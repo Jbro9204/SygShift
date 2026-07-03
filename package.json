@@ -1,13 +1,19 @@
 {
   "name": "sygshift",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite dev",
     "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
+    "typecheck": "tsc -b --pretty false",
+    "lint": "oxlint src worker --deny-warnings",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "preview": "pnpm build && vite preview",
+    "deploy": "pnpm build && wrangler deploy"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.0",

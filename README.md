@@ -1,32 +1,48 @@
-# React + TypeScript + Vite
+# SygShift
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+SygShift is a workforce-operations application for security scheduling, employee qualifications, events, timekeeping, time off, announcements, and payroll preparation.
 
-Currently, two official plugins are available:
+## Local setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Requirements:
 
-## React Compiler
+- Node.js 22 or later
+- pnpm 10 or later
+- A Supabase project for authenticated data access
+- A Cloudflare account for preview and production deployment
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Install dependencies and create local browser configuration:
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+pnpm install
+Copy-Item .env.example .env.local
+pnpm dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Only the Supabase URL and publishable key belong in `.env.local`. Secret keys, service-role keys, database passwords, and integration credentials must be configured as server-side secrets.
+
+## Quality checks
+
+```powershell
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+pnpm test:e2e
+```
+
+`pnpm check` runs type checking, linting, unit tests, and the production build together.
+
+## Deployment
+
+Cloudflare configuration is stored in `wrangler.jsonc`. The Worker serves versioned routes under `/api/v1`; static assets and client-side routes are served as a single-page application.
+
+```powershell
+pnpm deploy
+```
+
+Production deployment requires successful quality checks, database migrations, row-level security verification, source reconciliation, accessibility review, and a tested backup restore.
+
+## Repository boundaries
+
+Source workbooks, extracted employee data, environment files, database exports, screenshots, and test reports are intentionally excluded from Git. Application code, migrations, tests, and documentation are committed after each verified development unit.

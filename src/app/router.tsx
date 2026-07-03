@@ -1,0 +1,108 @@
+import { createBrowserRouter } from 'react-router-dom'
+import { AppShell } from '../components/AppShell'
+import { ModulePage } from '../pages/ModulePage'
+import { OverviewPage } from '../pages/OverviewPage'
+import { RouteErrorPage } from '../pages/RouteErrorPage'
+import { SchedulePage } from '../pages/SchedulePage'
+
+export const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <AppShell />,
+    errorElement: <RouteErrorPage />,
+    children: [
+      { index: true, element: <OverviewPage /> },
+      { path: 'schedule', element: <SchedulePage /> },
+      {
+        path: 'events',
+        element: (
+          <ModulePage
+            eyebrow="Operations"
+            title="Events & open shifts"
+            description="Create one-time events, publish qualified openings, and review guard requests without mixing them into the permanent site schedule."
+          />
+        ),
+      },
+      {
+        path: 'time',
+        element: (
+          <ModulePage
+            eyebrow="Operations"
+            title="Time & attendance"
+            description="Schedule-linked punches, exceptions, approvals, locked pay periods, and traceable payroll exports will live here."
+          />
+        ),
+      },
+      {
+        path: 'people',
+        element: (
+          <ModulePage
+            eyebrow="Workforce"
+            title="People"
+            description="A clear employee directory for contact information, qualifications, credentials, training, account status, and employment history."
+          />
+        ),
+      },
+      {
+        path: 'sites',
+        element: (
+          <ModulePage
+            eyebrow="Workforce"
+            title="Sites & posts"
+            description="Maintain the company site list, define posts, set qualification requirements, and assign recurring coverage from one place."
+          />
+        ),
+      },
+      {
+        path: 'patrol',
+        element: (
+          <ModulePage
+            eyebrow="Workforce"
+            title="Patrol"
+            description="Plan patrol requirements and routes while preserving a clean history of assigned and completed visits."
+          />
+        ),
+      },
+      {
+        path: 'requests',
+        element: (
+          <ModulePage
+            eyebrow="Workforce"
+            title="Requests"
+            description="Review time off, open-shift interest, overtime, events, and call-offs through one consistent approval queue."
+          />
+        ),
+      },
+      {
+        path: 'announcements',
+        element: (
+          <ModulePage
+            eyebrow="Communication"
+            title="Announcements"
+            description="Publish general updates, events, and approved shift opportunities to the right qualified employees."
+          />
+        ),
+      },
+      {
+        path: 'notifications',
+        element: (
+          <ModulePage
+            eyebrow="Communication"
+            title="Notifications"
+            description="Track delivery of scheduling, approval, call-off, and overtime messages without exposing sensitive site details."
+          />
+        ),
+      },
+      {
+        path: 'reports',
+        element: (
+          <ModulePage
+            eyebrow="Communication"
+            title="Reports"
+            description="Create readable operational, timekeeping, payroll, compliance, and change-history reports."
+          />
+        ),
+      },
+    ],
+  },
+])
