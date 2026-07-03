@@ -57,6 +57,60 @@ values
     now()
   );
 
+insert into private.employee_contacts (employee_id, company_email, mobile_phone)
+values (
+  '00000000-0000-0000-0000-000000000005',
+  'casey@example.invalid',
+  '555-0105'
+);
+
+set local role authenticated;
+set local "request.jwt.claim.sub" = '10000000-0000-0000-0000-000000000005';
+set local "request.jwt.claims" = '{"aal":"aal2"}';
+
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    perform public.get_employee_directory();
+  exception when insufficient_privilege then
+    blocked := true;
+  end;
+  if not blocked then
+    raise exception 'Guard accessed the protected employee directory.';
+  end if;
+end
+$$;
+
+set local "request.jwt.claim.sub" = '10000000-0000-0000-0000-000000000002';
+set local "request.jwt.claims" = '{"aal":"aal1"}';
+
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    perform public.get_employee_directory();
+  exception when insufficient_privilege then
+    blocked := true;
+  end;
+  if not blocked then
+    raise exception 'Supervisor accessed protected directory without MFA.';
+  end if;
+end
+$$;
+
+set local "request.jwt.claims" = '{"aal":"aal2"}';
+
+select 1 / case when count(*) = 1 then 1 else 0 end as protected_directory_visible
+from public.get_employee_directory()
+where id = '00000000-0000-0000-0000-000000000005'
+  and company_email = 'casey@example.invalid'
+  and mobile_phone = '555-0105';
+
+reset role;
+
 insert into public.sites (id, code, name)
 values ('20000000-0000-0000-0000-000000000001', 'TEST', 'Regression Test Site');
 

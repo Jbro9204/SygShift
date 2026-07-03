@@ -2,8 +2,10 @@ import { createBrowserRouter } from 'react-router-dom'
 import { AppShell } from '../components/AppShell'
 import { ModulePage } from '../pages/ModulePage'
 import { OverviewPage } from '../pages/OverviewPage'
+import { PeoplePage } from '../pages/PeoplePage'
 import { RouteErrorPage } from '../pages/RouteErrorPage'
 import { SchedulePage } from '../pages/SchedulePage'
+import { SitesPage } from '../pages/SitesPage'
 
 export const router = createBrowserRouter([
   {
@@ -33,26 +35,8 @@ export const router = createBrowserRouter([
           />
         ),
       },
-      {
-        path: 'people',
-        element: (
-          <ModulePage
-            eyebrow="Workforce"
-            title="People"
-            description="A clear employee directory for contact information, qualifications, credentials, training, account status, and employment history."
-          />
-        ),
-      },
-      {
-        path: 'sites',
-        element: (
-          <ModulePage
-            eyebrow="Workforce"
-            title="Sites & posts"
-            description="Maintain the company site list, define posts, set qualification requirements, and assign recurring coverage from one place."
-          />
-        ),
-      },
+      { path: 'people', element: <PeoplePage /> },
+      { path: 'sites', element: <SitesPage /> },
       {
         path: 'patrol',
         element: (
