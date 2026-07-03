@@ -82,6 +82,22 @@ await verifyManifestFiles(evidenceDirectory, artifactManifest)
 await verifyManifestFiles(evidenceDirectory, ooxmlManifest)
 await verifyManifestFiles(normalizedDirectory, normalizationManifest)
 
+async function countFormattingOnlyCells() {
+  const artifactAddresses = new Set()
+  for await (const cell of readRecords(path.join(evidenceDirectory, 'cells.ndjson'))) {
+    artifactAddresses.add(`${cell.sheetIndex}:${cell.address}`)
+  }
+
+  let count = 0
+  for await (const cell of readRecords(path.join(evidenceDirectory, 'ooxml-cells.ndjson'))) {
+    if (!artifactAddresses.has(`${cell.sheetIndex}:${cell.address}`)) count += 1
+  }
+  return count
+}
+
+const formattingOnlyCellCount = await countFormattingOnlyCells()
+const protectedSourceCellCount = artifactManifest.counts.cells + formattingOnlyCellCount
+
 const evidenceRecords = []
 const addEvidence = (prefix, manifest, countLookup) => {
   for (const [key, item] of Object.entries(manifest.evidence)) {
@@ -230,7 +246,9 @@ if (dryRun) {
     sourceSha256: sourceRecord.sha256,
     evidenceFileCount: evidenceRecords.length,
     sourceSheetCount: artifactManifest.counts.sheets,
-    sourceCellCount: artifactManifest.counts.cells,
+    artifactSourceCellCount: artifactManifest.counts.cells,
+    formattingOnlyCellCount,
+    protectedSourceCellCount,
     ooxmlCellMetadataCount: ooxmlManifest.counts.cells,
     candidateCount: expectedCandidateCount,
     issueCount: normalizationManifest.counts.blockingIssues + normalizationManifest.counts.warnings,
@@ -319,7 +337,7 @@ await ingestFile(
 await rpc('finalize_source_import', {
   target_import_run_id: importRunId,
   expected_sheet_count: artifactManifest.counts.sheets,
-  expected_cell_count: artifactManifest.counts.cells,
+  expected_cell_count: protectedSourceCellCount,
   expected_candidate_count: expectedCandidateCount,
   reconciliation_sha256: reconciliationSha256,
 })

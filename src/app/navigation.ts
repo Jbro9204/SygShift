@@ -4,6 +4,7 @@ import {
   CalendarClock,
   CalendarDays,
   ClipboardCheck,
+  Database,
   FileBarChart,
   LayoutDashboard,
   MapPinned,
@@ -12,11 +13,13 @@ import {
   UsersRound,
   type LucideIcon,
 } from 'lucide-react'
+import type { AppRole } from '../data/session'
 
 export interface NavigationItem {
   label: string
   path: string
   icon: LucideIcon
+  roles?: AppRole[]
 }
 
 export interface NavigationGroup {
@@ -49,6 +52,12 @@ export const navigationGroups: NavigationGroup[] = [
       { label: 'Announcements', path: '/announcements', icon: Megaphone },
       { label: 'Notifications', path: '/notifications', icon: Bell },
       { label: 'Reports', path: '/reports', icon: FileBarChart },
+    ],
+  },
+  {
+    label: 'Administration',
+    items: [
+      { label: 'Import review', path: '/import-review', icon: Database, roles: ['admin'] },
     ],
   },
 ]

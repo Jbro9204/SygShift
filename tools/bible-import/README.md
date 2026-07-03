@@ -55,3 +55,11 @@ node tools/bible-import/load-evidence.mjs `
 ```
 
 Live loading is intentionally unavailable until the source workbook has been uploaded to an access-controlled Supabase Storage path and the database migrations have been applied. At that point, set `SUPABASE_URL` and `SUPABASE_SECRET_KEY` in the server environment and omit `--dry-run`. The secret key must never use a `VITE_` name or enter browser configuration.
+
+The loader reconciles the union of value evidence and raw OOXML evidence. Styled blank cells that exist only in OOXML are stored as `ooxml_only` source cells so workbook layout evidence is not silently discarded.
+
+## Admin review
+
+The application route `/import-review` reads staging data through Admin-only database functions. MFA is required for summaries, candidate pages, issue pages, and every review decision. Candidate decisions and issue resolutions are written to append-only history; the original payload and source references are retained.
+
+An import cannot be marked promoted until all candidates have a recorded decision and no unresolved blocking issue remains. Rejection and duplicate decisions are explicit outcomes, not deleted source records.

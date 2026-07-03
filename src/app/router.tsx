@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { AppShell } from '../components/AppShell'
 import { EventsPage } from '../pages/EventsPage'
+import { ImportReviewPage } from '../pages/ImportReviewPage'
 import { ModulePage } from '../pages/ModulePage'
 import { OverviewPage } from '../pages/OverviewPage'
 import { PeoplePage } from '../pages/PeoplePage'
@@ -41,6 +42,7 @@ export const router = createBrowserRouter([
         ),
       },
       { path: 'requests', element: <RequestsPage /> },
+      { path: 'import-review', element: <ImportReviewPage /> },
       {
         path: 'announcements',
         element: (

@@ -2,6 +2,482 @@
   min-height: 100vh;
 }
 
+.page--import-review {
+  max-width: 1280px;
+}
+
+.import-status-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 16px;
+  padding: 23px 24px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--success);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.import-status-card__icon {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  color: #27694f;
+  background: #eaf4ef;
+  border-radius: 10px;
+}
+
+.import-status-card .eyebrow {
+  margin-bottom: 4px;
+  color: #4c665a;
+}
+
+.import-status-card h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(20px, 2.2vw, 27px);
+  letter-spacing: -0.02em;
+}
+
+.import-status-card p:not(.eyebrow) {
+  max-width: 760px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.import-state-pill,
+.review-severity,
+.review-kind,
+.review-confidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.import-state-pill {
+  padding: 8px 11px;
+  color: #245d47;
+  background: #eaf4ef;
+  border: 1px solid #bcd8ca;
+}
+
+.import-state-pill--attention {
+  color: #7c4b0e;
+  background: #fff6e7;
+  border-color: #e6c78e;
+}
+
+.import-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.import-metrics article {
+  display: grid;
+  min-height: 148px;
+  align-content: center;
+  padding: 21px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-top: 3px solid #b9b4aa;
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.import-metrics article.import-metric--attention {
+  border-top-color: #b27625;
+}
+
+.import-metrics span {
+  color: #666159;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.import-metrics strong {
+  margin: 7px 0 3px;
+  color: #24221e;
+  font-size: 32px;
+  letter-spacing: -0.035em;
+}
+
+.import-metrics small {
+  color: #7b766e;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.import-breakdown,
+.import-workbench {
+  margin-bottom: 16px;
+  overflow: hidden;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.import-breakdown__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 20px;
+}
+
+.import-breakdown__grid > div {
+  display: grid;
+  gap: 5px;
+  padding: 5px 20px;
+  border-right: 1px solid #e8e4dc;
+}
+
+.import-breakdown__grid > div:last-child {
+  border-right: 0;
+}
+
+.import-breakdown__grid strong {
+  color: #2a2823;
+  font-size: 25px;
+}
+
+.import-breakdown__grid span {
+  color: #6d6961;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.import-workbench__heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 21px;
+  border-bottom: 1px solid #e7e3db;
+}
+
+.import-workbench__heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 23px;
+  letter-spacing: -0.02em;
+}
+
+.review-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: #f0eee8;
+  border: 1px solid #dfdbd2;
+  border-radius: 9px;
+}
+
+.review-tab {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 13px;
+  color: #625e56;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.review-tab--active {
+  color: #29261f;
+  background: #ffffff;
+  box-shadow: 0 1px 5px rgb(25 22 17 / 10%);
+}
+
+.import-filters {
+  display: flex;
+  gap: 14px;
+  padding: 16px 21px;
+  background: #fbfaf7;
+  border-bottom: 1px solid #e7e3db;
+}
+
+.import-filters .select-field {
+  min-width: 210px;
+}
+
+.import-review-list {
+  display: grid;
+  gap: 12px;
+  padding: 18px 21px;
+}
+
+.import-review-card {
+  display: grid;
+  gap: 13px;
+  padding: 19px;
+  background: #ffffff;
+  border: 1px solid #dedad1;
+  border-left: 4px solid #aaa49a;
+  border-radius: 9px;
+}
+
+.import-review-card--blocking {
+  border-left-color: #a4473b;
+}
+
+.import-review-card--warning {
+  border-left-color: #bb7b25;
+}
+
+.import-review-card--information {
+  border-left-color: #4e7089;
+}
+
+.import-review-card__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.import-review-card h3 {
+  margin: 7px 0 0;
+  color: #302e29;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.import-review-card code {
+  flex: 0 0 auto;
+  padding: 5px 7px;
+  color: #6e6960;
+  background: #f4f2ed;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.review-severity,
+.review-kind,
+.review-confidence {
+  padding: 5px 8px;
+  text-transform: capitalize;
+}
+
+.review-severity--blocking,
+.review-confidence--blocking_review {
+  color: #87382f;
+  background: #fff0ee;
+}
+
+.review-severity--warning {
+  color: #7e4b08;
+  background: #fff4df;
+}
+
+.review-severity--information,
+.review-confidence--review,
+.review-kind {
+  color: #465e70;
+  background: #edf3f7;
+}
+
+.source-reference {
+  margin: 0;
+  color: #716d65;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.source-reference::before {
+  content: "Source: ";
+  color: #504d47;
+  font-weight: 750;
+}
+
+.review-resolution {
+  margin: 0;
+  padding: 11px 13px;
+  color: #4e4b45;
+  background: #f6f4ef;
+  border-radius: 7px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.candidate-evidence {
+  color: #514e48;
+  font-size: 14px;
+}
+
+.candidate-evidence summary {
+  width: fit-content;
+  color: #694b1d;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.candidate-evidence pre {
+  max-height: 360px;
+  margin: 12px 0 0;
+  overflow: auto;
+  padding: 14px;
+  color: #e8e3d8;
+  background: #24231f;
+  border-radius: 8px;
+  font: 13px/1.55 Consolas, "Cascadia Code", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.candidate-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.import-review-card > .primary-action {
+  justify-self: end;
+}
+
+.import-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 17px 21px;
+  color: #67635b;
+  background: #fbfaf7;
+  border-top: 1px solid #e7e3db;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.import-pagination > div {
+  display: flex;
+  gap: 9px;
+}
+
+.import-pagination .secondary-button {
+  min-height: 40px;
+  gap: 7px;
+  padding: 8px 12px;
+}
+
+.import-pagination button:disabled,
+.candidate-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+@media (max-width: 1120px) {
+  .import-metrics,
+  .import-breakdown__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .import-breakdown__grid > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .import-breakdown__grid > div:nth-child(-n + 2) {
+    padding-bottom: 18px;
+    border-bottom: 1px solid #e8e4dc;
+  }
+
+  .import-breakdown__grid > div:nth-child(n + 3) {
+    padding-top: 18px;
+  }
+}
+
+@media (max-width: 820px) {
+  .import-status-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .import-state-pill {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .import-workbench__heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .review-tabs {
+    align-self: flex-start;
+  }
+}
+
+@media (max-width: 680px) {
+  .import-status-card {
+    grid-template-columns: 1fr;
+    padding: 20px;
+  }
+
+  .import-state-pill {
+    grid-column: auto;
+  }
+
+  .import-metrics,
+  .import-breakdown__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .import-metrics article {
+    min-height: 125px;
+  }
+
+  .import-breakdown__grid > div {
+    padding: 15px 5px;
+    border-right: 0;
+    border-bottom: 1px solid #e8e4dc;
+  }
+
+  .import-breakdown__grid > div:nth-child(-n + 2),
+  .import-breakdown__grid > div:nth-child(n + 3) {
+    padding: 15px 5px;
+  }
+
+  .import-breakdown__grid > div:last-child {
+    border-bottom: 0;
+  }
+
+  .review-tabs,
+  .import-filters,
+  .candidate-actions,
+  .import-pagination,
+  .import-pagination > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .review-tab,
+  .import-filters .select-field,
+  .candidate-actions > *,
+  .import-review-card > .primary-action,
+  .import-pagination button {
+    width: 100%;
+  }
+
+  .import-review-card__heading {
+    flex-direction: column;
+  }
+
+  .import-review-card code {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+}
+
 .visually-hidden {
   position: absolute !important;
   width: 1px !important;

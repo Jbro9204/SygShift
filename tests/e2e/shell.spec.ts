@@ -96,3 +96,20 @@ test('request center explains protected guard and supervisor workflows', async (
   const accessibility = await new AxeBuilder({ page }).analyze()
   expect(accessibility.violations).toEqual([])
 })
+
+test('workbook import review presents verified staging without exposing private records', async ({ page }) => {
+  await page.goto('/import-review')
+
+  await expect(page.getByRole('heading', { name: 'Workbook import review' })).toBeVisible()
+  await expect(page.getByText('Every workbook cell is preserved and traceable.')).toBeVisible()
+  await expect(page.getByText('Ready for the secure Supabase connection')).toBeVisible()
+  await expect(page.getByText('110,274')).toBeVisible()
+  await expect(page.getByText('9,408')).toBeVisible()
+
+  const bodyWidth = await page.locator('body').evaluate((body) => body.scrollWidth)
+  const viewportWidth = page.viewportSize()?.width ?? 0
+  expect(bodyWidth).toBeLessThanOrEqual(viewportWidth)
+
+  const accessibility = await new AxeBuilder({ page }).analyze()
+  expect(accessibility.violations).toEqual([])
+})

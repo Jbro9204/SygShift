@@ -41,6 +41,7 @@ values
 
 insert into auth.users (id, email)
 values
+  ('10000000-0000-0000-0000-000000000001', 'admin@example.invalid'),
   ('10000000-0000-0000-0000-000000000002', 'supervisor@example.invalid'),
   ('10000000-0000-0000-0000-000000000003', 'armed-guard@example.invalid'),
   ('10000000-0000-0000-0000-000000000004', 'replacement-guard@example.invalid'),
@@ -48,6 +49,11 @@ values
 
 insert into private.employee_accounts (employee_id, auth_user_id, activated_at)
 values
+  (
+    '00000000-0000-0000-0000-000000000001',
+    '10000000-0000-0000-0000-000000000001',
+    now()
+  ),
   (
     '00000000-0000-0000-0000-000000000002',
     '10000000-0000-0000-0000-000000000002',
@@ -643,6 +649,37 @@ insert into private.import_runs (
   repeat('b', 64)
 );
 
+insert into private.source_sheets (
+  id,
+  import_run_id,
+  sheet_index,
+  name,
+  max_row,
+  max_column
+) values (
+  '74000000-0000-0000-0000-000000000001',
+  '71000000-0000-0000-0000-000000000001',
+  0,
+  'Formatting-only regression',
+  0,
+  0
+);
+
+select public.ingest_ooxml_cell_metadata(
+  '71000000-0000-0000-0000-000000000001',
+  '[{"sheetIndex":0,"address":"AA12","bold":true}]'::jsonb
+) as formatting_only_metadata_ingested;
+
+select 1 / case when count(*) = 1 then 1 else 0 end as formatting_only_cell_preserved
+from private.source_cells cell
+join private.source_cell_metadata metadata on metadata.source_cell_id = cell.id
+where cell.source_sheet_id = '74000000-0000-0000-0000-000000000001'
+  and cell.cell_address = 'AA12'
+  and cell.row_number = 12
+  and cell.column_number = 27
+  and cell.evidence_origin = 'ooxml_only'
+  and metadata.bold;
+
 insert into private.import_candidates (
   id,
   import_run_id,
@@ -692,23 +729,92 @@ begin
 end
 $$;
 
-update private.import_candidates
-set
-  review_status = 'accepted',
-  reviewed_by = '00000000-0000-0000-0000-000000000001',
-  reviewed_at = now(),
-  review_note = 'Regression approval'
-where id = '72000000-0000-0000-0000-000000000001';
+set local role authenticated;
+set local "request.jwt.claim.sub" = '10000000-0000-0000-0000-000000000002';
+set local "request.jwt.claims" = '{"aal":"aal2"}';
 
-update private.import_issues
-set
-  resolution = 'Regression resolution',
-  resolved_by = '00000000-0000-0000-0000-000000000001',
-  resolved_at = now()
-where id = '73000000-0000-0000-0000-000000000001';
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    perform public.get_import_review_summary();
+  exception when insufficient_privilege then
+    blocked := true;
+  end;
+  if not blocked then
+    raise exception 'Supervisor accessed the Admin-only import review center.';
+  end if;
+end
+$$;
 
-update private.import_runs
-set blocking_issue_count = 0
+set local "request.jwt.claim.sub" = '10000000-0000-0000-0000-000000000001';
+set local "request.jwt.claims" = '{"aal":"aal1"}';
+
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    perform public.get_import_review_summary();
+  exception when insufficient_privilege then
+    blocked := true;
+  end;
+  if not blocked then
+    raise exception 'Administrator accessed import review without MFA.';
+  end if;
+end
+$$;
+
+set local "request.jwt.claims" = '{"aal":"aal2"}';
+
+select 1 / case when summary ->> 'importRunId' = '71000000-0000-0000-0000-000000000001'
+  and (summary ->> 'candidateCount')::integer = 0
+  and (summary ->> 'blockingIssueCount')::integer = 1
+then 1 else 0 end as import_review_summary_visible
+from (select public.get_import_review_summary() as summary) review;
+
+select 1 / case when count(*) = 1 then 1 else 0 end as pending_import_candidate_visible
+from public.get_import_candidates_page(
+  '71000000-0000-0000-0000-000000000001',
+  'employee',
+  'pending',
+  50,
+  0
+)
+where id = '72000000-0000-0000-0000-000000000001'
+  and total_count = 1;
+
+select 1 / case when count(*) = 1 then 1 else 0 end as blocking_import_issue_visible
+from public.get_import_issues_page(
+  '71000000-0000-0000-0000-000000000001',
+  'blocking',
+  false,
+  50,
+  0
+)
+where id = '73000000-0000-0000-0000-000000000001'
+  and total_count = 1;
+
+select public.review_import_candidate(
+  '72000000-0000-0000-0000-000000000001',
+  'accepted',
+  'Regression approval'
+) as import_candidate_reviewed;
+
+select public.resolve_import_issue(
+  '73000000-0000-0000-0000-000000000001',
+  'Regression resolution'
+) as import_issue_resolved;
+
+reset role;
+
+select 1 / case when count(*) = 2 then 1 else 0 end as import_review_history_preserved
+from private.import_review_decisions
+where import_run_id = '71000000-0000-0000-0000-000000000001';
+
+select 1 / case when blocking_issue_count = 0 then 1 else 0 end as import_issue_counts_reconciled
+from private.import_runs
 where id = '71000000-0000-0000-0000-000000000001';
 
 update private.import_runs

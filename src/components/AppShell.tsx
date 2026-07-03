@@ -1,12 +1,28 @@
 import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Menu, ShieldCheck, X } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { navigationGroups } from '../app/navigation'
+import { getCurrentAppRole } from '../data/session'
+import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDate, formatOperationalTime } from '../lib/time'
 
 export function AppShell() {
   const [navigationOpen, setNavigationOpen] = useState(false)
   const location = useLocation()
+  const roleQuery = useQuery({
+    queryKey: ['current-app-role'],
+    queryFn: getCurrentAppRole,
+    enabled: isSupabaseConfigured,
+  })
+  const visibleNavigationGroups = navigationGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) =>
+        !item.roles || !isSupabaseConfigured || Boolean(roleQuery.data && item.roles.includes(roleQuery.data)),
+      ),
+    }))
+    .filter((group) => group.items.length > 0)
 
   useEffect(() => {
     setNavigationOpen(false)
@@ -52,7 +68,7 @@ export function AppShell() {
         </div>
 
         <nav aria-label="Primary navigation" className="sidebar-navigation">
-          {navigationGroups.map((group) => (
+          {visibleNavigationGroups.map((group) => (
             <div className="navigation-group" key={group.label}>
               <p>{group.label}</p>
               {group.items.map((item) => {
@@ -78,8 +94,8 @@ export function AppShell() {
         <div className="sidebar-status" role="status">
           <ShieldCheck aria-hidden="true" size={22} />
           <div>
-            <strong>Setup mode</strong>
-            <span>Operational data is protected</span>
+            <strong>{isSupabaseConfigured ? 'Secure workspace' : 'Setup mode'}</strong>
+            <span>{isSupabaseConfigured ? 'Role-based access is active' : 'Operational data is protected'}</span>
           </div>
         </div>
       </aside>
