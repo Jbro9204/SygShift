@@ -81,3 +81,18 @@ test('events and openings explain the guarded request workflow', async ({ page }
   const accessibility = await new AxeBuilder({ page }).analyze()
   expect(accessibility.violations).toEqual([])
 })
+
+test('request center explains protected guard and supervisor workflows', async ({ page }) => {
+  await page.goto('/requests')
+
+  await expect(page.getByRole('heading', { name: 'Requests & call-offs' })).toBeVisible()
+  await expect(page.getByText('Request workflows ready for the secure connection')).toBeVisible()
+  await expect(page.getByText('Supervisor approvals protected by MFA')).toBeVisible()
+
+  const bodyWidth = await page.locator('body').evaluate((body) => body.scrollWidth)
+  const viewportWidth = page.viewportSize()?.width ?? 0
+  expect(bodyWidth).toBeLessThanOrEqual(viewportWidth)
+
+  const accessibility = await new AxeBuilder({ page }).analyze()
+  expect(accessibility.violations).toEqual([])
+})

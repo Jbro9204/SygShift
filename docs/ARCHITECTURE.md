@@ -45,3 +45,11 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Published schedules are versioned; historical versions are not overwritten.
 - Payroll exports identify their source entries and preserve a checksum.
 - Every completed change is reviewed, checked, and committed to Git.
+
+## Request and notification lifecycle
+
+- Guard requests are created through database functions that derive the employee from the authenticated account.
+- Time-off approval is blocked while an active assignment overlaps the requested dates; approved time off blocks later assignment.
+- A call-off queues a supervisor alert but does not claim delivery. A supervisor with MFA must review it and publish the replacement opening.
+- Publishing a replacement opening cancels the original assignment, opens the shift, creates the announcement, and queues qualified delivery atomically.
+- Notification records distinguish queued, attempted, delivered, and failed states. The interface must never describe a queued message as sent.

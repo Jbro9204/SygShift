@@ -719,6 +719,20 @@ select 1 / case when status = 'promoted' then 1 else 0 end as safe_import_promot
 from private.import_runs
 where id = '71000000-0000-0000-0000-000000000001';
 
+do $$
+begin
+  if exists (
+    select 1
+    from pg_proc function
+    join pg_namespace namespace on namespace.oid = function.pronamespace
+    where namespace.nspname = 'private'
+      and has_function_privilege('authenticated', function.oid, 'EXECUTE')
+  ) then
+    raise exception 'Authenticated role retained execute access to a private function.';
+  end if;
+end
+$$;
+
 select 'foundation_regression: PASS' as result;
 
 rollback;

@@ -590,4 +590,7 @@ grant execute on function public.decide_time_off_request(uuid, public.request_st
 grant execute on function public.decide_shift_request(uuid, public.request_status, text) to authenticated;
 grant execute on function public.publish_call_off_opening(uuid, text, text) to authenticated;
 
+revoke all on all functions in schema private from public, anon, authenticated;
+grant execute on all functions in schema private to service_role;
+
 commit;

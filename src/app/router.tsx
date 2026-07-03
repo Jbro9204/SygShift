@@ -4,6 +4,7 @@ import { EventsPage } from '../pages/EventsPage'
 import { ModulePage } from '../pages/ModulePage'
 import { OverviewPage } from '../pages/OverviewPage'
 import { PeoplePage } from '../pages/PeoplePage'
+import { RequestsPage } from '../pages/RequestsPage'
 import { RouteErrorPage } from '../pages/RouteErrorPage'
 import { SchedulePage } from '../pages/SchedulePage'
 import { SitesPage } from '../pages/SitesPage'
@@ -39,16 +40,7 @@ export const router = createBrowserRouter([
           />
         ),
       },
-      {
-        path: 'requests',
-        element: (
-          <ModulePage
-            eyebrow="Workforce"
-            title="Requests"
-            description="Review time off, open-shift interest, overtime, events, and call-offs through one consistent approval queue."
-          />
-        ),
-      },
+      { path: 'requests', element: <RequestsPage /> },
       {
         path: 'announcements',
         element: (
