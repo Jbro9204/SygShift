@@ -2,7 +2,14 @@ import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 
 const credentialSchema = z.object({
-  kind: z.enum(['armed_guard', 'unarmed_guard', 'driver', 'first_aid', 'cpr', 'other']),
+  kind: z.enum([
+    'guard_license',
+    'armed_guard',
+    'driver_license',
+    'first_aid_cpr',
+    'site_training',
+    'other',
+  ]),
   status: z.enum(['pending', 'active', 'expired', 'suspended', 'revoked']),
   expires_on: z.string().nullable(),
 })
@@ -51,10 +58,14 @@ const siteSchema = z.object({
 export type DirectoryEntry = z.infer<typeof directoryEntrySchema>
 export type Site = z.infer<typeof siteSchema>
 
+export function parseDirectoryEntries(value: unknown): DirectoryEntry[] {
+  return z.array(directoryEntrySchema).parse(value)
+}
+
 export async function getEmployeeDirectory(): Promise<DirectoryEntry[]> {
   const { data, error } = await getSupabaseClient().rpc('get_employee_directory')
   if (error) throw new Error('The employee directory could not be loaded for this account.')
-  return z.array(directoryEntrySchema).parse(data)
+  return parseDirectoryEntries(data)
 }
 export async function getSites(): Promise<Site[]> {
   const { data, error } = await getSupabaseClient()

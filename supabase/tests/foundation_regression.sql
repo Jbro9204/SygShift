@@ -42,6 +42,8 @@ values
 insert into auth.users (id, email)
 values
   ('10000000-0000-0000-0000-000000000002', 'supervisor@example.invalid'),
+  ('10000000-0000-0000-0000-000000000003', 'armed-guard@example.invalid'),
+  ('10000000-0000-0000-0000-000000000004', 'replacement-guard@example.invalid'),
   ('10000000-0000-0000-0000-000000000005', 'guard@example.invalid');
 
 insert into private.employee_accounts (employee_id, auth_user_id, activated_at)
@@ -49,6 +51,16 @@ values
   (
     '00000000-0000-0000-0000-000000000002',
     '10000000-0000-0000-0000-000000000002',
+    now()
+  ),
+  (
+    '00000000-0000-0000-0000-000000000003',
+    '10000000-0000-0000-0000-000000000003',
+    now()
+  ),
+  (
+    '00000000-0000-0000-0000-000000000004',
+    '10000000-0000-0000-0000-000000000004',
     now()
   ),
   (
@@ -153,7 +165,7 @@ insert into public.shifts (
     timestamptz '2099-07-06 08:00:00-06',
     timestamptz '2099-07-06 16:00:00-06',
     1,
-    true,
+    false,
     '00000000-0000-0000-0000-000000000002'
   ),
   (
@@ -163,7 +175,7 @@ insert into public.shifts (
     timestamptz '2099-07-06 09:00:00-06',
     timestamptz '2099-07-06 17:00:00-06',
     2,
-    true,
+    false,
     '00000000-0000-0000-0000-000000000002'
   ),
   (
@@ -324,7 +336,212 @@ where shift_id = '50000000-0000-0000-0000-000000000003'
   and employee_id = '00000000-0000-0000-0000-000000000005'
   and status = 'withdrawn';
 
+select public.submit_time_off_request(
+  date '2099-07-07',
+  date '2099-07-07',
+  null,
+  null,
+  'Planned time off regression.'
+) as submitted_time_off_request;
+
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    perform public.submit_time_off_request(
+      date '2099-07-07',
+      date '2099-07-08',
+      null,
+      null,
+      'This overlaps an active request.'
+    );
+  exception when unique_violation then
+    blocked := true;
+  end;
+  if not blocked then
+    raise exception 'Overlapping time-off request was accepted.';
+  end if;
+end
+$$;
+
 reset role;
+
+set local role authenticated;
+set local "request.jwt.claim.sub" = '10000000-0000-0000-0000-000000000003';
+set local "request.jwt.claims" = '{"aal":"aal1"}';
+
+select public.report_call_off(
+  '50000000-0000-0000-0000-000000000001',
+  'Unable to work the assigned shift.'
+) as submitted_call_off;
+
+select public.submit_time_off_request(
+  date '2099-07-06',
+  date '2099-07-06',
+  null,
+  null,
+  'Time off overlaps the assigned shift.'
+) as assigned_employee_time_off;
+
+do $$
+declare
+  blocked boolean := false;
+  call_off_id uuid;
+begin
+  select id into call_off_id
+  from public.call_off_reports
+  where shift_id = '50000000-0000-0000-0000-000000000001';
+
+  begin
+    perform public.publish_call_off_opening(
+      call_off_id,
+      'Replacement guard needed',
+      'A qualified guard may request this opening.'
+    );
+  exception when others then
+    blocked := true;
+  end;
+  if not blocked then
+    raise exception 'Guard published a call-off announcement.';
+  end if;
+end
+$$;
+
+reset role;
+
+select 1 / case when count(*) = 1 then 1 else 0 end as supervisor_alert_queued
+from private.notification_outbox
+where message_type = 'call_off_supervisor_alert';
+
+set local role authenticated;
+set local "request.jwt.claim.sub" = '10000000-0000-0000-0000-000000000002';
+set local "request.jwt.claims" = '{"aal":"aal1"}';
+
+do $$
+declare
+  blocked boolean := false;
+  call_off_id uuid;
+begin
+  select id into call_off_id
+  from public.call_off_reports
+  where shift_id = '50000000-0000-0000-0000-000000000001';
+
+  begin
+    perform public.publish_call_off_opening(
+      call_off_id,
+      'Replacement guard needed',
+      'A qualified guard may request this opening.'
+    );
+  exception when others then
+    blocked := true;
+  end;
+  if not blocked then
+    raise exception 'Supervisor published a call-off announcement without MFA.';
+  end if;
+end
+$$;
+
+set local "request.jwt.claims" = '{"aal":"aal2"}';
+
+do $$
+declare
+  blocked boolean := false;
+  time_off_id uuid;
+begin
+  select id into time_off_id
+  from public.time_off_requests
+  where employee_id = '00000000-0000-0000-0000-000000000003'
+    and status = 'pending';
+
+  begin
+    perform public.decide_time_off_request(time_off_id, 'approved', null);
+  exception when check_violation then
+    blocked := true;
+  end;
+  if not blocked then
+    raise exception 'Time off was approved while an overlapping assignment remained active.';
+  end if;
+end
+$$;
+
+select public.publish_call_off_opening(
+  id,
+  'Replacement guard needed',
+  'A qualified guard may request this opening.'
+) as call_off_opening_published
+from public.call_off_reports
+where shift_id = '50000000-0000-0000-0000-000000000001';
+
+select public.decide_time_off_request(id, 'approved', null) as assigned_time_off_approved
+from public.time_off_requests
+where employee_id = '00000000-0000-0000-0000-000000000003'
+  and status = 'pending';
+
+select public.decide_time_off_request(id, 'approved', null) as guard_time_off_approved
+from public.time_off_requests
+where employee_id = '00000000-0000-0000-0000-000000000005'
+  and status = 'pending';
+
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    insert into public.shift_assignments (shift_id, employee_id, assigned_by)
+    values (
+      '50000000-0000-0000-0000-000000000003',
+      '00000000-0000-0000-0000-000000000005',
+      '00000000-0000-0000-0000-000000000002'
+    );
+  exception when others then
+    blocked := sqlerrm like '%approved time off%';
+  end;
+  if not blocked then
+    raise exception 'Assignment ignored approved time off.';
+  end if;
+end
+$$;
+
+reset role;
+
+set local role authenticated;
+set local "request.jwt.claim.sub" = '10000000-0000-0000-0000-000000000004';
+set local "request.jwt.claims" = '{"aal":"aal1"}';
+
+select public.submit_shift_request(
+  '50000000-0000-0000-0000-000000000001',
+  'Available as the replacement guard.'
+) as replacement_request_submitted;
+
+reset role;
+
+set local role authenticated;
+set local "request.jwt.claim.sub" = '10000000-0000-0000-0000-000000000002';
+set local "request.jwt.claims" = '{"aal":"aal2"}';
+
+select public.decide_shift_request(id, 'approved', null) as replacement_request_approved
+from public.shift_requests
+where shift_id = '50000000-0000-0000-0000-000000000001'
+  and employee_id = '00000000-0000-0000-0000-000000000004'
+  and status = 'pending';
+
+select 1 / case when count(*) = 1 then 1 else 0 end as replacement_assignment_created
+from public.shift_assignments
+where shift_id = '50000000-0000-0000-0000-000000000001'
+  and employee_id = '00000000-0000-0000-0000-000000000004'
+  and status = 'assigned';
+
+select 1 / case when count(*) = 1 then 1 else 0 end as filled_shift_closed
+from public.shifts
+where id = '50000000-0000-0000-0000-000000000001'
+  and is_open = false;
+
+reset role;
+
+select 1 / case when count(*) = 1 then 1 else 0 end as announcement_delivery_queued
+from private.notification_outbox
+where message_type = 'announcement_published';
 
 do $$
 declare

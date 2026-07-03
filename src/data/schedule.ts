@@ -54,7 +54,7 @@ const scheduleSchema = z.object({
   id: z.string().uuid(),
   week_starts_on: z.string(),
   revision: z.number().int().positive(),
-  status: z.enum(['draft', 'published', 'superseded']),
+  status: z.enum(['draft', 'published', 'superseded', 'archived']),
   published_at: z.string().nullable(),
   shifts: z.array(shiftSchema),
 })
