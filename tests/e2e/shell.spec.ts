@@ -16,10 +16,14 @@ test('master schedule remains usable on the configured viewport', async ({ page 
 
   await expect(page.getByRole('heading', { name: 'Master schedule' })).toBeVisible()
   await expect(page.getByRole('table', { name: 'Weekly master schedule' })).toBeVisible()
+  await expect(page.getByText('Schedule ready for the secure connection.')).toBeVisible()
 
   const bodyWidth = await page.locator('body').evaluate((body) => body.scrollWidth)
   const viewportWidth = page.viewportSize()?.width ?? 0
   expect(bodyWidth).toBeLessThanOrEqual(viewportWidth)
+
+  const accessibility = await new AxeBuilder({ page }).analyze()
+  expect(accessibility.violations).toEqual([])
 })
 
 test('employee directory protects source data and remains accessible', async ({ page }) => {
