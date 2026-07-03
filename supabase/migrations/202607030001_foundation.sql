@@ -689,11 +689,16 @@ declare
   shift_requires_armed boolean;
   shift_date date;
 begin
-  if tg_table_name = 'shift_assignments' and new.status = 'canceled' then
+  if tg_table_name = 'shift_assignments' and new.status::text = 'canceled' then
     return new;
   end if;
 
-  if tg_table_name = 'shift_requests' and new.status in ('withdrawn', 'canceled', 'declined') then
+  -- This trigger is shared by tables whose status columns use different enum
+  -- types. Compare their textual values so PostgreSQL never attempts to cast a
+  -- request-only value (such as "withdrawn") to assignment_status.
+  if tg_table_name = 'shift_requests'
+    and new.status::text in ('withdrawn', 'canceled', 'declined')
+  then
     return new;
   end if;
 

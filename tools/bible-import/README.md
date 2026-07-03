@@ -41,3 +41,17 @@ node tools/bible-import/normalize-evidence.mjs `
 Normalization output is never promoted automatically. It preserves source references, records unresolved duplicates and ambiguous schedule sections as blocking issues, and marks the dataset ineligible for promotion while any blocking issue remains.
 
 For the reviewed source fingerprint, the structural gate expects exactly 155 worksheets: 140 weekly schedules, 11 intentionally blank tabs, and 4 reference tabs. Any change to those counts is blocking until reviewed.
+
+## Database loading
+
+Validate the complete database payload without transmitting data:
+
+```powershell
+node tools/bible-import/load-evidence.mjs `
+  "data\private\bible-evidence" `
+  "data\private\bible-normalized" `
+  "private-source-bucket/source.xlsx" `
+  --dry-run
+```
+
+Live loading is intentionally unavailable until the source workbook has been uploaded to an access-controlled Supabase Storage path and the database migrations have been applied. At that point, set `SUPABASE_URL` and `SUPABASE_SECRET_KEY` in the server environment and omit `--dry-run`. The secret key must never use a `VITE_` name or enter browser configuration.
