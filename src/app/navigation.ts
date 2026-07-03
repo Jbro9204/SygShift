@@ -7,6 +7,7 @@ import {
   Database,
   FileBarChart,
   LayoutDashboard,
+  ListChecks,
   MapPinned,
   Megaphone,
   Timer,
@@ -58,6 +59,7 @@ export const navigationGroups: NavigationGroup[] = [
     label: 'Administration',
     items: [
       { label: 'Import review', path: '/import-review', icon: Database, roles: ['admin'] },
+      { label: 'Operational import', path: '/operational-import', icon: ListChecks, roles: ['admin'] },
     ],
   },
 ]

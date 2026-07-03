@@ -60,6 +60,43 @@ function ContactSummary({ employee }: { employee: DirectoryEntry }) {
   )
 }
 
+function OperationalDetails({ employee }: { employee: DirectoryEntry }) {
+  const profile = employee.operational_profile
+  const hasProfileDetails = profile && [
+    profile.locationText,
+    profile.scheduleAvailability,
+    profile.employeeDg,
+    profile.expectedHoursText,
+    profile.sourceNotes,
+    profile.supervisorLabel,
+  ].some(Boolean)
+  if (!hasProfileDetails && employee.credentials.length === 0) return null
+
+  return (
+    <details className="operational-details">
+      <summary>View licenses & operational details</summary>
+      <dl>
+        {profile?.locationText ? <div><dt>Location</dt><dd>{profile.locationText}</dd></div> : null}
+        {profile?.scheduleAvailability ? <div><dt>Availability</dt><dd>{profile.scheduleAvailability}</dd></div> : null}
+        {profile?.expectedHoursText ? <div><dt>Expected hours</dt><dd>{profile.expectedHoursText}</dd></div> : null}
+        {profile?.employeeDg ? <div><dt>Employee details</dt><dd>{profile.employeeDg}</dd></div> : null}
+        {profile?.supervisorLabel ? <div><dt>Supervisor source</dt><dd>{profile.supervisorLabel}</dd></div> : null}
+        {profile?.sourceNotes ? <div><dt>Source notes</dt><dd>{profile.sourceNotes}</dd></div> : null}
+        {employee.credentials.map((credential, index) => (
+          <div key={`${credential.kind}-${index}`}>
+            <dt>{credential.kind.replaceAll('_', ' ')}</dt>
+            <dd>
+              {credential.status}
+              {credential.credential_number ? ` · ${credential.credential_number}` : ''}
+              {credential.expires_on ? ` · expires ${credential.expires_on}` : ''}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  )
+}
+
 export function PeoplePage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<'all' | DirectoryEntry['status']>('active')
@@ -170,7 +207,7 @@ export function PeoplePage() {
                   <div className="directory-row" role="row" key={employee.id}>
                     <div role="cell"><EmployeeIdentity employee={employee} /></div>
                     <div role="cell"><span className="plain-value">{roleLabels[employee.role]}</span></div>
-                    <div role="cell"><CredentialSummary employee={employee} /></div>
+                    <div role="cell"><CredentialSummary employee={employee} /><OperationalDetails employee={employee} /></div>
                     <div role="cell"><ContactSummary employee={employee} /></div>
                     <div role="cell">
                       <span className={`status-badge status-badge--${employee.status}`}>
@@ -195,6 +232,7 @@ export function PeoplePage() {
                       <div><dt>Qualifications</dt><dd><CredentialSummary employee={employee} /></dd></div>
                       <div><dt>Contact</dt><dd><ContactSummary employee={employee} /></dd></div>
                     </dl>
+                    <OperationalDetails employee={employee} />
                   </article>
                 ))}
               </div>

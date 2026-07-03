@@ -825,6 +825,236 @@ select 1 / case when status = 'promoted' then 1 else 0 end as safe_import_promot
 from private.import_runs
 where id = '71000000-0000-0000-0000-000000000001';
 
+insert into private.import_runs (
+  id,
+  source_file_id,
+  status,
+  extractor_version,
+  reconciliation_digest
+) values (
+  '81000000-0000-4000-8000-000000000001',
+  '70000000-0000-0000-0000-000000000001',
+  'review',
+  'mapping-regression',
+  repeat('d', 64)
+);
+
+insert into private.import_candidates (
+  id,
+  import_run_id,
+  kind,
+  candidate_key,
+  confidence,
+  payload,
+  fingerprint
+) values
+  (
+    '82000000-0000-4000-8000-000000000001',
+    '81000000-0000-4000-8000-000000000001',
+    'employee',
+    'mapping-regression-employee',
+    'review',
+    '{"name":"Regression Guard","roleCandidate":"guard","statusCandidate":"active","armed":false}'::jsonb,
+    repeat('e', 64)
+  ),
+  (
+    '83000000-0000-4000-8000-000000000001',
+    '81000000-0000-4000-8000-000000000001',
+    'site',
+    'regression-site',
+    'review',
+    '{"siteKeyCandidate":"regression-site","labelVariants":["Regression Site"],"qualificationCandidate":"unarmed"}'::jsonb,
+    repeat('f', 64)
+  ),
+  (
+    '84000000-0000-4000-8000-000000000001',
+    '81000000-0000-4000-8000-000000000001',
+    'weekly_schedule',
+    'mapping-regression-schedule',
+    'review',
+    '{"weekStartsOn":"2099-08-02"}'::jsonb,
+    repeat('0', 64)
+  ),
+  (
+    '85000000-0000-4000-8000-000000000001',
+    '81000000-0000-4000-8000-000000000001',
+    'shift',
+    'mapping-regression-shift',
+    'review',
+    '{"localDate":"2099-08-03","startTime":"08:00","endTime":"16:00","crossesMidnight":false,"siteKeyCandidate":"regression-site","contextLabel":"Regression Site","assigneeLabel":"Regression Guard","sourceSchedule":{"weekStartsOn":"2099-08-02"}}'::jsonb,
+    repeat('1', 64)
+  ),
+  (
+    '86000000-0000-4000-8000-000000000001',
+    '81000000-0000-4000-8000-000000000001',
+    'weekly_schedule',
+    'mapping-regression-schedule-2',
+    'review',
+    '{"weekStartsOn":"2099-08-09"}'::jsonb,
+    repeat('2', 64)
+  ),
+  (
+    '87000000-0000-4000-8000-000000000001',
+    '81000000-0000-4000-8000-000000000001',
+    'shift',
+    'mapping-regression-shift-2',
+    'review',
+    '{"localDate":"2099-08-10","startTime":"08:00","endTime":"16:00","crossesMidnight":false,"siteKeyCandidate":"regression-site","contextLabel":"Regression Site","assigneeLabel":"Regression Guard","sourceSchedule":{"weekStartsOn":"2099-08-09"}}'::jsonb,
+    repeat('3', 64)
+  );
+
+set local role authenticated;
+set local "request.jwt.claim.sub" = '10000000-0000-0000-0000-000000000002';
+set local "request.jwt.claims" = '{"aal":"aal2"}';
+
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    perform public.get_import_mapping_readiness(
+      '81000000-0000-4000-8000-000000000001',
+      date '2099-08-02',
+      date '2099-08-08'
+    );
+  exception when insufficient_privilege then
+    blocked := true;
+  end;
+  if not blocked then
+    raise exception 'Supervisor accessed the Admin-only operational import mapping.';
+  end if;
+end
+$$;
+
+set local "request.jwt.claim.sub" = '10000000-0000-0000-0000-000000000001';
+
+select public.save_import_employee_mapping(
+  '82000000-0000-4000-8000-000000000001',
+  'Regression',
+  null,
+  'Guard',
+  null,
+  'guard',
+  'hourly',
+  'active',
+  null,
+  null,
+  null,
+  null,
+  null,
+  'not_armed',
+  null,
+  null,
+  'Regression employee mapping'
+) as employee_mapping_saved;
+
+select public.save_import_site_mapping(
+  '83000000-0000-4000-8000-000000000001',
+  'regression-site',
+  'REG2',
+  'Mapped Regression Site',
+  'Mapped Post',
+  false,
+  true,
+  'Regression site mapping'
+) as site_mapping_saved;
+
+select public.save_import_assignee_alias_mapping(
+  '81000000-0000-4000-8000-000000000001',
+  'Regression Guard',
+  'employee',
+  array['candidate:82000000-0000-4000-8000-000000000001'],
+  'Regression alias mapping'
+) as alias_mapping_saved;
+
+select public.accept_import_schedule_scope(
+  '81000000-0000-4000-8000-000000000001',
+  date '2099-08-02',
+  date '2099-08-08',
+  'Regression schedule acceptance'
+) as schedule_scope_accepted;
+
+select 1 / case when (readiness ->> 'directoryReady')::boolean
+  and (readiness ->> 'scheduleReady')::boolean
+  and (readiness ->> 'shiftCandidateCount')::integer = 1
+then 1 else 0 end as mapping_scope_ready
+from (
+  select public.get_import_mapping_readiness(
+    '81000000-0000-4000-8000-000000000001',
+    date '2099-08-02',
+    date '2099-08-08'
+  ) readiness
+) review;
+
+select public.promote_import_scope(
+  '81000000-0000-4000-8000-000000000001',
+  date '2099-08-02',
+  date '2099-08-08',
+  false,
+  'Regression atomic promotion'
+) as mapping_scope_promoted;
+
+select public.accept_import_schedule_scope(
+  '81000000-0000-4000-8000-000000000001',
+  date '2099-08-09',
+  date '2099-08-15',
+  'Regression second schedule acceptance'
+) as second_schedule_scope_accepted;
+
+select public.promote_import_scope(
+  '81000000-0000-4000-8000-000000000001',
+  date '2099-08-09',
+  date '2099-08-15',
+  false,
+  'Regression reused-entity promotion'
+) as second_mapping_scope_promoted;
+
+reset role;
+
+select 1 / case when employee_count = 1
+  and site_count = 1
+  and post_count = 1
+  and schedule_count = 1
+  and shift_count = 1
+  and assignment_count = 1
+  and excluded_shift_count = 0
+then 1 else 0 end as promotion_batch_reconciled
+from private.import_promotion_batches
+where import_run_id = '81000000-0000-4000-8000-000000000001'
+  and from_date = date '2099-08-02';
+
+select 1 / case when employee_count = 0
+  and site_count = 0
+  and post_count = 0
+  and schedule_count = 1
+  and shift_count = 1
+  and assignment_count = 1
+then 1 else 0 end as reusable_entities_not_duplicated
+from private.import_promotion_batches
+where import_run_id = '81000000-0000-4000-8000-000000000001'
+  and from_date = date '2099-08-09';
+
+select 1 / case when count(*) = 9 then 1 else 0 end as canonical_provenance_preserved
+from private.import_entity_links
+where import_run_id = '81000000-0000-4000-8000-000000000001';
+
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    update private.import_mapping_decisions
+    set note = 'Tampered'
+    where import_run_id = '81000000-0000-4000-8000-000000000001';
+  exception when others then
+    blocked := sqlerrm like '%append-only%';
+  end;
+  if not blocked then
+    raise exception 'Import mapping history was not append-only.';
+  end if;
+end
+$$;
+
 do $$
 begin
   if exists (

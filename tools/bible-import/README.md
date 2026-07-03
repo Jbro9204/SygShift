@@ -63,3 +63,11 @@ The loader reconciles the union of value evidence and raw OOXML evidence. Styled
 The application route `/import-review` reads staging data through Admin-only database functions. MFA is required for summaries, candidate pages, issue pages, and every review decision. Candidate decisions and issue resolutions are written to append-only history; the original payload and source references are retained.
 
 An import cannot be marked promoted until all candidates have a recorded decision and no unresolved blocking issue remains. Rejection and duplicate decisions are explicit outcomes, not deleted source records.
+
+## Operational mapping and scoped promotion
+
+The `/operational-import` Admin workspace maps Directory candidates, site/post contexts, and recurring schedule-name labels once, then derives shifts from those reviewed meanings. Schedule-only historical employees and per-shift exceptions are explicit mapping decisions with append-only history.
+
+The verified current/future scope covers June 28 through August 15, 2026: 56 Directory candidates, 14 site/post contexts, 53 recurring assignee labels, 7 weekly schedules, and 963 shifts. Twenty-eight assignee labels have conservative source-name suggestions; all suggestions still require Admin approval.
+
+Scoped promotion runs in one database transaction. It checks missing locations, armed-credential validity, assignment overlaps, mapping completeness, and exact source-to-canonical counts. Any failure rolls back the entire transaction. Successful records keep source-candidate and mapping-decision provenance in `private.import_entity_links`.

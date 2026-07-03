@@ -4,6 +4,7 @@ import { EventsPage } from '../pages/EventsPage'
 import { ImportReviewPage } from '../pages/ImportReviewPage'
 import { ModulePage } from '../pages/ModulePage'
 import { OverviewPage } from '../pages/OverviewPage'
+import { OperationalImportPage } from '../pages/OperationalImportPage'
 import { PeoplePage } from '../pages/PeoplePage'
 import { RequestsPage } from '../pages/RequestsPage'
 import { RouteErrorPage } from '../pages/RouteErrorPage'
@@ -43,6 +44,7 @@ export const router = createBrowserRouter([
       },
       { path: 'requests', element: <RequestsPage /> },
       { path: 'import-review', element: <ImportReviewPage /> },
+      { path: 'operational-import', element: <OperationalImportPage /> },
       {
         path: 'announcements',
         element: (

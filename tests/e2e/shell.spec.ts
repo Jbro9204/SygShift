@@ -113,3 +113,18 @@ test('workbook import review presents verified staging without exposing private 
   const accessibility = await new AxeBuilder({ page }).analyze()
   expect(accessibility.violations).toEqual([])
 })
+
+test('operational import explains the guarded current-schedule mapping process', async ({ page }) => {
+  await page.goto('/operational-import')
+
+  await expect(page.getByRole('heading', { name: 'Operational import' })).toBeVisible()
+  await expect(page.getByText('The current schedule is reduced to a manageable review.')).toBeVisible()
+  await expect(page.getByText('Ready to connect the protected mapping workspace')).toBeVisible()
+
+  const bodyWidth = await page.locator('body').evaluate((body) => body.scrollWidth)
+  const viewportWidth = page.viewportSize()?.width ?? 0
+  expect(bodyWidth).toBeLessThanOrEqual(viewportWidth)
+
+  const accessibility = await new AxeBuilder({ page }).analyze()
+  expect(accessibility.violations).toEqual([])
+})

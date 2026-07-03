@@ -11,7 +11,21 @@ const credentialSchema = z.object({
     'other',
   ]),
   status: z.enum(['pending', 'active', 'expired', 'suspended', 'revoked']),
+  credential_number: z.string().nullable(),
+  valid_from: z.string().nullable(),
   expires_on: z.string().nullable(),
+  notes: z.string().nullable(),
+})
+
+const operationalProfileSchema = z.object({
+  sourceDisplayName: z.string().nullable(),
+  locationText: z.string().nullable(),
+  scheduleAvailability: z.string().nullable(),
+  employeeDg: z.string().nullable(),
+  expectedHoursText: z.string().nullable(),
+  sourceNotes: z.string().nullable(),
+  supervisorLabel: z.string().nullable(),
+  armedSourceClaim: z.boolean(),
 })
 
 const directoryEntrySchema = z.object({
@@ -31,6 +45,7 @@ const directoryEntrySchema = z.object({
   company_email: z.string().nullable(),
   mobile_phone: z.string().nullable(),
   credentials: z.array(credentialSchema),
+  operational_profile: operationalProfileSchema.nullable(),
 })
 
 const postSchema = z.object({

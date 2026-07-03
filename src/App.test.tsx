@@ -15,6 +15,7 @@ describe('SygShift shell', () => {
     expect(await screen.findByRole('heading', { name: 'One clear view of the day.' })).toBeVisible()
     expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible()
     expect(screen.getByRole('link', { name: 'Import review' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Operational import' })).toBeVisible()
     expect(screen.getByText('No schedule has been published.')).toBeVisible()
   })
 })

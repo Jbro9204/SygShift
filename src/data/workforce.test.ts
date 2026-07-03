@@ -23,10 +23,11 @@ const employee: DirectoryEntry = {
   company_email: 'alex@example.invalid',
   mobile_phone: null,
   credentials: [
-    { kind: 'guard_license', status: 'active', expires_on: '2027-01-01' },
-    { kind: 'first_aid_cpr', status: 'active', expires_on: null },
-    { kind: 'site_training', status: 'pending', expires_on: null },
+    { kind: 'guard_license', status: 'active', credential_number: 'TEST-1', valid_from: null, expires_on: '2027-01-01', notes: null },
+    { kind: 'first_aid_cpr', status: 'active', credential_number: null, valid_from: null, expires_on: null, notes: null },
+    { kind: 'site_training', status: 'pending', credential_number: null, valid_from: null, expires_on: null, notes: null },
   ],
+  operational_profile: null,
 }
 
 describe('workforce presentation', () => {
