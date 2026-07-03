@@ -66,3 +66,18 @@ test('site registry explains review safeguards without fabricated locations', as
   const accessibility = await new AxeBuilder({ page }).analyze()
   expect(accessibility.violations).toEqual([])
 })
+
+test('events and openings explain the guarded request workflow', async ({ page }) => {
+  await page.goto('/events')
+
+  await expect(page.getByRole('heading', { name: 'Events & openings' })).toBeVisible()
+  await expect(page.getByText('Openings ready for the secure connection')).toBeVisible()
+  await expect(page.getByText('Armed work is never shown to an unqualified guard.')).toBeVisible()
+
+  const bodyWidth = await page.locator('body').evaluate((body) => body.scrollWidth)
+  const viewportWidth = page.viewportSize()?.width ?? 0
+  expect(bodyWidth).toBeLessThanOrEqual(viewportWidth)
+
+  const accessibility = await new AxeBuilder({ page }).analyze()
+  expect(accessibility.violations).toEqual([])
+})

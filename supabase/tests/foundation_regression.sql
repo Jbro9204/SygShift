@@ -132,7 +132,7 @@ values
 insert into public.schedules (id, week_starts_on, created_by)
 values (
   '40000000-0000-0000-0000-000000000001',
-  date '2026-07-05',
+  date '2099-07-05',
   '00000000-0000-0000-0000-000000000002'
 );
 
@@ -143,33 +143,37 @@ insert into public.shifts (
   starts_at,
   ends_at,
   headcount_required,
+  is_open,
   created_by
 ) values
   (
     '50000000-0000-0000-0000-000000000001',
     '40000000-0000-0000-0000-000000000001',
     '30000000-0000-0000-0000-000000000001',
-    timestamptz '2026-07-06 08:00:00-06',
-    timestamptz '2026-07-06 16:00:00-06',
+    timestamptz '2099-07-06 08:00:00-06',
+    timestamptz '2099-07-06 16:00:00-06',
     1,
+    true,
     '00000000-0000-0000-0000-000000000002'
   ),
   (
     '50000000-0000-0000-0000-000000000002',
     '40000000-0000-0000-0000-000000000001',
     '30000000-0000-0000-0000-000000000002',
-    timestamptz '2026-07-06 09:00:00-06',
-    timestamptz '2026-07-06 17:00:00-06',
+    timestamptz '2099-07-06 09:00:00-06',
+    timestamptz '2099-07-06 17:00:00-06',
     2,
+    true,
     '00000000-0000-0000-0000-000000000002'
   ),
   (
     '50000000-0000-0000-0000-000000000003',
     '40000000-0000-0000-0000-000000000001',
     '30000000-0000-0000-0000-000000000002',
-    timestamptz '2026-07-07 08:00:00-06',
-    timestamptz '2026-07-07 16:00:00-06',
+    timestamptz '2099-07-07 08:00:00-06',
+    timestamptz '2099-07-07 16:00:00-06',
     1,
+    true,
     '00000000-0000-0000-0000-000000000002'
   );
 
@@ -208,14 +212,14 @@ insert into public.employee_credentials (
     'armed_guard',
     'active',
     date '2026-01-01',
-    date '2026-12-31'
+    date '2100-12-31'
   ),
   (
     '00000000-0000-0000-0000-000000000004',
     'armed_guard',
     'active',
     date '2026-01-01',
-    date '2026-12-31'
+    date '2100-12-31'
   );
 
 insert into public.shift_assignments (shift_id, employee_id, assigned_by)
@@ -280,6 +284,46 @@ select 1 / case when count(*) = 1 then 1 else 0 end as unarmed_shift_visible
 from public.shifts
 where id = '50000000-0000-0000-0000-000000000003';
 
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    perform public.submit_shift_request(
+      '50000000-0000-0000-0000-000000000001',
+      null
+    );
+  exception when check_violation then
+    blocked := true;
+  end;
+  if not blocked then
+    raise exception 'Unqualified guard requested an armed opening.';
+  end if;
+end
+$$;
+
+select public.submit_shift_request(
+  '50000000-0000-0000-0000-000000000003',
+  'Available for this opening.'
+) as submitted_shift_request;
+
+select 1 / case when count(*) = 1 then 1 else 0 end as pending_request_created
+from public.shift_requests
+where shift_id = '50000000-0000-0000-0000-000000000003'
+  and employee_id = '00000000-0000-0000-0000-000000000005'
+  and status = 'pending';
+
+select public.withdraw_shift_request(id) as request_withdrawn
+from public.shift_requests
+where shift_id = '50000000-0000-0000-0000-000000000003'
+  and employee_id = '00000000-0000-0000-0000-000000000005';
+
+select 1 / case when count(*) = 1 then 1 else 0 end as withdrawn_request_preserved
+from public.shift_requests
+where shift_id = '50000000-0000-0000-0000-000000000003'
+  and employee_id = '00000000-0000-0000-0000-000000000005'
+  and status = 'withdrawn';
+
 reset role;
 
 do $$
@@ -305,8 +349,8 @@ begin
     ) values (
       '40000000-0000-0000-0000-000000000001',
       '30000000-0000-0000-0000-000000000002',
-      timestamptz '2026-07-08 08:00:00-06',
-      timestamptz '2026-07-08 16:00:00-06',
+      timestamptz '2099-07-08 08:00:00-06',
+      timestamptz '2099-07-08 16:00:00-06',
       '00000000-0000-0000-0000-000000000002'
     );
   exception when others then

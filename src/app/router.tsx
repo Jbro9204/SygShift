@@ -1,5 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { AppShell } from '../components/AppShell'
+import { EventsPage } from '../pages/EventsPage'
 import { ModulePage } from '../pages/ModulePage'
 import { OverviewPage } from '../pages/OverviewPage'
 import { PeoplePage } from '../pages/PeoplePage'
@@ -15,16 +16,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <OverviewPage /> },
       { path: 'schedule', element: <SchedulePage /> },
-      {
-        path: 'events',
-        element: (
-          <ModulePage
-            eyebrow="Operations"
-            title="Events & open shifts"
-            description="Create one-time events, publish qualified openings, and review guard requests without mixing them into the permanent site schedule."
-          />
-        ),
-      },
+      { path: 'events', element: <EventsPage /> },
       {
         path: 'time',
         element: (
