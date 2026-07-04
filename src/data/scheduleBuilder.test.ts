@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSupervisorOpenShift, getScheduleBuilderOptions } from './schedule'
+import { createSupervisorOpenShift, getScheduleBuilderOptions, resolveScheduleReviewShift } from './schedule'
 
 const rpc = vi.fn()
 
@@ -26,6 +26,15 @@ describe('schedule builder data contract', () => {
             time_zone: 'America/Denver',
           },
         }],
+        employees: [{
+          id: '70000000-0000-4000-8000-000000000001',
+          first_name: 'Jordan',
+          last_name: 'Brown',
+          preferred_name: null,
+          role: 'admin',
+          employment_type: 'salary',
+          has_armed_guard_credential: true,
+        }],
       },
       error: null,
     })
@@ -41,6 +50,15 @@ describe('schedule builder data contract', () => {
           name: 'Headquarters',
           time_zone: 'America/Denver',
         },
+      }],
+      employees: [{
+        id: '70000000-0000-4000-8000-000000000001',
+        first_name: 'Jordan',
+        last_name: 'Brown',
+        preferred_name: null,
+        role: 'admin',
+        employment_type: 'salary',
+        has_armed_guard_credential: true,
       }],
     })
     expect(rpc).toHaveBeenCalledWith('get_schedule_builder_options')
@@ -92,6 +110,35 @@ describe('schedule builder data contract', () => {
       target_is_overtime: true,
       target_notes: 'North gate',
       publish_announcement: true,
+    })
+  })
+
+  it('sends supervisor review resolutions through the guarded revision RPC', async () => {
+    rpc.mockResolvedValueOnce({
+      data: {
+        schedule_id: '30000000-0000-4000-8000-000000000001',
+        schedule_revision: 3,
+        shift_id: '40000000-0000-4000-8000-000000000001',
+        employee_id: '70000000-0000-4000-8000-000000000001',
+      },
+      error: null,
+    })
+
+    await expect(resolveScheduleReviewShift({
+      shiftId: '90000000-0000-4000-8000-000000000001',
+      employeeId: '70000000-0000-4000-8000-000000000001',
+      note: '  Confirmed with supervisor  ',
+    })).resolves.toEqual({
+      schedule_id: '30000000-0000-4000-8000-000000000001',
+      schedule_revision: 3,
+      shift_id: '40000000-0000-4000-8000-000000000001',
+      employee_id: '70000000-0000-4000-8000-000000000001',
+    })
+
+    expect(rpc).toHaveBeenCalledWith('resolve_schedule_review_shift', {
+      target_shift_id: '90000000-0000-4000-8000-000000000001',
+      target_employee_id: '70000000-0000-4000-8000-000000000001',
+      resolution_note: 'Confirmed with supervisor',
     })
   })
 })

@@ -41,4 +41,16 @@ describe('Bible source note parsing', () => {
     expect(source.reviewNeeded).toBe(true)
     expect(source.importGuardrail).toBe('employee already overlaps this time window')
   })
+
+  it('keeps resolved source history without leaving the shift in review state', () => {
+    const source = parseBibleSourceNote([
+      'Bible source assignee: Jordan Brown',
+      'Assignment status: supervisor reviewed and assigned.',
+      'Assignment import skipped by system guardrail: resolved by supervisor revision.',
+      'Supervisor resolution: assigned by supervisor on 2026-07-04 06:20:00 UTC',
+    ].join('\n'))
+
+    expect(source.reviewNeeded).toBe(false)
+    expect(source.assignee).toBe('Jordan Brown')
+  })
 })

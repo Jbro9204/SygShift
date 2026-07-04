@@ -76,6 +76,15 @@ const builderPostSchema = z.object({
 
 const builderOptionsSchema = z.object({
   posts: z.array(builderPostSchema),
+  employees: z.array(z.object({
+    id: z.string().uuid(),
+    first_name: z.string(),
+    last_name: z.string(),
+    preferred_name: z.string().nullable(),
+    role: z.enum(['guard', 'supervisor', 'admin']),
+    employment_type: z.enum(['hourly', 'salary', 'contractor']),
+    has_armed_guard_credential: z.boolean(),
+  })),
 })
 
 const createOpenShiftResultSchema = z.object({
@@ -89,9 +98,18 @@ const createOpenShiftResultSchema = z.object({
   time_zone: z.string(),
 })
 
+const resolveReviewShiftResultSchema = z.object({
+  schedule_id: z.string().uuid(),
+  schedule_revision: z.number().int().positive(),
+  shift_id: z.string().uuid(),
+  employee_id: z.string().uuid(),
+})
+
 export type ScheduleBuilderOptions = z.infer<typeof builderOptionsSchema>
 export type ScheduleBuilderPost = z.infer<typeof builderPostSchema>
+export type ScheduleBuilderEmployee = ScheduleBuilderOptions['employees'][number]
 export type CreateOpenShiftResult = z.infer<typeof createOpenShiftResultSchema>
+export type ResolveReviewShiftResult = z.infer<typeof resolveReviewShiftResultSchema>
 
 const bibleScheduleShiftSchema = z.object({
   id: z.string().uuid(),
@@ -249,6 +267,21 @@ export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Pr
 
   if (error) throw new Error(error.message || 'The open shift could not be created.')
   return createOpenShiftResultSchema.parse(data)
+}
+
+export async function resolveScheduleReviewShift(input: {
+  shiftId: string
+  employeeId: string
+  note: string | null
+}): Promise<ResolveReviewShiftResult> {
+  const { data, error } = await getSupabaseClient().rpc('resolve_schedule_review_shift', {
+    target_shift_id: input.shiftId,
+    target_employee_id: input.employeeId,
+    resolution_note: input.note?.trim() || null,
+  })
+
+  if (error) throw new Error(error.message || 'The review item could not be resolved.')
+  return resolveReviewShiftResultSchema.parse(data)
 }
 
 export function scheduleRows(schedule: WeeklySchedule): ScheduleRow[] {

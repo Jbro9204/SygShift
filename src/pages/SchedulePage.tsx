@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
 import { CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, MoveHorizontal, Plus, Search, ShieldAlert } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { ModalDialog } from '../components/ModalDialog'
 import { getCurrentAppRole } from '../data/session'
 import {
   assignmentName,
@@ -11,10 +12,12 @@ import {
   getBibleSchedulePreview,
   getScheduleBuilderOptions,
   getWeeklySchedule,
+  resolveScheduleReviewShift,
   scheduleRows,
   shiftOperationalDate,
   shiftTimeRange,
   type BibleScheduleShift,
+  type ScheduleBuilderEmployee,
   type ScheduleShift,
 } from '../data/schedule'
 import { parseBibleSourceNote, sourceReferenceLabel } from '../data/sourceNotes'
@@ -57,7 +60,19 @@ function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
   }
 }
 
-function ShiftCard({ shift }: { shift: ScheduleShift }) {
+function builderEmployeeName(employee: ScheduleBuilderEmployee): string {
+  return `${employee.preferred_name || employee.first_name} ${employee.last_name}`
+}
+
+function ShiftCard({
+  shift,
+  canResolve,
+  onResolve,
+}: {
+  shift: ScheduleShift
+  canResolve: boolean
+  onResolve: (shift: ScheduleShift) => void
+}) {
   const title = shift.post?.name ?? shift.event?.name ?? 'Shift'
   const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
   const source = parseBibleSourceNote(shift.notes)
@@ -95,9 +110,87 @@ function ShiftCard({ shift }: { shift: ScheduleShift }) {
           {source.context ? <span><strong>Source row:</strong> {source.context}</span> : null}
           {source.qualification ? <span><strong>Qualification:</strong> {source.qualification}</span> : null}
           {sourceReference ? <small>{sourceReference}</small> : null}
+          {source.reviewNeeded && canResolve ? (
+            <button className="text-button shift-card__resolve" onClick={() => onResolve(shift)} type="button">
+              Resolve assignment
+            </button>
+          ) : null}
         </div>
       ) : null}
     </article>
+  )
+}
+
+function ReviewResolutionDialog({
+  shift,
+  employees,
+  mutation,
+  onClose,
+}: {
+  shift: ScheduleShift
+  employees: ScheduleBuilderEmployee[]
+  mutation: ReturnType<typeof useMutation<unknown, Error, { shiftId: string, employeeId: string, note: string | null }>>
+  onClose: () => void
+}) {
+  const source = parseBibleSourceNote(shift.notes)
+  const eligibleEmployees = employees.filter((employee) => !shift.requires_armed || employee.has_armed_guard_credential)
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    mutation.mutate({
+      shiftId: shift.id,
+      employeeId: String(form.get('employeeId')),
+      note: String(form.get('note')).trim() || null,
+    }, { onSuccess: onClose })
+  }
+
+  return (
+    <ModalDialog
+      description="Resolving creates a new schedule revision. The database will reject overlaps, missing armed credentials, or full shifts."
+      onClose={onClose}
+      title="Resolve Bible schedule assignment"
+    >
+      <div className="confirmation-summary">
+        <strong>{shift.post?.name ?? shift.event?.name ?? 'Shift'}</strong>
+        <span>{shiftTimeRange(shift)}</span>
+        {source.assignee ? <span>Bible assignee: {source.assignee}</span> : null}
+        {source.context ? <span>Source row: {source.context}</span> : null}
+      </div>
+      <form className="request-form" onSubmit={submit}>
+        <label className="field-stack">
+          <span>Assign employee</span>
+          <select autoFocus name="employeeId" required>
+            <option value="">Choose employee</option>
+            {eligibleEmployees.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {builderEmployeeName(employee)}
+                {employee.has_armed_guard_credential ? ' · armed credential' : ''}
+                {employee.employment_type === 'salary' ? ' · salary' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        {eligibleEmployees.length === 0 ? (
+          <p className="form-feedback form-feedback--error">
+            No active employee in the current options can satisfy this shift&apos;s armed requirement.
+          </p>
+        ) : null}
+        <label className="field-stack">
+          <span>Resolution note <small>Optional</small></span>
+          <textarea maxLength={2000} name="note" rows={3} />
+        </label>
+        {mutation.isError ? (
+          <p className="form-feedback form-feedback--error" role="alert">{mutation.error.message}</p>
+        ) : null}
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onClose} type="button">Cancel</button>
+          <button className="primary-action" disabled={mutation.isPending || eligibleEmployees.length === 0} type="submit">
+            {mutation.isPending ? 'Resolving…' : 'Resolve & publish revision'}
+          </button>
+        </div>
+      </form>
+    </ModalDialog>
   )
 }
 
@@ -145,6 +238,7 @@ export function SchedulePage() {
   const [siteFilter, setSiteFilter] = useState('all')
   const [reviewOnly, setReviewOnly] = useState(false)
   const [builderOpen, setBuilderOpen] = useState(false)
+  const [resolvingShift, setResolvingShift] = useState<ScheduleShift | null>(null)
   const [builderMessage, setBuilderMessage] = useState<string | null>(null)
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
   const weekEnd = days[6]
@@ -212,6 +306,18 @@ export function SchedulePage() {
     },
     onError: (error) => {
       setBuilderMessage(error instanceof Error ? error.message : 'The open shift could not be created.')
+    },
+  })
+  const resolveReviewMutation = useMutation({
+    mutationFn: (input: { shiftId: string, employeeId: string, note: string | null }) => resolveScheduleReviewShift(input),
+    onSuccess: async (result) => {
+      setBuilderMessage(`Review item resolved on revision ${result.schedule_revision}.`)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['weekly-schedule'] }),
+        queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
+        queryClient.invalidateQueries({ queryKey: ['request-center'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-metrics'] }),
+      ])
     },
   })
   const rows = useMemo(() => scheduleQuery.data ? scheduleRows(scheduleQuery.data) : [], [scheduleQuery.data])
@@ -504,6 +610,15 @@ export function SchedulePage() {
         </section>
       ) : null}
 
+      {resolvingShift ? (
+        <ReviewResolutionDialog
+          employees={builderOptionsQuery.data?.employees ?? []}
+          mutation={resolveReviewMutation}
+          onClose={() => setResolvingShift(null)}
+          shift={resolvingShift}
+        />
+      ) : null}
+
       <section className="schedule-toolbar" aria-label="Schedule controls">
         <div className="week-controls">
           <button
@@ -692,7 +807,18 @@ export function SchedulePage() {
                 const shifts = row.shifts.filter((shift) => shiftOperationalDate(shift) === dayKey)
                 return (
                   <div className="schedule-day-cell" role="cell" key={dayKey}>
-                    {shifts.map((shift) => <ShiftCard shift={shift} key={shift.id} />)}
+                    {shifts.map((shift) => (
+                      <ShiftCard
+                        canResolve={canBuildSchedule}
+                        key={shift.id}
+                        onResolve={(targetShift) => {
+                          setBuilderOpen(false)
+                          setBuilderMessage(null)
+                          setResolvingShift(targetShift)
+                        }}
+                        shift={shift}
+                      />
+                    ))}
                     {shifts.length === 0 ? <span className="schedule-day-empty">—</span> : null}
                   </div>
                 )

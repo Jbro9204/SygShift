@@ -1736,6 +1736,14 @@
   font-weight: 750;
 }
 
+.shift-card__resolve {
+  justify-self: start;
+  margin-top: 3px;
+  color: #674310;
+  font-size: 13px;
+  font-weight: 850;
+}
+
 .shift-tag {
   display: inline-flex;
   min-height: 25px;

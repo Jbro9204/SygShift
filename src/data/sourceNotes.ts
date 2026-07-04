@@ -32,7 +32,8 @@ export function parseBibleSourceNote(notes: string | null | undefined): BibleSou
   const text = notes?.trim() ?? ''
   const status = readNoteField(text, NOTE_FIELD_LABELS.status)
   const guardrail = readNoteField(text, 'Assignment import skipped by system guardrail')
-  const reviewNeeded = /needs supervisor review|import skipped|guardrail/i.test(text)
+  const supervisorResolved = /supervisor reviewed|supervisor resolution/i.test(text)
+  const reviewNeeded = !supervisorResolved && /needs supervisor review|import skipped by system guardrail/i.test(text)
 
   return {
     assignee: readNoteField(text, NOTE_FIELD_LABELS.assignee),
