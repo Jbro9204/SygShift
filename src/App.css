@@ -3701,6 +3701,21 @@
   line-height: 1.45;
 }
 
+.route-loading {
+  display: grid;
+  min-height: 260px;
+  place-items: center;
+  padding: 32px;
+  border: 1px solid #e4dfd6;
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(192, 148, 67, 0.12), transparent 42%),
+    #fffaf1;
+  color: #514e48;
+  font-size: 16px;
+  font-weight: 750;
+}
+
 @media (max-width: 680px) {
   .operational-details dl > div {
     grid-template-columns: 1fr;

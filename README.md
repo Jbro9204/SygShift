@@ -37,6 +37,8 @@ Remove-Item Env:\SYGSHIFT_BOOTSTRAP_PASSWORD
 
 The bootstrap account must replace the temporary password on first sign-in and verify MFA before privileged tools open.
 
+Hosted Supabase Auth should also have leaked-password protection enabled (`password_hibp_enabled = true`). The current Supabase CLI config template does not expose that hosted setting in `supabase/config.toml`, so verify it in the Supabase Dashboard or Management API before production launch and after any Auth configuration push.
+
 ## Quality checks
 
 ```powershell

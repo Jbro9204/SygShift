@@ -1,22 +1,29 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { AppShell } from '../components/AppShell'
-import { AccountSecurityPage } from '../pages/AccountSecurityPage'
-import { EventsPage } from '../pages/EventsPage'
-import { ImportReviewPage } from '../pages/ImportReviewPage'
-import { LoginPage } from '../pages/LoginPage'
 import { ModulePage } from '../pages/ModulePage'
-import { OverviewPage } from '../pages/OverviewPage'
-import { OperationalImportPage } from '../pages/OperationalImportPage'
-import { PeoplePage } from '../pages/PeoplePage'
-import { RequestsPage } from '../pages/RequestsPage'
 import { RouteErrorPage } from '../pages/RouteErrorPage'
-import { SchedulePage } from '../pages/SchedulePage'
-import { SitesPage } from '../pages/SitesPage'
+import {
+  AccountSecurityPageRoute,
+  EventsPageRoute,
+  ImportReviewPageRoute,
+  LoginPageRoute,
+  OperationalImportPageRoute,
+  OverviewPageRoute,
+  PeoplePageRoute,
+  RequestsPageRoute,
+  RouteSuspense,
+  SchedulePageRoute,
+  SitesPageRoute,
+} from './RouteElements'
 
 export const router = createBrowserRouter([
   {
     path: '/login',
-    element: <LoginPage />,
+    element: (
+      <RouteSuspense>
+        <LoginPageRoute />
+      </RouteSuspense>
+    ),
     errorElement: <RouteErrorPage />,
   },
   {
@@ -24,9 +31,30 @@ export const router = createBrowserRouter([
     element: <AppShell />,
     errorElement: <RouteErrorPage />,
     children: [
-      { index: true, element: <OverviewPage /> },
-      { path: 'schedule', element: <SchedulePage /> },
-      { path: 'events', element: <EventsPage /> },
+      {
+        index: true,
+        element: (
+          <RouteSuspense>
+            <OverviewPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'schedule',
+        element: (
+          <RouteSuspense>
+            <SchedulePageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'events',
+        element: (
+          <RouteSuspense>
+            <EventsPageRoute />
+          </RouteSuspense>
+        ),
+      },
       {
         path: 'time',
         element: (
@@ -37,9 +65,30 @@ export const router = createBrowserRouter([
           />
         ),
       },
-      { path: 'people', element: <PeoplePage /> },
-      { path: 'sites', element: <SitesPage /> },
-      { path: 'account-security', element: <AccountSecurityPage /> },
+      {
+        path: 'people',
+        element: (
+          <RouteSuspense>
+            <PeoplePageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'sites',
+        element: (
+          <RouteSuspense>
+            <SitesPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'account-security',
+        element: (
+          <RouteSuspense>
+            <AccountSecurityPageRoute />
+          </RouteSuspense>
+        ),
+      },
       {
         path: 'patrol',
         element: (
@@ -50,9 +99,30 @@ export const router = createBrowserRouter([
           />
         ),
       },
-      { path: 'requests', element: <RequestsPage /> },
-      { path: 'import-review', element: <ImportReviewPage /> },
-      { path: 'operational-import', element: <OperationalImportPage /> },
+      {
+        path: 'requests',
+        element: (
+          <RouteSuspense>
+            <RequestsPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'import-review',
+        element: (
+          <RouteSuspense>
+            <ImportReviewPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'operational-import',
+        element: (
+          <RouteSuspense>
+            <OperationalImportPageRoute />
+          </RouteSuspense>
+        ),
+      },
       {
         path: 'announcements',
         element: (
