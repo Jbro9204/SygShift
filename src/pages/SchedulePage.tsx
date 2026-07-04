@@ -1,10 +1,13 @@
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMemo, useState, type FormEvent } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
-import { CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, MoveHorizontal, Search, ShieldAlert } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, MoveHorizontal, Plus, Search, ShieldAlert } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { getCurrentAppRole } from '../data/session'
 import {
   assignmentName,
+  createSupervisorOpenShift,
+  getScheduleBuilderOptions,
   getWeeklySchedule,
   scheduleRows,
   shiftOperationalDate,
@@ -13,6 +16,42 @@ import {
 } from '../data/schedule'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { operationalToday } from '../lib/time'
+
+interface OpenShiftFormState {
+  mode: 'post' | 'event'
+  postId: string
+  eventName: string
+  eventLocationName: string
+  eventSiteId: string
+  eventTimeZone: string
+  eventRequiresArmed: boolean
+  shiftDate: string
+  startTime: string
+  endTime: string
+  headcount: string
+  isOvertime: boolean
+  notes: string
+  publishAnnouncement: boolean
+}
+
+function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
+  return {
+    mode: 'post',
+    postId: '',
+    eventName: '',
+    eventLocationName: '',
+    eventSiteId: '',
+    eventTimeZone: 'America/Denver',
+    eventRequiresArmed: false,
+    shiftDate: weekKey,
+    startTime: '08:00',
+    endTime: '16:00',
+    headcount: '1',
+    isOvertime: false,
+    notes: '',
+    publishAnnouncement: true,
+  }
+}
 
 function ShiftCard({ shift }: { shift: ScheduleShift }) {
   const title = shift.post?.name ?? shift.event?.name ?? 'Shift'
@@ -47,17 +86,75 @@ function ShiftCard({ shift }: { shift: ScheduleShift }) {
 }
 
 export function SchedulePage() {
+  const queryClient = useQueryClient()
   const today = useMemo(() => operationalToday(), [])
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today, { weekStartsOn: 0 }))
   const [search, setSearch] = useState('')
   const [siteFilter, setSiteFilter] = useState('all')
+  const [builderOpen, setBuilderOpen] = useState(false)
+  const [builderMessage, setBuilderMessage] = useState<string | null>(null)
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
   const weekEnd = days[6]
   const weekKey = format(weekStart, 'yyyy-MM-dd')
+  const [openShiftForm, setOpenShiftForm] = useState<OpenShiftFormState>(() => defaultOpenShiftForm(weekKey))
   const scheduleQuery = useQuery({
     queryKey: ['weekly-schedule', weekKey],
     queryFn: () => getWeeklySchedule(weekKey),
     enabled: isSupabaseConfigured,
+  })
+  const roleQuery = useQuery({
+    queryKey: ['current-app-role'],
+    queryFn: getCurrentAppRole,
+    enabled: isSupabaseConfigured,
+  })
+  const canBuildSchedule = roleQuery.data === 'supervisor' || roleQuery.data === 'admin'
+  const builderOptionsQuery = useQuery({
+    queryKey: ['schedule-builder-options'],
+    queryFn: getScheduleBuilderOptions,
+    enabled: isSupabaseConfigured && canBuildSchedule,
+  })
+  const availableSites = useMemo(() => {
+    const sites = new Map<string, { id: string, name: string, time_zone: string }>()
+    for (const post of builderOptionsQuery.data?.posts ?? []) {
+      sites.set(post.site.id, {
+        id: post.site.id,
+        name: post.site.name,
+        time_zone: post.site.time_zone,
+      })
+    }
+    return [...sites.values()].sort((left, right) => left.name.localeCompare(right.name))
+  }, [builderOptionsQuery.data?.posts])
+  const selectedPost = builderOptionsQuery.data?.posts.find((post) => post.id === openShiftForm.postId)
+  const createOpenShiftMutation = useMutation({
+    mutationFn: () => createSupervisorOpenShift({
+      weekStartsOn: weekKey,
+      mode: openShiftForm.mode,
+      postId: openShiftForm.postId || null,
+      eventName: openShiftForm.eventName,
+      eventLocationName: openShiftForm.eventLocationName,
+      eventSiteId: openShiftForm.eventSiteId || null,
+      eventTimeZone: openShiftForm.eventTimeZone,
+      eventRequiresArmed: openShiftForm.eventRequiresArmed,
+      shiftDate: openShiftForm.shiftDate,
+      startTime: openShiftForm.startTime,
+      endTime: openShiftForm.endTime,
+      headcount: Number.parseInt(openShiftForm.headcount, 10),
+      isOvertime: openShiftForm.isOvertime,
+      notes: openShiftForm.notes,
+      publishAnnouncement: openShiftForm.publishAnnouncement,
+    }),
+    onSuccess: async (result) => {
+      setBuilderMessage(`Open shift published on revision ${result.schedule_revision}. Guards can see it now.`)
+      setOpenShiftForm(defaultOpenShiftForm(weekKey))
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['weekly-schedule', weekKey] }),
+        queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
+        queryClient.invalidateQueries({ queryKey: ['request-center'] }),
+      ])
+    },
+    onError: (error) => {
+      setBuilderMessage(error instanceof Error ? error.message : 'The open shift could not be created.')
+    },
   })
   const rows = useMemo(() => scheduleQuery.data ? scheduleRows(scheduleQuery.data) : [], [scheduleQuery.data])
   const visibleRows = useMemo(() => {
@@ -84,6 +181,17 @@ export function SchedulePage() {
       .filter((row) => row.shifts.length > 0)
   }, [rows, search, siteFilter])
 
+  function updateOpenShiftForm(update: Partial<OpenShiftFormState>) {
+    setBuilderMessage(null)
+    setOpenShiftForm((current) => ({ ...current, ...update }))
+  }
+
+  function handleCreateOpenShift(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setBuilderMessage(null)
+    createOpenShiftMutation.mutate()
+  }
+
   return (
     <div className="page page--schedule">
       <section className="page-intro schedule-intro">
@@ -94,7 +202,211 @@ export function SchedulePage() {
             A readable weekly view for permanent sites, one-time events, patrol, and dispatch coverage.
           </p>
         </div>
+        {canBuildSchedule ? (
+          <button
+            className="primary-action"
+            onClick={() => {
+              setBuilderOpen((current) => !current)
+              setOpenShiftForm(defaultOpenShiftForm(weekKey))
+              setBuilderMessage(null)
+            }}
+            type="button"
+          >
+            <Plus aria-hidden="true" size={20} />
+            Add open shift
+          </button>
+        ) : null}
       </section>
+
+      {canBuildSchedule && builderOpen ? (
+        <section className="panel schedule-builder" aria-labelledby="schedule-builder-heading">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Supervisor action</p>
+              <h2 id="schedule-builder-heading">Add an open shift or event</h2>
+            </div>
+            <span className="status-pill">Creates a reviewed schedule revision</span>
+          </div>
+
+          <form className="request-form schedule-builder__form" onSubmit={handleCreateOpenShift}>
+            <div className="form-grid">
+              <label>
+                Shift type
+                <select
+                  onChange={(event) => updateOpenShiftForm({ mode: event.target.value as OpenShiftFormState['mode'] })}
+                  value={openShiftForm.mode}
+                >
+                  <option value="post">Permanent site/post</option>
+                  <option value="event">One-time event</option>
+                </select>
+              </label>
+
+              {openShiftForm.mode === 'post' ? (
+                <label>
+                  Site and post
+                  <select
+                    disabled={builderOptionsQuery.isPending}
+                    onChange={(event) => updateOpenShiftForm({ postId: event.target.value })}
+                    required
+                    value={openShiftForm.postId}
+                  >
+                    <option value="">Choose a site/post</option>
+                    {builderOptionsQuery.data?.posts.map((post) => (
+                      <option key={post.id} value={post.id}>
+                        {post.site.code ? `${post.site.code} - ` : ''}{post.site.name} / {post.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label>
+                  Event name
+                  <input
+                    onChange={(event) => updateOpenShiftForm({ eventName: event.target.value })}
+                    placeholder="Example: Concert coverage"
+                    required
+                    value={openShiftForm.eventName}
+                  />
+                </label>
+              )}
+
+              {openShiftForm.mode === 'event' ? (
+                <>
+                  <label>
+                    Event location
+                    <input
+                      onChange={(event) => updateOpenShiftForm({ eventLocationName: event.target.value })}
+                      placeholder="Venue, building, or address"
+                      required={!openShiftForm.eventSiteId}
+                      value={openShiftForm.eventLocationName}
+                    />
+                  </label>
+                  <label>
+                    Link to site, if applicable
+                    <select
+                      onChange={(event) => {
+                        const site = availableSites.find((item) => item.id === event.target.value)
+                        updateOpenShiftForm({
+                          eventSiteId: event.target.value,
+                          eventTimeZone: site?.time_zone ?? 'America/Denver',
+                        })
+                      }}
+                      value={openShiftForm.eventSiteId}
+                    >
+                      <option value="">Standalone event</option>
+                      {availableSites.map((site) => (
+                        <option key={site.id} value={site.id}>{site.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              ) : null}
+
+              <label>
+                Date
+                <input
+                  onChange={(event) => updateOpenShiftForm({ shiftDate: event.target.value })}
+                  required
+                  type="date"
+                  value={openShiftForm.shiftDate}
+                />
+              </label>
+              <label>
+                Start time
+                <input
+                  onChange={(event) => updateOpenShiftForm({ startTime: event.target.value })}
+                  required
+                  type="time"
+                  value={openShiftForm.startTime}
+                />
+              </label>
+              <label>
+                End time
+                <input
+                  onChange={(event) => updateOpenShiftForm({ endTime: event.target.value })}
+                  required
+                  type="time"
+                  value={openShiftForm.endTime}
+                />
+              </label>
+              <label>
+                Guards needed
+                <input
+                  min="1"
+                  max="50"
+                  onChange={(event) => updateOpenShiftForm({ headcount: event.target.value })}
+                  required
+                  type="number"
+                  value={openShiftForm.headcount}
+                />
+              </label>
+            </div>
+
+            <label className="field-stack">
+              Notes for supervisors
+              <textarea
+                onChange={(event) => updateOpenShiftForm({ notes: event.target.value })}
+                placeholder="Anything important about coverage, parking, uniform, or arrival instructions."
+                value={openShiftForm.notes}
+              />
+            </label>
+
+            <div className="schedule-builder__checks">
+              <label className="check-field">
+                <input
+                  checked={openShiftForm.isOvertime}
+                  onChange={(event) => updateOpenShiftForm({ isOvertime: event.target.checked })}
+                  type="checkbox"
+                />
+                Mark this as overtime
+              </label>
+              {openShiftForm.mode === 'event' ? (
+                <label className="check-field">
+                  <input
+                    checked={openShiftForm.eventRequiresArmed}
+                    onChange={(event) => updateOpenShiftForm({ eventRequiresArmed: event.target.checked })}
+                    type="checkbox"
+                  />
+                  Requires armed guard credentials
+                </label>
+              ) : null}
+              <label className="check-field">
+                <input
+                  checked={openShiftForm.publishAnnouncement}
+                  onChange={(event) => updateOpenShiftForm({ publishAnnouncement: event.target.checked })}
+                  type="checkbox"
+                />
+                Publish announcement for guards
+              </label>
+            </div>
+
+            <p className="form-note">
+              {openShiftForm.mode === 'post' && selectedPost
+                ? `${selectedPost.site.name} uses ${selectedPost.site.time_zone}. Armed requirements come from the selected post.`
+                : 'Times are saved in the site or event time zone so payroll and the schedule stay consistent.'}
+            </p>
+
+            {builderMessage ? (
+              <p className={createOpenShiftMutation.isError ? 'form-feedback form-feedback--error' : 'form-feedback form-feedback--success'} role="status">
+                {builderMessage}
+              </p>
+            ) : null}
+
+            <div className="modal-actions">
+              <button className="secondary-button" onClick={() => setBuilderOpen(false)} type="button">
+                Close
+              </button>
+              <button
+                className="primary-action"
+                disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending}
+                type="submit"
+              >
+                {createOpenShiftMutation.isPending ? 'Publishing...' : 'Publish open shift'}
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
 
       <section className="schedule-toolbar" aria-label="Schedule controls">
         <div className="week-controls">

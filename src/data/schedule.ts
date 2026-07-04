@@ -62,6 +62,55 @@ const scheduleSchema = z.object({
 export type WeeklySchedule = z.infer<typeof scheduleSchema>
 export type ScheduleShift = z.infer<typeof shiftSchema>
 
+const builderPostSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  requires_armed: z.boolean(),
+  site: z.object({
+    id: z.string().uuid(),
+    code: z.string().nullable(),
+    name: z.string(),
+    time_zone: z.string(),
+  }),
+})
+
+const builderOptionsSchema = z.object({
+  posts: z.array(builderPostSchema),
+})
+
+const createOpenShiftResultSchema = z.object({
+  schedule_id: z.string().uuid(),
+  schedule_revision: z.number().int().positive(),
+  shift_id: z.string().uuid(),
+  event_id: z.string().uuid().nullable(),
+  announcement_id: z.string().uuid().nullable(),
+  starts_at: z.string(),
+  ends_at: z.string(),
+  time_zone: z.string(),
+})
+
+export type ScheduleBuilderOptions = z.infer<typeof builderOptionsSchema>
+export type ScheduleBuilderPost = z.infer<typeof builderPostSchema>
+export type CreateOpenShiftResult = z.infer<typeof createOpenShiftResultSchema>
+
+export interface CreateOpenShiftInput {
+  weekStartsOn: string
+  mode: 'post' | 'event'
+  postId?: string | null
+  eventName?: string
+  eventLocationName?: string
+  eventSiteId?: string | null
+  eventTimeZone?: string
+  eventRequiresArmed?: boolean
+  shiftDate: string
+  startTime: string
+  endTime: string
+  headcount: number
+  isOvertime: boolean
+  notes?: string
+  publishAnnouncement: boolean
+}
+
 export interface ScheduleRow {
   id: string
   code: string | null
@@ -123,6 +172,34 @@ export async function getWeeklySchedule(weekStartsOn: string): Promise<WeeklySch
       assignments: shift.assignments.filter((assignment) => assignment.status !== 'canceled'),
     })),
   }
+}
+
+export async function getScheduleBuilderOptions(): Promise<ScheduleBuilderOptions> {
+  const { data, error } = await getSupabaseClient().rpc('get_schedule_builder_options')
+  if (error) throw new Error('Schedule builder options could not be loaded.')
+  return builderOptionsSchema.parse(data)
+}
+
+export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Promise<CreateOpenShiftResult> {
+  const { data, error } = await getSupabaseClient().rpc('create_supervisor_open_shift', {
+    target_week_starts_on: input.weekStartsOn,
+    target_post_id: input.mode === 'post' ? input.postId : null,
+    event_name: input.mode === 'event' ? input.eventName?.trim() : null,
+    event_location_name: input.mode === 'event' ? input.eventLocationName?.trim() : null,
+    event_site_id: input.mode === 'event' ? input.eventSiteId ?? null : null,
+    event_time_zone: input.mode === 'event' ? input.eventTimeZone?.trim() || 'America/Denver' : null,
+    event_requires_armed: input.mode === 'event' ? input.eventRequiresArmed ?? false : false,
+    shift_operational_date: input.shiftDate,
+    shift_start_time: input.startTime,
+    shift_end_time: input.endTime,
+    target_headcount: input.headcount,
+    target_is_overtime: input.isOvertime,
+    target_notes: input.notes?.trim() || null,
+    publish_announcement: input.publishAnnouncement,
+  })
+
+  if (error) throw new Error(error.message || 'The open shift could not be created.')
+  return createOpenShiftResultSchema.parse(data)
 }
 
 export function scheduleRows(schedule: WeeklySchedule): ScheduleRow[] {
