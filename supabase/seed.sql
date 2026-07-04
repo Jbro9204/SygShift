@@ -1,0 +1,2 @@
+-- SygShift intentionally has no static seed data yet.
+-- Operational data must enter through the protected workbook import review flow.
