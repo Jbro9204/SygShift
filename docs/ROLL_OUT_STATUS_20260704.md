@@ -6,7 +6,7 @@
 - Company domain: sygilant.us
 - Notification sender: SygShift <scheduling@sygilant.us>
 - GitHub repo: https://github.com/Jbro9204/SygShift
-- Latest verified Cloudflare Worker version: `8cf43e0b-a5c8-4e44-a677-2d32cc1a3874`
+- Latest verified Cloudflare Worker version: `772768ff-dc89-41d8-ae9d-c102826f240c`
 - Latest pushed commit: see Git history for the current rollout-status revision.
 
 ## Verification completed
@@ -23,6 +23,10 @@ The following checks passed after the supervisor schedule-review and notificatio
 - Operational Notifications page connected to delivery status data
 - Operational Reports page connected to schedule, workforce, requests, notification, and payroll summaries
 - Salary payroll handling note added: salary employees are tracked separately and are not silently auto-paid 40 hours without an approved rule
+- Patrol page opened with current/upcoming patrol coverage from the published Bible schedule
+- Overview command-check panel simplified and duplicate schedule link removed
+- Reports open-shift counts restricted to current/upcoming openings only
+- Schedule source-preview language clarified for weeks outside the published imported range
 - Live `/schedule` smoke check
 - Live `/people` smoke check
 - Live `/users` smoke check

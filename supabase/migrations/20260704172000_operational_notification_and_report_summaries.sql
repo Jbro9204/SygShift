@@ -84,9 +84,9 @@ begin
         'weeks', count(distinct schedule.id),
         'shifts', count(shift.id),
         'assignedSlots', count(assignment.id) filter (where assignment.status in ('assigned', 'confirmed', 'completed')),
-        'openShifts', count(shift.id) filter (where shift.is_open),
+        'openShifts', count(shift.id) filter (where shift.is_open and shift.starts_at >= clock_timestamp()),
         'reviewNeeded', count(shift.id) filter (where shift.notes ilike '%review needed%'),
-        'armedOpenShifts', count(shift.id) filter (where shift.is_open and shift.requires_armed)
+        'armedOpenShifts', count(shift.id) filter (where shift.is_open and shift.requires_armed and shift.starts_at >= clock_timestamp())
       )
       from public.schedules schedule
       left join public.shifts shift on shift.schedule_id = schedule.id
@@ -138,7 +138,7 @@ begin
           schedule.week_starts_on,
           schedule.revision,
           count(shift.id)::integer as shift_count,
-          count(shift.id) filter (where shift.is_open)::integer as open_count,
+          count(shift.id) filter (where shift.is_open and shift.starts_at >= clock_timestamp())::integer as open_count,
           count(assignment.id) filter (where assignment.status in ('assigned', 'confirmed', 'completed'))::integer as assigned_count
         from public.schedules schedule
         left join public.shifts shift on shift.schedule_id = schedule.id

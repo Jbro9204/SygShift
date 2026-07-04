@@ -855,10 +855,11 @@ export function SchedulePage() {
       {!scheduleQuery.data && biblePreviewQuery.data ? (
         <section className="source-schedule-banner" aria-label="Bible source schedule status">
           <div>
-            <p className="eyebrow">Bible source schedule</p>
+            <p className="eyebrow">Imported workbook preview</p>
             <strong>{biblePreviewQuery.data.sourceSheetName ?? 'Source workbook week'}</strong>
             <span>
-              This is the workbook schedule staged for review. It is visible for operations planning, but not yet payroll-ready.
+              No published operational revision exists for this selected week yet. This preview shows
+              the source workbook records only; use the published weeks or create a reviewed revision before payroll reliance.
             </span>
           </div>
           <div className="source-schedule-banner__counts">
@@ -924,8 +925,8 @@ export function SchedulePage() {
           ) : !scheduleQuery.data && biblePreviewQuery.isPending ? (
             <div className="schedule-state" role="row">
               <div role="cell">
-                <DataStatePanel icon={CalendarDays} title="Loading Bible source schedule">
-                  <p>Retrieving the reviewed source workbook schedule for this week.</p>
+                <DataStatePanel icon={CalendarDays} title="Checking imported schedule data">
+                  <p>Looking for a published operational week first, then source workbook records if no revision exists.</p>
                 </DataStatePanel>
               </div>
             </div>
@@ -952,8 +953,8 @@ export function SchedulePage() {
             <div className="schedule-empty" role="row">
               <div role="cell">
                 <CalendarDays aria-hidden="true" size={34} />
-                <strong>No schedule exists for this week.</strong>
-                <p>A supervisor can prepare a reviewed revision before publishing coverage.</p>
+                <strong>No published schedule exists for this selected week.</strong>
+                <p>The Bible import currently covers June 28, 2026 through August 15, 2026. Move into that range or create a reviewed schedule revision for this week.</p>
               </div>
             </div>
           ) : scheduleView === 'employee' && visibleEmployeeRows.length === 0 ? (

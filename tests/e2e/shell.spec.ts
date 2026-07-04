@@ -5,7 +5,8 @@ test('overview is readable and has no automatically detectable accessibility vio
   await page.goto('/')
 
   await expect(page.getByRole('heading', { name: 'One clear view of the day.' })).toBeVisible()
-  await expect(page.getByText('No schedule has been published.')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'What needs attention' })).toBeVisible()
+  await expect(page.getByText('Schedule data is not connected yet.')).toBeVisible()
 
   const accessibility = await new AxeBuilder({ page }).analyze()
   expect(accessibility.violations).toEqual([])

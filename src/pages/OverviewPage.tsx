@@ -84,18 +84,21 @@ export function OverviewPage() {
         <section className="panel coverage-panel" aria-labelledby="coverage-heading">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Today</p>
-              <h2 id="coverage-heading">Coverage at a glance</h2>
+              <p className="eyebrow">Command check</p>
+              <h2 id="coverage-heading">What needs attention</h2>
             </div>
-            <Link to="/schedule">View schedule</Link>
           </div>
           <div className="empty-state empty-state--schedule">
             <CalendarDays aria-hidden="true" size={28} />
             <div>
-              <strong>{isSupabaseConfigured ? 'The Bible schedule is operational.' : 'No schedule has been published.'}</strong>
+              <strong>
+                {isSupabaseConfigured
+                  ? `${overview?.openShifts ?? '—'} current/upcoming open shift${overview?.openShifts === 1 ? '' : 's'}`
+                  : 'Schedule data is not connected yet.'}
+              </strong>
               <p>
                 {isSupabaseConfigured
-                  ? 'Use the master schedule for the full weekly board, open coverage, and source-review markers.'
+                  ? 'This count excludes past openings. Use Events & openings to fill them, or Master schedule to review the full week.'
                   : 'Imported coverage will appear here only after every source value is verified.'}
               </p>
             </div>

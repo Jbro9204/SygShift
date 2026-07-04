@@ -1,6 +1,5 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { AppShell } from '../components/AppShell'
-import { ModulePage } from '../pages/ModulePage'
 import { RouteErrorPage } from '../pages/RouteErrorPage'
 import {
   AccountSecurityPageRoute,
@@ -12,6 +11,7 @@ import {
   OperationalImportPageRoute,
   OverviewPageRoute,
   PeoplePageRoute,
+  PatrolPageRoute,
   ReportsPageRoute,
   RequestsPageRoute,
   RouteSuspense,
@@ -95,11 +95,9 @@ export const router = createBrowserRouter([
       {
         path: 'patrol',
         element: (
-          <ModulePage
-            eyebrow="Workforce"
-            title="Patrol"
-            description="Plan patrol requirements and routes while preserving a clean history of assigned and completed visits."
-          />
+          <RouteSuspense>
+            <PatrolPageRoute />
+          </RouteSuspense>
         ),
       },
       {
