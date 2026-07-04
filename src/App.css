@@ -1638,6 +1638,12 @@
   border-radius: 7px;
 }
 
+.shift-card--source {
+  background: #fffdf8;
+  border-color: #d9ceb9;
+  border-left-color: #8e744a;
+}
+
 .shift-card + .shift-card {
   margin-top: 7px;
 }
@@ -1719,6 +1725,70 @@
   color: #226044;
   background: #e5f1ea;
   border-color: #b9d7c6;
+}
+
+.shift-tag--review {
+  color: #70411d;
+  background: #f7e9dc;
+  border-color: #e2bea0;
+}
+
+.source-cell-reference {
+  display: block;
+  margin-top: 8px;
+  color: #79736a;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.source-schedule-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+  padding: 17px 19px;
+  background: #fffaf0;
+  border: 1px solid #dfc792;
+  border-left: 4px solid #ad7e2e;
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.source-schedule-banner strong,
+.source-schedule-banner span {
+  display: block;
+}
+
+.source-schedule-banner strong {
+  color: #302e29;
+  font-size: 18px;
+}
+
+.source-schedule-banner span {
+  margin-top: 4px;
+  color: #645f56;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.source-schedule-banner__counts {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.source-schedule-banner__counts span {
+  margin: 0;
+  padding: 7px 10px;
+  color: #684714;
+  background: #f4e6c8;
+  border: 1px solid #dfc28b;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 850;
 }
 
 .schedule-state {

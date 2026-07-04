@@ -93,6 +93,45 @@ export type ScheduleBuilderOptions = z.infer<typeof builderOptionsSchema>
 export type ScheduleBuilderPost = z.infer<typeof builderPostSchema>
 export type CreateOpenShiftResult = z.infer<typeof createOpenShiftResultSchema>
 
+const bibleScheduleShiftSchema = z.object({
+  id: z.string().uuid(),
+  candidateKey: z.string(),
+  reviewStatus: z.string(),
+  localDate: z.string(),
+  startTime: z.string(),
+  endTime: z.string(),
+  crossesMidnight: z.boolean(),
+  contextLabel: z.string().nullable(),
+  siteKeyCandidate: z.string().nullable(),
+  assigneeLabel: z.string().nullable(),
+  openCandidate: z.boolean(),
+  qualificationCandidate: z.string().nullable(),
+  confidence: z.string().nullable(),
+  sourceTimeAddress: z.string().nullable(),
+  sourceAssignmentAddress: z.string().nullable(),
+})
+
+const bibleSchedulePreviewSchema = z.object({
+  importRunId: z.string().uuid(),
+  weekStartsOn: z.string(),
+  weekEndsOn: z.string().nullable(),
+  sourceSheetName: z.string().nullable(),
+  sourceSheetIndex: z.number().int().nullable(),
+  blockingIssueCount: z.number().int().nonnegative(),
+  warningIssueCount: z.number().int().nonnegative(),
+  shifts: z.array(bibleScheduleShiftSchema),
+})
+
+export type BibleSchedulePreview = z.infer<typeof bibleSchedulePreviewSchema>
+export type BibleScheduleShift = z.infer<typeof bibleScheduleShiftSchema>
+
+export interface BibleScheduleRow {
+  id: string
+  name: string
+  qualification: string | null
+  shifts: BibleScheduleShift[]
+}
+
 export interface CreateOpenShiftInput {
   weekStartsOn: string
   mode: 'post' | 'event'
@@ -180,6 +219,16 @@ export async function getScheduleBuilderOptions(): Promise<ScheduleBuilderOption
   return builderOptionsSchema.parse(data)
 }
 
+export async function getBibleSchedulePreview(weekStartsOn: string): Promise<BibleSchedulePreview | null> {
+  const { data, error } = await getSupabaseClient().rpc('get_bible_schedule_preview', {
+    target_week_starts_on: weekStartsOn,
+  })
+
+  if (error) throw new Error('The Bible source schedule could not be loaded.')
+  if (!data) return null
+  return bibleSchedulePreviewSchema.parse(data)
+}
+
 export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Promise<CreateOpenShiftResult> {
   const { data, error } = await getSupabaseClient().rpc('create_supervisor_open_shift', {
     target_week_starts_on: input.weekStartsOn,
@@ -223,6 +272,33 @@ export function scheduleRows(schedule: WeeklySchedule): ScheduleRow[] {
     .map((row) => ({
       ...row,
       shifts: [...row.shifts].sort((left, right) => left.starts_at.localeCompare(right.starts_at)),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+export function bibleScheduleRows(schedule: BibleSchedulePreview): BibleScheduleRow[] {
+  const rows = new Map<string, BibleScheduleRow>()
+
+  for (const shift of schedule.shifts) {
+    const name = shift.contextLabel ?? 'Unlabeled source row'
+    const id = shift.siteKeyCandidate ?? name.toLocaleLowerCase()
+    const row = rows.get(id) ?? {
+      id,
+      name,
+      qualification: shift.qualificationCandidate,
+      shifts: [],
+    }
+    row.shifts.push(shift)
+    if (!row.qualification && shift.qualificationCandidate) row.qualification = shift.qualificationCandidate
+    rows.set(id, row)
+  }
+
+  return [...rows.values()]
+    .map((row) => ({
+      ...row,
+      shifts: [...row.shifts].sort((left, right) =>
+        `${left.localDate} ${left.startTime} ${left.candidateKey}`.localeCompare(`${right.localDate} ${right.startTime} ${right.candidateKey}`),
+      ),
     }))
     .sort((left, right) => left.name.localeCompare(right.name))
 }

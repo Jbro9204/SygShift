@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   assignmentName,
+  bibleScheduleRows,
   scheduleRows,
   shiftOperationalDate,
+  type BibleSchedulePreview,
   type ScheduleShift,
   type WeeklySchedule,
 } from './schedule'
@@ -79,5 +81,41 @@ describe('schedule presentation', () => {
 
   it('uses a preferred name when one is recorded', () => {
     expect(assignmentName(siteShift.assignments[0])).toBe('Alex Rivera')
+  })
+
+  it('groups Bible source shifts by workbook context label', () => {
+    const sourceSchedule: BibleSchedulePreview = {
+      importRunId: '80000000-0000-4000-8000-000000000001',
+      weekStartsOn: '2026-06-28',
+      weekEndsOn: '2026-07-04',
+      sourceSheetName: 'June 28th to July 4th',
+      sourceSheetIndex: 145,
+      blockingIssueCount: 132,
+      warningIssueCount: 60,
+      shifts: [{
+        id: '90000000-0000-4000-8000-000000000001',
+        candidateKey: 'cell:145:C12',
+        reviewStatus: 'pending',
+        localDate: '2026-06-28',
+        startTime: '08:00',
+        endTime: '16:00',
+        crossesMidnight: false,
+        contextLabel: '4400 Syracuse Apt-Unarmed',
+        siteKeyCandidate: '4400-syracuse-apt',
+        assigneeLabel: 'Jordan Brown',
+        openCandidate: false,
+        qualificationCandidate: 'unarmed',
+        confidence: 'review',
+        sourceTimeAddress: 'C12',
+        sourceAssignmentAddress: 'C13',
+      }],
+    }
+
+    expect(bibleScheduleRows(sourceSchedule)).toEqual([{
+      id: '4400-syracuse-apt',
+      name: '4400 Syracuse Apt-Unarmed',
+      qualification: 'unarmed',
+      shifts: sourceSchedule.shifts,
+    }])
   })
 })

@@ -6,12 +6,15 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import { getCurrentAppRole } from '../data/session'
 import {
   assignmentName,
+  bibleScheduleRows,
   createSupervisorOpenShift,
+  getBibleSchedulePreview,
   getScheduleBuilderOptions,
   getWeeklySchedule,
   scheduleRows,
   shiftOperationalDate,
   shiftTimeRange,
+  type BibleScheduleShift,
   type ScheduleShift,
 } from '../data/schedule'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -85,6 +88,42 @@ function ShiftCard({ shift }: { shift: ScheduleShift }) {
   )
 }
 
+function sourceQualificationLabel(value: string | null): string {
+  if (value === 'armed') return 'Armed'
+  if (value === 'unarmed') return 'Unarmed'
+  return 'Needs review'
+}
+
+function BibleShiftCard({ shift }: { shift: BibleScheduleShift }) {
+  const assignee = shift.openCandidate
+    ? 'Open shift'
+    : shift.assigneeLabel && !['na', 'n/a', 'none'].includes(shift.assigneeLabel.trim().toLocaleLowerCase())
+      ? shift.assigneeLabel
+      : 'No named guard'
+
+  return (
+    <article className="shift-card shift-card--source">
+      <div className="shift-card__heading">
+        <strong>{shift.startTime} - {shift.endTime}</strong>
+        {shift.crossesMidnight ? <span className="shift-tag">Overnight</span> : null}
+      </div>
+      <span className="shift-card__title">{assignee}</span>
+      <div className="shift-card__people">
+        <span>{shift.contextLabel ?? 'Unlabeled source row'}</span>
+      </div>
+      <div className="shift-card__footer">
+        <span className={shift.qualificationCandidate === 'unknown' ? 'shift-tag shift-tag--review' : 'shift-tag'}>
+          {sourceQualificationLabel(shift.qualificationCandidate)}
+        </span>
+        <span className="shift-tag">Bible source</span>
+      </div>
+      <small className="source-cell-reference">
+        Cell {shift.sourceTimeAddress ?? shift.candidateKey}
+      </small>
+    </article>
+  )
+}
+
 export function SchedulePage() {
   const queryClient = useQueryClient()
   const today = useMemo(() => operationalToday(), [])
@@ -101,6 +140,11 @@ export function SchedulePage() {
     queryKey: ['weekly-schedule', weekKey],
     queryFn: () => getWeeklySchedule(weekKey),
     enabled: isSupabaseConfigured,
+  })
+  const biblePreviewQuery = useQuery({
+    queryKey: ['bible-schedule-preview', weekKey],
+    queryFn: () => getBibleSchedulePreview(weekKey),
+    enabled: isSupabaseConfigured && !scheduleQuery.isPending && !scheduleQuery.data,
   })
   const roleQuery = useQuery({
     queryKey: ['current-app-role'],
@@ -157,6 +201,10 @@ export function SchedulePage() {
     },
   })
   const rows = useMemo(() => scheduleQuery.data ? scheduleRows(scheduleQuery.data) : [], [scheduleQuery.data])
+  const bibleRows = useMemo(
+    () => biblePreviewQuery.data ? bibleScheduleRows(biblePreviewQuery.data) : [],
+    [biblePreviewQuery.data],
+  )
   const visibleRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
     return rows
@@ -180,6 +228,30 @@ export function SchedulePage() {
       }))
       .filter((row) => row.shifts.length > 0)
   }, [rows, search, siteFilter])
+  const visibleBibleRows = useMemo(() => {
+    const term = search.trim().toLocaleLowerCase()
+    return bibleRows
+      .filter((row) => siteFilter === 'all' || row.id === siteFilter)
+      .map((row) => ({
+        ...row,
+        shifts: row.shifts.filter((shift) => {
+          if (!term) return true
+          const searchable = [
+            row.name,
+            shift.contextLabel,
+            shift.assigneeLabel,
+            shift.startTime,
+            shift.endTime,
+            shift.qualificationCandidate,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLocaleLowerCase()
+          return searchable.includes(term)
+        }),
+      }))
+      .filter((row) => row.shifts.length > 0)
+  }, [bibleRows, search, siteFilter])
 
   function updateOpenShiftForm(update: Partial<OpenShiftFormState>) {
     setBuilderMessage(null)
@@ -457,11 +529,28 @@ export function SchedulePage() {
               value={siteFilter}
             >
               <option value="all">All sites</option>
-              {rows.map((row) => <option value={row.id} key={row.id}>{row.name}</option>)}
+              {(rows.length > 0 ? rows : bibleRows).map((row) => <option value={row.id} key={row.id}>{row.name}</option>)}
             </select>
           </label>
         </div>
       </section>
+
+      {!scheduleQuery.data && biblePreviewQuery.data ? (
+        <section className="source-schedule-banner" aria-label="Bible source schedule status">
+          <div>
+            <p className="eyebrow">Bible source schedule</p>
+            <strong>{biblePreviewQuery.data.sourceSheetName ?? 'Source workbook week'}</strong>
+            <span>
+              This is the workbook schedule staged for review. It is visible for operations planning, but not yet payroll-ready.
+            </span>
+          </div>
+          <div className="source-schedule-banner__counts">
+            <span>{biblePreviewQuery.data.shifts.length} source shifts</span>
+            <span>{biblePreviewQuery.data.blockingIssueCount} blockers</span>
+            <span>{biblePreviewQuery.data.warningIssueCount} warnings</span>
+          </div>
+        </section>
+      ) : null}
 
       <p className="schedule-scroll-hint" id="schedule-scroll-instructions">
         <MoveHorizontal aria-hidden="true" size={19} />
@@ -515,6 +604,33 @@ export function SchedulePage() {
                 </DataStatePanel>
               </div>
             </div>
+          ) : !scheduleQuery.data && biblePreviewQuery.isPending ? (
+            <div className="schedule-state" role="row">
+              <div role="cell">
+                <DataStatePanel icon={CalendarDays} title="Loading Bible source schedule">
+                  <p>Retrieving the reviewed source workbook schedule for this week.</p>
+                </DataStatePanel>
+              </div>
+            </div>
+          ) : !scheduleQuery.data && biblePreviewQuery.data && visibleBibleRows.length > 0 ? (
+            visibleBibleRows.map((row) => (
+              <div className="schedule-row schedule-row--coverage schedule-row--source" role="row" key={row.id}>
+                <div className="schedule-location" role="rowheader">
+                  <span>{sourceQualificationLabel(row.qualification)}</span>
+                  <strong>{row.name}</strong>
+                </div>
+                {days.map((day) => {
+                  const dayKey = format(day, 'yyyy-MM-dd')
+                  const shifts = row.shifts.filter((shift) => shift.localDate === dayKey)
+                  return (
+                    <div className="schedule-day-cell" role="cell" key={dayKey}>
+                      {shifts.map((shift) => <BibleShiftCard shift={shift} key={shift.id} />)}
+                      {shifts.length === 0 ? <span className="schedule-day-empty">—</span> : null}
+                    </div>
+                  )
+                })}
+              </div>
+            ))
           ) : !scheduleQuery.data ? (
             <div className="schedule-empty" role="row">
               <div role="cell">
