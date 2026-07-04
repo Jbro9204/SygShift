@@ -4,6 +4,9 @@ import {
   nextTimeEventKinds,
   parseTimekeepingDashboard,
   parseTimekeepingEvent,
+  parseTimekeepingReview,
+  payrollHours,
+  reviewRowsToPayrollCsv,
 } from './timekeeping'
 
 describe('timekeeping validation', () => {
@@ -59,5 +62,53 @@ describe('timekeeping validation', () => {
     expect(nextTimeEventKinds('off_clock')).toEqual(['clock_in'])
     expect(nextTimeEventKinds('working')).toEqual(['break_start', 'clock_out'])
     expect(nextTimeEventKinds('on_break')).toEqual(['break_end'])
+  })
+
+  it('validates supervisor review rows and exports payroll CSV safely', () => {
+    const review = parseTimekeepingReview({
+      serverTimestamp: '2026-07-04T15:00:00.000Z',
+      fromDate: '2026-06-28',
+      throughDate: '2026-07-04',
+      operationalTimeZone: 'America/Denver',
+      summary: {
+        rowCount: 1,
+        readyCount: 1,
+        exceptionCount: 0,
+        pendingCorrectionCount: 0,
+        grossMinutes: 510,
+        paidMinutes: 480,
+      },
+      rows: [{
+        employeeId: '73000000-0000-4000-8000-000000000001',
+        username: 'jbrown',
+        employeeName: 'Jordan Brown',
+        role: 'admin',
+        employmentType: 'salary',
+        shiftId: '73000000-0000-4000-8000-000000000010',
+        operationalDate: '2026-07-04',
+        siteName: 'Main Site',
+        siteCode: 'MAIN',
+        postName: 'Primary Post',
+        eventName: null,
+        locationName: 'Main Site',
+        scheduledStartsAt: '2026-07-04T14:00:00.000Z',
+        scheduledEndsAt: '2026-07-04T22:00:00.000Z',
+        timeZone: 'America/Denver',
+        firstClockIn: '2026-07-04T13:58:00.000Z',
+        lastClockOut: '2026-07-04T22:28:00.000Z',
+        grossMinutes: 510,
+        breakMinutes: 30,
+        paidMinutes: 480,
+        eventCount: 4,
+        requiresArmed: false,
+        isOvertime: false,
+        payrollReady: true,
+        exceptionCodes: [],
+      }],
+      pendingCorrections: [],
+    })
+
+    expect(payrollHours(review.summary.paidMinutes)).toBe('8.00')
+    expect(reviewRowsToPayrollCsv(review.rows)).toContain('Jordan Brown,jbrown,2026-07-04')
   })
 })

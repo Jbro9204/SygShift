@@ -63,11 +63,94 @@ const correctionResultSchema = z.object({
   approvedAt: z.string().nullable(),
 })
 
+const payrollExceptionSchema = z.enum([
+  'unscheduled',
+  'missing_clock_in',
+  'missing_clock_out',
+  'invalid_sequence',
+  'pending_correction',
+  'zero_paid_minutes',
+])
+
+const timekeepingReviewRowSchema = z.object({
+  employeeId: z.string().uuid(),
+  username: z.string(),
+  employeeName: z.string(),
+  role: appRoleSchema,
+  employmentType: employmentTypeSchema,
+  shiftId: z.string().uuid().nullable(),
+  operationalDate: z.string(),
+  siteName: z.string().nullable(),
+  siteCode: z.string().nullable(),
+  postName: z.string().nullable(),
+  eventName: z.string().nullable(),
+  locationName: z.string(),
+  scheduledStartsAt: z.string().nullable(),
+  scheduledEndsAt: z.string().nullable(),
+  timeZone: z.string(),
+  firstClockIn: z.string().nullable(),
+  lastClockOut: z.string().nullable(),
+  grossMinutes: z.number().int().nonnegative(),
+  breakMinutes: z.number().int().nonnegative(),
+  paidMinutes: z.number().int().nonnegative(),
+  eventCount: z.number().int().nonnegative(),
+  requiresArmed: z.boolean(),
+  isOvertime: z.boolean(),
+  payrollReady: z.boolean(),
+  exceptionCodes: z.array(payrollExceptionSchema),
+})
+
+const pendingCorrectionSchema = z.object({
+  id: z.string().uuid(),
+  timeEventId: z.string().uuid(),
+  employeeId: z.string().uuid(),
+  employeeName: z.string(),
+  username: z.string(),
+  kind: timeEventKindSchema,
+  recordedAt: z.string(),
+  replacementTime: z.string().nullable(),
+  voided: z.boolean(),
+  reason: z.string(),
+  requestedBy: z.string().uuid(),
+  requestedAt: z.string(),
+  shiftId: z.string().uuid().nullable(),
+})
+
+const timekeepingReviewSchema = z.object({
+  serverTimestamp: z.string(),
+  fromDate: z.string(),
+  throughDate: z.string(),
+  operationalTimeZone: z.literal('America/Denver'),
+  summary: z.object({
+    rowCount: z.number().int().nonnegative(),
+    readyCount: z.number().int().nonnegative(),
+    exceptionCount: z.number().int().nonnegative(),
+    pendingCorrectionCount: z.number().int().nonnegative(),
+    grossMinutes: z.number().int().nonnegative(),
+    paidMinutes: z.number().int().nonnegative(),
+  }),
+  rows: z.array(timekeepingReviewRowSchema),
+  pendingCorrections: z.array(pendingCorrectionSchema),
+})
+
+const correctionReviewResultSchema = z.object({
+  id: z.string().uuid(),
+  timeEventId: z.string().uuid(),
+  approved: z.boolean(),
+  approvedAt: z.string().nullable(),
+  declinedAt: z.string().nullable(),
+  decisionNote: z.string().nullable(),
+})
+
 export type TimeEventKind = z.infer<typeof timeEventKindSchema>
 export type TimekeepingShift = z.infer<typeof timekeepingShiftSchema>
 export type TimekeepingEvent = z.infer<typeof timekeepingEventSchema>
 export type TimekeepingDashboard = z.infer<typeof timekeepingDashboardSchema>
 export type TimekeepingState = 'off_clock' | 'working' | 'on_break'
+export type PayrollException = z.infer<typeof payrollExceptionSchema>
+export type TimekeepingReview = z.infer<typeof timekeepingReviewSchema>
+export type TimekeepingReviewRow = z.infer<typeof timekeepingReviewRowSchema>
+export type PendingCorrection = z.infer<typeof pendingCorrectionSchema>
 
 export const verifiedTimekeepingBaseline = {
   operationalTimeZone: 'America/Denver',
@@ -86,6 +169,10 @@ export function parseTimekeepingDashboard(value: unknown): TimekeepingDashboard 
 
 export function parseTimekeepingEvent(value: unknown): TimekeepingEvent {
   return timekeepingEventSchema.parse(value)
+}
+
+export function parseTimekeepingReview(value: unknown): TimekeepingReview {
+  return timekeepingReviewSchema.parse(value)
 }
 
 export function activeTimeState(lastEvent: TimekeepingEvent | null): TimekeepingState {
@@ -141,4 +228,71 @@ export async function requestTimeEventCorrection(input: {
   })
   if (error) throw new Error(error.message || 'The time correction could not be requested.')
   return correctionResultSchema.parse(data)
+}
+
+export async function getTimekeepingReview(input: {
+  fromDate: string
+  throughDate: string
+}): Promise<TimekeepingReview> {
+  const { data, error } = await getSupabaseClient().rpc('get_timekeeping_review', {
+    target_from_date: input.fromDate,
+    target_through_date: input.throughDate,
+  })
+  if (error) throw new Error('Supervisor time review could not be loaded. MFA is required.')
+  return parseTimekeepingReview(data)
+}
+
+export async function reviewTimeEventCorrection(input: {
+  correctionId: string
+  approved: boolean
+  note: string | null
+}): Promise<z.infer<typeof correctionReviewResultSchema>> {
+  const { data, error } = await getSupabaseClient().rpc('review_time_event_correction', {
+    target_correction_id: input.correctionId,
+    target_approved: input.approved,
+    target_decision_note: input.note,
+  })
+  if (error) throw new Error(error.message || 'The correction decision could not be recorded.')
+  return correctionReviewResultSchema.parse(data)
+}
+
+export function payrollHours(minutes: number): string {
+  return (minutes / 60).toFixed(2)
+}
+
+export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
+  const headers = [
+    'Employee',
+    'Username',
+    'Date',
+    'Location',
+    'Clock In',
+    'Clock Out',
+    'Gross Hours',
+    'Break Minutes',
+    'Paid Hours',
+    'Overtime',
+    'Payroll Ready',
+    'Exceptions',
+  ]
+  const escape = (value: unknown) => {
+    const text = value === null || value === undefined ? '' : String(value)
+    return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+  }
+  const lines = rows.map((row) => [
+    row.employeeName,
+    row.username,
+    row.operationalDate,
+    row.locationName,
+    row.firstClockIn ?? '',
+    row.lastClockOut ?? '',
+    payrollHours(row.grossMinutes),
+    row.breakMinutes,
+    payrollHours(row.paidMinutes),
+    row.isOvertime ? 'yes' : 'no',
+    row.payrollReady ? 'yes' : 'no',
+    row.exceptionCodes.join('|'),
+  ].map(escape).join(','))
+
+  return [headers.map(escape).join(','), ...lines].join('\n')
 }

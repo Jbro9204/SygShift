@@ -4066,6 +4066,270 @@
   opacity: 0.72;
 }
 
+.time-review-workbench {
+  margin-top: 16px;
+  overflow: hidden;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.time-review-workbench__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px;
+  border-bottom: 1px solid #e7e2d8;
+}
+
+.time-review-workbench__heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 24px;
+  letter-spacing: -0.02em;
+}
+
+.time-review-workbench__heading p:not(.eyebrow) {
+  max-width: 720px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.time-review-range {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.time-review-range label {
+  display: grid;
+  gap: 6px;
+  color: #504b43;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.time-review-range input {
+  min-height: 42px;
+  padding: 8px 10px;
+  color: #29261f;
+  background: #ffffff;
+  border: 1px solid #d5cec0;
+  border-radius: 8px;
+  font-size: 15px;
+}
+
+.time-review-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px 22px;
+  background: #fbfaf7;
+  border-bottom: 1px solid #e7e2d8;
+}
+
+.time-review-metrics article {
+  display: grid;
+  min-height: 118px;
+  align-content: center;
+  padding: 17px;
+  background: #ffffff;
+  border: 1px solid #e1dcd2;
+  border-top: 3px solid #b9b4aa;
+  border-radius: 9px;
+}
+
+.time-review-metrics article.import-metric--attention {
+  border-top-color: #b27625;
+}
+
+.time-review-metrics span {
+  color: #625e56;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.time-review-metrics strong {
+  margin-top: 6px;
+  color: #26231e;
+  font-size: 30px;
+}
+
+.time-review-metrics small {
+  color: #777168;
+  font-size: 13px;
+}
+
+.time-review-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 22px;
+  border-bottom: 1px solid #e7e2d8;
+}
+
+.time-review-actions p {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  color: #675f52;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.time-review-actions svg {
+  flex: 0 0 auto;
+  color: #9b671d;
+}
+
+.time-review-table-wrap {
+  overflow-x: auto;
+}
+
+.time-review-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
+.time-review-table th,
+.time-review-table td {
+  padding: 15px 16px;
+  border-bottom: 1px solid #ebe6dc;
+  text-align: left;
+  vertical-align: top;
+}
+
+.time-review-table th {
+  color: #625b50;
+  background: #f7f4ed;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.time-review-table td {
+  color: #3a362f;
+  font-size: 14px;
+}
+
+.time-review-table td strong,
+.time-review-table td span,
+.time-review-table td small {
+  display: block;
+}
+
+.time-review-table td span,
+.time-review-table td small {
+  margin-top: 3px;
+  color: #746e64;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.payroll-status {
+  display: inline-flex;
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: capitalize;
+}
+
+.payroll-status--ready {
+  color: #245d47;
+  background: #e7f2ec;
+}
+
+.payroll-status--hold {
+  color: #7a4b13;
+  background: #fff1d8;
+}
+
+.time-corrections-panel {
+  margin: 18px 22px 22px;
+}
+
+.correction-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.correction-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.45fr);
+  gap: 18px;
+  padding: 17px;
+  background: #ffffff;
+  border: 1px solid #ded8cc;
+  border-left: 4px solid #b27625;
+  border-radius: 9px;
+}
+
+.correction-card h3 {
+  margin: 8px 0 0;
+  color: #2f2c26;
+  font-size: 19px;
+}
+
+.correction-card p {
+  margin: 6px 0 0;
+  color: #686156;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.correction-card blockquote {
+  margin: 12px 0 0;
+  padding-left: 12px;
+  color: #4d463c;
+  border-left: 3px solid #d6bd91;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.correction-card__actions {
+  display: grid;
+  gap: 9px;
+  align-content: start;
+}
+
+.correction-card__actions textarea {
+  width: 100%;
+  min-height: 74px;
+  padding: 10px;
+  resize: vertical;
+  color: #29261f;
+  background: #ffffff;
+  border: 1px solid #d5cec0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+}
+
+.correction-card__actions .danger-primary {
+  min-height: 42px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.correction-card__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
 @media (max-width: 680px) {
   .operational-details dl > div {
     grid-template-columns: 1fr;
@@ -4079,6 +4343,20 @@
   }
 
   .time-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .time-review-workbench__heading,
+  .time-review-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .time-review-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .correction-card {
     grid-template-columns: 1fr;
   }
 }
@@ -4116,5 +4394,28 @@
   .time-shift-option b {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .time-review-range,
+  .time-review-range label,
+  .time-review-range input,
+  .time-review-actions .secondary-button {
+    width: 100%;
+  }
+
+  .time-review-range,
+  .time-review-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .time-review-range,
+  .time-review-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .time-corrections-panel {
+    margin-right: 16px;
+    margin-left: 16px;
   }
 }

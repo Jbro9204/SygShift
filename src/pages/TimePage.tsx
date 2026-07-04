@@ -7,7 +7,9 @@ import {
   CircleAlert,
   Clock3,
   Coffee,
+  Download,
   FileClock,
+  FileWarning,
   History,
   ShieldAlert,
   Timer,
@@ -16,12 +18,19 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import {
   activeTimeState,
   getTimekeepingDashboard,
+  getTimekeepingReview,
   nextTimeEventKinds,
+  payrollHours,
   recordTimeEvent,
+  reviewRowsToPayrollCsv,
+  reviewTimeEventCorrection,
   verifiedTimekeepingBaseline,
+  type PendingCorrection,
   type TimeEventKind,
   type TimekeepingDashboard,
   type TimekeepingEvent,
+  type TimekeepingReview,
+  type TimekeepingReviewRow,
   type TimekeepingShift,
   type TimekeepingState,
 } from '../data/timekeeping'
@@ -64,6 +73,12 @@ function formatDateKey(date: Date): string {
     timeZone: OPERATIONAL_TIME_ZONE,
     year: 'numeric',
   }).format(date)
+}
+
+function addDaysKey(dateKey: string, days: number): string {
+  const [year, month, day] = dateKey.split('-').map(Number)
+  const date = new Date(year, month - 1, day + days, 12)
+  return formatDateKey(date)
 }
 
 function formatTime(value: string, timeZone = OPERATIONAL_TIME_ZONE): string {
@@ -304,6 +319,240 @@ function RecentEvents({ events }: { events: TimekeepingEvent[] }) {
   )
 }
 
+function exceptionLabel(code: string): string {
+  return code.replaceAll('_', ' ')
+}
+
+function exportPayrollCsv(review: TimekeepingReview) {
+  const csv = reviewRowsToPayrollCsv(review.rows)
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `sygshift-payroll-${review.fromDate}-to-${review.throughDate}.csv`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+function PayrollReviewTable({ rows }: { rows: TimekeepingReviewRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <DataStatePanel icon={FileClock} title="No time records in this range">
+        <p>Recorded punches will appear here once employees begin using the time clock.</p>
+      </DataStatePanel>
+    )
+  }
+
+  return (
+    <div className="time-review-table-wrap">
+      <table className="time-review-table">
+        <thead>
+          <tr>
+            <th>Employee</th>
+            <th>Date</th>
+            <th>Location</th>
+            <th>Clock in</th>
+            <th>Clock out</th>
+            <th>Paid</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.employeeId}-${row.shiftId ?? 'unscheduled'}-${row.operationalDate}`}>
+              <td>
+                <strong>{row.employeeName}</strong>
+                <span>@{row.username}</span>
+              </td>
+              <td>{row.operationalDate}</td>
+              <td>
+                <strong>{row.locationName}</strong>
+                <span>{[row.siteCode, row.postName ?? row.eventName].filter(Boolean).join(' · ') || 'Time clock'}</span>
+              </td>
+              <td>{row.firstClockIn ? formatTime(row.firstClockIn, row.timeZone) : 'Missing'}</td>
+              <td>{row.lastClockOut ? formatTime(row.lastClockOut, row.timeZone) : 'Missing'}</td>
+              <td>
+                <strong>{payrollHours(row.paidMinutes)} hr</strong>
+                <span>{row.breakMinutes} break min</span>
+              </td>
+              <td>
+                {row.payrollReady ? (
+                  <span className="payroll-status payroll-status--ready">Ready</span>
+                ) : (
+                  <span className="payroll-status payroll-status--hold">Needs review</span>
+                )}
+                {row.exceptionCodes.length > 0 ? (
+                  <small>{row.exceptionCodes.map(exceptionLabel).join(', ')}</small>
+                ) : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function CorrectionReviewCard({
+  correction,
+  pending,
+  onDecision,
+}: {
+  correction: PendingCorrection
+  pending: boolean
+  onDecision: (approved: boolean, note: string | null) => void
+}) {
+  const [declineNote, setDeclineNote] = useState('')
+
+  return (
+    <article className="correction-card">
+      <div>
+        <span className="payroll-status payroll-status--hold">{correction.voided ? 'Void requested' : 'Time change requested'}</span>
+        <h3>{correction.employeeName}</h3>
+        <p>
+          {eventLabels[correction.kind]} at {formatTime(correction.recordedAt)}
+          {correction.replacementTime ? ` → ${formatTime(correction.replacementTime)}` : ''}
+        </p>
+        <blockquote>{correction.reason}</blockquote>
+      </div>
+      <div className="correction-card__actions">
+        <button
+          className="secondary-button"
+          disabled={pending}
+          onClick={() => onDecision(true, null)}
+          type="button"
+        >
+          Approve
+        </button>
+        <label>
+          <span className="visually-hidden">Decline reason for {correction.employeeName}</span>
+          <textarea
+            maxLength={700}
+            onChange={(event) => setDeclineNote(event.target.value)}
+            placeholder="Reason if declined"
+            rows={2}
+            value={declineNote}
+          />
+        </label>
+        <button
+          className="danger-primary"
+          disabled={pending || declineNote.trim().length === 0}
+          onClick={() => onDecision(false, declineNote.trim())}
+          type="button"
+        >
+          Decline
+        </button>
+      </div>
+    </article>
+  )
+}
+
+function PendingCorrections({
+  corrections,
+  pending,
+  onDecision,
+}: {
+  corrections: PendingCorrection[]
+  pending: boolean
+  onDecision: (correctionId: string, approved: boolean, note: string | null) => void
+}) {
+  if (corrections.length === 0) {
+    return (
+      <DataStatePanel icon={CheckCircle2} title="No correction requests are waiting">
+        <p>Employee correction requests will appear here before they affect payroll-ready totals.</p>
+      </DataStatePanel>
+    )
+  }
+
+  return (
+    <div className="correction-list">
+      {corrections.map((correction) => (
+        <CorrectionReviewCard
+          correction={correction}
+          key={correction.id}
+          onDecision={(approved, note) => onDecision(correction.id, approved, note)}
+          pending={pending}
+        />
+      ))}
+    </div>
+  )
+}
+
+function SupervisorTimeReview({ defaultDate }: { defaultDate: string }) {
+  const queryClient = useQueryClient()
+  const [fromDate, setFromDate] = useState(() => addDaysKey(defaultDate, -6))
+  const [throughDate, setThroughDate] = useState(defaultDate)
+  const reviewQuery = useQuery({
+    queryKey: ['timekeeping-review', fromDate, throughDate],
+    queryFn: () => getTimekeepingReview({ fromDate, throughDate }),
+  })
+  const correctionMutation = useMutation({
+    mutationFn: (input: { correctionId: string; approved: boolean; note: string | null }) => reviewTimeEventCorrection(input),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['timekeeping-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'] }),
+      ])
+    },
+  })
+
+  return (
+    <section className="time-review-workbench" aria-labelledby="supervisor-time-title">
+      <div className="time-review-workbench__heading">
+        <div>
+          <p className="eyebrow">Supervisor payroll review</p>
+          <h2 id="supervisor-time-title">Review time before payroll export</h2>
+          <p>Rows stay marked “Needs review” until the punch sequence is complete and correction requests are resolved.</p>
+        </div>
+        <div className="time-review-range" aria-label="Time review date range">
+          <label><span>From</span><input max={throughDate} onChange={(event) => setFromDate(event.target.value)} type="date" value={fromDate} /></label>
+          <label><span>Through</span><input min={fromDate} onChange={(event) => setThroughDate(event.target.value)} type="date" value={throughDate} /></label>
+        </div>
+      </div>
+
+      {reviewQuery.isPending ? (
+        <DataStatePanel icon={FileClock} title="Loading payroll review"><p>Calculating paid time, breaks, corrections, and exception flags.</p></DataStatePanel>
+      ) : reviewQuery.isError ? (
+        <DataStatePanel icon={ShieldAlert} title="Payroll review unavailable" tone="error"><p>{reviewQuery.error.message}</p></DataStatePanel>
+      ) : (
+        <>
+          <section className="time-review-metrics" aria-label="Payroll review totals">
+            <article><span>Total rows</span><strong>{reviewQuery.data.summary.rowCount}</strong><small>Time groups in range</small></article>
+            <article><span>Ready</span><strong>{reviewQuery.data.summary.readyCount}</strong><small>Clean payroll rows</small></article>
+            <article className={reviewQuery.data.summary.exceptionCount ? 'import-metric--attention' : ''}><span>Needs review</span><strong>{reviewQuery.data.summary.exceptionCount}</strong><small>Exceptions or missing punches</small></article>
+            <article><span>Paid hours</span><strong>{payrollHours(reviewQuery.data.summary.paidMinutes)}</strong><small>Export preview total</small></article>
+          </section>
+
+          {correctionMutation.isError ? <div className="inline-alert" role="alert">{correctionMutation.error.message}</div> : null}
+
+          <div className="time-review-actions">
+            <p><FileWarning aria-hidden="true" size={18} /> CSV export is a preview. Payroll locking and stored export batches come after review rules are approved.</p>
+            <button className="secondary-button" disabled={reviewQuery.data.rows.length === 0} onClick={() => exportPayrollCsv(reviewQuery.data)} type="button">
+              <Download aria-hidden="true" size={18} /> Export CSV preview
+            </button>
+          </div>
+
+          <PayrollReviewTable rows={reviewQuery.data.rows} />
+
+          <section className="time-panel time-corrections-panel" aria-labelledby="pending-corrections-title">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Corrections</p>
+                <h2 id="pending-corrections-title">Pending correction requests</h2>
+              </div>
+            </div>
+            <PendingCorrections
+              corrections={reviewQuery.data.pendingCorrections}
+              onDecision={(correctionId, approved, note) => correctionMutation.mutate({ correctionId, approved, note })}
+              pending={correctionMutation.isPending}
+            />
+          </section>
+        </>
+      )}
+    </section>
+  )
+}
+
 function LiveTimekeeping() {
   const queryClient = useQueryClient()
   const operationalDate = useMemo(() => formatDateKey(operationalToday()), [])
@@ -327,6 +576,7 @@ function LiveTimekeeping() {
   }
 
   const dashboard = dashboardQuery.data
+  const canReviewPayroll = dashboard.employee.role === 'supervisor' || dashboard.employee.role === 'admin'
 
   return (
     <>
@@ -372,6 +622,8 @@ function LiveTimekeeping() {
       </div>
 
       <RecentEvents events={dashboard.recentEvents} />
+
+      {canReviewPayroll ? <SupervisorTimeReview defaultDate={operationalDate} /> : null}
     </>
   )
 }
