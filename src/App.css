@@ -1503,6 +1503,19 @@
   font-weight: 650;
 }
 
+.schedule-review-filter {
+  min-height: 46px;
+  margin: 0;
+  padding: 0 13px;
+  color: #5b4a32;
+  background: #fff7ec;
+  border: 1px solid #e1c59d;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
 .schedule-board {
   overflow-x: auto;
   overflow-y: hidden;

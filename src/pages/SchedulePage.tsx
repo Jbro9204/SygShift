@@ -143,6 +143,7 @@ export function SchedulePage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today, { weekStartsOn: 0 }))
   const [search, setSearch] = useState('')
   const [siteFilter, setSiteFilter] = useState('all')
+  const [reviewOnly, setReviewOnly] = useState(false)
   const [builderOpen, setBuilderOpen] = useState(false)
   const [builderMessage, setBuilderMessage] = useState<string | null>(null)
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
@@ -225,12 +226,18 @@ export function SchedulePage() {
       .map((row) => ({
         ...row,
         shifts: row.shifts.filter((shift) => {
+          const source = parseBibleSourceNote(shift.notes)
+          if (reviewOnly && !source.reviewNeeded) return false
           if (!term) return true
           const searchable = [
             row.name,
             row.code,
             shift.post?.name,
             shift.event?.name,
+            source.assignee,
+            source.context,
+            source.sheet,
+            source.timeCell,
             ...shift.assignments.map(assignmentName),
           ]
             .filter(Boolean)
@@ -240,7 +247,11 @@ export function SchedulePage() {
         }),
       }))
       .filter((row) => row.shifts.length > 0)
-  }, [rows, search, siteFilter])
+  }, [rows, reviewOnly, search, siteFilter])
+  const reviewNeededCount = useMemo(
+    () => rows.reduce((total, row) => total + row.shifts.filter((shift) => parseBibleSourceNote(shift.notes).reviewNeeded).length, 0),
+    [rows],
+  )
   const visibleBibleRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
     return bibleRows
@@ -545,6 +556,16 @@ export function SchedulePage() {
               {(rows.length > 0 ? rows : bibleRows).map((row) => <option value={row.id} key={row.id}>{row.name}</option>)}
             </select>
           </label>
+          {reviewNeededCount > 0 ? (
+            <label className="check-field schedule-review-filter">
+              <input
+                checked={reviewOnly}
+                onChange={(event) => setReviewOnly(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Show review needed only ({reviewNeededCount})</span>
+            </label>
+          ) : null}
         </div>
       </section>
 
