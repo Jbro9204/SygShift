@@ -358,6 +358,20 @@ export function SchedulePage() {
     () => rows.reduce((total, row) => total + row.shifts.filter((shift) => parseBibleSourceNote(shift.notes).reviewNeeded).length, 0),
     [rows],
   )
+  const reviewItems = useMemo(() => rows.flatMap((row) =>
+    row.shifts
+      .filter((shift) => parseBibleSourceNote(shift.notes).reviewNeeded)
+      .map((shift) => ({
+        row,
+        shift,
+        source: parseBibleSourceNote(shift.notes),
+        sourceReference: sourceReferenceLabel(parseBibleSourceNote(shift.notes)),
+      })),
+  ).sort((left, right) => left.shift.starts_at.localeCompare(right.shift.starts_at)), [rows])
+  const armedReviewCount = useMemo(
+    () => reviewItems.filter((item) => item.shift.requires_armed).length,
+    [reviewItems],
+  )
   const visibleBibleRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
     return bibleRows
@@ -617,6 +631,71 @@ export function SchedulePage() {
           onClose={() => setResolvingShift(null)}
           shift={resolvingShift}
         />
+      ) : null}
+
+      {canBuildSchedule && reviewItems.length > 0 ? (
+        <section className="panel schedule-review-workbench" aria-labelledby="schedule-review-workbench-title">
+          <div className="schedule-review-workbench__heading">
+            <div>
+              <p className="eyebrow">Supervisor cleanup</p>
+              <h2 id="schedule-review-workbench-title">Review needed workbench</h2>
+              <p>
+                These shifts came from the Bible but were not safe to auto-assign. Resolve each one
+                after confirming the correct employee.
+              </p>
+            </div>
+            <div className="schedule-review-workbench__metrics" aria-label="Review needed totals">
+              <article>
+                <span>Total</span>
+                <strong>{reviewItems.length}</strong>
+              </article>
+              <article>
+                <span>Armed</span>
+                <strong>{armedReviewCount}</strong>
+              </article>
+              <article>
+                <span>Unarmed</span>
+                <strong>{reviewItems.length - armedReviewCount}</strong>
+              </article>
+            </div>
+          </div>
+          <div className="schedule-review-list" aria-label="Current week review-needed shifts">
+            {reviewItems.slice(0, 12).map((item) => (
+              <article className="schedule-review-item" key={item.shift.id}>
+                <div>
+                  <div className="schedule-review-item__meta">
+                    <span>{shiftOperationalDate(item.shift)}</span>
+                    <span>{shiftTimeRange(item.shift)}</span>
+                    {item.shift.requires_armed ? <span>Armed</span> : <span>Unarmed</span>}
+                  </div>
+                  <h3>{item.row.name}</h3>
+                  <p>
+                    {item.source.assignee ? `Bible assignee: ${item.source.assignee}` : 'Bible assignee not named'}
+                    {item.source.context ? ` · Source row: ${item.source.context}` : ''}
+                  </p>
+                  {item.sourceReference ? <small>{item.sourceReference}</small> : null}
+                </div>
+                <button
+                  className="primary-action"
+                  onClick={() => {
+                    setReviewOnly(true)
+                    setBuilderOpen(false)
+                    setBuilderMessage(null)
+                    setResolvingShift(item.shift)
+                  }}
+                  type="button"
+                >
+                  Resolve
+                </button>
+              </article>
+            ))}
+          </div>
+          {reviewItems.length > 12 ? (
+            <p className="schedule-review-workbench__more">
+              Showing the next 12 review items for this week. Use “Show review needed only” below to work through the full board.
+            </p>
+          ) : null}
+        </section>
       ) : null}
 
       <section className="schedule-toolbar" aria-label="Schedule controls">

@@ -65,6 +65,10 @@ Use [docs/BOSS_BUILD_EXPLANATION.md](docs/BOSS_BUILD_EXPLANATION.md) for a plain
 
 Use [docs/ROLL_OUT_STATUS_20260704.md](docs/ROLL_OUT_STATUS_20260704.md) for the latest verified deployment, database, schedule, and advisor status.
 
+Use [docs/PILOT_TEST_PLAN.md](docs/PILOT_TEST_PLAN.md) to run the first controlled real-world test with one admin, supervisors, and a small guard group.
+
+Use [docs/PAYROLL_EXPORT_VALIDATION.md](docs/PAYROLL_EXPORT_VALIDATION.md) to validate timekeeping and payroll export accuracy before any payroll run depends on SygShift.
+
 Production deployment requires successful quality checks, database migrations, row-level security verification, source reconciliation, accessibility review, and a tested backup restore.
 
 ## Repository boundaries

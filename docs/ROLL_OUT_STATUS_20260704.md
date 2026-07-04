@@ -1,15 +1,15 @@
-# Rollout status — July 4, 2026
+# Rollout status - July 4, 2026
 
 ## Current deployment
 
 - Live app: https://sygshift.sygilant.workers.dev
 - GitHub repo: https://github.com/Jbro9204/SygShift
-- Latest verified Cloudflare Worker version: `d29d0c0f-b9d3-4889-a090-f16cb4f60e37`
-- Latest pushed commit at time of this report: `3d05526`
+- Latest verified Cloudflare Worker version: `c98df75a-87f1-4c70-b7e4-553794f8126a`
+- Latest pushed commit: see Git history for the current rollout-status revision.
 
 ## Verification completed
 
-The following checks passed after the supervisor schedule-review workflow was added:
+The following checks passed after the supervisor schedule-review and notification delivery workflows were added:
 
 - TypeScript typecheck
 - Lint
@@ -57,7 +57,7 @@ Future open shifts as of this report:
 - Future review-needed shifts: 432
 - Future armed open shifts: 170
 
-These are intentionally not auto-assigned because the workbook source required human review. Supervisors can now use the schedule review filter and resolve each item into a new published schedule revision.
+These are intentionally not auto-assigned because the workbook source required human review. Supervisors can now use the schedule review filter, the Supervisor cleanup workbench, and the resolve action to publish each correction into a new schedule revision.
 
 ## Supabase advisor notes
 
@@ -77,6 +77,16 @@ Supabase performance advisor reported:
 
 These are not blocking launch findings, but they should be reviewed after real usage patterns are available. Removing indexes before production traffic would be premature because many indexes support planned workflows that may not have enough usage yet.
 
+## Notification delivery status
+
+Supabase now has service-only notification claiming and delivery-result functions.
+
+The Worker now has an admin/MFA-protected processor endpoint:
+
+`POST /api/v1/admin/notifications/process`
+
+The endpoint is deployed, but Cloudflare currently reports only the `ASSETS` binding on the Worker. Actual email sending will stay disabled until the Cloudflare Email Sending `EMAIL` binding and sender address are configured.
+
 ## Remaining account-owner actions
 
 These items cannot be fully completed from code alone:
@@ -89,18 +99,8 @@ These items cannot be fully completed from code alone:
    - set `SYGSHIFT_EMAIL_FROM`,
    - optionally set `SYGSHIFT_EMAIL_FROM_NAME`.
 4. Run a small pilot with one admin, one supervisor, and a few guards.
-5. Confirm payroll export format with the person responsible for payroll.
+5. Complete the payroll export validation plan with the person responsible for payroll.
 6. Have supervisors resolve the review-needed Bible schedule shifts.
-
-## Notification delivery status
-
-Supabase now has service-only notification claiming and delivery-result functions.
-
-The Worker now has an admin/MFA-protected processor endpoint:
-
-`POST /api/v1/admin/notifications/process`
-
-The endpoint is deployed, but Cloudflare currently reports only the `ASSETS` binding on the Worker. Actual email sending will stay disabled until the Cloudflare Email Sending `EMAIL` binding and sender address are configured.
 
 ## Practical next operating step
 
@@ -110,9 +110,11 @@ In the app:
 
 1. Sign in as an admin or supervisor.
 2. Open the master schedule.
-3. Turn on “Show review needed only.”
-4. Open each review-needed shift.
-5. Assign the correct employee.
-6. Save the resolution.
+3. Start with the Supervisor cleanup workbench.
+4. Resolve each review-needed shift by assigning the correct employee.
+5. Use Show review needed only if the supervisor wants the full board view.
+6. Save each resolution.
 
 Each resolution creates a new published schedule revision and keeps the previous revision in history.
+
+Use [PILOT_TEST_PLAN.md](PILOT_TEST_PLAN.md) for the first controlled rollout and [PAYROLL_EXPORT_VALIDATION.md](PAYROLL_EXPORT_VALIDATION.md) before any payroll run depends on SygShift exports.

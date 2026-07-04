@@ -1396,6 +1396,131 @@
   padding: 2px 0;
 }
 
+.schedule-review-workbench {
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+
+.schedule-review-workbench__heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  padding: 20px 21px;
+  border-bottom: 1px solid #ebe6dd;
+}
+
+.schedule-review-workbench__heading h2 {
+  margin: 4px 0 7px;
+  color: var(--ink);
+  font-size: 24px;
+  letter-spacing: -0.02em;
+}
+
+.schedule-review-workbench__heading p:not(.eyebrow) {
+  max-width: 720px;
+  margin: 0;
+  color: #625e56;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.schedule-review-workbench__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(88px, 1fr));
+  gap: 10px;
+}
+
+.schedule-review-workbench__metrics article {
+  min-width: 88px;
+  padding: 12px;
+  background: #fff8ef;
+  border: 1px solid #e3c89f;
+  border-radius: 9px;
+}
+
+.schedule-review-workbench__metrics span,
+.schedule-review-workbench__more {
+  color: #70675a;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.schedule-review-workbench__metrics strong {
+  display: block;
+  margin-top: 4px;
+  color: #4d3212;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.schedule-review-list {
+  display: grid;
+  gap: 0;
+}
+
+.schedule-review-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 17px 21px;
+  border-bottom: 1px solid #eee9df;
+}
+
+.schedule-review-item:last-child {
+  border-bottom: 0;
+}
+
+.schedule-review-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.schedule-review-item__meta span {
+  display: inline-flex;
+  min-height: 25px;
+  align-items: center;
+  padding: 3px 8px;
+  color: #674310;
+  background: #f4e5cf;
+  border: 1px solid #dec29a;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.schedule-review-item h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.schedule-review-item p {
+  margin: 7px 0 0;
+  color: #565149;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.schedule-review-item small {
+  display: block;
+  margin-top: 6px;
+  color: #7b7265;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.schedule-review-workbench__more {
+  margin: 0;
+  padding: 14px 21px 18px;
+  background: #fbfaf7;
+  border-top: 1px solid #eee9df;
+  line-height: 1.45;
+}
+
 .form-feedback {
   margin: 0;
   padding: 13px 14px;
@@ -3216,6 +3341,14 @@
     grid-template-columns: 1fr;
   }
 
+  .schedule-review-workbench__heading {
+    grid-template-columns: 1fr;
+  }
+
+  .schedule-review-workbench__metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .guard-request-grid {
     grid-template-columns: 1fr;
   }
@@ -3296,6 +3429,20 @@
   }
 
   .schedule-filters select {
+    width: 100%;
+  }
+
+  .schedule-review-workbench__heading,
+  .schedule-review-item {
+    padding: 17px;
+  }
+
+  .schedule-review-workbench__metrics,
+  .schedule-review-item {
+    grid-template-columns: 1fr;
+  }
+
+  .schedule-review-item .primary-action {
     width: 100%;
   }
 

@@ -4,6 +4,10 @@ This checklist is the controlled path for moving SygShift from local development
 
 Current verified deployment and database status is tracked in [ROLL_OUT_STATUS_20260704.md](ROLL_OUT_STATUS_20260704.md).
 
+Pilot rollout instructions are tracked in [PILOT_TEST_PLAN.md](PILOT_TEST_PLAN.md).
+
+Payroll export validation instructions are tracked in [PAYROLL_EXPORT_VALIDATION.md](PAYROLL_EXPORT_VALIDATION.md).
+
 ## 1. Rotate exposed credentials before launch
 
 Any credential that was copied into chat, email, screenshots, tickets, or shared notes must be treated as exposed.
@@ -142,3 +146,13 @@ Before launch:
 - Current workbook data has been reconciled against the live directory
 - Backup and restore process has been tested
 - The boss-facing build explanation has been updated for non-technical readers
+
+## 8. Pilot and payroll validation
+
+Before the first full rollout:
+
+- complete the pilot plan with a small real-world group
+- run a payroll dry run
+- confirm every exported hour can be explained
+- confirm payroll receives the fields it needs
+- fix any confusing supervisor or guard workflow before adding the full workforce
