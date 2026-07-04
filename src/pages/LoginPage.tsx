@@ -118,7 +118,7 @@ export function LoginPage() {
               disabled={!isSupabaseConfigured || checkingSession || loading}
               inputMode="text"
               onChange={(event) => setUsername(event.target.value)}
-              placeholder="jbrown"
+              placeholder="Username"
               required
               type="text"
               value={username}
