@@ -61,6 +61,8 @@ pnpm deploy
 
 Use [docs/PRODUCTION_CUTOVER.md](docs/PRODUCTION_CUTOVER.md) for the full Cloudflare + Supabase launch checklist, including credential rotation, Worker secrets, readiness checks, and first-admin verification.
 
+Use [docs/BOSS_BUILD_EXPLANATION.md](docs/BOSS_BUILD_EXPLANATION.md) for a plain-English explanation of what is being built, what is already working, what remains before rollout, and the realistic launch path.
+
 Production deployment requires successful quality checks, database migrations, row-level security verification, source reconciliation, accessibility review, and a tested backup restore.
 
 ## Repository boundaries
