@@ -142,6 +142,21 @@ const correctionReviewResultSchema = z.object({
   decisionNote: z.string().nullable(),
 })
 
+const payrollExportBatchSchema = z.object({
+  id: z.string().uuid(),
+  fromDate: z.string(),
+  throughDate: z.string(),
+  createdAt: z.string(),
+  createdBy: z.string().uuid(),
+  createdByName: z.string().nullable(),
+  rowCount: z.number().int().positive(),
+  grossMinutes: z.number().int().nonnegative(),
+  paidMinutes: z.number().int().nonnegative(),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  note: z.string().min(1),
+  duplicate: z.boolean().optional(),
+})
+
 export type TimeEventKind = z.infer<typeof timeEventKindSchema>
 export type TimekeepingShift = z.infer<typeof timekeepingShiftSchema>
 export type TimekeepingEvent = z.infer<typeof timekeepingEventSchema>
@@ -151,6 +166,7 @@ export type PayrollException = z.infer<typeof payrollExceptionSchema>
 export type TimekeepingReview = z.infer<typeof timekeepingReviewSchema>
 export type TimekeepingReviewRow = z.infer<typeof timekeepingReviewRowSchema>
 export type PendingCorrection = z.infer<typeof pendingCorrectionSchema>
+export type PayrollExportBatch = z.infer<typeof payrollExportBatchSchema>
 
 export const verifiedTimekeepingBaseline = {
   operationalTimeZone: 'America/Denver',
@@ -173,6 +189,14 @@ export function parseTimekeepingEvent(value: unknown): TimekeepingEvent {
 
 export function parseTimekeepingReview(value: unknown): TimekeepingReview {
   return timekeepingReviewSchema.parse(value)
+}
+
+export function parsePayrollExportBatch(value: unknown): PayrollExportBatch {
+  return payrollExportBatchSchema.parse(value)
+}
+
+export function parsePayrollExportHistory(value: unknown): PayrollExportBatch[] {
+  return z.array(payrollExportBatchSchema).parse(value)
 }
 
 export function activeTimeState(lastEvent: TimekeepingEvent | null): TimekeepingState {
@@ -254,6 +278,28 @@ export async function reviewTimeEventCorrection(input: {
   })
   if (error) throw new Error(error.message || 'The correction decision could not be recorded.')
   return correctionReviewResultSchema.parse(data)
+}
+
+export async function createPayrollExportBatch(input: {
+  fromDate: string
+  throughDate: string
+  note: string
+}): Promise<PayrollExportBatch> {
+  const { data, error } = await getSupabaseClient().rpc('create_payroll_export_batch', {
+    target_from_date: input.fromDate,
+    target_through_date: input.throughDate,
+    target_note: input.note,
+  })
+  if (error) throw new Error(error.message || 'Payroll export could not be locked.')
+  return parsePayrollExportBatch(data)
+}
+
+export async function getPayrollExportHistory(limit = 20): Promise<PayrollExportBatch[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_payroll_export_history', {
+    target_limit: limit,
+  })
+  if (error) throw new Error('Payroll export history could not be loaded. MFA is required.')
+  return parsePayrollExportHistory(data)
 }
 
 export function payrollHours(minutes: number): string {

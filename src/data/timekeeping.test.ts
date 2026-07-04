@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   activeTimeState,
   nextTimeEventKinds,
+  parsePayrollExportBatch,
+  parsePayrollExportHistory,
   parseTimekeepingDashboard,
   parseTimekeepingEvent,
   parseTimekeepingReview,
@@ -110,5 +112,25 @@ describe('timekeeping validation', () => {
 
     expect(payrollHours(review.summary.paidMinutes)).toBe('8.00')
     expect(reviewRowsToPayrollCsv(review.rows)).toContain('Jordan Brown,jbrown,2026-07-04')
+  })
+
+  it('validates locked payroll export batch records', () => {
+    const batch = parsePayrollExportBatch({
+      id: '73000000-0000-4000-8000-000000000020',
+      fromDate: '2026-06-28',
+      throughDate: '2026-07-04',
+      createdAt: '2026-07-04T23:30:00.000Z',
+      createdBy: '73000000-0000-4000-8000-000000000001',
+      createdByName: 'Jordan Brown',
+      rowCount: 14,
+      grossMinutes: 7140,
+      paidMinutes: 6720,
+      digest: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      note: 'Reviewed and ready for payroll.',
+      duplicate: false,
+    })
+
+    expect(batch.rowCount).toBe(14)
+    expect(parsePayrollExportHistory([batch])).toHaveLength(1)
   })
 })

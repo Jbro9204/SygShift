@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  Archive,
   BadgeCheck,
   CalendarClock,
   CheckCircle2,
@@ -11,12 +12,15 @@ import {
   FileClock,
   FileWarning,
   History,
+  LockKeyhole,
   ShieldAlert,
   Timer,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import {
   activeTimeState,
+  createPayrollExportBatch,
+  getPayrollExportHistory,
   getTimekeepingDashboard,
   getTimekeepingReview,
   nextTimeEventKinds,
@@ -26,6 +30,7 @@ import {
   reviewTimeEventCorrection,
   verifiedTimekeepingBaseline,
   type PendingCorrection,
+  type PayrollExportBatch,
   type TimeEventKind,
   type TimekeepingDashboard,
   type TimekeepingEvent,
@@ -97,6 +102,10 @@ function formatDate(value: string): string {
     timeZone: OPERATIONAL_TIME_ZONE,
     weekday: 'short',
   }).format(new Date(value))
+}
+
+function shortDigest(digest: string): string {
+  return `${digest.slice(0, 10)}…${digest.slice(-6)}`
 }
 
 function shiftTitle(shift: TimekeepingShift): string {
@@ -478,13 +487,53 @@ function PendingCorrections({
   )
 }
 
+function payrollLockBlocker(review: TimekeepingReview | undefined): string {
+  if (!review) return 'Load the payroll review before locking an export.'
+  if (review.summary.rowCount === 0) return 'There are no time records in this range yet.'
+  if (review.summary.pendingCorrectionCount > 0) return 'Resolve every pending correction request first.'
+  if (review.summary.exceptionCount > 0) return 'Fix every row marked “Needs review” before locking payroll.'
+  if (review.summary.readyCount !== review.summary.rowCount) return 'Every row must be marked Ready before payroll can be locked.'
+  return ''
+}
+
+function PayrollExportHistoryList({ batches }: { batches: PayrollExportBatch[] }) {
+  if (batches.length === 0) {
+    return (
+      <DataStatePanel icon={Archive} title="No locked payroll exports yet">
+        <p>Locked batches will appear here after a supervisor exports a clean review range.</p>
+      </DataStatePanel>
+    )
+  }
+
+  return (
+    <ol className="payroll-export-history-list">
+      {batches.map((batch) => (
+        <li className="payroll-export-history-item" key={batch.id}>
+          <div>
+            <strong>{batch.fromDate} to {batch.throughDate}</strong>
+            <span>{batch.rowCount} rows · {payrollHours(batch.paidMinutes)} paid hours · locked by {batch.createdByName ?? 'Unknown'}</span>
+            <small>{formatDate(batch.createdAt)} · {formatTime(batch.createdAt)} · {shortDigest(batch.digest)}</small>
+          </div>
+          <p>{batch.note}</p>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 function SupervisorTimeReview({ defaultDate }: { defaultDate: string }) {
   const queryClient = useQueryClient()
   const [fromDate, setFromDate] = useState(() => addDaysKey(defaultDate, -6))
   const [throughDate, setThroughDate] = useState(defaultDate)
+  const [exportNote, setExportNote] = useState('')
+  const [lastExport, setLastExport] = useState<PayrollExportBatch | null>(null)
   const reviewQuery = useQuery({
     queryKey: ['timekeeping-review', fromDate, throughDate],
     queryFn: () => getTimekeepingReview({ fromDate, throughDate }),
+  })
+  const exportHistoryQuery = useQuery({
+    queryKey: ['payroll-export-history'],
+    queryFn: () => getPayrollExportHistory(12),
   })
   const correctionMutation = useMutation({
     mutationFn: (input: { correctionId: string; approved: boolean; note: string | null }) => reviewTimeEventCorrection(input),
@@ -495,6 +544,17 @@ function SupervisorTimeReview({ defaultDate }: { defaultDate: string }) {
       ])
     },
   })
+  const exportMutation = useMutation({
+    mutationFn: (note: string) => createPayrollExportBatch({ fromDate, throughDate, note }),
+    onSuccess: async (batch) => {
+      setLastExport(batch)
+      setExportNote('')
+      await queryClient.invalidateQueries({ queryKey: ['payroll-export-history'] })
+    },
+  })
+  const review = reviewQuery.data
+  const lockBlockedReason = payrollLockBlocker(review)
+  const canLockExport = Boolean(review && lockBlockedReason === '' && exportNote.trim().length > 0 && !exportMutation.isPending)
 
   return (
     <section className="time-review-workbench" aria-labelledby="supervisor-time-title">
@@ -514,25 +574,68 @@ function SupervisorTimeReview({ defaultDate }: { defaultDate: string }) {
         <DataStatePanel icon={FileClock} title="Loading payroll review"><p>Calculating paid time, breaks, corrections, and exception flags.</p></DataStatePanel>
       ) : reviewQuery.isError ? (
         <DataStatePanel icon={ShieldAlert} title="Payroll review unavailable" tone="error"><p>{reviewQuery.error.message}</p></DataStatePanel>
-      ) : (
+      ) : review ? (
         <>
           <section className="time-review-metrics" aria-label="Payroll review totals">
-            <article><span>Total rows</span><strong>{reviewQuery.data.summary.rowCount}</strong><small>Time groups in range</small></article>
-            <article><span>Ready</span><strong>{reviewQuery.data.summary.readyCount}</strong><small>Clean payroll rows</small></article>
-            <article className={reviewQuery.data.summary.exceptionCount ? 'import-metric--attention' : ''}><span>Needs review</span><strong>{reviewQuery.data.summary.exceptionCount}</strong><small>Exceptions or missing punches</small></article>
-            <article><span>Paid hours</span><strong>{payrollHours(reviewQuery.data.summary.paidMinutes)}</strong><small>Export preview total</small></article>
+            <article><span>Total rows</span><strong>{review.summary.rowCount}</strong><small>Time groups in range</small></article>
+            <article><span>Ready</span><strong>{review.summary.readyCount}</strong><small>Clean payroll rows</small></article>
+            <article className={review.summary.exceptionCount ? 'import-metric--attention' : ''}><span>Needs review</span><strong>{review.summary.exceptionCount}</strong><small>Exceptions or missing punches</small></article>
+            <article><span>Paid hours</span><strong>{payrollHours(review.summary.paidMinutes)}</strong><small>Export preview total</small></article>
           </section>
 
           {correctionMutation.isError ? <div className="inline-alert" role="alert">{correctionMutation.error.message}</div> : null}
 
           <div className="time-review-actions">
-            <p><FileWarning aria-hidden="true" size={18} /> CSV export is a preview. Payroll locking and stored export batches come after review rules are approved.</p>
-            <button className="secondary-button" disabled={reviewQuery.data.rows.length === 0} onClick={() => exportPayrollCsv(reviewQuery.data)} type="button">
+            <p><FileWarning aria-hidden="true" size={18} /> CSV is a preview for checking totals. Locking creates the official payroll audit batch.</p>
+            <button className="secondary-button" disabled={review.rows.length === 0} onClick={() => exportPayrollCsv(review)} type="button">
               <Download aria-hidden="true" size={18} /> Export CSV preview
             </button>
           </div>
 
-          <PayrollReviewTable rows={reviewQuery.data.rows} />
+          <section className="payroll-lock-panel" aria-labelledby="payroll-lock-title">
+            <div className="payroll-lock-panel__copy">
+              <p className="eyebrow">Controlled export</p>
+              <h3 id="payroll-lock-title">Lock clean payroll for this range</h3>
+              <p>
+                The database rechecks the review before saving anything. If a correction is pending,
+                a clock-out is missing, or any row is not ready, the export is blocked.
+              </p>
+              {lastExport ? (
+                <div className="payroll-lock-success" role="status">
+                  <CheckCircle2 aria-hidden="true" size={18} />
+                  <span>
+                    {lastExport.duplicate ? 'This exact payroll batch was already locked.' : 'Payroll export locked.'}
+                    {' '}Batch {shortDigest(lastExport.digest)} · {lastExport.rowCount} rows · {payrollHours(lastExport.paidMinutes)} paid hours.
+                  </span>
+                </div>
+              ) : null}
+              {exportMutation.isError ? <div className="inline-alert" role="alert">{exportMutation.error.message}</div> : null}
+            </div>
+            <div className="payroll-lock-controls">
+              <label>
+                <span>Audit note</span>
+                <textarea
+                  maxLength={240}
+                  onChange={(event) => setExportNote(event.target.value)}
+                  placeholder="Example: Reviewed and ready for payroll."
+                  rows={3}
+                  value={exportNote}
+                />
+              </label>
+              <button
+                className="primary-action"
+                disabled={!canLockExport}
+                onClick={() => exportMutation.mutate(exportNote.trim())}
+                type="button"
+              >
+                <LockKeyhole aria-hidden="true" size={18} />
+                {exportMutation.isPending ? 'Locking payroll…' : 'Lock payroll export'}
+              </button>
+              <small>{lockBlockedReason || (exportNote.trim() ? 'Ready to lock. The server will verify it one more time.' : 'Add a short note before locking payroll.')}</small>
+            </div>
+          </section>
+
+          <PayrollReviewTable rows={review.rows} />
 
           <section className="time-panel time-corrections-panel" aria-labelledby="pending-corrections-title">
             <div className="section-heading">
@@ -542,13 +645,29 @@ function SupervisorTimeReview({ defaultDate }: { defaultDate: string }) {
               </div>
             </div>
             <PendingCorrections
-              corrections={reviewQuery.data.pendingCorrections}
+              corrections={review.pendingCorrections}
               onDecision={(correctionId, approved, note) => correctionMutation.mutate({ correctionId, approved, note })}
               pending={correctionMutation.isPending}
             />
           </section>
+
+          <section className="time-panel payroll-history-panel" aria-labelledby="payroll-history-title">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Payroll history</p>
+                <h2 id="payroll-history-title">Recent locked export batches</h2>
+              </div>
+            </div>
+            {exportHistoryQuery.isPending ? (
+              <DataStatePanel icon={Archive} title="Loading locked exports"><p>Retrieving recent payroll batches from the audit history.</p></DataStatePanel>
+            ) : exportHistoryQuery.isError ? (
+              <DataStatePanel icon={ShieldAlert} title="Payroll history unavailable" tone="error"><p>{exportHistoryQuery.error.message}</p></DataStatePanel>
+            ) : (
+              <PayrollExportHistoryList batches={exportHistoryQuery.data} />
+            )}
+          </section>
         </>
-      )}
+      ) : null}
     </section>
   )
 }

@@ -46,6 +46,15 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Payroll exports identify their source entries and preserve a checksum.
 - Every completed change is reviewed, checked, and committed to Git.
 
+## Payroll export control
+
+- Supervisors preview CSV payroll rows first; the preview does not create the official record.
+- A locked payroll export is created only through the database, after the server recalculates the review range.
+- Payroll locking is blocked when any row has a missing punch, invalid punch order, unresolved correction, zero paid minutes, or other exception.
+- Locked batches are stored in private tables with row snapshots, totals, the exporting employee, an audit note, and a SHA-256 digest of the clean review rows.
+- Locked batches and their rows are append-only. Duplicate locks for the exact same reviewed range and digest return the existing batch instead of creating clutter.
+- Browser users cannot insert payroll export records directly; they can only request the controlled export function, which requires Supervisor or Admin role plus MFA.
+
 ## Request and notification lifecycle
 
 - Guard requests are created through database functions that derive the employee from the authenticated account.
