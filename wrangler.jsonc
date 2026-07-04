@@ -15,6 +15,7 @@
     }
   ],
   "vars": {
+    "SYGSHIFT_PUBLIC_APP_URL": "https://sygshift.sygilant.workers.dev",
     "SYGSHIFT_EMAIL_FROM": "scheduling@sygilant.us",
     "SYGSHIFT_EMAIL_FROM_NAME": "SygShift"
   },

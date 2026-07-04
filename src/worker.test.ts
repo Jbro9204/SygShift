@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import worker, { validateSuppliedTemporaryPassword } from '../worker'
+import worker, { brandedEmailHtml, validateSuppliedTemporaryPassword } from '../worker'
 
 function environment(response: Response = new Response('asset'), values: Record<string, string> = {}) {
   return { ASSETS: { fetch: vi.fn().mockResolvedValue(response) }, ...values }
@@ -159,5 +159,17 @@ describe('Cloudflare Worker boundary', () => {
     expect(validateSuppliedTemporaryPassword('short', 'jbrown')).toContain('Use at least 12 characters.')
     expect(validateSuppliedTemporaryPassword('jbrownStrong!234', 'jbrown')).toContain('Do not include the username.')
     expect(validateSuppliedTemporaryPassword('Strong!Pass234', 'jbrown')).toEqual([])
+  })
+
+  it('wraps notification email content in the SygShift brand shell', () => {
+    const html = brandedEmailHtml({
+      subject: 'Open shift available',
+      text: 'A shift is available.\nPlease review it.',
+    }, 'https://shift.sygilant.us/')
+
+    expect(html).toContain('https://shift.sygilant.us/brand/sygshift-logo.png')
+    expect(html).toContain('SygShift notification')
+    expect(html).toContain('Open SygShift')
+    expect(html).toContain('A shift is available.<br>Please review it.')
   })
 })

@@ -15,6 +15,7 @@ interface EmailBinding {
 interface Environment {
   ASSETS: AssetBinding
   EMAIL?: EmailBinding
+  SYGSHIFT_PUBLIC_APP_URL?: string
   SYGSHIFT_EMAIL_FROM?: string
   SYGSHIFT_EMAIL_FROM_NAME?: string
   SUPABASE_URL?: string
@@ -491,6 +492,91 @@ function chunkRecipients(recipients: string[], size = 50): string[][] {
   return chunks
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function textToHtml(value: string): string {
+  return value
+    .split(/\n{2,}/)
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replaceAll('\n', '<br>')}</p>`)
+    .join('')
+}
+
+export function brandedEmailHtml(message: NotificationJob['message'], appUrl = 'https://sygshift.sygilant.workers.dev'): string {
+  const normalizedAppUrl = appUrl.replace(/\/+$/, '')
+  const body = message.html?.trim() || textToHtml(message.text)
+  const title = escapeHtml(message.subject)
+  const logoUrl = `${normalizedAppUrl}/brand/sygshift-logo.png`
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${title}</title>
+  </head>
+  <body style="margin:0; padding:0; background:#f3f0ea; color:#1b1814; font-family:Arial, Helvetica, sans-serif;">
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
+      ${escapeHtml(message.text).slice(0, 180)}
+    </div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse; background:#f3f0ea;">
+      <tr>
+        <td align="center" style="padding:28px 16px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%; max-width:640px; border-collapse:collapse;">
+            <tr>
+              <td style="padding:18px 22px; background:#11100e; border-radius:18px 18px 0 0;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+                  <tr>
+                    <td style="vertical-align:middle;">
+                      <img src="${logoUrl}" width="190" alt="SygShift" style="display:block; width:190px; max-width:70%; height:auto; border:0;">
+                      <div style="margin-top:10px; color:#d6b15f; font-size:11px; line-height:1.4; letter-spacing:1.8px; text-transform:uppercase; font-weight:700;">
+                        Smart schedules. Stronger coverage.
+                      </div>
+                    </td>
+                    <td align="right" style="vertical-align:middle; color:#f5ead5; font-size:13px; line-height:1.4; font-weight:700;">
+                      Sygilant Operations
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 28px 8px; background:#ffffff; border-left:1px solid #e4ddcf; border-right:1px solid #e4ddcf;">
+                <div style="color:#7b5a1e; font-size:12px; line-height:1.4; letter-spacing:1.5px; text-transform:uppercase; font-weight:800;">
+                  SygShift notification
+                </div>
+                <h1 style="margin:8px 0 18px; color:#181511; font-size:26px; line-height:1.18; font-weight:800; letter-spacing:-0.02em;">
+                  ${title}
+                </h1>
+                <div style="color:#29241d; font-size:16px; line-height:1.62;">
+                  ${body}
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:20px 28px 28px; background:#ffffff; border-left:1px solid #e4ddcf; border-right:1px solid #e4ddcf; border-bottom:1px solid #e4ddcf; border-radius:0 0 18px 18px;">
+                <a href="${normalizedAppUrl}" style="display:inline-block; padding:12px 18px; color:#11100e; background:#d6b15f; border-radius:10px; font-size:15px; line-height:1; font-weight:800; text-decoration:none;">
+                  Open SygShift
+                </a>
+                <p style="margin:18px 0 0; color:#6d665c; font-size:13px; line-height:1.5;">
+                  This operational message was sent by SygShift for Sygilant scheduling and workforce coordination.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+}
+
 async function handleNotificationProcessApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
 
@@ -531,7 +617,7 @@ async function handleNotificationProcessApi(request: Request, environment: Envir
       for (const to of chunkRecipients(recipients)) {
         await environment.EMAIL.send({
           from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
-          html: job.message.html,
+          html: brandedEmailHtml(job.message, environment.SYGSHIFT_PUBLIC_APP_URL),
           subject: job.message.subject,
           text: job.message.text,
           to,

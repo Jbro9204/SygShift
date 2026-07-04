@@ -6,7 +6,7 @@
 - Company domain: sygilant.us
 - Notification sender: SygShift <scheduling@sygilant.us>
 - GitHub repo: https://github.com/Jbro9204/SygShift
-- Latest verified Cloudflare Worker version: `b989fd61-bb1a-444f-8a72-f2e31fe0ad7a`
+- Latest verified Cloudflare Worker version: `5edaaebe-aa06-42e0-a65e-6e41192ab7fc`
 - Latest pushed commit: see Git history for the current rollout-status revision.
 
 ## Verification completed
@@ -87,7 +87,7 @@ The Worker now has an admin/MFA-protected processor endpoint:
 
 `POST /api/v1/admin/notifications/process`
 
-Cloudflare Email Sending is enabled for `sygilant.us`. The Worker is configured with the `EMAIL` binding and branded sender variables. Send only controlled internal tests before enabling broad employee announcements.
+Cloudflare Email Sending is enabled for `sygilant.us`. The Worker is configured with the `EMAIL` binding, branded sender variables, and a SygShift HTML email shell that includes the hosted logo, readable body area, app button, and plain-text fallback. Send only controlled internal tests before enabling broad employee announcements.
 
 ## Remaining account-owner actions
 
