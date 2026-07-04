@@ -83,10 +83,24 @@ These items cannot be fully completed from code alone:
 
 1. Rotate credentials that were pasted into chat or copied through any non-secure channel.
 2. Confirm hosted Supabase Auth leaked-password protection in the Supabase Dashboard.
-3. Confirm production email sender/domain setup for announcements and overtime/open-shift notifications.
+3. Configure Cloudflare Email Sending:
+   - verify the sender domain,
+   - add the Worker binding named `EMAIL`,
+   - set `SYGSHIFT_EMAIL_FROM`,
+   - optionally set `SYGSHIFT_EMAIL_FROM_NAME`.
 4. Run a small pilot with one admin, one supervisor, and a few guards.
 5. Confirm payroll export format with the person responsible for payroll.
 6. Have supervisors resolve the review-needed Bible schedule shifts.
+
+## Notification delivery status
+
+Supabase now has service-only notification claiming and delivery-result functions.
+
+The Worker now has an admin/MFA-protected processor endpoint:
+
+`POST /api/v1/admin/notifications/process`
+
+The endpoint is deployed, but Cloudflare currently reports only the `ASSETS` binding on the Worker. Actual email sending will stay disabled until the Cloudflare Email Sending `EMAIL` binding and sender address are configured.
 
 ## Practical next operating step
 

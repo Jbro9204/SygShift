@@ -32,6 +32,19 @@ Set these as browser-safe build variables:
 
 The service-role key is server-only. It is used by the Worker for admin account provisioning and must never be available to client JavaScript.
 
+## 2a. Configure announcement email delivery
+
+SygShift queues call-off, open-shift, overtime, and event notifications in Supabase. The Worker includes an admin/MFA-protected processor at `/api/v1/admin/notifications/process`, but actual sending requires Cloudflare Email Sending to be configured first.
+
+Required account setup:
+
+- Onboard and verify the sending domain in Cloudflare Email Sending.
+- Add a Worker Email Sending binding named `EMAIL`.
+- Set Worker variable `SYGSHIFT_EMAIL_FROM` to a sender address on the verified domain.
+- Optional: set `SYGSHIFT_EMAIL_FROM_NAME`, for example `SygShift`.
+
+Until the `EMAIL` binding exists, the processor intentionally returns `email_not_configured` and does not claim notification work.
+
 ## 3. Apply and verify database migrations
 
 Run pending migrations against the production Supabase project, then verify:

@@ -2,8 +2,21 @@ interface AssetBinding {
   fetch(request: Request): Promise<Response>
 }
 
+interface EmailBinding {
+  send(message: {
+    to: string | string[]
+    from: { email: string, name?: string }
+    subject: string
+    html?: string
+    text: string
+  }): Promise<unknown>
+}
+
 interface Environment {
   ASSETS: AssetBinding
+  EMAIL?: EmailBinding
+  SYGSHIFT_EMAIL_FROM?: string
+  SYGSHIFT_EMAIL_FROM_NAME?: string
   SUPABASE_URL?: string
   SUPABASE_PUBLISHABLE_KEY?: string
   SUPABASE_SERVICE_ROLE_KEY?: string
@@ -33,6 +46,16 @@ interface AuthTarget {
 interface AuthUser {
   id: string
   email?: string
+}
+
+interface NotificationJob {
+  id: string
+  recipients: string[]
+  message: {
+    subject: string
+    text: string
+    html?: string
+  }
 }
 
 const maxJsonBodyBytes = 4096
@@ -460,6 +483,89 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
   })
 }
 
+function chunkRecipients(recipients: string[], size = 50): string[][] {
+  const chunks: string[][] = []
+  for (let index = 0; index < recipients.length; index += size) {
+    chunks.push(recipients.slice(index, index + size))
+  }
+  return chunks
+}
+
+async function handleNotificationProcessApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+
+  let admin: Awaited<ReturnType<typeof requireAdminMfa>>
+  try {
+    admin = await requireAdminMfa(request, environment)
+  } catch (error) {
+    if (error instanceof Response) {
+      const payload = await error.json().catch(() => ({ error: 'auth_failed' })) as { error?: string }
+      return errorJson(payload.error ?? 'auth_failed', requestId, error.status)
+    }
+    throw error
+  }
+
+  if (!environment.EMAIL) {
+    return errorJson('email_not_configured', requestId, 503, 'Cloudflare Email Sending is not configured for this Worker.')
+  }
+
+  const fromEmail = environment.SYGSHIFT_EMAIL_FROM?.trim()
+  if (!fromEmail) {
+    return errorJson('email_sender_not_configured', requestId, 503, 'The email sender address is not configured.')
+  }
+
+  const jobs = await callRpc<NotificationJob[]>(
+    { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+    'service_claim_notification_batch',
+    { target_limit: 10 },
+    admin.config.serviceRoleKey,
+  )
+  const delivered: string[] = []
+  const failed: Array<{ id: string, error: string }> = []
+
+  for (const job of jobs) {
+    try {
+      const recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
+      if (recipients.length === 0) throw new Error('No deliverable recipients were found.')
+
+      for (const to of chunkRecipients(recipients)) {
+        await environment.EMAIL.send({
+          from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
+          html: job.message.html,
+          subject: job.message.subject,
+          text: job.message.text,
+          to,
+        })
+      }
+
+      await callRpc<unknown>(
+        { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+        'service_mark_notification_result',
+        { delivered: true, delivery_error: null, target_notification_id: job.id },
+        admin.config.serviceRoleKey,
+      )
+      delivered.push(job.id)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Email delivery failed.'
+      await callRpc<unknown>(
+        { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+        'service_mark_notification_result',
+        { delivered: false, delivery_error: message, target_notification_id: job.id },
+        admin.config.serviceRoleKey,
+      )
+      failed.push({ id: job.id, error: message })
+    }
+  }
+
+  return json({
+    delivered,
+    failed,
+    processed: delivered.length + failed.length,
+    requestId,
+    requestedBy: admin.context.username,
+  })
+}
+
 function readiness(environment: Environment, requestId: string): Response {
   const config = configuredSupabase(environment)
   const checks = {
@@ -544,6 +650,12 @@ export default {
         response = error instanceof ApiError
           ? errorJson(error.code, requestId, error.status, error.message)
           : errorJson('admin_user_request_failed', requestId, 500, 'The admin user request failed.')
+      }
+    } else if (url.pathname === '/api/v1/admin/notifications/process') {
+      try {
+        response = await handleNotificationProcessApi(request, environment, requestId)
+      } catch {
+        response = errorJson('notification_process_failed', requestId, 500, 'The notification delivery request failed.')
       }
     } else if (url.pathname.startsWith('/api/')) {
       response = json({ error: 'not_found', requestId }, 404)

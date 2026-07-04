@@ -118,6 +118,43 @@ describe('Cloudflare Worker boundary', () => {
     expect(payload.requestId).toBe(response.headers.get('x-request-id'))
   })
 
+  it('requires an authenticated admin session before notification delivery', async () => {
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/admin/notifications/process', { method: 'POST' }),
+      environment(new Response('asset'), configuredEnvironment),
+    )
+    const payload = await response.json() as { error: string; requestId: string }
+
+    expect(response.status).toBe(401)
+    expect(payload.error).toBe('auth_required')
+    expect(payload.requestId).toBe(response.headers.get('x-request-id'))
+  })
+
+  it('does not claim notification work until email sending is configured', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      employee_id: '10000000-0000-4000-8000-000000000001',
+      username: 'admin',
+      display_name: 'Admin User',
+      role: 'admin',
+      has_mfa: true,
+    }), { headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/admin/notifications/process', {
+        headers: { authorization: 'Bearer user-token' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), configuredEnvironment),
+    )
+    const payload = await response.json() as { error: string }
+
+    expect(response.status).toBe(503)
+    expect(payload.error).toBe('email_not_configured')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+
   it('validates admin-supplied temporary passwords before sending them to authentication', () => {
     expect(validateSuppliedTemporaryPassword('short', 'jbrown')).toContain('Use at least 12 characters.')
     expect(validateSuppliedTemporaryPassword('jbrownStrong!234', 'jbrown')).toContain('Do not include the username.')
