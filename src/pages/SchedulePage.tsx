@@ -7,21 +7,21 @@ import { ModalDialog } from '../components/ModalDialog'
 import { getCurrentAppRole } from '../data/session'
 import {
   assignmentName,
-  bibleScheduleRows,
+  importedScheduleRows,
   employeeScheduleRows,
   createSupervisorOpenShift,
-  getBibleSchedulePreview,
+  getImportedSchedulePreview,
   getScheduleBuilderOptions,
   getWeeklySchedule,
   resolveScheduleReviewShift,
   scheduleRows,
   shiftOperationalDate,
   shiftTimeRange,
-  type BibleScheduleShift,
+  type ImportedScheduleShift,
   type ScheduleBuilderEmployee,
   type ScheduleShift,
 } from '../data/schedule'
-import { parseBibleSourceNote, sourceReferenceLabel } from '../data/sourceNotes'
+import { parseImportedScheduleNote, sourceReferenceLabel } from '../data/sourceNotes'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { operationalToday } from '../lib/time'
 
@@ -81,7 +81,7 @@ function ShiftCard({
   const title = shift.post?.name ?? shift.event?.name ?? 'Shift'
   const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? null
   const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
-  const source = parseBibleSourceNote(shift.notes)
+  const source = parseImportedScheduleNote(shift.notes)
   const sourceReference = sourceReferenceLabel(source)
   const showSourceReview = source.reviewNeeded || (shift.is_open && source.assignee)
 
@@ -112,8 +112,8 @@ function ShiftCard({
         )}
       </div>
       {showSourceReview ? (
-        <div className="shift-card__source-note" aria-label="Bible source assignment review">
-          {source.assignee ? <span><strong>Bible assignee:</strong> {source.assignee}</span> : null}
+        <div className="shift-card__source-note" aria-label="Imported schedule assignment review">
+          {source.assignee ? <span><strong>Imported assignee:</strong> {source.assignee}</span> : null}
           {source.context ? <span><strong>Source row:</strong> {source.context}</span> : null}
           {source.qualification ? <span><strong>Qualification:</strong> {source.qualification}</span> : null}
           {sourceReference ? <small>{sourceReference}</small> : null}
@@ -139,7 +139,7 @@ function ReviewResolutionDialog({
   mutation: ReturnType<typeof useMutation<unknown, Error, { shiftId: string, employeeId: string, note: string | null }>>
   onClose: () => void
 }) {
-  const source = parseBibleSourceNote(shift.notes)
+  const source = parseImportedScheduleNote(shift.notes)
   const eligibleEmployees = employees.filter((employee) => !shift.requires_armed || employee.has_armed_guard_credential)
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -156,12 +156,12 @@ function ReviewResolutionDialog({
     <ModalDialog
       description="Resolving creates a new schedule revision. The database will reject overlaps, missing armed credentials, or full shifts."
       onClose={onClose}
-      title="Resolve Bible schedule assignment"
+      title="Resolve imported schedule assignment"
     >
       <div className="confirmation-summary">
         <strong>{shift.post?.name ?? shift.event?.name ?? 'Shift'}</strong>
         <span>{shiftTimeRange(shift)}</span>
-        {source.assignee ? <span>Bible assignee: {source.assignee}</span> : null}
+        {source.assignee ? <span>Imported assignee: {source.assignee}</span> : null}
         {source.context ? <span>Source row: {source.context}</span> : null}
       </div>
       <form className="request-form" onSubmit={submit}>
@@ -207,7 +207,7 @@ function sourceQualificationLabel(value: string | null): string {
   return 'Needs review'
 }
 
-function BibleShiftCard({ shift }: { shift: BibleScheduleShift }) {
+function ImportedShiftCard({ shift }: { shift: ImportedScheduleShift }) {
   const assignee = shift.openCandidate
     ? 'Open shift'
     : shift.assigneeLabel && !['na', 'n/a', 'none'].includes(shift.assigneeLabel.trim().toLocaleLowerCase())
@@ -228,7 +228,7 @@ function BibleShiftCard({ shift }: { shift: BibleScheduleShift }) {
         <span className={shift.qualificationCandidate === 'unknown' ? 'shift-tag shift-tag--review' : 'shift-tag'}>
           {sourceQualificationLabel(shift.qualificationCandidate)}
         </span>
-        <span className="shift-tag">Bible source</span>
+        <span className="shift-tag">Imported schedule</span>
       </div>
       <small className="source-cell-reference">
         Cell {shift.sourceTimeAddress ?? shift.candidateKey}
@@ -258,9 +258,9 @@ export function SchedulePage() {
     queryFn: () => getWeeklySchedule(weekKey),
     enabled: isSupabaseConfigured,
   })
-  const biblePreviewQuery = useQuery({
-    queryKey: ['bible-schedule-preview', weekKey],
-    queryFn: () => getBibleSchedulePreview(weekKey),
+  const importedPreviewQuery = useQuery({
+    queryKey: ['imported-schedule-preview', weekKey],
+    queryFn: () => getImportedSchedulePreview(weekKey),
     enabled: isSupabaseConfigured && !scheduleQuery.isPending && !scheduleQuery.data,
   })
   const roleQuery = useQuery({
@@ -336,9 +336,9 @@ export function SchedulePage() {
   })
   const rows = useMemo(() => scheduleQuery.data ? scheduleRows(scheduleQuery.data) : [], [scheduleQuery.data])
   const employeeRows = useMemo(() => scheduleQuery.data ? employeeScheduleRows(scheduleQuery.data) : [], [scheduleQuery.data])
-  const bibleRows = useMemo(
-    () => biblePreviewQuery.data ? bibleScheduleRows(biblePreviewQuery.data) : [],
-    [biblePreviewQuery.data],
+  const importedRows = useMemo(
+    () => importedPreviewQuery.data ? importedScheduleRows(importedPreviewQuery.data) : [],
+    [importedPreviewQuery.data],
   )
   const visibleRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
@@ -347,7 +347,7 @@ export function SchedulePage() {
       .map((row) => ({
         ...row,
         shifts: row.shifts.filter((shift) => {
-          const source = parseBibleSourceNote(shift.notes)
+          const source = parseImportedScheduleNote(shift.notes)
           if (reviewOnly && !source.reviewNeeded) return false
           if (!term) return true
           const searchable = [
@@ -376,7 +376,7 @@ export function SchedulePage() {
       .map((row) => ({
         ...row,
         shifts: row.shifts.filter((shift) => {
-          const source = parseBibleSourceNote(shift.notes)
+          const source = parseImportedScheduleNote(shift.notes)
           if (reviewOnly && !source.reviewNeeded) return false
           if (!term) return true
           const searchable = [
@@ -404,32 +404,32 @@ export function SchedulePage() {
       assigned,
       employees: employeeRows.length,
       open,
-      review: shifts.filter((shift) => parseBibleSourceNote(shift.notes).reviewNeeded).length,
+      review: shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length,
       shifts: shifts.length,
       sites: rows.length,
     }
   }, [employeeRows.length, rows])
   const reviewNeededCount = useMemo(
-    () => rows.reduce((total, row) => total + row.shifts.filter((shift) => parseBibleSourceNote(shift.notes).reviewNeeded).length, 0),
+    () => rows.reduce((total, row) => total + row.shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length, 0),
     [rows],
   )
   const reviewItems = useMemo(() => rows.flatMap((row) =>
     row.shifts
-      .filter((shift) => parseBibleSourceNote(shift.notes).reviewNeeded)
+      .filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded)
       .map((shift) => ({
         row,
         shift,
-        source: parseBibleSourceNote(shift.notes),
-        sourceReference: sourceReferenceLabel(parseBibleSourceNote(shift.notes)),
+        source: parseImportedScheduleNote(shift.notes),
+        sourceReference: sourceReferenceLabel(parseImportedScheduleNote(shift.notes)),
       })),
   ).sort((left, right) => left.shift.starts_at.localeCompare(right.shift.starts_at)), [rows])
   const armedReviewCount = useMemo(
     () => reviewItems.filter((item) => item.shift.requires_armed).length,
     [reviewItems],
   )
-  const visibleBibleRows = useMemo(() => {
+  const visibleImportedRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
-    return bibleRows
+    return importedRows
       .filter((row) => siteFilter === 'all' || row.id === siteFilter)
       .map((row) => ({
         ...row,
@@ -450,7 +450,7 @@ export function SchedulePage() {
         }),
       }))
       .filter((row) => row.shifts.length > 0)
-  }, [bibleRows, search, siteFilter])
+  }, [importedRows, search, siteFilter])
 
   function updateOpenShiftForm(update: Partial<OpenShiftFormState>) {
     setBuilderMessage(null)
@@ -723,7 +723,7 @@ export function SchedulePage() {
               <p className="eyebrow">Supervisor cleanup</p>
               <h2 id="schedule-review-workbench-title">Review needed workbench</h2>
               <p>
-                These shifts came from the Bible but were not safe to auto-assign. Resolve each one
+                These shifts came from the original imported schedule but were not safe to auto-assign. Resolve each one
                 after confirming the correct employee.
               </p>
             </div>
@@ -753,7 +753,7 @@ export function SchedulePage() {
                   </div>
                   <h3>{item.row.name}</h3>
                   <p>
-                    {item.source.assignee ? `Bible assignee: ${item.source.assignee}` : 'Bible assignee not named'}
+                    {item.source.assignee ? `Imported assignee: ${item.source.assignee}` : 'Imported assignee not named'}
                     {item.source.context ? ` · Source row: ${item.source.context}` : ''}
                   </p>
                   {item.sourceReference ? <small>{item.sourceReference}</small> : null}
@@ -786,7 +786,7 @@ export function SchedulePage() {
           <article><span>Published shifts</span><strong>{scheduleSummary.shifts}</strong><small>Revision {scheduleQuery.data.revision}</small></article>
           <article><span>Assigned slots</span><strong>{scheduleSummary.assigned}</strong><small>{scheduleSummary.employees} employees on schedule</small></article>
           <article className={scheduleSummary.open ? 'import-metric--attention' : ''}><span>Open slots</span><strong>{scheduleSummary.open}</strong><small>Visible in openings/request workflows</small></article>
-          <article className={scheduleSummary.review ? 'import-metric--attention' : ''}><span>Review needed</span><strong>{scheduleSummary.review}</strong><small>Bible items needing supervisor cleanup</small></article>
+          <article className={scheduleSummary.review ? 'import-metric--attention' : ''}><span>Review needed</span><strong>{scheduleSummary.review}</strong><small>Imported items needing supervisor cleanup</small></article>
         </section>
       ) : null}
 
@@ -870,7 +870,7 @@ export function SchedulePage() {
               value={siteFilter}
             >
               <option value="all">All sites</option>
-              {(rows.length > 0 ? rows : bibleRows).map((row) => <option value={row.id} key={row.id}>{row.name}</option>)}
+              {(rows.length > 0 ? rows : importedRows).map((row) => <option value={row.id} key={row.id}>{row.name}</option>)}
             </select>
           </label>
           )}
@@ -887,20 +887,20 @@ export function SchedulePage() {
         </div>
       </section>
 
-      {!scheduleQuery.data && biblePreviewQuery.data ? (
-        <section className="source-schedule-banner" aria-label="Bible source schedule status">
+      {!scheduleQuery.data && importedPreviewQuery.data ? (
+        <section className="source-schedule-banner" aria-label="Imported schedule status">
           <div>
             <p className="eyebrow">Imported workbook preview</p>
-            <strong>{biblePreviewQuery.data.sourceSheetName ?? 'Source workbook week'}</strong>
+            <strong>{importedPreviewQuery.data.sourceSheetName ?? 'Source workbook week'}</strong>
             <span>
               No published operational revision exists for this selected week yet. This preview shows
               the source workbook records only; use the published weeks or create a reviewed revision before payroll reliance.
             </span>
           </div>
           <div className="source-schedule-banner__counts">
-            <span>{biblePreviewQuery.data.shifts.length} source shifts</span>
-            <span>{biblePreviewQuery.data.blockingIssueCount} blockers</span>
-            <span>{biblePreviewQuery.data.warningIssueCount} warnings</span>
+            <span>{importedPreviewQuery.data.shifts.length} source shifts</span>
+            <span>{importedPreviewQuery.data.blockingIssueCount} blockers</span>
+            <span>{importedPreviewQuery.data.warningIssueCount} warnings</span>
           </div>
         </section>
       ) : null}
@@ -957,7 +957,7 @@ export function SchedulePage() {
                 </DataStatePanel>
               </div>
             </div>
-          ) : !scheduleQuery.data && biblePreviewQuery.isPending ? (
+          ) : !scheduleQuery.data && importedPreviewQuery.isPending ? (
             <div className="schedule-state" role="row">
               <div role="cell">
                 <DataStatePanel icon={CalendarDays} title="Checking imported schedule data">
@@ -965,8 +965,8 @@ export function SchedulePage() {
                 </DataStatePanel>
               </div>
             </div>
-          ) : !scheduleQuery.data && biblePreviewQuery.data && visibleBibleRows.length > 0 ? (
-            visibleBibleRows.map((row) => (
+          ) : !scheduleQuery.data && importedPreviewQuery.data && visibleImportedRows.length > 0 ? (
+            visibleImportedRows.map((row) => (
               <div className="schedule-row schedule-row--coverage schedule-row--source" role="row" key={row.id}>
                 <div className="schedule-location" role="rowheader">
                   <span>{sourceQualificationLabel(row.qualification)}</span>
@@ -977,7 +977,7 @@ export function SchedulePage() {
                   const shifts = row.shifts.filter((shift) => shift.localDate === dayKey)
                   return (
                     <div className="schedule-day-cell" role="cell" key={dayKey}>
-                      {shifts.map((shift) => <BibleShiftCard shift={shift} key={shift.id} />)}
+                      {shifts.map((shift) => <ImportedShiftCard shift={shift} key={shift.id} />)}
                       {shifts.length === 0 ? <span className="schedule-day-empty">—</span> : null}
                     </div>
                   )
@@ -989,7 +989,7 @@ export function SchedulePage() {
               <div role="cell">
                 <CalendarDays aria-hidden="true" size={34} />
                 <strong>No published schedule exists for this selected week.</strong>
-                <p>The Bible import currently covers June 28, 2026 through August 15, 2026. Move into that range or create a reviewed schedule revision for this week.</p>
+                <p>The imported schedule currently covers June 28, 2026 through August 15, 2026. Move into that range or create a reviewed schedule revision for this week.</p>
               </div>
             </div>
           ) : scheduleView === 'employee' && visibleEmployeeRows.length === 0 ? (

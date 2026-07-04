@@ -7,7 +7,7 @@ This plan is the safest way to prove SygShift with real people before a full com
 Confirm that supervisors and guards can use SygShift for the daily operating work without confusion:
 
 - read the schedule
-- resolve Bible schedule review items
+- resolve imported schedule review items
 - request time off
 - accept open shifts and events
 - clock into the correct shift, site, or event
@@ -34,7 +34,7 @@ Do not start with every employee. The first week is for finding friction before 
 
 Complete these checks:
 
-- The latest Bible schedule has been imported and promoted.
+- The latest source schedule has been imported and promoted.
 - All active pilot employees have logins.
 - Admin and supervisors have MFA enabled.
 - Guard roles are correct.

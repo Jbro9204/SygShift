@@ -39,7 +39,7 @@ export function PatrolPage() {
           <p className="eyebrow">Workforce</p>
           <h1>Patrol</h1>
           <p className="page-summary">
-            Patrol coverage pulled from the published Bible schedule, focused on current and upcoming
+            Patrol coverage pulled from the published operational schedule, focused on current and upcoming
             patrol-related shifts only.
           </p>
         </div>

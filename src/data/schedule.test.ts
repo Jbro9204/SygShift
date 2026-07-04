@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   assignmentName,
-  bibleScheduleRows,
+  importedScheduleRows,
   scheduleRows,
   shiftOperationalDate,
-  type BibleSchedulePreview,
+  type ImportedSchedulePreview,
   type ScheduleShift,
   type WeeklySchedule,
 } from './schedule'
@@ -83,8 +83,8 @@ describe('schedule presentation', () => {
     expect(assignmentName(siteShift.assignments[0])).toBe('Alex Rivera')
   })
 
-  it('groups Bible source shifts by workbook context label', () => {
-    const sourceSchedule: BibleSchedulePreview = {
+  it('groups imported source shifts by workbook context label', () => {
+    const sourceSchedule: ImportedSchedulePreview = {
       importRunId: '80000000-0000-4000-8000-000000000001',
       weekStartsOn: '2026-06-28',
       weekEndsOn: '2026-07-04',
@@ -111,7 +111,7 @@ describe('schedule presentation', () => {
       }],
     }
 
-    expect(bibleScheduleRows(sourceSchedule)).toEqual([{
+    expect(importedScheduleRows(sourceSchedule)).toEqual([{
       id: '4400-syracuse-apt',
       name: '4400 Syracuse Apt-Unarmed',
       qualification: 'unarmed',

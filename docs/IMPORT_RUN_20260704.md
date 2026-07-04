@@ -1,4 +1,4 @@
-# Bible Import Run - 2026-07-04
+# Source Schedule Import Run - 2026-07-04
 
 ## Source
 

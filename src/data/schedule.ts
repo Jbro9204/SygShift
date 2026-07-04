@@ -112,7 +112,7 @@ export type ScheduleBuilderEmployee = ScheduleBuilderOptions['employees'][number
 export type CreateOpenShiftResult = z.infer<typeof createOpenShiftResultSchema>
 export type ResolveReviewShiftResult = z.infer<typeof resolveReviewShiftResultSchema>
 
-const bibleScheduleShiftSchema = z.object({
+const importedScheduleShiftSchema = z.object({
   id: z.string().uuid(),
   candidateKey: z.string(),
   reviewStatus: z.string(),
@@ -130,7 +130,7 @@ const bibleScheduleShiftSchema = z.object({
   sourceAssignmentAddress: z.string().nullable(),
 })
 
-const bibleSchedulePreviewSchema = z.object({
+const importedSchedulePreviewSchema = z.object({
   importRunId: z.string().uuid(),
   weekStartsOn: z.string(),
   weekEndsOn: z.string().nullable(),
@@ -138,17 +138,17 @@ const bibleSchedulePreviewSchema = z.object({
   sourceSheetIndex: z.number().int().nullable(),
   blockingIssueCount: z.number().int().nonnegative(),
   warningIssueCount: z.number().int().nonnegative(),
-  shifts: z.array(bibleScheduleShiftSchema),
+  shifts: z.array(importedScheduleShiftSchema),
 })
 
-export type BibleSchedulePreview = z.infer<typeof bibleSchedulePreviewSchema>
-export type BibleScheduleShift = z.infer<typeof bibleScheduleShiftSchema>
+export type ImportedSchedulePreview = z.infer<typeof importedSchedulePreviewSchema>
+export type ImportedScheduleShift = z.infer<typeof importedScheduleShiftSchema>
 
-export interface BibleScheduleRow {
+export interface ImportedScheduleRow {
   id: string
   name: string
   qualification: string | null
-  shifts: BibleScheduleShift[]
+  shifts: ImportedScheduleShift[]
 }
 
 export interface CreateOpenShiftInput {
@@ -208,14 +208,14 @@ export async function getScheduleBuilderOptions(): Promise<ScheduleBuilderOption
   return builderOptionsSchema.parse(data)
 }
 
-export async function getBibleSchedulePreview(weekStartsOn: string): Promise<BibleSchedulePreview | null> {
-  const { data, error } = await getSupabaseClient().rpc('get_bible_schedule_preview', {
+export async function getImportedSchedulePreview(weekStartsOn: string): Promise<ImportedSchedulePreview | null> {
+  const { data, error } = await getSupabaseClient().rpc('get_imported_schedule_preview', {
     target_week_starts_on: weekStartsOn,
   })
 
-  if (error) throw new Error('The Bible source schedule could not be loaded.')
+  if (error) throw new Error('The imported source schedule could not be loaded.')
   if (!data) return null
-  return bibleSchedulePreviewSchema.parse(data)
+  return importedSchedulePreviewSchema.parse(data)
 }
 
 export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Promise<CreateOpenShiftResult> {
@@ -305,8 +305,8 @@ export function employeeScheduleRows(schedule: WeeklySchedule): EmployeeSchedule
     .sort((left, right) => left.name.localeCompare(right.name))
 }
 
-export function bibleScheduleRows(schedule: BibleSchedulePreview): BibleScheduleRow[] {
-  const rows = new Map<string, BibleScheduleRow>()
+export function importedScheduleRows(schedule: ImportedSchedulePreview): ImportedScheduleRow[] {
+  const rows = new Map<string, ImportedScheduleRow>()
 
   for (const shift of schedule.shifts) {
     const name = shift.contextLabel ?? 'Unlabeled source row'
@@ -331,6 +331,7 @@ export function bibleScheduleRows(schedule: BibleSchedulePreview): BibleSchedule
     }))
     .sort((left, right) => left.name.localeCompare(right.name))
 }
+
 
 export function shiftOperationalDate(shift: ScheduleShift): string {
   const parts = new Intl.DateTimeFormat('en-US', {

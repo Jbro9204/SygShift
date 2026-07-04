@@ -46,7 +46,7 @@ export function ReportsPage() {
           <section className="operations-metrics" aria-label="Operational report totals">
             <article><span>Published weeks</span><strong>{number(reportQuery.data.schedule.weeks)}</strong><small>{number(reportQuery.data.schedule.shifts)} shifts</small></article>
             <article><span>Assigned slots</span><strong>{number(reportQuery.data.schedule.assignedSlots)}</strong><small>{number(reportQuery.data.schedule.openShifts)} open shifts</small></article>
-            <article className={reportQuery.data.schedule.reviewNeeded ? 'import-metric--attention' : ''}><span>Review needed</span><strong>{number(reportQuery.data.schedule.reviewNeeded)}</strong><small>Bible cleanup queue</small></article>
+            <article className={reportQuery.data.schedule.reviewNeeded ? 'import-metric--attention' : ''}><span>Review needed</span><strong>{number(reportQuery.data.schedule.reviewNeeded)}</strong><small>Imported schedule cleanup</small></article>
             <article><span>Employees</span><strong>{number(reportQuery.data.people.total)}</strong><small>{number(reportQuery.data.people.active)} active</small></article>
           </section>
 
@@ -101,7 +101,7 @@ export function ReportsPage() {
 
           <section className="operations-panel" aria-labelledby="published-week-report-title">
             <p className="eyebrow">Master schedule</p>
-            <h2 id="published-week-report-title">Published Bible schedule weeks</h2>
+            <h2 id="published-week-report-title">Published schedule weeks</h2>
             <div className="report-table" role="table" aria-label="Published schedule weeks">
               <div role="row">
                 <span role="columnheader">Week</span>

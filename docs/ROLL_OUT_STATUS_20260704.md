@@ -23,7 +23,7 @@ The following checks passed after the supervisor schedule-review and notificatio
 - Operational Notifications page connected to delivery status data
 - Operational Reports page connected to schedule, workforce, requests, notification, and payroll summaries
 - Salary payroll handling note added: salary employees are tracked separately and are not silently auto-paid 40 hours without an approved rule
-- Patrol page opened with current/upcoming patrol coverage from the published Bible schedule
+- Patrol page opened with current/upcoming patrol coverage from the published operational schedule
 - Overview command-check panel simplified and duplicate schedule link removed
 - Reports open-shift counts restricted to current/upcoming openings only
 - Schedule source-preview language clarified for weeks outside the published imported range
@@ -51,7 +51,7 @@ Current verified counts:
 
 ## Current schedule posture
 
-The Bible schedule has been promoted into operational schedule tables.
+The source schedule has been promoted into operational schedule tables.
 
 Current published schedule weeks:
 
@@ -130,7 +130,7 @@ These items cannot be fully completed from code alone:
 4. Verify armed credentials before sending armed-only opportunities.
 5. Run a small pilot with one admin, one supervisor, and a few guards.
 6. Complete the payroll export validation plan with the person responsible for payroll.
-7. Have supervisors resolve the review-needed Bible schedule shifts.
+7. Have supervisors resolve the review-needed imported schedule shifts.
 
 ## Practical next operating step
 
