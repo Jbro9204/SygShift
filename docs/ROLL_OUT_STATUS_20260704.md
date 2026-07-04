@@ -6,7 +6,7 @@
 - Company domain: sygilant.us
 - Notification sender: SygShift <scheduling@sygilant.us>
 - GitHub repo: https://github.com/Jbro9204/SygShift
-- Latest verified Cloudflare Worker version: `83ade3eb-d89e-46b8-abd2-bbc88920e023`
+- Latest verified Cloudflare Worker version: `fd446809-97a2-4cc6-98ac-d8b0174de78c`
 - Latest pushed commit: see Git history for the current rollout-status revision.
 
 ## Verification completed
@@ -18,7 +18,11 @@ The following checks passed after the supervisor schedule-review and notificatio
 - Unit tests
 - Production build
 - Browser/e2e tests on desktop and mobile
+- Production UI polish pass for user access, employee directory, and announcement composer layouts
 - Live `/schedule` smoke check
+- Live `/people` smoke check
+- Live `/users` smoke check
+- Live `/announcements` smoke check
 - Live `/api/v1/ready` check
 - Git source scan for pasted secrets
 - Git source scan for development-tool authorship traces
@@ -55,9 +59,9 @@ Current published schedule weeks:
 
 Future open shifts as of this report:
 
-- Future open shifts: 432
-- Future review-needed shifts: 432
-- Future armed open shifts: 170
+- Future open shifts: 429
+- Future review-needed open shifts: 429
+- Future armed open shifts: 168
 
 These are intentionally not auto-assigned because the workbook source required human review. Supervisors can now use the schedule review filter, the Supervisor cleanup workbench, and the resolve action to publish each correction into a new schedule revision.
 

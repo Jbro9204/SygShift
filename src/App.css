@@ -2198,7 +2198,7 @@
 .directory-row {
   display: grid;
   min-height: 88px;
-  grid-template-columns: minmax(230px, 1.35fr) minmax(100px, 0.65fr) minmax(170px, 1fr) minmax(210px, 1.2fr) minmax(90px, 0.55fr);
+  grid-template-columns: minmax(285px, 1.35fr) minmax(110px, 0.55fr) minmax(200px, 1fr) minmax(230px, 1.15fr) minmax(110px, 0.5fr);
   align-items: center;
   border-bottom: 1px solid #ebe7df;
 }
@@ -2209,7 +2209,11 @@
 
 .directory-row > * {
   min-width: 0;
-  padding: 15px 18px;
+  padding: 15px 20px;
+}
+
+.directory-row > :first-child {
+  padding-left: 24px;
 }
 
 .directory-row--header {
@@ -2230,15 +2234,15 @@
 
 .employee-avatar {
   display: grid;
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   flex: 0 0 auto;
   place-items: center;
   color: #593c12;
   background: #f0e2c5;
   border: 1px solid #dbc393;
   border-radius: 50%;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 850;
   letter-spacing: 0.04em;
 }
@@ -2626,7 +2630,7 @@
 
 .announcement-workspace {
   display: grid;
-  grid-template-columns: minmax(260px, 0.42fr) minmax(0, 0.78fr) minmax(320px, 0.52fr);
+  grid-template-columns: minmax(270px, 0.42fr) minmax(440px, 0.82fr) minmax(340px, 0.52fr);
   gap: 18px;
   align-items: start;
 }
@@ -2694,7 +2698,49 @@
 .announcement-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 15px 16px;
+}
+
+.announcement-form .form-field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.announcement-form .form-field > span {
+  color: #514b42;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+}
+
+.announcement-form input,
+.announcement-form select,
+.announcement-form textarea {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: #fffdf8;
+  border: 1px solid #cfc5b5;
+  border-radius: 9px;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 15px;
+}
+
+.announcement-form textarea {
+  min-height: 104px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.announcement-form input:focus,
+.announcement-form select:focus,
+.announcement-form textarea:focus {
+  border-color: var(--gold-dark);
+  box-shadow: 0 0 0 3px rgb(184 135 49 / 14%);
+  outline: 0;
 }
 
 .announcement-form .form-field--wide,
@@ -2709,13 +2755,16 @@
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+  padding-top: 2px;
 }
 
 .announcement-actions .primary-action,
 .announcement-actions .secondary-button {
   display: inline-flex;
+  min-height: 46px;
   gap: 8px;
   align-items: center;
+  justify-content: center;
 }
 
 .announcement-preview {
@@ -5041,7 +5090,7 @@
 
 .user-admin-toolbar {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) repeat(3, minmax(130px, 0.18fr)) auto auto;
+  grid-template-columns: minmax(340px, 1fr) repeat(3, minmax(145px, 0.22fr)) minmax(160px, auto) minmax(210px, auto);
   gap: 12px;
   align-items: end;
   margin-bottom: 16px;
@@ -5053,7 +5102,11 @@
 
 .user-admin-toolbar .primary-action,
 .user-admin-toolbar .secondary-button {
-  min-height: 44px;
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   white-space: nowrap;
 }
 
@@ -5085,7 +5138,7 @@
 
 .user-admin-row {
   display: grid;
-  grid-template-columns: minmax(260px, 1.4fr) minmax(110px, 0.55fr) minmax(120px, 0.6fr) minmax(130px, 0.6fr) minmax(120px, 0.45fr);
+  grid-template-columns: minmax(280px, 1.45fr) minmax(110px, 0.5fr) minmax(140px, 0.65fr) minmax(135px, 0.55fr) minmax(130px, 0.45fr);
   gap: 12px;
   align-items: center;
   padding: 15px 16px;
@@ -5155,8 +5208,9 @@
 
 .user-admin-modal-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.42fr);
-  gap: 22px;
+  grid-template-columns: minmax(520px, 1fr) minmax(330px, 0.46fr);
+  gap: 24px;
+  padding: 22px;
 }
 
 .user-admin-modal-grid h3 {
@@ -5168,6 +5222,41 @@
 
 .user-admin-form .modal-actions {
   margin-bottom: 0;
+}
+
+.modal-dialog:has(.user-admin-modal-grid) {
+  width: min(980px, calc(100vw - 32px));
+}
+
+.user-admin-form {
+  margin-top: 0;
+}
+
+.user-admin-form .form-grid {
+  gap: 14px;
+}
+
+.user-admin-form .form-grid--three {
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+}
+
+.user-admin-form .form-grid--two {
+  grid-template-columns: repeat(2, minmax(230px, 1fr));
+}
+
+.user-admin-form label > span {
+  line-height: 1.25;
+}
+
+.user-admin-form input,
+.user-admin-form select {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.user-admin-form input[type='email'],
+.user-admin-form input[name='mobilePhone'] {
+  font-size: 15px;
 }
 
 .account-control-panel {
