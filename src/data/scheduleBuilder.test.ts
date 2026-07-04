@@ -110,6 +110,58 @@ describe('schedule builder data contract', () => {
       target_is_overtime: true,
       target_notes: 'North gate',
       publish_announcement: true,
+      target_employee_id: null,
+    })
+  })
+
+  it('can create a directly assigned shift without publishing an opening announcement', async () => {
+    rpc.mockResolvedValueOnce({
+      data: {
+        schedule_id: '30000000-0000-4000-8000-000000000001',
+        schedule_revision: 2,
+        shift_id: '40000000-0000-4000-8000-000000000001',
+        assignment_id: '80000000-0000-4000-8000-000000000001',
+        event_id: null,
+        announcement_id: null,
+        starts_at: '2026-07-08T14:00:00.000Z',
+        ends_at: '2026-07-08T22:00:00.000Z',
+        time_zone: 'America/Denver',
+      },
+      error: null,
+    })
+
+    await expect(createSupervisorOpenShift({
+      weekStartsOn: '2026-07-05',
+      mode: 'post',
+      postId: '10000000-0000-4000-8000-000000000001',
+      shiftDate: '2026-07-08',
+      startTime: '08:00',
+      endTime: '16:00',
+      headcount: 1,
+      employeeId: '70000000-0000-4000-8000-000000000001',
+      isOvertime: false,
+      notes: '',
+      publishAnnouncement: false,
+    })).resolves.toMatchObject({
+      assignment_id: '80000000-0000-4000-8000-000000000001',
+    })
+
+    expect(rpc).toHaveBeenCalledWith('create_supervisor_open_shift', {
+      target_week_starts_on: '2026-07-05',
+      target_post_id: '10000000-0000-4000-8000-000000000001',
+      event_name: null,
+      event_location_name: null,
+      event_site_id: null,
+      event_time_zone: null,
+      event_requires_armed: false,
+      shift_operational_date: '2026-07-08',
+      shift_start_time: '08:00',
+      shift_end_time: '16:00',
+      target_headcount: 1,
+      target_is_overtime: false,
+      target_notes: null,
+      publish_announcement: false,
+      target_employee_id: '70000000-0000-4000-8000-000000000001',
     })
   })
 

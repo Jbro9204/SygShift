@@ -37,6 +37,7 @@ interface OpenShiftFormState {
   startTime: string
   endTime: string
   headcount: string
+  employeeId: string
   isOvertime: boolean
   notes: string
   publishAnnouncement: boolean
@@ -55,6 +56,7 @@ function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
     startTime: '08:00',
     endTime: '16:00',
     headcount: '1',
+    employeeId: '',
     isOvertime: false,
     notes: '',
     publishAnnouncement: true,
@@ -298,12 +300,17 @@ export function SchedulePage() {
       startTime: openShiftForm.startTime,
       endTime: openShiftForm.endTime,
       headcount: Number.parseInt(openShiftForm.headcount, 10),
+      employeeId: openShiftForm.employeeId || null,
       isOvertime: openShiftForm.isOvertime,
       notes: openShiftForm.notes,
-      publishAnnouncement: openShiftForm.publishAnnouncement,
+      publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
     }),
     onSuccess: async (result) => {
-      setBuilderMessage(`Open shift published on revision ${result.schedule_revision}. Guards can see it now.`)
+      setBuilderMessage(
+        result.assignment_id
+          ? `Assigned shift published on revision ${result.schedule_revision}.`
+          : `Open shift published on revision ${result.schedule_revision}. Guards can see it now.`,
+      )
       setOpenShiftForm(defaultOpenShiftForm(weekKey))
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['weekly-schedule', weekKey] }),
@@ -487,7 +494,7 @@ export function SchedulePage() {
           <div className="panel-heading">
             <div>
               <p className="eyebrow">Supervisor action</p>
-              <h2 id="schedule-builder-heading">Add an open shift or event</h2>
+              <h2 id="schedule-builder-heading">Add a shift or event</h2>
             </div>
             <span className="status-pill">Creates a reviewed schedule revision</span>
           </div>
@@ -604,6 +611,29 @@ export function SchedulePage() {
                   value={openShiftForm.headcount}
                 />
               </label>
+              <label>
+                Assign now <small>Optional</small>
+                <select
+                  disabled={builderOptionsQuery.isPending}
+                  onChange={(event) => updateOpenShiftForm({
+                    employeeId: event.target.value,
+                    publishAnnouncement: event.target.value ? false : openShiftForm.publishAnnouncement,
+                  })}
+                  value={openShiftForm.employeeId}
+                >
+                  <option value="">Leave open for requests</option>
+                  {builderOptionsQuery.data?.employees
+                    .filter((employee) => openShiftForm.mode === 'event' && openShiftForm.eventRequiresArmed ? employee.has_armed_guard_credential : true)
+                    .filter((employee) => selectedPost?.requires_armed ? employee.has_armed_guard_credential : true)
+                    .map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {builderEmployeeName(employee)}
+                        {employee.has_armed_guard_credential ? ' · armed' : ''}
+                        {employee.employment_type === 'salary' ? ' · salary' : ''}
+                      </option>
+                    ))}
+                </select>
+              </label>
             </div>
 
             <label className="field-stack">
@@ -636,7 +666,8 @@ export function SchedulePage() {
               ) : null}
               <label className="check-field">
                 <input
-                  checked={openShiftForm.publishAnnouncement}
+                  checked={!openShiftForm.employeeId && openShiftForm.publishAnnouncement}
+                  disabled={Boolean(openShiftForm.employeeId)}
                   onChange={(event) => updateOpenShiftForm({ publishAnnouncement: event.target.checked })}
                   type="checkbox"
                 />
@@ -665,7 +696,11 @@ export function SchedulePage() {
                 disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending}
                 type="submit"
               >
-                {createOpenShiftMutation.isPending ? 'Publishing...' : 'Publish open shift'}
+                {createOpenShiftMutation.isPending
+                  ? 'Publishing...'
+                  : openShiftForm.employeeId
+                    ? 'Publish assigned shift'
+                    : 'Publish open shift'}
               </button>
             </div>
           </form>

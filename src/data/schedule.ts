@@ -91,6 +91,7 @@ const createOpenShiftResultSchema = z.object({
   schedule_id: z.string().uuid(),
   schedule_revision: z.number().int().positive(),
   shift_id: z.string().uuid(),
+  assignment_id: z.string().uuid().nullable().optional(),
   event_id: z.string().uuid().nullable(),
   announcement_id: z.string().uuid().nullable(),
   starts_at: z.string(),
@@ -166,6 +167,7 @@ export interface CreateOpenShiftInput {
   isOvertime: boolean
   notes?: string
   publishAnnouncement: boolean
+  employeeId?: string | null
 }
 
 export interface ScheduleRow {
@@ -183,46 +185,9 @@ export interface EmployeeScheduleRow {
 }
 
 export async function getWeeklySchedule(weekStartsOn: string): Promise<WeeklySchedule | null> {
-  const { data, error } = await getSupabaseClient()
-    .from('schedules')
-    .select(`
-      id,
-      week_starts_on,
-      revision,
-      status,
-      published_at,
-      shifts (
-        id,
-        starts_at,
-        ends_at,
-        time_zone,
-        headcount_required,
-        requires_armed,
-        is_open,
-        is_overtime,
-        notes,
-        post:posts (
-          id,
-          name,
-          site:sites (id, code, name)
-        ),
-        event:events (
-          id,
-          name,
-          location_name,
-          site:sites (id, code, name)
-        ),
-        assignments:shift_assignments (
-          id,
-          status,
-          employee:employees (id, first_name, last_name, preferred_name)
-        )
-      )
-    `)
-    .eq('week_starts_on', weekStartsOn)
-    .order('revision', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  const { data, error } = await getSupabaseClient().rpc('get_weekly_schedule_payload', {
+    target_week_starts_on: weekStartsOn,
+  })
 
   if (error) throw new Error('The weekly schedule could not be loaded for this account.')
   if (!data) return null
@@ -269,6 +234,7 @@ export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Pr
     target_is_overtime: input.isOvertime,
     target_notes: input.notes?.trim() || null,
     publish_announcement: input.publishAnnouncement,
+    target_employee_id: input.employeeId || null,
   })
 
   if (error) throw new Error(error.message || 'The open shift could not be created.')
