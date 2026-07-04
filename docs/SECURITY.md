@@ -3,6 +3,9 @@
 ## Access
 
 - Accounts are invite-only.
+- Usernames are assigned from the employee directory and mapped to private Supabase Auth identifiers; employees sign in with usernames, not personal email addresses.
+- The first administrator is created through a one-time service-role bootstrap command. Bootstrap credentials are never stored in source code, migrations, documentation, or browser-delivered files.
+- Temporary bootstrap passwords must be replaced on first sign-in.
 - Privileged roles require multi-factor authentication before sensitive mutations.
 - Disabled or separated employees cannot authenticate or accept work.
 - Authorization is enforced in the database and server, never only in the interface.

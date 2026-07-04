@@ -1,32 +1,127 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Menu, ShieldCheck, X } from 'lucide-react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { LogOut, Menu, ShieldCheck, UserCircle, X } from 'lucide-react'
 import { navigationGroups } from '../app/navigation'
-import { getCurrentAppRole } from '../data/session'
-import { isSupabaseConfigured } from '../lib/supabase'
+import { getSessionContext, signOut, type SessionContext } from '../data/auth'
+import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDate, formatOperationalTime } from '../lib/time'
 
 export function AppShell() {
   const [navigationOpen, setNavigationOpen] = useState(false)
+  const [sessionContext, setSessionContext] = useState<SessionContext | null>(null)
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
+  const [authMessage, setAuthMessage] = useState<string | null>(null)
   const location = useLocation()
-  const roleQuery = useQuery({
-    queryKey: ['current-app-role'],
-    queryFn: getCurrentAppRole,
-    enabled: isSupabaseConfigured,
-  })
+  const navigate = useNavigate()
+
   const visibleNavigationGroups = navigationGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) =>
-        !item.roles || !isSupabaseConfigured || Boolean(roleQuery.data && item.roles.includes(roleQuery.data)),
-      ),
+      items: group.items.filter((item) => {
+        if (!item.roles || !isSupabaseConfigured) return true
+        return Boolean(sessionContext && item.roles.includes(sessionContext.role))
+      }),
     }))
     .filter((group) => group.items.length > 0)
+
+  const needsSecurityCheckpoint = Boolean(
+    sessionContext?.mustChangePassword || (sessionContext?.mfaRequired && !sessionContext.hasMfa),
+  )
+  const isAccountSecurityRoute = location.pathname === '/account-security'
 
   useEffect(() => {
     setNavigationOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    let active = true
+
+    if (!isSupabaseConfigured) {
+      setAuthLoading(false)
+      setSessionContext(null)
+      return () => {
+        active = false
+      }
+    }
+
+    async function loadSessionContext() {
+      setAuthLoading(true)
+      setAuthMessage(null)
+
+      const { data } = await getSupabaseClient().auth.getSession()
+      if (!active) return
+
+      if (!data.session) {
+        setSessionContext(null)
+        setAuthLoading(false)
+        return
+      }
+
+      try {
+        const context = await getSessionContext()
+        if (active) setSessionContext(context)
+      } catch {
+        await getSupabaseClient().auth.signOut()
+        if (active) {
+          setSessionContext(null)
+          setAuthMessage('Your account is not linked to an active SygShift employee record.')
+        }
+      } finally {
+        if (active) setAuthLoading(false)
+      }
+    }
+
+    void loadSessionContext()
+
+    const {
+      data: { subscription },
+    } = getSupabaseClient().auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        setSessionContext(null)
+        setAuthLoading(false)
+        return
+      }
+
+      void loadSessionContext()
+    })
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  async function handleSignOut() {
+    setAuthMessage(null)
+
+    try {
+      await signOut()
+      setSessionContext(null)
+      navigate('/login', { replace: true })
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : 'Sign out failed.')
+    }
+  }
+
+  if (authLoading) {
+    return (
+      <main className="security-page">
+        <section className="security-card security-card--compact" role="status">
+          <ShieldCheck aria-hidden="true" size={36} />
+          <h1>Checking secure access…</h1>
+          <p>SygShift is verifying your session before opening the workspace.</p>
+        </section>
+      </main>
+    )
+  }
+
+  if (isSupabaseConfigured && !sessionContext) {
+    return <Navigate to="/login" replace state={{ from: location }} />
+  }
+
+  if (isSupabaseConfigured && needsSecurityCheckpoint && !isAccountSecurityRoute) {
+    return <Navigate to="/account-security" replace state={{ from: location }} />
+  }
 
   return (
     <div className="app-shell">
@@ -95,7 +190,13 @@ export function AppShell() {
           <ShieldCheck aria-hidden="true" size={22} />
           <div>
             <strong>{isSupabaseConfigured ? 'Secure workspace' : 'Setup mode'}</strong>
-            <span>{isSupabaseConfigured ? 'Role-based access is active' : 'Operational data is protected'}</span>
+            <span>
+              {isSupabaseConfigured
+                ? sessionContext
+                  ? `${sessionContext.role} access verified`
+                  : 'Sign in required'
+                : 'Operational data is protected'}
+            </span>
           </div>
         </div>
       </aside>
@@ -106,11 +207,35 @@ export function AppShell() {
             <span>{formatOperationalDate()}</span>
             <strong>{formatOperationalTime()}</strong>
           </div>
-          <div className="topbar-label">
-            <span aria-hidden="true" />
-            Mountain Time
-          </div>
+
+          {sessionContext ? (
+            <div className="user-menu">
+              <UserCircle aria-hidden="true" size={22} />
+              <div>
+                <strong>{sessionContext.displayName}</strong>
+                <span>@{sessionContext.username}</span>
+              </div>
+              <Link className="secondary-button secondary-button--small" to="/account-security">
+                Security
+              </Link>
+              <button className="secondary-button secondary-button--small" onClick={handleSignOut} type="button">
+                <LogOut aria-hidden="true" size={17} />
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <div className="topbar-label">
+              <span aria-hidden="true" />
+              Mountain Time
+            </div>
+          )}
         </header>
+
+        {authMessage ? (
+          <div className="shell-alert" role="alert">
+            {authMessage}
+          </div>
+        ) : null}
 
         <main id="main-content" tabIndex={-1}>
           <Outlet />

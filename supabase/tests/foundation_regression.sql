@@ -1055,6 +1055,115 @@ begin
 end
 $$;
 
+insert into auth.users (id, email)
+values (
+  '10000000-0000-0000-0000-000000000099',
+  'zbootstrap@accounts.sygshift.invalid'
+);
+
+set local role authenticated;
+
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    perform public.register_bootstrap_admin(
+      '10000000-0000-0000-0000-000000000099',
+      'Zed',
+      'Bootstrap',
+      'zbootstrap'
+    );
+  exception when insufficient_privilege then
+    blocked := true;
+  end;
+
+  if not blocked then
+    raise exception 'Authenticated role executed bootstrap admin registration.';
+  end if;
+end
+$$;
+
+reset role;
+
+set local role service_role;
+
+select public.register_bootstrap_admin(
+  '10000000-0000-0000-0000-000000000099',
+  'Zed',
+  'Bootstrap',
+  'zbootstrap'
+) as bootstrap_admin_registered;
+
+reset role;
+
+set local role authenticated;
+set local "request.jwt.claim.sub" = '10000000-0000-0000-0000-000000000099';
+set local "request.jwt.claims" = '{"aal":"aal1"}';
+
+select 1 / case when username = 'zbootstrap'
+  and role = 'admin'
+  and must_change_password
+  and mfa_required
+  and not has_mfa
+then 1 else 0 end as bootstrap_session_requires_security
+from public.get_session_context();
+
+select public.mark_password_changed() as bootstrap_password_marked_changed;
+
+select 1 / case when not must_change_password then 1 else 0 end as bootstrap_password_flag_cleared
+from public.get_session_context();
+
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    perform public.mark_mfa_enrolled();
+  exception when insufficient_privilege then
+    blocked := true;
+  end;
+
+  if not blocked then
+    raise exception 'MFA enrollment was recorded without an MFA-verified session.';
+  end if;
+end
+$$;
+
+set local "request.jwt.claims" = '{"aal":"aal2"}';
+
+select public.mark_mfa_enrolled() as bootstrap_mfa_marked_enrolled;
+
+select 1 / case when has_mfa and mfa_enrolled_at is not null then 1 else 0 end as bootstrap_mfa_recorded
+from public.get_session_context();
+
+reset role;
+
+set local role service_role;
+
+do $$
+declare
+  blocked boolean := false;
+begin
+  begin
+    perform public.register_bootstrap_admin(
+      '10000000-0000-0000-0000-000000000099',
+      'Zed',
+      'Bootstrap',
+      'zbootstrap'
+    );
+  exception when unique_violation then
+    blocked := true;
+  end;
+
+  if not blocked then
+    raise exception 'Bootstrap registration was not single-use.';
+  end if;
+end
+$$;
+
+reset role;
+
 do $$
 begin
   if exists (

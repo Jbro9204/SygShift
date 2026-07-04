@@ -13,7 +13,8 @@
     "test:e2e": "playwright test",
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
     "preview": "pnpm build && vite preview",
-    "deploy": "pnpm build && wrangler deploy"
+    "deploy": "pnpm build && wrangler deploy",
+    "bootstrap:admin": "node tools/bootstrap-admin.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.0",

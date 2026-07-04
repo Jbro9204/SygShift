@@ -1,7 +1,9 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { AppShell } from '../components/AppShell'
+import { AccountSecurityPage } from '../pages/AccountSecurityPage'
 import { EventsPage } from '../pages/EventsPage'
 import { ImportReviewPage } from '../pages/ImportReviewPage'
+import { LoginPage } from '../pages/LoginPage'
 import { ModulePage } from '../pages/ModulePage'
 import { OverviewPage } from '../pages/OverviewPage'
 import { OperationalImportPage } from '../pages/OperationalImportPage'
@@ -12,6 +14,11 @@ import { SchedulePage } from '../pages/SchedulePage'
 import { SitesPage } from '../pages/SitesPage'
 
 export const router = createBrowserRouter([
+  {
+    path: '/login',
+    element: <LoginPage />,
+    errorElement: <RouteErrorPage />,
+  },
   {
     path: '/',
     element: <AppShell />,
@@ -32,6 +39,7 @@ export const router = createBrowserRouter([
       },
       { path: 'people', element: <PeoplePage /> },
       { path: 'sites', element: <SitesPage /> },
+      { path: 'account-security', element: <AccountSecurityPage /> },
       {
         path: 'patrol',
         element: (
