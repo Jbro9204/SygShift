@@ -38,16 +38,22 @@ The service-role key is server-only. It is used by the Worker for admin account 
 
 ## 2a. Configure announcement email delivery
 
-SygShift queues call-off, open-shift, overtime, and event notifications in Supabase. The Worker includes an admin/MFA-protected processor at `/api/v1/admin/notifications/process`, but actual sending requires Cloudflare Email Sending to be configured first.
+SygShift queues call-off, open-shift, overtime, and event notifications in Supabase. The Worker includes an admin/MFA-protected processor at `/api/v1/admin/notifications/process`.
 
-Required account setup:
+Configured sender:
 
-- Onboard and verify the sending domain in Cloudflare Email Sending.
-- Add a Worker Email Sending binding named `EMAIL`.
-- Set Worker variable `SYGSHIFT_EMAIL_FROM` to a sender address on the verified domain.
-- Optional: set `SYGSHIFT_EMAIL_FROM_NAME`, for example `SygShift`.
+- Sender name: `SygShift`
+- Sender email: `scheduling@sygilant.us`
+- Sending domain: `sygilant.us`
+- Worker binding: `EMAIL`
 
-Until the `EMAIL` binding exists, the processor intentionally returns `email_not_configured` and does not claim notification work.
+Before broad employee email use:
+
+- send test emails only to internal recipients first
+- confirm the message does not land in spam
+- confirm the displayed sender is correct on desktop and mobile mail clients
+- confirm reply handling expectations with supervisors
+- keep announcement sending supervisor/admin controlled
 
 ## 3. Apply and verify database migrations
 

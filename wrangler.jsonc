@@ -9,6 +9,15 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
+  "vars": {
+    "SYGSHIFT_EMAIL_FROM": "scheduling@sygilant.us",
+    "SYGSHIFT_EMAIL_FROM_NAME": "SygShift"
+  },
   "observability": {
     "enabled": true
   }

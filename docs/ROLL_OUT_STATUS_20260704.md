@@ -3,8 +3,10 @@
 ## Current deployment
 
 - Live app: https://sygshift.sygilant.workers.dev
+- Company domain: sygilant.us
+- Notification sender: SygShift <scheduling@sygilant.us>
 - GitHub repo: https://github.com/Jbro9204/SygShift
-- Latest verified Cloudflare Worker version: `c98df75a-87f1-4c70-b7e4-553794f8126a`
+- Latest verified Cloudflare Worker version: `b989fd61-bb1a-444f-8a72-f2e31fe0ad7a`
 - Latest pushed commit: see Git history for the current rollout-status revision.
 
 ## Verification completed
@@ -85,7 +87,7 @@ The Worker now has an admin/MFA-protected processor endpoint:
 
 `POST /api/v1/admin/notifications/process`
 
-The endpoint is deployed, but Cloudflare currently reports only the `ASSETS` binding on the Worker. Actual email sending will stay disabled until the Cloudflare Email Sending `EMAIL` binding and sender address are configured.
+Cloudflare Email Sending is enabled for `sygilant.us`. The Worker is configured with the `EMAIL` binding and branded sender variables. Send only controlled internal tests before enabling broad employee announcements.
 
 ## Remaining account-owner actions
 
@@ -93,11 +95,7 @@ These items cannot be fully completed from code alone:
 
 1. Rotate credentials that were pasted into chat or copied through any non-secure channel.
 2. Confirm hosted Supabase Auth leaked-password protection in the Supabase Dashboard.
-3. Configure Cloudflare Email Sending:
-   - verify the sender domain,
-   - add the Worker binding named `EMAIL`,
-   - set `SYGSHIFT_EMAIL_FROM`,
-   - optionally set `SYGSHIFT_EMAIL_FROM_NAME`.
+3. Send controlled internal email tests and confirm sender display/deliverability.
 4. Run a small pilot with one admin, one supervisor, and a few guards.
 5. Complete the payroll export validation plan with the person responsible for payroll.
 6. Have supervisors resolve the review-needed Bible schedule shifts.
