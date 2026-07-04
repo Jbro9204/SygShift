@@ -3,6 +3,9 @@ import { lazy, Suspense, type ReactNode } from 'react'
 export const AccountSecurityPageRoute = lazy(() =>
   import('../pages/AccountSecurityPage').then((module) => ({ default: module.AccountSecurityPage })),
 )
+export const AnnouncementsPageRoute = lazy(() =>
+  import('../pages/AnnouncementsPage').then((module) => ({ default: module.AnnouncementsPage })),
+)
 export const EventsPageRoute = lazy(() =>
   import('../pages/EventsPage').then((module) => ({ default: module.EventsPage })),
 )

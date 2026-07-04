@@ -6,7 +6,7 @@
 - Company domain: sygilant.us
 - Notification sender: SygShift <scheduling@sygilant.us>
 - GitHub repo: https://github.com/Jbro9204/SygShift
-- Latest verified Cloudflare Worker version: `43479008-8f87-4897-93a3-a69fdb96989f`
+- Latest verified Cloudflare Worker version: `83ade3eb-d89e-46b8-abd2-bbc88920e023`
 - Latest pushed commit: see Git history for the current rollout-status revision.
 
 ## Verification completed
@@ -89,6 +89,25 @@ The Worker now has an admin/MFA-protected processor endpoint:
 
 Cloudflare Email Sending is enabled for `sygilant.us`. The Worker is configured with the `EMAIL` binding, branded sender variables, and a SygShift HTML email shell that includes a centered email-optimized hosted logo, carbon-style dark header, readable light body area, app button, and plain-text fallback. Send only controlled internal tests before enabling broad employee announcements.
 
+The Announcements page now uses approved templates. Supervisors and admins fill in fields, preview the branded email, review the eligible-recipient count, and publish through an MFA-protected database workflow.
+
+Approved templates currently loaded:
+
+- Open shift available
+- Overtime opportunity
+- Event coverage needed
+- Last-minute call-off coverage
+- Schedule update
+- Timekeeping/payroll reminder
+
+Current recipient-count verification:
+
+- Guard email recipients: 38
+- Guard/supervisor email recipients: 45
+- Armed-qualified guard email recipients: 0
+
+The armed-qualified count is intentionally zero until imported armed credentials are verified as active. Armed-only blasts should remain blocked until that credential review is complete.
+
 ## Remaining account-owner actions
 
 These items cannot be fully completed from code alone:
@@ -96,9 +115,10 @@ These items cannot be fully completed from code alone:
 1. Rotate credentials that were pasted into chat or copied through any non-secure channel.
 2. Confirm hosted Supabase Auth leaked-password protection in the Supabase Dashboard.
 3. Send controlled internal email tests and confirm sender display/deliverability.
-4. Run a small pilot with one admin, one supervisor, and a few guards.
-5. Complete the payroll export validation plan with the person responsible for payroll.
-6. Have supervisors resolve the review-needed Bible schedule shifts.
+4. Verify armed credentials before sending armed-only opportunities.
+5. Run a small pilot with one admin, one supervisor, and a few guards.
+6. Complete the payroll export validation plan with the person responsible for payroll.
+7. Have supervisors resolve the review-needed Bible schedule shifts.
 
 ## Practical next operating step
 

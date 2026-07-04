@@ -82,6 +82,21 @@ test('events and openings explain the guarded request workflow', async ({ page }
   expect(accessibility.violations).toEqual([])
 })
 
+test('announcements explain the controlled template workflow', async ({ page }) => {
+  await page.goto('/announcements')
+
+  await expect(page.getByRole('heading', { name: 'Announcements' })).toBeVisible()
+  await expect(page.getByText('Announcement templates need the secure connection')).toBeVisible()
+  await expect(page.getByText('Approved templates, recipient counts, and send history')).toBeVisible()
+
+  const bodyWidth = await page.locator('body').evaluate((body) => body.scrollWidth)
+  const viewportWidth = page.viewportSize()?.width ?? 0
+  expect(bodyWidth).toBeLessThanOrEqual(viewportWidth)
+
+  const accessibility = await new AxeBuilder({ page }).analyze()
+  expect(accessibility.violations).toEqual([])
+})
+
 test('request center explains protected guard and supervisor workflows', async ({ page }) => {
   await page.goto('/requests')
 

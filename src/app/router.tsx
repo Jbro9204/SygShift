@@ -4,6 +4,7 @@ import { ModulePage } from '../pages/ModulePage'
 import { RouteErrorPage } from '../pages/RouteErrorPage'
 import {
   AccountSecurityPageRoute,
+  AnnouncementsPageRoute,
   EventsPageRoute,
   ImportReviewPageRoute,
   LoginPageRoute,
@@ -134,11 +135,9 @@ export const router = createBrowserRouter([
       {
         path: 'announcements',
         element: (
-          <ModulePage
-            eyebrow="Communication"
-            title="Announcements"
-            description="Publish general updates, events, and approved shift opportunities to the right qualified employees."
-          />
+          <RouteSuspense>
+            <AnnouncementsPageRoute />
+          </RouteSuspense>
         ),
       },
       {

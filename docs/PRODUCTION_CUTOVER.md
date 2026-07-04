@@ -56,6 +56,8 @@ Before broad employee email use:
 - confirm reply handling expectations with supervisors
 - keep announcement sending supervisor/admin controlled
 
+Announcement publishing uses approved templates. Supervisors and admins fill in required fields, preview the branded message, review the eligible-recipient count, and publish only after MFA verification.
+
 ## 3. Apply and verify database migrations
 
 Run pending migrations against the production Supabase project, then verify:
@@ -151,6 +153,7 @@ Before launch:
 - Source scan shows no development-tool authorship traces
 - Supabase security advisor has no critical findings
 - Current workbook data has been reconciled against the live directory
+- Armed credentials needed for armed-only announcements have been verified as active
 - Backup and restore process has been tested
 - The boss-facing build explanation has been updated for non-technical readers
 
