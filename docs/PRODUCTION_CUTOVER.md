@@ -46,7 +46,7 @@ Configured sender:
 - Sender email: `scheduling@sygilant.us`
 - Sending domain: `sygilant.us`
 - Worker binding: `EMAIL`
-- Branded HTML shell: email-optimized SygShift logo, gold/black header, readable body copy, app button, and plain-text fallback
+- Branded HTML shell: centered email-optimized SygShift logo, carbon-style dark header, readable light body copy, app button, and plain-text fallback
 
 Before broad employee email use:
 

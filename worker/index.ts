@@ -530,24 +530,15 @@ export function brandedEmailHtml(message: NotificationJob['message'], appUrl = '
         <td align="center" style="padding:28px 16px;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%; max-width:640px; border-collapse:collapse;">
             <tr>
-              <td style="padding:24px 24px 20px; background:#080706; border-radius:18px 18px 0 0;">
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
-                  <tr>
-                    <td style="vertical-align:middle;">
-                      <img src="${logoUrl}" width="280" alt="SygShift" style="display:block; width:280px; max-width:88%; height:auto; border:0;">
-                      <div style="margin-top:12px; color:#d6b15f; font-size:11px; line-height:1.4; letter-spacing:1.8px; text-transform:uppercase; font-weight:700;">
-                        Smart schedules. Stronger coverage.
-                      </div>
-                    </td>
-                    <td align="right" style="vertical-align:middle; color:#f5ead5; font-size:13px; line-height:1.4; font-weight:700;">
-                      Sygilant Operations
-                    </td>
-                  </tr>
-                </table>
+              <td align="center" style="padding:26px 24px 22px; background-color:#070706; background-image:linear-gradient(135deg, #171511 0%, #080706 42%, #242018 43%, #0b0a08 64%, #15130f 100%); border-radius:18px 18px 0 0; border-bottom:3px solid #d6b15f;">
+                <img src="${logoUrl}" width="320" alt="SygShift" style="display:block; width:320px; max-width:92%; height:auto; margin:0 auto; border:0;">
+                <div style="margin-top:14px; color:#d6b15f; font-size:11px; line-height:1.4; letter-spacing:1.8px; text-transform:uppercase; font-weight:800; text-align:center;">
+                  Smart schedules. Stronger coverage.
+                </div>
               </td>
             </tr>
             <tr>
-              <td style="padding:28px 28px 8px; background:#ffffff; border-left:1px solid #e4ddcf; border-right:1px solid #e4ddcf;">
+              <td style="padding:30px 30px 8px; background:#fffdf8; border-left:1px solid #e4ddcf; border-right:1px solid #e4ddcf;">
                 <div style="color:#7b5a1e; font-size:12px; line-height:1.4; letter-spacing:1.5px; text-transform:uppercase; font-weight:800;">
                   SygShift notification
                 </div>
@@ -560,7 +551,7 @@ export function brandedEmailHtml(message: NotificationJob['message'], appUrl = '
               </td>
             </tr>
             <tr>
-              <td style="padding:20px 28px 28px; background:#ffffff; border-left:1px solid #e4ddcf; border-right:1px solid #e4ddcf; border-bottom:1px solid #e4ddcf; border-radius:0 0 18px 18px;">
+              <td style="padding:20px 30px 30px; background:#fffdf8; border-left:1px solid #e4ddcf; border-right:1px solid #e4ddcf; border-bottom:1px solid #e4ddcf; border-radius:0 0 18px 18px;">
                 <a href="${normalizedAppUrl}" style="display:inline-block; padding:12px 18px; color:#11100e; background:#d6b15f; border-radius:10px; font-size:15px; line-height:1; font-weight:800; text-decoration:none;">
                   Open SygShift
                 </a>

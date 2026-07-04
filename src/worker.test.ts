@@ -168,6 +168,8 @@ describe('Cloudflare Worker boundary', () => {
     }, 'https://shift.sygilant.us/')
 
     expect(html).toContain('https://shift.sygilant.us/brand/sygshift-email-logo.png')
+    expect(html).toContain('align="center"')
+    expect(html).toContain('background-image:linear-gradient')
     expect(html).toContain('SygShift notification')
     expect(html).toContain('Open SygShift')
     expect(html).toContain('A shift is available.<br>Please review it.')
