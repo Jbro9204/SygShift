@@ -16,6 +16,8 @@ const requestShiftSchema = z.object({
   starts_at: z.string(),
   ends_at: z.string(),
   time_zone: z.string(),
+  title: z.string().optional(),
+  location: z.string().optional(),
   post: z.object({
     id: z.string().uuid(),
     name: z.string(),
@@ -116,104 +118,136 @@ export function parseRequestCenterRecords(input: {
   }
 }
 
-const employeeSelection = 'employee:employees (id, first_name, last_name, preferred_name)'
-const shiftSelection = `
-  shift:shifts (
+const rpcShiftSchema = z.object({
+  id: z.string().uuid(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  timeZone: z.string(),
+  title: z.string(),
+  location: z.string(),
+})
+
+const requestCenterPayloadSchema = z.object({
+  employeeId: z.string().uuid(),
+  role: roleSchema,
+  timeOff: z.array(z.object({
+    id: z.string().uuid(),
+    employeeId: z.string().uuid(),
+    employeeName: z.string(),
+    startsOn: z.string(),
+    endsOn: z.string(),
+    partialDayStart: z.string().nullable(),
+    partialDayEnd: z.string().nullable(),
+    reason: z.string().nullable(),
+    status: requestStatusSchema,
+    decisionNote: z.string().nullable(),
+    createdAt: z.string(),
+  })),
+  shiftRequests: z.array(z.object({
+    id: z.string().uuid(),
+    employeeId: z.string().uuid(),
+    employeeName: z.string(),
+    status: requestStatusSchema,
+    employeeNote: z.string().nullable(),
+    decisionNote: z.string().nullable(),
+    createdAt: z.string(),
+    shift: rpcShiftSchema,
+  })),
+  callOffs: z.array(z.object({
+    id: z.string().uuid(),
+    employeeId: z.string().uuid(),
+    employeeName: z.string(),
+    reason: z.string().nullable(),
+    reportedAt: z.string(),
+    acknowledgedAt: z.string().nullable(),
+    announcementId: z.string().uuid().nullable(),
+    resolvedAt: z.string().nullable(),
+    shift: rpcShiftSchema,
+  })),
+  upcomingAssignments: z.array(z.object({
+    id: z.string().uuid(),
+    status: z.enum(['assigned', 'confirmed']),
+    shift: rpcShiftSchema,
+  })),
+})
+
+function employeeFromPayload(id: string, displayName: string): z.infer<typeof employeeSchema> {
+  const trimmedName = displayName.trim() || 'Employee'
+  return {
     id,
-    starts_at,
-    ends_at,
-    time_zone,
-    post:posts (id, name, site:sites (id, name)),
-    event:events (id, name, location_name)
-  )
-`
+    first_name: trimmedName,
+    last_name: '',
+    preferred_name: trimmedName,
+  }
+}
+
+function shiftFromPayload(shift: z.infer<typeof rpcShiftSchema>): RequestShift {
+  return {
+    id: shift.id,
+    starts_at: shift.startsAt,
+    ends_at: shift.endsAt,
+    time_zone: shift.timeZone,
+    title: shift.title,
+    location: shift.location,
+    post: null,
+    event: null,
+  }
+}
 
 export async function getRequestCenter(): Promise<RequestCenter> {
-  const client = getSupabaseClient()
-  const [employeeResult, roleResult] = await Promise.all([
-    client.rpc('current_employee_id'),
-    client.rpc('current_app_role'),
-  ])
+  const { data, error } = await getSupabaseClient().rpc('get_request_center_payload')
 
-  if (employeeResult.error || !employeeResult.data) {
-    throw new Error('An active employee account is required to view requests.')
-  }
-  if (roleResult.error || !roleResult.data) {
-    throw new Error('Your application role could not be verified.')
+  if (error) {
+    throw new Error(error.message || 'The request center could not be loaded for this account.')
   }
 
-  const employeeId = z.string().uuid().parse(employeeResult.data)
-  const role = roleSchema.parse(roleResult.data)
-  const privileged = role === 'supervisor' || role === 'admin'
-
-  let timeOffQuery = client
-    .from('time_off_requests')
-    .select(`
-      id, employee_id, starts_on, ends_on, partial_day_start, partial_day_end,
-      reason, status, decision_note, created_at, ${employeeSelection}
-    `)
-    .order('created_at', { ascending: false })
-    .limit(200)
-  let shiftRequestQuery = client
-    .from('shift_requests')
-    .select(`
-      id, employee_id, status, employee_note, decision_note, created_at,
-      ${employeeSelection}, ${shiftSelection}
-    `)
-    .order('created_at', { ascending: false })
-    .limit(200)
-  let callOffQuery = client
-    .from('call_off_reports')
-    .select(`
-      id, employee_id, reason, reported_at, acknowledged_at, announcement_id,
-      resolved_at, ${employeeSelection}, ${shiftSelection}
-    `)
-    .order('reported_at', { ascending: false })
-    .limit(200)
-
-  if (privileged) {
-    timeOffQuery = timeOffQuery.eq('status', 'pending')
-    shiftRequestQuery = shiftRequestQuery.eq('status', 'pending')
-    callOffQuery = callOffQuery.is('announcement_id', null).is('resolved_at', null)
-  } else {
-    timeOffQuery = timeOffQuery.eq('employee_id', employeeId)
-    shiftRequestQuery = shiftRequestQuery.eq('employee_id', employeeId)
-    callOffQuery = callOffQuery.eq('employee_id', employeeId)
+  const payload = requestCenterPayloadSchema.parse(data)
+  const records: RequestCenterRecords = {
+    timeOff: payload.timeOff.map((request) => ({
+      id: request.id,
+      employee_id: request.employeeId,
+      starts_on: request.startsOn,
+      ends_on: request.endsOn,
+      partial_day_start: request.partialDayStart,
+      partial_day_end: request.partialDayEnd,
+      reason: request.reason,
+      status: request.status,
+      decision_note: request.decisionNote,
+      created_at: request.createdAt,
+      employee: employeeFromPayload(request.employeeId, request.employeeName),
+    })),
+    shiftRequests: payload.shiftRequests.map((request) => ({
+      id: request.id,
+      employee_id: request.employeeId,
+      status: request.status,
+      employee_note: request.employeeNote,
+      decision_note: request.decisionNote,
+      created_at: request.createdAt,
+      employee: employeeFromPayload(request.employeeId, request.employeeName),
+      shift: shiftFromPayload(request.shift),
+    })),
+    callOffs: payload.callOffs.map((report) => ({
+      id: report.id,
+      employee_id: report.employeeId,
+      reason: report.reason,
+      reported_at: report.reportedAt,
+      acknowledged_at: report.acknowledgedAt,
+      announcement_id: report.announcementId,
+      resolved_at: report.resolvedAt,
+      employee: employeeFromPayload(report.employeeId, report.employeeName),
+      shift: shiftFromPayload(report.shift),
+    })),
+    assignments: payload.upcomingAssignments.map((assignment) => ({
+      id: assignment.id,
+      status: assignment.status,
+      shift: shiftFromPayload(assignment.shift),
+    })),
   }
-
-  const assignmentPromise = privileged
-    ? Promise.resolve({ data: [], error: null })
-    : client
-        .from('shift_assignments')
-        .select(`id, status, ${shiftSelection}`)
-        .eq('employee_id', employeeId)
-        .in('status', ['assigned', 'confirmed'])
-        .limit(100)
-
-  const [timeOffResult, shiftRequestResult, callOffResult, assignmentResult] = await Promise.all([
-    timeOffQuery,
-    shiftRequestQuery,
-    callOffQuery,
-    assignmentPromise,
-  ])
-
-  if (timeOffResult.error || shiftRequestResult.error || callOffResult.error || assignmentResult.error) {
-    throw new Error('The request center could not be loaded for this account.')
-  }
-
-  const records = parseRequestCenterRecords({
-    timeOff: timeOffResult.data,
-    shiftRequests: shiftRequestResult.data,
-    callOffs: callOffResult.data,
-    assignments: assignmentResult.data,
-  })
   const upcomingAssignments = records.assignments
-    .filter((assignment) => new Date(assignment.shift.ends_at) > new Date())
-    .sort((left, right) => left.shift.starts_at.localeCompare(right.shift.starts_at))
 
   return {
-    employeeId,
-    role,
+    employeeId: payload.employeeId,
+    role: payload.role,
     timeOff: records.timeOff,
     shiftRequests: records.shiftRequests,
     callOffs: records.callOffs,
@@ -298,13 +332,13 @@ export async function publishCallOffOpening(
 }
 
 export function employeeName(employee: z.infer<typeof employeeSchema>): string {
-  return `${employee.preferred_name || employee.first_name} ${employee.last_name}`
+  return `${employee.preferred_name || employee.first_name} ${employee.last_name}`.trim()
 }
 
 export function requestShiftTitle(shift: RequestShift): string {
-  return shift.event?.name ?? shift.post?.name ?? 'Assigned shift'
+  return shift.title ?? shift.event?.name ?? shift.post?.name ?? 'Assigned shift'
 }
 
 export function requestShiftLocation(shift: RequestShift): string {
-  return shift.post?.site.name ?? shift.event?.location_name ?? 'Location pending'
+  return shift.location ?? shift.post?.site.name ?? shift.event?.location_name ?? 'Location pending'
 }

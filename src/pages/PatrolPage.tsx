@@ -18,7 +18,7 @@ export function PatrolPage() {
       const searchable = [
         route.name,
         route.code,
-        ...route.upcomingShifts.map((shift) => `${shift.post?.name ?? ''} ${patrolAssignmentLabel(shift)}`),
+        ...route.upcomingShifts.map((shift) => `${shift.postName} ${shift.siteName ?? ''} ${patrolAssignmentLabel(shift)}`),
       ]
         .filter(Boolean)
         .join(' ')
@@ -28,7 +28,7 @@ export function PatrolPage() {
   }, [patrolQuery.data, search])
   const upcomingShiftCount = visibleRoutes.reduce((total, route) => total + route.upcomingShifts.length, 0)
   const openShiftCount = visibleRoutes.reduce(
-    (total, route) => total + route.upcomingShifts.filter((shift) => shift.is_open).length,
+    (total, route) => total + route.upcomingShifts.filter((shift) => shift.isOpen).length,
     0,
   )
 
@@ -57,11 +57,12 @@ export function PatrolPage() {
         </DataStatePanel>
       ) : patrolQuery.isPending ? (
         <DataStatePanel icon={MapPinned} title="Loading patrol coverage">
-          <p>Checking the published schedule for patrol-related sites and posts.</p>
+          <p>Checking the published schedule for patrol-related sites, posts, and route coverage.</p>
         </DataStatePanel>
       ) : patrolQuery.isError ? (
         <DataStatePanel icon={ShieldAlert} title="Patrol unavailable" tone="error">
           <p>{patrolQuery.error.message}</p>
+          <p>If you just signed in, sign out and back in so the secure employee link refreshes.</p>
         </DataStatePanel>
       ) : (
         <>
@@ -105,9 +106,9 @@ export function PatrolPage() {
                       <div className="patrol-shift" key={shift.id}>
                         <div>
                           <strong>{patrolShiftTime(shift)}</strong>
-                          <span>{shift.post?.name ?? 'Patrol coverage'} · {patrolAssignmentLabel(shift)}</span>
+                          <span>{shift.postName} · {patrolAssignmentLabel(shift)}</span>
                         </div>
-                        {shift.is_open ? <span className="shift-tag shift-tag--open">Open</span> : <span className="shift-tag shift-tag--covered">Covered</span>}
+                        {shift.isOpen ? <span className="shift-tag shift-tag--open">Open</span> : <span className="shift-tag shift-tag--covered">Covered</span>}
                       </div>
                     ))}
                   </div>

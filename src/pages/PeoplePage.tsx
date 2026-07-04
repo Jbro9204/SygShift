@@ -4,7 +4,6 @@ import { BadgeCheck, DatabaseZap, Search, ShieldAlert, UsersRound } from 'lucide
 import { DataStatePanel } from '../components/DataStatePanel'
 import {
   employeeDisplayName,
-  employeeInitials,
   getEmployeeDirectory,
   type DirectoryEntry,
 } from '../data/workforce'
@@ -25,9 +24,7 @@ const statusLabels: Record<DirectoryEntry['status'], string> = {
 function EmployeeIdentity({ employee }: { employee: DirectoryEntry }) {
   return (
     <div className="employee-identity">
-      <span className="employee-avatar" aria-hidden="true">
-        {employeeInitials(employee)}
-      </span>
+      <span className={`employee-role-rail employee-role-rail--${employee.role}`} aria-hidden="true" />
       <div>
         <strong>{employeeDisplayName(employee)}</strong>
         <span>@{employee.username}</span>
