@@ -14,6 +14,7 @@ import {
   RouteSuspense,
   SchedulePageRoute,
   SitesPageRoute,
+  TimePageRoute,
 } from './RouteElements'
 
 export const router = createBrowserRouter([
@@ -58,11 +59,9 @@ export const router = createBrowserRouter([
       {
         path: 'time',
         element: (
-          <ModulePage
-            eyebrow="Operations"
-            title="Time & attendance"
-            description="Schedule-linked punches, exceptions, approvals, locked pay periods, and traceable payroll exports will live here."
-          />
+          <RouteSuspense>
+            <TimePageRoute />
+          </RouteSuspense>
         ),
       },
       {

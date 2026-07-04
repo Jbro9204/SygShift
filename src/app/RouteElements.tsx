@@ -30,6 +30,9 @@ export const SchedulePageRoute = lazy(() =>
 export const SitesPageRoute = lazy(() =>
   import('../pages/SitesPage').then((module) => ({ default: module.SitesPage })),
 )
+export const TimePageRoute = lazy(() =>
+  import('../pages/TimePage').then((module) => ({ default: module.TimePage })),
+)
 
 function RouteFallback() {
   return (

@@ -3716,9 +3716,405 @@
   font-weight: 750;
 }
 
+.page--timekeeping {
+  max-width: 1220px;
+}
+
+.time-hero-card,
+.time-clock-card,
+.time-panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.time-hero-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 16px;
+  padding: 23px 24px;
+  border-left: 4px solid var(--gold);
+}
+
+.time-hero-card__icon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  color: #805715;
+  background: #f6ead0;
+  border-radius: 11px;
+}
+
+.time-hero-card h2,
+.time-clock-card h2,
+.time-panel h2 {
+  margin: 0;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+
+.time-hero-card h2 {
+  font-size: clamp(22px, 2.4vw, 30px);
+}
+
+.time-hero-card p:not(.eyebrow),
+.time-clock-card p,
+.time-panel__lead {
+  max-width: 760px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.time-rule-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.time-rule-grid article {
+  display: grid;
+  gap: 11px;
+  min-height: 150px;
+  align-content: start;
+  padding: 19px;
+  color: #3f3b33;
+  background: #fffdf8;
+  border: 1px solid #e4ded2;
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.time-rule-grid svg {
+  color: #916419;
+}
+
+.time-rule-grid span {
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.time-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.8fr);
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+
+.time-clock-card,
+.time-panel {
+  padding: 22px;
+}
+
+.time-clock-card {
+  display: grid;
+  gap: 18px;
+  border-left: 4px solid #a47a32;
+}
+
+.time-clock-card--working {
+  border-left-color: var(--success);
+}
+
+.time-clock-card--on_break {
+  border-left-color: #b66f22;
+}
+
+.time-clock-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+}
+
+.time-clock-card h2,
+.time-panel h2 {
+  font-size: 24px;
+}
+
+.time-server-box {
+  display: grid;
+  min-width: 190px;
+  gap: 3px;
+  padding: 13px 14px;
+  color: #403b33;
+  background: #f7f4ed;
+  border: 1px solid #e2dacc;
+  border-radius: 9px;
+}
+
+.time-server-box span {
+  color: #706a60;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.time-server-box strong {
+  color: #25221d;
+  font-size: 22px;
+}
+
+.time-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.time-action-row button {
+  min-height: 48px;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.time-shift-empty,
+.active-shift-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px;
+  color: #4a463e;
+  background: #faf7f0;
+  border: 1px solid #e5ddd0;
+  border-radius: 9px;
+}
+
+.time-shift-empty svg,
+.active-shift-card svg {
+  flex: 0 0 auto;
+  color: #8d611d;
+}
+
+.time-shift-empty strong,
+.active-shift-card strong,
+.time-shift-empty span,
+.active-shift-card span {
+  display: block;
+}
+
+.time-shift-empty p {
+  margin: 4px 0 0;
+  color: #716b61;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.time-shift-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.time-shift-list legend {
+  margin-bottom: 2px;
+  color: #4c4942;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.time-shift-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  background: #ffffff;
+  border: 1px solid #ddd7cb;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.time-shift-option--selected {
+  border-color: #bd8730;
+  box-shadow: 0 0 0 3px rgb(184 135 49 / 13%);
+}
+
+.time-shift-option input {
+  width: 18px;
+  height: 18px;
+  accent-color: #9b6b21;
+}
+
+.time-shift-option strong,
+.time-shift-option small,
+.time-shift-option em {
+  display: block;
+}
+
+.time-shift-option strong {
+  color: #302d27;
+  font-size: 16px;
+}
+
+.time-shift-option small,
+.time-shift-option em {
+  margin-top: 3px;
+  color: #6e685e;
+  font-size: 14px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.time-shift-option b {
+  padding: 5px 8px;
+  color: #70470c;
+  background: #fff1d8;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.active-shift-card span {
+  margin-top: 4px;
+  color: #6f695f;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.time-panel--guardrails ul {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.time-panel--guardrails li {
+  position: relative;
+  padding-left: 25px;
+  color: #4f4a42;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.time-panel--guardrails li::before {
+  position: absolute;
+  top: 0.62em;
+  left: 0;
+  width: 9px;
+  height: 9px;
+  background: var(--success);
+  border-radius: 50%;
+  content: "";
+}
+
+.time-event-list {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.time-event {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  padding: 14px;
+  background: #ffffff;
+  border: 1px solid #e2ddd3;
+  border-radius: 9px;
+}
+
+.time-event > span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  color: #805a1d;
+  background: #f5ead2;
+  border-radius: 9px;
+}
+
+.time-event strong,
+.time-event small {
+  display: block;
+}
+
+.time-event strong {
+  color: #2f2c26;
+  font-size: 16px;
+}
+
+.time-event small {
+  margin-top: 4px;
+  color: #716b61;
+  font-size: 14px;
+}
+
+.time-event em {
+  color: #7c3d34;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.time-event--voided {
+  opacity: 0.72;
+}
+
 @media (max-width: 680px) {
   .operational-details dl > div {
     grid-template-columns: 1fr;
     gap: 3px;
+  }
+}
+
+@media (max-width: 1040px) {
+  .time-rule-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .time-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .time-hero-card,
+  .time-clock-card__header {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .time-rule-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .time-hero-card .import-state-pill {
+    justify-self: start;
+  }
+
+  .time-action-row,
+  .time-action-row button {
+    width: 100%;
+  }
+
+  .time-action-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .time-shift-option {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .time-shift-option b {
+    grid-column: 2;
+    justify-self: start;
   }
 }
