@@ -512,7 +512,7 @@ export function brandedEmailHtml(message: NotificationJob['message'], appUrl = '
   const normalizedAppUrl = appUrl.replace(/\/+$/, '')
   const body = message.html?.trim() || textToHtml(message.text)
   const title = escapeHtml(message.subject)
-  const logoUrl = `${normalizedAppUrl}/brand/sygshift-logo.png`
+  const logoUrl = `${normalizedAppUrl}/brand/sygshift-email-logo.png`
 
   return `<!doctype html>
 <html lang="en">
@@ -530,12 +530,12 @@ export function brandedEmailHtml(message: NotificationJob['message'], appUrl = '
         <td align="center" style="padding:28px 16px;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%; max-width:640px; border-collapse:collapse;">
             <tr>
-              <td style="padding:18px 22px; background:#11100e; border-radius:18px 18px 0 0;">
+              <td style="padding:24px 24px 20px; background:#080706; border-radius:18px 18px 0 0;">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
                   <tr>
                     <td style="vertical-align:middle;">
-                      <img src="${logoUrl}" width="190" alt="SygShift" style="display:block; width:190px; max-width:70%; height:auto; border:0;">
-                      <div style="margin-top:10px; color:#d6b15f; font-size:11px; line-height:1.4; letter-spacing:1.8px; text-transform:uppercase; font-weight:700;">
+                      <img src="${logoUrl}" width="280" alt="SygShift" style="display:block; width:280px; max-width:88%; height:auto; border:0;">
+                      <div style="margin-top:12px; color:#d6b15f; font-size:11px; line-height:1.4; letter-spacing:1.8px; text-transform:uppercase; font-weight:700;">
                         Smart schedules. Stronger coverage.
                       </div>
                     </td>
