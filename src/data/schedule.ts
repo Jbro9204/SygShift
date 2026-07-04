@@ -176,6 +176,12 @@ export interface ScheduleRow {
   shifts: ScheduleShift[]
 }
 
+export interface EmployeeScheduleRow {
+  id: string
+  name: string
+  shifts: ScheduleShift[]
+}
+
 export async function getWeeklySchedule(weekStartsOn: string): Promise<WeeklySchedule | null> {
   const { data, error } = await getSupabaseClient()
     .from('schedules')
@@ -299,6 +305,30 @@ export function scheduleRows(schedule: WeeklySchedule): ScheduleRow[] {
     }
     row.shifts.push(shift)
     rows.set(id, row)
+  }
+
+  return [...rows.values()]
+    .map((row) => ({
+      ...row,
+      shifts: [...row.shifts].sort((left, right) => left.starts_at.localeCompare(right.starts_at)),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+export function employeeScheduleRows(schedule: WeeklySchedule): EmployeeScheduleRow[] {
+  const rows = new Map<string, EmployeeScheduleRow>()
+
+  for (const shift of schedule.shifts) {
+    for (const assignment of shift.assignments) {
+      const employee = assignment.employee
+      const row = rows.get(employee.id) ?? {
+        id: employee.id,
+        name: assignmentName(assignment),
+        shifts: [],
+      }
+      row.shifts.push(shift)
+      rows.set(employee.id, row)
+    }
   }
 
   return [...rows.values()]

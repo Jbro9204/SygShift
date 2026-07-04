@@ -18,6 +18,9 @@ export const LoginPageRoute = lazy(() =>
 export const OperationalImportPageRoute = lazy(() =>
   import('../pages/OperationalImportPage').then((module) => ({ default: module.OperationalImportPage })),
 )
+export const NotificationsPageRoute = lazy(() =>
+  import('../pages/NotificationsPage').then((module) => ({ default: module.NotificationsPage })),
+)
 export const OverviewPageRoute = lazy(() =>
   import('../pages/OverviewPage').then((module) => ({ default: module.OverviewPage })),
 )
@@ -26,6 +29,9 @@ export const PeoplePageRoute = lazy(() =>
 )
 export const RequestsPageRoute = lazy(() =>
   import('../pages/RequestsPage').then((module) => ({ default: module.RequestsPage })),
+)
+export const ReportsPageRoute = lazy(() =>
+  import('../pages/ReportsPage').then((module) => ({ default: module.ReportsPage })),
 )
 export const SchedulePageRoute = lazy(() =>
   import('../pages/SchedulePage').then((module) => ({ default: module.SchedulePage })),

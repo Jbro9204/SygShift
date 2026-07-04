@@ -6,7 +6,7 @@
 - Company domain: sygilant.us
 - Notification sender: SygShift <scheduling@sygilant.us>
 - GitHub repo: https://github.com/Jbro9204/SygShift
-- Latest verified Cloudflare Worker version: `fd446809-97a2-4cc6-98ac-d8b0174de78c`
+- Latest verified Cloudflare Worker version: `8cf43e0b-a5c8-4e44-a677-2d32cc1a3874`
 - Latest pushed commit: see Git history for the current rollout-status revision.
 
 ## Verification completed
@@ -19,6 +19,10 @@ The following checks passed after the supervisor schedule-review and notificatio
 - Production build
 - Browser/e2e tests on desktop and mobile
 - Production UI polish pass for user access, employee directory, and announcement composer layouts
+- Supervisor/Admin full-schedule summary and employee schedule view
+- Operational Notifications page connected to delivery status data
+- Operational Reports page connected to schedule, workforce, requests, notification, and payroll summaries
+- Salary payroll handling note added: salary employees are tracked separately and are not silently auto-paid 40 hours without an approved rule
 - Live `/schedule` smoke check
 - Live `/people` smoke check
 - Live `/users` smoke check

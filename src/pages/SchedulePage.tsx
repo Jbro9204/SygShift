@@ -8,6 +8,7 @@ import { getCurrentAppRole } from '../data/session'
 import {
   assignmentName,
   bibleScheduleRows,
+  employeeScheduleRows,
   createSupervisorOpenShift,
   getBibleSchedulePreview,
   getScheduleBuilderOptions,
@@ -68,12 +69,15 @@ function ShiftCard({
   shift,
   canResolve,
   onResolve,
+  compact = false,
 }: {
   shift: ScheduleShift
   canResolve: boolean
   onResolve: (shift: ScheduleShift) => void
+  compact?: boolean
 }) {
   const title = shift.post?.name ?? shift.event?.name ?? 'Shift'
+  const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? null
   const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
   const source = parseBibleSourceNote(shift.notes)
   const sourceReference = sourceReferenceLabel(source)
@@ -86,6 +90,7 @@ function ShiftCard({
         {shift.is_overtime ? <span className="shift-tag shift-tag--overtime">OT</span> : null}
       </div>
       <span className="shift-card__title">{title}</span>
+      {compact && location ? <small className="shift-card__location">{location}</small> : null}
       <div className="shift-card__people">
         {shift.assignments.length > 0
           ? shift.assignments.map((assignment) => (
@@ -236,6 +241,8 @@ export function SchedulePage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today, { weekStartsOn: 0 }))
   const [search, setSearch] = useState('')
   const [siteFilter, setSiteFilter] = useState('all')
+  const [scheduleView, setScheduleView] = useState<'site' | 'employee'>('site')
+  const [employeeFilter, setEmployeeFilter] = useState('all')
   const [reviewOnly, setReviewOnly] = useState(false)
   const [builderOpen, setBuilderOpen] = useState(false)
   const [resolvingShift, setResolvingShift] = useState<ScheduleShift | null>(null)
@@ -321,6 +328,7 @@ export function SchedulePage() {
     },
   })
   const rows = useMemo(() => scheduleQuery.data ? scheduleRows(scheduleQuery.data) : [], [scheduleQuery.data])
+  const employeeRows = useMemo(() => scheduleQuery.data ? employeeScheduleRows(scheduleQuery.data) : [], [scheduleQuery.data])
   const bibleRows = useMemo(
     () => biblePreviewQuery.data ? bibleScheduleRows(biblePreviewQuery.data) : [],
     [biblePreviewQuery.data],
@@ -354,6 +362,46 @@ export function SchedulePage() {
       }))
       .filter((row) => row.shifts.length > 0)
   }, [rows, reviewOnly, search, siteFilter])
+  const visibleEmployeeRows = useMemo(() => {
+    const term = search.trim().toLocaleLowerCase()
+    return employeeRows
+      .filter((row) => employeeFilter === 'all' || row.id === employeeFilter)
+      .map((row) => ({
+        ...row,
+        shifts: row.shifts.filter((shift) => {
+          const source = parseBibleSourceNote(shift.notes)
+          if (reviewOnly && !source.reviewNeeded) return false
+          if (!term) return true
+          const searchable = [
+            row.name,
+            shift.post?.name,
+            shift.post?.site.name,
+            shift.event?.name,
+            shift.event?.location_name,
+            source.context,
+            source.sheet,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLocaleLowerCase()
+          return searchable.includes(term)
+        }),
+      }))
+      .filter((row) => row.shifts.length > 0)
+  }, [employeeFilter, employeeRows, reviewOnly, search])
+  const scheduleSummary = useMemo(() => {
+    const shifts = rows.flatMap((row) => row.shifts)
+    const assigned = shifts.reduce((total, shift) => total + shift.assignments.length, 0)
+    const open = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+    return {
+      assigned,
+      employees: employeeRows.length,
+      open,
+      review: shifts.filter((shift) => parseBibleSourceNote(shift.notes).reviewNeeded).length,
+      shifts: shifts.length,
+      sites: rows.length,
+    }
+  }, [employeeRows.length, rows])
   const reviewNeededCount = useMemo(
     () => rows.reduce((total, row) => total + row.shifts.filter((shift) => parseBibleSourceNote(shift.notes).reviewNeeded).length, 0),
     [rows],
@@ -698,6 +746,15 @@ export function SchedulePage() {
         </section>
       ) : null}
 
+      {scheduleQuery.data ? (
+        <section className="schedule-admin-summary" aria-label="Published schedule summary">
+          <article><span>Published shifts</span><strong>{scheduleSummary.shifts}</strong><small>Revision {scheduleQuery.data.revision}</small></article>
+          <article><span>Assigned slots</span><strong>{scheduleSummary.assigned}</strong><small>{scheduleSummary.employees} employees on schedule</small></article>
+          <article className={scheduleSummary.open ? 'import-metric--attention' : ''}><span>Open slots</span><strong>{scheduleSummary.open}</strong><small>Visible in openings/request workflows</small></article>
+          <article className={scheduleSummary.review ? 'import-metric--attention' : ''}><span>Review needed</span><strong>{scheduleSummary.review}</strong><small>Bible items needing supervisor cleanup</small></article>
+        </section>
+      ) : null}
+
       <section className="schedule-toolbar" aria-label="Schedule controls">
         <div className="week-controls">
           <button
@@ -729,6 +786,24 @@ export function SchedulePage() {
         </div>
 
         <div className="schedule-filters">
+          {scheduleQuery.data ? (
+            <div className="segmented-control" aria-label="Schedule view">
+              <button
+                className={scheduleView === 'site' ? 'is-active' : ''}
+                onClick={() => setScheduleView('site')}
+                type="button"
+              >
+                Site coverage
+              </button>
+              <button
+                className={scheduleView === 'employee' ? 'is-active' : ''}
+                onClick={() => setScheduleView('employee')}
+                type="button"
+              >
+                Employee view
+              </button>
+            </div>
+          ) : null}
           <label className="search-field">
             <Search aria-hidden="true" size={20} />
             <span className="visually-hidden">Search schedule</span>
@@ -739,6 +814,19 @@ export function SchedulePage() {
               value={search}
             />
           </label>
+          {scheduleView === 'employee' && scheduleQuery.data ? (
+            <label>
+              <span className="visually-hidden">Filter by employee</span>
+              <select
+                aria-label="Filter by employee"
+                onChange={(event) => setEmployeeFilter(event.target.value)}
+                value={employeeFilter}
+              >
+                <option value="all">All employees</option>
+                {employeeRows.map((row) => <option value={row.id} key={row.id}>{row.name}</option>)}
+              </select>
+            </label>
+          ) : (
           <label>
             <span className="visually-hidden">Filter by site</span>
             <select
@@ -750,6 +838,7 @@ export function SchedulePage() {
               {(rows.length > 0 ? rows : bibleRows).map((row) => <option value={row.id} key={row.id}>{row.name}</option>)}
             </select>
           </label>
+          )}
           {reviewNeededCount > 0 ? (
             <label className="check-field schedule-review-filter">
               <input
@@ -867,7 +956,44 @@ export function SchedulePage() {
                 <p>A supervisor can prepare a reviewed revision before publishing coverage.</p>
               </div>
             </div>
-          ) : visibleRows.length === 0 ? (
+          ) : scheduleView === 'employee' && visibleEmployeeRows.length === 0 ? (
+            <div className="schedule-empty" role="row">
+              <div role="cell">
+                <Search aria-hidden="true" size={34} />
+                <strong>No employee schedules match these filters.</strong>
+                <p>Clear the search or select all employees to see assigned coverage for this week.</p>
+              </div>
+            </div>
+          ) : scheduleView === 'employee' ? visibleEmployeeRows.map((row) => (
+            <div className="schedule-row schedule-row--coverage" role="row" key={row.id}>
+              <div className="schedule-location" role="rowheader">
+                <span>Employee</span>
+                <strong>{row.name}</strong>
+              </div>
+              {days.map((day) => {
+                const dayKey = format(day, 'yyyy-MM-dd')
+                const shifts = row.shifts.filter((shift) => shiftOperationalDate(shift) === dayKey)
+                return (
+                  <div className="schedule-day-cell" role="cell" key={dayKey}>
+                    {shifts.map((shift) => (
+                      <ShiftCard
+                        canResolve={canBuildSchedule}
+                        compact
+                        key={shift.id}
+                        onResolve={(targetShift) => {
+                          setBuilderOpen(false)
+                          setBuilderMessage(null)
+                          setResolvingShift(targetShift)
+                        }}
+                        shift={shift}
+                      />
+                    ))}
+                    {shifts.length === 0 ? <span className="schedule-day-empty">—</span> : null}
+                  </div>
+                )
+              })}
+            </div>
+          )) : visibleRows.length === 0 ? (
             <div className="schedule-empty" role="row">
               <div role="cell">
                 <Search aria-hidden="true" size={34} />

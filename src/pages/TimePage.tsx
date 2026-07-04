@@ -583,6 +583,11 @@ function SupervisorTimeReview({ defaultDate }: { defaultDate: string }) {
             <article><span>Paid hours</span><strong>{payrollHours(review.summary.paidMinutes)}</strong><small>Export preview total</small></article>
           </section>
 
+          <div className="inline-note">
+            Salary employees are included in the review when they have schedule or punch activity. SygShift does not
+            automatically add 40 hours to payroll; that requires an approved salary-payroll rule before it is automated.
+          </div>
+
           {correctionMutation.isError ? <div className="inline-alert" role="alert">{correctionMutation.error.message}</div> : null}
 
           <div className="time-review-actions">

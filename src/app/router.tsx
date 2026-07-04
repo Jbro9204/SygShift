@@ -8,9 +8,11 @@ import {
   EventsPageRoute,
   ImportReviewPageRoute,
   LoginPageRoute,
+  NotificationsPageRoute,
   OperationalImportPageRoute,
   OverviewPageRoute,
   PeoplePageRoute,
+  ReportsPageRoute,
   RequestsPageRoute,
   RouteSuspense,
   SchedulePageRoute,
@@ -143,21 +145,17 @@ export const router = createBrowserRouter([
       {
         path: 'notifications',
         element: (
-          <ModulePage
-            eyebrow="Communication"
-            title="Notifications"
-            description="Track delivery of scheduling, approval, call-off, and overtime messages without exposing sensitive site details."
-          />
+          <RouteSuspense>
+            <NotificationsPageRoute />
+          </RouteSuspense>
         ),
       },
       {
         path: 'reports',
         element: (
-          <ModulePage
-            eyebrow="Communication"
-            title="Reports"
-            description="Create readable operational, timekeeping, payroll, compliance, and change-history reports."
-          />
+          <RouteSuspense>
+            <ReportsPageRoute />
+          </RouteSuspense>
         ),
       },
     ],
