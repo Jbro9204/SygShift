@@ -14,6 +14,7 @@ const opportunity: Opportunity = {
   headcount_required: 2,
   requires_armed: false,
   is_overtime: false,
+  notes: null,
   post: null,
   event: {
     id: '20000000-0000-0000-0000-000000000001',

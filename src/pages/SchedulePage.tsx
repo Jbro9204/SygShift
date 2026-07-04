@@ -17,6 +17,7 @@ import {
   type BibleScheduleShift,
   type ScheduleShift,
 } from '../data/schedule'
+import { parseBibleSourceNote, sourceReferenceLabel } from '../data/sourceNotes'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { operationalToday } from '../lib/time'
 
@@ -59,9 +60,12 @@ function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
 function ShiftCard({ shift }: { shift: ScheduleShift }) {
   const title = shift.post?.name ?? shift.event?.name ?? 'Shift'
   const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
+  const source = parseBibleSourceNote(shift.notes)
+  const sourceReference = sourceReferenceLabel(source)
+  const showSourceReview = source.reviewNeeded || (shift.is_open && source.assignee)
 
   return (
-    <article className="shift-card">
+    <article className={source.reviewNeeded ? 'shift-card shift-card--review-needed' : 'shift-card'}>
       <div className="shift-card__heading">
         <strong>{shiftTimeRange(shift)}</strong>
         {shift.is_overtime ? <span className="shift-tag shift-tag--overtime">OT</span> : null}
@@ -75,6 +79,7 @@ function ShiftCard({ shift }: { shift: ScheduleShift }) {
           : <span className="shift-card__unassigned">No one assigned</span>}
       </div>
       <div className="shift-card__footer">
+        {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review needed</span> : null}
         {shift.requires_armed ? <span className="shift-tag shift-tag--armed">Armed</span> : null}
         {shift.is_open || openSlots > 0 ? (
           <span className="shift-tag shift-tag--open">
@@ -84,6 +89,14 @@ function ShiftCard({ shift }: { shift: ScheduleShift }) {
           <span className="shift-tag shift-tag--covered">Covered</span>
         )}
       </div>
+      {showSourceReview ? (
+        <div className="shift-card__source-note" aria-label="Bible source assignment review">
+          {source.assignee ? <span><strong>Bible assignee:</strong> {source.assignee}</span> : null}
+          {source.context ? <span><strong>Source row:</strong> {source.context}</span> : null}
+          {source.qualification ? <span><strong>Qualification:</strong> {source.qualification}</span> : null}
+          {sourceReference ? <small>{sourceReference}</small> : null}
+        </div>
+      ) : null}
     </article>
   )
 }

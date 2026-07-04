@@ -11,6 +11,7 @@ import {
   withdrawOpportunityRequest,
   type Opportunity,
 } from '../data/opportunities'
+import { parseBibleSourceNote, sourceReferenceLabel } from '../data/sourceNotes'
 import { isSupabaseConfigured } from '../lib/supabase'
 
 const requestLabels = {
@@ -48,14 +49,18 @@ function OpportunityCard({
   const request = opportunityRequest(opportunity)
   const openSlots = Math.max(opportunity.headcount_required - opportunity.assignments.length, 0)
   const busy = mutation.isPending && mutation.variables?.opportunityId === opportunity.id
+  const source = parseBibleSourceNote(opportunity.notes)
+  const sourceReference = sourceReferenceLabel(source)
+  const guardCanRequest = canRequest && !source.reviewNeeded
 
   return (
-    <article className="opportunity-card">
+    <article className={source.reviewNeeded ? 'opportunity-card opportunity-card--review-needed' : 'opportunity-card'}>
       <header>
         <div>
           <div className="opportunity-card__type">
             {opportunity.event ? 'Event' : 'Open shift'}
             {opportunity.is_overtime ? <span>Overtime</span> : null}
+            {source.reviewNeeded ? <span>Review needed</span> : null}
           </div>
           <h2>{opportunityTitle(opportunity)}</h2>
         </div>
@@ -66,12 +71,20 @@ function OpportunityCard({
         <MapPin aria-hidden="true" size={18} />
         {opportunityLocation(opportunity)}
       </p>
+      {source.reviewNeeded ? (
+        <div className="opportunity-card__source-note" aria-label="Bible source assignment review">
+          {source.assignee ? <span><strong>Bible assignee:</strong> {source.assignee}</span> : null}
+          {source.context ? <span><strong>Source row:</strong> {source.context}</span> : null}
+          {source.qualification ? <span><strong>Qualification:</strong> {source.qualification}</span> : null}
+          {sourceReference ? <small>{sourceReference}</small> : null}
+        </div>
+      ) : null}
       <footer>
         <div className="opening-count">
           <UsersRound aria-hidden="true" size={19} />
           <span>{openSlots} opening{openSlots === 1 ? '' : 's'}</span>
         </div>
-        {canRequest ? (
+        {guardCanRequest ? (
           request?.status === 'pending' ? (
             <button
               className="secondary-button opportunity-action"
@@ -95,6 +108,8 @@ function OpportunityCard({
               {busy ? 'Requesting…' : 'Request to work'}
             </button>
           )
+        ) : canRequest && source.reviewNeeded ? (
+          <span className="request-status">Supervisor review required</span>
         ) : (
           <span className="request-status">Supervisor view</span>
         )}
@@ -148,8 +163,8 @@ export function EventsPage() {
           <p className="eyebrow">Operations</p>
           <h1>Events &amp; openings</h1>
           <p className="page-summary">
-            Published opportunities in one place, with qualification checks completed before a guard
-            can request the work.
+            Published opportunities in one place, with armed-work safeguards and supervisor review
+            markers kept visible before a guard requests the work.
           </p>
         </div>
       </section>
@@ -157,8 +172,8 @@ export function EventsPage() {
       {!isSupabaseConfigured ? (
         <DataStatePanel icon={DatabaseZap} title="Openings ready for the secure connection" tone="setup">
           <p>
-            Events and open shifts will appear after authentication and reviewed schedule data are connected.
-            Armed work is never shown to an unqualified guard.
+            Events and open shifts appear here after authentication is connected. Armed work is never
+            shown to an unqualified guard.
           </p>
           <ul>
             <li>Published events and open shifts only</li>
@@ -195,7 +210,7 @@ export function EventsPage() {
 
           {opportunities.length === 0 ? (
             <DataStatePanel icon={CalendarClock} title="No qualified openings are available">
-              <p>New published events and open shifts will appear here automatically.</p>
+              <p>New published events, overtime openings, and supervisor-reviewed shifts will appear here automatically.</p>
             </DataStatePanel>
           ) : (
             <section className="opportunity-grid" aria-label="Available events and open shifts">

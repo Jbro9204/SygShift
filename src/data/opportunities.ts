@@ -15,6 +15,7 @@ const opportunitySchema = z.object({
   headcount_required: z.number().int().positive(),
   requires_armed: z.boolean(),
   is_overtime: z.boolean(),
+  notes: z.string().nullable(),
   post: z.object({
     id: z.string().uuid(),
     name: z.string(),
@@ -58,6 +59,7 @@ export async function getOpenOpportunities(): Promise<OpportunityContext> {
         headcount_required,
         requires_armed,
         is_overtime,
+        notes,
         post:posts (id, name, site:sites (id, name, code)),
         event:events (id, name, location_name, site:sites (id, name, code)),
         schedules!inner (status),
