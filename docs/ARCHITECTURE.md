@@ -37,6 +37,15 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 7. Announcements and delivery history
 8. Audit history and source reconciliation
 
+## Identity and access control
+
+- The employee directory is the source of truth for names, roles, employment type, status, contact details, and permanent usernames.
+- Supabase Auth users are linked privately to employee records. The sign-in email is derived from the username and is never presented as a real employee email address.
+- Admins manage employee records and account state from the Users & Access console, which requires an Admin role and MFA.
+- Auth-user creation and password resets run through the Worker because they require the service-role key. That key is never available to browser code.
+- Disabled accounts and separated employees are blocked at the database authorization boundary even if an Auth session exists.
+- The workbook people import promotes only clear person records automatically; ambiguous source rows remain held for review.
+
 ## Change discipline
 
 - Schema changes are forward-only migrations.

@@ -11,6 +11,7 @@ import {
   MapPinned,
   Megaphone,
   Timer,
+  UserCog,
   UsersRound,
   type LucideIcon,
 } from 'lucide-react'
@@ -58,6 +59,7 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: 'Administration',
     items: [
+      { label: 'Users & access', path: '/users', icon: UserCog, roles: ['admin'] },
       { label: 'Import review', path: '/import-review', icon: Database, roles: ['admin'] },
       { label: 'Operational import', path: '/operational-import', icon: ListChecks, roles: ['admin'] },
     ],

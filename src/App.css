@@ -4408,6 +4408,258 @@
   border-radius: 8px;
 }
 
+.user-admin-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.user-admin-metrics article {
+  display: grid;
+  min-height: 116px;
+  align-content: center;
+  padding: 18px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-top: 3px solid #b9b4aa;
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.user-admin-metrics article.import-metric--attention {
+  border-top-color: #b27625;
+}
+
+.user-admin-metrics span {
+  color: #625e56;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.user-admin-metrics strong {
+  margin-top: 6px;
+  color: #26231e;
+  font-size: 30px;
+}
+
+.user-admin-metrics small {
+  color: #777168;
+  font-size: 13px;
+}
+
+.user-admin-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) repeat(3, minmax(130px, 0.18fr)) auto auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: #fbfaf7;
+  border: 1px solid #e6dfd3;
+  border-radius: 10px;
+}
+
+.user-admin-toolbar .primary-action,
+.user-admin-toolbar .secondary-button {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.user-admin-success {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 13px 15px;
+  color: #24513f;
+  background: #e8f3ec;
+  border: 1px solid #bed8ca;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.user-admin-panel {
+  overflow: hidden;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.user-admin-table {
+  display: grid;
+}
+
+.user-admin-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.4fr) minmax(110px, 0.55fr) minmax(120px, 0.6fr) minmax(130px, 0.6fr) minmax(120px, 0.45fr);
+  gap: 12px;
+  align-items: center;
+  padding: 15px 16px;
+  border-bottom: 1px solid #ebe6dc;
+}
+
+.user-admin-row:last-child {
+  border-bottom: 0;
+}
+
+.user-admin-row--header {
+  color: #625b50;
+  background: #f7f4ed;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.user-admin-row:not(.user-admin-row--header) {
+  color: #3a362f;
+  font-size: 14px;
+}
+
+.user-admin-row strong,
+.user-admin-row span,
+.user-admin-row small {
+  display: block;
+}
+
+.user-admin-row strong {
+  color: #2e2a24;
+  font-size: 16px;
+}
+
+.user-admin-row small,
+.user-admin-row div > span:not(.account-status, .plain-value) {
+  margin-top: 3px;
+  color: #746e64;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.account-status {
+  display: inline-flex;
+  width: fit-content;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.account-status--active {
+  color: #245d47;
+  background: #e7f2ec;
+}
+
+.account-status--disabled {
+  color: #783a2d;
+  background: #fae2dc;
+}
+
+.account-status--missing {
+  color: #7a4b13;
+  background: #fff1d8;
+}
+
+.user-admin-modal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.42fr);
+  gap: 22px;
+}
+
+.user-admin-modal-grid h3 {
+  margin: 0 0 14px;
+  color: #28241d;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.user-admin-form .modal-actions {
+  margin-bottom: 0;
+}
+
+.account-control-panel {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.account-control-card {
+  display: grid;
+  gap: 11px;
+  padding: 15px;
+  background: #fbfaf6;
+  border: 1px solid #e4dccf;
+  border-radius: 10px;
+}
+
+.account-control-card p,
+.account-control-card small {
+  margin: 0;
+  color: #665f54;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.account-control-card label {
+  display: grid;
+  gap: 7px;
+  color: #4f483d;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.account-control-card input {
+  min-height: 42px;
+  padding: 9px 10px;
+  color: #29261f;
+  background: #ffffff;
+  border: 1px solid #d5cec0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 15px;
+}
+
+.account-control-card .primary-action,
+.account-control-card .secondary-button,
+.temporary-password-card .secondary-button {
+  width: 100%;
+}
+
+.temporary-password-card {
+  display: grid;
+  gap: 10px;
+  padding: 15px;
+  color: #24513f;
+  background: #e8f3ec;
+  border: 1px solid #bed8ca;
+  border-radius: 10px;
+}
+
+.temporary-password-card strong {
+  color: #214737;
+  font-size: 16px;
+}
+
+.temporary-password-card p {
+  margin: 0;
+  color: #365f4c;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.temporary-password-card code {
+  display: block;
+  overflow-x: auto;
+  padding: 10px;
+  color: #1f342b;
+  background: #ffffff;
+  border: 1px solid #c6dece;
+  border-radius: 8px;
+  font-size: 15px;
+}
+
 .correction-list {
   display: grid;
   gap: 12px;
@@ -4513,6 +4765,21 @@
   .payroll-export-history-item {
     grid-template-columns: 1fr;
   }
+
+  .user-admin-metrics,
+  .user-admin-toolbar,
+  .user-admin-modal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .user-admin-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .user-admin-row--header {
+    display: none;
+  }
 }
 
 @media (max-width: 720px) {
@@ -4577,5 +4844,11 @@
   .payroll-history-panel {
     margin-right: 16px;
     margin-left: 16px;
+  }
+
+  .user-admin-toolbar .primary-action,
+  .user-admin-toolbar .secondary-button,
+  .user-admin-row .secondary-button {
+    width: 100%;
   }
 }

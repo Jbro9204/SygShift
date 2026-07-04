@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import worker from '../worker'
 
-function environment(response: Response = new Response('asset')) {
-  return { ASSETS: { fetch: vi.fn().mockResolvedValue(response) } }
+function environment(response: Response = new Response('asset'), values: Record<string, string> = {}) {
+  return { ASSETS: { fetch: vi.fn().mockResolvedValue(response) }, ...values }
 }
 
 describe('Cloudflare Worker boundary', () => {
@@ -67,5 +67,21 @@ describe('Cloudflare Worker boundary', () => {
     expect(response.headers.get('content-security-policy')).toBeNull()
     expect(response.headers.get('strict-transport-security')).toBeNull()
     expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+  })
+
+  it('requires an authenticated admin session before user provisioning', async () => {
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/admin/users/provision-missing', { method: 'POST' }),
+      environment(new Response('asset'), {
+        SUPABASE_PUBLISHABLE_KEY: 'publishable',
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+        SUPABASE_URL: 'https://example.supabase.co',
+      }),
+    )
+    const payload = await response.json() as { error: string; requestId: string }
+
+    expect(response.status).toBe(401)
+    expect(payload.error).toBe('auth_required')
+    expect(payload.requestId).toBe(response.headers.get('x-request-id'))
   })
 })

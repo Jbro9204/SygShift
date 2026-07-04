@@ -1,0 +1,33 @@
+set search_path = '';
+
+revoke usage on schema private from anon, authenticated;
+revoke all on all tables in schema private from anon, authenticated;
+revoke all on all sequences in schema private from anon, authenticated;
+revoke all on all functions in schema private from anon, authenticated;
+
+alter table private.audit_events enable row level security;
+alter table private.employee_accounts enable row level security;
+alter table private.employee_contacts enable row level security;
+alter table private.employee_operational_profiles enable row level security;
+alter table private.import_candidates enable row level security;
+alter table private.import_entity_links enable row level security;
+alter table private.import_evidence_files enable row level security;
+alter table private.import_issues enable row level security;
+alter table private.import_mapping_decisions enable row level security;
+alter table private.import_promotion_batches enable row level security;
+alter table private.import_review_decisions enable row level security;
+alter table private.import_runs enable row level security;
+alter table private.notification_outbox enable row level security;
+alter table private.payroll_export_batches enable row level security;
+alter table private.payroll_export_rows enable row level security;
+alter table private.site_secrets enable row level security;
+alter table private.source_annotations enable row level security;
+alter table private.source_cell_metadata enable row level security;
+alter table private.source_cells enable row level security;
+alter table private.source_files enable row level security;
+alter table private.source_links enable row level security;
+alter table private.source_relationships enable row level security;
+alter table private.source_sheet_metadata enable row level security;
+alter table private.source_sheets enable row level security;
+alter table private.system_bootstrap enable row level security;
+alter table private.username_registry enable row level security;

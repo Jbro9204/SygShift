@@ -6,6 +6,8 @@
 - Usernames are assigned from the employee directory and mapped to private Supabase Auth identifiers; employees sign in with usernames, not personal email addresses.
 - The first administrator is created through a one-time service-role bootstrap command. Bootstrap credentials are never stored in source code, migrations, documentation, or browser-delivered files.
 - Temporary bootstrap passwords must be replaced on first sign-in.
+- New employee logins are provisioned only through an Admin + MFA server-side workflow. The browser never receives the service-role key.
+- Temporary employee passwords are shown or exported once for handoff and must be treated as confidential.
 - Privileged roles require multi-factor authentication before sensitive mutations.
 - Disabled or separated employees cannot authenticate or accept work.
 - Authorization is enforced in the database and server, never only in the interface.
@@ -14,6 +16,7 @@
 ## Data handling
 
 - Service-role and secret keys are forbidden in browser configuration.
+- Service-role keys must live only in local secret files, the Cloudflare secret store, or a sealed provisioning process.
 - Sensitive site details are stored separately from ordinary site records.
 - Sensitive site details are never included in announcement or email bodies.
 - Access to sensitive site details is limited to Admins, Supervisors, and guards actively assigned to that location, and access is logged.

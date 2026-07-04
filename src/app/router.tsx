@@ -15,6 +15,7 @@ import {
   SchedulePageRoute,
   SitesPageRoute,
   TimePageRoute,
+  UserAdminPageRoute,
 } from './RouteElements'
 
 export const router = createBrowserRouter([
@@ -103,6 +104,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <RequestsPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'users',
+        element: (
+          <RouteSuspense>
+            <UserAdminPageRoute />
           </RouteSuspense>
         ),
       },
