@@ -90,8 +90,8 @@ describe('schedule presentation', () => {
       weekEndsOn: '2026-07-04',
       sourceSheetName: 'June 28th to July 4th',
       sourceSheetIndex: 145,
-      blockingIssueCount: 132,
-      warningIssueCount: 60,
+      blockingIssueCount: 0,
+      warningIssueCount: 0,
       shifts: [{
         id: '90000000-0000-4000-8000-000000000001',
         candidateKey: 'cell:145:C12',

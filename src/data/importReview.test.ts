@@ -10,17 +10,17 @@ describe('import review validation', () => {
   it('accepts the protected review summary contract', () => {
     const summary = parseImportReviewSummary({
       importRunId: '16a6c13b-af3f-423c-aa4e-55f794723a3c',
-      status: 'review',
+      status: 'promoted',
       sourceSha256: verifiedWorkbookBaseline.sourceSha256,
       sourceFilename: verifiedWorkbookBaseline.sourceFilename,
       sourceCellCount: 110_274,
       candidateCount: 9_408,
-      blockingIssueCount: 132,
-      warningCount: 60,
+      blockingIssueCount: 0,
+      warningCount: 0,
       reconciliationDigest: verifiedWorkbookBaseline.reconciliationDigest,
       createdAt: '2026-07-03T12:00:00.000Z',
       candidateCounts: { 'employee:pending': 56 },
-      issueCounts: { 'blocking:open': 132 },
+      issueCounts: { 'blocking:resolved': 132, 'warning:resolved': 60 },
     })
 
     expect(summary?.candidateCount).toBe(9_408)

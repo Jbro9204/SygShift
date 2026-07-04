@@ -105,8 +105,8 @@ function VerifiedStagingSummary() {
           <p className="eyebrow">Protected staging complete</p>
           <h2 id="verified-import-title">Every workbook cell is preserved and traceable.</h2>
           <p>
-            The source workbook is loaded into a private local database and backed up. Ambiguous legacy
-            entries remain in review so no employee, site, qualification, or shift is guessed.
+            The source workbook was loaded into protected staging, reviewed, and promoted into SygShift.
+            The workbook remains available as audit evidence, but SygShift is now the operational source of truth.
           </p>
         </div>
         <span className="import-state-pill"><CheckCircle2 aria-hidden="true" size={17} /> Verified</span>
@@ -116,7 +116,7 @@ function VerifiedStagingSummary() {
         <article><span>Worksheets</span><strong>{formatNumber(baseline.sheetCount)}</strong><small>All source tabs</small></article>
         <article><span>Protected cells</span><strong>{formatNumber(baseline.sourceCellCount)}</strong><small>Values and formatting evidence</small></article>
         <article><span>Records found</span><strong>{formatNumber(baseline.candidateCount)}</strong><small>Schedules, people, sites, and shifts</small></article>
-        <article className="import-metric--attention"><span>Review questions</span><strong>{formatNumber(baseline.blockingIssueCount + baseline.warningCount)}</strong><small>{baseline.blockingIssueCount} must be resolved</small></article>
+        <article><span>Historical questions</span><strong>{formatNumber(baseline.blockingIssueCount + baseline.warningCount)}</strong><small>Resolved during import</small></article>
       </section>
 
       <section className="import-breakdown" aria-labelledby="record-breakdown-title">
@@ -140,9 +140,9 @@ function VerifiedStagingSummary() {
           details, and schedules remain hidden until Supabase authentication is connected.
         </p>
         <ul>
-          <li>An Admin using MFA reviews every unresolved source question.</li>
+          <li>Resolved source questions remain available as audit history.</li>
           <li>Each decision keeps the original cell location and an append-only audit entry.</li>
-          <li>Promotion is technically blocked until no blocking question or pending record remains.</li>
+          <li>Operational work now happens in SygShift schedules, people, requests, and timekeeping.</li>
         </ul>
       </DataStatePanel>
     </>
@@ -348,6 +348,10 @@ function LiveImportReview() {
   const activeQuery = view === 'issues' ? issuesQuery : candidatesQuery
   const activeRows = activeQuery.data ?? []
   const total = activeRows[0]?.total_count ?? 0
+  const resolvedIssueCount = (summary.issueCounts['blocking:resolved'] ?? 0)
+    + (summary.issueCounts['warning:resolved'] ?? 0)
+    + (summary.issueCounts['information:resolved'] ?? 0)
+  const activeIssueCount = summary.blockingIssueCount + summary.warningCount
 
   function changeView(nextView: typeof view) {
     setView(nextView)
@@ -359,13 +363,17 @@ function LiveImportReview() {
       <section className="import-status-card" aria-labelledby="live-import-title">
         <div className="import-status-card__icon"><ShieldCheck aria-hidden="true" size={29} /></div>
         <div>
-          <p className="eyebrow">Latest protected import</p>
+          <p className="eyebrow">Operational import complete</p>
           <h2 id="live-import-title">{summary.sourceFilename}</h2>
-          <p>Review status: <strong>{summary.status}</strong> · Source identity {summary.sourceSha256.slice(0, 12)}…</p>
+          <p>
+            Active source blockers: <strong>{activeIssueCount}</strong>
+            {' '}· Historical questions resolved: <strong>{formatNumber(resolvedIssueCount)}</strong>
+            {' '}· Source identity {summary.sourceSha256.slice(0, 12)}…
+          </p>
         </div>
         <span className={summary.blockingIssueCount ? 'import-state-pill import-state-pill--attention' : 'import-state-pill'}>
           {summary.blockingIssueCount ? <CircleAlert aria-hidden="true" size={17} /> : <CheckCircle2 aria-hidden="true" size={17} />}
-          {summary.blockingIssueCount ? 'Review required' : 'Blocking issues clear'}
+          {summary.blockingIssueCount ? 'Review required' : 'Active blockers clear'}
         </span>
       </section>
 
@@ -382,7 +390,7 @@ function LiveImportReview() {
         <div className="import-workbench__heading">
           <div>
             <p className="eyebrow">Controlled review</p>
-            <h2 id="review-workbench-title">Resolve the source before promotion</h2>
+            <h2 id="review-workbench-title">Audit historical source decisions</h2>
           </div>
           <div className="review-tabs" role="tablist" aria-label="Import review areas">
             <button aria-selected={view === 'issues'} className={view === 'issues' ? 'review-tab review-tab--active' : 'review-tab'} onClick={() => changeView('issues')} role="tab" type="button"><CircleAlert aria-hidden="true" size={18} /> Source questions</button>
