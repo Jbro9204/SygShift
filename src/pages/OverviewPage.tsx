@@ -6,17 +6,27 @@ import {
   TimerReset,
   UsersRound,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { getOverviewMetrics, overviewMetricNote, type OverviewMetrics } from '../data/overview'
 import { isSupabaseConfigured } from '../lib/supabase'
 
-const metrics = [
-  { label: 'On duty now', icon: UsersRound, note: 'Available after schedule import' },
-  { label: 'Open shifts', icon: CalendarDays, note: 'No published openings' },
-  { label: 'Pending requests', icon: ClipboardCheck, note: 'Approval queue not connected' },
-  { label: 'Clock exceptions', icon: TimerReset, note: 'Timekeeping not active' },
+const metrics: Array<{ label: string, key: keyof OverviewMetrics, icon: typeof UsersRound }> = [
+  { label: 'On duty now', key: 'onDutyNow', icon: UsersRound },
+  { label: 'Open shifts', key: 'openShifts', icon: CalendarDays },
+  { label: 'Pending requests', key: 'pendingRequests', icon: ClipboardCheck },
+  { label: 'Clock exceptions', key: 'clockExceptions', icon: TimerReset },
 ]
 
 export function OverviewPage() {
+  const overviewQuery = useQuery({
+    queryKey: ['overview-metrics'],
+    queryFn: () => getOverviewMetrics(),
+    enabled: isSupabaseConfigured,
+    refetchInterval: 60_000,
+  })
+  const overview = overviewQuery.data
+
   return (
     <div className="page page--overview">
       <section className="page-intro">
@@ -24,8 +34,8 @@ export function OverviewPage() {
           <p className="eyebrow">Operations overview</p>
           <h1>One clear view of the day.</h1>
           <p className="page-summary">
-            Coverage, requests, timekeeping, and events will stay connected without making the
-            schedule harder to read.
+            Coverage, requests, timekeeping, and events stay connected without making the schedule
+            harder to read.
           </p>
         </div>
         <Link className="primary-action" to="/schedule">
@@ -44,7 +54,7 @@ export function OverviewPage() {
           </h2>
           <p>
             {isSupabaseConfigured
-              ? 'The application is ready for authenticated data access and exact source reconciliation.'
+              ? 'The application is using protected authentication, operational schedule data, and exact source reconciliation safeguards.'
               : 'No employee or schedule information will appear until the protected database is connected and the source workbook passes reconciliation.'}
           </p>
         </div>
@@ -54,14 +64,17 @@ export function OverviewPage() {
       <section aria-label="Operational totals" className="metric-grid">
         {metrics.map((metric) => {
           const Icon = metric.icon
+          const value = overview?.[metric.key] ?? null
           return (
             <article className="metric" key={metric.label}>
               <div className="metric-heading">
                 <span>{metric.label}</span>
                 <Icon aria-hidden="true" size={21} />
               </div>
-              <strong aria-label={`${metric.label} is unavailable`}>—</strong>
-              <p>{metric.note}</p>
+              <strong aria-label={`${metric.label}: ${value ?? 'not available'}`}>
+                {overviewQuery.isPending && isSupabaseConfigured ? '…' : value ?? '—'}
+              </strong>
+              <p>{overviewMetricNote(metric.key, value)}</p>
             </article>
           )
         })}
@@ -79,8 +92,12 @@ export function OverviewPage() {
           <div className="empty-state empty-state--schedule">
             <CalendarDays aria-hidden="true" size={28} />
             <div>
-              <strong>No schedule has been published.</strong>
-              <p>Imported coverage will appear here only after every source value is verified.</p>
+              <strong>{isSupabaseConfigured ? 'The Bible schedule is operational.' : 'No schedule has been published.'}</strong>
+              <p>
+                {isSupabaseConfigured
+                  ? 'Use the master schedule for the full weekly board, open coverage, and source-review markers.'
+                  : 'Imported coverage will appear here only after every source value is verified.'}
+              </p>
             </div>
           </div>
         </section>
@@ -95,8 +112,12 @@ export function OverviewPage() {
           <div className="empty-state">
             <ClipboardCheck aria-hidden="true" size={28} />
             <div>
-              <strong>Nothing to review yet.</strong>
-              <p>Time off, call-offs, shift requests, and exceptions will arrive in one queue.</p>
+              <strong>
+                {overview?.pendingRequests && overview.pendingRequests > 0
+                  ? `${overview.pendingRequests} item${overview.pendingRequests === 1 ? '' : 's'} waiting`
+                  : 'Nothing to review right now.'}
+              </strong>
+              <p>Time off, call-offs, shift requests, and exceptions route to the protected review areas.</p>
             </div>
           </div>
         </section>
