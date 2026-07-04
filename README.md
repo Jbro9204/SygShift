@@ -63,6 +63,8 @@ Use [docs/PRODUCTION_CUTOVER.md](docs/PRODUCTION_CUTOVER.md) for the full Cloudf
 
 Use [docs/BOSS_BUILD_EXPLANATION.md](docs/BOSS_BUILD_EXPLANATION.md) for a plain-English explanation of what is being built, what is already working, what remains before rollout, and the realistic launch path.
 
+Use [docs/ROLL_OUT_STATUS_20260704.md](docs/ROLL_OUT_STATUS_20260704.md) for the latest verified deployment, database, schedule, and advisor status.
+
 Production deployment requires successful quality checks, database migrations, row-level security verification, source reconciliation, accessibility review, and a tested backup restore.
 
 ## Repository boundaries

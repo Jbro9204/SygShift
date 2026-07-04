@@ -2,6 +2,8 @@
 
 This checklist is the controlled path for moving SygShift from local development to a live Cloudflare + Supabase deployment.
 
+Current verified deployment and database status is tracked in [ROLL_OUT_STATUS_20260704.md](ROLL_OUT_STATUS_20260704.md).
+
 ## 1. Rotate exposed credentials before launch
 
 Any credential that was copied into chat, email, screenshots, tickets, or shared notes must be treated as exposed.
