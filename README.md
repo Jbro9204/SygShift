@@ -59,6 +59,8 @@ Cloudflare configuration is stored in `wrangler.jsonc`. The Worker serves versio
 pnpm deploy
 ```
 
+Use [docs/PRODUCTION_CUTOVER.md](docs/PRODUCTION_CUTOVER.md) for the full Cloudflare + Supabase launch checklist, including credential rotation, Worker secrets, readiness checks, and first-admin verification.
+
 Production deployment requires successful quality checks, database migrations, row-level security verification, source reconciliation, accessibility review, and a tested backup restore.
 
 ## Repository boundaries

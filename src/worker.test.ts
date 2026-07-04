@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
-import worker from '../worker'
+import worker, { validateSuppliedTemporaryPassword } from '../worker'
 
 function environment(response: Response = new Response('asset'), values: Record<string, string> = {}) {
   return { ASSETS: { fetch: vi.fn().mockResolvedValue(response) }, ...values }
+}
+
+const configuredEnvironment = {
+  SUPABASE_PUBLISHABLE_KEY: 'publishable',
+  SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+  SUPABASE_URL: 'https://example.supabase.co',
 }
 
 describe('Cloudflare Worker boundary', () => {
@@ -45,6 +51,37 @@ describe('Cloudflare Worker boundary', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
   })
 
+  it('reports production readiness without exposing secret values', async () => {
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/ready'),
+      environment(new Response('asset'), configuredEnvironment),
+    )
+    const payload = await response.json() as {
+      checks: Record<string, boolean>
+      ready: boolean
+      requestId: string
+      status: string
+    }
+
+    expect(response.status).toBe(200)
+    expect(payload.ready).toBe(true)
+    expect(payload.status).toBe('ready')
+    expect(payload.checks.supabaseServiceRoleKey).toBe(true)
+    expect(JSON.stringify(payload)).not.toContain('service-role')
+  })
+
+  it('reports missing production configuration as not ready', async () => {
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/ready'),
+      environment(),
+    )
+    const payload = await response.json() as { ready: boolean; status: string }
+
+    expect(response.status).toBe(503)
+    expect(payload.ready).toBe(false)
+    expect(payload.status).toBe('misconfigured')
+  })
+
   it('hardens asset responses and prevents HTML caching', async () => {
     const assets = environment(new Response('<!doctype html>', {
       headers: { 'cache-control': 'public, max-age=3600', 'content-type': 'text/html' },
@@ -72,16 +109,18 @@ describe('Cloudflare Worker boundary', () => {
   it('requires an authenticated admin session before user provisioning', async () => {
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/admin/users/provision-missing', { method: 'POST' }),
-      environment(new Response('asset'), {
-        SUPABASE_PUBLISHABLE_KEY: 'publishable',
-        SUPABASE_SERVICE_ROLE_KEY: 'service-role',
-        SUPABASE_URL: 'https://example.supabase.co',
-      }),
+      environment(new Response('asset'), configuredEnvironment),
     )
     const payload = await response.json() as { error: string; requestId: string }
 
     expect(response.status).toBe(401)
     expect(payload.error).toBe('auth_required')
     expect(payload.requestId).toBe(response.headers.get('x-request-id'))
+  })
+
+  it('validates admin-supplied temporary passwords before sending them to authentication', () => {
+    expect(validateSuppliedTemporaryPassword('short', 'jbrown')).toContain('Use at least 12 characters.')
+    expect(validateSuppliedTemporaryPassword('jbrownStrong!234', 'jbrown')).toContain('Do not include the username.')
+    expect(validateSuppliedTemporaryPassword('Strong!Pass234', 'jbrown')).toEqual([])
   })
 })

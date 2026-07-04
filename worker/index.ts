@@ -35,6 +35,19 @@ interface AuthUser {
   email?: string
 }
 
+const maxJsonBodyBytes = 4096
+
+class ApiError extends Error {
+  readonly code: string
+  readonly status: number
+
+  constructor(code: string, status: number, detail: string) {
+    super(detail)
+    this.code = code
+    this.status = status
+  }
+}
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -85,11 +98,51 @@ function configuredSupabase(environment: Environment) {
 
 async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
   if (!request.body) return {}
-  const payload = await request.json().catch(() => null)
+
+  const contentLength = request.headers.get('content-length')
+  if (contentLength && Number(contentLength) > maxJsonBodyBytes) {
+    throw new ApiError('request_body_too_large', 413, 'The request body is too large.')
+  }
+
+  const text = await request.text()
+  if (new TextEncoder().encode(text).length > maxJsonBodyBytes) {
+    throw new ApiError('request_body_too_large', 413, 'The request body is too large.')
+  }
+  if (!text.trim()) return {}
+
+  let payload: unknown
+  try {
+    payload = JSON.parse(text)
+  } catch {
+    throw new ApiError('invalid_json', 400, 'The request body must be valid JSON.')
+  }
+
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new Error('Request body must be a JSON object.')
+    throw new ApiError('invalid_json', 400, 'The request body must be a JSON object.')
   }
   return payload as Record<string, unknown>
+}
+
+export function validateSuppliedTemporaryPassword(password: string, username: string): string[] {
+  const failures: string[] = []
+  const lowerPassword = password.toLowerCase()
+  const normalizedUsername = username.trim().toLowerCase()
+
+  if (password.length < 12) failures.push('Use at least 12 characters.')
+  if (!/[a-z]/.test(password)) failures.push('Add a lowercase letter.')
+  if (!/[A-Z]/.test(password)) failures.push('Add an uppercase letter.')
+  if (!/[0-9]/.test(password)) failures.push('Add a number.')
+  if (!/[^A-Za-z0-9]/.test(password)) failures.push('Add a symbol.')
+  if (normalizedUsername && lowerPassword.includes(normalizedUsername)) failures.push('Do not include the username.')
+
+  for (const blockedTerm of ['password', 'sygshift', 'sygilant', 'security', 'welcome', 'temporary']) {
+    if (lowerPassword.includes(blockedTerm)) {
+      failures.push('Avoid common or company-related words.')
+      break
+    }
+  }
+
+  return failures
 }
 
 async function supabaseJson<T>(url: string, init: RequestInit): Promise<T> {
@@ -381,7 +434,19 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
     { target_employee_id: match[1] },
     admin.config.serviceRoleKey,
   )
+
+  if ('temporaryPassword' in body && body.temporaryPassword !== null && typeof body.temporaryPassword !== 'string') {
+    throw new ApiError('invalid_temporary_password', 400, 'Temporary password must be text.')
+  }
+
   const suppliedPassword = typeof body.temporaryPassword === 'string' ? body.temporaryPassword.trim() : ''
+  if (suppliedPassword) {
+    const passwordFailures = validateSuppliedTemporaryPassword(suppliedPassword, target.username)
+    if (passwordFailures.length > 0) {
+      throw new ApiError('temporary_password_rejected', 422, passwordFailures.join(' '))
+    }
+  }
+
   const password = suppliedPassword || generateTemporaryPassword()
   const result = await provisionOne(admin.config, target, password, usersByEmail)
 
@@ -393,6 +458,26 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
     temporaryPassword: result.password,
     username: target.username,
   })
+}
+
+function readiness(environment: Environment, requestId: string): Response {
+  const config = configuredSupabase(environment)
+  const checks = {
+    assetsBinding: Boolean(environment.ASSETS),
+    supabasePublishableKey: Boolean(
+      environment.SUPABASE_PUBLISHABLE_KEY?.trim() || environment.VITE_SUPABASE_PUBLISHABLE_KEY?.trim(),
+    ),
+    supabaseServiceRoleKey: Boolean(environment.SUPABASE_SERVICE_ROLE_KEY?.trim()),
+    supabaseUrl: Boolean(environment.SUPABASE_URL?.trim() || environment.VITE_SUPABASE_URL?.trim()),
+  }
+  const ready = Boolean(config && checks.assetsBinding)
+
+  return json({
+    checks,
+    ready,
+    requestId,
+    status: ready ? 'ready' : 'misconfigured',
+  }, ready ? 200 : 503)
 }
 
 export function secureResponse(request: Request, response: Response, requestId: string): Response {
@@ -439,16 +524,26 @@ export default {
           response = new Response(null, { headers: response.headers, status: response.status })
         }
       }
+    } else if (url.pathname === '/api/v1/ready') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        response = json(
+          { error: 'method_not_allowed', requestId },
+          405,
+          { allow: 'GET, HEAD' },
+        )
+      } else {
+        response = readiness(environment, requestId)
+        if (request.method === 'HEAD') {
+          response = new Response(null, { headers: response.headers, status: response.status })
+        }
+      }
     } else if (url.pathname.startsWith('/api/v1/admin/users')) {
       try {
         response = await handleAdminUsersApi(request, environment, requestId)
       } catch (error) {
-        response = errorJson(
-          'admin_user_request_failed',
-          requestId,
-          500,
-          error instanceof Error ? error.message : 'The admin user request failed.',
-        )
+        response = error instanceof ApiError
+          ? errorJson(error.code, requestId, error.status, error.message)
+          : errorJson('admin_user_request_failed', requestId, 500, 'The admin user request failed.')
       }
     } else if (url.pathname.startsWith('/api/')) {
       response = json({ error: 'not_found', requestId }, 404)
