@@ -68,7 +68,7 @@ export async function getOpenOpportunities(): Promise<OpportunityContext> {
       `)
       .eq('is_open', true)
       .eq('schedules.status', 'published')
-      .gte('starts_at', new Date().toISOString())
+      .gt('ends_at', new Date().toISOString())
       .order('starts_at')
       .limit(100),
   ])

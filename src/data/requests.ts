@@ -56,7 +56,7 @@ const shiftRequestSchema = z.object({
 const callOffSchema = z.object({
   id: z.string().uuid(),
   employee_id: z.string().uuid(),
-  reason: z.string(),
+  reason: z.string().nullable(),
   reported_at: z.string(),
   acknowledged_at: z.string().nullable(),
   announcement_id: z.string().uuid().nullable(),
@@ -76,6 +76,7 @@ export type ShiftWorkRequest = z.infer<typeof shiftRequestSchema>
 export type CallOffReport = z.infer<typeof callOffSchema>
 export type UpcomingAssignment = z.infer<typeof assignmentSchema>
 export type RequestShift = z.infer<typeof requestShiftSchema>
+export type RequestEmployee = z.infer<typeof employeeSchema>
 
 export interface RequestCenter {
   employeeId: string
@@ -93,6 +94,14 @@ interface RequestCenterRecords {
   assignments: UpcomingAssignment[]
 }
 
+function parseRecordArray<T>(schema: z.ZodType<T>, input: unknown): T[] {
+  const rows = Array.isArray(input) ? input : []
+  return rows.flatMap((row) => {
+    const result = schema.safeParse(row)
+    return result.success ? [result.data] : []
+  })
+}
+
 export function parseRequestCenterRecords(input: {
   timeOff: unknown
   shiftRequests: unknown
@@ -100,10 +109,10 @@ export function parseRequestCenterRecords(input: {
   assignments: unknown
 }): RequestCenterRecords {
   return {
-    timeOff: z.array(timeOffSchema).parse(input.timeOff),
-    shiftRequests: z.array(shiftRequestSchema).parse(input.shiftRequests),
-    callOffs: z.array(callOffSchema).parse(input.callOffs),
-    assignments: z.array(assignmentSchema).parse(input.assignments),
+    timeOff: parseRecordArray(timeOffSchema, input.timeOff),
+    shiftRequests: parseRecordArray(shiftRequestSchema, input.shiftRequests),
+    callOffs: parseRecordArray(callOffSchema, input.callOffs),
+    assignments: parseRecordArray(assignmentSchema, input.assignments),
   }
 }
 

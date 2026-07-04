@@ -38,7 +38,7 @@ export async function getOverviewMetrics(now = new Date()): Promise<OverviewMetr
         .select('id, schedules!inner(status)', { count: 'exact', head: true })
         .eq('is_open', true)
         .eq('schedules.status', 'published')
-        .gte('starts_at', nowIso),
+        .gt('ends_at', nowIso),
     ),
     safeCount(
       client

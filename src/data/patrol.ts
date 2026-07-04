@@ -26,7 +26,7 @@ const patrolShiftSchema = z.object({
       first_name: z.string(),
       last_name: z.string(),
       preferred_name: z.string().nullable(),
-    }),
+    }).nullable(),
   })),
   schedules: z.object({
     status: z.literal('published'),
@@ -44,6 +44,7 @@ export interface PatrolRouteGroup {
 }
 
 function guardName(assignment: PatrolShift['assignments'][number]): string {
+  if (!assignment.employee) return 'Assigned guard'
   return `${assignment.employee.preferred_name || assignment.employee.first_name} ${assignment.employee.last_name}`
 }
 
@@ -92,7 +93,7 @@ export async function getPatrolRoutes(): Promise<PatrolRouteGroup[]> {
       schedules!inner (status)
     `)
     .eq('schedules.status', 'published')
-    .gte('starts_at', new Date().toISOString())
+    .gt('ends_at', new Date().toISOString())
     .order('starts_at')
     .limit(500)
 
@@ -101,7 +102,7 @@ export async function getPatrolRoutes(): Promise<PatrolRouteGroup[]> {
   const shifts = z.array(patrolShiftSchema).parse(data)
     .map((shift) => ({
       ...shift,
-      assignments: shift.assignments.filter((assignment) => assignment.status !== 'canceled'),
+      assignments: shift.assignments.filter((assignment) => assignment.status !== 'canceled' && assignment.employee),
     }))
     .filter((shift) => {
       const siteName = shift.post?.site.name.toLocaleLowerCase() ?? ''
