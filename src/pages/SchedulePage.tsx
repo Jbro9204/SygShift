@@ -72,6 +72,31 @@ function builderEmployeeName(employee: ScheduleBuilderEmployee): string {
   return `${employee.preferred_name || employee.first_name} ${employee.last_name}`
 }
 
+function shiftLocalTimeValue(shift: ScheduleShift, instant: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    hour12: false,
+    minute: '2-digit',
+    timeZone: shift.time_zone,
+  }).formatToParts(new Date(instant))
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '00'
+  return `${value('hour')}:${value('minute')}`
+}
+
+function draftShiftMutationInput(shift: ScheduleShift, employeeId: string | null) {
+  return {
+    shiftId: shift.id,
+    shiftDate: shiftOperationalDate(shift),
+    startTime: shiftLocalTimeValue(shift, shift.starts_at),
+    endTime: shiftLocalTimeValue(shift, shift.ends_at),
+    headcount: shift.headcount_required,
+    isOpen: employeeId ? shift.headcount_required > 1 : shift.is_open,
+    isOvertime: shift.is_overtime,
+    notes: shift.notes ?? '',
+    employeeId,
+  }
+}
+
 function ShiftCard({
   shift,
   canEdit,
@@ -184,17 +209,6 @@ function EditShiftDialog({
   const assignedEmployeeId = shift.assignments[0]?.employee.id ?? ''
   const eligibleEmployees = employees.filter((employee) => !shift.requires_armed || employee.has_armed_guard_credential)
 
-  function localTime(date: Date): string {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      hour: '2-digit',
-      hour12: false,
-      minute: '2-digit',
-      timeZone: shift.time_zone,
-    }).formatToParts(date)
-    const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '00'
-    return `${value('hour')}:${value('minute')}`
-  }
-
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -220,8 +234,8 @@ function EditShiftDialog({
       <form className="request-form schedule-edit-form" onSubmit={submit}>
         <div className="form-grid form-grid--three">
           <label><span>Date</span><input defaultValue={shiftOperationalDate(shift)} name="shiftDate" required type="date" /></label>
-          <label><span>Start</span><input defaultValue={localTime(new Date(shift.starts_at))} name="startTime" required type="time" /></label>
-          <label><span>End</span><input defaultValue={localTime(new Date(shift.ends_at))} name="endTime" required type="time" /></label>
+          <label><span>Start</span><input defaultValue={shiftLocalTimeValue(shift, shift.starts_at)} name="startTime" required type="time" /></label>
+          <label><span>End</span><input defaultValue={shiftLocalTimeValue(shift, shift.ends_at)} name="endTime" required type="time" /></label>
         </div>
         <div className="form-grid form-grid--two">
           <label><span>Headcount</span><input defaultValue={shift.headcount_required} min={1} name="headcount" required type="number" /></label>
@@ -394,6 +408,18 @@ export function SchedulePage() {
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
   const weekEnd = days[6]
   const weekKey = format(weekStart, 'yyyy-MM-dd')
+  const planningWeeks = useMemo(() => {
+    const currentWeek = startOfWeek(today, { weekStartsOn: 0 })
+    return Array.from({ length: 6 }, (_, index) => {
+      const startsOn = addWeeks(currentWeek, index)
+      return {
+        key: format(startsOn, 'yyyy-MM-dd'),
+        label: index === 0 ? 'This week' : `Week ${index + 1}`,
+        range: `${format(startsOn, 'MMM d')} - ${format(addDays(startsOn, 6), 'MMM d')}`,
+        startsOn,
+      }
+    })
+  }, [today])
   const [openShiftForm, setOpenShiftForm] = useState<OpenShiftFormState>(() => defaultOpenShiftForm(weekKey))
   const scheduleQuery = useQuery({
     queryKey: ['weekly-schedule', weekKey],
@@ -432,6 +458,11 @@ export function SchedulePage() {
     }
     return [...sites.values()].sort((left, right) => left.name.localeCompare(right.name))
   }, [builderOptionsQuery.data?.posts])
+  const suggestionsByShift = useMemo(() => {
+    const map = new Map<string, StaffingSuggestion>()
+    for (const suggestion of staffingSuggestionsQuery.data ?? []) map.set(suggestion.shiftId, suggestion)
+    return map
+  }, [staffingSuggestionsQuery.data])
   const selectedPost = builderOptionsQuery.data?.posts.find((post) => post.id === openShiftForm.postId)
   const createOpenShiftMutation = useMutation({
     mutationFn: () => createSupervisorOpenShift({
@@ -604,6 +635,24 @@ export function SchedulePage() {
       sites: rows.length,
     }
   }, [employeeRows.length, rows])
+  const staffingWorkItems = useMemo(() => {
+    if (scheduleQuery.data?.status !== 'draft') return []
+    return scheduleQuery.data.shifts
+      .map((shift) => {
+        const suggestion = suggestionsByShift.get(shift.id)
+        const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
+        return {
+          openSlots,
+          shift,
+          suggestion,
+          title: shift.post?.site.name
+            ? `${shift.post.site.name} / ${shift.post?.name ?? 'Shift'}`
+            : shift.event?.name ?? shift.event?.location_name ?? 'Shift',
+        }
+      })
+      .filter((item) => item.openSlots > 0)
+      .sort((left, right) => left.shift.starts_at.localeCompare(right.shift.starts_at))
+  }, [scheduleQuery.data, suggestionsByShift])
   const reviewNeededCount = useMemo(
     () => rows.reduce((total, row) => total + row.shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length, 0),
     [rows],
@@ -652,6 +701,14 @@ export function SchedulePage() {
     setOpenShiftForm((current) => ({ ...current, ...update }))
   }
 
+  function jumpToWeek(nextWeekStart: Date) {
+    const nextWeekKey = format(nextWeekStart, 'yyyy-MM-dd')
+    setWeekStart(nextWeekStart)
+    setOpenShiftForm(defaultOpenShiftForm(nextWeekKey))
+    setBuilderMessage(null)
+    setBuilderOpen(false)
+  }
+
   function handleCreateOpenShift(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setBuilderMessage(null)
@@ -666,6 +723,11 @@ export function SchedulePage() {
       return
     }
     ensureDraftMutation.mutate(shift)
+  }
+
+  function applySuggestedEmployee(shift: ScheduleShift, employeeId: string) {
+    setBuilderMessage(null)
+    updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId))
   }
 
   return (
@@ -714,6 +776,151 @@ export function SchedulePage() {
         <p className={builderMessage.toLowerCase().includes('could not') ? 'form-feedback form-feedback--error' : 'form-feedback form-feedback--success'} role="status">
           {builderMessage}
         </p>
+      ) : null}
+
+      {canBuildSchedule ? (
+        <section className={scheduleQuery.data?.status === 'draft' ? 'scheduler-workspace scheduler-workspace--draft' : 'scheduler-workspace'} aria-label="Scheduler workspace">
+          <div className="scheduler-workspace__hero">
+            <div>
+              <p className="eyebrow">Scheduler workspace</p>
+              <h2>
+                {scheduleQuery.data?.status === 'draft'
+                  ? `Draft revision ${scheduleQuery.data.revision} is open`
+                  : 'Plan the next six weeks'}
+              </h2>
+              <p>
+                {scheduleQuery.data?.status === 'draft'
+                  ? 'You are viewing and editing the working draft below. Changes are not final until you publish the draft.'
+                  : 'Choose a week, open a draft, add one-time events, or let SygShift suggest staffing before anything goes live.'}
+              </p>
+            </div>
+            <div className="scheduler-workspace__actions">
+              {scheduleQuery.data?.status === 'draft' ? (
+                <button className="primary-action" disabled={publishDraftMutation.isPending} onClick={() => publishDraftMutation.mutate()} type="button">
+                  {publishDraftMutation.isPending ? 'Publishing...' : 'Confirm & publish draft'}
+                </button>
+              ) : (
+                <button
+                  className="primary-action"
+                  disabled={ensureDraftMutation.isPending}
+                  onClick={() => ensureDraftMutation.mutate(undefined)}
+                  type="button"
+                >
+                  {ensureDraftMutation.isPending ? 'Opening draft...' : 'Start working draft'}
+                </button>
+              )}
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  setBuilderOpen(true)
+                  setOpenShiftForm(defaultOpenShiftForm(weekKey))
+                  setBuilderMessage(null)
+                }}
+                type="button"
+              >
+                <Plus aria-hidden="true" size={18} />
+                Add shift/event
+              </button>
+            </div>
+          </div>
+
+          <div className="scheduler-week-strip" aria-label="Six-week planning shortcuts">
+            {planningWeeks.map((week) => (
+              <button
+                className={week.key === weekKey ? 'scheduler-week-tile is-active' : 'scheduler-week-tile'}
+                key={week.key}
+                onClick={() => jumpToWeek(week.startsOn)}
+                type="button"
+              >
+                <span>{week.label}</span>
+                <strong>{week.range}</strong>
+              </button>
+            ))}
+          </div>
+
+          {scheduleQuery.data?.status === 'draft' ? (
+            <div className="draft-guidance-grid">
+              <article>
+                <span>1</span>
+                <strong>Review the board below</strong>
+                <p>Every card shown on this page is the current draft, not a hidden background copy.</p>
+              </article>
+              <article>
+                <span>2</span>
+                <strong>Use suggestions</strong>
+                <p>SygShift checks open slots, credentials, active employees, and schedule conflicts before suggesting people.</p>
+              </article>
+              <article>
+                <span>3</span>
+                <strong>Confirm when ready</strong>
+                <p>Publish only when the schedule looks right. Until then, this week remains a working draft.</p>
+              </article>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {scheduleQuery.data?.status === 'draft' && canBuildSchedule ? (
+        <section className="panel scheduler-suggestions" aria-labelledby="scheduler-suggestions-title">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Suggested staffing</p>
+              <h2 id="scheduler-suggestions-title">Open draft slots SygShift can help fill</h2>
+            </div>
+            <span className={staffingWorkItems.length ? 'status-pill status-pill--attention' : 'status-pill'}>
+              {staffingWorkItems.length ? `${staffingWorkItems.length} need attention` : 'Covered'}
+            </span>
+          </div>
+          {staffingSuggestionsQuery.isPending ? (
+            <div className="scheduler-suggestion-empty">
+              <Sparkles aria-hidden="true" size={24} />
+              <p>Checking active employees, credentials, and conflicts for this draft.</p>
+            </div>
+          ) : staffingWorkItems.length === 0 ? (
+            <div className="scheduler-suggestion-empty">
+              <Sparkles aria-hidden="true" size={24} />
+              <p>No open draft slots need suggested staffing right now.</p>
+            </div>
+          ) : (
+            <div className="scheduler-suggestion-list">
+              {staffingWorkItems.slice(0, 8).map((item) => (
+                <article className="scheduler-suggestion-item" key={item.shift.id}>
+                  <div>
+                    <div className="schedule-review-item__meta">
+                      <span>{shiftOperationalDate(item.shift)}</span>
+                      <span>{shiftTimeRange(item.shift)}</span>
+                      {item.shift.requires_armed ? <span>Armed</span> : <span>Unarmed</span>}
+                      <span>{item.openSlots} open</span>
+                    </div>
+                    <h3>{item.title}</h3>
+                    {item.suggestion?.suggestions.length ? (
+                      <p>
+                        Best matches: {item.suggestion.suggestions.slice(0, 3).map((candidate) => `${candidate.name} (${candidate.reason})`).join('; ')}
+                      </p>
+                    ) : (
+                      <p>No safe active employee suggestion was found for this slot. Add it manually or leave it open.</p>
+                    )}
+                  </div>
+                  <div className="scheduler-suggestion-actions">
+                    {item.suggestion?.suggestions[0] ? (
+                      <button
+                        className="primary-action"
+                        disabled={updateDraftShiftMutation.isPending}
+                        onClick={() => applySuggestedEmployee(item.shift, item.suggestion!.suggestions[0].employeeId)}
+                        type="button"
+                      >
+                        Assign best match
+                      </button>
+                    ) : null}
+                    <button className="secondary-button" onClick={() => setEditingShift(item.shift)} type="button">
+                      Edit manually
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       ) : null}
 
       {canBuildSchedule && builderOpen ? (
@@ -803,6 +1010,8 @@ export function SchedulePage() {
               <label>
                 Date
                 <input
+                  max={format(weekEnd, 'yyyy-MM-dd')}
+                  min={weekKey}
                   onChange={(event) => updateOpenShiftForm({ shiftDate: event.target.value })}
                   required
                   type="date"
@@ -1032,14 +1241,14 @@ export function SchedulePage() {
           <button
             aria-label="Previous week"
             className="icon-button"
-            onClick={() => setWeekStart((current) => addWeeks(current, -1))}
+            onClick={() => jumpToWeek(addWeeks(weekStart, -1))}
             type="button"
           >
             <ChevronLeft aria-hidden="true" size={22} />
           </button>
           <button
             className="secondary-button"
-            onClick={() => setWeekStart(startOfWeek(today, { weekStartsOn: 0 }))}
+            onClick={() => jumpToWeek(startOfWeek(today, { weekStartsOn: 0 }))}
             type="button"
           >
             Today
@@ -1047,7 +1256,7 @@ export function SchedulePage() {
           <button
             aria-label="Next week"
             className="icon-button"
-            onClick={() => setWeekStart((current) => addWeeks(current, 1))}
+            onClick={() => jumpToWeek(addWeeks(weekStart, 1))}
             type="button"
           >
             <ChevronRight aria-hidden="true" size={22} />
