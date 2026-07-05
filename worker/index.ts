@@ -527,7 +527,7 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
     const targets = await callRpc<LoginEmailTarget[]>(
       { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
       'service_get_employee_login_email_targets',
-      { target_include_existing: true },
+      { target_include_existing: false },
       admin.config.serviceRoleKey,
     )
     const sent = []

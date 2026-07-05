@@ -332,7 +332,7 @@ export function UserAdminPage() {
     onSuccess: async (result) => {
       const sentCount = result.sent?.length ?? 0
       const failureCount = result.failures?.length ?? 0
-      setBulkEmailMessage(`${sentCount} login email${sentCount === 1 ? '' : 's'} sent${failureCount ? `; ${failureCount} need attention.` : '.'}`)
+      setBulkEmailMessage(`${sentCount} new-login email${sentCount === 1 ? '' : 's'} sent${failureCount ? `; ${failureCount} need attention.` : '.'}`)
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
   })
@@ -410,8 +410,8 @@ export function UserAdminPage() {
             <button className="primary-action" disabled={bulkProvisionMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkProvisionMutation.mutate()} type="button">
               <KeyRound aria-hidden="true" size={18} /> Create missing logins
             </button>
-            <button className="secondary-button" disabled={bulkLoginEmailMutation.isPending || metrics.active === 0} onClick={() => bulkLoginEmailMutation.mutate()} type="button">
-              <Mail aria-hidden="true" size={18} /> Email login instructions
+            <button className="secondary-button" disabled={bulkLoginEmailMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkLoginEmailMutation.mutate()} type="button">
+              <Mail aria-hidden="true" size={18} /> Email new logins
             </button>
           </section>
 
