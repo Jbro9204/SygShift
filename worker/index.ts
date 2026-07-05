@@ -36,6 +36,8 @@ interface SessionContext {
 
 interface AuthTarget {
   employeeId: string
+  employeeNumber?: string | null
+  jobTitle?: string | null
   username: string
   authEmail: string
   displayName: string
@@ -320,6 +322,8 @@ async function createAuthUser(
       user_metadata: {
         displayName: target.displayName,
         employeeId: target.employeeId,
+        employeeNumber: target.employeeNumber ?? null,
+        jobTitle: target.jobTitle ?? null,
         username: target.username,
       },
     }),
@@ -351,6 +355,8 @@ async function updateAuthUser(
       user_metadata: {
         displayName: target.displayName,
         employeeId: target.employeeId,
+        employeeNumber: target.employeeNumber ?? null,
+        jobTitle: target.jobTitle ?? null,
         username: target.username,
       },
     }),

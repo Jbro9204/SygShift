@@ -2440,6 +2440,7 @@
 
 .employee-identity strong,
 .employee-identity span,
+.employee-identity small,
 .contact-summary span,
 .contact-summary small,
 .credential-summary small {
@@ -2458,6 +2459,13 @@
   margin-top: 3px;
   color: #716d65;
   font-size: 14px;
+}
+
+.employee-identity div > small {
+  margin-top: 3px;
+  color: #8a6a2d;
+  font-size: 13px;
+  font-weight: 750;
 }
 
 .plain-value {

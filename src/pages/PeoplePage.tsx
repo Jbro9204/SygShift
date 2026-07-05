@@ -28,7 +28,10 @@ function EmployeeIdentity({ employee }: { employee: DirectoryEntry }) {
       <span className={`employee-role-rail employee-role-rail--${employee.role}`} aria-hidden="true" />
       <div>
         <strong>{employeeDisplayName(employee)}</strong>
-        <span>@{employee.username}</span>
+        <span>
+          {employee.employee_number ?? 'ID pending'} · @{employee.username}
+        </span>
+        {employee.job_title ? <small>{employee.job_title}</small> : null}
       </div>
     </div>
   )
@@ -112,6 +115,7 @@ export function PeoplePage() {
         employeeDisplayName(employee),
         employee.username,
         employee.employee_number,
+        employee.job_title,
         roleLabels[employee.role],
       ]
         .filter(Boolean)

@@ -31,6 +31,7 @@ const operationalProfileSchema = z.object({
 const directoryEntrySchema = z.object({
   id: z.string().uuid(),
   employee_number: z.string().nullable(),
+  job_title: z.string().nullable(),
   username: z.string(),
   first_name: z.string(),
   middle_name: z.string().nullable(),

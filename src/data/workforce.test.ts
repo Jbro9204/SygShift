@@ -8,7 +8,8 @@ import {
 
 const employee: DirectoryEntry = {
   id: '10000000-0000-4000-8000-000000000001',
-  employee_number: 'G-100',
+  employee_number: 'SYG-1001',
+  job_title: 'Security Officer',
   username: 'arivera',
   first_name: 'Alexandra',
   middle_name: null,

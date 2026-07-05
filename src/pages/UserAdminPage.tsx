@@ -75,6 +75,7 @@ function employeeFormPayload(form: HTMLFormElement, employeeId?: string): Employ
     employeeNumber: optional('employeeNumber'),
     employmentType: value('employmentType') as EmploymentType,
     firstName: value('firstName'),
+    jobTitle: optional('jobTitle'),
     lastName: value('lastName'),
     middleName: optional('middleName'),
     mobilePhone: optional('mobilePhone'),
@@ -120,7 +121,18 @@ function EmployeeForm({
       </div>
       <div className="form-grid form-grid--three">
         <label><span>Preferred name</span><input defaultValue={employee?.preferredName ?? ''} name="preferredName" /></label>
-        <label><span>Employee number</span><input defaultValue={employee?.employeeNumber ?? ''} name="employeeNumber" /></label>
+        <label>
+          <span>Employee ID</span>
+          <input
+            defaultValue={employee?.employeeNumber ?? ''}
+            name="employeeNumber"
+            placeholder="Assigned automatically"
+            readOnly
+          />
+        </label>
+        <label><span>Job title</span><input defaultValue={employee?.jobTitle ?? ''} maxLength={140} name="jobTitle" placeholder="Guard, Owner, CS&AO..." /></label>
+      </div>
+      <div className="form-grid form-grid--three">
         <label>
           <span>Role</span>
           <select defaultValue={employee?.role ?? 'guard'} name="role">
@@ -130,8 +142,6 @@ function EmployeeForm({
             <option value="admin">Admin</option>
           </select>
         </label>
-      </div>
-      <div className="form-grid form-grid--three">
         <label>
           <span>Employment</span>
           <select defaultValue={employee?.employmentType ?? 'hourly'} name="employmentType">
@@ -218,7 +228,11 @@ function ManageUserModal({
   })
 
   return (
-    <ModalDialog description={`Permanent username: @${employee.username}`} onClose={onClose} title={`Manage ${employee.displayName}`}>
+    <ModalDialog
+      description={`${employee.employeeNumber ?? 'Employee ID pending'} · Permanent username: @${employee.username}${employee.jobTitle ? ` · ${employee.jobTitle}` : ''}`}
+      onClose={onClose}
+      title={`Manage ${employee.displayName}`}
+    >
       <div className="user-admin-modal-grid">
         <section aria-labelledby="employee-profile-title">
           <h3 id="employee-profile-title">Employee profile</h3>
@@ -392,6 +406,7 @@ export function UserAdminPage() {
         user.displayName,
         user.username,
         user.employeeNumber,
+        user.jobTitle,
         user.personalEmail,
         user.companyEmail,
         user.mobilePhone,
@@ -483,7 +498,8 @@ export function UserAdminPage() {
                   <div className="user-admin-row" key={user.id} role="row">
                     <div role="cell">
                       <strong>{user.displayName}</strong>
-                      <span>@{user.username}</span>
+                      <span>{user.employeeNumber ?? 'ID pending'} · @{user.username}</span>
+                      {user.jobTitle ? <small>{user.jobTitle}</small> : null}
                       <small>{user.companyEmail || user.personalEmail || user.mobilePhone || 'No contact on file'}</small>
                     </div>
                     <div role="cell"><span className="plain-value">{roleLabels[user.role]}</span></div>

@@ -32,6 +32,7 @@ const accountSchema = z.object({
 const adminUserSchema = z.object({
   id: z.string().uuid(),
   employeeNumber: z.string().nullable(),
+  jobTitle: z.string().nullable(),
   username: z.string(),
   firstName: z.string(),
   middleName: z.string().nullable(),
@@ -120,6 +121,7 @@ export type WelcomeEmailResult = z.infer<typeof welcomeEmailResponseSchema>
 export interface EmployeeMutationInput {
   employeeId?: string
   employeeNumber?: string | null
+  jobTitle?: string | null
   firstName: string
   middleName?: string | null
   lastName: string
@@ -143,6 +145,7 @@ function employeeRpcPayload(input: EmployeeMutationInput) {
     target_employee_number: cleanOptional(input.employeeNumber),
     target_employment_type: input.employmentType,
     target_first_name: input.firstName.trim(),
+    target_job_title: cleanOptional(input.jobTitle),
     target_last_name: input.lastName.trim(),
     target_middle_name: cleanOptional(input.middleName),
     target_mobile_phone: cleanOptional(input.mobilePhone),
