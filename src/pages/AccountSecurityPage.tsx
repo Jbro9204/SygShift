@@ -14,6 +14,36 @@ import {
 } from '../data/mfa'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 
+function isAlreadyCurrentPasswordError(error: unknown): boolean {
+  const message =
+    typeof error === 'object' && error && 'message' in error && typeof error.message === 'string'
+      ? error.message.toLowerCase()
+      : ''
+
+  return (
+    message.includes('different from the old password') ||
+    message.includes('same as the old password') ||
+    message.includes('same password') ||
+    message.includes('new password should be different')
+  )
+}
+
+async function markPasswordChangedWithRetry(): Promise<void> {
+  const supabase = getSupabaseClient()
+  let marked = await supabase.rpc('mark_password_changed')
+
+  if (!marked.error) return
+
+  await supabase.auth.refreshSession()
+  marked = await supabase.rpc('mark_password_changed')
+
+  if (marked.error) {
+    throw new Error(
+      'Your password was accepted, but SygShift could not finish clearing the temporary-password checkpoint. Please sign out and try again, or contact an administrator.',
+    )
+  }
+}
+
 type AccountSecurityLocationState = {
   from?: {
     pathname?: string
@@ -49,6 +79,7 @@ export function AccountSecurityPage() {
   const verifiedFactor = factors.find((factor) => factor.status === 'verified') ?? null
   const needsPassword = Boolean(context?.mustChangePassword)
   const needsMfa = Boolean(context?.mfaRequired && !context.hasMfa)
+  const passwordWaitingForMfa = needsPassword && needsMfa
   const isComplete = Boolean(context && !needsPassword && !needsMfa)
 
   useEffect(() => {
@@ -111,14 +142,19 @@ export function AccountSecurityPage() {
     setBusyAction('password')
     try {
       const update = await getSupabaseClient().auth.updateUser({ password })
-      if (update.error) throw new Error('The password could not be updated.')
-
-      const marked = await getSupabaseClient().rpc('mark_password_changed')
-      if (marked.error) throw new Error('The password change could not be recorded.')
+      if (update.error) {
+        if (isAlreadyCurrentPasswordError(update.error)) {
+          await markPasswordChangedWithRetry()
+        } else {
+          throw new Error(update.error.message || 'The password could not be updated.')
+        }
+      } else {
+        await markPasswordChangedWithRetry()
+      }
 
       setPassword('')
       setPasswordConfirmation('')
-      setMessage('Password updated. Continue with the remaining security step.')
+      setMessage('Password saved. Continue with the remaining security step.')
       await refreshContext()
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'The password update failed.')
@@ -205,8 +241,10 @@ export function AccountSecurityPage() {
               <div>
                 <h2>Password</h2>
                 <p>
-                  {needsPassword
-                    ? 'Replace the temporary password with a stronger private password.'
+                  {passwordWaitingForMfa
+                    ? 'Verify your authenticator first, then save your permanent password.'
+                    : needsPassword
+                      ? 'Replace the temporary password with a stronger private password.'
                     : 'Your password setup is complete.'}
                 </p>
               </div>
@@ -222,7 +260,9 @@ export function AccountSecurityPage() {
                 <p>
                   {context.mfaRequired
                     ? needsMfa
-                      ? 'Verify an authenticator code before protected tools open.'
+                      ? needsPassword
+                        ? 'Verify an authenticator code before saving the new password.'
+                        : 'Verify an authenticator code before protected tools open.'
                       : 'Authenticator verification is complete for this session.'
                     : 'Your role does not require an authenticator code.'}
                 </p>
@@ -246,7 +286,17 @@ export function AccountSecurityPage() {
           </div>
         ) : null}
 
-        {context && needsPassword ? (
+        {context && passwordWaitingForMfa ? (
+          <div className="auth-notice auth-notice--warning" role="status">
+            <ShieldCheck aria-hidden="true" size={21} />
+            <span>
+              This account is protected by MFA. Verify the authenticator code first, then the
+              permanent password form will open.
+            </span>
+          </div>
+        ) : null}
+
+        {context && needsPassword && !needsMfa ? (
           <form className="security-panel" onSubmit={handlePasswordUpdate}>
             <h2>Create your permanent password</h2>
             <div className="security-form-grid">
@@ -289,7 +339,7 @@ export function AccountSecurityPage() {
           </form>
         ) : null}
 
-        {context && !needsPassword && needsMfa ? (
+        {context && needsMfa ? (
           <section className="security-panel">
             <h2>{verifiedFactor ? 'Verify your authenticator' : 'Set up an authenticator'}</h2>
             <p>
