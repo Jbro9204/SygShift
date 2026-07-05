@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   UserCog,
   UsersRound,
+  Mail,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
@@ -20,6 +21,8 @@ import {
   getAdminUserDirectory,
   provisionEmployeeAccount,
   provisionMissingAccounts,
+  sendAllEmployeeLoginEmails,
+  sendEmployeeLoginEmail,
   setEmployeeAccountState,
   updateEmployee,
   type AdminUser,
@@ -32,6 +35,7 @@ import {
 
 const roleLabels: Record<AppRole, string> = {
   admin: 'Admin',
+  dispatcher: 'Dispatcher',
   guard: 'Guard',
   supervisor: 'Supervisor',
 }
@@ -120,6 +124,7 @@ function EmployeeForm({
           <span>Role</span>
           <select defaultValue={employee?.role ?? 'guard'} name="role">
             <option value="guard">Guard</option>
+            <option value="dispatcher">Dispatcher</option>
             <option value="supervisor">Supervisor</option>
             <option value="admin">Admin</option>
           </select>
@@ -168,6 +173,7 @@ function ManageUserModal({
   const queryClient = useQueryClient()
   const [temporaryPassword, setTemporaryPassword] = useState('')
   const [lastCredential, setLastCredential] = useState<ProvisioningCredential | null>(null)
+  const [loginEmailMessage, setLoginEmailMessage] = useState<string | null>(null)
 
   const updateMutation = useMutation({
     mutationFn: (payload: EmployeeMutationInput) => updateEmployee({ ...payload, employeeId: employee.id }),
@@ -186,6 +192,15 @@ function ManageUserModal({
     onSuccess: async (credential) => {
       setLastCredential(credential)
       setTemporaryPassword('')
+      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
+    },
+  })
+  const loginEmailMutation = useMutation({
+    mutationFn: () => sendEmployeeLoginEmail(employee.id, temporaryPassword),
+    onSuccess: async (result) => {
+      setTemporaryPassword('')
+      setLastCredential(null)
+      setLoginEmailMessage(`Login instructions sent to ${result.email ?? employee.companyEmail ?? employee.personalEmail ?? 'the on-file email address'}.`)
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
   })
@@ -234,6 +249,15 @@ function ManageUserModal({
               <KeyRound aria-hidden="true" size={18} />
               {employee.accountStatus === 'not_created' ? 'Create login' : 'Reset temporary password'}
             </button>
+            <button
+              className="secondary-button"
+              disabled={loginEmailMutation.isPending || employee.status !== 'active'}
+              onClick={() => loginEmailMutation.mutate()}
+              type="button"
+            >
+              <Mail aria-hidden="true" size={18} />
+              Email login instructions
+            </button>
             {employee.account ? (
               <button
                 className="secondary-button"
@@ -259,7 +283,9 @@ function ManageUserModal({
             </div>
           ) : null}
 
+          {loginEmailMessage ? <div className="form-feedback form-feedback--success" role="status">{loginEmailMessage}</div> : null}
           {provisionMutation.isError ? <div className="inline-alert" role="alert">{provisionMutation.error.message}</div> : null}
+          {loginEmailMutation.isError ? <div className="inline-alert" role="alert">{loginEmailMutation.error.message}</div> : null}
           {accountStateMutation.isError ? <div className="inline-alert" role="alert">{accountStateMutation.error.message}</div> : null}
         </section>
       </div>
@@ -276,6 +302,7 @@ export function UserAdminPage() {
   const [creating, setCreating] = useState(false)
   const [selected, setSelected] = useState<AdminUser | null>(null)
   const [bulkCredentials, setBulkCredentials] = useState<ProvisioningCredential[]>([])
+  const [bulkEmailMessage, setBulkEmailMessage] = useState<string | null>(null)
 
   const directoryQuery = useQuery({
     queryFn: getAdminUserDirectory,
@@ -297,6 +324,15 @@ export function UserAdminPage() {
       if (result.provisioned.length > 0) {
         downloadCredentialCsv(result.provisioned, 'sygshift-new-temporary-logins.csv')
       }
+      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
+    },
+  })
+  const bulkLoginEmailMutation = useMutation({
+    mutationFn: sendAllEmployeeLoginEmails,
+    onSuccess: async (result) => {
+      const sentCount = result.sent?.length ?? 0
+      const failureCount = result.failures?.length ?? 0
+      setBulkEmailMessage(`${sentCount} login email${sentCount === 1 ? '' : 's'} sent${failureCount ? `; ${failureCount} need attention.` : '.'}`)
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
   })
@@ -367,16 +403,21 @@ export function UserAdminPage() {
               <span className="visually-hidden">Search users</span>
               <input onChange={(event) => setSearch(event.target.value)} placeholder="Search name, username, email, or phone" type="search" value={search} />
             </label>
-            <label className="select-field"><span>Role</span><select onChange={(event) => setRole(event.target.value as typeof role)} value={role}><option value="all">All roles</option><option value="guard">Guards</option><option value="supervisor">Supervisors</option><option value="admin">Admins</option></select></label>
+            <label className="select-field"><span>Role</span><select onChange={(event) => setRole(event.target.value as typeof role)} value={role}><option value="all">All roles</option><option value="guard">Guards</option><option value="dispatcher">Dispatchers</option><option value="supervisor">Supervisors</option><option value="admin">Admins</option></select></label>
             <label className="select-field"><span>Status</span><select onChange={(event) => setStatus(event.target.value as typeof status)} value={status}><option value="active">Active</option><option value="leave">On leave</option><option value="inactive">Inactive</option><option value="separated">Separated</option><option value="all">All</option></select></label>
             <label className="select-field"><span>Login</span><select onChange={(event) => setAccount(event.target.value as typeof account)} value={account}><option value="all">All logins</option><option value="not_created">No login</option><option value="active">Active login</option><option value="disabled">Disabled</option></select></label>
             <button className="secondary-button" onClick={() => setCreating(true)} type="button"><Plus aria-hidden="true" size={18} /> Add employee</button>
             <button className="primary-action" disabled={bulkProvisionMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkProvisionMutation.mutate()} type="button">
               <KeyRound aria-hidden="true" size={18} /> Create missing logins
             </button>
+            <button className="secondary-button" disabled={bulkLoginEmailMutation.isPending || metrics.active === 0} onClick={() => bulkLoginEmailMutation.mutate()} type="button">
+              <Mail aria-hidden="true" size={18} /> Email login instructions
+            </button>
           </section>
 
           {bulkProvisionMutation.isError ? <div className="inline-alert" role="alert">{bulkProvisionMutation.error.message}</div> : null}
+          {bulkLoginEmailMutation.isError ? <div className="inline-alert" role="alert">{bulkLoginEmailMutation.error.message}</div> : null}
+          {bulkEmailMessage ? <div className="user-admin-success" role="status"><BadgeCheck aria-hidden="true" size={18} /><span>{bulkEmailMessage}</span></div> : null}
           {bulkCredentials.length > 0 ? (
             <div className="user-admin-success" role="status">
               <BadgeCheck aria-hidden="true" size={18} />

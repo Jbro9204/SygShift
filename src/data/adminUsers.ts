@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 
-const appRoleSchema = z.enum(['guard', 'supervisor', 'admin'])
+const appRoleSchema = z.enum(['guard', 'dispatcher', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary'])
 const employeeStatusSchema = z.enum(['active', 'leave', 'inactive', 'separated'])
 const accountStatusSchema = z.enum(['not_created', 'active', 'disabled'])
@@ -81,6 +81,24 @@ const provisioningResponseSchema = z.object({
   action: z.string().optional(),
 })
 
+const loginEmailResponseSchema = z.object({
+  requestId: z.string(),
+  sent: z.array(z.object({
+    displayName: z.string(),
+    email: z.string().nullable(),
+    username: z.string(),
+  })).optional(),
+  failures: z.array(z.object({
+    displayName: z.string(),
+    username: z.string(),
+    error: z.string(),
+  })).optional(),
+  displayName: z.string().optional(),
+  email: z.string().nullable().optional(),
+  username: z.string().optional(),
+  action: z.string().optional(),
+})
+
 export type AppRole = z.infer<typeof appRoleSchema>
 export type EmploymentType = z.infer<typeof employmentTypeSchema>
 export type EmployeeStatus = z.infer<typeof employeeStatusSchema>
@@ -88,6 +106,7 @@ export type AccountStatus = z.infer<typeof accountStatusSchema>
 export type AdminUser = z.infer<typeof adminUserSchema>
 export type AdminUserDirectory = z.infer<typeof adminUserDirectorySchema>
 export type ProvisioningCredential = z.infer<typeof provisioningCredentialSchema>
+export type LoginEmailResult = z.infer<typeof loginEmailResponseSchema>
 
 export interface EmployeeMutationInput {
   employeeId?: string
@@ -210,6 +229,42 @@ export async function provisionMissingAccounts(): Promise<{
     failures: payload.failures ?? [],
     provisioned: payload.provisioned ?? [],
   }
+}
+
+export async function sendEmployeeLoginEmail(employeeId: string, temporaryPassword?: string): Promise<LoginEmailResult> {
+  const response = await fetch(`/api/v1/admin/users/${employeeId}/login-email`, {
+    body: JSON.stringify({ temporaryPassword: cleanOptional(temporaryPassword) }),
+    headers: await authHeaders(),
+    method: 'POST',
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) {
+    const message = typeof payload?.detail === 'string'
+      ? payload.detail
+      : typeof payload?.error === 'string'
+        ? payload.error.replaceAll('_', ' ')
+        : 'The login email could not be sent.'
+    throw new Error(message)
+  }
+  return loginEmailResponseSchema.parse(payload)
+}
+
+export async function sendAllEmployeeLoginEmails(): Promise<LoginEmailResult> {
+  const response = await fetch('/api/v1/admin/users/login-emails', {
+    body: JSON.stringify({}),
+    headers: await authHeaders(),
+    method: 'POST',
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) {
+    const message = typeof payload?.detail === 'string'
+      ? payload.detail
+      : typeof payload?.error === 'string'
+        ? payload.error.replaceAll('_', ' ')
+        : 'The login email batch could not be sent.'
+    throw new Error(message)
+  }
+  return loginEmailResponseSchema.parse(payload)
 }
 
 export function credentialsToCsv(credentials: ProvisioningCredential[]): string {

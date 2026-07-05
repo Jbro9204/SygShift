@@ -40,7 +40,7 @@ export type OpportunityRequest = z.infer<typeof requestSchema>
 
 export interface OpportunityContext {
   employeeId: string
-  role: 'guard' | 'supervisor' | 'admin'
+  role: 'guard' | 'dispatcher' | 'supervisor' | 'admin'
   opportunities: Opportunity[]
 }
 
@@ -83,7 +83,7 @@ export async function getOpenOpportunities(): Promise<OpportunityContext> {
     throw new Error('Open shifts and events could not be loaded for this account.')
   }
 
-  const role = z.enum(['guard', 'supervisor', 'admin']).parse(roleResult.data)
+  const role = z.enum(['guard', 'dispatcher', 'supervisor', 'admin']).parse(roleResult.data)
   const employeeId = z.string().uuid().parse(employeeResult.data)
   const opportunities = z.array(opportunitySchema).parse(opportunitiesResult.data).map((item) => ({
     ...item,

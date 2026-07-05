@@ -29,7 +29,7 @@ interface SessionContext {
   employee_id: string
   username: string
   display_name: string
-  role: 'guard' | 'supervisor' | 'admin'
+  role: 'guard' | 'dispatcher' | 'supervisor' | 'admin'
   has_mfa: boolean
 }
 
@@ -38,10 +38,14 @@ interface AuthTarget {
   username: string
   authEmail: string
   displayName: string
-  role: 'guard' | 'supervisor' | 'admin'
+  role: 'guard' | 'dispatcher' | 'supervisor' | 'admin'
   employmentType: 'hourly' | 'salary'
   status: 'active' | 'leave' | 'inactive' | 'separated'
   existingAuthUserId: string | null
+}
+
+interface LoginEmailTarget extends AuthTarget {
+  contactEmail: string | null
 }
 
 interface AuthUser {
@@ -390,6 +394,76 @@ async function provisionOne(
   }
 }
 
+function buildLoginInstructionsEmail(target: LoginEmailTarget, temporaryPassword: string, appUrl: string): NotificationJob['message'] {
+  const normalizedAppUrl = appUrl.replace(/\/+$/, '')
+  const safeName = escapeHtml(target.displayName)
+  const safeUsername = escapeHtml(target.username)
+  const safePassword = escapeHtml(temporaryPassword)
+  const safeUrl = escapeHtml(normalizedAppUrl)
+
+  return {
+    subject: 'Your SygShift login is ready',
+    text: [
+      `Hello ${target.displayName},`,
+      'Your SygShift account is ready.',
+      `Site: ${normalizedAppUrl}`,
+      `Username: ${target.username}`,
+      `Temporary password: ${temporaryPassword}`,
+      'Getting started:',
+      '1. Open the SygShift site link above.',
+      '2. Sign in with your username and temporary password.',
+      '3. Create your permanent password when prompted.',
+      '4. Review your schedule, open shifts, requests, and time clock.',
+      'For security, do not share this temporary password. If it does not work, contact a supervisor or administrator so they can reset your access from SygShift.',
+    ].join('\n\n'),
+    html: `
+      <p>Hello ${safeName},</p>
+      <p>Your SygShift account is ready.</p>
+      <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse; margin:18px 0; width:100%; max-width:520px;">
+        <tr><td style="padding:10px 12px; border:1px solid #e4ddcf; background:#f8f3e9; font-weight:700;">Site</td><td style="padding:10px 12px; border:1px solid #e4ddcf;"><a href="${safeUrl}">${safeUrl}</a></td></tr>
+        <tr><td style="padding:10px 12px; border:1px solid #e4ddcf; background:#f8f3e9; font-weight:700;">Username</td><td style="padding:10px 12px; border:1px solid #e4ddcf;">${safeUsername}</td></tr>
+        <tr><td style="padding:10px 12px; border:1px solid #e4ddcf; background:#f8f3e9; font-weight:700;">Temporary password</td><td style="padding:10px 12px; border:1px solid #e4ddcf; font-family:Consolas, Menlo, monospace;">${safePassword}</td></tr>
+      </table>
+      <p><strong>Getting started:</strong></p>
+      <ol>
+        <li>Open the SygShift site link above.</li>
+        <li>Sign in with your username and temporary password.</li>
+        <li>Create your permanent password when prompted.</li>
+        <li>Review your schedule, open shifts, requests, and time clock.</li>
+      </ol>
+      <p>For security, do not share this temporary password. If it does not work, contact a supervisor or administrator so they can reset your access from SygShift.</p>
+    `,
+  }
+}
+
+async function sendLoginInstructions(
+  environment: Environment,
+  target: LoginEmailTarget,
+  temporaryPassword: string,
+) {
+  if (!environment.EMAIL) {
+    throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
+  }
+  const fromEmail = environment.SYGSHIFT_EMAIL_FROM?.trim()
+  if (!fromEmail) {
+    throw new ApiError('email_sender_not_configured', 503, 'The email sender address is not configured.')
+  }
+  const to = target.contactEmail?.trim().toLowerCase()
+  if (!to) {
+    throw new ApiError('employee_email_missing', 422, `${target.displayName} does not have an on-file email address.`)
+  }
+
+  const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || 'https://sygshift.sygilant.workers.dev'
+  const message = buildLoginInstructionsEmail(target, temporaryPassword, appUrl)
+  await environment.EMAIL.send({
+    from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
+    html: brandedEmailHtml(message, appUrl),
+    subject: message.subject,
+    text: message.text,
+    to,
+  })
+}
+
 async function handleAdminUsersApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
   let admin: Awaited<ReturnType<typeof requireAdminMfa>>
   try {
@@ -444,6 +518,81 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       provisioned: results,
       requestId,
       requestedBy: admin.context.username,
+    })
+  }
+
+  if (url.pathname === '/api/v1/admin/users/login-emails') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+
+    const targets = await callRpc<LoginEmailTarget[]>(
+      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+      'service_get_employee_login_email_targets',
+      { target_include_existing: true },
+      admin.config.serviceRoleKey,
+    )
+    const sent = []
+    const failures = []
+
+    for (const target of targets) {
+      try {
+        const result = await provisionOne(admin.config, target, generateTemporaryPassword(), usersByEmail)
+        await sendLoginInstructions(environment, target, result.password)
+        sent.push({
+          displayName: target.displayName,
+          email: target.contactEmail,
+          username: target.username,
+        })
+      } catch (error) {
+        failures.push({
+          displayName: target.displayName,
+          error: error instanceof Error ? error.message : 'Login email failed.',
+          username: target.username,
+        })
+      }
+    }
+
+    return json({
+      failures,
+      requestId,
+      requestedBy: admin.context.username,
+      sent,
+    })
+  }
+
+  const emailMatch = /^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/login-email$/i.exec(url.pathname)
+  if (emailMatch) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+
+    const target = await callRpc<LoginEmailTarget>(
+      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+      'service_get_employee_login_email_target',
+      { target_employee_id: emailMatch[1] },
+      admin.config.serviceRoleKey,
+    )
+    if (!target) throw new ApiError('employee_not_found', 404, 'The employee record was not found.')
+
+    if ('temporaryPassword' in body && body.temporaryPassword !== null && typeof body.temporaryPassword !== 'string') {
+      throw new ApiError('invalid_temporary_password', 400, 'Temporary password must be text.')
+    }
+
+    const suppliedPassword = typeof body.temporaryPassword === 'string' ? body.temporaryPassword.trim() : ''
+    if (suppliedPassword) {
+      const passwordFailures = validateSuppliedTemporaryPassword(suppliedPassword, target.username)
+      if (passwordFailures.length > 0) {
+        throw new ApiError('temporary_password_rejected', 422, passwordFailures.join(' '))
+      }
+    }
+
+    const result = await provisionOne(admin.config, target, suppliedPassword || generateTemporaryPassword(), usersByEmail)
+    await sendLoginInstructions(environment, target, result.password)
+
+    return json({
+      action: result.action,
+      displayName: target.displayName,
+      email: target.contactEmail,
+      requestId,
+      role: target.role,
+      username: target.username,
     })
   }
 

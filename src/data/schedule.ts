@@ -81,7 +81,7 @@ const builderOptionsSchema = z.object({
     first_name: z.string(),
     last_name: z.string(),
     preferred_name: z.string().nullable(),
-    role: z.enum(['guard', 'supervisor', 'admin']),
+    role: z.enum(['guard', 'dispatcher', 'supervisor', 'admin']),
     employment_type: z.enum(['hourly', 'salary', 'contractor']),
     has_armed_guard_credential: z.boolean(),
   })),
@@ -106,11 +106,25 @@ const resolveReviewShiftResultSchema = z.object({
   employee_id: z.string().uuid(),
 })
 
+const staffingSuggestionSchema = z.object({
+  shiftId: z.string().uuid(),
+  openSlots: z.number().int().nonnegative(),
+  suggestions: z.array(z.object({
+    employeeId: z.string().uuid(),
+    name: z.string(),
+    role: z.enum(['guard', 'dispatcher', 'supervisor', 'admin']),
+    employmentType: z.enum(['hourly', 'salary', 'contractor']),
+    hasArmedCredential: z.boolean(),
+    reason: z.string(),
+  })),
+})
+
 export type ScheduleBuilderOptions = z.infer<typeof builderOptionsSchema>
 export type ScheduleBuilderPost = z.infer<typeof builderPostSchema>
 export type ScheduleBuilderEmployee = ScheduleBuilderOptions['employees'][number]
 export type CreateOpenShiftResult = z.infer<typeof createOpenShiftResultSchema>
 export type ResolveReviewShiftResult = z.infer<typeof resolveReviewShiftResultSchema>
+export type StaffingSuggestion = z.infer<typeof staffingSuggestionSchema>
 
 const importedScheduleShiftSchema = z.object({
   id: z.string().uuid(),
@@ -167,6 +181,18 @@ export interface CreateOpenShiftInput {
   isOvertime: boolean
   notes?: string
   publishAnnouncement: boolean
+  employeeId?: string | null
+}
+
+export interface UpdateDraftShiftInput {
+  shiftId: string
+  shiftDate: string
+  startTime: string
+  endTime: string
+  headcount: number
+  isOpen: boolean
+  isOvertime: boolean
+  notes?: string
   employeeId?: string | null
 }
 
@@ -239,6 +265,51 @@ export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Pr
 
   if (error) throw new Error(error.message || 'The open shift could not be created.')
   return createOpenShiftResultSchema.parse(data)
+}
+
+export async function ensureScheduleDraft(weekStartsOn: string): Promise<WeeklySchedule | null> {
+  const { data, error } = await getSupabaseClient().rpc('ensure_schedule_draft', {
+    target_week_starts_on: weekStartsOn,
+  })
+
+  if (error) throw new Error(error.message || 'The schedule draft could not be opened.')
+  if (!data) return null
+  return scheduleSchema.parse(data)
+}
+
+export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Promise<WeeklySchedule> {
+  const { data, error } = await getSupabaseClient().rpc('update_schedule_draft_shift', {
+    target_shift_id: input.shiftId,
+    shift_operational_date: input.shiftDate,
+    shift_start_time: input.startTime,
+    shift_end_time: input.endTime,
+    target_headcount: input.headcount,
+    target_is_open: input.isOpen,
+    target_is_overtime: input.isOvertime,
+    target_notes: input.notes?.trim() || null,
+    target_employee_id: input.employeeId || null,
+  })
+
+  if (error) throw new Error(error.message || 'The draft shift could not be updated.')
+  return scheduleSchema.parse(data)
+}
+
+export async function publishScheduleDraft(scheduleId: string): Promise<WeeklySchedule> {
+  const { data, error } = await getSupabaseClient().rpc('publish_schedule_draft', {
+    target_schedule_id: scheduleId,
+  })
+
+  if (error) throw new Error(error.message || 'The schedule draft could not be published.')
+  return scheduleSchema.parse(data)
+}
+
+export async function getScheduleStaffingSuggestions(scheduleId: string): Promise<StaffingSuggestion[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_schedule_staffing_suggestions', {
+    target_schedule_id: scheduleId,
+  })
+
+  if (error) throw new Error(error.message || 'Staffing suggestions could not be loaded.')
+  return z.array(staffingSuggestionSchema).parse(data ?? [])
 }
 
 export async function resolveScheduleReviewShift(input: {

@@ -524,7 +524,7 @@ export function RequestsPage() {
     enabled: isSupabaseConfigured,
   })
   const mutation = useRequestAction()
-  const privileged = requestQuery.data?.role === 'supervisor' || requestQuery.data?.role === 'admin'
+  const privileged = requestQuery.data?.role === 'dispatcher' || requestQuery.data?.role === 'supervisor' || requestQuery.data?.role === 'admin'
   const guardAssignments = useMemo(
     () => requestQuery.data?.upcomingAssignments ?? [],
     [requestQuery.data?.upcomingAssignments],

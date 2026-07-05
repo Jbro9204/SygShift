@@ -1,25 +1,30 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
-import { CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, MoveHorizontal, Plus, Search, ShieldAlert } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, Edit3, MoveHorizontal, Plus, Search, ShieldAlert, Sparkles } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import { getCurrentAppRole } from '../data/session'
 import {
   assignmentName,
+  ensureScheduleDraft,
   importedScheduleRows,
   employeeScheduleRows,
   createSupervisorOpenShift,
   getImportedSchedulePreview,
   getScheduleBuilderOptions,
+  getScheduleStaffingSuggestions,
   getWeeklySchedule,
+  publishScheduleDraft,
   resolveScheduleReviewShift,
   scheduleRows,
   shiftOperationalDate,
   shiftTimeRange,
+  updateScheduleDraftShift,
   type ImportedScheduleShift,
   type ScheduleBuilderEmployee,
   type ScheduleShift,
+  type StaffingSuggestion,
 } from '../data/schedule'
 import { parseImportedScheduleNote, sourceReferenceLabel } from '../data/sourceNotes'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -69,12 +74,16 @@ function builderEmployeeName(employee: ScheduleBuilderEmployee): string {
 
 function ShiftCard({
   shift,
+  canEdit,
   canResolve,
+  onEdit,
   onResolve,
   compact = false,
 }: {
   shift: ScheduleShift
+  canEdit: boolean
   canResolve: boolean
+  onEdit: (shift: ScheduleShift) => void
   onResolve: (shift: ScheduleShift) => void
   compact?: boolean
 }) {
@@ -86,7 +95,25 @@ function ShiftCard({
   const showSourceReview = source.reviewNeeded || (shift.is_open && source.assignee)
 
   return (
-    <article className={source.reviewNeeded ? 'shift-card shift-card--review-needed' : 'shift-card'}>
+    <article
+      className={[
+        source.reviewNeeded ? 'shift-card shift-card--review-needed' : 'shift-card',
+        canEdit ? 'shift-card--editable' : '',
+      ].filter(Boolean).join(' ')}
+      onClick={() => {
+        if (canEdit) onEdit(shift)
+      }}
+      onKeyDown={(event) => {
+        if (!canEdit) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onEdit(shift)
+        }
+      }}
+      role={canEdit ? 'button' : undefined}
+      tabIndex={canEdit ? 0 : undefined}
+      title={canEdit ? 'Edit this schedule block' : undefined}
+    >
       <div className="shift-card__heading">
         <strong>{shiftTimeRange(shift)}</strong>
         {shift.is_overtime ? <span className="shift-tag shift-tag--overtime">OT</span> : null}
@@ -118,13 +145,127 @@ function ShiftCard({
           {source.qualification ? <span><strong>Qualification:</strong> {source.qualification}</span> : null}
           {sourceReference ? <small>{sourceReference}</small> : null}
           {source.reviewNeeded && canResolve ? (
-            <button className="text-button shift-card__resolve" onClick={() => onResolve(shift)} type="button">
+            <button className="text-button shift-card__resolve" onClick={(event) => {
+              event.stopPropagation()
+              onResolve(shift)
+            }} type="button">
               Resolve assignment
             </button>
           ) : null}
         </div>
       ) : null}
     </article>
+  )
+}
+
+function EditShiftDialog({
+  employees,
+  shift,
+  suggestions,
+  mutation,
+  onClose,
+}: {
+  employees: ScheduleBuilderEmployee[]
+  shift: ScheduleShift
+  suggestions: StaffingSuggestion | undefined
+  mutation: ReturnType<typeof useMutation<unknown, Error, {
+    shiftId: string
+    shiftDate: string
+    startTime: string
+    endTime: string
+    headcount: number
+    isOpen: boolean
+    isOvertime: boolean
+    notes?: string
+    employeeId?: string | null
+  }>>
+  onClose: () => void
+}) {
+  const assignedEmployeeId = shift.assignments[0]?.employee.id ?? ''
+  const eligibleEmployees = employees.filter((employee) => !shift.requires_armed || employee.has_armed_guard_credential)
+
+  function localTime(date: Date): string {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      hour: '2-digit',
+      hour12: false,
+      minute: '2-digit',
+      timeZone: shift.time_zone,
+    }).formatToParts(date)
+    const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '00'
+    return `${value('hour')}:${value('minute')}`
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    mutation.mutate({
+      shiftId: shift.id,
+      shiftDate: String(form.get('shiftDate')),
+      startTime: String(form.get('startTime')),
+      endTime: String(form.get('endTime')),
+      headcount: Number.parseInt(String(form.get('headcount')), 10),
+      isOpen: form.get('isOpen') === 'on',
+      isOvertime: form.get('isOvertime') === 'on',
+      notes: String(form.get('notes') ?? ''),
+      employeeId: String(form.get('employeeId') ?? '') || null,
+    }, { onSuccess: onClose })
+  }
+
+  return (
+    <ModalDialog
+      description="Edits are saved to the working draft. Publish the draft when the schedule is ready to go live."
+      onClose={onClose}
+      title={`Edit ${shift.post?.site.name ?? shift.event?.name ?? 'shift'}`}
+    >
+      <form className="request-form schedule-edit-form" onSubmit={submit}>
+        <div className="form-grid form-grid--three">
+          <label><span>Date</span><input defaultValue={shiftOperationalDate(shift)} name="shiftDate" required type="date" /></label>
+          <label><span>Start</span><input defaultValue={localTime(new Date(shift.starts_at))} name="startTime" required type="time" /></label>
+          <label><span>End</span><input defaultValue={localTime(new Date(shift.ends_at))} name="endTime" required type="time" /></label>
+        </div>
+        <div className="form-grid form-grid--two">
+          <label><span>Headcount</span><input defaultValue={shift.headcount_required} min={1} name="headcount" required type="number" /></label>
+          <label>
+            <span>Assign employee</span>
+            <select defaultValue={assignedEmployeeId} name="employeeId">
+              <option value="">Leave open / unassigned</option>
+              {eligibleEmployees.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {builderEmployeeName(employee)}
+                  {employee.has_armed_guard_credential ? ' · armed' : ''}
+                  {employee.employment_type === 'salary' ? ' · salary' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label className="field-stack">
+          <span>Notes</span>
+          <textarea defaultValue={shift.notes ?? ''} name="notes" rows={4} />
+        </label>
+        <div className="schedule-builder__checks">
+          <label className="check-field"><input defaultChecked={shift.is_open} name="isOpen" type="checkbox" /> Show as open if coverage is still needed</label>
+          <label className="check-field"><input defaultChecked={shift.is_overtime} name="isOvertime" type="checkbox" /> Mark as overtime</label>
+        </div>
+        {shift.requires_armed ? <p className="form-note">This shift requires an active armed credential. The system blocks unqualified assignments.</p> : null}
+        {suggestions?.suggestions.length ? (
+          <div className="staffing-suggestion-card">
+            <Sparkles aria-hidden="true" size={18} />
+            <div>
+              <strong>Suggested staffing</strong>
+              <p>{suggestions.suggestions.slice(0, 3).map((candidate) => `${candidate.name} (${candidate.reason})`).join('; ')}</p>
+            </div>
+          </div>
+        ) : null}
+        {mutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{mutation.error.message}</p> : null}
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onClose} type="button">Cancel</button>
+          <button className="primary-action" disabled={mutation.isPending} type="submit">
+            {mutation.isPending ? 'Saving...' : 'Save draft shift'}
+          </button>
+        </div>
+      </form>
+    </ModalDialog>
   )
 }
 
@@ -248,6 +389,7 @@ export function SchedulePage() {
   const [reviewOnly, setReviewOnly] = useState(false)
   const [builderOpen, setBuilderOpen] = useState(false)
   const [resolvingShift, setResolvingShift] = useState<ScheduleShift | null>(null)
+  const [editingShift, setEditingShift] = useState<ScheduleShift | null>(null)
   const [builderMessage, setBuilderMessage] = useState<string | null>(null)
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
   const weekEnd = days[6]
@@ -268,11 +410,16 @@ export function SchedulePage() {
     queryFn: getCurrentAppRole,
     enabled: isSupabaseConfigured,
   })
-  const canBuildSchedule = roleQuery.data === 'supervisor' || roleQuery.data === 'admin'
+  const canBuildSchedule = roleQuery.data === 'dispatcher' || roleQuery.data === 'supervisor' || roleQuery.data === 'admin'
   const builderOptionsQuery = useQuery({
     queryKey: ['schedule-builder-options'],
     queryFn: getScheduleBuilderOptions,
     enabled: isSupabaseConfigured && canBuildSchedule,
+  })
+  const staffingSuggestionsQuery = useQuery({
+    queryKey: ['schedule-staffing-suggestions', scheduleQuery.data?.id],
+    queryFn: () => getScheduleStaffingSuggestions(scheduleQuery.data!.id),
+    enabled: isSupabaseConfigured && canBuildSchedule && scheduleQuery.data?.status === 'draft',
   })
   const availableSites = useMemo(() => {
     const sites = new Map<string, { id: string, name: string, time_zone: string }>()
@@ -320,6 +467,54 @@ export function SchedulePage() {
     },
     onError: (error) => {
       setBuilderMessage(error instanceof Error ? error.message : 'The open shift could not be created.')
+    },
+  })
+  const ensureDraftMutation = useMutation({
+    mutationFn: (shiftToEdit?: ScheduleShift) => ensureScheduleDraft(weekKey).then((draft) => ({ draft, shiftToEdit })),
+    onSuccess: async ({ draft, shiftToEdit }) => {
+      if (draft) {
+        queryClient.setQueryData(['weekly-schedule', weekKey], draft)
+        setBuilderMessage(`Working draft opened for revision ${draft.revision}. Publish when ready.`)
+        if (shiftToEdit) {
+          const copiedShift = draft.shifts.find((candidate) =>
+            candidate.starts_at === shiftToEdit.starts_at
+            && candidate.ends_at === shiftToEdit.ends_at
+            && (candidate.post?.id ?? null) === (shiftToEdit.post?.id ?? null)
+            && (candidate.event?.id ?? null) === (shiftToEdit.event?.id ?? null),
+          )
+          if (copiedShift) setEditingShift(copiedShift)
+        }
+      }
+      await queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions'] })
+    },
+    onError: (error) => {
+      setBuilderMessage(error instanceof Error ? error.message : 'The schedule draft could not be opened.')
+    },
+  })
+  const updateDraftShiftMutation = useMutation({
+    mutationFn: updateScheduleDraftShift,
+    onSuccess: async (updatedSchedule) => {
+      queryClient.setQueryData(['weekly-schedule', weekKey], updatedSchedule)
+      setBuilderMessage('Draft shift saved. Publish the draft when the week is ready.')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions', updatedSchedule.id] }),
+        queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
+      ])
+    },
+  })
+  const publishDraftMutation = useMutation({
+    mutationFn: () => publishScheduleDraft(scheduleQuery.data!.id),
+    onSuccess: async (publishedSchedule) => {
+      queryClient.setQueryData(['weekly-schedule', weekKey], publishedSchedule)
+      setBuilderMessage(`Revision ${publishedSchedule.revision} is now live.`)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['weekly-schedule', weekKey] }),
+        queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-metrics'] }),
+      ])
+    },
+    onError: (error) => {
+      setBuilderMessage(error instanceof Error ? error.message : 'The schedule draft could not be published.')
     },
   })
   const resolveReviewMutation = useMutation({
@@ -463,6 +658,16 @@ export function SchedulePage() {
     createOpenShiftMutation.mutate()
   }
 
+  function editShift(shift: ScheduleShift) {
+    setBuilderOpen(false)
+    setBuilderMessage(null)
+    if (scheduleQuery.data?.status === 'draft') {
+      setEditingShift(shift)
+      return
+    }
+    ensureDraftMutation.mutate(shift)
+  }
+
   return (
     <div className="page page--schedule">
       <section className="page-intro schedule-intro">
@@ -474,20 +679,42 @@ export function SchedulePage() {
           </p>
         </div>
         {canBuildSchedule ? (
-          <button
-            className="primary-action"
-            onClick={() => {
-              setBuilderOpen((current) => !current)
-              setOpenShiftForm(defaultOpenShiftForm(weekKey))
-              setBuilderMessage(null)
-            }}
-            type="button"
-          >
-            <Plus aria-hidden="true" size={20} />
-            Add open shift
-          </button>
+          <div className="schedule-intro__actions">
+            <button
+              className="secondary-button"
+              disabled={ensureDraftMutation.isPending || scheduleQuery.data?.status === 'draft'}
+              onClick={() => ensureDraftMutation.mutate(undefined)}
+              type="button"
+            >
+              <Edit3 aria-hidden="true" size={19} />
+              {scheduleQuery.data?.status === 'draft' ? 'Draft open' : ensureDraftMutation.isPending ? 'Opening draft...' : 'Open schedule draft'}
+            </button>
+            {scheduleQuery.data?.status === 'draft' ? (
+              <button className="primary-action" disabled={publishDraftMutation.isPending} onClick={() => publishDraftMutation.mutate()} type="button">
+                {publishDraftMutation.isPending ? 'Publishing...' : 'Publish draft'}
+              </button>
+            ) : null}
+            <button
+              className="primary-action"
+              onClick={() => {
+                setBuilderOpen((current) => !current)
+                setOpenShiftForm(defaultOpenShiftForm(weekKey))
+                setBuilderMessage(null)
+              }}
+              type="button"
+            >
+              <Plus aria-hidden="true" size={20} />
+              Add open shift
+            </button>
+          </div>
         ) : null}
       </section>
+
+      {builderMessage ? (
+        <p className={builderMessage.toLowerCase().includes('could not') ? 'form-feedback form-feedback--error' : 'form-feedback form-feedback--success'} role="status">
+          {builderMessage}
+        </p>
+      ) : null}
 
       {canBuildSchedule && builderOpen ? (
         <section className="panel schedule-builder" aria-labelledby="schedule-builder-heading">
@@ -716,6 +943,16 @@ export function SchedulePage() {
         />
       ) : null}
 
+      {editingShift ? (
+        <EditShiftDialog
+          employees={builderOptionsQuery.data?.employees ?? []}
+          mutation={updateDraftShiftMutation}
+          onClose={() => setEditingShift(null)}
+          shift={editingShift}
+          suggestions={staffingSuggestionsQuery.data?.find((item) => item.shiftId === editingShift.id)}
+        />
+      ) : null}
+
       {canBuildSchedule && reviewItems.length > 0 ? (
         <section className="panel schedule-review-workbench" aria-labelledby="schedule-review-workbench-title">
           <div className="schedule-review-workbench__heading">
@@ -783,7 +1020,7 @@ export function SchedulePage() {
 
       {scheduleQuery.data ? (
         <section className="schedule-admin-summary" aria-label="Published schedule summary">
-          <article><span>Published shifts</span><strong>{scheduleSummary.shifts}</strong><small>Revision {scheduleQuery.data.revision}</small></article>
+          <article><span>{scheduleQuery.data.status === 'draft' ? 'Draft shifts' : 'Published shifts'}</span><strong>{scheduleSummary.shifts}</strong><small>Revision {scheduleQuery.data.revision}</small></article>
           <article><span>Assigned slots</span><strong>{scheduleSummary.assigned}</strong><small>{scheduleSummary.employees} employees on schedule</small></article>
           <article className={scheduleSummary.open ? 'import-metric--attention' : ''}><span>Open slots</span><strong>{scheduleSummary.open}</strong><small>Visible in openings/request workflows</small></article>
           <article className={scheduleSummary.review ? 'import-metric--attention' : ''}><span>Review needed</span><strong>{scheduleSummary.review}</strong><small>Imported items needing supervisor cleanup</small></article>
@@ -1013,9 +1250,11 @@ export function SchedulePage() {
                   <div className="schedule-day-cell" role="cell" key={dayKey}>
                     {shifts.map((shift) => (
                       <ShiftCard
+                        canEdit={canBuildSchedule}
                         canResolve={canBuildSchedule}
                         compact
                         key={shift.id}
+                        onEdit={editShift}
                         onResolve={(targetShift) => {
                           setBuilderOpen(false)
                           setBuilderMessage(null)
@@ -1050,8 +1289,10 @@ export function SchedulePage() {
                   <div className="schedule-day-cell" role="cell" key={dayKey}>
                     {shifts.map((shift) => (
                       <ShiftCard
+                        canEdit={canBuildSchedule}
                         canResolve={canBuildSchedule}
                         key={shift.id}
+                        onEdit={editShift}
                         onResolve={(targetShift) => {
                           setBuilderOpen(false)
                           setBuilderMessage(null)

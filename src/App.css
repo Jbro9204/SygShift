@@ -1396,6 +1396,40 @@
   padding: 2px 0;
 }
 
+.schedule-intro__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.staffing-suggestion-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  color: #4f3912;
+  background: #fff5db;
+  border: 1px solid #e7c77d;
+  border-radius: 10px;
+}
+
+.staffing-suggestion-card strong,
+.staffing-suggestion-card p {
+  margin: 0;
+}
+
+.staffing-suggestion-card p {
+  margin-top: 4px;
+  color: #655337;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.schedule-edit-form {
+  min-width: min(680px, calc(100vw - 72px));
+}
+
 .schedule-review-workbench {
   margin-bottom: 18px;
   overflow: hidden;
@@ -1855,6 +1889,19 @@
   border: 1px solid #ddd7ca;
   border-left: 3px solid #bd8a35;
   border-radius: 7px;
+}
+
+.shift-card--editable {
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.shift-card--editable:hover,
+.shift-card--editable:focus-visible {
+  border-color: #c99633;
+  box-shadow: 0 14px 28px rgb(91 63 17 / 0.16);
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .shift-card--source {
@@ -2325,6 +2372,10 @@
 
 .employee-role-rail--supervisor {
   background: linear-gradient(180deg, #d8b35f 0%, #7e5a14 100%);
+}
+
+.employee-role-rail--dispatcher {
+  background: linear-gradient(180deg, #d6c29a 0%, #6a5a3a 100%);
 }
 
 .employee-role-rail--admin {
@@ -5469,7 +5520,7 @@
 
 .user-admin-toolbar {
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) repeat(3, minmax(150px, 180px));
+  grid-template-columns: minmax(300px, 1.4fr) repeat(3, minmax(145px, 0.55fr)) repeat(3, max-content);
   gap: 12px;
   align-items: end;
   margin-bottom: 16px;
@@ -5489,6 +5540,10 @@
   justify-self: start;
   padding-inline: 18px;
   white-space: nowrap;
+}
+
+.user-admin-toolbar .search-field {
+  min-width: 0;
 }
 
 .user-admin-success {

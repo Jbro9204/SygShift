@@ -10,6 +10,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 
 const roleLabels: Record<DirectoryEntry['role'], string> = {
+  dispatcher: 'Dispatcher',
   guard: 'Guard',
   supervisor: 'Supervisor',
   admin: 'Admin',

@@ -700,7 +700,7 @@ function LiveTimekeeping() {
   }
 
   const dashboard = dashboardQuery.data
-  const canReviewPayroll = dashboard.employee.role === 'supervisor' || dashboard.employee.role === 'admin'
+  const canReviewPayroll = dashboard.employee.role === 'dispatcher' || dashboard.employee.role === 'supervisor' || dashboard.employee.role === 'admin'
 
   return (
     <>

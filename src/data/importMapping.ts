@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 
-const appRoleSchema = z.enum(['guard', 'supervisor', 'admin'])
+const appRoleSchema = z.enum(['guard', 'dispatcher', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary'])
 const employeeStatusSchema = z.enum(['active', 'leave', 'inactive', 'separated'])
 const sourcePayloadSchema = z.record(z.string(), z.unknown())

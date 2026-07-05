@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 
-const appRoleSchema = z.enum(['guard', 'supervisor', 'admin'])
+const appRoleSchema = z.enum(['guard', 'dispatcher', 'supervisor', 'admin'])
 
 export type AppRole = z.infer<typeof appRoleSchema>
 
