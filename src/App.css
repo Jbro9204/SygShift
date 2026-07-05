@@ -5724,6 +5724,34 @@
   line-height: 1.45;
 }
 
+.account-control-card h4 {
+  margin: 3px 0 0;
+  color: #28241d;
+  font-size: 16px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.account-control-card p strong {
+  color: #2f2a22;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.account-control-card--welcome {
+  background: linear-gradient(180deg, #fffdf8 0%, #f8f1e4 100%);
+}
+
+.account-control-kicker {
+  display: block;
+  color: #8b641e;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
 .account-control-card label {
   display: grid;
   gap: 7px;

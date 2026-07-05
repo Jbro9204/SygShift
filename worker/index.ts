@@ -6,6 +6,7 @@ interface EmailBinding {
   send(message: {
     to: string | string[]
     from: { email: string, name?: string }
+    replyTo?: string
     subject: string
     html?: string
     text: string
@@ -64,6 +65,7 @@ interface NotificationJob {
 }
 
 const maxJsonBodyBytes = 4096
+const defaultSupportEmail = 'jbrown@guardianshipsecurity.net'
 
 class ApiError extends Error {
   readonly code: string
@@ -436,6 +438,54 @@ function buildLoginInstructionsEmail(target: LoginEmailTarget, temporaryPassword
   }
 }
 
+function greetingName(displayName: string): string {
+  const firstToken = displayName.trim().split(/\s+/)[0]
+  return firstToken || 'there'
+}
+
+export function buildWelcomeEmail(target: LoginEmailTarget, appUrl: string, supportEmail = defaultSupportEmail): NotificationJob['message'] {
+  const normalizedAppUrl = appUrl.replace(/\/+$/, '')
+  const firstName = greetingName(target.displayName)
+  const safeFirstName = escapeHtml(firstName)
+  const safeUrl = escapeHtml(normalizedAppUrl)
+  const safeSupportEmail = escapeHtml(supportEmail)
+
+  return {
+    subject: 'Welcome to SygShift',
+    text: [
+      `Hello ${firstName},`,
+      'Welcome to SygShift, our new scheduling, time, and workforce coordination system.',
+      `Site link: ${normalizedAppUrl}`,
+      'What SygShift will help with:',
+      '- Viewing current schedules in one easy-to-read place.',
+      '- Seeing open shifts, overtime opportunities, and event coverage needs.',
+      '- Requesting time off and tracking schedule-related requests.',
+      '- Using time clock and attendance tools as rollout continues.',
+      '- Receiving company scheduling announcements in one consistent format.',
+      `We are still testing and polishing the system before full rollout. If you notice a bug, missing information, confusing screen, or anything that does not look right, please email Jordan Brown at ${supportEmail}.`,
+      'Thank you for helping us make this stronger and easier for everyone to use.',
+      'Jordan Brown',
+      'Chief Systems and Automation Officer',
+    ].join('\n\n'),
+    html: `
+      <p>Hello ${safeFirstName},</p>
+      <p>Welcome to <strong>SygShift</strong>, our new scheduling, time, and workforce coordination system.</p>
+      <p><strong>Site link:</strong> <a href="${safeUrl}">${safeUrl}</a></p>
+      <p><strong>What SygShift will help with:</strong></p>
+      <ul>
+        <li>Viewing current schedules in one easy-to-read place.</li>
+        <li>Seeing open shifts, overtime opportunities, and event coverage needs.</li>
+        <li>Requesting time off and tracking schedule-related requests.</li>
+        <li>Using time clock and attendance tools as rollout continues.</li>
+        <li>Receiving company scheduling announcements in one consistent format.</li>
+      </ul>
+      <p>We are still testing and polishing the system before full rollout. If you notice a bug, missing information, confusing screen, or anything that does not look right, please email Jordan Brown at <a href="mailto:${safeSupportEmail}">${safeSupportEmail}</a>.</p>
+      <p>Thank you for helping us make this stronger and easier for everyone to use.</p>
+      <p><strong>Jordan Brown</strong><br>Chief Systems and Automation Officer</p>
+    `,
+  }
+}
+
 async function sendLoginInstructions(
   environment: Environment,
   target: LoginEmailTarget,
@@ -458,6 +508,34 @@ async function sendLoginInstructions(
   await environment.EMAIL.send({
     from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
     html: brandedEmailHtml(message, appUrl),
+    subject: message.subject,
+    text: message.text,
+    to,
+  })
+}
+
+async function sendWelcomeEmail(
+  environment: Environment,
+  target: LoginEmailTarget,
+) {
+  if (!environment.EMAIL) {
+    throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
+  }
+  const fromEmail = environment.SYGSHIFT_EMAIL_FROM?.trim()
+  if (!fromEmail) {
+    throw new ApiError('email_sender_not_configured', 503, 'The email sender address is not configured.')
+  }
+  const to = target.contactEmail?.trim().toLowerCase()
+  if (!to) {
+    throw new ApiError('employee_email_missing', 422, `${target.displayName} does not have an on-file email address.`)
+  }
+
+  const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || 'https://sygshift.sygilant.workers.dev'
+  const message = buildWelcomeEmail(target, appUrl)
+  await environment.EMAIL.send({
+    from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
+    html: brandedEmailHtml(message, appUrl),
+    replyTo: defaultSupportEmail,
     subject: message.subject,
     text: message.text,
     to,
@@ -592,6 +670,28 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       email: target.contactEmail,
       requestId,
       role: target.role,
+      username: target.username,
+    })
+  }
+
+  const welcomeEmailMatch = /^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/welcome-email$/i.exec(url.pathname)
+  if (welcomeEmailMatch) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+
+    const target = await callRpc<LoginEmailTarget>(
+      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+      'service_get_employee_login_email_target',
+      { target_employee_id: welcomeEmailMatch[1] },
+      admin.config.serviceRoleKey,
+    )
+    if (!target) throw new ApiError('employee_not_found', 404, 'The active employee record was not found.')
+
+    await sendWelcomeEmail(environment, target)
+
+    return json({
+      displayName: target.displayName,
+      email: target.contactEmail,
+      requestId,
       username: target.username,
     })
   }

@@ -23,6 +23,7 @@ import {
   provisionMissingAccounts,
   sendAllEmployeeLoginEmails,
   sendEmployeeLoginEmail,
+  sendEmployeeWelcomeEmail,
   setEmployeeAccountState,
   updateEmployee,
   type AdminUser,
@@ -174,6 +175,8 @@ function ManageUserModal({
   const [temporaryPassword, setTemporaryPassword] = useState('')
   const [lastCredential, setLastCredential] = useState<ProvisioningCredential | null>(null)
   const [loginEmailMessage, setLoginEmailMessage] = useState<string | null>(null)
+  const [welcomeEmailMessage, setWelcomeEmailMessage] = useState<string | null>(null)
+  const onFileEmail = employee.companyEmail || employee.personalEmail || null
 
   const updateMutation = useMutation({
     mutationFn: (payload: EmployeeMutationInput) => updateEmployee({ ...payload, employeeId: employee.id }),
@@ -201,6 +204,13 @@ function ManageUserModal({
       setTemporaryPassword('')
       setLastCredential(null)
       setLoginEmailMessage(`Login instructions sent to ${result.email ?? employee.companyEmail ?? employee.personalEmail ?? 'the on-file email address'}.`)
+      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
+    },
+  })
+  const welcomeEmailMutation = useMutation({
+    mutationFn: () => sendEmployeeWelcomeEmail(employee.id),
+    onSuccess: async (result) => {
+      setWelcomeEmailMessage(`Welcome email sent to ${result.email ?? onFileEmail ?? 'the on-file email address'}.`)
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
   })
@@ -287,6 +297,34 @@ function ManageUserModal({
           {provisionMutation.isError ? <div className="inline-alert" role="alert">{provisionMutation.error.message}</div> : null}
           {loginEmailMutation.isError ? <div className="inline-alert" role="alert">{loginEmailMutation.error.message}</div> : null}
           {accountStateMutation.isError ? <div className="inline-alert" role="alert">{accountStateMutation.error.message}</div> : null}
+
+          <div className="account-control-card account-control-card--welcome">
+            <div>
+              <span className="account-control-kicker">Welcome email</span>
+              <h4>Send the SygShift introduction</h4>
+            </div>
+            <p>
+              Sends the branded welcome message only. It does not create a login, reset a
+              password, or include temporary credentials.
+            </p>
+            <p>
+              Recipient: <strong>{onFileEmail ?? 'No email on file'}</strong>
+            </p>
+            <button
+              className="secondary-button"
+              disabled={welcomeEmailMutation.isPending || employee.status !== 'active' || !onFileEmail}
+              onClick={() => welcomeEmailMutation.mutate()}
+              type="button"
+            >
+              <Mail aria-hidden="true" size={18} />
+              {welcomeEmailMutation.isPending ? 'Sending welcome…' : 'Send welcome email'}
+            </button>
+            {employee.status !== 'active' ? <small>Only active employees can receive welcome emails.</small> : null}
+            {!onFileEmail ? <small>Add a personal or company email before sending.</small> : null}
+          </div>
+
+          {welcomeEmailMessage ? <div className="form-feedback form-feedback--success" role="status">{welcomeEmailMessage}</div> : null}
+          {welcomeEmailMutation.isError ? <div className="inline-alert" role="alert">{welcomeEmailMutation.error.message}</div> : null}
         </section>
       </div>
     </ModalDialog>

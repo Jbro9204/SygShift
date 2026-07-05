@@ -99,6 +99,13 @@ const loginEmailResponseSchema = z.object({
   action: z.string().optional(),
 })
 
+const welcomeEmailResponseSchema = z.object({
+  requestId: z.string(),
+  displayName: z.string(),
+  email: z.string().nullable(),
+  username: z.string(),
+})
+
 export type AppRole = z.infer<typeof appRoleSchema>
 export type EmploymentType = z.infer<typeof employmentTypeSchema>
 export type EmployeeStatus = z.infer<typeof employeeStatusSchema>
@@ -107,6 +114,7 @@ export type AdminUser = z.infer<typeof adminUserSchema>
 export type AdminUserDirectory = z.infer<typeof adminUserDirectorySchema>
 export type ProvisioningCredential = z.infer<typeof provisioningCredentialSchema>
 export type LoginEmailResult = z.infer<typeof loginEmailResponseSchema>
+export type WelcomeEmailResult = z.infer<typeof welcomeEmailResponseSchema>
 
 export interface EmployeeMutationInput {
   employeeId?: string
@@ -247,6 +255,24 @@ export async function sendEmployeeLoginEmail(employeeId: string, temporaryPasswo
     throw new Error(message)
   }
   return loginEmailResponseSchema.parse(payload)
+}
+
+export async function sendEmployeeWelcomeEmail(employeeId: string): Promise<WelcomeEmailResult> {
+  const response = await fetch(`/api/v1/admin/users/${employeeId}/welcome-email`, {
+    body: JSON.stringify({}),
+    headers: await authHeaders(),
+    method: 'POST',
+  })
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) {
+    const message = typeof payload?.detail === 'string'
+      ? payload.detail
+      : typeof payload?.error === 'string'
+        ? payload.error.replaceAll('_', ' ')
+        : 'The welcome email could not be sent.'
+    throw new Error(message)
+  }
+  return welcomeEmailResponseSchema.parse(payload)
 }
 
 export async function sendAllEmployeeLoginEmails(): Promise<LoginEmailResult> {

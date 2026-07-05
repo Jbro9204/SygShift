@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import worker, { brandedEmailHtml, validateSuppliedTemporaryPassword } from '../worker'
+import worker, { brandedEmailHtml, buildWelcomeEmail, validateSuppliedTemporaryPassword } from '../worker'
 
 function environment(response: Response = new Response('asset'), values: Record<string, string> = {}) {
   return { ASSETS: { fetch: vi.fn().mockResolvedValue(response) }, ...values }
@@ -173,5 +173,26 @@ describe('Cloudflare Worker boundary', () => {
     expect(html).toContain('SygShift notification')
     expect(html).toContain('Open SygShift')
     expect(html).toContain('A shift is available.<br>Please review it.')
+  })
+
+  it('builds personalized welcome email content without login credentials', () => {
+    const message = buildWelcomeEmail({
+      authEmail: 'lhill@accounts.sygshift.invalid',
+      contactEmail: 'lorinda@example.com',
+      displayName: 'Lorinda Hood',
+      employeeId: '10000000-0000-4000-8000-000000000001',
+      employmentType: 'hourly',
+      existingAuthUserId: null,
+      role: 'dispatcher',
+      status: 'active',
+      username: 'lhood',
+    }, 'https://shift.sygilant.us/')
+
+    expect(message.subject).toBe('Welcome to SygShift')
+    expect(message.text).toContain('Hello Lorinda,')
+    expect(message.text).toContain('jbrown@guardianshipsecurity.net')
+    expect(message.text.toLowerCase()).not.toContain('temporary password')
+    expect(message.html).toContain('Hello Lorinda,')
+    expect(message.html).toContain('mailto:jbrown@guardianshipsecurity.net')
   })
 })
