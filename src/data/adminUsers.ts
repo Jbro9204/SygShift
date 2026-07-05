@@ -102,6 +102,7 @@ const loginEmailResponseSchema = z.object({
 const welcomeEmailResponseSchema = z.object({
   requestId: z.string(),
   displayName: z.string(),
+  delivery: z.unknown().optional(),
   email: z.string().nullable(),
   username: z.string(),
 })

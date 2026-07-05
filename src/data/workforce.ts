@@ -80,7 +80,7 @@ export function parseDirectoryEntries(value: unknown): DirectoryEntry[] {
 export async function getEmployeeDirectory(): Promise<DirectoryEntry[]> {
   const { data, error } = await getSupabaseClient().rpc('get_employee_directory')
   if (error) throw new Error('The employee directory could not be loaded for this account.')
-  return parseDirectoryEntries(data)
+  return parseDirectoryEntries(data).filter((employee) => employee.status === 'active' || employee.status === 'leave')
 }
 export async function getSites(): Promise<Site[]> {
   const { data, error } = await getSupabaseClient()

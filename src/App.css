@@ -1173,6 +1173,62 @@
   line-height: 1.58;
 }
 
+.overview-intro-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.overview-clock-action {
+  min-width: 150px;
+}
+
+.overview-schedule-action {
+  min-height: 42px;
+  padding: 9px 13px;
+  color: #4b3b22;
+  background: #fffaf0;
+  border: 1px solid #dac9aa;
+  box-shadow: none;
+  text-decoration: none;
+}
+
+.overview-time-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: -8px 0 22px;
+  padding: 14px 16px;
+  color: #2c261c;
+  background: linear-gradient(180deg, #fffdf8 0%, #f7f0e3 100%);
+  border: 1px solid #e0d3bb;
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.overview-time-card > svg {
+  flex: 0 0 auto;
+  color: #8a5f1e;
+}
+
+.overview-time-card strong,
+.overview-time-card span {
+  display: block;
+}
+
+.overview-time-card strong {
+  margin-bottom: 2px;
+  font-size: 15px;
+}
+
+.overview-time-card span {
+  color: #665f54;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
 .primary-action,
 .secondary-button,
 .icon-button {
@@ -5519,8 +5575,8 @@
 }
 
 .user-admin-toolbar {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) repeat(3, minmax(132px, 168px)) repeat(3, max-content);
   gap: 12px;
   align-items: end;
   margin-bottom: 16px;
@@ -5533,23 +5589,20 @@
 .user-admin-toolbar .primary-action,
 .user-admin-toolbar .secondary-button {
   display: inline-flex;
-  flex: 0 0 auto;
   min-height: 46px;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  justify-self: start;
   padding-inline: 18px;
   white-space: nowrap;
 }
 
 .user-admin-toolbar .search-field {
-  flex: 1 1 420px;
   min-width: 0;
 }
 
 .user-admin-toolbar .select-field {
-  flex: 0 1 165px;
+  min-width: 0;
 }
 
 .user-admin-success {

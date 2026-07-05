@@ -97,7 +97,7 @@ function OperationalDetails({ employee }: { employee: DirectoryEntry }) {
 
 export function PeoplePage() {
   const [search, setSearch] = useState('')
-  const [status, setStatus] = useState<'all' | DirectoryEntry['status']>('active')
+  const [status, setStatus] = useState<'all' | 'active' | 'leave'>('active')
   const directoryQuery = useQuery({
     queryKey: ['employee-directory'],
     queryFn: getEmployeeDirectory,
@@ -180,16 +180,14 @@ export function PeoplePage() {
               >
                 <option value="active">Active</option>
                 <option value="leave">On leave</option>
-                <option value="inactive">Inactive</option>
-                <option value="separated">Separated</option>
-                <option value="all">All employees</option>
+                <option value="all">Active + on leave</option>
               </select>
             </label>
           </section>
 
           {filteredEmployees.length === 0 ? (
             <DataStatePanel icon={UsersRound} title="No employees match these filters">
-              <p>Change the search or status filter to see other directory records.</p>
+              <p>Change the search or status filter to see other active workforce records.</p>
             </DataStatePanel>
           ) : (
             <section className="directory-panel" aria-label="Employee directory results">
@@ -239,7 +237,7 @@ export function PeoplePage() {
 
           <p className="results-note">
             <BadgeCheck aria-hidden="true" size={18} />
-            Showing {filteredEmployees.length} of {directoryQuery.data?.length ?? 0} permitted records
+            Showing {filteredEmployees.length} of {directoryQuery.data?.length ?? 0} active workforce records
           </p>
         </>
       )}

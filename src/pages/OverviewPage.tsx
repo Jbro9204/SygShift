@@ -3,12 +3,22 @@ import {
   CalendarDays,
   ClipboardCheck,
   DatabaseZap,
+  Clock3,
+  Timer,
   TimerReset,
   UsersRound,
 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { getOverviewMetrics, overviewMetricNote, type OverviewMetrics } from '../data/overview'
+import {
+  activeTimeState,
+  getTimekeepingDashboard,
+  recordTimeEvent,
+  type TimeEventKind,
+  type TimekeepingDashboard,
+} from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
 
 const metrics: Array<{ label: string, key: keyof OverviewMetrics, icon: typeof UsersRound }> = [
@@ -18,14 +28,59 @@ const metrics: Array<{ label: string, key: keyof OverviewMetrics, icon: typeof U
   { label: 'Clock exceptions', key: 'clockExceptions', icon: TimerReset },
 ]
 
+function overviewTimeAction(dashboard: TimekeepingDashboard | undefined): {
+  kind: TimeEventKind | null
+  label: string
+  requiresTimePage: boolean
+} {
+  if (!dashboard) return { kind: null, label: 'Open time clock', requiresTimePage: true }
+
+  const state = activeTimeState(dashboard.lastEvent)
+  if (state === 'working') return { kind: 'clock_out', label: 'Clock out', requiresTimePage: false }
+  if (state === 'on_break') return { kind: 'break_end', label: 'End break', requiresTimePage: false }
+  if (dashboard.eligibleShifts.length > 1) return { kind: null, label: 'Choose shift to clock in', requiresTimePage: true }
+  return { kind: 'clock_in', label: 'Clock in', requiresTimePage: false }
+}
+
 export function OverviewPage() {
+  const queryClient = useQueryClient()
+  const punchLocked = useRef(false)
   const overviewQuery = useQuery({
     queryKey: ['overview-metrics'],
     queryFn: () => getOverviewMetrics(),
     enabled: isSupabaseConfigured,
     refetchInterval: 60_000,
   })
+  const timekeepingQuery = useQuery({
+    enabled: isSupabaseConfigured,
+    queryFn: () => getTimekeepingDashboard(),
+    queryKey: ['timekeeping-dashboard', 'overview'],
+    refetchInterval: 15_000,
+    retry: false,
+  })
+  const punchMutation = useMutation({
+    mutationFn: (input: { kind: TimeEventKind; shiftId?: string | null }) => recordTimeEvent(input),
+    onSettled: async () => {
+      punchLocked.current = false
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['overview-metrics'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'], refetchType: 'active' }),
+      ])
+      await queryClient.refetchQueries({ queryKey: ['timekeeping-dashboard'], type: 'active' })
+    },
+  })
   const overview = overviewQuery.data
+  const timeAction = overviewTimeAction(timekeepingQuery.data)
+
+  function quickPunch() {
+    if (!timeAction.kind || !timekeepingQuery.data) return
+    if (punchLocked.current || punchMutation.isPending) return
+    punchLocked.current = true
+    const shiftId = timeAction.kind === 'clock_in'
+      ? timekeepingQuery.data.eligibleShifts[0]?.shiftId ?? null
+      : undefined
+    punchMutation.mutate({ kind: timeAction.kind, shiftId })
+  }
 
   return (
     <div className="page page--overview">
@@ -38,11 +93,49 @@ export function OverviewPage() {
             harder to read.
           </p>
         </div>
-        <Link className="primary-action" to="/schedule">
-          Open master schedule
-          <ArrowRight aria-hidden="true" size={20} />
-        </Link>
+        <div className="overview-intro-actions">
+          {timeAction.requiresTimePage ? (
+            <Link className="primary-action overview-clock-action" to="/time">
+              <Timer aria-hidden="true" size={19} />
+              {timeAction.label}
+            </Link>
+          ) : (
+            <button
+              className="primary-action overview-clock-action"
+              disabled={punchMutation.isPending || timekeepingQuery.isPending}
+              onClick={quickPunch}
+              type="button"
+            >
+              <Timer aria-hidden="true" size={19} />
+              {punchMutation.isPending ? 'Recording...' : timeAction.label}
+            </button>
+          )}
+          <Link className="secondary-button overview-schedule-action" to="/schedule">
+            Master schedule
+            <ArrowRight aria-hidden="true" size={18} />
+          </Link>
+        </div>
       </section>
+
+      {punchMutation.isError ? (
+        <div className="inline-alert" role="alert">{punchMutation.error.message}</div>
+      ) : null}
+
+      {timekeepingQuery.data ? (
+        <section className="overview-time-card" aria-label="Quick time clock">
+          <Clock3 aria-hidden="true" size={22} />
+          <div>
+            <strong>
+              {activeTimeState(timekeepingQuery.data.lastEvent) === 'off_clock'
+                ? 'You are off the clock'
+                : activeTimeState(timekeepingQuery.data.lastEvent) === 'on_break'
+                  ? 'You are on break'
+                  : 'You are clocked in'}
+            </strong>
+            <span>Official time is recorded by the secure server. Full time tools remain under Time & attendance.</span>
+          </div>
+        </section>
+      ) : null}
 
       <section className="connection-banner" aria-labelledby="connection-title">
         <div className="connection-icon">

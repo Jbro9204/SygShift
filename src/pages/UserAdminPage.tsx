@@ -210,7 +210,9 @@ function ManageUserModal({
   const welcomeEmailMutation = useMutation({
     mutationFn: () => sendEmployeeWelcomeEmail(employee.id),
     onSuccess: async (result) => {
-      setWelcomeEmailMessage(`Welcome email sent to ${result.email ?? onFileEmail ?? 'the on-file email address'}.`)
+      setWelcomeEmailMessage(
+        `Welcome email accepted for ${result.email ?? onFileEmail ?? 'the on-file email address'}. Request ${result.requestId}.`,
+      )
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
   })

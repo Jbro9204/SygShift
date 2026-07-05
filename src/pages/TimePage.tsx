@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
@@ -679,17 +679,27 @@ function SupervisorTimeReview({ defaultDate }: { defaultDate: string }) {
 
 function LiveTimekeeping() {
   const queryClient = useQueryClient()
+  const punchLocked = useRef(false)
   const operationalDate = useMemo(() => formatDateKey(operationalToday()), [])
   const dashboardQuery = useQuery({
     queryKey: ['timekeeping-dashboard', operationalDate],
     queryFn: () => getTimekeepingDashboard(operationalDate),
+    refetchInterval: 15_000,
   })
   const punchMutation = useMutation({
     mutationFn: (input: { kind: TimeEventKind; shiftId?: string | null }) => recordTimeEvent(input),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'] })
+    onSettled: async () => {
+      punchLocked.current = false
+      await queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'], refetchType: 'active' })
+      await queryClient.refetchQueries({ queryKey: ['timekeeping-dashboard'], type: 'active' })
     },
   })
+
+  function recordPunch(kind: TimeEventKind, shiftId?: string | null) {
+    if (punchLocked.current || punchMutation.isPending) return
+    punchLocked.current = true
+    punchMutation.mutate({ kind, shiftId })
+  }
 
   if (dashboardQuery.isPending) {
     return <DataStatePanel icon={Timer} title="Loading timekeeping"><p>Retrieving your assigned shifts, current status, and today&apos;s recorded punches.</p></DataStatePanel>
@@ -725,7 +735,7 @@ function LiveTimekeeping() {
       <div className="time-layout">
         <PunchControls
           dashboard={dashboard}
-          onPunch={(kind, shiftId) => punchMutation.mutate({ kind, shiftId })}
+          onPunch={recordPunch}
           pending={punchMutation.isPending}
         />
 

@@ -517,7 +517,7 @@ async function sendLoginInstructions(
 async function sendWelcomeEmail(
   environment: Environment,
   target: LoginEmailTarget,
-) {
+): Promise<unknown> {
   if (!environment.EMAIL) {
     throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
   }
@@ -532,7 +532,7 @@ async function sendWelcomeEmail(
 
   const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || 'https://sygshift.sygilant.workers.dev'
   const message = buildWelcomeEmail(target, appUrl)
-  await environment.EMAIL.send({
+  return environment.EMAIL.send({
     from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
     html: brandedEmailHtml(message, appUrl),
     replyTo: defaultSupportEmail,
@@ -686,9 +686,10 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
     )
     if (!target) throw new ApiError('employee_not_found', 404, 'The active employee record was not found.')
 
-    await sendWelcomeEmail(environment, target)
+    const delivery = await sendWelcomeEmail(environment, target)
 
     return json({
+      delivery,
       displayName: target.displayName,
       email: target.contactEmail,
       requestId,
@@ -770,43 +771,44 @@ export function brandedEmailHtml(message: NotificationJob['message'], appUrl = '
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${title}</title>
   </head>
-  <body style="margin:0; padding:0; background:#f3f0ea; color:#1b1814; font-family:Arial, Helvetica, sans-serif;">
+  <body style="margin:0; padding:0; background:#f3f0ea; color:#1b1814; font-family:Arial, Helvetica, sans-serif; -webkit-text-size-adjust:100%;">
     <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
       ${escapeHtml(message.text).slice(0, 180)}
     </div>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse; background:#f3f0ea;">
       <tr>
-        <td align="center" style="padding:28px 16px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%; max-width:640px; border-collapse:collapse;">
+        <td align="center" style="padding:22px 12px 64px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%; max-width:640px; border-collapse:collapse; table-layout:fixed;">
             <tr>
-              <td align="center" style="padding:26px 24px 22px; background-color:#070706; background-image:linear-gradient(135deg, #171511 0%, #080706 42%, #242018 43%, #0b0a08 64%, #15130f 100%); border-radius:18px 18px 0 0; border-bottom:3px solid #d6b15f;">
-                <img src="${logoUrl}" width="320" alt="SygShift" style="display:block; width:320px; max-width:92%; height:auto; margin:0 auto; border:0;">
+              <td align="center" style="padding:24px 18px 20px; background-color:#070706; background-image:linear-gradient(135deg, #171511 0%, #080706 42%, #242018 43%, #0b0a08 64%, #15130f 100%); border-radius:16px 16px 0 0; border-bottom:3px solid #d6b15f;">
+                <img src="${logoUrl}" width="280" alt="SygShift" style="display:block; width:280px; max-width:88%; height:auto; margin:0 auto; border:0;">
                 <div style="margin-top:14px; color:#d6b15f; font-size:11px; line-height:1.4; letter-spacing:1.8px; text-transform:uppercase; font-weight:800; text-align:center;">
                   Smart schedules. Stronger coverage.
                 </div>
               </td>
             </tr>
             <tr>
-              <td style="padding:30px 30px 8px; background:#fffdf8; border-left:1px solid #e4ddcf; border-right:1px solid #e4ddcf;">
+              <td style="padding:26px 22px 10px; background:#fffdf8; border-left:1px solid #e4ddcf; border-right:1px solid #e4ddcf; word-break:break-word;">
                 <div style="color:#7b5a1e; font-size:12px; line-height:1.4; letter-spacing:1.5px; text-transform:uppercase; font-weight:800;">
                   SygShift notification
                 </div>
                 <h1 style="margin:8px 0 18px; color:#181511; font-size:26px; line-height:1.18; font-weight:800; letter-spacing:-0.02em;">
                   ${title}
                 </h1>
-                <div style="color:#29241d; font-size:16px; line-height:1.62;">
+                <div style="color:#29241d; font-size:16px; line-height:1.6;">
                   ${body}
                 </div>
               </td>
             </tr>
             <tr>
-              <td style="padding:20px 30px 30px; background:#fffdf8; border-left:1px solid #e4ddcf; border-right:1px solid #e4ddcf; border-bottom:1px solid #e4ddcf; border-radius:0 0 18px 18px;">
+              <td style="padding:18px 22px 52px; background:#fffdf8; border-left:1px solid #e4ddcf; border-right:1px solid #e4ddcf; border-bottom:1px solid #e4ddcf; border-radius:0 0 16px 16px;">
                 <a href="${normalizedAppUrl}" style="display:inline-block; padding:12px 18px; color:#11100e; background:#d6b15f; border-radius:10px; font-size:15px; line-height:1; font-weight:800; text-decoration:none;">
                   Open SygShift
                 </a>
                 <p style="margin:18px 0 0; color:#6d665c; font-size:13px; line-height:1.5;">
                   This operational message was sent by SygShift for Sygilant scheduling and workforce coordination.
                 </p>
+                <div style="height:24px; line-height:24px; font-size:24px;">&nbsp;</div>
               </td>
             </tr>
           </table>
