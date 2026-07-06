@@ -111,7 +111,7 @@ export function OverviewPage() {
             </button>
           )}
           <Link className="secondary-button overview-schedule-action" to="/schedule">
-            Master schedule
+            Schedule
             <ArrowRight aria-hidden="true" size={18} />
           </Link>
         </div>
@@ -132,7 +132,7 @@ export function OverviewPage() {
                   ? 'You are on break'
                   : 'You are clocked in'}
             </strong>
-            <span>Official time is recorded by the secure server. Full time tools remain under Time & attendance.</span>
+            <span>Official time is recorded by the secure server. Full time tools remain under Time & Attendance.</span>
           </div>
         </section>
       ) : null}
@@ -191,7 +191,7 @@ export function OverviewPage() {
               </strong>
               <p>
                 {isSupabaseConfigured
-                  ? 'This count excludes past openings. Use Events & openings to fill them, or Master schedule to review the full week.'
+                  ? 'This count excludes past openings. Use Events & Openings to fill them, or Schedule to review the full week.'
                   : 'Imported coverage will appear here only after every source value is verified.'}
               </p>
             </div>

@@ -11,6 +11,13 @@ import {
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDate, formatOperationalTime } from '../lib/time'
 
+function displayRole(role: SessionContext['role']): string {
+  if (role === 'admin') return 'Admin'
+  if (role === 'dispatcher') return 'Dispatcher'
+  if (role === 'supervisor') return 'Supervisor'
+  return 'Guard'
+}
+
 export function AppShell() {
   const [navigationOpen, setNavigationOpen] = useState(false)
   const [sessionContext, setSessionContext] = useState<SessionContext | null>(null)
@@ -216,7 +223,7 @@ export function AppShell() {
             <span>
               {isSupabaseConfigured
                 ? sessionContext
-                  ? `${sessionContext.role} access verified`
+                  ? `${displayRole(sessionContext.role)} access verified`
                   : 'Sign in required'
                 : 'Operational data is protected'}
             </span>

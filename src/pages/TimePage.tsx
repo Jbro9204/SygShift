@@ -717,7 +717,7 @@ function LiveTimekeeping() {
       <section className="time-hero-card" aria-labelledby="live-time-title">
         <div className="time-hero-card__icon"><FileClock aria-hidden="true" size={31} /></div>
         <div>
-          <p className="eyebrow">Time & attendance</p>
+          <p className="eyebrow">Time & Attendance</p>
           <h2 id="live-time-title">{dashboard.employee.displayName}</h2>
           <p>
             @{dashboard.employee.username} · {dashboard.employee.role} · {dashboard.employee.employmentType}
@@ -768,7 +768,7 @@ export function TimePage() {
       <section className="page-intro workforce-intro">
         <div>
           <p className="eyebrow">Operations</p>
-          <h1>Time & attendance</h1>
+          <h1>Time & Attendance</h1>
           <p className="page-summary">
             Clock into scheduled shifts, record breaks, preserve original punch history, and prepare clean
             payroll evidence without making employees fight the system.

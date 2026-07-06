@@ -50,7 +50,7 @@ Complete these checks:
 
 The supervisor should:
 
-1. Open Master Schedule.
+1. Open Schedule.
 2. Use the Supervisor cleanup workbench.
 3. Resolve each review-needed item for the pilot week.
 4. Confirm the schedule board is easy to read after cleanup.

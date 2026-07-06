@@ -364,6 +364,13 @@ function sourceQualificationLabel(value: string | null): string {
   return 'Needs review'
 }
 
+function mobileScheduleRowLabel(row: { id: string, name: string, code?: string | null, type?: string }, view: 'site' | 'employee'): string {
+  if (view === 'employee') return 'Employee'
+  if (row.code) return row.code
+  if (row.type === 'event') return 'Event'
+  return 'Site'
+}
+
 function ImportedShiftCard({ shift }: { shift: ImportedScheduleShift }) {
   const assignee = shift.openCandidate
     ? 'Open shift'
@@ -702,6 +709,16 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     () => reviewItems.filter((item) => item.shift.requires_armed).length,
     [reviewItems],
   )
+  const schedulerDayBuckets = useMemo(() => days.map((day) => {
+    const dayKey = format(day, 'yyyy-MM-dd')
+    const shifts = visibleRows
+      .flatMap((row) => row.shifts)
+      .filter((shift) => shiftOperationalDate(shift) === dayKey)
+      .sort((left, right) => left.starts_at.localeCompare(right.starts_at))
+    const openSlots = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+    const reviewCount = shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
+    return { day, dayKey, openSlots, reviewCount, shifts }
+  }), [days, visibleRows])
   const visibleImportedRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
     return importedRows
@@ -798,14 +815,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   }
 
   return (
-    <div className="page page--schedule">
+    <div className={isSchedulerHome ? 'page page--schedule page--scheduler' : 'page page--schedule'}>
       <section className="page-intro schedule-intro">
         <div>
           <p className="eyebrow">Operations</p>
-          <h1>{isSchedulerHome ? 'Scheduler workspace' : 'Master schedule'}</h1>
+          <h1>{isSchedulerHome ? 'Scheduler' : 'Schedule'}</h1>
           <p className="page-summary">
             {isSchedulerHome
-              ? 'Build, edit, suggest, publish, or cancel schedule drafts from one focused workspace.'
+              ? 'Build the week from a focused planning board, make changes safely, and publish only when coverage is ready.'
               : 'A readable weekly view for permanent sites, one-time events, patrol, and dispatch coverage.'}
           </p>
         </div>
@@ -899,7 +916,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         <section className={scheduleQuery.data?.status === 'draft' ? 'scheduler-workspace scheduler-workspace--draft' : 'scheduler-workspace'} aria-label="Scheduler workspace">
           <div className="scheduler-workspace__hero">
             <div>
-              <p className="eyebrow">Scheduler workspace</p>
+              <p className="eyebrow">Planning command center</p>
               <h2>
                 {scheduleQuery.data?.status === 'draft'
                   ? `Draft revision ${scheduleQuery.data.revision} is open`
@@ -907,8 +924,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               </h2>
               <p>
                 {scheduleQuery.data?.status === 'draft'
-                  ? 'You are viewing and editing the working draft below. Changes are not final until you publish the draft.'
-                  : 'Choose a week, open a draft, add one-time events, or let SygShift suggest staffing before anything goes live.'}
+                  ? 'Work from the planner below. Changes stay private until the draft is published.'
+                  : 'Pick a week, open a draft, add coverage, and use staffing suggestions before anything goes live.'}
               </p>
             </div>
             <div className="scheduler-workspace__actions">
@@ -969,8 +986,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             <div className="draft-guidance-grid">
               <article>
                 <span>1</span>
-                <strong>Review the board below</strong>
-                <p>Every card shown on this page is the current draft, not a hidden background copy.</p>
+                <strong>Work the planner</strong>
+                <p>Each day shows the shifts, open slots, and review items that need attention.</p>
               </article>
               <article>
                 <span>2</span>
@@ -1363,6 +1380,112 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         </section>
       ) : null}
 
+      {isSchedulerHome ? (
+        <section className="scheduler-planner" aria-labelledby="scheduler-planner-title">
+          <div className="scheduler-planner__heading">
+            <div>
+              <p className="eyebrow">Week planner</p>
+              <h2 id="scheduler-planner-title">
+                {format(weekStart, 'MMM d')} – {format(weekEnd, 'MMM d, yyyy')}
+              </h2>
+              <p>Use this board to inspect each day, open a draft, edit shift cards, and publish when the week is ready.</p>
+              <div className="scheduler-planner__week-nav" aria-label="Planner week controls">
+                <button
+                  aria-label="Previous week"
+                  className="secondary-button secondary-button--small"
+                  onClick={() => jumpToWeek(addWeeks(weekStart, -1))}
+                  type="button"
+                >
+                  <ChevronLeft aria-hidden="true" size={17} />
+                  Previous
+                </button>
+                <button
+                  className="secondary-button secondary-button--small"
+                  onClick={() => jumpToWeek(startOfWeek(today, { weekStartsOn: 0 }))}
+                  type="button"
+                >
+                  This week
+                </button>
+                <button
+                  aria-label="Next week"
+                  className="secondary-button secondary-button--small"
+                  onClick={() => jumpToWeek(addWeeks(weekStart, 1))}
+                  type="button"
+                >
+                  Next
+                  <ChevronRight aria-hidden="true" size={17} />
+                </button>
+              </div>
+            </div>
+            <div className="scheduler-planner__totals" aria-label="Planner totals">
+              <article><span>Shifts</span><strong>{scheduleSummary.shifts}</strong></article>
+              <article><span>Open</span><strong>{scheduleSummary.open}</strong></article>
+              <article><span>Review</span><strong>{scheduleSummary.review}</strong></article>
+            </div>
+          </div>
+
+          {!isSupabaseConfigured ? (
+            <DataStatePanel icon={DatabaseZap} title="Scheduler ready for the secure connection">
+              <p>Scheduling tools activate after the protected database connection is configured.</p>
+            </DataStatePanel>
+          ) : scheduleQuery.isPending ? (
+            <DataStatePanel icon={CalendarDays} title="Loading planner">
+              <p>Retrieving the schedule revision for this planning week.</p>
+            </DataStatePanel>
+          ) : scheduleQuery.isError ? (
+            <DataStatePanel icon={ShieldAlert} title="Scheduler unavailable" tone="error">
+              <p>{scheduleQuery.error.message}</p>
+            </DataStatePanel>
+          ) : !scheduleQuery.data ? (
+            <DataStatePanel icon={CalendarDays} title="No schedule exists for this week">
+              <p>Open a working draft or add a shift/event to start building this week.</p>
+            </DataStatePanel>
+          ) : (
+            <div className="scheduler-day-board">
+              {schedulerDayBuckets.map((bucket) => (
+                <article className="scheduler-day-column" key={bucket.dayKey}>
+                  <header>
+                    <div>
+                      <span>{format(bucket.day, 'EEE')}</span>
+                      <strong>{format(bucket.day, 'MMM d')}</strong>
+                    </div>
+                    <small>
+                      {bucket.shifts.length} shift{bucket.shifts.length === 1 ? '' : 's'}
+                      {bucket.openSlots ? ` · ${bucket.openSlots} open` : ''}
+                    </small>
+                  </header>
+                  {bucket.reviewCount ? (
+                    <p className="scheduler-day-column__alert">{bucket.reviewCount} review item{bucket.reviewCount === 1 ? '' : 's'}</p>
+                  ) : null}
+                  <div className="scheduler-day-column__cards">
+                    {bucket.shifts.length ? bucket.shifts.map((shift) => (
+                      <ShiftCard
+                        canEdit={canUseScheduler}
+                        canResolve={canUseScheduler}
+                        compact
+                        key={shift.id}
+                        onEdit={editShift}
+                        onResolve={(targetShift) => {
+                          setBuilderOpen(false)
+                          setBuilderMessage(null)
+                          setResolvingShift(targetShift)
+                        }}
+                        shift={shift}
+                      />
+                    )) : (
+                      <div className="scheduler-day-empty">
+                        <strong>No coverage yet</strong>
+                        <span>Add a shift/event if this day needs staffing.</span>
+                      </div>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
       <section className="schedule-toolbar" aria-label="Schedule controls">
         <div className="week-controls">
           <button
@@ -1478,12 +1601,15 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         </section>
       ) : null}
 
-      <p className="schedule-scroll-hint" id="schedule-scroll-instructions">
-        <MoveHorizontal aria-hidden="true" size={19} />
-        Scroll horizontally to see all seven days
-      </p>
+      {!isSchedulerHome ? (
+        <p className="schedule-scroll-hint" id="schedule-scroll-instructions">
+          <MoveHorizontal aria-hidden="true" size={19} />
+          Scroll horizontally to see all seven days
+        </p>
+      ) : null}
 
-      <div
+      {!isSchedulerHome ? (
+        <div
         aria-label="Horizontal schedule scroll"
         className="schedule-scrollbar"
         onScroll={syncBoardScrollFromTop}
@@ -1492,9 +1618,84 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         tabIndex={0}
       >
         <div style={{ width: `${Math.max(boardScrollWidth, 1)}px` }} />
-      </div>
+        </div>
+      ) : null}
 
-      <section
+      {!isSchedulerHome ? (
+        <section className="schedule-mobile-list" aria-label="Mobile schedule view">
+          {scheduleQuery.data ? days.map((day) => {
+            const dayKey = format(day, 'yyyy-MM-dd')
+            const activeRows = scheduleView === 'employee' ? visibleEmployeeRows : visibleRows
+            const rowsForDay = activeRows
+              .map((row) => ({ ...row, shifts: row.shifts.filter((shift) => shiftOperationalDate(shift) === dayKey) }))
+              .filter((row) => row.shifts.length > 0)
+            return (
+              <article className="mobile-schedule-day" key={dayKey}>
+                <header>
+                  <span>{format(day, 'EEEE')}</span>
+                  <strong>{format(day, 'MMM d')}</strong>
+                </header>
+                {rowsForDay.length ? rowsForDay.map((row) => (
+                  <div className="mobile-schedule-location" key={row.id}>
+                    <div className="mobile-schedule-location__title">
+                      <span>{mobileScheduleRowLabel(row, scheduleView)}</span>
+                      <strong>{row.name}</strong>
+                    </div>
+                    {row.shifts.map((shift) => (
+                      <ShiftCard
+                        canEdit={canUseScheduler}
+                        canResolve={canUseScheduler}
+                        compact
+                        key={shift.id}
+                        onEdit={editShift}
+                        onResolve={(targetShift) => {
+                          setBuilderOpen(false)
+                          setBuilderMessage(null)
+                          setResolvingShift(targetShift)
+                        }}
+                        shift={shift}
+                      />
+                    ))}
+                  </div>
+                )) : (
+                  <p className="mobile-schedule-empty">No shifts scheduled.</p>
+                )}
+              </article>
+            )
+          }) : !scheduleQuery.data && importedPreviewQuery.data && visibleImportedRows.length > 0 ? days.map((day) => {
+            const dayKey = format(day, 'yyyy-MM-dd')
+            const rowsForDay = visibleImportedRows
+              .map((row) => ({ ...row, shifts: row.shifts.filter((shift) => shift.localDate === dayKey) }))
+              .filter((row) => row.shifts.length > 0)
+            return (
+              <article className="mobile-schedule-day" key={dayKey}>
+                <header>
+                  <span>{format(day, 'EEEE')}</span>
+                  <strong>{format(day, 'MMM d')}</strong>
+                </header>
+                {rowsForDay.length ? rowsForDay.map((row) => (
+                  <div className="mobile-schedule-location" key={row.id}>
+                    <div className="mobile-schedule-location__title">
+                      <span>{sourceQualificationLabel(row.qualification)}</span>
+                      <strong>{row.name}</strong>
+                    </div>
+                    {row.shifts.map((shift) => <ImportedShiftCard shift={shift} key={shift.id} />)}
+                  </div>
+                )) : (
+                  <p className="mobile-schedule-empty">No shifts scheduled.</p>
+                )}
+              </article>
+            )
+          }) : (
+            <DataStatePanel icon={CalendarDays} title="No schedule to show">
+              <p>Select a week with published coverage or create a reviewed schedule revision.</p>
+            </DataStatePanel>
+          )}
+        </section>
+      ) : null}
+
+      {!isSchedulerHome ? (
+        <section
         aria-describedby="schedule-scroll-instructions"
         aria-labelledby="schedule-board-heading"
         className="schedule-board"
@@ -1505,7 +1706,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         <h2 className="visually-hidden" id="schedule-board-heading">
           Weekly coverage
         </h2>
-        <div className="schedule-grid" role="table" aria-label="Weekly master schedule">
+        <div className="schedule-grid" role="table" aria-label="Weekly schedule">
           <div className="schedule-row schedule-row--header" role="row">
             <div className="schedule-site-column" role="columnheader">
               Site / post
@@ -1657,7 +1858,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             </div>
           ))}
         </div>
-      </section>
+        </section>
+      ) : null}
     </div>
   )
 }

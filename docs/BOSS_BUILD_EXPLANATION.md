@@ -10,13 +10,13 @@ The goal is not to replace the company’s process with something unfamiliar. Th
 
 SygShift currently covers these core areas:
 
-- Master schedule by week, site, post, event, and guard assignment
+- Schedule by week, site, post, event, and guard assignment
 - Open shifts and overtime opportunities
 - Events that guards can request to work
 - Employee directory with roles, usernames, employment details, and qualifications
 - Armed/unarmed qualification safeguards
 - Supervisor review for schedule items that could not be matched safely from the workbook
-- Time-off requests
+- Time-Off Requests
 - Call-off reporting and replacement-opening workflow
 - Time clock and timekeeping review
 - Payroll-ready export preparation
@@ -58,7 +58,7 @@ Armed work is protected so unarmed guards are not shown or allowed to request ar
 
 Supervisors can:
 
-- View the master schedule
+- View the schedule
 - Add open shifts or one-time events
 - Review time-off requests
 - Review open-shift requests

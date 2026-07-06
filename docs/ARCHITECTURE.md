@@ -30,7 +30,7 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 
 1. Identity and employee directory
 2. Sites, posts, patrol, and dispatch coverage
-3. Master schedule and published schedule history
+3. Schedule and published schedule history
 4. Events and qualified open-shift requests
 5. Time off and call-off workflow
 6. Timeclock, corrections, approval, locking, and payroll exports

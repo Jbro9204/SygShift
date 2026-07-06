@@ -37,19 +37,19 @@ export const navigationGroups: NavigationGroup[] = [
     label: 'Operations',
     items: [
       { label: 'Overview', path: '/', icon: LayoutDashboard },
-      { label: 'Master schedule', path: '/schedule', icon: CalendarDays },
+      { label: 'Schedule', path: '/schedule', icon: CalendarDays },
       { label: 'Scheduler', path: '/scheduler', icon: CalendarPlus, roles: ['dispatcher', 'supervisor', 'admin'] },
-      { label: 'Events & openings', path: '/events', icon: CalendarClock },
-      { label: 'Time & attendance', path: '/time', icon: Timer },
+      { label: 'Events & Openings', path: '/events', icon: CalendarClock },
+      { label: 'Time & Attendance', path: '/time', icon: Timer },
     ],
   },
   {
     label: 'Workforce',
     items: [
       { label: 'People', path: '/people', icon: UsersRound, roles: OPERATIONS_ROLES },
-      { label: 'Sites & posts', path: '/sites', icon: Building2, roles: OPERATIONS_ROLES },
+      { label: 'Sites & Posts', path: '/sites', icon: Building2, roles: OPERATIONS_ROLES },
       { label: 'Patrol', path: '/patrol', icon: MapPinned },
-      { label: 'Time-off requests', path: '/requests', icon: ClipboardCheck },
+      { label: 'Time-Off Requests', path: '/requests', icon: ClipboardCheck },
     ],
   },
   {
@@ -63,9 +63,9 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: 'Administration',
     items: [
-      { label: 'Users & access', path: '/users', icon: UserCog, roles: ['admin'] },
-      { label: 'Import review', path: '/import-review', icon: Database, roles: ['admin'] },
-      { label: 'Operational import', path: '/operational-import', icon: ListChecks, roles: ['admin'] },
+      { label: 'Users & Access', path: '/users', icon: UserCog, roles: ['admin'] },
+      { label: 'Import Review', path: '/import-review', icon: Database, roles: ['admin'] },
+      { label: 'Operational Import', path: '/operational-import', icon: ListChecks, roles: ['admin'] },
     ],
   },
 ]

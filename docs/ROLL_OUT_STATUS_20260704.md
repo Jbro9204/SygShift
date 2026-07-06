@@ -139,7 +139,7 @@ Start with the week of 2026-07-05.
 In the app:
 
 1. Sign in as an admin or supervisor.
-2. Open the master schedule.
+2. Open the schedule.
 3. Start with the Supervisor cleanup workbench.
 4. Resolve each review-needed shift by assigning the correct employee.
 5. Use Show review needed only if the supervisor wants the full board view.

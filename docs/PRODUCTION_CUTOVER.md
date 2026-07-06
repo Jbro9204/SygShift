@@ -117,7 +117,7 @@ After deployment, verify:
 - `/api/v1/ready` returns `200` and reports `ready: true`
 - `/login` loads over HTTPS
 - `/users` redirects unauthenticated visitors to `/login`
-- an admin can sign in, change the temporary password, enroll MFA, and open Users & access
+- an admin can sign in, change the temporary password, enroll MFA, and open Users & Access
 - non-admin users cannot open admin routes or admin API endpoints
 
 ## 5. First admin account

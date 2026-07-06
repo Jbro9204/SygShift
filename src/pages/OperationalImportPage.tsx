@@ -142,7 +142,7 @@ function VerifiedMappingSetup() {
           is connected. The mapping forms and atomic promotion transaction are already built.
         </p>
         <ul>
-          <li>Nothing reaches the Directory or Master Schedule until an Admin confirms the mappings.</li>
+          <li>Nothing reaches the Directory or Schedule until an Admin confirms the mappings.</li>
           <li>Overlapping assignments and unverified armed qualifications block promotion automatically.</li>
           <li>A failed validation rolls back the entire promotion—no partial schedule is left behind.</li>
         </ul>
@@ -375,7 +375,7 @@ function ReadinessHeader({ readiness, onAcceptSchedules, onPromote }: { readines
       </section>
       <section className="mapping-progress-grid" aria-label="Import mapping completion">
         <MappingProgress complete={readiness.directoryEmployeeMappingCount} label="Directory" total={readiness.employeeCandidateCount} />
-        <MappingProgress complete={readiness.siteMappingCount} label="Sites & posts" total={readiness.siteKeyCount} />
+        <MappingProgress complete={readiness.siteMappingCount} label="Sites & Posts" total={readiness.siteKeyCount} />
         <MappingProgress complete={readiness.aliasMappingCount} label="Schedule names" total={readiness.assigneeLabelCount} />
         <MappingProgress complete={readiness.acceptedScheduleCount} label="Schedule weeks" total={readiness.scheduleCandidateCount} />
       </section>
@@ -436,7 +436,7 @@ function LiveOperationalImport() {
   const readiness = readinessQuery.data
   const tabs: Array<{ id: WorkArea; label: string; count: string }> = [
     { id: 'employees', label: 'Directory', count: `${readiness.directoryEmployeeMappingCount}/${readiness.employeeCandidateCount}` },
-    { id: 'sites', label: 'Sites & posts', count: `${readiness.siteMappingCount}/${readiness.siteKeyCount}` },
+    { id: 'sites', label: 'Sites & Posts', count: `${readiness.siteMappingCount}/${readiness.siteKeyCount}` },
     { id: 'aliases', label: 'Schedule names', count: `${readiness.aliasMappingCount}/${readiness.assigneeLabelCount}` },
     { id: 'exceptions', label: 'Shift exceptions', count: String(readiness.assignmentOverlapConflictCount + readiness.qualificationConflictCount) },
   ]
@@ -474,7 +474,7 @@ export function OperationalImportPage() {
   return (
     <div className="page page--operational-import">
       <section className="page-intro workforce-intro">
-        <div><p className="eyebrow">Administration</p><h1>Operational import</h1><p className="page-summary">Confirm how workbook people, sites, and schedule labels map into the live Directory and Master Schedule—then promote them in one controlled, atomic transaction.</p></div>
+        <div><p className="eyebrow">Administration</p><h1>Operational import</h1><p className="page-summary">Confirm how workbook people, sites, and schedule labels map into the live Directory and Schedule—then promote them in one controlled, atomic transaction.</p></div>
         <div className="access-note"><ShieldAlert aria-hidden="true" size={19} /> Admin access and MFA required</div>
       </section>
       {isSupabaseConfigured ? <LiveOperationalImport /> : <VerifiedMappingSetup />}

@@ -100,7 +100,7 @@ export function ReportsPage() {
           </section>
 
           <section className="operations-panel" aria-labelledby="published-week-report-title">
-            <p className="eyebrow">Master schedule</p>
+            <p className="eyebrow">Schedule</p>
             <h2 id="published-week-report-title">Published schedule weeks</h2>
             <div className="report-table" role="table" aria-label="Published schedule weeks">
               <div role="row">

@@ -423,7 +423,7 @@ export function UserAdminPage() {
       <section className="page-intro user-admin-intro">
         <div>
           <p className="eyebrow">Administration</p>
-          <h1>Users & access</h1>
+          <h1>Users & Access</h1>
           <p className="page-summary">
             Manage employees, permanent usernames, roles, employment status, and login access
             from one controlled admin workspace.

@@ -474,7 +474,7 @@ function SupervisorQueue({
           ) : null}
           {timeOff.length > 0 ? (
             <section className="approval-section" aria-labelledby="time-off-queue-title">
-              <div className="section-heading"><h2 id="time-off-queue-title">Time-off requests</h2></div>
+              <div className="section-heading"><h2 id="time-off-queue-title">Time-Off Requests</h2></div>
               {timeOff.map((request) => (
                 <article className="approval-card" key={request.id}>
                   <div>
