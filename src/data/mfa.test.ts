@@ -162,4 +162,19 @@ describe('MFA enrollment helpers', () => {
       phone: '+17205551234',
     })
   })
+
+  it('explains when Supabase has phone MFA disabled', async () => {
+    supabaseMock.client.auth.mfa.listFactors.mockResolvedValue({
+      data: { phone: [], all: [] },
+      error: null,
+    })
+    supabaseMock.client.auth.mfa.enroll.mockResolvedValue({
+      data: null,
+      error: { message: 'MFA enroll is disabled for phone' },
+    })
+
+    await expect(startPhoneEnrollment('720-555-1234')).rejects.toThrow(
+      'Text message MFA is not enabled in Supabase yet.',
+    )
+  })
 })

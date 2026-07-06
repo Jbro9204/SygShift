@@ -59,6 +59,15 @@ function isDuplicateFactorNameError(error: unknown): boolean {
   return message.includes('friendly name') && message.includes('already exists')
 }
 
+function isPhoneMfaDisabledError(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase()
+  return message.includes('phone') && message.includes('disabled')
+}
+
+function phoneMfaNotReadyMessage(): string {
+  return 'Text message MFA is not enabled in Supabase yet. Use Authenticator App for now, or ask an administrator to enable Advanced MFA Phone before using text codes.'
+}
+
 function createTotpFriendlyName(attempt: number): string {
   const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14)
   return attempt === 0 ? `${TOTP_FRIENDLY_NAME} ${stamp}` : `${TOTP_FRIENDLY_NAME} ${stamp}-${attempt + 1}`
@@ -237,6 +246,7 @@ export async function startPhoneEnrollment(phoneNumber: string): Promise<MfaPhon
     }
 
     enrollmentError = error
+    if (isPhoneMfaDisabledError(error)) throw new Error(phoneMfaNotReadyMessage())
     if (!isDuplicateFactorNameError(error)) break
   }
 
@@ -254,6 +264,7 @@ export async function createMfaChallenge(factorId: string, factorType: MfaFactor
     ? await getSupabaseClient().auth.mfa.challenge({ factorId, channel: 'sms' })
     : await getSupabaseClient().auth.mfa.challenge({ factorId })
   if (error) {
+    if (factorType === 'phone' && isPhoneMfaDisabledError(error)) throw new Error(phoneMfaNotReadyMessage())
     throw new Error(factorType === 'phone' ? 'SMS verification code could not be sent.' : 'Authenticator verification could not be started.')
   }
   return data.id
