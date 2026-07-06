@@ -2018,12 +2018,19 @@
 }
 
 .schedule-board {
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-color: #bd8a35 #efe8dc;
+  scrollbar-width: thin;
+  scroll-padding-inline: 18px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .schedule-scroll-hint {
-  display: none;
+  display: flex;
   align-items: center;
   gap: 8px;
   margin: -2px 2px 12px;
@@ -2037,12 +2044,15 @@
 }
 
 .schedule-grid {
-  min-width: 1160px;
+  width: max-content;
+  min-width: min(100%, 1160px);
+  padding-right: 18px;
 }
 
 .schedule-row {
   display: grid;
-  grid-template-columns: minmax(200px, 1.35fr) repeat(7, minmax(135px, 1fr));
+  grid-template-columns: minmax(190px, 240px) repeat(7, minmax(128px, 1fr));
+  min-width: 100%;
 }
 
 .schedule-row--header {
@@ -3903,12 +3913,6 @@
 
 .navigation-scrim {
   display: none;
-}
-
-@media (max-width: 1460px) {
-  .schedule-scroll-hint {
-    display: flex;
-  }
 }
 
 @media (max-width: 1280px) {
