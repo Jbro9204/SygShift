@@ -49,7 +49,7 @@ export const navigationGroups: NavigationGroup[] = [
       { label: 'People', path: '/people', icon: UsersRound, roles: OPERATIONS_ROLES },
       { label: 'Sites & posts', path: '/sites', icon: Building2, roles: OPERATIONS_ROLES },
       { label: 'Patrol', path: '/patrol', icon: MapPinned },
-      { label: 'Requests', path: '/requests', icon: ClipboardCheck },
+      { label: 'Time-off requests', path: '/requests', icon: ClipboardCheck },
     ],
   },
   {
