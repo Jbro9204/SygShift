@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
 import { CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, Edit3, MoveHorizontal, Plus, Search, ShieldAlert, Sparkles } from 'lucide-react'
@@ -396,6 +396,8 @@ function ImportedShiftCard({ shift }: { shift: ImportedScheduleShift }) {
 
 export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler' } = {}) {
   const queryClient = useQueryClient()
+  const boardScrollRef = useRef<HTMLElement | null>(null)
+  const topScrollRef = useRef<HTMLDivElement | null>(null)
   const isSchedulerHome = mode === 'scheduler'
   const today = useMemo(() => operationalToday(), [])
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today, { weekStartsOn: 0 }))
@@ -409,6 +411,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const [editingShift, setEditingShift] = useState<ScheduleShift | null>(null)
   const [cancelDraftConfirmOpen, setCancelDraftConfirmOpen] = useState(false)
   const [builderMessage, setBuilderMessage] = useState<string | null>(null)
+  const [boardScrollWidth, setBoardScrollWidth] = useState(0)
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
   const weekEnd = days[6]
   const weekKey = format(weekStart, 'yyyy-MM-dd')
@@ -724,6 +727,31 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       .filter((row) => row.shifts.length > 0)
   }, [importedRows, search, siteFilter])
 
+  useEffect(() => {
+    const board = boardScrollRef.current
+    if (!board) return
+
+    const updateScrollWidth = () => {
+      setBoardScrollWidth(board.scrollWidth)
+      if (topScrollRef.current) topScrollRef.current.scrollLeft = board.scrollLeft
+    }
+
+    updateScrollWidth()
+    const observer = new ResizeObserver(updateScrollWidth)
+    observer.observe(board)
+    const grid = board.querySelector('.schedule-grid')
+    if (grid) observer.observe(grid)
+
+    return () => observer.disconnect()
+  }, [
+    scheduleQuery.data,
+    importedPreviewQuery.data,
+    scheduleView,
+    visibleRows,
+    visibleEmployeeRows,
+    visibleImportedRows,
+  ])
+
   function updateOpenShiftForm(update: Partial<OpenShiftFormState>) {
     setBuilderMessage(null)
     setOpenShiftForm((current) => ({ ...current, ...update }))
@@ -757,6 +785,16 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   function applySuggestedEmployee(shift: ScheduleShift, employeeId: string) {
     setBuilderMessage(null)
     updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId))
+  }
+
+  function syncBoardScrollFromTop() {
+    if (!boardScrollRef.current || !topScrollRef.current) return
+    boardScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft
+  }
+
+  function syncTopScrollFromBoard() {
+    if (!boardScrollRef.current || !topScrollRef.current) return
+    topScrollRef.current.scrollLeft = boardScrollRef.current.scrollLeft
   }
 
   return (
@@ -1445,10 +1483,23 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         Scroll horizontally to see all seven days
       </p>
 
+      <div
+        aria-label="Horizontal schedule scroll"
+        className="schedule-scrollbar"
+        onScroll={syncBoardScrollFromTop}
+        ref={topScrollRef}
+        role="region"
+        tabIndex={0}
+      >
+        <div style={{ width: `${Math.max(boardScrollWidth, 1)}px` }} />
+      </div>
+
       <section
         aria-describedby="schedule-scroll-instructions"
         aria-labelledby="schedule-board-heading"
         className="schedule-board"
+        onScroll={syncTopScrollFromBoard}
+        ref={boardScrollRef}
         tabIndex={0}
       >
         <h2 className="visually-hidden" id="schedule-board-heading">
