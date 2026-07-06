@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { LogOut, Menu, ShieldCheck, UserCircle, X } from 'lucide-react'
 import { navigationGroups } from '../app/navigation'
-import { getSessionContext, signOut, type SessionContext } from '../data/auth'
+import {
+  getSessionContext,
+  SESSION_CONTEXT_REFRESH_EVENT,
+  signOut,
+  type SessionContext,
+} from '../data/auth'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDate, formatOperationalTime } from '../lib/time'
 
@@ -44,8 +49,8 @@ export function AppShell() {
       }
     }
 
-    async function loadSessionContext() {
-      setAuthLoading(true)
+    async function loadSessionContext(showLoading = true) {
+      if (showLoading) setAuthLoading(true)
       setAuthMessage(null)
 
       const { data } = await getSupabaseClient().auth.getSession()
@@ -85,9 +90,15 @@ export function AppShell() {
       void loadSessionContext()
     })
 
+    const refreshSecurityContext = () => {
+      void loadSessionContext(false)
+    }
+    window.addEventListener(SESSION_CONTEXT_REFRESH_EVENT, refreshSecurityContext)
+
     return () => {
       active = false
       subscription.unsubscribe()
+      window.removeEventListener(SESSION_CONTEXT_REFRESH_EVENT, refreshSecurityContext)
     }
   }, [])
 

@@ -3,6 +3,7 @@ import { getSupabaseClient } from '../lib/supabase'
 
 export const AUTH_EMAIL_DOMAIN = 'accounts.sygshift.invalid'
 export const USERNAME_PATTERN = /^[a-z][a-z0-9]{1,62}$/
+export const SESSION_CONTEXT_REFRESH_EVENT = 'sygshift:session-context-refresh'
 
 const sessionContextSchema = z.object({
   employee_id: z.string().uuid(),
@@ -84,6 +85,11 @@ export async function getSessionContext(): Promise<SessionContext> {
     mfaRequired: parsed.mfa_required,
     hasMfa: parsed.has_mfa,
   }
+}
+
+export function notifySessionContextChanged(): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event(SESSION_CONTEXT_REFRESH_EVENT))
 }
 
 export function validatePassword(password: string, username?: string): PasswordPolicyResult {

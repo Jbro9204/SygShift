@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { CheckCircle2, KeyRound, Loader2, QrCode, ShieldCheck } from 'lucide-react'
-import { getSessionContext, type SessionContext, validatePassword } from '../data/auth'
+import {
+  getSessionContext,
+  notifySessionContextChanged,
+  type SessionContext,
+  validatePassword,
+} from '../data/auth'
 import {
   createMfaChallenge,
   listTotpFactors,
@@ -69,7 +74,8 @@ export function AccountSecurityPage() {
   const returnPath = useMemo(() => {
     const state = location.state as AccountSecurityLocationState | null
     const from = state?.from
-    return `${from?.pathname ?? '/'}${from?.search ?? ''}${from?.hash ?? ''}`
+    const path = `${from?.pathname ?? '/'}${from?.search ?? ''}${from?.hash ?? ''}`
+    return path === '/account-security' ? '/' : path
   }, [location.state])
 
   const passwordPolicy = useMemo(
@@ -115,13 +121,18 @@ export function AccountSecurityPage() {
     }
   }, [])
 
-  async function refreshContext() {
+  async function refreshContext(): Promise<SessionContext> {
     const nextContext = await getSessionContext()
     setContext(nextContext)
 
     if (nextContext.mfaRequired) {
       setFactors(await listTotpFactors())
+    } else {
+      setFactors([])
     }
+
+    notifySessionContextChanged()
+    return nextContext
   }
 
   async function handlePasswordUpdate(event: FormEvent<HTMLFormElement>) {
@@ -152,10 +163,18 @@ export function AccountSecurityPage() {
         await markPasswordChangedWithRetry()
       }
 
+      await getSupabaseClient().auth.refreshSession()
+      const nextContext = await refreshContext()
       setPassword('')
       setPasswordConfirmation('')
-      setMessage('Password saved. Continue with the remaining security step.')
-      await refreshContext()
+
+      const nextNeedsMfa = nextContext.mfaRequired && !nextContext.hasMfa
+      if (nextNeedsMfa) {
+        setMessage('Password saved. Continue with authenticator verification.')
+      } else {
+        setMessage('Password saved. Opening your workspace.')
+        navigate(returnPath, { replace: true })
+      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'The password update failed.')
     } finally {
@@ -196,10 +215,16 @@ export function AccountSecurityPage() {
       const marked = await getSupabaseClient().rpc('mark_mfa_enrolled')
       if (marked.error) throw new Error('MFA enrollment could not be recorded.')
 
+      const nextContext = await refreshContext()
       setEnrollment(null)
       setMfaCode('')
-      setMessage('Authenticator verified. Your account security is ready.')
-      await refreshContext()
+
+      if (!nextContext.mustChangePassword && !(nextContext.mfaRequired && !nextContext.hasMfa)) {
+        setMessage('Authenticator verified. Opening your workspace.')
+        navigate(returnPath, { replace: true })
+      } else {
+        setMessage('Authenticator verified. Continue with the remaining security step.')
+      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Authenticator verification failed.')
     } finally {
