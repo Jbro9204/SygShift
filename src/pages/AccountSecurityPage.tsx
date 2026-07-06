@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { CheckCircle2, Eye, EyeOff, KeyRound, Loader2, QrCode, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, Eye, EyeOff, KeyRound, Loader2, MessageSquareText, QrCode, ShieldCheck } from 'lucide-react'
 import {
   getSessionContext,
   notifySessionContextChanged,
@@ -10,12 +10,15 @@ import {
 } from '../data/auth'
 import {
   createMfaChallenge,
-  listTotpFactors,
+  listMfaFactors,
   startTotpEnrollment,
+  startPhoneEnrollment,
   verifyMfaChallenge,
   verifyTotpEnrollment,
   type MfaEnrollment,
+  type MfaFactorType,
   type MfaFactorSummary,
+  type MfaPhoneEnrollment,
 } from '../data/mfa'
 import {
   clearRememberedDeviceOnThisBrowser,
@@ -64,12 +67,18 @@ type AccountSecurityLocationState = {
   }
 }
 
+type MfaMethod = MfaFactorType
+
 export function AccountSecurityPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const [context, setContext] = useState<SessionContext | null>(null)
   const [factors, setFactors] = useState<MfaFactorSummary[]>([])
   const [enrollment, setEnrollment] = useState<MfaEnrollment | null>(null)
+  const [phoneEnrollment, setPhoneEnrollment] = useState<MfaPhoneEnrollment | null>(null)
+  const [selectedMfaMethod, setSelectedMfaMethod] = useState<MfaMethod | null>(null)
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [phoneChallengeId, setPhoneChallengeId] = useState<string | null>(null)
   const [password, setPassword] = useState('')
   const [passwordConfirmation, setPasswordConfirmation] = useState('')
   const [mfaCode, setMfaCode] = useState('')
@@ -94,8 +103,16 @@ export function AccountSecurityPage() {
     () => validatePassword(password, context?.username),
     [context?.username, password],
   )
-  const verifiedFactor = factors.find((factor) => factor.status === 'verified') ?? null
-  const unverifiedFactor = factors.find((factor) => factor.status !== 'verified') ?? null
+  const verifiedFactors = factors.filter((factor) => factor.status === 'verified')
+  const verifiedTotpFactor = verifiedFactors.find((factor) => factor.factorType === 'totp') ?? null
+  const verifiedPhoneFactor = verifiedFactors.find((factor) => factor.factorType === 'phone') ?? null
+  const unverifiedTotpFactor = factors.find((factor) => factor.factorType === 'totp' && factor.status !== 'verified') ?? null
+  const unverifiedPhoneFactor = factors.find((factor) => factor.factorType === 'phone' && factor.status !== 'verified') ?? null
+  const activeVerifiedFactor = selectedMfaMethod
+    ? verifiedFactors.find((factor) => factor.factorType === selectedMfaMethod) ?? null
+    : verifiedFactors.length === 1
+      ? verifiedFactors[0]
+      : null
   const needsPassword = Boolean(context?.mustChangePassword)
   const needsMfa = Boolean(context?.mfaRequired && !context.hasMfa)
   const passwordWaitingForMfa = needsPassword && needsMfa
@@ -117,7 +134,7 @@ export function AccountSecurityPage() {
         setContext(nextContext)
 
         if (nextContext.mfaRequired) {
-          const nextFactors = await listTotpFactors()
+          const nextFactors = await listMfaFactors()
           if (active) setFactors(nextFactors)
         }
       } catch {
@@ -140,7 +157,7 @@ export function AccountSecurityPage() {
     setContext(nextContext)
 
     if (nextContext.mfaRequired) {
-      setFactors(await listTotpFactors())
+      setFactors(await listMfaFactors())
     } else {
       setFactors([])
     }
@@ -185,6 +202,11 @@ export function AccountSecurityPage() {
       active = false
     }
   }, [canRememberDevice, context, needsMfa])
+
+  useEffect(() => {
+    if (!needsMfa || selectedMfaMethod || verifiedFactors.length !== 1) return
+    setSelectedMfaMethod(verifiedFactors[0].factorType)
+  }, [needsMfa, selectedMfaMethod, verifiedFactors])
 
   async function handlePasswordUpdate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -232,7 +254,7 @@ export function AccountSecurityPage() {
 
       const nextNeedsMfa = nextContext.mfaRequired && !nextContext.hasMfa
       if (nextNeedsMfa) {
-        setMessage('Password saved. Continue with authenticator verification.')
+        setMessage('Password saved. Continue with MFA verification.')
       } else {
         setMessage('Password saved. Opening your workspace.')
         navigate(returnPath, { replace: true })
@@ -244,12 +266,25 @@ export function AccountSecurityPage() {
     }
   }
 
+  function handleSelectMfaMethod(method: MfaMethod) {
+    setSelectedMfaMethod(method)
+    setEnrollment(null)
+    setPhoneEnrollment(null)
+    setPhoneChallengeId(null)
+    setMfaCode('')
+    setErrorMessage(null)
+    setMessage(null)
+  }
+
   async function handleStartEnrollment() {
     setErrorMessage(null)
     setEnrollment(null)
+    setPhoneEnrollment(null)
+    setPhoneChallengeId(null)
+    setSelectedMfaMethod('totp')
     setMfaCode('')
     setMessage(
-      unverifiedFactor
+      unverifiedTotpFactor
         ? 'Restarting authenticator setup and clearing the unfinished attempt.'
         : 'Preparing authenticator setup.',
     )
@@ -260,7 +295,7 @@ export function AccountSecurityPage() {
       setEnrollment(nextEnrollment)
       setMessage('Authenticator setup is ready. Scan the QR code, then enter the six-digit code from the app.')
       try {
-        setFactors(await listTotpFactors())
+        setFactors(await listMfaFactors())
       } catch {
         // The QR code is already available; do not block setup on a secondary list refresh.
       }
@@ -271,10 +306,76 @@ export function AccountSecurityPage() {
           : 'Authenticator setup failed. Refresh the page and try again.',
       )
       try {
-        setFactors(await listTotpFactors())
+        setFactors(await listMfaFactors())
       } catch {
         // Keep the original setup error visible instead of replacing it with a secondary refresh error.
       }
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function handleStartPhoneEnrollment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErrorMessage(null)
+    setMessage(null)
+    setEnrollment(null)
+    setPhoneEnrollment(null)
+    setPhoneChallengeId(null)
+    setSelectedMfaMethod('phone')
+    setMfaCode('')
+    setBusyAction('start-phone-mfa')
+
+    try {
+      const nextEnrollment = await startPhoneEnrollment(phoneNumber)
+      setPhoneEnrollment(nextEnrollment)
+      setPhoneNumber(nextEnrollment.phone)
+      setMessage(`Text code sent to ${nextEnrollment.phone}. Enter the code to finish SMS MFA setup.`)
+      try {
+        setFactors(await listMfaFactors())
+      } catch {
+        // The SMS challenge is already active; do not block setup on a secondary list refresh.
+      }
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'SMS verification setup failed. Check the mobile number and try again.',
+      )
+      try {
+        setFactors(await listMfaFactors())
+      } catch {
+        // Keep the original setup error visible instead of replacing it with a secondary refresh error.
+      }
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function handleSendPhoneChallenge() {
+    if (!verifiedPhoneFactor) {
+      setErrorMessage('Set up SMS verification before requesting a text code.')
+      return
+    }
+
+    setErrorMessage(null)
+    setMessage(null)
+    setSelectedMfaMethod('phone')
+    setEnrollment(null)
+    setPhoneEnrollment(null)
+    setMfaCode('')
+    setBusyAction('send-phone-code')
+
+    try {
+      const challengeId = await createMfaChallenge(verifiedPhoneFactor.id, 'phone')
+      setPhoneChallengeId(challengeId)
+      setMessage(
+        verifiedPhoneFactor.phone
+          ? `Text code sent to ${verifiedPhoneFactor.phone}.`
+          : 'Text code sent. Enter the code when it arrives.',
+      )
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Text code could not be sent.')
     } finally {
       setBusyAction(null)
     }
@@ -287,13 +388,26 @@ export function AccountSecurityPage() {
     setBusyAction('verify-mfa')
 
     try {
+      let verifiedMethod: MfaMethod = selectedMfaMethod ?? 'totp'
+
       if (enrollment) {
         await verifyTotpEnrollment(enrollment.factorId, mfaCode)
-      } else if (verifiedFactor) {
-        const challengeId = await createMfaChallenge(verifiedFactor.id)
-        await verifyMfaChallenge(verifiedFactor.id, challengeId, mfaCode)
+        verifiedMethod = 'totp'
+      } else if (phoneEnrollment) {
+        await verifyMfaChallenge(phoneEnrollment.factorId, phoneEnrollment.challengeId, mfaCode, 'phone')
+        verifiedMethod = 'phone'
+      } else if (activeVerifiedFactor) {
+        if (activeVerifiedFactor.factorType === 'phone') {
+          if (!phoneChallengeId) throw new Error('Send a text code before verifying SMS MFA.')
+          await verifyMfaChallenge(activeVerifiedFactor.id, phoneChallengeId, mfaCode, 'phone')
+          verifiedMethod = 'phone'
+        } else {
+          const challengeId = await createMfaChallenge(activeVerifiedFactor.id, 'totp')
+          await verifyMfaChallenge(activeVerifiedFactor.id, challengeId, mfaCode, 'totp')
+          verifiedMethod = 'totp'
+        }
       } else {
-        throw new Error('Start authenticator setup before entering a code.')
+        throw new Error('Choose an MFA method before entering a code.')
       }
 
       const marked = await getSupabaseClient().rpc('mark_mfa_enrolled')
@@ -310,6 +424,8 @@ export function AccountSecurityPage() {
 
       const nextContext = await refreshContext()
       setEnrollment(null)
+      setPhoneEnrollment(null)
+      setPhoneChallengeId(null)
       setMfaCode('')
       setRememberDevice(true)
       setPassword('')
@@ -322,19 +438,19 @@ export function AccountSecurityPage() {
       if (!nextContext.mustChangePassword && !(nextContext.mfaRequired && !nextContext.hasMfa)) {
         setMessage(
           rememberDeviceFailed
-            ? 'Authenticator verified. This device could not be remembered, but your workspace is opening.'
-            : 'Authenticator verified. Opening your workspace.',
+            ? `${verifiedMethod === 'phone' ? 'Text message' : 'Authenticator'} verified. This device could not be remembered, but your workspace is opening.`
+            : `${verifiedMethod === 'phone' ? 'Text message' : 'Authenticator'} verified. Opening your workspace.`,
         )
         navigate(returnPath, { replace: true })
       } else {
         setMessage(
           rememberDeviceFailed
-            ? 'Authenticator verified. This device could not be remembered; continue with the remaining security step.'
-            : 'Authenticator verified. Continue with the remaining security step.',
+            ? `${verifiedMethod === 'phone' ? 'Text message' : 'Authenticator'} verified. This device could not be remembered; continue with the remaining security step.`
+            : `${verifiedMethod === 'phone' ? 'Text message' : 'Authenticator'} verified. Continue with the remaining security step.`,
         )
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Authenticator verification failed.')
+      setErrorMessage(error instanceof Error ? error.message : 'MFA verification failed.')
     } finally {
       setBusyAction(null)
     }
@@ -375,10 +491,10 @@ export function AccountSecurityPage() {
                 <h2>Password</h2>
                 <p>
                   {passwordWaitingForMfa
-                    ? 'Verify your authenticator first, then save your permanent password.'
+                    ? 'Verify MFA first, then save your permanent password.'
                     : needsPassword
                       ? 'Replace the temporary password with a stronger private password.'
-                    : 'Your password setup is complete.'}
+                      : 'Your password setup is complete.'}
                 </p>
               </div>
               {!needsPassword ? <CheckCircle2 aria-hidden="true" size={24} /> : null}
@@ -389,15 +505,15 @@ export function AccountSecurityPage() {
                 <QrCode aria-hidden="true" size={24} />
               </div>
               <div>
-                <h2>Authenticator</h2>
+                <h2>MFA</h2>
                 <p>
                   {context.mfaRequired
                     ? needsMfa
                       ? needsPassword
-                        ? 'Verify an authenticator code before saving the new password.'
-                        : 'Verify an authenticator code before protected tools open.'
-                      : 'Authenticator verification is complete for this session.'
-                    : 'Your role does not require an authenticator code.'}
+                        ? 'Verify by authenticator app or text message before saving the new password.'
+                        : 'Verify by authenticator app or text message before protected tools open.'
+                      : 'MFA verification is complete for this session.'
+                    : 'Your role does not require MFA.'}
                 </p>
               </div>
               {!needsMfa ? <CheckCircle2 aria-hidden="true" size={24} /> : null}
@@ -423,7 +539,7 @@ export function AccountSecurityPage() {
           <div className="auth-notice auth-notice--warning" role="status">
             <ShieldCheck aria-hidden="true" size={21} />
             <span>
-              This account is protected by MFA. Verify the authenticator code first, then the
+              This account is protected by MFA. Verify with an authenticator app or text message first, then the
               permanent password form will open.
             </span>
           </div>
@@ -500,13 +616,39 @@ export function AccountSecurityPage() {
 
         {context && needsMfa ? (
           <section className="security-panel">
-            <h2>{verifiedFactor ? 'Verify your authenticator' : 'Set up an authenticator'}</h2>
+            <h2>{verifiedFactors.length > 0 ? 'Verify your account' : 'Choose your MFA method'}</h2>
             <p>
-              Use an authenticator app such as Microsoft Authenticator, Google Authenticator, or
-              1Password. Enter the six-digit code when it appears.
+              You can use either an authenticator app or a text message code. Set up one method now; add the other later
+              if you want a backup.
             </p>
 
-            {unverifiedFactor && !enrollment && !verifiedFactor ? (
+            <div className="mfa-method-grid" role="list" aria-label="MFA method options">
+              <button
+                aria-pressed={selectedMfaMethod === 'totp'}
+                className={selectedMfaMethod === 'totp' ? 'mfa-method-card mfa-method-card--active' : 'mfa-method-card'}
+                disabled={busyAction !== null}
+                onClick={() => handleSelectMfaMethod('totp')}
+                type="button"
+              >
+                <QrCode aria-hidden="true" size={24} />
+                <strong>Authenticator app</strong>
+                <span>{verifiedTotpFactor ? 'Use your existing app code.' : 'Scan a QR code with an app.'}</span>
+              </button>
+
+              <button
+                aria-pressed={selectedMfaMethod === 'phone'}
+                className={selectedMfaMethod === 'phone' ? 'mfa-method-card mfa-method-card--active' : 'mfa-method-card'}
+                disabled={busyAction !== null}
+                onClick={() => handleSelectMfaMethod('phone')}
+                type="button"
+              >
+                <MessageSquareText aria-hidden="true" size={24} />
+                <strong>Text message</strong>
+                <span>{verifiedPhoneFactor ? 'Send a code to your phone.' : 'Use a mobile number that receives texts.'}</span>
+              </button>
+            </div>
+
+            {selectedMfaMethod === 'totp' && unverifiedTotpFactor && !enrollment && !verifiedTotpFactor ? (
               <div className="auth-notice auth-notice--warning auth-notice--inline" role="status">
                 <ShieldCheck aria-hidden="true" size={21} />
                 <span>
@@ -516,7 +658,7 @@ export function AccountSecurityPage() {
               </div>
             ) : null}
 
-            {!verifiedFactor && !enrollment ? (
+            {selectedMfaMethod === 'totp' && !verifiedTotpFactor && !enrollment ? (
               <button
                 className="primary-action"
                 disabled={busyAction === 'start-mfa'}
@@ -528,7 +670,7 @@ export function AccountSecurityPage() {
                     <Loader2 aria-hidden="true" size={18} />
                     Preparing setup…
                   </>
-                ) : unverifiedFactor ? 'Restart authenticator setup' : 'Start authenticator setup'}
+                ) : unverifiedTotpFactor ? 'Restart authenticator setup' : 'Start authenticator setup'}
               </button>
             ) : null}
 
@@ -543,10 +685,69 @@ export function AccountSecurityPage() {
               </div>
             ) : null}
 
-            {verifiedFactor || enrollment ? (
+            {selectedMfaMethod === 'phone' ? (
+              <div className="mfa-method-body">
+                <h3>{verifiedPhoneFactor ? 'Send a text message code' : 'Set up text message MFA'}</h3>
+                <p>SMS is often easiest on a phone. Use a mobile number that can receive text messages.</p>
+
+                {unverifiedPhoneFactor && !phoneEnrollment && !verifiedPhoneFactor ? (
+                  <div className="auth-notice auth-notice--warning auth-notice--inline" role="status">
+                    <ShieldCheck aria-hidden="true" size={21} />
+                    <span>
+                      An SMS setup was started but not finished. Starting again will clear the unfinished attempt and send
+                      a fresh code.
+                    </span>
+                  </div>
+                ) : null}
+
+                {verifiedPhoneFactor ? (
+                  <button
+                    className="primary-action"
+                    disabled={busyAction === 'send-phone-code'}
+                    onClick={handleSendPhoneChallenge}
+                    type="button"
+                  >
+                    {busyAction === 'send-phone-code' ? (
+                      <>
+                        <Loader2 aria-hidden="true" size={18} />
+                        Sending text...
+                      </>
+                    ) : phoneChallengeId ? 'Send a new text code' : 'Send text code'}
+                  </button>
+                ) : null}
+
+                {!verifiedPhoneFactor && !phoneEnrollment ? (
+                  <form className="sms-setup-form" onSubmit={handleStartPhoneEnrollment}>
+                    <label className="field-label">
+                      <span>Mobile number</span>
+                      <input
+                        autoComplete="tel"
+                        disabled={busyAction === 'start-phone-mfa'}
+                        inputMode="tel"
+                        onChange={(event) => setPhoneNumber(event.target.value)}
+                        placeholder="720-555-1234"
+                        required
+                        type="tel"
+                        value={phoneNumber}
+                      />
+                    </label>
+                    <button className="primary-action" disabled={busyAction === 'start-phone-mfa'} type="submit">
+                      {busyAction === 'start-phone-mfa' ? (
+                        <>
+                          <Loader2 aria-hidden="true" size={18} />
+                          Sending text...
+                        </>
+                      ) : unverifiedPhoneFactor ? 'Restart SMS setup' : 'Send setup text'}
+                    </button>
+                  </form>
+                ) : null}
+              </div>
+            ) : null}
+
+            {enrollment || phoneEnrollment || activeVerifiedFactor?.factorType === 'totp' || phoneChallengeId ? (
               <form className="mfa-form" onSubmit={handleMfaVerification}>
                 <label className="field-label">
-                  <span>Six-digit authenticator code</span>
+                  <span>{selectedMfaMethod === 'phone' ? 'Six-digit text message code' : 'Six-digit authenticator code'}</span>
                   <input
                     autoComplete="one-time-code"
                     disabled={busyAction === 'verify-mfa'}
@@ -571,7 +772,11 @@ export function AccountSecurityPage() {
                   </label>
                 ) : null}
                 <button className="primary-action" disabled={busyAction === 'verify-mfa'} type="submit">
-                  {busyAction === 'verify-mfa' ? 'Verifying…' : 'Verify authenticator'}
+                  {busyAction === 'verify-mfa'
+                    ? 'Verifying...'
+                    : selectedMfaMethod === 'phone'
+                      ? 'Verify text code'
+                      : 'Verify authenticator'}
                 </button>
               </form>
             ) : null}
@@ -583,7 +788,7 @@ export function AccountSecurityPage() {
             <div>
               <h2 id="trusted-devices-title">Remembered devices</h2>
               <p>
-                These browsers can open supervisor/admin tools without another authenticator prompt until they expire.
+                These browsers can open supervisor/admin tools without another MFA prompt until they expire.
                 Signing out removes the remembered device from this browser.
               </p>
             </div>
@@ -611,7 +816,7 @@ export function AccountSecurityPage() {
                         await refreshTrustedDevices()
                         const nextContext = await refreshContext()
                         if (nextContext.mfaRequired && !nextContext.hasMfa) {
-                          setMessage('This remembered device was removed. Verify your authenticator to continue.')
+                          setMessage('This remembered device was removed. Verify MFA to continue.')
                         }
                       }}
                       type="button"

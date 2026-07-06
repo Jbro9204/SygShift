@@ -2,6 +2,7 @@ import { getSupabaseClient } from '../lib/supabase'
 
 const TOTP_ISSUER_NAME = 'SygShift'
 const TOTP_FRIENDLY_NAME = 'SygShift'
+const PHONE_FRIENDLY_NAME = 'SygShift SMS'
 const DUPLICATE_FACTOR_RETRY_LIMIT = 2
 
 export type MfaAuthenticatorLevel = {
@@ -15,10 +16,20 @@ export type MfaEnrollment = {
   secret: string
 }
 
+export type MfaPhoneEnrollment = {
+  factorId: string
+  challengeId: string
+  phone: string
+}
+
+export type MfaFactorType = 'totp' | 'phone'
+
 export type MfaFactorSummary = {
   id: string
+  factorType: MfaFactorType
   friendlyName: string | null
   status: string | null
+  phone: string | null
 }
 
 type SupabaseMfaFactor = {
@@ -26,6 +37,7 @@ type SupabaseMfaFactor = {
   friendly_name?: string | null
   factor_type?: string | null
   status?: string | null
+  phone?: string | null
 }
 
 function mfaErrorMessage(error: unknown, fallback: string): string {
@@ -50,6 +62,35 @@ function isDuplicateFactorNameError(error: unknown): boolean {
 function createTotpFriendlyName(attempt: number): string {
   const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14)
   return attempt === 0 ? `${TOTP_FRIENDLY_NAME} ${stamp}` : `${TOTP_FRIENDLY_NAME} ${stamp}-${attempt + 1}`
+}
+
+function createPhoneFriendlyName(attempt: number): string {
+  const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14)
+  return attempt === 0 ? `${PHONE_FRIENDLY_NAME} ${stamp}` : `${PHONE_FRIENDLY_NAME} ${stamp}-${attempt + 1}`
+}
+
+export function normalizeSmsPhoneNumber(input: string): string {
+  const trimmed = input.trim()
+  if (!trimmed) return ''
+
+  const hasInternationalPrefix = trimmed.startsWith('+')
+  const digits = trimmed.replace(/\D/g, '')
+
+  if (!digits) return ''
+  if (hasInternationalPrefix) return `+${digits}`
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  return `+${digits}`
+}
+
+export function validateSmsPhoneNumber(input: string): string {
+  const normalized = normalizeSmsPhoneNumber(input)
+
+  if (!/^\+[1-9]\d{9,14}$/.test(normalized)) {
+    throw new Error('Enter a valid mobile number that can receive texts. Example: 720-555-1234.')
+  }
+
+  return normalized
 }
 
 export function normalizeTotpQrCode(qrCode: string): string {
@@ -82,40 +123,64 @@ export async function getAuthenticatorLevel(): Promise<MfaAuthenticatorLevel> {
   }
 }
 
-export async function listTotpFactors(): Promise<MfaFactorSummary[]> {
+export async function listMfaFactors(): Promise<MfaFactorSummary[]> {
   const { data, error } = await getSupabaseClient().auth.mfa.listFactors()
-  if (error) throw new Error('Authenticator devices could not be loaded.')
+  if (error) throw new Error('MFA methods could not be loaded.')
 
-  const typedData = data as { totp?: SupabaseMfaFactor[]; all?: SupabaseMfaFactor[] }
+  const typedData = data as { totp?: SupabaseMfaFactor[]; phone?: SupabaseMfaFactor[]; all?: SupabaseMfaFactor[] }
   const factorsById = new Map<string, SupabaseMfaFactor>()
 
   for (const factor of typedData.totp ?? []) {
-    factorsById.set(factor.id, factor)
+    factorsById.set(factor.id, { ...factor, factor_type: 'totp' })
+  }
+
+  for (const factor of typedData.phone ?? []) {
+    factorsById.set(factor.id, { ...factor, factor_type: 'phone' })
   }
 
   for (const factor of typedData.all ?? []) {
-    if (factor.factor_type === 'totp') {
+    if (factor.factor_type === 'totp' || factor.factor_type === 'phone') {
       factorsById.set(factor.id, factor)
     }
   }
 
-  return [...factorsById.values()].map((factor) => ({
+  return [...factorsById.values()].map((factor) => {
+    const factorType = factor.factor_type === 'phone' ? 'phone' : 'totp'
+    return {
     id: factor.id,
+    factorType,
     friendlyName: factor.friendly_name ?? null,
     status: factor.status ?? null,
-  }))
+    phone: factor.phone ?? null,
+    }
+  })
 }
 
-export async function clearUnverifiedTotpFactors(): Promise<number> {
-  const factors = await listTotpFactors()
-  const unverifiedFactors = factors.filter((factor) => factor.status !== 'verified')
+export async function listTotpFactors(): Promise<MfaFactorSummary[]> {
+  const factors = await listMfaFactors()
+  return factors.filter((factor) => factor.factorType === 'totp')
+}
+
+export async function clearUnverifiedMfaFactors(factorType: MfaFactorType): Promise<number> {
+  const factors = await listMfaFactors()
+  const unverifiedFactors = factors.filter((factor) => factor.factorType === factorType && factor.status !== 'verified')
 
   for (const factor of unverifiedFactors) {
     const { error } = await getSupabaseClient().auth.mfa.unenroll({ factorId: factor.id })
-    if (error) throw new Error(mfaErrorMessage(error, 'Old authenticator setup could not be cleared.'))
+    if (error) {
+      throw new Error(mfaErrorMessage(error, factorType === 'phone' ? 'Old SMS setup could not be cleared.' : 'Old authenticator setup could not be cleared.'))
+    }
   }
 
   return unverifiedFactors.length
+}
+
+export async function clearUnverifiedTotpFactors(): Promise<number> {
+  return clearUnverifiedMfaFactors('totp')
+}
+
+export async function clearUnverifiedPhoneFactors(): Promise<number> {
+  return clearUnverifiedMfaFactors('phone')
 }
 
 export async function startTotpEnrollment(): Promise<MfaEnrollment> {
@@ -149,34 +214,63 @@ export async function startTotpEnrollment(): Promise<MfaEnrollment> {
   throw new Error(mfaErrorMessage(enrollmentError, 'Authenticator setup could not be started.'))
 }
 
-export async function verifyTotpEnrollment(factorId: string, code: string): Promise<void> {
-  const challenge = await getSupabaseClient().auth.mfa.challenge({ factorId })
-  if (challenge.error) throw new Error('Authenticator verification could not be started.')
+export async function startPhoneEnrollment(phoneNumber: string): Promise<MfaPhoneEnrollment> {
+  await clearUnverifiedPhoneFactors()
 
-  const verification = await getSupabaseClient().auth.mfa.verify({
-    factorId,
-    challengeId: challenge.data.id,
-    code: code.trim(),
-  })
-  if (verification.error) throw new Error('The authenticator code was not accepted.')
+  const normalizedPhone = validateSmsPhoneNumber(phoneNumber)
+  let enrollmentError: unknown = null
 
-  const refresh = await getSupabaseClient().auth.refreshSession()
-  if (refresh.error) throw new Error('Your secure session could not be refreshed.')
+  for (let attempt = 0; attempt <= DUPLICATE_FACTOR_RETRY_LIMIT; attempt += 1) {
+    const { data, error } = await getSupabaseClient().auth.mfa.enroll({
+      factorType: 'phone',
+      friendlyName: createPhoneFriendlyName(attempt),
+      phone: normalizedPhone,
+    })
+
+    if (!error) {
+      const challengeId = await createMfaChallenge(data.id, 'phone')
+      return {
+        factorId: data.id,
+        challengeId,
+        phone: data.phone ?? normalizedPhone,
+      }
+    }
+
+    enrollmentError = error
+    if (!isDuplicateFactorNameError(error)) break
+  }
+
+  throw new Error(mfaErrorMessage(enrollmentError, 'SMS verification could not be started.'))
 }
 
-export async function createMfaChallenge(factorId: string): Promise<string> {
-  const { data, error } = await getSupabaseClient().auth.mfa.challenge({ factorId })
-  if (error) throw new Error('Authenticator verification could not be started.')
+export async function verifyTotpEnrollment(factorId: string, code: string): Promise<void> {
+  const challengeId = await createMfaChallenge(factorId, 'totp')
+
+  await verifyMfaChallenge(factorId, challengeId, code, 'totp')
+}
+
+export async function createMfaChallenge(factorId: string, factorType: MfaFactorType = 'totp'): Promise<string> {
+  const { data, error } = factorType === 'phone'
+    ? await getSupabaseClient().auth.mfa.challenge({ factorId, channel: 'sms' })
+    : await getSupabaseClient().auth.mfa.challenge({ factorId })
+  if (error) {
+    throw new Error(factorType === 'phone' ? 'SMS verification code could not be sent.' : 'Authenticator verification could not be started.')
+  }
   return data.id
 }
 
-export async function verifyMfaChallenge(factorId: string, challengeId: string, code: string): Promise<void> {
+export async function verifyMfaChallenge(
+  factorId: string,
+  challengeId: string,
+  code: string,
+  factorType: MfaFactorType = 'totp',
+): Promise<void> {
   const { error } = await getSupabaseClient().auth.mfa.verify({
     factorId,
     challengeId,
     code: code.trim(),
   })
-  if (error) throw new Error('The authenticator code was not accepted.')
+  if (error) throw new Error(factorType === 'phone' ? 'The text message code was not accepted.' : 'The authenticator code was not accepted.')
 
   const refresh = await getSupabaseClient().auth.refreshSession()
   if (refresh.error) throw new Error('Your secure session could not be refreshed.')

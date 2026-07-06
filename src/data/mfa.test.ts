@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { normalizeTotpQrCode, startTotpEnrollment } from './mfa'
+import { normalizeSmsPhoneNumber, normalizeTotpQrCode, startPhoneEnrollment, startTotpEnrollment } from './mfa'
 
 const supabaseMock = vi.hoisted(() => ({
   client: {
     auth: {
       mfa: {
+        challenge: vi.fn(),
         enroll: vi.fn(),
         listFactors: vi.fn(),
         unenroll: vi.fn(),
@@ -28,6 +29,12 @@ describe('MFA enrollment helpers', () => {
 
     expect(qrCode).toMatch(/^data:image\/svg\+xml;utf-8,/)
     expect(decodeURIComponent(qrCode.split(',')[1])).toBe('<svg><path fill="#000"/></svg>')
+  })
+
+  it('normalizes common US mobile number formats for SMS MFA', () => {
+    expect(normalizeSmsPhoneNumber('(720) 555-1234')).toBe('+17205551234')
+    expect(normalizeSmsPhoneNumber('1-720-555-1234')).toBe('+17205551234')
+    expect(normalizeSmsPhoneNumber('+44 20 7946 0958')).toBe('+442079460958')
   })
 
   it('clears stale unverified factors before starting a fresh authenticator setup', async () => {
@@ -112,5 +119,47 @@ describe('MFA enrollment helpers', () => {
       issuer: 'SygShift',
     })
     expect(enrollment.factorId).toBe('retry-factor')
+  })
+
+  it('enrolls an SMS MFA factor and sends the first text challenge', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-05T21:40:20.000Z'))
+    supabaseMock.client.auth.mfa.listFactors.mockResolvedValue({
+      data: {
+        phone: [],
+        all: [{ id: 'old-phone-factor', factor_type: 'phone', status: 'unverified' }],
+      },
+      error: null,
+    })
+    supabaseMock.client.auth.mfa.unenroll.mockResolvedValue({ data: {}, error: null })
+    supabaseMock.client.auth.mfa.enroll.mockResolvedValue({
+      data: {
+        id: 'sms-factor',
+        phone: '+17205551234',
+      },
+      error: null,
+    })
+    supabaseMock.client.auth.mfa.challenge.mockResolvedValue({
+      data: { id: 'sms-challenge' },
+      error: null,
+    })
+
+    const enrollment = await startPhoneEnrollment('(720) 555-1234')
+
+    expect(supabaseMock.client.auth.mfa.unenroll).toHaveBeenCalledWith({ factorId: 'old-phone-factor' })
+    expect(supabaseMock.client.auth.mfa.enroll).toHaveBeenCalledWith({
+      factorType: 'phone',
+      friendlyName: 'SygShift SMS 20260705214020',
+      phone: '+17205551234',
+    })
+    expect(supabaseMock.client.auth.mfa.challenge).toHaveBeenCalledWith({
+      factorId: 'sms-factor',
+      channel: 'sms',
+    })
+    expect(enrollment).toEqual({
+      factorId: 'sms-factor',
+      challengeId: 'sms-challenge',
+      phone: '+17205551234',
+    })
   })
 })

@@ -35,7 +35,9 @@ vi.mock('../lib/supabase', () => ({
 
 vi.mock('../data/mfa', () => ({
   createMfaChallenge: vi.fn(),
+  listMfaFactors: vi.fn(),
   listTotpFactors: vi.fn(),
+  startPhoneEnrollment: vi.fn(),
   startTotpEnrollment: vi.fn(),
   verifyMfaChallenge: vi.fn(),
   verifyTotpEnrollment: vi.fn(),
