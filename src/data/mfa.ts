@@ -1,5 +1,8 @@
 import { getSupabaseClient } from '../lib/supabase'
 
+const TOTP_ISSUER_NAME = 'SygShift'
+const TOTP_FRIENDLY_NAME = 'SygShift'
+
 export type MfaAuthenticatorLevel = {
   currentLevel: string | null
   nextLevel: string | null
@@ -48,7 +51,8 @@ export async function listTotpFactors(): Promise<MfaFactorSummary[]> {
 export async function startTotpEnrollment(): Promise<MfaEnrollment> {
   const { data, error } = await getSupabaseClient().auth.mfa.enroll({
     factorType: 'totp',
-    friendlyName: 'SygShift authenticator',
+    friendlyName: TOTP_FRIENDLY_NAME,
+    issuer: TOTP_ISSUER_NAME,
   })
 
   if (error) throw new Error('Authenticator setup could not be started.')
