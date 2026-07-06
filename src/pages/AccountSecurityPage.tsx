@@ -70,6 +70,7 @@ export function AccountSecurityPage() {
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [checkpointVersion, setCheckpointVersion] = useState(0)
 
   const returnPath = useMemo(() => {
     const state = location.state as AccountSecurityLocationState | null
@@ -141,19 +142,27 @@ export function AccountSecurityPage() {
     setErrorMessage(null)
     setMessage(null)
 
-    if (!passwordPolicy.valid) {
+    const form = new FormData(event.currentTarget)
+    const submittedPassword = String(form.get('password') ?? '')
+    const submittedPasswordConfirmation = String(form.get('passwordConfirmation') ?? '')
+    const submittedPolicy = validatePassword(submittedPassword, context?.username)
+
+    setPassword(submittedPassword)
+    setPasswordConfirmation(submittedPasswordConfirmation)
+
+    if (!submittedPolicy.valid) {
       setErrorMessage('The new password does not meet the security requirements.')
       return
     }
 
-    if (password !== passwordConfirmation) {
+    if (submittedPassword !== submittedPasswordConfirmation) {
       setErrorMessage('The password confirmation does not match.')
       return
     }
 
     setBusyAction('password')
     try {
-      const update = await getSupabaseClient().auth.updateUser({ password })
+      const update = await getSupabaseClient().auth.updateUser({ password: submittedPassword })
       if (update.error) {
         if (isAlreadyCurrentPasswordError(update.error)) {
           await markPasswordChangedWithRetry()
@@ -168,6 +177,7 @@ export function AccountSecurityPage() {
       const nextContext = await refreshContext()
       setPassword('')
       setPasswordConfirmation('')
+      setCheckpointVersion((version) => version + 1)
 
       const nextNeedsMfa = nextContext.mfaRequired && !nextContext.hasMfa
       if (nextNeedsMfa) {
@@ -241,6 +251,9 @@ export function AccountSecurityPage() {
       const nextContext = await refreshContext()
       setEnrollment(null)
       setMfaCode('')
+      setPassword('')
+      setPasswordConfirmation('')
+      setCheckpointVersion((version) => version + 1)
 
       if (!nextContext.mustChangePassword && !(nextContext.mfaRequired && !nextContext.hasMfa)) {
         setMessage('Authenticator verified. Opening your workspace.')
@@ -345,7 +358,7 @@ export function AccountSecurityPage() {
         ) : null}
 
         {context && needsPassword && !needsMfa ? (
-          <form className="security-panel" onSubmit={handlePasswordUpdate}>
+          <form className="security-panel" key={`password-${context.employeeId}-${checkpointVersion}`} onSubmit={handlePasswordUpdate}>
             <h2>Create your permanent password</h2>
             <div className="security-form-grid">
               <label className="field-label">
@@ -353,6 +366,7 @@ export function AccountSecurityPage() {
                 <input
                   autoComplete="new-password"
                   disabled={busyAction === 'password'}
+                  name="password"
                   onChange={(event) => setPassword(event.target.value)}
                   required
                   type="password"
@@ -365,6 +379,7 @@ export function AccountSecurityPage() {
                 <input
                   autoComplete="new-password"
                   disabled={busyAction === 'password'}
+                  name="passwordConfirmation"
                   onChange={(event) => setPasswordConfirmation(event.target.value)}
                   required
                   type="password"
