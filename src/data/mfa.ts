@@ -2,6 +2,7 @@ import { getSupabaseClient } from '../lib/supabase'
 
 const TOTP_ISSUER_NAME = 'SygShift'
 const TOTP_FRIENDLY_NAME = 'SygShift'
+const DUPLICATE_FACTOR_RETRY_LIMIT = 2
 
 export type MfaAuthenticatorLevel = {
   currentLevel: string | null
@@ -32,6 +33,23 @@ function mfaErrorMessage(error: unknown, fallback: string): string {
     return `${fallback} ${error.message}`
   }
   return fallback
+}
+
+function getErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error && 'message' in error && typeof error.message === 'string') {
+    return error.message
+  }
+  return ''
+}
+
+function isDuplicateFactorNameError(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase()
+  return message.includes('friendly name') && message.includes('already exists')
+}
+
+function createTotpFriendlyName(attempt: number): string {
+  const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14)
+  return attempt === 0 ? `${TOTP_FRIENDLY_NAME} ${stamp}` : `${TOTP_FRIENDLY_NAME} ${stamp}-${attempt + 1}`
 }
 
 export function normalizeTotpQrCode(qrCode: string): string {
@@ -68,7 +86,20 @@ export async function listTotpFactors(): Promise<MfaFactorSummary[]> {
   const { data, error } = await getSupabaseClient().auth.mfa.listFactors()
   if (error) throw new Error('Authenticator devices could not be loaded.')
 
-  return (data.totp as SupabaseMfaFactor[]).map((factor) => ({
+  const typedData = data as { totp?: SupabaseMfaFactor[]; all?: SupabaseMfaFactor[] }
+  const factorsById = new Map<string, SupabaseMfaFactor>()
+
+  for (const factor of typedData.totp ?? []) {
+    factorsById.set(factor.id, factor)
+  }
+
+  for (const factor of typedData.all ?? []) {
+    if (factor.factor_type === 'totp') {
+      factorsById.set(factor.id, factor)
+    }
+  }
+
+  return [...factorsById.values()].map((factor) => ({
     id: factor.id,
     friendlyName: factor.friendly_name ?? null,
     status: factor.status ?? null,
@@ -90,22 +121,32 @@ export async function clearUnverifiedTotpFactors(): Promise<number> {
 export async function startTotpEnrollment(): Promise<MfaEnrollment> {
   await clearUnverifiedTotpFactors()
 
-  const { data, error } = await getSupabaseClient().auth.mfa.enroll({
-    factorType: 'totp',
-    friendlyName: TOTP_FRIENDLY_NAME,
-    issuer: TOTP_ISSUER_NAME,
-  })
+  let enrollmentError: unknown = null
 
-  if (error) throw new Error(mfaErrorMessage(error, 'Authenticator setup could not be started.'))
-  if (!data.totp?.qr_code || !data.totp.secret) {
-    throw new Error('Authenticator setup started, but the QR code was not returned. Refresh the page and try again.')
+  for (let attempt = 0; attempt <= DUPLICATE_FACTOR_RETRY_LIMIT; attempt += 1) {
+    const { data, error } = await getSupabaseClient().auth.mfa.enroll({
+      factorType: 'totp',
+      friendlyName: createTotpFriendlyName(attempt),
+      issuer: TOTP_ISSUER_NAME,
+    })
+
+    if (!error) {
+      if (!data.totp?.qr_code || !data.totp.secret) {
+        throw new Error('Authenticator setup started, but the QR code was not returned. Refresh the page and try again.')
+      }
+
+      return {
+        factorId: data.id,
+        qrCode: normalizeTotpQrCode(data.totp.qr_code),
+        secret: data.totp.secret,
+      }
+    }
+
+    enrollmentError = error
+    if (!isDuplicateFactorNameError(error)) break
   }
 
-  return {
-    factorId: data.id,
-    qrCode: normalizeTotpQrCode(data.totp.qr_code),
-    secret: data.totp.secret,
-  }
+  throw new Error(mfaErrorMessage(enrollmentError, 'Authenticator setup could not be started.'))
 }
 
 export async function verifyTotpEnrollment(factorId: string, code: string): Promise<void> {
