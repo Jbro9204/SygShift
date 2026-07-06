@@ -6009,8 +6009,8 @@
 }
 
 .user-admin-toolbar {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) repeat(3, minmax(132px, 168px)) repeat(3, max-content);
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: end;
   margin-bottom: 16px;
@@ -6023,6 +6023,7 @@
 .user-admin-toolbar .primary-action,
 .user-admin-toolbar .secondary-button {
   display: inline-flex;
+  flex: 0 0 auto;
   min-height: 46px;
   align-items: center;
   justify-content: center;
@@ -6032,11 +6033,15 @@
 }
 
 .user-admin-toolbar .search-field {
+  flex: 1 1 340px;
   min-width: 0;
+  width: auto;
 }
 
 .user-admin-toolbar .select-field {
+  flex: 1 1 150px;
   min-width: 0;
+  max-width: 190px;
 }
 
 .user-admin-success {
@@ -6645,6 +6650,13 @@
   .user-admin-toolbar .primary-action,
   .user-admin-toolbar .secondary-button,
   .user-admin-row .secondary-button {
+    width: 100%;
+  }
+
+  .user-admin-toolbar .search-field,
+  .user-admin-toolbar .select-field {
+    flex-basis: 100%;
+    max-width: none;
     width: 100%;
   }
 }
