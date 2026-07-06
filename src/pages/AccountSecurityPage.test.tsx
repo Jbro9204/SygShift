@@ -93,4 +93,31 @@ describe('AccountSecurityPage', () => {
     })
     expect(screen.queryByText('The password confirmation does not match.')).not.toBeInTheDocument()
   })
+
+  it('allows permanent password fields to be shown and hidden independently', async () => {
+    render(
+      <MemoryRouter>
+        <AccountSecurityPage />
+      </MemoryRouter>,
+    )
+
+    const newPassword = await screen.findByLabelText('New password')
+    const confirmPassword = screen.getByLabelText('Confirm password')
+
+    expect(newPassword).toHaveAttribute('type', 'password')
+    expect(confirmPassword).toHaveAttribute('type', 'password')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show new password' }))
+    expect(newPassword).toHaveAttribute('type', 'text')
+    expect(confirmPassword).toHaveAttribute('type', 'password')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show confirmation password' }))
+    expect(newPassword).toHaveAttribute('type', 'text')
+    expect(confirmPassword).toHaveAttribute('type', 'text')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide new password' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Hide confirmation password' }))
+    expect(newPassword).toHaveAttribute('type', 'password')
+    expect(confirmPassword).toHaveAttribute('type', 'password')
+  })
 })

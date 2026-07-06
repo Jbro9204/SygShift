@@ -903,6 +903,46 @@
   outline: 0;
 }
 
+.password-input {
+  position: relative;
+  display: block;
+}
+
+.password-input input {
+  padding-right: 52px;
+}
+
+.password-input__toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  color: #6a5f4f;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  transform: translateY(-50%);
+}
+
+.password-input__toggle:hover:not(:disabled) {
+  color: #2d271e;
+  background: #f4ead8;
+}
+
+.password-input__toggle:focus-visible {
+  box-shadow: 0 0 0 3px rgb(184 135 49 / 22%);
+  outline: 2px solid #b88731;
+  outline-offset: 1px;
+}
+
+.password-input__toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
 .login-submit {
   width: 100%;
   min-height: 54px;

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { KeyRound, LockKeyhole, ShieldCheck } from 'lucide-react'
+import { Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck } from 'lucide-react'
 import { getSessionContext, signInWithUsername } from '../data/auth'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 
@@ -22,6 +22,7 @@ export function LoginPage() {
   const [checkingSession, setCheckingSession] = useState(isSupabaseConfigured)
   const [alreadySignedIn, setAlreadySignedIn] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
 
   const returnPath = useMemo(() => {
     const state = location.state as LoginLocationState | null
@@ -125,17 +126,28 @@ export function LoginPage() {
             />
           </label>
 
-          <label className="field-label">
-            <span>Password</span>
-            <input
-              autoComplete="current-password"
-              disabled={!isSupabaseConfigured || checkingSession || loading}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              type="password"
-              value={password}
-            />
-          </label>
+          <div className="field-label">
+            <label htmlFor="login-password">Password</label>
+            <span className="password-input">
+              <input
+                autoComplete="current-password"
+                disabled={!isSupabaseConfigured || checkingSession || loading}
+                id="login-password"
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+              />
+              <button
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="password-input__toggle"
+                onClick={() => setShowPassword((current) => !current)}
+                type="button"
+              >
+                {showPassword ? <EyeOff aria-hidden="true" size={19} /> : <Eye aria-hidden="true" size={19} />}
+              </button>
+            </span>
+          </div>
 
           {errorMessage ? (
             <div className="auth-notice auth-notice--error" role="alert">

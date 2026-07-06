@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { CheckCircle2, KeyRound, Loader2, QrCode, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, Eye, EyeOff, KeyRound, Loader2, QrCode, ShieldCheck } from 'lucide-react'
 import {
   getSessionContext,
   notifySessionContextChanged,
@@ -71,6 +71,8 @@ export function AccountSecurityPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [checkpointVersion, setCheckpointVersion] = useState(0)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false)
 
   const returnPath = useMemo(() => {
     const state = location.state as AccountSecurityLocationState | null
@@ -177,6 +179,8 @@ export function AccountSecurityPage() {
       const nextContext = await refreshContext()
       setPassword('')
       setPasswordConfirmation('')
+      setShowPassword(false)
+      setShowPasswordConfirmation(false)
       setCheckpointVersion((version) => version + 1)
 
       const nextNeedsMfa = nextContext.mfaRequired && !nextContext.hasMfa
@@ -253,6 +257,8 @@ export function AccountSecurityPage() {
       setMfaCode('')
       setPassword('')
       setPasswordConfirmation('')
+      setShowPassword(false)
+      setShowPasswordConfirmation(false)
       setCheckpointVersion((version) => version + 1)
 
       if (!nextContext.mustChangePassword && !(nextContext.mfaRequired && !nextContext.hasMfa)) {
@@ -361,31 +367,55 @@ export function AccountSecurityPage() {
           <form className="security-panel" key={`password-${context.employeeId}-${checkpointVersion}`} onSubmit={handlePasswordUpdate}>
             <h2>Create your permanent password</h2>
             <div className="security-form-grid">
-              <label className="field-label">
-                <span>New password</span>
-                <input
-                  autoComplete="new-password"
-                  disabled={busyAction === 'password'}
-                  name="password"
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                  type="password"
-                  value={password}
-                />
-              </label>
+              <div className="field-label">
+                <label htmlFor="new-password">New password</label>
+                <span className="password-input">
+                  <input
+                    autoComplete="new-password"
+                    disabled={busyAction === 'password'}
+                    id="new-password"
+                    name="password"
+                    onChange={(event) => setPassword(event.target.value)}
+                    required
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                  />
+                  <button
+                    aria-label={showPassword ? 'Hide new password' : 'Show new password'}
+                    className="password-input__toggle"
+                    disabled={busyAction === 'password'}
+                    onClick={() => setShowPassword((current) => !current)}
+                    type="button"
+                  >
+                    {showPassword ? <EyeOff aria-hidden="true" size={19} /> : <Eye aria-hidden="true" size={19} />}
+                  </button>
+                </span>
+              </div>
 
-              <label className="field-label">
-                <span>Confirm password</span>
-                <input
-                  autoComplete="new-password"
-                  disabled={busyAction === 'password'}
-                  name="passwordConfirmation"
-                  onChange={(event) => setPasswordConfirmation(event.target.value)}
-                  required
-                  type="password"
-                  value={passwordConfirmation}
-                />
-              </label>
+              <div className="field-label">
+                <label htmlFor="confirm-password">Confirm password</label>
+                <span className="password-input">
+                  <input
+                    autoComplete="new-password"
+                    disabled={busyAction === 'password'}
+                    id="confirm-password"
+                    name="passwordConfirmation"
+                    onChange={(event) => setPasswordConfirmation(event.target.value)}
+                    required
+                    type={showPasswordConfirmation ? 'text' : 'password'}
+                    value={passwordConfirmation}
+                  />
+                  <button
+                    aria-label={showPasswordConfirmation ? 'Hide confirmation password' : 'Show confirmation password'}
+                    className="password-input__toggle"
+                    disabled={busyAction === 'password'}
+                    onClick={() => setShowPasswordConfirmation((current) => !current)}
+                    type="button"
+                  >
+                    {showPasswordConfirmation ? <EyeOff aria-hidden="true" size={19} /> : <Eye aria-hidden="true" size={19} />}
+                  </button>
+                </span>
+              </div>
             </div>
 
             <ul className="password-rules" aria-label="Password requirements">
