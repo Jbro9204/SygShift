@@ -834,46 +834,6 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             </Link>
           </div>
         ) : null}
-        {canUseScheduler ? (
-          <div className="schedule-intro__actions">
-            <button
-              className="secondary-button"
-              disabled={ensureDraftMutation.isPending || scheduleQuery.data?.status === 'draft'}
-              onClick={() => ensureDraftMutation.mutate(undefined)}
-              type="button"
-            >
-              <Edit3 aria-hidden="true" size={19} />
-              {scheduleQuery.data?.status === 'draft' ? 'Draft open' : ensureDraftMutation.isPending ? 'Opening draft...' : 'Open schedule draft'}
-            </button>
-            {scheduleQuery.data?.status === 'draft' ? (
-              <button className="primary-action" disabled={publishDraftMutation.isPending} onClick={() => publishDraftMutation.mutate()} type="button">
-                {publishDraftMutation.isPending ? 'Publishing...' : 'Publish draft'}
-              </button>
-            ) : null}
-            {scheduleQuery.data?.status === 'draft' ? (
-              <button
-                className="secondary-button"
-                disabled={cancelDraftMutation.isPending}
-                onClick={() => setCancelDraftConfirmOpen(true)}
-                type="button"
-              >
-                {cancelDraftMutation.isPending ? 'Canceling...' : 'Cancel draft'}
-              </button>
-            ) : null}
-            <button
-              className="primary-action"
-              onClick={() => {
-                setBuilderOpen((current) => !current)
-                setOpenShiftForm(defaultOpenShiftForm(weekKey))
-                setBuilderMessage(null)
-              }}
-              type="button"
-            >
-              <Plus aria-hidden="true" size={20} />
-              Add open shift
-            </button>
-          </div>
-        ) : null}
       </section>
 
       {builderMessage ? (
@@ -924,8 +884,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               </h2>
               <p>
                 {scheduleQuery.data?.status === 'draft'
-                  ? 'Work from the planner below. Changes stay private until the draft is published.'
-                  : 'Pick a week, open a draft, add coverage, and use staffing suggestions before anything goes live.'}
+                  ? 'Make changes one week at a time. Nothing goes live until you publish.'
+                  : 'Choose a week, let SygShift surface the coverage needs, then add or adjust shifts before publishing.'}
               </p>
             </div>
             <div className="scheduler-workspace__actions">
@@ -950,7 +910,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   onClick={() => ensureDraftMutation.mutate(undefined)}
                   type="button"
                 >
-                  {ensureDraftMutation.isPending ? 'Opening draft...' : 'Start working draft'}
+                  {ensureDraftMutation.isPending ? 'Opening draft...' : 'Start schedule work'}
                 </button>
               )}
               <button
@@ -963,7 +923,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 type="button"
               >
                 <Plus aria-hidden="true" size={18} />
-                Add shift/event
+                Add shift or event
               </button>
             </div>
           </div>
@@ -986,18 +946,18 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             <div className="draft-guidance-grid">
               <article>
                 <span>1</span>
-                <strong>Work the planner</strong>
-                <p>Each day shows the shifts, open slots, and review items that need attention.</p>
+                <strong>Pick the week</strong>
+                <p>Use the six-week strip to choose the week you want to build or clean up.</p>
               </article>
               <article>
                 <span>2</span>
-                <strong>Use suggestions</strong>
-                <p>SygShift checks open slots, credentials, active employees, and schedule conflicts before suggesting people.</p>
+                <strong>Fix what matters</strong>
+                <p>Open slots and review items are called out first so supervisors are not hunting through clutter.</p>
               </article>
               <article>
                 <span>3</span>
-                <strong>Confirm when ready</strong>
-                <p>Publish only when the schedule looks right. Until then, this week remains a working draft.</p>
+                <strong>Publish once</strong>
+                <p>Review the week, make manual changes if needed, then publish the clean schedule.</p>
               </article>
             </div>
           ) : null}
@@ -1027,7 +987,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             </div>
           ) : (
             <div className="scheduler-suggestion-list">
-              {staffingWorkItems.slice(0, 8).map((item) => (
+              {staffingWorkItems.slice(0, 6).map((item) => (
                 <article className="scheduler-suggestion-item" key={item.shift.id}>
                   <div>
                     <div className="schedule-review-item__meta">
@@ -1388,7 +1348,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               <h2 id="scheduler-planner-title">
                 {format(weekStart, 'MMM d')} – {format(weekEnd, 'MMM d, yyyy')}
               </h2>
-              <p>Use this board to inspect each day, open a draft, edit shift cards, and publish when the week is ready.</p>
+              <p>Each day is a focused card. Click a shift to edit it while a draft is open; add one-time events from the builder above.</p>
               <div className="scheduler-planner__week-nav" aria-label="Planner week controls">
                 <button
                   aria-label="Previous week"
@@ -1486,6 +1446,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         </section>
       ) : null}
 
+      {!isSchedulerHome ? (
       <section className="schedule-toolbar" aria-label="Schedule controls">
         <div className="week-controls">
           <button
@@ -1582,6 +1543,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           ) : null}
         </div>
       </section>
+      ) : null}
 
       {!scheduleQuery.data && importedPreviewQuery.data ? (
         <section className="source-schedule-banner" aria-label="Imported schedule status">

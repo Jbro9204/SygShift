@@ -1508,7 +1508,7 @@
   margin-bottom: 18px;
   padding: 0;
   overflow: hidden;
-  background: linear-gradient(180deg, #fffdf8 0%, #f8f1e4 100%);
+  background: linear-gradient(180deg, #fffdf8 0%, #f9f4ea 100%);
   border: 1px solid #dfd1b8;
   border-top: 4px solid #b98a32;
   border-radius: 12px;
@@ -1705,7 +1705,7 @@
 
 .scheduler-planner {
   margin-bottom: 18px;
-  overflow: hidden;
+  overflow: clip;
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -1785,22 +1785,21 @@
 
 .scheduler-day-board {
   display: grid;
-  grid-template-columns: repeat(7, minmax(220px, 1fr));
-  gap: 1px;
-  overflow-x: auto;
-  background: #e6ded1;
-  scrollbar-color: #bd8a35 #efe8dc;
-  scrollbar-width: thin;
-  -webkit-overflow-scrolling: touch;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 12px;
+  padding: 12px;
+  background: #f3eadc;
 }
 
 .scheduler-day-column {
   display: grid;
-  min-height: 420px;
+  min-height: 260px;
   align-content: start;
   gap: 10px;
   padding: 13px;
   background: #fffdf8;
+  border: 1px solid #e2d8c9;
+  border-radius: 11px;
 }
 
 .scheduler-day-column header {
