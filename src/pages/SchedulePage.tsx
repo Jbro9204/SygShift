@@ -7,6 +7,7 @@ import { ModalDialog } from '../components/ModalDialog'
 import { getCurrentAppRole } from '../data/session'
 import {
   assignmentName,
+  cancelScheduleDraft,
   ensureScheduleDraft,
   importedScheduleRows,
   employeeScheduleRows,
@@ -404,6 +405,7 @@ export function SchedulePage() {
   const [builderOpen, setBuilderOpen] = useState(false)
   const [resolvingShift, setResolvingShift] = useState<ScheduleShift | null>(null)
   const [editingShift, setEditingShift] = useState<ScheduleShift | null>(null)
+  const [cancelDraftConfirmOpen, setCancelDraftConfirmOpen] = useState(false)
   const [builderMessage, setBuilderMessage] = useState<string | null>(null)
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
   const weekEnd = days[6]
@@ -546,6 +548,29 @@ export function SchedulePage() {
     },
     onError: (error) => {
       setBuilderMessage(error instanceof Error ? error.message : 'The schedule draft could not be published.')
+    },
+  })
+  const cancelDraftMutation = useMutation({
+    mutationFn: () => cancelScheduleDraft(scheduleQuery.data!.id),
+    onSuccess: async (publishedSchedule) => {
+      setCancelDraftConfirmOpen(false)
+      setEditingShift(null)
+      setBuilderOpen(false)
+      queryClient.setQueryData(['weekly-schedule', weekKey], publishedSchedule)
+      setBuilderMessage(
+        publishedSchedule
+          ? `Draft canceled. Showing live revision ${publishedSchedule.revision}.`
+          : 'Draft canceled. No published schedule exists for this week yet.',
+      )
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['weekly-schedule', weekKey] }),
+        queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions'] }),
+        queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-metrics'] }),
+      ])
+    },
+    onError: (error) => {
+      setBuilderMessage(error instanceof Error ? error.message : 'The schedule draft could not be canceled.')
     },
   })
   const resolveReviewMutation = useMutation({
@@ -756,6 +781,16 @@ export function SchedulePage() {
                 {publishDraftMutation.isPending ? 'Publishing...' : 'Publish draft'}
               </button>
             ) : null}
+            {scheduleQuery.data?.status === 'draft' ? (
+              <button
+                className="secondary-button"
+                disabled={cancelDraftMutation.isPending}
+                onClick={() => setCancelDraftConfirmOpen(true)}
+                type="button"
+              >
+                {cancelDraftMutation.isPending ? 'Canceling...' : 'Cancel draft'}
+              </button>
+            ) : null}
             <button
               className="primary-action"
               onClick={() => {
@@ -778,6 +813,36 @@ export function SchedulePage() {
         </p>
       ) : null}
 
+      {cancelDraftConfirmOpen && scheduleQuery.data?.status === 'draft' ? (
+        <ModalDialog
+          description={`This will discard draft revision ${scheduleQuery.data.revision} for ${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d, yyyy')}.`}
+          onClose={() => setCancelDraftConfirmOpen(false)}
+          title="Cancel this schedule draft?"
+        >
+          <div className="confirmation-summary">
+            <strong>This does not delete the live schedule.</strong>
+            <span>The draft will be archived and the week will return to the latest published revision.</span>
+            <span>Any unpublished draft edits, assignments, one-time events, or open-shift changes in this draft will not go live.</span>
+          </div>
+          {cancelDraftMutation.isError ? (
+            <p className="form-feedback form-feedback--error" role="alert">{cancelDraftMutation.error.message}</p>
+          ) : null}
+          <div className="modal-actions">
+            <button className="secondary-button" onClick={() => setCancelDraftConfirmOpen(false)} type="button">
+              Keep working
+            </button>
+            <button
+              className="primary-action danger-primary"
+              disabled={cancelDraftMutation.isPending}
+              onClick={() => cancelDraftMutation.mutate()}
+              type="button"
+            >
+              {cancelDraftMutation.isPending ? 'Canceling draft...' : 'Discard draft'}
+            </button>
+          </div>
+        </ModalDialog>
+      ) : null}
+
       {canBuildSchedule ? (
         <section className={scheduleQuery.data?.status === 'draft' ? 'scheduler-workspace scheduler-workspace--draft' : 'scheduler-workspace'} aria-label="Scheduler workspace">
           <div className="scheduler-workspace__hero">
@@ -796,9 +861,19 @@ export function SchedulePage() {
             </div>
             <div className="scheduler-workspace__actions">
               {scheduleQuery.data?.status === 'draft' ? (
-                <button className="primary-action" disabled={publishDraftMutation.isPending} onClick={() => publishDraftMutation.mutate()} type="button">
-                  {publishDraftMutation.isPending ? 'Publishing...' : 'Confirm & publish draft'}
-                </button>
+                <>
+                  <button className="primary-action" disabled={publishDraftMutation.isPending} onClick={() => publishDraftMutation.mutate()} type="button">
+                    {publishDraftMutation.isPending ? 'Publishing...' : 'Confirm & publish draft'}
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={cancelDraftMutation.isPending}
+                    onClick={() => setCancelDraftConfirmOpen(true)}
+                    type="button"
+                  >
+                    {cancelDraftMutation.isPending ? 'Canceling...' : 'Cancel draft'}
+                  </button>
+                </>
               ) : (
                 <button
                   className="primary-action"

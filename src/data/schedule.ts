@@ -303,6 +303,16 @@ export async function publishScheduleDraft(scheduleId: string): Promise<WeeklySc
   return scheduleSchema.parse(data)
 }
 
+export async function cancelScheduleDraft(scheduleId: string): Promise<WeeklySchedule | null> {
+  const { data, error } = await getSupabaseClient().rpc('cancel_schedule_draft', {
+    target_schedule_id: scheduleId,
+  })
+
+  if (error) throw new Error(error.message || 'The schedule draft could not be canceled.')
+  if (!data) return null
+  return scheduleSchema.parse(data)
+}
+
 export async function getScheduleStaffingSuggestions(scheduleId: string): Promise<StaffingSuggestion[]> {
   const { data, error } = await getSupabaseClient().rpc('get_schedule_staffing_suggestions', {
     target_schedule_id: scheduleId,
