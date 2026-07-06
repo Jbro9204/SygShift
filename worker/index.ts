@@ -67,6 +67,7 @@ interface NotificationJob {
 }
 
 const maxJsonBodyBytes = 4096
+const defaultAppUrl = 'https://app.sygilant.us'
 const defaultSupportEmail = 'jbrown@guardianshipsecurity.net'
 
 class ApiError extends Error {
@@ -509,7 +510,7 @@ async function sendLoginInstructions(
     throw new ApiError('employee_email_missing', 422, `${target.displayName} does not have an on-file email address.`)
   }
 
-  const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || 'https://sygshift.sygilant.workers.dev'
+  const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl
   const message = buildLoginInstructionsEmail(target, temporaryPassword, appUrl)
   await environment.EMAIL.send({
     from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
@@ -536,7 +537,7 @@ async function sendWelcomeEmail(
     throw new ApiError('employee_email_missing', 422, `${target.displayName} does not have an on-file email address.`)
   }
 
-  const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || 'https://sygshift.sygilant.workers.dev'
+  const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl
   const message = buildWelcomeEmail(target, appUrl)
   return environment.EMAIL.send({
     from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
@@ -764,7 +765,7 @@ function textToHtml(value: string): string {
     .join('')
 }
 
-export function brandedEmailHtml(message: NotificationJob['message'], appUrl = 'https://sygshift.sygilant.workers.dev'): string {
+export function brandedEmailHtml(message: NotificationJob['message'], appUrl = defaultAppUrl): string {
   const normalizedAppUrl = appUrl.replace(/\/+$/, '')
   const body = message.html?.trim() || textToHtml(message.text)
   const title = escapeHtml(message.subject)
