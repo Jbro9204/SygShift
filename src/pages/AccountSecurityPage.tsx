@@ -68,6 +68,7 @@ type AccountSecurityLocationState = {
 }
 
 type MfaMethod = MfaFactorType
+const SMS_MFA_ENABLED = import.meta.env.VITE_ENABLE_SMS_MFA === 'true'
 
 export function AccountSecurityPage() {
   const navigate = useNavigate()
@@ -104,14 +105,19 @@ export function AccountSecurityPage() {
     [context?.username, password],
   )
   const verifiedFactors = factors.filter((factor) => factor.status === 'verified')
+  const availableVerifiedFactors = verifiedFactors.filter((factor) => SMS_MFA_ENABLED || factor.factorType === 'totp')
   const verifiedTotpFactor = verifiedFactors.find((factor) => factor.factorType === 'totp') ?? null
-  const verifiedPhoneFactor = verifiedFactors.find((factor) => factor.factorType === 'phone') ?? null
+  const verifiedPhoneFactor = SMS_MFA_ENABLED
+    ? verifiedFactors.find((factor) => factor.factorType === 'phone') ?? null
+    : null
   const unverifiedTotpFactor = factors.find((factor) => factor.factorType === 'totp' && factor.status !== 'verified') ?? null
-  const unverifiedPhoneFactor = factors.find((factor) => factor.factorType === 'phone' && factor.status !== 'verified') ?? null
+  const unverifiedPhoneFactor = SMS_MFA_ENABLED
+    ? factors.find((factor) => factor.factorType === 'phone' && factor.status !== 'verified') ?? null
+    : null
   const activeVerifiedFactor = selectedMfaMethod
-    ? verifiedFactors.find((factor) => factor.factorType === selectedMfaMethod) ?? null
-    : verifiedFactors.length === 1
-      ? verifiedFactors[0]
+    ? availableVerifiedFactors.find((factor) => factor.factorType === selectedMfaMethod) ?? null
+    : availableVerifiedFactors.length === 1
+      ? availableVerifiedFactors[0]
       : null
   const needsPassword = Boolean(context?.mustChangePassword)
   const needsMfa = Boolean(context?.mfaRequired && !context.hasMfa)
@@ -204,9 +210,14 @@ export function AccountSecurityPage() {
   }, [canRememberDevice, context, needsMfa])
 
   useEffect(() => {
-    if (!needsMfa || selectedMfaMethod || verifiedFactors.length !== 1) return
-    setSelectedMfaMethod(verifiedFactors[0].factorType)
-  }, [needsMfa, selectedMfaMethod, verifiedFactors])
+    if (!needsMfa || selectedMfaMethod) return
+    if (!SMS_MFA_ENABLED) {
+      setSelectedMfaMethod('totp')
+      return
+    }
+    if (availableVerifiedFactors.length !== 1) return
+    setSelectedMfaMethod(availableVerifiedFactors[0].factorType)
+  }, [availableVerifiedFactors, needsMfa, selectedMfaMethod])
 
   async function handlePasswordUpdate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -267,6 +278,7 @@ export function AccountSecurityPage() {
   }
 
   function handleSelectMfaMethod(method: MfaMethod) {
+    if (method === 'phone' && !SMS_MFA_ENABLED) return
     setSelectedMfaMethod(method)
     setEnrollment(null)
     setPhoneEnrollment(null)
@@ -317,6 +329,10 @@ export function AccountSecurityPage() {
 
   async function handleStartPhoneEnrollment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!SMS_MFA_ENABLED) {
+      setErrorMessage('Text message MFA is turned off for now. Use Authenticator App to finish account security.')
+      return
+    }
     setErrorMessage(null)
     setMessage(null)
     setEnrollment(null)
@@ -353,6 +369,10 @@ export function AccountSecurityPage() {
   }
 
   async function handleSendPhoneChallenge() {
+    if (!SMS_MFA_ENABLED) {
+      setErrorMessage('Text message MFA is turned off for now. Use Authenticator App to finish account security.')
+      return
+    }
     if (!verifiedPhoneFactor) {
       setErrorMessage('Set up SMS verification before requesting a text code.')
       return
@@ -510,8 +530,12 @@ export function AccountSecurityPage() {
                   {context.mfaRequired
                     ? needsMfa
                       ? needsPassword
-                        ? 'Verify by authenticator app or text message before saving the new password.'
-                        : 'Verify by authenticator app or text message before protected tools open.'
+                        ? SMS_MFA_ENABLED
+                          ? 'Verify by authenticator app or text message before saving the new password.'
+                          : 'Verify with an authenticator app before saving the new password.'
+                        : SMS_MFA_ENABLED
+                          ? 'Verify by authenticator app or text message before protected tools open.'
+                          : 'Verify with an authenticator app before protected tools open.'
                       : 'MFA verification is complete for this session.'
                     : 'Your role does not require MFA.'}
                 </p>
@@ -539,7 +563,7 @@ export function AccountSecurityPage() {
           <div className="auth-notice auth-notice--warning" role="status">
             <ShieldCheck aria-hidden="true" size={21} />
             <span>
-              This account is protected by MFA. Verify with an authenticator app or text message first, then the
+              This account is protected by MFA. Verify with an authenticator app first, then the
               permanent password form will open.
             </span>
           </div>
@@ -616,13 +640,14 @@ export function AccountSecurityPage() {
 
         {context && needsMfa ? (
           <section className="security-panel">
-            <h2>{verifiedFactors.length > 0 ? 'Verify your account' : 'Choose your MFA method'}</h2>
+            <h2>{availableVerifiedFactors.length > 0 ? 'Verify your account' : SMS_MFA_ENABLED ? 'Choose your MFA method' : 'Set up an authenticator app'}</h2>
             <p>
-              You can use either an authenticator app or a text message code. Set up one method now; add the other later
-              if you want a backup.
+              {SMS_MFA_ENABLED
+                ? 'You can use either an authenticator app or a text message code. Set up one method now; add the other later if you want a backup.'
+                : 'Use an authenticator app such as Microsoft Authenticator, Google Authenticator, 1Password, Authy, or Apple Passwords.'}
             </p>
 
-            <div className="mfa-method-grid" role="list" aria-label="MFA method options">
+            <div className={SMS_MFA_ENABLED ? 'mfa-method-grid' : 'mfa-method-grid mfa-method-grid--single'} role="list" aria-label="MFA method options">
               <button
                 aria-pressed={selectedMfaMethod === 'totp'}
                 className={selectedMfaMethod === 'totp' ? 'mfa-method-card mfa-method-card--active' : 'mfa-method-card'}
@@ -635,17 +660,19 @@ export function AccountSecurityPage() {
                 <span>{verifiedTotpFactor ? 'Use your existing app code.' : 'Scan a QR code with an app.'}</span>
               </button>
 
-              <button
-                aria-pressed={selectedMfaMethod === 'phone'}
-                className={selectedMfaMethod === 'phone' ? 'mfa-method-card mfa-method-card--active' : 'mfa-method-card'}
-                disabled={busyAction !== null}
-                onClick={() => handleSelectMfaMethod('phone')}
-                type="button"
-              >
-                <MessageSquareText aria-hidden="true" size={24} />
-                <strong>Text message</strong>
-                <span>{verifiedPhoneFactor ? 'Send a code to your phone.' : 'Use a mobile number that receives texts.'}</span>
-              </button>
+              {SMS_MFA_ENABLED ? (
+                <button
+                  aria-pressed={selectedMfaMethod === 'phone'}
+                  className={selectedMfaMethod === 'phone' ? 'mfa-method-card mfa-method-card--active' : 'mfa-method-card'}
+                  disabled={busyAction !== null}
+                  onClick={() => handleSelectMfaMethod('phone')}
+                  type="button"
+                >
+                  <MessageSquareText aria-hidden="true" size={24} />
+                  <strong>Text message</strong>
+                  <span>{verifiedPhoneFactor ? 'Send a code to your phone.' : 'Use a mobile number that receives texts.'}</span>
+                </button>
+              ) : null}
             </div>
 
             {selectedMfaMethod === 'totp' && unverifiedTotpFactor && !enrollment && !verifiedTotpFactor ? (
@@ -685,7 +712,7 @@ export function AccountSecurityPage() {
               </div>
             ) : null}
 
-            {selectedMfaMethod === 'phone' ? (
+            {SMS_MFA_ENABLED && selectedMfaMethod === 'phone' ? (
               <div className="mfa-method-body">
                 <h3>{verifiedPhoneFactor ? 'Send a text message code' : 'Set up text message MFA'}</h3>
                 <p>SMS is often easiest on a phone. Use a mobile number that can receive text messages.</p>

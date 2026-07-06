@@ -1168,6 +1168,10 @@
   gap: 14px;
 }
 
+.mfa-method-grid--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .mfa-method-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

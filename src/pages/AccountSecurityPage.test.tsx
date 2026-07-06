@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as mfaData from '../data/mfa'
 import { AccountSecurityPage } from './AccountSecurityPage'
 
 const authMock = vi.hoisted(() => ({
@@ -71,6 +72,7 @@ describe('AccountSecurityPage', () => {
     supabaseMock.client.auth.signOut.mockResolvedValue({ error: null })
     supabaseMock.client.auth.updateUser.mockResolvedValue({ data: {}, error: null })
     supabaseMock.client.rpc.mockResolvedValue({ data: true, error: null })
+    vi.mocked(mfaData.listMfaFactors).mockResolvedValue([])
   })
 
   it('submits the actual password field values even when browser autofill bypasses React change state', async () => {
@@ -121,5 +123,23 @@ describe('AccountSecurityPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Hide confirmation password' }))
     expect(newPassword).toHaveAttribute('type', 'password')
     expect(confirmPassword).toHaveAttribute('type', 'password')
+  })
+
+  it('does not show SMS MFA when the feature is turned off', async () => {
+    authMock.getSessionContext.mockReset()
+    authMock.getSessionContext.mockResolvedValue(sessionContext({
+      hasMfa: false,
+      mfaRequired: true,
+    }))
+
+    render(
+      <MemoryRouter>
+        <AccountSecurityPage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('Authenticator app')
+    expect(screen.queryByText('Text message')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Start authenticator setup/i })).toBeInTheDocument()
   })
 })
