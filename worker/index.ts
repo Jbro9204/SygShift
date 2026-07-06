@@ -204,10 +204,12 @@ async function callRpc<T>(
   name: string,
   body: Record<string, unknown>,
   token: string,
+  additionalHeaders?: Record<string, string>,
 ): Promise<T> {
   return supabaseJson<T>(`${config.url}/rest/v1/rpc/${name}`, {
     body: JSON.stringify(body),
     headers: {
+      ...additionalHeaders,
       apikey: config.publishableKey ?? token,
       authorization: `Bearer ${token}`,
       'content-type': 'application/json',
@@ -241,6 +243,9 @@ async function requireAdminMfa(request: Request, environment: Environment): Prom
     'get_session_context',
     {},
     authorization.slice('Bearer '.length),
+    request.headers.get('x-sygshift-trusted-device')
+      ? { 'x-sygshift-trusted-device': request.headers.get('x-sygshift-trusted-device')! }
+      : undefined,
   )
   const context = Array.isArray(payload) ? payload[0] : payload
 

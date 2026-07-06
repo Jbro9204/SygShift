@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
+import { getTrustedDeviceToken } from '../lib/trustedDeviceToken'
 
 const appRoleSchema = z.enum(['guard', 'dispatcher', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary'])
@@ -27,6 +28,7 @@ const accountSchema = z.object({
   mfaEnrolledAt: z.string().nullable(),
   isBootstrapAdmin: z.boolean(),
   status: z.enum(['active', 'disabled']),
+  trustedDeviceCount: z.number().int().nonnegative().optional(),
 })
 
 const adminUserSchema = z.object({
@@ -162,6 +164,8 @@ async function authHeaders(): Promise<Headers> {
   const headers = new Headers()
   headers.set('authorization', `Bearer ${data.session.access_token}`)
   headers.set('content-type', 'application/json')
+  const trustedDeviceToken = getTrustedDeviceToken()
+  if (trustedDeviceToken) headers.set('x-sygshift-trusted-device', trustedDeviceToken)
   return headers
 }
 
@@ -206,6 +210,14 @@ export async function setEmployeeAccountState(employeeId: string, disabled: bool
   })
   if (error) throw new Error(error.message || 'Account state could not be changed.')
   return adminUserSchema.parse(data)
+}
+
+export async function revokeEmployeeTrustedDevices(employeeId: string): Promise<number> {
+  const { data, error } = await getSupabaseClient().rpc('admin_revoke_employee_trusted_devices', {
+    target_employee_id: employeeId,
+  })
+  if (error) throw new Error(error.message || 'Remembered devices could not be revoked.')
+  return z.number().int().nonnegative().parse(data)
 }
 
 export async function provisionEmployeeAccount(employeeId: string, temporaryPassword?: string): Promise<ProvisioningCredential> {

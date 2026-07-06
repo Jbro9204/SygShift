@@ -21,6 +21,7 @@ import {
   getAdminUserDirectory,
   provisionEmployeeAccount,
   provisionMissingAccounts,
+  revokeEmployeeTrustedDevices,
   sendAllEmployeeLoginEmails,
   sendEmployeeLoginEmail,
   sendEmployeeWelcomeEmail,
@@ -186,6 +187,7 @@ function ManageUserModal({
   const [lastCredential, setLastCredential] = useState<ProvisioningCredential | null>(null)
   const [loginEmailMessage, setLoginEmailMessage] = useState<string | null>(null)
   const [welcomeEmailMessage, setWelcomeEmailMessage] = useState<string | null>(null)
+  const [trustedDeviceMessage, setTrustedDeviceMessage] = useState<string | null>(null)
   const onFileEmail = employee.companyEmail || employee.personalEmail || null
 
   const updateMutation = useMutation({
@@ -197,6 +199,13 @@ function ManageUserModal({
   const accountStateMutation = useMutation({
     mutationFn: (disabled: boolean) => setEmployeeAccountState(employee.id, disabled),
     onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
+    },
+  })
+  const revokeTrustedDevicesMutation = useMutation({
+    mutationFn: () => revokeEmployeeTrustedDevices(employee.id),
+    onSuccess: async (count) => {
+      setTrustedDeviceMessage(`${count} remembered device${count === 1 ? '' : 's'} revoked for ${employee.displayName}.`)
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
   })
@@ -295,6 +304,17 @@ function ManageUserModal({
                 {employee.accountStatus === 'disabled' ? 'Enable login' : 'Disable login'}
               </button>
             ) : null}
+            {employee.account && (employee.account.trustedDeviceCount ?? 0) > 0 ? (
+              <button
+                className="secondary-button"
+                disabled={revokeTrustedDevicesMutation.isPending}
+                onClick={() => revokeTrustedDevicesMutation.mutate()}
+                type="button"
+              >
+                <ShieldAlert aria-hidden="true" size={18} />
+                Revoke remembered devices ({employee.account.trustedDeviceCount})
+              </button>
+            ) : null}
             {employee.status !== 'active' ? <small>Only active employees can receive login accounts.</small> : null}
           </div>
 
@@ -313,6 +333,8 @@ function ManageUserModal({
           {provisionMutation.isError ? <div className="inline-alert" role="alert">{provisionMutation.error.message}</div> : null}
           {loginEmailMutation.isError ? <div className="inline-alert" role="alert">{loginEmailMutation.error.message}</div> : null}
           {accountStateMutation.isError ? <div className="inline-alert" role="alert">{accountStateMutation.error.message}</div> : null}
+          {trustedDeviceMessage ? <div className="form-feedback form-feedback--success" role="status">{trustedDeviceMessage}</div> : null}
+          {revokeTrustedDevicesMutation.isError ? <div className="inline-alert" role="alert">{revokeTrustedDevicesMutation.error.message}</div> : null}
 
           <div className="account-control-card account-control-card--welcome">
             <div>

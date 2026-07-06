@@ -17,6 +17,13 @@ import {
   type MfaEnrollment,
   type MfaFactorSummary,
 } from '../data/mfa'
+import {
+  clearRememberedDeviceOnThisBrowser,
+  getCurrentTrustedDevices,
+  rememberCurrentDevice,
+  revokeCurrentTrustedDevice,
+  type TrustedDevice,
+} from '../data/trustedDevices'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 
 function isAlreadyCurrentPasswordError(error: unknown): boolean {
@@ -73,6 +80,8 @@ export function AccountSecurityPage() {
   const [checkpointVersion, setCheckpointVersion] = useState(0)
   const [showPassword, setShowPassword] = useState(false)
   const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false)
+  const [rememberDevice, setRememberDevice] = useState(true)
+  const [trustedDevices, setTrustedDevices] = useState<TrustedDevice[]>([])
 
   const returnPath = useMemo(() => {
     const state = location.state as AccountSecurityLocationState | null
@@ -91,6 +100,7 @@ export function AccountSecurityPage() {
   const needsMfa = Boolean(context?.mfaRequired && !context.hasMfa)
   const passwordWaitingForMfa = needsPassword && needsMfa
   const isComplete = Boolean(context && !needsPassword && !needsMfa)
+  const canRememberDevice = Boolean(context?.mfaRequired && (context.role === 'admin' || context.role === 'supervisor'))
 
   useEffect(() => {
     let active = true
@@ -138,6 +148,43 @@ export function AccountSecurityPage() {
     notifySessionContextChanged()
     return nextContext
   }
+
+  async function refreshTrustedDevices(): Promise<void> {
+    if (!canRememberDevice) {
+      setTrustedDevices([])
+      return
+    }
+
+    try {
+      setTrustedDevices(await getCurrentTrustedDevices())
+    } catch {
+      setTrustedDevices([])
+    }
+  }
+
+  useEffect(() => {
+    let active = true
+
+    async function loadTrustedDevices() {
+      if (!context || needsMfa || !canRememberDevice) {
+        setTrustedDevices([])
+        return
+      }
+
+      try {
+        const devices = await getCurrentTrustedDevices()
+        if (active) setTrustedDevices(devices)
+      } catch {
+        if (active) setTrustedDevices([])
+      }
+    }
+
+    void loadTrustedDevices()
+
+    return () => {
+      active = false
+    }
+  }, [canRememberDevice, context, needsMfa])
 
   async function handlePasswordUpdate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -252,20 +299,39 @@ export function AccountSecurityPage() {
       const marked = await getSupabaseClient().rpc('mark_mfa_enrolled')
       if (marked.error) throw new Error('MFA enrollment could not be recorded.')
 
+      let rememberDeviceFailed = false
+      if (rememberDevice && canRememberDevice) {
+        try {
+          await rememberCurrentDevice(14)
+        } catch {
+          rememberDeviceFailed = true
+        }
+      }
+
       const nextContext = await refreshContext()
       setEnrollment(null)
       setMfaCode('')
+      setRememberDevice(true)
       setPassword('')
       setPasswordConfirmation('')
       setShowPassword(false)
       setShowPasswordConfirmation(false)
       setCheckpointVersion((version) => version + 1)
+      await refreshTrustedDevices()
 
       if (!nextContext.mustChangePassword && !(nextContext.mfaRequired && !nextContext.hasMfa)) {
-        setMessage('Authenticator verified. Opening your workspace.')
+        setMessage(
+          rememberDeviceFailed
+            ? 'Authenticator verified. This device could not be remembered, but your workspace is opening.'
+            : 'Authenticator verified. Opening your workspace.',
+        )
         navigate(returnPath, { replace: true })
       } else {
-        setMessage('Authenticator verified. Continue with the remaining security step.')
+        setMessage(
+          rememberDeviceFailed
+            ? 'Authenticator verified. This device could not be remembered; continue with the remaining security step.'
+            : 'Authenticator verified. Continue with the remaining security step.',
+        )
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Authenticator verification failed.')
@@ -493,11 +559,69 @@ export function AccountSecurityPage() {
                     value={mfaCode}
                   />
                 </label>
+                {canRememberDevice ? (
+                  <label className="check-field trusted-device-check">
+                    <input
+                      checked={rememberDevice}
+                      disabled={busyAction === 'verify-mfa'}
+                      onChange={(event) => setRememberDevice(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>Remember this device for 14 days</span>
+                  </label>
+                ) : null}
                 <button className="primary-action" disabled={busyAction === 'verify-mfa'} type="submit">
                   {busyAction === 'verify-mfa' ? 'Verifying…' : 'Verify authenticator'}
                 </button>
               </form>
             ) : null}
+          </section>
+        ) : null}
+
+        {canRememberDevice && !needsMfa ? (
+          <section className="security-panel trusted-device-panel" aria-labelledby="trusted-devices-title">
+            <div>
+              <h2 id="trusted-devices-title">Remembered devices</h2>
+              <p>
+                These browsers can open supervisor/admin tools without another authenticator prompt until they expire.
+                Signing out removes the remembered device from this browser.
+              </p>
+            </div>
+            {trustedDevices.length === 0 ? (
+              <p className="trusted-device-empty">No active remembered devices are on file for this account.</p>
+            ) : (
+              <div className="trusted-device-list">
+                {trustedDevices.map((device) => (
+                  <article className="trusted-device-item" key={device.id}>
+                    <div>
+                      <strong>{device.deviceLabel ?? 'Remembered browser'}</strong>
+                      <span>
+                        Expires {new Intl.DateTimeFormat('en-US', {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        }).format(new Date(device.expiresAt))}
+                        {device.isCurrentDevice ? ' · this device' : ''}
+                      </span>
+                    </div>
+                    <button
+                      className="secondary-button secondary-button--small"
+                      onClick={async () => {
+                        await revokeCurrentTrustedDevice(device.id)
+                        if (device.isCurrentDevice) clearRememberedDeviceOnThisBrowser()
+                        await refreshTrustedDevices()
+                        const nextContext = await refreshContext()
+                        if (nextContext.mfaRequired && !nextContext.hasMfa) {
+                          setMessage('This remembered device was removed. Verify your authenticator to continue.')
+                        }
+                      }}
+                      type="button"
+                    >
+                      Remove
+                    </button>
+                  </article>
+                ))}
+              </div>
+            )}
           </section>
         ) : null}
 

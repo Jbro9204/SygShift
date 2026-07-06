@@ -1200,6 +1200,57 @@
   gap: 13px;
 }
 
+.trusted-device-check {
+  grid-column: 1 / -1;
+  width: fit-content;
+}
+
+.trusted-device-panel {
+  gap: 16px;
+}
+
+.trusted-device-empty {
+  margin: 0;
+  padding: 14px;
+  color: #6b6256;
+  background: #f7f3eb;
+  border: 1px dashed #d8ccba;
+  border-radius: 9px;
+}
+
+.trusted-device-list {
+  display: grid;
+  gap: 10px;
+}
+
+.trusted-device-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  background: #fffdf8;
+  border: 1px solid #e4dccf;
+  border-radius: 10px;
+}
+
+.trusted-device-item strong,
+.trusted-device-item span {
+  display: block;
+}
+
+.trusted-device-item strong {
+  color: #29241d;
+  font-size: 16px;
+}
+
+.trusted-device-item span {
+  margin-top: 4px;
+  color: #6a6258;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
 .security-complete {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -5019,6 +5070,10 @@
   .security-form-grid,
   .mfa-form,
   .security-complete {
+    grid-template-columns: 1fr;
+  }
+
+  .trusted-device-item {
     grid-template-columns: 1fr;
   }
 
