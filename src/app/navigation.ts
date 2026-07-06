@@ -18,6 +18,8 @@ import {
 } from 'lucide-react'
 import type { AppRole } from '../data/session'
 
+export const OPERATIONS_ROLES: AppRole[] = ['dispatcher', 'supervisor', 'admin']
+
 export interface NavigationItem {
   label: string
   path: string
@@ -44,8 +46,8 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: 'Workforce',
     items: [
-      { label: 'People', path: '/people', icon: UsersRound },
-      { label: 'Sites & posts', path: '/sites', icon: Building2 },
+      { label: 'People', path: '/people', icon: UsersRound, roles: OPERATIONS_ROLES },
+      { label: 'Sites & posts', path: '/sites', icon: Building2, roles: OPERATIONS_ROLES },
       { label: 'Patrol', path: '/patrol', icon: MapPinned },
       { label: 'Requests', path: '/requests', icon: ClipboardCheck },
     ],
@@ -53,9 +55,9 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: 'Communication',
     items: [
-      { label: 'Announcements', path: '/announcements', icon: Megaphone },
-      { label: 'Notifications', path: '/notifications', icon: Bell },
-      { label: 'Reports', path: '/reports', icon: FileBarChart },
+      { label: 'Announcements', path: '/announcements', icon: Megaphone, roles: OPERATIONS_ROLES },
+      { label: 'Notifications', path: '/notifications', icon: Bell, roles: OPERATIONS_ROLES },
+      { label: 'Reports', path: '/reports', icon: FileBarChart, roles: OPERATIONS_ROLES },
     ],
   },
   {

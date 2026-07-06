@@ -33,6 +33,14 @@ export function AppShell() {
     sessionContext?.mustChangePassword || (sessionContext?.mfaRequired && !sessionContext.hasMfa),
   )
   const isAccountSecurityRoute = location.pathname === '/account-security'
+  const requestedNavigationItem = navigationGroups
+    .flatMap((group) => group.items)
+    .find((item) => item.path === location.pathname)
+  const lacksRouteAccess = Boolean(
+    sessionContext
+      && requestedNavigationItem?.roles
+      && !requestedNavigationItem.roles.includes(sessionContext.role),
+  )
 
   useEffect(() => {
     setNavigationOpen(false)
@@ -132,6 +140,10 @@ export function AppShell() {
 
   if (isSupabaseConfigured && needsSecurityCheckpoint && !isAccountSecurityRoute) {
     return <Navigate to="/account-security" replace state={{ from: location }} />
+  }
+
+  if (isSupabaseConfigured && lacksRouteAccess) {
+    return <Navigate to="/" replace />
   }
 
   return (
