@@ -83,6 +83,7 @@ export function AccountSecurityPage() {
     [context?.username, password],
   )
   const verifiedFactor = factors.find((factor) => factor.status === 'verified') ?? null
+  const unverifiedFactor = factors.find((factor) => factor.status !== 'verified') ?? null
   const needsPassword = Boolean(context?.mustChangePassword)
   const needsMfa = Boolean(context?.mfaRequired && !context.hasMfa)
   const passwordWaitingForMfa = needsPassword && needsMfa
@@ -184,13 +185,35 @@ export function AccountSecurityPage() {
 
   async function handleStartEnrollment() {
     setErrorMessage(null)
-    setMessage(null)
+    setEnrollment(null)
+    setMfaCode('')
+    setMessage(
+      unverifiedFactor
+        ? 'Restarting authenticator setup and clearing the unfinished attempt.'
+        : 'Preparing authenticator setup.',
+    )
     setBusyAction('start-mfa')
 
     try {
-      setEnrollment(await startTotpEnrollment())
+      const nextEnrollment = await startTotpEnrollment()
+      setEnrollment(nextEnrollment)
+      setMessage('Authenticator setup is ready. Scan the QR code, then enter the six-digit code from the app.')
+      try {
+        setFactors(await listTotpFactors())
+      } catch {
+        // The QR code is already available; do not block setup on a secondary list refresh.
+      }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Authenticator setup failed.')
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Authenticator setup failed. Refresh the page and try again.',
+      )
+      try {
+        setFactors(await listTotpFactors())
+      } catch {
+        // Keep the original setup error visible instead of replacing it with a secondary refresh error.
+      }
     } finally {
       setBusyAction(null)
     }
@@ -372,6 +395,16 @@ export function AccountSecurityPage() {
               1Password. Enter the six-digit code when it appears.
             </p>
 
+            {unverifiedFactor && !enrollment && !verifiedFactor ? (
+              <div className="auth-notice auth-notice--warning auth-notice--inline" role="status">
+                <ShieldCheck aria-hidden="true" size={21} />
+                <span>
+                  An authenticator setup was started but not finished. Restarting setup will clear the unfinished attempt
+                  and show a fresh QR code.
+                </span>
+              </div>
+            ) : null}
+
             {!verifiedFactor && !enrollment ? (
               <button
                 className="primary-action"
@@ -379,7 +412,12 @@ export function AccountSecurityPage() {
                 onClick={handleStartEnrollment}
                 type="button"
               >
-                {busyAction === 'start-mfa' ? 'Preparing setup…' : 'Start authenticator setup'}
+                {busyAction === 'start-mfa' ? (
+                  <>
+                    <Loader2 aria-hidden="true" size={18} />
+                    Preparing setup…
+                  </>
+                ) : unverifiedFactor ? 'Restart authenticator setup' : 'Start authenticator setup'}
               </button>
             ) : null}
 

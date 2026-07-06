@@ -27,6 +27,33 @@ type SupabaseMfaFactor = {
   status?: string | null
 }
 
+function mfaErrorMessage(error: unknown, fallback: string): string {
+  if (typeof error === 'object' && error && 'message' in error && typeof error.message === 'string') {
+    return `${fallback} ${error.message}`
+  }
+  return fallback
+}
+
+export function normalizeTotpQrCode(qrCode: string): string {
+  const trimmed = qrCode.trim()
+  if (!trimmed) return trimmed
+
+  if (trimmed.startsWith('data:image/svg+xml')) {
+    const commaIndex = trimmed.indexOf(',')
+    if (commaIndex === -1) return trimmed
+
+    const prefix = trimmed.slice(0, commaIndex + 1)
+    const payload = trimmed.slice(commaIndex + 1)
+    return payload.includes('<') ? `${prefix}${encodeURIComponent(payload)}` : trimmed
+  }
+
+  if (trimmed.startsWith('<svg')) {
+    return `data:image/svg+xml;utf-8,${encodeURIComponent(trimmed)}`
+  }
+
+  return trimmed
+}
+
 export async function getAuthenticatorLevel(): Promise<MfaAuthenticatorLevel> {
   const { data, error } = await getSupabaseClient().auth.mfa.getAuthenticatorAssuranceLevel()
   if (error) throw new Error('The account security level could not be checked.')
@@ -48,18 +75,35 @@ export async function listTotpFactors(): Promise<MfaFactorSummary[]> {
   }))
 }
 
+export async function clearUnverifiedTotpFactors(): Promise<number> {
+  const factors = await listTotpFactors()
+  const unverifiedFactors = factors.filter((factor) => factor.status !== 'verified')
+
+  for (const factor of unverifiedFactors) {
+    const { error } = await getSupabaseClient().auth.mfa.unenroll({ factorId: factor.id })
+    if (error) throw new Error(mfaErrorMessage(error, 'Old authenticator setup could not be cleared.'))
+  }
+
+  return unverifiedFactors.length
+}
+
 export async function startTotpEnrollment(): Promise<MfaEnrollment> {
+  await clearUnverifiedTotpFactors()
+
   const { data, error } = await getSupabaseClient().auth.mfa.enroll({
     factorType: 'totp',
     friendlyName: TOTP_FRIENDLY_NAME,
     issuer: TOTP_ISSUER_NAME,
   })
 
-  if (error) throw new Error('Authenticator setup could not be started.')
+  if (error) throw new Error(mfaErrorMessage(error, 'Authenticator setup could not be started.'))
+  if (!data.totp?.qr_code || !data.totp.secret) {
+    throw new Error('Authenticator setup started, but the QR code was not returned. Refresh the page and try again.')
+  }
 
   return {
     factorId: data.id,
-    qrCode: data.totp.qr_code,
+    qrCode: normalizeTotpQrCode(data.totp.qr_code),
     secret: data.totp.secret,
   }
 }

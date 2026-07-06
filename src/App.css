@@ -946,6 +946,10 @@
   border: 1px solid #b9d8c8;
 }
 
+.auth-notice--inline {
+  margin: 0;
+}
+
 .security-card__heading {
   display: flex;
   align-items: flex-start;
