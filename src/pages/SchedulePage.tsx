@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
 import { CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, Edit3, MoveHorizontal, Plus, Search, ShieldAlert, Sparkles } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import { getCurrentAppRole } from '../data/session'
@@ -393,8 +394,9 @@ function ImportedShiftCard({ shift }: { shift: ImportedScheduleShift }) {
   )
 }
 
-export function SchedulePage() {
+export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler' } = {}) {
   const queryClient = useQueryClient()
+  const isSchedulerHome = mode === 'scheduler'
   const today = useMemo(() => operationalToday(), [])
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today, { weekStartsOn: 0 }))
   const [search, setSearch] = useState('')
@@ -439,15 +441,16 @@ export function SchedulePage() {
     enabled: isSupabaseConfigured,
   })
   const canBuildSchedule = roleQuery.data === 'dispatcher' || roleQuery.data === 'supervisor' || roleQuery.data === 'admin'
+  const canUseScheduler = canBuildSchedule && isSchedulerHome
   const builderOptionsQuery = useQuery({
     queryKey: ['schedule-builder-options'],
     queryFn: getScheduleBuilderOptions,
-    enabled: isSupabaseConfigured && canBuildSchedule,
+    enabled: isSupabaseConfigured && canUseScheduler,
   })
   const staffingSuggestionsQuery = useQuery({
     queryKey: ['schedule-staffing-suggestions', scheduleQuery.data?.id],
     queryFn: () => getScheduleStaffingSuggestions(scheduleQuery.data!.id),
-    enabled: isSupabaseConfigured && canBuildSchedule && scheduleQuery.data?.status === 'draft',
+    enabled: isSupabaseConfigured && canUseScheduler && scheduleQuery.data?.status === 'draft',
   })
   const availableSites = useMemo(() => {
     const sites = new Map<string, { id: string, name: string, time_zone: string }>()
@@ -741,6 +744,7 @@ export function SchedulePage() {
   }
 
   function editShift(shift: ScheduleShift) {
+    if (!canUseScheduler) return
     setBuilderOpen(false)
     setBuilderMessage(null)
     if (scheduleQuery.data?.status === 'draft') {
@@ -760,12 +764,22 @@ export function SchedulePage() {
       <section className="page-intro schedule-intro">
         <div>
           <p className="eyebrow">Operations</p>
-          <h1>Master schedule</h1>
+          <h1>{isSchedulerHome ? 'Scheduler workspace' : 'Master schedule'}</h1>
           <p className="page-summary">
-            A readable weekly view for permanent sites, one-time events, patrol, and dispatch coverage.
+            {isSchedulerHome
+              ? 'Build, edit, suggest, publish, or cancel schedule drafts from one focused workspace.'
+              : 'A readable weekly view for permanent sites, one-time events, patrol, and dispatch coverage.'}
           </p>
         </div>
-        {canBuildSchedule ? (
+        {canBuildSchedule && !isSchedulerHome ? (
+          <div className="schedule-intro__actions">
+            <Link className="primary-action" to="/scheduler">
+              <Edit3 aria-hidden="true" size={19} />
+              Open Scheduler
+            </Link>
+          </div>
+        ) : null}
+        {canUseScheduler ? (
           <div className="schedule-intro__actions">
             <button
               className="secondary-button"
@@ -813,7 +827,7 @@ export function SchedulePage() {
         </p>
       ) : null}
 
-      {cancelDraftConfirmOpen && scheduleQuery.data?.status === 'draft' ? (
+      {canUseScheduler && cancelDraftConfirmOpen && scheduleQuery.data?.status === 'draft' ? (
         <ModalDialog
           description={`This will discard draft revision ${scheduleQuery.data.revision} for ${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d, yyyy')}.`}
           onClose={() => setCancelDraftConfirmOpen(false)}
@@ -843,7 +857,7 @@ export function SchedulePage() {
         </ModalDialog>
       ) : null}
 
-      {canBuildSchedule ? (
+      {canUseScheduler ? (
         <section className={scheduleQuery.data?.status === 'draft' ? 'scheduler-workspace scheduler-workspace--draft' : 'scheduler-workspace'} aria-label="Scheduler workspace">
           <div className="scheduler-workspace__hero">
             <div>
@@ -935,7 +949,7 @@ export function SchedulePage() {
         </section>
       ) : null}
 
-      {scheduleQuery.data?.status === 'draft' && canBuildSchedule ? (
+      {scheduleQuery.data?.status === 'draft' && canUseScheduler ? (
         <section className="panel scheduler-suggestions" aria-labelledby="scheduler-suggestions-title">
           <div className="panel-heading">
             <div>
@@ -998,7 +1012,7 @@ export function SchedulePage() {
         </section>
       ) : null}
 
-      {canBuildSchedule && builderOpen ? (
+      {canUseScheduler && builderOpen ? (
         <section className="panel schedule-builder" aria-labelledby="schedule-builder-heading">
           <div className="panel-heading">
             <div>
@@ -1218,7 +1232,7 @@ export function SchedulePage() {
         </section>
       ) : null}
 
-      {resolvingShift ? (
+      {canUseScheduler && resolvingShift ? (
         <ReviewResolutionDialog
           employees={builderOptionsQuery.data?.employees ?? []}
           mutation={resolveReviewMutation}
@@ -1227,7 +1241,7 @@ export function SchedulePage() {
         />
       ) : null}
 
-      {editingShift ? (
+      {canUseScheduler && editingShift ? (
         <EditShiftDialog
           employees={builderOptionsQuery.data?.employees ?? []}
           mutation={updateDraftShiftMutation}
@@ -1237,7 +1251,7 @@ export function SchedulePage() {
         />
       ) : null}
 
-      {canBuildSchedule && reviewItems.length > 0 ? (
+      {canUseScheduler && reviewItems.length > 0 ? (
         <section className="panel schedule-review-workbench" aria-labelledby="schedule-review-workbench-title">
           <div className="schedule-review-workbench__heading">
             <div>
@@ -1534,8 +1548,8 @@ export function SchedulePage() {
                   <div className="schedule-day-cell" role="cell" key={dayKey}>
                     {shifts.map((shift) => (
                       <ShiftCard
-                        canEdit={canBuildSchedule}
-                        canResolve={canBuildSchedule}
+                        canEdit={canUseScheduler}
+                        canResolve={canUseScheduler}
                         compact
                         key={shift.id}
                         onEdit={editShift}
@@ -1573,8 +1587,8 @@ export function SchedulePage() {
                   <div className="schedule-day-cell" role="cell" key={dayKey}>
                     {shifts.map((shift) => (
                       <ShiftCard
-                        canEdit={canBuildSchedule}
-                        canResolve={canBuildSchedule}
+                        canEdit={canUseScheduler}
+                        canResolve={canUseScheduler}
                         key={shift.id}
                         onEdit={editShift}
                         onResolve={(targetShift) => {
@@ -1595,4 +1609,8 @@ export function SchedulePage() {
       </section>
     </div>
   )
+}
+
+export function SchedulerPage() {
+  return <SchedulePage mode="scheduler" />
 }

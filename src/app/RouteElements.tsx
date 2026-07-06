@@ -39,6 +39,9 @@ export const ReportsPageRoute = lazy(() =>
 export const SchedulePageRoute = lazy(() =>
   import('../pages/SchedulePage').then((module) => ({ default: module.SchedulePage })),
 )
+export const SchedulerPageRoute = lazy(() =>
+  import('../pages/SchedulePage').then((module) => ({ default: module.SchedulerPage })),
+)
 export const SitesPageRoute = lazy(() =>
   import('../pages/SitesPage').then((module) => ({ default: module.SitesPage })),
 )

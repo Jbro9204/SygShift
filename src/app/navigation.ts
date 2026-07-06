@@ -3,6 +3,7 @@ import {
   Building2,
   CalendarClock,
   CalendarDays,
+  CalendarPlus,
   ClipboardCheck,
   Database,
   FileBarChart,
@@ -35,6 +36,7 @@ export const navigationGroups: NavigationGroup[] = [
     items: [
       { label: 'Overview', path: '/', icon: LayoutDashboard },
       { label: 'Master schedule', path: '/schedule', icon: CalendarDays },
+      { label: 'Scheduler', path: '/scheduler', icon: CalendarPlus, roles: ['dispatcher', 'supervisor', 'admin'] },
       { label: 'Events & openings', path: '/events', icon: CalendarClock },
       { label: 'Time & attendance', path: '/time', icon: Timer },
     ],
