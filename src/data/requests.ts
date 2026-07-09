@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 
-const roleSchema = z.enum(['guard', 'dispatcher', 'supervisor', 'admin'])
+const roleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin'])
 const requestStatusSchema = z.enum(['pending', 'approved', 'declined', 'withdrawn', 'canceled'])
 
 const employeeSchema = z.object({
@@ -301,7 +301,7 @@ export async function decideTimeOff(
     target_decision: decision,
     target_note: note,
   })
-  if (error) throw new Error('The time-off decision was not saved. Check for assigned-shift conflicts.')
+  if (error) throw new Error(error.message || 'The time-off decision was not saved.')
 }
 
 export async function decideShiftRequest(

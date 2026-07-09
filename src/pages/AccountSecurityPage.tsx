@@ -69,6 +69,33 @@ type AccountSecurityLocationState = {
 
 type MfaMethod = MfaFactorType
 const SMS_MFA_ENABLED = import.meta.env.VITE_ENABLE_SMS_MFA === 'true'
+const TOTP_SETUP_STORAGE_KEY = 'sygshift:totp-setup'
+
+function readStoredTotpEnrollment(): MfaEnrollment | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.sessionStorage.getItem(TOTP_SETUP_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<MfaEnrollment>
+    if (!parsed.factorId || !parsed.qrCode || !parsed.secret) return null
+    return {
+      factorId: parsed.factorId,
+      qrCode: parsed.qrCode,
+      secret: parsed.secret,
+    }
+  } catch {
+    return null
+  }
+}
+
+function storeTotpEnrollment(enrollment: MfaEnrollment | null): void {
+  if (typeof window === 'undefined') return
+  if (!enrollment) {
+    window.sessionStorage.removeItem(TOTP_SETUP_STORAGE_KEY)
+    return
+  }
+  window.sessionStorage.setItem(TOTP_SETUP_STORAGE_KEY, JSON.stringify(enrollment))
+}
 
 export function AccountSecurityPage() {
   const navigate = useNavigate()
@@ -123,7 +150,13 @@ export function AccountSecurityPage() {
   const needsMfa = Boolean(context?.mfaRequired && !context.hasMfa)
   const passwordWaitingForMfa = needsPassword && needsMfa
   const isComplete = Boolean(context && !needsPassword && !needsMfa)
-  const canRememberDevice = Boolean(context?.mfaRequired && (context.role === 'admin' || context.role === 'supervisor'))
+  const canRememberDevice = Boolean(
+    context?.mfaRequired
+    && (context.role === 'admin'
+      || context.role === 'supervisor'
+      || context.role === 'scheduler'
+      || context.role === 'dispatcher'),
+  )
 
   useEffect(() => {
     let active = true
@@ -219,6 +252,15 @@ export function AccountSecurityPage() {
     setSelectedMfaMethod(availableVerifiedFactors[0].factorType)
   }, [availableVerifiedFactors, needsMfa, selectedMfaMethod])
 
+  useEffect(() => {
+    if (!needsMfa || enrollment || verifiedTotpFactor) return
+    const storedEnrollment = readStoredTotpEnrollment()
+    if (!storedEnrollment) return
+    setSelectedMfaMethod('totp')
+    setEnrollment(storedEnrollment)
+    setMessage('Authenticator setup is still active. Enter the six-digit code from your app to finish.')
+  }, [enrollment, needsMfa, verifiedTotpFactor])
+
   async function handlePasswordUpdate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setErrorMessage(null)
@@ -281,6 +323,7 @@ export function AccountSecurityPage() {
     if (method === 'phone' && !SMS_MFA_ENABLED) return
     setSelectedMfaMethod(method)
     setEnrollment(null)
+    if (method !== 'totp') storeTotpEnrollment(null)
     setPhoneEnrollment(null)
     setPhoneChallengeId(null)
     setMfaCode('')
@@ -291,6 +334,7 @@ export function AccountSecurityPage() {
   async function handleStartEnrollment() {
     setErrorMessage(null)
     setEnrollment(null)
+    storeTotpEnrollment(null)
     setPhoneEnrollment(null)
     setPhoneChallengeId(null)
     setSelectedMfaMethod('totp')
@@ -305,6 +349,7 @@ export function AccountSecurityPage() {
     try {
       const nextEnrollment = await startTotpEnrollment()
       setEnrollment(nextEnrollment)
+      storeTotpEnrollment(nextEnrollment)
       setMessage('Authenticator setup is ready. Scan the QR code, then enter the six-digit code from the app.')
       try {
         setFactors(await listMfaFactors())
@@ -336,6 +381,7 @@ export function AccountSecurityPage() {
     setErrorMessage(null)
     setMessage(null)
     setEnrollment(null)
+    storeTotpEnrollment(null)
     setPhoneEnrollment(null)
     setPhoneChallengeId(null)
     setSelectedMfaMethod('phone')
@@ -444,6 +490,7 @@ export function AccountSecurityPage() {
 
       const nextContext = await refreshContext()
       setEnrollment(null)
+      storeTotpEnrollment(null)
       setPhoneEnrollment(null)
       setPhoneChallengeId(null)
       setMfaCode('')
@@ -675,7 +722,7 @@ export function AccountSecurityPage() {
               ) : null}
             </div>
 
-            {selectedMfaMethod === 'totp' && unverifiedTotpFactor && !enrollment && !verifiedTotpFactor ? (
+            {(!SMS_MFA_ENABLED || selectedMfaMethod === 'totp') && unverifiedTotpFactor && !enrollment && !verifiedTotpFactor ? (
               <div className="auth-notice auth-notice--warning auth-notice--inline" role="status">
                 <ShieldCheck aria-hidden="true" size={21} />
                 <span>
@@ -685,7 +732,7 @@ export function AccountSecurityPage() {
               </div>
             ) : null}
 
-            {selectedMfaMethod === 'totp' && !verifiedTotpFactor && !enrollment ? (
+            {(!SMS_MFA_ENABLED || selectedMfaMethod === 'totp') && !verifiedTotpFactor && !enrollment ? (
               <button
                 className="primary-action"
                 disabled={busyAction === 'start-mfa'}
@@ -815,7 +862,7 @@ export function AccountSecurityPage() {
             <div>
               <h2 id="trusted-devices-title">Remembered devices</h2>
               <p>
-                These browsers can open supervisor/admin tools without another MFA prompt until they expire.
+                These browsers can open protected operations tools without another MFA prompt until they expire.
                 Signing out removes the remembered device from this browser.
               </p>
             </div>

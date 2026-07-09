@@ -41,8 +41,9 @@ export function patrolAssignmentLabel(shift: PatrolShift): string {
 export function patrolShiftTime(shift: PatrolShift): string {
   const day = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
-    month: 'short',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
     timeZone: shift.timeZone,
   }).format(new Date(shift.startsAt))
   const time = new Intl.DateTimeFormat('en-US', {

@@ -12,6 +12,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 const roleLabels: Record<DirectoryEntry['role'], string> = {
   dispatcher: 'Dispatcher',
   guard: 'Guard',
+  scheduler: 'Scheduler',
   supervisor: 'Supervisor',
   admin: 'Admin',
 }
@@ -20,6 +21,14 @@ const statusLabels: Record<DirectoryEntry['status'], string> = {
   leave: 'On leave',
   inactive: 'Inactive',
   separated: 'Separated',
+}
+
+function formatDateOnly(date: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(`${date}T12:00:00`))
 }
 
 function EmployeeIdentity({ employee }: { employee: DirectoryEntry }) {
@@ -89,7 +98,7 @@ function OperationalDetails({ employee }: { employee: DirectoryEntry }) {
             <dd>
               {credential.status}
               {credential.credential_number ? ` · ${credential.credential_number}` : ''}
-              {credential.expires_on ? ` · expires ${credential.expires_on}` : ''}
+              {credential.expires_on ? ` · expires ${formatDateOnly(credential.expires_on)}` : ''}
             </dd>
           </div>
         ))}

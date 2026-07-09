@@ -81,7 +81,7 @@ const builderOptionsSchema = z.object({
     first_name: z.string(),
     last_name: z.string(),
     preferred_name: z.string().nullable(),
-    role: z.enum(['guard', 'dispatcher', 'supervisor', 'admin']),
+    role: z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin']),
     employment_type: z.enum(['hourly', 'salary', 'contractor']),
     has_armed_guard_credential: z.boolean(),
   })),
@@ -112,7 +112,7 @@ const staffingSuggestionSchema = z.object({
   suggestions: z.array(z.object({
     employeeId: z.string().uuid(),
     name: z.string(),
-    role: z.enum(['guard', 'dispatcher', 'supervisor', 'admin']),
+    role: z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin']),
     employmentType: z.enum(['hourly', 'salary', 'contractor']),
     hasArmedCredential: z.boolean(),
     reason: z.string(),

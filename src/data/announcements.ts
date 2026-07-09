@@ -15,7 +15,7 @@ const templateSchema = z.object({
   description: z.string(),
   kind: z.enum(['general', 'open_shift', 'overtime', 'event']),
   requiredFields: z.array(fieldSchema),
-  recipientRoles: z.array(z.enum(['guard', 'dispatcher', 'supervisor', 'admin'])),
+  recipientRoles: z.array(z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin'])),
   displayOrder: z.number(),
 })
 
@@ -26,13 +26,13 @@ const recentAnnouncementSchema = z.object({
   kind: z.enum(['general', 'open_shift', 'overtime', 'event']),
   publishedAt: z.string().nullable(),
   expiresAt: z.string().nullable(),
-  recipientRoles: z.array(z.enum(['guard', 'dispatcher', 'supervisor', 'admin'])),
+  recipientRoles: z.array(z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin'])),
   requiresArmed: z.boolean(),
   createdBy: z.string(),
 })
 
 const composerSchema = z.object({
-  role: z.enum(['guard', 'dispatcher', 'supervisor', 'admin']),
+  role: z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin']),
   hasMfa: z.boolean(),
   templates: z.array(templateSchema),
   recentAnnouncements: z.array(recentAnnouncementSchema),
@@ -43,7 +43,7 @@ const previewSchema = z.object({
   title: z.string(),
   body: z.string(),
   kind: z.enum(['general', 'open_shift', 'overtime', 'event']),
-  recipientRoles: z.array(z.enum(['guard', 'dispatcher', 'supervisor', 'admin'])),
+  recipientRoles: z.array(z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin'])),
   requiresArmed: z.boolean(),
   recipientCount: z.number().int().nonnegative(),
 })

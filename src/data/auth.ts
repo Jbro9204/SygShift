@@ -10,7 +10,7 @@ const sessionContextSchema = z.object({
   employee_id: z.string().uuid(),
   username: z.string().min(1),
   display_name: z.string().min(1),
-  role: z.enum(['guard', 'dispatcher', 'supervisor', 'admin']),
+  role: z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin']),
   must_change_password: z.boolean(),
   password_changed_at: z.string().nullable(),
   mfa_enrolled_at: z.string().nullable(),
@@ -22,7 +22,7 @@ export type SessionContext = {
   employeeId: string
   username: string
   displayName: string
-  role: 'guard' | 'dispatcher' | 'supervisor' | 'admin'
+  role: 'guard' | 'dispatcher' | 'scheduler' | 'supervisor' | 'admin'
   mustChangePassword: boolean
   passwordChangedAt: string | null
   mfaEnrolledAt: string | null

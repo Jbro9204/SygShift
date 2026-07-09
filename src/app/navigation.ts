@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import type { AppRole } from '../data/session'
 
-export const OPERATIONS_ROLES: AppRole[] = ['dispatcher', 'supervisor', 'admin']
+export const OPERATIONS_ROLES: AppRole[] = ['dispatcher', 'scheduler', 'supervisor', 'admin']
 
 export interface NavigationItem {
   label: string
@@ -38,7 +38,7 @@ export const navigationGroups: NavigationGroup[] = [
     items: [
       { label: 'Overview', path: '/', icon: LayoutDashboard },
       { label: 'Schedule', path: '/schedule', icon: CalendarDays },
-      { label: 'Scheduler', path: '/scheduler', icon: CalendarPlus, roles: ['dispatcher', 'supervisor', 'admin'] },
+      { label: 'Scheduler', path: '/scheduler', icon: CalendarPlus, roles: OPERATIONS_ROLES },
       { label: 'Events & Openings', path: '/events', icon: CalendarClock },
       { label: 'Time & Attendance', path: '/time', icon: Timer },
     ],

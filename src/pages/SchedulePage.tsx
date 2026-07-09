@@ -268,7 +268,7 @@ function EditShiftDialog({
         <div className="form-grid form-grid--two">
           <label><span>Headcount</span><input defaultValue={shift.headcount_required} min={1} name="headcount" required type="number" /></label>
           <label>
-            <span>Assign employee</span>
+            <span>Switch / assign employee</span>
             <select defaultValue={assignedEmployeeId} name="employeeId">
               <option value="">Leave open / unassigned</option>
               {eligibleEmployees.map((employee) => (
@@ -437,7 +437,7 @@ function SchedulerShiftPanel({
         <section className="scheduler-shift-panel__section">
           <span className="scheduler-shift-panel__label">Details</span>
           <dl className="scheduler-shift-details">
-            <div><dt>Date</dt><dd>{format(new Date(`${shiftOperationalDate(shift)}T12:00:00`), 'EEEE, MMM d')}</dd></div>
+            <div><dt>Date</dt><dd>{format(new Date(`${shiftOperationalDate(shift)}T12:00:00`), 'EEEE, MM/dd/yyyy')}</dd></div>
             <div><dt>Time</dt><dd>{shiftTimeRange(shift)}</dd></div>
             <div><dt>Needed</dt><dd>{shift.headcount_required}</dd></div>
             <div><dt>Open</dt><dd>{openSlots}</dd></div>
@@ -500,7 +500,7 @@ function SchedulerShiftPanel({
 
         <form className="scheduler-panel-assign" onSubmit={submitAssignment}>
           <label>
-            Assign manually
+            Switch / assign manually
             <select disabled={!isDraft || isSaving || eligibleEmployees.length === 0} name="employeeId">
               <option value="">Leave open / unassigned</option>
               {eligibleEmployees.map((employee) => (
@@ -515,6 +515,9 @@ function SchedulerShiftPanel({
           <button className="primary-action" disabled={!isDraft || isSaving} type="submit">
             {isSaving ? 'Saving...' : 'Save assignment'}
           </button>
+          <p className="form-note">
+            Use this for call-offs and coverage changes. Saving replaces the current active assignment for this shift and keeps the draft unpublished until you approve it.
+          </p>
         </form>
 
         {!isDraft ? (
@@ -597,6 +600,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
   const weekEnd = days[6]
   const weekKey = format(weekStart, 'yyyy-MM-dd')
+  const currentOperationalDateKey = format(today, 'yyyy-MM-dd')
   const planningWeeks = useMemo(() => {
     const currentWeek = startOfWeek(today, { weekStartsOn: 0 })
     return Array.from({ length: 6 }, (_, index) => {
@@ -604,7 +608,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       return {
         key: format(startsOn, 'yyyy-MM-dd'),
         label: index === 0 ? 'This week' : `Week ${index + 1}`,
-        range: `${format(startsOn, 'MMM d')} - ${format(addDays(startsOn, 6), 'MMM d')}`,
+        range: `${format(startsOn, 'MM/dd/yyyy')} - ${format(addDays(startsOn, 6), 'MM/dd/yyyy')}`,
         startsOn,
       }
     })
@@ -625,7 +629,10 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     queryFn: getCurrentAppRole,
     enabled: isSupabaseConfigured,
   })
-  const canBuildSchedule = roleQuery.data === 'dispatcher' || roleQuery.data === 'supervisor' || roleQuery.data === 'admin'
+  const canBuildSchedule = roleQuery.data === 'dispatcher'
+    || roleQuery.data === 'scheduler'
+    || roleQuery.data === 'supervisor'
+    || roleQuery.data === 'admin'
   const canUseScheduler = canBuildSchedule && isSchedulerHome
   const builderOptionsQuery = useQuery({
     queryKey: ['schedule-builder-options'],
@@ -803,7 +810,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         ...row,
         shifts: row.shifts.filter((shift) => {
           const source = parseImportedScheduleNote(shift.notes)
-          if (reviewOnly && !source.reviewNeeded) return false
+          if (reviewOnly && (!source.reviewNeeded || shiftOperationalDate(shift) < currentOperationalDateKey)) return false
           if (!term) return true
           const searchable = [
             row.name,
@@ -823,7 +830,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         }),
       }))
       .filter((row) => row.shifts.length > 0)
-  }, [rows, reviewOnly, search, siteFilter])
+  }, [currentOperationalDateKey, rows, reviewOnly, search, siteFilter])
   const visibleEmployeeRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
     const selectedEmployee = employeeFilter === 'all'
@@ -839,7 +846,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         ...row,
         shifts: row.shifts.filter((shift) => {
           const source = parseImportedScheduleNote(shift.notes)
-          if (reviewOnly && !source.reviewNeeded) return false
+          if (reviewOnly && (!source.reviewNeeded || shiftOperationalDate(shift) < currentOperationalDateKey)) return false
           if (!term) return true
           const searchable = [
             row.name,
@@ -857,7 +864,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         }),
       }))
       .filter((row) => employeeFilter !== 'all' || row.shifts.length > 0)
-  }, [employeeFilter, employeeFilterOptions, employeeRows, reviewOnly, search])
+  }, [currentOperationalDateKey, employeeFilter, employeeFilterOptions, employeeRows, reviewOnly, search])
   const focusedEmployeeId = scheduleView === 'employee' && employeeFilter !== 'all' ? employeeFilter : null
   const scheduleSummary = useMemo(() => {
     const shifts = rows.flatMap((row) => row.shifts)
@@ -867,20 +874,20 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       assigned,
       employees: employeeRows.length,
       open,
-      review: shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length,
+      review: shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey).length,
       shifts: shifts.length,
       sites: rows.length,
     }
-  }, [employeeRows.length, rows])
+  }, [currentOperationalDateKey, employeeRows.length, rows])
   const visibleScheduleSummary = useMemo(() => {
     const activeRows = focusedEmployeeId ? visibleEmployeeRows : visibleRows
     const shifts = activeRows.flatMap((row) => row.shifts)
     return {
       open: shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0),
-      review: shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length,
+      review: shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey).length,
       shifts: shifts.length,
     }
-  }, [focusedEmployeeId, visibleEmployeeRows, visibleRows])
+  }, [currentOperationalDateKey, focusedEmployeeId, visibleEmployeeRows, visibleRows])
   const staffingWorkItems = useMemo(() => {
     if (scheduleQuery.data?.status !== 'draft') return []
     return scheduleQuery.data.shifts
@@ -900,19 +907,21 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       .sort((left, right) => left.shift.starts_at.localeCompare(right.shift.starts_at))
   }, [scheduleQuery.data, suggestionsByShift])
   const reviewNeededCount = useMemo(
-    () => rows.reduce((total, row) => total + row.shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length, 0),
-    [rows],
+    () => rows.reduce((total, row) => total + row.shifts.filter((shift) =>
+      parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey,
+    ).length, 0),
+    [currentOperationalDateKey, rows],
   )
   const reviewItems = useMemo(() => rows.flatMap((row) =>
     row.shifts
-      .filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded)
+      .filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey)
       .map((shift) => ({
         row,
         shift,
         source: parseImportedScheduleNote(shift.notes),
         sourceReference: sourceReferenceLabel(parseImportedScheduleNote(shift.notes)),
       })),
-  ).sort((left, right) => left.shift.starts_at.localeCompare(right.shift.starts_at)), [rows])
+  ).sort((left, right) => left.shift.starts_at.localeCompare(right.shift.starts_at)), [currentOperationalDateKey, rows])
   const armedReviewCount = useMemo(
     () => reviewItems.filter((item) => item.shift.requires_armed).length,
     [reviewItems],
@@ -925,9 +934,11 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       .filter((shift) => shiftOperationalDate(shift) === dayKey)
       .sort((left, right) => left.starts_at.localeCompare(right.starts_at))
     const openSlots = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
-    const reviewCount = shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
+    const reviewCount = shifts.filter((shift) =>
+      parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey,
+    ).length
     return { day, dayKey, openSlots, reviewCount, shifts }
-  }), [days, focusedEmployeeId, visibleEmployeeRows, visibleRows])
+  }), [currentOperationalDateKey, days, focusedEmployeeId, visibleEmployeeRows, visibleRows])
   const schedulerCoverageGroups = useMemo<SchedulerCoverageGroup[]>(() => visibleRows.map((row) => {
     const lanes = new Map<string, SchedulerCoverageLane>()
 
@@ -945,7 +956,9 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
     const shifts = row.shifts
     const openSlots = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
-    const reviewCount = shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
+    const reviewCount = shifts.filter((shift) =>
+      parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey,
+    ).length
     const status: SchedulerCoverageGroup['status'] = shifts.length === 0
       ? 'empty'
       : openSlots > 0
@@ -969,10 +982,12 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       shiftCount: shifts.length,
       status,
     }
-  }), [visibleRows])
+  }), [currentOperationalDateKey, visibleRows])
   const schedulerLocationSummaries = useMemo(() => rows.map((row) => {
     const openSlots = row.shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
-    const reviewCount = row.shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
+    const reviewCount = row.shifts.filter((shift) =>
+      parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey,
+    ).length
     const status: SchedulerCoverageGroup['status'] = row.shifts.length === 0
       ? 'empty'
       : openSlots > 0
@@ -989,7 +1004,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       shiftCount: row.shifts.length,
       status,
     }
-  }), [rows])
+  }), [currentOperationalDateKey, rows])
   const selectedPlannerShift = useMemo(() => {
     if (!selectedPlannerShiftId) return null
     return scheduleQuery.data?.shifts.find((shift) => shift.id === selectedPlannerShiftId) ?? null
@@ -1141,7 +1156,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
       {canUseScheduler && cancelDraftConfirmOpen && scheduleQuery.data?.status === 'draft' ? (
         <ModalDialog
-          description={`This will discard draft revision ${scheduleQuery.data.revision} for ${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d, yyyy')}.`}
+          description={`This will discard draft revision ${scheduleQuery.data.revision} for ${format(weekStart, 'MM/dd/yyyy')} - ${format(weekEnd, 'MM/dd/yyyy')}.`}
           onClose={() => setCancelDraftConfirmOpen(false)}
           title="Cancel this schedule draft?"
         >
@@ -1644,7 +1659,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             <div>
               <p className="eyebrow">Week planner</p>
               <h2 id="scheduler-planner-title">
-                {format(weekStart, 'MMM d')} – {format(weekEnd, 'MMM d, yyyy')}
+                {format(weekStart, 'MM/dd/yyyy')} – {format(weekEnd, 'MM/dd/yyyy')}
               </h2>
               <p>Work coverage by site and post, select a shift for details, then assign, edit, or resolve review items from one focused panel.</p>
               <div className="scheduler-planner__week-nav" aria-label="Planner week controls">
@@ -1791,7 +1806,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                           {days.map((day) => (
                             <div key={day.toISOString()} role="columnheader">
                               <span>{format(day, 'EEE')}</span>
-                              <strong>{format(day, 'd')}</strong>
+                              <strong>{format(day, 'MM/dd/yyyy')}</strong>
                             </div>
                           ))}
                         </div>
@@ -1871,7 +1886,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   <header>
                     <div>
                       <span>{format(bucket.day, 'EEE')}</span>
-                      <strong>{format(bucket.day, 'MMM d')}</strong>
+                      <strong>{format(bucket.day, 'MM/dd/yyyy')}</strong>
                     </div>
                     <small>
                       {bucket.shifts.length} shift{bucket.shifts.length === 1 ? '' : 's'}
@@ -1937,7 +1952,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             <ChevronRight aria-hidden="true" size={22} />
           </button>
           <h2>
-            {format(weekStart, 'MMM d')} – {format(weekEnd, 'MMM d, yyyy')}
+            {format(weekStart, 'MM/dd/yyyy')} – {format(weekEnd, 'MM/dd/yyyy')}
           </h2>
         </div>
 
@@ -2059,7 +2074,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               <article className="mobile-schedule-day" key={dayKey}>
                 <header>
                   <span>{format(day, 'EEEE')}</span>
-                  <strong>{format(day, 'MMM d')}</strong>
+                  <strong>{format(day, 'MM/dd/yyyy')}</strong>
                 </header>
                 {rowsForDay.length ? rowsForDay.map((row) => (
                   <div className="mobile-schedule-location" key={row.id}>
@@ -2097,7 +2112,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               <article className="mobile-schedule-day" key={dayKey}>
                 <header>
                   <span>{format(day, 'EEEE')}</span>
-                  <strong>{format(day, 'MMM d')}</strong>
+                  <strong>{format(day, 'MM/dd/yyyy')}</strong>
                 </header>
                 {rowsForDay.length ? rowsForDay.map((row) => (
                   <div className="mobile-schedule-location" key={row.id}>
@@ -2140,7 +2155,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             {days.map((day) => (
               <div className="schedule-day-column" key={day.toISOString()} role="columnheader">
                 <span>{format(day, 'EEE')}</span>
-                <strong>{format(day, 'd')}</strong>
+                <strong>{format(day, 'MM/dd/yyyy')}</strong>
               </div>
             ))}
           </div>

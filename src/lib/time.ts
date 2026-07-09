@@ -16,13 +16,17 @@ export function operationalToday(now = new Date()): Date {
 }
 
 export function formatOperationalDate(now = new Date()): string {
-  return new Intl.DateTimeFormat('en-US', {
-    day: 'numeric',
-    month: 'long',
+  const weekday = new Intl.DateTimeFormat('en-US', {
     timeZone: OPERATIONAL_TIME_ZONE,
     weekday: 'long',
+  }).format(now)
+  const date = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: OPERATIONAL_TIME_ZONE,
     year: 'numeric',
   }).format(now)
+  return `${weekday}, ${date}`
 }
 
 export function formatOperationalTime(now = new Date()): string {

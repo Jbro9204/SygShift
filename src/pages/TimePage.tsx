@@ -97,10 +97,11 @@ function formatTime(value: string, timeZone = OPERATIONAL_TIME_ZONE): string {
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('en-US', {
-    day: 'numeric',
-    month: 'short',
+    day: '2-digit',
+    month: '2-digit',
     timeZone: OPERATIONAL_TIME_ZONE,
     weekday: 'short',
+    year: 'numeric',
   }).format(new Date(value))
 }
 

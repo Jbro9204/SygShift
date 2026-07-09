@@ -53,6 +53,31 @@ function useRequestAction() {
         case 'publish-call-off': return publishCallOffOpening(action.callOffId, action.title, action.body)
       }
     },
+    onMutate: async (action) => {
+      if (action.kind !== 'decide-time-off' && action.kind !== 'decide-shift') return undefined
+
+      await queryClient.cancelQueries({ queryKey: ['request-center'] })
+      const previous = queryClient.getQueryData<Awaited<ReturnType<typeof getRequestCenter>>>(['request-center'])
+
+      if (previous) {
+        queryClient.setQueryData<Awaited<ReturnType<typeof getRequestCenter>>>(['request-center'], {
+          ...previous,
+          timeOff: action.kind === 'decide-time-off'
+            ? previous.timeOff.filter((request) => request.id !== action.requestId)
+            : previous.timeOff,
+          shiftRequests: action.kind === 'decide-shift'
+            ? previous.shiftRequests.filter((request) => request.id !== action.requestId)
+            : previous.shiftRequests,
+        })
+      }
+
+      return { previous }
+    },
+    onError: (_error, _action, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['request-center'], context.previous)
+      }
+    },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['request-center'] }),
@@ -66,8 +91,9 @@ function useRequestAction() {
 function formatShiftDate(shift: RequestShift): string {
   const date = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
-    month: 'short',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
     timeZone: shift.time_zone,
   }).format(new Date(shift.starts_at))
   const time = new Intl.DateTimeFormat('en-US', {
@@ -80,6 +106,20 @@ function formatShiftDate(shift: RequestShift): string {
 
 function StatusBadge({ status }: { status: string }) {
   return <span className={`status-badge status-badge--${status}`}>{status.replace('_', ' ')}</span>
+}
+
+function formatRequestDate(date: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(`${date}T12:00:00`))
+}
+
+function formatRequestDateRange(request: Pick<TimeOffRequest, 'starts_on' | 'ends_on'>): string {
+  const start = formatRequestDate(request.starts_on)
+  const end = formatRequestDate(request.ends_on)
+  return start === end ? start : `${start} â€“ ${end}`
 }
 
 function GuardTimeOffForm({ mutation }: { mutation: ReturnType<typeof useRequestAction> }) {
@@ -278,7 +318,7 @@ function GuardHistory({
         {timeOff.map((request) => (
           <article className="history-row" key={request.id}>
             <div>
-              <strong>Time off · {request.starts_on}{request.ends_on !== request.starts_on ? ` – ${request.ends_on}` : ''}</strong>
+              <strong>Time off · {formatRequestDateRange(request)}</strong>
               <span>{request.reason || 'No note provided'}</span>
             </div>
             <div className="history-row__actions">
@@ -335,10 +375,12 @@ function DecisionDialog({
   state,
   mutation,
   onClose,
+  onDecided,
 }: {
   state: DecisionDialogState
   mutation: ReturnType<typeof useRequestAction>
   onClose: () => void
+  onDecided: (message: string) => void
 }) {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -346,7 +388,12 @@ function DecisionDialog({
     const action: RequestAction = state.category === 'time-off'
       ? { kind: 'decide-time-off', requestId: state.id, decision: state.decision, note }
       : { kind: 'decide-shift', requestId: state.id, decision: state.decision, note }
-    mutation.mutate(action, { onSuccess: onClose })
+    mutation.mutate(action, {
+      onSuccess: () => {
+        onDecided(`${state.category === 'time-off' ? 'Time-off request' : 'Shift request'} ${state.decision}.`)
+        onClose()
+      },
+    })
   }
 
   return (
@@ -479,7 +526,7 @@ function SupervisorQueue({
                 <article className="approval-card" key={request.id}>
                   <div>
                     <span className="approval-card__person">{employeeName(request.employee)}</span>
-                    <h3>{request.starts_on}{request.ends_on !== request.starts_on ? ` – ${request.ends_on}` : ''}</h3>
+                    <h3>{formatRequestDateRange(request)}</h3>
                     <p>{request.reason || 'No note provided'}</p>
                   </div>
                   <div className="approval-actions">
@@ -518,13 +565,17 @@ export function RequestsPage() {
   const [pendingCallOff, setPendingCallOff] = useState<PendingCallOff | null>(null)
   const [decision, setDecision] = useState<DecisionDialogState | null>(null)
   const [announcement, setAnnouncement] = useState<CallOffReport | null>(null)
+  const [actionMessage, setActionMessage] = useState<string | null>(null)
   const requestQuery = useQuery({
     queryKey: ['request-center'],
     queryFn: getRequestCenter,
     enabled: isSupabaseConfigured,
   })
   const mutation = useRequestAction()
-  const privileged = requestQuery.data?.role === 'dispatcher' || requestQuery.data?.role === 'supervisor' || requestQuery.data?.role === 'admin'
+  const privileged = requestQuery.data?.role === 'dispatcher'
+    || requestQuery.data?.role === 'scheduler'
+    || requestQuery.data?.role === 'supervisor'
+    || requestQuery.data?.role === 'admin'
   const guardAssignments = useMemo(
     () => requestQuery.data?.upcomingAssignments ?? [],
     [requestQuery.data?.upcomingAssignments],
@@ -564,6 +615,7 @@ export function RequestsPage() {
       ) : (
         <>
           {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+          {actionMessage ? <div className="form-feedback form-feedback--success" role="status">{actionMessage}</div> : null}
           {privileged ? (
             <SupervisorQueue
               callOffs={requestQuery.data.callOffs}
@@ -590,7 +642,14 @@ export function RequestsPage() {
       )}
 
       {pendingCallOff ? <CallOffConfirmation mutation={mutation} onClose={() => setPendingCallOff(null)} pending={pendingCallOff} /> : null}
-      {decision ? <DecisionDialog mutation={mutation} onClose={() => setDecision(null)} state={decision} /> : null}
+      {decision ? (
+        <DecisionDialog
+          mutation={mutation}
+          onClose={() => setDecision(null)}
+          onDecided={setActionMessage}
+          state={decision}
+        />
+      ) : null}
       {announcement ? <AnnouncementDialog mutation={mutation} onClose={() => setAnnouncement(null)} report={announcement} /> : null}
     </div>
   )

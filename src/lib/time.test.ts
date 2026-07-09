@@ -13,7 +13,7 @@ describe('operational time', () => {
   it('labels the date and time in Mountain Time', () => {
     const instant = new Date('2026-07-03T18:45:00.000Z')
 
-    expect(formatOperationalDate(instant)).toBe('Friday, July 3, 2026')
+    expect(formatOperationalDate(instant)).toBe('Friday, 07/03/2026')
     expect(formatOperationalTime(instant)).toMatch(/^12:45 PM MDT$/)
   })
 })

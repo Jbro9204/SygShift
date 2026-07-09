@@ -40,58 +40,30 @@ export type OpportunityRequest = z.infer<typeof requestSchema>
 
 export interface OpportunityContext {
   employeeId: string
-  role: 'guard' | 'dispatcher' | 'supervisor' | 'admin'
+  role: 'guard' | 'dispatcher' | 'scheduler' | 'supervisor' | 'admin'
   opportunities: Opportunity[]
 }
 
 export async function getOpenOpportunities(): Promise<OpportunityContext> {
   const client = getSupabaseClient()
-  const [employeeResult, roleResult, opportunitiesResult] = await Promise.all([
-    client.rpc('current_employee_id'),
-    client.rpc('current_app_role'),
-    client
-      .from('shifts')
-      .select(`
-        id,
-        starts_at,
-        ends_at,
-        time_zone,
-        headcount_required,
-        requires_armed,
-        is_overtime,
-        notes,
-        post:posts (id, name, site:sites (id, name, code)),
-        event:events (id, name, location_name, site:sites (id, name, code)),
-        schedules!inner (status),
-        assignments:shift_assignments (id, status),
-        requests:shift_requests (id, employee_id, status)
-      `)
-      .eq('is_open', true)
-      .eq('schedules.status', 'published')
-      .gt('ends_at', new Date().toISOString())
-      .order('starts_at')
-      .limit(100),
-  ])
+  const { data, error } = await client.rpc('get_open_opportunities_payload')
 
-  if (employeeResult.error || !employeeResult.data) {
-    throw new Error('An active employee account is required to view openings.')
-  }
-  if (roleResult.error || !roleResult.data) {
-    throw new Error('Your application role could not be verified.')
-  }
-  if (opportunitiesResult.error) {
-    throw new Error('Open shifts and events could not be loaded for this account.')
+  if (error) {
+    throw new Error(error.message || 'Open shifts and events could not be loaded for this account.')
   }
 
-  const role = z.enum(['guard', 'dispatcher', 'supervisor', 'admin']).parse(roleResult.data)
-  const employeeId = z.string().uuid().parse(employeeResult.data)
-  const opportunities = z.array(opportunitySchema).parse(opportunitiesResult.data).map((item) => ({
+  const payload = z.object({
+    employeeId: z.string().uuid(),
+    role: z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin']),
+    opportunities: z.array(opportunitySchema),
+  }).parse(data)
+  const opportunities = payload.opportunities.map((item) => ({
     ...item,
     assignments: item.assignments.filter((assignment) => assignment.status !== 'canceled'),
-    requests: item.requests.filter((request) => request.employee_id === employeeId),
+    requests: item.requests.filter((request) => request.employee_id === payload.employeeId),
   }))
 
-  return { employeeId, role, opportunities }
+  return { employeeId: payload.employeeId, role: payload.role, opportunities }
 }
 
 export async function submitOpportunityRequest(shiftId: string): Promise<string> {

@@ -6952,6 +6952,52 @@
   font-size: 15px;
 }
 
+.credential-management-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid #e6dfd2;
+}
+
+.credential-editor {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  background: #fffdfa;
+  border: 1px solid #e3dac8;
+  border-radius: 12px;
+}
+
+.credential-editor__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.credential-editor__heading strong {
+  color: #28241d;
+  font-size: 16px;
+}
+
+.credential-editor__heading span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  color: #5f4619;
+  background: #f7ecd4;
+  border: 1px solid #e8d3a8;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.credential-editor textarea {
+  min-height: 74px;
+}
+
 .account-control-panel {
   display: grid;
   gap: 12px;

@@ -30,7 +30,7 @@ interface SessionContext {
   employee_id: string
   username: string
   display_name: string
-  role: 'guard' | 'dispatcher' | 'supervisor' | 'admin'
+  role: 'guard' | 'dispatcher' | 'scheduler' | 'supervisor' | 'admin'
   has_mfa: boolean
 }
 
@@ -41,7 +41,7 @@ interface AuthTarget {
   username: string
   authEmail: string
   displayName: string
-  role: 'guard' | 'dispatcher' | 'supervisor' | 'admin'
+  role: 'guard' | 'dispatcher' | 'scheduler' | 'supervisor' | 'admin'
   employmentType: 'hourly' | 'salary'
   status: 'active' | 'leave' | 'inactive' | 'separated'
   existingAuthUserId: string | null

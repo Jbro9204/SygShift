@@ -4,7 +4,7 @@ import { getSupabaseClient } from '../lib/supabase'
 const timeEventKindSchema = z.enum(['clock_in', 'break_start', 'break_end', 'clock_out'])
 const timeEventSourceSchema = z.enum(['web', 'mobile_web', 'supervisor', 'import', 'system'])
 const assignmentStatusSchema = z.enum(['assigned', 'confirmed', 'canceled', 'completed'])
-const appRoleSchema = z.enum(['guard', 'dispatcher', 'supervisor', 'admin'])
+const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary'])
 
 const timekeepingEmployeeSchema = z.object({

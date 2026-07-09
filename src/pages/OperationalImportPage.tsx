@@ -202,7 +202,7 @@ function EmployeeEditor({ item, pending, onClose, onSave }: {
         </div>
         <div className="form-grid form-grid--three">
           <label><span>Preferred name</span><input name="preferredName" /></label>
-          <label><span>Role</span><select defaultValue={payloadText(item.source_payload, 'roleCandidate') || 'guard'} name="role"><option value="guard">Guard</option><option value="supervisor">Supervisor</option><option value="admin">Admin</option></select></label>
+          <label><span>Role</span><select defaultValue={payloadText(item.source_payload, 'roleCandidate') || 'guard'} name="role"><option value="guard">Guard</option><option value="dispatcher">Dispatcher</option><option value="scheduler">Scheduler</option><option value="supervisor">Supervisor</option><option value="admin">Admin</option></select></label>
           <label><span>Employment</span><select defaultValue="hourly" name="employmentType"><option value="hourly">Hourly</option><option value="salary">Salary</option></select></label>
         </div>
         <div className="form-grid form-grid--three">

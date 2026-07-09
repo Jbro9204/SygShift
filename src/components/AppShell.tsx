@@ -11,9 +11,13 @@ import {
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDate, formatOperationalTime } from '../lib/time'
 
+const INACTIVITY_WARNING_MS = 8 * 60 * 1000
+const INACTIVITY_LOGOUT_MS = 10 * 60 * 1000
+
 function displayRole(role: SessionContext['role']): string {
   if (role === 'admin') return 'Admin'
   if (role === 'dispatcher') return 'Dispatcher'
+  if (role === 'scheduler') return 'Scheduler'
   if (role === 'supervisor') return 'Supervisor'
   return 'Guard'
 }
@@ -23,6 +27,7 @@ export function AppShell() {
   const [sessionContext, setSessionContext] = useState<SessionContext | null>(null)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [authMessage, setAuthMessage] = useState<string | null>(null)
+  const [logoutWarningRemaining, setLogoutWarningRemaining] = useState<number | null>(null)
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -128,6 +133,66 @@ export function AppShell() {
       setAuthMessage(error instanceof Error ? error.message : 'Sign out failed.')
     }
   }
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !sessionContext) {
+      setLogoutWarningRemaining(null)
+      return
+    }
+
+    let warningTimer: number | undefined
+    let logoutTimer: number | undefined
+    let countdownTimer: number | undefined
+    let logoutAt = Date.now() + INACTIVITY_LOGOUT_MS
+
+    const clearTimers = () => {
+      if (warningTimer) window.clearTimeout(warningTimer)
+      if (logoutTimer) window.clearTimeout(logoutTimer)
+      if (countdownTimer) window.clearInterval(countdownTimer)
+    }
+
+    const autoSignOut = async () => {
+      clearTimers()
+      setLogoutWarningRemaining(null)
+      try {
+        await signOut()
+      } finally {
+        setSessionContext(null)
+        navigate('/login', { replace: true, state: { reason: 'inactive' } })
+      }
+    }
+
+    const startTimers = () => {
+      clearTimers()
+      setLogoutWarningRemaining(null)
+      logoutAt = Date.now() + INACTIVITY_LOGOUT_MS
+      warningTimer = window.setTimeout(() => {
+        setLogoutWarningRemaining(Math.max(0, Math.ceil((logoutAt - Date.now()) / 1000)))
+        countdownTimer = window.setInterval(() => {
+          setLogoutWarningRemaining(Math.max(0, Math.ceil((logoutAt - Date.now()) / 1000)))
+        }, 1000)
+      }, INACTIVITY_WARNING_MS)
+      logoutTimer = window.setTimeout(() => {
+        void autoSignOut()
+      }, INACTIVITY_LOGOUT_MS)
+    }
+
+    const handleActivity = () => {
+      if (document.visibilityState === 'hidden') return
+      startTimers()
+    }
+
+    const events: Array<keyof WindowEventMap> = ['keydown', 'mousedown', 'mousemove', 'scroll', 'touchstart', 'wheel']
+    for (const event of events) window.addEventListener(event, handleActivity, { passive: true })
+    document.addEventListener('visibilitychange', handleActivity)
+    startTimers()
+
+    return () => {
+      clearTimers()
+      for (const event of events) window.removeEventListener(event, handleActivity)
+      document.removeEventListener('visibilitychange', handleActivity)
+    }
+  }, [navigate, sessionContext])
 
   if (authLoading) {
     return (
@@ -264,6 +329,13 @@ export function AppShell() {
         {authMessage ? (
           <div className="shell-alert" role="alert">
             {authMessage}
+          </div>
+        ) : null}
+
+        {logoutWarningRemaining !== null ? (
+          <div className="shell-alert shell-alert--warning" role="alert">
+            You will be signed out for inactivity in {Math.ceil(logoutWarningRemaining / 60)} minute
+            {Math.ceil(logoutWarningRemaining / 60) === 1 ? '' : 's'}. Move, tap, or type to stay signed in.
           </div>
         ) : null}
 

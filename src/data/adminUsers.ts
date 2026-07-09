@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 import { getTrustedDeviceToken } from '../lib/trustedDeviceToken'
 
-const appRoleSchema = z.enum(['guard', 'dispatcher', 'supervisor', 'admin'])
+const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary'])
 const employeeStatusSchema = z.enum(['active', 'leave', 'inactive', 'separated'])
 const accountStatusSchema = z.enum(['not_created', 'active', 'disabled'])
@@ -111,6 +111,8 @@ const welcomeEmailResponseSchema = z.object({
 })
 
 export type AppRole = z.infer<typeof appRoleSchema>
+export type CredentialKind = z.infer<typeof credentialSchema>['kind']
+export type CredentialStatus = z.infer<typeof credentialSchema>['status']
 export type EmploymentType = z.infer<typeof employmentTypeSchema>
 export type EmployeeStatus = z.infer<typeof employeeStatusSchema>
 export type AccountStatus = z.infer<typeof accountStatusSchema>
@@ -134,6 +136,16 @@ export interface EmployeeMutationInput {
   personalEmail?: string | null
   companyEmail?: string | null
   mobilePhone?: string | null
+}
+
+export interface EmployeeCredentialMutationInput {
+  employeeId: string
+  kind: CredentialKind
+  status: CredentialStatus
+  credentialNumber?: string | null
+  validFrom?: string | null
+  expiresOn?: string | null
+  notes?: string | null
 }
 
 function cleanOptional(value: string | null | undefined): string | null {
@@ -200,6 +212,20 @@ export async function updateEmployee(input: EmployeeMutationInput & { employeeId
     ...employeeRpcPayload(input),
   })
   if (error) throw new Error(error.message || 'Employee could not be updated.')
+  return adminUserSchema.parse(data)
+}
+
+export async function upsertEmployeeCredential(input: EmployeeCredentialMutationInput): Promise<AdminUser> {
+  const { data, error } = await getSupabaseClient().rpc('admin_upsert_employee_credential', {
+    target_credential_number: cleanOptional(input.credentialNumber),
+    target_employee_id: input.employeeId,
+    target_expires_on: cleanOptional(input.expiresOn),
+    target_kind: input.kind,
+    target_notes: cleanOptional(input.notes),
+    target_status: input.status,
+    target_valid_from: cleanOptional(input.validFrom),
+  })
+  if (error) throw new Error(error.message || 'Credential could not be updated.')
   return adminUserSchema.parse(data)
 }
 

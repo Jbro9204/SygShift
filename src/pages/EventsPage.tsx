@@ -25,8 +25,9 @@ const requestLabels = {
 function opportunityTime(opportunity: Opportunity): string {
   const day = new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
-    month: 'short',
-    day: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
     timeZone: opportunity.time_zone,
   }).format(new Date(opportunity.starts_at))
   const time = new Intl.DateTimeFormat('en-US', {
