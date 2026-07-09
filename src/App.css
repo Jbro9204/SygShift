@@ -1923,6 +1923,40 @@
   font-size: 14px;
 }
 
+.scheduler-focus-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.scheduler-employee-filter {
+  display: grid;
+  gap: 5px;
+  min-width: min(320px, 100%);
+}
+
+.scheduler-employee-filter span {
+  color: #665e52;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scheduler-employee-filter select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 12px;
+  color: var(--ink);
+  background: #ffffff;
+  border: 1px solid #d8cebd;
+  border-radius: 9px;
+  font: inherit;
+  font-weight: 800;
+}
+
 .scheduler-planner__totals {
   display: grid;
   grid-template-columns: repeat(3, minmax(92px, 1fr));

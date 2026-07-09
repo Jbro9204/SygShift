@@ -187,12 +187,14 @@ function ShiftCard({
 
 function EditShiftDialog({
   employees,
+  focusEmployeeId,
   shift,
   suggestions,
   mutation,
   onClose,
 }: {
   employees: ScheduleBuilderEmployee[]
+  focusEmployeeId?: string | null
   shift: ScheduleShift
   suggestions: StaffingSuggestion | undefined
   mutation: ReturnType<typeof useMutation<unknown, Error, {
@@ -208,7 +210,10 @@ function EditShiftDialog({
   }>>
   onClose: () => void
 }) {
-  const assignedEmployeeId = shift.assignments[0]?.employee.id ?? ''
+  const focusedAssignment = focusEmployeeId
+    ? shift.assignments.find((assignment) => assignment.employee.id === focusEmployeeId)
+    : null
+  const assignedEmployeeId = focusedAssignment?.employee.id ?? shift.assignments[0]?.employee.id ?? ''
   const eligibleEmployees = employees.filter((employee) => !shift.requires_armed || employee.has_armed_guard_credential)
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -455,7 +460,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const builderOptionsQuery = useQuery({
     queryKey: ['schedule-builder-options'],
     queryFn: getScheduleBuilderOptions,
-    enabled: isSupabaseConfigured && canUseScheduler,
+    enabled: isSupabaseConfigured && canBuildSchedule && (canUseScheduler || scheduleView === 'employee'),
   })
   const staffingSuggestionsQuery = useQuery({
     queryKey: ['schedule-staffing-suggestions', scheduleQuery.data?.id],
@@ -600,6 +605,22 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   })
   const rows = useMemo(() => scheduleQuery.data ? scheduleRows(scheduleQuery.data) : [], [scheduleQuery.data])
   const employeeRows = useMemo(() => scheduleQuery.data ? employeeScheduleRows(scheduleQuery.data) : [], [scheduleQuery.data])
+  const employeeFilterOptions = useMemo(() => {
+    const options = new Map<string, { id: string, name: string }>()
+
+    for (const employee of builderOptionsQuery.data?.employees ?? []) {
+      options.set(employee.id, {
+        id: employee.id,
+        name: builderEmployeeName(employee),
+      })
+    }
+
+    for (const row of employeeRows) {
+      if (!options.has(row.id)) options.set(row.id, { id: row.id, name: row.name })
+    }
+
+    return [...options.values()].sort((left, right) => left.name.localeCompare(right.name))
+  }, [builderOptionsQuery.data?.employees, employeeRows])
   const importedRows = useMemo(
     () => importedPreviewQuery.data ? importedScheduleRows(importedPreviewQuery.data) : [],
     [importedPreviewQuery.data],
@@ -635,7 +656,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   }, [rows, reviewOnly, search, siteFilter])
   const visibleEmployeeRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
-    return employeeRows
+    const selectedEmployee = employeeFilter === 'all'
+      ? null
+      : employeeFilterOptions.find((employee) => employee.id === employeeFilter) ?? null
+    const sourceRows = selectedEmployee && !employeeRows.some((row) => row.id === selectedEmployee.id)
+      ? [...employeeRows, { id: selectedEmployee.id, name: selectedEmployee.name, shifts: [] }]
+      : employeeRows
+
+    return sourceRows
       .filter((row) => employeeFilter === 'all' || row.id === employeeFilter)
       .map((row) => ({
         ...row,
@@ -658,8 +686,9 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           return searchable.includes(term)
         }),
       }))
-      .filter((row) => row.shifts.length > 0)
-  }, [employeeFilter, employeeRows, reviewOnly, search])
+      .filter((row) => employeeFilter !== 'all' || row.shifts.length > 0)
+  }, [employeeFilter, employeeFilterOptions, employeeRows, reviewOnly, search])
+  const focusedEmployeeId = scheduleView === 'employee' && employeeFilter !== 'all' ? employeeFilter : null
   const scheduleSummary = useMemo(() => {
     const shifts = rows.flatMap((row) => row.shifts)
     const assigned = shifts.reduce((total, shift) => total + shift.assignments.length, 0)
@@ -673,6 +702,15 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       sites: rows.length,
     }
   }, [employeeRows.length, rows])
+  const visibleScheduleSummary = useMemo(() => {
+    const activeRows = focusedEmployeeId ? visibleEmployeeRows : visibleRows
+    const shifts = activeRows.flatMap((row) => row.shifts)
+    return {
+      open: shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0),
+      review: shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length,
+      shifts: shifts.length,
+    }
+  }, [focusedEmployeeId, visibleEmployeeRows, visibleRows])
   const staffingWorkItems = useMemo(() => {
     if (scheduleQuery.data?.status !== 'draft') return []
     return scheduleQuery.data.shifts
@@ -711,14 +749,15 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   )
   const schedulerDayBuckets = useMemo(() => days.map((day) => {
     const dayKey = format(day, 'yyyy-MM-dd')
-    const shifts = visibleRows
+    const schedulerRows = focusedEmployeeId ? visibleEmployeeRows : visibleRows
+    const shifts = schedulerRows
       .flatMap((row) => row.shifts)
       .filter((shift) => shiftOperationalDate(shift) === dayKey)
       .sort((left, right) => left.starts_at.localeCompare(right.starts_at))
     const openSlots = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
     const reviewCount = shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
     return { day, dayKey, openSlots, reviewCount, shifts }
-  }), [days, visibleRows])
+  }), [days, focusedEmployeeId, visibleEmployeeRows, visibleRows])
   const visibleImportedRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
     return importedRows
@@ -743,7 +782,6 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       }))
       .filter((row) => row.shifts.length > 0)
   }, [importedRows, search, siteFilter])
-
   useEffect(() => {
     const board = boardScrollRef.current
     if (!board) return
@@ -772,6 +810,16 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   function updateOpenShiftForm(update: Partial<OpenShiftFormState>) {
     setBuilderMessage(null)
     setOpenShiftForm((current) => ({ ...current, ...update }))
+  }
+
+  function openShiftFormForCurrentFocus(): OpenShiftFormState {
+    const base = defaultOpenShiftForm(weekKey)
+    if (!focusedEmployeeId) return base
+    return {
+      ...base,
+      employeeId: focusedEmployeeId,
+      publishAnnouncement: false,
+    }
   }
 
   function jumpToWeek(nextWeekStart: Date) {
@@ -917,7 +965,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 className="secondary-button"
                 onClick={() => {
                   setBuilderOpen(true)
-                  setOpenShiftForm(defaultOpenShiftForm(weekKey))
+                  setOpenShiftForm(openShiftFormForCurrentFocus())
                   setBuilderMessage(null)
                 }}
                 type="button"
@@ -1259,6 +1307,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       {canUseScheduler && editingShift ? (
         <EditShiftDialog
           employees={builderOptionsQuery.data?.employees ?? []}
+          focusEmployeeId={focusedEmployeeId}
           mutation={updateDraftShiftMutation}
           onClose={() => setEditingShift(null)}
           shift={editingShift}
@@ -1376,11 +1425,46 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   <ChevronRight aria-hidden="true" size={17} />
                 </button>
               </div>
+              {scheduleQuery.data ? (
+                <div className="scheduler-focus-controls" aria-label="Scheduler focus controls">
+                  <div className="segmented-control" aria-label="Work schedule by">
+                    <button
+                      className={scheduleView === 'site' ? 'is-active' : ''}
+                      onClick={() => setScheduleView('site')}
+                      type="button"
+                    >
+                      Site coverage
+                    </button>
+                    <button
+                      className={scheduleView === 'employee' ? 'is-active' : ''}
+                      onClick={() => setScheduleView('employee')}
+                      type="button"
+                    >
+                      Employee schedule
+                    </button>
+                  </div>
+                  {scheduleView === 'employee' ? (
+                    <label className="scheduler-employee-filter">
+                      <span>Employee</span>
+                      <select
+                        aria-label="Work on employee schedule"
+                        onChange={(event) => setEmployeeFilter(event.target.value)}
+                        value={employeeFilter}
+                      >
+                        <option value="all">All employees</option>
+                        {employeeFilterOptions.map((employee) => (
+                          <option key={employee.id} value={employee.id}>{employee.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
             <div className="scheduler-planner__totals" aria-label="Planner totals">
-              <article><span>Shifts</span><strong>{scheduleSummary.shifts}</strong></article>
-              <article><span>Open</span><strong>{scheduleSummary.open}</strong></article>
-              <article><span>Review</span><strong>{scheduleSummary.review}</strong></article>
+              <article><span>{scheduleView === 'employee' && employeeFilter !== 'all' ? 'Person shifts' : 'Visible shifts'}</span><strong>{visibleScheduleSummary.shifts}</strong></article>
+              <article><span>Open</span><strong>{visibleScheduleSummary.open}</strong></article>
+              <article><span>Review</span><strong>{visibleScheduleSummary.review}</strong></article>
             </div>
           </div>
 
@@ -1434,8 +1518,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                       />
                     )) : (
                       <div className="scheduler-day-empty">
-                        <strong>No coverage yet</strong>
-                        <span>Add a shift/event if this day needs staffing.</span>
+                        <strong>{scheduleView === 'employee' && employeeFilter !== 'all' ? 'No shifts for this employee' : 'No coverage yet'}</strong>
+                        <span>{scheduleView === 'employee' && employeeFilter !== 'all' ? 'Use Add shift or event to assign this person if needed.' : 'Add a shift/event if this day needs staffing.'}</span>
                       </div>
                     )}
                   </div>
@@ -1515,7 +1599,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 value={employeeFilter}
               >
                 <option value="all">All employees</option>
-                {employeeRows.map((row) => <option value={row.id} key={row.id}>{row.name}</option>)}
+                {employeeFilterOptions.map((employee) => <option value={employee.id} key={employee.id}>{employee.name}</option>)}
               </select>
             </label>
           ) : (
