@@ -117,6 +117,15 @@ function draftShiftMutationInput(shift: ScheduleShift, employeeId: string | null
   }
 }
 
+function findMatchingDraftShift(draft: { shifts: ScheduleShift[] }, sourceShift: ScheduleShift): ScheduleShift | undefined {
+  return draft.shifts.find((candidate) =>
+    candidate.starts_at === sourceShift.starts_at
+    && candidate.ends_at === sourceShift.ends_at
+    && (candidate.post?.id ?? null) === (sourceShift.post?.id ?? null)
+    && (candidate.event?.id ?? null) === (sourceShift.event?.id ?? null)
+  )
+}
+
 function ShiftCard({
   shift,
   canEdit,
@@ -501,7 +510,7 @@ function SchedulerShiftPanel({
         <form className="scheduler-panel-assign" onSubmit={submitAssignment}>
           <label>
             Switch / assign manually
-            <select disabled={!isDraft || isSaving || eligibleEmployees.length === 0} name="employeeId">
+            <select disabled={isSaving || eligibleEmployees.length === 0} name="employeeId">
               <option value="">Leave open / unassigned</option>
               {eligibleEmployees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
@@ -512,8 +521,8 @@ function SchedulerShiftPanel({
               ))}
             </select>
           </label>
-          <button className="primary-action" disabled={!isDraft || isSaving} type="submit">
-            {isSaving ? 'Saving...' : 'Save assignment'}
+          <button className="primary-action" disabled={isSaving || eligibleEmployees.length === 0} type="submit">
+            {isSaving ? 'Saving...' : isDraft ? 'Save assignment' : 'Open draft & save assignment'}
           </button>
           <p className="form-note">
             Use this for call-offs and coverage changes. Saving replaces the current active assignment for this shift and keeps the draft unpublished until you approve it.
@@ -521,7 +530,7 @@ function SchedulerShiftPanel({
         </form>
 
         {!isDraft ? (
-          <p className="form-note">Open a working draft before changing assignments. You can still inspect this shift and open the full editor.</p>
+          <p className="form-note">This will open a working draft first, then apply the change so the live schedule is not changed until you publish.</p>
         ) : null}
 
         <div className="scheduler-shift-panel__actions">
@@ -704,12 +713,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         queryClient.setQueryData(['weekly-schedule', weekKey], draft)
         setBuilderMessage(`Working draft opened for revision ${draft.revision}. Publish when ready.`)
         if (shiftToEdit) {
-          const copiedShift = draft.shifts.find((candidate) =>
-            candidate.starts_at === shiftToEdit.starts_at
-            && candidate.ends_at === shiftToEdit.ends_at
-            && (candidate.post?.id ?? null) === (shiftToEdit.post?.id ?? null)
-            && (candidate.event?.id ?? null) === (shiftToEdit.event?.id ?? null),
-          )
+          const copiedShift = findMatchingDraftShift(draft, shiftToEdit)
           if (copiedShift) setEditingShift(copiedShift)
         }
       }
@@ -1111,9 +1115,24 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   }
 
   function assignPlannerEmployee(shift: ScheduleShift, employeeId: string | null) {
-    if (scheduleQuery.data?.status !== 'draft') return
     setBuilderMessage(null)
-    updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId))
+    if (scheduleQuery.data?.status === 'draft') {
+      updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId))
+      return
+    }
+
+    setBuilderMessage('Opening a working draft before saving this assignment...')
+    ensureDraftMutation.mutate(shift, {
+      onSuccess: ({ draft }) => {
+        if (!draft) return
+        const copiedShift = findMatchingDraftShift(draft, shift)
+        if (!copiedShift) {
+          setBuilderMessage('Draft opened, but the selected shift could not be matched. Select the shift again and retry.')
+          return
+        }
+        updateDraftShiftMutation.mutate(draftShiftMutationInput(copiedShift, employeeId))
+      },
+    })
   }
 
   function syncBoardScrollFromTop() {
