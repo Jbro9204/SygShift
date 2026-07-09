@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
-import { CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, Edit3, MoveHorizontal, Plus, Search, ShieldAlert, Sparkles } from 'lucide-react'
+import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, Edit3, MapPin, MoveHorizontal, Plus, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
@@ -48,6 +48,24 @@ interface OpenShiftFormState {
   isOvertime: boolean
   notes: string
   publishAnnouncement: boolean
+}
+
+interface SchedulerCoverageLane {
+  id: string
+  name: string
+  label: string
+  shifts: ScheduleShift[]
+}
+
+interface SchedulerCoverageGroup {
+  id: string
+  code: string | null
+  name: string
+  openSlots: number
+  reviewCount: number
+  shiftCount: number
+  status: 'covered' | 'has-open' | 'needs-review' | 'empty'
+  lanes: SchedulerCoverageLane[]
 }
 
 function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
@@ -106,6 +124,7 @@ function ShiftCard({
   onEdit,
   onResolve,
   compact = false,
+  selected = false,
 }: {
   shift: ScheduleShift
   canEdit: boolean
@@ -113,6 +132,7 @@ function ShiftCard({
   onEdit: (shift: ScheduleShift) => void
   onResolve: (shift: ScheduleShift) => void
   compact?: boolean
+  selected?: boolean
 }) {
   const title = shift.post?.name ?? shift.event?.name ?? 'Shift'
   const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? null
@@ -126,6 +146,7 @@ function ShiftCard({
       className={[
         source.reviewNeeded ? 'shift-card shift-card--review-needed' : 'shift-card',
         canEdit ? 'shift-card--editable' : '',
+        selected ? 'is-selected' : '',
       ].filter(Boolean).join(' ')}
       onClick={() => {
         if (canEdit) onEdit(shift)
@@ -363,6 +384,154 @@ function ReviewResolutionDialog({
   )
 }
 
+function SchedulerShiftPanel({
+  employees,
+  isDraft,
+  isSaving,
+  onAssignEmployee,
+  onClose,
+  onEdit,
+  onResolve,
+  shift,
+  suggestion,
+}: {
+  employees: ScheduleBuilderEmployee[]
+  isDraft: boolean
+  isSaving: boolean
+  onAssignEmployee: (employeeId: string | null) => void
+  onClose: () => void
+  onEdit: () => void
+  onResolve: () => void
+  shift: ScheduleShift
+  suggestion: StaffingSuggestion | undefined
+}) {
+  const source = parseImportedScheduleNote(shift.notes)
+  const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
+  const eligibleEmployees = employees.filter((employee) => !shift.requires_armed || employee.has_armed_guard_credential)
+  const title = shift.post?.name ?? shift.event?.name ?? 'Shift'
+  const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? 'Unassigned location'
+  const sourceReference = sourceReferenceLabel(source)
+
+  function submitAssignment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const employeeId = String(form.get('employeeId') ?? '')
+    onAssignEmployee(employeeId || null)
+    event.currentTarget.reset()
+  }
+
+  return (
+    <aside className="scheduler-shift-panel" aria-label="Selected shift actions">
+      <header>
+        <div>
+          <p className="eyebrow">Selected shift</p>
+          <h3>{title}</h3>
+          <span>{location}</span>
+        </div>
+        <button aria-label="Close selected shift" className="icon-button" onClick={onClose} type="button">
+          <X aria-hidden="true" size={18} />
+        </button>
+      </header>
+
+      <div className="scheduler-shift-panel__body">
+        <section className="scheduler-shift-panel__section">
+          <span className="scheduler-shift-panel__label">Details</span>
+          <dl className="scheduler-shift-details">
+            <div><dt>Date</dt><dd>{format(new Date(`${shiftOperationalDate(shift)}T12:00:00`), 'EEEE, MMM d')}</dd></div>
+            <div><dt>Time</dt><dd>{shiftTimeRange(shift)}</dd></div>
+            <div><dt>Needed</dt><dd>{shift.headcount_required}</dd></div>
+            <div><dt>Open</dt><dd>{openSlots}</dd></div>
+            <div><dt>Requirement</dt><dd>{shift.requires_armed ? 'Armed credential' : 'Unarmed'}</dd></div>
+          </dl>
+        </section>
+
+        <section className="scheduler-shift-panel__section">
+          <span className="scheduler-shift-panel__label">Assigned</span>
+          {shift.assignments.length ? (
+            <div className="scheduler-assigned-list">
+              {shift.assignments.map((assignment) => (
+                <span key={assignment.id}>{assignmentName(assignment)}</span>
+              ))}
+            </div>
+          ) : (
+            <p className="scheduler-muted">No employee assigned yet.</p>
+          )}
+        </section>
+
+        {source.reviewNeeded || source.assignee || source.context ? (
+          <section className="scheduler-shift-panel__section scheduler-shift-panel__warning">
+            <AlertCircle aria-hidden="true" size={17} />
+            <div>
+              <strong>{source.reviewNeeded ? 'Review needed' : 'Imported note'}</strong>
+              {source.assignee ? <span>Imported assignee: {source.assignee}</span> : null}
+              {source.context ? <span>Source row: {source.context}</span> : null}
+              {sourceReference ? <small>{sourceReference}</small> : null}
+            </div>
+          </section>
+        ) : null}
+
+        <section className="scheduler-shift-panel__section">
+          <span className="scheduler-shift-panel__label">Suggested staffing</span>
+          {suggestion?.suggestions.length ? (
+            <div className="scheduler-panel-suggestions">
+              {suggestion.suggestions.slice(0, 5).map((candidate) => (
+                <article key={candidate.employeeId}>
+                  <div>
+                    <strong>{candidate.name}</strong>
+                    <span>{candidate.reason}</span>
+                  </div>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!isDraft || isSaving}
+                    onClick={() => onAssignEmployee(candidate.employeeId)}
+                    type="button"
+                  >
+                    Assign
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="scheduler-muted">
+              {isDraft ? 'No automatic suggestion is available. Choose an eligible employee below.' : 'Open a draft to see and apply staffing suggestions.'}
+            </p>
+          )}
+        </section>
+
+        <form className="scheduler-panel-assign" onSubmit={submitAssignment}>
+          <label>
+            Assign manually
+            <select disabled={!isDraft || isSaving || eligibleEmployees.length === 0} name="employeeId">
+              <option value="">Leave open / unassigned</option>
+              {eligibleEmployees.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {builderEmployeeName(employee)}
+                  {employee.has_armed_guard_credential ? ' · armed' : ''}
+                  {employee.employment_type === 'salary' ? ' · salary' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary-action" disabled={!isDraft || isSaving} type="submit">
+            {isSaving ? 'Saving...' : 'Save assignment'}
+          </button>
+        </form>
+
+        {!isDraft ? (
+          <p className="form-note">Open a working draft before changing assignments. You can still inspect this shift and open the full editor.</p>
+        ) : null}
+
+        <div className="scheduler-shift-panel__actions">
+          <button className="secondary-button" onClick={onEdit} type="button">Edit full block</button>
+          {source.reviewNeeded ? (
+            <button className="primary-action" onClick={onResolve} type="button">Resolve review</button>
+          ) : null}
+        </div>
+      </div>
+    </aside>
+  )
+}
+
 function sourceQualificationLabel(value: string | null): string {
   if (value === 'armed') return 'Armed'
   if (value === 'unarmed') return 'Unarmed'
@@ -421,6 +590,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const [builderOpen, setBuilderOpen] = useState(false)
   const [resolvingShift, setResolvingShift] = useState<ScheduleShift | null>(null)
   const [editingShift, setEditingShift] = useState<ScheduleShift | null>(null)
+  const [selectedPlannerShiftId, setSelectedPlannerShiftId] = useState<string | null>(null)
   const [cancelDraftConfirmOpen, setCancelDraftConfirmOpen] = useState(false)
   const [builderMessage, setBuilderMessage] = useState<string | null>(null)
   const [boardScrollWidth, setBoardScrollWidth] = useState(0)
@@ -758,6 +928,72 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     const reviewCount = shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
     return { day, dayKey, openSlots, reviewCount, shifts }
   }), [days, focusedEmployeeId, visibleEmployeeRows, visibleRows])
+  const schedulerCoverageGroups = useMemo<SchedulerCoverageGroup[]>(() => visibleRows.map((row) => {
+    const lanes = new Map<string, SchedulerCoverageLane>()
+
+    for (const shift of row.shifts) {
+      const id = shift.post?.id ?? shift.event?.id ?? shift.id
+      const lane = lanes.get(id) ?? {
+        id,
+        label: shift.post ? 'Post' : 'Event',
+        name: shift.post?.name ?? shift.event?.name ?? shift.event?.location_name ?? 'Shift',
+        shifts: [],
+      }
+      lane.shifts.push(shift)
+      lanes.set(id, lane)
+    }
+
+    const shifts = row.shifts
+    const openSlots = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+    const reviewCount = shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
+    const status: SchedulerCoverageGroup['status'] = shifts.length === 0
+      ? 'empty'
+      : openSlots > 0
+        ? 'has-open'
+        : reviewCount > 0
+          ? 'needs-review'
+          : 'covered'
+
+    return {
+      code: row.code,
+      id: row.id,
+      lanes: [...lanes.values()]
+        .map((lane) => ({
+          ...lane,
+          shifts: [...lane.shifts].sort((left, right) => left.starts_at.localeCompare(right.starts_at)),
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name)),
+      name: row.name,
+      openSlots,
+      reviewCount,
+      shiftCount: shifts.length,
+      status,
+    }
+  }), [visibleRows])
+  const schedulerLocationSummaries = useMemo(() => rows.map((row) => {
+    const openSlots = row.shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+    const reviewCount = row.shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
+    const status: SchedulerCoverageGroup['status'] = row.shifts.length === 0
+      ? 'empty'
+      : openSlots > 0
+        ? 'has-open'
+        : reviewCount > 0
+          ? 'needs-review'
+          : 'covered'
+    return {
+      code: row.code,
+      id: row.id,
+      name: row.name,
+      openSlots,
+      reviewCount,
+      shiftCount: row.shifts.length,
+      status,
+    }
+  }), [rows])
+  const selectedPlannerShift = useMemo(() => {
+    if (!selectedPlannerShiftId) return null
+    return scheduleQuery.data?.shifts.find((shift) => shift.id === selectedPlannerShiftId) ?? null
+  }, [scheduleQuery.data?.shifts, selectedPlannerShiftId])
   const visibleImportedRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
     return importedRows
@@ -807,6 +1043,13 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     visibleImportedRows,
   ])
 
+  useEffect(() => {
+    if (!selectedPlannerShiftId) return
+    if (!scheduleQuery.data?.shifts.some((shift) => shift.id === selectedPlannerShiftId)) {
+      setSelectedPlannerShiftId(null)
+    }
+  }, [scheduleQuery.data?.shifts, selectedPlannerShiftId])
+
   function updateOpenShiftForm(update: Partial<OpenShiftFormState>) {
     setBuilderMessage(null)
     setOpenShiftForm((current) => ({ ...current, ...update }))
@@ -848,6 +1091,12 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   }
 
   function applySuggestedEmployee(shift: ScheduleShift, employeeId: string) {
+    setBuilderMessage(null)
+    updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId))
+  }
+
+  function assignPlannerEmployee(shift: ScheduleShift, employeeId: string | null) {
+    if (scheduleQuery.data?.status !== 'draft') return
     setBuilderMessage(null)
     updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId))
   }
@@ -1397,7 +1646,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               <h2 id="scheduler-planner-title">
                 {format(weekStart, 'MMM d')} – {format(weekEnd, 'MMM d, yyyy')}
               </h2>
-              <p>Each day is a focused card. Click a shift to edit it while a draft is open; add one-time events from the builder above.</p>
+              <p>Work coverage by site and post, select a shift for details, then assign, edit, or resolve review items from one focused panel.</p>
               <div className="scheduler-planner__week-nav" aria-label="Planner week controls">
                 <button
                   aria-label="Previous week"
@@ -1484,6 +1733,137 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             <DataStatePanel icon={CalendarDays} title="No schedule exists for this week">
               <p>Open a working draft or add a shift/event to start building this week.</p>
             </DataStatePanel>
+          ) : scheduleView === 'site' ? (
+            <div className="scheduler-board-shell">
+              <aside className="scheduler-location-rail" aria-label="Scheduler site filter">
+                <header>
+                  <strong>Sites</strong>
+                  <span>{schedulerLocationSummaries.length} active this week</span>
+                </header>
+                <button
+                  className={siteFilter === 'all' ? 'scheduler-location-button is-active' : 'scheduler-location-button'}
+                  onClick={() => setSiteFilter('all')}
+                  type="button"
+                >
+                  <span>All sites</span>
+                  <small>{scheduleSummary.shifts} shifts</small>
+                </button>
+                <div className="scheduler-location-list">
+                  {schedulerLocationSummaries.map((site) => (
+                    <button
+                      className={siteFilter === site.id ? 'scheduler-location-button is-active' : 'scheduler-location-button'}
+                      key={site.id}
+                      onClick={() => setSiteFilter(site.id)}
+                      type="button"
+                    >
+                      <span>
+                        <i className={`scheduler-status-dot scheduler-status-dot--${site.status}`} aria-hidden="true" />
+                        {site.name}
+                      </span>
+                      <small>{site.openSlots ? `${site.openSlots} open` : site.reviewCount ? `${site.reviewCount} review` : `${site.shiftCount} shifts`}</small>
+                    </button>
+                  ))}
+                </div>
+              </aside>
+
+              <div className="scheduler-coverage-board" aria-label="Weekly site coverage planner">
+                <div className="scheduler-coverage-board__scroller">
+                  {schedulerCoverageGroups.length ? schedulerCoverageGroups.map((group) => (
+                    <article className="scheduler-coverage-location" key={group.id}>
+                      <header>
+                        <div>
+                          <MapPin aria-hidden="true" size={18} />
+                          <div>
+                            <span>{group.code ?? (group.lanes.some((lane) => lane.label === 'Event') ? 'Event' : 'Site')}</span>
+                            <strong>{group.name}</strong>
+                          </div>
+                        </div>
+                        <div className="scheduler-location-badges">
+                          {group.openSlots ? <span className="status-pill status-pill--attention">{group.openSlots} open</span> : null}
+                          {group.reviewCount ? <span className="status-pill status-pill--warning">{group.reviewCount} review</span> : null}
+                          {!group.openSlots && !group.reviewCount ? <span className="status-pill">Covered</span> : null}
+                        </div>
+                      </header>
+
+                      <div className="scheduler-coverage-grid" role="table" aria-label={`${group.name} weekly coverage`}>
+                        <div className="scheduler-coverage-row scheduler-coverage-row--header" role="row">
+                          <div role="columnheader">Post</div>
+                          {days.map((day) => (
+                            <div key={day.toISOString()} role="columnheader">
+                              <span>{format(day, 'EEE')}</span>
+                              <strong>{format(day, 'd')}</strong>
+                            </div>
+                          ))}
+                        </div>
+                        {group.lanes.map((lane) => (
+                          <div className="scheduler-coverage-row" key={lane.id} role="row">
+                            <div className="scheduler-coverage-post" role="rowheader">
+                              <span>{lane.label}</span>
+                              <strong>{lane.name}</strong>
+                            </div>
+                            {days.map((day) => {
+                              const dayKey = format(day, 'yyyy-MM-dd')
+                              const shifts = lane.shifts.filter((shift) => shiftOperationalDate(shift) === dayKey)
+                              return (
+                                <div className="scheduler-coverage-cell" key={dayKey} role="cell">
+                                  {shifts.map((shift) => (
+                                    <ShiftCard
+                                      canEdit
+                                      canResolve={canUseScheduler}
+                                      compact
+                                      key={shift.id}
+                                      onEdit={(targetShift) => setSelectedPlannerShiftId(targetShift.id)}
+                                      onResolve={(targetShift) => {
+                                        setBuilderOpen(false)
+                                        setBuilderMessage(null)
+                                        setResolvingShift(targetShift)
+                                      }}
+                                      selected={selectedPlannerShiftId === shift.id}
+                                      shift={shift}
+                                    />
+                                  ))}
+                                  {shifts.length === 0 ? <span className="scheduler-coverage-empty">—</span> : null}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+                  )) : (
+                    <div className="scheduler-board-empty">
+                      <Search aria-hidden="true" size={28} />
+                      <strong>No site coverage matches these filters.</strong>
+                      <span>Clear the search or choose all sites to continue working this schedule.</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {selectedPlannerShift ? (
+                <SchedulerShiftPanel
+                  employees={builderOptionsQuery.data?.employees ?? []}
+                  isDraft={scheduleQuery.data.status === 'draft'}
+                  isSaving={updateDraftShiftMutation.isPending}
+                  onAssignEmployee={(employeeId) => assignPlannerEmployee(selectedPlannerShift, employeeId)}
+                  onClose={() => setSelectedPlannerShiftId(null)}
+                  onEdit={() => editShift(selectedPlannerShift)}
+                  onResolve={() => {
+                    setBuilderOpen(false)
+                    setBuilderMessage(null)
+                    setResolvingShift(selectedPlannerShift)
+                  }}
+                  shift={selectedPlannerShift}
+                  suggestion={staffingSuggestionsQuery.data?.find((item) => item.shiftId === selectedPlannerShift.id)}
+                />
+              ) : (
+                <aside className="scheduler-shift-panel scheduler-shift-panel--empty" aria-label="No selected shift">
+                  <Sparkles aria-hidden="true" size={24} />
+                  <strong>Select a shift</strong>
+                  <span>Click any schedule block to inspect details, assign suggested staff, or open the full editor.</span>
+                </aside>
+              )}
+            </div>
           ) : (
             <div className="scheduler-day-board">
               {schedulerDayBuckets.map((bucket) => (
