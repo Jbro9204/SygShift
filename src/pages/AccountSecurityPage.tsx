@@ -863,7 +863,7 @@ export function AccountSecurityPage() {
               <h2 id="trusted-devices-title">Remembered devices</h2>
               <p>
                 These browsers can open protected operations tools without another MFA prompt until they expire.
-                Signing out removes the remembered device from this browser.
+                Signing out keeps this browser remembered. Use Remove, or an admin revoke, when this device should require MFA again.
               </p>
             </div>
             {trustedDevices.length === 0 ? (

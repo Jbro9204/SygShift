@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
-import { clearTrustedDeviceToken } from '../lib/trustedDeviceToken'
 
 export const AUTH_EMAIL_DOMAIN = 'accounts.sygshift.invalid'
 export const USERNAME_PATTERN = /^[a-z][a-z0-9]{1,62}$/
@@ -67,7 +66,6 @@ export async function signInWithUsername(username: string, password: string): Pr
 export async function signOut(): Promise<void> {
   const { error } = await getSupabaseClient().auth.signOut()
   if (error) throw new Error('You could not be signed out. Please try again.')
-  clearTrustedDeviceToken()
 }
 
 export async function getSessionContext(): Promise<SessionContext> {

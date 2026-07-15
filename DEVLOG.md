@@ -22,6 +22,16 @@ deployment status, or major workflow assumptions change.
 
 ## 2026-07-15
 
+### Fixed MFA remembered-device persistence
+
+- Issue: "Remember this device for 14 days" still required MFA after each normal logout/login.
+- Root cause: the browser trusted-device token was being cleared during regular sign-out.
+- Fix:
+  - Normal sign-out now keeps the remembered-device token so the next login can satisfy MFA with the trusted-device record.
+  - Remembered devices are still removed by expiration, the user's Remove action, or admin revoke.
+  - Account Security copy now explains that signing out does not remove a remembered device.
+- Note: browsers that already lost the token before this fix must complete MFA one more time and check "Remember this device" again.
+
 ### Fixed time-off approval/decline permissions
 
 - Issue: Approving/declining time-off requests failed with `permission denied for schema private`.
@@ -89,4 +99,3 @@ Deploy with:
 ```powershell
 & 'C:\Users\Jordan\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\pnpm.cmd' exec wrangler deploy --keep-vars
 ```
-

@@ -1,11 +1,24 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   AUTH_EMAIL_DOMAIN,
   isValidUsername,
   normalizeUsername,
+  signOut,
   usernameToAuthEmail,
   validatePassword,
 } from './auth'
+
+const supabaseMock = vi.hoisted(() => ({
+  client: {
+    auth: {
+      signOut: vi.fn(),
+    },
+  },
+}))
+
+vi.mock('../lib/supabase', () => ({
+  getSupabaseClient: () => supabaseMock.client,
+}))
 
 describe('auth helpers', () => {
   it('normalizes directory usernames before creating Supabase auth identifiers', () => {
@@ -24,5 +37,16 @@ describe('auth helpers', () => {
     expect(validatePassword('short', 'jbrown').valid).toBe(false)
     expect(validatePassword('JBrown-Schedule-2026!', 'jbrown').valid).toBe(false)
     expect(validatePassword('Copper!River!4729', 'jbrown').valid).toBe(true)
+  })
+})
+
+describe('signOut', () => {
+  it('keeps remembered-device trust available for the next login', async () => {
+    localStorage.setItem('sygshift:trusted-device-token:v1', 'remembered-device-token')
+    supabaseMock.client.auth.signOut.mockResolvedValueOnce({ error: null })
+
+    await signOut()
+
+    expect(localStorage.getItem('sygshift:trusted-device-token:v1')).toBe('remembered-device-token')
   })
 })
