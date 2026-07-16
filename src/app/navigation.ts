@@ -5,10 +5,8 @@ import {
   CalendarDays,
   CalendarPlus,
   ClipboardCheck,
-  Database,
   FileBarChart,
   LayoutDashboard,
-  ListChecks,
   MapPinned,
   Megaphone,
   Timer,
@@ -64,8 +62,6 @@ export const navigationGroups: NavigationGroup[] = [
     label: 'Administration',
     items: [
       { label: 'Users & Access', path: '/users', icon: UserCog, roles: ['admin'] },
-      { label: 'Import Review', path: '/import-review', icon: Database, roles: ['admin'] },
-      { label: 'Operational Import', path: '/operational-import', icon: ListChecks, roles: ['admin'] },
     ],
   },
 ]

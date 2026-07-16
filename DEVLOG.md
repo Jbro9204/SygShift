@@ -22,6 +22,12 @@ deployment status, or major workflow assumptions change.
 
 ## 2026-07-15
 
+### Hid legacy import tools from daily navigation
+
+- Import Review and Operational Import were removed from the normal sidebar because the Bible import has become legacy source data, not the operating system of record.
+- The underlying pages/code/data were intentionally left in place as maintenance/reference tools if a future admin cleanup requires them.
+- Production navigation now points users toward the live workflows: Schedule, Scheduler, People, Sites, Time-Off Requests, Events/Openings, Announcements, Time, and Reports.
+
 ### Fixed MFA remembered-device persistence
 
 - Issue: "Remember this device for 14 days" still required MFA after each normal logout/login.

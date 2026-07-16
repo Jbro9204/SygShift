@@ -14,8 +14,8 @@ describe('SygShift shell', () => {
 
     expect(await screen.findByRole('heading', { name: 'One clear view of the day.' })).toBeVisible()
     expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Import Review' })).toBeVisible()
-    expect(screen.getByRole('link', { name: 'Operational Import' })).toBeVisible()
+    expect(screen.queryByRole('link', { name: 'Import Review' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Operational Import' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'What needs attention' })).toBeVisible()
     expect(screen.getByText('Schedule data is not connected yet.')).toBeVisible()
   })
