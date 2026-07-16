@@ -38,6 +38,8 @@ deployment status, or major workflow assumptions change.
   - `supervisor_correct_time_event(uuid, timestamptz, boolean, text)`
 - Added `public.time_event_maintenance_notes` so manual time work keeps actor, reason, action, timestamp, and audit history.
 - Original punch records remain append-only; maintenance actions create auditable events/corrections instead of silently rewriting history.
+- Fixed Add Missing Punch form layout so the button, reason field, and optional shift-link context do not crowd or drift.
+- Payroll review rows now include a direct "Review / edit time" action that filters Time Maintenance to that employee/date and scrolls to the editable records.
 
 ## 2026-07-15
 

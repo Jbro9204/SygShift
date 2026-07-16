@@ -6568,29 +6568,35 @@
 
 .time-maintenance-add {
   display: grid;
-  grid-template-columns: minmax(190px, 1.1fr) repeat(4, minmax(120px, 0.75fr)) auto;
-  align-items: end;
-  gap: 12px;
-  padding: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+  padding: 18px;
   background: #f8f5ec;
   border: 1px solid #ded2bd;
   border-left: 4px solid #b88735;
   border-radius: 10px;
 }
 
-.time-maintenance-add > div {
-  align-self: center;
+.time-maintenance-add > div:not(.time-maintenance-context) {
+  grid-column: 1 / -1;
+}
+
+.time-maintenance-add > div:not(.time-maintenance-context):first-child {
+  padding-bottom: 2px;
+  border-bottom: 1px solid #e4d8c4;
 }
 
 .time-maintenance-add__reason {
-  grid-column: 1 / -2;
+  grid-column: span 3;
 }
 
 .time-maintenance-context {
   display: grid;
+  grid-column: span 3;
   gap: 5px;
-  align-self: stretch;
-  min-width: 180px;
+  align-self: end;
+  min-height: 78px;
   padding: 10px 11px;
   color: #4f483d;
   background: #fffaf1;
@@ -6620,8 +6626,12 @@
 }
 
 .time-maintenance-add .primary-action {
+  grid-column: 4;
+  width: 100%;
   min-height: 44px;
   align-self: end;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .time-correction-editor {
@@ -6685,6 +6695,29 @@
 .time-maintenance-actions button {
   min-height: 38px;
   gap: 6px;
+}
+
+.time-review-jump-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 34px;
+  margin-top: 9px;
+  padding: 7px 10px;
+  color: #6e470d;
+  background: #fff3dc;
+  border: 1px solid #dec28f;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.time-review-jump-button:hover {
+  color: #422a07;
+  background: #f7e1b9;
 }
 
 .operations-metrics {
@@ -7473,6 +7506,11 @@
   }
 
   .time-maintenance-add__reason {
+    grid-column: auto;
+  }
+
+  .time-maintenance-context,
+  .time-maintenance-add .primary-action {
     grid-column: auto;
   }
 

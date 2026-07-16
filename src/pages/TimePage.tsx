@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Archive,
@@ -202,8 +202,22 @@ function MaintenanceEventStatus({ event }: { event: TimeMaintenanceEvent }) {
   return <span className="payroll-status payroll-status--ready">Active</span>
 }
 
-function TimeMaintenanceWorkbench({ defaultDate }: { defaultDate: string }) {
+interface TimeMaintenanceFocusRequest {
+  employeeId: string
+  fromDate: string
+  throughDate: string
+  requestId: number
+}
+
+function TimeMaintenanceWorkbench({
+  defaultDate,
+  focusRequest,
+}: {
+  defaultDate: string
+  focusRequest: TimeMaintenanceFocusRequest | null
+}) {
   const queryClient = useQueryClient()
+  const workbenchRef = useRef<HTMLElement | null>(null)
   const [fromDate, setFromDate] = useState(() => addDaysKey(defaultDate, -6))
   const [throughDate, setThroughDate] = useState(defaultDate)
   const [employeeId, setEmployeeId] = useState('')
@@ -270,6 +284,17 @@ function TimeMaintenanceWorkbench({ defaultDate }: { defaultDate: string }) {
   const voidedCount = events.filter((event) => event.voided).length
   const pendingCount = events.filter((event) => event.pendingCorrectionCount > 0).length
 
+  useEffect(() => {
+    if (!focusRequest) return
+    setEmployeeId(focusRequest.employeeId)
+    setAddEmployeeId((current) => current || focusRequest.employeeId)
+    setFromDate(focusRequest.fromDate)
+    setThroughDate(focusRequest.throughDate)
+    window.requestAnimationFrame(() => {
+      workbenchRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [focusRequest])
+
   function beginCorrection(event: TimeMaintenanceEvent, mode: 'adjust' | 'void') {
     setSelectedEvent(event)
     setCorrectionMode(mode)
@@ -290,7 +315,7 @@ function TimeMaintenanceWorkbench({ defaultDate }: { defaultDate: string }) {
   }
 
   return (
-    <section className="time-maintenance-workbench" aria-labelledby="time-maintenance-title">
+    <section className="time-maintenance-workbench" aria-labelledby="time-maintenance-title" ref={workbenchRef}>
       <div className="time-maintenance-heading">
         <div>
           <p className="eyebrow">Time maintenance</p>
@@ -737,7 +762,13 @@ function exportPayrollCsv(review: TimekeepingReview) {
   URL.revokeObjectURL(url)
 }
 
-function PayrollReviewTable({ rows }: { rows: TimekeepingReviewRow[] }) {
+function PayrollReviewTable({
+  rows,
+  onReviewEmployeeTime,
+}: {
+  rows: TimekeepingReviewRow[]
+  onReviewEmployeeTime: (row: TimekeepingReviewRow) => void
+}) {
   if (rows.length === 0) {
     return (
       <DataStatePanel icon={FileClock} title="No time records in this range">
@@ -766,6 +797,9 @@ function PayrollReviewTable({ rows }: { rows: TimekeepingReviewRow[] }) {
               <td>
                 <strong>{row.employeeName}</strong>
                 <span>@{row.username}</span>
+                <button className="time-review-jump-button" onClick={() => onReviewEmployeeTime(row)} type="button">
+                  Review / edit time
+                </button>
               </td>
               <td>{row.operationalDate}</td>
               <td>
@@ -915,7 +949,13 @@ function PayrollExportHistoryList({ batches }: { batches: PayrollExportBatch[] }
   )
 }
 
-function SupervisorTimeReview({ defaultDate }: { defaultDate: string }) {
+function SupervisorTimeReview({
+  defaultDate,
+  onReviewEmployeeTime,
+}: {
+  defaultDate: string
+  onReviewEmployeeTime: (row: TimekeepingReviewRow) => void
+}) {
   const queryClient = useQueryClient()
   const [fromDate, setFromDate] = useState(() => addDaysKey(defaultDate, -6))
   const [throughDate, setThroughDate] = useState(defaultDate)
@@ -1034,7 +1074,7 @@ function SupervisorTimeReview({ defaultDate }: { defaultDate: string }) {
             </div>
           </section>
 
-          <PayrollReviewTable rows={review.rows} />
+          <PayrollReviewTable onReviewEmployeeTime={onReviewEmployeeTime} rows={review.rows} />
 
           <section className="time-panel time-corrections-panel" aria-labelledby="pending-corrections-title">
             <div className="section-heading">
@@ -1075,6 +1115,7 @@ function LiveTimekeeping() {
   const queryClient = useQueryClient()
   const punchLocked = useRef(false)
   const operationalDate = useMemo(() => formatDateKey(operationalToday()), [])
+  const [maintenanceFocusRequest, setMaintenanceFocusRequest] = useState<TimeMaintenanceFocusRequest | null>(null)
   const dashboardQuery = useQuery({
     queryKey: ['timekeeping-dashboard', operationalDate],
     queryFn: () => getTimekeepingDashboard(operationalDate),
@@ -1153,8 +1194,18 @@ function LiveTimekeeping() {
 
       {canReviewPayroll ? (
         <>
-          <TimeMaintenanceWorkbench defaultDate={operationalDate} />
-          <SupervisorTimeReview defaultDate={operationalDate} />
+          <TimeMaintenanceWorkbench defaultDate={operationalDate} focusRequest={maintenanceFocusRequest} />
+          <SupervisorTimeReview
+            defaultDate={operationalDate}
+            onReviewEmployeeTime={(row) => {
+              setMaintenanceFocusRequest({
+                employeeId: row.employeeId,
+                fromDate: row.operationalDate,
+                requestId: Date.now(),
+                throughDate: row.operationalDate,
+              })
+            }}
+          />
         </>
       ) : null}
     </>
