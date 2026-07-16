@@ -29,6 +29,7 @@ deployment status, or major workflow assumptions change.
   - filter employee time by date range and employee,
   - view detailed punch events,
   - add a missing supervisor-entered punch with a required reason,
+  - prefill a related punch from an existing event so missing clock-ins/outs stay attached to the same shift when available,
   - change a punch time through an approved correction,
   - void an incorrect punch through an approved correction.
 - Added Supabase function support:

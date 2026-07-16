@@ -212,6 +212,8 @@ function TimeMaintenanceWorkbench({ defaultDate }: { defaultDate: string }) {
   const [addDate, setAddDate] = useState(defaultDate)
   const [addTime, setAddTime] = useState('08:00')
   const [addReason, setAddReason] = useState('')
+  const [addShiftId, setAddShiftId] = useState<string | null>(null)
+  const [addContext, setAddContext] = useState<string | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<TimeMaintenanceEvent | null>(null)
   const [correctionMode, setCorrectionMode] = useState<'adjust' | 'void'>('adjust')
   const [correctionDate, setCorrectionDate] = useState(defaultDate)
@@ -234,9 +236,12 @@ function TimeMaintenanceWorkbench({ defaultDate }: { defaultDate: string }) {
       employeeId: addEmployeeId,
       kind: addKind,
       reason: addReason.trim(),
+      shiftId: addShiftId,
     }),
     onSuccess: async () => {
       setAddReason('')
+      setAddShiftId(null)
+      setAddContext(null)
       await refreshTimeQueries()
     },
   })
@@ -271,6 +276,17 @@ function TimeMaintenanceWorkbench({ defaultDate }: { defaultDate: string }) {
     setCorrectionDate(dateInputValue(event.effectiveAt))
     setCorrectionTime(timeInputValue(event.effectiveAt))
     setCorrectionReason('')
+  }
+
+  function prefillRelatedPunch(event: TimeMaintenanceEvent) {
+    setAddEmployeeId(event.employeeId)
+    setAddShiftId(event.shiftId)
+    setAddContext(event.shiftId
+      ? `${event.employeeName} · ${event.locationName} · same shift`
+      : `${event.employeeName} · unscheduled time`)
+    setAddDate(dateInputValue(event.effectiveAt))
+    setAddTime(timeInputValue(event.effectiveAt))
+    setAddReason('')
   }
 
   return (
@@ -333,7 +349,11 @@ function TimeMaintenanceWorkbench({ defaultDate }: { defaultDate: string }) {
               <label>
                 <span>Employee</span>
                 <select
-                  onChange={(event) => setAddEmployeeId(event.target.value)}
+                  onChange={(event) => {
+                    setAddEmployeeId(event.target.value)
+                    setAddShiftId(null)
+                    setAddContext(null)
+                  }}
                   required
                   value={addEmployeeId}
                 >
@@ -362,6 +382,22 @@ function TimeMaintenanceWorkbench({ defaultDate }: { defaultDate: string }) {
                   value={addReason}
                 />
               </label>
+              {addContext ? (
+                <div className="time-maintenance-context">
+                  <span>Linked context</span>
+                  <strong>{addContext}</strong>
+                  <button
+                    className="text-button"
+                    onClick={() => {
+                      setAddShiftId(null)
+                      setAddContext(null)
+                    }}
+                    type="button"
+                  >
+                    Clear shift link
+                  </button>
+                </div>
+              ) : null}
               <button className="primary-action" disabled={!canAdd} type="submit">
                 {addMutation.isPending ? 'Saving...' : 'Add time event'}
               </button>
@@ -457,6 +493,9 @@ function TimeMaintenanceWorkbench({ defaultDate }: { defaultDate: string }) {
                       </td>
                       <td>
                         <div className="time-maintenance-actions">
+                          <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => prefillRelatedPunch(event)} type="button">
+                            Add punch
+                          </button>
                           <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'adjust')} type="button">
                             <Pencil aria-hidden="true" size={15} /> Change
                           </button>
