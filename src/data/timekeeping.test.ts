@@ -73,6 +73,19 @@ describe('timekeeping validation', () => {
       fromDate: '2026-06-28',
       throughDate: '2026-07-04',
       operationalTimeZone: 'America/Denver',
+      payrollRules: {
+        timeZone: 'America/Denver',
+        weekStartsOn: 0,
+        weekStartsOnLabel: 'Sunday',
+        payFrequency: 'biweekly',
+        payDateAnchor: '2026-07-17',
+        dailyOvertimeMinutes: 720,
+        weeklyOvertimeMinutes: 2400,
+        unpaidBreaks: true,
+        defaultBreakMinutes: 30,
+        salaryWeeklyDefaultMinutes: 2400,
+        salaryTimeOffReducesDefault: true,
+      },
       summary: {
         rowCount: 1,
         readyCount: 1,
@@ -80,8 +93,13 @@ describe('timekeeping validation', () => {
         pendingCorrectionCount: 0,
         grossMinutes: 510,
         paidMinutes: 480,
+        regularMinutes: 420,
+        overtimeMinutes: 60,
+        salaryDefaultMinutes: 0,
+        timeOffMinutes: 0,
       },
       rows: [{
+        rowKind: 'time_event',
         employeeId: '73000000-0000-4000-8000-000000000001',
         username: 'jbrown',
         employeeName: 'Jordan Brown',
@@ -89,6 +107,8 @@ describe('timekeeping validation', () => {
         employmentType: 'salary',
         shiftId: '73000000-0000-4000-8000-000000000010',
         operationalDate: '2026-07-04',
+        weekStartsOn: '2026-06-28',
+        weekEndsOn: '2026-07-04',
         siteName: 'Main Site',
         siteCode: 'MAIN',
         postName: 'Primary Post',
@@ -102,17 +122,83 @@ describe('timekeeping validation', () => {
         grossMinutes: 510,
         breakMinutes: 30,
         paidMinutes: 480,
+        regularMinutes: 420,
+        overtimeMinutes: 60,
+        salaryDefaultMinutes: 0,
+        timeOffMinutes: 0,
         eventCount: 4,
         requiresArmed: false,
         isOvertime: false,
         payrollReady: true,
         exceptionCodes: [],
+        payrollNotes: ['Daily OT: over 12 paid hours in one day.'],
       }],
       pendingCorrections: [],
     })
 
     expect(payrollHours(review.summary.paidMinutes)).toBe('8.00')
-    expect(reviewRowsToPayrollCsv(review.rows)).toContain('Jordan Brown,jbrown,2026-07-04')
+    expect(payrollHours(review.summary.overtimeMinutes)).toBe('1.00')
+    expect(reviewRowsToPayrollCsv(review.rows)).toContain('time_event,Jordan Brown,jbrown,2026-07-04')
+  })
+
+  it('validates salary default payroll rows reduced by approved time off', () => {
+    const review = parseTimekeepingReview({
+      serverTimestamp: '2026-07-16T15:00:00.000Z',
+      fromDate: '2026-07-12',
+      throughDate: '2026-07-18',
+      operationalTimeZone: 'America/Denver',
+      summary: {
+        rowCount: 1,
+        readyCount: 1,
+        exceptionCount: 0,
+        pendingCorrectionCount: 0,
+        grossMinutes: 1920,
+        paidMinutes: 1920,
+        regularMinutes: 1920,
+        overtimeMinutes: 0,
+        salaryDefaultMinutes: 2400,
+        timeOffMinutes: 480,
+      },
+      rows: [{
+        rowKind: 'salary_default',
+        employeeId: '73000000-0000-4000-8000-000000000001',
+        username: 'jbrown',
+        employeeName: 'Jordan Brown',
+        role: 'admin',
+        employmentType: 'salary',
+        shiftId: null,
+        operationalDate: '2026-07-12',
+        weekStartsOn: '2026-07-12',
+        weekEndsOn: '2026-07-18',
+        siteName: null,
+        siteCode: null,
+        postName: null,
+        eventName: null,
+        locationName: 'Salary default',
+        scheduledStartsAt: null,
+        scheduledEndsAt: null,
+        timeZone: 'America/Denver',
+        firstClockIn: null,
+        lastClockOut: null,
+        grossMinutes: 1920,
+        breakMinutes: 0,
+        paidMinutes: 1920,
+        regularMinutes: 1920,
+        overtimeMinutes: 0,
+        salaryDefaultMinutes: 2400,
+        timeOffMinutes: 480,
+        eventCount: 0,
+        requiresArmed: false,
+        isOvertime: false,
+        payrollReady: true,
+        exceptionCodes: [],
+        payrollNotes: ['Approved time off reduced the salary default by 8.00 hours.'],
+      }],
+      pendingCorrections: [],
+    })
+
+    expect(review.rows[0]?.rowKind).toBe('salary_default')
+    expect(reviewRowsToPayrollCsv(review.rows)).toContain('salary_default,Jordan Brown,jbrown,2026-07-12')
   })
 
   it('validates locked payroll export batch records', () => {

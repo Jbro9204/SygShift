@@ -62,6 +62,11 @@ const eventLabels: Record<TimeEventKind, string> = {
   clock_out: 'Clocked out',
 }
 
+const rowKindLabels: Record<TimekeepingReviewRow['rowKind'], string> = {
+  salary_default: 'Salary default',
+  time_event: 'Time clock',
+}
+
 const stateCopy: Record<TimekeepingState, { title: string; body: string }> = {
   off_clock: {
     title: 'You are currently off the clock.',
@@ -90,6 +95,19 @@ function addDaysKey(dateKey: string, days: number): string {
   const [year, month, day] = dateKey.split('-').map(Number)
   const date = new Date(year, month - 1, day + days, 12)
   return formatDateKey(date)
+}
+
+function payrollWeekRange(dateKey: string): { fromDate: string; throughDate: string } {
+  const [year, month, day] = dateKey.split('-').map(Number)
+  const date = new Date(year, month - 1, day, 12)
+  const start = new Date(date)
+  start.setDate(date.getDate() - date.getDay())
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  return {
+    fromDate: formatDateKey(start),
+    throughDate: formatDateKey(end),
+  }
 }
 
 function formatTime(value: string, timeZone = OPERATIONAL_TIME_ZONE): string {
@@ -762,6 +780,36 @@ function exportPayrollCsv(review: TimekeepingReview) {
   URL.revokeObjectURL(url)
 }
 
+function PayrollRulesPanel({ review }: { review: TimekeepingReview }) {
+  const rules = review.payrollRules
+  if (!rules) return null
+
+  return (
+    <section className="payroll-rules-panel" aria-label="Active payroll rules">
+      <article>
+        <span>Payroll week</span>
+        <strong>{rules.weekStartsOnLabel} 12:00 AM - Saturday 11:59 PM</strong>
+        <small>{formatDateOnly(review.fromDate)} to {formatDateOnly(review.throughDate)}</small>
+      </article>
+      <article>
+        <span>Overtime</span>
+        <strong>{payrollHours(rules.dailyOvertimeMinutes)} daily / {payrollHours(rules.weeklyOvertimeMinutes)} weekly</strong>
+        <small>Daily OT is counted before weekly OT.</small>
+      </article>
+      <article>
+        <span>Salary default</span>
+        <strong>{payrollHours(rules.salaryWeeklyDefaultMinutes)} hours / week</strong>
+        <small>{rules.salaryTimeOffReducesDefault ? 'Approved time off reduces salary default.' : 'Time off does not reduce salary default.'}</small>
+      </article>
+      <article>
+        <span>Breaks</span>
+        <strong>{rules.unpaidBreaks ? 'Unpaid' : 'Paid'}</strong>
+        <small>Typical break: {rules.defaultBreakMinutes} minutes.</small>
+      </article>
+    </section>
+  )
+}
+
 function PayrollReviewTable({
   rows,
   onReviewEmployeeTime,
@@ -783,10 +831,13 @@ function PayrollReviewTable({
         <thead>
           <tr>
             <th>Employee</th>
+            <th>Type</th>
             <th>Date</th>
             <th>Location</th>
             <th>Clock in</th>
             <th>Clock out</th>
+            <th>Regular</th>
+            <th>OT</th>
             <th>Paid</th>
             <th>Status</th>
           </tr>
@@ -801,13 +852,25 @@ function PayrollReviewTable({
                   Review / edit time
                 </button>
               </td>
+              <td>
+                <strong>{rowKindLabels[row.rowKind]}</strong>
+                {row.weekStartsOn && row.weekEndsOn ? <span>{row.weekStartsOn} - {row.weekEndsOn}</span> : null}
+              </td>
               <td>{row.operationalDate}</td>
               <td>
                 <strong>{row.locationName}</strong>
                 <span>{[row.siteCode, row.postName ?? row.eventName].filter(Boolean).join(' · ') || 'Time clock'}</span>
               </td>
-              <td>{row.firstClockIn ? formatTime(row.firstClockIn, row.timeZone) : 'Missing'}</td>
-              <td>{row.lastClockOut ? formatTime(row.lastClockOut, row.timeZone) : 'Missing'}</td>
+              <td>{row.firstClockIn ? formatTime(row.firstClockIn, row.timeZone) : row.rowKind === 'salary_default' ? 'Payroll default' : 'Missing'}</td>
+              <td>{row.lastClockOut ? formatTime(row.lastClockOut, row.timeZone) : row.rowKind === 'salary_default' ? 'Payroll default' : 'Missing'}</td>
+              <td>
+                <strong>{payrollHours(row.regularMinutes)} hr</strong>
+                {row.salaryDefaultMinutes > 0 ? <span>{payrollHours(row.salaryDefaultMinutes)} salary default</span> : null}
+              </td>
+              <td>
+                <strong>{payrollHours(row.overtimeMinutes)} hr</strong>
+                {row.timeOffMinutes > 0 ? <span>{payrollHours(row.timeOffMinutes)} time off</span> : null}
+              </td>
               <td>
                 <strong>{payrollHours(row.paidMinutes)} hr</strong>
                 <span>{row.breakMinutes} break min</span>
@@ -820,6 +883,9 @@ function PayrollReviewTable({
                 )}
                 {row.exceptionCodes.length > 0 ? (
                   <small>{row.exceptionCodes.map(exceptionLabel).join(', ')}</small>
+                ) : null}
+                {row.payrollNotes.length > 0 ? (
+                  <small>{row.payrollNotes.join(' ')}</small>
                 ) : null}
               </td>
             </tr>
@@ -957,8 +1023,9 @@ function SupervisorTimeReview({
   onReviewEmployeeTime: (row: TimekeepingReviewRow) => void
 }) {
   const queryClient = useQueryClient()
-  const [fromDate, setFromDate] = useState(() => addDaysKey(defaultDate, -6))
-  const [throughDate, setThroughDate] = useState(defaultDate)
+  const defaultPayrollWeek = useMemo(() => payrollWeekRange(defaultDate), [defaultDate])
+  const [fromDate, setFromDate] = useState(defaultPayrollWeek.fromDate)
+  const [throughDate, setThroughDate] = useState(defaultPayrollWeek.throughDate)
   const [exportNote, setExportNote] = useState('')
   const [lastExport, setLastExport] = useState<PayrollExportBatch | null>(null)
   const reviewQuery = useQuery({
@@ -1012,14 +1079,16 @@ function SupervisorTimeReview({
         <>
           <section className="time-review-metrics" aria-label="Payroll review totals">
             <article><span>Total rows</span><strong>{review.summary.rowCount}</strong><small>Time groups in range</small></article>
-            <article><span>Ready</span><strong>{review.summary.readyCount}</strong><small>Clean payroll rows</small></article>
-            <article className={review.summary.exceptionCount ? 'import-metric--attention' : ''}><span>Needs review</span><strong>{review.summary.exceptionCount}</strong><small>Exceptions or missing punches</small></article>
+            <article><span>Regular</span><strong>{payrollHours(review.summary.regularMinutes)}</strong><small>Regular export hours</small></article>
+            <article className={review.summary.overtimeMinutes ? 'import-metric--attention' : ''}><span>OT</span><strong>{payrollHours(review.summary.overtimeMinutes)}</strong><small>Daily/weekly overtime</small></article>
             <article><span>Paid hours</span><strong>{payrollHours(review.summary.paidMinutes)}</strong><small>Export preview total</small></article>
           </section>
 
+          <PayrollRulesPanel review={review} />
+
           <div className="inline-note">
-            Salary employees are included in the review when they have schedule or punch activity. SygShift does not
-            automatically add 40 hours to payroll; that requires an approved salary-payroll rule before it is automated.
+            Salary employees appear as payroll default rows, not fake punches. Approved time off reduces the salary
+            default before export, and hourly overtime follows the active payroll rules.
           </div>
 
           {correctionMutation.isError ? <div className="inline-alert" role="alert">{correctionMutation.error.message}</div> : null}

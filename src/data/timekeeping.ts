@@ -72,7 +72,22 @@ const payrollExceptionSchema = z.enum([
   'zero_paid_minutes',
 ])
 
+const payrollRulesSchema = z.object({
+  timeZone: z.string(),
+  weekStartsOn: z.number().int().min(0).max(6),
+  weekStartsOnLabel: z.string(),
+  payFrequency: z.enum(['weekly', 'biweekly', 'semimonthly', 'monthly']),
+  payDateAnchor: z.string(),
+  dailyOvertimeMinutes: z.number().int().positive(),
+  weeklyOvertimeMinutes: z.number().int().positive(),
+  unpaidBreaks: z.boolean(),
+  defaultBreakMinutes: z.number().int().nonnegative(),
+  salaryWeeklyDefaultMinutes: z.number().int().nonnegative(),
+  salaryTimeOffReducesDefault: z.boolean(),
+})
+
 const timekeepingReviewRowSchema = z.object({
+  rowKind: z.enum(['time_event', 'salary_default']).default('time_event'),
   employeeId: z.string().uuid(),
   username: z.string(),
   employeeName: z.string(),
@@ -80,6 +95,8 @@ const timekeepingReviewRowSchema = z.object({
   employmentType: employmentTypeSchema,
   shiftId: z.string().uuid().nullable(),
   operationalDate: z.string(),
+  weekStartsOn: z.string().optional(),
+  weekEndsOn: z.string().optional(),
   siteName: z.string().nullable(),
   siteCode: z.string().nullable(),
   postName: z.string().nullable(),
@@ -93,11 +110,16 @@ const timekeepingReviewRowSchema = z.object({
   grossMinutes: z.number().int().nonnegative(),
   breakMinutes: z.number().int().nonnegative(),
   paidMinutes: z.number().int().nonnegative(),
+  regularMinutes: z.number().int().nonnegative().default(0),
+  overtimeMinutes: z.number().int().nonnegative().default(0),
+  salaryDefaultMinutes: z.number().int().nonnegative().default(0),
+  timeOffMinutes: z.number().int().nonnegative().default(0),
   eventCount: z.number().int().nonnegative(),
   requiresArmed: z.boolean(),
   isOvertime: z.boolean(),
   payrollReady: z.boolean(),
   exceptionCodes: z.array(payrollExceptionSchema),
+  payrollNotes: z.array(z.string()).default([]),
 })
 
 const pendingCorrectionSchema = z.object({
@@ -169,6 +191,7 @@ const timekeepingReviewSchema = z.object({
   fromDate: z.string(),
   throughDate: z.string(),
   operationalTimeZone: z.literal('America/Denver'),
+  payrollRules: payrollRulesSchema.optional(),
   summary: z.object({
     rowCount: z.number().int().nonnegative(),
     readyCount: z.number().int().nonnegative(),
@@ -176,6 +199,10 @@ const timekeepingReviewSchema = z.object({
     pendingCorrectionCount: z.number().int().nonnegative(),
     grossMinutes: z.number().int().nonnegative(),
     paidMinutes: z.number().int().nonnegative(),
+    regularMinutes: z.number().int().nonnegative().default(0),
+    overtimeMinutes: z.number().int().nonnegative().default(0),
+    timeOffMinutes: z.number().int().nonnegative().default(0),
+    salaryDefaultMinutes: z.number().int().nonnegative().default(0),
   }),
   rows: z.array(timekeepingReviewRowSchema),
   pendingCorrections: z.array(pendingCorrectionSchema),
@@ -218,6 +245,7 @@ export type PayrollExportBatch = z.infer<typeof payrollExportBatchSchema>
 export type TimeMaintenance = z.infer<typeof timeMaintenanceSchema>
 export type TimeMaintenanceEmployee = z.infer<typeof timeMaintenanceEmployeeSchema>
 export type TimeMaintenanceEvent = z.infer<typeof timeMaintenanceEventSchema>
+export type PayrollRules = z.infer<typeof payrollRulesSchema>
 
 export const verifiedTimekeepingBaseline = {
   operationalTimeZone: 'America/Denver',
@@ -244,6 +272,10 @@ export function parseTimekeepingReview(value: unknown): TimekeepingReview {
 
 export function parseTimeMaintenance(value: unknown): TimeMaintenance {
   return timeMaintenanceSchema.parse(value)
+}
+
+export function parsePayrollRules(value: unknown): PayrollRules {
+  return payrollRulesSchema.parse(value)
 }
 
 export function parsePayrollExportBatch(value: unknown): PayrollExportBatch {
@@ -319,6 +351,12 @@ export async function getTimekeepingReview(input: {
   })
   if (error) throw new Error('Supervisor time review could not be loaded. MFA is required.')
   return parseTimekeepingReview(data)
+}
+
+export async function getPayrollRules(): Promise<PayrollRules> {
+  const { data, error } = await getSupabaseClient().rpc('get_payroll_rules')
+  if (error) throw new Error(error.message || 'Payroll rules could not be loaded. MFA is required.')
+  return parsePayrollRules(data)
 }
 
 export async function getTimeMaintenance(input: {
@@ -412,36 +450,52 @@ export function payrollHours(minutes: number): string {
 
 export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
   const headers = [
+    'Row Type',
     'Employee',
     'Username',
     'Date',
+    'Week Start',
+    'Week End',
     'Location',
     'Clock In',
     'Clock Out',
     'Gross Hours',
     'Break Minutes',
     'Paid Hours',
+    'Regular Hours',
+    'Overtime Hours',
+    'Salary Default Hours',
+    'Time Off Deduction Hours',
     'Overtime',
     'Payroll Ready',
     'Exceptions',
+    'Notes',
   ]
   const escape = (value: unknown) => {
     const text = value === null || value === undefined ? '' : String(value)
     return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
   }
   const lines = rows.map((row) => [
+    row.rowKind,
     row.employeeName,
     row.username,
     row.operationalDate,
+    row.weekStartsOn ?? '',
+    row.weekEndsOn ?? '',
     row.locationName,
     row.firstClockIn ?? '',
     row.lastClockOut ?? '',
     payrollHours(row.grossMinutes),
     row.breakMinutes,
     payrollHours(row.paidMinutes),
+    payrollHours(row.regularMinutes),
+    payrollHours(row.overtimeMinutes),
+    payrollHours(row.salaryDefaultMinutes),
+    payrollHours(row.timeOffMinutes),
     row.isOvertime ? 'yes' : 'no',
     row.payrollReady ? 'yes' : 'no',
     row.exceptionCodes.join('|'),
+    row.payrollNotes.join('|'),
   ].map(escape).join(','))
 
   return [headers.map(escape).join(','), ...lines].join('\n')

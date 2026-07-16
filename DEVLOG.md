@@ -22,6 +22,22 @@ deployment status, or major workflow assumptions change.
 
 ## 2026-07-16
 
+### Added payroll rules and salary default payroll rows
+
+- Added centralized payroll rules in Supabase:
+  - Payroll week starts Sunday at 12:00 AM and ends Saturday at 11:59 PM.
+  - Pay frequency is bi-weekly with a known pay-date anchor of July 17, 2026.
+  - Daily OT starts after 12 paid hours in a day.
+  - Weekly OT starts after 40 paid hours in the Sunday-Saturday payroll week.
+  - Breaks are unpaid with a 30-minute typical break reference.
+  - Salary employees receive a 40-hour weekly payroll default.
+  - Approved time off reduces salary default hours.
+- Payroll review now receives and displays active payroll rules.
+- Salary employees now appear as `Salary default` payroll rows instead of fake clock punches.
+- Payroll export CSV now includes row type, week start/end, regular hours, overtime hours, salary default hours, time-off deductions, and payroll notes.
+- The payroll review default date range now opens on the active Sunday-Saturday payroll week.
+- Overtime calculations avoid double-counting by allocating daily OT first, then weekly OT on remaining non-daily-OT hours.
+
 ### Added operations time maintenance workbench
 
 - Added a live Time Maintenance workspace inside Time & Attendance for dispatcher/scheduler/supervisor/admin roles.
