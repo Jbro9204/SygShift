@@ -6477,6 +6477,183 @@
   border-radius: 8px;
 }
 
+.time-maintenance-workbench {
+  margin-top: 16px;
+  overflow: hidden;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.time-maintenance-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px;
+  border-bottom: 1px solid #e7e2d8;
+}
+
+.time-maintenance-heading h2,
+.time-maintenance-add h3,
+.time-correction-editor h3 {
+  margin: 0;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+
+.time-maintenance-heading h2 {
+  font-size: 24px;
+}
+
+.time-maintenance-heading p:not(.eyebrow),
+.time-correction-editor p {
+  max-width: 720px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.time-maintenance-tools {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.32fr) minmax(0, 1fr);
+  gap: 16px;
+  padding: 20px 22px;
+  border-bottom: 1px solid #e7e2d8;
+}
+
+.time-maintenance-filter,
+.time-maintenance-add label,
+.time-correction-editor label {
+  display: grid;
+  gap: 7px;
+  color: #4f483d;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.time-maintenance-filter {
+  align-content: start;
+  padding: 16px;
+  background: #fbfaf6;
+  border: 1px solid #e3dccf;
+  border-radius: 10px;
+}
+
+.time-maintenance-filter select,
+.time-maintenance-add select,
+.time-maintenance-add input,
+.time-maintenance-add textarea,
+.time-correction-editor input,
+.time-correction-editor textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  color: #29261f;
+  background: #ffffff;
+  border: 1px solid #d5cec0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 15px;
+}
+
+.time-maintenance-add textarea,
+.time-correction-editor textarea {
+  min-height: 78px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.time-maintenance-add {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.1fr) repeat(4, minmax(120px, 0.75fr)) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 16px;
+  background: #f8f5ec;
+  border: 1px solid #ded2bd;
+  border-left: 4px solid #b88735;
+  border-radius: 10px;
+}
+
+.time-maintenance-add > div {
+  align-self: center;
+}
+
+.time-maintenance-add__reason {
+  grid-column: 1 / -2;
+}
+
+.time-maintenance-add .primary-action {
+  min-height: 44px;
+  align-self: end;
+}
+
+.time-correction-editor {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(130px, 0.35fr) minmax(130px, 0.35fr) minmax(260px, 0.9fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin: 18px 22px;
+  padding: 16px;
+  background: #fffaf1;
+  border: 1px solid #dcc79f;
+  border-left: 4px solid #a46b1f;
+  border-radius: 10px;
+}
+
+.time-correction-editor__mode {
+  display: grid;
+  gap: 8px;
+  align-self: center;
+  min-width: 150px;
+  color: #4c463c;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.time-correction-editor__mode label {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.time-correction-editor__mode input {
+  width: 17px;
+  min-height: 0;
+  height: 17px;
+  accent-color: #9b6b21;
+}
+
+.time-correction-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.time-maintenance-table td {
+  vertical-align: middle;
+}
+
+.time-maintenance-row--voided {
+  opacity: 0.72;
+}
+
+.time-maintenance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.time-maintenance-actions button {
+  min-height: 38px;
+  gap: 6px;
+}
+
 .operations-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -7195,6 +7372,7 @@
   }
 
   .time-review-workbench__heading,
+  .time-maintenance-heading,
   .time-review-actions {
     align-items: stretch;
     flex-direction: column;
@@ -7253,6 +7431,16 @@
 
   .correction-card {
     grid-template-columns: 1fr;
+  }
+
+  .time-maintenance-tools,
+  .time-maintenance-add,
+  .time-correction-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .time-maintenance-add__reason {
+    grid-column: auto;
   }
 
   .payroll-lock-panel,
@@ -7314,6 +7502,10 @@
   .time-review-range,
   .time-review-range label,
   .time-review-range input,
+  .time-maintenance-filter,
+  .time-maintenance-add .primary-action,
+  .time-correction-editor__actions,
+  .time-correction-editor__actions button,
   .time-review-actions .secondary-button {
     width: 100%;
   }

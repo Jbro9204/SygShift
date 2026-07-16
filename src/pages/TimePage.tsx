@@ -13,14 +13,17 @@ import {
   FileWarning,
   History,
   LockKeyhole,
+  Pencil,
   ShieldAlert,
   Timer,
+  UserRound,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import {
   activeTimeState,
   createPayrollExportBatch,
   getPayrollExportHistory,
+  getTimeMaintenance,
   getTimekeepingDashboard,
   getTimekeepingReview,
   nextTimeEventKinds,
@@ -28,9 +31,12 @@ import {
   recordTimeEvent,
   reviewRowsToPayrollCsv,
   reviewTimeEventCorrection,
+  supervisorCorrectTimeEvent,
+  supervisorRecordTimeEvent,
   verifiedTimekeepingBaseline,
   type PendingCorrection,
   type PayrollExportBatch,
+  type TimeMaintenanceEvent,
   type TimeEventKind,
   type TimekeepingDashboard,
   type TimekeepingEvent,
@@ -105,6 +111,67 @@ function formatDate(value: string): string {
   }).format(new Date(value))
 }
 
+function formatDateOnly(value: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: OPERATIONAL_TIME_ZONE,
+    year: 'numeric',
+  }).format(new Date(`${value}T12:00:00`))
+}
+
+function dateInputValue(value: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: OPERATIONAL_TIME_ZONE,
+    year: 'numeric',
+  }).format(new Date(value))
+}
+
+function timeInputValue(value: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    hour12: false,
+    minute: '2-digit',
+    timeZone: OPERATIONAL_TIME_ZONE,
+  }).formatToParts(new Date(value))
+  const hour = parts.find((part) => part.type === 'hour')?.value ?? '00'
+  const minute = parts.find((part) => part.type === 'minute')?.value ?? '00'
+  return `${hour}:${minute}`
+}
+
+function zonedDateTimeToIso(dateKey: string, timeValue: string): string {
+  const [year, month, day] = dateKey.split('-').map(Number)
+  const [hour, minute] = timeValue.split(':').map(Number)
+  const targetUtc = Date.UTC(year, month - 1, day, hour, minute)
+  let guess = targetUtc
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+    minute: '2-digit',
+    month: '2-digit',
+    timeZone: OPERATIONAL_TIME_ZONE,
+    year: 'numeric',
+  })
+
+  for (let index = 0; index < 3; index += 1) {
+    const parts = formatter.formatToParts(new Date(guess))
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? '0'
+    const renderedUtc = Date.UTC(
+      Number(part('year')),
+      Number(part('month')) - 1,
+      Number(part('day')),
+      Number(part('hour')),
+      Number(part('minute')),
+    )
+    guess += targetUtc - renderedUtc
+  }
+
+  return new Date(guess).toISOString()
+}
+
 function shortDigest(digest: string): string {
   return `${digest.slice(0, 10)}…${digest.slice(-6)}`
 }
@@ -121,6 +188,293 @@ function activeShift(dashboard: TimekeepingDashboard): TimekeepingShift | null {
   const activeShiftId = dashboard.lastEvent?.shiftId
   if (!activeShiftId) return null
   return dashboard.eligibleShifts.find((shift) => shift.shiftId === activeShiftId) ?? null
+}
+
+function maintenanceEventLabel(event: TimeMaintenanceEvent): string {
+  return eventLabels[event.kind]
+}
+
+function MaintenanceEventStatus({ event }: { event: TimeMaintenanceEvent }) {
+  if (event.voided) return <span className="payroll-status payroll-status--hold">Voided</span>
+  if (event.pendingCorrectionCount > 0) return <span className="payroll-status payroll-status--hold">Correction pending</span>
+  if (event.latestAction === 'time_adjust') return <span className="payroll-status payroll-status--ready">Adjusted</span>
+  if (event.latestAction === 'manual_add') return <span className="payroll-status payroll-status--ready">Manual</span>
+  return <span className="payroll-status payroll-status--ready">Active</span>
+}
+
+function TimeMaintenanceWorkbench({ defaultDate }: { defaultDate: string }) {
+  const queryClient = useQueryClient()
+  const [fromDate, setFromDate] = useState(() => addDaysKey(defaultDate, -6))
+  const [throughDate, setThroughDate] = useState(defaultDate)
+  const [employeeId, setEmployeeId] = useState('')
+  const [addEmployeeId, setAddEmployeeId] = useState('')
+  const [addKind, setAddKind] = useState<TimeEventKind>('clock_in')
+  const [addDate, setAddDate] = useState(defaultDate)
+  const [addTime, setAddTime] = useState('08:00')
+  const [addReason, setAddReason] = useState('')
+  const [selectedEvent, setSelectedEvent] = useState<TimeMaintenanceEvent | null>(null)
+  const [correctionMode, setCorrectionMode] = useState<'adjust' | 'void'>('adjust')
+  const [correctionDate, setCorrectionDate] = useState(defaultDate)
+  const [correctionTime, setCorrectionTime] = useState('08:00')
+  const [correctionReason, setCorrectionReason] = useState('')
+  const maintenanceQuery = useQuery({
+    queryKey: ['time-maintenance', fromDate, throughDate, employeeId || null],
+    queryFn: () => getTimeMaintenance({ employeeId: employeeId || null, fromDate, throughDate }),
+  })
+  const refreshTimeQueries = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['time-maintenance'] }),
+      queryClient.invalidateQueries({ queryKey: ['timekeeping-review'] }),
+      queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'] }),
+    ])
+  }
+  const addMutation = useMutation({
+    mutationFn: () => supervisorRecordTimeEvent({
+      effectiveAt: zonedDateTimeToIso(addDate, addTime),
+      employeeId: addEmployeeId,
+      kind: addKind,
+      reason: addReason.trim(),
+    }),
+    onSuccess: async () => {
+      setAddReason('')
+      await refreshTimeQueries()
+    },
+  })
+  const correctionMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedEvent) throw new Error('Select a time event first.')
+      return supervisorCorrectTimeEvent({
+        reason: correctionReason.trim(),
+        replacementTime: correctionMode === 'adjust' ? zonedDateTimeToIso(correctionDate, correctionTime) : null,
+        timeEventId: selectedEvent.id,
+        voided: correctionMode === 'void',
+      })
+    },
+    onSuccess: async () => {
+      setSelectedEvent(null)
+      setCorrectionReason('')
+      await refreshTimeQueries()
+    },
+  })
+  const maintenance = maintenanceQuery.data
+  const events = maintenance?.events ?? []
+  const employees = maintenance?.employees ?? []
+  const canAdd = addEmployeeId !== '' && addReason.trim().length > 0 && !addMutation.isPending
+  const canCorrect = selectedEvent !== null && correctionReason.trim().length > 0 && !correctionMutation.isPending
+  const manualCount = events.filter((event) => event.source === 'supervisor').length
+  const voidedCount = events.filter((event) => event.voided).length
+  const pendingCount = events.filter((event) => event.pendingCorrectionCount > 0).length
+
+  function beginCorrection(event: TimeMaintenanceEvent, mode: 'adjust' | 'void') {
+    setSelectedEvent(event)
+    setCorrectionMode(mode)
+    setCorrectionDate(dateInputValue(event.effectiveAt))
+    setCorrectionTime(timeInputValue(event.effectiveAt))
+    setCorrectionReason('')
+  }
+
+  return (
+    <section className="time-maintenance-workbench" aria-labelledby="time-maintenance-title">
+      <div className="time-maintenance-heading">
+        <div>
+          <p className="eyebrow">Time maintenance</p>
+          <h2 id="time-maintenance-title">Work employee time records</h2>
+          <p>
+            Search an employee, review their punches, add missing events, and correct mistakes without erasing the original history.
+          </p>
+        </div>
+        <div className="time-review-range" aria-label="Time maintenance date range">
+          <label><span>From</span><input max={throughDate} onChange={(event) => setFromDate(event.target.value)} type="date" value={fromDate} /></label>
+          <label><span>Through</span><input min={fromDate} onChange={(event) => setThroughDate(event.target.value)} type="date" value={throughDate} /></label>
+        </div>
+      </div>
+
+      {maintenanceQuery.isPending ? (
+        <DataStatePanel icon={FileClock} title="Loading time maintenance"><p>Retrieving employee time events and maintenance history.</p></DataStatePanel>
+      ) : maintenanceQuery.isError ? (
+        <DataStatePanel icon={ShieldAlert} title="Time maintenance unavailable" tone="error"><p>{maintenanceQuery.error.message}</p></DataStatePanel>
+      ) : maintenance ? (
+        <>
+          <section className="time-review-metrics" aria-label="Time maintenance totals">
+            <article><span>Events</span><strong>{events.length}</strong><small>Punches in range</small></article>
+            <article><span>Manual</span><strong>{manualCount}</strong><small>Supervisor-entered punches</small></article>
+            <article className={pendingCount ? 'import-metric--attention' : ''}><span>Pending</span><strong>{pendingCount}</strong><small>Employee corrections</small></article>
+            <article className={voidedCount ? 'import-metric--attention' : ''}><span>Voided</span><strong>{voidedCount}</strong><small>Excluded from payroll</small></article>
+          </section>
+
+          <div className="time-maintenance-tools">
+            <label className="time-maintenance-filter">
+              <span>Employee filter</span>
+              <select
+                onChange={(event) => {
+                  setEmployeeId(event.target.value)
+                  if (event.target.value && addEmployeeId === '') setAddEmployeeId(event.target.value)
+                }}
+                value={employeeId}
+              >
+                <option value="">All active employees</option>
+                {employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>{employee.displayName} (@{employee.username})</option>
+                ))}
+              </select>
+            </label>
+
+            <form
+              className="time-maintenance-add"
+              onSubmit={(event) => {
+                event.preventDefault()
+                addMutation.mutate()
+              }}
+            >
+              <div>
+                <p className="eyebrow">Add missing punch</p>
+                <h3>Supervisor-entered time event</h3>
+              </div>
+              <label>
+                <span>Employee</span>
+                <select
+                  onChange={(event) => setAddEmployeeId(event.target.value)}
+                  required
+                  value={addEmployeeId}
+                >
+                  <option value="">Choose employee</option>
+                  {employees.map((employee) => (
+                    <option key={employee.id} value={employee.id}>{employee.displayName} (@{employee.username})</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Punch type</span>
+                <select onChange={(event) => setAddKind(event.target.value as TimeEventKind)} value={addKind}>
+                  {Object.entries(actionLabels).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}
+                </select>
+              </label>
+              <label><span>Date</span><input onChange={(event) => setAddDate(event.target.value)} required type="date" value={addDate} /></label>
+              <label><span>Time / Mountain</span><input onChange={(event) => setAddTime(event.target.value)} required type="time" value={addTime} /></label>
+              <label className="time-maintenance-add__reason">
+                <span>Reason</span>
+                <textarea
+                  maxLength={700}
+                  onChange={(event) => setAddReason(event.target.value)}
+                  placeholder="Example: Employee forgot to clock out; verified by supervisor."
+                  required
+                  rows={2}
+                  value={addReason}
+                />
+              </label>
+              <button className="primary-action" disabled={!canAdd} type="submit">
+                {addMutation.isPending ? 'Saving...' : 'Add time event'}
+              </button>
+            </form>
+          </div>
+
+          {addMutation.isError ? <div className="inline-alert" role="alert">{addMutation.error.message}</div> : null}
+          {correctionMutation.isError ? <div className="inline-alert" role="alert">{correctionMutation.error.message}</div> : null}
+
+          {selectedEvent ? (
+            <form
+              className="time-correction-editor"
+              onSubmit={(event) => {
+                event.preventDefault()
+                correctionMutation.mutate()
+              }}
+            >
+              <div>
+                <p className="eyebrow">Correct selected punch</p>
+                <h3>{selectedEvent.employeeName} · {maintenanceEventLabel(selectedEvent)}</h3>
+                <p>{formatDate(selectedEvent.effectiveAt)} · {formatTime(selectedEvent.effectiveAt, selectedEvent.timeZone)}</p>
+              </div>
+              <div className="time-correction-editor__mode" role="radiogroup" aria-label="Correction type">
+                <label><input checked={correctionMode === 'adjust'} onChange={() => setCorrectionMode('adjust')} type="radio" /> Change time</label>
+                <label><input checked={correctionMode === 'void'} onChange={() => setCorrectionMode('void')} type="radio" /> Void punch</label>
+              </div>
+              {correctionMode === 'adjust' ? (
+                <>
+                  <label><span>New date</span><input onChange={(event) => setCorrectionDate(event.target.value)} required type="date" value={correctionDate} /></label>
+                  <label><span>New time / Mountain</span><input onChange={(event) => setCorrectionTime(event.target.value)} required type="time" value={correctionTime} /></label>
+                </>
+              ) : null}
+              <label className="time-maintenance-add__reason">
+                <span>Reason</span>
+                <textarea
+                  maxLength={700}
+                  onChange={(event) => setCorrectionReason(event.target.value)}
+                  placeholder="Explain why this punch is being changed."
+                  required
+                  rows={2}
+                  value={correctionReason}
+                />
+              </label>
+              <div className="time-correction-editor__actions">
+                <button className="secondary-button" onClick={() => setSelectedEvent(null)} type="button">Cancel</button>
+                <button className={correctionMode === 'void' ? 'danger-primary' : 'primary-action'} disabled={!canCorrect} type="submit">
+                  {correctionMutation.isPending ? 'Saving...' : correctionMode === 'void' ? 'Void punch' : 'Save corrected time'}
+                </button>
+              </div>
+            </form>
+          ) : null}
+
+          {events.length === 0 ? (
+            <DataStatePanel icon={UserRound} title="No employee time events in this range">
+              <p>Use the employee filter or add a missing punch if a supervisor has verified the time.</p>
+            </DataStatePanel>
+          ) : (
+            <div className="time-review-table-wrap">
+              <table className="time-review-table time-maintenance-table">
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    <th>Effective time</th>
+                    <th>Punch</th>
+                    <th>Location</th>
+                    <th>Status</th>
+                    <th>Maintenance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((event) => (
+                    <tr className={event.voided ? 'time-maintenance-row--voided' : ''} key={event.id}>
+                      <td>
+                        <strong>{event.employeeName}</strong>
+                        <span>@{event.username} · {event.employmentType}</span>
+                      </td>
+                      <td>
+                        <strong>{formatDateOnly(dateInputValue(event.effectiveAt))}</strong>
+                        <span>{formatTime(event.effectiveAt, event.timeZone)}</span>
+                        {event.effectiveAt !== event.recordedAt ? <small>Original: {formatTime(event.recordedAt, event.timeZone)}</small> : null}
+                      </td>
+                      <td>
+                        <strong>{maintenanceEventLabel(event)}</strong>
+                        <span>{event.source.replaceAll('_', ' ')}</span>
+                      </td>
+                      <td>
+                        <strong>{event.locationName}</strong>
+                        <span>{[event.siteCode, event.postName ?? event.eventName].filter(Boolean).join(' · ') || 'Unscheduled'}</span>
+                      </td>
+                      <td>
+                        <MaintenanceEventStatus event={event} />
+                        {event.latestNote ? <small>{event.latestNote}</small> : null}
+                      </td>
+                      <td>
+                        <div className="time-maintenance-actions">
+                          <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'adjust')} type="button">
+                            <Pencil aria-hidden="true" size={15} /> Change
+                          </button>
+                          <button className="danger-secondary" disabled={event.voided} onClick={() => beginCorrection(event, 'void')} type="button">
+                            Void
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      ) : null}
+    </section>
+  )
 }
 
 function VerifiedTimekeepingSetup() {
@@ -711,7 +1065,7 @@ function LiveTimekeeping() {
   }
 
   const dashboard = dashboardQuery.data
-  const canReviewPayroll = dashboard.employee.role === 'dispatcher' || dashboard.employee.role === 'supervisor' || dashboard.employee.role === 'admin'
+  const canReviewPayroll = ['dispatcher', 'scheduler', 'supervisor', 'admin'].includes(dashboard.employee.role)
 
   return (
     <>
@@ -758,7 +1112,12 @@ function LiveTimekeeping() {
 
       <RecentEvents events={dashboard.recentEvents} />
 
-      {canReviewPayroll ? <SupervisorTimeReview defaultDate={operationalDate} /> : null}
+      {canReviewPayroll ? (
+        <>
+          <TimeMaintenanceWorkbench defaultDate={operationalDate} />
+          <SupervisorTimeReview defaultDate={operationalDate} />
+        </>
+      ) : null}
     </>
   )
 }

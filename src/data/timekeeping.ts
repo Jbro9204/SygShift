@@ -116,6 +116,54 @@ const pendingCorrectionSchema = z.object({
   shiftId: z.string().uuid().nullable(),
 })
 
+const employeeStatusSchema = z.enum(['active', 'leave', 'inactive', 'separated'])
+
+const timeMaintenanceEmployeeSchema = z.object({
+  id: z.string().uuid(),
+  username: z.string(),
+  displayName: z.string(),
+  role: appRoleSchema,
+  employmentType: employmentTypeSchema,
+  status: employeeStatusSchema,
+})
+
+const timeMaintenanceEventSchema = z.object({
+  id: z.string().uuid(),
+  employeeId: z.string().uuid(),
+  username: z.string(),
+  employeeName: z.string(),
+  role: appRoleSchema,
+  employmentType: employmentTypeSchema,
+  shiftId: z.string().uuid().nullable(),
+  kind: timeEventKindSchema,
+  recordedAt: z.string(),
+  effectiveAt: z.string(),
+  clientRecordedAt: z.string().nullable(),
+  source: timeEventSourceSchema,
+  createdBy: z.string().uuid().nullable(),
+  createdByName: z.string().nullable(),
+  voided: z.boolean(),
+  pendingCorrectionCount: z.number().int().nonnegative(),
+  maintenanceNoteCount: z.number().int().nonnegative(),
+  latestNote: z.string().nullable(),
+  latestAction: z.enum(['manual_add', 'time_adjust', 'void']).nullable(),
+  siteName: z.string().nullable(),
+  siteCode: z.string().nullable(),
+  postName: z.string().nullable(),
+  eventName: z.string().nullable(),
+  locationName: z.string(),
+  timeZone: z.string(),
+})
+
+const timeMaintenanceSchema = z.object({
+  serverTimestamp: z.string(),
+  fromDate: z.string(),
+  throughDate: z.string(),
+  operationalTimeZone: z.literal('America/Denver'),
+  employees: z.array(timeMaintenanceEmployeeSchema),
+  events: z.array(timeMaintenanceEventSchema),
+})
+
 const timekeepingReviewSchema = z.object({
   serverTimestamp: z.string(),
   fromDate: z.string(),
@@ -167,6 +215,9 @@ export type TimekeepingReview = z.infer<typeof timekeepingReviewSchema>
 export type TimekeepingReviewRow = z.infer<typeof timekeepingReviewRowSchema>
 export type PendingCorrection = z.infer<typeof pendingCorrectionSchema>
 export type PayrollExportBatch = z.infer<typeof payrollExportBatchSchema>
+export type TimeMaintenance = z.infer<typeof timeMaintenanceSchema>
+export type TimeMaintenanceEmployee = z.infer<typeof timeMaintenanceEmployeeSchema>
+export type TimeMaintenanceEvent = z.infer<typeof timeMaintenanceEventSchema>
 
 export const verifiedTimekeepingBaseline = {
   operationalTimeZone: 'America/Denver',
@@ -189,6 +240,10 @@ export function parseTimekeepingEvent(value: unknown): TimekeepingEvent {
 
 export function parseTimekeepingReview(value: unknown): TimekeepingReview {
   return timekeepingReviewSchema.parse(value)
+}
+
+export function parseTimeMaintenance(value: unknown): TimeMaintenance {
+  return timeMaintenanceSchema.parse(value)
 }
 
 export function parsePayrollExportBatch(value: unknown): PayrollExportBatch {
@@ -266,6 +321,20 @@ export async function getTimekeepingReview(input: {
   return parseTimekeepingReview(data)
 }
 
+export async function getTimeMaintenance(input: {
+  fromDate: string
+  throughDate: string
+  employeeId?: string | null
+}): Promise<TimeMaintenance> {
+  const { data, error } = await getSupabaseClient().rpc('get_time_maintenance', {
+    target_employee_id: input.employeeId ?? null,
+    target_from_date: input.fromDate,
+    target_through_date: input.throughDate,
+  })
+  if (error) throw new Error(error.message || 'Time maintenance could not be loaded. MFA is required.')
+  return parseTimeMaintenance(data)
+}
+
 export async function reviewTimeEventCorrection(input: {
   correctionId: string
   approved: boolean
@@ -278,6 +347,41 @@ export async function reviewTimeEventCorrection(input: {
   })
   if (error) throw new Error(error.message || 'The correction decision could not be recorded.')
   return correctionReviewResultSchema.parse(data)
+}
+
+export async function supervisorRecordTimeEvent(input: {
+  employeeId: string
+  kind: TimeEventKind
+  effectiveAt: string
+  shiftId?: string | null
+  reason: string
+}): Promise<TimekeepingEvent> {
+  const { data, error } = await getSupabaseClient().rpc('supervisor_record_time_event', {
+    target_effective_at: input.effectiveAt,
+    target_employee_id: input.employeeId,
+    target_idempotency_key: requestKey(),
+    target_kind: input.kind,
+    target_reason: input.reason,
+    target_shift_id: input.shiftId ?? null,
+  })
+  if (error) throw new Error(error.message || 'The time event could not be added.')
+  return parseTimekeepingEvent(data)
+}
+
+export async function supervisorCorrectTimeEvent(input: {
+  timeEventId: string
+  replacementTime?: string | null
+  voided?: boolean
+  reason: string
+}): Promise<z.infer<typeof correctionResultSchema>> {
+  const { data, error } = await getSupabaseClient().rpc('supervisor_correct_time_event', {
+    target_reason: input.reason,
+    target_replacement_time: input.replacementTime ?? null,
+    target_time_event_id: input.timeEventId,
+    target_voided: input.voided ?? false,
+  })
+  if (error) throw new Error(error.message || 'The time event could not be corrected.')
+  return correctionResultSchema.parse(data)
 }
 
 export async function createPayrollExportBatch(input: {

@@ -4,6 +4,7 @@ import {
   nextTimeEventKinds,
   parsePayrollExportBatch,
   parsePayrollExportHistory,
+  parseTimeMaintenance,
   parseTimekeepingDashboard,
   parseTimekeepingEvent,
   parseTimekeepingReview,
@@ -132,5 +133,52 @@ describe('timekeeping validation', () => {
 
     expect(batch.rowCount).toBe(14)
     expect(parsePayrollExportHistory([batch])).toHaveLength(1)
+  })
+
+  it('validates operations time maintenance events', () => {
+    const maintenance = parseTimeMaintenance({
+      serverTimestamp: '2026-07-16T15:00:00.000Z',
+      fromDate: '2026-07-10',
+      throughDate: '2026-07-16',
+      operationalTimeZone: 'America/Denver',
+      employees: [{
+        id: '73000000-0000-4000-8000-000000000001',
+        username: 'jbrown',
+        displayName: 'Jordan Brown',
+        role: 'admin',
+        employmentType: 'salary',
+        status: 'active',
+      }],
+      events: [{
+        id: '73000000-0000-4000-8000-000000000030',
+        employeeId: '73000000-0000-4000-8000-000000000001',
+        username: 'jbrown',
+        employeeName: 'Jordan Brown',
+        role: 'admin',
+        employmentType: 'salary',
+        shiftId: null,
+        kind: 'clock_out',
+        recordedAt: '2026-07-16T22:00:00.000Z',
+        effectiveAt: '2026-07-16T22:00:00.000Z',
+        clientRecordedAt: null,
+        source: 'supervisor',
+        createdBy: '73000000-0000-4000-8000-000000000001',
+        createdByName: 'Jordan Brown',
+        voided: false,
+        pendingCorrectionCount: 0,
+        maintenanceNoteCount: 1,
+        latestNote: 'Forgotten clock-out verified by supervisor.',
+        latestAction: 'manual_add',
+        siteName: null,
+        siteCode: null,
+        postName: null,
+        eventName: null,
+        locationName: 'Unscheduled',
+        timeZone: 'America/Denver',
+      }],
+    })
+
+    expect(maintenance.events[0]?.source).toBe('supervisor')
+    expect(maintenance.events[0]?.latestAction).toBe('manual_add')
   })
 })

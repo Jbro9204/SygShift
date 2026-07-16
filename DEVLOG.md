@@ -20,6 +20,24 @@ deployment status, or major workflow assumptions change.
 - Do not run Supabase migration repair blindly. First reconcile remote migration history or intentionally apply
   a targeted SQL file.
 
+## 2026-07-16
+
+### Added operations time maintenance workbench
+
+- Added a live Time Maintenance workspace inside Time & Attendance for dispatcher/scheduler/supervisor/admin roles.
+- Operations users can now:
+  - filter employee time by date range and employee,
+  - view detailed punch events,
+  - add a missing supervisor-entered punch with a required reason,
+  - change a punch time through an approved correction,
+  - void an incorrect punch through an approved correction.
+- Added Supabase function support:
+  - `get_time_maintenance(date, date, uuid)`
+  - `supervisor_record_time_event(uuid, time_event_kind, timestamptz, uuid, text, text)`
+  - `supervisor_correct_time_event(uuid, timestamptz, boolean, text)`
+- Added `public.time_event_maintenance_notes` so manual time work keeps actor, reason, action, timestamp, and audit history.
+- Original punch records remain append-only; maintenance actions create auditable events/corrections instead of silently rewriting history.
+
 ## 2026-07-15
 
 ### Hid legacy import tools from daily navigation
