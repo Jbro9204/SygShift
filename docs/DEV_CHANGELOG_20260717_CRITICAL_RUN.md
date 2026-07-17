@@ -15,6 +15,7 @@ This run addressed the 12-item critical task list covering availability, schedul
 - Reworked dashboard counters behind `public.get_overview_metrics_payload()`:
   - On Duty = active clocked-in employees from the latest non-voided time event within the active window;
   - Open Shifts = published open shifts whose end time is still in the future.
+- Updated the dashboard Open Shifts counter after review so it only counts active published openings starting within the next 14 days instead of all future openings.
 - Hardened schedule draft editing:
   - scheduler role included in eligible scheduling employees;
   - old active assignments are cleared before editing/reassigning a draft block to prevent self-overlap errors;
@@ -37,6 +38,7 @@ This run addressed the 12-item critical task list covering availability, schedul
 ## Verification
 
 - Supabase migration applied successfully to the linked SygShift project.
+- Follow-up Supabase migration applied successfully for the two-week dashboard Open Shifts window.
 - `pnpm typecheck` passed.
 - `pnpm lint` passed.
 - `pnpm test` passed: 22 test files, 72 tests.
