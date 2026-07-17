@@ -84,28 +84,7 @@ export async function getEmployeeDirectory(): Promise<DirectoryEntry[]> {
   return parseDirectoryEntries(data).filter((employee) => employee.status === 'active' || employee.status === 'leave')
 }
 export async function getSites(): Promise<Site[]> {
-  const { data, error } = await getSupabaseClient()
-    .from('sites')
-    .select(`
-      id,
-      code,
-      name,
-      address_line_1,
-      city,
-      region,
-      postal_code,
-      time_zone,
-      active,
-      posts (
-        id,
-        name,
-        requires_armed,
-        active,
-        default_start_time,
-        default_end_time
-      )
-    `)
-    .order('name')
+  const { data, error } = await getSupabaseClient().rpc('get_sites_payload')
 
   if (error) throw new Error('Sites and posts could not be loaded for this account.')
 

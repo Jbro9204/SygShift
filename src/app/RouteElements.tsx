@@ -6,17 +6,14 @@ export const AccountSecurityPageRoute = lazy(() =>
 export const AnnouncementsPageRoute = lazy(() =>
   import('../pages/AnnouncementsPage').then((module) => ({ default: module.AnnouncementsPage })),
 )
+export const AvailabilityPageRoute = lazy(() =>
+  import('../pages/AvailabilityPage').then((module) => ({ default: module.AvailabilityPage })),
+)
 export const EventsPageRoute = lazy(() =>
   import('../pages/EventsPage').then((module) => ({ default: module.EventsPage })),
 )
-export const ImportReviewPageRoute = lazy(() =>
-  import('../pages/ImportReviewPage').then((module) => ({ default: module.ImportReviewPage })),
-)
 export const LoginPageRoute = lazy(() =>
   import('../pages/LoginPage').then((module) => ({ default: module.LoginPage })),
-)
-export const OperationalImportPageRoute = lazy(() =>
-  import('../pages/OperationalImportPage').then((module) => ({ default: module.OperationalImportPage })),
 )
 export const NotificationsPageRoute = lazy(() =>
   import('../pages/NotificationsPage').then((module) => ({ default: module.NotificationsPage })),

@@ -148,7 +148,7 @@ export function OverviewPage() {
           <p>
             {isSupabaseConfigured
               ? 'The application is using protected authentication, operational schedule data, and exact source reconciliation safeguards.'
-              : 'No employee or schedule information will appear until the protected database is connected and the source workbook passes reconciliation.'}
+              : 'No employee or schedule information will appear until the protected database is connected.'}
           </p>
         </div>
         <span className="status-pill">{isSupabaseConfigured ? 'Connected' : 'No data loaded'}</span>
@@ -192,7 +192,7 @@ export function OverviewPage() {
               <p>
                 {isSupabaseConfigured
                   ? 'This count excludes past openings. Use Events & Openings to fill them, or Schedule to review the full week.'
-                  : 'Imported coverage will appear here only after every source value is verified.'}
+                  : 'Published coverage will appear here after the secure schedule is ready.'}
               </p>
             </div>
           </div>

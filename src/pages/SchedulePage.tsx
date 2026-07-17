@@ -196,9 +196,9 @@ function ShiftCard({
         )}
       </div>
       {showSourceReview ? (
-        <div className="shift-card__source-note" aria-label="Imported schedule assignment review">
-          {source.assignee ? <span><strong>Imported assignee:</strong> {source.assignee}</span> : null}
-          {source.context ? <span><strong>Source row:</strong> {source.context}</span> : null}
+        <div className="shift-card__source-note" aria-label="Schedule assignment review">
+          {source.assignee ? <span><strong>Original assignee:</strong> {source.assignee}</span> : null}
+          {source.context ? <span><strong>Schedule context:</strong> {source.context}</span> : null}
           {source.qualification ? <span><strong>Qualification:</strong> {source.qualification}</span> : null}
           {sourceReference ? <small>{sourceReference}</small> : null}
           {source.reviewNeeded && canResolve ? (
@@ -348,13 +348,13 @@ function ReviewResolutionDialog({
     <ModalDialog
       description="Resolving creates a new schedule revision. The database will reject overlaps, missing armed credentials, or full shifts."
       onClose={onClose}
-      title="Resolve imported schedule assignment"
+      title="Resolve schedule assignment"
     >
       <div className="confirmation-summary">
         <strong>{shift.post?.name ?? shift.event?.name ?? 'Shift'}</strong>
         <span>{shiftTimeRange(shift)}</span>
-        {source.assignee ? <span>Imported assignee: {source.assignee}</span> : null}
-        {source.context ? <span>Source row: {source.context}</span> : null}
+        {source.assignee ? <span>Original assignee: {source.assignee}</span> : null}
+        {source.context ? <span>Schedule context: {source.context}</span> : null}
       </div>
       <form className="request-form" onSubmit={submit}>
         <label className="field-stack">
@@ -471,9 +471,9 @@ function SchedulerShiftPanel({
           <section className="scheduler-shift-panel__section scheduler-shift-panel__warning">
             <AlertCircle aria-hidden="true" size={17} />
             <div>
-              <strong>{source.reviewNeeded ? 'Review needed' : 'Imported note'}</strong>
-              {source.assignee ? <span>Imported assignee: {source.assignee}</span> : null}
-              {source.context ? <span>Source row: {source.context}</span> : null}
+              <strong>{source.reviewNeeded ? 'Review needed' : 'Schedule note'}</strong>
+              {source.assignee ? <span>Original assignee: {source.assignee}</span> : null}
+              {source.context ? <span>Schedule context: {source.context}</span> : null}
               {sourceReference ? <small>{sourceReference}</small> : null}
             </div>
           </section>
@@ -572,13 +572,13 @@ function ImportedShiftCard({ shift }: { shift: ImportedScheduleShift }) {
       </div>
       <span className="shift-card__title">{assignee}</span>
       <div className="shift-card__people">
-        <span>{shift.contextLabel ?? 'Unlabeled source row'}</span>
+        <span>{shift.contextLabel ?? 'Unlabeled schedule row'}</span>
       </div>
       <div className="shift-card__footer">
         <span className={shift.qualificationCandidate === 'unknown' ? 'shift-tag shift-tag--review' : 'shift-tag'}>
           {sourceQualificationLabel(shift.qualificationCandidate)}
         </span>
-        <span className="shift-tag">Imported schedule</span>
+        <span className="shift-tag">Historical schedule</span>
       </div>
       <small className="source-cell-reference">
         Cell {shift.sourceTimeAddress ?? shift.candidateKey}
@@ -610,6 +610,10 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const weekEnd = days[6]
   const weekKey = format(weekStart, 'yyyy-MM-dd')
   const currentOperationalDateKey = format(today, 'yyyy-MM-dd')
+  const schedulerWorkDays = useMemo(
+    () => days.filter((day) => format(day, 'yyyy-MM-dd') >= currentOperationalDateKey),
+    [currentOperationalDateKey, days],
+  )
   const planningWeeks = useMemo(() => {
     const currentWeek = startOfWeek(today, { weekStartsOn: 0 })
     return Array.from({ length: 6 }, (_, index) => {
@@ -631,7 +635,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const importedPreviewQuery = useQuery({
     queryKey: ['imported-schedule-preview', weekKey],
     queryFn: () => getImportedSchedulePreview(weekKey),
-    enabled: isSupabaseConfigured && !scheduleQuery.isPending && !scheduleQuery.data,
+    enabled: false,
   })
   const roleQuery = useQuery({
     queryKey: ['current-app-role'],
@@ -930,7 +934,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     () => reviewItems.filter((item) => item.shift.requires_armed).length,
     [reviewItems],
   )
-  const schedulerDayBuckets = useMemo(() => days.map((day) => {
+  const schedulerDayBuckets = useMemo(() => schedulerWorkDays.map((day) => {
     const dayKey = format(day, 'yyyy-MM-dd')
     const schedulerRows = focusedEmployeeId ? visibleEmployeeRows : visibleRows
     const shifts = schedulerRows
@@ -942,11 +946,13 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey,
     ).length
     return { day, dayKey, openSlots, reviewCount, shifts }
-  }), [currentOperationalDateKey, days, focusedEmployeeId, visibleEmployeeRows, visibleRows])
+  }), [currentOperationalDateKey, focusedEmployeeId, schedulerWorkDays, visibleEmployeeRows, visibleRows])
   const schedulerCoverageGroups = useMemo<SchedulerCoverageGroup[]>(() => visibleRows.map((row) => {
     const lanes = new Map<string, SchedulerCoverageLane>()
 
-    for (const shift of row.shifts) {
+    const futureShifts = row.shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
+
+    for (const shift of futureShifts) {
       const id = shift.post?.id ?? shift.event?.id ?? shift.id
       const lane = lanes.get(id) ?? {
         id,
@@ -958,7 +964,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       lanes.set(id, lane)
     }
 
-    const shifts = row.shifts
+    const shifts = futureShifts
     const openSlots = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
     const reviewCount = shifts.filter((shift) =>
       parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey,
@@ -986,7 +992,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       shiftCount: shifts.length,
       status,
     }
-  }), [currentOperationalDateKey, visibleRows])
+  }).filter((group) => group.shiftCount > 0), [currentOperationalDateKey, visibleRows])
   const schedulerLocationSummaries = useMemo(() => rows.map((row) => {
     const openSlots = row.shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
     const reviewCount = row.shifts.filter((shift) =>
@@ -1605,7 +1611,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               <p className="eyebrow">Supervisor cleanup</p>
               <h2 id="schedule-review-workbench-title">Review needed workbench</h2>
               <p>
-                These shifts came from the original imported schedule but were not safe to auto-assign. Resolve each one
+                These shifts need an operations decision before the schedule can be trusted. Resolve each one
                 after confirming the correct employee.
               </p>
             </div>
@@ -1635,8 +1641,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   </div>
                   <h3>{item.row.name}</h3>
                   <p>
-                    {item.source.assignee ? `Imported assignee: ${item.source.assignee}` : 'Imported assignee not named'}
-                    {item.source.context ? ` · Source row: ${item.source.context}` : ''}
+                    {item.source.assignee ? `Original assignee: ${item.source.assignee}` : 'Original assignee not named'}
+                    {item.source.context ? ` · Schedule context: ${item.source.context}` : ''}
                   </p>
                   {item.sourceReference ? <small>{item.sourceReference}</small> : null}
                 </div>
@@ -1668,7 +1674,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           <article><span>{scheduleQuery.data.status === 'draft' ? 'Draft shifts' : 'Published shifts'}</span><strong>{scheduleSummary.shifts}</strong><small>Revision {scheduleQuery.data.revision}</small></article>
           <article><span>Assigned slots</span><strong>{scheduleSummary.assigned}</strong><small>{scheduleSummary.employees} employees on schedule</small></article>
           <article className={scheduleSummary.open ? 'import-metric--attention' : ''}><span>Open slots</span><strong>{scheduleSummary.open}</strong><small>Visible in openings/request workflows</small></article>
-          <article className={scheduleSummary.review ? 'import-metric--attention' : ''}><span>Review needed</span><strong>{scheduleSummary.review}</strong><small>Imported items needing supervisor cleanup</small></article>
+          <article className={scheduleSummary.review ? 'import-metric--attention' : ''}><span>Review needed</span><strong>{scheduleSummary.review}</strong><small>Schedule items needing supervisor cleanup</small></article>
         </section>
       ) : null}
 
@@ -1822,7 +1828,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                       <div className="scheduler-coverage-grid" role="table" aria-label={`${group.name} weekly coverage`}>
                         <div className="scheduler-coverage-row scheduler-coverage-row--header" role="row">
                           <div role="columnheader">Post</div>
-                          {days.map((day) => (
+                          {schedulerWorkDays.map((day) => (
                             <div key={day.toISOString()} role="columnheader">
                               <span>{format(day, 'EEE')}</span>
                               <strong>{format(day, 'MM/dd/yyyy')}</strong>
@@ -1835,7 +1841,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                               <span>{lane.label}</span>
                               <strong>{lane.name}</strong>
                             </div>
-                            {days.map((day) => {
+                            {schedulerWorkDays.map((day) => {
                               const dayKey = format(day, 'yyyy-MM-dd')
                               const shifts = lane.shifts.filter((shift) => shiftOperationalDate(shift) === dayKey)
                               return (
@@ -2044,17 +2050,16 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       ) : null}
 
       {!scheduleQuery.data && importedPreviewQuery.data ? (
-        <section className="source-schedule-banner" aria-label="Imported schedule status">
+        <section className="source-schedule-banner" aria-label="Schedule status">
           <div>
-            <p className="eyebrow">Imported workbook preview</p>
-            <strong>{importedPreviewQuery.data.sourceSheetName ?? 'Source workbook week'}</strong>
+            <p className="eyebrow">Historical schedule preview</p>
+            <strong>{importedPreviewQuery.data.sourceSheetName ?? 'Schedule week'}</strong>
             <span>
-              No published operational revision exists for this selected week yet. This preview shows
-              the source workbook records only; use the published weeks or create a reviewed revision before payroll reliance.
+              No published operational revision exists for this selected week yet. Create a reviewed revision before relying on this week.
             </span>
           </div>
           <div className="source-schedule-banner__counts">
-            <span>{importedPreviewQuery.data.shifts.length} source shifts</span>
+            <span>{importedPreviewQuery.data.shifts.length} schedule shifts</span>
             <span>{importedPreviewQuery.data.blockingIssueCount} blockers</span>
             <span>{importedPreviewQuery.data.warningIssueCount} warnings</span>
           </div>
@@ -2184,7 +2189,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 <DatabaseZap aria-hidden="true" size={34} />
                 <strong>Schedule ready for the secure connection.</strong>
                 <p>
-                  Coverage remains empty until the workbook import matches the protected source exactly.
+                  Coverage remains empty until the secure schedule is published.
                 </p>
               </div>
             </div>
@@ -2207,8 +2212,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           ) : !scheduleQuery.data && importedPreviewQuery.isPending ? (
             <div className="schedule-state" role="row">
               <div role="cell">
-                <DataStatePanel icon={CalendarDays} title="Checking imported schedule data">
-                  <p>Looking for a published operational week first, then source workbook records if no revision exists.</p>
+                <DataStatePanel icon={CalendarDays} title="Checking schedule data">
+                  <p>Looking for a published operational week.</p>
                 </DataStatePanel>
               </div>
             </div>
@@ -2236,7 +2241,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               <div role="cell">
                 <CalendarDays aria-hidden="true" size={34} />
                 <strong>No published schedule exists for this selected week.</strong>
-                <p>The imported schedule currently covers June 28, 2026 through August 15, 2026. Move into that range or create a reviewed schedule revision for this week.</p>
+                <p>Create a reviewed schedule revision for this week, then publish it when coverage is ready.</p>
               </div>
             </div>
           ) : scheduleView === 'employee' && visibleEmployeeRows.length === 0 ? (

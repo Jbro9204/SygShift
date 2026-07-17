@@ -73,9 +73,9 @@ function OpportunityCard({
         {opportunityLocation(opportunity)}
       </p>
       {source.reviewNeeded ? (
-        <div className="opportunity-card__source-note" aria-label="Imported schedule assignment review">
-          {source.assignee ? <span><strong>Imported assignee:</strong> {source.assignee}</span> : null}
-          {source.context ? <span><strong>Source row:</strong> {source.context}</span> : null}
+        <div className="opportunity-card__source-note" aria-label="Schedule assignment review">
+          {source.assignee ? <span><strong>Original assignee:</strong> {source.assignee}</span> : null}
+          {source.context ? <span><strong>Schedule context:</strong> {source.context}</span> : null}
           {source.qualification ? <span><strong>Qualification:</strong> {source.qualification}</span> : null}
           {sourceReference ? <small>{sourceReference}</small> : null}
         </div>

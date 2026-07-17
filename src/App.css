@@ -3026,10 +3026,14 @@
 }
 
 .schedule-row--header {
+  position: sticky;
+  z-index: 6;
+  top: 0;
   min-height: 78px;
   color: #5e5a52;
   background: #faf8f3;
   border-bottom: 1px solid var(--line);
+  box-shadow: 0 8px 18px rgb(31 28 22 / 6%);
 }
 
 .schedule-site-column,
@@ -3042,11 +3046,15 @@
 }
 
 .schedule-site-column {
+  position: sticky;
+  z-index: 7;
+  left: 0;
   justify-content: flex-start;
   padding-left: 20px;
   color: #393731;
   font-size: 15px;
   font-weight: 750;
+  background: #faf8f3;
 }
 
 .schedule-day-column {
@@ -6559,7 +6567,7 @@
 
 .time-maintenance-tools {
   display: grid;
-  grid-template-columns: minmax(240px, 0.32fr) minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 0.3fr) minmax(0, 1fr);
   gap: 16px;
   padding: 20px 22px;
   border-bottom: 1px solid #e7e2d8;
@@ -6609,7 +6617,7 @@
 
 .time-maintenance-add {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
   align-items: start;
   gap: 14px;
   padding: 18px;
@@ -6629,7 +6637,7 @@
 }
 
 .time-maintenance-add__reason {
-  grid-column: span 3;
+  grid-column: 1 / span 3;
 }
 
 .time-maintenance-context {
@@ -6669,7 +6677,7 @@
 .time-maintenance-add .primary-action {
   grid-column: 4;
   width: 100%;
-  min-height: 44px;
+  min-height: 46px;
   align-self: end;
   justify-content: center;
   white-space: nowrap;
@@ -6677,7 +6685,7 @@
 
 .time-correction-editor {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto minmax(130px, 0.35fr) minmax(130px, 0.35fr) minmax(260px, 0.9fr) auto;
+  grid-template-columns: minmax(240px, 1fr) minmax(150px, 0.35fr) minmax(140px, 0.3fr) minmax(140px, 0.3fr) minmax(260px, 0.8fr) minmax(180px, auto);
   align-items: end;
   gap: 12px;
   margin: 18px 22px;
@@ -6713,10 +6721,59 @@
 }
 
 .time-correction-editor__actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 8px;
-  justify-content: flex-end;
+}
+
+.time-correction-editor__actions button {
+  width: 100%;
+  justify-content: center;
+}
+
+.availability-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.78fr) minmax(320px, 1fr) minmax(320px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.availability-panel {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+}
+
+.availability-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  background: #fffdf8;
+  border: 1px solid #e2d9ca;
+  border-radius: 10px;
+}
+
+.availability-card h3 {
+  margin: 8px 0 5px;
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.availability-card p,
+.availability-card small,
+.availability-card blockquote {
+  margin: 0;
+  color: #665f54;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.availability-card blockquote {
+  margin-top: 10px;
+  padding-left: 12px;
+  border-left: 3px solid #d6b678;
 }
 
 .time-maintenance-table td {
@@ -7494,6 +7551,7 @@
   }
 
   .schedule-admin-summary,
+  .availability-layout,
   .operations-metrics,
   .page--notifications .operations-metrics,
   .operations-grid,
@@ -7560,6 +7618,7 @@
   }
 
   .payroll-lock-panel,
+  .availability-card,
   .payroll-export-history-item {
     grid-template-columns: 1fr;
   }

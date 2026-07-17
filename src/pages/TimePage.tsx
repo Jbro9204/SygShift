@@ -854,9 +854,9 @@ function PayrollReviewTable({
               </td>
               <td>
                 <strong>{rowKindLabels[row.rowKind]}</strong>
-                {row.weekStartsOn && row.weekEndsOn ? <span>{row.weekStartsOn} - {row.weekEndsOn}</span> : null}
+                {row.weekStartsOn && row.weekEndsOn ? <span>{formatDateOnly(row.weekStartsOn)} - {formatDateOnly(row.weekEndsOn)}</span> : null}
               </td>
-              <td>{row.operationalDate}</td>
+              <td>{formatDateOnly(row.operationalDate)}</td>
               <td>
                 <strong>{row.locationName}</strong>
                 <span>{[row.siteCode, row.postName ?? row.eventName].filter(Boolean).join(' · ') || 'Time clock'}</span>

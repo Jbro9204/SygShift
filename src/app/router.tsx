@@ -4,11 +4,10 @@ import { RouteErrorPage } from '../pages/RouteErrorPage'
 import {
   AccountSecurityPageRoute,
   AnnouncementsPageRoute,
+  AvailabilityPageRoute,
   EventsPageRoute,
-  ImportReviewPageRoute,
   LoginPageRoute,
   NotificationsPageRoute,
-  OperationalImportPageRoute,
   OverviewPageRoute,
   PeoplePageRoute,
   PatrolPageRoute,
@@ -94,6 +93,14 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: 'availability',
+        element: (
+          <RouteSuspense>
+            <AvailabilityPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
         path: 'account-security',
         element: (
           <RouteSuspense>
@@ -122,22 +129,6 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <UserAdminPageRoute />
-          </RouteSuspense>
-        ),
-      },
-      {
-        path: 'import-review',
-        element: (
-          <RouteSuspense>
-            <ImportReviewPageRoute />
-          </RouteSuspense>
-        ),
-      },
-      {
-        path: 'operational-import',
-        element: (
-          <RouteSuspense>
-            <OperationalImportPageRoute />
           </RouteSuspense>
         ),
       },

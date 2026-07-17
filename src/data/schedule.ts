@@ -239,7 +239,7 @@ export async function getImportedSchedulePreview(weekStartsOn: string): Promise<
     target_week_starts_on: weekStartsOn,
   })
 
-  if (error) throw new Error('The imported source schedule could not be loaded.')
+  if (error) throw new Error('The historical schedule preview could not be loaded.')
   if (!data) return null
   return importedSchedulePreviewSchema.parse(data)
 }
@@ -390,7 +390,7 @@ export function importedScheduleRows(schedule: ImportedSchedulePreview): Importe
   const rows = new Map<string, ImportedScheduleRow>()
 
   for (const shift of schedule.shifts) {
-    const name = shift.contextLabel ?? 'Unlabeled source row'
+    const name = shift.contextLabel ?? 'Unlabeled schedule row'
     const id = shift.siteKeyCandidate ?? name.toLocaleLowerCase()
     const row = rows.get(id) ?? {
       id,

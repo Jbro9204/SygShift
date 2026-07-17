@@ -39,7 +39,7 @@ const composerSchema = z.object({
 })
 
 const previewSchema = z.object({
-  templateKey: z.string(),
+  templateKey: z.string().default(''),
   title: z.string(),
   body: z.string(),
   kind: z.enum(['general', 'open_shift', 'overtime', 'event']),
@@ -56,7 +56,12 @@ export type AnnouncementPreview = z.infer<typeof previewSchema>
 export async function getAnnouncementComposer(): Promise<AnnouncementComposer> {
   const { data, error } = await getSupabaseClient().rpc('get_announcement_composer')
   if (error) throw new Error('Announcement templates could not be loaded for this account.')
-  return composerSchema.parse(data)
+  const composer = composerSchema.parse(data)
+  return {
+    ...composer,
+    templates: composer.templates.filter((template) => template.key !== 'welcome_to_sygshift'),
+    recentAnnouncements: composer.recentAnnouncements.filter((announcement) => announcement.templateKey !== 'welcome_to_sygshift'),
+  }
 }
 
 export async function previewAnnouncementTemplate(templateKey: string, fields: Record<string, string>): Promise<AnnouncementPreview> {
