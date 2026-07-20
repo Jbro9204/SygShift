@@ -45,7 +45,7 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: 'Workforce',
     items: [
-      { label: 'People', path: '/people', icon: UsersRound, roles: OPERATIONS_ROLES },
+      { label: 'Directory', path: '/people', icon: UsersRound, roles: OPERATIONS_ROLES },
       { label: 'Availability', path: '/availability', icon: CalendarCheck2 },
       { label: 'Sites & Posts', path: '/sites', icon: Building2, roles: OPERATIONS_ROLES },
       { label: 'Patrol', path: '/patrol', icon: MapPinned },

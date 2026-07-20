@@ -27,11 +27,8 @@ import {
   sendEmployeeWelcomeEmail,
   setEmployeeAccountState,
   updateEmployee,
-  upsertEmployeeCredential,
   type AdminUser,
   type AppRole,
-  type CredentialKind,
-  type CredentialStatus,
   type EmployeeMutationInput,
   type EmployeeStatus,
   type EmploymentType,
@@ -44,14 +41,6 @@ const roleLabels: Record<AppRole, string> = {
   guard: 'Guard',
   scheduler: 'Scheduler',
   supervisor: 'Supervisor',
-}
-
-const credentialStatusLabels: Record<CredentialStatus, string> = {
-  active: 'Active',
-  expired: 'Expired',
-  pending: 'Pending',
-  revoked: 'Revoked',
-  suspended: 'Suspended',
 }
 
 const statusLabels: Record<EmployeeStatus, string> = {
@@ -188,86 +177,6 @@ function EmployeeForm({
   )
 }
 
-function CredentialEditor({
-  employee,
-  kind,
-  label,
-  onSubmit,
-  pending,
-}: {
-  employee: AdminUser
-  kind: CredentialKind
-  label: string
-  onSubmit: (payload: {
-    kind: CredentialKind
-    status: CredentialStatus
-    credentialNumber: string | null
-    validFrom: string | null
-    expiresOn: string | null
-    notes: string | null
-  }) => void
-  pending: boolean
-}) {
-  const credential = employee.credentials.find((item) => item.kind === kind)
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const data = new FormData(event.currentTarget)
-    const value = (key: string) => String(data.get(key) ?? '').trim()
-    const optional = (key: string) => value(key) || null
-    onSubmit({
-      credentialNumber: optional('credentialNumber'),
-      expiresOn: optional('expiresOn'),
-      kind,
-      notes: optional('notes'),
-      status: value('status') as CredentialStatus,
-      validFrom: optional('validFrom'),
-    })
-  }
-
-  return (
-    <form className="credential-editor" onSubmit={submit}>
-      <div className="credential-editor__heading">
-        <strong>{label}</strong>
-        <span>{credential ? credentialStatusLabels[credential.status] : 'Not on file'}</span>
-      </div>
-      <div className="form-grid form-grid--two">
-        <label>
-          <span>Status</span>
-          <select defaultValue={credential?.status ?? 'pending'} name="status">
-            <option value="pending">Pending</option>
-            <option value="active">Active</option>
-            <option value="expired">Expired</option>
-            <option value="suspended">Suspended</option>
-            <option value="revoked">Revoked</option>
-          </select>
-        </label>
-        <label>
-          <span>Credential number</span>
-          <input defaultValue={credential?.credentialNumber ?? ''} name="credentialNumber" />
-        </label>
-      </div>
-      <div className="form-grid form-grid--two">
-        <label>
-          <span>Valid from</span>
-          <input defaultValue={credential?.validFrom ?? ''} name="validFrom" type="date" />
-        </label>
-        <label>
-          <span>Expires on</span>
-          <input defaultValue={credential?.expiresOn ?? ''} name="expiresOn" type="date" />
-        </label>
-      </div>
-      <label className="field-stack">
-        <span>Notes</span>
-        <textarea defaultValue={credential?.notes ?? ''} maxLength={2000} name="notes" rows={2} />
-      </label>
-      <button className="secondary-button secondary-button--small" disabled={pending} type="submit">
-        {pending ? 'Saving...' : `Save ${label}`}
-      </button>
-    </form>
-  )
-}
-
 function ManageUserModal({
   employee,
   onClose,
@@ -291,19 +200,6 @@ function ManageUserModal({
   })
   const accountStateMutation = useMutation({
     mutationFn: (disabled: boolean) => setEmployeeAccountState(employee.id, disabled),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
-    },
-  })
-  const credentialMutation = useMutation({
-    mutationFn: (payload: {
-      kind: CredentialKind
-      status: CredentialStatus
-      credentialNumber: string | null
-      validFrom: string | null
-      expiresOn: string | null
-      notes: string | null
-    }) => upsertEmployeeCredential({ ...payload, employeeId: employee.id }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
@@ -358,28 +254,7 @@ function ManageUserModal({
             pending={updateMutation.isPending}
           />
           {updateMutation.isError ? <div className="inline-alert" role="alert">{updateMutation.error.message}</div> : null}
-          <section className="credential-management-panel" aria-labelledby="credential-management-title">
-            <h3 id="credential-management-title">Credentials & Qualifications</h3>
-            <p className="form-note">
-              Armed assignments are blocked unless the armed guard credential is active and valid for the shift date.
-            </p>
-            <CredentialEditor
-              employee={employee}
-              kind="guard_license"
-              label="Guard license"
-              onSubmit={(payload) => credentialMutation.mutate(payload)}
-              pending={credentialMutation.isPending}
-            />
-            <CredentialEditor
-              employee={employee}
-              kind="armed_guard"
-              label="Armed guard credential"
-              onSubmit={(payload) => credentialMutation.mutate(payload)}
-              pending={credentialMutation.isPending}
-            />
-            {credentialMutation.isError ? <div className="inline-alert" role="alert">{credentialMutation.error.message}</div> : null}
-            {credentialMutation.isSuccess ? <div className="form-feedback form-feedback--success" role="status">Credential information saved.</div> : null}
-          </section>
+          <p className="form-note">Credential updates are handled in Directory so schedulers can maintain qualification records without account-security access.</p>
         </section>
 
         <section className="account-control-panel" aria-labelledby="account-control-title">

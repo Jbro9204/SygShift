@@ -72,7 +72,25 @@ const siteSchema = z.object({
 })
 
 export type DirectoryEntry = z.infer<typeof directoryEntrySchema>
+export type DirectoryCredential = z.infer<typeof credentialSchema>
+export type CredentialKind = DirectoryCredential['kind']
+export type CredentialStatus = DirectoryCredential['status']
 export type Site = z.infer<typeof siteSchema>
+
+export interface EmployeeCredentialMutationInput {
+  employeeId: string
+  kind: CredentialKind
+  status: CredentialStatus
+  credentialNumber?: string | null
+  validFrom?: string | null
+  expiresOn?: string | null
+  notes?: string | null
+}
+
+function cleanOptional(value: string | null | undefined): string | null {
+  const clean = value?.trim()
+  return clean ? clean : null
+}
 
 export function parseDirectoryEntries(value: unknown): DirectoryEntry[] {
   return z.array(directoryEntrySchema).parse(value)
@@ -83,6 +101,21 @@ export async function getEmployeeDirectory(): Promise<DirectoryEntry[]> {
   if (error) throw new Error('The employee directory could not be loaded for this account.')
   return parseDirectoryEntries(data).filter((employee) => employee.status === 'active' || employee.status === 'leave')
 }
+
+export async function upsertDirectoryCredential(input: EmployeeCredentialMutationInput): Promise<DirectoryEntry> {
+  const { data, error } = await getSupabaseClient().rpc('upsert_employee_credential', {
+    target_credential_number: cleanOptional(input.credentialNumber),
+    target_employee_id: input.employeeId,
+    target_expires_on: cleanOptional(input.expiresOn),
+    target_kind: input.kind,
+    target_notes: cleanOptional(input.notes),
+    target_status: input.status,
+    target_valid_from: cleanOptional(input.validFrom),
+  })
+  if (error) throw new Error(error.message || 'Credential could not be updated.')
+  return directoryEntrySchema.parse(data)
+}
+
 export async function getSites(): Promise<Site[]> {
   const { data, error } = await getSupabaseClient().rpc('get_sites_payload')
 
