@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import worker, { brandedEmailHtml, buildWelcomeEmail, validateSuppliedTemporaryPassword } from '../worker'
 
-function environment(response: Response = new Response('asset'), values: Record<string, string> = {}) {
+function environment(response: Response = new Response('asset'), values: Record<string, unknown> = {}) {
   return { ASSETS: { fetch: vi.fn().mockResolvedValue(response) }, ...values }
 }
 
@@ -152,6 +152,58 @@ describe('Cloudflare Worker boundary', () => {
     expect(response.status).toBe(503)
     expect(payload.error).toBe('email_not_configured')
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+
+  it('allows MFA-verified schedulers to process queued announcement emails', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employee_id: '10000000-0000-4000-8000-000000000002',
+        username: 'scheduler',
+        display_name: 'Schedule User',
+        role: 'scheduler',
+        has_mfa: true,
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{
+        id: '20000000-0000-4000-8000-000000000001',
+        recipients: ['jbrown@guardianshipsecurity.net'],
+        message: {
+          subject: 'Open shift available',
+          text: 'A shift is available.',
+        },
+      }]), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+    const emailSend = vi.fn().mockResolvedValue({ messageId: 'test-message' })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/admin/notifications/process', {
+        headers: { authorization: 'Bearer scheduler-token' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        EMAIL: { send: emailSend },
+        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+      }),
+    )
+    const payload = await response.json() as { delivered: string[]; failed: unknown[]; processed: number; requestedBy: string }
+
+    expect(response.status).toBe(200)
+    expect(payload).toMatchObject({
+      delivered: ['20000000-0000-4000-8000-000000000001'],
+      failed: [],
+      processed: 1,
+      requestedBy: 'scheduler',
+    })
+    expect(emailSend).toHaveBeenCalledWith(expect.objectContaining({
+      from: { email: 'scheduling@sygilant.us', name: 'SygShift' },
+      subject: 'Open shift available',
+      to: ['jbrown@guardianshipsecurity.net'],
+    }))
     vi.unstubAllGlobals()
   })
 

@@ -99,7 +99,9 @@ export async function getOperationsReport(): Promise<OperationsReport> {
 export async function processNotificationBatch(): Promise<NotificationProcessResult> {
   const { data: sessionData, error: sessionError } = await getSupabaseClient().auth.getSession()
   const token = sessionData.session?.access_token
-  if (sessionError || !token) throw new Error('Sign in as an Admin with MFA before sending queued emails.')
+  if (sessionError || !token) {
+    throw new Error('Sign in with an MFA-verified operations account before sending queued emails.')
+  }
 
   const response = await fetch('/api/v1/admin/notifications/process', {
     headers: { authorization: `Bearer ${token}` },

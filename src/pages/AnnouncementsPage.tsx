@@ -12,6 +12,7 @@ import {
   type AnnouncementPreview,
   type AnnouncementTemplate,
 } from '../data/announcements'
+import { processNotificationBatch } from '../data/operations'
 import { isSupabaseConfigured } from '../lib/supabase'
 
 function kindLabel(kind: AnnouncementTemplate['kind']): string {
@@ -143,8 +144,26 @@ export function AnnouncementsPage() {
     },
     onSuccess: async (result) => {
       setPreview(result)
-      setMessage(`Published "${result.title}" to ${recipientSummary(result)}.`)
-      await queryClient.invalidateQueries({ queryKey: ['announcement-composer'] })
+      const publishedMessage = `Published "${result.title}" to ${recipientSummary(result)}.`
+
+      try {
+        const delivery = await processNotificationBatch()
+        const deliveredCount = delivery.delivered.length
+        const failedCount = delivery.failed.length
+        const deliveryMessage = delivery.processed === 0
+          ? 'No queued emails were waiting to send.'
+          : `Email delivery processed ${delivery.processed} queued message${delivery.processed === 1 ? '' : 's'} (${deliveredCount} delivered, ${failedCount} failed).`
+
+        setMessage(`${publishedMessage} ${deliveryMessage}`)
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : 'Queued email delivery could not be started.'
+        setMessage(`${publishedMessage} Email delivery is queued, but sending needs attention: ${detail}`)
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['announcement-composer'] }),
+        queryClient.invalidateQueries({ queryKey: ['notification-center'] }),
+      ])
     },
   })
 

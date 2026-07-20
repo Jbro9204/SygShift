@@ -69,6 +69,12 @@ interface NotificationJob {
 const maxJsonBodyBytes = 4096
 const defaultAppUrl = 'https://app.sygilant.us'
 const defaultSupportEmail = 'jbrown@guardianshipsecurity.net'
+const notificationProcessorRoles = new Set<SessionContext['role']>([
+  'dispatcher',
+  'scheduler',
+  'supervisor',
+  'admin',
+])
 
 class ApiError extends Error {
   readonly code: string
@@ -222,6 +228,26 @@ async function requireAdminMfa(request: Request, environment: Environment): Prom
   config: NonNullable<ReturnType<typeof configuredSupabase>>
   context: SessionContext
 }> {
+  const result = await requireVerifiedOperationsSession(request, environment, null, 'admin_mfa_required')
+  if (result.context.role !== 'admin') {
+    throw new Response(JSON.stringify({ error: 'admin_mfa_required' }), {
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      status: 403,
+    })
+  }
+
+  return result
+}
+
+async function requireVerifiedOperationsSession(
+  request: Request,
+  environment: Environment,
+  allowedRoles: ReadonlySet<SessionContext['role']> | null = notificationProcessorRoles,
+  mfaError = 'operations_mfa_required',
+): Promise<{
+  config: NonNullable<ReturnType<typeof configuredSupabase>>
+  context: SessionContext
+}> {
   const config = configuredSupabase(environment)
   if (!config) {
     throw new Response(JSON.stringify({ error: 'server_not_configured' }), {
@@ -249,8 +275,8 @@ async function requireAdminMfa(request: Request, environment: Environment): Prom
   )
   const context = Array.isArray(payload) ? payload[0] : payload
 
-  if (!context || context.role !== 'admin' || !context.has_mfa) {
-    throw new Response(JSON.stringify({ error: 'admin_mfa_required' }), {
+  if (!context || !context.has_mfa || (allowedRoles && !allowedRoles.has(context.role))) {
+    throw new Response(JSON.stringify({ error: mfaError }), {
       headers: { 'content-type': 'application/json; charset=utf-8' },
       status: 403,
     })
@@ -834,9 +860,9 @@ export function brandedEmailHtml(message: NotificationJob['message'], appUrl = d
 async function handleNotificationProcessApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
 
-  let admin: Awaited<ReturnType<typeof requireAdminMfa>>
+  let operator: Awaited<ReturnType<typeof requireVerifiedOperationsSession>>
   try {
-    admin = await requireAdminMfa(request, environment)
+    operator = await requireVerifiedOperationsSession(request, environment)
   } catch (error) {
     if (error instanceof Response) {
       const payload = await error.json().catch(() => ({ error: 'auth_failed' })) as { error?: string }
@@ -855,10 +881,10 @@ async function handleNotificationProcessApi(request: Request, environment: Envir
   }
 
   const jobs = await callRpc<NotificationJob[]>(
-    { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+    { serviceRoleKey: operator.config.serviceRoleKey, url: operator.config.url },
     'service_claim_notification_batch',
     { target_limit: 10 },
-    admin.config.serviceRoleKey,
+    operator.config.serviceRoleKey,
   )
   const delivered: string[] = []
   const failed: Array<{ id: string, error: string }> = []
@@ -879,19 +905,19 @@ async function handleNotificationProcessApi(request: Request, environment: Envir
       }
 
       await callRpc<unknown>(
-        { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+        { serviceRoleKey: operator.config.serviceRoleKey, url: operator.config.url },
         'service_mark_notification_result',
         { delivered: true, delivery_error: null, target_notification_id: job.id },
-        admin.config.serviceRoleKey,
+        operator.config.serviceRoleKey,
       )
       delivered.push(job.id)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Email delivery failed.'
       await callRpc<unknown>(
-        { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+        { serviceRoleKey: operator.config.serviceRoleKey, url: operator.config.url },
         'service_mark_notification_result',
         { delivered: false, delivery_error: message, target_notification_id: job.id },
-        admin.config.serviceRoleKey,
+        operator.config.serviceRoleKey,
       )
       failed.push({ id: job.id, error: message })
     }
@@ -902,7 +928,7 @@ async function handleNotificationProcessApi(request: Request, environment: Envir
     failed,
     processed: delivered.length + failed.length,
     requestId,
-    requestedBy: admin.context.username,
+    requestedBy: operator.context.username,
   })
 }
 

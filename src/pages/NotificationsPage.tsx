@@ -64,7 +64,7 @@ export function NotificationsPage() {
       ) : notificationQuery.isError ? (
         <DataStatePanel icon={ShieldAlert} title="Notifications unavailable" tone="error">
           <p>{notificationQuery.error.message}</p>
-          <p>Supervisor or Admin access is required.</p>
+          <p>MFA-verified Dispatcher, Scheduler, Supervisor, or Admin access is required.</p>
         </DataStatePanel>
       ) : (
         <>
