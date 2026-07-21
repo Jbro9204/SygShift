@@ -1937,6 +1937,13 @@
   margin-top: 14px;
 }
 
+.scheduler-employee-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
 .scheduler-employee-filter {
   display: grid;
   gap: 5px;
@@ -1961,6 +1968,14 @@
   border-radius: 9px;
   font: inherit;
   font-weight: 800;
+}
+
+.scheduler-full-week-button {
+  min-height: 42px;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 13px;
+  white-space: nowrap;
 }
 
 .scheduler-planner__totals {
@@ -5568,6 +5583,236 @@
   width: min(900px, calc(100vw - 32px));
 }
 
+.modal-dialog:has(.employee-week-modal) {
+  width: min(1380px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  border-radius: 14px;
+}
+
+.employee-week-modal {
+  display: grid;
+  gap: 16px;
+  padding: 18px 22px 22px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(214, 167, 77, 0.14), transparent 28%),
+    linear-gradient(180deg, #fffdf8 0%, #f6f0e6 100%);
+}
+
+.employee-week-modal__summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.employee-week-modal__summary article {
+  padding: 13px 14px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid #e2d7c7;
+  border-radius: 11px;
+  box-shadow: 0 10px 22px rgba(76, 55, 18, 0.08);
+}
+
+.employee-week-modal__summary span,
+.employee-week-shift__details dt {
+  color: #6f6659;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.employee-week-modal__summary strong {
+  display: block;
+  margin-top: 4px;
+  color: #211d18;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.employee-week-modal__summary small {
+  display: block;
+  margin-top: 6px;
+  color: #6f675c;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.employee-week-modal__metric--attention {
+  border-color: #deb262 !important;
+  background: #fff7e5 !important;
+}
+
+.employee-week-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.employee-week-modal__actions .secondary-button {
+  min-height: 42px;
+  align-items: center;
+  gap: 7px;
+}
+
+.employee-week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(185px, 1fr));
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-gutter: stable;
+}
+
+.employee-week-day {
+  display: grid;
+  min-width: 185px;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #e1d7c9;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(48, 36, 17, 0.08);
+}
+
+.employee-week-day header {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #ece4d8;
+}
+
+.employee-week-day header span,
+.employee-week-day header strong,
+.employee-week-day header small {
+  display: block;
+}
+
+.employee-week-day header span {
+  color: #8a621e;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.employee-week-day header strong {
+  color: #201d18;
+  font-size: 17px;
+  line-height: 1.15;
+}
+
+.employee-week-day header small {
+  color: #6d655a;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.employee-week-day__body {
+  display: grid;
+  gap: 9px;
+}
+
+.employee-week-shift {
+  display: grid;
+  gap: 9px;
+  padding: 11px;
+  background: #fffaf1;
+  border: 1px solid #dfc38c;
+  border-left: 4px solid #b77b21;
+  border-radius: 10px;
+}
+
+.employee-week-shift__main {
+  display: grid;
+  gap: 4px;
+}
+
+.employee-week-shift__main strong {
+  color: #201c17;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.employee-week-shift__main span {
+  color: #2d2923;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.employee-week-shift__main small,
+.employee-week-shift__details dd,
+.employee-week-shift__note {
+  color: #665f55;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.employee-week-shift__details {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.employee-week-shift__details div {
+  display: grid;
+  gap: 2px;
+}
+
+.employee-week-shift__details dd {
+  margin: 0;
+  font-weight: 800;
+}
+
+.employee-week-shift__chips,
+.employee-week-shift__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.employee-week-shift__actions .secondary-button,
+.employee-week-shift__actions .primary-action {
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.employee-week-shift__note {
+  margin: 0;
+  padding: 8px 9px;
+  background: #fff3df;
+  border: 1px solid #e6c79c;
+  border-radius: 8px;
+  font-weight: 750;
+}
+
+.employee-week-day__empty {
+  display: grid;
+  gap: 4px;
+  min-height: 105px;
+  align-content: center;
+  padding: 14px;
+  color: #777067;
+  background: #f7f3eb;
+  border: 1px dashed #d6cbbb;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.employee-week-day__empty strong {
+  color: #4b453d;
+  font-size: 14px;
+}
+
+.employee-week-day__empty span {
+  font-size: 13px;
+}
+
 .form-grid--three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -7615,6 +7860,14 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .employee-week-modal__summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .employee-week-grid {
+    grid-template-columns: repeat(4, minmax(205px, 1fr));
+  }
+
   .correction-card {
     grid-template-columns: 1fr;
   }
@@ -7748,6 +8001,31 @@
 
   .scheduler-planner__totals {
     grid-template-columns: 1fr;
+  }
+
+  .scheduler-employee-tools,
+  .scheduler-employee-filter,
+  .scheduler-full-week-button,
+  .employee-week-modal__actions,
+  .employee-week-modal__actions .secondary-button {
+    width: 100%;
+  }
+
+  .employee-week-modal {
+    padding: 14px;
+  }
+
+  .employee-week-modal__summary,
+  .employee-week-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-week-grid {
+    overflow-x: visible;
+  }
+
+  .employee-week-day {
+    min-width: 0;
   }
 
   .scheduler-day-board {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
-import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, Edit3, MapPin, MoveHorizontal, Plus, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
+import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, Edit3, MapPin, Maximize2, MoveHorizontal, Plus, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
@@ -550,11 +550,177 @@ function sourceQualificationLabel(value: string | null): string {
   return 'Needs review'
 }
 
+function shiftDurationHours(shift: ScheduleShift): number {
+  const start = new Date(shift.starts_at).getTime()
+  const end = new Date(shift.ends_at).getTime()
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0
+  return (end - start) / 3_600_000
+}
+
 function mobileScheduleRowLabel(row: { id: string, name: string, code?: string | null, type?: string }, view: 'site' | 'employee'): string {
   if (view === 'employee') return 'Employee'
   if (row.code) return row.code
   if (row.type === 'event') return 'Event'
   return 'Site'
+}
+
+function EmployeeWeekDialog({
+  canUseScheduler,
+  employeeName,
+  isDraft,
+  isSaving,
+  onClose,
+  onEdit,
+  onOpenBuilder,
+  onResolve,
+  row,
+  weekEnd,
+  weekStart,
+  workDays,
+}: {
+  canUseScheduler: boolean
+  employeeName: string
+  isDraft: boolean
+  isSaving: boolean
+  onClose: () => void
+  onEdit: (shift: ScheduleShift) => void
+  onOpenBuilder: () => void
+  onResolve: (shift: ScheduleShift) => void
+  row: { id: string, name: string, shifts: ScheduleShift[] }
+  weekEnd: Date
+  weekStart: Date
+  workDays: Date[]
+}) {
+  const shifts = [...row.shifts].sort((left, right) => left.starts_at.localeCompare(right.starts_at))
+  const totalHours = shifts.reduce((total, shift) => total + shiftDurationHours(shift), 0)
+  const openSlots = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+  const armedCount = shifts.filter((shift) => shift.requires_armed).length
+  const reviewCount = shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
+  const daysToShow = workDays.length > 0 ? workDays : Array.from({ length: 7 }, (_, index) => addDays(weekStart, index))
+
+  return (
+    <ModalDialog
+      description={`${format(weekStart, 'MM/dd/yyyy')} through ${format(weekEnd, 'MM/dd/yyyy')} for ${employeeName}.`}
+      onClose={onClose}
+      title={`${employeeName} full week`}
+    >
+      <section className="employee-week-modal" aria-label={`${employeeName} full weekly schedule`}>
+        <div className="employee-week-modal__summary">
+          <article>
+            <span>Week status</span>
+            <strong>{isDraft ? 'Draft' : 'Live'}</strong>
+            <small>{isDraft ? 'Unpublished changes may exist' : 'Published schedule'}</small>
+          </article>
+          <article>
+            <span>Assigned shifts</span>
+            <strong>{shifts.length}</strong>
+            <small>{totalHours.toFixed(totalHours % 1 === 0 ? 0 : 1)} scheduled hours</small>
+          </article>
+          <article className={openSlots ? 'employee-week-modal__metric--attention' : ''}>
+            <span>Open slots</span>
+            <strong>{openSlots}</strong>
+            <small>{openSlots ? 'Needs coverage review' : 'No open slots on assigned shifts'}</small>
+          </article>
+          <article className={reviewCount ? 'employee-week-modal__metric--attention' : ''}>
+            <span>Flags</span>
+            <strong>{reviewCount}</strong>
+            <small>{armedCount} armed shift{armedCount === 1 ? '' : 's'}</small>
+          </article>
+        </div>
+
+        <div className="employee-week-modal__actions" aria-label="Employee week actions">
+          <button className="secondary-button" onClick={onOpenBuilder} type="button">
+            <Plus aria-hidden="true" size={18} />
+            Add shift for this employee
+          </button>
+          <button className="secondary-button" onClick={onClose} type="button">
+            Close full week
+          </button>
+        </div>
+
+        <div className="employee-week-grid" aria-label="Full week by day">
+          {daysToShow.map((day) => {
+            const dayKey = format(day, 'yyyy-MM-dd')
+            const dayShifts = shifts.filter((shift) => shiftOperationalDate(shift) === dayKey)
+            const dayHours = dayShifts.reduce((total, shift) => total + shiftDurationHours(shift), 0)
+
+            return (
+              <article className="employee-week-day" key={dayKey}>
+                <header>
+                  <div>
+                    <span>{format(day, 'EEEE')}</span>
+                    <strong>{format(day, 'MM/dd/yyyy')}</strong>
+                  </div>
+                  <small>
+                    {dayShifts.length ? `${dayShifts.length} shift${dayShifts.length === 1 ? '' : 's'} · ${dayHours.toFixed(dayHours % 1 === 0 ? 0 : 1)} hrs` : 'No shifts'}
+                  </small>
+                </header>
+
+                <div className="employee-week-day__body">
+                  {dayShifts.length ? dayShifts.map((shift) => {
+                    const source = parseImportedScheduleNote(shift.notes)
+                    const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? 'Location not set'
+                    const postOrEvent = shift.post?.name ?? shift.event?.name ?? 'Shift'
+                    const assignedNames = shift.assignments.map(assignmentName)
+                    const openCount = Math.max(shift.headcount_required - shift.assignments.length, 0)
+
+                    return (
+                      <article className="employee-week-shift" key={shift.id}>
+                        <div className="employee-week-shift__main">
+                          <strong>{shiftTimeRange(shift)}</strong>
+                          <span>{location}</span>
+                          <small>{postOrEvent}</small>
+                        </div>
+                        <dl className="employee-week-shift__details">
+                          <div>
+                            <dt>Assigned</dt>
+                            <dd>{assignedNames.length ? assignedNames.join(', ') : 'No one assigned'}</dd>
+                          </div>
+                          <div>
+                            <dt>Need</dt>
+                            <dd>{shift.headcount_required} guard{shift.headcount_required === 1 ? '' : 's'}{openCount ? ` · ${openCount} open` : ''}</dd>
+                          </div>
+                        </dl>
+                        <div className="employee-week-shift__chips">
+                          {shift.requires_armed ? <span className="shift-tag shift-tag--armed">Armed</span> : <span className="shift-tag">Unarmed</span>}
+                          {shift.is_overtime ? <span className="shift-tag shift-tag--overtime">OT</span> : null}
+                          {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review needed</span> : null}
+                          {openCount ? <span className="shift-tag shift-tag--open">{openCount} open</span> : <span className="shift-tag shift-tag--covered">Covered</span>}
+                        </div>
+                        {source.reviewNeeded || source.assignee || source.context ? (
+                          <p className="employee-week-shift__note">
+                            {source.assignee ? `Original assignee: ${source.assignee}. ` : ''}
+                            {source.context ? `Context: ${source.context}.` : ''}
+                          </p>
+                        ) : null}
+                        {canUseScheduler ? (
+                          <div className="employee-week-shift__actions">
+                            <button className="secondary-button secondary-button--small" disabled={isSaving} onClick={() => onEdit(shift)} type="button">
+                              Edit shift
+                            </button>
+                            {source.reviewNeeded ? (
+                              <button className="primary-action primary-action--small" disabled={isSaving} onClick={() => onResolve(shift)} type="button">
+                                Resolve
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </article>
+                    )
+                  }) : (
+                    <div className="employee-week-day__empty">
+                      <strong>No shift scheduled</strong>
+                      <span>This day is clear for this employee.</span>
+                    </div>
+                  )}
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      </section>
+    </ModalDialog>
+  )
 }
 
 function ImportedShiftCard({ shift }: { shift: ImportedScheduleShift }) {
@@ -603,6 +769,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const [resolvingShift, setResolvingShift] = useState<ScheduleShift | null>(null)
   const [editingShift, setEditingShift] = useState<ScheduleShift | null>(null)
   const [selectedPlannerShiftId, setSelectedPlannerShiftId] = useState<string | null>(null)
+  const [employeeWeekOpen, setEmployeeWeekOpen] = useState(false)
   const [cancelDraftConfirmOpen, setCancelDraftConfirmOpen] = useState(false)
   const [builderMessage, setBuilderMessage] = useState<string | null>(null)
   const [boardScrollWidth, setBoardScrollWidth] = useState(0)
@@ -873,6 +1040,16 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       }))
       .filter((row) => employeeFilter !== 'all' || row.shifts.length > 0)
   }, [currentOperationalDateKey, employeeFilter, employeeFilterOptions, employeeRows, reviewOnly, search])
+  const selectedEmployeeWeekRow = useMemo(() => {
+    if (employeeFilter === 'all') return null
+    const selectedEmployee = employeeFilterOptions.find((employee) => employee.id === employeeFilter) ?? null
+    const visibleRow = visibleEmployeeRows.find((row) => row.id === employeeFilter)
+    const sourceRow = employeeRows.find((row) => row.id === employeeFilter)
+    if (visibleRow) return visibleRow
+    if (sourceRow) return sourceRow
+    if (selectedEmployee) return { id: selectedEmployee.id, name: selectedEmployee.name, shifts: [] }
+    return null
+  }, [employeeFilter, employeeFilterOptions, employeeRows, visibleEmployeeRows])
   const focusedEmployeeId = scheduleView === 'employee' && employeeFilter !== 'all' ? employeeFilter : null
   const scheduleSummary = useMemo(() => {
     const shifts = rows.flatMap((row) => row.shifts)
@@ -1074,6 +1251,12 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       setSelectedPlannerShiftId(null)
     }
   }, [scheduleQuery.data?.shifts, selectedPlannerShiftId])
+
+  useEffect(() => {
+    if (employeeWeekOpen && (scheduleView !== 'employee' || employeeFilter === 'all')) {
+      setEmployeeWeekOpen(false)
+    }
+  }, [employeeFilter, employeeWeekOpen, scheduleView])
 
   function updateOpenShiftForm(update: Partial<OpenShiftFormState>) {
     setBuilderMessage(null)
@@ -1604,6 +1787,36 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         />
       ) : null}
 
+      {canUseScheduler && employeeWeekOpen && selectedEmployeeWeekRow ? (
+        <EmployeeWeekDialog
+          canUseScheduler={canUseScheduler}
+          employeeName={selectedEmployeeWeekRow.name}
+          isDraft={scheduleQuery.data?.status === 'draft'}
+          isSaving={updateDraftShiftMutation.isPending || ensureDraftMutation.isPending}
+          onClose={() => setEmployeeWeekOpen(false)}
+          onEdit={(shift) => {
+            setEmployeeWeekOpen(false)
+            editShift(shift)
+          }}
+          onOpenBuilder={() => {
+            setEmployeeWeekOpen(false)
+            setBuilderOpen(true)
+            setOpenShiftForm(openShiftFormForCurrentFocus())
+            setBuilderMessage(null)
+          }}
+          onResolve={(shift) => {
+            setEmployeeWeekOpen(false)
+            setBuilderOpen(false)
+            setBuilderMessage(null)
+            setResolvingShift(shift)
+          }}
+          row={selectedEmployeeWeekRow}
+          weekEnd={weekEnd}
+          weekStart={weekStart}
+          workDays={days}
+        />
+      ) : null}
+
       {canUseScheduler && reviewItems.length > 0 ? (
         <section className="panel schedule-review-workbench" aria-labelledby="schedule-review-workbench-title">
           <div className="schedule-review-workbench__heading">
@@ -1733,19 +1946,31 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                     </button>
                   </div>
                   {scheduleView === 'employee' ? (
-                    <label className="scheduler-employee-filter">
-                      <span>Employee</span>
-                      <select
-                        aria-label="Work on employee schedule"
-                        onChange={(event) => setEmployeeFilter(event.target.value)}
-                        value={employeeFilter}
+                    <div className="scheduler-employee-tools">
+                      <label className="scheduler-employee-filter">
+                        <span>Employee</span>
+                        <select
+                          aria-label="Work on employee schedule"
+                          onChange={(event) => setEmployeeFilter(event.target.value)}
+                          value={employeeFilter}
+                        >
+                          <option value="all">All employees</option>
+                          {employeeFilterOptions.map((employee) => (
+                            <option key={employee.id} value={employee.id}>{employee.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        className="secondary-button scheduler-full-week-button"
+                        disabled={employeeFilter === 'all' || !selectedEmployeeWeekRow}
+                        onClick={() => setEmployeeWeekOpen(true)}
+                        title={employeeFilter === 'all' ? 'Choose one employee to open the full-week view' : 'Open full weekly schedule'}
+                        type="button"
                       >
-                        <option value="all">All employees</option>
-                        {employeeFilterOptions.map((employee) => (
-                          <option key={employee.id} value={employee.id}>{employee.name}</option>
-                        ))}
-                      </select>
-                    </label>
+                        <Maximize2 aria-hidden="true" size={18} />
+                        Open full week
+                      </button>
+                    </div>
                   ) : null}
                 </div>
               ) : null}
