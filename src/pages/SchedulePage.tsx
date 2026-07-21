@@ -118,12 +118,22 @@ function draftShiftMutationInput(shift: ScheduleShift, employeeId: string | null
 }
 
 function findMatchingDraftShift(draft: { shifts: ScheduleShift[] }, sourceShift: ScheduleShift): ScheduleShift | undefined {
-  return draft.shifts.find((candidate) =>
-    candidate.starts_at === sourceShift.starts_at
-    && candidate.ends_at === sourceShift.ends_at
-    && (candidate.post?.id ?? null) === (sourceShift.post?.id ?? null)
-    && (candidate.event?.id ?? null) === (sourceShift.event?.id ?? null)
-  )
+  const sourcePostId = sourceShift.post?.id ?? null
+  const sourceEventId = sourceShift.event?.id ?? null
+
+  return draft.shifts.find((candidate) => candidate.id === sourceShift.id)
+    ?? draft.shifts.find((candidate) =>
+      candidate.starts_at === sourceShift.starts_at
+      && candidate.ends_at === sourceShift.ends_at
+      && (candidate.post?.id ?? null) === sourcePostId
+      && (candidate.event?.id ?? null) === sourceEventId
+      && candidate.requires_armed === sourceShift.requires_armed
+    )
+    ?? draft.shifts.find((candidate) =>
+      candidate.starts_at === sourceShift.starts_at
+      && candidate.ends_at === sourceShift.ends_at
+      && (candidate.post?.site.id ?? candidate.event?.site?.id ?? null) === (sourceShift.post?.site.id ?? sourceShift.event?.site?.id ?? null)
+    )
 }
 
 function ShiftCard({
@@ -584,7 +594,7 @@ function EmployeeWeekDialog({
   isSaving: boolean
   onClose: () => void
   onEdit: (shift: ScheduleShift) => void
-  onOpenBuilder: () => void
+  onOpenBuilder: (shiftDate?: string) => void
   onResolve: (shift: ScheduleShift) => void
   row: { id: string, name: string, shifts: ScheduleShift[] }
   weekEnd: Date
@@ -629,7 +639,7 @@ function EmployeeWeekDialog({
         </div>
 
         <div className="employee-week-modal__actions" aria-label="Employee week actions">
-          <button className="secondary-button" onClick={onOpenBuilder} type="button">
+          <button className="secondary-button" onClick={() => onOpenBuilder()} type="button">
             <Plus aria-hidden="true" size={18} />
             Add shift for this employee
           </button>
@@ -665,7 +675,23 @@ function EmployeeWeekDialog({
                     const openCount = Math.max(shift.headcount_required - shift.assignments.length, 0)
 
                     return (
-                      <article className="employee-week-shift" key={shift.id}>
+                      <article
+                        className={canUseScheduler ? 'employee-week-shift employee-week-shift--interactive' : 'employee-week-shift'}
+                        key={shift.id}
+                        onClick={() => {
+                          if (canUseScheduler) onEdit(shift)
+                        }}
+                        onKeyDown={(event) => {
+                          if (!canUseScheduler) return
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            onEdit(shift)
+                          }
+                        }}
+                        role={canUseScheduler ? 'button' : undefined}
+                        tabIndex={canUseScheduler ? 0 : undefined}
+                        title={canUseScheduler ? 'Open the full shift editor' : undefined}
+                      >
                         <div className="employee-week-shift__main">
                           <strong>{shiftTimeRange(shift)}</strong>
                           <span>{location}</span>
@@ -695,11 +721,17 @@ function EmployeeWeekDialog({
                         ) : null}
                         {canUseScheduler ? (
                           <div className="employee-week-shift__actions">
-                            <button className="secondary-button secondary-button--small" disabled={isSaving} onClick={() => onEdit(shift)} type="button">
+                            <button className="secondary-button secondary-button--small" disabled={isSaving} onClick={(event) => {
+                              event.stopPropagation()
+                              onEdit(shift)
+                            }} type="button">
                               Edit shift
                             </button>
                             {source.reviewNeeded ? (
-                              <button className="primary-action primary-action--small" disabled={isSaving} onClick={() => onResolve(shift)} type="button">
+                              <button className="primary-action primary-action--small" disabled={isSaving} onClick={(event) => {
+                                event.stopPropagation()
+                                onResolve(shift)
+                              }} type="button">
                                 Resolve
                               </button>
                             ) : null}
@@ -711,6 +743,11 @@ function EmployeeWeekDialog({
                     <div className="employee-week-day__empty">
                       <strong>No shift scheduled</strong>
                       <span>This day is clear for this employee.</span>
+                      {canUseScheduler ? (
+                        <button className="secondary-button secondary-button--small" onClick={() => onOpenBuilder(dayKey)} type="button">
+                          Add shift this day
+                        </button>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -882,10 +919,15 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     onSuccess: async ({ draft, shiftToEdit }) => {
       if (draft) {
         queryClient.setQueryData(['weekly-schedule', weekKey], draft)
-        setBuilderMessage(`Working draft opened for revision ${draft.revision}. Publish when ready.`)
+        setBuilderMessage(shiftToEdit ? `Working draft opened for revision ${draft.revision}. Opening the shift editor...` : `Working draft opened for revision ${draft.revision}. Publish when ready.`)
         if (shiftToEdit) {
           const copiedShift = findMatchingDraftShift(draft, shiftToEdit)
-          if (copiedShift) setEditingShift(copiedShift)
+          if (copiedShift) {
+            setEditingShift(copiedShift)
+            setSelectedPlannerShiftId(copiedShift.id)
+          } else {
+            setBuilderMessage('Draft opened, but the selected shift could not be matched automatically. Select the shift in the draft and click Edit full block again.')
+          }
         }
       }
       await queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions'] })
@@ -903,6 +945,9 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions', updatedSchedule.id] }),
         queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
       ])
+    },
+    onError: (error) => {
+      setBuilderMessage(error instanceof Error ? error.message : 'The draft shift could not be saved.')
     },
   })
   const publishDraftMutation = useMutation({
@@ -1290,7 +1335,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   function editShift(shift: ScheduleShift) {
     if (!canUseScheduler) return
     setBuilderOpen(false)
-    setBuilderMessage(null)
+    setBuilderMessage(scheduleQuery.data?.status === 'draft' ? null : 'Opening a working draft before editing this shift...')
     if (scheduleQuery.data?.status === 'draft') {
       setEditingShift(shift)
       return
@@ -1798,10 +1843,13 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             setEmployeeWeekOpen(false)
             editShift(shift)
           }}
-          onOpenBuilder={() => {
+          onOpenBuilder={(shiftDate) => {
             setEmployeeWeekOpen(false)
             setBuilderOpen(true)
-            setOpenShiftForm(openShiftFormForCurrentFocus())
+            setOpenShiftForm({
+              ...openShiftFormForCurrentFocus(),
+              ...(shiftDate ? { shiftDate } : {}),
+            })
             setBuilderMessage(null)
           }}
           onResolve={(shift) => {

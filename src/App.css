@@ -5726,6 +5726,19 @@
   border-radius: 10px;
 }
 
+.employee-week-shift--interactive {
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.employee-week-shift--interactive:hover,
+.employee-week-shift--interactive:focus-visible {
+  border-color: #b77b21;
+  box-shadow: 0 12px 26px rgba(82, 55, 12, 0.16);
+  outline: none;
+  transform: translateY(-1px);
+}
+
 .employee-week-shift__main {
   display: grid;
   gap: 4px;
@@ -5802,6 +5815,12 @@
   border: 1px dashed #d6cbbb;
   border-radius: 10px;
   text-align: center;
+}
+
+.employee-week-day__empty .secondary-button {
+  width: fit-content;
+  justify-self: center;
+  margin-top: 8px;
 }
 
 .employee-week-day__empty strong {
