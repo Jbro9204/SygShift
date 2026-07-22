@@ -7218,6 +7218,37 @@
   padding: 20px;
 }
 
+.availability-form-card {
+  overflow: hidden;
+}
+
+.availability-form {
+  gap: 15px;
+}
+
+.availability-form .form-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 15px;
+}
+
+.availability-form .form-grid label,
+.availability-form .field-stack {
+  width: 100%;
+  min-width: 0;
+}
+
+.availability-form input,
+.availability-form select,
+.availability-form textarea {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.availability-form select {
+  text-overflow: ellipsis;
+}
+
 .availability-form__actions {
   display: flex;
   justify-content: flex-end;

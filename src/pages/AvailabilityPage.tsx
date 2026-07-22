@@ -160,7 +160,7 @@ export function AvailabilityPage() {
           {decisionMutation.isError ? <div className="inline-alert" role="alert">{decisionMutation.error.message}</div> : null}
 
           <div className="availability-layout">
-            <section className="request-form-card" aria-labelledby="availability-form-title">
+            <section className="request-form-card availability-form-card" aria-labelledby="availability-form-title">
               <div className="request-card-heading">
                 <CalendarCheck2 aria-hidden="true" size={24} />
                 <div>
@@ -168,7 +168,7 @@ export function AvailabilityPage() {
                   <p>{privileged ? 'Add approved availability for any active employee.' : 'Tell scheduling when you can or cannot work.'}</p>
                 </div>
               </div>
-              <form className="request-form" onSubmit={submit}>
+              <form className="request-form availability-form" onSubmit={submit}>
                 {privileged ? (
                   <label className="field-stack">
                     <span>Employee</span>

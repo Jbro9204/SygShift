@@ -61,4 +61,18 @@ describe('button layout guardrails', () => {
     expect(appCss).toContain('.availability-card__actions .secondary-button')
     expect(appCss).toContain('.availability-form__actions .primary-action')
   })
+
+  it('keeps Availability form controls inside the narrow Add Availability card', () => {
+    expect(availabilityPage).toContain('request-form-card availability-form-card')
+    expect(availabilityPage).toContain('request-form availability-form')
+
+    expect(blockFor('.availability-form .form-grid')).toContain('grid-template-columns: minmax(0, 1fr)')
+
+    const availabilityControlsBlock = blockFor(
+      '.availability-form input,\n.availability-form select,\n.availability-form textarea',
+    )
+    expect(availabilityControlsBlock).toContain('box-sizing: border-box')
+    expect(availabilityControlsBlock).toContain('max-width: 100%')
+    expect(availabilityControlsBlock).toContain('min-width: 0')
+  })
 })
