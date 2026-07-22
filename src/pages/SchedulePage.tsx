@@ -286,14 +286,14 @@ function EditShiftDialog({
       title={`Edit ${shift.post?.site.name ?? shift.event?.name ?? 'shift'}`}
     >
       <form className="request-form schedule-edit-form" onSubmit={submit}>
-        <div className="form-grid form-grid--three">
+        <div className="form-grid schedule-edit-form__timing">
           <label><span>Date</span><input defaultValue={shiftOperationalDate(shift)} name="shiftDate" required type="date" /></label>
           <label><span>Start</span><input defaultValue={shiftLocalTimeValue(shift, shift.starts_at)} name="startTime" required type="time" /></label>
           <label><span>End</span><input defaultValue={shiftLocalTimeValue(shift, shift.ends_at)} name="endTime" required type="time" /></label>
-        </div>
-        <div className="form-grid form-grid--two">
           <label><span>Headcount</span><input defaultValue={shift.headcount_required} min={1} name="headcount" required type="number" /></label>
-          <label>
+        </div>
+        <div className="schedule-edit-form__details">
+          <label className="field-stack">
             <span>Switch / assign employee</span>
             <select defaultValue={assignedEmployeeId} name="employeeId">
               <option value="">Leave open / unassigned</option>
@@ -306,12 +306,12 @@ function EditShiftDialog({
               ))}
             </select>
           </label>
+          <label className="field-stack">
+            <span>Notes</span>
+            <textarea defaultValue={shift.notes ?? ''} name="notes" rows={3} />
+          </label>
         </div>
-        <label className="field-stack">
-          <span>Notes</span>
-          <textarea defaultValue={shift.notes ?? ''} name="notes" rows={4} />
-        </label>
-        <div className="schedule-builder__checks">
+        <div className="schedule-builder__checks schedule-edit-form__checks">
           <label className="check-field"><input defaultChecked={shift.is_open} name="isOpen" type="checkbox" /> Show as open if coverage is still needed</label>
           <label className="check-field"><input defaultChecked={shift.is_overtime} name="isOvertime" type="checkbox" /> Mark as overtime</label>
         </div>
