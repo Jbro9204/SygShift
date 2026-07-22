@@ -19,6 +19,22 @@ deployment status, or major workflow assumptions change.
   `pnpm dlx supabase db query --linked --file <migration-file>`
 - Do not run Supabase migration repair blindly. First reconcile remote migration history or intentionally apply
   a targeted SQL file.
+- Button/action layout is protected by `src/buttonLayoutGuard.test.ts`. Do not add page/card action buttons
+  with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
+  shared action container so mobile and narrow-card layouts cannot overlap.
+
+## 2026-07-22
+
+### Hardened button layout guardrails site-wide
+
+- Removed the mobile rule that made every `.primary-action` full-width globally, which was the recurring
+  source of action buttons stretching or crowding inside cards and toolbars.
+- Added shared button safeguards: bounded width, stable line-height, wrapped approval/history action rows,
+  and shrink-safe action children.
+- Kept intentional full-width mobile buttons targeted to standalone page-intro, data-state, route-error,
+  connection-banner, and direct request-form submit actions.
+- Added `src/buttonLayoutGuard.test.ts` so the build fails if the global full-width button pattern or missing
+  action-row safeguards are reintroduced.
 
 ## 2026-07-21
 

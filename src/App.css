@@ -1441,11 +1441,15 @@
 .secondary-button,
 .icon-button {
   display: inline-flex;
+  box-sizing: border-box;
+  max-width: 100%;
   min-height: 46px;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
   font-weight: 750;
+  line-height: 1.2;
+  text-align: center;
 }
 
 .primary-action {
@@ -4774,6 +4778,7 @@
   display: flex;
   flex: 0 0 auto;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -4910,7 +4915,17 @@
   display: flex;
   flex: 0 0 auto;
   align-items: center;
+  flex-wrap: wrap;
   gap: 9px;
+}
+
+.approval-actions > .primary-action,
+.approval-actions > .secondary-button,
+.history-row__actions > .primary-action,
+.history-row__actions > .secondary-button,
+.modal-actions > .primary-action,
+.modal-actions > .secondary-button {
+  min-width: 0;
 }
 
 .modal-dialog {
@@ -5278,7 +5293,11 @@
     font-size: 36px;
   }
 
-  .primary-action {
+  .page-intro .primary-action,
+  .connection-banner .primary-action,
+  .data-state .primary-action,
+  .route-error .primary-action,
+  .request-form > .primary-action {
     width: 100%;
   }
 
@@ -5447,6 +5466,8 @@
 
   .approval-actions > * {
     flex: 1;
+    min-width: 0;
+    width: auto;
   }
 
   .modal-dialog__heading {
