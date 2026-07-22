@@ -48,10 +48,17 @@ describe('button layout guardrails', () => {
   })
 
   it('keeps Availability approvals on a local page-specific action wrapper', () => {
-    expect(availabilityPage).toContain('approval-actions availability-actions')
-    expect(blocksFor('.availability-actions').some((block) => block.includes('flex-direction: column'))).toBe(true)
-    expect(blocksFor('.availability-actions').some((block) => block.includes('flex-direction: row'))).toBe(true)
-    expect(appCss).toContain('.availability-actions .primary-action')
-    expect(appCss).toContain('.availability-actions .secondary-button')
+    expect(availabilityPage).toContain('className="availability-card__actions"')
+    expect(availabilityPage).toContain('className="availability-form__actions"')
+    expect(availabilityPage).not.toContain('approval-actions availability-actions')
+    expect(availabilityPage).toMatch(
+      /<div className="availability-form__actions">\s*<button className="primary-action" disabled=\{submitMutation\.isPending\} type="submit">/,
+    )
+
+    expect(blocksFor('.availability-card__actions').some((block) => block.includes('flex-direction: column'))).toBe(true)
+    expect(blocksFor('.availability-card__actions').some((block) => block.includes('flex-direction: row'))).toBe(true)
+    expect(appCss).toContain('.availability-card__actions .primary-action')
+    expect(appCss).toContain('.availability-card__actions .secondary-button')
+    expect(appCss).toContain('.availability-form__actions .primary-action')
   })
 })

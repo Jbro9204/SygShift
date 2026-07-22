@@ -5448,9 +5448,15 @@
     flex-direction: column;
   }
 
-  .availability-actions {
+  .availability-card__actions {
     width: 100%;
+    min-width: 0;
     flex-direction: row;
+  }
+
+  .availability-card__actions > * {
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .history-row__actions,
@@ -5468,6 +5474,16 @@
     flex: 1;
     min-width: 0;
     width: auto;
+  }
+
+  .availability-form__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .availability-form__actions .primary-action {
+    width: 100%;
+    min-width: 0;
   }
 
   .modal-dialog__heading {
@@ -7202,6 +7218,18 @@
   padding: 20px;
 }
 
+.availability-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.availability-form__actions .primary-action {
+  width: auto;
+  min-width: 190px;
+}
+
 .availability-card {
   display: flex;
   align-items: flex-start;
@@ -7238,14 +7266,18 @@
   border-left: 3px solid #d6b678;
 }
 
-.availability-actions {
-  width: 132px;
+.availability-card__actions {
+  display: flex;
+  width: 144px;
+  min-width: 132px;
   align-items: stretch;
   flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 9px;
 }
 
-.availability-actions .primary-action,
-.availability-actions .secondary-button {
+.availability-card__actions .primary-action,
+.availability-card__actions .secondary-button {
   width: 100%;
   min-height: 40px;
   justify-content: center;

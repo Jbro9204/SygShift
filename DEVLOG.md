@@ -36,6 +36,14 @@ deployment status, or major workflow assumptions change.
 - Added `src/buttonLayoutGuard.test.ts` so the build fails if the global full-width button pattern or missing
   action-row safeguards are reintroduced.
 
+### Corrected Availability-specific action layout
+
+- Replaced Availability's remaining generic approval action wrapper with a dedicated
+  `availability-card__actions` wrapper for approve/decline controls.
+- Wrapped the Availability submit action in `availability-form__actions` so it is no longer caught by generic
+  direct request-form button behavior.
+- Updated `src/buttonLayoutGuard.test.ts` to fail if Availability regresses back to generic action wrappers.
+
 ## 2026-07-21
 
 ### Enlarged the scheduler shift editor

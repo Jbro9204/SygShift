@@ -59,7 +59,7 @@ function AvailabilityCard({
         {record.decisionNote ? <small>Decision note: {record.decisionNote}</small> : null}
       </div>
       {record.approvalStatus === 'pending' && onDecision ? (
-        <div className="approval-actions availability-actions">
+        <div className="availability-card__actions">
           <button className="secondary-button" disabled={pending} onClick={() => onDecision(record, 'declined')} type="button">
             Decline
           </button>
@@ -220,9 +220,11 @@ export function AvailabilityPage() {
                   <span>Note <small>Optional</small></span>
                   <textarea maxLength={2000} name="note" rows={3} />
                 </label>
-                <button className="primary-action" disabled={submitMutation.isPending} type="submit">
-                  {submitMutation.isPending ? 'Saving...' : 'Save availability'}
-                </button>
+                <div className="availability-form__actions">
+                  <button className="primary-action" disabled={submitMutation.isPending} type="submit">
+                    {submitMutation.isPending ? 'Saving...' : 'Save availability'}
+                  </button>
+                </div>
               </form>
             </section>
 
