@@ -5424,6 +5424,16 @@
     flex-direction: column;
   }
 
+  .availability-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .availability-actions {
+    width: 100%;
+    flex-direction: row;
+  }
+
   .history-row__actions,
   .approval-actions,
   .approval-card .primary-action {
@@ -7182,6 +7192,10 @@
   border-radius: 10px;
 }
 
+.availability-card > div:first-child {
+  min-width: 0;
+}
+
 .availability-card h3 {
   margin: 8px 0 5px;
   color: var(--ink);
@@ -7201,6 +7215,21 @@
   margin-top: 10px;
   padding-left: 12px;
   border-left: 3px solid #d6b678;
+}
+
+.availability-actions {
+  width: 132px;
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.availability-actions .primary-action,
+.availability-actions .secondary-button {
+  width: 100%;
+  min-height: 40px;
+  justify-content: center;
+  padding: 9px 12px;
+  white-space: nowrap;
 }
 
 .time-maintenance-table td {

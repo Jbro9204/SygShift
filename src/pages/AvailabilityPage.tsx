@@ -59,7 +59,7 @@ function AvailabilityCard({
         {record.decisionNote ? <small>Decision note: {record.decisionNote}</small> : null}
       </div>
       {record.approvalStatus === 'pending' && onDecision ? (
-        <div className="approval-actions">
+        <div className="approval-actions availability-actions">
           <button className="secondary-button" disabled={pending} onClick={() => onDecision(record, 'declined')} type="button">
             Decline
           </button>
