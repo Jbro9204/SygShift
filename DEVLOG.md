@@ -20,6 +20,17 @@ deployment status, or major workflow assumptions change.
 - Do not run Supabase migration repair blindly. First reconcile remote migration history or intentionally apply
   a targeted SQL file.
 
+## 2026-07-21
+
+### Enlarged the scheduler shift editor
+
+- Increased the Shift Edit dialog from roughly 610px to 920px wide on desktop.
+- Consolidated date, start time, end time, and headcount into one row, with employee assignment and notes
+  side by side, so the complete editor and action buttons remain visible without dialog scrolling.
+- Preserved a single-column responsive layout for narrow screens so fields and buttons remain usable.
+- The first deployment was rolled back after QA caught missing client-side Supabase configuration.
+- Verified production deploy version: `521bfff9-0983-40b0-90b9-8095a54a2ad9`.
+
 ## 2026-07-16
 
 ### Added payroll rules and salary default payroll rows
