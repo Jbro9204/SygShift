@@ -20,6 +20,20 @@ deployment status, or major workflow assumptions change.
 - Do not run Supabase migration repair blindly. First reconcile remote migration history or intentionally apply
   a targeted SQL file.
 
+## 2026-07-21
+
+### Preserved legacy armed assignments when opening schedule drafts
+
+- Issue: Opening any shift for editing could fail with an armed-qualification error, including unarmed and
+  dispatch shifts, because draft creation revalidated every copied assignment in the week.
+- Fix: An unchanged armed assignment inherited from the prior published revision can now be copied into the
+  editable draft while certificate records are still being uploaded.
+- Guardrails remain in place for new armed assignments, employee changes, changed shift blocks, and armed
+  shift requests; those actions still require a valid armed credential for the shift date.
+- Existing Bible-derived assignments were not removed or changed.
+- Applied directly to production Supabase with migration
+  `20260722003300_allow_inherited_legacy_armed_assignments.sql`; no Cloudflare deployment was required.
+
 ## 2026-07-16
 
 ### Added payroll rules and salary default payroll rows
