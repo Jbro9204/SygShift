@@ -28,7 +28,8 @@ deployment status, or major workflow assumptions change.
 - Consolidated date, start time, end time, and headcount into one row, with employee assignment and notes
   side by side, so the complete editor and action buttons remain visible without dialog scrolling.
 - Preserved a single-column responsive layout for narrow screens so fields and buttons remain usable.
-- Production deploy version: `b44ef99d-7dd5-42b0-95ea-f43758d7bbb9`.
+- The first deployment was rolled back after QA caught missing client-side Supabase configuration.
+- Verified production deploy version: `521bfff9-0983-40b0-90b9-8095a54a2ad9`.
 
 ## 2026-07-16
 
