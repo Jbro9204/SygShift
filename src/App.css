@@ -2013,7 +2013,7 @@
 
 .scheduler-board-shell {
   display: grid;
-  grid-template-columns: minmax(210px, 260px) minmax(0, 1fr) minmax(290px, 340px);
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
   min-height: 620px;
   background: #f3eadc;
 }
@@ -2131,7 +2131,7 @@
 }
 
 .scheduler-coverage-location {
-  min-width: 840px;
+  min-width: 0;
   overflow: clip;
   background: #fffdf8;
   border: 1px solid #ded4c6;
@@ -2193,7 +2193,7 @@
 
 .scheduler-coverage-row {
   display: grid;
-  grid-template-columns: minmax(150px, 190px) repeat(7, minmax(118px, 1fr));
+  grid-template-columns: minmax(118px, 150px) repeat(7, minmax(92px, 1fr));
   min-width: 100%;
   border-bottom: 1px solid #eee4d7;
 }
@@ -2305,9 +2305,11 @@
 .scheduler-shift-panel {
   display: flex;
   min-width: 0;
+  grid-column: 1 / -1;
   flex-direction: column;
   background: #fffdf8;
-  border-left: 1px solid #dfd3c2;
+  border-top: 1px solid #dfd3c2;
+  border-left: 0;
 }
 
 .scheduler-shift-panel > header {
@@ -2523,14 +2525,17 @@
 
 .scheduler-day-board {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  grid-template-columns: repeat(7, minmax(136px, 1fr));
   gap: 12px;
+  overflow-x: auto;
   padding: 12px;
   background: #f3eadc;
+  scrollbar-gutter: stable;
 }
 
 .scheduler-day-column {
   display: grid;
+  min-width: 0;
   min-height: 260px;
   align-content: start;
   gap: 10px;
@@ -5862,7 +5867,7 @@
 
 .employee-week-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(185px, 1fr));
+  grid-template-columns: repeat(7, minmax(145px, 1fr));
   gap: 10px;
   overflow-x: auto;
   padding-bottom: 4px;
@@ -5871,7 +5876,7 @@
 
 .employee-week-day {
   display: grid;
-  min-width: 185px;
+  min-width: 0;
   align-content: start;
   gap: 10px;
   padding: 12px;

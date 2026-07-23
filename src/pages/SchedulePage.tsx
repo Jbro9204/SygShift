@@ -822,10 +822,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const weekEnd = days[6]
   const weekKey = format(weekStart, 'yyyy-MM-dd')
   const currentOperationalDateKey = format(today, 'yyyy-MM-dd')
-  const schedulerWorkDays = useMemo(
-    () => days.filter((day) => format(day, 'yyyy-MM-dd') >= currentOperationalDateKey),
-    [currentOperationalDateKey, days],
-  )
+  const schedulerWorkDays = days
   const planningWeeks = useMemo(() => {
     const currentWeek = startOfWeek(today, { weekStartsOn: 0 })
     return Array.from({ length: 6 }, (_, index) => {
@@ -1201,9 +1198,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const schedulerCoverageGroups = useMemo<SchedulerCoverageGroup[]>(() => visibleRows.map((row) => {
     const lanes = new Map<string, SchedulerCoverageLane>()
 
-    const futureShifts = row.shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
-
-    for (const shift of futureShifts) {
+    for (const shift of row.shifts) {
       const id = shift.post?.id ?? shift.event?.id ?? shift.id
       const lane = lanes.get(id) ?? {
         id,
@@ -1215,7 +1210,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       lanes.set(id, lane)
     }
 
-    const shifts = futureShifts
+    const shifts = row.shifts
     const openSlots = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
     const reviewCount = shifts.filter((shift) =>
       parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey,
