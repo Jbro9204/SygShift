@@ -28,6 +28,7 @@ import {
   setEmployeeAccountState,
   updateEmployee,
   type AdminUser,
+  type AdminUserDirectory,
   type AppRole,
   type EmployeeMutationInput,
   type EmployeeStatus,
@@ -56,6 +57,20 @@ const employmentLabels: Record<EmploymentType, string> = {
 }
 
 const EMPTY_USERS: AdminUser[] = []
+
+function replaceDirectoryUser(directory: AdminUserDirectory | undefined, updatedUser: AdminUser): AdminUserDirectory | undefined {
+  if (!directory) return directory
+
+  const existingIndex = directory.users.findIndex((user) => user.id === updatedUser.id)
+  const users = existingIndex === -1
+    ? [...directory.users, updatedUser]
+    : directory.users.map((user) => user.id === updatedUser.id ? updatedUser : user)
+
+  return {
+    ...directory,
+    users,
+  }
+}
 
 function downloadCredentialCsv(credentials: ProvisioningCredential[], filename = 'sygshift-temporary-logins.csv') {
   const blob = new Blob([credentialsToCsv(credentials)], { type: 'text/csv;charset=utf-8' })
@@ -180,9 +195,11 @@ function EmployeeForm({
 function ManageUserModal({
   employee,
   onClose,
+  onEmployeeUpdated,
 }: {
   employee: AdminUser
   onClose: () => void
+  onEmployeeUpdated: (employee: AdminUser) => void
 }) {
   const queryClient = useQueryClient()
   const [temporaryPassword, setTemporaryPassword] = useState('')
@@ -194,14 +211,22 @@ function ManageUserModal({
 
   const updateMutation = useMutation({
     mutationFn: (payload: EmployeeMutationInput) => updateEmployee({ ...payload, employeeId: employee.id }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
+    onSuccess: async (updatedEmployee) => {
+      onEmployeeUpdated(updatedEmployee)
+      queryClient.setQueryData<AdminUserDirectory>(['admin-user-directory'], (current) =>
+        replaceDirectoryUser(current, updatedEmployee),
+      )
+      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
     },
   })
   const accountStateMutation = useMutation({
     mutationFn: (disabled: boolean) => setEmployeeAccountState(employee.id, disabled),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
+    onSuccess: async (updatedEmployee) => {
+      onEmployeeUpdated(updatedEmployee)
+      queryClient.setQueryData<AdminUserDirectory>(['admin-user-directory'], (current) =>
+        replaceDirectoryUser(current, updatedEmployee),
+      )
+      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
     },
   })
   const revokeTrustedDevicesMutation = useMutation({
@@ -390,9 +415,12 @@ export function UserAdminPage() {
 
   const createMutation = useMutation({
     mutationFn: createEmployee,
-    onSuccess: async () => {
+    onSuccess: async (createdEmployee) => {
+      queryClient.setQueryData<AdminUserDirectory>(['admin-user-directory'], (current) =>
+        replaceDirectoryUser(current, createdEmployee),
+      )
       setCreating(false)
-      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
+      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
     },
   })
 
@@ -557,7 +585,13 @@ export function UserAdminPage() {
         </ModalDialog>
       ) : null}
 
-      {selected ? <ManageUserModal employee={selected} onClose={() => setSelected(null)} /> : null}
+      {selected ? (
+        <ManageUserModal
+          employee={users.find((user) => user.id === selected.id) ?? selected}
+          onClose={() => setSelected(null)}
+          onEmployeeUpdated={setSelected}
+        />
+      ) : null}
     </div>
   )
 }

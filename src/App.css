@@ -7232,25 +7232,34 @@
 }
 
 .availability-form .form-grid {
+  display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 15px;
+}
+
+.page--workforce .availability-form .form-grid {
+  grid-template-columns: minmax(0, 1fr) !important;
 }
 
 .availability-form .form-grid label,
 .availability-form .field-stack {
   width: 100%;
   min-width: 0;
+  max-width: 100%;
 }
 
 .availability-form input,
 .availability-form select,
 .availability-form textarea {
+  display: block;
+  width: 100%;
   box-sizing: border-box;
   max-width: 100%;
   min-width: 0;
 }
 
 .availability-form select {
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 

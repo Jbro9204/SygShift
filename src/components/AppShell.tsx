@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useIsMutating } from '@tanstack/react-query'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { LogOut, Menu, ShieldCheck, UserCircle, X } from 'lucide-react'
 import { navigationGroups } from '../app/navigation'
@@ -28,6 +29,7 @@ export function AppShell() {
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [authMessage, setAuthMessage] = useState<string | null>(null)
   const [logoutWarningRemaining, setLogoutWarningRemaining] = useState<number | null>(null)
+  const activeMutationCount = useIsMutating()
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -57,6 +59,14 @@ export function AppShell() {
   useEffect(() => {
     setNavigationOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    document.documentElement.toggleAttribute('data-sygshift-busy', activeMutationCount > 0)
+
+    return () => {
+      document.documentElement.removeAttribute('data-sygshift-busy')
+    }
+  }, [activeMutationCount])
 
   useEffect(() => {
     let active = true

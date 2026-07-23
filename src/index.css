@@ -59,6 +59,11 @@ select {
   cursor: pointer;
 }
 
+html[data-sygshift-busy],
+html[data-sygshift-busy] * {
+  cursor: progress !important;
+}
+
 a {
   color: inherit;
 }

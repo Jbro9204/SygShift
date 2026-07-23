@@ -23,6 +23,32 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 2026-07-23
+
+### Reconciled the July 26-August 1 operational schedule
+
+- Loaded the scheduler-provided CSV for the upcoming 07/26/2026-08/01/2026 week into the live SygShift schedule.
+- Published the corrected week as schedule revision 8 with 142 shifts.
+- Replaced the older week data where the new CSV differed, because the scheduler sent the newer file as the source of truth.
+- Added missing operational sites/posts needed by the new schedule data, including 3300 Tamarac, Stone Cliff, and Patrol-daytime PERA lunch/day-hit coverage.
+- Removed stale schedule rows that were not in the new CSV week.
+- Kept operational wording clean: no visible `Bible`, `Import`, or `Source` schedule notes remain in the published week.
+- Preserved scheduling safeguards instead of forcing unsafe assignments. Unresolved people, missing armed credentials, and overlapping assignments were left open with plain review notes so a scheduler can resolve them intentionally.
+- Added `tools/schedule-sync/reconcile_dispatch_csv.py` so this specific CSV reconciliation can be audited or rerun without hand-editing production data.
+
+### Improved save feedback and immediate admin refresh
+
+- Added a global progress cursor while database-backed saves are running, so users get immediate visual feedback that the system is working.
+- Updated Users & Access employee create/update/enable/disable flows to refresh the open employee dialog immediately after save instead of requiring users to close and reopen it.
+- Tightened the Availability form layout so date fields, repeat selectors, and save buttons stay inside the card without overlap on narrower screens.
+
+### QA completed
+
+- `pnpm typecheck` passed.
+- `pnpm lint` passed.
+- `pnpm test` passed: 23 files, 77 tests.
+- `pnpm build` passed.
+
 ## 2026-07-22
 
 ### Hardened button layout guardrails site-wide
