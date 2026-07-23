@@ -25,6 +25,35 @@ deployment status, or major workflow assumptions change.
 
 ## 2026-07-23
 
+### Added Flex employment and Directory-based availability controls
+
+- Added `Flex` as a first-class employment type in frontend schemas, Users & Access, Directory, timekeeping, import mapping, operations metrics, Worker auth typing, and the Supabase enum.
+- Moved practical availability management into the Directory profile dialog so schedulers, supervisors, and admins can manage a person’s credentials and scheduling availability from one place.
+- Added a compact weekly availability snapshot to each Directory profile, plus a polished form for adding approved available/unavailable rules and removing active/pending availability rules.
+- Kept the UI intentionally contained: no new sidebar clutter, no crowded card controls, and responsive styling for narrow screens.
+- Added database-backed availability cancellation through `public.cancel_employee_availability`.
+
+### Added availability override guardrails to scheduling
+
+- Added inline availability conflict warnings when assigning an employee from the scheduler panel, full shift editor, or Add shift/event form.
+- Schedulers/admins can override availability only by entering a written reason; the save button stays disabled until that reason exists.
+- Added `public.schedule_assignment_overrides` so availability overrides are stored with shift, employee, note, actor, and timestamp for history/audit.
+- Updated schedule assignment RPCs so the database rejects assignments against approved unavailable time unless an override note is supplied.
+- Updated staffing suggestions so Flex employees are labeled and scored intentionally, while approved unavailable windows continue to exclude employees from automatic suggestions.
+
+### Production deployment
+
+- Applied targeted Supabase migration: `supabase/migrations/20260723143000_flex_directory_availability_overrides.sql`.
+- Deployed Cloudflare Worker/site version `57d80885-0b71-4eb0-925c-f665398fa46a`.
+- Verified live URL responded with HTTP 200: https://app.sygilant.us
+
+### QA completed
+
+- `pnpm typecheck` passed.
+- `pnpm lint` passed.
+- `pnpm test` passed: 23 files, 77 tests.
+- `pnpm build` passed.
+
 ### Reconciled the July 26-August 1 operational schedule
 
 - Loaded the scheduler-provided CSV for the upcoming 07/26/2026-08/01/2026 week into the live SygShift schedule.

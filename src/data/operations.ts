@@ -31,6 +31,7 @@ const operationsReportSchema = z.object({
     admins: z.number().int().nonnegative(),
     salary: z.number().int().nonnegative(),
     hourly: z.number().int().nonnegative(),
+    flex: z.number().int().nonnegative().default(0),
   }),
   schedule: z.object({
     weeks: z.number().int().nonnegative(),

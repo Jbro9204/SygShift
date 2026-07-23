@@ -38,7 +38,7 @@ const directoryEntrySchema = z.object({
   last_name: z.string(),
   preferred_name: z.string().nullable(),
   role: z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin']),
-  employment_type: z.enum(['hourly', 'salary']),
+  employment_type: z.enum(['hourly', 'salary', 'flex']),
   status: z.enum(['active', 'leave', 'inactive', 'separated']),
   photo_path: z.string().nullable(),
   hired_on: z.string().nullable(),

@@ -111,6 +111,7 @@ describe('schedule builder data contract', () => {
       target_notes: 'North gate',
       publish_announcement: true,
       target_employee_id: null,
+      target_availability_override_note: null,
     })
   })
 
@@ -162,6 +163,7 @@ describe('schedule builder data contract', () => {
       target_notes: null,
       publish_announcement: false,
       target_employee_id: '70000000-0000-4000-8000-000000000001',
+      target_availability_override_note: null,
     })
   })
 

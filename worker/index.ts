@@ -42,7 +42,7 @@ interface AuthTarget {
   authEmail: string
   displayName: string
   role: 'guard' | 'dispatcher' | 'scheduler' | 'supervisor' | 'admin'
-  employmentType: 'hourly' | 'salary'
+  employmentType: 'hourly' | 'salary' | 'flex'
   status: 'active' | 'leave' | 'inactive' | 'separated'
   existingAuthUserId: string | null
 }

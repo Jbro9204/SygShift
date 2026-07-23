@@ -3,7 +3,7 @@ import { getSupabaseClient } from '../lib/supabase'
 import { getTrustedDeviceToken } from '../lib/trustedDeviceToken'
 
 const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin'])
-const employmentTypeSchema = z.enum(['hourly', 'salary'])
+const employmentTypeSchema = z.enum(['hourly', 'salary', 'flex'])
 const employeeStatusSchema = z.enum(['active', 'leave', 'inactive', 'separated'])
 const accountStatusSchema = z.enum(['not_created', 'active', 'disabled'])
 

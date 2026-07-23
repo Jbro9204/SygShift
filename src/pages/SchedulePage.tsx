@@ -5,6 +5,10 @@ import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, Edit
 import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import {
+  getAvailabilityWorkspace,
+  type AvailabilityRecord,
+} from '../data/availability'
 import { getCurrentAppRole } from '../data/session'
 import {
   assignmentName,
@@ -48,6 +52,7 @@ interface OpenShiftFormState {
   isOvertime: boolean
   notes: string
   publishAnnouncement: boolean
+  availabilityOverrideNote: string
 }
 
 interface SchedulerCoverageLane {
@@ -92,11 +97,72 @@ function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
     isOvertime: false,
     notes: '',
     publishAnnouncement: true,
+    availabilityOverrideNote: '',
   }
 }
 
 function builderEmployeeName(employee: ScheduleBuilderEmployee): string {
   return `${employee.preferred_name || employee.first_name} ${employee.last_name}`
+}
+
+function builderEmployeeOptionLabel(employee: ScheduleBuilderEmployee): string {
+  const details = [
+    employee.has_armed_guard_credential ? 'armed' : null,
+    employee.employment_type === 'salary' ? 'salary' : null,
+    employee.employment_type === 'flex' ? 'flex' : null,
+  ].filter(Boolean)
+  return `${builderEmployeeName(employee)}${details.length ? ` · ${details.join(' · ')}` : ''}`
+}
+
+function timeToMinutes(value: string | null | undefined): number | null {
+  if (!value) return null
+  const [hoursText, minutesText] = value.split(':')
+  const hours = Number(hoursText)
+  const minutes = Number(minutesText)
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null
+  return hours * 60 + minutes
+}
+
+function availabilityDateApplies(record: AvailabilityRecord, dateKey: string): boolean {
+  if (record.approvalStatus !== 'approved' || record.availabilityStatus !== 'unavailable') return false
+  if (record.startsOn > dateKey || record.endsOn < dateKey) return false
+  if (record.dayOfWeek === null) return true
+  const dayOfWeek = new Date(`${dateKey}T12:00:00`).getDay()
+  return record.dayOfWeek === dayOfWeek
+}
+
+function availabilityTimeApplies(record: AvailabilityRecord, startTime: string, endTime: string): boolean {
+  if (!record.startTime || !record.endTime) return true
+  const recordStart = timeToMinutes(record.startTime)
+  const recordEnd = timeToMinutes(record.endTime)
+  const shiftStart = timeToMinutes(startTime)
+  const shiftEnd = timeToMinutes(endTime)
+  if (recordStart === null || recordEnd === null || shiftStart === null || shiftEnd === null) return true
+  if (shiftEnd <= shiftStart) return true
+  return recordStart < shiftEnd && recordEnd > shiftStart
+}
+
+function findAvailabilityConflict(
+  records: AvailabilityRecord[],
+  employeeId: string | null | undefined,
+  dateKey: string,
+  startTime: string,
+  endTime: string,
+): AvailabilityRecord | null {
+  if (!employeeId || !dateKey || !startTime || !endTime) return null
+  return records.find((record) =>
+    record.employeeId === employeeId
+    && availabilityDateApplies(record, dateKey)
+    && availabilityTimeApplies(record, startTime, endTime),
+  ) ?? null
+}
+
+function availabilityConflictText(record: AvailabilityRecord): string {
+  const day = record.dayOfWeek === null
+    ? 'selected date'
+    : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][record.dayOfWeek]
+  const time = record.startTime || record.endTime ? ` from ${record.startTime ?? 'start'} to ${record.endTime ?? 'end'}` : ' all day'
+  return `${record.employeeName} is marked unavailable for ${day}${time}. Add an override reason if they confirmed this shift is okay.`
 }
 
 function shiftLocalTimeValue(shift: ScheduleShift, instant: string): string {
@@ -110,7 +176,7 @@ function shiftLocalTimeValue(shift: ScheduleShift, instant: string): string {
   return `${value('hour')}:${value('minute')}`
 }
 
-function draftShiftMutationInput(shift: ScheduleShift, employeeId: string | null) {
+function draftShiftMutationInput(shift: ScheduleShift, employeeId: string | null, availabilityOverrideNote?: string | null) {
   return {
     shiftId: shift.id,
     shiftDate: shiftOperationalDate(shift),
@@ -121,6 +187,7 @@ function draftShiftMutationInput(shift: ScheduleShift, employeeId: string | null
     isOvertime: shift.is_overtime,
     notes: shift.notes ?? '',
     employeeId,
+    availabilityOverrideNote: availabilityOverrideNote?.trim() || null,
   }
 }
 
@@ -233,6 +300,7 @@ function ShiftCard({
 }
 
 function EditShiftDialog({
+  availabilityRecords,
   employees,
   focusEmployeeId,
   shift,
@@ -240,6 +308,7 @@ function EditShiftDialog({
   mutation,
   onClose,
 }: {
+  availabilityRecords: AvailabilityRecord[]
   employees: ScheduleBuilderEmployee[]
   focusEmployeeId?: string | null
   shift: ScheduleShift
@@ -254,6 +323,7 @@ function EditShiftDialog({
     isOvertime: boolean
     notes?: string
     employeeId?: string | null
+    availabilityOverrideNote?: string | null
   }>>
   onClose: () => void
 }) {
@@ -262,6 +332,12 @@ function EditShiftDialog({
     : null
   const assignedEmployeeId = focusedAssignment?.employee.id ?? shift.assignments[0]?.employee.id ?? ''
   const eligibleEmployees = employees.filter((employee) => !shift.requires_armed || employee.has_armed_guard_credential)
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(assignedEmployeeId)
+  const [shiftDate, setShiftDate] = useState(shiftOperationalDate(shift))
+  const [startTime, setStartTime] = useState(shiftLocalTimeValue(shift, shift.starts_at))
+  const [endTime, setEndTime] = useState(shiftLocalTimeValue(shift, shift.ends_at))
+  const [overrideNote, setOverrideNote] = useState('')
+  const availabilityConflict = findAvailabilityConflict(availabilityRecords, selectedEmployeeId, shiftDate, startTime, endTime)
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -276,6 +352,7 @@ function EditShiftDialog({
       isOvertime: form.get('isOvertime') === 'on',
       notes: String(form.get('notes') ?? ''),
       employeeId: String(form.get('employeeId') ?? '') || null,
+      availabilityOverrideNote: availabilityConflict ? overrideNote : null,
     }, { onSuccess: onClose })
   }
 
@@ -287,21 +364,19 @@ function EditShiftDialog({
     >
       <form className="request-form schedule-edit-form" onSubmit={submit}>
         <div className="form-grid schedule-edit-form__timing">
-          <label><span>Date</span><input defaultValue={shiftOperationalDate(shift)} name="shiftDate" required type="date" /></label>
-          <label><span>Start</span><input defaultValue={shiftLocalTimeValue(shift, shift.starts_at)} name="startTime" required type="time" /></label>
-          <label><span>End</span><input defaultValue={shiftLocalTimeValue(shift, shift.ends_at)} name="endTime" required type="time" /></label>
+          <label><span>Date</span><input name="shiftDate" onChange={(event) => setShiftDate(event.target.value)} required type="date" value={shiftDate} /></label>
+          <label><span>Start</span><input name="startTime" onChange={(event) => setStartTime(event.target.value)} required type="time" value={startTime} /></label>
+          <label><span>End</span><input name="endTime" onChange={(event) => setEndTime(event.target.value)} required type="time" value={endTime} /></label>
           <label><span>Headcount</span><input defaultValue={shift.headcount_required} min={1} name="headcount" required type="number" /></label>
         </div>
         <div className="schedule-edit-form__details">
           <label className="field-stack">
             <span>Switch / assign employee</span>
-            <select defaultValue={assignedEmployeeId} name="employeeId">
+            <select name="employeeId" onChange={(event) => setSelectedEmployeeId(event.target.value)} value={selectedEmployeeId}>
               <option value="">Leave open / unassigned</option>
               {eligibleEmployees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
-                  {builderEmployeeName(employee)}
-                  {employee.has_armed_guard_credential ? ' · armed' : ''}
-                  {employee.employment_type === 'salary' ? ' · salary' : ''}
+                  {builderEmployeeOptionLabel(employee)}
                 </option>
               ))}
             </select>
@@ -311,6 +386,26 @@ function EditShiftDialog({
             <textarea defaultValue={shift.notes ?? ''} name="notes" rows={3} />
           </label>
         </div>
+        {availabilityConflict ? (
+          <div className="availability-override-card">
+            <AlertCircle aria-hidden="true" size={18} />
+            <div>
+              <strong>Availability override required</strong>
+              <p>{availabilityConflictText(availabilityConflict)}</p>
+              <label>
+                Override reason
+                <textarea
+                  maxLength={2000}
+                  onChange={(event) => setOverrideNote(event.target.value)}
+                  placeholder="Example: Employee confirmed they can cover this date."
+                  required
+                  rows={2}
+                  value={overrideNote}
+                />
+              </label>
+            </div>
+          </div>
+        ) : null}
         <div className="schedule-builder__checks schedule-edit-form__checks">
           <label className="check-field"><input defaultChecked={shift.is_open} name="isOpen" type="checkbox" /> Show as open if coverage is still needed</label>
           <label className="check-field"><input defaultChecked={shift.is_overtime} name="isOvertime" type="checkbox" /> Mark as overtime</label>
@@ -328,7 +423,7 @@ function EditShiftDialog({
         {mutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{mutation.error.message}</p> : null}
         <div className="modal-actions">
           <button className="secondary-button" onClick={onClose} type="button">Cancel</button>
-          <button className="primary-action" disabled={mutation.isPending} type="submit">
+          <button className="primary-action" disabled={mutation.isPending || Boolean(availabilityConflict && !overrideNote.trim())} type="submit">
             {mutation.isPending ? 'Saving...' : 'Save draft shift'}
           </button>
         </div>
@@ -411,6 +506,7 @@ function ReviewResolutionDialog({
 }
 
 function SchedulerShiftPanel({
+  availabilityRecords,
   employees,
   isDraft,
   isSaving,
@@ -421,10 +517,11 @@ function SchedulerShiftPanel({
   shift,
   suggestion,
 }: {
+  availabilityRecords: AvailabilityRecord[]
   employees: ScheduleBuilderEmployee[]
   isDraft: boolean
   isSaving: boolean
-  onAssignEmployee: (employeeId: string | null) => void
+  onAssignEmployee: (employeeId: string | null, availabilityOverrideNote?: string | null) => void
   onClose: () => void
   onEdit: () => void
   onResolve: () => void
@@ -437,13 +534,21 @@ function SchedulerShiftPanel({
   const title = shift.post?.name ?? shift.event?.name ?? 'Shift'
   const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? 'Unassigned location'
   const sourceReference = sourceReferenceLabel(source)
+  const [manualEmployeeId, setManualEmployeeId] = useState('')
+  const [overrideNote, setOverrideNote] = useState('')
+  const manualConflict = findAvailabilityConflict(
+    availabilityRecords,
+    manualEmployeeId,
+    shiftOperationalDate(shift),
+    shiftLocalTimeValue(shift, shift.starts_at),
+    shiftLocalTimeValue(shift, shift.ends_at),
+  )
 
   function submitAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    const employeeId = String(form.get('employeeId') ?? '')
-    onAssignEmployee(employeeId || null)
-    event.currentTarget.reset()
+    onAssignEmployee(manualEmployeeId || null, manualConflict ? overrideNote : null)
+    setManualEmployeeId('')
+    setOverrideNote('')
   }
 
   return (
@@ -527,18 +632,41 @@ function SchedulerShiftPanel({
         <form className="scheduler-panel-assign" onSubmit={submitAssignment}>
           <label>
             Switch / assign manually
-            <select disabled={isSaving || eligibleEmployees.length === 0} name="employeeId">
+            <select
+              disabled={isSaving || eligibleEmployees.length === 0}
+              name="employeeId"
+              onChange={(event) => setManualEmployeeId(event.target.value)}
+              value={manualEmployeeId}
+            >
               <option value="">Leave open / unassigned</option>
               {eligibleEmployees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
-                  {builderEmployeeName(employee)}
-                  {employee.has_armed_guard_credential ? ' · armed' : ''}
-                  {employee.employment_type === 'salary' ? ' · salary' : ''}
+                  {builderEmployeeOptionLabel(employee)}
                 </option>
               ))}
             </select>
           </label>
-          <button className="primary-action" disabled={isSaving || eligibleEmployees.length === 0} type="submit">
+          {manualConflict ? (
+            <div className="availability-override-card availability-override-card--compact">
+              <AlertCircle aria-hidden="true" size={17} />
+              <div>
+                <strong>Availability override required</strong>
+                <p>{availabilityConflictText(manualConflict)}</p>
+                <label>
+                  Override reason
+                  <textarea
+                    maxLength={2000}
+                    onChange={(event) => setOverrideNote(event.target.value)}
+                    placeholder="Employee confirmed they can work this shift."
+                    required
+                    rows={2}
+                    value={overrideNote}
+                  />
+                </label>
+              </div>
+            </div>
+          ) : null}
+          <button className="primary-action" disabled={isSaving || eligibleEmployees.length === 0 || Boolean(manualConflict && !overrideNote.trim())} type="submit">
             {isSaving ? 'Saving...' : isDraft ? 'Save assignment' : 'Open draft & save assignment'}
           </button>
           <p className="form-note">
@@ -866,6 +994,11 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     queryFn: () => getScheduleStaffingSuggestions(scheduleQuery.data!.id),
     enabled: isSupabaseConfigured && canUseScheduler && scheduleQuery.data?.status === 'draft',
   })
+  const availabilityQuery = useQuery({
+    queryKey: ['availability-workspace', weekKey, format(weekEnd, 'yyyy-MM-dd')],
+    queryFn: () => getAvailabilityWorkspace(weekKey, format(weekEnd, 'yyyy-MM-dd')),
+    enabled: isSupabaseConfigured && canUseScheduler,
+  })
   const availableSites = useMemo(() => {
     const sites = new Map<string, { id: string, name: string, time_zone: string }>()
     for (const post of builderOptionsQuery.data?.posts ?? []) {
@@ -883,6 +1016,13 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     return map
   }, [staffingSuggestionsQuery.data])
   const selectedPost = builderOptionsQuery.data?.posts.find((post) => post.id === openShiftForm.postId)
+  const openShiftAvailabilityConflict = findAvailabilityConflict(
+    availabilityQuery.data?.availability ?? [],
+    openShiftForm.employeeId,
+    openShiftForm.shiftDate,
+    openShiftForm.startTime,
+    openShiftForm.endTime,
+  )
   const createOpenShiftMutation = useMutation({
     mutationFn: () => createSupervisorOpenShift({
       weekStartsOn: weekKey,
@@ -900,6 +1040,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       employeeId: openShiftForm.employeeId || null,
       isOvertime: openShiftForm.isOvertime,
       notes: openShiftForm.notes,
+      availabilityOverrideNote: openShiftAvailabilityConflict ? openShiftForm.availabilityOverrideNote : null,
       publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
     }),
     onSuccess: async (result) => {
@@ -1388,10 +1529,10 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId))
   }
 
-  function assignPlannerEmployee(shift: ScheduleShift, employeeId: string | null) {
+  function assignPlannerEmployee(shift: ScheduleShift, employeeId: string | null, availabilityOverrideNote?: string | null) {
     setBuilderMessage(null)
     if (scheduleQuery.data?.status === 'draft') {
-      updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId))
+      updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId, availabilityOverrideNote))
       return
     }
 
@@ -1404,7 +1545,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           setBuilderMessage('Draft opened, but the selected shift could not be matched. Select the shift again and retry.')
           return
         }
-        updateDraftShiftMutation.mutate(draftShiftMutationInput(copiedShift, employeeId))
+        updateDraftShiftMutation.mutate(draftShiftMutationInput(copiedShift, employeeId, availabilityOverrideNote))
       },
     })
   }
@@ -1772,14 +1913,33 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                     .filter((employee) => selectedPost?.requires_armed ? employee.has_armed_guard_credential : true)
                     .map((employee) => (
                       <option key={employee.id} value={employee.id}>
-                        {builderEmployeeName(employee)}
-                        {employee.has_armed_guard_credential ? ' · armed' : ''}
-                        {employee.employment_type === 'salary' ? ' · salary' : ''}
+                        {builderEmployeeOptionLabel(employee)}
                       </option>
                     ))}
                 </select>
               </label>
             </div>
+
+            {openShiftAvailabilityConflict ? (
+              <div className="availability-override-card">
+                <AlertCircle aria-hidden="true" size={18} />
+                <div>
+                  <strong>Availability override required</strong>
+                  <p>{availabilityConflictText(openShiftAvailabilityConflict)}</p>
+                  <label>
+                    Override reason
+                    <textarea
+                      maxLength={2000}
+                      onChange={(event) => updateOpenShiftForm({ availabilityOverrideNote: event.target.value })}
+                      placeholder="Example: Employee confirmed this date is available."
+                      required
+                      rows={2}
+                      value={openShiftForm.availabilityOverrideNote}
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : null}
 
             <label className="field-stack">
               Notes for supervisors
@@ -1838,7 +1998,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               </button>
               <button
                 className="primary-action"
-                disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending}
+                disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending || Boolean(openShiftAvailabilityConflict && !openShiftForm.availabilityOverrideNote.trim())}
                 type="submit"
               >
                 {createOpenShiftMutation.isPending
@@ -1863,6 +2023,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
       {canUseScheduler && shiftEditor?.status === 'ready' && shiftEditor.editableShift ? (
         <EditShiftDialog
+          availabilityRecords={availabilityQuery.data?.availability ?? []}
           employees={builderOptionsQuery.data?.employees ?? []}
           focusEmployeeId={focusedEmployeeId}
           mutation={updateDraftShiftMutation}
@@ -2299,10 +2460,11 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
               {selectedPlannerShift ? (
                 <SchedulerShiftPanel
+                  availabilityRecords={availabilityQuery.data?.availability ?? []}
                   employees={builderOptionsQuery.data?.employees ?? []}
                   isDraft={scheduleQuery.data.status === 'draft'}
                   isSaving={updateDraftShiftMutation.isPending}
-                  onAssignEmployee={(employeeId) => assignPlannerEmployee(selectedPlannerShift, employeeId)}
+                  onAssignEmployee={(employeeId, availabilityOverrideNote) => assignPlannerEmployee(selectedPlannerShift, employeeId, availabilityOverrideNote)}
                   onClose={() => setSelectedPlannerShiftId(null)}
                   onEdit={() => editShift(selectedPlannerShift)}
                   onResolve={() => {

@@ -8,7 +8,7 @@ const availabilityEmployeeSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
   role: roleSchema,
-  employmentType: z.enum(['hourly', 'salary', 'contractor']),
+  employmentType: z.enum(['hourly', 'salary', 'flex']),
   hasArmedCredential: z.boolean(),
 })
 
@@ -81,4 +81,12 @@ export async function decideAvailability(requestId: string, decision: 'approved'
     target_note: note,
   })
   if (error) throw new Error(error.message || 'Availability decision could not be saved.')
+}
+
+export async function cancelAvailability(requestId: string, note: string | null): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('cancel_employee_availability', {
+    target_availability_id: requestId,
+    target_note: note?.trim() || null,
+  })
+  if (error) throw new Error(error.message || 'Availability rule could not be removed.')
 }

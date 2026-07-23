@@ -5,7 +5,7 @@ const timeEventKindSchema = z.enum(['clock_in', 'break_start', 'break_end', 'clo
 const timeEventSourceSchema = z.enum(['web', 'mobile_web', 'supervisor', 'import', 'system'])
 const assignmentStatusSchema = z.enum(['assigned', 'confirmed', 'canceled', 'completed'])
 const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin'])
-const employmentTypeSchema = z.enum(['hourly', 'salary'])
+const employmentTypeSchema = z.enum(['hourly', 'salary', 'flex'])
 
 const timekeepingEmployeeSchema = z.object({
   id: z.string().uuid(),

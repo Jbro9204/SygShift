@@ -52,6 +52,7 @@ const statusLabels: Record<EmployeeStatus, string> = {
 }
 
 const employmentLabels: Record<EmploymentType, string> = {
+  flex: 'Flex',
   hourly: 'Hourly',
   salary: 'Salary',
 }
@@ -165,6 +166,7 @@ function EmployeeForm({
           <select defaultValue={employee?.employmentType ?? 'hourly'} name="employmentType">
             <option value="hourly">Hourly</option>
             <option value="salary">Salary</option>
+            <option value="flex">Flex</option>
           </select>
         </label>
         <label>

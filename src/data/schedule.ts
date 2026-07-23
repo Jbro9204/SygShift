@@ -82,7 +82,7 @@ const builderOptionsSchema = z.object({
     last_name: z.string(),
     preferred_name: z.string().nullable(),
     role: z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin']),
-    employment_type: z.enum(['hourly', 'salary', 'contractor']),
+    employment_type: z.enum(['hourly', 'salary', 'flex']),
     has_armed_guard_credential: z.boolean(),
   })),
 })
@@ -113,7 +113,7 @@ const staffingSuggestionSchema = z.object({
     employeeId: z.string().uuid(),
     name: z.string(),
     role: z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin']),
-    employmentType: z.enum(['hourly', 'salary', 'contractor']),
+    employmentType: z.enum(['hourly', 'salary', 'flex']),
     hasArmedCredential: z.boolean(),
     reason: z.string(),
   })),
@@ -182,6 +182,7 @@ export interface CreateOpenShiftInput {
   notes?: string
   publishAnnouncement: boolean
   employeeId?: string | null
+  availabilityOverrideNote?: string | null
 }
 
 export interface UpdateDraftShiftInput {
@@ -194,6 +195,7 @@ export interface UpdateDraftShiftInput {
   isOvertime: boolean
   notes?: string
   employeeId?: string | null
+  availabilityOverrideNote?: string | null
 }
 
 export interface ScheduleRow {
@@ -261,6 +263,7 @@ export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Pr
     target_notes: input.notes?.trim() || null,
     publish_announcement: input.publishAnnouncement,
     target_employee_id: input.employeeId || null,
+    target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
   })
 
   if (error) throw new Error(error.message || 'The open shift could not be created.')
@@ -288,6 +291,7 @@ export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Pr
     target_is_overtime: input.isOvertime,
     target_notes: input.notes?.trim() || null,
     target_employee_id: input.employeeId || null,
+    target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
   })
 
   if (error) throw new Error(error.message || 'The draft shift could not be updated.')

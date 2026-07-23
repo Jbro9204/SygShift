@@ -1,8 +1,15 @@
 import { type FormEvent, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BadgeCheck, DatabaseZap, Pencil, Search, ShieldAlert, UsersRound } from 'lucide-react'
+import { addDays, format } from 'date-fns'
+import { BadgeCheck, CalendarCheck2, DatabaseZap, Pencil, Search, ShieldAlert, Trash2, UsersRound } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import {
+  cancelAvailability,
+  getAvailabilityWorkspace,
+  submitAvailability,
+  type AvailabilityRecord,
+} from '../data/availability'
 import { getCurrentAppRole, type AppRole } from '../data/session'
 import {
   employeeDisplayName,
@@ -13,6 +20,7 @@ import {
   type DirectoryEntry,
 } from '../data/workforce'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { operationalToday } from '../lib/time'
 
 const roleLabels: Record<DirectoryEntry['role'], string> = {
   dispatcher: 'Dispatcher',
@@ -26,6 +34,11 @@ const statusLabels: Record<DirectoryEntry['status'], string> = {
   leave: 'On leave',
   inactive: 'Inactive',
   separated: 'Separated',
+}
+const employmentLabels: Record<DirectoryEntry['employment_type'], string> = {
+  flex: 'Flex',
+  hourly: 'Hourly',
+  salary: 'Salary',
 }
 const credentialStatusLabels: Record<CredentialStatus, string> = {
   active: 'Active',
@@ -66,6 +79,8 @@ const credentialOptions: Array<{ kind: CredentialKind; label: string; helper: st
     label: 'Other Credential',
   },
 ]
+const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const dayNamesShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 function canEditCredentials(role: AppRole | null | undefined): boolean {
   return role === 'scheduler' || role === 'supervisor' || role === 'admin'
@@ -77,6 +92,50 @@ function formatDateOnly(date: string): string {
     month: '2-digit',
     year: 'numeric',
   }).format(new Date(`${date}T12:00:00`))
+}
+
+function formatAvailabilityTime(value: string | null): string {
+  if (!value) return 'All day'
+  const [hoursText, minutesText] = value.split(':')
+  const hours = Number(hoursText)
+  const suffix = hours >= 12 ? 'PM' : 'AM'
+  return `${hours % 12 || 12}:${minutesText} ${suffix}`
+}
+
+function availabilityRange(record: Pick<AvailabilityRecord, 'startsOn' | 'endsOn'>): string {
+  const start = formatDateOnly(record.startsOn)
+  const end = formatDateOnly(record.endsOn)
+  return start === end ? start : `${start} - ${end}`
+}
+
+function availabilitySummary(record: AvailabilityRecord): string {
+  const type = record.availabilityStatus === 'available' ? 'Available' : 'Unavailable'
+  const day = record.dayOfWeek === null ? '' : ` · ${dayNames[record.dayOfWeek]}`
+  const time = record.startTime || record.endTime
+    ? ` · ${formatAvailabilityTime(record.startTime)} - ${formatAvailabilityTime(record.endTime)}`
+    : ' · All day'
+  return `${type} · ${availabilityRange(record)}${day}${time}`
+}
+
+function activeAvailability(records: AvailabilityRecord[], employeeId: string): AvailabilityRecord[] {
+  return records
+    .filter((record) => record.employeeId === employeeId && ['approved', 'pending'].includes(record.approvalStatus))
+    .sort((left, right) => left.startsOn.localeCompare(right.startsOn) || left.createdAt.localeCompare(right.createdAt))
+}
+
+function weeklyAvailability(records: AvailabilityRecord[], employeeId: string) {
+  return dayNamesShort.map((label, dayOfWeek) => {
+    const rules = activeAvailability(records, employeeId).filter((record) =>
+      record.approvalStatus === 'approved'
+      && record.availabilityStatus === 'unavailable'
+      && (record.dayOfWeek === null || record.dayOfWeek === dayOfWeek),
+    )
+    return {
+      dayOfWeek,
+      label,
+      rule: rules[0] ?? null,
+    }
+  })
 }
 
 function EmployeeIdentity({ employee }: { employee: DirectoryEntry }) {
@@ -240,11 +299,171 @@ function DirectoryCredentialEditor({
   )
 }
 
-function CredentialManagementModal({
+function DirectoryAvailabilityManager({
   employee,
+  records,
+  pending,
+}: {
+  employee: DirectoryEntry
+  records: AvailabilityRecord[]
+  pending: boolean
+}) {
+  const queryClient = useQueryClient()
+  const employeeRecords = activeAvailability(records, employee.id)
+  const week = weeklyAvailability(records, employee.id)
+  const todayKey = format(operationalToday(), 'yyyy-MM-dd')
+  const [message, setMessage] = useState<string | null>(null)
+
+  const submitMutation = useMutation({
+    mutationFn: submitAvailability,
+    onSuccess: async () => {
+      setMessage('Availability saved for scheduling.')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['availability-workspace'] }),
+        queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions'] }),
+      ])
+    },
+  })
+  const cancelMutation = useMutation({
+    mutationFn: (input: { id: string; note: string | null }) => cancelAvailability(input.id, input.note),
+    onSuccess: async () => {
+      setMessage('Availability rule removed.')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['availability-workspace'] }),
+        queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions'] }),
+      ])
+    },
+  })
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const formElement = event.currentTarget
+    const form = new FormData(formElement)
+    submitMutation.mutate({
+      availabilityStatus: String(form.get('availabilityStatus')) === 'available' ? 'available' : 'unavailable',
+      dayOfWeek: String(form.get('dayOfWeek') || '') === '' ? null : Number(form.get('dayOfWeek')),
+      employeeId: employee.id,
+      endTime: String(form.get('endTime') || '') || null,
+      endsOn: String(form.get('endsOn')),
+      note: String(form.get('note') || '').trim() || null,
+      startTime: String(form.get('startTime') || '') || null,
+      startsOn: String(form.get('startsOn')),
+    }, {
+      onSuccess: () => formElement.reset(),
+    })
+  }
+
+  return (
+    <section className="directory-availability-panel" aria-labelledby="directory-availability-title">
+      <div className="directory-availability-panel__heading">
+        <div>
+          <h3 id="directory-availability-title">Scheduling availability</h3>
+          <p>
+            Mark normal unavailable windows here. Schedulers can still override a rule from the schedule,
+            but the system will require a written reason.
+          </p>
+        </div>
+        <CalendarCheck2 aria-hidden="true" size={24} />
+      </div>
+
+      <div className="availability-week-strip" aria-label="Weekly availability snapshot">
+        {week.map((day) => (
+          <div className={day.rule ? 'availability-day-chip availability-day-chip--blocked' : 'availability-day-chip'} key={day.dayOfWeek}>
+            <span>{day.label}</span>
+            <strong>{day.rule ? 'Unavailable' : 'Open'}</strong>
+            {day.rule?.startTime || day.rule?.endTime ? (
+              <small>{formatAvailabilityTime(day.rule.startTime)} - {formatAvailabilityTime(day.rule.endTime)}</small>
+            ) : null}
+          </div>
+        ))}
+      </div>
+
+      <form className="request-form directory-availability-form" onSubmit={submit}>
+        <div className="form-grid form-grid--three">
+          <label>
+            <span>Start date</span>
+            <input min={todayKey} name="startsOn" required type="date" />
+          </label>
+          <label>
+            <span>End date</span>
+            <input min={todayKey} name="endsOn" required type="date" />
+          </label>
+          <label>
+            <span>Type</span>
+            <select name="availabilityStatus" required>
+              <option value="unavailable">Unavailable</option>
+              <option value="available">Available</option>
+            </select>
+          </label>
+        </div>
+        <div className="form-grid form-grid--three">
+          <label>
+            <span>Repeats on <small>Optional</small></span>
+            <select name="dayOfWeek">
+              <option value="">All selected dates</option>
+              {dayNames.map((day, index) => <option key={day} value={index}>{day}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Start time <small>Optional</small></span>
+            <input name="startTime" type="time" />
+          </label>
+          <label>
+            <span>End time <small>Optional</small></span>
+            <input name="endTime" type="time" />
+          </label>
+        </div>
+        <label className="field-stack">
+          <span>Note <small>Optional</small></span>
+          <textarea maxLength={2000} name="note" placeholder="Example: Flex employee cannot work Thursdays." rows={2} />
+        </label>
+        <div className="directory-availability-form__actions">
+          <button className="primary-action" disabled={pending || submitMutation.isPending} type="submit">
+            {submitMutation.isPending ? 'Saving...' : 'Save availability'}
+          </button>
+        </div>
+      </form>
+
+      <div className="directory-availability-list" aria-label="Saved availability rules">
+        {employeeRecords.length ? employeeRecords.map((record) => (
+          <article className="directory-availability-rule" key={record.id}>
+            <div>
+              <span className={`status-badge status-badge--${record.approvalStatus}`}>{record.approvalStatus}</span>
+              <strong>{availabilitySummary(record)}</strong>
+              {record.note ? <small>{record.note}</small> : null}
+            </div>
+            <button
+              aria-label={`Remove availability rule for ${employeeDisplayName(employee)}`}
+              className="secondary-button secondary-button--small"
+              disabled={cancelMutation.isPending}
+              onClick={() => cancelMutation.mutate({ id: record.id, note: 'Removed from Directory.' })}
+              type="button"
+            >
+              <Trash2 aria-hidden="true" size={15} />
+              Remove
+            </button>
+          </article>
+        )) : (
+          <p className="empty-note">No active availability rules are on file for this employee.</p>
+        )}
+      </div>
+
+      {message ? <div className="form-feedback form-feedback--success" role="status">{message}</div> : null}
+      {submitMutation.isError ? <div className="inline-alert" role="alert">{submitMutation.error.message}</div> : null}
+      {cancelMutation.isError ? <div className="inline-alert" role="alert">{cancelMutation.error.message}</div> : null}
+    </section>
+  )
+}
+
+function DirectoryProfileModal({
+  employee,
+  availabilityRecords,
+  availabilityPending,
   onClose,
 }: {
   employee: DirectoryEntry
+  availabilityRecords: AvailabilityRecord[]
+  availabilityPending: boolean
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
@@ -273,8 +492,16 @@ function CredentialManagementModal({
     <ModalDialog
       description={`${currentEmployee.employee_number ?? 'ID pending'} · @${currentEmployee.username}`}
       onClose={onClose}
-      title={`Credentials for ${employeeDisplayName(currentEmployee)}`}
+      title={`Directory profile for ${employeeDisplayName(currentEmployee)}`}
     >
+      <p className="directory-profile-summary">
+        Employment: {employmentLabels[currentEmployee.employment_type]} · Role: {roleLabels[currentEmployee.role]}
+      </p>
+      <DirectoryAvailabilityManager
+        employee={currentEmployee}
+        pending={availabilityPending}
+        records={availabilityRecords}
+      />
       <section className="credential-management-panel credential-management-panel--directory" aria-labelledby="directory-credential-title">
         <h3 id="directory-credential-title">Credentials & Qualifications</h3>
         <p className="form-note">
@@ -313,6 +540,13 @@ export function PeoplePage() {
     enabled: isSupabaseConfigured,
   })
   const canManageCredentials = canEditCredentials(roleQuery.data)
+  const todayKey = format(operationalToday(), 'yyyy-MM-dd')
+  const throughKey = format(addDays(operationalToday(), 42), 'yyyy-MM-dd')
+  const availabilityQuery = useQuery({
+    queryKey: ['availability-workspace', todayKey, throughKey],
+    queryFn: () => getAvailabilityWorkspace(todayKey, throughKey),
+    enabled: isSupabaseConfigured && canManageCredentials,
+  })
 
   const filteredEmployees = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
@@ -426,7 +660,7 @@ export function PeoplePage() {
                       {canManageCredentials ? (
                         <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployee(employee)} type="button">
                           <Pencil aria-hidden="true" size={16} />
-                          Edit Credentials
+                          Manage Profile
                         </button>
                       ) : <span className="plain-value">Read only</span>}
                     </div>
@@ -452,7 +686,7 @@ export function PeoplePage() {
                     {canManageCredentials ? (
                       <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployee(employee)} type="button">
                         <Pencil aria-hidden="true" size={16} />
-                        Edit Credentials
+                        Manage Profile
                       </button>
                     ) : null}
                   </article>
@@ -466,7 +700,12 @@ export function PeoplePage() {
             Showing {filteredEmployees.length} of {directoryQuery.data?.length ?? 0} active workforce records
           </p>
           {selectedEmployee ? (
-            <CredentialManagementModal employee={selectedEmployee} onClose={() => setSelectedEmployee(null)} />
+            <DirectoryProfileModal
+              availabilityPending={availabilityQuery.isPending}
+              availabilityRecords={availabilityQuery.data?.availability ?? []}
+              employee={selectedEmployee}
+              onClose={() => setSelectedEmployee(null)}
+            />
           ) : null}
         </>
       )}
