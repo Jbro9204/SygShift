@@ -119,7 +119,7 @@ function formatRequestDate(date: string): string {
 function formatRequestDateRange(request: Pick<TimeOffRequest, 'starts_on' | 'ends_on'>): string {
   const start = formatRequestDate(request.starts_on)
   const end = formatRequestDate(request.ends_on)
-  return start === end ? start : `${start} â€“ ${end}`
+  return start === end ? start : `${start} – ${end}`
 }
 
 function GuardTimeOffForm({ mutation }: { mutation: ReturnType<typeof useRequestAction> }) {

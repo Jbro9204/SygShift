@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
-import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, Edit3, MapPin, Maximize2, MoveHorizontal, Plus, Search, ShieldAlert, Sparkles, Trash2, X } from 'lucide-react'
+import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, Edit3, MapPin, Maximize2, MoveHorizontal, Plus, Search, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
@@ -339,8 +339,27 @@ function EditShiftDialog({
   const [shiftDate, setShiftDate] = useState(shiftOperationalDate(shift))
   const [startTime, setStartTime] = useState(shiftLocalTimeValue(shift, shift.starts_at))
   const [endTime, setEndTime] = useState(shiftLocalTimeValue(shift, shift.ends_at))
+  const [headcount, setHeadcount] = useState(String(shift.headcount_required))
+  const [notes, setNotes] = useState(shift.notes ?? '')
+  const [isOpen, setIsOpen] = useState(shift.is_open)
+  const [isOvertime, setIsOvertime] = useState(shift.is_overtime)
   const [overrideNote, setOverrideNote] = useState('')
   const availabilityConflict = findAvailabilityConflict(availabilityRecords, selectedEmployeeId, shiftDate, startTime, endTime)
+  const hasUnsavedChanges = selectedEmployeeId !== assignedEmployeeId
+    || shiftDate !== shiftOperationalDate(shift)
+    || startTime !== shiftLocalTimeValue(shift, shift.starts_at)
+    || endTime !== shiftLocalTimeValue(shift, shift.ends_at)
+    || headcount !== String(shift.headcount_required)
+    || notes !== (shift.notes ?? '')
+    || isOpen !== shift.is_open
+    || isOvertime !== shift.is_overtime
+    || overrideNote.trim().length > 0
+
+  function requestClose() {
+    if (!hasUnsavedChanges || window.confirm('Close without saving this shift change?')) {
+      onClose()
+    }
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -350,10 +369,10 @@ function EditShiftDialog({
       shiftDate: String(form.get('shiftDate')),
       startTime: String(form.get('startTime')),
       endTime: String(form.get('endTime')),
-      headcount: Number.parseInt(String(form.get('headcount')), 10),
-      isOpen: form.get('isOpen') === 'on',
-      isOvertime: form.get('isOvertime') === 'on',
-      notes: String(form.get('notes') ?? ''),
+      headcount: Number.parseInt(headcount, 10),
+      isOpen,
+      isOvertime,
+      notes,
       employeeId: String(form.get('employeeId') ?? '') || null,
       availabilityOverrideNote: availabilityConflict ? overrideNote : null,
     }, { onSuccess: onClose })
@@ -361,8 +380,9 @@ function EditShiftDialog({
 
   return (
     <ModalDialog
+      className="modal-dialog--shift-editor"
       description="Edits are saved to the working draft. Publish the draft when the schedule is ready to go live."
-      onClose={onClose}
+      onClose={requestClose}
       title={`Edit ${shift.post?.site.name ?? shift.event?.name ?? 'shift'}`}
     >
       <form className="request-form schedule-edit-form" onSubmit={submit}>
@@ -370,7 +390,7 @@ function EditShiftDialog({
           <label><span>Date</span><input name="shiftDate" onChange={(event) => setShiftDate(event.target.value)} required type="date" value={shiftDate} /></label>
           <label><span>Start</span><input name="startTime" onChange={(event) => setStartTime(event.target.value)} required type="time" value={startTime} /></label>
           <label><span>End</span><input name="endTime" onChange={(event) => setEndTime(event.target.value)} required type="time" value={endTime} /></label>
-          <label><span>Headcount</span><input defaultValue={shift.headcount_required} min={1} name="headcount" required type="number" /></label>
+          <label><span>Headcount</span><input min={1} name="headcount" onChange={(event) => setHeadcount(event.target.value)} required type="number" value={headcount} /></label>
         </div>
         <div className="schedule-edit-form__details">
           <label className="field-stack">
@@ -386,7 +406,7 @@ function EditShiftDialog({
           </label>
           <label className="field-stack">
             <span>Notes</span>
-            <textarea defaultValue={shift.notes ?? ''} name="notes" rows={3} />
+            <textarea name="notes" onChange={(event) => setNotes(event.target.value)} rows={3} value={notes} />
           </label>
         </div>
         {availabilityConflict ? (
@@ -410,8 +430,8 @@ function EditShiftDialog({
           </div>
         ) : null}
         <div className="schedule-builder__checks schedule-edit-form__checks">
-          <label className="check-field"><input defaultChecked={shift.is_open} name="isOpen" type="checkbox" /> Show as open if coverage is still needed</label>
-          <label className="check-field"><input defaultChecked={shift.is_overtime} name="isOvertime" type="checkbox" /> Mark as overtime</label>
+          <label className="check-field"><input checked={isOpen} name="isOpen" onChange={(event) => setIsOpen(event.target.checked)} type="checkbox" /> Show as open if coverage is still needed</label>
+          <label className="check-field"><input checked={isOvertime} name="isOvertime" onChange={(event) => setIsOvertime(event.target.checked)} type="checkbox" /> Mark as overtime</label>
         </div>
         {shift.requires_armed ? <p className="form-note">This shift requires an active armed credential. The system blocks unqualified assignments.</p> : null}
         {suggestions?.suggestions.length ? (
@@ -433,7 +453,7 @@ function EditShiftDialog({
             <Trash2 aria-hidden="true" size={17} />
             Remove from draft
           </button>
-          <button className="secondary-button" onClick={onClose} type="button">Cancel</button>
+          <button className="secondary-button" onClick={requestClose} type="button">Cancel</button>
           <button className="primary-action" disabled={mutation.isPending || Boolean(availabilityConflict && !overrideNote.trim())} type="submit">
             {mutation.isPending ? 'Saving...' : 'Save draft shift'}
           </button>
@@ -584,7 +604,7 @@ function RemoveShiftDialog({
   )
 }
 
-function SchedulerShiftPanel({
+function SchedulerShiftModal({
   availabilityRecords,
   employees,
   isDraft,
@@ -632,21 +652,40 @@ function SchedulerShiftPanel({
     setOverrideNote('')
   }
 
-  return (
-    <aside className="scheduler-shift-panel" aria-label="Selected shift actions">
-      <header>
-        <div>
-          <p className="eyebrow">Selected shift</p>
-          <h3>{title}</h3>
-          <span>{location}</span>
-        </div>
-        <button aria-label="Close selected shift" className="icon-button" onClick={onClose} type="button">
-          <X aria-hidden="true" size={18} />
-        </button>
-      </header>
+  function requestClose() {
+    if ((!manualEmployeeId && !overrideNote.trim()) || window.confirm('Close without saving this assignment change?')) {
+      onClose()
+    }
+  }
 
-      <div className="scheduler-shift-panel__body">
-        <section className="scheduler-shift-panel__section">
+  return (
+    <ModalDialog
+      className="modal-dialog--scheduler-shift"
+      description={`${location} · ${format(new Date(`${shiftOperationalDate(shift)}T12:00:00`), 'EEEE, MM/dd/yyyy')} · ${shiftTimeRange(shift)}`}
+      onClose={requestClose}
+      title={title}
+    >
+      <section className="scheduler-shift-modal" aria-label="Selected shift actions">
+        <div className="scheduler-shift-modal__summary">
+          <article>
+            <span>Date</span>
+            <strong>{format(new Date(`${shiftOperationalDate(shift)}T12:00:00`), 'MM/dd/yyyy')}</strong>
+            <small>{shiftTimeRange(shift)}</small>
+          </article>
+          <article>
+            <span>Coverage</span>
+            <strong>{openSlots ? `${openSlots} open` : 'Covered'}</strong>
+            <small>{shift.assignments.length} assigned / {shift.headcount_required} needed</small>
+          </article>
+          <article>
+            <span>Requirement</span>
+            <strong>{shift.requires_armed ? 'Armed' : 'Unarmed'}</strong>
+            <small>{shift.is_overtime ? 'Overtime noted' : 'Standard shift'}</small>
+          </article>
+        </div>
+
+        <div className="scheduler-shift-modal__grid">
+          <section className="scheduler-shift-panel__section">
           <span className="scheduler-shift-panel__label">Details</span>
           <dl className="scheduler-shift-details">
             <div><dt>Date</dt><dd>{format(new Date(`${shiftOperationalDate(shift)}T12:00:00`), 'EEEE, MM/dd/yyyy')}</dd></div>
@@ -655,9 +694,9 @@ function SchedulerShiftPanel({
             <div><dt>Open</dt><dd>{openSlots}</dd></div>
             <div><dt>Requirement</dt><dd>{shift.requires_armed ? 'Armed credential' : 'Unarmed'}</dd></div>
           </dl>
-        </section>
+          </section>
 
-        <section className="scheduler-shift-panel__section">
+          <section className="scheduler-shift-panel__section">
           <span className="scheduler-shift-panel__label">Assigned</span>
           {shift.assignments.length ? (
             <div className="scheduler-assigned-list">
@@ -668,10 +707,10 @@ function SchedulerShiftPanel({
           ) : (
             <p className="scheduler-muted">No employee assigned yet.</p>
           )}
-        </section>
+          </section>
 
-        {source.reviewNeeded || source.assignee || source.context ? (
-          <section className="scheduler-shift-panel__section scheduler-shift-panel__warning">
+          {source.reviewNeeded || source.assignee || source.context ? (
+            <section className="scheduler-shift-panel__section scheduler-shift-panel__warning">
             <AlertCircle aria-hidden="true" size={17} />
             <div>
               <strong>{source.reviewNeeded ? 'Review needed' : 'Schedule note'}</strong>
@@ -679,10 +718,10 @@ function SchedulerShiftPanel({
               {source.context ? <span>Schedule context: {source.context}</span> : null}
               {sourceReference ? <small>{sourceReference}</small> : null}
             </div>
-          </section>
-        ) : null}
+            </section>
+          ) : null}
 
-        <section className="scheduler-shift-panel__section">
+          <section className="scheduler-shift-panel__section">
           <span className="scheduler-shift-panel__label">Suggested staffing</span>
           {suggestion?.suggestions.length ? (
             <div className="scheduler-panel-suggestions">
@@ -708,9 +747,9 @@ function SchedulerShiftPanel({
               {isDraft ? 'No automatic suggestion is available. Choose an eligible employee below.' : 'Open a draft to see and apply staffing suggestions.'}
             </p>
           )}
-        </section>
+          </section>
 
-        <form className="scheduler-panel-assign" onSubmit={submitAssignment}>
+          <form className="scheduler-panel-assign" onSubmit={submitAssignment}>
           <label>
             Switch / assign manually
             <select
@@ -753,13 +792,14 @@ function SchedulerShiftPanel({
           <p className="form-note">
             Use this for call-offs and coverage changes. Saving replaces the current active assignment for this shift and keeps the draft unpublished until you approve it.
           </p>
-        </form>
+          </form>
 
-        {!isDraft ? (
-          <p className="form-note">This will open a working draft first, then apply the change so the live schedule is not changed until you publish.</p>
-        ) : null}
+          {!isDraft ? (
+            <p className="form-note">This will open a working draft first, then apply the change so the live schedule is not changed until you publish.</p>
+          ) : null}
+        </div>
 
-        <div className="scheduler-shift-panel__actions">
+        <div className="scheduler-shift-modal__actions">
           <button className="secondary-button" onClick={onEdit} type="button">Edit full block</button>
           <button className="secondary-button danger-button" disabled={isSaving} onClick={onRequestRemove} type="button">
             <Trash2 aria-hidden="true" size={17} />
@@ -769,8 +809,8 @@ function SchedulerShiftPanel({
             <button className="primary-action" onClick={onResolve} type="button">Resolve review</button>
           ) : null}
         </div>
-      </div>
-    </aside>
+      </section>
+    </ModalDialog>
   )
 }
 
@@ -1382,16 +1422,19 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   }, [currentOperationalDateKey, employeeRows.length, rows])
   const visibleScheduleSummary = useMemo(() => {
     const activeRows = focusedEmployeeId ? visibleEmployeeRows : visibleRows
-    const shifts = activeRows.flatMap((row) => row.shifts)
+    const shifts = activeRows
+      .flatMap((row) => row.shifts)
+      .filter((shift) => !isSchedulerHome || shiftOperationalDate(shift) >= currentOperationalDateKey)
     return {
       open: shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0),
       review: shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey).length,
       shifts: shifts.length,
     }
-  }, [currentOperationalDateKey, focusedEmployeeId, visibleEmployeeRows, visibleRows])
+  }, [currentOperationalDateKey, focusedEmployeeId, isSchedulerHome, visibleEmployeeRows, visibleRows])
   const staffingWorkItems = useMemo(() => {
     if (scheduleQuery.data?.status !== 'draft') return []
     return scheduleQuery.data.shifts
+      .filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
       .map((shift) => {
         const suggestion = suggestionsByShift.get(shift.id)
         const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
@@ -1406,7 +1449,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       })
       .filter((item) => item.openSlots > 0)
       .sort((left, right) => left.shift.starts_at.localeCompare(right.shift.starts_at))
-  }, [scheduleQuery.data, suggestionsByShift])
+  }, [currentOperationalDateKey, scheduleQuery.data, suggestionsByShift])
   const reviewNeededCount = useMemo(
     () => rows.reduce((total, row) => total + row.shifts.filter((shift) =>
       parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey,
@@ -1433,6 +1476,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     const shifts = schedulerRows
       .flatMap((row) => row.shifts)
       .filter((shift) => shiftOperationalDate(shift) === dayKey)
+      .filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
       .sort((left, right) => left.starts_at.localeCompare(right.starts_at))
     const openSlots = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
     const reviewCount = shifts.filter((shift) =>
@@ -1442,8 +1486,9 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   }), [currentOperationalDateKey, focusedEmployeeId, schedulerWorkDays, visibleEmployeeRows, visibleRows])
   const schedulerCoverageGroups = useMemo<SchedulerCoverageGroup[]>(() => visibleRows.map((row) => {
     const lanes = new Map<string, SchedulerCoverageLane>()
+    const activeShifts = row.shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
 
-    for (const shift of row.shifts) {
+    for (const shift of activeShifts) {
       const id = shift.post?.id ?? shift.event?.id ?? shift.id
       const lane = lanes.get(id) ?? {
         id,
@@ -1455,7 +1500,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       lanes.set(id, lane)
     }
 
-    const shifts = row.shifts
+    const shifts = activeShifts
     const openSlots = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
     const reviewCount = shifts.filter((shift) =>
       parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey,
@@ -1485,11 +1530,12 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     }
   }).filter((group) => group.shiftCount > 0), [currentOperationalDateKey, visibleRows])
   const schedulerLocationSummaries = useMemo(() => rows.map((row) => {
-    const openSlots = row.shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
-    const reviewCount = row.shifts.filter((shift) =>
+    const activeShifts = row.shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
+    const openSlots = activeShifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+    const reviewCount = activeShifts.filter((shift) =>
       parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey,
     ).length
-    const status: SchedulerCoverageGroup['status'] = row.shifts.length === 0
+    const status: SchedulerCoverageGroup['status'] = activeShifts.length === 0
       ? 'empty'
       : openSlots > 0
         ? 'has-open'
@@ -1502,10 +1548,10 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       name: row.name,
       openSlots,
       reviewCount,
-      shiftCount: row.shifts.length,
+      shiftCount: activeShifts.length,
       status,
     }
-  }), [currentOperationalDateKey, rows])
+  }).filter((site) => site.shiftCount > 0), [currentOperationalDateKey, rows])
   const selectedPlannerShift = useMemo(() => {
     if (!selectedPlannerShiftId) return null
     return scheduleQuery.data?.shifts.find((shift) => shift.id === selectedPlannerShiftId) ?? null
@@ -2389,7 +2435,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               <h2 id="scheduler-planner-title">
                 {format(weekStart, 'MM/dd/yyyy')} – {format(weekEnd, 'MM/dd/yyyy')}
               </h2>
-              <p>Work coverage by site and post, select a shift for details, then assign, edit, or resolve review items from one focused panel.</p>
+              <p>Work coverage by site and post, select a shift for a focused editing window, then assign, edit, or resolve review items safely.</p>
               <div className="scheduler-planner__week-nav" aria-label="Planner week controls">
                 <button
                   aria-label="Previous week"
@@ -2501,7 +2547,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   type="button"
                 >
                   <span>All sites</span>
-                  <small>{scheduleSummary.shifts} shifts</small>
+                  <small>{visibleScheduleSummary.shifts} current/future shifts</small>
                 </button>
                 <div className="scheduler-location-list">
                   {schedulerLocationSummaries.map((site) => (
@@ -2596,7 +2642,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               </div>
 
               {selectedPlannerShift ? (
-                <SchedulerShiftPanel
+                <SchedulerShiftModal
                   availabilityRecords={availabilityQuery.data?.availability ?? []}
                   employees={builderOptionsQuery.data?.employees ?? []}
                   isDraft={scheduleQuery.data.status === 'draft'}
@@ -2613,13 +2659,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   shift={selectedPlannerShift}
                   suggestion={staffingSuggestionsQuery.data?.find((item) => item.shiftId === selectedPlannerShift.id)}
                 />
-              ) : (
-                <aside className="scheduler-shift-panel scheduler-shift-panel--empty" aria-label="No selected shift">
-                  <Sparkles aria-hidden="true" size={24} />
-                  <strong>Select a shift</strong>
-                  <span>Click any schedule block to inspect details, assign suggested staff, or open the full editor.</span>
-                </aside>
-              )}
+              ) : null}
             </div>
           ) : (
             <div className="scheduler-day-board">

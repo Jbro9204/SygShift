@@ -2523,6 +2523,75 @@
   font-size: 18px;
 }
 
+.modal-dialog--scheduler-shift {
+  width: min(1040px, calc(100vw - 40px));
+  max-height: calc(100dvh - 32px);
+}
+
+.scheduler-shift-modal {
+  display: grid;
+  gap: 16px;
+  padding: 20px 22px 22px;
+}
+
+.scheduler-shift-modal__summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.scheduler-shift-modal__summary article {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 14px;
+  background: #fffaf0;
+  border: 1px solid #e5d9c7;
+  border-radius: 11px;
+}
+
+.scheduler-shift-modal__summary span,
+.scheduler-shift-modal__summary small {
+  color: #6f675c;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.scheduler-shift-modal__summary span {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scheduler-shift-modal__summary strong {
+  color: var(--ink);
+  font-size: clamp(20px, 2.3vw, 28px);
+  line-height: 1.05;
+}
+
+.scheduler-shift-modal__grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.78fr) minmax(320px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.scheduler-shift-modal__grid > * {
+  min-width: 0;
+}
+
+.scheduler-shift-modal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.scheduler-shift-modal__actions > * {
+  min-width: 178px;
+}
+
 .scheduler-day-board {
   display: grid;
   grid-template-columns: repeat(7, minmax(136px, 1fr));
@@ -2658,6 +2727,7 @@
   gap: 14px;
 }
 
+.modal-dialog--shift-editor,
 .modal-dialog:has(.schedule-edit-form) {
   width: min(920px, calc(100vw - 40px));
   max-height: calc(100dvh - 32px);
@@ -6150,6 +6220,20 @@
   .schedule-edit-form__details,
   .schedule-edit-form__checks {
     grid-template-columns: 1fr;
+  }
+
+  .scheduler-shift-modal__summary,
+  .scheduler-shift-modal__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .scheduler-shift-modal__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .scheduler-shift-modal__actions > * {
+    width: 100%;
   }
 }
 

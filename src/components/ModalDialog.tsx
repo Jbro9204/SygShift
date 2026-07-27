@@ -3,12 +3,13 @@ import { X } from 'lucide-react'
 
 interface ModalDialogProps {
   children: ReactNode
+  className?: string
   description?: string
   onClose: () => void
   title: string
 }
 
-export function ModalDialog({ children, description, onClose, title }: ModalDialogProps) {
+export function ModalDialog({ children, className, description, onClose, title }: ModalDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -24,7 +25,7 @@ export function ModalDialog({ children, description, onClose, title }: ModalDial
     <dialog
       aria-describedby={description ? 'modal-description' : undefined}
       aria-labelledby="modal-title"
-      className="modal-dialog"
+      className={['modal-dialog', className].filter(Boolean).join(' ')}
       onCancel={(event) => {
         event.preventDefault()
         onClose()
