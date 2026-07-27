@@ -7,6 +7,7 @@ import {
   AvailabilityPageRoute,
   EventsPageRoute,
   LoginPageRoute,
+  LicensingCenterPageRoute,
   NotificationsPageRoute,
   OverviewPageRoute,
   PeoplePageRoute,
@@ -81,6 +82,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <PeoplePageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'licensing',
+        element: (
+          <RouteSuspense>
+            <LicensingCenterPageRoute />
           </RouteSuspense>
         ),
       },

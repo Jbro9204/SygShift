@@ -15,6 +15,9 @@ export const EventsPageRoute = lazy(() =>
 export const LoginPageRoute = lazy(() =>
   import('../pages/LoginPage').then((module) => ({ default: module.LoginPage })),
 )
+export const LicensingCenterPageRoute = lazy(() =>
+  import('../pages/LicensingCenterPage').then((module) => ({ default: module.LicensingCenterPage })),
+)
 export const NotificationsPageRoute = lazy(() =>
   import('../pages/NotificationsPage').then((module) => ({ default: module.NotificationsPage })),
 )

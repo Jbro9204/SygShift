@@ -25,12 +25,14 @@ import { operationalToday } from '../lib/time'
 const roleLabels: Record<DirectoryEntry['role'], string> = {
   dispatcher: 'Dispatcher',
   guard: 'Guard',
+  recruiting_licensing: 'Recruiting & Licensing',
   scheduler: 'Scheduler',
   supervisor: 'Supervisor',
   admin: 'Admin',
 }
 const statusLabels: Record<DirectoryEntry['status'], string> = {
   active: 'Active',
+  onboarding: 'Onboarding',
   leave: 'On leave',
   inactive: 'Inactive',
   separated: 'Separated',
@@ -83,7 +85,7 @@ const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frida
 const dayNamesShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 function canEditCredentials(role: AppRole | null | undefined): boolean {
-  return role === 'scheduler' || role === 'supervisor' || role === 'admin'
+  return role === 'scheduler' || role === 'recruiting_licensing' || role === 'supervisor' || role === 'admin'
 }
 
 function formatDateOnly(date: string): string {

@@ -1,4 +1,5 @@
 import {
+  BadgeCheck,
   Bell,
   Building2,
   CalendarCheck2,
@@ -18,6 +19,7 @@ import {
 import type { AppRole } from '../data/session'
 
 export const OPERATIONS_ROLES: AppRole[] = ['dispatcher', 'scheduler', 'supervisor', 'admin']
+export const LICENSING_ROLES: AppRole[] = ['recruiting_licensing', 'admin']
 
 export interface NavigationItem {
   label: string
@@ -46,6 +48,7 @@ export const navigationGroups: NavigationGroup[] = [
     label: 'Workforce',
     items: [
       { label: 'Directory', path: '/people', icon: UsersRound, roles: OPERATIONS_ROLES },
+      { label: 'Licensing Center', path: '/licensing', icon: BadgeCheck, roles: LICENSING_ROLES },
       { label: 'Availability', path: '/availability', icon: CalendarCheck2 },
       { label: 'Sites & Posts', path: '/sites', icon: Building2, roles: OPERATIONS_ROLES },
       { label: 'Patrol', path: '/patrol', icon: MapPinned },

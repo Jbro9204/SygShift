@@ -8789,3 +8789,644 @@
     width: 100%;
   }
 }
+
+.page--licensing {
+  max-width: 1560px;
+}
+
+.licensing-intro {
+  align-items: flex-start;
+}
+
+.licensing-intro__actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.licensing-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 13px;
+  margin-bottom: 18px;
+}
+
+.licensing-summary-card {
+  display: grid;
+  min-height: 146px;
+  align-content: start;
+  gap: 8px;
+  padding: 17px;
+  color: #302d27;
+  background: #fffdf8;
+  border: 1px solid #ded5c6;
+  border-top: 4px solid #c6b79e;
+  border-radius: 11px;
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.licensing-summary-card:hover,
+.licensing-summary-card.is-active {
+  border-color: #b88631;
+  box-shadow: 0 15px 36px rgb(66 49 20 / 12%);
+  transform: translateY(-1px);
+}
+
+.licensing-summary-card--green {
+  border-top-color: #2f7a58;
+}
+
+.licensing-summary-card--yellow {
+  border-top-color: #d19a35;
+}
+
+.licensing-summary-card--red {
+  border-top-color: #b95a4f;
+}
+
+.licensing-summary-card span {
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.licensing-summary-card strong {
+  color: #17140f;
+  font-size: clamp(30px, 3vw, 42px);
+  line-height: 1;
+}
+
+.licensing-summary-card small {
+  color: #6f675b;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.licensing-toolbar {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) repeat(3, minmax(170px, 0.45fr)) auto;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 16px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  box-shadow: var(--shadow-sm);
+}
+
+.licensing-toolbar .secondary-button {
+  min-width: 128px;
+}
+
+.licensing-work-queue {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.licensing-queue-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 84px;
+  padding: 16px;
+  background: #fffdf8;
+  border: 1px solid #ded6c9;
+  border-left: 4px solid #d19a35;
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.licensing-queue-card--red {
+  border-left-color: #b95a4f;
+}
+
+.licensing-queue-card--yellow {
+  border-left-color: #d19a35;
+}
+
+.licensing-queue-card svg {
+  flex: 0 0 auto;
+  color: #8a621e;
+}
+
+.licensing-queue-card span,
+.licensing-queue-card strong {
+  display: block;
+}
+
+.licensing-queue-card span {
+  color: #665f55;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.licensing-queue-card strong {
+  margin-top: 2px;
+  color: var(--ink);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.licensing-table-panel {
+  overflow: hidden;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.licensing-table-panel__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px;
+  border-bottom: 1px solid #e6ded2;
+}
+
+.licensing-table-panel__heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 23px;
+  letter-spacing: -0.02em;
+}
+
+.licensing-table-panel__heading p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.licensing-table {
+  min-width: 1040px;
+  overflow-x: auto;
+}
+
+.licensing-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.1fr) minmax(210px, 1.15fr) minmax(145px, 0.7fr) minmax(160px, 0.8fr) minmax(135px, 0.65fr) minmax(155px, 0.75fr) minmax(120px, 0.5fr);
+  align-items: center;
+  gap: 12px;
+  padding: 15px 20px;
+  border-bottom: 1px solid #eee8df;
+}
+
+.licensing-row:last-child {
+  border-bottom: 0;
+}
+
+.licensing-row--header {
+  min-height: 46px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  color: #5d5448;
+  background: #faf6ef;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.licensing-row div[role='cell'] {
+  min-width: 0;
+}
+
+.licensing-row strong,
+.licensing-row span {
+  display: block;
+}
+
+.licensing-row strong {
+  overflow-wrap: anywhere;
+  color: #27231e;
+  font-size: 15px;
+}
+
+.licensing-row div[role='cell'] > span:not(.licensing-status):not(.work-eligibility),
+.plain-value {
+  margin-top: 4px;
+  color: #70685d;
+  font-size: 13px;
+  line-height: 1.35;
+  text-transform: capitalize;
+}
+
+.licensing-status,
+.work-eligibility {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 10px;
+  border: 1px solid #d8cec0;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.licensing-status--green,
+.work-eligibility--eligible {
+  color: #1e6647;
+  background: #e8f3ec;
+  border-color: #bad9c7;
+}
+
+.licensing-status--yellow,
+.work-eligibility--eligible_with_warning,
+.work-eligibility--pending_review {
+  color: #7a541b;
+  background: #fff5df;
+  border-color: #e4c486;
+}
+
+.licensing-status--red,
+.work-eligibility--restricted,
+.work-eligibility--ineligible {
+  color: #7e332d;
+  background: #fff0ed;
+  border-color: #dfb5ae;
+}
+
+.licensing-status--gray {
+  color: #5f5a52;
+  background: #f1eee8;
+  border-color: #d8d1c6;
+}
+
+.licensing-empty {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  padding: 34px 20px;
+  color: #726a5f;
+  text-align: center;
+}
+
+.licensing-empty strong {
+  color: var(--ink);
+  font-size: 17px;
+}
+
+.modal-dialog--wide,
+.modal-dialog--licensing-profile {
+  width: min(1100px, calc(100vw - 32px));
+}
+
+.modal-dialog--licensing-profile {
+  max-height: calc(100vh - 24px);
+}
+
+.licensing-form {
+  margin-top: 0;
+}
+
+.licensing-form .form-grid--two {
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+}
+
+.licensing-form input,
+.licensing-form select,
+.licensing-form textarea {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.licensing-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  background: #f7f4ed;
+  border: 1px solid #ded5c7;
+  border-left: 4px solid #c6b79e;
+  border-radius: 10px;
+}
+
+.licensing-alert--green {
+  background: #f0f8f3;
+  border-color: #bedcc9;
+  border-left-color: #2f7a58;
+}
+
+.licensing-alert--yellow {
+  background: #fff8e8;
+  border-color: #e8cc91;
+  border-left-color: #d19a35;
+}
+
+.licensing-alert--red {
+  background: #fff3ef;
+  border-color: #e1b9b1;
+  border-left-color: #b95a4f;
+}
+
+.licensing-alert svg {
+  flex: 0 0 auto;
+  color: #8a621e;
+}
+
+.licensing-alert strong,
+.licensing-alert span {
+  display: block;
+}
+
+.licensing-alert strong {
+  color: #29241e;
+  font-size: 15px;
+}
+
+.licensing-alert span {
+  margin-top: 4px;
+  color: #655d52;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.licensing-document-panel {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 0.8fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 0 22px 22px;
+  padding: 16px;
+  background: #fbf8f1;
+  border: 1px solid #e2d8c9;
+  border-radius: 10px;
+}
+
+.licensing-document-panel strong,
+.licensing-document-panel span {
+  display: block;
+}
+
+.licensing-document-panel > div > span {
+  margin-top: 3px;
+  color: #6c655b;
+  font-size: 14px;
+}
+
+.file-picker {
+  position: relative;
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  overflow: hidden;
+  color: #4d3a1d;
+  background: #ffffff;
+  border: 1px solid #d7cab8;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.file-picker input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.licensing-profile-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 22px 14px;
+}
+
+.licensing-profile-summary article,
+.licensing-profile-context > div {
+  display: grid;
+  gap: 5px;
+  min-height: 82px;
+  padding: 14px;
+  background: #fbfaf6;
+  border: 1px solid #e0d8cc;
+  border-radius: 10px;
+}
+
+.licensing-profile-summary__status--green {
+  border-top: 4px solid #2f7a58;
+}
+
+.licensing-profile-summary__status--yellow {
+  border-top: 4px solid #d19a35;
+}
+
+.licensing-profile-summary__status--red {
+  border-top: 4px solid #b95a4f;
+}
+
+.licensing-profile-summary span,
+.licensing-profile-context span {
+  color: #746c61;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.licensing-profile-summary strong,
+.licensing-profile-context strong {
+  color: #26221d;
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.licensing-profile-context {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 22px 14px;
+}
+
+.modal-dialog--licensing-profile > .licensing-alert,
+.licensing-profile-actions,
+.licensing-credential-grid {
+  margin-right: 22px;
+  margin-left: 22px;
+}
+
+.licensing-profile-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+  margin-bottom: 14px;
+}
+
+.licensing-credential-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.licensing-credential-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  background: #fffdf8;
+  border: 1px solid #ded4c5;
+  border-left: 4px solid #c6b79e;
+  border-radius: 11px;
+  box-shadow: var(--shadow-sm);
+}
+
+.licensing-credential-card--green {
+  border-left-color: #2f7a58;
+}
+
+.licensing-credential-card--yellow {
+  border-left-color: #d19a35;
+}
+
+.licensing-credential-card--red {
+  border-left-color: #b95a4f;
+}
+
+.licensing-credential-card__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.licensing-credential-card__heading span {
+  color: #8a621e;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.licensing-credential-card h3 {
+  margin: 4px 0 0;
+  color: #26221d;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.licensing-credential-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin: 0;
+}
+
+.licensing-credential-card dt {
+  color: #746c61;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.licensing-credential-card dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: #2d2923;
+  font-size: 14px;
+  line-height: 1.35;
+  text-transform: capitalize;
+}
+
+.credential-rejection-note {
+  margin: 0;
+  padding: 11px 12px;
+  color: #74342e;
+  background: #fff3ef;
+  border: 1px solid #dfb8b1;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.licensing-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.licensing-card-actions .secondary-button {
+  min-width: 112px;
+}
+
+.employee-role-rail--recruiting_licensing {
+  background: linear-gradient(180deg, #4b3f89, #d3a34a);
+}
+
+@media (max-width: 1220px) {
+  .licensing-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .licensing-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .licensing-toolbar .search-field {
+    grid-column: 1 / -1;
+  }
+
+  .licensing-work-queue,
+  .licensing-profile-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .licensing-profile-context {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .licensing-intro {
+    display: grid;
+  }
+
+  .licensing-intro__actions,
+  .licensing-intro__actions > * {
+    width: 100%;
+  }
+
+  .licensing-summary-grid,
+  .licensing-toolbar,
+  .licensing-work-queue,
+  .licensing-profile-summary,
+  .licensing-profile-context,
+  .licensing-credential-grid,
+  .licensing-form .form-grid,
+  .licensing-form .form-grid--two,
+  .licensing-form .form-grid--three,
+  .licensing-document-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .licensing-toolbar .secondary-button,
+  .licensing-document-panel .secondary-button,
+  .licensing-card-actions .secondary-button,
+  .licensing-profile-actions .secondary-button,
+  .licensing-form .modal-actions > * {
+    width: 100%;
+  }
+
+  .licensing-table-panel {
+    overflow-x: auto;
+  }
+
+  .licensing-table {
+    min-width: 920px;
+  }
+}

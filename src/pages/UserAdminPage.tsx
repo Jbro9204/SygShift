@@ -40,6 +40,7 @@ const roleLabels: Record<AppRole, string> = {
   admin: 'Admin',
   dispatcher: 'Dispatcher',
   guard: 'Guard',
+  recruiting_licensing: 'Recruiting & Licensing',
   scheduler: 'Scheduler',
   supervisor: 'Supervisor',
 }
@@ -48,6 +49,7 @@ const statusLabels: Record<EmployeeStatus, string> = {
   active: 'Active',
   inactive: 'Inactive',
   leave: 'On leave',
+  onboarding: 'Onboarding',
   separated: 'Separated',
 }
 
@@ -157,6 +159,7 @@ function EmployeeForm({
             <option value="guard">Guard</option>
             <option value="dispatcher">Dispatcher</option>
             <option value="scheduler">Scheduler</option>
+            <option value="recruiting_licensing">Recruiting & Licensing</option>
             <option value="supervisor">Supervisor</option>
             <option value="admin">Admin</option>
           </select>
@@ -173,6 +176,7 @@ function EmployeeForm({
           <span>Status</span>
           <select defaultValue={employee?.status ?? 'active'} name="status">
             <option value="active">Active</option>
+            <option value="onboarding">Onboarding</option>
             <option value="leave">On leave</option>
             <option value="inactive">Inactive</option>
             <option value="separated">Separated</option>
@@ -513,7 +517,7 @@ export function UserAdminPage() {
               <span className="visually-hidden">Search users</span>
               <input onChange={(event) => setSearch(event.target.value)} placeholder="Search name, username, email, or phone" type="search" value={search} />
             </label>
-            <label className="select-field"><span>Role</span><select onChange={(event) => setRole(event.target.value as typeof role)} value={role}><option value="all">All roles</option><option value="guard">Guards</option><option value="dispatcher">Dispatchers</option><option value="scheduler">Schedulers</option><option value="supervisor">Supervisors</option><option value="admin">Admins</option></select></label>
+            <label className="select-field"><span>Role</span><select onChange={(event) => setRole(event.target.value as typeof role)} value={role}><option value="all">All roles</option><option value="guard">Guards</option><option value="dispatcher">Dispatchers</option><option value="scheduler">Schedulers</option><option value="recruiting_licensing">Recruiting & Licensing</option><option value="supervisor">Supervisors</option><option value="admin">Admins</option></select></label>
             <label className="select-field"><span>Status</span><select onChange={(event) => setStatus(event.target.value as typeof status)} value={status}><option value="active">Active</option><option value="leave">On leave</option><option value="inactive">Inactive</option><option value="separated">Separated</option><option value="all">All</option></select></label>
             <label className="select-field"><span>Login</span><select onChange={(event) => setAccount(event.target.value as typeof account)} value={account}><option value="all">All logins</option><option value="not_created">No login</option><option value="active">Active login</option><option value="disabled">Disabled</option></select></label>
             <button className="secondary-button" onClick={() => setCreating(true)} type="button"><Plus aria-hidden="true" size={18} /> Add employee</button>

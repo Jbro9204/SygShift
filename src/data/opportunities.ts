@@ -40,7 +40,7 @@ export type OpportunityRequest = z.infer<typeof requestSchema>
 
 export interface OpportunityContext {
   employeeId: string
-  role: 'guard' | 'dispatcher' | 'scheduler' | 'supervisor' | 'admin'
+  role: 'guard' | 'dispatcher' | 'scheduler' | 'recruiting_licensing' | 'supervisor' | 'admin'
   opportunities: Opportunity[]
 }
 
@@ -54,7 +54,7 @@ export async function getOpenOpportunities(): Promise<OpportunityContext> {
 
   const payload = z.object({
     employeeId: z.string().uuid(),
-    role: z.enum(['guard', 'dispatcher', 'scheduler', 'supervisor', 'admin']),
+    role: z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin']),
     opportunities: z.array(opportunitySchema),
   }).parse(data)
   const opportunities = payload.opportunities.map((item) => ({

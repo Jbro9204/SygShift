@@ -18,6 +18,7 @@ const INACTIVITY_LOGOUT_MS = 10 * 60 * 1000
 function displayRole(role: SessionContext['role']): string {
   if (role === 'admin') return 'Admin'
   if (role === 'dispatcher') return 'Dispatcher'
+  if (role === 'recruiting_licensing') return 'Recruiting & Licensing'
   if (role === 'scheduler') return 'Scheduler'
   if (role === 'supervisor') return 'Supervisor'
   return 'Guard'
