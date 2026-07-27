@@ -8114,6 +8114,37 @@
   font: inherit;
 }
 
+.availability-override-card--credential {
+  color: #5a2a18;
+  background: #fff0ea;
+  border-color: #e6a98f;
+}
+
+.availability-override-card--credential p {
+  color: #70412f;
+}
+
+.availability-override-card--credential svg {
+  flex: 0 0 auto;
+  color: #9c3f24;
+}
+
+.availability-override-card .override-check-field {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  margin: 8px 0;
+  color: #59331f;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.availability-override-card .override-check-field input {
+  width: 17px;
+  height: 17px;
+  margin: 1px 0 0;
+  accent-color: #b46d19;
+}
+
 .availability-override-card--compact {
   padding: 12px;
 }

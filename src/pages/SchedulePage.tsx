@@ -54,6 +54,9 @@ interface OpenShiftFormState {
   notes: string
   publishAnnouncement: boolean
   availabilityOverrideNote: string
+  credentialOverrideNote: string
+  credentialOverrideConfirmedKnown: boolean
+  credentialOverrideConfirmedResponsibility: boolean
 }
 
 interface SchedulerCoverageLane {
@@ -99,6 +102,9 @@ function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
     notes: '',
     publishAnnouncement: true,
     availabilityOverrideNote: '',
+    credentialOverrideNote: '',
+    credentialOverrideConfirmedKnown: false,
+    credentialOverrideConfirmedResponsibility: false,
   }
 }
 
@@ -108,11 +114,85 @@ function builderEmployeeName(employee: ScheduleBuilderEmployee): string {
 
 function builderEmployeeOptionLabel(employee: ScheduleBuilderEmployee): string {
   const details = [
-    employee.has_armed_guard_credential ? 'armed' : null,
+    employee.has_armed_guard_credential ? 'armed credential on file' : 'no armed credential on file',
     employee.employment_type === 'salary' ? 'salary' : null,
     employee.employment_type === 'flex' ? 'flex' : null,
   ].filter(Boolean)
   return `${builderEmployeeName(employee)}${details.length ? ` · ${details.join(' · ')}` : ''}`
+}
+
+function selectedBuilderEmployee(employees: ScheduleBuilderEmployee[], employeeId: string | null | undefined): ScheduleBuilderEmployee | null {
+  if (!employeeId) return null
+  return employees.find((employee) => employee.id === employeeId) ?? null
+}
+
+function needsArmedCredentialOverride(requiresArmed: boolean, employee: ScheduleBuilderEmployee | null): boolean {
+  return Boolean(requiresArmed && employee && !employee.has_armed_guard_credential)
+}
+
+function credentialOverrideComplete(required: boolean, note: string, confirmedKnown: boolean, confirmedResponsibility: boolean): boolean {
+  return !required || Boolean(note.trim() && confirmedKnown && confirmedResponsibility)
+}
+
+function ArmedCredentialOverrideCard({
+  compact = false,
+  confirmedKnown,
+  confirmedResponsibility,
+  employeeName,
+  note,
+  onConfirmedKnownChange,
+  onConfirmedResponsibilityChange,
+  onNoteChange,
+}: {
+  compact?: boolean
+  confirmedKnown: boolean
+  confirmedResponsibility: boolean
+  employeeName: string
+  note: string
+  onConfirmedKnownChange: (value: boolean) => void
+  onConfirmedResponsibilityChange: (value: boolean) => void
+  onNoteChange: (value: string) => void
+}) {
+  return (
+    <div className={`availability-override-card availability-override-card--credential${compact ? ' availability-override-card--compact' : ''}`}>
+      <ShieldAlert aria-hidden="true" size={18} />
+      <div>
+        <strong>Armed credential override required</strong>
+        <p>
+          {employeeName} does not have an active armed credential recorded in SygShift. Continue only if leadership has verified they are allowed to work this armed post.
+        </p>
+        <label className="override-check-field">
+          <input
+            checked={confirmedKnown}
+            onChange={(event) => onConfirmedKnownChange(event.target.checked)}
+            required
+            type="checkbox"
+          />
+          <span>I understand there is no armed credential on file for this employee.</span>
+        </label>
+        <label className="override-check-field">
+          <input
+            checked={confirmedResponsibility}
+            onChange={(event) => onConfirmedResponsibilityChange(event.target.checked)}
+            required
+            type="checkbox"
+          />
+          <span>I confirm they are authorized outside SygShift and this exception should be logged.</span>
+        </label>
+        <label>
+          Override reason
+          <textarea
+            maxLength={2000}
+            onChange={(event) => onNoteChange(event.target.value)}
+            placeholder="Example: Armed license verified by Michelle; document pending upload."
+            required
+            rows={2}
+            value={note}
+          />
+        </label>
+      </div>
+    </div>
+  )
 }
 
 function timeToMinutes(value: string | null | undefined): number | null {
@@ -177,7 +257,12 @@ function shiftLocalTimeValue(shift: ScheduleShift, instant: string): string {
   return `${value('hour')}:${value('minute')}`
 }
 
-function draftShiftMutationInput(shift: ScheduleShift, employeeId: string | null, availabilityOverrideNote?: string | null) {
+function draftShiftMutationInput(
+  shift: ScheduleShift,
+  employeeId: string | null,
+  availabilityOverrideNote?: string | null,
+  credentialOverrideNote?: string | null,
+) {
   return {
     shiftId: shift.id,
     shiftDate: shiftOperationalDate(shift),
@@ -189,6 +274,7 @@ function draftShiftMutationInput(shift: ScheduleShift, employeeId: string | null
     notes: shift.notes ?? '',
     employeeId,
     availabilityOverrideNote: availabilityOverrideNote?.trim() || null,
+    credentialOverrideNote: credentialOverrideNote?.trim() || null,
   }
 }
 
@@ -326,6 +412,7 @@ function EditShiftDialog({
     notes?: string
     employeeId?: string | null
     availabilityOverrideNote?: string | null
+    credentialOverrideNote?: string | null
   }>>
   onClose: () => void
   onRequestRemove: (shift: ScheduleShift) => void
@@ -334,7 +421,6 @@ function EditShiftDialog({
     ? shift.assignments.find((assignment) => assignment.employee.id === focusEmployeeId)
     : null
   const assignedEmployeeId = focusedAssignment?.employee.id ?? shift.assignments[0]?.employee.id ?? ''
-  const eligibleEmployees = employees.filter((employee) => !shift.requires_armed || employee.has_armed_guard_credential)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(assignedEmployeeId)
   const [shiftDate, setShiftDate] = useState(shiftOperationalDate(shift))
   const [startTime, setStartTime] = useState(shiftLocalTimeValue(shift, shift.starts_at))
@@ -344,7 +430,18 @@ function EditShiftDialog({
   const [isOpen, setIsOpen] = useState(shift.is_open)
   const [isOvertime, setIsOvertime] = useState(shift.is_overtime)
   const [overrideNote, setOverrideNote] = useState('')
+  const [credentialOverrideNote, setCredentialOverrideNote] = useState('')
+  const [credentialConfirmedKnown, setCredentialConfirmedKnown] = useState(false)
+  const [credentialConfirmedResponsibility, setCredentialConfirmedResponsibility] = useState(false)
   const availabilityConflict = findAvailabilityConflict(availabilityRecords, selectedEmployeeId, shiftDate, startTime, endTime)
+  const selectedEmployee = selectedBuilderEmployee(employees, selectedEmployeeId)
+  const credentialOverrideRequired = needsArmedCredentialOverride(shift.requires_armed, selectedEmployee)
+  const credentialOverrideReady = credentialOverrideComplete(
+    credentialOverrideRequired,
+    credentialOverrideNote,
+    credentialConfirmedKnown,
+    credentialConfirmedResponsibility,
+  )
   const hasUnsavedChanges = selectedEmployeeId !== assignedEmployeeId
     || shiftDate !== shiftOperationalDate(shift)
     || startTime !== shiftLocalTimeValue(shift, shift.starts_at)
@@ -354,6 +451,9 @@ function EditShiftDialog({
     || isOpen !== shift.is_open
     || isOvertime !== shift.is_overtime
     || overrideNote.trim().length > 0
+    || credentialOverrideNote.trim().length > 0
+    || credentialConfirmedKnown
+    || credentialConfirmedResponsibility
 
   function requestClose() {
     if (!hasUnsavedChanges || window.confirm('Close without saving this shift change?')) {
@@ -375,6 +475,7 @@ function EditShiftDialog({
       notes,
       employeeId: String(form.get('employeeId') ?? '') || null,
       availabilityOverrideNote: availabilityConflict ? overrideNote : null,
+      credentialOverrideNote: credentialOverrideRequired ? credentialOverrideNote : null,
     }, { onSuccess: onClose })
   }
 
@@ -395,9 +496,18 @@ function EditShiftDialog({
         <div className="schedule-edit-form__details">
           <label className="field-stack">
             <span>Switch / assign employee</span>
-            <select name="employeeId" onChange={(event) => setSelectedEmployeeId(event.target.value)} value={selectedEmployeeId}>
+            <select
+              name="employeeId"
+              onChange={(event) => {
+                setSelectedEmployeeId(event.target.value)
+                setCredentialOverrideNote('')
+                setCredentialConfirmedKnown(false)
+                setCredentialConfirmedResponsibility(false)
+              }}
+              value={selectedEmployeeId}
+            >
               <option value="">Leave open / unassigned</option>
-              {eligibleEmployees.map((employee) => (
+              {employees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {builderEmployeeOptionLabel(employee)}
                 </option>
@@ -429,11 +539,22 @@ function EditShiftDialog({
             </div>
           </div>
         ) : null}
+        {credentialOverrideRequired && selectedEmployee ? (
+          <ArmedCredentialOverrideCard
+            confirmedKnown={credentialConfirmedKnown}
+            confirmedResponsibility={credentialConfirmedResponsibility}
+            employeeName={builderEmployeeName(selectedEmployee)}
+            note={credentialOverrideNote}
+            onConfirmedKnownChange={setCredentialConfirmedKnown}
+            onConfirmedResponsibilityChange={setCredentialConfirmedResponsibility}
+            onNoteChange={setCredentialOverrideNote}
+          />
+        ) : null}
         <div className="schedule-builder__checks schedule-edit-form__checks">
           <label className="check-field"><input checked={isOpen} name="isOpen" onChange={(event) => setIsOpen(event.target.checked)} type="checkbox" /> Show as open if coverage is still needed</label>
           <label className="check-field"><input checked={isOvertime} name="isOvertime" onChange={(event) => setIsOvertime(event.target.checked)} type="checkbox" /> Mark as overtime</label>
         </div>
-        {shift.requires_armed ? <p className="form-note">This shift requires an active armed credential. The system blocks unqualified assignments.</p> : null}
+        {shift.requires_armed ? <p className="form-note">This shift requires an active armed credential. If the credential is not on file yet, SygShift requires a double-confirmed override reason before saving.</p> : null}
         {suggestions?.suggestions.length ? (
           <div className="staffing-suggestion-card">
             <Sparkles aria-hidden="true" size={18} />
@@ -454,7 +575,7 @@ function EditShiftDialog({
             Remove from draft
           </button>
           <button className="secondary-button" onClick={requestClose} type="button">Cancel</button>
-          <button className="primary-action" disabled={mutation.isPending || Boolean(availabilityConflict && !overrideNote.trim())} type="submit">
+          <button className="primary-action" disabled={mutation.isPending || Boolean(availabilityConflict && !overrideNote.trim()) || !credentialOverrideReady} type="submit">
             {mutation.isPending ? 'Saving...' : 'Save draft shift'}
           </button>
         </div>
@@ -471,25 +592,42 @@ function ReviewResolutionDialog({
 }: {
   shift: ScheduleShift
   employees: ScheduleBuilderEmployee[]
-  mutation: ReturnType<typeof useMutation<unknown, Error, { shiftId: string, employeeId: string, note: string | null }>>
+  mutation: ReturnType<typeof useMutation<unknown, Error, {
+    shiftId: string
+    employeeId: string
+    note: string | null
+    credentialOverrideNote?: string | null
+  }>>
   onClose: () => void
 }) {
   const source = parseImportedScheduleNote(shift.notes)
-  const eligibleEmployees = employees.filter((employee) => !shift.requires_armed || employee.has_armed_guard_credential)
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
+  const [credentialOverrideNote, setCredentialOverrideNote] = useState('')
+  const [credentialConfirmedKnown, setCredentialConfirmedKnown] = useState(false)
+  const [credentialConfirmedResponsibility, setCredentialConfirmedResponsibility] = useState(false)
+  const selectedEmployee = selectedBuilderEmployee(employees, selectedEmployeeId)
+  const credentialOverrideRequired = needsArmedCredentialOverride(shift.requires_armed, selectedEmployee)
+  const credentialOverrideReady = credentialOverrideComplete(
+    credentialOverrideRequired,
+    credentialOverrideNote,
+    credentialConfirmedKnown,
+    credentialConfirmedResponsibility,
+  )
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     mutation.mutate({
       shiftId: shift.id,
-      employeeId: String(form.get('employeeId')),
+      employeeId: selectedEmployeeId,
       note: String(form.get('note')).trim() || null,
+      credentialOverrideNote: credentialOverrideRequired ? credentialOverrideNote : null,
     }, { onSuccess: onClose })
   }
 
   return (
     <ModalDialog
-      description="Resolving creates a new schedule revision. The database will reject overlaps, missing armed credentials, or full shifts."
+      description="Resolving creates a new schedule revision. The database will reject overlaps or full shifts; armed credential gaps require a logged override."
       onClose={onClose}
       title="Resolve schedule assignment"
     >
@@ -502,21 +640,41 @@ function ReviewResolutionDialog({
       <form className="request-form" onSubmit={submit}>
         <label className="field-stack">
           <span>Assign employee</span>
-          <select autoFocus name="employeeId" required>
+          <select
+            autoFocus
+            name="employeeId"
+            onChange={(event) => {
+              setSelectedEmployeeId(event.target.value)
+              setCredentialOverrideNote('')
+              setCredentialConfirmedKnown(false)
+              setCredentialConfirmedResponsibility(false)
+            }}
+            required
+            value={selectedEmployeeId}
+          >
             <option value="">Choose employee</option>
-            {eligibleEmployees.map((employee) => (
+            {employees.map((employee) => (
               <option key={employee.id} value={employee.id}>
-                {builderEmployeeName(employee)}
-                {employee.has_armed_guard_credential ? ' · armed credential' : ''}
-                {employee.employment_type === 'salary' ? ' · salary' : ''}
+                {builderEmployeeOptionLabel(employee)}
               </option>
             ))}
           </select>
         </label>
-        {eligibleEmployees.length === 0 ? (
+        {employees.length === 0 ? (
           <p className="form-feedback form-feedback--error">
-            No active employee in the current options can satisfy this shift&apos;s armed requirement.
+            No active employees are available in the current schedule options.
           </p>
+        ) : null}
+        {credentialOverrideRequired && selectedEmployee ? (
+          <ArmedCredentialOverrideCard
+            confirmedKnown={credentialConfirmedKnown}
+            confirmedResponsibility={credentialConfirmedResponsibility}
+            employeeName={builderEmployeeName(selectedEmployee)}
+            note={credentialOverrideNote}
+            onConfirmedKnownChange={setCredentialConfirmedKnown}
+            onConfirmedResponsibilityChange={setCredentialConfirmedResponsibility}
+            onNoteChange={setCredentialOverrideNote}
+          />
         ) : null}
         <label className="field-stack">
           <span>Resolution note <small>Optional</small></span>
@@ -527,7 +685,7 @@ function ReviewResolutionDialog({
         ) : null}
         <div className="modal-actions">
           <button className="secondary-button" onClick={onClose} type="button">Cancel</button>
-          <button className="primary-action" disabled={mutation.isPending || eligibleEmployees.length === 0} type="submit">
+          <button className="primary-action" disabled={mutation.isPending || employees.length === 0 || !selectedEmployeeId || !credentialOverrideReady} type="submit">
             {mutation.isPending ? 'Resolving…' : 'Resolve & publish revision'}
           </button>
         </div>
@@ -621,7 +779,7 @@ function SchedulerShiftModal({
   employees: ScheduleBuilderEmployee[]
   isDraft: boolean
   isSaving: boolean
-  onAssignEmployee: (employeeId: string | null, availabilityOverrideNote?: string | null) => void
+  onAssignEmployee: (employeeId: string | null, availabilityOverrideNote?: string | null, credentialOverrideNote?: string | null) => void
   onClose: () => void
   onEdit: () => void
   onRequestRemove: () => void
@@ -631,12 +789,14 @@ function SchedulerShiftModal({
 }) {
   const source = parseImportedScheduleNote(shift.notes)
   const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
-  const eligibleEmployees = employees.filter((employee) => !shift.requires_armed || employee.has_armed_guard_credential)
   const title = shift.post?.name ?? shift.event?.name ?? 'Shift'
   const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? 'Unassigned location'
   const sourceReference = sourceReferenceLabel(source)
   const [manualEmployeeId, setManualEmployeeId] = useState('')
   const [overrideNote, setOverrideNote] = useState('')
+  const [credentialOverrideNote, setCredentialOverrideNote] = useState('')
+  const [credentialConfirmedKnown, setCredentialConfirmedKnown] = useState(false)
+  const [credentialConfirmedResponsibility, setCredentialConfirmedResponsibility] = useState(false)
   const manualConflict = findAvailabilityConflict(
     availabilityRecords,
     manualEmployeeId,
@@ -644,16 +804,31 @@ function SchedulerShiftModal({
     shiftLocalTimeValue(shift, shift.starts_at),
     shiftLocalTimeValue(shift, shift.ends_at),
   )
+  const manualEmployee = selectedBuilderEmployee(employees, manualEmployeeId)
+  const credentialOverrideRequired = needsArmedCredentialOverride(shift.requires_armed, manualEmployee)
+  const credentialOverrideReady = credentialOverrideComplete(
+    credentialOverrideRequired,
+    credentialOverrideNote,
+    credentialConfirmedKnown,
+    credentialConfirmedResponsibility,
+  )
 
   function submitAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    onAssignEmployee(manualEmployeeId || null, manualConflict ? overrideNote : null)
+    onAssignEmployee(
+      manualEmployeeId || null,
+      manualConflict ? overrideNote : null,
+      credentialOverrideRequired ? credentialOverrideNote : null,
+    )
     setManualEmployeeId('')
     setOverrideNote('')
+    setCredentialOverrideNote('')
+    setCredentialConfirmedKnown(false)
+    setCredentialConfirmedResponsibility(false)
   }
 
   function requestClose() {
-    if ((!manualEmployeeId && !overrideNote.trim()) || window.confirm('Close without saving this assignment change?')) {
+    if ((!manualEmployeeId && !overrideNote.trim() && !credentialOverrideNote.trim()) || window.confirm('Close without saving this assignment change?')) {
       onClose()
     }
   }
@@ -753,13 +928,18 @@ function SchedulerShiftModal({
           <label>
             Switch / assign manually
             <select
-              disabled={isSaving || eligibleEmployees.length === 0}
+              disabled={isSaving || employees.length === 0}
               name="employeeId"
-              onChange={(event) => setManualEmployeeId(event.target.value)}
+              onChange={(event) => {
+                setManualEmployeeId(event.target.value)
+                setCredentialOverrideNote('')
+                setCredentialConfirmedKnown(false)
+                setCredentialConfirmedResponsibility(false)
+              }}
               value={manualEmployeeId}
             >
               <option value="">Leave open / unassigned</option>
-              {eligibleEmployees.map((employee) => (
+              {employees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {builderEmployeeOptionLabel(employee)}
                 </option>
@@ -786,7 +966,19 @@ function SchedulerShiftModal({
               </div>
             </div>
           ) : null}
-          <button className="primary-action" disabled={isSaving || eligibleEmployees.length === 0 || Boolean(manualConflict && !overrideNote.trim())} type="submit">
+          {credentialOverrideRequired && manualEmployee ? (
+            <ArmedCredentialOverrideCard
+              compact
+              confirmedKnown={credentialConfirmedKnown}
+              confirmedResponsibility={credentialConfirmedResponsibility}
+              employeeName={builderEmployeeName(manualEmployee)}
+              note={credentialOverrideNote}
+              onConfirmedKnownChange={setCredentialConfirmedKnown}
+              onConfirmedResponsibilityChange={setCredentialConfirmedResponsibility}
+              onNoteChange={setCredentialOverrideNote}
+            />
+          ) : null}
+          <button className="primary-action" disabled={isSaving || employees.length === 0 || Boolean(manualConflict && !overrideNote.trim()) || !credentialOverrideReady} type="submit">
             {isSaving ? 'Saving...' : isDraft ? 'Save assignment' : 'Open draft & save assignment'}
           </button>
           <p className="form-note">
@@ -1149,6 +1341,17 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     openShiftForm.startTime,
     openShiftForm.endTime,
   )
+  const openShiftRequiresArmed = openShiftForm.mode === 'event'
+    ? openShiftForm.eventRequiresArmed
+    : Boolean(selectedPost?.requires_armed)
+  const openShiftEmployee = selectedBuilderEmployee(builderOptionsQuery.data?.employees ?? [], openShiftForm.employeeId)
+  const openShiftCredentialOverrideRequired = needsArmedCredentialOverride(openShiftRequiresArmed, openShiftEmployee)
+  const openShiftCredentialOverrideReady = credentialOverrideComplete(
+    openShiftCredentialOverrideRequired,
+    openShiftForm.credentialOverrideNote,
+    openShiftForm.credentialOverrideConfirmedKnown,
+    openShiftForm.credentialOverrideConfirmedResponsibility,
+  )
   const createOpenShiftMutation = useMutation({
     mutationFn: () => createSupervisorOpenShift({
       weekStartsOn: weekKey,
@@ -1167,6 +1370,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       isOvertime: openShiftForm.isOvertime,
       notes: openShiftForm.notes,
       availabilityOverrideNote: openShiftAvailabilityConflict ? openShiftForm.availabilityOverrideNote : null,
+      credentialOverrideNote: openShiftCredentialOverrideRequired ? openShiftForm.credentialOverrideNote : null,
       publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
     }),
     onSuccess: async (result) => {
@@ -1300,7 +1504,12 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     },
   })
   const resolveReviewMutation = useMutation({
-    mutationFn: (input: { shiftId: string, employeeId: string, note: string | null }) => resolveScheduleReviewShift(input),
+    mutationFn: (input: {
+      shiftId: string
+      employeeId: string
+      note: string | null
+      credentialOverrideNote?: string | null
+    }) => resolveScheduleReviewShift(input),
     onSuccess: async (result) => {
       setBuilderMessage(`Review item resolved on revision ${result.schedule_revision}.`)
       await Promise.all([
@@ -1679,10 +1888,15 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId))
   }
 
-  function assignPlannerEmployee(shift: ScheduleShift, employeeId: string | null, availabilityOverrideNote?: string | null) {
+  function assignPlannerEmployee(
+    shift: ScheduleShift,
+    employeeId: string | null,
+    availabilityOverrideNote?: string | null,
+    credentialOverrideNote?: string | null,
+  ) {
     setBuilderMessage(null)
     if (scheduleQuery.data?.status === 'draft') {
-      updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId, availabilityOverrideNote))
+      updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId, availabilityOverrideNote, credentialOverrideNote))
       return
     }
 
@@ -1695,7 +1909,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           setBuilderMessage('Draft opened, but the selected shift could not be matched. Select the shift again and retry.')
           return
         }
-        updateDraftShiftMutation.mutate(draftShiftMutationInput(copiedShift, employeeId, availabilityOverrideNote))
+        updateDraftShiftMutation.mutate(draftShiftMutationInput(copiedShift, employeeId, availabilityOverrideNote, credentialOverrideNote))
       },
     })
   }
@@ -1959,7 +2173,13 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               <label>
                 Shift type
                 <select
-                  onChange={(event) => updateOpenShiftForm({ mode: event.target.value as OpenShiftFormState['mode'] })}
+                  onChange={(event) => updateOpenShiftForm({
+                    mode: event.target.value as OpenShiftFormState['mode'],
+                    employeeId: '',
+                    credentialOverrideNote: '',
+                    credentialOverrideConfirmedKnown: false,
+                    credentialOverrideConfirmedResponsibility: false,
+                  })}
                   value={openShiftForm.mode}
                 >
                   <option value="post">Permanent site/post</option>
@@ -1972,7 +2192,12 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   Site and post
                   <select
                     disabled={builderOptionsQuery.isPending}
-                    onChange={(event) => updateOpenShiftForm({ postId: event.target.value })}
+                    onChange={(event) => updateOpenShiftForm({
+                      postId: event.target.value,
+                      credentialOverrideNote: '',
+                      credentialOverrideConfirmedKnown: false,
+                      credentialOverrideConfirmedResponsibility: false,
+                    })}
                     required
                     value={openShiftForm.postId}
                   >
@@ -2075,14 +2300,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   onChange={(event) => updateOpenShiftForm({
                     employeeId: event.target.value,
                     publishAnnouncement: event.target.value ? false : openShiftForm.publishAnnouncement,
+                    credentialOverrideNote: '',
+                    credentialOverrideConfirmedKnown: false,
+                    credentialOverrideConfirmedResponsibility: false,
                   })}
                   value={openShiftForm.employeeId}
                 >
                   <option value="">Leave open for requests</option>
-                  {builderOptionsQuery.data?.employees
-                    .filter((employee) => openShiftForm.mode === 'event' && openShiftForm.eventRequiresArmed ? employee.has_armed_guard_credential : true)
-                    .filter((employee) => selectedPost?.requires_armed ? employee.has_armed_guard_credential : true)
-                    .map((employee) => (
+                  {builderOptionsQuery.data?.employees.map((employee) => (
                       <option key={employee.id} value={employee.id}>
                         {builderEmployeeOptionLabel(employee)}
                       </option>
@@ -2111,6 +2336,17 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 </div>
               </div>
             ) : null}
+            {openShiftCredentialOverrideRequired && openShiftEmployee ? (
+              <ArmedCredentialOverrideCard
+                confirmedKnown={openShiftForm.credentialOverrideConfirmedKnown}
+                confirmedResponsibility={openShiftForm.credentialOverrideConfirmedResponsibility}
+                employeeName={builderEmployeeName(openShiftEmployee)}
+                note={openShiftForm.credentialOverrideNote}
+                onConfirmedKnownChange={(value) => updateOpenShiftForm({ credentialOverrideConfirmedKnown: value })}
+                onConfirmedResponsibilityChange={(value) => updateOpenShiftForm({ credentialOverrideConfirmedResponsibility: value })}
+                onNoteChange={(value) => updateOpenShiftForm({ credentialOverrideNote: value })}
+              />
+            ) : null}
 
             <label className="field-stack">
               Notes for supervisors
@@ -2134,7 +2370,12 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 <label className="check-field">
                   <input
                     checked={openShiftForm.eventRequiresArmed}
-                    onChange={(event) => updateOpenShiftForm({ eventRequiresArmed: event.target.checked })}
+                    onChange={(event) => updateOpenShiftForm({
+                      eventRequiresArmed: event.target.checked,
+                      credentialOverrideNote: '',
+                      credentialOverrideConfirmedKnown: false,
+                      credentialOverrideConfirmedResponsibility: false,
+                    })}
                     type="checkbox"
                   />
                   Requires armed guard credentials
@@ -2169,7 +2410,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               </button>
               <button
                 className="primary-action"
-                disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending || Boolean(openShiftAvailabilityConflict && !openShiftForm.availabilityOverrideNote.trim())}
+                disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending || Boolean(openShiftAvailabilityConflict && !openShiftForm.availabilityOverrideNote.trim()) || !openShiftCredentialOverrideReady}
                 type="submit"
               >
                 {createOpenShiftMutation.isPending

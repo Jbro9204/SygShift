@@ -183,6 +183,7 @@ export interface CreateOpenShiftInput {
   publishAnnouncement: boolean
   employeeId?: string | null
   availabilityOverrideNote?: string | null
+  credentialOverrideNote?: string | null
 }
 
 export interface UpdateDraftShiftInput {
@@ -196,6 +197,7 @@ export interface UpdateDraftShiftInput {
   notes?: string
   employeeId?: string | null
   availabilityOverrideNote?: string | null
+  credentialOverrideNote?: string | null
 }
 
 export interface RemoveDraftShiftInput {
@@ -269,6 +271,7 @@ export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Pr
     publish_announcement: input.publishAnnouncement,
     target_employee_id: input.employeeId || null,
     target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
+    target_credential_override_note: input.credentialOverrideNote?.trim() || null,
   })
 
   if (error) throw new Error(error.message || 'The open shift could not be created.')
@@ -297,6 +300,7 @@ export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Pr
     target_notes: input.notes?.trim() || null,
     target_employee_id: input.employeeId || null,
     target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
+    target_credential_override_note: input.credentialOverrideNote?.trim() || null,
   })
 
   if (error) throw new Error(error.message || 'The draft shift could not be updated.')
@@ -345,11 +349,13 @@ export async function resolveScheduleReviewShift(input: {
   shiftId: string
   employeeId: string
   note: string | null
+  credentialOverrideNote?: string | null
 }): Promise<ResolveReviewShiftResult> {
   const { data, error } = await getSupabaseClient().rpc('resolve_schedule_review_shift', {
     target_shift_id: input.shiftId,
     target_employee_id: input.employeeId,
     resolution_note: input.note?.trim() || null,
+    target_credential_override_note: input.credentialOverrideNote?.trim() || null,
   })
 
   if (error) throw new Error(error.message || 'The review item could not be resolved.')

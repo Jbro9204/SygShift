@@ -112,6 +112,7 @@ describe('schedule builder data contract', () => {
       publish_announcement: true,
       target_employee_id: null,
       target_availability_override_note: null,
+      target_credential_override_note: null,
     })
   })
 
@@ -164,7 +165,45 @@ describe('schedule builder data contract', () => {
       publish_announcement: false,
       target_employee_id: '70000000-0000-4000-8000-000000000001',
       target_availability_override_note: null,
+      target_credential_override_note: null,
     })
+  })
+
+  it('passes armed credential override notes only when a scheduler intentionally records one', async () => {
+    rpc.mockResolvedValueOnce({
+      data: {
+        schedule_id: '30000000-0000-4000-8000-000000000001',
+        schedule_revision: 2,
+        shift_id: '40000000-0000-4000-8000-000000000001',
+        assignment_id: '80000000-0000-4000-8000-000000000001',
+        event_id: null,
+        announcement_id: null,
+        starts_at: '2026-07-08T14:00:00.000Z',
+        ends_at: '2026-07-08T22:00:00.000Z',
+        time_zone: 'America/Denver',
+      },
+      error: null,
+    })
+
+    await createSupervisorOpenShift({
+      weekStartsOn: '2026-07-05',
+      mode: 'post',
+      postId: '10000000-0000-4000-8000-000000000001',
+      shiftDate: '2026-07-08',
+      startTime: '08:00',
+      endTime: '16:00',
+      headcount: 1,
+      employeeId: '70000000-0000-4000-8000-000000000001',
+      isOvertime: false,
+      notes: '',
+      publishAnnouncement: false,
+      credentialOverrideNote: '  License verified outside SygShift; upload pending.  ',
+    })
+
+    expect(rpc).toHaveBeenCalledWith('create_supervisor_open_shift', expect.objectContaining({
+      target_employee_id: '70000000-0000-4000-8000-000000000001',
+      target_credential_override_note: 'License verified outside SygShift; upload pending.',
+    }))
   })
 
   it('sends supervisor review resolutions through the guarded revision RPC', async () => {
@@ -193,6 +232,7 @@ describe('schedule builder data contract', () => {
       target_shift_id: '90000000-0000-4000-8000-000000000001',
       target_employee_id: '70000000-0000-4000-8000-000000000001',
       resolution_note: 'Confirmed with supervisor',
+      target_credential_override_note: null,
     })
   })
 
