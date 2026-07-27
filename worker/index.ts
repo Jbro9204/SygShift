@@ -32,6 +32,7 @@ interface SessionContext {
   display_name: string
   role: 'guard' | 'dispatcher' | 'scheduler' | 'recruiting_licensing' | 'supervisor' | 'admin'
   has_mfa: boolean
+  permissions?: string[]
 }
 
 interface AuthTarget {

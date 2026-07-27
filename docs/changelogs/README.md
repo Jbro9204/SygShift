@@ -8,6 +8,7 @@ Desktop backup location:
 
 ## Current archive
 
+- [DEV_CHANGELOG_07-27-2026_ACCESS_CONTROL_CENTER.md](DEV_CHANGELOG_07-27-2026_ACCESS_CONTROL_CENTER.md)
 - [DEV_CHANGELOG_2026-07-27_ARMED_CREDENTIAL_OVERRIDE.md](DEV_CHANGELOG_2026-07-27_ARMED_CREDENTIAL_OVERRIDE.md)
 - [DEV_CHANGELOG_2026-07-27_RECRUITING_LICENSING_CENTER.md](DEV_CHANGELOG_2026-07-27_RECRUITING_LICENSING_CENTER.md)
 - [DEV_CHANGELOG_2026-07-27_SCHEDULER_SEPARATION_HARDENING.md](DEV_CHANGELOG_2026-07-27_SCHEDULER_SEPARATION_HARDENING.md)
@@ -19,4 +20,4 @@ Desktop backup location:
 
 ## Rule going forward
 
-Every meaningful SygShift update should add or update a file in this folder and then mirror the same file to the Desktop backup folder.
+Every meaningful SygShift update should add or update a file in this folder and then mirror the same file to the Desktop backup folder. Dates in changelog content must use `MM/DD/YYYY`.

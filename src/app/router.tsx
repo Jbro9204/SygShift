@@ -3,6 +3,7 @@ import { AppShell } from '../components/AppShell'
 import { RouteErrorPage } from '../pages/RouteErrorPage'
 import {
   AccountSecurityPageRoute,
+  AccessControlPageRoute,
   AnnouncementsPageRoute,
   AvailabilityPageRoute,
   EventsPageRoute,
@@ -138,6 +139,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <UserAdminPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'access-control',
+        element: (
+          <RouteSuspense>
+            <AccessControlPageRoute />
           </RouteSuspense>
         ),
       },

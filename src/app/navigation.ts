@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   MapPinned,
   Megaphone,
+  ShieldCheck,
   Timer,
   UserCog,
   UsersRound,
@@ -26,6 +27,7 @@ export interface NavigationItem {
   path: string
   icon: LucideIcon
   roles?: AppRole[]
+  permission?: string
 }
 
 export interface NavigationGroup {
@@ -66,7 +68,8 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: 'Administration',
     items: [
-      { label: 'Users & Access', path: '/users', icon: UserCog, roles: ['admin'] },
+      { label: 'Users & Access', path: '/users', icon: UserCog, roles: ['admin'], permission: 'admin.users.view' },
+      { label: 'Roles & Permissions', path: '/access-control', icon: ShieldCheck, roles: ['admin'], permission: 'admin.roles.view' },
     ],
   },
 ]

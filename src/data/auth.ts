@@ -15,6 +15,7 @@ const sessionContextSchema = z.object({
   mfa_enrolled_at: z.string().nullable(),
   mfa_required: z.boolean(),
   has_mfa: z.boolean(),
+  permissions: z.array(z.string()).optional().default([]),
 })
 
 export type SessionContext = {
@@ -27,6 +28,7 @@ export type SessionContext = {
   mfaEnrolledAt: string | null
   mfaRequired: boolean
   hasMfa: boolean
+  permissions: string[]
 }
 
 export type PasswordPolicyResult = {
@@ -84,6 +86,7 @@ export async function getSessionContext(): Promise<SessionContext> {
     mfaEnrolledAt: parsed.mfa_enrolled_at,
     mfaRequired: parsed.mfa_required,
     hasMfa: parsed.has_mfa,
+    permissions: parsed.permissions,
   }
 }
 

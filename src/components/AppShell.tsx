@@ -24,6 +24,17 @@ function displayRole(role: SessionContext['role']): string {
   return 'Guard'
 }
 
+function canOpenNavigationItem(
+  item: (typeof navigationGroups)[number]['items'][number],
+  sessionContext: SessionContext | null,
+): boolean {
+  if (!isSupabaseConfigured) return true
+  if (!item.roles && !item.permission) return true
+  if (!sessionContext) return false
+  if (item.permission && sessionContext.permissions.includes(item.permission)) return true
+  return Boolean(item.roles?.includes(sessionContext.role))
+}
+
 export function AppShell() {
   const [navigationOpen, setNavigationOpen] = useState(false)
   const [sessionContext, setSessionContext] = useState<SessionContext | null>(null)
@@ -38,8 +49,7 @@ export function AppShell() {
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => {
-        if (!item.roles || !isSupabaseConfigured) return true
-        return Boolean(sessionContext && item.roles.includes(sessionContext.role))
+        return canOpenNavigationItem(item, sessionContext)
       }),
     }))
     .filter((group) => group.items.length > 0)
@@ -53,8 +63,8 @@ export function AppShell() {
     .find((item) => item.path === location.pathname)
   const lacksRouteAccess = Boolean(
     sessionContext
-      && requestedNavigationItem?.roles
-      && !requestedNavigationItem.roles.includes(sessionContext.role),
+      && requestedNavigationItem
+      && !canOpenNavigationItem(requestedNavigationItem, sessionContext),
   )
 
   useEffect(() => {
