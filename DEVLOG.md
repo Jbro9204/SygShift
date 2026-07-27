@@ -23,6 +23,36 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 2026-07-27
+
+### Added scheduler-safe shift removal
+
+- Added a controlled “Remove duplicate/open shift” action to the Scheduler selected-shift panel.
+- Added a matching “Remove from draft” action inside the full shift editor so the action is available from both scheduler workflows.
+- Removal now uses a confirmation dialog with an optional note field, so schedulers can record why a block was removed.
+- If a scheduler is looking at a live published schedule, SygShift opens a working draft first, removes the matching draft shift, and keeps the live schedule unchanged until the draft is published.
+- Removed shifts no longer show on the Schedule/Scheduler board, no longer count in staffing suggestions, and no longer enter Events & Openings / Shift Pool.
+- Pending requests attached to a removed shift are canceled, and active assignments are canceled with the removal reason.
+- The database now keeps a soft-removal audit trail on shifts instead of hard-deleting operational history.
+
+### Scheduler access/responsibility clarification prepared
+
+- Prepared scheduler-facing guidance for Michael’s questions about duplicate shift cleanup, employee setup, contract/site setup, time editing, manual current-week schedule additions, and Denver license/armed credential ownership.
+- Recommendation: Admin/Ops owns official employee setup and contract/site records; Schedulers maintain schedule coverage, assignments, open shifts, availability, and credential updates needed to schedule armed work.
+
+### Production deployment
+
+- Applied targeted Supabase migration: `supabase/migrations/20260727103000_scheduler_shift_removal.sql`.
+- Deployed Cloudflare Worker/site version `764edcd1-bbc7-4951-a5e8-b5edfd85d0c0`.
+- Verified live URL responded with HTTP 200: https://app.sygilant.us
+
+### QA completed
+
+- `pnpm typecheck` passed.
+- `pnpm lint` passed.
+- `pnpm test` passed: 23 files, 78 tests.
+- `pnpm build` passed.
+
 ## 2026-07-23
 
 ### Added Flex employment and Directory-based availability controls

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSupervisorOpenShift, getScheduleBuilderOptions, resolveScheduleReviewShift } from './schedule'
+import { createSupervisorOpenShift, getScheduleBuilderOptions, removeScheduleDraftShift, resolveScheduleReviewShift } from './schedule'
 
 const rpc = vi.fn()
 
@@ -193,6 +193,34 @@ describe('schedule builder data contract', () => {
       target_shift_id: '90000000-0000-4000-8000-000000000001',
       target_employee_id: '70000000-0000-4000-8000-000000000001',
       resolution_note: 'Confirmed with supervisor',
+    })
+  })
+
+  it('removes duplicate draft shifts through the guarded removal RPC', async () => {
+    rpc.mockResolvedValueOnce({
+      data: {
+        id: '30000000-0000-4000-8000-000000000001',
+        week_starts_on: '2026-07-26',
+        revision: 4,
+        status: 'draft',
+        published_at: null,
+        shifts: [],
+      },
+      error: null,
+    })
+
+    await expect(removeScheduleDraftShift({
+      shiftId: '40000000-0000-4000-8000-000000000001',
+      note: '  Duplicate Neon Local open shift  ',
+    })).resolves.toMatchObject({
+      id: '30000000-0000-4000-8000-000000000001',
+      shifts: [],
+      status: 'draft',
+    })
+
+    expect(rpc).toHaveBeenCalledWith('remove_schedule_draft_shift', {
+      target_shift_id: '40000000-0000-4000-8000-000000000001',
+      removal_note: 'Duplicate Neon Local open shift',
     })
   })
 })

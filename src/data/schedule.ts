@@ -198,6 +198,11 @@ export interface UpdateDraftShiftInput {
   availabilityOverrideNote?: string | null
 }
 
+export interface RemoveDraftShiftInput {
+  shiftId: string
+  note?: string | null
+}
+
 export interface ScheduleRow {
   id: string
   code: string | null
@@ -295,6 +300,16 @@ export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Pr
   })
 
   if (error) throw new Error(error.message || 'The draft shift could not be updated.')
+  return scheduleSchema.parse(data)
+}
+
+export async function removeScheduleDraftShift(input: RemoveDraftShiftInput): Promise<WeeklySchedule> {
+  const { data, error } = await getSupabaseClient().rpc('remove_schedule_draft_shift', {
+    target_shift_id: input.shiftId,
+    removal_note: input.note?.trim() || null,
+  })
+
+  if (error) throw new Error(error.message || 'The shift could not be removed from the draft.')
   return scheduleSchema.parse(data)
 }
 
