@@ -753,7 +753,7 @@ export function LicensingCenterPage() {
             <option value="separated">Separated</option>
           </select>
         </label>
-        <button className="secondary-button" onClick={() => {
+        <button className="secondary-button licensing-toolbar__clear" onClick={() => {
           setSummaryFilter('all')
           setSearch('')
           setComplianceFilter('all')
@@ -824,7 +824,7 @@ export function LicensingCenterPage() {
                     {employee ? formatEligibility(employee.workEligibility) : 'Pending Review'}
                   </span>
                 </div>
-                <div role="cell">
+                <div className="licensing-row__actions" role="cell">
                   {employee ? (
                     <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployee(employee)} type="button">
                       Open profile

@@ -8813,9 +8813,31 @@
 .licensing-intro__actions {
   display: flex;
   flex: 0 0 auto;
+  align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 12px;
+}
+
+.page--licensing .primary-action,
+.page--licensing .secondary-button,
+.modal-dialog--licensing-profile .primary-action,
+.modal-dialog--licensing-profile .secondary-button,
+.licensing-form .primary-action,
+.licensing-form .secondary-button {
+  width: auto;
+  min-width: max-content;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.page--licensing .primary-action svg,
+.page--licensing .secondary-button svg,
+.modal-dialog--licensing-profile .primary-action svg,
+.modal-dialog--licensing-profile .secondary-button svg,
+.licensing-form .primary-action svg,
+.licensing-form .secondary-button svg {
+  flex: 0 0 auto;
 }
 
 .licensing-summary-grid {
@@ -8837,6 +8859,7 @@
   border-top: 4px solid #c6b79e;
   border-radius: 11px;
   box-shadow: var(--shadow-sm);
+  cursor: pointer;
   text-align: left;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
@@ -8881,7 +8904,7 @@
 
 .licensing-toolbar {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) repeat(3, minmax(170px, 0.45fr)) auto;
+  grid-template-columns: minmax(320px, 1fr) repeat(3, minmax(180px, 0.45fr)) max-content;
   align-items: end;
   gap: 12px;
   margin-bottom: 18px;
@@ -8894,6 +8917,12 @@
 
 .licensing-toolbar .secondary-button {
   min-width: 128px;
+}
+
+.licensing-toolbar__clear {
+  min-height: 48px;
+  padding-right: 18px;
+  padding-left: 18px;
 }
 
 .licensing-work-queue {
@@ -8986,7 +9015,7 @@
 
 .licensing-row {
   display: grid;
-  grid-template-columns: minmax(190px, 1.1fr) minmax(210px, 1.15fr) minmax(145px, 0.7fr) minmax(160px, 0.8fr) minmax(135px, 0.65fr) minmax(155px, 0.75fr) minmax(120px, 0.5fr);
+  grid-template-columns: minmax(190px, 1.1fr) minmax(210px, 1.15fr) minmax(145px, 0.7fr) minmax(160px, 0.8fr) minmax(135px, 0.65fr) minmax(155px, 0.75fr) minmax(148px, max-content);
   align-items: center;
   gap: 12px;
   padding: 15px 20px;
@@ -9011,6 +9040,18 @@
 
 .licensing-row div[role='cell'] {
   min-width: 0;
+}
+
+.licensing-row__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.licensing-row__actions .secondary-button {
+  min-width: 118px;
+  padding-right: 14px;
+  padding-left: 14px;
 }
 
 .licensing-row strong,
@@ -9168,7 +9209,7 @@
 
 .licensing-document-panel {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(180px, 0.8fr) auto;
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.75fr) max-content;
   align-items: center;
   gap: 12px;
   margin: 0 22px 22px;
@@ -9274,6 +9315,7 @@
 
 .licensing-profile-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   margin-top: 14px;
   margin-bottom: 14px;
@@ -9369,11 +9411,15 @@
 .licensing-card-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 9px;
+  padding-top: 2px;
 }
 
 .licensing-card-actions .secondary-button {
-  min-width: 112px;
+  min-width: 116px;
+  min-height: 40px;
 }
 
 .employee-role-rail--recruiting_licensing {
@@ -9391,6 +9437,10 @@
 
   .licensing-toolbar .search-field {
     grid-column: 1 / -1;
+  }
+
+  .licensing-toolbar__clear {
+    justify-self: end;
   }
 
   .licensing-work-queue,
@@ -9432,6 +9482,26 @@
   .licensing-profile-actions .secondary-button,
   .licensing-form .modal-actions > * {
     width: 100%;
+    min-width: 0;
+  }
+
+  .page--licensing .primary-action,
+  .page--licensing .secondary-button,
+  .modal-dialog--licensing-profile .primary-action,
+  .modal-dialog--licensing-profile .secondary-button,
+  .licensing-form .primary-action,
+  .licensing-form .secondary-button {
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .licensing-row__actions {
+    justify-content: flex-start;
+  }
+
+  .licensing-row__actions .secondary-button {
+    width: 100%;
+    min-width: 0;
   }
 
   .licensing-table-panel {
