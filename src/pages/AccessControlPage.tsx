@@ -414,7 +414,7 @@ function EmployeeAccessEditor({
     <ModalDialog
       busy={modalBusy}
       busyLabel="Updating employee access..."
-      className="access-modal access-modal--wide"
+      className="access-modal access-modal--employee-editor"
       description="Adjust extra role memberships, individual grants, individual denies, and review final effective permissions."
       onClose={onClose}
       title={`Employee access: ${user.displayName}`}
@@ -741,7 +741,7 @@ export function AccessControlPage() {
 
       {employeeAccessOpen ? (
         <ModalDialog
-          className="access-modal"
+          className="access-modal access-modal--employee-menu"
           description="Choose an employee before opening their access editor."
           onClose={() => setEmployeeAccessOpen(false)}
           title="Manage employee access"
@@ -751,7 +751,7 @@ export function AccessControlPage() {
             selectedUserId={selectedUser?.id ?? ''}
             users={center.users}
           />
-          <div className="modal-actions">
+          <div className="modal-actions employee-access-menu-actions">
             <button className="access-control-button access-control-button--secondary" onClick={() => setEmployeeAccessOpen(false)} type="button">
               <X aria-hidden="true" size={18} />
               Close

@@ -98,4 +98,20 @@ describe('button layout guardrails', () => {
     expect(blockFor('.access-control-button--primary')).toContain('linear-gradient')
     expect(blockFor('.access-control-button--secondary')).toContain('background: #fffdfa')
   })
+
+  it('keeps Employee Access modals purpose-sized and locally aligned', () => {
+    expect(accessControlPage).toContain('access-modal access-modal--employee-menu')
+    expect(accessControlPage).toContain('access-modal access-modal--employee-editor')
+    expect(accessControlPage).toContain('modal-actions employee-access-menu-actions')
+
+    expect(blockFor('.access-modal--employee-menu')).toContain('width: min(94vw, 720px)')
+    expect(blockFor('.access-modal--employee-editor')).toContain('width: min(96vw, 1120px)')
+
+    const menuActionsBlock = blockFor('.employee-access-menu-actions')
+    expect(menuActionsBlock).toContain('justify-content: space-between')
+    expect(menuActionsBlock).toContain('border-top: 1px solid var(--line)')
+
+    expect(appCss).toContain('.employee-access-launcher {\n  gap: 18px;\n  padding: 22px;')
+    expect(appCss).toContain('box-shadow: 0 14px 32px rgba(45, 32, 12, 0.08)')
+  })
 })

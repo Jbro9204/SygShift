@@ -10352,6 +10352,14 @@
   width: min(96vw, 1160px);
 }
 
+.access-modal--employee-menu {
+  width: min(94vw, 720px);
+}
+
+.access-modal--employee-editor {
+  width: min(96vw, 1120px);
+}
+
 .access-modal-form,
 .employee-access-window,
 .employee-access-launcher {
@@ -10378,6 +10386,7 @@
 .access-modal-card {
   display: grid;
   gap: 14px;
+  min-width: 0;
 }
 
 .access-modal-card--permissions {
@@ -10435,13 +10444,24 @@
 
 .employee-access-banner {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 18px;
   background: #fff8e8;
   border: 1px solid #e2c27d;
   border-radius: 16px;
+  box-shadow: 0 12px 28px rgba(72, 48, 12, 0.08);
+}
+
+.employee-access-banner > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.employee-access-banner .status-pill {
+  flex: 0 0 auto;
 }
 
 .employee-access-banner h3,
@@ -10474,6 +10494,81 @@
 
 .employee-access-search input {
   padding-left: 42px;
+}
+
+.employee-access-launcher {
+  gap: 18px;
+  padding: 22px;
+  border-color: #ded0bb;
+  box-shadow: 0 14px 32px rgba(45, 32, 12, 0.08);
+}
+
+.employee-access-launcher > div:first-child {
+  display: grid;
+  gap: 6px;
+}
+
+.employee-access-launcher .eyebrow,
+.employee-access-banner .eyebrow {
+  margin: 0;
+}
+
+.employee-access-launcher h2 {
+  line-height: 1.1;
+}
+
+.employee-access-search,
+.access-employee-select {
+  max-width: 100%;
+}
+
+.employee-access-search input,
+.access-employee-select {
+  min-height: 50px;
+}
+
+.employee-access-menu-actions {
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.employee-access-menu-actions .access-control-button {
+  min-width: 170px;
+}
+
+.employee-access-window {
+  gap: 18px;
+}
+
+.employee-access-grid {
+  grid-template-columns: minmax(320px, 0.95fr) minmax(360px, 1.05fr);
+  gap: 18px;
+}
+
+.employee-role-picklist {
+  max-height: min(44vh, 360px);
+  padding-right: 4px;
+  overflow: auto;
+}
+
+.access-override-form {
+  gap: 14px;
+}
+
+.access-override-form .access-control-button {
+  width: 100%;
+}
+
+.access-override-list {
+  margin-top: 0;
+  padding: 16px;
+  background: #fffdf8;
+  border: 1px solid var(--line);
+  border-radius: 16px;
 }
 
 .employee-access-floating-button {
@@ -10522,6 +10617,26 @@
 
   .access-command-center__actions .access-control-button {
     width: 100%;
+  }
+
+  .access-modal--employee-menu,
+  .access-modal--employee-editor {
+    width: min(96vw, 680px);
+  }
+
+  .employee-access-menu-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .employee-access-menu-actions .access-control-button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .employee-role-picklist {
+    max-height: none;
+    padding-right: 0;
   }
 
   .permission-row {
