@@ -8,10 +8,17 @@ const assignedEmployeeSchema = z.object({
   preferred_name: z.string().nullable(),
 })
 
+const assignmentOverrideSchema = z.object({
+  kind: z.enum(['availability', 'armed_credential']),
+  note: z.string(),
+  createdAt: z.string().nullable().optional(),
+})
+
 const assignmentSchema = z.object({
   id: z.string().uuid(),
   status: z.enum(['assigned', 'confirmed', 'canceled', 'completed']),
   employee: assignedEmployeeSchema,
+  overrides: z.array(assignmentOverrideSchema).optional(),
 })
 
 const postSchema = z.object({

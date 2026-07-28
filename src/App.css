@@ -2411,14 +2411,55 @@
   gap: 8px;
 }
 
-.scheduler-assigned-list span {
-  padding: 8px 10px;
+.scheduler-assigned-card {
+  display: grid;
+  gap: 7px;
+  padding: 10px 11px;
   color: #174d39;
   background: #e8f5ee;
   border: 1px solid #bfe0cf;
   border-radius: 9px;
   font-size: 13px;
   font-weight: 900;
+}
+
+.scheduler-assigned-card > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.scheduler-assigned-card strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.scheduler-assigned-card span {
+  color: #477565;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.scheduler-assigned-card__overrides {
+  display: grid;
+  gap: 5px;
+}
+
+.scheduler-assigned-card__overrides small {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 5px 8px;
+  color: #744118;
+  background: #fff1dc;
+  border: 1px solid #e6c39b;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .scheduler-muted {

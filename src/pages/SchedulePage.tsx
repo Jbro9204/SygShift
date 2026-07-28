@@ -134,6 +134,13 @@ function credentialOverrideComplete(required: boolean, note: string, confirmedKn
   return !required || Boolean(note.trim() && confirmedKnown && confirmedResponsibility)
 }
 
+function assignmentOverrideByKind(
+  assignment: ScheduleShift['assignments'][number],
+  kind: 'availability' | 'armed_credential',
+) {
+  return assignment.overrides?.find((override) => override.kind === kind) ?? null
+}
+
 function ArmedCredentialOverrideCard({
   compact = false,
   confirmedKnown,
@@ -875,9 +882,33 @@ function SchedulerShiftModal({
           <span className="scheduler-shift-panel__label">Assigned</span>
           {shift.assignments.length ? (
             <div className="scheduler-assigned-list">
-              {shift.assignments.map((assignment) => (
-                <span key={assignment.id}>{assignmentName(assignment)}</span>
-              ))}
+              {shift.assignments.map((assignment) => {
+                const credentialOverride = assignmentOverrideByKind(assignment, 'armed_credential')
+                const availabilityOverride = assignmentOverrideByKind(assignment, 'availability')
+
+                return (
+                  <article className="scheduler-assigned-card" key={assignment.id}>
+                    <div>
+                      <strong>{assignmentName(assignment)}</strong>
+                      <span>{assignment.status}</span>
+                    </div>
+                    {credentialOverride || availabilityOverride ? (
+                      <div className="scheduler-assigned-card__overrides" aria-label="Saved assignment overrides">
+                        {credentialOverride ? (
+                          <small title={credentialOverride.note}>
+                            Credential override saved{credentialOverride.createdAt ? ` ${credentialOverride.createdAt}` : ''}
+                          </small>
+                        ) : null}
+                        {availabilityOverride ? (
+                          <small title={availabilityOverride.note}>
+                            Availability override saved{availabilityOverride.createdAt ? ` ${availabilityOverride.createdAt}` : ''}
+                          </small>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </article>
+                )
+              })}
             </div>
           ) : (
             <p className="scheduler-muted">No employee assigned yet.</p>
