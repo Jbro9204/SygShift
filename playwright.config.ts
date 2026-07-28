@@ -9,6 +9,7 @@ const e2eBaseUrl = `http://127.0.0.1:${e2ePort}`
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
+  workers: process.env.CI ? undefined : 2,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: [['list'], ['html', { open: 'never' }]],
@@ -17,12 +18,12 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: {
-    command: `pnpm dev --host 127.0.0.1 --port ${e2ePort}`,
+    command: `pnpm build && node tools/e2e-static-server.mjs ${e2ePort}`,
     env: {
       VITE_SUPABASE_URL: '',
       VITE_SUPABASE_PUBLISHABLE_KEY: '',
     },
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     url: e2eBaseUrl,
   },
   projects: [

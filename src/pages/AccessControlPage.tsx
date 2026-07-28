@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BadgeCheck,
@@ -236,8 +236,8 @@ function CreateRoleModal({
         </div>
 
         <div className="modal-actions">
-          <button className="secondary-button" onClick={onClose} type="button">Cancel</button>
-          <button className="primary-button" disabled={mutation.isPending} type="submit">
+          <button className="access-control-button access-control-button--secondary" onClick={onClose} type="button">Cancel</button>
+          <button className="access-control-button access-control-button--primary" disabled={mutation.isPending} type="submit">
             <Plus aria-hidden="true" size={18} />
             Create role
           </button>
@@ -313,7 +313,7 @@ function RolePermissionEditor({
 
       <div className="access-actions">
         <button
-          className="primary-button"
+          className="access-control-button access-control-button--primary"
           disabled={mutation.isPending}
           onClick={() => mutation.mutate([...selectedCodes])}
           type="button"
@@ -444,7 +444,7 @@ function EmployeeAccessEditor({
               ))}
             </div>
             <button
-              className="primary-button"
+              className="access-control-button access-control-button--primary"
               disabled={roleMutation.isPending}
               onClick={() => roleMutation.mutate([...selectedRoleIds])}
               type="button"
@@ -478,7 +478,7 @@ function EmployeeAccessEditor({
                 <span>Reason</span>
                 <textarea name="reason" placeholder="Required audit note." required rows={3} />
               </label>
-              <button className="secondary-button" disabled={overrideMutation.isPending} type="submit">
+              <button className="access-control-button access-control-button--secondary" disabled={overrideMutation.isPending} type="submit">
                 Apply override
               </button>
             </form>
@@ -576,6 +576,34 @@ function EmployeeAccessLauncher({
   )
 }
 
+function AccessControlState({
+  children,
+  icon,
+  title,
+  tone,
+}: {
+  children: ReactNode
+  icon: typeof ShieldAlert
+  title: string
+  tone?: 'setup' | 'error' | 'empty'
+}) {
+  return (
+    <div className="page-stack access-control-page">
+      <section className="page-hero page-hero--split access-hero">
+        <div>
+          <p className="eyebrow">Administration</p>
+          <h1>Roles & Permissions</h1>
+          <p>
+            Active Directory style control for SygShift. Build clean roles first,
+            then handle per-person exceptions only when they are truly needed.
+          </p>
+        </div>
+      </section>
+      <DataStatePanel icon={icon} title={title} tone={tone}>{children}</DataStatePanel>
+    </div>
+  )
+}
+
 export function AccessControlPage() {
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
@@ -598,26 +626,26 @@ export function AccessControlPage() {
 
   if (centerQuery.isPending) {
     return (
-      <DataStatePanel icon={ShieldCheck} title="Loading roles and permissions">
+      <AccessControlState icon={ShieldCheck} title="Loading roles and permissions">
         <p>Retrieving the active permission catalog, role matrix, employee assignments, and override records.</p>
-      </DataStatePanel>
+      </AccessControlState>
     )
   }
 
   if (centerQuery.isError) {
     return (
-      <DataStatePanel icon={ShieldAlert} title="Roles & Permissions unavailable" tone="error">
+      <AccessControlState icon={ShieldAlert} title="Roles & Permissions unavailable" tone="error">
         <p>{centerQuery.error.message}</p>
         <p>Sign in as an MFA-verified Admin before managing access control.</p>
-      </DataStatePanel>
+      </AccessControlState>
     )
   }
 
   if (!center) {
     return (
-      <DataStatePanel icon={ShieldAlert} title="Roles & Permissions unavailable" tone="error">
+      <AccessControlState icon={ShieldAlert} title="Roles & Permissions unavailable" tone="error">
         <p>The access-control center did not return a usable payload.</p>
-      </DataStatePanel>
+      </AccessControlState>
     )
   }
 
@@ -641,11 +669,11 @@ export function AccessControlPage() {
 
       <section className="access-command-center">
         <div className="access-command-center__actions">
-          <button className="primary-button" onClick={() => setCreateRoleOpen(true)} type="button">
+          <button className="access-control-button access-control-button--primary" onClick={() => setCreateRoleOpen(true)} type="button">
             <Plus aria-hidden="true" size={18} />
             Create role
           </button>
-          <button className="secondary-button" onClick={() => setEmployeeAccessOpen(true)} type="button">
+          <button className="access-control-button access-control-button--secondary" onClick={() => setEmployeeAccessOpen(true)} type="button">
             <UserRoundCog aria-hidden="true" size={18} />
             Manage employee access
           </button>
@@ -724,12 +752,12 @@ export function AccessControlPage() {
             users={center.users}
           />
           <div className="modal-actions">
-            <button className="secondary-button" onClick={() => setEmployeeAccessOpen(false)} type="button">
+            <button className="access-control-button access-control-button--secondary" onClick={() => setEmployeeAccessOpen(false)} type="button">
               <X aria-hidden="true" size={18} />
               Close
             </button>
             <button
-              className="primary-button"
+              className="access-control-button access-control-button--primary"
               disabled={!selectedUser}
               onClick={() => {
                 if (!selectedUser) return

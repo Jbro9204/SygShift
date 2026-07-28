@@ -6,6 +6,7 @@ import { join } from 'node:path'
 
 const root = process.cwd()
 const appCss = readFileSync(join(root, 'src', 'App.css'), 'utf8')
+const accessControlPage = readFileSync(join(root, 'src', 'pages', 'AccessControlPage.tsx'), 'utf8')
 const availabilityPage = readFileSync(join(root, 'src', 'pages', 'AvailabilityPage.tsx'), 'utf8')
 
 function blockFor(selector: string): string {
@@ -26,6 +27,12 @@ function blocksFor(selector: string): string[] {
     start = appCss.indexOf(selector, close)
   }
   return blocks
+}
+
+function topLevelBlockFor(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = appCss.match(new RegExp(`^${escaped}\\s*\\{([^}]*)\\}`, 'm'))
+  return match?.[1] ?? ''
 }
 
 describe('button layout guardrails', () => {
@@ -74,5 +81,21 @@ describe('button layout guardrails', () => {
     expect(availabilityControlsBlock).toContain('box-sizing: border-box')
     expect(availabilityControlsBlock).toContain('max-width: 100%')
     expect(availabilityControlsBlock).toContain('min-width: 0')
+  })
+
+  it('keeps Roles & Permissions actions on a local uniform button system', () => {
+    expect(accessControlPage).not.toContain('className="primary-button"')
+    expect(accessControlPage).not.toContain('className="secondary-button"')
+    expect(accessControlPage).toContain('access-control-button access-control-button--primary')
+    expect(accessControlPage).toContain('access-control-button access-control-button--secondary')
+
+    const accessButtonBlock = topLevelBlockFor('.access-control-button')
+    expect(accessButtonBlock).toContain('box-sizing: border-box')
+    expect(accessButtonBlock).toContain('width: auto')
+    expect(accessButtonBlock).toContain('max-width: 100%')
+    expect(accessButtonBlock).toContain('justify-content: center')
+
+    expect(blockFor('.access-control-button--primary')).toContain('linear-gradient')
+    expect(blockFor('.access-control-button--secondary')).toContain('background: #fffdfa')
   })
 })

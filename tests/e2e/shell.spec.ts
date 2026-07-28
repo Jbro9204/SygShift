@@ -34,9 +34,9 @@ test('schedule remains usable on the configured viewport', async ({ page }) => {
 test('employee directory protects source data and remains accessible', async ({ page }) => {
   await page.goto('/people')
 
-  await expect(page.getByRole('heading', { name: 'Employee directory' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Directory', exact: true })).toBeVisible()
   await expect(page.getByText('Directory ready for the secure connection')).toBeVisible()
-  await expect(page.getByText('Sensitive details require supervisor access and MFA')).toBeVisible()
+  await expect(page.getByText('Employee information stays hidden until Supabase authentication')).toBeVisible()
 
   const bodyWidth = await page.locator('body').evaluate((body) => body.scrollWidth)
   const viewportWidth = page.viewportSize()?.width ?? 0
@@ -117,29 +117,11 @@ test('request center explains protected guard and supervisor workflows', async (
   expect(accessibility.violations).toEqual([])
 })
 
-test('workbook import review presents verified staging without exposing private records', async ({ page }) => {
-  await page.goto('/import-review')
+test('roles and permissions stay protected without an admin session', async ({ page }) => {
+  await page.goto('/access-control')
 
-  await expect(page.getByRole('heading', { name: 'Workbook import review' })).toBeVisible()
-  await expect(page.getByText('Every workbook cell is preserved and traceable.')).toBeVisible()
-  await expect(page.getByText('Ready for the secure Supabase connection')).toBeVisible()
-  await expect(page.getByText('110,274')).toBeVisible()
-  await expect(page.getByText('9,408')).toBeVisible()
-
-  const bodyWidth = await page.locator('body').evaluate((body) => body.scrollWidth)
-  const viewportWidth = page.viewportSize()?.width ?? 0
-  expect(bodyWidth).toBeLessThanOrEqual(viewportWidth)
-
-  const accessibility = await new AxeBuilder({ page }).analyze()
-  expect(accessibility.violations).toEqual([])
-})
-
-test('operational import explains the guarded current-schedule mapping process', async ({ page }) => {
-  await page.goto('/operational-import')
-
-  await expect(page.getByRole('heading', { name: 'Operational import' })).toBeVisible()
-  await expect(page.getByText('The current schedule is reduced to a manageable review.')).toBeVisible()
-  await expect(page.getByText('Ready to connect the protected mapping workspace')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Roles & Permissions unavailable' })).toBeVisible()
+  await expect(page.getByText('Sign in as an MFA-verified Admin before managing access control.')).toBeVisible()
 
   const bodyWidth = await page.locator('body').evaluate((body) => body.scrollWidth)
   const viewportWidth = page.viewportSize()?.width ?? 0

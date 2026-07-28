@@ -653,11 +653,14 @@ begin
     raise no_data_found using message = 'The selected role no longer exists.';
   end if;
 
-  if target_role.protected and (
-    not ('admin.roles.manage' = any(clean_permissions))
-    or not ('admin.users.manage' = any(clean_permissions))
-    or not ('admin.security.manage' = any(clean_permissions))
-  ) then
+  if target_role.protected
+    and target_role.code = 'system_admin'
+    and (
+      not ('admin.roles.manage' = any(clean_permissions))
+      or not ('admin.users.manage' = any(clean_permissions))
+      or not ('admin.security.manage' = any(clean_permissions))
+    )
+  then
     raise insufficient_privilege using message = 'Protected Admin permissions cannot be removed.';
   end if;
 
