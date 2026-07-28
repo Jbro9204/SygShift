@@ -779,6 +779,7 @@ function SchedulerShiftModal({
   onEdit,
   onRequestRemove,
   onResolve,
+  saveError,
   shift,
   suggestion,
 }: {
@@ -791,6 +792,7 @@ function SchedulerShiftModal({
   onEdit: () => void
   onRequestRemove: () => void
   onResolve: () => void
+  saveError?: string | null
   shift: ScheduleShift
   suggestion: StaffingSuggestion | undefined
 }) {
@@ -827,11 +829,6 @@ function SchedulerShiftModal({
       manualConflict ? overrideNote : null,
       credentialOverrideRequired ? credentialOverrideNote : null,
     )
-    setManualEmployeeId('')
-    setOverrideNote('')
-    setCredentialOverrideNote('')
-    setCredentialConfirmedKnown(false)
-    setCredentialConfirmedResponsibility(false)
   }
 
   function requestClose() {
@@ -1012,6 +1009,9 @@ function SchedulerShiftModal({
           <button className="primary-action" disabled={isSaving || employees.length === 0 || Boolean(manualConflict && !overrideNote.trim()) || !credentialOverrideReady} type="submit">
             {isSaving ? 'Saving...' : isDraft ? 'Save assignment' : 'Open draft & save assignment'}
           </button>
+          {saveError ? (
+            <p className="scheduler-save-error" role="alert">{saveError}</p>
+          ) : null}
           <p className="form-note">
             Use this for call-offs and coverage changes. Saving replaces the current active assignment for this shift and keeps the draft unpublished until you approve it.
           </p>
@@ -2919,7 +2919,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   employees={builderOptionsQuery.data?.employees ?? []}
                   isDraft={scheduleQuery.data.status === 'draft'}
                   isSaving={updateDraftShiftMutation.isPending}
-                  onAssignEmployee={(employeeId, availabilityOverrideNote) => assignPlannerEmployee(selectedPlannerShift, employeeId, availabilityOverrideNote)}
+                  onAssignEmployee={(employeeId, availabilityOverrideNote, credentialOverrideNote) => assignPlannerEmployee(selectedPlannerShift, employeeId, availabilityOverrideNote, credentialOverrideNote)}
                   onClose={() => setSelectedPlannerShiftId(null)}
                   onEdit={() => editShift(selectedPlannerShift)}
                   onRequestRemove={() => setRemovingShift(selectedPlannerShift)}
@@ -2928,6 +2928,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                     setBuilderMessage(null)
                     setResolvingShift(selectedPlannerShift)
                   }}
+                  saveError={updateDraftShiftMutation.error instanceof Error ? updateDraftShiftMutation.error.message : null}
                   shift={selectedPlannerShift}
                   suggestion={staffingSuggestionsQuery.data?.find((item) => item.shiftId === selectedPlannerShift.id)}
                 />

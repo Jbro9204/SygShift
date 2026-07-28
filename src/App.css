@@ -2469,6 +2469,18 @@
   line-height: 1.45;
 }
 
+.scheduler-save-error {
+  margin: 0;
+  padding: 9px 11px;
+  color: #7a271a;
+  background: #fff0ec;
+  border: 1px solid #efb6aa;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
 .scheduler-shift-panel__warning {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 9px;
