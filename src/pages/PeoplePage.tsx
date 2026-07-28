@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, format } from 'date-fns'
 import { BadgeCheck, CalendarCheck2, DatabaseZap, Pencil, Search, ShieldAlert, Trash2, UsersRound } from 'lucide-react'
@@ -303,10 +303,12 @@ function DirectoryCredentialEditor({
 
 function DirectoryAvailabilityManager({
   employee,
+  onPendingChange,
   records,
   pending,
 }: {
   employee: DirectoryEntry
+  onPendingChange?: (pending: boolean) => void
   records: AvailabilityRecord[]
   pending: boolean
 }) {
@@ -336,6 +338,10 @@ function DirectoryAvailabilityManager({
       ])
     },
   })
+  const localPending = submitMutation.isPending || cancelMutation.isPending
+  useEffect(() => {
+    onPendingChange?.(localPending)
+  }, [localPending, onPendingChange])
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -420,7 +426,7 @@ function DirectoryAvailabilityManager({
           <textarea maxLength={2000} name="note" placeholder="Example: Flex employee cannot work Thursdays." rows={2} />
         </label>
         <div className="directory-availability-form__actions">
-          <button className="primary-action" disabled={pending || submitMutation.isPending} type="submit">
+          <button className="primary-action" disabled={pending || localPending} type="submit">
             {submitMutation.isPending ? 'Saving...' : 'Save availability'}
           </button>
         </div>
@@ -437,7 +443,7 @@ function DirectoryAvailabilityManager({
             <button
               aria-label={`Remove availability rule for ${employeeDisplayName(employee)}`}
               className="secondary-button secondary-button--small"
-              disabled={cancelMutation.isPending}
+              disabled={localPending}
               onClick={() => cancelMutation.mutate({ id: record.id, note: 'Removed from Directory.' })}
               type="button"
             >
@@ -470,6 +476,10 @@ function DirectoryProfileModal({
 }) {
   const queryClient = useQueryClient()
   const [currentEmployee, setCurrentEmployee] = useState(employee)
+  const [availabilitySaving, setAvailabilitySaving] = useState(false)
+  useEffect(() => {
+    setCurrentEmployee(employee)
+  }, [employee])
 
   const credentialMutation = useMutation({
     mutationFn: (payload: {
@@ -482,8 +492,11 @@ function DirectoryProfileModal({
     }) => upsertDirectoryCredential({ ...payload, employeeId: currentEmployee.id }),
     onSuccess: async (updatedEmployee) => {
       setCurrentEmployee(updatedEmployee)
+      queryClient.setQueryData<DirectoryEntry[]>(['employee-directory'], (current) =>
+        current?.map((entry) => entry.id === updatedEmployee.id ? updatedEmployee : entry) ?? current,
+      )
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['employee-directory'] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-directory'], refetchType: 'active' }),
         queryClient.invalidateQueries({ queryKey: ['weekly-schedule'] }),
         queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions'] }),
       ])
@@ -492,6 +505,8 @@ function DirectoryProfileModal({
 
   return (
     <ModalDialog
+      busy={credentialMutation.isPending || availabilitySaving}
+      busyLabel={availabilitySaving ? 'Updating availability...' : 'Saving credential information...'}
       description={`${currentEmployee.employee_number ?? 'ID pending'} · @${currentEmployee.username}`}
       onClose={onClose}
       title={`Directory profile for ${employeeDisplayName(currentEmployee)}`}
@@ -501,6 +516,7 @@ function DirectoryProfileModal({
       </p>
       <DirectoryAvailabilityManager
         employee={currentEmployee}
+        onPendingChange={setAvailabilitySaving}
         pending={availabilityPending}
         records={availabilityRecords}
       />
@@ -530,7 +546,7 @@ function DirectoryProfileModal({
 export function PeoplePage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<'all' | 'active' | 'leave'>('active')
-  const [selectedEmployee, setSelectedEmployee] = useState<DirectoryEntry | null>(null)
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const directoryQuery = useQuery({
     queryKey: ['employee-directory'],
     queryFn: getEmployeeDirectory,
@@ -567,6 +583,9 @@ export function PeoplePage() {
       return matchesStatus && (!term || searchable.includes(term))
     })
   }, [directoryQuery.data, search, status])
+  const selectedEmployee = selectedEmployeeId
+    ? directoryQuery.data?.find((employee) => employee.id === selectedEmployeeId) ?? null
+    : null
 
   return (
     <div className="page page--workforce">
@@ -660,7 +679,7 @@ export function PeoplePage() {
                     </div>
                     <div role="cell">
                       {canManageCredentials ? (
-                        <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployee(employee)} type="button">
+                        <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployeeId(employee.id)} type="button">
                           <Pencil aria-hidden="true" size={16} />
                           Manage Profile
                         </button>
@@ -686,7 +705,7 @@ export function PeoplePage() {
                     </dl>
                     <OperationalDetails employee={employee} />
                     {canManageCredentials ? (
-                      <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployee(employee)} type="button">
+                      <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployeeId(employee.id)} type="button">
                         <Pencil aria-hidden="true" size={16} />
                         Manage Profile
                       </button>
@@ -706,7 +725,7 @@ export function PeoplePage() {
               availabilityPending={availabilityQuery.isPending}
               availabilityRecords={availabilityQuery.data?.availability ?? []}
               employee={selectedEmployee}
-              onClose={() => setSelectedEmployee(null)}
+              onClose={() => setSelectedEmployeeId(null)}
             />
           ) : null}
         </>

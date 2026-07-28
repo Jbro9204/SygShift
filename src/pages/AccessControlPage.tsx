@@ -190,6 +190,8 @@ function CreateRoleModal({
 
   return (
     <ModalDialog
+      busy={mutation.isPending}
+      busyLabel="Creating role..."
       className="access-modal access-modal--wide"
       description="Create a custom access group, then choose the permission nests it should include."
       onClose={onClose}
@@ -378,6 +380,7 @@ function EmployeeAccessEditor({
       setMessage('Employee permission override removed.')
     },
   })
+  const modalBusy = roleMutation.isPending || overrideMutation.isPending || clearMutation.isPending
 
   useEffect(() => {
     setSelectedRoleIds(new Set(user.assignedRoleIds))
@@ -409,6 +412,8 @@ function EmployeeAccessEditor({
 
   return (
     <ModalDialog
+      busy={modalBusy}
+      busyLabel="Updating employee access..."
       className="access-modal access-modal--wide"
       description="Adjust extra role memberships, individual grants, individual denies, and review final effective permissions."
       onClose={onClose}

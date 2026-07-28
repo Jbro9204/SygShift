@@ -187,7 +187,7 @@ function EmployeeEditor({ item, pending, onClose, onSave }: {
   }
 
   return (
-    <ModalDialog description={`Workbook Directory record: ${sourceName}`} onClose={onClose} title="Confirm Directory mapping">
+    <ModalDialog busy={pending} busyLabel="Saving Directory mapping..." description={`Workbook Directory record: ${sourceName}`} onClose={onClose} title="Confirm Directory mapping">
       <form className="request-form mapping-form" onSubmit={submit}>
         <div className="source-fact-grid">
           <div><span>Source phone</span><strong>{payloadText(item.source_payload, 'phone') || 'Not provided'}</strong></div>
@@ -252,7 +252,7 @@ function SiteEditor({ item, pending, onClose, onSave }: {
     })
   }
   return (
-    <ModalDialog description={`${item.scope_shift_count} shifts use this workbook context.`} onClose={onClose} title="Confirm site and post mapping">
+    <ModalDialog busy={pending} busyLabel="Saving site mapping..." description={`${item.scope_shift_count} shifts use this workbook context.`} onClose={onClose} title="Confirm site and post mapping">
       <form className="request-form mapping-form" onSubmit={submit}>
         <div className="source-callout"><strong>Workbook label</strong><span>{labels.join(' · ') || sourceLabel}</span><small>Qualification evidence: {qualification || 'unknown'}</small></div>
         <div className="form-grid">
@@ -294,7 +294,7 @@ function AssignmentEditor({
     onSave(disposition, disposition === 'employee' ? [employeeKey] : [], String(form.get('note')).trim())
   }
   return (
-    <ModalDialog description={description} onClose={onClose} title={title}>
+    <ModalDialog busy={pending} busyLabel="Saving assignment resolution..." description={description} onClose={onClose} title={title}>
       <form className="request-form mapping-form" onSubmit={submit}>
         <label className="field-stack"><span>Resolution</span><select value={disposition} onChange={(event) => setDisposition(event.target.value as typeof disposition)}><option value="employee">Map to reviewed employee</option><option value="open">Treat as an open shift</option><option value="exclude">Exclude this source shift</option></select></label>
         {disposition === 'employee' ? <label className="field-stack"><span>Reviewed employee</span><select name="employeeKey" required><option value="">Select employee</option>{options.map((option) => <option key={option.mapping_key} value={option.mapping_key}>{option.display_name} · {option.employee_status}</option>)}</select></label> : null}
@@ -327,7 +327,7 @@ function SchedulePersonEditor({ item, pending, onClose, onSave }: {
     })
   }
   return (
-    <ModalDialog description={`Schedule label: ${sourceLabel}`} onClose={onClose} title="Create a schedule-only employee">
+    <ModalDialog busy={pending} busyLabel="Creating schedule-only employee..." description={`Schedule label: ${sourceLabel}`} onClose={onClose} title="Create a schedule-only employee">
       <form className="request-form mapping-form" onSubmit={submit}>
         <p className="modal-warning">Use this only when the schedule names a real employee who is absent from the workbook Directory.</p>
         <div className="form-grid form-grid--three"><label><span>First name</span><input defaultValue={name.first} name="firstName" required /></label><label><span>Middle name</span><input defaultValue={name.middle} name="middleName" /></label><label><span>Last name</span><input defaultValue={name.last} name="lastName" required /></label></div>
@@ -352,7 +352,7 @@ function ConfirmationEditor({ type, pending, onClose, onSave }: {
   }
   const promotion = type === 'promote'
   return (
-    <ModalDialog description={promotion ? 'This transaction creates the reviewed operational records atomically.' : 'This records approval of seven unique weekly schedule structures.'} onClose={onClose} title={promotion ? 'Promote reviewed schedule scope' : 'Accept schedule weeks'}>
+    <ModalDialog busy={pending} busyLabel={promotion ? 'Promoting reviewed schedule scope...' : 'Accepting schedule weeks...'} description={promotion ? 'This transaction creates the reviewed operational records atomically.' : 'This records approval of seven unique weekly schedule structures.'} onClose={onClose} title={promotion ? 'Promote reviewed schedule scope' : 'Accept schedule weeks'}>
       <form className="request-form mapping-form" onSubmit={submit}>
         {promotion ? <label className="check-field"><input name="publish" type="checkbox" /><span>Publish immediately for guards after successful promotion</span></label> : null}
         <label className="field-stack"><span>Audit note</span><textarea defaultValue={promotion ? 'Promote the fully reviewed current and future schedule scope.' : 'Confirmed the seven unique current and future workbook schedule weeks.'} maxLength={4000} name="note" required rows={4} /></label>

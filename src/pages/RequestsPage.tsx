@@ -263,6 +263,8 @@ function CallOffConfirmation({
 }) {
   return (
     <ModalDialog
+      busy={mutation.isPending}
+      busyLabel="Recording call-off..."
       description="Confirming records the call-off immediately and queues a supervisor alert."
       onClose={onClose}
       title="Confirm this call-off"
@@ -397,7 +399,12 @@ function DecisionDialog({
   }
 
   return (
-    <ModalDialog onClose={onClose} title={`${state.decision === 'approved' ? 'Approve' : 'Decline'} ${state.label}`}>
+    <ModalDialog
+      busy={mutation.isPending}
+      busyLabel="Saving decision..."
+      onClose={onClose}
+      title={`${state.decision === 'approved' ? 'Approve' : 'Decline'} ${state.label}`}
+    >
       <form className="request-form" onSubmit={submit}>
         <label className="field-stack">
           <span>Decision note {state.decision === 'approved' ? <small>Optional</small> : null}</span>
@@ -436,6 +443,8 @@ function AnnouncementDialog({
 
   return (
     <ModalDialog
+      busy={mutation.isPending}
+      busyLabel="Publishing opening..."
       description="Publishing cancels the original assignment, opens the shift, and queues announcement delivery."
       onClose={onClose}
       title="Publish replacement opening"

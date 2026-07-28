@@ -5110,6 +5110,36 @@
   line-height: 1.5;
 }
 
+.modal-dialog__busy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 22px;
+  color: #6f4708;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+  background: linear-gradient(135deg, rgba(217, 164, 65, 0.16), rgba(248, 243, 232, 0.94));
+  border-bottom: 1px solid rgba(166, 118, 35, 0.22);
+}
+
+.modal-dialog__spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(166, 118, 35, 0.28);
+  border-top-color: #9a640d;
+  border-radius: 999px;
+  animation: modal-spinner 0.75s linear infinite;
+}
+
+@keyframes modal-spinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .modal-close {
   display: grid;
   width: 42px;
@@ -5124,6 +5154,11 @@
 
 .modal-close:hover {
   background: #f3f0e9;
+}
+
+.modal-close:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .modal-dialog > .request-form,

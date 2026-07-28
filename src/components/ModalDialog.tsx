@@ -2,6 +2,8 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 
 interface ModalDialogProps {
+  busy?: boolean
+  busyLabel?: string
   children: ReactNode
   className?: string
   description?: string
@@ -9,7 +11,7 @@ interface ModalDialogProps {
   title: string
 }
 
-export function ModalDialog({ children, className, description, onClose, title }: ModalDialogProps) {
+export function ModalDialog({ busy = false, busyLabel = 'Saving changes...', children, className, description, onClose, title }: ModalDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -25,9 +27,11 @@ export function ModalDialog({ children, className, description, onClose, title }
     <dialog
       aria-describedby={description ? 'modal-description' : undefined}
       aria-labelledby="modal-title"
+      aria-busy={busy}
       className={['modal-dialog', className].filter(Boolean).join(' ')}
       onCancel={(event) => {
         event.preventDefault()
+        if (busy) return
         onClose()
       }}
       ref={dialogRef}
@@ -37,10 +41,16 @@ export function ModalDialog({ children, className, description, onClose, title }
           <h2 id="modal-title">{title}</h2>
           {description ? <p id="modal-description">{description}</p> : null}
         </div>
-        <button aria-label="Close dialog" className="modal-close" onClick={onClose} type="button">
+        <button aria-label="Close dialog" className="modal-close" disabled={busy} onClick={onClose} type="button">
           <X aria-hidden="true" size={22} />
         </button>
       </div>
+      {busy ? (
+        <div className="modal-dialog__busy" role="status">
+          <span aria-hidden="true" className="modal-dialog__spinner" />
+          <span>{busyLabel}</span>
+        </div>
+      ) : null}
       {children}
     </dialog>
   )

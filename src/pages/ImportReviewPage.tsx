@@ -276,7 +276,7 @@ function ReviewDecisionDialog({
     : `${kindLabels[dialog.candidate.kind]} · ${candidateTitle(dialog.candidate)}`
 
   return (
-    <ModalDialog description={description} onClose={onClose} title={title}>
+    <ModalDialog busy={pending} busyLabel="Saving review decision..." description={description} onClose={onClose} title={title}>
       <form className="request-form" onSubmit={submit}>
         <label className="field-stack">
           <span>{dialog.type === 'issue' ? 'What the source means and how it maps' : 'Reason for this decision'}</span>
@@ -284,7 +284,7 @@ function ReviewDecisionDialog({
         </label>
         <p className="form-note">This note becomes part of the permanent import audit history.</p>
         <div className="modal-actions">
-          <button className="secondary-button" onClick={onClose} type="button">Cancel</button>
+          <button className="secondary-button" disabled={pending} onClick={onClose} type="button">Cancel</button>
           <button className="primary-action" disabled={pending} type="submit">{pending ? 'Saving…' : 'Save decision'}</button>
         </div>
       </form>

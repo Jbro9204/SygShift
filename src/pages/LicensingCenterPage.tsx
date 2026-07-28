@@ -183,6 +183,8 @@ function EmployeeFormModal({
 
   return (
     <ModalDialog
+      busy={mutation.isPending}
+      busyLabel={employee ? 'Saving employee profile...' : 'Creating onboarding record...'}
       className="modal-dialog--wide"
       description="Recruiting and licensing can maintain onboarding and operational profile information without user-admin access."
       onClose={onClose}
@@ -309,6 +311,8 @@ function CredentialEditModal({
 
   return (
     <ModalDialog
+      busy={credentialMutation.isPending || documentMutation.isPending}
+      busyLabel={documentMutation.isPending ? 'Uploading credential document...' : 'Saving credential...'}
       className="modal-dialog--wide"
       description={`${employee.displayName} • ${credential.credentialName}`}
       onClose={onClose}
@@ -433,6 +437,8 @@ function CommunicationModal({
 
   return (
     <ModalDialog
+      busy={mutation.isPending}
+      busyLabel="Recording licensing communication..."
       className="modal-dialog--wide"
       description="Preview and record licensing communication. Automated sending can use these records as the approved source."
       onClose={onClose}
@@ -480,8 +486,14 @@ function EmployeeLicensingProfile({
   onClose: () => void
   onEditEmployee: (employee: LicensingEmployee) => void
 }) {
-  const [editingCredential, setEditingCredential] = useState<LicensingCredential | null>(null)
-  const [communicatingCredential, setCommunicatingCredential] = useState<LicensingCredential | null>(null)
+  const [editingCredentialTypeId, setEditingCredentialTypeId] = useState<string | null>(null)
+  const [communicatingCredentialTypeId, setCommunicatingCredentialTypeId] = useState<string | null>(null)
+  const editingCredential = editingCredentialTypeId
+    ? employee.credentials.find((credential) => credential.credentialTypeId === editingCredentialTypeId) ?? null
+    : null
+  const communicatingCredential = communicatingCredentialTypeId
+    ? employee.credentials.find((credential) => credential.credentialTypeId === communicatingCredentialTypeId) ?? null
+    : null
   const firstAction = employee.credentials.find((credential) => credential.complianceColor === 'red')
     ?? employee.credentials.find((credential) => credential.complianceColor === 'yellow')
 
@@ -576,8 +588,8 @@ function EmployeeLicensingProfile({
             </dl>
             {credential.rejectionReason ? <p className="credential-rejection-note">{credential.rejectionReason}</p> : null}
             <div className="licensing-card-actions">
-              <button className="secondary-button secondary-button--small" onClick={() => setEditingCredential(credential)} type="button">Edit</button>
-              <button className="secondary-button secondary-button--small" onClick={() => setCommunicatingCredential(credential)} type="button">
+              <button className="secondary-button secondary-button--small" onClick={() => setEditingCredentialTypeId(credential.credentialTypeId)} type="button">Edit</button>
+              <button className="secondary-button secondary-button--small" onClick={() => setCommunicatingCredentialTypeId(credential.credentialTypeId)} type="button">
                 <Mail aria-hidden="true" size={15} />
                 Message
               </button>
@@ -591,14 +603,15 @@ function EmployeeLicensingProfile({
           credential={editingCredential}
           credentialTypes={center.credentialTypes}
           employee={employee}
-          onClose={() => setEditingCredential(null)}
+          key={`${employee.employeeId}-${editingCredential.credentialTypeId}-${editingCredential.credentialId ?? 'missing'}-${editingCredential.status}-${editingCredential.credentialNumber ?? ''}-${editingCredential.expirationDate ?? ''}`}
+          onClose={() => setEditingCredentialTypeId(null)}
         />
       ) : null}
       {communicatingCredential ? (
         <CommunicationModal
           credential={communicatingCredential}
           employee={employee}
-          onClose={() => setCommunicatingCredential(null)}
+          onClose={() => setCommunicatingCredentialTypeId(null)}
         />
       ) : null}
     </ModalDialog>
@@ -611,8 +624,8 @@ export function LicensingCenterPage() {
   const [complianceFilter, setComplianceFilter] = useState<'all' | ComplianceColor>('all')
   const [credentialTypeFilter, setCredentialTypeFilter] = useState('all')
   const [employmentStatusFilter, setEmploymentStatusFilter] = useState<'all' | LicensingEmployee['employmentStatus']>('all')
-  const [selectedEmployee, setSelectedEmployee] = useState<LicensingEmployee | null>(null)
-  const [employeeBeingEdited, setEmployeeBeingEdited] = useState<LicensingEmployee | null | 'new'>(null)
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
+  const [employeeBeingEditedId, setEmployeeBeingEditedId] = useState<string | null | 'new'>(null)
 
   const centerQuery = useQuery({
     enabled: isSupabaseConfigured,
@@ -675,6 +688,12 @@ export function LicensingCenterPage() {
   }
 
   const center = centerQuery.data
+  const selectedEmployee = selectedEmployeeId
+    ? center.employees.find((employee) => employee.employeeId === selectedEmployeeId) ?? null
+    : null
+  const employeeBeingEdited = employeeBeingEditedId && employeeBeingEditedId !== 'new'
+    ? center.employees.find((employee) => employee.employeeId === employeeBeingEditedId) ?? null
+    : null
 
   return (
     <div className="page page--licensing">
@@ -692,7 +711,7 @@ export function LicensingCenterPage() {
             Admin or Recruiting & Licensing access with MFA
           </div>
           {center.permissions.canManage ? (
-            <button className="primary-action" onClick={() => setEmployeeBeingEdited('new')} type="button">
+            <button className="primary-action" onClick={() => setEmployeeBeingEditedId('new')} type="button">
               <UserRoundPlus aria-hidden="true" size={17} />
               Add onboarding employee
             </button>
@@ -826,7 +845,7 @@ export function LicensingCenterPage() {
                 </div>
                 <div className="licensing-row__actions" role="cell">
                   {employee ? (
-                    <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployee(employee)} type="button">
+                    <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployeeId(employee.employeeId)} type="button">
                       Open profile
                     </button>
                   ) : null}
@@ -848,14 +867,37 @@ export function LicensingCenterPage() {
         <EmployeeLicensingProfile
           center={center}
           employee={selectedEmployee}
-          onClose={() => setSelectedEmployee(null)}
-          onEditEmployee={(employee) => setEmployeeBeingEdited(employee)}
+          onClose={() => setSelectedEmployeeId(null)}
+          onEditEmployee={(employee) => setEmployeeBeingEditedId(employee.employeeId)}
         />
       ) : null}
-      {employeeBeingEdited ? (
+      {selectedEmployeeId && !selectedEmployee && centerQuery.isFetching ? (
+        <ModalDialog
+          busy
+          busyLabel="Refreshing licensing profile..."
+          description="The selected employee record is being refreshed."
+          onClose={() => setSelectedEmployeeId(null)}
+          title="Refreshing profile"
+        >
+          <p className="modal-warning">Loading the latest saved licensing information.</p>
+        </ModalDialog>
+      ) : null}
+      {employeeBeingEditedId && employeeBeingEditedId !== 'new' && !employeeBeingEdited && centerQuery.isFetching ? (
+        <ModalDialog
+          busy
+          busyLabel="Refreshing employee profile..."
+          description="The employee profile is being refreshed before editing continues."
+          onClose={() => setEmployeeBeingEditedId(null)}
+          title="Refreshing employee"
+        >
+          <p className="modal-warning">Loading the latest saved employee information.</p>
+        </ModalDialog>
+      ) : null}
+      {employeeBeingEditedId === 'new' || employeeBeingEdited ? (
         <EmployeeFormModal
-          employee={employeeBeingEdited === 'new' ? undefined : employeeBeingEdited}
-          onClose={() => setEmployeeBeingEdited(null)}
+          employee={employeeBeingEditedId === 'new' ? undefined : employeeBeingEdited ?? undefined}
+          key={employeeBeingEditedId === 'new' ? 'new' : `${employeeBeingEdited?.employeeId}-${employeeBeingEdited?.displayName}-${employeeBeingEdited?.jobTitle ?? ''}-${employeeBeingEdited?.employmentStatus ?? ''}`}
+          onClose={() => setEmployeeBeingEditedId(null)}
         />
       ) : null}
     </div>

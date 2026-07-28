@@ -32,6 +32,7 @@ import {
   type ScheduleBuilderEmployee,
   type ScheduleShift,
   type StaffingSuggestion,
+  type WeeklySchedule,
 } from '../data/schedule'
 import { parseImportedScheduleNote, sourceReferenceLabel } from '../data/sourceNotes'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -483,11 +484,13 @@ function EditShiftDialog({
       employeeId: String(form.get('employeeId') ?? '') || null,
       availabilityOverrideNote: availabilityConflict ? overrideNote : null,
       credentialOverrideNote: credentialOverrideRequired ? credentialOverrideNote : null,
-    }, { onSuccess: onClose })
+    })
   }
 
   return (
     <ModalDialog
+      busy={mutation.isPending}
+      busyLabel="Saving draft shift..."
       className="modal-dialog--shift-editor"
       description="Edits are saved to the working draft. Publish the draft when the schedule is ready to go live."
       onClose={requestClose}
@@ -629,11 +632,13 @@ function ReviewResolutionDialog({
       employeeId: selectedEmployeeId,
       note: String(form.get('note')).trim() || null,
       credentialOverrideNote: credentialOverrideRequired ? credentialOverrideNote : null,
-    }, { onSuccess: onClose })
+    })
   }
 
   return (
     <ModalDialog
+      busy={mutation.isPending}
+      busyLabel="Resolving assignment..."
       description="Resolving creates a new schedule revision. The database will reject overlaps or full shifts; armed credential gaps require a logged override."
       onClose={onClose}
       title="Resolve schedule assignment"
@@ -727,6 +732,8 @@ function RemoveShiftDialog({
 
   return (
     <ModalDialog
+      busy={isSaving}
+      busyLabel={isDraft ? 'Removing shift...' : 'Opening draft and removing shift...'}
       description={isDraft
         ? 'This removes the block from the current working draft. Publish the draft when the schedule is ready.'
         : 'SygShift will open a working draft first, then remove this block from the draft. The live schedule will not change until the draft is published.'}
@@ -839,6 +846,8 @@ function SchedulerShiftModal({
 
   return (
     <ModalDialog
+      busy={isSaving}
+      busyLabel={isDraft ? 'Saving assignment...' : 'Opening draft and saving assignment...'}
       className="modal-dialog--scheduler-shift"
       description={`${location} · ${format(new Date(`${shiftOperationalDate(shift)}T12:00:00`), 'EEEE, MM/dd/yyyy')} · ${shiftTimeRange(shift)}`}
       onClose={requestClose}
@@ -1093,6 +1102,8 @@ function EmployeeWeekDialog({
 
   return (
     <ModalDialog
+      busy={isSaving}
+      busyLabel={isDraft ? 'Updating schedule...' : 'Opening draft...'}
       description={`${format(weekStart, 'MM/dd/yyyy')} through ${format(weekEnd, 'MM/dd/yyyy')} for ${employeeName}.`}
       onClose={onClose}
       title={`${employeeName} full week`}
@@ -1383,6 +1394,33 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     openShiftForm.credentialOverrideConfirmedKnown,
     openShiftForm.credentialOverrideConfirmedResponsibility,
   )
+
+  function syncOpenScheduleWindows(updatedSchedule: WeeklySchedule | null | undefined) {
+    if (!updatedSchedule) return
+
+    setShiftEditor((current) => {
+      if (!current || current.status !== 'ready' || !current.editableShift) return current
+      const updatedShift = updatedSchedule.shifts.find((shift) => shift.id === current.editableShift?.id)
+      if (!updatedShift) return null
+
+      return {
+        ...current,
+        editableShift: updatedShift,
+        originalShift: updatedShift,
+      }
+    })
+
+    setResolvingShift((current) => {
+      if (!current) return current
+      return updatedSchedule.shifts.find((shift) => shift.id === current.id) ?? null
+    })
+
+    setRemovingShift((current) => {
+      if (!current) return current
+      return updatedSchedule.shifts.find((shift) => shift.id === current.id) ?? null
+    })
+  }
+
   const createOpenShiftMutation = useMutation({
     mutationFn: () => createSupervisorOpenShift({
       weekStartsOn: weekKey,
@@ -1411,8 +1449,10 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           : `Open shift published on revision ${result.schedule_revision}. Guards can see it now.`,
       )
       setOpenShiftForm(defaultOpenShiftForm(weekKey))
+      const refreshedScheduleResult = await scheduleQuery.refetch()
+      syncOpenScheduleWindows(refreshedScheduleResult.data)
+      setSelectedPlannerShiftId(result.shift_id)
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['weekly-schedule', weekKey] }),
         queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
         queryClient.invalidateQueries({ queryKey: ['request-center'] }),
       ])
@@ -1467,6 +1507,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     mutationFn: updateScheduleDraftShift,
     onSuccess: async (updatedSchedule) => {
       queryClient.setQueryData(['weekly-schedule', weekKey], updatedSchedule)
+      syncOpenScheduleWindows(updatedSchedule)
       setBuilderMessage('Draft shift saved. Publish the draft when the week is ready.')
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions', updatedSchedule.id] }),
@@ -1543,6 +1584,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     }) => resolveScheduleReviewShift(input),
     onSuccess: async (result) => {
       setBuilderMessage(`Review item resolved on revision ${result.schedule_revision}.`)
+      setResolvingShift(null)
+      setSelectedPlannerShiftId(result.shift_id)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['weekly-schedule'] }),
         queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
@@ -2006,6 +2049,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
       {canUseScheduler && cancelDraftConfirmOpen && scheduleQuery.data?.status === 'draft' ? (
         <ModalDialog
+          busy={cancelDraftMutation.isPending}
+          busyLabel="Discarding schedule draft..."
           description={`This will discard draft revision ${scheduleQuery.data.revision} for ${format(weekStart, 'MM/dd/yyyy')} - ${format(weekEnd, 'MM/dd/yyyy')}.`}
           onClose={() => setCancelDraftConfirmOpen(false)}
           title="Cancel this schedule draft?"
@@ -2469,6 +2514,16 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           availabilityRecords={availabilityQuery.data?.availability ?? []}
           employees={builderOptionsQuery.data?.employees ?? []}
           focusEmployeeId={focusedEmployeeId}
+          key={[
+            shiftEditor.editableShift.id,
+            shiftEditor.editableShift.starts_at,
+            shiftEditor.editableShift.ends_at,
+            shiftEditor.editableShift.headcount_required,
+            shiftEditor.editableShift.is_open,
+            shiftEditor.editableShift.is_overtime,
+            shiftEditor.editableShift.notes ?? '',
+            shiftEditor.editableShift.assignments.map((assignment) => `${assignment.employee.id}:${assignment.status}`).join(','),
+          ].join('|')}
           mutation={updateDraftShiftMutation}
           onClose={() => setShiftEditor(null)}
           onRequestRemove={(shift) => setRemovingShift(shift)}
@@ -2490,6 +2545,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
       {canUseScheduler && shiftEditor && shiftEditor.status !== 'ready' ? (
         <ModalDialog
+          busy={shiftEditor.status === 'preparing' || ensureDraftMutation.isPending}
+          busyLabel={shiftEditor.status === 'preparing' ? 'Preparing editable schedule block...' : 'Opening draft...'}
           description="SygShift prepares an editable draft before changing published schedule coverage."
           onClose={() => setShiftEditor(null)}
           title="Edit shift"

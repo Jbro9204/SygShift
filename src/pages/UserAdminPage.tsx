@@ -201,11 +201,9 @@ function EmployeeForm({
 function ManageUserModal({
   employee,
   onClose,
-  onEmployeeUpdated,
 }: {
   employee: AdminUser
   onClose: () => void
-  onEmployeeUpdated: (employee: AdminUser) => void
 }) {
   const queryClient = useQueryClient()
   const [temporaryPassword, setTemporaryPassword] = useState('')
@@ -218,7 +216,6 @@ function ManageUserModal({
   const updateMutation = useMutation({
     mutationFn: (payload: EmployeeMutationInput) => updateEmployee({ ...payload, employeeId: employee.id }),
     onSuccess: async (updatedEmployee) => {
-      onEmployeeUpdated(updatedEmployee)
       queryClient.setQueryData<AdminUserDirectory>(['admin-user-directory'], (current) =>
         replaceDirectoryUser(current, updatedEmployee),
       )
@@ -228,7 +225,6 @@ function ManageUserModal({
   const accountStateMutation = useMutation({
     mutationFn: (disabled: boolean) => setEmployeeAccountState(employee.id, disabled),
     onSuccess: async (updatedEmployee) => {
-      onEmployeeUpdated(updatedEmployee)
       queryClient.setQueryData<AdminUserDirectory>(['admin-user-directory'], (current) =>
         replaceDirectoryUser(current, updatedEmployee),
       )
@@ -268,9 +264,32 @@ function ManageUserModal({
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
   })
+  const modalBusy = updateMutation.isPending
+    || accountStateMutation.isPending
+    || revokeTrustedDevicesMutation.isPending
+    || provisionMutation.isPending
+    || loginEmailMutation.isPending
+    || welcomeEmailMutation.isPending
+  const employeeFormKey = [
+    employee.id,
+    employee.firstName,
+    employee.middleName ?? '',
+    employee.lastName,
+    employee.preferredName ?? '',
+    employee.employeeNumber ?? '',
+    employee.jobTitle ?? '',
+    employee.role,
+    employee.employmentType,
+    employee.status,
+    employee.mobilePhone ?? '',
+    employee.personalEmail ?? '',
+    employee.companyEmail ?? '',
+  ].join('|')
 
   return (
     <ModalDialog
+      busy={modalBusy}
+      busyLabel="Updating employee record..."
       description={`${employee.employeeNumber ?? 'Employee ID pending'} · Permanent username: @${employee.username}${employee.jobTitle ? ` · ${employee.jobTitle}` : ''}`}
       onClose={onClose}
       title={`Manage ${employee.displayName}`}
@@ -280,6 +299,7 @@ function ManageUserModal({
           <h3 id="employee-profile-title">Employee profile</h3>
           <EmployeeForm
             employee={employee}
+            key={employeeFormKey}
             onCancel={onClose}
             onSubmit={(payload) => updateMutation.mutate(payload)}
             pending={updateMutation.isPending}
@@ -410,7 +430,7 @@ export function UserAdminPage() {
   const [status, setStatus] = useState<'all' | EmployeeStatus>('active')
   const [account, setAccount] = useState<'all' | 'not_created' | 'active' | 'disabled'>('all')
   const [creating, setCreating] = useState(false)
-  const [selected, setSelected] = useState<AdminUser | null>(null)
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [bulkCredentials, setBulkCredentials] = useState<ProvisioningCredential[]>([])
   const [bulkEmailMessage, setBulkEmailMessage] = useState<string | null>(null)
 
@@ -476,6 +496,7 @@ export function UserAdminPage() {
         && (!term || searchable.includes(term))
     })
   }, [account, role, search, status, users])
+  const selectedUser = selectedUserId ? users.find((user) => user.id === selectedUserId) ?? null : null
 
   return (
     <div className="page page--user-admin">
@@ -568,7 +589,7 @@ export function UserAdminPage() {
                     </div>
                     <div role="cell"><AccountStatusBadge user={user} /></div>
                     <div role="cell">
-                      <button className="secondary-button secondary-button--small" onClick={() => setSelected(user)} type="button">
+                      <button className="secondary-button secondary-button--small" onClick={() => setSelectedUserId(user.id)} type="button">
                         <UserCog aria-hidden="true" size={17} /> Manage
                       </button>
                     </div>
@@ -581,7 +602,13 @@ export function UserAdminPage() {
       )}
 
       {creating ? (
-        <ModalDialog description="A permanent username will be assigned automatically from the employee name." onClose={() => setCreating(false)} title="Add employee">
+        <ModalDialog
+          busy={createMutation.isPending}
+          busyLabel="Creating employee..."
+          description="A permanent username will be assigned automatically from the employee name."
+          onClose={() => setCreating(false)}
+          title="Add employee"
+        >
           <EmployeeForm
             onCancel={() => setCreating(false)}
             onSubmit={(payload) => createMutation.mutate(payload)}
@@ -591,11 +618,22 @@ export function UserAdminPage() {
         </ModalDialog>
       ) : null}
 
-      {selected ? (
+      {selectedUserId && !selectedUser && directoryQuery.isFetching ? (
+        <ModalDialog
+          busy
+          busyLabel="Refreshing employee record..."
+          description="The employee record is being refreshed after the last change."
+          onClose={() => setSelectedUserId(null)}
+          title="Refreshing employee"
+        >
+          <p className="modal-warning">Loading the latest saved employee information.</p>
+        </ModalDialog>
+      ) : null}
+
+      {selectedUser ? (
         <ManageUserModal
-          employee={users.find((user) => user.id === selected.id) ?? selected}
-          onClose={() => setSelected(null)}
-          onEmployeeUpdated={setSelected}
+          employee={selectedUser}
+          onClose={() => setSelectedUserId(null)}
         />
       ) : null}
     </div>
