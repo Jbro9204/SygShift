@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useIsMutating } from '@tanstack/react-query'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LogOut, Menu, ShieldCheck, UserCircle, X } from 'lucide-react'
+import { FileClock, LogOut, Menu, ShieldCheck, UserCircle, X } from 'lucide-react'
 import { navigationGroups } from '../app/navigation'
 import {
   getSessionContext,
@@ -9,8 +9,9 @@ import {
   signOut,
   type SessionContext,
 } from '../data/auth'
+import { shouldShowPayrollExportReminder } from '../lib/payrollReminder'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
-import { formatOperationalDate, formatOperationalTime } from '../lib/time'
+import { formatOperationalDate, formatOperationalTime, lastCompletedPayrollWeek } from '../lib/time'
 
 const INACTIVITY_WARNING_MS = 8 * 60 * 1000
 const INACTIVITY_LOGOUT_MS = 10 * 60 * 1000
@@ -44,6 +45,8 @@ export function AppShell() {
   const activeMutationCount = useIsMutating()
   const location = useLocation()
   const navigate = useNavigate()
+  const payrollReminderWeek = lastCompletedPayrollWeek()
+  const showPayrollReminder = shouldShowPayrollExportReminder(sessionContext)
 
   const visibleNavigationGroups = navigationGroups
     .map((group) => ({
@@ -358,6 +361,26 @@ export function AppShell() {
             You will be signed out for inactivity in {Math.ceil(logoutWarningRemaining / 60)} minute
             {Math.ceil(logoutWarningRemaining / 60) === 1 ? '' : 's'}. Move, tap, or type to stay signed in.
           </div>
+        ) : null}
+
+        {showPayrollReminder ? (
+          <section className="payroll-export-reminder" aria-label="Weekly payroll export reminder">
+            <div className="payroll-export-reminder__icon">
+              <FileClock aria-hidden="true" size={24} />
+            </div>
+            <div className="payroll-export-reminder__copy">
+              <strong>Payroll export reminder</strong>
+              <div className="payroll-export-reminder__ticker">
+                <span>
+                  Review, lock, and export time for {payrollReminderWeek.fromLabel} through {payrollReminderWeek.throughLabel}
+                  {' '}so it can be sent to HR/Finance.
+                </span>
+              </div>
+            </div>
+            <Link className="payroll-export-reminder__action" to="/time">
+              Open Time & Attendance
+            </Link>
+          </section>
         ) : null}
 
         <main id="main-content" tabIndex={-1}>

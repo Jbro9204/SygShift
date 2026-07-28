@@ -37,3 +37,35 @@ export function formatOperationalTime(now = new Date()): string {
     timeZoneName: 'short',
   }).format(now)
 }
+
+function addOperationalDays(date: Date, days: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days, 12)
+}
+
+function formatUsDate(date: Date): string {
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
+}
+
+export function lastCompletedPayrollWeek(now = new Date()): {
+  fromDate: Date
+  fromLabel: string
+  throughDate: Date
+  throughLabel: string
+} {
+  const today = operationalToday(now)
+  const dayOfWeek = today.getDay()
+  const daysSinceCompletedSaturday = dayOfWeek === 6 ? 7 : (dayOfWeek - 6 + 7) % 7
+  const throughDate = addOperationalDays(today, -daysSinceCompletedSaturday)
+  const fromDate = addOperationalDays(throughDate, -6)
+
+  return {
+    fromDate,
+    fromLabel: formatUsDate(fromDate),
+    throughDate,
+    throughLabel: formatUsDate(throughDate),
+  }
+}
