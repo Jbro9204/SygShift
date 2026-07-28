@@ -157,18 +157,20 @@ begin
 
   after_record := private.admin_user_record(target_employee_id);
 
-  insert into private.audit_log (
-    actor_auth_id,
-    actor_employee_id,
+  insert into private.audit_events (
+    auth_user_id,
+    employee_id,
+    request_id,
     schema_name,
     table_name,
-    action,
-    record_id,
-    before_data,
-    after_data
+    operation,
+    row_id,
+    old_record,
+    new_record
   ) values (
     (select auth.uid()),
     actor_id,
+    nullif(current_setting('request.headers', true), '')::jsonb ->> 'x-request-id',
     'public',
     'employees',
     'UPDATE',
