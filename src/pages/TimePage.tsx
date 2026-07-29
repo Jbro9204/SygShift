@@ -22,6 +22,7 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import {
   activeTimeState,
   createPayrollExportBatch,
+  getOwnTimekeepingReview,
   getPayrollExportHistory,
   getTimeMaintenance,
   getTimekeepingDashboard,
@@ -814,6 +815,109 @@ function PayrollRulesPanel({ review }: { review: TimekeepingReview }) {
   )
 }
 
+function MyTimeHistory({ dashboard, defaultDate }: { dashboard: TimekeepingDashboard; defaultDate: string }) {
+  const defaultPayrollWeek = useMemo(() => payrollWeekRange(defaultDate), [defaultDate])
+  const [fromDate, setFromDate] = useState(defaultPayrollWeek.fromDate)
+  const [throughDate, setThroughDate] = useState(defaultPayrollWeek.throughDate)
+  const reviewQuery = useQuery({
+    queryKey: ['my-timekeeping-review', dashboard.employee.id, fromDate, throughDate],
+    queryFn: () => getOwnTimekeepingReview({
+      employeeId: dashboard.employee.id,
+      fromDate,
+      throughDate,
+    }),
+  })
+  const review = reviewQuery.data
+
+  return (
+    <section className="my-time-history" aria-labelledby="my-time-history-title">
+      <div className="my-time-history__heading">
+        <div>
+          <p className="eyebrow">My time</p>
+          <h2 id="my-time-history-title">My Time & Attendance</h2>
+          <p>
+            View your own pay-period time, breaks, overtime, salary defaults, and pending corrections.
+            Team payroll tools stay separate for supervisors and admins.
+          </p>
+        </div>
+        <div className="time-review-range" aria-label="My time date range">
+          <label><span>From</span><input max={throughDate} onChange={(event) => setFromDate(event.target.value)} type="date" value={fromDate} /></label>
+          <label><span>Through</span><input min={fromDate} onChange={(event) => setThroughDate(event.target.value)} type="date" value={throughDate} /></label>
+        </div>
+      </div>
+
+      {reviewQuery.isPending ? (
+        <DataStatePanel icon={FileClock} title="Loading your time"><p>Calculating your time records for the selected range.</p></DataStatePanel>
+      ) : reviewQuery.isError ? (
+        <DataStatePanel icon={ShieldAlert} title="Your time could not be loaded" tone="error"><p>{reviewQuery.error.message}</p></DataStatePanel>
+      ) : review ? (
+        <>
+          <section className="my-time-history__metrics" aria-label="My time totals">
+            <article>
+              <span>Paid</span>
+              <strong>{payrollHours(review.summary.paidMinutes)} hr</strong>
+              <small>Total paid time in this range.</small>
+            </article>
+            <article>
+              <span>Regular</span>
+              <strong>{payrollHours(review.summary.regularMinutes)} hr</strong>
+              <small>Regular payroll hours.</small>
+            </article>
+            <article className={review.summary.overtimeMinutes ? 'import-metric--attention' : ''}>
+              <span>OT</span>
+              <strong>{payrollHours(review.summary.overtimeMinutes)} hr</strong>
+              <small>Daily or weekly overtime.</small>
+            </article>
+            <article className={review.summary.pendingCorrectionCount ? 'import-metric--attention' : ''}>
+              <span>Corrections</span>
+              <strong>{review.summary.pendingCorrectionCount}</strong>
+              <small>Waiting for supervisor review.</small>
+            </article>
+          </section>
+
+          {review.rows.length === 0 ? (
+            <DataStatePanel icon={FileClock} title="No time records in this range">
+              <p>Your punches or salary default will appear here once time exists for the selected dates.</p>
+            </DataStatePanel>
+          ) : (
+            <div className="my-time-history__list" aria-label="My time records">
+              {review.rows.map((row) => (
+                <article className="my-time-row" key={`${row.employeeId}-${row.shiftId ?? row.rowKind}-${row.operationalDate}`}>
+                  <div className="my-time-row__date">
+                    <strong>{formatDateOnly(row.operationalDate)}</strong>
+                    <span>{row.rowKind === 'salary_default' ? 'Salary default' : row.locationName}</span>
+                  </div>
+                  <div>
+                    <strong>{row.postName ?? row.eventName ?? row.locationName}</strong>
+                    <span>
+                      {row.firstClockIn ? formatTime(row.firstClockIn, row.timeZone) : '—'}
+                      {' '}to{' '}
+                      {row.lastClockOut ? formatTime(row.lastClockOut, row.timeZone) : '—'}
+                    </span>
+                    {row.payrollNotes.length > 0 ? <small>{row.payrollNotes.join(' ')}</small> : null}
+                  </div>
+                  <div className="my-time-row__hours">
+                    <strong>{payrollHours(row.paidMinutes)} hr</strong>
+                    <span>{row.breakMinutes} break min</span>
+                  </div>
+                  <div className="my-time-row__status">
+                    {row.payrollReady ? (
+                      <span className="payroll-status payroll-status--ready">Ready</span>
+                    ) : (
+                      <span className="payroll-status payroll-status--hold">Needs review</span>
+                    )}
+                    {row.exceptionCodes.length > 0 ? <small>{row.exceptionCodes.map(exceptionLabel).join(', ')}</small> : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </>
+      ) : null}
+    </section>
+  )
+}
+
 function PayrollReviewTable({
   canManageTime,
   rows,
@@ -1237,14 +1341,11 @@ function LiveTimekeeping() {
 
   const dashboard = dashboardQuery.data
   const session = sessionQuery.data
-  const canReviewPayroll = hasOperationsTimeRole(dashboard.employee.role)
-    || hasTimePermission(session, 'time.view')
-    || hasTimePermission(session, 'time.manage')
-    || hasTimePermission(session, 'time.export_payroll')
   const canManageTime = hasOperationsTimeRole(dashboard.employee.role)
     || hasTimePermission(session, 'time.manage')
   const canExportPayroll = hasOperationsTimeRole(dashboard.employee.role)
     || hasTimePermission(session, 'time.export_payroll')
+  const canReviewPayroll = canManageTime || canExportPayroll
 
   return (
     <>
@@ -1290,6 +1391,8 @@ function LiveTimekeeping() {
       </div>
 
       <RecentEvents events={dashboard.recentEvents} />
+
+      <MyTimeHistory dashboard={dashboard} defaultDate={operationalDate} />
 
       {canReviewPayroll ? (
         <>

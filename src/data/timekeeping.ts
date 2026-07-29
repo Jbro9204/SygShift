@@ -353,6 +353,52 @@ export async function getTimekeepingReview(input: {
   return parseTimekeepingReview(data)
 }
 
+function summarizeTimekeepingRows(rows: TimekeepingReviewRow[], pendingCorrections: PendingCorrection[]): TimekeepingReview['summary'] {
+  return rows.reduce<TimekeepingReview['summary']>((summary, row) => {
+    summary.rowCount += 1
+    if (row.payrollReady) summary.readyCount += 1
+    else summary.exceptionCount += 1
+    summary.grossMinutes += row.grossMinutes
+    summary.paidMinutes += row.paidMinutes
+    summary.regularMinutes += row.regularMinutes
+    summary.overtimeMinutes += row.overtimeMinutes
+    summary.timeOffMinutes += row.timeOffMinutes
+    summary.salaryDefaultMinutes += row.salaryDefaultMinutes
+    return summary
+  }, {
+    exceptionCount: 0,
+    grossMinutes: 0,
+    overtimeMinutes: 0,
+    paidMinutes: 0,
+    pendingCorrectionCount: pendingCorrections.length,
+    readyCount: 0,
+    regularMinutes: 0,
+    rowCount: 0,
+    salaryDefaultMinutes: 0,
+    timeOffMinutes: 0,
+  })
+}
+
+export async function getOwnTimekeepingReview(input: {
+  employeeId: string
+  fromDate: string
+  throughDate: string
+}): Promise<TimekeepingReview> {
+  const review = await getTimekeepingReview({
+    fromDate: input.fromDate,
+    throughDate: input.throughDate,
+  })
+  const rows = review.rows.filter((row) => row.employeeId === input.employeeId)
+  const pendingCorrections = review.pendingCorrections.filter((correction) => correction.employeeId === input.employeeId)
+
+  return {
+    ...review,
+    pendingCorrections,
+    rows,
+    summary: summarizeTimekeepingRows(rows, pendingCorrections),
+  }
+}
+
 export async function getPayrollRules(): Promise<PayrollRules> {
   const { data, error } = await getSupabaseClient().rpc('get_payroll_rules')
   if (error) throw new Error(error.message || 'Payroll rules could not be loaded. MFA is required.')
