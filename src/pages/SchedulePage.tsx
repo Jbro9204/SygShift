@@ -1521,8 +1521,25 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       'schedule.delete_shift',
       'schedule.override_warnings',
     ])
+  const canViewTeamSchedule = sessionHasOperationsRole(sessionQuery.data)
+    || sessionHasAnyPermission(sessionQuery.data, [
+      'schedule.view',
+      'scheduler.view',
+      'scheduler.manage',
+      'schedule.manage',
+      'schedule.publish',
+      'schedule.delete_shift',
+      'schedule.override_warnings',
+    ])
   const canUseScheduler = canBuildSchedule && isSchedulerHome
   const canEditScheduler = canManageSchedule && isSchedulerHome
+  useEffect(() => {
+    if (canViewTeamSchedule) return
+    setScheduleView('employee')
+    setEmployeeFilter('all')
+    setSiteFilter('all')
+    setReviewOnly(false)
+  }, [canViewTeamSchedule])
   const builderOptionsQuery = useQuery({
     queryKey: ['schedule-builder-options'],
     queryFn: getScheduleBuilderOptions,
@@ -3438,7 +3455,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         </div>
 
         <div className="schedule-filters">
-          {scheduleQuery.data ? (
+          {scheduleQuery.data && canViewTeamSchedule ? (
             <div className="segmented-control" aria-label="Schedule view">
               <button
                 className={scheduleView === 'site' ? 'is-active' : ''}
@@ -3461,12 +3478,12 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             <span className="visually-hidden">Search schedule</span>
             <input
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search sites or people"
+              placeholder={canViewTeamSchedule ? 'Search sites or people' : 'Search your schedule'}
               type="search"
               value={search}
             />
           </label>
-          {scheduleView === 'employee' && scheduleQuery.data ? (
+          {canViewTeamSchedule && scheduleView === 'employee' && scheduleQuery.data ? (
             <label>
               <span className="visually-hidden">Filter by employee</span>
               <select
@@ -3478,7 +3495,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 {employeeFilterOptions.map((employee) => <option value={employee.id} key={employee.id}>{employee.name}</option>)}
               </select>
             </label>
-          ) : (
+          ) : canViewTeamSchedule ? (
           <label>
             <span className="visually-hidden">Filter by site</span>
             <select
@@ -3490,8 +3507,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               {(rows.length > 0 ? rows : importedRows).map((row) => <option value={row.id} key={row.id}>{row.name}</option>)}
             </select>
           </label>
-          )}
-          {reviewNeededCount > 0 ? (
+          ) : null}
+          {canViewTeamSchedule && reviewNeededCount > 0 ? (
             <label className="check-field schedule-review-filter">
               <input
                 checked={reviewOnly}

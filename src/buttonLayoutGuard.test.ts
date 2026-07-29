@@ -9,7 +9,9 @@ const appCss = readFileSync(join(root, 'src', 'App.css'), 'utf8')
 const accessControlPage = readFileSync(join(root, 'src', 'pages', 'AccessControlPage.tsx'), 'utf8')
 const availabilityPage = readFileSync(join(root, 'src', 'pages', 'AvailabilityPage.tsx'), 'utf8')
 const licensingCenterPage = readFileSync(join(root, 'src', 'pages', 'LicensingCenterPage.tsx'), 'utf8')
+const navigation = readFileSync(join(root, 'src', 'app', 'navigation.ts'), 'utf8')
 const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
+const employeeSelfScheduleScopeMigration = readFileSync(join(root, 'supabase', 'migrations', '20260729191000_employee_self_schedule_scope.sql'), 'utf8')
 const userAdminPage = readFileSync(join(root, 'src', 'pages', 'UserAdminPage.tsx'), 'utf8')
 
 function blockFor(selector: string): string {
@@ -150,6 +152,17 @@ describe('button layout guardrails', () => {
     expect(dangerBlock).toContain('min-height: 46px')
     expect(dangerBlock).toContain('border-radius: 8px')
     expect(dangerBlock).toContain('linear-gradient')
+  })
+
+  it('keeps employee self-schedule access visible but backend scoped', () => {
+    expect(navigation).toContain("label: 'Schedule', path: '/schedule', icon: CalendarDays, roles: ALL_EMPLOYEE_ROLES")
+    expect(schedulePage).toContain('const canViewTeamSchedule = sessionHasOperationsRole(sessionQuery.data)')
+    expect(schedulePage).toContain("setScheduleView('employee')")
+    expect(schedulePage).toContain("placeholder={canViewTeamSchedule ? 'Search sites or people' : 'Search your schedule'}")
+
+    expect(employeeSelfScheduleScopeMigration).toContain('viewer_assignment.employee_id = viewer_employee_id')
+    expect(employeeSelfScheduleScopeMigration).not.toContain('or not shift.requires_armed')
+    expect(employeeSelfScheduleScopeMigration).toContain('Operations roles see team coverage')
   })
 
   it('keeps recently deleted user retention compact and clearly labeled', () => {

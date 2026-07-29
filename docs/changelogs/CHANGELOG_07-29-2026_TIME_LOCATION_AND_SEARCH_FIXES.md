@@ -22,6 +22,9 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 - Fixed the root stale-draft scheduler issue where an older draft revision could hide a newer published revision in the UI.
 - Archived the stale 08/02/2026 draft revision that was causing Zach Ward to show 0 visible shifts while the database correctly blocked overlapping assignments.
 - Fixed the Remove from draft destructive action button so it uses the same professional SygShift button system instead of rendering as a thin raw red browser-style button.
+- Made Schedule visible to every active employee role so hourly employees can always view their own schedule without needing a manually added permission.
+- Updated the normal employee Schedule screen to default into a simple self-schedule view instead of showing team/site controls that do not apply to them.
+- Added a regression guard for employee self-schedule access so future permission or navigation work does not accidentally hide Schedule again.
 
 ## Database changes
 
@@ -34,6 +37,10 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 - Updated `public.get_weekly_schedule_payload(...)` so the latest visible schedule revision wins instead of any draft automatically overriding newer published data.
 - Updated `public.ensure_schedule_draft(...)` so stale older drafts are archived before opening or creating a working draft.
 - Marked migration `20260729173000` as applied in Supabase after applying it directly.
+- Added migration `20260729191000_employee_self_schedule_scope.sql`.
+- Updated `public.get_weekly_schedule_payload(...)` so Admin, Supervisor, Scheduler, and Dispatcher roles keep team schedule visibility while regular employees only receive shifts assigned to their own employee record.
+- Removed the older unarmed-shift visibility path from normal employee schedule access so “can view my schedule” does not expose company-wide unarmed coverage.
+- Marked migration `20260729191000` as applied in Supabase after applying it directly.
 
 ## QA completed
 
@@ -43,6 +50,7 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 - Follow-up scheduler fix passed: 28 files, 105 tests.
 - Multi-day retry fix passed: 28 files, 106 tests.
 - Destructive button style fix passed: 28 files, 107 tests.
+- Employee self-schedule visibility fix passed: 28 files, 108 tests.
 - Production build passed.
 
 ## Notes
