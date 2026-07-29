@@ -7,6 +7,7 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 ## Completed
 
 - Cleaned up the guard search field styling so it no longer appears like a box inside another box.
+- Added a stronger modal-specific guard search override after screenshot review confirmed the generic form-grid input styling was still creating an inner input border.
 - Reworked the punch correction editor layout so the New Date and New Time fields stay aligned, readable, and contained.
 - Added a dedicated Fix Location workflow for employee punches.
 - Added a permanent database-backed location maintenance record for punches that were showing as Unscheduled Location.
