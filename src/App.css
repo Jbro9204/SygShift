@@ -3000,6 +3000,11 @@
   border-radius: 9px;
 }
 
+.scheduler-employee-search > span,
+.scheduler-employee-search--inline {
+  box-shadow: none;
+}
+
 .scheduler-employee-search input,
 .permission-search input {
   width: 100%;
@@ -3009,7 +3014,18 @@
   color: var(--ink);
   background: transparent;
   border: 0;
+  outline: 0;
   font: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.scheduler-employee-search input[type='search']::-webkit-search-decoration,
+.scheduler-employee-search input[type='search']::-webkit-search-cancel-button,
+.scheduler-employee-search input[type='search']::-webkit-search-results-button,
+.scheduler-employee-search input[type='search']::-webkit-search-results-decoration {
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .scheduler-employee-search input:focus,
@@ -3026,6 +3042,10 @@
 
 .scheduler-employee-search--inline {
   font-size: 13px;
+}
+
+.schedule-builder--modal .scheduler-employee-search--inline {
+  margin-top: 6px;
 }
 
 .scheduler-select-empty,
@@ -8420,7 +8440,7 @@
 
 .time-correction-editor {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(150px, 0.35fr) minmax(140px, 0.3fr) minmax(140px, 0.3fr) minmax(260px, 0.8fr) minmax(180px, auto);
+  grid-template-columns: minmax(240px, 1fr) minmax(160px, 0.35fr) minmax(280px, 0.65fr) minmax(260px, 0.8fr) minmax(180px, auto);
   align-items: end;
   gap: 12px;
   margin: 18px 22px;
@@ -8429,6 +8449,29 @@
   border: 1px solid #dcc79f;
   border-left: 4px solid #a46b1f;
   border-radius: 10px;
+}
+
+.time-correction-editor__fields {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.time-correction-editor__fields label,
+.time-correction-editor__location {
+  min-width: 0;
+}
+
+.time-correction-editor__location {
+  align-self: end;
+}
+
+.time-correction-editor__fields input,
+.time-correction-editor__location input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .time-correction-editor__mode {
@@ -9875,6 +9918,7 @@
 
   .time-review-range,
   .time-review-metrics,
+  .time-correction-editor__fields,
   .payroll-rules-panel {
     grid-template-columns: 1fr;
   }

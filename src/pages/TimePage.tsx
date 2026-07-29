@@ -34,6 +34,7 @@ import {
   reviewTimeEventCorrection,
   supervisorCorrectTimeEvent,
   supervisorRecordTimeEvent,
+  supervisorUpdateTimeEventLocation,
   verifiedTimekeepingBaseline,
   type PendingCorrection,
   type PayrollExportBatch,
@@ -252,9 +253,10 @@ function TimeMaintenanceWorkbench({
   const [addShiftId, setAddShiftId] = useState<string | null>(null)
   const [addContext, setAddContext] = useState<string | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<TimeMaintenanceEvent | null>(null)
-  const [correctionMode, setCorrectionMode] = useState<'adjust' | 'void'>('adjust')
+  const [correctionMode, setCorrectionMode] = useState<'adjust' | 'void' | 'location'>('adjust')
   const [correctionDate, setCorrectionDate] = useState(defaultDate)
   const [correctionTime, setCorrectionTime] = useState('08:00')
+  const [correctionLocation, setCorrectionLocation] = useState('')
   const [correctionReason, setCorrectionReason] = useState('')
   const maintenanceQuery = useQuery({
     queryKey: ['time-maintenance', fromDate, throughDate, employeeId || null],
@@ -282,9 +284,17 @@ function TimeMaintenanceWorkbench({
       await refreshTimeQueries()
     },
   })
-  const correctionMutation = useMutation({
+  const correctionMutation = useMutation<unknown, Error>({
     mutationFn: () => {
       if (!selectedEvent) throw new Error('Select a time event first.')
+      if (correctionMode === 'location') {
+        return supervisorUpdateTimeEventLocation({
+          locationName: correctionLocation.trim(),
+          reason: correctionReason.trim(),
+          timeEventId: selectedEvent.id,
+          timeZone: selectedEvent.timeZone,
+        })
+      }
       return supervisorCorrectTimeEvent({
         reason: correctionReason.trim(),
         replacementTime: correctionMode === 'adjust' ? zonedDateTimeToIso(correctionDate, correctionTime) : null,
@@ -294,6 +304,7 @@ function TimeMaintenanceWorkbench({
     },
     onSuccess: async () => {
       setSelectedEvent(null)
+      setCorrectionLocation('')
       setCorrectionReason('')
       await refreshTimeQueries()
     },
@@ -302,7 +313,10 @@ function TimeMaintenanceWorkbench({
   const events = maintenance?.events ?? []
   const employees = maintenance?.employees ?? []
   const canAdd = addEmployeeId !== '' && addReason.trim().length > 0 && !addMutation.isPending
-  const canCorrect = selectedEvent !== null && correctionReason.trim().length > 0 && !correctionMutation.isPending
+  const canCorrect = selectedEvent !== null
+    && correctionReason.trim().length > 0
+    && !correctionMutation.isPending
+    && (correctionMode !== 'location' || correctionLocation.trim().length > 0)
   const manualCount = events.filter((event) => event.source === 'supervisor').length
   const voidedCount = events.filter((event) => event.voided).length
   const pendingCount = events.filter((event) => event.pendingCorrectionCount > 0).length
@@ -318,11 +332,12 @@ function TimeMaintenanceWorkbench({
     })
   }, [focusRequest])
 
-  function beginCorrection(event: TimeMaintenanceEvent, mode: 'adjust' | 'void') {
+  function beginCorrection(event: TimeMaintenanceEvent, mode: 'adjust' | 'void' | 'location') {
     setSelectedEvent(event)
     setCorrectionMode(mode)
     setCorrectionDate(dateInputValue(event.effectiveAt))
     setCorrectionTime(timeInputValue(event.effectiveAt))
+    setCorrectionLocation(event.locationName === 'Unscheduled' || event.locationName === 'Unscheduled Location' ? '' : event.locationName)
     setCorrectionReason('')
   }
 
@@ -471,12 +486,26 @@ function TimeMaintenanceWorkbench({
               <div className="time-correction-editor__mode" role="radiogroup" aria-label="Correction type">
                 <label><input checked={correctionMode === 'adjust'} onChange={() => setCorrectionMode('adjust')} type="radio" /> Change time</label>
                 <label><input checked={correctionMode === 'void'} onChange={() => setCorrectionMode('void')} type="radio" /> Void punch</label>
+                <label><input checked={correctionMode === 'location'} onChange={() => setCorrectionMode('location')} type="radio" /> Fix location</label>
               </div>
               {correctionMode === 'adjust' ? (
-                <>
+                <div className="time-correction-editor__fields">
                   <label><span>New date</span><input onChange={(event) => setCorrectionDate(event.target.value)} required type="date" value={correctionDate} /></label>
                   <label><span>New time / Mountain</span><input onChange={(event) => setCorrectionTime(event.target.value)} required type="time" value={correctionTime} /></label>
-                </>
+                </div>
+              ) : null}
+              {correctionMode === 'location' ? (
+                <label className="time-correction-editor__location">
+                  <span>Correct location</span>
+                  <input
+                    maxLength={180}
+                    onChange={(event) => setCorrectionLocation(event.target.value)}
+                    placeholder="Example: Cobalt / Executive Protection"
+                    required
+                    type="text"
+                    value={correctionLocation}
+                  />
+                </label>
               ) : null}
               <label className="time-maintenance-add__reason">
                 <span>Reason</span>
@@ -492,7 +521,7 @@ function TimeMaintenanceWorkbench({
               <div className="time-correction-editor__actions">
                 <button className="secondary-button" onClick={() => setSelectedEvent(null)} type="button">Cancel</button>
                 <button className={correctionMode === 'void' ? 'danger-primary' : 'primary-action'} disabled={!canCorrect} type="submit">
-                  {correctionMutation.isPending ? 'Saving...' : correctionMode === 'void' ? 'Void punch' : 'Save corrected time'}
+                  {correctionMutation.isPending ? 'Saving...' : correctionMode === 'void' ? 'Void punch' : correctionMode === 'location' ? 'Save location' : 'Save corrected time'}
                 </button>
               </div>
             </form>
@@ -546,6 +575,9 @@ function TimeMaintenanceWorkbench({
                           </button>
                           <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'adjust')} type="button">
                             <Pencil aria-hidden="true" size={15} /> Change
+                          </button>
+                          <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'location')} type="button">
+                            Location
                           </button>
                           <button className="danger-secondary" disabled={event.voided} onClick={() => beginCorrection(event, 'void')} type="button">
                             Void

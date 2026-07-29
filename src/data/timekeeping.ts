@@ -168,7 +168,7 @@ const timeMaintenanceEventSchema = z.object({
   pendingCorrectionCount: z.number().int().nonnegative(),
   maintenanceNoteCount: z.number().int().nonnegative(),
   latestNote: z.string().nullable(),
-  latestAction: z.enum(['manual_add', 'time_adjust', 'void']).nullable(),
+  latestAction: z.enum(['manual_add', 'time_adjust', 'void', 'location_update']).nullable(),
   siteName: z.string().nullable(),
   siteCode: z.string().nullable(),
   postName: z.string().nullable(),
@@ -466,6 +466,34 @@ export async function supervisorCorrectTimeEvent(input: {
   })
   if (error) throw new Error(error.message || 'The time event could not be corrected.')
   return correctionResultSchema.parse(data)
+}
+
+export async function supervisorUpdateTimeEventLocation(input: {
+  timeEventId: string
+  locationName: string
+  timeZone?: string | null
+  reason: string
+}): Promise<{
+  id: string
+  timeEventId: string
+  locationName: string
+  timeZone: string
+  reason: string
+}> {
+  const { data, error } = await getSupabaseClient().rpc('supervisor_update_time_event_location', {
+    target_location_name: input.locationName,
+    target_reason: input.reason,
+    target_time_event_id: input.timeEventId,
+    target_time_zone: input.timeZone ?? 'America/Denver',
+  })
+  if (error) throw new Error(error.message || 'The punch location could not be updated.')
+  return z.object({
+    id: z.string().uuid(),
+    timeEventId: z.string().uuid(),
+    locationName: z.string(),
+    timeZone: z.string(),
+    reason: z.string(),
+  }).parse(data)
 }
 
 export async function createPayrollExportBatch(input: {
