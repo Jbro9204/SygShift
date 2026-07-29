@@ -21,6 +21,7 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 - Confirmed Zach Ward already had ADMIN shifts on 08/03/2026 and 08/04/2026 in the database; the new scheduler behavior prevents that real saved data from looking like a broken overlap error on retry.
 - Fixed the root stale-draft scheduler issue where an older draft revision could hide a newer published revision in the UI.
 - Archived the stale 08/02/2026 draft revision that was causing Zach Ward to show 0 visible shifts while the database correctly blocked overlapping assignments.
+- Fixed the Remove from draft destructive action button so it uses the same professional SygShift button system instead of rendering as a thin raw red browser-style button.
 
 ## Database changes
 
@@ -41,6 +42,7 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 - Full test suite passed: 28 files, 104 tests.
 - Follow-up scheduler fix passed: 28 files, 105 tests.
 - Multi-day retry fix passed: 28 files, 106 tests.
+- Destructive button style fix passed: 28 files, 107 tests.
 - Production build passed.
 
 ## Notes

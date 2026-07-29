@@ -908,7 +908,7 @@ function RemoveShiftDialog({
         {mutationError ? <p className="form-feedback form-feedback--error" role="alert">{mutationError.message}</p> : null}
         <div className="modal-actions">
           <button className="secondary-button" disabled={isSaving} onClick={onClose} type="button">Keep shift</button>
-          <button className="danger-primary" disabled={isSaving} type="submit">
+          <button className="primary-action danger-primary" disabled={isSaving} type="submit">
             {isSaving ? 'Removing...' : isDraft ? 'Remove from draft' : 'Open draft & remove'}
           </button>
         </div>

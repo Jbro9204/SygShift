@@ -6104,14 +6104,28 @@
 }
 
 .danger-primary {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 18px;
   color: #fffaf8;
-  background: #a84d40;
+  font: inherit;
+  font-weight: 900;
+  line-height: 1.15;
+  text-align: center;
+  text-decoration: none;
+  white-space: normal;
+  background: linear-gradient(135deg, #b85a4b 0%, #984034 100%);
+  border: 1px solid #84382e;
   border-color: #84382e;
+  border-radius: 8px;
   box-shadow: 0 3px 0 #753027;
 }
 
 .danger-primary:hover {
-  background: #b95a4c;
+  background: linear-gradient(135deg, #c36455 0%, #a3473a 100%);
   box-shadow: 0 4px 0 #753027;
 }
 

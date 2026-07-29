@@ -142,6 +142,16 @@ describe('button layout guardrails', () => {
     expect(schedulePage).toContain('Already assigned dates skipped')
   })
 
+  it('keeps destructive scheduler modal actions on the professional button system', () => {
+    expect(schedulePage).toContain('className="primary-action danger-primary"')
+
+    const dangerBlock = blockFor('.danger-primary')
+    expect(dangerBlock).toContain('display: inline-flex')
+    expect(dangerBlock).toContain('min-height: 46px')
+    expect(dangerBlock).toContain('border-radius: 8px')
+    expect(dangerBlock).toContain('linear-gradient')
+  })
+
   it('keeps recently deleted user retention compact and clearly labeled', () => {
     expect(userAdminPage).not.toContain('Admin retention')
     expect(userAdminPage).toContain('<p className="eyebrow">Audit</p>')
