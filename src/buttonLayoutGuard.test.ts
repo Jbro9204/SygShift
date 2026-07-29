@@ -151,9 +151,12 @@ describe('button layout guardrails', () => {
 
     const toolbarBlock = topLevelBlockFor('.user-admin-toolbar')
     expect(toolbarBlock).toContain('display: grid')
-    expect(toolbarBlock).toContain('repeat(3, minmax(140px, 170px))')
-    expect(toolbarBlock).toContain('auto auto')
+    expect(toolbarBlock).toContain('repeat(4, minmax(132px, 165px))')
+    expect(toolbarBlock).toContain('max-content')
 
+    expect(userAdminPage).toContain('className="user-admin-toolbar__actions"')
+    expect(blockFor('.user-admin-toolbar__actions')).toContain('display: flex')
+    expect(blockFor('.user-admin-toolbar__actions')).toContain('flex-wrap: wrap')
     expect(blockFor('.user-admin-toolbar .select-field')).toContain('width: 100%')
     expect(blockFor('.user-admin-toolbar .select-field select')).toContain('min-width: 0')
     expect(blockFor('.user-admin-toolbar .primary-action,\n.user-admin-toolbar .secondary-button')).toContain('min-width: max-content')

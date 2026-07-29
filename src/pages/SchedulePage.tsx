@@ -54,6 +54,9 @@ interface OpenShiftFormState {
   isOvertime: boolean
   notes: string
   publishAnnouncement: boolean
+  repeatEnabled: boolean
+  repeatThroughDate: string
+  repeatWeekdays: number[]
   availabilityOverrideNote: string
   credentialOverrideNote: string
   credentialOverrideConfirmedKnown: boolean
@@ -102,11 +105,57 @@ function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
     isOvertime: false,
     notes: '',
     publishAnnouncement: true,
+    repeatEnabled: false,
+    repeatThroughDate: addDays(new Date(`${weekKey}T00:00:00`), 6).toISOString().slice(0, 10),
+    repeatWeekdays: [new Date(`${weekKey}T00:00:00`).getDay()],
     availabilityOverrideNote: '',
     credentialOverrideNote: '',
     credentialOverrideConfirmedKnown: false,
     credentialOverrideConfirmedResponsibility: false,
   }
+}
+
+const weekdayOptions = [
+  { value: 0, shortLabel: 'Sun', label: 'Sunday' },
+  { value: 1, shortLabel: 'Mon', label: 'Monday' },
+  { value: 2, shortLabel: 'Tue', label: 'Tuesday' },
+  { value: 3, shortLabel: 'Wed', label: 'Wednesday' },
+  { value: 4, shortLabel: 'Thu', label: 'Thursday' },
+  { value: 5, shortLabel: 'Fri', label: 'Friday' },
+  { value: 6, shortLabel: 'Sat', label: 'Saturday' },
+]
+
+function dateKeyToLocalDate(dateKey: string): Date {
+  return new Date(`${dateKey}T00:00:00`)
+}
+
+function localDateToDateKey(date: Date): string {
+  return format(date, 'yyyy-MM-dd')
+}
+
+function selectedOpenShiftDateKeys(form: OpenShiftFormState, weekStartsOn: string, weekEndsOn: string): string[] {
+  const startKey = form.shiftDate || weekStartsOn
+  if (!form.repeatEnabled) return [startKey]
+
+  const endKey = form.repeatThroughDate && form.repeatThroughDate >= startKey
+    ? form.repeatThroughDate > weekEndsOn ? weekEndsOn : form.repeatThroughDate
+    : startKey
+  const selectedWeekdays = new Set(
+    form.repeatWeekdays.length ? form.repeatWeekdays : [dateKeyToLocalDate(startKey).getDay()],
+  )
+  const dates: string[] = []
+
+  for (
+    let current = dateKeyToLocalDate(startKey);
+    localDateToDateKey(current) <= endKey;
+    current = addDays(current, 1)
+  ) {
+    if (selectedWeekdays.has(current.getDay())) {
+      dates.push(localDateToDateKey(current))
+    }
+  }
+
+  return dates.length ? dates : [startKey]
 }
 
 function builderEmployeeName(employee: ScheduleBuilderEmployee): string {
@@ -1367,6 +1416,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
   const weekEnd = days[6]
   const weekKey = format(weekStart, 'yyyy-MM-dd')
+  const weekEndKey = format(weekEnd, 'yyyy-MM-dd')
   const currentOperationalDateKey = format(today, 'yyyy-MM-dd')
   const schedulerWorkDays = days
   const [openShiftEmployeeSearch, setOpenShiftEmployeeSearch] = useState('')
@@ -1449,13 +1499,29 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     return map
   }, [staffingSuggestionsQuery.data])
   const selectedPost = builderOptionsQuery.data?.posts.find((post) => post.id === openShiftForm.postId)
-  const openShiftAvailabilityConflict = findAvailabilityConflict(
-    availabilityQuery.data?.availability ?? [],
-    openShiftForm.employeeId,
-    openShiftForm.shiftDate,
-    openShiftForm.startTime,
-    openShiftForm.endTime,
+  const openShiftDateKeys = useMemo(
+    () => selectedOpenShiftDateKeys(openShiftForm, weekKey, weekEndKey),
+    [openShiftForm, weekEndKey, weekKey],
   )
+  const openShiftAvailabilityConflicts = useMemo(
+    () => openShiftDateKeys
+      .map((dateKey) => findAvailabilityConflict(
+        availabilityQuery.data?.availability ?? [],
+        openShiftForm.employeeId,
+        dateKey,
+        openShiftForm.startTime,
+        openShiftForm.endTime,
+      ))
+      .filter((record): record is AvailabilityRecord => Boolean(record)),
+    [
+      availabilityQuery.data?.availability,
+      openShiftDateKeys,
+      openShiftForm.employeeId,
+      openShiftForm.endTime,
+      openShiftForm.startTime,
+    ],
+  )
+  const openShiftAvailabilityConflict = openShiftAvailabilityConflicts[0] ?? null
   const openShiftRequiresArmed = openShiftForm.mode === 'event'
     ? openShiftForm.eventRequiresArmed
     : Boolean(selectedPost?.requires_armed)
@@ -1499,37 +1565,44 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   }
 
   const createOpenShiftMutation = useMutation({
-    mutationFn: () => createSupervisorOpenShift({
-      weekStartsOn: weekKey,
-      mode: openShiftForm.mode,
-      postId: openShiftForm.postId || null,
-      eventName: openShiftForm.eventName,
-      eventLocationName: openShiftForm.eventLocationName,
-      eventSiteId: openShiftForm.eventSiteId || null,
-      eventTimeZone: openShiftForm.eventTimeZone,
-      eventRequiresArmed: openShiftForm.eventRequiresArmed,
-      shiftDate: openShiftForm.shiftDate,
-      startTime: openShiftForm.startTime,
-      endTime: openShiftForm.endTime,
-      headcount: Number.parseInt(openShiftForm.headcount, 10),
-      employeeId: openShiftForm.employeeId || null,
-      isOvertime: openShiftForm.isOvertime,
-      notes: openShiftForm.notes,
-      availabilityOverrideNote: openShiftAvailabilityConflict ? openShiftForm.availabilityOverrideNote : null,
-      credentialOverrideNote: openShiftCredentialOverrideRequired ? openShiftForm.credentialOverrideNote : null,
-      publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
-    }),
-    onSuccess: async (result) => {
+    mutationFn: async () => {
+      const dates = selectedOpenShiftDateKeys(openShiftForm, weekKey, weekEndKey)
+      const results = await Promise.all(dates.map((shiftDate) => createSupervisorOpenShift({
+        weekStartsOn: weekKey,
+        mode: openShiftForm.mode,
+        postId: openShiftForm.postId || null,
+        eventName: openShiftForm.eventName,
+        eventLocationName: openShiftForm.eventLocationName,
+        eventSiteId: openShiftForm.eventSiteId || null,
+        eventTimeZone: openShiftForm.eventTimeZone,
+        eventRequiresArmed: openShiftForm.eventRequiresArmed,
+        shiftDate,
+        startTime: openShiftForm.startTime,
+        endTime: openShiftForm.endTime,
+        headcount: Number.parseInt(openShiftForm.headcount, 10),
+        employeeId: openShiftForm.employeeId || null,
+        isOvertime: openShiftForm.isOvertime,
+        notes: openShiftForm.notes,
+        availabilityOverrideNote: openShiftAvailabilityConflict ? openShiftForm.availabilityOverrideNote : null,
+        credentialOverrideNote: openShiftCredentialOverrideRequired ? openShiftForm.credentialOverrideNote : null,
+        publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
+      })))
+      return { dates, results }
+    },
+    onSuccess: async ({ results }) => {
+      const result = results[results.length - 1]
+      const createdCount = results.length
       setBuilderMessage(
         result.assignment_id
-          ? `Assigned shift published on revision ${result.schedule_revision}.`
-          : `Open shift published on revision ${result.schedule_revision}. Guards can see it now.`,
+          ? `${createdCount} assigned shift${createdCount === 1 ? '' : 's'} published.`
+          : `${createdCount} open shift${createdCount === 1 ? '' : 's'} published. Guards can see ${createdCount === 1 ? 'it' : 'them'} now.`,
       )
       setOpenShiftForm(defaultOpenShiftForm(weekKey))
       setOpenShiftEmployeeSearch('')
+      setBuilderOpen(false)
       const refreshedScheduleResult = await scheduleQuery.refetch()
       syncOpenScheduleWindows(refreshedScheduleResult.data)
-      setSelectedPlannerShiftId(result.shift_id)
+      setSelectedPlannerShiftId(result?.shift_id ?? null)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
         queryClient.invalidateQueries({ queryKey: ['request-center'] }),
@@ -1996,7 +2069,24 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
   function updateOpenShiftForm(update: Partial<OpenShiftFormState>) {
     setBuilderMessage(null)
-    setOpenShiftForm((current) => ({ ...current, ...update }))
+    setOpenShiftForm((current) => {
+      const next = { ...current, ...update }
+      if (update.shiftDate) {
+        const selectedDay = dateKeyToLocalDate(update.shiftDate).getDay()
+        next.repeatThroughDate = next.repeatThroughDate < update.shiftDate ? update.shiftDate : next.repeatThroughDate
+        next.repeatWeekdays = current.repeatWeekdays.includes(selectedDay)
+          ? current.repeatWeekdays
+          : [selectedDay]
+      }
+      if (update.repeatEnabled === true && next.repeatWeekdays.length === 0) {
+        next.repeatWeekdays = [dateKeyToLocalDate(next.shiftDate).getDay()]
+      }
+      if (update.repeatEnabled === false) {
+        next.repeatThroughDate = next.shiftDate
+        next.repeatWeekdays = [dateKeyToLocalDate(next.shiftDate).getDay()]
+      }
+      return next
+    })
   }
 
   function openShiftFormForCurrentFocus(): OpenShiftFormState {
@@ -2444,9 +2534,12 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               <label>
                 Date
                 <input
-                  max={format(weekEnd, 'yyyy-MM-dd')}
+                  max={weekEndKey}
                   min={weekKey}
-                  onChange={(event) => updateOpenShiftForm({ shiftDate: event.target.value })}
+                  onChange={(event) => updateOpenShiftForm({
+                    repeatThroughDate: event.target.value > openShiftForm.repeatThroughDate ? event.target.value : openShiftForm.repeatThroughDate,
+                    shiftDate: event.target.value,
+                  })}
                   required
                   type="date"
                   value={openShiftForm.shiftDate}
@@ -2515,6 +2608,61 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 ) : null}
               </label>
             </div>
+
+            <section className="schedule-builder-repeat" aria-label="Multiple-day shift creation">
+              <label className="check-field">
+                <input
+                  checked={openShiftForm.repeatEnabled}
+                  onChange={(event) => updateOpenShiftForm({ repeatEnabled: event.target.checked })}
+                  type="checkbox"
+                />
+                Add this same shift to multiple days this week
+              </label>
+              {openShiftForm.repeatEnabled ? (
+                <div className="schedule-builder-repeat__body">
+                  <label>
+                    Through date
+                    <input
+                      max={weekEndKey}
+                      min={openShiftForm.shiftDate}
+                      onChange={(event) => updateOpenShiftForm({ repeatThroughDate: event.target.value })}
+                      required
+                      type="date"
+                      value={openShiftForm.repeatThroughDate}
+                    />
+                  </label>
+                  <fieldset>
+                    <legend>Days to create</legend>
+                    <div className="schedule-builder-repeat__days">
+                      {weekdayOptions.map((option) => {
+                        const checked = openShiftForm.repeatWeekdays.includes(option.value)
+                        return (
+                          <label className={checked ? 'weekday-toggle is-selected' : 'weekday-toggle'} key={option.value}>
+                            <input
+                              checked={checked}
+                              disabled={checked && openShiftForm.repeatWeekdays.length === 1}
+                              onChange={(event) => {
+                                const nextWeekdays = event.target.checked
+                                  ? [...new Set([...openShiftForm.repeatWeekdays, option.value])].sort()
+                                  : openShiftForm.repeatWeekdays.filter((weekday) => weekday !== option.value)
+                                updateOpenShiftForm({ repeatWeekdays: nextWeekdays })
+                              }}
+                              type="checkbox"
+                            />
+                            <span>{option.shortLabel}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </fieldset>
+                  <p className="form-note">
+                    This will create {openShiftDateKeys.length} shift{openShiftDateKeys.length === 1 ? '' : 's'}:
+                    {' '}
+                    {openShiftDateKeys.map((dateKey) => format(dateKeyToLocalDate(dateKey), 'MM/dd/yyyy')).join(', ')}.
+                  </p>
+                </div>
+              ) : null}
+            </section>
 
             {openShiftAvailabilityConflict ? (
               <div className="availability-override-card">
@@ -2610,14 +2758,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               </button>
               <button
                 className="primary-action"
-                disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending || Boolean(openShiftAvailabilityConflict && !openShiftForm.availabilityOverrideNote.trim()) || !openShiftCredentialOverrideReady}
+                disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending || openShiftDateKeys.length === 0 || Boolean(openShiftAvailabilityConflict && !openShiftForm.availabilityOverrideNote.trim()) || !openShiftCredentialOverrideReady}
                 type="submit"
               >
                 {createOpenShiftMutation.isPending
                   ? 'Publishing...'
                   : openShiftForm.employeeId
-                    ? 'Publish assigned shift'
-                    : 'Publish open shift'}
+                    ? `Publish ${openShiftDateKeys.length === 1 ? 'assigned shift' : `${openShiftDateKeys.length} assigned shifts`}`
+                    : `Publish ${openShiftDateKeys.length === 1 ? 'open shift' : `${openShiftDateKeys.length} open shifts`}`}
               </button>
             </div>
           </form>

@@ -66,6 +66,8 @@ const employmentLabels: Record<EmploymentType, string> = {
 
 const EMPTY_USERS: AdminUser[] = []
 
+type AccountActivityFilter = 'all' | 'pending_setup' | 'activated' | 'signed_in' | 'never_signed_in'
+
 function replaceDirectoryUser(directory: AdminUserDirectory | undefined, updatedUser: AdminUser): AdminUserDirectory | undefined {
   if (!directory) return directory
 
@@ -605,6 +607,7 @@ export function UserAdminPage() {
   const [role, setRole] = useState<'all' | AppRole>('all')
   const [status, setStatus] = useState<'all' | EmployeeStatus>('active')
   const [account, setAccount] = useState<'all' | 'not_created' | 'active' | 'disabled'>('all')
+  const [activity, setActivity] = useState<AccountActivityFilter>('all')
   const [creating, setCreating] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [bulkCredentials, setBulkCredentials] = useState<ProvisioningCredential[]>([])
@@ -687,9 +690,14 @@ export function UserAdminPage() {
       return (role === 'all' || user.role === role)
         && (status === 'all' || user.status === status)
         && (account === 'all' || user.accountStatus === account)
+        && (activity === 'all'
+          || (activity === 'pending_setup' && user.accountStatus === 'active' && !user.account?.activatedAt)
+          || (activity === 'activated' && Boolean(user.account?.activatedAt))
+          || (activity === 'signed_in' && Boolean(user.account?.lastSignInAt))
+          || (activity === 'never_signed_in' && user.accountStatus === 'active' && !user.account?.lastSignInAt))
         && (!term || searchable.includes(term))
     })
-  }, [account, role, search, status, users])
+  }, [account, activity, role, search, status, users])
   const selectedUser = selectedUserId ? users.find((user) => user.id === selectedUserId) ?? null : null
 
   return (
@@ -735,19 +743,22 @@ export function UserAdminPage() {
             <label className="select-field"><span>Role</span><select onChange={(event) => setRole(event.target.value as typeof role)} value={role}><option value="all">All roles</option><option value="guard">Guards</option><option value="dispatcher">Dispatchers</option><option value="scheduler">Schedulers</option><option value="recruiting_licensing">Recruiting & Licensing</option><option value="supervisor">Supervisors</option><option value="admin">Admins</option></select></label>
             <label className="select-field"><span>Status</span><select onChange={(event) => setStatus(event.target.value as typeof status)} value={status}><option value="active">Active</option><option value="leave">On leave</option><option value="inactive">Inactive</option><option value="separated">Separated</option><option value="all">All</option></select></label>
             <label className="select-field"><span>Login</span><select onChange={(event) => setAccount(event.target.value as typeof account)} value={account}><option value="all">All logins</option><option value="not_created">No login</option><option value="active">Active login</option><option value="disabled">Disabled</option></select></label>
-            {canEditBasic ? (
-              <button className="secondary-button" onClick={() => setCreating(true)} type="button"><Plus aria-hidden="true" size={18} /> Add employee</button>
-            ) : null}
-            {canManageLogin ? (
-              <>
+            <label className="select-field"><span>Activity</span><select onChange={(event) => setActivity(event.target.value as AccountActivityFilter)} value={activity}><option value="all">All activity</option><option value="pending_setup">Pending setup</option><option value="activated">Activated</option><option value="signed_in">Has signed in</option><option value="never_signed_in">Never signed in</option></select></label>
+            <div className="user-admin-toolbar__actions">
+              {canEditBasic ? (
+                <button className="secondary-button" onClick={() => setCreating(true)} type="button"><Plus aria-hidden="true" size={18} /> Add employee</button>
+              ) : null}
+              {canManageLogin ? (
+                <>
                 <button className="primary-action" disabled={bulkProvisionMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkProvisionMutation.mutate()} type="button">
                   <KeyRound aria-hidden="true" size={18} /> Create missing logins
                 </button>
                 <button className="secondary-button" disabled={bulkLoginEmailMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkLoginEmailMutation.mutate()} type="button">
                   <Mail aria-hidden="true" size={18} /> Email new logins
                 </button>
-              </>
-            ) : null}
+                </>
+              ) : null}
+            </div>
           </section>
 
           {bulkProvisionMutation.isError ? <div className="inline-alert" role="alert">{bulkProvisionMutation.error.message}</div> : null}
