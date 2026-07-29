@@ -10,7 +10,7 @@ import {
   type AvailabilityRecord,
 } from '../data/availability'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { operationalToday } from '../lib/time'
+import { formatDualClockTime, operationalToday } from '../lib/time'
 
 const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -23,11 +23,7 @@ function formatDate(value: string): string {
 }
 
 function formatTime(value: string | null): string {
-  if (!value) return 'All day'
-  const [hoursText, minutesText] = value.split(':')
-  const hours = Number(hoursText)
-  const suffix = hours >= 12 ? 'PM' : 'AM'
-  return `${hours % 12 || 12}:${minutesText} ${suffix}`
+  return formatDualClockTime(value)
 }
 
 function dateRange(record: Pick<AvailabilityRecord, 'startsOn' | 'endsOn'>): string {
@@ -82,9 +78,7 @@ export function AvailabilityPage() {
     queryFn: () => getAvailabilityWorkspace(todayKey, throughKey),
     enabled: isSupabaseConfigured,
   })
-  const privileged = availabilityQuery.data
-    ? ['dispatcher', 'scheduler', 'supervisor', 'admin'].includes(availabilityQuery.data.role)
-    : false
+  const privileged = availabilityQuery.data?.permissions.canManage ?? false
   const pendingRecords = useMemo(
     () => (availabilityQuery.data?.availability ?? []).filter((record) => record.approvalStatus === 'pending'),
     [availabilityQuery.data?.availability],

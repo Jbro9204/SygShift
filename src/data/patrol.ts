@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
+import { formatDualTimeRange } from '../lib/time'
 
 const patrolAssignmentSchema = z.object({
   id: z.string().uuid(),
@@ -46,12 +47,7 @@ export function patrolShiftTime(shift: PatrolShift): string {
     year: 'numeric',
     timeZone: shift.timeZone,
   }).format(new Date(shift.startsAt))
-  const time = new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: shift.timeZone,
-  })
-  return `${day} · ${time.format(new Date(shift.startsAt))} – ${time.format(new Date(shift.endsAt))}`
+  return `${day} · ${formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}`
 }
 
 export async function getPatrolRoutes(): Promise<PatrolRouteGroup[]> {

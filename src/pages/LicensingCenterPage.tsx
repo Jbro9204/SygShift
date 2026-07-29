@@ -6,11 +6,15 @@ import {
   BellRing,
   ClipboardCheck,
   FileText,
+  FolderOpen,
   Mail,
+  Pencil,
+  Save,
   Search,
   ShieldAlert,
   Upload,
   UserRoundPlus,
+  X,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
@@ -32,6 +36,7 @@ import {
   type RenewalStatus,
 } from '../data/licensing'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { formatOperationalDateTime } from '../lib/time'
 
 type SummaryFilter =
   | 'all'
@@ -109,10 +114,7 @@ function formatDate(value: string | null): string {
 
 function formatTimestamp(value: string | null): string {
   if (!value) return '—'
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  }).format(new Date(value))
+  return formatOperationalDateTime(value)
 }
 
 function normalized(value: unknown): string {
@@ -229,6 +231,7 @@ function EmployeeFormModal({
         <div className="modal-actions">
           <button className="secondary-button" onClick={onClose} type="button">Cancel</button>
           <button className="primary-action" disabled={mutation.isPending} type="submit">
+            <Save aria-hidden="true" size={17} />
             {mutation.isPending ? 'Saving...' : employee ? 'Save profile' : 'Create onboarding record'}
           </button>
         </div>
@@ -359,6 +362,7 @@ function CredentialEditModal({
         <div className="modal-actions">
           <button className="secondary-button" onClick={onClose} type="button">Close</button>
           <button className="primary-action" disabled={credentialMutation.isPending} type="submit">
+            <Save aria-hidden="true" size={17} />
             {credentialMutation.isPending ? 'Saving...' : 'Save credential'}
           </button>
         </div>
@@ -381,6 +385,7 @@ function CredentialEditModal({
           />
         </label>
         <button className="secondary-button" disabled={!selectedFile || !currentCredentialId || documentMutation.isPending} onClick={uploadDocument} type="button">
+          <Upload aria-hidden="true" size={17} />
           {documentMutation.isPending ? 'Uploading...' : 'Upload document'}
         </button>
         {!currentCredentialId ? <p className="form-note">Save the credential first, then attach documents.</p> : null}
@@ -465,6 +470,7 @@ function CommunicationModal({
         <div className="modal-actions">
           <button className="secondary-button" onClick={onClose} type="button">Close</button>
           <button className="primary-action" disabled={mutation.isPending} type="submit">
+            <Mail aria-hidden="true" size={17} />
             {mutation.isPending ? 'Recording...' : 'Record communication'}
           </button>
         </div>
@@ -562,6 +568,7 @@ function EmployeeLicensingProfile({
 
       <div className="licensing-profile-actions">
         <button className="secondary-button" onClick={() => onEditEmployee(employee)} type="button">
+          <Pencil aria-hidden="true" size={17} />
           Edit employee profile
         </button>
       </div>
@@ -588,7 +595,10 @@ function EmployeeLicensingProfile({
             </dl>
             {credential.rejectionReason ? <p className="credential-rejection-note">{credential.rejectionReason}</p> : null}
             <div className="licensing-card-actions">
-              <button className="secondary-button secondary-button--small" onClick={() => setEditingCredentialTypeId(credential.credentialTypeId)} type="button">Edit</button>
+              <button className="secondary-button secondary-button--small" onClick={() => setEditingCredentialTypeId(credential.credentialTypeId)} type="button">
+                <Pencil aria-hidden="true" size={15} />
+                Edit
+              </button>
               <button className="secondary-button secondary-button--small" onClick={() => setCommunicatingCredentialTypeId(credential.credentialTypeId)} type="button">
                 <Mail aria-hidden="true" size={15} />
                 Message
@@ -744,7 +754,7 @@ export function LicensingCenterPage() {
           <span className="visually-hidden">Search licensing records</span>
           <input onChange={(event) => setSearch(event.target.value)} placeholder="Search employee, credential, status, license number, or location" type="search" value={search} />
         </label>
-        <label className="select-field">
+        <label className="select-field licensing-toolbar__filter licensing-toolbar__filter--compliance">
           <span>Compliance</span>
           <select onChange={(event) => setComplianceFilter(event.target.value as typeof complianceFilter)} value={complianceFilter}>
             <option value="all">All colors</option>
@@ -754,14 +764,14 @@ export function LicensingCenterPage() {
             <option value="gray">Gray</option>
           </select>
         </label>
-        <label className="select-field">
+        <label className="select-field licensing-toolbar__filter licensing-toolbar__filter--credential">
           <span>Credential</span>
           <select onChange={(event) => setCredentialTypeFilter(event.target.value)} value={credentialTypeFilter}>
             <option value="all">All types</option>
             {center.credentialTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
           </select>
         </label>
-        <label className="select-field">
+        <label className="select-field licensing-toolbar__filter licensing-toolbar__filter--employment">
           <span>Employment status</span>
           <select onChange={(event) => setEmploymentStatusFilter(event.target.value as typeof employmentStatusFilter)} value={employmentStatusFilter}>
             <option value="all">All statuses</option>
@@ -779,6 +789,7 @@ export function LicensingCenterPage() {
           setCredentialTypeFilter('all')
           setEmploymentStatusFilter('all')
         }} type="button">
+          <X aria-hidden="true" size={17} />
           Clear filters
         </button>
       </section>
@@ -846,6 +857,7 @@ export function LicensingCenterPage() {
                 <div className="licensing-row__actions" role="cell">
                   {employee ? (
                     <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployeeId(employee.employeeId)} type="button">
+                      <FolderOpen aria-hidden="true" size={15} />
                       Open profile
                     </button>
                   ) : null}

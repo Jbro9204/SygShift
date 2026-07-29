@@ -28,6 +28,7 @@ import {
   type TrustedDevice,
 } from '../data/trustedDevices'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
+import { formatOperationalDateTime } from '../lib/time'
 
 function isAlreadyCurrentPasswordError(error: unknown): boolean {
   const message =
@@ -155,7 +156,8 @@ export function AccountSecurityPage() {
     && (context.role === 'admin'
       || context.role === 'supervisor'
       || context.role === 'scheduler'
-      || context.role === 'dispatcher'),
+      || context.role === 'dispatcher'
+      || context.role === 'recruiting_licensing'),
   )
 
   useEffect(() => {
@@ -862,7 +864,7 @@ export function AccountSecurityPage() {
             <div>
               <h2 id="trusted-devices-title">Remembered devices</h2>
               <p>
-                These browsers can open protected operations tools without another MFA prompt until they expire.
+                These browsers can open protected SygShift tools without another MFA prompt until they expire.
                 Signing out keeps this browser remembered. Use Remove, or an admin revoke, when this device should require MFA again.
               </p>
             </div>
@@ -875,10 +877,7 @@ export function AccountSecurityPage() {
                     <div>
                       <strong>{device.deviceLabel ?? 'Remembered browser'}</strong>
                       <span>
-                        Expires {new Intl.DateTimeFormat('en-US', {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        }).format(new Date(device.expiresAt))}
+                        Expires {formatOperationalDateTime(device.expiresAt)}
                         {device.isCurrentDevice ? ' · this device' : ''}
                       </span>
                     </div>

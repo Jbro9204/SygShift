@@ -39,6 +39,7 @@ import {
   type ProvisioningCredential,
 } from '../data/adminUsers'
 import { getSessionContext } from '../data/auth'
+import { formatOperationalDateTime } from '../lib/time'
 
 const roleLabels: Record<AppRole, string> = {
   admin: 'Admin',
@@ -123,13 +124,7 @@ function AccountStatusBadge({ user }: { user: AdminUser }) {
 function formatAccountDateTime(value: string | null): string {
   if (!value) return 'Never'
 
-  return new Intl.DateTimeFormat('en-US', {
-    day: '2-digit',
-    hour: 'numeric',
-    minute: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(new Date(value))
+  return formatOperationalDateTime(value)
 }
 
 function AccountActivitySummary({ user }: { user: AdminUser }) {

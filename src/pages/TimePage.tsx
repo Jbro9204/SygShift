@@ -45,8 +45,9 @@ import {
   type TimekeepingShift,
   type TimekeepingState,
 } from '../data/timekeeping'
+import { getSessionContext, type SessionContext } from '../data/auth'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { OPERATIONAL_TIME_ZONE, operationalToday } from '../lib/time'
+import { formatDualTime, OPERATIONAL_TIME_ZONE, operationalToday } from '../lib/time'
 
 const actionLabels: Record<TimeEventKind, string> = {
   clock_in: 'Clock in',
@@ -82,6 +83,14 @@ const stateCopy: Record<TimekeepingState, { title: string; body: string }> = {
   },
 }
 
+function hasTimePermission(session: SessionContext | null | undefined, permission: string): boolean {
+  return session?.role === 'admin' || Boolean(session?.permissions.includes(permission))
+}
+
+function hasOperationsTimeRole(role: TimekeepingDashboard['employee']['role']): boolean {
+  return ['dispatcher', 'scheduler', 'supervisor', 'admin'].includes(role)
+}
+
 function formatDateKey(date: Date): string {
   return new Intl.DateTimeFormat('en-CA', {
     day: '2-digit',
@@ -111,12 +120,7 @@ function payrollWeekRange(dateKey: string): { fromDate: string; throughDate: str
 }
 
 function formatTime(value: string, timeZone = OPERATIONAL_TIME_ZONE): string {
-  return new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone,
-    timeZoneName: 'short',
-  }).format(new Date(value))
+  return formatDualTime(value, { includeTimeZoneName: true, timeZone })
 }
 
 function formatDate(value: string): string {
@@ -811,9 +815,11 @@ function PayrollRulesPanel({ review }: { review: TimekeepingReview }) {
 }
 
 function PayrollReviewTable({
+  canManageTime,
   rows,
   onReviewEmployeeTime,
 }: {
+  canManageTime: boolean
   rows: TimekeepingReviewRow[]
   onReviewEmployeeTime: (row: TimekeepingReviewRow) => void
 }) {
@@ -848,9 +854,11 @@ function PayrollReviewTable({
               <td>
                 <strong>{row.employeeName}</strong>
                 <span>@{row.username}</span>
-                <button className="time-review-jump-button" onClick={() => onReviewEmployeeTime(row)} type="button">
-                  Review / edit time
-                </button>
+                {canManageTime ? (
+                  <button className="time-review-jump-button" onClick={() => onReviewEmployeeTime(row)} type="button">
+                    Review / edit time
+                  </button>
+                ) : null}
               </td>
               <td>
                 <strong>{rowKindLabels[row.rowKind]}</strong>
@@ -1016,9 +1024,13 @@ function PayrollExportHistoryList({ batches }: { batches: PayrollExportBatch[] }
 }
 
 function SupervisorTimeReview({
+  canExportPayroll,
+  canManageTime,
   defaultDate,
   onReviewEmployeeTime,
 }: {
+  canExportPayroll: boolean
+  canManageTime: boolean
   defaultDate: string
   onReviewEmployeeTime: (row: TimekeepingReviewRow) => void
 }) {
@@ -1055,7 +1067,7 @@ function SupervisorTimeReview({
   })
   const review = reviewQuery.data
   const lockBlockedReason = payrollLockBlocker(review)
-  const canLockExport = Boolean(review && lockBlockedReason === '' && exportNote.trim().length > 0 && !exportMutation.isPending)
+  const canLockExport = Boolean(canExportPayroll && review && lockBlockedReason === '' && exportNote.trim().length > 0 && !exportMutation.isPending)
 
   return (
     <section className="time-review-workbench" aria-labelledby="supervisor-time-title">
@@ -1095,12 +1107,15 @@ function SupervisorTimeReview({
 
           <div className="time-review-actions">
             <p><FileWarning aria-hidden="true" size={18} /> CSV is a preview for checking totals. Locking creates the official payroll audit batch.</p>
-            <button className="secondary-button" disabled={review.rows.length === 0} onClick={() => exportPayrollCsv(review)} type="button">
-              <Download aria-hidden="true" size={18} /> Export CSV preview
-            </button>
+            {canExportPayroll ? (
+              <button className="secondary-button" disabled={review.rows.length === 0} onClick={() => exportPayrollCsv(review)} type="button">
+                <Download aria-hidden="true" size={18} /> Export CSV preview
+              </button>
+            ) : null}
           </div>
 
-          <section className="payroll-lock-panel" aria-labelledby="payroll-lock-title">
+          {canExportPayroll ? (
+            <section className="payroll-lock-panel" aria-labelledby="payroll-lock-title">
             <div className="payroll-lock-panel__copy">
               <p className="eyebrow">Controlled export</p>
               <h3 id="payroll-lock-title">Lock clean payroll for this range</h3>
@@ -1141,23 +1156,26 @@ function SupervisorTimeReview({
               </button>
               <small>{lockBlockedReason || (exportNote.trim() ? 'Ready to lock. The server will verify it one more time.' : 'Add a short note before locking payroll.')}</small>
             </div>
-          </section>
+            </section>
+          ) : null}
 
-          <PayrollReviewTable onReviewEmployeeTime={onReviewEmployeeTime} rows={review.rows} />
+          <PayrollReviewTable canManageTime={canManageTime} onReviewEmployeeTime={onReviewEmployeeTime} rows={review.rows} />
 
-          <section className="time-panel time-corrections-panel" aria-labelledby="pending-corrections-title">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Corrections</p>
-                <h2 id="pending-corrections-title">Pending correction requests</h2>
+          {canManageTime ? (
+            <section className="time-panel time-corrections-panel" aria-labelledby="pending-corrections-title">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Corrections</p>
+                  <h2 id="pending-corrections-title">Pending correction requests</h2>
+                </div>
               </div>
-            </div>
-            <PendingCorrections
-              corrections={review.pendingCorrections}
-              onDecision={(correctionId, approved, note) => correctionMutation.mutate({ correctionId, approved, note })}
-              pending={correctionMutation.isPending}
-            />
-          </section>
+              <PendingCorrections
+                corrections={review.pendingCorrections}
+                onDecision={(correctionId, approved, note) => correctionMutation.mutate({ correctionId, approved, note })}
+                pending={correctionMutation.isPending}
+              />
+            </section>
+          ) : null}
 
           <section className="time-panel payroll-history-panel" aria-labelledby="payroll-history-title">
             <div className="section-heading">
@@ -1185,6 +1203,10 @@ function LiveTimekeeping() {
   const punchLocked = useRef(false)
   const operationalDate = useMemo(() => formatDateKey(operationalToday()), [])
   const [maintenanceFocusRequest, setMaintenanceFocusRequest] = useState<TimeMaintenanceFocusRequest | null>(null)
+  const sessionQuery = useQuery({
+    queryKey: ['session-context'],
+    queryFn: getSessionContext,
+  })
   const dashboardQuery = useQuery({
     queryKey: ['timekeeping-dashboard', operationalDate],
     queryFn: () => getTimekeepingDashboard(operationalDate),
@@ -1214,7 +1236,15 @@ function LiveTimekeeping() {
   }
 
   const dashboard = dashboardQuery.data
-  const canReviewPayroll = ['dispatcher', 'scheduler', 'supervisor', 'admin'].includes(dashboard.employee.role)
+  const session = sessionQuery.data
+  const canReviewPayroll = hasOperationsTimeRole(dashboard.employee.role)
+    || hasTimePermission(session, 'time.view')
+    || hasTimePermission(session, 'time.manage')
+    || hasTimePermission(session, 'time.export_payroll')
+  const canManageTime = hasOperationsTimeRole(dashboard.employee.role)
+    || hasTimePermission(session, 'time.manage')
+  const canExportPayroll = hasOperationsTimeRole(dashboard.employee.role)
+    || hasTimePermission(session, 'time.export_payroll')
 
   return (
     <>
@@ -1263,10 +1293,13 @@ function LiveTimekeeping() {
 
       {canReviewPayroll ? (
         <>
-          <TimeMaintenanceWorkbench defaultDate={operationalDate} focusRequest={maintenanceFocusRequest} />
+          {canManageTime ? <TimeMaintenanceWorkbench defaultDate={operationalDate} focusRequest={maintenanceFocusRequest} /> : null}
           <SupervisorTimeReview
+            canExportPayroll={canExportPayroll}
+            canManageTime={canManageTime}
             defaultDate={operationalDate}
             onReviewEmployeeTime={(row) => {
+              if (!canManageTime) return
               setMaintenanceFocusRequest({
                 employeeId: row.employeeId,
                 fromDate: row.operationalDate,

@@ -30,7 +30,7 @@ import {
   type UpcomingAssignment,
 } from '../data/requests'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { operationalToday } from '../lib/time'
+import { formatDualTimeRange, operationalToday } from '../lib/time'
 
 type RequestAction =
   | { kind: 'submit-time-off'; input: TimeOffInput }
@@ -96,12 +96,7 @@ function formatShiftDate(shift: RequestShift): string {
     year: 'numeric',
     timeZone: shift.time_zone,
   }).format(new Date(shift.starts_at))
-  const time = new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: shift.time_zone,
-  })
-  return `${date} · ${time.format(new Date(shift.starts_at))} – ${time.format(new Date(shift.ends_at))}`
+  return `${date} · ${formatDualTimeRange(shift.starts_at, shift.ends_at, shift.time_zone)}`
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -581,10 +576,7 @@ export function RequestsPage() {
     enabled: isSupabaseConfigured,
   })
   const mutation = useRequestAction()
-  const privileged = requestQuery.data?.role === 'dispatcher'
-    || requestQuery.data?.role === 'scheduler'
-    || requestQuery.data?.role === 'supervisor'
-    || requestQuery.data?.role === 'admin'
+  const privileged = requestQuery.data?.permissions.canManage ?? false
   const guardAssignments = useMemo(
     () => requestQuery.data?.upcomingAssignments ?? [],
     [requestQuery.data?.upcomingAssignments],

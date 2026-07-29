@@ -13,6 +13,7 @@ import {
 } from '../data/opportunities'
 import { parseImportedScheduleNote, sourceReferenceLabel } from '../data/sourceNotes'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { formatDualTimeRange } from '../lib/time'
 
 const requestLabels = {
   pending: 'Requested',
@@ -30,12 +31,7 @@ function opportunityTime(opportunity: Opportunity): string {
     year: 'numeric',
     timeZone: opportunity.time_zone,
   }).format(new Date(opportunity.starts_at))
-  const time = new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: opportunity.time_zone,
-  })
-  return `${day} · ${time.format(new Date(opportunity.starts_at))} – ${time.format(new Date(opportunity.ends_at))}`
+  return `${day} · ${formatDualTimeRange(opportunity.starts_at, opportunity.ends_at, opportunity.time_zone)}`
 }
 
 function OpportunityCard({

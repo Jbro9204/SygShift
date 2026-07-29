@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
+import { formatDualTimeRange } from '../lib/time'
 
 const assignedEmployeeSchema = z.object({
   id: z.string().uuid(),
@@ -458,12 +459,7 @@ export function shiftOperationalDate(shift: ScheduleShift): string {
 }
 
 export function shiftTimeRange(shift: ScheduleShift): string {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: shift.time_zone,
-  })
-  return `${formatter.format(new Date(shift.starts_at))} – ${formatter.format(new Date(shift.ends_at))}`
+  return formatDualTimeRange(shift.starts_at, shift.ends_at, shift.time_zone)
 }
 
 export function assignmentName(assignment: ScheduleShift['assignments'][number]): string {
