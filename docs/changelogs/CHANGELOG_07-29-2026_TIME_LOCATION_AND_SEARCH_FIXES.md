@@ -17,6 +17,8 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 - Updated Time Maintenance so corrected punch locations appear after save and refresh.
 - Updated Time Review / payroll review data so corrected punch locations are available in review/export workflows.
 - Added a new `location_update` maintenance action so location changes show as part of the punch maintenance history.
+- Fixed assigned multi-day shift retries so SygShift refreshes the current schedule first, skips dates where the selected employee is already assigned for that same time, creates only the missing dates, closes the modal, and reports which dates were skipped.
+- Confirmed Zach Ward already had ADMIN shifts on 08/03/2026 and 08/04/2026 in the database; the new scheduler behavior prevents that real saved data from looking like a broken overlap error on retry.
 
 ## Database changes
 
@@ -32,6 +34,7 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 - Lint passed.
 - Full test suite passed: 28 files, 104 tests.
 - Follow-up scheduler fix passed: 28 files, 105 tests.
+- Multi-day retry fix passed: 28 files, 106 tests.
 - Production build passed.
 
 ## Notes

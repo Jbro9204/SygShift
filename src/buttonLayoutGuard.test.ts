@@ -135,6 +135,13 @@ describe('button layout guardrails', () => {
     expect(schedulePage).not.toContain('Promise.all(dates.map((shiftDate) => createSupervisorOpenShift')
   })
 
+  it('keeps multi-day assigned shift retries from failing on already-created dates', () => {
+    expect(schedulePage).toContain('employeeAlreadyAssignedDateKeys(')
+    expect(schedulePage).toContain('const latestScheduleResult = await scheduleQuery.refetch()')
+    expect(schedulePage).toContain('const dates = requestedDates.filter((dateKey) => !skippedDateSet.has(dateKey))')
+    expect(schedulePage).toContain('Already assigned dates skipped')
+  })
+
   it('keeps recently deleted user retention compact and clearly labeled', () => {
     expect(userAdminPage).not.toContain('Admin retention')
     expect(userAdminPage).toContain('<p className="eyebrow">Audit</p>')

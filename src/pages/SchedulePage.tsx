@@ -339,6 +339,62 @@ function availabilityConflictText(record: AvailabilityRecord): string {
   return `${record.employeeName} is marked unavailable for ${day}${time}. Add an override reason if they confirmed this shift is okay.`
 }
 
+function dateKeyDisplay(dateKey: string): string {
+  return format(new Date(`${dateKey}T12:00:00`), 'MM/dd/yyyy')
+}
+
+function scheduleShiftLocalWindow(shift: ScheduleShift): { end: number, start: number } {
+  const start = timeToMinutes(shiftLocalTimeValue(shift, shift.starts_at)) ?? 0
+  const rawEnd = timeToMinutes(shiftLocalTimeValue(shift, shift.ends_at)) ?? 0
+  return {
+    start,
+    end: rawEnd <= start ? rawEnd + 24 * 60 : rawEnd,
+  }
+}
+
+function requestedShiftLocalWindow(startTime: string, endTime: string): { end: number, start: number } {
+  const start = timeToMinutes(startTime) ?? 0
+  const rawEnd = timeToMinutes(endTime) ?? 0
+  return {
+    start,
+    end: rawEnd <= start ? rawEnd + 24 * 60 : rawEnd,
+  }
+}
+
+function windowsOverlap(left: { end: number, start: number }, right: { end: number, start: number }): boolean {
+  return left.start < right.end && left.end > right.start
+}
+
+function employeeAlreadyAssignedDateKeys(
+  schedule: WeeklySchedule | null | undefined,
+  employeeId: string | null | undefined,
+  dateKeys: string[],
+  startTime: string,
+  endTime: string,
+): string[] {
+  if (!schedule || !employeeId) return []
+
+  const requestedWindow = requestedShiftLocalWindow(startTime, endTime)
+  const selectedDateKeys = new Set(dateKeys)
+  const overlappingDateKeys = new Set<string>()
+
+  for (const shift of schedule.shifts) {
+    const shiftDate = shiftOperationalDate(shift)
+    if (!selectedDateKeys.has(shiftDate)) continue
+
+    const hasActiveAssignment = shift.assignments.some((assignment) =>
+      assignment.employee.id === employeeId
+      && ['assigned', 'confirmed', 'completed'].includes(assignment.status),
+    )
+    if (!hasActiveAssignment) continue
+    if (windowsOverlap(scheduleShiftLocalWindow(shift), requestedWindow)) {
+      overlappingDateKeys.add(shiftDate)
+    }
+  }
+
+  return dateKeys.filter((dateKey) => overlappingDateKeys.has(dateKey))
+}
+
 function shiftLocalTimeValue(shift: ScheduleShift, instant: string): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     hour: '2-digit',
@@ -1566,7 +1622,26 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
   const createOpenShiftMutation = useMutation({
     mutationFn: async () => {
-      const dates = selectedOpenShiftDateKeys(openShiftForm, weekKey, weekEndKey)
+      const requestedDates = selectedOpenShiftDateKeys(openShiftForm, weekKey, weekEndKey)
+      const latestScheduleResult = await scheduleQuery.refetch()
+      const latestSchedule = latestScheduleResult.data ?? scheduleQuery.data
+      syncOpenScheduleWindows(latestSchedule)
+
+      const skippedAssignedDates = employeeAlreadyAssignedDateKeys(
+        latestSchedule,
+        openShiftForm.employeeId,
+        requestedDates,
+        openShiftForm.startTime,
+        openShiftForm.endTime,
+      )
+      const skippedDateSet = new Set(skippedAssignedDates)
+      const dates = requestedDates.filter((dateKey) => !skippedDateSet.has(dateKey))
+
+      if (dates.length === 0) {
+        const employeeName = openShiftEmployee ? builderEmployeeName(openShiftEmployee) : 'The selected employee'
+        throw new Error(`${employeeName} is already assigned during this time on ${skippedAssignedDates.map(dateKeyDisplay).join(', ')}. No new shifts were created.`)
+      }
+
       const results = []
       for (const shiftDate of dates) {
         results.push(await createSupervisorOpenShift({
@@ -1590,15 +1665,18 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
         }))
       }
-      return { dates, results }
+      return { dates, results, skippedAssignedDates }
     },
-    onSuccess: async ({ results }) => {
+    onSuccess: async ({ results, skippedAssignedDates }) => {
       const result = results[results.length - 1]
       const createdCount = results.length
+      const skippedMessage = skippedAssignedDates.length
+        ? ` Already assigned dates skipped: ${skippedAssignedDates.map(dateKeyDisplay).join(', ')}.`
+        : ''
       setBuilderMessage(
         result.assignment_id
-          ? `${createdCount} assigned shift${createdCount === 1 ? '' : 's'} published.`
-          : `${createdCount} open shift${createdCount === 1 ? '' : 's'} published. Guards can see ${createdCount === 1 ? 'it' : 'them'} now.`,
+          ? `${createdCount} assigned shift${createdCount === 1 ? '' : 's'} published.${skippedMessage}`
+          : `${createdCount} open shift${createdCount === 1 ? '' : 's'} published. Guards can see ${createdCount === 1 ? 'it' : 'them'} now.${skippedMessage}`,
       )
       setOpenShiftForm(defaultOpenShiftForm(weekKey))
       setOpenShiftEmployeeSearch('')
