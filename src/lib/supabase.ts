@@ -8,7 +8,7 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKe
 
 let client: SupabaseClient | undefined
 
-function attachTrustedDeviceHeader(input: RequestInfo | URL, init?: RequestInit): RequestInit | undefined {
+export function attachTrustedDeviceHeader(input: RequestInfo | URL, init?: RequestInit): RequestInit | undefined {
   const trustedToken = getTrustedDeviceToken()
   if (!trustedToken) return init
 
@@ -20,7 +20,10 @@ function attachTrustedDeviceHeader(input: RequestInfo | URL, init?: RequestInit)
 
   if (!target.includes('/rest/v1/')) return init
 
-  const headers = new Headers(init?.headers)
+  const headers = new Headers(input instanceof Request ? input.headers : undefined)
+  new Headers(init?.headers).forEach((value, key) => {
+    headers.set(key, value)
+  })
   headers.set('x-sygshift-trusted-device', trustedToken)
   return { ...init, headers }
 }

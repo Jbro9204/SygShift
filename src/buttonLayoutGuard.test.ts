@@ -12,6 +12,7 @@ const licensingCenterPage = readFileSync(join(root, 'src', 'pages', 'LicensingCe
 const navigation = readFileSync(join(root, 'src', 'app', 'navigation.ts'), 'utf8')
 const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
 const employeeSelfScheduleScopeMigration = readFileSync(join(root, 'supabase', 'migrations', '20260729191000_employee_self_schedule_scope.sql'), 'utf8')
+const supabaseClient = readFileSync(join(root, 'src', 'lib', 'supabase.ts'), 'utf8')
 const userAdminPage = readFileSync(join(root, 'src', 'pages', 'UserAdminPage.tsx'), 'utf8')
 
 function blockFor(selector: string): string {
@@ -163,6 +164,13 @@ describe('button layout guardrails', () => {
     expect(employeeSelfScheduleScopeMigration).toContain('viewer_assignment.employee_id = viewer_employee_id')
     expect(employeeSelfScheduleScopeMigration).not.toContain('or not shift.requires_armed')
     expect(employeeSelfScheduleScopeMigration).toContain('Operations roles see team coverage')
+  })
+
+  it('keeps trusted-device MFA headers attached without dropping Supabase auth headers', () => {
+    expect(supabaseClient).toContain('export function attachTrustedDeviceHeader')
+    expect(supabaseClient).toContain('new Headers(input instanceof Request ? input.headers : undefined)')
+    expect(supabaseClient).toContain('new Headers(init?.headers).forEach((value, key) => {')
+    expect(supabaseClient).toContain("headers.set('x-sygshift-trusted-device', trustedToken)")
   })
 
   it('keeps recently deleted user retention compact and clearly labeled', () => {

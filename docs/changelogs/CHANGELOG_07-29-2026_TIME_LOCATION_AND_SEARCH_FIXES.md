@@ -25,6 +25,9 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 - Made Schedule visible to every active employee role so hourly employees can always view their own schedule without needing a manually added permission.
 - Updated the normal employee Schedule screen to default into a simple self-schedule view instead of showing team/site controls that do not apply to them.
 - Added a regression guard for employee self-schedule access so future permission or navigation work does not accidentally hide Schedule again.
+- Hardened remembered MFA for Recruiting & Licensing by keeping a secure cookie backup of the trusted-device token in addition to localStorage.
+- Hardened the Supabase trusted-device request wrapper so the `x-sygshift-trusted-device` header is added without dropping existing Supabase auth headers.
+- Confirmed Zach Ward has active remembered-device records in Supabase; the issue was in reliable browser token reuse, not missing database records.
 
 ## Database changes
 
@@ -51,6 +54,7 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 - Multi-day retry fix passed: 28 files, 106 tests.
 - Destructive button style fix passed: 28 files, 107 tests.
 - Employee self-schedule visibility fix passed: 28 files, 108 tests.
+- Remembered MFA hardening passed: 28 files, 110 tests.
 - Production build passed.
 
 ## Notes

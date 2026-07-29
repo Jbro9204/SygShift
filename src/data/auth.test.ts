@@ -7,6 +7,11 @@ import {
   usernameToAuthEmail,
   validatePassword,
 } from './auth'
+import {
+  clearTrustedDeviceToken,
+  getTrustedDeviceToken,
+  setTrustedDeviceToken,
+} from '../lib/trustedDeviceToken'
 
 const supabaseMock = vi.hoisted(() => ({
   client: {
@@ -48,5 +53,22 @@ describe('signOut', () => {
     await signOut()
 
     expect(localStorage.getItem('sygshift:trusted-device-token:v1')).toBe('remembered-device-token')
+  })
+})
+
+describe('trusted device token storage', () => {
+  it('keeps a secure cookie backup when remembering MFA on this browser', () => {
+    clearTrustedDeviceToken()
+
+    setTrustedDeviceToken('remembered-device-token')
+
+    expect(getTrustedDeviceToken()).toBe('remembered-device-token')
+    expect(document.cookie).toContain('sygshift_trusted_device=remembered-device-token')
+
+    localStorage.removeItem('sygshift:trusted-device-token:v1')
+    expect(getTrustedDeviceToken()).toBe('remembered-device-token')
+
+    clearTrustedDeviceToken()
+    expect(getTrustedDeviceToken()).toBeNull()
   })
 })
