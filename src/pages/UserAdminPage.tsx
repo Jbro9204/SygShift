@@ -9,6 +9,7 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
   UserCog,
   UsersRound,
   Mail,
@@ -18,7 +19,9 @@ import { ModalDialog } from '../components/ModalDialog'
 import {
   createEmployee,
   credentialsToCsv,
+  deleteSeparatedEmployee,
   getAdminUserDirectory,
+  getRecentlyDeletedEmployees,
   provisionEmployeeAccount,
   provisionMissingAccounts,
   revokeEmployeeTrustedDevices,
@@ -35,6 +38,7 @@ import {
   type EmploymentType,
   type ProvisioningCredential,
 } from '../data/adminUsers'
+import { getSessionContext } from '../data/auth'
 
 const roleLabels: Record<AppRole, string> = {
   admin: 'Admin',
@@ -116,57 +120,157 @@ function AccountStatusBadge({ user }: { user: AdminUser }) {
   return <span className="account-status account-status--active">Login active</span>
 }
 
+function formatAccountDateTime(value: string | null): string {
+  if (!value) return 'Never'
+
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(value))
+}
+
+function AccountActivitySummary({ user }: { user: AdminUser }) {
+  if (!user.account) {
+    return (
+      <div className="account-activity">
+        <AccountStatusBadge user={user} />
+        <span className="account-activity__line">Activation: Not created</span>
+        <span className="account-activity__line">Last login: Never</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="account-activity">
+      <AccountStatusBadge user={user} />
+      <span className="account-activity__line">
+        Activation: {user.account.activatedAt ? formatAccountDateTime(user.account.activatedAt) : 'Pending'}
+      </span>
+      <span className="account-activity__line">
+        Last login: {formatAccountDateTime(user.account.lastSignInAt)}
+      </span>
+    </div>
+  )
+}
+
+function AccountActivityPanel({ user }: { user: AdminUser }) {
+  if (!user.account) {
+    return (
+      <div className="account-activity-card">
+        <strong>Account activity</strong>
+        <dl>
+          <div>
+            <dt>Activation</dt>
+            <dd>Not created</dd>
+          </div>
+          <div>
+            <dt>Last login</dt>
+            <dd>Never</dd>
+          </div>
+          <div>
+            <dt>MFA</dt>
+            <dd>Not enrolled</dd>
+          </div>
+        </dl>
+      </div>
+    )
+  }
+
+  return (
+    <div className="account-activity-card">
+      <strong>Account activity</strong>
+      <dl>
+        <div>
+          <dt>Activation</dt>
+          <dd>{user.account.activatedAt ? formatAccountDateTime(user.account.activatedAt) : 'Pending first setup'}</dd>
+        </div>
+        <div>
+          <dt>Last login</dt>
+          <dd>{formatAccountDateTime(user.account.lastSignInAt)}</dd>
+        </div>
+        <div>
+          <dt>Password</dt>
+          <dd>{user.account.mustChangePassword ? 'Temporary password pending' : `Changed ${formatAccountDateTime(user.account.passwordChangedAt)}`}</dd>
+        </div>
+        <div>
+          <dt>MFA</dt>
+          <dd>{user.account.mfaEnrolledAt ? `Enrolled ${formatAccountDateTime(user.account.mfaEnrolledAt)}` : 'Not enrolled'}</dd>
+        </div>
+        <div>
+          <dt>Remembered devices</dt>
+          <dd>{user.account.trustedDeviceCount ?? 0}</dd>
+        </div>
+      </dl>
+    </div>
+  )
+}
+
 function EmployeeForm({
+  canEditAdminRole,
+  canEditBasic,
+  canSeparate,
   employee,
   onCancel,
   onSubmit,
   pending,
 }: {
+  canEditAdminRole: boolean
+  canEditBasic: boolean
+  canSeparate: boolean
   employee?: AdminUser
   onCancel: () => void
   onSubmit: (payload: EmployeeMutationInput) => void
   pending: boolean
 }) {
+  const canEditThisProfile = canEditBasic
+    && (canEditAdminRole || employee?.role !== 'admin')
+    && (canSeparate || employee?.status !== 'separated')
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!canEditThisProfile) return
     onSubmit(employeeFormPayload(event.currentTarget, employee?.id))
   }
 
   return (
     <form className="request-form user-admin-form" onSubmit={submit}>
       <div className="form-grid form-grid--three">
-        <label><span>First name</span><input defaultValue={employee?.firstName} name="firstName" required /></label>
-        <label><span>Middle name</span><input defaultValue={employee?.middleName ?? ''} name="middleName" /></label>
-        <label><span>Last name</span><input defaultValue={employee?.lastName} name="lastName" required /></label>
+        <label><span>First name</span><input defaultValue={employee?.firstName} disabled={!canEditThisProfile} name="firstName" required /></label>
+        <label><span>Middle name</span><input defaultValue={employee?.middleName ?? ''} disabled={!canEditThisProfile} name="middleName" /></label>
+        <label><span>Last name</span><input defaultValue={employee?.lastName} disabled={!canEditThisProfile} name="lastName" required /></label>
       </div>
       <div className="form-grid form-grid--three">
-        <label><span>Preferred name</span><input defaultValue={employee?.preferredName ?? ''} name="preferredName" /></label>
+        <label><span>Preferred name</span><input defaultValue={employee?.preferredName ?? ''} disabled={!canEditThisProfile} name="preferredName" /></label>
         <label>
           <span>Employee ID</span>
           <input
             defaultValue={employee?.employeeNumber ?? ''}
+            disabled={!canEditThisProfile}
             name="employeeNumber"
             placeholder="Assigned automatically"
             readOnly
           />
         </label>
-        <label><span>Job title</span><input defaultValue={employee?.jobTitle ?? ''} maxLength={140} name="jobTitle" placeholder="Guard, Owner, CS&AO..." /></label>
+        <label><span>Job title</span><input defaultValue={employee?.jobTitle ?? ''} disabled={!canEditThisProfile} maxLength={140} name="jobTitle" placeholder="Guard, Owner, CS&AO..." /></label>
       </div>
       <div className="form-grid form-grid--three">
         <label>
           <span>Role</span>
-          <select defaultValue={employee?.role ?? 'guard'} name="role">
+          <select defaultValue={employee?.role ?? 'guard'} disabled={!canEditThisProfile} name="role">
             <option value="guard">Guard</option>
             <option value="dispatcher">Dispatcher</option>
             <option value="scheduler">Scheduler</option>
             <option value="recruiting_licensing">Recruiting & Licensing</option>
             <option value="supervisor">Supervisor</option>
-            <option value="admin">Admin</option>
+            <option disabled={!canEditAdminRole} value="admin">Admin</option>
           </select>
         </label>
         <label>
           <span>Employment</span>
-          <select defaultValue={employee?.employmentType ?? 'hourly'} name="employmentType">
+          <select defaultValue={employee?.employmentType ?? 'hourly'} disabled={!canEditThisProfile} name="employmentType">
             <option value="hourly">Hourly</option>
             <option value="salary">Salary</option>
             <option value="flex">Flex</option>
@@ -174,23 +278,23 @@ function EmployeeForm({
         </label>
         <label>
           <span>Status</span>
-          <select defaultValue={employee?.status ?? 'active'} name="status">
+          <select defaultValue={employee?.status ?? 'active'} disabled={!canEditThisProfile} name="status">
             <option value="active">Active</option>
             <option value="onboarding">Onboarding</option>
             <option value="leave">On leave</option>
             <option value="inactive">Inactive</option>
-            <option value="separated">Separated</option>
+            <option disabled={!canSeparate && employee?.status !== 'separated'} value="separated">Separated</option>
           </select>
         </label>
-        <label><span>Mobile phone</span><input defaultValue={employee?.mobilePhone ?? ''} name="mobilePhone" /></label>
+        <label><span>Mobile phone</span><input defaultValue={employee?.mobilePhone ?? ''} disabled={!canEditThisProfile} name="mobilePhone" /></label>
       </div>
       <div className="form-grid form-grid--two">
-        <label><span>Personal email</span><input defaultValue={employee?.personalEmail ?? ''} name="personalEmail" type="email" /></label>
-        <label><span>Company email</span><input defaultValue={employee?.companyEmail ?? ''} name="companyEmail" type="email" /></label>
+        <label><span>Personal email</span><input defaultValue={employee?.personalEmail ?? ''} disabled={!canEditThisProfile} name="personalEmail" type="email" /></label>
+        <label><span>Company email</span><input defaultValue={employee?.companyEmail ?? ''} disabled={!canEditThisProfile} name="companyEmail" type="email" /></label>
       </div>
       <div className="modal-actions">
         <button className="secondary-button" onClick={onCancel} type="button">Cancel</button>
-        <button className="primary-action" disabled={pending} type="submit">
+        <button className="primary-action" disabled={pending || !canEditThisProfile} type="submit">
           {pending ? 'Saving…' : employee ? 'Save employee' : 'Create employee'}
         </button>
       </div>
@@ -199,9 +303,19 @@ function EmployeeForm({
 }
 
 function ManageUserModal({
+  canDeleteUsers,
+  canEditAdminRole,
+  canEditBasic,
+  canManageLogin,
+  canSeparate,
   employee,
   onClose,
 }: {
+  canDeleteUsers: boolean
+  canEditAdminRole: boolean
+  canEditBasic: boolean
+  canManageLogin: boolean
+  canSeparate: boolean
   employee: AdminUser
   onClose: () => void
 }) {
@@ -211,6 +325,7 @@ function ManageUserModal({
   const [loginEmailMessage, setLoginEmailMessage] = useState<string | null>(null)
   const [welcomeEmailMessage, setWelcomeEmailMessage] = useState<string | null>(null)
   const [trustedDeviceMessage, setTrustedDeviceMessage] = useState<string | null>(null)
+  const [deleteMessage, setDeleteMessage] = useState<string | null>(null)
   const onFileEmail = employee.companyEmail || employee.personalEmail || null
 
   const updateMutation = useMutation({
@@ -220,6 +335,24 @@ function ManageUserModal({
         replaceDirectoryUser(current, updatedEmployee),
       )
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
+    },
+  })
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteSeparatedEmployee(employee.id),
+    onSuccess: async (result) => {
+      setDeleteMessage(`${result.displayName} was deleted. Metadata remains visible for 14 days.`)
+      queryClient.setQueryData<AdminUserDirectory>(['admin-user-directory'], (current) => {
+        if (!current) return current
+        return {
+          ...current,
+          users: current.users.filter((user) => user.id !== employee.id),
+        }
+      })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['recently-deleted-employees'], refetchType: 'active' }),
+      ])
+      onClose()
     },
   })
   const accountStateMutation = useMutation({
@@ -270,6 +403,7 @@ function ManageUserModal({
     || provisionMutation.isPending
     || loginEmailMutation.isPending
     || welcomeEmailMutation.isPending
+    || deleteMutation.isPending
   const employeeFormKey = [
     employee.id,
     employee.firstName,
@@ -298,6 +432,9 @@ function ManageUserModal({
         <section aria-labelledby="employee-profile-title">
           <h3 id="employee-profile-title">Employee profile</h3>
           <EmployeeForm
+            canEditAdminRole={canEditAdminRole}
+            canEditBasic={canEditBasic}
+            canSeparate={canSeparate}
             employee={employee}
             key={employeeFormKey}
             onCancel={onClose}
@@ -305,13 +442,26 @@ function ManageUserModal({
             pending={updateMutation.isPending}
           />
           {updateMutation.isError ? <div className="inline-alert" role="alert">{updateMutation.error.message}</div> : null}
-          <p className="form-note">Credential updates are handled in Directory so schedulers can maintain qualification records without account-security access.</p>
+          <p className="form-note">
+            {canEditBasic
+              ? 'Credential updates are handled in Directory so schedulers can maintain qualification records without account-security access.'
+              : 'This access level can review user records, but cannot edit employee profile details.'}
+          </p>
         </section>
 
         <section className="account-control-panel" aria-labelledby="account-control-title">
           <h3 id="account-control-title">Login access</h3>
+          {!canManageLogin ? (
+            <div className="account-control-card">
+              <AccountStatusBadge user={employee} />
+              <AccountActivityPanel user={employee} />
+              <p>This permission level can view account state, but cannot create, reset, disable, or email login access.</p>
+            </div>
+          ) : null}
+          {canManageLogin ? (
           <div className="account-control-card">
             <AccountStatusBadge user={employee} />
+            <AccountActivityPanel user={employee} />
             <p>
               {employee.accountStatus === 'not_created'
                 ? 'Create a login when this employee is ready to access SygShift.'
@@ -326,12 +476,13 @@ function ManageUserModal({
                 onChange={(event) => setTemporaryPassword(event.target.value)}
                 placeholder="Leave blank to generate securely"
                 type="password"
+                disabled={!canManageLogin}
                 value={temporaryPassword}
               />
             </label>
             <button
               className="primary-action"
-              disabled={provisionMutation.isPending || employee.status !== 'active'}
+              disabled={!canManageLogin || provisionMutation.isPending || employee.status !== 'active'}
               onClick={() => provisionMutation.mutate()}
               type="button"
             >
@@ -340,7 +491,7 @@ function ManageUserModal({
             </button>
             <button
               className="secondary-button"
-              disabled={loginEmailMutation.isPending || employee.status !== 'active'}
+              disabled={!canManageLogin || loginEmailMutation.isPending || employee.status !== 'active'}
               onClick={() => loginEmailMutation.mutate()}
               type="button"
             >
@@ -350,7 +501,7 @@ function ManageUserModal({
             {employee.account ? (
               <button
                 className="secondary-button"
-                disabled={accountStateMutation.isPending}
+                disabled={!canManageLogin || accountStateMutation.isPending}
                 onClick={() => accountStateMutation.mutate(employee.accountStatus !== 'disabled')}
                 type="button"
               >
@@ -361,7 +512,7 @@ function ManageUserModal({
             {employee.account && (employee.account.trustedDeviceCount ?? 0) > 0 ? (
               <button
                 className="secondary-button"
-                disabled={revokeTrustedDevicesMutation.isPending}
+                disabled={!canManageLogin || revokeTrustedDevicesMutation.isPending}
                 onClick={() => revokeTrustedDevicesMutation.mutate()}
                 type="button"
               >
@@ -371,6 +522,7 @@ function ManageUserModal({
             ) : null}
             {employee.status !== 'active' ? <small>Only active employees can receive login accounts.</small> : null}
           </div>
+          ) : null}
 
           {lastCredential ? (
             <div className="temporary-password-card" role="status">
@@ -404,7 +556,7 @@ function ManageUserModal({
             </p>
             <button
               className="secondary-button"
-              disabled={welcomeEmailMutation.isPending || employee.status !== 'active' || !onFileEmail}
+              disabled={!canManageLogin || welcomeEmailMutation.isPending || employee.status !== 'active' || !onFileEmail}
               onClick={() => welcomeEmailMutation.mutate()}
               type="button"
             >
@@ -417,6 +569,35 @@ function ManageUserModal({
 
           {welcomeEmailMessage ? <div className="form-feedback form-feedback--success" role="status">{welcomeEmailMessage}</div> : null}
           {welcomeEmailMutation.isError ? <div className="inline-alert" role="alert">{welcomeEmailMutation.error.message}</div> : null}
+
+          {canDeleteUsers ? (
+            <div className="account-control-card account-control-card--danger">
+              <div>
+                <span className="account-control-kicker">Admin only</span>
+                <h4>Delete separated unused user</h4>
+              </div>
+              <p>
+                Delete is only allowed after separation and only when the record has no operational history.
+                Metadata remains in Recently Deleted for 14 days.
+              </p>
+              <button
+                className="secondary-button"
+                disabled={deleteMutation.isPending || employee.status !== 'separated'}
+                onClick={() => {
+                  if (window.confirm(`Delete ${employee.displayName}? This only succeeds if the separated employee has no operational history.`)) {
+                    deleteMutation.mutate()
+                  }
+                }}
+                type="button"
+              >
+                <Trash2 aria-hidden="true" size={18} />
+                Delete user
+              </button>
+              {employee.status !== 'separated' ? <small>Separate the employee before deletion is available.</small> : null}
+              {deleteMessage ? <small>{deleteMessage}</small> : null}
+              {deleteMutation.isError ? <div className="inline-alert" role="alert">{deleteMutation.error.message}</div> : null}
+            </div>
+          ) : null}
         </section>
       </div>
     </ModalDialog>
@@ -434,9 +615,27 @@ export function UserAdminPage() {
   const [bulkCredentials, setBulkCredentials] = useState<ProvisioningCredential[]>([])
   const [bulkEmailMessage, setBulkEmailMessage] = useState<string | null>(null)
 
+  const sessionQuery = useQuery({
+    queryFn: getSessionContext,
+    queryKey: ['session-context', 'user-admin'],
+  })
   const directoryQuery = useQuery({
     queryFn: getAdminUserDirectory,
     queryKey: ['admin-user-directory'],
+  })
+
+  const sessionContext = sessionQuery.data
+  const hasPermission = (permission: string) => sessionContext?.role === 'admin' || Boolean(sessionContext?.permissions.includes(permission))
+  const canEditBasic = hasPermission('admin.users.basic') || hasPermission('admin.users.manage')
+  const canManageLogin = hasPermission('admin.users.manage')
+  const canSeparate = hasPermission('admin.users.separate')
+  const canDeleteUsers = sessionContext?.role === 'admin' && hasPermission('admin.users.delete')
+  const canEditAdminRole = sessionContext?.role === 'admin'
+
+  const recentlyDeletedQuery = useQuery({
+    enabled: Boolean(canDeleteUsers),
+    queryFn: getRecentlyDeletedEmployees,
+    queryKey: ['recently-deleted-employees'],
   })
 
   const createMutation = useMutation({
@@ -511,7 +710,7 @@ export function UserAdminPage() {
         </div>
         <div className="access-note">
           <ShieldCheck aria-hidden="true" size={19} />
-          Admin + MFA required
+          MFA permission checked
         </div>
       </section>
 
@@ -541,13 +740,19 @@ export function UserAdminPage() {
             <label className="select-field"><span>Role</span><select onChange={(event) => setRole(event.target.value as typeof role)} value={role}><option value="all">All roles</option><option value="guard">Guards</option><option value="dispatcher">Dispatchers</option><option value="scheduler">Schedulers</option><option value="recruiting_licensing">Recruiting & Licensing</option><option value="supervisor">Supervisors</option><option value="admin">Admins</option></select></label>
             <label className="select-field"><span>Status</span><select onChange={(event) => setStatus(event.target.value as typeof status)} value={status}><option value="active">Active</option><option value="leave">On leave</option><option value="inactive">Inactive</option><option value="separated">Separated</option><option value="all">All</option></select></label>
             <label className="select-field"><span>Login</span><select onChange={(event) => setAccount(event.target.value as typeof account)} value={account}><option value="all">All logins</option><option value="not_created">No login</option><option value="active">Active login</option><option value="disabled">Disabled</option></select></label>
-            <button className="secondary-button" onClick={() => setCreating(true)} type="button"><Plus aria-hidden="true" size={18} /> Add employee</button>
-            <button className="primary-action" disabled={bulkProvisionMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkProvisionMutation.mutate()} type="button">
-              <KeyRound aria-hidden="true" size={18} /> Create missing logins
-            </button>
-            <button className="secondary-button" disabled={bulkLoginEmailMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkLoginEmailMutation.mutate()} type="button">
-              <Mail aria-hidden="true" size={18} /> Email new logins
-            </button>
+            {canEditBasic ? (
+              <button className="secondary-button" onClick={() => setCreating(true)} type="button"><Plus aria-hidden="true" size={18} /> Add employee</button>
+            ) : null}
+            {canManageLogin ? (
+              <>
+                <button className="primary-action" disabled={bulkProvisionMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkProvisionMutation.mutate()} type="button">
+                  <KeyRound aria-hidden="true" size={18} /> Create missing logins
+                </button>
+                <button className="secondary-button" disabled={bulkLoginEmailMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkLoginEmailMutation.mutate()} type="button">
+                  <Mail aria-hidden="true" size={18} /> Email new logins
+                </button>
+              </>
+            ) : null}
           </section>
 
           {bulkProvisionMutation.isError ? <div className="inline-alert" role="alert">{bulkProvisionMutation.error.message}</div> : null}
@@ -571,7 +776,7 @@ export function UserAdminPage() {
                   <span role="columnheader">Employee</span>
                   <span role="columnheader">Role</span>
                   <span role="columnheader">Employment</span>
-                  <span role="columnheader">Login</span>
+                  <span role="columnheader">Account activity</span>
                   <span role="columnheader">Action</span>
                 </div>
                 {filteredUsers.map((user) => (
@@ -587,10 +792,10 @@ export function UserAdminPage() {
                       <span className="plain-value">{employmentLabels[user.employmentType]}</span>
                       <small>{statusLabels[user.status]}</small>
                     </div>
-                    <div role="cell"><AccountStatusBadge user={user} /></div>
+                    <div role="cell"><AccountActivitySummary user={user} /></div>
                     <div role="cell">
                       <button className="secondary-button secondary-button--small" onClick={() => setSelectedUserId(user.id)} type="button">
-                        <UserCog aria-hidden="true" size={17} /> Manage
+                        <UserCog aria-hidden="true" size={17} /> {canEditBasic || canManageLogin || canSeparate || canDeleteUsers ? 'Manage' : 'View'}
                       </button>
                     </div>
                   </div>
@@ -598,10 +803,50 @@ export function UserAdminPage() {
               </div>
             )}
           </section>
+
+          {canDeleteUsers ? (
+            <section
+              className={recentlyDeletedQuery.data?.length
+                ? 'recently-deleted-panel recently-deleted-panel--users'
+                : 'recently-deleted-panel recently-deleted-panel--users recently-deleted-panel--empty'}
+              aria-labelledby="recently-deleted-users-title"
+            >
+              <div className="recently-deleted-panel__heading">
+                <div>
+                  <p className="eyebrow">Audit</p>
+                  <h2 id="recently-deleted-users-title">Recently deleted users</h2>
+                  <p>Deleted user metadata is retained for 14 days.</p>
+                </div>
+                <span className="status-pill">14-day retention</span>
+              </div>
+              {recentlyDeletedQuery.isPending ? (
+                <p className="form-note">Loading deleted user metadata.</p>
+              ) : recentlyDeletedQuery.isError ? (
+                <div className="inline-alert" role="alert">{recentlyDeletedQuery.error.message}</div>
+              ) : recentlyDeletedQuery.data?.length ? (
+                <div className="recently-deleted-list">
+                  {recentlyDeletedQuery.data.map((record) => (
+                    <article key={record.id}>
+                      <div>
+                        <strong>{record.displayName}</strong>
+                        <small>Deleted {new Date(record.deletedAt).toLocaleString()}</small>
+                      </div>
+                      <span>Retained until {new Date(record.expiresAt).toLocaleDateString()}</span>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="recently-deleted-empty">
+                  <strong>No recently deleted users</strong>
+                  <span>Deleted user metadata will appear here during the retention window.</span>
+                </div>
+              )}
+            </section>
+          ) : null}
         </>
       )}
 
-      {creating ? (
+      {creating && canEditBasic ? (
         <ModalDialog
           busy={createMutation.isPending}
           busyLabel="Creating employee..."
@@ -610,6 +855,9 @@ export function UserAdminPage() {
           title="Add employee"
         >
           <EmployeeForm
+            canEditAdminRole={canEditAdminRole}
+            canEditBasic={canEditBasic}
+            canSeparate={canSeparate}
             onCancel={() => setCreating(false)}
             onSubmit={(payload) => createMutation.mutate(payload)}
             pending={createMutation.isPending}
@@ -632,6 +880,11 @@ export function UserAdminPage() {
 
       {selectedUser ? (
         <ManageUserModal
+          canDeleteUsers={Boolean(canDeleteUsers)}
+          canEditAdminRole={canEditAdminRole}
+          canEditBasic={canEditBasic}
+          canManageLogin={canManageLogin}
+          canSeparate={canSeparate}
           employee={selectedUser}
           onClose={() => setSelectedUserId(null)}
         />

@@ -8,6 +8,8 @@ const root = process.cwd()
 const appCss = readFileSync(join(root, 'src', 'App.css'), 'utf8')
 const accessControlPage = readFileSync(join(root, 'src', 'pages', 'AccessControlPage.tsx'), 'utf8')
 const availabilityPage = readFileSync(join(root, 'src', 'pages', 'AvailabilityPage.tsx'), 'utf8')
+const licensingCenterPage = readFileSync(join(root, 'src', 'pages', 'LicensingCenterPage.tsx'), 'utf8')
+const userAdminPage = readFileSync(join(root, 'src', 'pages', 'UserAdminPage.tsx'), 'utf8')
 
 function blockFor(selector: string): string {
   const start = appCss.indexOf(selector)
@@ -88,6 +90,8 @@ describe('button layout guardrails', () => {
     expect(accessControlPage).not.toContain('className="secondary-button"')
     expect(accessControlPage).toContain('access-control-button access-control-button--primary')
     expect(accessControlPage).toContain('access-control-button access-control-button--secondary')
+    expect(accessControlPage).toContain('access-save-status access-save-status--${saveStatusState}')
+    expect(accessControlPage).toContain('Saving complete.')
 
     const accessButtonBlock = topLevelBlockFor('.access-control-button')
     expect(accessButtonBlock).toContain('box-sizing: border-box')
@@ -97,6 +101,63 @@ describe('button layout guardrails', () => {
 
     expect(blockFor('.access-control-button--primary')).toContain('linear-gradient')
     expect(blockFor('.access-control-button--secondary')).toContain('background: #fffdfa')
+    expect(blockFor('.access-save-status')).toContain('min-height: 42px')
+    expect(blockFor('.access-save-status')).toContain('font-weight: 900')
+  })
+
+  it('keeps Licensing Center filters separated and actions icon-safe', () => {
+    expect(licensingCenterPage).toContain('licensing-toolbar__filter--credential')
+    expect(licensingCenterPage).toContain('licensing-toolbar__filter--employment')
+    expect(licensingCenterPage).toContain('<X aria-hidden="true" size={17} />')
+    expect(licensingCenterPage).toContain('<FolderOpen aria-hidden="true" size={15} />')
+    expect(licensingCenterPage).toContain('<Pencil aria-hidden="true" size={15} />')
+
+    const toolbarBlock = blockFor('.licensing-toolbar')
+    expect(toolbarBlock).toContain('minmax(260px, 0.9fr)')
+    expect(toolbarBlock).toContain('minmax(220px, 0.72fr)')
+    expect(toolbarBlock).toContain('gap: 14px 16px')
+
+    expect(blockFor('.licensing-toolbar .select-field')).toContain('min-width: 0')
+    expect(blockFor('.licensing-toolbar .select-field span')).toContain('white-space: nowrap')
+
+    const licensingButtonBlock = blockFor(
+      '.page--licensing .primary-action,\n.page--licensing .secondary-button,\n.modal-dialog--licensing-profile .primary-action,\n.modal-dialog--licensing-profile .secondary-button,\n.licensing-form .primary-action,\n.licensing-form .secondary-button',
+    )
+    expect(licensingButtonBlock).toContain('gap: 8px')
+    expect(licensingButtonBlock).toContain('min-width: 0')
+    expect(licensingButtonBlock).toContain('white-space: normal')
+    expect(licensingButtonBlock).not.toContain('min-width: max-content')
+  })
+
+  it('keeps recently deleted user retention compact and clearly labeled', () => {
+    expect(userAdminPage).not.toContain('Admin retention')
+    expect(userAdminPage).toContain('<p className="eyebrow">Audit</p>')
+    expect(userAdminPage).toContain('14-day retention')
+    expect(userAdminPage).toContain('recently-deleted-panel--users')
+    expect(userAdminPage).toContain('recently-deleted-panel--empty')
+    expect(userAdminPage).toContain('No recently deleted users')
+
+    expect(blockFor('.recently-deleted-panel--users')).toContain('max-width: 760px')
+    expect(blockFor('.recently-deleted-panel--empty')).toContain('max-width: 620px')
+    expect(blockFor('.recently-deleted-panel__heading h2')).toContain('font-size: 18px')
+    expect(blockFor('.recently-deleted-empty')).toContain('padding: 14px 16px 16px')
+  })
+
+  it('keeps Users & Access filters and actions separated in a real grid', () => {
+    expect(userAdminPage).toContain('className="user-admin-toolbar"')
+    expect(userAdminPage).toContain('<span role="columnheader">Account activity</span>')
+    expect(userAdminPage).toContain('<AccountActivitySummary user={user} />')
+    expect(userAdminPage).toContain('<AccountActivityPanel user={employee} />')
+
+    const toolbarBlock = topLevelBlockFor('.user-admin-toolbar')
+    expect(toolbarBlock).toContain('display: grid')
+    expect(toolbarBlock).toContain('repeat(3, minmax(140px, 170px))')
+    expect(toolbarBlock).toContain('auto auto')
+
+    expect(blockFor('.user-admin-toolbar .select-field')).toContain('width: 100%')
+    expect(blockFor('.user-admin-toolbar .select-field select')).toContain('min-width: 0')
+    expect(blockFor('.user-admin-toolbar .primary-action,\n.user-admin-toolbar .secondary-button')).toContain('min-width: max-content')
+    expect(blockFor('.account-activity-card dl div')).toContain('grid-template-columns')
   })
 
   it('keeps Employee Access modals purpose-sized and locally aligned', () => {
@@ -104,8 +165,8 @@ describe('button layout guardrails', () => {
     expect(accessControlPage).toContain('access-modal access-modal--employee-editor')
     expect(accessControlPage).toContain('modal-actions employee-access-menu-actions')
 
-    expect(blockFor('.access-modal--employee-menu')).toContain('width: min(94vw, 720px)')
-    expect(blockFor('.access-modal--employee-editor')).toContain('width: min(96vw, 1120px)')
+    expect(blockFor('.access-modal--employee-menu')).toContain('width: min(96vw, 820px)')
+    expect(blockFor('.access-modal--employee-editor')).toContain('width: min(98vw, 1280px)')
 
     const menuActionsBlock = blockFor('.employee-access-menu-actions')
     expect(menuActionsBlock).toContain('justify-content: space-between')
