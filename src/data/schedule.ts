@@ -99,8 +99,8 @@ const createOpenShiftResultSchema = z.object({
   schedule_revision: z.number().int().positive(),
   shift_id: z.string().uuid(),
   assignment_id: z.string().uuid().nullable().optional(),
-  event_id: z.string().uuid().nullable(),
-  announcement_id: z.string().uuid().nullable(),
+  event_id: z.string().uuid().nullable().optional(),
+  announcement_id: z.string().uuid().nullable().optional(),
   starts_at: z.string(),
   ends_at: z.string(),
   time_zone: z.string(),
@@ -261,7 +261,7 @@ export async function getImportedSchedulePreview(weekStartsOn: string): Promise<
 }
 
 export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Promise<CreateOpenShiftResult> {
-  const { data, error } = await getSupabaseClient().rpc('create_supervisor_open_shift', {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_create_open_shift', {
     target_week_starts_on: input.weekStartsOn,
     target_post_id: input.mode === 'post' ? input.postId : null,
     event_name: input.mode === 'event' ? input.eventName?.trim() : null,
@@ -296,7 +296,7 @@ export async function ensureScheduleDraft(weekStartsOn: string): Promise<WeeklyS
 }
 
 export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Promise<WeeklySchedule> {
-  const { data, error } = await getSupabaseClient().rpc('update_schedule_draft_shift', {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_update_draft_shift', {
     target_shift_id: input.shiftId,
     shift_operational_date: input.shiftDate,
     shift_start_time: input.startTime,
@@ -358,7 +358,7 @@ export async function resolveScheduleReviewShift(input: {
   note: string | null
   credentialOverrideNote?: string | null
 }): Promise<ResolveReviewShiftResult> {
-  const { data, error } = await getSupabaseClient().rpc('resolve_schedule_review_shift', {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_resolve_review_shift', {
     target_shift_id: input.shiftId,
     target_employee_id: input.employeeId,
     resolution_note: input.note?.trim() || null,
