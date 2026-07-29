@@ -10,6 +10,8 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 - Added a stronger modal-specific guard search override after screenshot review confirmed the generic form-grid input styling was still creating an inner input border.
 - Reworked the punch correction editor layout so the New Date and New Time fields stay aligned, readable, and contained.
 - Added a dedicated Fix Location workflow for employee punches.
+- Fixed multi-day shift publishing so repeated shifts are created sequentially instead of creating competing schedule revisions at the same time.
+- Added a regression guard that blocks the multi-day scheduler path from being changed back to parallel revision creation.
 - Added a permanent database-backed location maintenance record for punches that were showing as Unscheduled Location.
 - Preserved audit integrity by keeping original punch records append-only and recording location corrections as maintenance overrides.
 - Updated Time Maintenance so corrected punch locations appear after save and refresh.
@@ -29,6 +31,7 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 - TypeScript check passed.
 - Lint passed.
 - Full test suite passed: 28 files, 104 tests.
+- Follow-up scheduler fix passed: 28 files, 105 tests.
 - Production build passed.
 
 ## Notes

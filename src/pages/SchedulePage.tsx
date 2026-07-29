@@ -1567,26 +1567,29 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const createOpenShiftMutation = useMutation({
     mutationFn: async () => {
       const dates = selectedOpenShiftDateKeys(openShiftForm, weekKey, weekEndKey)
-      const results = await Promise.all(dates.map((shiftDate) => createSupervisorOpenShift({
-        weekStartsOn: weekKey,
-        mode: openShiftForm.mode,
-        postId: openShiftForm.postId || null,
-        eventName: openShiftForm.eventName,
-        eventLocationName: openShiftForm.eventLocationName,
-        eventSiteId: openShiftForm.eventSiteId || null,
-        eventTimeZone: openShiftForm.eventTimeZone,
-        eventRequiresArmed: openShiftForm.eventRequiresArmed,
-        shiftDate,
-        startTime: openShiftForm.startTime,
-        endTime: openShiftForm.endTime,
-        headcount: Number.parseInt(openShiftForm.headcount, 10),
-        employeeId: openShiftForm.employeeId || null,
-        isOvertime: openShiftForm.isOvertime,
-        notes: openShiftForm.notes,
-        availabilityOverrideNote: openShiftAvailabilityConflict ? openShiftForm.availabilityOverrideNote : null,
-        credentialOverrideNote: openShiftCredentialOverrideRequired ? openShiftForm.credentialOverrideNote : null,
-        publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
-      })))
+      const results = []
+      for (const shiftDate of dates) {
+        results.push(await createSupervisorOpenShift({
+          weekStartsOn: weekKey,
+          mode: openShiftForm.mode,
+          postId: openShiftForm.postId || null,
+          eventName: openShiftForm.eventName,
+          eventLocationName: openShiftForm.eventLocationName,
+          eventSiteId: openShiftForm.eventSiteId || null,
+          eventTimeZone: openShiftForm.eventTimeZone,
+          eventRequiresArmed: openShiftForm.eventRequiresArmed,
+          shiftDate,
+          startTime: openShiftForm.startTime,
+          endTime: openShiftForm.endTime,
+          headcount: Number.parseInt(openShiftForm.headcount, 10),
+          employeeId: openShiftForm.employeeId || null,
+          isOvertime: openShiftForm.isOvertime,
+          notes: openShiftForm.notes,
+          availabilityOverrideNote: openShiftAvailabilityConflict ? openShiftForm.availabilityOverrideNote : null,
+          credentialOverrideNote: openShiftCredentialOverrideRequired ? openShiftForm.credentialOverrideNote : null,
+          publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
+        }))
+      }
       return { dates, results }
     },
     onSuccess: async ({ results }) => {

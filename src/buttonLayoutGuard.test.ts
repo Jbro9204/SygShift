@@ -9,6 +9,7 @@ const appCss = readFileSync(join(root, 'src', 'App.css'), 'utf8')
 const accessControlPage = readFileSync(join(root, 'src', 'pages', 'AccessControlPage.tsx'), 'utf8')
 const availabilityPage = readFileSync(join(root, 'src', 'pages', 'AvailabilityPage.tsx'), 'utf8')
 const licensingCenterPage = readFileSync(join(root, 'src', 'pages', 'LicensingCenterPage.tsx'), 'utf8')
+const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
 const userAdminPage = readFileSync(join(root, 'src', 'pages', 'UserAdminPage.tsx'), 'utf8')
 
 function blockFor(selector: string): string {
@@ -127,6 +128,11 @@ describe('button layout guardrails', () => {
     expect(licensingButtonBlock).toContain('min-width: 0')
     expect(licensingButtonBlock).toContain('white-space: normal')
     expect(licensingButtonBlock).not.toContain('min-width: max-content')
+  })
+
+  it('keeps multi-day shift creation sequential to avoid duplicate schedule revisions', () => {
+    expect(schedulePage).toContain('for (const shiftDate of dates)')
+    expect(schedulePage).not.toContain('Promise.all(dates.map((shiftDate) => createSupervisorOpenShift')
   })
 
   it('keeps recently deleted user retention compact and clearly labeled', () => {
