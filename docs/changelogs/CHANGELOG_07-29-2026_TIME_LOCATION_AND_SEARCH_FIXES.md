@@ -19,6 +19,8 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 - Added a new `location_update` maintenance action so location changes show as part of the punch maintenance history.
 - Fixed assigned multi-day shift retries so SygShift refreshes the current schedule first, skips dates where the selected employee is already assigned for that same time, creates only the missing dates, closes the modal, and reports which dates were skipped.
 - Confirmed Zach Ward already had ADMIN shifts on 08/03/2026 and 08/04/2026 in the database; the new scheduler behavior prevents that real saved data from looking like a broken overlap error on retry.
+- Fixed the root stale-draft scheduler issue where an older draft revision could hide a newer published revision in the UI.
+- Archived the stale 08/02/2026 draft revision that was causing Zach Ward to show 0 visible shifts while the database correctly blocked overlapping assignments.
 
 ## Database changes
 
@@ -27,6 +29,10 @@ This update fixed immediate Time & Attendance and scheduling usability issues wh
 - Updated `public.get_time_maintenance(...)` to read the latest location override.
 - Updated `public.get_timekeeping_review(...)` to use corrected locations in review output.
 - Marked migration `20260729184500` as applied in Supabase after applying it directly.
+- Added migration `20260729173000_latest_schedule_revision_selection.sql`.
+- Updated `public.get_weekly_schedule_payload(...)` so the latest visible schedule revision wins instead of any draft automatically overriding newer published data.
+- Updated `public.ensure_schedule_draft(...)` so stale older drafts are archived before opening or creating a working draft.
+- Marked migration `20260729173000` as applied in Supabase after applying it directly.
 
 ## QA completed
 
