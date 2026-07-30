@@ -47,10 +47,17 @@ import {
   type TimekeepingShift,
   type TimekeepingState,
 } from '../data/timekeeping'
-import { getSessionContext, type SessionContext } from '../data/auth'
+import { getSessionContext } from '../data/auth'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTime, OPERATIONAL_TIME_ZONE, operationalToday } from '../lib/time'
 import { TimeCommandCenterPage } from '../time/TimeCommandCenterPage'
+import {
+  canExportPayroll as sessionCanExportPayroll,
+  canManageTime as sessionCanManageTime,
+  canUseOwnTimeClock,
+  canViewOwnTime,
+} from '../time/timePermissions'
+import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from '../time/timeQuerySync'
 
 const actionLabels: Record<TimeEventKind, string> = {
   clock_in: 'Clock in',
@@ -84,14 +91,6 @@ const stateCopy: Record<TimekeepingState, { title: string; body: string }> = {
     title: 'You are on break.',
     body: 'End the break before clocking out so payroll can calculate the paid and unpaid time correctly.',
   },
-}
-
-function hasTimePermission(session: SessionContext | null | undefined, permission: string): boolean {
-  return session?.role === 'admin' || Boolean(session?.permissions.includes(permission))
-}
-
-function hasOperationsTimeRole(role: TimekeepingDashboard['employee']['role']): boolean {
-  return ['dispatcher', 'scheduler', 'supervisor', 'admin'].includes(role)
 }
 
 function formatDateKey(date: Date): string {
@@ -702,10 +701,12 @@ function ShiftPicker({
 }
 
 function PunchControls({
+  canPunch,
   dashboard,
   pending,
   onPunch,
 }: {
+  canPunch: boolean
   dashboard: TimekeepingDashboard
   pending: boolean
   onPunch: (kind: TimeEventKind, shiftId?: string | null) => void
@@ -756,7 +757,7 @@ function PunchControls({
         {actions.map((kind) => (
           <button
             className={kind === 'clock_in' || kind === 'clock_out' ? 'primary-action' : 'secondary-button'}
-            disabled={pending}
+            disabled={pending || !canPunch}
             key={kind}
             onClick={() => onPunch(kind, kind === 'clock_in' ? selectedShiftId : undefined)}
             type="button"
@@ -766,6 +767,11 @@ function PunchControls({
           </button>
         ))}
       </div>
+      <small className="my-time-official-note">
+        {canPunch
+          ? 'Official time is recorded by the secure server. This panel updates as soon as the punch is saved.'
+          : 'Your account can view time, but time clock punches are not enabled.'}
+      </small>
     </section>
   )
 }
@@ -1343,43 +1349,39 @@ function LiveTimekeeping() {
   const sessionQuery = useQuery({
     queryKey: ['session-context'],
     queryFn: getSessionContext,
+    enabled: isSupabaseConfigured,
   })
+  const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
+  const punchAllowed = canUseOwnTimeClock(sessionQuery.data)
   const dashboardQuery = useQuery({
     queryKey: ['timekeeping-dashboard', operationalDate],
     queryFn: () => getTimekeepingDashboard(operationalDate),
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     refetchInterval: 15_000,
   })
   const punchMutation = useMutation({
     mutationFn: (input: { kind: TimeEventKind; shiftId?: string | null }) => recordTimeEvent(input),
+    onSuccess: (event) => {
+      applyTimeEventToCachedDashboards(queryClient, event)
+    },
     onSettled: async () => {
       punchLocked.current = false
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['my-time-dashboard'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['my-time-review'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['time-command-dashboard'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['time-command-review'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['time-maintenance'], refetchType: 'active' }),
-      ])
-      await Promise.all([
-        queryClient.refetchQueries({ queryKey: ['timekeeping-dashboard'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['my-time-dashboard'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['my-time-review'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['time-command-dashboard'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['time-command-review'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['time-maintenance'], type: 'active' }),
-      ])
+      await refreshTimekeepingQueriesAfterPunch(queryClient)
     },
   })
 
   function recordPunch(kind: TimeEventKind, shiftId?: string | null) {
-    if (punchLocked.current || punchMutation.isPending) return
+    if (!punchAllowed || punchLocked.current || punchMutation.isPending) return
     punchLocked.current = true
     punchMutation.mutate({ kind, shiftId })
   }
 
-  if (dashboardQuery.isPending) {
+  if (sessionQuery.isPending || (ownTimeAllowed && dashboardQuery.isPending)) {
     return <DataStatePanel icon={Timer} title="Loading timekeeping"><p>Retrieving your assigned shifts, current status, and today&apos;s recorded punches.</p></DataStatePanel>
+  }
+
+  if (sessionQuery.isError || !ownTimeAllowed) {
+    return <DataStatePanel icon={ShieldAlert} title="Timekeeping is not enabled" tone="error"><p>Your account does not currently have Time & Attendance access. Ask an admin to add time.self.view or time.punch if this is incorrect.</p></DataStatePanel>
   }
 
   if (dashboardQuery.isError) {
@@ -1387,11 +1389,13 @@ function LiveTimekeeping() {
   }
 
   const dashboard = dashboardQuery.data
+  if (!dashboard) {
+    return <DataStatePanel icon={Timer} title="Loading timekeeping"><p>Waiting for your current clock and schedule data to finish loading.</p></DataStatePanel>
+  }
+
   const session = sessionQuery.data
-  const canManageTime = hasOperationsTimeRole(dashboard.employee.role)
-    || hasTimePermission(session, 'time.manage')
-  const canExportPayroll = hasOperationsTimeRole(dashboard.employee.role)
-    || hasTimePermission(session, 'time.export_payroll')
+  const canManageTime = sessionCanManageTime(session)
+  const canExportPayroll = sessionCanExportPayroll(session)
   const canReviewPayroll = canManageTime || canExportPayroll
 
   return (
@@ -1416,6 +1420,7 @@ function LiveTimekeeping() {
 
       <div className="time-layout">
         <PunchControls
+          canPunch={punchAllowed}
           dashboard={dashboard}
           onPunch={recordPunch}
           pending={punchMutation.isPending}

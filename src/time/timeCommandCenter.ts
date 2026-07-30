@@ -10,6 +10,7 @@ import type {
 import { activeTimeState } from '../data/timekeeping'
 import type { SessionContext } from '../data/auth'
 import { DEFAULT_TIME_RULES, TIME_RISK_THRESHOLDS, currentPayrollPeriod, type TimePeriod } from './timeRules'
+export { canExportPayroll, canViewTeamTime } from './timePermissions'
 
 export type TimeCommandRoleMode = 'employee' | 'salary' | 'operations' | 'admin'
 
@@ -57,17 +58,6 @@ export interface TimeCommandCenterModel {
     payPeriodPaidMinutes: number
     weeklyPaidMinutes: number
   }
-}
-
-export function canViewTeamTime(session: SessionContext | null | undefined): boolean {
-  if (!session) return false
-  if (['admin', 'supervisor', 'scheduler', 'dispatcher'].includes(session.role)) return true
-  return session.permissions.some((permission) => ['time.view', 'time.manage', 'time.export_payroll'].includes(permission))
-}
-
-export function canExportPayroll(session: SessionContext | null | undefined): boolean {
-  if (!session) return false
-  return session.role === 'admin' || session.permissions.includes('time.export_payroll')
 }
 
 export function commandRoleMode(session: SessionContext | null | undefined, dashboard: TimekeepingDashboard | null | undefined): TimeCommandRoleMode {

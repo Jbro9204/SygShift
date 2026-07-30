@@ -27,6 +27,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { buildTimeCommandCenterModel, canExportPayroll, canViewTeamTime } from './timeCommandCenter'
+import { canUseOwnTimeClock, canViewOwnTime } from './timePermissions'
 import { currentPayrollPeriod, formatUsDateKey } from './timeRules'
 import {
   TimeAlertCard,
@@ -41,10 +42,14 @@ export function TimeCommandCenterPage() {
   const sessionQuery = useQuery({
     queryKey: ['session-context'],
     queryFn: getSessionContext,
+    enabled: isSupabaseConfigured,
   })
+  const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
+  const punchAllowed = canUseOwnTimeClock(sessionQuery.data)
   const dashboardQuery = useQuery({
     queryKey: ['time-command-dashboard'],
     queryFn: () => getTimekeepingDashboard(),
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     refetchInterval: 15_000,
   })
   const rulesQuery = useQuery({
@@ -98,11 +103,21 @@ export function TimeCommandCenterPage() {
     )
   }
 
-  if (dashboardQuery.isPending) {
+  if (sessionQuery.isPending || (ownTimeAllowed && dashboardQuery.isPending)) {
     return (
       <main className="page page--sygshift-time">
         <DataStatePanel icon={Timer} title="Loading SygShift Time">
           <p>Building your Time Command Center from current punch, review, and payroll data.</p>
+        </DataStatePanel>
+      </main>
+    )
+  }
+
+  if (sessionQuery.isError || !ownTimeAllowed) {
+    return (
+      <main className="page page--sygshift-time">
+        <DataStatePanel icon={ShieldAlert} title="Time & Attendance is not enabled" tone="error">
+          <p>Your account does not currently have Time & Attendance access. Ask an admin to add time.self.view or time.punch if this is incorrect.</p>
         </DataStatePanel>
       </main>
     )
@@ -118,8 +133,19 @@ export function TimeCommandCenterPage() {
     )
   }
 
+  const dashboard = dashboardQuery.data
+  if (!dashboard) {
+    return (
+      <main className="page page--sygshift-time">
+        <DataStatePanel icon={Timer} title="Loading SygShift Time">
+          <p>Waiting for your current clock and schedule data to finish loading.</p>
+        </DataStatePanel>
+      </main>
+    )
+  }
+
   const model = buildTimeCommandCenterModel({
-    dashboard: dashboardQuery.data,
+    dashboard,
     exportHistory: exportHistoryQuery.data,
     maintenance: maintenanceQuery.data,
     payrollRules: rulesQuery.data,
@@ -136,7 +162,7 @@ export function TimeCommandCenterPage() {
         actions={
           <>
             <Link className="time-button time-button--secondary" to="/time/my-time"><UserRoundCheck aria-hidden="true" size={18} /><span>My Time</span></Link>
-            <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Open Time Tools</span></Link>
+            {punchAllowed ? <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Open Time Tools</span></Link> : null}
           </>
         }
         eyebrow="SygShift Time"
@@ -163,14 +189,14 @@ export function TimeCommandCenterPage() {
           <div>
             <p className="eyebrow">Your Clock Status</p>
             <h2>{statusTitle(model.self.clockState)}</h2>
-            <p>{model.self.displayName} · {model.self.employmentType} employee · Updated {formatOperationalDateTime(dashboardQuery.data.serverTimestamp)}</p>
+            <p>{model.self.displayName} · {model.self.employmentType} employee · Updated {formatOperationalDateTime(dashboard.serverTimestamp)}</p>
           </div>
           <TimeStatusBadge tone={model.self.clockState === 'off_clock' ? 'neutral' : 'good'}>{model.self.clockState.replace('_', ' ')}</TimeStatusBadge>
         </article>
       </section>
 
       {employeeView ? (
-        <EmployeeTimeOverview model={model} loadingMetrics={loadingMetrics} />
+        <EmployeeTimeOverview model={model} loadingMetrics={loadingMetrics} punchAllowed={punchAllowed} />
       ) : (
         <OperationsTimeOverview
           model={model}
@@ -186,9 +212,11 @@ export function TimeCommandCenterPage() {
 function EmployeeTimeOverview({
   loadingMetrics,
   model,
+  punchAllowed,
 }: {
   loadingMetrics: boolean
   model: ReturnType<typeof buildTimeCommandCenterModel>
+  punchAllowed: boolean
 }) {
   return (
     <>
@@ -212,7 +240,7 @@ function EmployeeTimeOverview({
       <section className="time-action-panel">
         <TimeSectionHeader title="What you can do next" summary="Keep it simple: check your hours or open the working time tools if you need to clock in, clock out, or review details." />
         <div className="time-action-panel__actions">
-          <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Clock / Review My Time</span></Link>
+          {punchAllowed ? <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Clock / Review My Time</span></Link> : null}
           <Link className="time-button time-button--secondary" to="/time/my-time"><ArrowRight aria-hidden="true" size={18} /><span>Open My Time</span></Link>
         </div>
       </section>

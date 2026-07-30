@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   activeTimeState,
+  applyRecordedTimeEventToDashboard,
   nextTimeEventKinds,
   parsePayrollExportBatch,
   parsePayrollExportHistory,
@@ -65,6 +66,48 @@ describe('timekeeping validation', () => {
     expect(nextTimeEventKinds('off_clock')).toEqual(['clock_in'])
     expect(nextTimeEventKinds('working')).toEqual(['break_start', 'clock_out'])
     expect(nextTimeEventKinds('on_break')).toEqual(['break_end'])
+  })
+
+  it('applies a saved punch to visible dashboard state immediately', () => {
+    const dashboard = parseTimekeepingDashboard({
+      serverTimestamp: '2026-07-30T14:00:00.000Z',
+      operationalDate: '2026-07-30',
+      operationalTimeZone: 'America/Denver',
+      employee: {
+        id: '73000000-0000-4000-8000-000000000001',
+        username: 'zward',
+        displayName: 'Zach Ward',
+        role: 'guard',
+        employmentType: 'flex',
+      },
+      lastEvent: null,
+      eligibleShifts: [],
+      recentEvents: [{
+        id: '73000000-0000-4000-8000-000000000002',
+        kind: 'clock_out',
+        shiftId: null,
+        recordedAt: '2026-07-30T13:00:00.000Z',
+        source: 'web',
+      }],
+      pendingCorrectionCount: 0,
+    })
+    const event = parseTimekeepingEvent({
+      id: '73000000-0000-4000-8000-000000000003',
+      kind: 'clock_in',
+      shiftId: null,
+      recordedAt: '2026-07-30T15:00:00.000Z',
+      effectiveAt: '2026-07-30T15:00:00.000Z',
+      source: 'web',
+    })
+
+    const updated = applyRecordedTimeEventToDashboard(dashboard, event)
+
+    expect(updated.lastEvent).toEqual({ ...event, voided: false })
+    expect(updated.recentEvents.map((recentEvent) => recentEvent.id)).toEqual([
+      event.id,
+      '73000000-0000-4000-8000-000000000002',
+    ])
+    expect(updated.serverTimestamp).toBe('2026-07-30T15:00:00.000Z')
   })
 
   it('validates supervisor review rows and exports payroll CSV safely', () => {

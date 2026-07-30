@@ -11,6 +11,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef } from 'react'
 import { Link } from 'react-router-dom'
+import { getSessionContext } from '../data/auth'
 import { getOverviewMetrics, overviewMetricNote, type OverviewMetrics } from '../data/overview'
 import {
   activeTimeState,
@@ -20,6 +21,8 @@ import {
   type TimekeepingDashboard,
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { canUseOwnTimeClock, canViewOwnTime } from '../time/timePermissions'
+import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from '../time/timeQuerySync'
 
 const metrics: Array<{ label: string, key: keyof OverviewMetrics, icon: typeof UsersRound }> = [
   { label: 'On duty now', key: 'onDutyNow', icon: UsersRound },
@@ -51,8 +54,15 @@ export function OverviewPage() {
     enabled: isSupabaseConfigured,
     refetchInterval: 60_000,
   })
-  const timekeepingQuery = useQuery({
+  const sessionQuery = useQuery({
     enabled: isSupabaseConfigured,
+    queryFn: getSessionContext,
+    queryKey: ['session-context'],
+  })
+  const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
+  const punchAllowed = canUseOwnTimeClock(sessionQuery.data)
+  const timekeepingQuery = useQuery({
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     queryFn: () => getTimekeepingDashboard(),
     queryKey: ['timekeeping-dashboard', 'overview'],
     refetchInterval: 15_000,
@@ -60,24 +70,12 @@ export function OverviewPage() {
   })
   const punchMutation = useMutation({
     mutationFn: (input: { kind: TimeEventKind; shiftId?: string | null }) => recordTimeEvent(input),
+    onSuccess: (event) => {
+      applyTimeEventToCachedDashboards(queryClient, event)
+    },
     onSettled: async () => {
       punchLocked.current = false
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['overview-metrics'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['my-time-dashboard'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['my-time-review'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['time-command-dashboard'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['time-command-review'], refetchType: 'active' }),
-      ])
-      await Promise.all([
-        queryClient.refetchQueries({ queryKey: ['overview-metrics'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['timekeeping-dashboard'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['my-time-dashboard'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['my-time-review'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['time-command-dashboard'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['time-command-review'], type: 'active' }),
-      ])
+      await refreshTimekeepingQueriesAfterPunch(queryClient)
     },
   })
   const overview = overviewQuery.data
@@ -85,7 +83,7 @@ export function OverviewPage() {
 
   function quickPunch() {
     if (!timeAction.kind || !timekeepingQuery.data) return
-    if (punchLocked.current || punchMutation.isPending) return
+    if (!punchAllowed || punchLocked.current || punchMutation.isPending) return
     punchLocked.current = true
     const shiftId = timeAction.kind === 'clock_in'
       ? timekeepingQuery.data.eligibleShifts[0]?.shiftId ?? null
@@ -105,12 +103,12 @@ export function OverviewPage() {
           </p>
         </div>
         <div className="overview-intro-actions">
-          {timeAction.requiresTimePage ? (
+          {ownTimeAllowed && timeAction.requiresTimePage ? (
             <Link className="primary-action overview-clock-action" to="/time">
               <Timer aria-hidden="true" size={19} />
               {timeAction.label}
             </Link>
-          ) : (
+          ) : ownTimeAllowed && punchAllowed ? (
             <button
               className="primary-action overview-clock-action"
               disabled={punchMutation.isPending || timekeepingQuery.isPending}
@@ -120,7 +118,7 @@ export function OverviewPage() {
               <Timer aria-hidden="true" size={19} />
               {punchMutation.isPending ? 'Recording...' : timeAction.label}
             </button>
-          )}
+          ) : null}
           <Link className="secondary-button overview-schedule-action" to="/schedule">
             Schedule
             <ArrowRight aria-hidden="true" size={18} />
@@ -130,6 +128,10 @@ export function OverviewPage() {
 
       {punchMutation.isError ? (
         <div className="inline-alert" role="alert">{punchMutation.error.message}</div>
+      ) : null}
+
+      {overviewQuery.isError ? (
+        <div className="inline-alert" role="alert">{overviewQuery.error.message}</div>
       ) : null}
 
       {timekeepingQuery.data ? (

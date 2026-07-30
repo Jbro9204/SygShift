@@ -298,6 +298,27 @@ export function nextTimeEventKinds(state: TimekeepingState): TimeEventKind[] {
   return ['break_start', 'clock_out']
 }
 
+export function applyRecordedTimeEventToDashboard(
+  dashboard: TimekeepingDashboard,
+  event: TimekeepingEvent,
+): TimekeepingDashboard {
+  const recordedEvent: TimekeepingEvent = {
+    ...event,
+    voided: event.voided ?? false,
+  }
+  const recentEvents = [
+    recordedEvent,
+    ...dashboard.recentEvents.filter((recentEvent) => recentEvent.id !== recordedEvent.id),
+  ].slice(0, 10)
+
+  return {
+    ...dashboard,
+    lastEvent: recordedEvent,
+    recentEvents,
+    serverTimestamp: recordedEvent.effectiveAt ?? recordedEvent.recordedAt,
+  }
+}
+
 function requestKey(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }

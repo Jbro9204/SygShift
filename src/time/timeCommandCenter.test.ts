@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SessionContext } from '../data/auth'
 import type { TimekeepingDashboard, TimekeepingReview, TimeMaintenance } from '../data/timekeeping'
 import { buildTimeCommandCenterModel, canViewTeamTime } from './timeCommandCenter'
+import { canUseOwnTimeClock, canViewOwnTime } from './timePermissions'
 
 const dashboard: TimekeepingDashboard = {
   eligibleShifts: [],
@@ -169,7 +170,11 @@ describe('time command center model', () => {
       username: 'zward',
     }
 
+    expect(canViewOwnTime(guardSession)).toBe(true)
+    expect(canUseOwnTimeClock(guardSession)).toBe(false)
     expect(canViewTeamTime(guardSession)).toBe(false)
-    expect(canViewTeamTime({ ...guardSession, role: 'supervisor' })).toBe(true)
+    expect(canViewTeamTime({ ...guardSession, role: 'supervisor' })).toBe(false)
+    expect(canUseOwnTimeClock({ ...guardSession, permissions: ['time.punch'] })).toBe(true)
+    expect(canViewTeamTime({ ...guardSession, permissions: ['time.view'] })).toBe(true)
   })
 })

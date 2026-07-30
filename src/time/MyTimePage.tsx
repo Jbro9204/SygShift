@@ -16,6 +16,7 @@ import {
   Timer,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { getSessionContext } from '../data/auth'
 import {
   activeTimeState,
   getOwnTimekeepingReview,
@@ -32,6 +33,8 @@ import {
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTimeRange, formatOperationalDateTime } from '../lib/time'
+import { canUseOwnTimeClock, canViewOwnTime } from './timePermissions'
+import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from './timeQuerySync'
 import { currentPayrollPeriod, formatUsDateKey } from './timeRules'
 import {
   TimeAlertCard,
@@ -63,15 +66,23 @@ export function MyTimePage() {
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
   const defaultPeriod = currentPayrollPeriod()
 
+  const sessionQuery = useQuery({
+    queryFn: getSessionContext,
+    queryKey: ['session-context'],
+    enabled: isSupabaseConfigured,
+  })
+  const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
+  const punchAllowed = canUseOwnTimeClock(sessionQuery.data)
   const dashboardQuery = useQuery({
     queryFn: () => getTimekeepingDashboard(),
     queryKey: ['my-time-dashboard'],
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     refetchInterval: 15_000,
   })
 
   const dashboard = dashboardQuery.data
   const reviewQuery = useQuery({
-    enabled: isSupabaseConfigured && Boolean(dashboard?.employee.id),
+    enabled: isSupabaseConfigured && ownTimeAllowed && Boolean(dashboard?.employee.id),
     queryFn: () => getOwnTimekeepingReview({
       employeeId: dashboard?.employee.id ?? '',
       fromDate: defaultPeriod.fromDate,
@@ -93,25 +104,13 @@ export function MyTimePage() {
 
   const punchMutation = useMutation({
     mutationFn: (input: { kind: TimeEventKind; shiftId?: string | null }) => recordTimeEvent(input),
+    onSuccess: (event) => {
+      applyTimeEventToCachedDashboards(queryClient, event)
+      setSelectedShiftId(null)
+    },
     onSettled: async () => {
       punchLocked.current = false
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['my-time-dashboard'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['my-time-review'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['time-command-dashboard'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['time-command-review'], refetchType: 'active' }),
-      ])
-      await Promise.all([
-        queryClient.refetchQueries({ queryKey: ['timekeeping-dashboard'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['my-time-dashboard'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['my-time-review'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['time-command-dashboard'], type: 'active' }),
-        queryClient.refetchQueries({ queryKey: ['time-command-review'], type: 'active' }),
-      ])
-    },
-    onSuccess: () => {
-      setSelectedShiftId(null)
+      await refreshTimekeepingQueriesAfterPunch(queryClient)
     },
   })
 
@@ -126,7 +125,7 @@ export function MyTimePage() {
   }, [dashboard?.operationalDate, dashboard?.pendingCorrectionCount, reviewQuery.data?.pendingCorrections.length, rows, todayRows])
 
   function record(kind: TimeEventKind) {
-    if (punchLocked.current || punchMutation.isPending) return
+    if (!punchAllowed || punchLocked.current || punchMutation.isPending) return
     punchLocked.current = true
     punchMutation.mutate({
       kind,
@@ -149,12 +148,27 @@ export function MyTimePage() {
     )
   }
 
-  if (dashboardQuery.isPending) {
+  if (sessionQuery.isPending || (ownTimeAllowed && dashboardQuery.isPending)) {
     return (
       <main className="page page--sygshift-time">
         <DataStatePanel icon={Timer} title="Loading My Time">
           <p>Loading your clock status, assigned shifts, recent punches, and pay-period summary.</p>
         </DataStatePanel>
+      </main>
+    )
+  }
+
+  if (sessionQuery.isError || !ownTimeAllowed) {
+    return (
+      <main className="page page--sygshift-time">
+        <TimePageHeader
+          eyebrow="My Time"
+          summary="Time & Attendance access is controlled by permissions."
+          title="My Time"
+        />
+        <TimeEmptyState icon={ShieldAlert} title="My Time is not enabled for your account">
+          <p>Ask an admin to add time.self.view or time.punch if you should be able to view or use the time clock.</p>
+        </TimeEmptyState>
       </main>
     )
   }
@@ -202,6 +216,7 @@ export function MyTimePage() {
           nextKinds={nextKinds}
           onPunch={record}
           pending={punchMutation.isPending}
+          punchAllowed={punchAllowed}
           selectedShiftId={selectedShiftId}
           setSelectedShiftId={setSelectedShiftId}
           state={state}
@@ -243,6 +258,7 @@ function ClockStatusPanel({
   nextKinds,
   onPunch,
   pending,
+  punchAllowed,
   selectedShiftId,
   setSelectedShiftId,
   state,
@@ -252,6 +268,7 @@ function ClockStatusPanel({
   nextKinds: TimeEventKind[]
   onPunch: (kind: TimeEventKind) => void
   pending: boolean
+  punchAllowed: boolean
   selectedShiftId: string | null
   setSelectedShiftId: (value: string | null) => void
   state: TimekeepingState
@@ -319,6 +336,7 @@ function ClockStatusPanel({
           <TimeButton
             icon={kind === 'break_start' || kind === 'break_end' ? Coffee : Timer}
             key={kind}
+            disabled={!punchAllowed}
             loading={pending}
             onClick={() => onPunch(kind)}
             variant={kind === 'clock_out' ? 'danger' : 'primary'}
@@ -328,7 +346,11 @@ function ClockStatusPanel({
         ))}
       </div>
 
-      <small className="my-time-official-note">Official time is recorded by the secure server. The page refreshes after each saved punch.</small>
+      <small className="my-time-official-note">
+        {punchAllowed
+          ? 'Official time is recorded by the secure server. The page updates as soon as each punch is saved.'
+          : 'Your account can view time, but time clock punches are not enabled.'}
+      </small>
     </section>
   )
 }
