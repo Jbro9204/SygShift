@@ -7636,6 +7636,75 @@
   margin-bottom: 16px;
 }
 
+.my-time-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.1fr);
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+
+.my-time-summary-card {
+  display: grid;
+  gap: 14px;
+}
+
+.my-time-summary-card .time-section-header {
+  margin: 0;
+}
+
+.my-time-summary-card__metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.my-time-two-column {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.78fr);
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+
+.my-time-correction-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.my-time-correction-card {
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+  background: #fffaf1;
+  border: 1px solid #e4d3af;
+  border-radius: 10px;
+}
+
+.my-time-correction-card strong,
+.my-time-correction-card span,
+.my-time-correction-card p {
+  margin: 0;
+}
+
+.my-time-correction-card strong {
+  color: #28241e;
+  font-size: 16px;
+}
+
+.my-time-correction-card span,
+.my-time-correction-card p {
+  color: #6d6457;
+  font-size: 14px;
+  line-height: 1.42;
+}
+
+.my-time-official-note {
+  display: block;
+  color: #6d655a;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .time-card {
   min-width: 0;
   padding: 20px;
@@ -10090,6 +10159,8 @@
   .time-page-header,
   .time-command-grid,
   .time-command-grid--period,
+  .my-time-dashboard-grid,
+  .my-time-two-column,
   .time-period-card,
   .time-section-header {
     grid-template-columns: 1fr;
@@ -10155,6 +10226,11 @@
   }
 
   .time-command-grid--period {
+    grid-template-columns: 1fr;
+  }
+
+  .my-time-dashboard-grid,
+  .my-time-two-column {
     grid-template-columns: 1fr;
   }
 

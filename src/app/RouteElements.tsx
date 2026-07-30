@@ -55,9 +55,7 @@ export const TimeToolsPageRoute = lazy(() =>
   import('../pages/TimePage').then((module) => ({ default: module.LegacyTimeToolsPage })),
 )
 export const TimeMyTimePageRoute = lazy(() =>
-  import('../time/TimeCommandCenterPage').then((module) => ({
-    default: () => <module.TimeFuturePage area="My Time" />,
-  })),
+  import('../time/MyTimePage').then((module) => ({ default: module.MyTimePage })),
 )
 export const TimeTeamPageRoute = lazy(() =>
   import('../time/TimeCommandCenterPage').then((module) => ({

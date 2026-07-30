@@ -38,6 +38,66 @@ Notes:
 
 ## Pinned For Later
 
+### Time & Attendance Full Rebuild / Time Command Center
+Status: Pinned for phased build
+Added: 07/30/2026
+
+Goal:
+Rebuild Time & Attendance into a clean, professional timekeeping system that is easy for employees, supervisors, schedulers, and admins to use without crowding everything onto one screen.
+
+Completed phases:
+- Phase 1 - Foundation and Time Command Center completed 07/30/2026.
+- Phase 2 - Employee My Time completed 07/30/2026.
+
+Non-negotiables:
+- Preserve all existing punches, edits, active clock-ins, payroll history, and audit history.
+- Employees must be able to view their own time and attendance.
+- Hourly employee time must come from real clock activity, approved manual corrections, and verified payroll review.
+- Salary payroll defaults should calculate 40 hours per week unless approved time off or an approved payroll adjustment changes it.
+- Payroll weeks run Sunday 12:00 AM through Saturday 11:59 PM.
+- Overtime rules must support more than 12 hours in a day and more than 40 hours in a week.
+- Breaks are unpaid, with a normal 30-minute break expectation.
+- All dates must display as MM/DD/YYYY.
+- Time should display in normal time plus military time where useful, such as 2:00 PM (14:00).
+- Every save must show a loading state, complete cleanly, and refresh the affected view/modal immediately.
+- Every payroll-impacting change must have an audit trail.
+
+Phase 1 - Foundation and Time Command Center:
+- Create a dedicated Time Command Center instead of one overloaded Time & Attendance page.
+- Add clear navigation for My Time, Team Time, Exceptions, Payroll Review, and Exports.
+- Keep existing time data intact and map old records into the new views.
+- Add role-based visibility so Guards see their own time, while approved operations/admin roles see the proper management tools.
+- Add visible loading states and immediate refetch/update behavior for every time save action.
+
+Phase 3 - Supervisor / Scheduler Team Time:
+- Add team and employee filters.
+- Allow approved users to review employee time without exposing payroll-only tools.
+- Show missing punches, unscheduled punches, long shifts, time off conflicts, and location issues.
+- Allow punch location/site correction when time is tied to Unscheduled Location.
+
+Phase 4 - Corrections and Audit Trail:
+- Build a clean punch correction workflow with original value, new value, reason, changed by, and changed at.
+- Support missing punch creation, punch edits, break corrections, site/location edits, and notes.
+- Make every correction immediately visible after save.
+- Prevent silent overwrites.
+
+Phase 5 - Payroll Review:
+- Create a payroll review workspace organized by pay period.
+- Separate ready, needs review, and blocked records.
+- Add salary default handling and time off deductions.
+- Add payroll lock/close behavior so reviewed periods are not accidentally changed.
+- Add a large weekly reminder for Admins/Supervisors to export time for HR/Finance.
+
+Phase 6 - Payroll Export:
+- Build a clean export flow for HR/Finance.
+- Export approved hours, overtime, salary defaults, unpaid breaks, corrections, and notes.
+- Keep export history with who exported, when, and for what pay period.
+
+Phase 7 - QA and Guardrails:
+- Add tests for payroll rules, overtime, salary defaults, break handling, missing punches, active punches, corrections, and export totals.
+- Add UI checks for button alignment and form layout in every time modal/page.
+- Add regression checks so save buttons, date/time fields, and modal refresh behavior do not break again.
+
 ### Accountability Tracker
 Status: Pinned for later
 
