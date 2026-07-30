@@ -10,6 +10,7 @@ import type {
 import { activeTimeState } from '../data/timekeeping'
 import type { SessionContext } from '../data/auth'
 import { DEFAULT_TIME_RULES, TIME_RISK_THRESHOLDS, currentPayrollPeriod, type TimePeriod } from './timeRules'
+import { workedTimePayrollReview } from './timePayroll'
 export { canExportPayroll, canViewTeamTime } from './timePermissions'
 
 export type TimeCommandRoleMode = 'employee' | 'salary' | 'operations' | 'admin'
@@ -78,6 +79,7 @@ export function buildTimeCommandCenterModel(input: {
 }): TimeCommandCenterModel {
   const period = currentPayrollPeriod(undefined, input.payrollRules)
   const rows = input.review?.rows ?? []
+  const workedReview = workedTimePayrollReview(input.review)
   const latestExport = input.exportHistory?.find((batch) => batch.fromDate === period.fromDate && batch.throughDate === period.throughDate)
   const periodStatus = latestExport ? 'exported' : period.status
   const selfRows = rows.filter((row) => row.employeeId === input.dashboard.employee.id)
@@ -85,10 +87,10 @@ export function buildTimeCommandCenterModel(input: {
 
   return {
     clockedIn: summarizeClockedIn(input.maintenance),
-    exceptions: summarizeExceptions(input.review),
-    missingPunches: summarizeMissingPunches(input.review),
-    overtimeRisk: summarizeOvertimeRisk(input.review),
-    payrollReadiness: summarizePayrollReadiness(input.review),
+    exceptions: summarizeExceptions(workedReview),
+    missingPunches: summarizeMissingPunches(workedReview),
+    overtimeRisk: summarizeOvertimeRisk(workedReview),
+    payrollReadiness: summarizePayrollReadiness(workedReview),
     period: {
       ...period,
       status: periodStatus,

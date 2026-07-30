@@ -668,8 +668,6 @@ export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
     'Paid Hours',
     'Regular Hours',
     'Overtime Hours',
-    'Salary Default Hours',
-    'Time Off Deduction Hours',
     'Overtime',
     'Payroll Ready',
     'Exceptions',
@@ -679,7 +677,15 @@ export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
     const text = value === null || value === undefined ? '' : String(value)
     return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
   }
-  const lines = rows.map((row) => [
+  const exportRows = rows.filter((row) =>
+    row.rowKind === 'time_event'
+    && Boolean(row.firstClockIn)
+    && Boolean(row.lastClockOut)
+    && row.payrollReady
+    && row.exceptionCodes.length === 0
+    && row.paidMinutes > 0,
+  )
+  const lines = exportRows.map((row) => [
     row.rowKind,
     row.employeeName,
     row.username,
@@ -694,8 +700,6 @@ export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
     payrollHours(row.paidMinutes),
     payrollHours(row.regularMinutes),
     payrollHours(row.overtimeMinutes),
-    payrollHours(row.salaryDefaultMinutes),
-    payrollHours(row.timeOffMinutes),
     row.isOvertime ? 'yes' : 'no',
     row.payrollReady ? 'yes' : 'no',
     row.exceptionCodes.join('|'),

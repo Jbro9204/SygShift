@@ -33,7 +33,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { canExportPayroll, canViewTeamTime } from './timePermissions'
 import { completedPayrollPeriod, currentPayrollPeriod, formatUsDateKey, shiftPayrollPeriod, type TimePeriod } from './timeRules'
-import { payrollExportFileName, payrollLockBlocker, payrollReadinessPercent } from './timePayroll'
+import { payrollExportFileName, payrollLockBlocker, payrollReadinessPercent, workedTimePayrollReview } from './timePayroll'
 import {
   TimeAlertCard,
   TimeButton,
@@ -74,7 +74,6 @@ function rowLocation(row: TimekeepingReviewRow): string {
 
 function rowClock(value: string | null, row: TimekeepingReviewRow): string {
   if (value) return formatOperationalDateTime(value, { includeTimeZoneName: true, timeZone: row.timeZone })
-  if (row.rowKind === 'salary_default') return 'Payroll default'
   return 'Missing'
 }
 
@@ -109,9 +108,9 @@ function PayrollRulesSummary({ rules, period }: { period: Pick<TimePeriod, 'from
         <small>Daily overtime and weekly overtime are calculated before export.</small>
       </article>
       <article>
-        <span>Salary default</span>
-        <strong>{payrollHours(rules.salaryWeeklyDefaultMinutes)} hours / week</strong>
-        <small>{rules.salaryTimeOffReducesDefault ? 'Approved time off reduces default salary hours.' : 'Time off does not reduce default salary hours.'}</small>
+        <span>Export source</span>
+        <strong>Clock-in/out records only</strong>
+        <small>Scheduled hours and salary defaults are excluded from payroll export.</small>
       </article>
       <article>
         <span>Breaks</span>
@@ -200,8 +199,8 @@ function PayrollExportPanel({
         <p className="eyebrow">Controlled export</p>
         <h2 id="payroll-export-title">Payroll handoff</h2>
         <p>
-          Preview CSV can be downloaded for checking. The official payroll export is locked only after the server
-          verifies every row is ready and every correction is resolved.
+          Preview CSV can be downloaded for checking. The official payroll export includes only completed SygShift
+          clock-in/out records after the server verifies every worked-time row is ready.
         </p>
       </div>
       <div className="payroll-export-panel__body">
@@ -286,7 +285,7 @@ function PayrollRowsTable({ rows }: { rows: TimekeepingReviewRow[] }) {
   if (rows.length === 0) {
     return (
       <DataStatePanel icon={FileClock} title="No time records in this range">
-        <p>No punches or salary-default rows are available for the selected payroll range.</p>
+        <p>No SygShift clock-in/out time records are available for the selected payroll range.</p>
       </DataStatePanel>
     )
   }
@@ -332,7 +331,7 @@ function PayrollRowsTable({ rows }: { rows: TimekeepingReviewRow[] }) {
                 <td>{rowClock(row.lastClockOut, row)}</td>
                 <td>
                   <strong>{payrollHours(row.regularMinutes)} hr</strong>
-                  {row.salaryDefaultMinutes > 0 ? <span>{payrollHours(row.salaryDefaultMinutes)} salary default</span> : null}
+                  {row.grossMinutes !== row.paidMinutes + row.breakMinutes ? <span>Gross time reviewed</span> : null}
                 </td>
                 <td>
                   <strong>{payrollHours(row.overtimeMinutes)} hr</strong>
@@ -440,7 +439,7 @@ export function TimePayrollPage() {
     queryKey: ['payroll-export-history'],
     queryFn: () => getPayrollExportHistory(20),
   })
-  const review = reviewQuery.data
+  const review = useMemo(() => workedTimePayrollReview(reviewQuery.data), [reviewQuery.data])
   const lockBlockedReason = payrollLockBlocker(review)
   const readinessPercent = payrollReadinessPercent(review)
 
@@ -557,7 +556,7 @@ export function TimePayrollPage() {
           />
           {reviewQuery.isPending ? (
             <DataStatePanel icon={FileClock} title="Loading payroll review">
-              <p>Calculating rows, exceptions, overtime, salary defaults, and corrections.</p>
+              <p>Calculating clock-in/out rows, exceptions, overtime, breaks, and corrections.</p>
             </DataStatePanel>
           ) : reviewQuery.isError ? (
             <DataStatePanel icon={ShieldAlert} title="Payroll review unavailable" tone="error">
@@ -579,11 +578,11 @@ export function TimePayrollPage() {
       {review ? (
         <>
           <section className="time-command-grid payroll-summary-grid" aria-label="Payroll export totals">
-            <TimeMetricCard detail="All payroll rows in the selected range." icon={FileClock} label="Rows" value={totals?.rowCount ?? 0} />
-            <TimeMetricCard detail="Paid hours after unpaid breaks and salary defaults." icon={CheckCircle2} label="Paid Hours" tone="good" value={`${payrollHours(totals?.paidMinutes ?? 0)} hr`} />
+            <TimeMetricCard detail="Only SygShift timeclock rows in the selected range." icon={FileClock} label="Worked Rows" value={totals?.rowCount ?? 0} />
+            <TimeMetricCard detail="Paid hours from completed clock-in/out records after unpaid breaks." icon={CheckCircle2} label="Paid Hours" tone="good" value={`${payrollHours(totals?.paidMinutes ?? 0)} hr`} />
             <TimeMetricCard detail="Regular hours ready for HR/Finance." icon={History} label="Regular" value={`${payrollHours(totals?.regularMinutes ?? 0)} hr`} />
             <TimeMetricCard detail="Daily/weekly overtime calculated by payroll rules." icon={AlertTriangle} label="Overtime" tone={(totals?.overtimeMinutes ?? 0) > 0 ? 'warning' : 'neutral'} value={`${payrollHours(totals?.overtimeMinutes ?? 0)} hr`} />
-            <TimeMetricCard detail="Salary defaults after approved time-off deductions." icon={LockKeyhole} label="Salary Default" value={`${payrollHours(totals?.salaryDefaultMinutes ?? 0)} hr`} />
+            <TimeMetricCard detail="Unpaid break minutes subtracted from worked time." icon={LockKeyhole} label="Breaks" value={`${payrollHours(review.summary.grossMinutes - review.summary.paidMinutes)} hr`} />
             <TimeMetricCard detail="Rows or corrections blocking official export." icon={ShieldAlert} label="Blockers" tone={(totals?.exceptionCount ?? 0) + (totals?.pendingCorrectionCount ?? 0) > 0 ? 'danger' : 'good'} value={(totals?.exceptionCount ?? 0) + (totals?.pendingCorrectionCount ?? 0)} />
           </section>
 

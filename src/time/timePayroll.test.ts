@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TimekeepingReview } from '../data/timekeeping'
-import { payrollExportFileName, payrollLockBlocker, payrollReadinessPercent } from './timePayroll'
+import { exportableWorkedTimeRows, payrollExportFileName, payrollLockBlocker, payrollReadinessPercent, workedTimePayrollReview } from './timePayroll'
 
 const cleanReview: TimekeepingReview = {
   fromDate: '2026-07-12',
@@ -66,6 +66,11 @@ describe('payroll export readiness', () => {
   it('blocks payroll while exceptions remain', () => {
     const blockedReview: TimekeepingReview = {
       ...cleanReview,
+      rows: [{
+        ...cleanReview.rows[0],
+        exceptionCodes: ['pending_correction'],
+        payrollReady: false,
+      }],
       summary: {
         ...cleanReview.summary,
         exceptionCount: 1,
@@ -80,5 +85,60 @@ describe('payroll export readiness', () => {
   it('uses stable file names for preview and official exports', () => {
     expect(payrollExportFileName('2026-07-12', '2026-07-25')).toBe('sygshift-payroll-preview-2026-07-12-to-2026-07-25.csv')
     expect(payrollExportFileName('2026-07-12', '2026-07-25', 'official')).toBe('sygshift-payroll-official-2026-07-12-to-2026-07-25.csv')
+  })
+
+  it('removes salary defaults from payroll export readiness', () => {
+    const salaryOnlyReview: TimekeepingReview = {
+      ...cleanReview,
+      rows: [{
+        ...cleanReview.rows[0],
+        breakMinutes: 0,
+        eventCount: 0,
+        firstClockIn: null,
+        grossMinutes: 2400,
+        lastClockOut: null,
+        locationName: 'Salary default',
+        paidMinutes: 2400,
+        payrollNotes: ['Salary payroll default.'],
+        regularMinutes: 2400,
+        rowKind: 'salary_default',
+        salaryDefaultMinutes: 2400,
+      }],
+      summary: {
+        ...cleanReview.summary,
+        grossMinutes: 2400,
+        paidMinutes: 2400,
+        readyCount: 1,
+        regularMinutes: 2400,
+        rowCount: 1,
+        salaryDefaultMinutes: 2400,
+      },
+    }
+
+    expect(workedTimePayrollReview(salaryOnlyReview)?.summary.rowCount).toBe(0)
+    expect(payrollLockBlocker(salaryOnlyReview)).toContain('no SygShift clock-in/out')
+    expect(exportableWorkedTimeRows(salaryOnlyReview.rows)).toHaveLength(0)
+  })
+
+  it('blocks export when a worked-time row is missing a clock-out', () => {
+    const incompleteReview: TimekeepingReview = {
+      ...cleanReview,
+      rows: [{
+        ...cleanReview.rows[0],
+        exceptionCodes: ['missing_clock_out'],
+        lastClockOut: null,
+        paidMinutes: 0,
+        payrollReady: false,
+      }],
+      summary: {
+        ...cleanReview.summary,
+        exceptionCount: 1,
+        paidMinutes: 0,
+        readyCount: 0,
+      },
+    }
+
+    expect(payrollLockBlocker(incompleteReview)).toContain('worked-time row')
+    expect(exportableWorkedTimeRows(incompleteReview.rows)).toHaveLength(0)
   })
 })

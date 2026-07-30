@@ -53,6 +53,7 @@ import { getSessionContext } from '../data/auth'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTime, OPERATIONAL_TIME_ZONE, operationalToday } from '../lib/time'
 import { TimeCommandCenterPage } from '../time/TimeCommandCenterPage'
+import { workedTimePayrollReview } from '../time/timePayroll'
 import {
   canExportPayroll as sessionCanExportPayroll,
   canManageTime as sessionCanManageTime,
@@ -862,9 +863,9 @@ function PayrollRulesPanel({ review }: { review: TimekeepingReview }) {
         <small>Daily OT is counted before weekly OT.</small>
       </article>
       <article>
-        <span>Salary default</span>
-        <strong>{payrollHours(rules.salaryWeeklyDefaultMinutes)} hours / week</strong>
-        <small>{rules.salaryTimeOffReducesDefault ? 'Approved time off reduces salary default.' : 'Time off does not reduce salary default.'}</small>
+        <span>Export source</span>
+        <strong>Clock-in/out records only</strong>
+        <small>Scheduled hours and salary defaults are excluded from payroll export.</small>
       </article>
       <article>
         <span>Breaks</span>
@@ -1229,7 +1230,7 @@ function SupervisorTimeReview({
       await queryClient.invalidateQueries({ queryKey: ['payroll-export-history'] })
     },
   })
-  const review = reviewQuery.data
+  const review = useMemo(() => workedTimePayrollReview(reviewQuery.data), [reviewQuery.data])
   const lockBlockedReason = payrollLockBlocker(review)
   const canLockExport = Boolean(canExportPayroll && review && lockBlockedReason === '' && exportNote.trim().length > 0 && !exportMutation.isPending)
 
@@ -1254,17 +1255,17 @@ function SupervisorTimeReview({
       ) : review ? (
         <>
           <section className="time-review-metrics" aria-label="Payroll review totals">
-            <article><span>Total rows</span><strong>{review.summary.rowCount}</strong><small>Time groups in range</small></article>
-            <article><span>Regular</span><strong>{payrollHours(review.summary.regularMinutes)}</strong><small>Regular export hours</small></article>
+            <article><span>Worked rows</span><strong>{review.summary.rowCount}</strong><small>Clock-in/out groups in range</small></article>
+            <article><span>Regular</span><strong>{payrollHours(review.summary.regularMinutes)}</strong><small>Regular worked hours</small></article>
             <article className={review.summary.overtimeMinutes ? 'import-metric--attention' : ''}><span>OT</span><strong>{payrollHours(review.summary.overtimeMinutes)}</strong><small>Daily/weekly overtime</small></article>
-            <article><span>Paid hours</span><strong>{payrollHours(review.summary.paidMinutes)}</strong><small>Export preview total</small></article>
+            <article><span>Paid hours</span><strong>{payrollHours(review.summary.paidMinutes)}</strong><small>Worked-time export preview</small></article>
           </section>
 
           <PayrollRulesPanel review={review} />
 
           <div className="inline-note">
-            Salary employees appear as payroll default rows, not fake punches. Approved time off reduces the salary
-            default before export, and hourly overtime follows the active payroll rules.
+            Payroll export includes only time recorded by SygShift clock-in/out punches. Scheduled shifts and salary
+            default rows are not exported.
           </div>
 
           {correctionMutation.isError ? <div className="inline-alert" role="alert">{correctionMutation.error.message}</div> : null}

@@ -284,7 +284,8 @@ describe('timekeeping validation', () => {
     })
 
     expect(review.rows[0]?.rowKind).toBe('salary_default')
-    expect(reviewRowsToPayrollCsv(review.rows)).toContain('salary_default,Jordan Brown,jbrown,07/12/2026')
+    expect(reviewRowsToPayrollCsv(review.rows)).not.toContain('salary_default,Jordan Brown,jbrown,07/12/2026')
+    expect(reviewRowsToPayrollCsv(review.rows)).not.toContain('Salary Default Hours')
   })
 
   it('validates locked payroll export batch records', () => {
