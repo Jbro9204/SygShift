@@ -96,10 +96,18 @@ export function MyTimePage() {
     onSettled: async () => {
       punchLocked.current = false
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['my-time-dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['my-time-review'] }),
-        queryClient.invalidateQueries({ queryKey: ['time-command-dashboard'] }),
-        queryClient.invalidateQueries({ queryKey: ['time-command-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['my-time-dashboard'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['my-time-review'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['time-command-dashboard'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['time-command-review'], refetchType: 'active' }),
+      ])
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ['timekeeping-dashboard'], type: 'active' }),
+        queryClient.refetchQueries({ queryKey: ['my-time-dashboard'], type: 'active' }),
+        queryClient.refetchQueries({ queryKey: ['my-time-review'], type: 'active' }),
+        queryClient.refetchQueries({ queryKey: ['time-command-dashboard'], type: 'active' }),
+        queryClient.refetchQueries({ queryKey: ['time-command-review'], type: 'active' }),
       ])
     },
     onSuccess: () => {

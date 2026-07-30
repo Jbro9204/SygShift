@@ -65,8 +65,19 @@ export function OverviewPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['overview-metrics'], refetchType: 'active' }),
         queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['my-time-dashboard'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['my-time-review'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['time-command-dashboard'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['time-command-review'], refetchType: 'active' }),
       ])
-      await queryClient.refetchQueries({ queryKey: ['timekeeping-dashboard'], type: 'active' })
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ['overview-metrics'], type: 'active' }),
+        queryClient.refetchQueries({ queryKey: ['timekeeping-dashboard'], type: 'active' }),
+        queryClient.refetchQueries({ queryKey: ['my-time-dashboard'], type: 'active' }),
+        queryClient.refetchQueries({ queryKey: ['my-time-review'], type: 'active' }),
+        queryClient.refetchQueries({ queryKey: ['time-command-dashboard'], type: 'active' }),
+        queryClient.refetchQueries({ queryKey: ['time-command-review'], type: 'active' }),
+      ])
     },
   })
   const overview = overviewQuery.data

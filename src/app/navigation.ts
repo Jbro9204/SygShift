@@ -45,7 +45,7 @@ export const navigationGroups: NavigationGroup[] = [
       { label: 'Schedule', path: '/schedule', icon: CalendarDays, roles: ALL_EMPLOYEE_ROLES, permissions: ['schedule.view', 'schedule.manage', 'schedule.publish', 'schedule.delete_shift', 'schedule.override_warnings'] },
       { label: 'Scheduler', path: '/scheduler', icon: CalendarPlus, roles: OPERATIONS_ROLES, permissions: ['scheduler.view', 'scheduler.manage', 'schedule.manage'] },
       { label: 'Events & Openings', path: '/events', icon: CalendarClock, permissions: ['events.view', 'events.manage', 'shift_pool.view', 'shift_pool.manage'] },
-      { label: 'Time & Attendance', path: '/time', icon: Timer, roles: ALL_EMPLOYEE_ROLES, permissions: ['time.self.view', 'time.view', 'time.manage', 'time.export_payroll'] },
+      { label: 'Time & Attendance', path: '/time', icon: Timer, roles: ALL_EMPLOYEE_ROLES, permissions: ['time.self.view', 'time.punch', 'time.view', 'time.manage', 'time.export_payroll'] },
     ],
   },
   {
