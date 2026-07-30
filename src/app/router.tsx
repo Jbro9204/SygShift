@@ -19,7 +19,14 @@ import {
   SchedulePageRoute,
   SchedulerPageRoute,
   SitesPageRoute,
+  TimeExceptionsPageRoute,
+  TimeMyTimePageRoute,
   TimePageRoute,
+  TimePayrollPageRoute,
+  TimeRulesPageRoute,
+  TimeTeamPageRoute,
+  TimeTimecardsPageRoute,
+  TimeToolsPageRoute,
   UserAdminPageRoute,
 } from './RouteElements'
 
@@ -75,6 +82,62 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <TimePageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'time/tools',
+        element: (
+          <RouteSuspense>
+            <TimeToolsPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'time/my-time',
+        element: (
+          <RouteSuspense>
+            <TimeMyTimePageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'time/team',
+        element: (
+          <RouteSuspense>
+            <TimeTeamPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'time/exceptions',
+        element: (
+          <RouteSuspense>
+            <TimeExceptionsPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'time/timecards',
+        element: (
+          <RouteSuspense>
+            <TimeTimecardsPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'time/payroll',
+        element: (
+          <RouteSuspense>
+            <TimePayrollPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'time/rules',
+        element: (
+          <RouteSuspense>
+            <TimeRulesPageRoute />
           </RouteSuspense>
         ),
       },

@@ -51,6 +51,39 @@ export const SitesPageRoute = lazy(() =>
 export const TimePageRoute = lazy(() =>
   import('../pages/TimePage').then((module) => ({ default: module.TimePage })),
 )
+export const TimeToolsPageRoute = lazy(() =>
+  import('../pages/TimePage').then((module) => ({ default: module.LegacyTimeToolsPage })),
+)
+export const TimeMyTimePageRoute = lazy(() =>
+  import('../time/TimeCommandCenterPage').then((module) => ({
+    default: () => <module.TimeFuturePage area="My Time" />,
+  })),
+)
+export const TimeTeamPageRoute = lazy(() =>
+  import('../time/TimeCommandCenterPage').then((module) => ({
+    default: () => <module.TimeFuturePage area="Team Attendance" />,
+  })),
+)
+export const TimeExceptionsPageRoute = lazy(() =>
+  import('../time/TimeCommandCenterPage').then((module) => ({
+    default: () => <module.TimeFuturePage area="Exceptions" />,
+  })),
+)
+export const TimeTimecardsPageRoute = lazy(() =>
+  import('../time/TimeCommandCenterPage').then((module) => ({
+    default: () => <module.TimeFuturePage area="Timecards" />,
+  })),
+)
+export const TimePayrollPageRoute = lazy(() =>
+  import('../time/TimeCommandCenterPage').then((module) => ({
+    default: () => <module.TimeFuturePage area="Payroll" />,
+  })),
+)
+export const TimeRulesPageRoute = lazy(() =>
+  import('../time/TimeCommandCenterPage').then((module) => ({
+    default: () => <module.TimeFuturePage area="Time Rules" />,
+  })),
+)
 export const UserAdminPageRoute = lazy(() =>
   import('../pages/UserAdminPage').then((module) => ({ default: module.UserAdminPage })),
 )

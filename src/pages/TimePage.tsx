@@ -50,6 +50,7 @@ import {
 import { getSessionContext, type SessionContext } from '../data/auth'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTime, OPERATIONAL_TIME_ZONE, operationalToday } from '../lib/time'
+import { TimeCommandCenterPage } from '../time/TimeCommandCenterPage'
 
 const actionLabels: Record<TimeEventKind, string> = {
   clock_in: 'Clock in',
@@ -1449,7 +1450,7 @@ function LiveTimekeeping() {
   )
 }
 
-export function TimePage() {
+export function LegacyTimeToolsPage() {
   return (
     <div className="page page--timekeeping">
       <section className="page-intro workforce-intro">
@@ -1466,4 +1467,8 @@ export function TimePage() {
       {isSupabaseConfigured ? <LiveTimekeeping /> : <VerifiedTimekeepingSetup />}
     </div>
   )
+}
+
+export function TimePage() {
+  return <TimeCommandCenterPage />
 }

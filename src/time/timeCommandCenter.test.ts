@@ -1,0 +1,175 @@
+import { describe, expect, it } from 'vitest'
+import type { SessionContext } from '../data/auth'
+import type { TimekeepingDashboard, TimekeepingReview, TimeMaintenance } from '../data/timekeeping'
+import { buildTimeCommandCenterModel, canViewTeamTime } from './timeCommandCenter'
+
+const dashboard: TimekeepingDashboard = {
+  eligibleShifts: [],
+  employee: {
+    displayName: 'Zach Ward',
+    employmentType: 'flex',
+    id: '73000000-0000-4000-8000-000000000001',
+    role: 'guard',
+    username: 'zward',
+  },
+  lastEvent: {
+    id: '73000000-0000-4000-8000-000000000002',
+    kind: 'clock_in',
+    recordedAt: '2026-07-30T14:00:00.000Z',
+    shiftId: null,
+    source: 'web',
+  },
+  operationalDate: '2026-07-30',
+  operationalTimeZone: 'America/Denver',
+  pendingCorrectionCount: 1,
+  recentEvents: [],
+  serverTimestamp: '2026-07-30T16:00:00.000Z',
+}
+
+const review: TimekeepingReview = {
+  fromDate: '2026-07-26',
+  operationalTimeZone: 'America/Denver',
+  payrollRules: {
+    dailyOvertimeMinutes: 720,
+    defaultBreakMinutes: 30,
+    payDateAnchor: '2026-07-31',
+    payFrequency: 'biweekly',
+    salaryTimeOffReducesDefault: true,
+    salaryWeeklyDefaultMinutes: 2400,
+    timeZone: 'America/Denver',
+    unpaidBreaks: true,
+    weeklyOvertimeMinutes: 2400,
+    weekStartsOn: 0,
+    weekStartsOnLabel: 'Sunday',
+  },
+  pendingCorrections: [{
+    employeeId: dashboard.employee.id,
+    employeeName: 'Zach Ward',
+    id: '73000000-0000-4000-8000-000000000004',
+    kind: 'clock_in',
+    reason: 'Forgot to clock in.',
+    recordedAt: '2026-07-30T14:00:00.000Z',
+    replacementTime: null,
+    requestedAt: '2026-07-30T15:00:00.000Z',
+    requestedBy: dashboard.employee.id,
+    shiftId: null,
+    timeEventId: '73000000-0000-4000-8000-000000000002',
+    username: 'zward',
+    voided: false,
+  }],
+  rows: [{
+    breakMinutes: 30,
+    employeeId: dashboard.employee.id,
+    employeeName: 'Zach Ward',
+    employmentType: 'flex',
+    eventCount: 1,
+    eventName: null,
+    exceptionCodes: ['missing_clock_out'],
+    firstClockIn: '2026-07-30T14:00:00.000Z',
+    grossMinutes: 660,
+    isOvertime: false,
+    lastClockOut: null,
+    locationName: 'Administrative',
+    operationalDate: '2026-07-30',
+    overtimeMinutes: 0,
+    paidMinutes: 630,
+    payrollNotes: [],
+    payrollReady: false,
+    postName: 'Recruiting and Licensure',
+    regularMinutes: 630,
+    requiresArmed: false,
+    role: 'guard',
+    rowKind: 'time_event',
+    salaryDefaultMinutes: 0,
+    scheduledEndsAt: null,
+    scheduledStartsAt: null,
+    shiftId: null,
+    siteCode: 'ADMIN',
+    siteName: 'Administrative',
+    timeOffMinutes: 0,
+    timeZone: 'America/Denver',
+    username: 'zward',
+    weekEndsOn: '2026-08-01',
+    weekStartsOn: '2026-07-26',
+  }],
+  serverTimestamp: '2026-07-30T16:00:00.000Z',
+  summary: {
+    exceptionCount: 1,
+    grossMinutes: 660,
+    overtimeMinutes: 0,
+    paidMinutes: 630,
+    pendingCorrectionCount: 1,
+    readyCount: 0,
+    regularMinutes: 630,
+    rowCount: 1,
+    salaryDefaultMinutes: 0,
+    timeOffMinutes: 0,
+  },
+  throughDate: '2026-08-08',
+}
+
+const maintenance: TimeMaintenance = {
+  employees: [],
+  events: [{
+    clientRecordedAt: null,
+    createdBy: null,
+    createdByName: null,
+    effectiveAt: '2026-07-30T14:00:00.000Z',
+    employeeId: dashboard.employee.id,
+    employeeName: 'Zach Ward',
+    employmentType: 'flex',
+    eventName: null,
+    id: '73000000-0000-4000-8000-000000000002',
+    kind: 'clock_in',
+    latestAction: null,
+    latestNote: null,
+    locationName: 'Administrative',
+    maintenanceNoteCount: 0,
+    pendingCorrectionCount: 0,
+    postName: 'Recruiting and Licensure',
+    recordedAt: '2026-07-30T14:00:00.000Z',
+    role: 'guard',
+    shiftId: null,
+    siteCode: 'ADMIN',
+    siteName: 'Administrative',
+    source: 'web',
+    timeZone: 'America/Denver',
+    username: 'zward',
+    voided: false,
+  }],
+  fromDate: '2026-07-26',
+  operationalTimeZone: 'America/Denver',
+  serverTimestamp: '2026-07-30T16:00:00.000Z',
+  throughDate: '2026-08-08',
+}
+
+describe('time command center model', () => {
+  it('summarizes real review and maintenance data without dropping active punches', () => {
+    const model = buildTimeCommandCenterModel({ dashboard, maintenance, review })
+
+    expect(model.self.clockState).toBe('working')
+    expect(model.clockedIn.count).toBe(1)
+    expect(model.clockedIn.atUnexpectedLocation).toBe(1)
+    expect(model.missingPunches.missingClockOuts).toBe(1)
+    expect(model.payrollReadiness.percent).toBe(0)
+    expect(model.overtimeRisk.approachingDaily).toBe(1)
+  })
+
+  it('keeps employee access separate from team-wide access', () => {
+    const guardSession: SessionContext = {
+      displayName: 'Zach Ward',
+      employeeId: dashboard.employee.id,
+      hasMfa: false,
+      mfaEnrolledAt: null,
+      mfaRequired: false,
+      mustChangePassword: false,
+      passwordChangedAt: null,
+      permissions: ['time.self.view'],
+      role: 'guard',
+      username: 'zward',
+    }
+
+    expect(canViewTeamTime(guardSession)).toBe(false)
+    expect(canViewTeamTime({ ...guardSession, role: 'supervisor' })).toBe(true)
+  })
+})
