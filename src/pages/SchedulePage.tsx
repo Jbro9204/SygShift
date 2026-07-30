@@ -468,7 +468,7 @@ function ShiftCard({
   const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
   const source = parseImportedScheduleNote(shift.notes)
   const sourceReference = sourceReferenceLabel(source)
-  const showSourceReview = source.reviewNeeded || (shift.is_open && source.assignee)
+  const showSourceReview = source.reviewNeeded || (openSlots > 0 && Boolean(source.assignee))
 
   return (
     <article
@@ -507,9 +507,9 @@ function ShiftCard({
       <div className="shift-card__footer">
         {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review needed</span> : null}
         {shift.requires_armed ? <span className="shift-tag shift-tag--armed">Armed</span> : null}
-        {shift.is_open || openSlots > 0 ? (
+        {openSlots > 0 ? (
           <span className="shift-tag shift-tag--open">
-            {openSlots > 0 ? `${openSlots} open` : 'Open'}
+            {`${openSlots} open`}
           </span>
         ) : (
           <span className="shift-tag shift-tag--covered">Covered</span>
