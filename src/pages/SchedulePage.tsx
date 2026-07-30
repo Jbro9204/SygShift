@@ -1697,8 +1697,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         : ''
       setBuilderMessage(
         result.assignment_id
-          ? `${createdCount} assigned shift${createdCount === 1 ? '' : 's'} published.${skippedMessage}`
-          : `${createdCount} open shift${createdCount === 1 ? '' : 's'} published. Guards can see ${createdCount === 1 ? 'it' : 'them'} now.${skippedMessage}`,
+          ? `${createdCount} assigned draft shift${createdCount === 1 ? '' : 's'} saved. Publish the schedule draft when the week is ready.${skippedMessage}`
+          : `${createdCount} open draft shift${createdCount === 1 ? '' : 's'} saved. Publish the schedule draft when the week is ready.${skippedMessage}`,
       )
       setOpenShiftForm(defaultOpenShiftForm(weekKey))
       setOpenShiftEmployeeSearch('')
@@ -2877,10 +2877,10 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 type="submit"
               >
                 {createOpenShiftMutation.isPending
-                  ? 'Publishing...'
+                  ? 'Saving draft...'
                   : openShiftForm.employeeId
-                    ? `Publish ${openShiftDateKeys.length === 1 ? 'assigned shift' : `${openShiftDateKeys.length} assigned shifts`}`
-                    : `Publish ${openShiftDateKeys.length === 1 ? 'open shift' : `${openShiftDateKeys.length} open shifts`}`}
+                    ? `Save ${openShiftDateKeys.length === 1 ? 'draft shift' : `${openShiftDateKeys.length} draft shifts`}`
+                    : `Save ${openShiftDateKeys.length === 1 ? 'open draft shift' : `${openShiftDateKeys.length} open draft shifts`}`}
               </button>
             </div>
           </form>
