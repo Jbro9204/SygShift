@@ -5,6 +5,9 @@ Use this file for ideas we want to keep visible but are not building yet.
 Keep this repo copy in sync with:
 `C:\Users\Jordan\Desktop\SygShift Future Items\FUTURE_ITEMS.md`
 
+Maintenance rule:
+When a future item is implemented, record it in the proper changelog/devlog, then remove it from this active future list so this file stays current.
+
 ## Active / Recently Closed
 
 ### Employee Time & Attendance Self-View
@@ -69,3 +72,18 @@ Notes:
 - Goal is to better organize applicants, recruiting stages, licensing progress, and onboarding handoff.
 - Need to confirm Indeed Employer API access, permissions, costs, and data limits.
 - If direct API access is not realistic, evaluate email parsing, CSV import, or manual intake as fallback options.
+
+### Role-Based Welcome/Login Emails and Clear MFA Setup Instructions
+Status: Pinned for later
+
+Idea:
+Create role-specific welcome/login emails and make MFA setup language much clearer for roles that require MFA.
+
+Notes:
+- Welcome emails and login credential emails should stay separate.
+- Emails should explain role-specific expectations for Guards, Supervisors, Schedulers, Dispatchers, Recruiting & Licensing, and Admins.
+- MFA-required emails should clearly state that users must install an authenticator app before setup.
+- Recommended authenticator apps: Microsoft Authenticator or Google Authenticator.
+- First-time MFA setup screen should use large, plain language explaining that SygShift does not text the authenticator code; the authenticator app generates a new 6-digit code.
+- Add clear instructions: install the app, open the app, choose Add Account / Scan QR Code, scan the SygShift QR from inside the authenticator app, then enter the 6-digit code shown in the app.
+- Add a warning that scanning the QR code with the normal phone camera may not complete setup.
