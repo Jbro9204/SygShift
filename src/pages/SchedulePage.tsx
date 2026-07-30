@@ -606,12 +606,14 @@ function EditShiftDialog({
 
   function requestClose() {
     if (!hasUnsavedChanges || window.confirm('Close without saving this shift change?')) {
+      mutation.reset()
       onClose()
     }
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    mutation.reset()
     const form = new FormData(event.currentTarget)
     mutation.mutate({
       shiftId: shift.id,
@@ -719,7 +721,10 @@ function EditShiftDialog({
         <div className="modal-actions">
           <button
             className="secondary-button danger-button"
-            onClick={() => onRequestRemove(shift)}
+            onClick={() => {
+              mutation.reset()
+              onRequestRemove(shift)
+            }}
             type="button"
           >
             <Trash2 aria-hidden="true" size={17} />
@@ -1773,6 +1778,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       queryClient.setQueryData(['weekly-schedule', weekKey], updatedSchedule)
       setBuilderMessage('Shift removed from the working draft. Publish the draft when the week is ready.')
       setRemovingShift(null)
+      updateDraftShiftMutation.reset()
       setShiftEditor(null)
       setSelectedPlannerShiftId(null)
       await Promise.all([
@@ -1790,6 +1796,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     onSuccess: async (publishedSchedule) => {
       queryClient.setQueryData(['weekly-schedule', weekKey], publishedSchedule)
       setBuilderMessage(`Revision ${publishedSchedule.revision} is now live.`)
+      updateDraftShiftMutation.reset()
       setShiftEditor(null)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['weekly-schedule', weekKey] }),
@@ -1805,6 +1812,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     mutationFn: () => cancelScheduleDraft(scheduleQuery.data!.id),
     onSuccess: async (publishedSchedule) => {
       setCancelDraftConfirmOpen(false)
+      updateDraftShiftMutation.reset()
       setShiftEditor(null)
       setBuilderOpen(false)
       queryClient.setQueryData(['weekly-schedule', weekKey], publishedSchedule)
@@ -2215,6 +2223,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
   function editShift(shift: ScheduleShift) {
     if (!canEditScheduler) return
+    updateDraftShiftMutation.reset()
     setBuilderOpen(false)
     setResolvingShift(null)
     if (scheduleQuery.data?.status === 'draft') {
@@ -2236,8 +2245,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   }
 
   function applySuggestedEmployee(shift: ScheduleShift, employeeId: string) {
+    updateDraftShiftMutation.reset()
     setBuilderMessage(null)
     updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId))
+  }
+
+  function closeShiftEditor() {
+    updateDraftShiftMutation.reset()
+    setShiftEditor(null)
   }
 
   function closePlannerAssignmentAfterSave() {
@@ -2252,6 +2267,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     credentialOverrideNote?: string | null,
   ) {
     setBuilderMessage(null)
+    updateDraftShiftMutation.reset()
     if (scheduleQuery.data?.status === 'draft') {
       updateDraftShiftMutation.mutate(
         draftShiftMutationInput(shift, employeeId, availabilityOverrideNote, credentialOverrideNote),
@@ -2261,6 +2277,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     }
 
     setBuilderMessage('Opening a working draft before saving this assignment...')
+    updateDraftShiftMutation.reset()
     ensureDraftMutation.mutate({ openEditor: false, shift }, {
       onSuccess: ({ draft }) => {
         if (!draft) return
@@ -2896,8 +2913,11 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             shiftEditor.editableShift.assignments.map((assignment) => `${assignment.employee.id}:${assignment.status}`).join(','),
           ].join('|')}
           mutation={updateDraftShiftMutation}
-          onClose={() => setShiftEditor(null)}
-          onRequestRemove={(shift) => setRemovingShift(shift)}
+          onClose={closeShiftEditor}
+          onRequestRemove={(shift) => {
+            updateDraftShiftMutation.reset()
+            setRemovingShift(shift)
+          }}
           shift={shiftEditor.editableShift}
           suggestions={staffingSuggestionsQuery.data?.find((item) => item.shiftId === shiftEditor.editableShift?.id)}
         />
@@ -2919,7 +2939,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           busy={shiftEditor.status === 'preparing' || ensureDraftMutation.isPending}
           busyLabel={shiftEditor.status === 'preparing' ? 'Preparing editable schedule block...' : 'Opening draft...'}
           description="SygShift prepares an editable draft before changing published schedule coverage."
-          onClose={() => setShiftEditor(null)}
+          onClose={closeShiftEditor}
           title="Edit shift"
         >
           <section className="shift-editor-prep" aria-live="polite">
@@ -2942,7 +2962,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               </p>
             )}
             <div className="modal-actions">
-              <button className="secondary-button" onClick={() => setShiftEditor(null)} type="button">
+              <button className="secondary-button" onClick={closeShiftEditor} type="button">
                 Close
               </button>
               {shiftEditor.status === 'error' ? (
