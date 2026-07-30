@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BadgeCheck,
   ChevronDown,
+  CheckCircle2,
+  Loader2,
   LockKeyhole,
   Plus,
   Save,
@@ -52,12 +54,35 @@ function groupedPermissions(permissions: PermissionDefinition[]) {
   }, {})
 }
 
+function permissionMatchesSearch(permission: PermissionDefinition, query: string): boolean {
+  const term = query.trim().toLocaleLowerCase()
+  if (!term) return true
+  return [
+    permission.category,
+    permission.code,
+    permission.description,
+    permission.name,
+    permission.riskLevel,
+    permission.requiresMfa ? 'mfa authenticator secure' : 'no mfa',
+    permission.locked ? 'locked system' : 'editable custom',
+  ].some((value) => String(value ?? '').toLocaleLowerCase().includes(term))
+}
+
+function filterPermissions(permissions: PermissionDefinition[], query: string): PermissionDefinition[] {
+  return permissions.filter((permission) => permissionMatchesSearch(permission, query))
+}
+
 function updateCenter(queryClient: ReturnType<typeof useQueryClient>, center: AccessControlCenter) {
   queryClient.setQueryData(['access-control-center'], center)
 }
 
 function selectedCount(categoryPermissions: PermissionDefinition[], selectedCodes: Set<string>): number {
   return categoryPermissions.filter((permission) => selectedCodes.has(permission.code)).length
+}
+
+function permissionSetsMatch(selectedCodes: Set<string>, permissionCodes: string[]): boolean {
+  if (selectedCodes.size !== permissionCodes.length) return false
+  return permissionCodes.every((code) => selectedCodes.has(code))
 }
 
 function PermissionGroup({
@@ -140,15 +165,22 @@ function RoleTile({
 function CreateRoleModal({
   existingRoleIds,
   onClose,
+  onSaved,
   permissions,
 }: {
   existingRoleIds: string[]
   onClose: () => void
+  onSaved: (message: string) => void
   permissions: PermissionDefinition[]
 }) {
   const queryClient = useQueryClient()
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set())
-  const grouped = useMemo(() => groupedPermissions(permissions), [permissions])
+  const [permissionSearch, setPermissionSearch] = useState('')
+  const visiblePermissions = useMemo(
+    () => filterPermissions(permissions, permissionSearch),
+    [permissionSearch, permissions],
+  )
+  const grouped = useMemo(() => groupedPermissions(visiblePermissions), [visiblePermissions])
   const mutation = useMutation({
     mutationFn: async (input: { name: string, description: string | null, mfaRequired: boolean, permissionCodes: string[] }) => {
       const createdCenter = await upsertAccessRole({
@@ -161,8 +193,10 @@ function CreateRoleModal({
       if (!createdRole || input.permissionCodes.length === 0) return createdCenter
       return setAccessRolePermissions(createdRole.id, input.permissionCodes)
     },
-    onSuccess: (center) => {
+    onSuccess: (center, input) => {
       updateCenter(queryClient, center)
+      const permissionLabel = input.permissionCodes.length === 1 ? '1 permission' : `${input.permissionCodes.length} permissions`
+      onSaved(input.permissionCodes.length > 0 ? `${input.name} created. ${permissionLabel} saved.` : `${input.name} created.`)
       onClose()
     },
   })
@@ -220,18 +254,32 @@ function CreateRoleModal({
 
           <section className="access-modal-card access-modal-card--permissions">
             <p className="eyebrow">Permission nests</p>
-            <div className="permission-nest-list">
-              {Object.entries(grouped).map(([category, categoryPermissions], index) => (
-                <PermissionGroup
-                  category={category}
-                  key={category}
-                  onToggle={togglePermission}
-                  openByDefault={index === 0}
-                  permissions={categoryPermissions}
-                  selectedCodes={selectedCodes}
-                />
-              ))}
-            </div>
+            <label className="permission-search">
+              <Search aria-hidden="true" size={18} />
+              <span className="visually-hidden">Search permissions</span>
+              <input
+                onChange={(event) => setPermissionSearch(event.target.value)}
+                placeholder="Search permissions, categories, codes, or MFA"
+                type="search"
+                value={permissionSearch}
+              />
+            </label>
+            {visiblePermissions.length === 0 ? (
+              <p className="permission-search-empty">No permissions match that search.</p>
+            ) : (
+              <div className="permission-nest-list">
+                {Object.entries(grouped).map(([category, categoryPermissions], index) => (
+                  <PermissionGroup
+                    category={category}
+                    key={category}
+                    onToggle={togglePermission}
+                    openByDefault={permissionSearch.trim().length > 0 || index === 0}
+                    permissions={categoryPermissions}
+                    selectedCodes={selectedCodes}
+                  />
+                ))}
+              </div>
+            )}
           </section>
         </div>
 
@@ -258,7 +306,16 @@ function RolePermissionEditor({
   const queryClient = useQueryClient()
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set(role.permissionCodes))
   const [message, setMessage] = useState<string | null>(null)
-  const grouped = useMemo(() => groupedPermissions(permissions), [permissions])
+  const [permissionSearch, setPermissionSearch] = useState('')
+  const visiblePermissions = useMemo(
+    () => filterPermissions(permissions, permissionSearch),
+    [permissionSearch, permissions],
+  )
+  const grouped = useMemo(() => groupedPermissions(visiblePermissions), [visiblePermissions])
+  const hasUnsavedChanges = useMemo(
+    () => !permissionSetsMatch(selectedCodes, role.permissionCodes),
+    [role.permissionCodes, selectedCodes],
+  )
   const mutation = useMutation({
     mutationFn: (codes: string[]) => setAccessRolePermissions(role.id, codes),
     onSuccess: (center) => {
@@ -266,11 +323,22 @@ function RolePermissionEditor({
       setMessage('Role permissions saved.')
     },
   })
+  const saveStatusState = mutation.isPending ? 'saving' : message ? 'saved' : hasUnsavedChanges ? 'dirty' : 'idle'
+  const saveStatusText = mutation.isPending
+    ? 'Saving permissions...'
+    : message
+      ? 'Saving complete.'
+      : hasUnsavedChanges
+        ? 'Unsaved permission changes'
+        : 'Saved.'
 
   useEffect(() => {
     setSelectedCodes(new Set(role.permissionCodes))
-    setMessage(null)
   }, [role.id, role.permissionCodes])
+
+  useEffect(() => {
+    setMessage(null)
+  }, [role.id])
 
   function togglePermission(code: string) {
     setSelectedCodes((current) => {
@@ -279,6 +347,7 @@ function RolePermissionEditor({
       else next.add(code)
       return next
     })
+    setMessage(null)
   }
 
   return (
@@ -298,29 +367,54 @@ function RolePermissionEditor({
         </div>
       </div>
 
-      <div className="permission-nest-list">
-        {Object.entries(grouped).map(([category, categoryPermissions], index) => (
-          <PermissionGroup
-            category={category}
-            key={category}
-            onToggle={togglePermission}
-            openByDefault={index === 0}
-            permissions={categoryPermissions}
-            selectedCodes={selectedCodes}
-          />
-        ))}
-      </div>
+      <label className="permission-search permission-search--workspace">
+        <Search aria-hidden="true" size={18} />
+        <span className="visually-hidden">Search permissions</span>
+        <input
+          onChange={(event) => setPermissionSearch(event.target.value)}
+          placeholder="Search permissions, categories, codes, or MFA"
+          type="search"
+          value={permissionSearch}
+        />
+      </label>
+
+      {visiblePermissions.length === 0 ? (
+        <p className="permission-search-empty">No permissions match that search.</p>
+      ) : (
+        <div className="permission-nest-list">
+          {Object.entries(grouped).map(([category, categoryPermissions], index) => (
+            <PermissionGroup
+              category={category}
+              key={category}
+              onToggle={togglePermission}
+              openByDefault={permissionSearch.trim().length > 0 || index === 0}
+              permissions={categoryPermissions}
+              selectedCodes={selectedCodes}
+            />
+          ))}
+        </div>
+      )}
 
       <div className="access-actions">
         <button
           className="access-control-button access-control-button--primary"
-          disabled={mutation.isPending}
+          disabled={mutation.isPending || !hasUnsavedChanges}
           onClick={() => mutation.mutate([...selectedCodes])}
           type="button"
         >
           <Save aria-hidden="true" size={18} />
-          Save permissions
+          {mutation.isPending ? 'Saving...' : 'Save permissions'}
         </button>
+        <div className={`access-save-status access-save-status--${saveStatusState}`} role="status" aria-live="polite">
+          {mutation.isPending ? (
+            <Loader2 aria-hidden="true" className="access-save-status__spinner" size={18} />
+          ) : saveStatusState === 'dirty' ? (
+            <ShieldAlert aria-hidden="true" size={18} />
+          ) : (
+            <CheckCircle2 aria-hidden="true" size={18} />
+          )}
+          <span>{saveStatusText}</span>
+        </div>
         <p>Changes apply to everyone assigned to this role.</p>
       </div>
       {role.protected ? (
@@ -329,7 +423,6 @@ function RolePermissionEditor({
           Protected Admin safety permissions cannot be removed.
         </p>
       ) : null}
-      {message ? <p className="form-feedback form-feedback--success" role="status">{message}</p> : null}
       {mutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{mutation.error.message}</p> : null}
     </section>
   )
@@ -349,7 +442,12 @@ function EmployeeAccessEditor({
   const queryClient = useQueryClient()
   const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set(user.assignedRoleIds))
   const [message, setMessage] = useState<string | null>(null)
+  const [overridePermissionSearch, setOverridePermissionSearch] = useState('')
   const permissionByCode = useMemo(() => new Map(permissions.map((permission) => [permission.code, permission])), [permissions])
+  const overridePermissions = useMemo(
+    () => filterPermissions(permissions, overridePermissionSearch),
+    [overridePermissionSearch, permissions],
+  )
   const groupedEffective = useMemo(() => {
     const visible = user.effectivePermissionCodes
       .map((code) => permissionByCode.get(code))
@@ -457,16 +555,29 @@ function EmployeeAccessEditor({
           <section className="access-modal-card">
             <h3>Individual permission override</h3>
             <form className="access-override-form" onSubmit={submitOverride}>
+              <label className="permission-search permission-search--override">
+                <Search aria-hidden="true" size={18} />
+                <span className="visually-hidden">Search override permissions</span>
+                <input
+                  onChange={(event) => setOverridePermissionSearch(event.target.value)}
+                  placeholder="Search permission to grant or deny"
+                  type="search"
+                  value={overridePermissionSearch}
+                />
+              </label>
               <label>
                 <span>Permission</span>
-                <select name="permissionCode">
-                  {permissions.map((permission) => (
+                <select disabled={overridePermissions.length === 0} name="permissionCode">
+                  {overridePermissions.map((permission) => (
                     <option key={permission.code} value={permission.code}>
                       {permission.category} — {permission.name}
                     </option>
                   ))}
                 </select>
               </label>
+              {overridePermissions.length === 0 ? (
+                <p className="permission-search-empty">No permissions match that search.</p>
+              ) : null}
               <label>
                 <span>Effect</span>
                 <select name="effect">
@@ -478,7 +589,7 @@ function EmployeeAccessEditor({
                 <span>Reason</span>
                 <textarea name="reason" placeholder="Required audit note." required rows={3} />
               </label>
-              <button className="access-control-button access-control-button--secondary" disabled={overrideMutation.isPending} type="submit">
+              <button className="access-control-button access-control-button--secondary" disabled={overrideMutation.isPending || overridePermissions.length === 0} type="submit">
                 Apply override
               </button>
             </form>
@@ -610,6 +721,7 @@ export function AccessControlPage() {
   const [createRoleOpen, setCreateRoleOpen] = useState(false)
   const [employeeAccessOpen, setEmployeeAccessOpen] = useState(false)
   const [employeeEditorOpen, setEmployeeEditorOpen] = useState(false)
+  const [saveNotice, setSaveNotice] = useState<string | null>(null)
   const centerQuery = useQuery({
     queryFn: getAccessControlCenter,
     queryKey: ['access-control-center'],
@@ -623,6 +735,12 @@ export function AccessControlPage() {
     if (!selectedRoleId && center?.roles[0]) setSelectedRoleId(center.roles[0].id)
     if (!selectedUserId && center?.users[0]) setSelectedUserId(center.users[0].id)
   }, [center, selectedRoleId, selectedUserId])
+
+  useEffect(() => {
+    if (!saveNotice) return
+    const timerId = window.setTimeout(() => setSaveNotice(null), 6500)
+    return () => window.clearTimeout(timerId)
+  }, [saveNotice])
 
   if (centerQuery.isPending) {
     return (
@@ -698,6 +816,13 @@ export function AccessControlPage() {
         </div>
       </section>
 
+      {saveNotice ? (
+        <div className="access-save-status access-save-status--saved access-page-save-notice" role="status" aria-live="polite">
+          <CheckCircle2 aria-hidden="true" size={18} />
+          <span>{saveNotice}</span>
+        </div>
+      ) : null}
+
       <section className="role-library-panel">
         <div className="role-library-panel__heading">
           <div>
@@ -735,6 +860,7 @@ export function AccessControlPage() {
         <CreateRoleModal
           existingRoleIds={center.roles.map((role) => role.id)}
           onClose={() => setCreateRoleOpen(false)}
+          onSaved={setSaveNotice}
           permissions={center.permissions}
         />
       ) : null}

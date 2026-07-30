@@ -30,6 +30,7 @@ export function NotificationsPage() {
       await queryClient.invalidateQueries({ queryKey: ['notification-center'] })
     },
   })
+  const canManageNotifications = notificationQuery.data?.permissions.canManage ?? false
 
   return (
     <div className="page page--notifications">
@@ -42,15 +43,17 @@ export function NotificationsPage() {
             overtime, open shifts, and schedule coordination.
           </p>
         </div>
-        <button
-          className="primary-action"
-          disabled={processMutation.isPending || !notificationQuery.data?.summary.pending}
-          onClick={() => processMutation.mutate()}
-          type="button"
-        >
-          <MailCheck aria-hidden="true" size={19} />
+        {canManageNotifications ? (
+          <button
+            className="primary-action"
+            disabled={processMutation.isPending || !notificationQuery.data?.summary.pending}
+            onClick={() => processMutation.mutate()}
+            type="button"
+          >
+            <MailCheck aria-hidden="true" size={19} />
           {processMutation.isPending ? 'Sending queued emails…' : 'Process queued emails'}
-        </button>
+          </button>
+        ) : null}
       </section>
 
       {!isSupabaseConfigured ? (

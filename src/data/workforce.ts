@@ -71,11 +71,24 @@ const siteSchema = z.object({
   posts: z.array(postSchema),
 })
 
+const recentlyDeletedRecordSchema = z.object({
+  id: z.string().uuid(),
+  recordType: z.enum(['employee', 'site', 'post']),
+  recordId: z.string().uuid(),
+  displayName: z.string(),
+  metadata: z.unknown(),
+  deletedBy: z.string().uuid().nullable(),
+  deletedAt: z.string(),
+  expiresAt: z.string(),
+})
+
 export type DirectoryEntry = z.infer<typeof directoryEntrySchema>
 export type DirectoryCredential = z.infer<typeof credentialSchema>
 export type CredentialKind = DirectoryCredential['kind']
 export type CredentialStatus = DirectoryCredential['status']
 export type Site = z.infer<typeof siteSchema>
+export type SitePost = z.infer<typeof postSchema>
+export type RecentlyDeletedRecord = z.infer<typeof recentlyDeletedRecordSchema>
 
 export interface EmployeeCredentialMutationInput {
   employeeId: string
@@ -85,6 +98,28 @@ export interface EmployeeCredentialMutationInput {
   validFrom?: string | null
   expiresOn?: string | null
   notes?: string | null
+}
+
+export interface SiteMutationInput {
+  siteId?: string | null
+  code?: string | null
+  name: string
+  addressLine1?: string | null
+  city?: string | null
+  region?: string | null
+  postalCode?: string | null
+  timeZone: string
+  active: boolean
+}
+
+export interface PostMutationInput {
+  postId?: string | null
+  siteId: string
+  name: string
+  requiresArmed: boolean
+  active: boolean
+  defaultStartTime?: string | null
+  defaultEndTime?: string | null
 }
 
 function cleanOptional(value: string | null | undefined): string | null {
@@ -121,11 +156,75 @@ export async function getSites(): Promise<Site[]> {
 
   if (error) throw new Error('Sites and posts could not be loaded for this account.')
 
+  return parseSitesPayload(data)
+}
+
+function parseSitesPayload(data: unknown): Site[] {
   const sites = z.array(siteSchema).parse(data)
   return sites.map((site) => ({
     ...site,
     posts: [...site.posts].sort((left, right) => left.name.localeCompare(right.name)),
   }))
+}
+
+export async function upsertSite(input: SiteMutationInput): Promise<Site[]> {
+  const { data, error } = await getSupabaseClient().rpc('upsert_site', {
+    target_active: input.active,
+    target_address_line_1: cleanOptional(input.addressLine1),
+    target_city: cleanOptional(input.city),
+    target_code: cleanOptional(input.code),
+    target_name: input.name.trim(),
+    target_postal_code: cleanOptional(input.postalCode),
+    target_region: cleanOptional(input.region),
+    target_site_id: input.siteId ?? null,
+    target_time_zone: cleanOptional(input.timeZone) ?? 'America/Denver',
+  })
+  if (error) throw new Error(error.message || 'Site could not be saved.')
+  return parseSitesPayload(data)
+}
+
+export async function upsertPost(input: PostMutationInput): Promise<Site[]> {
+  const { data, error } = await getSupabaseClient().rpc('upsert_post', {
+    target_active: input.active,
+    target_default_end_time: cleanOptional(input.defaultEndTime),
+    target_default_start_time: cleanOptional(input.defaultStartTime),
+    target_name: input.name.trim(),
+    target_post_id: input.postId ?? null,
+    target_requires_armed: input.requiresArmed,
+    target_site_id: input.siteId,
+  })
+  if (error) throw new Error(error.message || 'Post could not be saved.')
+  return parseSitesPayload(data)
+}
+
+export async function deleteUnusedSite(siteId: string): Promise<Site[]> {
+  const { data, error } = await getSupabaseClient().rpc('delete_unused_site', {
+    target_site_id: siteId,
+  })
+  if (error) throw new Error(error.message || 'Site could not be deleted.')
+  return parseSitesPayload(data)
+}
+
+export async function deleteUnusedPost(postId: string): Promise<Site[]> {
+  const { data, error } = await getSupabaseClient().rpc('delete_unused_post', {
+    target_post_id: postId,
+  })
+  if (error) throw new Error(error.message || 'Post could not be deleted.')
+  return parseSitesPayload(data)
+}
+
+export async function getRecentlyDeletedSitesAndPosts(): Promise<RecentlyDeletedRecord[]> {
+  const [sitesResult, postsResult] = await Promise.all([
+    getSupabaseClient().rpc('get_recently_deleted_records', { target_record_type: 'site' }),
+    getSupabaseClient().rpc('get_recently_deleted_records', { target_record_type: 'post' }),
+  ])
+
+  if (sitesResult.error) throw new Error(sitesResult.error.message || 'Recently deleted sites could not be loaded.')
+  if (postsResult.error) throw new Error(postsResult.error.message || 'Recently deleted posts could not be loaded.')
+
+  return z.array(recentlyDeletedRecordSchema)
+    .parse([...(sitesResult.data ?? []), ...(postsResult.data ?? [])])
+    .sort((left, right) => right.deletedAt.localeCompare(left.deletedAt))
 }
 
 export function employeeDisplayName(employee: DirectoryEntry): string {

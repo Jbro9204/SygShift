@@ -1,8 +1,32 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getTrustedDeviceToken } from './trustedDeviceToken'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim()
-const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim()
+const defaultSupabaseUrl = 'https://eqkdfrbwtioiqtjsyglg.supabase.co'
+const defaultSupabasePublishableKey = 'sb_publishable_-uU9fD3XIeZ58r815-fl_Q_g4IIRPQ5'
+
+type SupabaseBuildEnv = {
+  VITE_SUPABASE_URL?: string
+  VITE_SUPABASE_PUBLISHABLE_KEY?: string
+}
+
+export function resolveSupabaseConfig(env: SupabaseBuildEnv) {
+  const configuredUrl = env.VITE_SUPABASE_URL
+  const configuredPublishableKey = env.VITE_SUPABASE_PUBLISHABLE_KEY
+  const supabaseUrl = (configuredUrl === undefined ? defaultSupabaseUrl : configuredUrl.trim()).replace(/\/$/, '')
+  const supabasePublishableKey = configuredPublishableKey === undefined
+    ? defaultSupabasePublishableKey
+    : configuredPublishableKey.trim()
+
+  return {
+    supabaseUrl,
+    supabasePublishableKey,
+    isConfigured: Boolean(supabaseUrl && supabasePublishableKey),
+  }
+}
+
+const supabaseConfig = resolveSupabaseConfig(import.meta.env)
+const supabaseUrl = supabaseConfig.supabaseUrl
+const supabasePublishableKey = supabaseConfig.supabasePublishableKey
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKey)
 

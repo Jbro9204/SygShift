@@ -18,7 +18,7 @@ const overviewMetricsSchema = z.object({
 export async function getOverviewMetrics(_now = new Date()): Promise<OverviewMetrics> {
   const client = getSupabaseClient()
   const { data, error } = await client.rpc('get_overview_metrics_payload')
-  if (error) return { onDutyNow: null, openShifts: null, pendingRequests: null, clockExceptions: null }
+  if (error) throw new Error(error.message || 'Operations dashboard metrics could not be loaded.')
   return overviewMetricsSchema.parse(data)
 }
 

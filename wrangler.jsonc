@@ -24,7 +24,11 @@
   "vars": {
     "SYGSHIFT_PUBLIC_APP_URL": "https://app.sygilant.us",
     "SYGSHIFT_EMAIL_FROM": "scheduling@sygilant.us",
-    "SYGSHIFT_EMAIL_FROM_NAME": "SygShift"
+    "SYGSHIFT_EMAIL_FROM_NAME": "SygShift",
+    "SUPABASE_URL": "https://eqkdfrbwtioiqtjsyglg.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_-uU9fD3XIeZ58r815-fl_Q_g4IIRPQ5",
+    "VITE_SUPABASE_URL": "https://eqkdfrbwtioiqtjsyglg.supabase.co",
+    "VITE_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_-uU9fD3XIeZ58r815-fl_Q_g4IIRPQ5"
   },
   "observability": {
     "enabled": true

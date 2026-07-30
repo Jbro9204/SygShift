@@ -31,6 +31,9 @@ const availabilityRecordSchema = z.object({
 const availabilityWorkspaceSchema = z.object({
   role: roleSchema,
   hasMfa: z.boolean(),
+  permissions: z.object({
+    canManage: z.boolean(),
+  }).optional().default({ canManage: false }),
   employees: z.array(availabilityEmployeeSchema),
   availability: z.array(availabilityRecordSchema),
 })

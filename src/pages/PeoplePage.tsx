@@ -10,7 +10,7 @@ import {
   submitAvailability,
   type AvailabilityRecord,
 } from '../data/availability'
-import { getCurrentAppRole, type AppRole } from '../data/session'
+import { getSessionContext, type SessionContext } from '../data/auth'
 import {
   employeeDisplayName,
   getEmployeeDirectory,
@@ -84,8 +84,17 @@ const credentialOptions: Array<{ kind: CredentialKind; label: string; helper: st
 const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const dayNamesShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-function canEditCredentials(role: AppRole | null | undefined): boolean {
-  return role === 'scheduler' || role === 'recruiting_licensing' || role === 'supervisor' || role === 'admin'
+function sessionHasPermission(session: SessionContext | null | undefined, permission: string): boolean {
+  return session?.role === 'admin' || Boolean(session?.permissions.includes(permission))
+}
+
+function canEditCredentials(session: SessionContext | null | undefined): boolean {
+  return session?.role === 'scheduler'
+    || session?.role === 'recruiting_licensing'
+    || session?.role === 'supervisor'
+    || session?.role === 'admin'
+    || sessionHasPermission(session, 'directory.edit_credentials')
+    || sessionHasPermission(session, 'licensing.manage')
 }
 
 function formatDateOnly(date: string): string {
@@ -552,12 +561,12 @@ export function PeoplePage() {
     queryFn: getEmployeeDirectory,
     enabled: isSupabaseConfigured,
   })
-  const roleQuery = useQuery({
-    queryKey: ['current-app-role'],
-    queryFn: getCurrentAppRole,
+  const sessionQuery = useQuery({
+    queryKey: ['session-context', 'directory'],
+    queryFn: getSessionContext,
     enabled: isSupabaseConfigured,
   })
-  const canManageCredentials = canEditCredentials(roleQuery.data)
+  const canManageCredentials = canEditCredentials(sessionQuery.data)
   const todayKey = format(operationalToday(), 'yyyy-MM-dd')
   const throughKey = format(addDays(operationalToday(), 42), 'yyyy-MM-dd')
   const availabilityQuery = useQuery({

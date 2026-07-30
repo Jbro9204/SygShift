@@ -83,6 +83,9 @@ export type RequestEmployee = z.infer<typeof employeeSchema>
 export interface RequestCenter {
   employeeId: string
   role: z.infer<typeof roleSchema>
+  permissions: {
+    canManage: boolean
+  }
   timeOff: TimeOffRequest[]
   shiftRequests: ShiftWorkRequest[]
   callOffs: CallOffReport[]
@@ -130,6 +133,9 @@ const rpcShiftSchema = z.object({
 const requestCenterPayloadSchema = z.object({
   employeeId: z.string().uuid(),
   role: roleSchema,
+  permissions: z.object({
+    canManage: z.boolean(),
+  }).optional().default({ canManage: false }),
   timeOff: z.array(z.object({
     id: z.string().uuid(),
     employeeId: z.string().uuid(),
@@ -248,6 +254,7 @@ export async function getRequestCenter(): Promise<RequestCenter> {
   return {
     employeeId: payload.employeeId,
     role: payload.role,
+    permissions: payload.permissions,
     timeOff: records.timeOff,
     shiftRequests: records.shiftRequests,
     callOffs: records.callOffs,

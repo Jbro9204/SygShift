@@ -50,7 +50,15 @@ coverage/
 playwright-report/
 test-results/
 screenshots/
+tmp/
 *.lcov
+
+# Local package/runtime caches and non-SygShift reference material
+.pnpm-store/
+.reference/
+
+# Local design/archive assets; production assets belong under public/
+assets/
 
 # Python build artifacts
 __pycache__/

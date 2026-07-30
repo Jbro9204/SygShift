@@ -2,6 +2,9 @@ import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 
 const notificationCenterSchema = z.object({
+  permissions: z.object({
+    canManage: z.boolean(),
+  }).optional().default({ canManage: false }),
   summary: z.object({
     pending: z.number().int().nonnegative(),
     delivered: z.number().int().nonnegative(),

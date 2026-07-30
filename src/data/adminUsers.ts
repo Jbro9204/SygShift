@@ -110,6 +110,24 @@ const welcomeEmailResponseSchema = z.object({
   username: z.string(),
 })
 
+const recentlyDeletedRecordSchema = z.object({
+  id: z.string().uuid(),
+  recordType: z.enum(['employee', 'site', 'post']),
+  recordId: z.string().uuid(),
+  displayName: z.string(),
+  metadata: z.unknown(),
+  deletedBy: z.string().uuid().nullable(),
+  deletedAt: z.string(),
+  expiresAt: z.string(),
+})
+
+const deleteEmployeeResponseSchema = z.object({
+  deletedId: z.string().uuid(),
+  employeeId: z.string().uuid(),
+  displayName: z.string(),
+  expiresAt: z.string(),
+})
+
 export type AppRole = z.infer<typeof appRoleSchema>
 export type CredentialKind = z.infer<typeof credentialSchema>['kind']
 export type CredentialStatus = z.infer<typeof credentialSchema>['status']
@@ -121,6 +139,8 @@ export type AdminUserDirectory = z.infer<typeof adminUserDirectorySchema>
 export type ProvisioningCredential = z.infer<typeof provisioningCredentialSchema>
 export type LoginEmailResult = z.infer<typeof loginEmailResponseSchema>
 export type WelcomeEmailResult = z.infer<typeof welcomeEmailResponseSchema>
+export type RecentlyDeletedRecord = z.infer<typeof recentlyDeletedRecordSchema>
+export type DeleteEmployeeResult = z.infer<typeof deleteEmployeeResponseSchema>
 
 export interface EmployeeMutationInput {
   employeeId?: string
@@ -244,6 +264,22 @@ export async function revokeEmployeeTrustedDevices(employeeId: string): Promise<
   })
   if (error) throw new Error(error.message || 'Remembered devices could not be revoked.')
   return z.number().int().nonnegative().parse(data)
+}
+
+export async function deleteSeparatedEmployee(employeeId: string): Promise<DeleteEmployeeResult> {
+  const { data, error } = await getSupabaseClient().rpc('admin_delete_separated_employee', {
+    target_employee_id: employeeId,
+  })
+  if (error) throw new Error(error.message || 'Separated employee could not be deleted.')
+  return deleteEmployeeResponseSchema.parse(data)
+}
+
+export async function getRecentlyDeletedEmployees(): Promise<RecentlyDeletedRecord[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_recently_deleted_records', {
+    target_record_type: 'employee',
+  })
+  if (error) throw new Error(error.message || 'Recently deleted employees could not be loaded.')
+  return z.array(recentlyDeletedRecordSchema).parse(data)
 }
 
 export async function provisionEmployeeAccount(employeeId: string, temporaryPassword?: string): Promise<ProvisioningCredential> {

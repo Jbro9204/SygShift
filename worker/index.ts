@@ -230,7 +230,7 @@ async function requireAdminMfa(request: Request, environment: Environment): Prom
   context: SessionContext
 }> {
   const result = await requireVerifiedOperationsSession(request, environment, null, 'admin_mfa_required')
-  if (result.context.role !== 'admin') {
+  if (result.context.role !== 'admin' && !result.context.permissions?.includes('admin.users.manage')) {
     throw new Response(JSON.stringify({ error: 'admin_mfa_required' }), {
       headers: { 'content-type': 'application/json; charset=utf-8' },
       status: 403,
@@ -863,13 +863,20 @@ async function handleNotificationProcessApi(request: Request, environment: Envir
 
   let operator: Awaited<ReturnType<typeof requireVerifiedOperationsSession>>
   try {
-    operator = await requireVerifiedOperationsSession(request, environment)
+    operator = await requireVerifiedOperationsSession(request, environment, null)
   } catch (error) {
     if (error instanceof Response) {
       const payload = await error.json().catch(() => ({ error: 'auth_failed' })) as { error?: string }
       return errorJson(payload.error ?? 'auth_failed', requestId, error.status)
     }
     throw error
+  }
+
+  if (
+    !notificationProcessorRoles.has(operator.context.role)
+    && !operator.context.permissions?.some((permission) => permission === 'notifications.manage' || permission === 'announcements.send')
+  ) {
+    return errorJson('operations_mfa_required', requestId, 403)
   }
 
   if (!environment.EMAIL) {

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
-import { useIsMutating } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { useIsMutating, useQuery } from '@tanstack/react-query'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { FileClock, LogOut, Menu, ShieldCheck, UserCircle, X } from 'lucide-react'
+import { FileClock, LogOut, Megaphone, Menu, ShieldCheck, UserCircle, X } from 'lucide-react'
 import { navigationGroups } from '../app/navigation'
+import { getActiveAnnouncementBanners, type AnnouncementBanner } from '../data/announcements'
 import {
   getSessionContext,
   SESSION_CONTEXT_REFRESH_EVENT,
@@ -15,6 +16,17 @@ import { formatOperationalDate, formatOperationalTime, lastCompletedPayrollWeek 
 
 const INACTIVITY_WARNING_MS = 8 * 60 * 1000
 const INACTIVITY_LOGOUT_MS = 10 * 60 * 1000
+const WORKSPACE_ALERT_ROTATE_MS = 9_000
+
+type WorkspaceAlertEntry = {
+  id: string
+  title: string
+  message: string
+  tone: AnnouncementBanner['tone']
+  icon: 'announcement' | 'payroll'
+  ctaHref: string | null
+  ctaLabel: string | null
+}
 
 function displayRole(role: SessionContext['role']): string {
   if (role === 'admin') return 'Admin'
@@ -30,10 +42,62 @@ function canOpenNavigationItem(
   sessionContext: SessionContext | null,
 ): boolean {
   if (!isSupabaseConfigured) return true
-  if (!item.roles && !item.permission) return true
+  const itemPermissions = [item.permission, ...(item.permissions ?? [])].filter((permission): permission is string => Boolean(permission))
+  if (!item.roles && itemPermissions.length === 0) return true
   if (!sessionContext) return false
-  if (item.permission && sessionContext.permissions.includes(item.permission)) return true
+  if (itemPermissions.some((permission) => sessionContext.permissions.includes(permission))) return true
   return Boolean(item.roles?.includes(sessionContext.role))
+}
+
+function WorkspaceAlertStrip({ entries }: { entries: WorkspaceAlertEntry[] }) {
+  const [activeIndex, setActiveIndex] = useState(0)
+  const entryKey = entries.map((entry) => entry.id).join('|')
+
+  useEffect(() => {
+    setActiveIndex(0)
+  }, [entryKey])
+
+  useEffect(() => {
+    if (entries.length <= 1) return undefined
+    const interval = window.setInterval(() => {
+      setActiveIndex((current) => (current + 1) % entries.length)
+    }, WORKSPACE_ALERT_ROTATE_MS)
+
+    return () => window.clearInterval(interval)
+  }, [entries.length, entryKey])
+
+  if (entries.length === 0) return null
+
+  const current = entries[activeIndex % entries.length]
+  const Icon = current.icon === 'payroll' ? FileClock : Megaphone
+
+  return (
+    <section
+      aria-label="Workspace alerts"
+      aria-live="polite"
+      className={`workspace-alert-strip workspace-alert-strip--${current.tone}`}
+    >
+      <div className="workspace-alert-strip__icon">
+        <Icon aria-hidden="true" size={24} />
+      </div>
+      <div className="workspace-alert-strip__copy">
+        <strong>{current.title}</strong>
+        <div className="workspace-alert-strip__ticker" key={`${current.id}-${activeIndex}`}>
+          <span>{current.message}</span>
+        </div>
+      </div>
+      {entries.length > 1 ? (
+        <div className="workspace-alert-strip__position" aria-label={`Alert ${activeIndex + 1} of ${entries.length}`}>
+          {activeIndex + 1}/{entries.length}
+        </div>
+      ) : null}
+      {current.ctaHref && current.ctaLabel ? (
+        <Link className="workspace-alert-strip__action" to={current.ctaHref}>
+          {current.ctaLabel}
+        </Link>
+      ) : null}
+    </section>
+  )
 }
 
 export function AppShell() {
@@ -47,6 +111,38 @@ export function AppShell() {
   const navigate = useNavigate()
   const payrollReminderWeek = lastCompletedPayrollWeek()
   const showPayrollReminder = shouldShowPayrollExportReminder(sessionContext)
+  const activeBannerQuery = useQuery({
+    enabled: isSupabaseConfigured && Boolean(sessionContext),
+    queryFn: getActiveAnnouncementBanners,
+    queryKey: ['active-announcement-banners'],
+    refetchInterval: 60_000,
+  })
+  const workspaceAlerts = useMemo<WorkspaceAlertEntry[]>(() => {
+    const announcementAlerts = (activeBannerQuery.data ?? []).map((banner) => ({
+      id: banner.id,
+      title: banner.title,
+      message: banner.message,
+      tone: banner.tone,
+      icon: 'announcement' as const,
+      ctaHref: banner.ctaHref,
+      ctaLabel: banner.ctaLabel,
+    }))
+
+    if (!showPayrollReminder) return announcementAlerts
+
+    return [
+      ...announcementAlerts,
+      {
+        id: `payroll-export-reminder-${payrollReminderWeek.fromLabel}-${payrollReminderWeek.throughLabel}`,
+        title: 'Payroll export reminder',
+        message: `Review, lock, and export time for ${payrollReminderWeek.fromLabel} through ${payrollReminderWeek.throughLabel} so it can be sent to HR/Finance.`,
+        tone: 'warning',
+        icon: 'payroll',
+        ctaHref: '/time',
+        ctaLabel: 'Open Time & Attendance',
+      },
+    ]
+  }, [activeBannerQuery.data, payrollReminderWeek.fromLabel, payrollReminderWeek.throughLabel, showPayrollReminder])
 
   const visibleNavigationGroups = navigationGroups
     .map((group) => ({
@@ -363,25 +459,7 @@ export function AppShell() {
           </div>
         ) : null}
 
-        {showPayrollReminder ? (
-          <section className="payroll-export-reminder" aria-label="Weekly payroll export reminder">
-            <div className="payroll-export-reminder__icon">
-              <FileClock aria-hidden="true" size={24} />
-            </div>
-            <div className="payroll-export-reminder__copy">
-              <strong>Payroll export reminder</strong>
-              <div className="payroll-export-reminder__ticker">
-                <span>
-                  Review, lock, and export time for {payrollReminderWeek.fromLabel} through {payrollReminderWeek.throughLabel}
-                  {' '}so it can be sent to HR/Finance.
-                </span>
-              </div>
-            </div>
-            <Link className="payroll-export-reminder__action" to="/time">
-              Open Time & Attendance
-            </Link>
-          </section>
-        ) : null}
+        <WorkspaceAlertStrip entries={workspaceAlerts} />
 
         <main id="main-content" tabIndex={-1}>
           <Outlet />

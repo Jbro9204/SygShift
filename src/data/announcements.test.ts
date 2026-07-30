@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyFields, recipientSummary, type AnnouncementTemplate } from './announcements'
+import { bannerAudienceLabel, emptyFields, recipientSummary, type AnnouncementTemplate } from './announcements'
 
 const template: AnnouncementTemplate = {
   key: 'open_shift_available',
@@ -22,5 +22,13 @@ describe('announcement template helpers', () => {
   it('summarizes recipient scope clearly', () => {
     expect(recipientSummary({ recipientCount: 17, recipientRoles: ['guard'], requiresArmed: true }))
       .toBe('17 armed-qualified guards')
+  })
+
+  it('labels workspace banner audiences clearly', () => {
+    expect(bannerAudienceLabel({ audience: 'all', audienceRoles: [] })).toBe('Everyone')
+    expect(bannerAudienceLabel({ audience: 'supervisors', audienceRoles: ['supervisor', 'admin'] }))
+      .toBe('Supervisors and admins')
+    expect(bannerAudienceLabel({ audience: 'roles', audienceRoles: ['dispatcher', 'scheduler'] }))
+      .toBe('Dispatchers, Schedulers')
   })
 })

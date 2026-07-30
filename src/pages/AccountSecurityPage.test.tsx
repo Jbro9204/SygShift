@@ -142,4 +142,28 @@ describe('AccountSecurityPage', () => {
     expect(screen.queryByText('Text message')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Start authenticator setup/i })).toBeInTheDocument()
   })
+
+  it('lets Recruiting and Licensing remember an MFA-verified browser', async () => {
+    authMock.getSessionContext.mockReset()
+    authMock.getSessionContext.mockResolvedValue(sessionContext({
+      hasMfa: false,
+      mfaRequired: true,
+      role: 'recruiting_licensing',
+    }))
+    vi.mocked(mfaData.listMfaFactors).mockResolvedValue([{
+      factorType: 'totp',
+      friendlyName: 'SygShift',
+      id: 'factor-1',
+      phone: null,
+      status: 'verified',
+    }])
+
+    render(
+      <MemoryRouter>
+        <AccountSecurityPage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByLabelText('Remember this device for 14 days')).toBeInTheDocument()
+  })
 })
