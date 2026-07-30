@@ -12,6 +12,7 @@ const licensingCenterPage = readFileSync(join(root, 'src', 'pages', 'LicensingCe
 const navigation = readFileSync(join(root, 'src', 'app', 'navigation.ts'), 'utf8')
 const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
 const employeeSelfScheduleScopeMigration = readFileSync(join(root, 'supabase', 'migrations', '20260729191000_employee_self_schedule_scope.sql'), 'utf8')
+const schedulerRemovalPersistenceMigration = readFileSync(join(root, 'supabase', 'migrations', '20260730183000_scheduler_removal_draft_persistence.sql'), 'utf8')
 const supabaseClient = readFileSync(join(root, 'src', 'lib', 'supabase.ts'), 'utf8')
 const userAdminPage = readFileSync(join(root, 'src', 'pages', 'UserAdminPage.tsx'), 'utf8')
 
@@ -147,12 +148,23 @@ describe('button layout guardrails', () => {
 
   it('keeps destructive scheduler modal actions on the professional button system', () => {
     expect(schedulePage).toContain('className="primary-action danger-primary"')
+    expect(schedulePage).toContain('Save removal to draft')
+    expect(schedulePage).toContain('Open draft & save removal')
 
     const dangerBlock = blockFor('.danger-primary')
     expect(dangerBlock).toContain('display: inline-flex')
     expect(dangerBlock).toContain('min-height: 46px')
     expect(dangerBlock).toContain('border-radius: 8px')
     expect(dangerBlock).toContain('linear-gradient')
+  })
+
+  it('keeps scheduler removals in the same draft normalization pipeline as edit and publish', () => {
+    expect(schedulerRemovalPersistenceMigration).toContain('private.remove_schedule_draft_shift_unmerged')
+    expect(schedulerRemovalPersistenceMigration).toContain('perform private.normalize_schedule_duplicate_shift_blocks(result_schedule_id)')
+    expect(schedulerRemovalPersistenceMigration).toContain('return public.get_weekly_schedule_payload(result_week)')
+    expect(schedulePage).toContain('Removal saved to the working draft')
+    expect(schedulePage).toContain("queryClient.invalidateQueries({ queryKey: ['weekly-schedule', weekKey] })")
+    expect(schedulePage).toContain('removeDraftShiftMutation.reset()')
   })
 
   it('keeps employee self-schedule access visible but backend scoped', () => {

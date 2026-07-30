@@ -898,7 +898,7 @@ function RemoveShiftDialog({
           )}
         </div>
         <p className="form-note">
-          Use this for duplicate schedule blocks or open shifts that should not be offered in the shift pool.
+          Use this for duplicate schedule blocks or open shifts that should not be offered in the shift pool. This saves the removal to the working draft; publish the draft when the full schedule is ready.
         </p>
         <label className="field-stack">
           <span>Removal note <small>Optional</small></span>
@@ -914,7 +914,7 @@ function RemoveShiftDialog({
         <div className="modal-actions">
           <button className="secondary-button" disabled={isSaving} onClick={onClose} type="button">Keep shift</button>
           <button className="primary-action danger-primary" disabled={isSaving} type="submit">
-            {isSaving ? 'Removing...' : isDraft ? 'Remove from draft' : 'Open draft & remove'}
+            {isSaving ? 'Saving removal...' : isDraft ? 'Save removal to draft' : 'Open draft & save removal'}
           </button>
         </div>
       </form>
@@ -1776,12 +1776,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     mutationFn: removeScheduleDraftShift,
     onSuccess: async (updatedSchedule) => {
       queryClient.setQueryData(['weekly-schedule', weekKey], updatedSchedule)
-      setBuilderMessage('Shift removed from the working draft. Publish the draft when the week is ready.')
+      syncOpenScheduleWindows(updatedSchedule)
+      setBuilderMessage('Removal saved to the working draft. Publish the draft when the week is ready.')
       setRemovingShift(null)
       updateDraftShiftMutation.reset()
       setShiftEditor(null)
       setSelectedPlannerShiftId(null)
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['weekly-schedule', weekKey] }),
         queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions', updatedSchedule.id] }),
         queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
         queryClient.invalidateQueries({ queryKey: ['overview-metrics'] }),
@@ -1791,6 +1793,13 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       setBuilderMessage(error instanceof Error ? error.message : 'The shift could not be removed from the draft.')
     },
   })
+
+  function requestShiftRemoval(shift: ScheduleShift) {
+    removeDraftShiftMutation.reset()
+    updateDraftShiftMutation.reset()
+    setBuilderMessage(null)
+    setRemovingShift(shift)
+  }
   const publishDraftMutation = useMutation({
     mutationFn: () => publishScheduleDraft(scheduleQuery.data!.id),
     onSuccess: async (publishedSchedule) => {
@@ -2296,6 +2305,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
   function removeShiftFromSchedule(shift: ScheduleShift, note: string | null) {
     setBuilderMessage(null)
+    removeDraftShiftMutation.reset()
     if (scheduleQuery.data?.status === 'draft') {
       removeDraftShiftMutation.mutate({ shiftId: shift.id, note })
       return
@@ -2914,10 +2924,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           ].join('|')}
           mutation={updateDraftShiftMutation}
           onClose={closeShiftEditor}
-          onRequestRemove={(shift) => {
-            updateDraftShiftMutation.reset()
-            setRemovingShift(shift)
-          }}
+          onRequestRemove={requestShiftRemoval}
           shift={shiftEditor.editableShift}
           suggestions={staffingSuggestionsQuery.data?.find((item) => item.shiftId === shiftEditor.editableShift?.id)}
         />
@@ -2928,7 +2935,10 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           isDraft={scheduleQuery.data?.status === 'draft'}
           isSaving={removeDraftShiftMutation.isPending || ensureDraftMutation.isPending}
           mutationError={removeDraftShiftMutation.isError ? removeDraftShiftMutation.error : null}
-          onClose={() => setRemovingShift(null)}
+          onClose={() => {
+            removeDraftShiftMutation.reset()
+            setRemovingShift(null)
+          }}
           onConfirm={(note) => removeShiftFromSchedule(removingShift, note)}
           shift={removingShift}
         />
@@ -3372,7 +3382,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   onAssignEmployee={(employeeId, availabilityOverrideNote, credentialOverrideNote) => assignPlannerEmployee(selectedPlannerShift, employeeId, availabilityOverrideNote, credentialOverrideNote)}
                   onClose={() => setSelectedPlannerShiftId(null)}
                   onEdit={() => editShift(selectedPlannerShift)}
-                  onRequestRemove={() => setRemovingShift(selectedPlannerShift)}
+                  onRequestRemove={() => requestShiftRemoval(selectedPlannerShift)}
                   onResolve={() => {
                     setBuilderOpen(false)
                     setBuilderMessage(null)
