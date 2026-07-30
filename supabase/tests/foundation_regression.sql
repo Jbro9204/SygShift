@@ -251,6 +251,7 @@ do $$
 declare
   capacity_blocked boolean := false;
   overlap_blocked boolean := false;
+  overlap_message text;
 begin
   begin
     insert into public.shift_assignments (shift_id, employee_id, assigned_by)
@@ -271,7 +272,10 @@ begin
       '00000000-0000-0000-0000-000000000002'
     );
   exception when others then
-    overlap_blocked := sqlerrm like '%overlapping shift%';
+    overlap_message := sqlerrm;
+    overlap_blocked := overlap_message like '%overlapping shift:%'
+      and overlap_message like '%Regression Test Site / Armed Post%'
+      and overlap_message like '%07/06/2099%';
   end;
 
   if not capacity_blocked then
@@ -279,6 +283,104 @@ begin
   end if;
   if not overlap_blocked then
     raise exception 'Shift overlap regression.';
+  end if;
+end
+$$;
+
+insert into public.schedules (id, week_starts_on, revision, status, created_by)
+values
+  (
+    '40000000-0000-0000-0000-000000000091',
+    date '2099-07-12',
+    1,
+    'draft',
+    '00000000-0000-0000-0000-000000000002'
+  ),
+  (
+    '40000000-0000-0000-0000-000000000092',
+    date '2099-07-12',
+    2,
+    'draft',
+    '00000000-0000-0000-0000-000000000002'
+  );
+
+insert into public.shifts (
+  id,
+  schedule_id,
+  post_id,
+  starts_at,
+  ends_at,
+  headcount_required,
+  is_open,
+  created_by
+) values
+  (
+    '50000000-0000-0000-0000-000000000091',
+    '40000000-0000-0000-0000-000000000091',
+    '30000000-0000-0000-0000-000000000002',
+    timestamptz '2099-07-13 08:00:00-06',
+    timestamptz '2099-07-13 12:00:00-06',
+    1,
+    false,
+    '00000000-0000-0000-0000-000000000002'
+  ),
+  (
+    '50000000-0000-0000-0000-000000000092',
+    '40000000-0000-0000-0000-000000000092',
+    '30000000-0000-0000-0000-000000000002',
+    timestamptz '2099-07-13 08:00:00-06',
+    timestamptz '2099-07-13 12:00:00-06',
+    2,
+    false,
+    '00000000-0000-0000-0000-000000000002'
+  ),
+  (
+    '50000000-0000-0000-0000-000000000093',
+    '40000000-0000-0000-0000-000000000092',
+    '30000000-0000-0000-0000-000000000002',
+    timestamptz '2099-07-13 09:00:00-06',
+    timestamptz '2099-07-13 11:00:00-06',
+    2,
+    false,
+    '00000000-0000-0000-0000-000000000002'
+  );
+
+insert into public.shift_assignments (shift_id, employee_id, assigned_by)
+values (
+  '50000000-0000-0000-0000-000000000091',
+  '00000000-0000-0000-0000-000000000004',
+  '00000000-0000-0000-0000-000000000002'
+);
+
+insert into public.shift_assignments (shift_id, employee_id, assigned_by)
+values (
+  '50000000-0000-0000-0000-000000000092',
+  '00000000-0000-0000-0000-000000000004',
+  '00000000-0000-0000-0000-000000000002'
+);
+
+do $$
+declare
+  blocked boolean := false;
+  message text;
+begin
+  begin
+    insert into public.shift_assignments (shift_id, employee_id, assigned_by)
+    values (
+      '50000000-0000-0000-0000-000000000093',
+      '00000000-0000-0000-0000-000000000004',
+      '00000000-0000-0000-0000-000000000002'
+    );
+  exception when others then
+    message := sqlerrm;
+    blocked := message like '%overlapping shift:%'
+      and message like '%Regression Test Site / Unarmed Post%'
+      and message like '%07/13/2099%'
+      and message like '%revision 2%';
+  end;
+
+  if not blocked then
+    raise exception 'Detailed same-draft overlap regression. Message: %', coalesce(message, '<no error>');
   end if;
 end
 $$;
