@@ -22,6 +22,7 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import {
   activeTimeState,
   createPayrollExportBatch,
+  getClockableShiftChoices,
   getOwnTimekeepingReview,
   getPayrollExportHistory,
   getTimeMaintenance,
@@ -38,6 +39,7 @@ import {
   verifiedTimekeepingBaseline,
   type PendingCorrection,
   type PayrollExportBatch,
+  type ClockableShiftChoices,
   type TimeMaintenanceEvent,
   type TimeEventKind,
   type TimekeepingDashboard,
@@ -649,21 +651,25 @@ function VerifiedTimekeepingSetup() {
 }
 
 function ShiftPicker({
+  choices,
   selectedShiftId,
-  shifts,
   onSelect,
 }: {
+  choices: ClockableShiftChoices
   selectedShiftId: string | null
-  shifts: TimekeepingShift[]
   onSelect: (shiftId: string | null) => void
 }) {
+  const shifts = choices.shifts
   if (shifts.length === 0) {
     return (
       <div className="time-shift-empty">
         <CalendarClock aria-hidden="true" size={25} />
         <div>
-          <strong>No assigned shift is available for today.</strong>
+          <strong>No assigned shift is available for clock-in right now.</strong>
           <p>An unscheduled clock-in can still be recorded for supervisor review.</p>
+          {choices.hiddenCount > 0 ? (
+            <p>{choices.hiddenCount} future or duplicate schedule {choices.hiddenCount === 1 ? 'entry is' : 'entries are'} hidden from this clock-in list.</p>
+          ) : null}
         </div>
       </div>
     )
@@ -672,6 +678,11 @@ function ShiftPicker({
   return (
     <fieldset className="time-shift-list">
       <legend>Choose the shift you are clocking into</legend>
+      {choices.hiddenCount > 0 ? (
+        <p className="time-shift-list__note">
+          Showing only shifts available for clock-in right now. {choices.hiddenCount} future or duplicate schedule {choices.hiddenCount === 1 ? 'entry is' : 'entries are'} hidden.
+        </p>
+      ) : null}
       {shifts.map((shift) => (
         <label className={selectedShiftId === shift.shiftId ? 'time-shift-option time-shift-option--selected' : 'time-shift-option'} key={shift.shiftId}>
           <input
@@ -718,6 +729,16 @@ function PunchControls({
   const copy = stateCopy[state]
   const currentShift = activeShift(dashboard)
   const actions = nextTimeEventKinds(state)
+  const clockableChoices = useMemo(
+    () => getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp),
+    [dashboard.eligibleShifts, dashboard.serverTimestamp],
+  )
+
+  useEffect(() => {
+    if (state !== 'off_clock') return
+    if (clockableChoices.shifts.some((shift) => shift.shiftId === selectedShiftId)) return
+    setSelectedShiftId(clockableChoices.shifts[0]?.shiftId ?? null)
+  }, [clockableChoices.shifts, selectedShiftId, state])
 
   return (
     <section className={`time-clock-card time-clock-card--${state}`} aria-labelledby="time-clock-title">
@@ -734,7 +755,7 @@ function PunchControls({
       </div>
 
       {state === 'off_clock' ? (
-        <ShiftPicker onSelect={setSelectedShiftId} selectedShiftId={selectedShiftId} shifts={dashboard.eligibleShifts} />
+        <ShiftPicker choices={clockableChoices} onSelect={setSelectedShiftId} selectedShiftId={selectedShiftId} />
       ) : currentShift ? (
         <div className="active-shift-card">
           <Clock3 aria-hidden="true" size={23} />

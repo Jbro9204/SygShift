@@ -8104,6 +8104,18 @@
   font-weight: 850;
 }
 
+.time-shift-list__note {
+  margin: 0;
+  padding: 11px 13px;
+  color: #5e574c;
+  background: #fbf5e8;
+  border: 1px solid #e8d7b8;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
 .time-shift-option {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;

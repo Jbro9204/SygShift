@@ -247,6 +247,16 @@ export type TimeMaintenanceEmployee = z.infer<typeof timeMaintenanceEmployeeSche
 export type TimeMaintenanceEvent = z.infer<typeof timeMaintenanceEventSchema>
 export type PayrollRules = z.infer<typeof payrollRulesSchema>
 
+const CLOCK_IN_WINDOW_BEFORE_MS = 12 * 60 * 60 * 1000
+const CLOCK_IN_WINDOW_AFTER_MS = 6 * 60 * 60 * 1000
+
+export interface ClockableShiftChoices {
+  shifts: TimekeepingShift[]
+  hiddenCount: number
+  outsideWindowCount: number
+  duplicateCount: number
+}
+
 export const verifiedTimekeepingBaseline = {
   operationalTimeZone: 'America/Denver',
   punchWindow: 'Assigned shifts open for clock-in 12 hours before start and remain available until 6 hours after end.',
@@ -296,6 +306,59 @@ export function nextTimeEventKinds(state: TimekeepingState): TimeEventKind[] {
   if (state === 'off_clock') return ['clock_in']
   if (state === 'on_break') return ['break_end']
   return ['break_start', 'clock_out']
+}
+
+function shiftChoiceKey(shift: TimekeepingShift): string {
+  return [
+    shift.startsAt,
+    shift.endsAt,
+    shift.timeZone,
+    shift.siteCode ?? '',
+    shift.siteName ?? '',
+    shift.postName ?? '',
+    shift.eventName ?? '',
+    shift.locationName ?? '',
+    shift.requiresArmed ? 'armed' : 'unarmed',
+    shift.isOvertime ? 'ot' : 'standard',
+  ].join('|')
+}
+
+function isInsideClockInWindow(shift: TimekeepingShift, serverTimestamp: string): boolean {
+  const serverTime = new Date(serverTimestamp).getTime()
+  const startTime = new Date(shift.startsAt).getTime()
+  const endTime = new Date(shift.endsAt).getTime()
+  if (!Number.isFinite(serverTime) || !Number.isFinite(startTime) || !Number.isFinite(endTime)) return true
+  return startTime <= serverTime + CLOCK_IN_WINDOW_BEFORE_MS && endTime >= serverTime - CLOCK_IN_WINDOW_AFTER_MS
+}
+
+export function getClockableShiftChoices(
+  shifts: TimekeepingShift[],
+  serverTimestamp: string,
+): ClockableShiftChoices {
+  const insideWindow = shifts.filter((shift) => isInsideClockInWindow(shift, serverTimestamp))
+  const outsideWindowCount = shifts.length - insideWindow.length
+  const seen = new Set<string>()
+  const deduped: TimekeepingShift[] = []
+
+  for (const shift of [...insideWindow].sort((left, right) => {
+    const leftStart = new Date(left.startsAt).getTime()
+    const rightStart = new Date(right.startsAt).getTime()
+    if (leftStart !== rightStart) return leftStart - rightStart
+    return new Date(left.endsAt).getTime() - new Date(right.endsAt).getTime()
+  })) {
+    const key = shiftChoiceKey(shift)
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(shift)
+  }
+
+  const duplicateCount = insideWindow.length - deduped.length
+  return {
+    shifts: deduped,
+    hiddenCount: outsideWindowCount + duplicateCount,
+    outsideWindowCount,
+    duplicateCount,
+  }
 }
 
 export function applyRecordedTimeEventToDashboard(

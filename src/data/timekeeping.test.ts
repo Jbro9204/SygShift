@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   activeTimeState,
   applyRecordedTimeEventToDashboard,
+  getClockableShiftChoices,
   nextTimeEventKinds,
   parsePayrollExportBatch,
   parsePayrollExportHistory,
@@ -11,6 +12,7 @@ import {
   parseTimekeepingReview,
   payrollHours,
   reviewRowsToPayrollCsv,
+  type TimekeepingShift,
 } from './timekeeping'
 
 describe('timekeeping validation', () => {
@@ -66,6 +68,45 @@ describe('timekeeping validation', () => {
     expect(nextTimeEventKinds('off_clock')).toEqual(['clock_in'])
     expect(nextTimeEventKinds('working')).toEqual(['break_start', 'clock_out'])
     expect(nextTimeEventKinds('on_break')).toEqual(['break_end'])
+  })
+
+  it('keeps employee clock-in shift choices focused on the active punch window', () => {
+    const baseShift: TimekeepingShift = {
+      assignmentId: '73000000-0000-4000-8000-000000000101',
+      shiftId: '73000000-0000-4000-8000-000000000201',
+      status: 'assigned',
+      startsAt: '2026-07-30T14:00:00.000Z',
+      endsAt: '2026-07-30T22:00:00.000Z',
+      timeZone: 'America/Denver',
+      requiresArmed: false,
+      isOvertime: false,
+      postName: 'Unarmed coverage',
+      siteName: 'Neon Local Apt-Unarmed',
+      siteCode: 'NLA',
+      eventName: null,
+      locationName: 'Neon Local Apt-Unarmed',
+    }
+    const choices = getClockableShiftChoices([
+      baseShift,
+      {
+        ...baseShift,
+        assignmentId: '73000000-0000-4000-8000-000000000102',
+        shiftId: '73000000-0000-4000-8000-000000000202',
+      },
+      {
+        ...baseShift,
+        assignmentId: '73000000-0000-4000-8000-000000000103',
+        shiftId: '73000000-0000-4000-8000-000000000203',
+        startsAt: '2026-08-20T14:00:00.000Z',
+        endsAt: '2026-08-20T22:00:00.000Z',
+      },
+    ], '2026-07-30T13:00:00.000Z')
+
+    expect(choices.shifts).toHaveLength(1)
+    expect(choices.shifts[0]?.shiftId).toBe(baseShift.shiftId)
+    expect(choices.duplicateCount).toBe(1)
+    expect(choices.outsideWindowCount).toBe(1)
+    expect(choices.hiddenCount).toBe(2)
   })
 
   it('applies a saved punch to visible dashboard state immediately', () => {

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -19,12 +19,14 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import { getSessionContext } from '../data/auth'
 import {
   activeTimeState,
+  getClockableShiftChoices,
   getOwnTimekeepingReview,
   getTimekeepingDashboard,
   nextTimeEventKinds,
   payrollHours,
   recordTimeEvent,
   type PendingCorrection,
+  type ClockableShiftChoices,
   type TimeEventKind,
   type TimekeepingDashboard,
   type TimekeepingReviewRow,
@@ -100,7 +102,19 @@ export function MyTimePage() {
   const currentShift = dashboard ? activeShift(dashboard) : null
   const state = activeTimeState(dashboard?.lastEvent ?? null)
   const nextKinds = nextTimeEventKinds(state)
-  const defaultShiftId = selectedShiftId ?? dashboard?.eligibleShifts[0]?.shiftId ?? null
+  const dashboardEligibleShifts = dashboard?.eligibleShifts
+  const dashboardServerTimestamp = dashboard?.serverTimestamp
+  const clockableChoices = useMemo(
+    () => dashboardEligibleShifts && dashboardServerTimestamp ? getClockableShiftChoices(dashboardEligibleShifts, dashboardServerTimestamp) : null,
+    [dashboardEligibleShifts, dashboardServerTimestamp],
+  )
+  const defaultShiftId = selectedShiftId ?? clockableChoices?.shifts[0]?.shiftId ?? null
+
+  useEffect(() => {
+    if (!clockableChoices || state !== 'off_clock') return
+    if (clockableChoices.shifts.some((shift) => shift.shiftId === selectedShiftId)) return
+    setSelectedShiftId(clockableChoices.shifts[0]?.shiftId ?? null)
+  }, [clockableChoices, selectedShiftId, state])
 
   const punchMutation = useMutation({
     mutationFn: (input: { kind: TimeEventKind; shiftId?: string | null }) => recordTimeEvent(input),
@@ -212,7 +226,7 @@ export function MyTimePage() {
       <section className="my-time-dashboard-grid">
         <ClockStatusPanel
           currentShift={currentShift}
-          dashboard={dashboard}
+          clockableChoices={clockableChoices ?? { duplicateCount: 0, hiddenCount: 0, outsideWindowCount: 0, shifts: [] }}
           nextKinds={nextKinds}
           onPunch={record}
           pending={punchMutation.isPending}
@@ -253,8 +267,8 @@ export function MyTimePage() {
 }
 
 function ClockStatusPanel({
+  clockableChoices,
   currentShift,
-  dashboard,
   nextKinds,
   onPunch,
   pending,
@@ -263,8 +277,8 @@ function ClockStatusPanel({
   setSelectedShiftId,
   state,
 }: {
+  clockableChoices: ClockableShiftChoices
   currentShift: TimekeepingShift | null
-  dashboard: TimekeepingDashboard
   nextKinds: TimeEventKind[]
   onPunch: (kind: TimeEventKind) => void
   pending: boolean
@@ -274,6 +288,7 @@ function ClockStatusPanel({
   state: TimekeepingState
 }) {
   const clockInMode = state === 'off_clock'
+  const shifts = clockableChoices.shifts
 
   return (
     <section className={`time-clock-card time-clock-card--${state}`}>
@@ -299,8 +314,13 @@ function ClockStatusPanel({
       {clockInMode ? (
         <fieldset className="time-shift-list">
           <legend>Clock into</legend>
-          {dashboard.eligibleShifts.length > 0 ? dashboard.eligibleShifts.map((shift) => {
-            const checked = selectedShiftId === shift.shiftId || (!selectedShiftId && dashboard.eligibleShifts[0]?.shiftId === shift.shiftId)
+          {clockableChoices.hiddenCount > 0 ? (
+            <p className="time-shift-list__note">
+              Showing only shifts available for clock-in right now. {clockableChoices.hiddenCount} future or duplicate schedule {clockableChoices.hiddenCount === 1 ? 'entry is' : 'entries are'} hidden.
+            </p>
+          ) : null}
+          {shifts.length > 0 ? shifts.map((shift) => {
+            const checked = selectedShiftId === shift.shiftId || (!selectedShiftId && shifts[0]?.shiftId === shift.shiftId)
             return (
               <label className={`time-shift-option${checked ? ' time-shift-option--selected' : ''}`} key={shift.assignmentId}>
                 <input
@@ -325,6 +345,9 @@ function ClockStatusPanel({
               <div>
                 <strong>No assigned shift is currently available.</strong>
                 <p>If you clock in anyway, it will be recorded as unscheduled time for supervisor review.</p>
+                {clockableChoices.hiddenCount > 0 ? (
+                  <p>{clockableChoices.hiddenCount} future or duplicate schedule {clockableChoices.hiddenCount === 1 ? 'entry is' : 'entries are'} hidden from this clock-in list.</p>
+                ) : null}
               </div>
             </article>
           )}

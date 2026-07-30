@@ -15,6 +15,7 @@ import { getSessionContext } from '../data/auth'
 import { getOverviewMetrics, overviewMetricNote, type OverviewMetrics } from '../data/overview'
 import {
   activeTimeState,
+  getClockableShiftChoices,
   getTimekeepingDashboard,
   recordTimeEvent,
   type TimeEventKind,
@@ -41,7 +42,8 @@ function overviewTimeAction(dashboard: TimekeepingDashboard | undefined): {
   const state = activeTimeState(dashboard.lastEvent)
   if (state === 'working') return { kind: 'clock_out', label: 'Clock out', requiresTimePage: false }
   if (state === 'on_break') return { kind: 'break_end', label: 'End break', requiresTimePage: false }
-  if (dashboard.eligibleShifts.length > 1) return { kind: null, label: 'Choose shift to clock in', requiresTimePage: true }
+  const clockableChoices = getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp)
+  if (clockableChoices.shifts.length > 1) return { kind: null, label: 'Choose shift to clock in', requiresTimePage: true }
   return { kind: 'clock_in', label: 'Clock in', requiresTimePage: false }
 }
 
@@ -85,8 +87,9 @@ export function OverviewPage() {
     if (!timeAction.kind || !timekeepingQuery.data) return
     if (!punchAllowed || punchLocked.current || punchMutation.isPending) return
     punchLocked.current = true
+    const clockableChoices = getClockableShiftChoices(timekeepingQuery.data.eligibleShifts, timekeepingQuery.data.serverTimestamp)
     const shiftId = timeAction.kind === 'clock_in'
-      ? timekeepingQuery.data.eligibleShifts[0]?.shiftId ?? null
+      ? clockableChoices.shifts[0]?.shiftId ?? null
       : undefined
     punchMutation.mutate({ kind: timeAction.kind, shiftId })
   }
