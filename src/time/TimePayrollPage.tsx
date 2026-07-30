@@ -22,7 +22,10 @@ import {
   getPayrollRules,
   getTimekeepingReview,
   payrollHours,
+  reviewRowsToPayrollSummaryCsv,
   reviewRowsToPayrollCsv,
+  summarizePayrollRowsByEmployee,
+  type PayrollEmployeeSummary,
   type PayrollExportBatch,
   type PayrollExportDetail,
   type PayrollRules,
@@ -51,6 +54,13 @@ function downloadCsv(csv: string, fileName: string) {
   anchor.download = fileName
   anchor.click()
   URL.revokeObjectURL(url)
+}
+
+type PayrollDownloadKind = 'summary' | 'detail'
+
+interface PayrollDownloadRequest {
+  batchId: string
+  kind: PayrollDownloadKind
 }
 
 function formatPeriod(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>): string {
@@ -179,7 +189,8 @@ function PayrollExportPanel({
   exportMutation,
   lockBlockedReason,
   note,
-  onDownloadPreview,
+  onDownloadDetailPreview,
+  onDownloadSummaryPreview,
   onNoteChange,
   review,
 }: {
@@ -187,7 +198,8 @@ function PayrollExportPanel({
   exportMutation: UseMutationResult<PayrollExportDetail, Error, string>
   lockBlockedReason: string
   note: string
-  onDownloadPreview: () => void
+  onDownloadDetailPreview: () => void
+  onDownloadSummaryPreview: () => void
   onNoteChange: (value: string) => void
   review: TimekeepingReview
 }) {
@@ -218,10 +230,18 @@ function PayrollExportPanel({
           <TimeButton
             disabled={review.rows.length === 0}
             icon={Download}
-            onClick={onDownloadPreview}
+            onClick={onDownloadSummaryPreview}
             variant="secondary"
           >
-            Download CSV preview
+            Download Summary CSV
+          </TimeButton>
+          <TimeButton
+            disabled={review.rows.length === 0}
+            icon={Download}
+            onClick={onDownloadDetailPreview}
+            variant="secondary"
+          >
+            Download Detail CSV
           </TimeButton>
           <TimeButton
             disabled={!canLock}
@@ -234,7 +254,7 @@ function PayrollExportPanel({
           </TimeButton>
         </div>
         <small>
-          {lockBlockedReason || (noteMissing ? 'Add a short export note before locking payroll.' : 'Ready to lock. The server will verify the batch again.')}
+          {lockBlockedReason || (noteMissing ? 'Add a short export note before locking payroll.' : 'Ready to lock. The official handoff downloads as a clean employee summary; detail stays available for audit.')}
         </small>
         {exportMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{exportMutation.error.message}</p> : null}
         {exportMutation.isSuccess ? (
@@ -281,7 +301,89 @@ function PayrollExceptions({ rows }: { rows: TimekeepingReviewRow[] }) {
   )
 }
 
-function PayrollRowsTable({ rows }: { rows: TimekeepingReviewRow[] }) {
+function PayrollEmployeeSummaryTable({
+  onSelectEmployee,
+  selectedEmployeeId,
+  summaries,
+}: {
+  onSelectEmployee: (employeeId: string) => void
+  selectedEmployeeId: string | null
+  summaries: PayrollEmployeeSummary[]
+}) {
+  if (summaries.length === 0) {
+    return (
+      <DataStatePanel icon={FileClock} title="No worked time in this range">
+        <p>No SygShift clock-in/out totals are available for the selected payroll range.</p>
+      </DataStatePanel>
+    )
+  }
+
+  return (
+    <section className="time-card payroll-employee-summary-panel" aria-labelledby="payroll-employee-summary-title">
+      <TimeSectionHeader
+        eyebrow="Employee totals"
+        summary="The main payroll view is grouped by person. Open an employee only when you need the shift-by-shift audit detail."
+        title="Pay period summary"
+      />
+      <div className="time-review-table-wrap">
+        <table className="time-review-table payroll-employee-summary-table">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Worked shifts</th>
+              <th>Regular</th>
+              <th>OT</th>
+              <th>Breaks</th>
+              <th>Paid total</th>
+              <th>Status</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summaries.map((summary) => (
+              <tr className={selectedEmployeeId === summary.employeeId ? 'payroll-summary-row payroll-summary-row--selected' : 'payroll-summary-row'} key={summary.employeeId}>
+                <td>
+                  <strong>{summary.employeeName}</strong>
+                  <span>@{summary.username} · {summary.employmentType}</span>
+                </td>
+                <td>
+                  <strong>{summary.workedShiftCount}</strong>
+                  <span>{summary.locationCount} location{summary.locationCount === 1 ? '' : 's'}</span>
+                </td>
+                <td><strong>{payrollHours(summary.regularMinutes)} hr</strong></td>
+                <td><strong>{payrollHours(summary.overtimeMinutes)} hr</strong></td>
+                <td><strong>{summary.breakMinutes} min</strong></td>
+                <td><strong>{payrollHours(summary.paidMinutes)} hr</strong></td>
+                <td>
+                  <TimeStatusBadge tone={summary.payrollReady ? 'good' : 'warning'}>
+                    {summary.payrollReady ? 'Ready' : 'Needs review'}
+                  </TimeStatusBadge>
+                  {summary.exceptionCount > 0 ? <small>{summary.exceptionCount} row{summary.exceptionCount === 1 ? '' : 's'} need review</small> : null}
+                </td>
+                <td>
+                  <TimeButton
+                    onClick={() => onSelectEmployee(summary.employeeId)}
+                    variant={selectedEmployeeId === summary.employeeId ? 'primary' : 'secondary'}
+                  >
+                    {selectedEmployeeId === summary.employeeId ? 'Viewing details' : 'View details'}
+                  </TimeButton>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+function PayrollRowsTable({
+  rows,
+  summary,
+}: {
+  rows: TimekeepingReviewRow[]
+  summary: PayrollEmployeeSummary
+}) {
   if (rows.length === 0) {
     return (
       <DataStatePanel icon={FileClock} title="No time records in this range">
@@ -293,9 +395,9 @@ function PayrollRowsTable({ rows }: { rows: TimekeepingReviewRow[] }) {
   return (
     <section className="time-card payroll-rows-panel" aria-labelledby="payroll-rows-title">
       <TimeSectionHeader
-        eyebrow="Export rows"
-        summary="This is the same data used for the CSV handoff."
-        title="Payroll export preview"
+        eyebrow="Employee detail"
+        summary={`${summary.workedShiftCount} worked shift${summary.workedShiftCount === 1 ? '' : 's'} · ${payrollHours(summary.paidMinutes)} paid hours · ${summary.exceptionCount === 0 ? 'ready for payroll' : `${summary.exceptionCount} row${summary.exceptionCount === 1 ? '' : 's'} need review`}.`}
+        title={`${summary.employeeName} payroll detail`}
       />
       <div className="time-review-table-wrap">
         <table className="time-review-table payroll-rows-table">
@@ -314,7 +416,7 @@ function PayrollRowsTable({ rows }: { rows: TimekeepingReviewRow[] }) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={`${row.employeeId}-${row.shiftId ?? row.rowKind}-${row.operationalDate}`}>
+              <tr key={`${row.employeeId}-${row.shiftId ?? row.rowKind}-${row.operationalDate}-${row.firstClockIn ?? row.scheduledStartsAt ?? 'no-start'}`}>
                 <td>
                   <strong>{row.employeeName}</strong>
                   <span>@{row.username} · {row.employmentType}</span>
@@ -364,7 +466,7 @@ function PayrollHistory({
   downloadMutation,
 }: {
   batches: PayrollExportBatch[]
-  downloadMutation: UseMutationResult<PayrollExportDetail, Error, string>
+  downloadMutation: UseMutationResult<PayrollExportDetail, Error, PayrollDownloadRequest>
 }) {
   if (batches.length === 0) {
     return (
@@ -388,11 +490,20 @@ function PayrollHistory({
             <TimeButton
               disabled={downloadMutation.isPending}
               icon={Download}
-              loading={downloadMutation.isPending && downloadMutation.variables === batch.id}
-              onClick={() => downloadMutation.mutate(batch.id)}
+              loading={downloadMutation.isPending && downloadMutation.variables?.batchId === batch.id && downloadMutation.variables.kind === 'summary'}
+              onClick={() => downloadMutation.mutate({ batchId: batch.id, kind: 'summary' })}
               variant="secondary"
             >
-              Download locked CSV
+              Download Summary CSV
+            </TimeButton>
+            <TimeButton
+              disabled={downloadMutation.isPending}
+              icon={Download}
+              loading={downloadMutation.isPending && downloadMutation.variables?.batchId === batch.id && downloadMutation.variables.kind === 'detail'}
+              onClick={() => downloadMutation.mutate({ batchId: batch.id, kind: 'detail' })}
+              variant="ghost"
+            >
+              Download Detail CSV
             </TimeButton>
           </div>
         </li>
@@ -442,13 +553,31 @@ export function TimePayrollPage() {
   const review = useMemo(() => workedTimePayrollReview(reviewQuery.data), [reviewQuery.data])
   const lockBlockedReason = payrollLockBlocker(review)
   const readinessPercent = payrollReadinessPercent(review)
+  const employeeSummaries = useMemo(() => summarizePayrollRowsByEmployee(review?.rows ?? []), [review])
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
+  const selectedSummary = useMemo(
+    () => employeeSummaries.find((summary) => summary.employeeId === selectedEmployeeId) ?? null,
+    [employeeSummaries, selectedEmployeeId],
+  )
+  const selectedRows = useMemo(
+    () => review?.rows.filter((row) => row.employeeId === selectedEmployeeId) ?? [],
+    [review, selectedEmployeeId],
+  )
+
+  useEffect(() => {
+    if (selectedEmployeeId && !employeeSummaries.some((summary) => summary.employeeId === selectedEmployeeId)) {
+      setSelectedEmployeeId(null)
+    }
+  }, [employeeSummaries, selectedEmployeeId])
 
   const downloadMutation = useMutation({
-    mutationFn: (batchId: string) => getPayrollExportBatchDetail(batchId),
-    onSuccess: (detail) => {
+    mutationFn: (request: PayrollDownloadRequest) => getPayrollExportBatchDetail(request.batchId),
+    onSuccess: (detail, request) => {
       downloadCsv(
-        reviewRowsToPayrollCsv(detail.rows),
-        payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, 'official'),
+        request.kind === 'summary'
+          ? reviewRowsToPayrollSummaryCsv(detail.rows)
+          : reviewRowsToPayrollCsv(detail.rows),
+        payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, request.kind === 'summary' ? 'official-summary' : 'official-detail'),
       )
     },
   })
@@ -459,8 +588,8 @@ export function TimePayrollPage() {
     },
     onSuccess: async (detail) => {
       downloadCsv(
-        reviewRowsToPayrollCsv(detail.rows),
-        payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, 'official'),
+        reviewRowsToPayrollSummaryCsv(detail.rows),
+        payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, 'official-summary'),
       )
       setExportNote('')
       await queryClient.invalidateQueries({ queryKey: ['payroll-export-history'] })
@@ -476,9 +605,14 @@ export function TimePayrollPage() {
     setRangeTouched(touched)
   }
 
-  function downloadPreview() {
+  function downloadSummaryPreview() {
     if (!review) return
-    downloadCsv(reviewRowsToPayrollCsv(review.rows), payrollExportFileName(review.fromDate, review.throughDate, 'preview'))
+    downloadCsv(reviewRowsToPayrollSummaryCsv(review.rows), payrollExportFileName(review.fromDate, review.throughDate, 'preview-summary'))
+  }
+
+  function downloadDetailPreview() {
+    if (!review) return
+    downloadCsv(reviewRowsToPayrollCsv(review.rows), payrollExportFileName(review.fromDate, review.throughDate, 'preview-detail'))
   }
 
   if (!isSupabaseConfigured) {
@@ -594,7 +728,8 @@ export function TimePayrollPage() {
               exportMutation={exportMutation}
               lockBlockedReason={lockBlockedReason}
               note={exportNote}
-              onDownloadPreview={downloadPreview}
+              onDownloadDetailPreview={downloadDetailPreview}
+              onDownloadSummaryPreview={downloadSummaryPreview}
               onNoteChange={setExportNote}
               review={review}
             />
@@ -605,7 +740,12 @@ export function TimePayrollPage() {
           )}
 
           <PayrollExceptions rows={review.rows} />
-          <PayrollRowsTable rows={review.rows} />
+          <PayrollEmployeeSummaryTable
+            onSelectEmployee={(employeeId) => setSelectedEmployeeId((current) => current === employeeId ? null : employeeId)}
+            selectedEmployeeId={selectedEmployeeId}
+            summaries={employeeSummaries}
+          />
+          {selectedSummary ? <PayrollRowsTable rows={selectedRows} summary={selectedSummary} /> : null}
         </>
       ) : null}
 

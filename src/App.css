@@ -8785,6 +8785,7 @@
 .payroll-readiness-card,
 .payroll-export-panel,
 .payroll-exception-list,
+.payroll-employee-summary-panel,
 .payroll-rows-panel {
   display: grid;
   align-content: start;
@@ -8795,6 +8796,7 @@
 .payroll-readiness-card .time-section-header,
 .payroll-export-panel .time-section-header,
 .payroll-exception-list .time-section-header,
+.payroll-employee-summary-panel .time-section-header,
 .payroll-rows-panel .time-section-header,
 .payroll-history-panel--page .time-section-header {
   margin: 0;
@@ -8960,10 +8962,50 @@
   line-height: 1.35;
 }
 
+.payroll-employee-summary-panel {
+  margin-bottom: 16px;
+  padding: 0;
+  overflow: hidden;
+  border-top: 4px solid #2f6f56;
+}
+
+.payroll-employee-summary-panel .time-section-header {
+  padding: 20px 20px 0;
+}
+
+.payroll-employee-summary-table {
+  min-width: 980px;
+}
+
+.payroll-employee-summary-table td:last-child {
+  width: 180px;
+}
+
+.payroll-employee-summary-table .time-button {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  white-space: nowrap;
+}
+
+.payroll-summary-row {
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+.payroll-summary-row--selected {
+  background: #f7edda;
+  box-shadow: inset 4px 0 0 #b88735;
+}
+
+.payroll-summary-row td > .time-status-badge {
+  margin-bottom: 4px;
+}
+
 .payroll-rows-panel {
   margin-bottom: 16px;
   padding: 0;
   overflow: hidden;
+  border-top: 4px solid #b88735;
 }
 
 .payroll-rows-panel .time-section-header {
@@ -8995,6 +9037,11 @@
 .payroll-export-history-item--actionable .time-button {
   justify-self: end;
   min-width: 198px;
+}
+
+.payroll-export-history-item--actionable .time-button--ghost {
+  color: #5f5344;
+  background: #fffaf1;
 }
 
 .time-maintenance-workbench {

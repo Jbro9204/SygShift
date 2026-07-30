@@ -31,7 +31,7 @@ import {
   nextTimeEventKinds,
   payrollHours,
   recordTimeEvent,
-  reviewRowsToPayrollCsv,
+  reviewRowsToPayrollSummaryCsv,
   reviewTimeEventCorrection,
   supervisorCorrectTimeEvent,
   supervisorRecordTimeEvent,
@@ -836,12 +836,12 @@ function exceptionLabel(code: string): string {
 }
 
 function exportPayrollCsv(review: TimekeepingReview) {
-  const csv = reviewRowsToPayrollCsv(review.rows)
+  const csv = reviewRowsToPayrollSummaryCsv(review.rows)
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `sygshift-payroll-${review.fromDate}-to-${review.throughDate}.csv`
+  anchor.download = `sygshift-payroll-summary-${review.fromDate}-to-${review.throughDate}.csv`
   anchor.click()
   URL.revokeObjectURL(url)
 }
@@ -1274,7 +1274,7 @@ function SupervisorTimeReview({
             <p><FileWarning aria-hidden="true" size={18} /> CSV is a preview for checking totals. Locking creates the official payroll audit batch.</p>
             {canExportPayroll ? (
               <button className="secondary-button" disabled={review.rows.length === 0} onClick={() => exportPayrollCsv(review)} type="button">
-                <Download aria-hidden="true" size={18} /> Export CSV preview
+                <Download aria-hidden="true" size={18} /> Export Summary CSV
               </button>
             ) : null}
           </div>

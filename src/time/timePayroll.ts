@@ -59,7 +59,7 @@ export function payrollLockBlocker(review: TimekeepingReview | undefined): strin
   return ''
 }
 
-export function payrollExportFileName(fromDate: string, throughDate: string, kind: 'preview' | 'official' = 'preview'): string {
+export function payrollExportFileName(fromDate: string, throughDate: string, kind = 'preview'): string {
   return `sygshift-payroll-${kind}-${fromDate}-to-${throughDate}.csv`
 }
 

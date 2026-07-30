@@ -253,6 +253,27 @@ export type TimeMaintenanceEmployee = z.infer<typeof timeMaintenanceEmployeeSche
 export type TimeMaintenanceEvent = z.infer<typeof timeMaintenanceEventSchema>
 export type PayrollRules = z.infer<typeof payrollRulesSchema>
 
+export interface PayrollEmployeeSummary {
+  employeeId: string
+  employeeName: string
+  username: string
+  role: TimekeepingReviewRow['role']
+  employmentType: TimekeepingReviewRow['employmentType']
+  firstDate: string
+  lastDate: string
+  workedShiftCount: number
+  locationCount: number
+  grossMinutes: number
+  breakMinutes: number
+  paidMinutes: number
+  regularMinutes: number
+  overtimeMinutes: number
+  readyCount: number
+  exceptionCount: number
+  payrollReady: boolean
+  notes: string[]
+}
+
 const CLOCK_IN_WINDOW_BEFORE_MS = 12 * 60 * 60 * 1000
 const CLOCK_IN_WINDOW_AFTER_MS = 6 * 60 * 60 * 1000
 
@@ -652,6 +673,149 @@ function payrollDateTime(value: string | null | undefined, timeZone: string): st
   return `${civilian} (${military})`
 }
 
+function csvEscape(value: unknown): string {
+  const text = value === null || value === undefined ? '' : String(value)
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+}
+
+function payrollLocationKey(row: TimekeepingReviewRow): string {
+  return [
+    row.siteCode,
+    row.siteName,
+    row.postName ?? row.eventName,
+    row.locationName,
+  ].filter(Boolean).join('|') || row.locationName
+}
+
+function payrollLocationLabel(row: TimekeepingReviewRow): string {
+  return [
+    row.siteCode,
+    row.siteName,
+    row.postName ?? row.eventName,
+  ].filter(Boolean).join(' / ') || row.locationName
+}
+
+export function payrollWorkedRows(rows: TimekeepingReviewRow[]): TimekeepingReviewRow[] {
+  return rows.filter((row) => row.rowKind === 'time_event')
+}
+
+export function payrollExportRows(rows: TimekeepingReviewRow[]): TimekeepingReviewRow[] {
+  return payrollWorkedRows(rows).filter((row) =>
+    Boolean(row.firstClockIn)
+    && Boolean(row.lastClockOut)
+    && row.payrollReady
+    && row.exceptionCodes.length === 0
+    && row.paidMinutes > 0,
+  )
+}
+
+export function summarizePayrollRowsByEmployee(rows: TimekeepingReviewRow[]): PayrollEmployeeSummary[] {
+  const summaries = new Map<string, PayrollEmployeeSummary & { locationKeys: Set<string>; noteKeys: Set<string> }>()
+
+  for (const row of payrollWorkedRows(rows)) {
+    const existing = summaries.get(row.employeeId)
+    const summary = existing ?? {
+      breakMinutes: 0,
+      employeeId: row.employeeId,
+      employeeName: row.employeeName,
+      employmentType: row.employmentType,
+      exceptionCount: 0,
+      firstDate: row.operationalDate,
+      grossMinutes: 0,
+      lastDate: row.operationalDate,
+      locationCount: 0,
+      locationKeys: new Set<string>(),
+      noteKeys: new Set<string>(),
+      notes: [],
+      overtimeMinutes: 0,
+      paidMinutes: 0,
+      payrollReady: true,
+      readyCount: 0,
+      regularMinutes: 0,
+      role: row.role,
+      username: row.username,
+      workedShiftCount: 0,
+    }
+
+    summary.breakMinutes += row.breakMinutes
+    summary.grossMinutes += row.grossMinutes
+    summary.paidMinutes += row.paidMinutes
+    summary.regularMinutes += row.regularMinutes
+    summary.overtimeMinutes += row.overtimeMinutes
+    summary.workedShiftCount += 1
+    summary.firstDate = row.operationalDate < summary.firstDate ? row.operationalDate : summary.firstDate
+    summary.lastDate = row.operationalDate > summary.lastDate ? row.operationalDate : summary.lastDate
+    summary.locationKeys.add(payrollLocationKey(row))
+
+    if (row.payrollReady && row.exceptionCodes.length === 0) {
+      summary.readyCount += 1
+    } else {
+      summary.exceptionCount += 1
+      summary.payrollReady = false
+    }
+
+    for (const note of [...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')), ...row.payrollNotes]) {
+      const cleanNote = note.trim()
+      if (!cleanNote || summary.noteKeys.has(cleanNote)) continue
+      summary.noteKeys.add(cleanNote)
+      summary.notes.push(cleanNote)
+    }
+
+    summaries.set(row.employeeId, summary)
+  }
+
+  return [...summaries.values()]
+    .map(({ locationKeys, noteKeys: _noteKeys, ...summary }) => ({
+      ...summary,
+      locationCount: locationKeys.size,
+    }))
+    .sort((left, right) => left.employeeName.localeCompare(right.employeeName, undefined, { sensitivity: 'base' }))
+}
+
+export function reviewRowsToPayrollSummaryCsv(rows: TimekeepingReviewRow[]): string {
+  const headers = [
+    'Employee',
+    'Username',
+    'Role',
+    'Employment',
+    'First Worked Date',
+    'Last Worked Date',
+    'Worked Shifts',
+    'Locations Worked',
+    'Gross Hours',
+    'Break Minutes',
+    'Paid Hours',
+    'Regular Hours',
+    'Overtime Hours',
+    'Payroll Ready',
+    'Rows Ready',
+    'Rows Needing Review',
+    'Notes',
+  ]
+
+  const lines = summarizePayrollRowsByEmployee(rows).map((summary) => [
+    summary.employeeName,
+    summary.username,
+    summary.role,
+    summary.employmentType,
+    payrollDate(summary.firstDate),
+    payrollDate(summary.lastDate),
+    summary.workedShiftCount,
+    summary.locationCount,
+    payrollHours(summary.grossMinutes),
+    summary.breakMinutes,
+    payrollHours(summary.paidMinutes),
+    payrollHours(summary.regularMinutes),
+    payrollHours(summary.overtimeMinutes),
+    summary.payrollReady ? 'yes' : 'no',
+    summary.readyCount,
+    summary.exceptionCount,
+    summary.notes.join('|'),
+  ].map(csvEscape).join(','))
+
+  return [headers.map(csvEscape).join(','), ...lines].join('\n')
+}
+
 export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
   const headers = [
     'Row Type',
@@ -673,26 +837,14 @@ export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
     'Exceptions',
     'Notes',
   ]
-  const escape = (value: unknown) => {
-    const text = value === null || value === undefined ? '' : String(value)
-    return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
-  }
-  const exportRows = rows.filter((row) =>
-    row.rowKind === 'time_event'
-    && Boolean(row.firstClockIn)
-    && Boolean(row.lastClockOut)
-    && row.payrollReady
-    && row.exceptionCodes.length === 0
-    && row.paidMinutes > 0,
-  )
-  const lines = exportRows.map((row) => [
+  const lines = payrollExportRows(rows).map((row) => [
     row.rowKind,
     row.employeeName,
     row.username,
     payrollDate(row.operationalDate),
     payrollDate(row.weekStartsOn),
     payrollDate(row.weekEndsOn),
-    row.locationName,
+    payrollLocationLabel(row),
     payrollDateTime(row.firstClockIn, row.timeZone),
     payrollDateTime(row.lastClockOut, row.timeZone),
     payrollHours(row.grossMinutes),
@@ -704,7 +856,7 @@ export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
     row.payrollReady ? 'yes' : 'no',
     row.exceptionCodes.join('|'),
     row.payrollNotes.join('|'),
-  ].map(escape).join(','))
+  ].map(csvEscape).join(','))
 
-  return [headers.map(escape).join(','), ...lines].join('\n')
+  return [headers.map(csvEscape).join(','), ...lines].join('\n')
 }

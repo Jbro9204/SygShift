@@ -12,7 +12,9 @@ import {
   parseTimekeepingEvent,
   parseTimekeepingReview,
   payrollHours,
+  reviewRowsToPayrollSummaryCsv,
   reviewRowsToPayrollCsv,
+  summarizePayrollRowsByEmployee,
   type TimekeepingShift,
 } from './timekeeping'
 
@@ -225,6 +227,147 @@ describe('timekeeping validation', () => {
     expect(payrollHours(review.summary.overtimeMinutes)).toBe('1.00')
     expect(reviewRowsToPayrollCsv(review.rows)).toContain('time_event,Jordan Brown,jbrown,07/04/2026')
     expect(reviewRowsToPayrollCsv(review.rows)).toContain('07/04/2026, 7:58 AM (07:58)')
+  })
+
+  it('groups payroll review rows into one employee summary row per person', () => {
+    const review = parseTimekeepingReview({
+      serverTimestamp: '2026-07-16T15:00:00.000Z',
+      fromDate: '2026-07-12',
+      throughDate: '2026-07-18',
+      operationalTimeZone: 'America/Denver',
+      summary: {
+        rowCount: 3,
+        readyCount: 2,
+        exceptionCount: 1,
+        pendingCorrectionCount: 0,
+        grossMinutes: 810,
+        paidMinutes: 780,
+        regularMinutes: 720,
+        overtimeMinutes: 60,
+        salaryDefaultMinutes: 0,
+        timeOffMinutes: 0,
+      },
+      rows: [
+        {
+          rowKind: 'time_event',
+          employeeId: '73000000-0000-4000-8000-000000000001',
+          username: 'jbrown',
+          employeeName: 'Jordan Brown',
+          role: 'admin',
+          employmentType: 'salary',
+          shiftId: '73000000-0000-4000-8000-000000000010',
+          operationalDate: '2026-07-12',
+          weekStartsOn: '2026-07-12',
+          weekEndsOn: '2026-07-18',
+          siteName: 'Main Site',
+          siteCode: 'MAIN',
+          postName: 'Primary Post',
+          eventName: null,
+          locationName: 'Main Site',
+          scheduledStartsAt: '2026-07-12T14:00:00.000Z',
+          scheduledEndsAt: '2026-07-12T22:00:00.000Z',
+          timeZone: 'America/Denver',
+          firstClockIn: '2026-07-12T13:58:00.000Z',
+          lastClockOut: '2026-07-12T22:28:00.000Z',
+          grossMinutes: 510,
+          breakMinutes: 30,
+          paidMinutes: 480,
+          regularMinutes: 420,
+          overtimeMinutes: 60,
+          salaryDefaultMinutes: 0,
+          timeOffMinutes: 0,
+          eventCount: 4,
+          requiresArmed: false,
+          isOvertime: false,
+          payrollReady: true,
+          exceptionCodes: [],
+          payrollNotes: [],
+        },
+        {
+          rowKind: 'time_event',
+          employeeId: '73000000-0000-4000-8000-000000000001',
+          username: 'jbrown',
+          employeeName: 'Jordan Brown',
+          role: 'admin',
+          employmentType: 'salary',
+          shiftId: '73000000-0000-4000-8000-000000000011',
+          operationalDate: '2026-07-13',
+          weekStartsOn: '2026-07-12',
+          weekEndsOn: '2026-07-18',
+          siteName: 'Main Site',
+          siteCode: 'MAIN',
+          postName: 'Primary Post',
+          eventName: null,
+          locationName: 'Main Site',
+          scheduledStartsAt: '2026-07-13T14:00:00.000Z',
+          scheduledEndsAt: '2026-07-13T22:00:00.000Z',
+          timeZone: 'America/Denver',
+          firstClockIn: '2026-07-13T14:00:00.000Z',
+          lastClockOut: null,
+          grossMinutes: 0,
+          breakMinutes: 0,
+          paidMinutes: 0,
+          regularMinutes: 0,
+          overtimeMinutes: 0,
+          salaryDefaultMinutes: 0,
+          timeOffMinutes: 0,
+          eventCount: 1,
+          requiresArmed: false,
+          isOvertime: false,
+          payrollReady: false,
+          exceptionCodes: ['missing_clock_out'],
+          payrollNotes: ['Missing clock out.'],
+        },
+        {
+          rowKind: 'time_event',
+          employeeId: '73000000-0000-4000-8000-000000000002',
+          username: 'scaughlan',
+          employeeName: 'Sandy Caughlan',
+          role: 'supervisor',
+          employmentType: 'hourly',
+          shiftId: '73000000-0000-4000-8000-000000000012',
+          operationalDate: '2026-07-14',
+          weekStartsOn: '2026-07-12',
+          weekEndsOn: '2026-07-18',
+          siteName: 'Market',
+          siteCode: 'MKT',
+          postName: 'Unarmed coverage',
+          eventName: null,
+          locationName: 'Market',
+          scheduledStartsAt: '2026-07-14T14:00:00.000Z',
+          scheduledEndsAt: '2026-07-14T19:00:00.000Z',
+          timeZone: 'America/Denver',
+          firstClockIn: '2026-07-14T14:00:00.000Z',
+          lastClockOut: '2026-07-14T19:00:00.000Z',
+          grossMinutes: 300,
+          breakMinutes: 0,
+          paidMinutes: 300,
+          regularMinutes: 300,
+          overtimeMinutes: 0,
+          salaryDefaultMinutes: 0,
+          timeOffMinutes: 0,
+          eventCount: 2,
+          requiresArmed: false,
+          isOvertime: false,
+          payrollReady: true,
+          exceptionCodes: [],
+          payrollNotes: [],
+        },
+      ],
+      pendingCorrections: [],
+    })
+
+    const summaries = summarizePayrollRowsByEmployee(review.rows)
+
+    expect(summaries).toHaveLength(2)
+    expect(summaries[0]?.employeeName).toBe('Jordan Brown')
+    expect(summaries[0]?.workedShiftCount).toBe(2)
+    expect(summaries[0]?.paidMinutes).toBe(480)
+    expect(summaries[0]?.payrollReady).toBe(false)
+    expect(summaries[0]?.exceptionCount).toBe(1)
+    expect(reviewRowsToPayrollSummaryCsv(review.rows)).toContain('Jordan Brown,jbrown,admin,salary,07/12/2026,07/13/2026,2,1,8.50,30,8.00,7.00,1.00,no,1,1')
+    expect(reviewRowsToPayrollCsv(review.rows)).toContain('Jordan Brown,jbrown,07/12/2026')
+    expect(reviewRowsToPayrollCsv(review.rows)).not.toContain('07/13/2026')
   })
 
   it('validates salary default payroll rows reduced by approved time off', () => {
