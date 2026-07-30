@@ -232,6 +232,11 @@ const payrollExportBatchSchema = z.object({
   duplicate: z.boolean().optional(),
 })
 
+const payrollExportDetailSchema = z.object({
+  batch: payrollExportBatchSchema,
+  rows: z.array(timekeepingReviewRowSchema),
+})
+
 export type TimeEventKind = z.infer<typeof timeEventKindSchema>
 export type TimekeepingShift = z.infer<typeof timekeepingShiftSchema>
 export type TimekeepingEvent = z.infer<typeof timekeepingEventSchema>
@@ -242,6 +247,7 @@ export type TimekeepingReview = z.infer<typeof timekeepingReviewSchema>
 export type TimekeepingReviewRow = z.infer<typeof timekeepingReviewRowSchema>
 export type PendingCorrection = z.infer<typeof pendingCorrectionSchema>
 export type PayrollExportBatch = z.infer<typeof payrollExportBatchSchema>
+export type PayrollExportDetail = z.infer<typeof payrollExportDetailSchema>
 export type TimeMaintenance = z.infer<typeof timeMaintenanceSchema>
 export type TimeMaintenanceEmployee = z.infer<typeof timeMaintenanceEmployeeSchema>
 export type TimeMaintenanceEvent = z.infer<typeof timeMaintenanceEventSchema>
@@ -294,6 +300,10 @@ export function parsePayrollExportBatch(value: unknown): PayrollExportBatch {
 
 export function parsePayrollExportHistory(value: unknown): PayrollExportBatch[] {
   return z.array(payrollExportBatchSchema).parse(value)
+}
+
+export function parsePayrollExportDetail(value: unknown): PayrollExportDetail {
+  return payrollExportDetailSchema.parse(value)
 }
 
 export function activeTimeState(lastEvent: TimekeepingEvent | null): TimekeepingState {
@@ -602,8 +612,44 @@ export async function getPayrollExportHistory(limit = 20): Promise<PayrollExport
   return parsePayrollExportHistory(data)
 }
 
+export async function getPayrollExportBatchDetail(batchId: string): Promise<PayrollExportDetail> {
+  const { data, error } = await getSupabaseClient().rpc('get_payroll_export_batch_detail', {
+    target_batch_id: batchId,
+  })
+  if (error) throw new Error(error.message || 'Locked payroll export could not be loaded.')
+  return parsePayrollExportDetail(data)
+}
+
 export function payrollHours(minutes: number): string {
   return (minutes / 60).toFixed(2)
+}
+
+function payrollDate(value: string | null | undefined): string {
+  if (!value) return ''
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
+  if (!match) return value
+  return `${match[2]}/${match[3]}/${match[1]}`
+}
+
+function payrollDateTime(value: string | null | undefined, timeZone: string): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const civilian = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    month: '2-digit',
+    timeZone,
+    year: 'numeric',
+  }).format(date)
+  const military = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    hourCycle: 'h23',
+    minute: '2-digit',
+    timeZone,
+  }).format(date)
+  return `${civilian} (${military})`
 }
 
 export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
@@ -637,12 +683,12 @@ export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
     row.rowKind,
     row.employeeName,
     row.username,
-    row.operationalDate,
-    row.weekStartsOn ?? '',
-    row.weekEndsOn ?? '',
+    payrollDate(row.operationalDate),
+    payrollDate(row.weekStartsOn),
+    payrollDate(row.weekEndsOn),
     row.locationName,
-    row.firstClockIn ?? '',
-    row.lastClockOut ?? '',
+    payrollDateTime(row.firstClockIn, row.timeZone),
+    payrollDateTime(row.lastClockOut, row.timeZone),
     payrollHours(row.grossMinutes),
     row.breakMinutes,
     payrollHours(row.paidMinutes),

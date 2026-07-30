@@ -7853,6 +7853,12 @@
   border-color: #e6ca92;
 }
 
+.time-alert--good {
+  color: #245d47;
+  background: #edf7f1;
+  border-color: #bcd8ca;
+}
+
 .time-alert--danger {
   color: #7d3127;
   background: #fff3f0;
@@ -8765,6 +8771,230 @@
   background: #fbfaf6;
   border: 1px solid #ebe4d7;
   border-radius: 8px;
+}
+
+.payroll-command-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.48fr);
+  gap: 16px;
+  align-items: stretch;
+  margin-bottom: 16px;
+}
+
+.payroll-period-controls,
+.payroll-readiness-card,
+.payroll-export-panel,
+.payroll-exception-list,
+.payroll-rows-panel {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+.payroll-period-controls .time-section-header,
+.payroll-readiness-card .time-section-header,
+.payroll-export-panel .time-section-header,
+.payroll-exception-list .time-section-header,
+.payroll-rows-panel .time-section-header,
+.payroll-history-panel--page .time-section-header {
+  margin: 0;
+}
+
+.payroll-period-controls__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.payroll-period-controls__fields label,
+.payroll-export-panel label {
+  display: grid;
+  gap: 7px;
+  color: #4f483d;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.payroll-period-controls__fields input,
+.payroll-export-panel textarea {
+  width: 100%;
+  box-sizing: border-box;
+  color: #29261f;
+  background: #ffffff;
+  border: 1px solid #d5cec0;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 15px;
+}
+
+.payroll-period-controls__fields input {
+  min-height: 46px;
+  padding: 9px 11px;
+}
+
+.payroll-period-controls__actions,
+.payroll-export-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.payroll-period-controls__actions .time-button,
+.payroll-export-panel__actions .time-button {
+  min-width: 178px;
+}
+
+.payroll-readiness-card__body {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  background: #fbfaf6;
+  border: 1px solid #e3dccf;
+  border-left: 4px solid #b88735;
+  border-radius: 10px;
+}
+
+.payroll-readiness-card__body strong {
+  color: #221f1a;
+  font-size: clamp(28px, 3vw, 38px);
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.payroll-readiness-card__body span:not(.time-status-badge),
+.payroll-readiness-card__body small {
+  color: #665f54;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.payroll-summary-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.payroll-summary-grid .time-metric {
+  min-height: 142px;
+}
+
+.payroll-rules-panel--page {
+  margin-bottom: 16px;
+  border: 1px solid #e3dccf;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.payroll-rules-panel--page {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.payroll-export-panel {
+  grid-template-columns: minmax(0, 0.9fr) minmax(320px, 0.62fr);
+  margin-bottom: 16px;
+  border-left: 4px solid #b88735;
+}
+
+.payroll-export-panel h2 {
+  margin: 0;
+  color: #25221d;
+  font-size: 26px;
+  letter-spacing: -0.025em;
+}
+
+.payroll-export-panel p:not(.eyebrow):not(.form-feedback) {
+  max-width: 760px;
+  margin: 8px 0 0;
+  color: #61594c;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.payroll-export-panel__body {
+  display: grid;
+  gap: 11px;
+}
+
+.payroll-export-panel textarea {
+  min-height: 104px;
+  padding: 11px 12px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.payroll-export-panel__body > small {
+  color: #71695d;
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.payroll-exception-list {
+  margin-bottom: 16px;
+  border-top: 4px solid #c98b2f;
+}
+
+.payroll-exception-list__items {
+  display: grid;
+  gap: 10px;
+}
+
+.payroll-exception-list__items article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  background: #fffaf1;
+  border: 1px solid #e2d3b6;
+  border-radius: 10px;
+}
+
+.payroll-exception-list__items strong,
+.payroll-exception-list__items span {
+  display: block;
+}
+
+.payroll-exception-list__items span {
+  margin-top: 3px;
+  color: #6d6457;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.payroll-rows-panel {
+  margin-bottom: 16px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.payroll-rows-panel .time-section-header {
+  padding: 20px 20px 0;
+}
+
+.payroll-rows-table {
+  min-width: 1180px;
+}
+
+.payroll-history-panel--page {
+  margin: 0;
+}
+
+.payroll-export-history-list--page {
+  margin-top: 0;
+}
+
+.payroll-export-history-item--actionable {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.44fr);
+  align-items: start;
+}
+
+.payroll-export-history-item--actionable > div:last-child {
+  display: grid;
+  gap: 10px;
+}
+
+.payroll-export-history-item--actionable .time-button {
+  justify-self: end;
+  min-width: 198px;
 }
 
 .time-maintenance-workbench {
@@ -10237,6 +10467,16 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .payroll-command-grid,
+  .payroll-export-panel,
+  .payroll-export-history-item--actionable {
+    grid-template-columns: 1fr;
+  }
+
+  .payroll-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .time-command-grid--period {
     grid-template-columns: 1fr;
   }
@@ -10360,6 +10600,11 @@
     grid-template-columns: 1fr;
   }
 
+  .payroll-export-history-item--actionable .time-button {
+    justify-self: stretch;
+    width: 100%;
+  }
+
   .user-admin-metrics,
   .user-admin-toolbar,
   .user-admin-modal-grid {
@@ -10455,8 +10700,26 @@
   .time-review-range,
   .time-review-metrics,
   .time-correction-editor__fields,
-  .payroll-rules-panel {
+  .payroll-rules-panel,
+  .payroll-period-controls__fields,
+  .payroll-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .payroll-period-controls__actions,
+  .payroll-export-panel__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .payroll-period-controls__actions .time-button,
+  .payroll-export-panel__actions .time-button {
+    width: 100%;
+  }
+
+  .payroll-exception-list__items article {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .schedule-admin-summary,

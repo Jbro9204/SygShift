@@ -73,9 +73,7 @@ export const TimeTimecardsPageRoute = lazy(() =>
   })),
 )
 export const TimePayrollPageRoute = lazy(() =>
-  import('../time/TimeCommandCenterPage').then((module) => ({
-    default: () => <module.TimeFuturePage area="Payroll" />,
-  })),
+  import('../time/TimePayrollPage').then((module) => ({ default: module.TimePayrollPage })),
 )
 export const TimeRulesPageRoute = lazy(() =>
   import('../time/TimeCommandCenterPage').then((module) => ({

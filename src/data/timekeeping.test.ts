@@ -5,6 +5,7 @@ import {
   getClockableShiftChoices,
   nextTimeEventKinds,
   parsePayrollExportBatch,
+  parsePayrollExportDetail,
   parsePayrollExportHistory,
   parseTimeMaintenance,
   parseTimekeepingDashboard,
@@ -222,7 +223,8 @@ describe('timekeeping validation', () => {
 
     expect(payrollHours(review.summary.paidMinutes)).toBe('8.00')
     expect(payrollHours(review.summary.overtimeMinutes)).toBe('1.00')
-    expect(reviewRowsToPayrollCsv(review.rows)).toContain('time_event,Jordan Brown,jbrown,2026-07-04')
+    expect(reviewRowsToPayrollCsv(review.rows)).toContain('time_event,Jordan Brown,jbrown,07/04/2026')
+    expect(reviewRowsToPayrollCsv(review.rows)).toContain('07/04/2026, 7:58 AM (07:58)')
   })
 
   it('validates salary default payroll rows reduced by approved time off', () => {
@@ -282,7 +284,7 @@ describe('timekeeping validation', () => {
     })
 
     expect(review.rows[0]?.rowKind).toBe('salary_default')
-    expect(reviewRowsToPayrollCsv(review.rows)).toContain('salary_default,Jordan Brown,jbrown,2026-07-12')
+    expect(reviewRowsToPayrollCsv(review.rows)).toContain('salary_default,Jordan Brown,jbrown,07/12/2026')
   })
 
   it('validates locked payroll export batch records', () => {
@@ -303,6 +305,7 @@ describe('timekeeping validation', () => {
 
     expect(batch.rowCount).toBe(14)
     expect(parsePayrollExportHistory([batch])).toHaveLength(1)
+    expect(parsePayrollExportDetail({ batch, rows: [] }).batch.digest).toBe(batch.digest)
   })
 
   it('validates operations time maintenance events', () => {
