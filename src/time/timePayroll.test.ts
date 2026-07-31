@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { TimekeepingReview } from '../data/timekeeping'
+import type { PayrollAccountabilityEvent, TimekeepingReview } from '../data/timekeeping'
+import {
+  accountabilityEventPayCategory,
+  accountabilityEventPayableMinutes,
+  accountabilityEventReviewNote,
+  accountabilityEventScheduledMinutes,
+} from './payrollWorkbook'
 import {
   exportableWorkedTimeRows,
   isActiveInProgressTimeRow,
@@ -62,6 +68,29 @@ const cleanReview: TimekeepingReview = {
     timeOffMinutes: 0,
   },
   throughDate: '2026-07-25',
+}
+
+const sickEvent: PayrollAccountabilityEvent = {
+  createdAt: '2026-07-30T12:00:00.000Z',
+  employeeId: '73000000-0000-4000-8000-000000000002',
+  employeeName: 'Jade Baptist',
+  employmentType: 'hourly',
+  endsAt: '2026-07-30T22:00:00.000Z',
+  eventName: null,
+  eventType: 'called_in_sick',
+  id: '73000000-0000-4000-8000-000000000101',
+  locationName: 'Market',
+  note: 'Called in sick before shift.',
+  operationalDate: '2026-07-30',
+  postName: 'Unarmed coverage',
+  role: 'guard',
+  siteCode: 'MKT',
+  siteName: 'Market',
+  sourceTable: 'attendance_accountability_events',
+  startsAt: '2026-07-30T12:00:00.000Z',
+  status: 'reported',
+  timeZone: 'America/Denver',
+  username: 'jbaptist',
 }
 
 describe('payroll export readiness', () => {
@@ -189,5 +218,36 @@ describe('payroll export readiness', () => {
     expect(isActiveInProgressTimeRow(staleReview.rows[0], new Date(staleReview.serverTimestamp))).toBe(false)
     expect(workedTimePayrollReview(staleReview)?.summary.exceptionCount).toBe(1)
     expect(payrollLockBlocker(staleReview)).toContain('worked-time row')
+  })
+
+  it('pays sick time from the scheduled shift length', () => {
+    expect(accountabilityEventScheduledMinutes(sickEvent)).toBe(600)
+    expect(accountabilityEventPayableMinutes(sickEvent)).toBe(600)
+    expect(accountabilityEventPayCategory(sickEvent)).toBe('Sick pay')
+    expect(accountabilityEventReviewNote(sickEvent)).toBe('')
+  })
+
+  it('flags sick reports without a scheduled shift window instead of guessing hours', () => {
+    const dateOnlySickEvent: PayrollAccountabilityEvent = {
+      ...sickEvent,
+      endsAt: null,
+      startsAt: null,
+    }
+
+    expect(accountabilityEventScheduledMinutes(dateOnlySickEvent)).toBe(0)
+    expect(accountabilityEventPayableMinutes(dateOnlySickEvent)).toBe(0)
+    expect(accountabilityEventReviewNote(dateOnlySickEvent)).toContain('no scheduled shift')
+  })
+
+  it('keeps regular call-offs unpaid unless HR converts them to sick or PTO', () => {
+    const callOffEvent: PayrollAccountabilityEvent = {
+      ...sickEvent,
+      eventType: 'call_off',
+      note: 'Called off but not marked sick.',
+    }
+
+    expect(accountabilityEventScheduledMinutes(callOffEvent)).toBe(600)
+    expect(accountabilityEventPayableMinutes(callOffEvent)).toBe(0)
+    expect(accountabilityEventPayCategory(callOffEvent)).toBe('Unpaid call-off')
   })
 })

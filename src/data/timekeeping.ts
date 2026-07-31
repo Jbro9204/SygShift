@@ -308,6 +308,8 @@ const payrollAccountabilityEventSchema = z.object({
   employeeId: z.string().uuid(),
   employeeName: z.string(),
   username: z.string(),
+  role: appRoleSchema,
+  employmentType: employmentTypeSchema,
   operationalDate: z.string(),
   startsAt: z.string().nullable(),
   endsAt: z.string().nullable(),

@@ -37,7 +37,12 @@ import { formatOperationalDateTime } from '../lib/time'
 import { canExportPayroll, canViewTeamTime } from './timePermissions'
 import { completedPayrollPeriod, currentPayrollPeriod, formatUsDateKey, shiftPayrollPeriod, type TimePeriod } from './timeRules'
 import { payrollExportFileName, payrollLockBlocker, payrollReadinessPercent, workedTimePayrollReview } from './timePayroll'
-import { downloadPayrollWorkbook } from './payrollWorkbook'
+import {
+  downloadPayrollWorkbook,
+  getPayrollAccountabilitySummary,
+  payrollPayableMinutes,
+  summarizePayrollAccountabilityByEmployee,
+} from './payrollWorkbook'
 import {
   TimeAlertCard,
   TimeButton,
@@ -293,18 +298,55 @@ function PayrollExceptions({ rows }: { rows: TimekeepingReviewRow[] }) {
 }
 
 function PayrollEmployeeSummaryTable({
+  accountabilityEvents,
   onSelectEmployee,
   selectedEmployeeId,
   summaries,
 }: {
+  accountabilityEvents: PayrollAccountabilityEvent[]
   onSelectEmployee: (employeeId: string) => void
   selectedEmployeeId: string | null
   summaries: PayrollEmployeeSummary[]
 }) {
-  if (summaries.length === 0) {
+  const accountabilitySummaries = useMemo(
+    () => summarizePayrollAccountabilityByEmployee(accountabilityEvents),
+    [accountabilityEvents],
+  )
+  const tableSummaries = useMemo(() => {
+    const employeeIds = [...new Set([
+      ...summaries.map((summary) => summary.employeeId),
+      ...accountabilitySummaries.map((summary) => summary.employeeId),
+    ])]
+
+    return employeeIds.map((employeeId) => {
+      const workedSummary = summaries.find((summary) => summary.employeeId === employeeId)
+      const accountabilitySummary = getPayrollAccountabilitySummary(employeeId, accountabilitySummaries)
+      const sickPtoMinutes = (accountabilitySummary?.sickPayMinutes ?? 0) + (accountabilitySummary?.vacationPayMinutes ?? 0)
+      const reviewCount = accountabilitySummary?.reviewCount ?? 0
+      return {
+        accountabilityCount: accountabilitySummary?.accountabilityCount ?? 0,
+        breakMinutes: workedSummary?.breakMinutes ?? 0,
+        employeeId,
+        employeeName: workedSummary?.employeeName ?? accountabilitySummary?.employeeName ?? 'Employee',
+        employmentType: workedSummary?.employmentType ?? accountabilitySummary?.employmentType ?? 'hourly',
+        exceptionCount: (workedSummary?.exceptionCount ?? 0) + reviewCount,
+        hasWorkedDetail: Boolean(workedSummary),
+        locationCount: workedSummary?.locationCount ?? 0,
+        overtimeMinutes: workedSummary?.overtimeMinutes ?? 0,
+        paidMinutes: payrollPayableMinutes(workedSummary, accountabilitySummary),
+        payrollReady: (workedSummary?.payrollReady ?? true) && reviewCount === 0,
+        regularMinutes: workedSummary?.regularMinutes ?? 0,
+        sickPtoMinutes,
+        username: workedSummary?.username ?? accountabilitySummary?.username ?? 'unknown',
+        workedShiftCount: workedSummary?.workedShiftCount ?? 0,
+      }
+    })
+  }, [accountabilitySummaries, summaries])
+
+  if (tableSummaries.length === 0) {
     return (
       <DataStatePanel icon={FileClock} title="No worked time in this range">
-        <p>No SygShift clock-in/out totals are available for the selected payroll range.</p>
+        <p>No SygShift clock-in/out totals, sick reports, or PTO records are available for the selected payroll range.</p>
       </DataStatePanel>
     )
   }
@@ -325,13 +367,14 @@ function PayrollEmployeeSummaryTable({
               <th>Regular</th>
               <th>OT</th>
               <th>Breaks</th>
-              <th>Paid total</th>
+              <th>Sick/PTO</th>
+              <th>Total payable</th>
               <th>Status</th>
               <th>Detail</th>
             </tr>
           </thead>
           <tbody>
-            {summaries.map((summary) => (
+            {tableSummaries.map((summary) => (
               <tr className={selectedEmployeeId === summary.employeeId ? 'payroll-summary-row payroll-summary-row--selected' : 'payroll-summary-row'} key={summary.employeeId}>
                 <td>
                   <strong>{summary.employeeName}</strong>
@@ -339,11 +382,12 @@ function PayrollEmployeeSummaryTable({
                 </td>
                 <td>
                   <strong>{summary.workedShiftCount}</strong>
-                  <span>{summary.locationCount} location{summary.locationCount === 1 ? '' : 's'}</span>
+                  <span>{summary.locationCount} location{summary.locationCount === 1 ? '' : 's'} · {summary.accountabilityCount} accountability</span>
                 </td>
                 <td><strong>{payrollHours(summary.regularMinutes)} hr</strong></td>
                 <td><strong>{payrollHours(summary.overtimeMinutes)} hr</strong></td>
                 <td><strong>{summary.breakMinutes} min</strong></td>
+                <td><strong>{payrollHours(summary.sickPtoMinutes)} hr</strong></td>
                 <td><strong>{payrollHours(summary.paidMinutes)} hr</strong></td>
                 <td>
                   <TimeStatusBadge tone={summary.payrollReady ? 'good' : 'warning'}>
@@ -352,12 +396,16 @@ function PayrollEmployeeSummaryTable({
                   {summary.exceptionCount > 0 ? <small>{summary.exceptionCount} row{summary.exceptionCount === 1 ? '' : 's'} need review</small> : null}
                 </td>
                 <td>
-                  <TimeButton
-                    onClick={() => onSelectEmployee(summary.employeeId)}
-                    variant={selectedEmployeeId === summary.employeeId ? 'primary' : 'secondary'}
-                  >
-                    {selectedEmployeeId === summary.employeeId ? 'Viewing details' : 'View details'}
-                  </TimeButton>
+                  {summary.hasWorkedDetail ? (
+                    <TimeButton
+                      onClick={() => onSelectEmployee(summary.employeeId)}
+                      variant={selectedEmployeeId === summary.employeeId ? 'primary' : 'secondary'}
+                    >
+                      {selectedEmployeeId === summary.employeeId ? 'Viewing details' : 'View details'}
+                    </TimeButton>
+                  ) : (
+                    <TimeStatusBadge tone="neutral">Events only</TimeStatusBadge>
+                  )}
                 </td>
               </tr>
             ))}
@@ -793,6 +841,7 @@ export function TimePayrollPage() {
 
           <PayrollExceptions rows={review.rows} />
           <PayrollEmployeeSummaryTable
+            accountabilityEvents={accountabilityEvents}
             onSelectEmployee={(employeeId) => setSelectedEmployeeId((current) => current === employeeId ? null : employeeId)}
             selectedEmployeeId={selectedEmployeeId}
             summaries={employeeSummaries}

@@ -157,6 +157,21 @@ function hours(minutes: number): number {
   return Number(payrollHours(minutes))
 }
 
+export interface PayrollAccountabilityPaySummary {
+  employeeId: string
+  employeeName: string
+  username: string
+  role: PayrollAccountabilityEvent['role']
+  employmentType: PayrollAccountabilityEvent['employmentType']
+  accountabilityCount: number
+  scheduledMinutes: number
+  sickPayMinutes: number
+  vacationPayMinutes: number
+  otherPaidMinutes: number
+  reviewCount: number
+  notes: string[]
+}
+
 function eventLabel(eventType: PayrollAccountabilityEvent['eventType']): string {
   const labels: Record<PayrollAccountabilityEvent['eventType'], string> = {
     call_off: 'Call-off',
@@ -168,6 +183,111 @@ function eventLabel(eventType: PayrollAccountabilityEvent['eventType']): string 
     vacation: 'Vacation / time off',
   }
   return labels[eventType] ?? eventType
+}
+
+export function accountabilityEventScheduledMinutes(event: PayrollAccountabilityEvent): number {
+  if (!event.startsAt || !event.endsAt) return 0
+  const starts = Date.parse(event.startsAt)
+  const ends = Date.parse(event.endsAt)
+  if (!Number.isFinite(starts) || !Number.isFinite(ends) || ends <= starts) return 0
+  return Math.round((ends - starts) / 60_000)
+}
+
+function isApprovedStatus(status: string): boolean {
+  return status.trim().toLocaleLowerCase() === 'approved'
+}
+
+export function accountabilityEventPayableMinutes(event: PayrollAccountabilityEvent): number {
+  const scheduled = accountabilityEventScheduledMinutes(event)
+  if (event.eventType === 'called_in_sick') return scheduled
+  if (event.eventType === 'vacation' && isApprovedStatus(event.status)) return scheduled
+  return 0
+}
+
+export function accountabilityEventPayCategory(event: PayrollAccountabilityEvent): string {
+  if (event.eventType === 'called_in_sick') return 'Sick pay'
+  if (event.eventType === 'vacation') return isApprovedStatus(event.status) ? 'Vacation/PTO' : 'PTO review'
+  if (event.eventType === 'call_off') return 'Unpaid call-off'
+  return 'Review'
+}
+
+export function accountabilityEventReviewNote(event: PayrollAccountabilityEvent): string {
+  const scheduled = accountabilityEventScheduledMinutes(event)
+  if (event.eventType === 'called_in_sick' && scheduled === 0) {
+    return 'Sick pay needs review: no scheduled shift window was attached.'
+  }
+  if (event.eventType === 'vacation') {
+    if (!isApprovedStatus(event.status)) return 'Time off is not approved yet; review before payroll.'
+    if (scheduled === 0) return 'PTO hours need review: no scheduled shift window was attached.'
+  }
+  if (event.eventType === 'call_off' && scheduled > 0) {
+    return 'Call-off is not paid unless HR marks it sick/PTO.'
+  }
+  if (event.eventType === 'call_off') return 'Call-off is informational unless converted to sick/PTO.'
+  return ''
+}
+
+export function summarizePayrollAccountabilityByEmployee(events: PayrollAccountabilityEvent[]): PayrollAccountabilityPaySummary[] {
+  const summaries = new Map<string, PayrollAccountabilityPaySummary & { noteKeys: Set<string> }>()
+
+  for (const event of events) {
+    const existing = summaries.get(event.employeeId)
+    const summary = existing ?? {
+      accountabilityCount: 0,
+      employeeId: event.employeeId,
+      employeeName: event.employeeName,
+      employmentType: event.employmentType,
+      noteKeys: new Set<string>(),
+      notes: [],
+      otherPaidMinutes: 0,
+      reviewCount: 0,
+      role: event.role,
+      scheduledMinutes: 0,
+      sickPayMinutes: 0,
+      username: event.username,
+      vacationPayMinutes: 0,
+    }
+    const scheduled = accountabilityEventScheduledMinutes(event)
+    const payable = accountabilityEventPayableMinutes(event)
+    const reviewNote = accountabilityEventReviewNote(event)
+
+    summary.accountabilityCount += 1
+    summary.scheduledMinutes += scheduled
+    if (event.eventType === 'called_in_sick') summary.sickPayMinutes += payable
+    else if (event.eventType === 'vacation') summary.vacationPayMinutes += payable
+    else if (payable > 0) summary.otherPaidMinutes += payable
+
+    if (reviewNote) {
+      summary.reviewCount += 1
+      if (!summary.noteKeys.has(reviewNote)) {
+        summary.noteKeys.add(reviewNote)
+        summary.notes.push(reviewNote)
+      }
+    }
+
+    summaries.set(event.employeeId, summary)
+  }
+
+  return [...summaries.values()]
+    .map(({ noteKeys: _noteKeys, ...summary }) => summary)
+    .sort((left, right) => left.employeeName.localeCompare(right.employeeName, undefined, { sensitivity: 'base' }))
+}
+
+export function getPayrollAccountabilitySummary(
+  employeeId: string,
+  summaries: PayrollAccountabilityPaySummary[],
+): PayrollAccountabilityPaySummary | undefined {
+  return summaries.find((summary) => summary.employeeId === employeeId)
+}
+
+export function payrollPayableMinutes(
+  workedSummary: Pick<PayrollEmployeeSummary, 'paidMinutes'> | undefined,
+  accountabilitySummary: PayrollAccountabilityPaySummary | undefined,
+): number {
+  return (workedSummary?.paidMinutes ?? 0)
+    + (accountabilitySummary?.sickPayMinutes ?? 0)
+    + (accountabilitySummary?.vacationPayMinutes ?? 0)
+    + (accountabilitySummary?.otherPaidMinutes ?? 0)
 }
 
 function employeeEventSummary(employeeId: string, events: PayrollAccountabilityEvent[]): string {
@@ -185,18 +305,29 @@ function summaryScheduledMinutes(employeeId: string, rows: TimekeepingReviewRow[
     .reduce((total, row) => total + scheduledMinutes(row), 0)
 }
 
-function summaryNotes(summary: PayrollEmployeeSummary, accountabilitySummary: string): string {
-  return [...summary.notes, accountabilitySummary].filter(Boolean).join(' | ')
+function summaryNotes(
+  summary: Pick<PayrollEmployeeSummary, 'notes'> | undefined,
+  accountabilitySummary: string,
+  accountabilityPaySummary?: PayrollAccountabilityPaySummary,
+): string {
+  return [
+    ...(summary?.notes ?? []),
+    accountabilitySummary,
+    ...(accountabilityPaySummary?.notes ?? []),
+  ].filter(Boolean).join(' | ')
 }
 
 function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmployeeSummary[], events: PayrollAccountabilityEvent[]): WorkbookSheet {
   const review = input.review
+  const accountabilitySummaries = summarizePayrollAccountabilityByEmployee(events)
+  const summaryIds = new Set([...summaries.map((summary) => summary.employeeId), ...accountabilitySummaries.map((summary) => summary.employeeId)])
   const titleRows: WorkbookCell[][] = [
     ['SygShift Payroll Report'],
     ['Pay Period', `${formatUsDateKey(review.fromDate)} - ${formatUsDateKey(review.throughDate)}`],
     ['Export Type', input.exportType],
-    ['Generated From', 'SygShift clock-in/out records only'],
+    ['Generated From', 'Worked time from SygShift clock-in/out records; sick/PTO pay from approved accountability records.'],
     ['Payroll Rules', input.rules ? `${input.rules.weekStartsOnLabel} week start, ${payrollHours(input.rules.dailyOvertimeMinutes)} daily OT, ${payrollHours(input.rules.weeklyOvertimeMinutes)} weekly OT` : 'Rules loaded from SygShift'],
+    ['Sick Pay Rule', 'Sick pay hours equal the scheduled shift length. Date-only sick reports are flagged for payroll review.'],
     ['Export Note', input.exportNote ?? input.batch?.note ?? ''],
     ['Locked Batch', input.batch ? `${input.batch.id} / ${input.batch.digest.slice(0, 12)}` : 'Preview only'],
     [],
@@ -210,35 +341,51 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
     'Last Worked Date',
     'Worked Shifts',
     'Scheduled Hours',
-    'Actual Paid Hours',
+    'Actual Worked Hours',
+    'Sick Pay Hours',
+    'Vacation/PTO Hours',
+    'Other Paid Hours',
+    'Total Payable Hours',
     'Regular Hours',
     'Overtime Hours',
     'Break Minutes',
-    'Sick / Call-Off / Vacation',
+    'Accountability Items',
     'Discrepancy Hours',
     'Status',
     'Notes',
   ]
-  const body = summaries.map((summary) => {
-    const scheduled = summaryScheduledMinutes(summary.employeeId, review.rows)
-    const accountabilitySummary = employeeEventSummary(summary.employeeId, events)
+  const body = [...summaryIds].map((employeeId) => {
+    const summary = summaries.find((item) => item.employeeId === employeeId)
+    const accountabilityPaySummary = getPayrollAccountabilitySummary(employeeId, accountabilitySummaries)
+    const employeeEvents = events.filter((event) => event.employeeId === employeeId)
+    const scheduled = summaryScheduledMinutes(employeeId, review.rows) + (accountabilityPaySummary?.scheduledMinutes ?? 0)
+    const accountabilitySummary = employeeEventSummary(employeeId, events)
+    const eventDates = employeeEvents.map((event) => event.operationalDate).filter(Boolean).sort()
+    const firstDate = summary?.firstDate ?? eventDates[0] ?? ''
+    const lastDate = summary?.lastDate ?? eventDates[eventDates.length - 1] ?? ''
+    const payableMinutes = payrollPayableMinutes(summary, accountabilityPaySummary)
+    const needsReview = !summary?.payrollReady || (accountabilityPaySummary?.reviewCount ?? 0) > 0
     return [
-      summary.employeeName,
-      summary.username,
-      summary.role,
-      summary.employmentType,
-      formatUsDateKey(summary.firstDate),
-      formatUsDateKey(summary.lastDate),
-      summary.workedShiftCount,
+      summary?.employeeName ?? accountabilityPaySummary?.employeeName ?? 'Employee',
+      summary?.username ?? accountabilityPaySummary?.username ?? '',
+      summary?.role ?? accountabilityPaySummary?.role ?? '',
+      summary?.employmentType ?? accountabilityPaySummary?.employmentType ?? '',
+      formatUsDateKey(firstDate),
+      formatUsDateKey(lastDate),
+      summary?.workedShiftCount ?? 0,
       hours(scheduled),
-      hours(summary.paidMinutes),
-      hours(summary.regularMinutes),
-      hours(summary.overtimeMinutes),
-      summary.breakMinutes,
+      hours(summary?.paidMinutes ?? 0),
+      hours(accountabilityPaySummary?.sickPayMinutes ?? 0),
+      hours(accountabilityPaySummary?.vacationPayMinutes ?? 0),
+      hours(accountabilityPaySummary?.otherPaidMinutes ?? 0),
+      hours(payableMinutes),
+      hours(summary?.regularMinutes ?? 0),
+      hours(summary?.overtimeMinutes ?? 0),
+      summary?.breakMinutes ?? 0,
       accountabilitySummary,
-      hours(summary.paidMinutes - scheduled),
-      summary.payrollReady ? 'Ready' : 'Needs review',
-      summaryNotes(summary, accountabilitySummary),
+      hours(payableMinutes - scheduled),
+      needsReview ? 'Needs review' : 'Ready',
+      summaryNotes(summary, accountabilitySummary, accountabilityPaySummary),
     ]
   })
 
@@ -254,7 +401,7 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
 }
 
 function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAccountabilityEvent[]): WorkbookSheet {
-  const header = ['Employee', 'Date', 'Type', 'Location', 'Scheduled Hours', 'Actual Paid Hours', 'Difference', 'Status', 'Notes']
+  const header = ['Employee', 'Date', 'Type', 'Location', 'Scheduled Hours', 'Actual Worked Hours', 'Payable Hours', 'Difference', 'Status', 'Notes']
   const rowItems = rows
     .filter((row) => {
       const diff = row.paidMinutes - scheduledMinutes(row)
@@ -269,22 +416,29 @@ function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
         locationLabel(row),
         hours(scheduled),
         hours(row.paidMinutes),
+        hours(row.paidMinutes),
         hours(row.paidMinutes - scheduled),
         row.payrollReady ? 'Ready' : 'Needs review',
         [...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')), ...row.payrollNotes].join(' | '),
       ]
     })
-  const eventItems = events.map((event) => [
-    event.employeeName,
-    formatUsDateKey(event.operationalDate),
-    eventLabel(event.eventType),
-    accountabilityLocation(event),
-    '',
-    '',
-    '',
-    event.status,
-    event.note,
-  ])
+  const eventItems = events.map((event) => {
+    const scheduled = accountabilityEventScheduledMinutes(event)
+    const payable = accountabilityEventPayableMinutes(event)
+    const reviewNote = accountabilityEventReviewNote(event)
+    return [
+      event.employeeName,
+      formatUsDateKey(event.operationalDate),
+      `${eventLabel(event.eventType)} / ${accountabilityEventPayCategory(event)}`,
+      accountabilityLocation(event),
+      hours(scheduled),
+      '',
+      hours(payable),
+      hours(payable - scheduled),
+      reviewNote ? 'Needs review' : event.status,
+      [reviewNote, event.note].filter(Boolean).join(' | '),
+    ]
+  })
   return {
     filterRowIndex: 0,
     freezeRows: 1,
@@ -297,29 +451,37 @@ function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
   }
 }
 
-function buildSiteSummarySheet(rows: TimekeepingReviewRow[]): WorkbookSheet {
+function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAccountabilityEvent[]): WorkbookSheet {
   const sites = new Map<string, {
+    accountabilityItems: number
     breakMinutes: number
     employees: Set<string>
     needsReview: number
+    otherPaidMinutes: number
     overtimeMinutes: number
     paidMinutes: number
     regularMinutes: number
     scheduledMinutes: number
     shifts: number
+    sickPayMinutes: number
+    vacationPayMinutes: number
   }>()
 
   for (const row of rows) {
     const key = locationLabel(row)
     const item = sites.get(key) ?? {
+      accountabilityItems: 0,
       breakMinutes: 0,
       employees: new Set<string>(),
       needsReview: 0,
+      otherPaidMinutes: 0,
       overtimeMinutes: 0,
       paidMinutes: 0,
       regularMinutes: 0,
       scheduledMinutes: 0,
       shifts: 0,
+      sickPayMinutes: 0,
+      vacationPayMinutes: 0,
     }
     item.breakMinutes += row.breakMinutes
     item.employees.add(row.employeeName)
@@ -332,14 +494,47 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[]): WorkbookSheet {
     sites.set(key, item)
   }
 
+  for (const event of events) {
+    const key = accountabilityLocation(event)
+    const item = sites.get(key) ?? {
+      accountabilityItems: 0,
+      breakMinutes: 0,
+      employees: new Set<string>(),
+      needsReview: 0,
+      otherPaidMinutes: 0,
+      overtimeMinutes: 0,
+      paidMinutes: 0,
+      regularMinutes: 0,
+      scheduledMinutes: 0,
+      shifts: 0,
+      sickPayMinutes: 0,
+      vacationPayMinutes: 0,
+    }
+    const scheduled = accountabilityEventScheduledMinutes(event)
+    const payable = accountabilityEventPayableMinutes(event)
+    item.accountabilityItems += 1
+    item.employees.add(event.employeeName)
+    item.scheduledMinutes += scheduled
+    if (event.eventType === 'called_in_sick') item.sickPayMinutes += payable
+    else if (event.eventType === 'vacation') item.vacationPayMinutes += payable
+    else if (payable > 0) item.otherPaidMinutes += payable
+    item.needsReview += accountabilityEventReviewNote(event) ? 1 : 0
+    sites.set(key, item)
+  }
+
   const rowsOut = [...sites.entries()]
     .sort(([left], [right]) => left.localeCompare(right, undefined, { sensitivity: 'base' }))
     .map(([location, item]) => [
       location,
       item.shifts,
+      item.accountabilityItems,
       item.employees.size,
       hours(item.scheduledMinutes),
       hours(item.paidMinutes),
+      hours(item.sickPayMinutes),
+      hours(item.vacationPayMinutes),
+      hours(item.otherPaidMinutes),
+      hours(item.paidMinutes + item.sickPayMinutes + item.vacationPayMinutes + item.otherPaidMinutes),
       hours(item.regularMinutes),
       hours(item.overtimeMinutes),
       item.breakMinutes,
@@ -352,7 +547,7 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[]): WorkbookSheet {
     headerRows: [0],
     name: 'Site Summary',
     rows: [
-      ['Site / Post', 'Worked Shifts', 'Employees', 'Scheduled Hours', 'Actual Paid Hours', 'Regular Hours', 'Overtime Hours', 'Break Minutes', 'Needs Review'],
+      ['Site / Post', 'Worked Shifts', 'Accountability Items', 'Employees', 'Scheduled Hours', 'Actual Worked Hours', 'Sick Pay Hours', 'Vacation/PTO Hours', 'Other Paid Hours', 'Total Payable Hours', 'Regular Hours', 'Overtime Hours', 'Break Minutes', 'Needs Review'],
       ...(rowsOut.length > 0 ? rowsOut : [['No worked time in this range.']]),
     ],
   }
@@ -388,8 +583,12 @@ function buildEmployeeSheets(rows: TimekeepingReviewRow[], events: PayrollAccoun
       eventLabel(event.eventType),
       event.status,
       accountabilityLocation(event),
+      hours(accountabilityEventScheduledMinutes(event)),
+      hours(accountabilityEventPayableMinutes(event)),
+      accountabilityEventPayCategory(event),
       dateTimeText(event.startsAt, event.timeZone),
       dateTimeText(event.endsAt, event.timeZone),
+      accountabilityEventReviewNote(event),
       event.note,
       dateTimeText(event.createdAt, event.timeZone),
     ])
@@ -408,9 +607,9 @@ function buildEmployeeSheets(rows: TimekeepingReviewRow[], events: PayrollAccoun
         ['Date', 'Week Start', 'Week End', 'Location', 'Scheduled Hours', 'Clock In', 'Clock Out', 'Gross Hours', 'Break Minutes', 'Paid Hours', 'Regular Hours', 'Overtime Hours', 'Status', 'Exceptions', 'Payroll Notes'],
         ...(workedRows.length > 0 ? workedRows : [['No worked time rows in this range.']]),
         [],
-        ['Accountability / Time Off'],
-        ['Date', 'Type', 'Status', 'Location', 'Start', 'End', 'Note', 'Created'],
-        ...(eventRows.length > 0 ? eventRows : [['No accountability or time-off events in this range.']]),
+        ['Accountability / Sick Pay / PTO'],
+        ['Date', 'Type', 'Status', 'Location', 'Scheduled Hours', 'Payable Hours', 'Pay Category', 'Start', 'End', 'Review Note', 'Employee Note', 'Created'],
+        ...(eventRows.length > 0 ? eventRows : [['No accountability, sick pay, or time-off events in this range.']]),
       ],
       sectionRows: [accountabilityTitleRow],
       titleRows: [0],
@@ -424,7 +623,7 @@ export function buildPayrollWorkbookSheets(input: PayrollWorkbookInput): Workboo
   return [
     buildSummarySheet(input, summaries, events),
     buildDiscrepancySheet(input.review.rows, events),
-    buildSiteSummarySheet(input.review.rows),
+    buildSiteSummarySheet(input.review.rows, events),
     ...buildEmployeeSheets(input.review.rows, events),
   ]
 }
