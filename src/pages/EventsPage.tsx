@@ -4,7 +4,10 @@ import { CalendarClock, DatabaseZap, MapPin, Search, ShieldAlert, UsersRound } f
 import { DataStatePanel } from '../components/DataStatePanel'
 import {
   getOpenOpportunities,
+  opportunityCoverageLabel,
+  opportunityDescription,
   opportunityLocation,
+  opportunityPayLabel,
   opportunityRequest,
   opportunityTitle,
   submitOpportunityRequest,
@@ -68,6 +71,20 @@ function OpportunityCard({
         <MapPin aria-hidden="true" size={18} />
         {opportunityLocation(opportunity)}
       </p>
+      <dl className="opportunity-card__details">
+        <div>
+          <dt>Coverage</dt>
+          <dd>{opportunityCoverageLabel(opportunity)}</dd>
+        </div>
+        <div>
+          <dt>Job details</dt>
+          <dd>{opportunityDescription(opportunity) ?? 'No extra description has been entered yet.'}</dd>
+        </div>
+        <div>
+          <dt>Pay</dt>
+          <dd>{opportunityPayLabel(opportunity)}</dd>
+        </div>
+      </dl>
       {source.reviewNeeded ? (
         <div className="opportunity-card__source-note" aria-label="Schedule assignment review">
           {source.assignee ? <span><strong>Original assignee:</strong> {source.assignee}</span> : null}

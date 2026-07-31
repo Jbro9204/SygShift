@@ -6,6 +6,7 @@ import {
   DatabaseZap,
   Clock3,
   FileClock,
+  Megaphone,
   Timer,
   TimerReset,
   UserRoundCheck,
@@ -15,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { getSessionContext } from '../data/auth'
+import { getActiveAnnouncementBanners } from '../data/announcements'
 import { getOverviewMetrics, overviewMetricNote, type OverviewMetrics } from '../data/overview'
 import {
   activeTimeState,
@@ -75,6 +77,13 @@ export function OverviewPage() {
     queryFn: () => getOverviewMetrics(),
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && operationsOverviewAllowed,
     refetchInterval: 60_000,
+  })
+  const employeeAnnouncementQuery = useQuery({
+    enabled: isSupabaseConfigured && employeeLanding,
+    queryFn: getActiveAnnouncementBanners,
+    queryKey: ['active-announcement-banners', 'overview'],
+    refetchInterval: 60_000,
+    retry: false,
   })
   const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
   const punchAllowed = canUseOwnTimeClock(sessionQuery.data)
@@ -223,6 +232,31 @@ export function OverviewPage() {
               <p>Request time off or review open shifts without seeing company-wide staffing totals.</p>
             </div>
             <Link className="secondary-button" to="/requests">Open Requests</Link>
+          </article>
+          <article className="overview-employee-card overview-employee-card--updates">
+            <div className="overview-employee-card__icon"><Megaphone aria-hidden="true" size={24} /></div>
+            <div>
+              <p className="eyebrow">Updates</p>
+              <h2>Announcements</h2>
+              <p>Current messages, open coverage notices, and company updates stay here so they are easy to find.</p>
+            </div>
+            {employeeAnnouncementQuery.isPending ? (
+              <p className="overview-employee-updates__empty">Checking for current updates...</p>
+            ) : employeeAnnouncementQuery.data?.length ? (
+              <div className="overview-employee-updates" aria-label="Current announcements">
+                {employeeAnnouncementQuery.data.slice(0, 3).map((banner) => (
+                  <article className={`overview-employee-update overview-employee-update--${banner.tone}`} key={banner.id}>
+                    <strong>{banner.title}</strong>
+                    <span>{banner.message}</span>
+                    {banner.ctaHref && banner.ctaLabel ? (
+                      <Link to={banner.ctaHref}>{banner.ctaLabel}</Link>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="overview-employee-updates__empty">No active announcements right now.</p>
+            )}
           </article>
         </section>
       ) : (

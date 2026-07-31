@@ -96,3 +96,32 @@ export function opportunityLocation(opportunity: Opportunity): string {
 export function opportunityTitle(opportunity: Opportunity): string {
   return opportunity.event?.name ?? opportunity.post?.name ?? 'Open shift'
 }
+
+export function opportunityCoverageLabel(opportunity: Opportunity): string {
+  return opportunity.post?.name ?? opportunity.event?.name ?? 'Open coverage'
+}
+
+export function opportunityDescription(opportunity: Opportunity): string | null {
+  const text = opportunity.notes?.trim()
+  if (!text) return null
+
+  const cleanLines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^(Imported schedule|Bible source|Source sheet|Source time cell|Qualification source|Assignment status|Assignment import skipped)/i.test(line))
+    .filter((line) => !/needs supervisor review|source row|source schedule/i.test(line))
+    .filter((line) => !/^(pay|rate)\s*[:=-]/i.test(line))
+
+  const cleaned = cleanLines.join(' ').trim()
+  return cleaned || null
+}
+
+export function opportunityPayLabel(opportunity: Opportunity): string {
+  const payLine = opportunity.notes
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^(pay|rate)\s*[:=-]/i.test(line))
+  const pay = payLine?.replace(/^(pay|rate)\s*[:=-]\s*/i, '').trim()
+  return pay || 'Not entered yet'
+}

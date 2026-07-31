@@ -82,6 +82,8 @@ interface SchedulerCoverageGroup {
   lanes: SchedulerCoverageLane[]
 }
 
+type EmployeeScheduleRange = '1w' | '2w' | 'month'
+
 interface ShiftEditorState {
   originalShift: ScheduleShift
   editableShift?: ScheduleShift
@@ -344,6 +346,82 @@ function dateKeyDisplay(dateKey: string): string {
   return format(new Date(`${dateKey}T12:00:00`), 'MM/dd/yyyy')
 }
 
+function employeeScheduleRangeLabel(range: EmployeeScheduleRange): string {
+  if (range === 'month') return 'Month'
+  return range === '2w' ? '2 weeks' : '1 week'
+}
+
+function employeeScheduleWeekCount(range: EmployeeScheduleRange): number {
+  if (range === 'month') return 4
+  return range === '2w' ? 2 : 1
+}
+
+function shiftSiteLabel(shift: ScheduleShift): string {
+  return shift.post?.site.name
+    ?? shift.event?.site?.name
+    ?? shift.event?.location_name
+    ?? 'Location pending'
+}
+
+function shiftPostLabel(shift: ScheduleShift): string {
+  return shift.post?.name
+    ?? shift.event?.name
+    ?? 'Shift'
+}
+
+function employeeOwnsShift(shift: ScheduleShift, employeeId: string | null | undefined): boolean {
+  if (!employeeId) return false
+  return shift.assignments.some((assignment) => assignment.employee.id === employeeId)
+}
+
+function cleanOperationalShiftNotes(notes: string | null | undefined): string | null {
+  const text = notes?.trim()
+  if (!text) return null
+
+  const source = parseImportedScheduleNote(text)
+  const hasSourceMetadata = Boolean(
+    source.assignee
+      || source.context
+      || source.sheet
+      || source.timeCell
+      || source.qualification
+      || source.status
+      || source.importGuardrail
+      || source.reviewNeeded,
+  )
+
+  if (!hasSourceMetadata) return text
+
+  const cleanLines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !/^(Imported schedule|Bible source|Source sheet|Source time cell|Qualification source|Assignment status|Assignment import skipped)/i.test(line))
+    .filter((line) => !/needs supervisor review|supervisor cleanup|source row|source schedule/i.test(line))
+
+  const cleaned = cleanLines.join(' ').trim()
+  return cleaned || null
+}
+
+function employeeScheduleMatchesSearch(shift: ScheduleShift, query: string): boolean {
+  const term = query.trim().toLocaleLowerCase()
+  if (!term) return true
+
+  const searchable = [
+    shiftSiteLabel(shift),
+    shiftPostLabel(shift),
+    shift.event?.location_name,
+    shift.requires_armed ? 'armed' : 'unarmed',
+    shift.is_overtime ? 'overtime' : null,
+    cleanOperationalShiftNotes(shift.notes),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLocaleLowerCase()
+
+  return searchable.includes(term)
+}
+
 function scheduleShiftLocalWindow(shift: ScheduleShift): { end: number, start: number } {
   const start = timeToMinutes(shiftLocalTimeValue(shift, shift.starts_at)) ?? 0
   const rawEnd = timeToMinutes(shiftLocalTimeValue(shift, shift.ends_at)) ?? 0
@@ -533,6 +611,189 @@ function ShiftCard({
         </div>
       ) : null}
     </article>
+  )
+}
+
+function EmployeePersonalSchedulePanel({
+  days,
+  errorMessage,
+  loading,
+  onJumpToWeek,
+  range,
+  search,
+  setRange,
+  setSearch,
+  shifts,
+  weekStart,
+}: {
+  days: Date[]
+  errorMessage: string | null
+  loading: boolean
+  onJumpToWeek: (date: Date) => void
+  range: EmployeeScheduleRange
+  search: string
+  setRange: (range: EmployeeScheduleRange) => void
+  setSearch: (value: string) => void
+  shifts: ScheduleShift[]
+  weekStart: Date
+}) {
+  const shiftDays = useMemo(() => {
+    const buckets = new Map<string, ScheduleShift[]>()
+    for (const day of days) buckets.set(format(day, 'yyyy-MM-dd'), [])
+    for (const shift of shifts) {
+      const dayKey = shiftOperationalDate(shift)
+      if (buckets.has(dayKey)) {
+        buckets.get(dayKey)?.push(shift)
+      }
+    }
+    for (const bucket of buckets.values()) {
+      bucket.sort((left, right) => left.starts_at.localeCompare(right.starts_at))
+    }
+    return buckets
+  }, [days, shifts])
+  const nextShift = shifts
+    .filter((shift) => new Date(shift.ends_at).getTime() >= Date.now())
+    .sort((left, right) => left.starts_at.localeCompare(right.starts_at))[0] ?? shifts[0] ?? null
+  const visibleDays = search.trim()
+    ? days.filter((day) => (shiftDays.get(format(day, 'yyyy-MM-dd')) ?? []).length > 0)
+    : days
+  const rangeEnd = days[days.length - 1] ?? weekStart
+
+  return (
+    <section className="employee-schedule-panel" aria-labelledby="employee-schedule-title">
+      <div className="employee-schedule-hero">
+        <div>
+          <p className="eyebrow">My schedule</p>
+          <h2 id="employee-schedule-title">Your upcoming work</h2>
+          <p>
+            This view only shows your assigned shifts, where to report, and the details you need to work the shift.
+          </p>
+        </div>
+        <div className="employee-schedule-hero__summary" aria-label="Personal schedule summary">
+          <article>
+            <span>Showing</span>
+            <strong>{employeeScheduleRangeLabel(range)}</strong>
+            <small>{dateKeyDisplay(format(weekStart, 'yyyy-MM-dd'))} - {dateKeyDisplay(format(rangeEnd, 'yyyy-MM-dd'))}</small>
+          </article>
+          <article>
+            <span>Shifts</span>
+            <strong>{shifts.length}</strong>
+            <small>{nextShift ? `Next: ${dateKeyDisplay(shiftOperationalDate(nextShift))}` : 'No assigned shifts in range'}</small>
+          </article>
+        </div>
+      </div>
+
+      <div className="employee-schedule-controls" aria-label="Personal schedule controls">
+        <div className="week-controls employee-schedule-week-controls">
+          <button
+            aria-label="Previous week"
+            className="icon-button"
+            onClick={() => onJumpToWeek(addWeeks(weekStart, -1))}
+            type="button"
+          >
+            <ChevronLeft aria-hidden="true" size={22} />
+          </button>
+          <button
+            className="secondary-button"
+            onClick={() => onJumpToWeek(startOfWeek(operationalToday(), { weekStartsOn: 0 }))}
+            type="button"
+          >
+            This week
+          </button>
+          <button
+            aria-label="Next week"
+            className="icon-button"
+            onClick={() => onJumpToWeek(addWeeks(weekStart, 1))}
+            type="button"
+          >
+            <ChevronRight aria-hidden="true" size={22} />
+          </button>
+        </div>
+
+        <div className="segmented-control employee-schedule-range" aria-label="Schedule range">
+          {(['1w', '2w', 'month'] as EmployeeScheduleRange[]).map((option) => (
+            <button
+              className={range === option ? 'is-active' : ''}
+              key={option}
+              onClick={() => setRange(option)}
+              type="button"
+            >
+              {employeeScheduleRangeLabel(option)}
+            </button>
+          ))}
+        </div>
+
+        <label className="search-field employee-schedule-search">
+          <Search aria-hidden="true" size={20} />
+          <span className="visually-hidden">Search your schedule</span>
+          <input
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search your sites, posts, or shift notes"
+            type="search"
+            value={search}
+          />
+        </label>
+      </div>
+
+      {loading ? (
+        <DataStatePanel icon={CalendarDays} title="Loading your schedule">
+          <p>Checking your assigned shifts for the selected date range.</p>
+        </DataStatePanel>
+      ) : errorMessage ? (
+        <DataStatePanel icon={ShieldAlert} title="Your schedule could not be loaded" tone="error">
+          <p>{errorMessage}</p>
+        </DataStatePanel>
+      ) : visibleDays.length === 0 ? (
+        <DataStatePanel icon={Search} title="No matching shifts">
+          <p>Clear the search to see the full personal schedule for this range.</p>
+        </DataStatePanel>
+      ) : (
+        <div className="employee-schedule-days" aria-label="Personal schedule days">
+          {visibleDays.map((day) => {
+            const dayKey = format(day, 'yyyy-MM-dd')
+            const dayShifts = shiftDays.get(dayKey) ?? []
+            return (
+              <article className="employee-schedule-day" key={dayKey}>
+                <header>
+                  <span>{format(day, 'EEE')}</span>
+                  <strong>{format(day, 'MM/dd/yyyy')}</strong>
+                  <small>{dayShifts.length} shift{dayShifts.length === 1 ? '' : 's'}</small>
+                </header>
+                {dayShifts.length ? (
+                  <div className="employee-schedule-day__shifts">
+                    {dayShifts.map((shift) => {
+                      const notes = cleanOperationalShiftNotes(shift.notes)
+                      return (
+                        <article className="employee-shift-card" key={shift.id}>
+                          <div className="employee-shift-card__time">
+                            <strong>{shiftTimeRange(shift)}</strong>
+                            {shift.is_overtime ? <span>Overtime</span> : null}
+                          </div>
+                          <h3>{shiftPostLabel(shift)}</h3>
+                          <p className="employee-shift-card__location">
+                            <MapPin aria-hidden="true" size={16} />
+                            {shiftSiteLabel(shift)}
+                          </p>
+                          {notes ? <p className="employee-shift-card__notes">{notes}</p> : null}
+                          <div className="employee-shift-card__tags">
+                            <span>{shift.requires_armed ? 'Armed' : 'Unarmed'}</span>
+                            <span>Assigned to you</span>
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="employee-schedule-day__empty">
+                    <span>No shift scheduled</span>
+                  </div>
+                )}
+              </article>
+            )
+          })}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -1463,6 +1724,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const today = useMemo(() => operationalToday(), [])
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today, { weekStartsOn: 0 }))
   const [search, setSearch] = useState('')
+  const [employeeScheduleRange, setEmployeeScheduleRange] = useState<EmployeeScheduleRange>('2w')
   const [siteFilter, setSiteFilter] = useState('all')
   const [scheduleView, setScheduleView] = useState<'site' | 'employee'>('site')
   const [employeeFilter, setEmployeeFilter] = useState('all')
@@ -1541,6 +1803,21 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     ])
   const canUseScheduler = canBuildSchedule && isSchedulerHome
   const canEditScheduler = canManageSchedule && isSchedulerHome
+  const employeeOnlySchedule = sessionQuery.isSuccess && !canViewTeamSchedule && !isSchedulerHome
+  const employeeScheduleDays = useMemo(
+    () => Array.from({ length: employeeScheduleWeekCount(employeeScheduleRange) * 7 }, (_, index) => addDays(weekStart, index)),
+    [employeeScheduleRange, weekStart],
+  )
+  const employeeScheduleWeekKeys = useMemo(
+    () => Array.from({ length: employeeScheduleWeekCount(employeeScheduleRange) }, (_, index) => format(addWeeks(weekStart, index), 'yyyy-MM-dd')),
+    [employeeScheduleRange, weekStart],
+  )
+  const employeeScheduleRangeQuery = useQuery({
+    enabled: isSupabaseConfigured && employeeOnlySchedule,
+    queryFn: async () => Promise.all(employeeScheduleWeekKeys.map((key) => getWeeklySchedule(key))),
+    queryKey: ['personal-schedule-range', employeeScheduleWeekKeys.join('|')],
+    retry: false,
+  })
   useEffect(() => {
     if (canViewTeamSchedule) return
     setScheduleView('employee')
@@ -1886,6 +2163,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   })
   const rows = useMemo(() => scheduleQuery.data ? scheduleRows(scheduleQuery.data) : [], [scheduleQuery.data])
   const employeeRows = useMemo(() => scheduleQuery.data ? employeeScheduleRows(scheduleQuery.data) : [], [scheduleQuery.data])
+  const employeePersonalScheduleShifts = useMemo(() => {
+    const employeeId = sessionQuery.data?.employeeId ?? null
+    return (employeeScheduleRangeQuery.data ?? [])
+      .flatMap((schedule) => schedule?.shifts ?? [])
+      .filter((shift) => employeeOwnsShift(shift, employeeId))
+      .filter((shift) => employeeScheduleMatchesSearch(shift, search))
+      .sort((left, right) => left.starts_at.localeCompare(right.starts_at))
+  }, [employeeScheduleRangeQuery.data, search, sessionQuery.data?.employeeId])
   const employeeFilterOptions = useMemo(() => {
     const options = new Map<string, { id: string, name: string }>()
 
@@ -2363,12 +2648,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     <div className={isSchedulerHome ? 'page page--schedule page--scheduler' : 'page page--schedule'}>
       <section className="page-intro schedule-intro">
         <div>
-          <p className="eyebrow">Operations</p>
+          <p className="eyebrow">{employeeOnlySchedule ? 'My schedule' : 'Operations'}</p>
           <h1>{isSchedulerHome ? 'Scheduler' : 'Schedule'}</h1>
           <p className="page-summary">
             {isSchedulerHome
               ? 'Build the week from a focused planning board, make changes safely, and publish only when coverage is ready.'
-              : 'A readable weekly view for permanent sites, one-time events, patrol, and dispatch coverage.'}
+              : employeeOnlySchedule
+                ? 'A personal schedule view with your dates, times, locations, and shift notes without company-wide staffing clutter.'
+                : 'A readable weekly view for permanent sites, one-time events, patrol, and dispatch coverage.'}
           </p>
         </div>
         {canBuildSchedule && !isSchedulerHome ? (
@@ -3193,13 +3480,28 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         </section>
       ) : null}
 
-      {scheduleQuery.data ? (
+      {scheduleQuery.data && canViewTeamSchedule ? (
         <section className="schedule-admin-summary" aria-label="Published schedule summary">
           <article><span>{scheduleQuery.data.status === 'draft' ? 'Draft shifts' : 'Published shifts'}</span><strong>{scheduleSummary.shifts}</strong><small>Revision {scheduleQuery.data.revision}</small></article>
           <article><span>Assigned slots</span><strong>{scheduleSummary.assigned}</strong><small>{scheduleSummary.employees} employees on schedule</small></article>
           <article className={scheduleSummary.open ? 'import-metric--attention' : ''}><span>Open slots</span><strong>{scheduleSummary.open}</strong><small>Visible in openings/request workflows</small></article>
           <article className={scheduleSummary.review ? 'import-metric--attention' : ''}><span>Review needed</span><strong>{scheduleSummary.review}</strong><small>Schedule items needing supervisor cleanup</small></article>
         </section>
+      ) : null}
+
+      {employeeOnlySchedule ? (
+        <EmployeePersonalSchedulePanel
+          days={employeeScheduleDays}
+          errorMessage={employeeScheduleRangeQuery.error instanceof Error ? employeeScheduleRangeQuery.error.message : null}
+          loading={employeeScheduleRangeQuery.isPending}
+          onJumpToWeek={jumpToWeek}
+          range={employeeScheduleRange}
+          search={search}
+          setRange={setEmployeeScheduleRange}
+          setSearch={setSearch}
+          shifts={employeePersonalScheduleShifts}
+          weekStart={weekStart}
+        />
       ) : null}
 
       {isSchedulerHome ? (
@@ -3496,7 +3798,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         </section>
       ) : null}
 
-      {!isSchedulerHome ? (
+      {!isSchedulerHome && !employeeOnlySchedule ? (
       <section className="schedule-toolbar" aria-label="Schedule controls">
         <div className="week-controls">
           <button
@@ -3595,7 +3897,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       </section>
       ) : null}
 
-      {!scheduleQuery.data && importedPreviewQuery.data ? (
+      {!employeeOnlySchedule && !scheduleQuery.data && importedPreviewQuery.data ? (
         <section className="source-schedule-banner" aria-label="Schedule status">
           <div>
             <p className="eyebrow">Historical schedule preview</p>
@@ -3612,14 +3914,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         </section>
       ) : null}
 
-      {!isSchedulerHome ? (
+      {!isSchedulerHome && !employeeOnlySchedule ? (
         <p className="schedule-scroll-hint" id="schedule-scroll-instructions">
           <MoveHorizontal aria-hidden="true" size={19} />
           Scroll horizontally to see all seven days
         </p>
       ) : null}
 
-      {!isSchedulerHome ? (
+      {!isSchedulerHome && !employeeOnlySchedule ? (
         <div
         aria-label="Horizontal schedule scroll"
         className="schedule-scrollbar"
@@ -3632,7 +3934,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         </div>
       ) : null}
 
-      {!isSchedulerHome ? (
+      {!isSchedulerHome && !employeeOnlySchedule ? (
         <section className="schedule-mobile-list" aria-label="Mobile schedule view">
           {scheduleQuery.data ? days.map((day) => {
             const dayKey = format(day, 'yyyy-MM-dd')
@@ -3705,7 +4007,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         </section>
       ) : null}
 
-      {!isSchedulerHome ? (
+      {!isSchedulerHome && !employeeOnlySchedule ? (
         <section
         aria-describedby="schedule-scroll-instructions"
         aria-labelledby="schedule-board-heading"

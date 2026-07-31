@@ -255,6 +255,9 @@ export function MyTimePage() {
       <TimePageHeader
         actions={
           <>
+            <TimeButton icon={AlertTriangle} onClick={() => setAttendanceReportOpen(true)} variant="secondary">
+              Report sick / call-off
+            </TimeButton>
             <Link className="time-button time-button--secondary" to="/time"><ArrowRight aria-hidden="true" size={18} /><span>Time Command Center</span></Link>
             <Link className="time-button time-button--secondary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Advanced Time Tools</span></Link>
           </>
@@ -329,11 +332,6 @@ export function MyTimePage() {
         </section>
       </section>
 
-      <section className="my-time-two-column">
-        <RecentPunchesPanel dashboard={dashboard} onRequestCorrection={setCorrectionEvent} />
-        <CorrectionPanel corrections={reviewQuery.data?.pendingCorrections ?? []} loading={reviewQuery.isPending} />
-      </section>
-
       <MyTimeRows
         loading={reviewQuery.isPending}
         onRequestCorrection={setCorrectionEvent}
@@ -341,6 +339,11 @@ export function MyTimePage() {
         rows={rows}
         serverTimestamp={reviewQuery.data?.serverTimestamp}
       />
+
+      <section className="my-time-two-column">
+        <RecentPunchesPanel dashboard={dashboard} onRequestCorrection={setCorrectionEvent} />
+        <CorrectionPanel corrections={reviewQuery.data?.pendingCorrections ?? []} loading={reviewQuery.isPending} />
+      </section>
 
       {attendanceReportOpen ? (
         <AttendanceReportModal
