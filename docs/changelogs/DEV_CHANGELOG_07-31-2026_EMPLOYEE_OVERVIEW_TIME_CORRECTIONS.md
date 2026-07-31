@@ -37,3 +37,5 @@
 - This update is frontend and workflow focused.
 - No database schema changes were required.
 - Time-card correction requests use the existing time correction review infrastructure.
+- Production deployment completed to `https://app.sygilant.us`.
+- Cloudflare Worker version: `928240b6-4279-42f7-aa62-e84d7074ca2e`.

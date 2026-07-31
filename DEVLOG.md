@@ -43,6 +43,8 @@ deployment status, or major workflow assumptions change.
   - `pnpm lint`
   - `pnpm test` — 32 files / 142 tests passing
   - `pnpm build`
+- Production deployment completed to `https://app.sygilant.us`.
+- Cloudflare Worker version: `928240b6-4279-42f7-aa62-e84d7074ca2e`.
 
 ### Added employee-scoped schedule publishing
 
