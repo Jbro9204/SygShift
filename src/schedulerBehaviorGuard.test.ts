@@ -22,6 +22,7 @@ describe('scheduler behavior guardrails', () => {
 
   it('uses draft-safe language when adding shifts from the scheduler', () => {
     expect(schedulePage).toContain("'Saving draft...'")
+    expect(schedulePage).toContain('busyLabel="Saving schedule draft..."')
     expect(schedulePage).toContain('Save ${openShiftDateKeys.length === 1 ? \'draft shift\'')
     expect(schedulePage).toContain('Save ${openShiftDateKeys.length === 1 ? \'open draft shift\'')
     expect(schedulePage).toContain('assigned draft shift${createdCount === 1 ? \'\' : \'s\'} saved')
@@ -31,5 +32,12 @@ describe('scheduler behavior guardrails', () => {
     expect(addShiftButtonBlock).not.toContain('Publishing...')
     expect(addShiftButtonBlock).not.toContain('Publish ${openShiftDateKeys.length === 1 ? \'assigned shift\'')
     expect(addShiftButtonBlock).not.toContain('Publish ${openShiftDateKeys.length === 1 ? \'open shift\'')
+  })
+
+  it('closes the full shift editor after a draft shift save succeeds', () => {
+    const editSubmitBlock = /function submit\(event: FormEvent<HTMLFormElement>\) \{[\s\S]+?mutation\.mutate\(\{[\s\S]+?\}, \{\s*onSuccess: onClose,\s*\}\)/.exec(schedulePage)?.[0] ?? ''
+
+    expect(editSubmitBlock).toContain('shiftId: shift.id')
+    expect(editSubmitBlock).toContain('onSuccess: onClose')
   })
 })

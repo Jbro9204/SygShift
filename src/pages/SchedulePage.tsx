@@ -627,6 +627,8 @@ function EditShiftDialog({
       employeeId: String(form.get('employeeId') ?? '') || null,
       availabilityOverrideNote: availabilityConflict ? overrideNote : null,
       credentialOverrideNote: credentialOverrideRequired ? credentialOverrideNote : null,
+    }, {
+      onSuccess: onClose,
     })
   }
 
@@ -2556,7 +2558,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       {canEditScheduler && builderOpen ? (
         <ModalDialog
           busy={createOpenShiftMutation.isPending}
-          busyLabel="Publishing schedule change..."
+          busyLabel="Saving schedule draft..."
           className="modal-dialog--schedule-builder"
           description="Create a permanent site/post shift or a one-time event for the selected schedule week."
           onClose={() => setBuilderOpen(false)}
