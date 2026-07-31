@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
+import { getTrustedDeviceToken } from '../lib/trustedDeviceToken'
 
 const timeEventKindSchema = z.enum(['clock_in', 'break_start', 'break_end', 'clock_out'])
 const timeEventSourceSchema = z.enum(['web', 'mobile_web', 'supervisor', 'import', 'system'])
@@ -299,6 +300,51 @@ const payrollExportDetailSchema = z.object({
   rows: z.array(timekeepingReviewRowSchema),
 })
 
+const payrollAccountabilityEventSchema = z.object({
+  id: z.string().uuid(),
+  sourceTable: z.enum(['attendance_accountability_events', 'call_off_reports', 'time_off_requests']),
+  eventType: z.enum(['called_in_sick', 'call_off', 'vacation', 'no_call_no_show', 'late_arrival', 'early_departure', 'other']),
+  status: z.string(),
+  employeeId: z.string().uuid(),
+  employeeName: z.string(),
+  username: z.string(),
+  operationalDate: z.string(),
+  startsAt: z.string().nullable(),
+  endsAt: z.string().nullable(),
+  timeZone: z.string(),
+  siteName: z.string().nullable(),
+  siteCode: z.string().nullable(),
+  postName: z.string().nullable(),
+  eventName: z.string().nullable(),
+  locationName: z.string(),
+  note: z.string(),
+  createdAt: z.string(),
+})
+
+const attendanceReportResultSchema = z.object({
+  id: z.string().uuid(),
+  callOffId: z.string().uuid().nullable().optional(),
+  employeeId: z.string().uuid(),
+  employeeName: z.string(),
+  username: z.string(),
+  eventType: z.enum(['called_in_sick', 'call_off']),
+  status: z.string(),
+  operationalDate: z.string(),
+  shiftId: z.string().uuid().nullable(),
+  startsAt: z.string().nullable(),
+  endsAt: z.string().nullable(),
+  timeZone: z.string(),
+  siteName: z.string().nullable(),
+  siteCode: z.string().nullable(),
+  postName: z.string().nullable(),
+  eventName: z.string().nullable(),
+  locationName: z.string(),
+  note: z.string(),
+  createdAt: z.string(),
+  dispatchNotified: z.boolean().optional().default(false),
+  dispatchError: z.string().nullable().optional(),
+})
+
 export type TimeEventKind = z.infer<typeof timeEventKindSchema>
 export type TimekeepingShift = z.infer<typeof timekeepingShiftSchema>
 export type TimekeepingEvent = z.infer<typeof timekeepingEventSchema>
@@ -317,6 +363,8 @@ export type TimeMaintenanceShiftOption = z.infer<typeof timeMaintenanceShiftOpti
 export type TeamAttendanceSummary = z.infer<typeof teamAttendanceSummarySchema>
 export type TeamAttendanceSummaryRow = z.infer<typeof teamAttendanceSummaryRowSchema>
 export type PayrollRules = z.infer<typeof payrollRulesSchema>
+export type PayrollAccountabilityEvent = z.infer<typeof payrollAccountabilityEventSchema>
+export type AttendanceReportResult = z.infer<typeof attendanceReportResultSchema>
 
 export interface PayrollEmployeeSummary {
   employeeId: string
@@ -347,6 +395,33 @@ export interface ClockableShiftChoices {
   hiddenCount: number
   outsideWindowCount: number
   duplicateCount: number
+}
+
+async function authenticatedApiHeaders(): Promise<Headers> {
+  const { data, error } = await getSupabaseClient().auth.getSession()
+  if (error || !data.session?.access_token) throw new Error('Your secure session is not available.')
+
+  const headers = new Headers()
+  headers.set('authorization', `Bearer ${data.session.access_token}`)
+  headers.set('content-type', 'application/json')
+
+  const trustedDeviceToken = getTrustedDeviceToken()
+  if (trustedDeviceToken) headers.set('x-sygshift-trusted-device', trustedDeviceToken)
+
+  return headers
+}
+
+async function parseAttendanceReportResponse(response: Response): Promise<AttendanceReportResult> {
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) {
+    const message = typeof payload?.detail === 'string'
+      ? payload.detail
+      : typeof payload?.error === 'string'
+        ? payload.error.replaceAll('_', ' ')
+        : 'The attendance report could not be saved.'
+    throw new Error(message)
+  }
+  return attendanceReportResultSchema.parse(payload)
 }
 
 export const verifiedTimekeepingBaseline = {
@@ -670,6 +745,38 @@ export async function getPayrollRules(): Promise<PayrollRules> {
   const { data, error } = await getSupabaseClient().rpc('get_payroll_rules')
   if (error) throw new Error(error.message || 'Payroll rules could not be loaded. MFA is required.')
   return parsePayrollRules(data)
+}
+
+export async function getPayrollAccountabilityEvents(input: {
+  fromDate: string
+  throughDate: string
+}): Promise<PayrollAccountabilityEvent[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_payroll_accountability_events', {
+    target_from_date: input.fromDate,
+    target_through_date: input.throughDate,
+  })
+  if (error) throw new Error(error.message || 'Payroll accountability events could not be loaded.')
+  return z.array(payrollAccountabilityEventSchema).parse(data)
+}
+
+export async function reportAttendanceIssue(input: {
+  eventType: 'called_in_sick' | 'call_off'
+  note: string
+  operationalDate?: string | null
+  shiftId?: string | null
+}): Promise<AttendanceReportResult> {
+  const headers = await authenticatedApiHeaders()
+  const response = await fetch('/api/v1/time/attendance/report', {
+    body: JSON.stringify({
+      eventType: input.eventType,
+      note: input.note,
+      operationalDate: input.operationalDate ?? null,
+      shiftId: input.shiftId ?? null,
+    }),
+    headers,
+    method: 'POST',
+  })
+  return parseAttendanceReportResponse(response)
 }
 
 export async function getTimeMaintenance(input: {

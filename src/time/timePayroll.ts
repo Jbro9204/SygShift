@@ -76,7 +76,7 @@ export function payrollLockBlocker(review: TimekeepingReview | undefined): strin
 }
 
 export function payrollExportFileName(fromDate: string, throughDate: string, kind = 'preview'): string {
-  return `sygshift-payroll-${kind}-${fromDate}-to-${throughDate}.csv`
+  return `sygshift-payroll-${kind}-${fromDate}-to-${throughDate}.xlsx`
 }
 
 export function payrollReadinessPercent(review: TimekeepingReview | undefined): number | null {

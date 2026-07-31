@@ -90,8 +90,8 @@ describe('payroll export readiness', () => {
   })
 
   it('uses stable file names for preview and official exports', () => {
-    expect(payrollExportFileName('2026-07-12', '2026-07-25')).toBe('sygshift-payroll-preview-2026-07-12-to-2026-07-25.csv')
-    expect(payrollExportFileName('2026-07-12', '2026-07-25', 'official')).toBe('sygshift-payroll-official-2026-07-12-to-2026-07-25.csv')
+    expect(payrollExportFileName('2026-07-12', '2026-07-25')).toBe('sygshift-payroll-preview-2026-07-12-to-2026-07-25.xlsx')
+    expect(payrollExportFileName('2026-07-12', '2026-07-25', 'official')).toBe('sygshift-payroll-official-2026-07-12-to-2026-07-25.xlsx')
   })
 
   it('removes salary defaults from payroll export readiness', () => {

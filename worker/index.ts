@@ -67,9 +67,33 @@ interface NotificationJob {
   }
 }
 
+interface AttendanceReportPayload {
+  id: string
+  callOffId?: string | null
+  employeeId: string
+  employeeName: string
+  username: string
+  eventType: 'called_in_sick' | 'call_off'
+  status: string
+  operationalDate: string
+  shiftId: string | null
+  startsAt: string | null
+  endsAt: string | null
+  timeZone: string
+  siteName: string | null
+  siteCode: string | null
+  postName: string | null
+  eventName: string | null
+  locationName: string
+  note: string
+  createdAt: string
+  dispatchTo: string
+}
+
 const maxJsonBodyBytes = 4096
 const defaultAppUrl = 'https://app.sygilant.us'
 const defaultSupportEmail = 'jbrown@guardianshipsecurity.net'
+const dispatchAlertEmail = 'dispatch@guardianshipsecurity.net'
 const notificationProcessorRoles = new Set<SessionContext['role']>([
   'dispatcher',
   'scheduler',
@@ -238,6 +262,49 @@ async function requireAdminMfa(request: Request, environment: Environment): Prom
   }
 
   return result
+}
+
+async function requireAuthenticatedSession(request: Request, environment: Environment): Promise<{
+  config: NonNullable<ReturnType<typeof configuredSupabase>>
+  context: SessionContext
+  token: string
+}> {
+  const config = configuredSupabase(environment)
+  if (!config) {
+    throw new Response(JSON.stringify({ error: 'server_not_configured' }), {
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      status: 503,
+    })
+  }
+
+  const authorization = request.headers.get('authorization')
+  if (!authorization?.startsWith('Bearer ')) {
+    throw new Response(JSON.stringify({ error: 'auth_required' }), {
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      status: 401,
+    })
+  }
+
+  const token = authorization.slice('Bearer '.length)
+  const payload = await callRpc<SessionContext[] | SessionContext>(
+    { publishableKey: config.publishableKey, url: config.url },
+    'get_session_context',
+    {},
+    token,
+    request.headers.get('x-sygshift-trusted-device')
+      ? { 'x-sygshift-trusted-device': request.headers.get('x-sygshift-trusted-device')! }
+      : undefined,
+  )
+  const context = Array.isArray(payload) ? payload[0] : payload
+
+  if (!context?.employee_id) {
+    throw new Response(JSON.stringify({ error: 'auth_required' }), {
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+      status: 401,
+    })
+  }
+
+  return { config, context, token }
 }
 
 async function requireVerifiedOperationsSession(
@@ -797,6 +864,42 @@ function textToHtml(value: string): string {
     .join('')
 }
 
+function formatDate(value: string): string {
+  const date = new Date(`${value}T12:00:00`)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'America/Denver',
+    year: 'numeric',
+  }).format(date)
+}
+
+function formatReportDateTime(value: string | null, timeZone: string): string {
+  if (!value) return 'Not tied to a scheduled shift'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const civilian = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    month: '2-digit',
+    timeZone,
+    year: 'numeric',
+  }).format(date)
+  const military = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    hourCycle: 'h23',
+    minute: '2-digit',
+    timeZone,
+  }).format(date)
+  return `${civilian} (${military})`
+}
+
+function attendanceEventLabel(eventType: AttendanceReportPayload['eventType']): string {
+  return eventType === 'called_in_sick' ? 'called in sick' : 'reported a call-off'
+}
+
 export function brandedEmailHtml(message: NotificationJob['message'], appUrl = defaultAppUrl): string {
   const normalizedAppUrl = appUrl.replace(/\/+$/, '')
   const body = message.html?.trim() || textToHtml(message.text)
@@ -856,6 +959,118 @@ export function brandedEmailHtml(message: NotificationJob['message'], appUrl = d
     </table>
   </body>
 </html>`
+}
+
+async function handleAttendanceReportApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+
+  let session: Awaited<ReturnType<typeof requireAuthenticatedSession>>
+  try {
+    session = await requireAuthenticatedSession(request, environment)
+  } catch (error) {
+    if (error instanceof Response) {
+      const payload = await error.json().catch(() => ({ error: 'auth_failed' })) as { error?: string }
+      return errorJson(payload.error ?? 'auth_failed', requestId, error.status)
+    }
+    throw error
+  }
+
+  const body = await readJsonBody(request)
+  const eventType = typeof body.eventType === 'string' ? body.eventType.trim() : ''
+  const note = typeof body.note === 'string' ? body.note.trim() : ''
+  const shiftId = typeof body.shiftId === 'string' && body.shiftId.trim() ? body.shiftId.trim() : null
+  const operationalDate = typeof body.operationalDate === 'string' && body.operationalDate.trim()
+    ? body.operationalDate.trim()
+    : null
+
+  if (eventType !== 'called_in_sick' && eventType !== 'call_off') {
+    return errorJson('invalid_attendance_event_type', requestId, 400, 'Choose Sick or Call-off.')
+  }
+  if (!note) return errorJson('attendance_note_required', requestId, 400, 'A short note is required.')
+  if (note.length > 2000) return errorJson('attendance_note_too_long', requestId, 400, 'The note is too long.')
+
+  const additionalHeaders = request.headers.get('x-sygshift-trusted-device')
+    ? { 'x-sygshift-trusted-device': request.headers.get('x-sygshift-trusted-device')! }
+    : undefined
+
+  const report = await callRpc<AttendanceReportPayload>(
+    { publishableKey: session.config.publishableKey, url: session.config.url },
+    'report_attendance_accountability_event',
+    {
+      target_event_type: eventType,
+      target_note: note,
+      target_operational_date: operationalDate,
+      target_shift_id: shiftId,
+    },
+    session.token,
+    additionalHeaders,
+  )
+
+  const fromEmail = environment.SYGSHIFT_EMAIL_FROM?.trim()
+  let dispatchNotified = false
+  let dispatchError: string | null = null
+
+  try {
+    if (!environment.EMAIL) throw new Error('Cloudflare Email Sending is not configured for this Worker.')
+    if (!fromEmail) throw new Error('The email sender address is not configured.')
+
+    const location = [report.siteCode, report.siteName, report.postName ?? report.eventName]
+      .filter(Boolean)
+      .join(' / ') || report.locationName
+    const subject = `SygShift attendance alert: ${report.employeeName}`
+    const text = [
+      `${report.employeeName} ${attendanceEventLabel(report.eventType)} in SygShift.`,
+      '',
+      `Employee: ${report.employeeName} (@${report.username})`,
+      `Date: ${formatDate(report.operationalDate)}`,
+      `Location: ${location}`,
+      `Shift: ${formatReportDateTime(report.startsAt, report.timeZone)} - ${formatReportDateTime(report.endsAt, report.timeZone)}`,
+      `Note: ${report.note}`,
+      '',
+      'This alert was sent automatically so Dispatch can review coverage immediately.',
+    ].join('\n')
+    const html = [
+      `<p><strong>${escapeHtml(report.employeeName)}</strong> ${escapeHtml(attendanceEventLabel(report.eventType))} in SygShift.</p>`,
+      '<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%; border-collapse:collapse; margin:16px 0;">',
+      `<tr><td style="padding:8px 0; color:#6d665c;">Employee</td><td style="padding:8px 0; font-weight:700;">${escapeHtml(report.employeeName)} (@${escapeHtml(report.username)})</td></tr>`,
+      `<tr><td style="padding:8px 0; color:#6d665c;">Date</td><td style="padding:8px 0; font-weight:700;">${escapeHtml(formatDate(report.operationalDate))}</td></tr>`,
+      `<tr><td style="padding:8px 0; color:#6d665c;">Location</td><td style="padding:8px 0; font-weight:700;">${escapeHtml(location)}</td></tr>`,
+      `<tr><td style="padding:8px 0; color:#6d665c;">Shift</td><td style="padding:8px 0; font-weight:700;">${escapeHtml(formatReportDateTime(report.startsAt, report.timeZone))} - ${escapeHtml(formatReportDateTime(report.endsAt, report.timeZone))}</td></tr>`,
+      `<tr><td style="padding:8px 0; color:#6d665c;">Note</td><td style="padding:8px 0; font-weight:700;">${escapeHtml(report.note)}</td></tr>`,
+      '</table>',
+      '<p>This alert was sent automatically so Dispatch can review coverage immediately.</p>',
+    ].join('')
+
+    await environment.EMAIL.send({
+      from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
+      html: brandedEmailHtml({ html, subject, text }, environment.SYGSHIFT_PUBLIC_APP_URL),
+      replyTo: defaultSupportEmail,
+      subject,
+      text,
+      to: dispatchAlertEmail,
+    })
+    dispatchNotified = true
+  } catch (error) {
+    dispatchError = error instanceof Error ? error.message : 'Dispatch email delivery failed.'
+  }
+
+  await callRpc<unknown>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_mark_attendance_accountability_dispatch_result',
+    {
+      delivered: dispatchNotified,
+      delivery_error: dispatchError,
+      target_event_id: report.id,
+    },
+    session.config.serviceRoleKey,
+  )
+
+  return json({
+    ...report,
+    dispatchError,
+    dispatchNotified,
+    requestId,
+  }, dispatchNotified ? 200 : 202)
 }
 
 async function handleNotificationProcessApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
@@ -1030,6 +1245,14 @@ export default {
         response = await handleNotificationProcessApi(request, environment, requestId)
       } catch {
         response = errorJson('notification_process_failed', requestId, 500, 'The notification delivery request failed.')
+      }
+    } else if (url.pathname === '/api/v1/time/attendance/report') {
+      try {
+        response = await handleAttendanceReportApi(request, environment, requestId)
+      } catch (error) {
+        response = error instanceof ApiError
+          ? errorJson(error.code, requestId, error.status, error.message)
+          : errorJson('attendance_report_failed', requestId, 500, 'The attendance report request failed.')
       }
     } else if (url.pathname.startsWith('/api/')) {
       response = json({ error: 'not_found', requestId }, 404)

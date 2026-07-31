@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
+import { reportAttendanceIssue } from './timekeeping'
 
 const roleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'])
 const requestStatusSchema = z.enum(['pending', 'approved', 'declined', 'withdrawn', 'canceled'])
@@ -290,12 +291,12 @@ export async function withdrawTimeOff(requestId: string): Promise<void> {
 }
 
 export async function reportCallOff(shiftId: string, reason: string): Promise<string> {
-  const { data, error } = await getSupabaseClient().rpc('report_call_off', {
-    target_shift_id: shiftId,
-    call_off_reason: reason,
+  const result = await reportAttendanceIssue({
+    eventType: 'call_off',
+    note: reason,
+    shiftId,
   })
-  if (error) throw new Error('The call-off was not saved. Refresh and confirm the assignment is active.')
-  return z.string().uuid().parse(data)
+  return result.callOffId ?? result.id
 }
 
 export async function decideTimeOff(

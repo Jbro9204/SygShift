@@ -17,14 +17,14 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import { getSessionContext } from '../data/auth'
 import {
   createPayrollExportBatch,
+  getPayrollAccountabilityEvents,
   getPayrollExportBatchDetail,
   getPayrollExportHistory,
   getPayrollRules,
   getTimekeepingReview,
   payrollHours,
-  reviewRowsToPayrollSummaryCsv,
-  reviewRowsToPayrollCsv,
   summarizePayrollRowsByEmployee,
+  type PayrollAccountabilityEvent,
   type PayrollEmployeeSummary,
   type PayrollExportBatch,
   type PayrollExportDetail,
@@ -37,6 +37,7 @@ import { formatOperationalDateTime } from '../lib/time'
 import { canExportPayroll, canViewTeamTime } from './timePermissions'
 import { completedPayrollPeriod, currentPayrollPeriod, formatUsDateKey, shiftPayrollPeriod, type TimePeriod } from './timeRules'
 import { payrollExportFileName, payrollLockBlocker, payrollReadinessPercent, workedTimePayrollReview } from './timePayroll'
+import { downloadPayrollWorkbook } from './payrollWorkbook'
 import {
   TimeAlertCard,
   TimeButton,
@@ -46,21 +47,13 @@ import {
   TimeStatusBadge,
 } from './TimeKit'
 
-function downloadCsv(csv: string, fileName: string) {
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = fileName
-  anchor.click()
-  URL.revokeObjectURL(url)
-}
-
-type PayrollDownloadKind = 'summary' | 'detail'
-
 interface PayrollDownloadRequest {
   batchId: string
-  kind: PayrollDownloadKind
+}
+
+interface PayrollWorkbookDownload {
+  accountabilityEvents: PayrollAccountabilityEvent[]
+  detail: PayrollExportDetail
 }
 
 function formatPeriod(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>): string {
@@ -120,7 +113,7 @@ function PayrollRulesSummary({ rules, period }: { period: Pick<TimePeriod, 'from
       <article>
         <span>Export source</span>
         <strong>Clock-in/out records only</strong>
-        <small>Scheduled hours and salary defaults are excluded from payroll export.</small>
+        <small>Worked payroll totals come from punches. Scheduled hours are shown beside actual hours for discrepancy review.</small>
       </article>
       <article>
         <span>Breaks</span>
@@ -185,23 +178,25 @@ function PeriodControls({
 }
 
 function PayrollExportPanel({
+  accountabilityEvents,
   canLock,
   exportMutation,
   lockBlockedReason,
   note,
-  onDownloadDetailPreview,
-  onDownloadSummaryPreview,
+  onDownloadPreview,
   onNoteChange,
   review,
+  rules,
 }: {
+  accountabilityEvents: PayrollAccountabilityEvent[]
   canLock: boolean
-  exportMutation: UseMutationResult<PayrollExportDetail, Error, string>
+  exportMutation: UseMutationResult<PayrollWorkbookDownload, Error, string>
   lockBlockedReason: string
   note: string
-  onDownloadDetailPreview: () => void
-  onDownloadSummaryPreview: () => void
+  onDownloadPreview: () => void
   onNoteChange: (value: string) => void
   review: TimekeepingReview
+  rules?: PayrollRules
 }) {
   const noteMissing = note.trim().length === 0
 
@@ -211,8 +206,8 @@ function PayrollExportPanel({
         <p className="eyebrow">Controlled export</p>
         <h2 id="payroll-export-title">Payroll handoff</h2>
         <p>
-          Preview CSV can be downloaded for checking. The official payroll export includes only completed SygShift
-          clock-in/out records after the server verifies every worked-time row is ready.
+          Preview workbooks can be downloaded for checking. The official payroll export includes completed SygShift
+          clock-in/out records, scheduled-vs-actual totals, accountability items, and employee detail tabs after the server verifies every worked-time row is ready.
         </p>
       </div>
       <div className="payroll-export-panel__body">
@@ -230,18 +225,10 @@ function PayrollExportPanel({
           <TimeButton
             disabled={review.rows.length === 0}
             icon={Download}
-            onClick={onDownloadSummaryPreview}
+            onClick={onDownloadPreview}
             variant="secondary"
           >
-            Download Summary CSV
-          </TimeButton>
-          <TimeButton
-            disabled={review.rows.length === 0}
-            icon={Download}
-            onClick={onDownloadDetailPreview}
-            variant="secondary"
-          >
-            Download Detail CSV
+            Download Preview Workbook
           </TimeButton>
           <TimeButton
             disabled={!canLock}
@@ -256,11 +243,15 @@ function PayrollExportPanel({
         <small>
           {lockBlockedReason || (noteMissing ? 'Add a short export note before locking payroll.' : 'Ready to lock. The official handoff downloads as a clean employee summary; detail stays available for audit.')}
         </small>
+        {accountabilityEvents.length > 0 ? (
+          <small>{accountabilityEvents.length} accountability/time-off item{accountabilityEvents.length === 1 ? '' : 's'} will be included in the workbook.</small>
+        ) : null}
+        {rules ? <small>Workbook dates use MM/DD/YYYY and times show civilian plus military time.</small> : null}
         {exportMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{exportMutation.error.message}</p> : null}
         {exportMutation.isSuccess ? (
           <p className="form-feedback form-feedback--success" role="status">
-            {exportMutation.data.batch.duplicate ? 'This exact payroll batch was already locked.' : 'Official payroll export locked and downloaded.'}
-            {' '}Batch {exportMutation.data.batch.digest.slice(0, 10)}.
+            {exportMutation.data.detail.batch.duplicate ? 'This exact payroll batch was already locked.' : 'Official payroll export locked and downloaded.'}
+            {' '}Batch {exportMutation.data.detail.batch.digest.slice(0, 10)}.
           </p>
         ) : null}
       </div>
@@ -466,7 +457,7 @@ function PayrollHistory({
   downloadMutation,
 }: {
   batches: PayrollExportBatch[]
-  downloadMutation: UseMutationResult<PayrollExportDetail, Error, PayrollDownloadRequest>
+  downloadMutation: UseMutationResult<PayrollWorkbookDownload, Error, PayrollDownloadRequest>
 }) {
   if (batches.length === 0) {
     return (
@@ -490,20 +481,11 @@ function PayrollHistory({
             <TimeButton
               disabled={downloadMutation.isPending}
               icon={Download}
-              loading={downloadMutation.isPending && downloadMutation.variables?.batchId === batch.id && downloadMutation.variables.kind === 'summary'}
-              onClick={() => downloadMutation.mutate({ batchId: batch.id, kind: 'summary' })}
+              loading={downloadMutation.isPending && downloadMutation.variables?.batchId === batch.id}
+              onClick={() => downloadMutation.mutate({ batchId: batch.id })}
               variant="secondary"
             >
-              Download Summary CSV
-            </TimeButton>
-            <TimeButton
-              disabled={downloadMutation.isPending}
-              icon={Download}
-              loading={downloadMutation.isPending && downloadMutation.variables?.batchId === batch.id && downloadMutation.variables.kind === 'detail'}
-              onClick={() => downloadMutation.mutate({ batchId: batch.id, kind: 'detail' })}
-              variant="ghost"
-            >
-              Download Detail CSV
+              Download Workbook
             </TimeButton>
           </div>
         </li>
@@ -545,6 +527,11 @@ export function TimePayrollPage() {
     queryKey: ['time-payroll-review', fromDate, throughDate],
     queryFn: () => getTimekeepingReview({ fromDate, throughDate }),
   })
+  const accountabilityQuery = useQuery({
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed,
+    queryKey: ['time-payroll-accountability', fromDate, throughDate],
+    queryFn: () => getPayrollAccountabilityEvents({ fromDate, throughDate }),
+  })
   const historyQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && exportAllowed,
     queryKey: ['payroll-export-history'],
@@ -554,6 +541,7 @@ export function TimePayrollPage() {
   const lockBlockedReason = payrollLockBlocker(review)
   const readinessPercent = payrollReadinessPercent(review)
   const employeeSummaries = useMemo(() => summarizePayrollRowsByEmployee(review?.rows ?? []), [review])
+  const accountabilityEvents = accountabilityQuery.data ?? []
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const selectedSummary = useMemo(
     () => employeeSummaries.find((summary) => summary.employeeId === selectedEmployeeId) ?? null,
@@ -571,26 +559,83 @@ export function TimePayrollPage() {
   }, [employeeSummaries, selectedEmployeeId])
 
   const downloadMutation = useMutation({
-    mutationFn: (request: PayrollDownloadRequest) => getPayrollExportBatchDetail(request.batchId),
-    onSuccess: (detail, request) => {
-      downloadCsv(
-        request.kind === 'summary'
-          ? reviewRowsToPayrollSummaryCsv(detail.rows)
-          : reviewRowsToPayrollCsv(detail.rows),
-        payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, request.kind === 'summary' ? 'official-summary' : 'official-detail'),
-      )
+    mutationFn: async (request: PayrollDownloadRequest): Promise<PayrollWorkbookDownload> => {
+      const detail = await getPayrollExportBatchDetail(request.batchId)
+      const events = await getPayrollAccountabilityEvents({
+        fromDate: detail.batch.fromDate,
+        throughDate: detail.batch.throughDate,
+      })
+      return { accountabilityEvents: events, detail }
+    },
+    onSuccess: ({ accountabilityEvents: events, detail }) => {
+      downloadPayrollWorkbook({
+        accountabilityEvents: events,
+        batch: detail.batch,
+        exportNote: detail.batch.note,
+        exportType: 'Official Locked',
+        review: {
+          ...detail,
+          fromDate: detail.batch.fromDate,
+          operationalTimeZone: 'America/Denver',
+          payrollRules: rulesQuery.data,
+          pendingCorrections: [],
+          serverTimestamp: detail.batch.createdAt,
+          summary: {
+            exceptionCount: 0,
+            grossMinutes: detail.batch.grossMinutes,
+            overtimeMinutes: detail.rows.reduce((total, row) => total + row.overtimeMinutes, 0),
+            paidMinutes: detail.batch.paidMinutes,
+            pendingCorrectionCount: 0,
+            readyCount: detail.rows.length,
+            regularMinutes: detail.rows.reduce((total, row) => total + row.regularMinutes, 0),
+            rowCount: detail.rows.length,
+            salaryDefaultMinutes: 0,
+            timeOffMinutes: 0,
+          },
+          throughDate: detail.batch.throughDate,
+        },
+        rules: rulesQuery.data,
+      }, payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, 'official'))
     },
   })
   const exportMutation = useMutation({
-    mutationFn: async (note: string) => {
+    mutationFn: async (note: string): Promise<PayrollWorkbookDownload> => {
       const batch = await createPayrollExportBatch({ fromDate, note, throughDate })
-      return getPayrollExportBatchDetail(batch.id)
+      const [detail, events] = await Promise.all([
+        getPayrollExportBatchDetail(batch.id),
+        getPayrollAccountabilityEvents({ fromDate: batch.fromDate, throughDate: batch.throughDate }),
+      ])
+      return { accountabilityEvents: events, detail }
     },
-    onSuccess: async (detail) => {
-      downloadCsv(
-        reviewRowsToPayrollSummaryCsv(detail.rows),
-        payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, 'official-summary'),
-      )
+    onSuccess: async ({ accountabilityEvents: events, detail }) => {
+      downloadPayrollWorkbook({
+        accountabilityEvents: events,
+        batch: detail.batch,
+        exportNote: detail.batch.note,
+        exportType: 'Official Locked',
+        review: {
+          ...detail,
+          fromDate: detail.batch.fromDate,
+          operationalTimeZone: 'America/Denver',
+          payrollRules: rulesQuery.data,
+          pendingCorrections: [],
+          serverTimestamp: detail.batch.createdAt,
+          summary: {
+            exceptionCount: 0,
+            grossMinutes: detail.batch.grossMinutes,
+            overtimeMinutes: detail.rows.reduce((total, row) => total + row.overtimeMinutes, 0),
+            paidMinutes: detail.batch.paidMinutes,
+            pendingCorrectionCount: 0,
+            readyCount: detail.rows.length,
+            regularMinutes: detail.rows.reduce((total, row) => total + row.regularMinutes, 0),
+            rowCount: detail.rows.length,
+            salaryDefaultMinutes: 0,
+            timeOffMinutes: 0,
+          },
+          throughDate: detail.batch.throughDate,
+        },
+        rules: rulesQuery.data,
+      }, payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, 'official'))
       setExportNote('')
       await queryClient.invalidateQueries({ queryKey: ['payroll-export-history'] })
     },
@@ -607,12 +652,13 @@ export function TimePayrollPage() {
 
   function downloadSummaryPreview() {
     if (!review) return
-    downloadCsv(reviewRowsToPayrollSummaryCsv(review.rows), payrollExportFileName(review.fromDate, review.throughDate, 'preview-summary'))
-  }
-
-  function downloadDetailPreview() {
-    if (!review) return
-    downloadCsv(reviewRowsToPayrollCsv(review.rows), payrollExportFileName(review.fromDate, review.throughDate, 'preview-detail'))
+    downloadPayrollWorkbook({
+      accountabilityEvents,
+      exportNote: 'Preview workbook. Official export requires locking the reviewed payroll batch.',
+      exportType: 'Preview',
+      review,
+      rules: rulesQuery.data ?? review.payrollRules,
+    }, payrollExportFileName(review.fromDate, review.throughDate, 'preview'))
   }
 
   if (!isSupabaseConfigured) {
@@ -660,7 +706,7 @@ export function TimePayrollPage() {
           </>
         }
         eyebrow="Payroll export"
-        summary="Review the pay period, correct exceptions, download a CSV preview, then lock the official payroll batch with an audit trail."
+        summary="Review the pay period, correct exceptions, download a clean workbook preview, then lock the official payroll batch with an audit trail."
         title="Payroll Export"
       />
 
@@ -672,6 +718,11 @@ export function TimePayrollPage() {
       {downloadMutation.isError ? (
         <TimeAlertCard icon={AlertTriangle} title="Locked export download failed" tone="danger">
           <p>{downloadMutation.error.message}</p>
+        </TimeAlertCard>
+      ) : null}
+      {accountabilityQuery.isError ? (
+        <TimeAlertCard icon={AlertTriangle} title="Accountability items could not be loaded" tone="warning">
+          <p>{accountabilityQuery.error.message}</p>
         </TimeAlertCard>
       ) : null}
 
@@ -724,14 +775,15 @@ export function TimePayrollPage() {
 
           {exportAllowed ? (
             <PayrollExportPanel
+              accountabilityEvents={accountabilityEvents}
               canLock={canLock}
               exportMutation={exportMutation}
               lockBlockedReason={lockBlockedReason}
               note={exportNote}
-              onDownloadDetailPreview={downloadDetailPreview}
-              onDownloadSummaryPreview={downloadSummaryPreview}
+              onDownloadPreview={downloadSummaryPreview}
               onNoteChange={setExportNote}
               review={review}
+              rules={rulesQuery.data ?? review.payrollRules}
             />
           ) : (
             <TimeAlertCard icon={ShieldAlert} title="Preview only" tone="warning">

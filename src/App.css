@@ -7705,6 +7705,174 @@
   line-height: 1.45;
 }
 
+.my-time-coverage-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  background: #fffaf0;
+  border: 1px solid #ead5a9;
+  border-radius: 10px;
+}
+
+.my-time-coverage-actions .time-button {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.my-time-coverage-actions span {
+  color: #6a5f4f;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.modal-dialog--attendance-report {
+  width: min(96vw, 860px);
+}
+
+.attendance-report-form {
+  display: grid;
+  gap: 16px;
+  padding: 20px 22px 22px;
+}
+
+.attendance-report-form .time-alert {
+  margin-bottom: 0;
+}
+
+.attendance-report-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.attendance-report-choice-grid legend,
+.attendance-report-grid label > span,
+.attendance-report-note > span {
+  color: #4b4439;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+
+.attendance-report-choice-grid legend {
+  grid-column: 1 / -1;
+}
+
+.attendance-report-choice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  padding: 15px;
+  background: #fffdf8;
+  border: 1px solid #ded5c5;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.attendance-report-choice--selected {
+  background: #fff6df;
+  border-color: #c08a28;
+  box-shadow: 0 0 0 3px rgb(194 139 39 / 15%);
+}
+
+.attendance-report-choice input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: #9b6a1f;
+}
+
+.attendance-report-choice strong,
+.attendance-report-choice small {
+  display: block;
+}
+
+.attendance-report-choice strong {
+  color: #201c16;
+  font-size: 16px;
+}
+
+.attendance-report-choice small {
+  margin-top: 5px;
+  color: #6d655a;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.attendance-report-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(180px, 0.7fr);
+  gap: 14px;
+}
+
+.attendance-report-grid label,
+.attendance-report-note {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.attendance-report-grid select,
+.attendance-report-grid input,
+.attendance-report-note textarea {
+  width: 100%;
+  min-width: 0;
+  color: #201c16;
+  background: #fffdf8;
+  border: 1px solid #cfc3b0;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 750;
+}
+
+.attendance-report-grid select,
+.attendance-report-grid input {
+  min-height: 48px;
+  padding: 0 14px;
+}
+
+.attendance-report-note textarea {
+  min-height: 126px;
+  padding: 13px 14px;
+  resize: vertical;
+}
+
+.attendance-report-note small {
+  justify-self: end;
+  color: #746b60;
+  font-size: 13px;
+}
+
+.attendance-report-actions {
+  padding: 0;
+}
+
+.attendance-report-actions .secondary-button,
+.attendance-report-actions .time-button {
+  min-width: 156px;
+  min-height: 48px;
+}
+
+@media (max-width: 720px) {
+  .my-time-coverage-actions,
+  .attendance-report-choice-grid,
+  .attendance-report-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .my-time-coverage-actions .time-button,
+  .attendance-report-actions .secondary-button,
+  .attendance-report-actions .time-button {
+    width: 100%;
+  }
+}
+
 .time-card {
   min-width: 0;
   padding: 20px;
