@@ -199,6 +199,48 @@ describe('payroll export readiness', () => {
     expect(payrollLockBlocker(activeReview)).toContain('no SygShift clock-in/out')
   })
 
+  it('does not flag an active clock-in just because the scheduled shift end has passed', () => {
+    const activeAfterScheduledEndReview: TimekeepingReview = {
+      ...cleanReview,
+      rows: [{
+        ...cleanReview.rows[0],
+        exceptionCodes: ['missing_clock_out', 'zero_paid_minutes'],
+        firstClockIn: '2026-07-30T14:00:00.000Z',
+        lastClockOut: null,
+        paidMinutes: 0,
+        payrollReady: false,
+        scheduledEndsAt: '2026-07-30T18:00:00.000Z',
+        scheduledStartsAt: '2026-07-30T14:00:00.000Z',
+      }],
+      serverTimestamp: '2026-07-31T02:30:00.000Z',
+    }
+
+    expect(isActiveInProgressTimeRow(activeAfterScheduledEndReview.rows[0], new Date(activeAfterScheduledEndReview.serverTimestamp))).toBe(true)
+    expect(workedTimePayrollReview(activeAfterScheduledEndReview)?.summary.rowCount).toBe(0)
+    expect(payrollLockBlocker(activeAfterScheduledEndReview)).toContain('no SygShift clock-in/out')
+  })
+
+  it('flags an active clock-in once it reaches the fourteen-hour review limit', () => {
+    const overLimitReview: TimekeepingReview = {
+      ...cleanReview,
+      rows: [{
+        ...cleanReview.rows[0],
+        exceptionCodes: ['missing_clock_out', 'zero_paid_minutes'],
+        firstClockIn: '2026-07-30T14:00:00.000Z',
+        lastClockOut: null,
+        paidMinutes: 0,
+        payrollReady: false,
+        scheduledEndsAt: '2026-07-30T18:00:00.000Z',
+        scheduledStartsAt: '2026-07-30T14:00:00.000Z',
+      }],
+      serverTimestamp: '2026-07-31T04:00:00.000Z',
+    }
+
+    expect(isActiveInProgressTimeRow(overLimitReview.rows[0], new Date(overLimitReview.serverTimestamp))).toBe(false)
+    expect(workedTimePayrollReview(overLimitReview)?.summary.exceptionCount).toBe(1)
+    expect(payrollLockBlocker(overLimitReview)).toContain('worked-time row')
+  })
+
   it('keeps stale open clock-ins blocked after the active shift window has passed', () => {
     const staleReview: TimekeepingReview = {
       ...cleanReview,

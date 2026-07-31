@@ -285,7 +285,7 @@ function OperationsTimeOverview({
           value={model.exceptions.total}
         />
         <TimeMetricCard
-          detail={`${model.clockedIn.atScheduledLocation} scheduled · ${model.clockedIn.atUnexpectedLocation} unexpected.`}
+          detail={`${model.clockedIn.atScheduledLocation} scheduled · ${model.clockedIn.atUnexpectedLocation} unexpected${model.clockedIn.longShiftCount > 0 ? ` · ${model.clockedIn.longShiftCount} over 14h` : ''}.`}
           icon={Timer}
           label="Clocked In Now"
           tone={model.clockedIn.atUnexpectedLocation > 0 || model.clockedIn.longShiftCount > 0 ? 'warning' : 'neutral'}

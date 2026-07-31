@@ -155,6 +155,20 @@ describe('time command center model', () => {
     expect(model.overtimeRisk.approachingDaily).toBe(0)
   })
 
+  it('only warns for active clock-ins once they reach the fourteen-hour guardrail', () => {
+    const thirteenHourSummary: TeamAttendanceSummary = {
+      ...attendanceSummary,
+      serverTimestamp: '2026-07-31T03:00:00.000Z',
+    }
+    const fourteenHourSummary: TeamAttendanceSummary = {
+      ...attendanceSummary,
+      serverTimestamp: '2026-07-31T04:00:00.000Z',
+    }
+
+    expect(buildTimeCommandCenterModel({ attendanceSummary: thirteenHourSummary, dashboard, review }).clockedIn.longShiftCount).toBe(0)
+    expect(buildTimeCommandCenterModel({ attendanceSummary: fourteenHourSummary, dashboard, review }).clockedIn.longShiftCount).toBe(1)
+  })
+
   it('keeps employee access separate from team-wide access', () => {
     const guardSession: SessionContext = {
       displayName: 'Zach Ward',

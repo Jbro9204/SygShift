@@ -10,7 +10,7 @@ import type {
 import { activeTimeState } from '../data/timekeeping'
 import type { SessionContext } from '../data/auth'
 import { DEFAULT_TIME_RULES, TIME_RISK_THRESHOLDS, currentPayrollPeriod, type TimePeriod } from './timeRules'
-import { workedTimePayrollReview } from './timePayroll'
+import { ACTIVE_CLOCK_IN_REVIEW_LIMIT_HOURS, workedTimePayrollReview } from './timePayroll'
 export { canExportPayroll, canViewTeamTime } from './timePermissions'
 
 export type TimeCommandRoleMode = 'employee' | 'salary' | 'operations' | 'admin'
@@ -185,7 +185,10 @@ function summarizeClockedIn(attendanceSummary?: TeamAttendanceSummary): TimeComm
     atScheduledLocation: activeRows.filter(isAtScheduledLocation).length,
     atUnexpectedLocation: activeRows.filter((row) => !isAtScheduledLocation(row)).length,
     count: activeRows.length,
-    longShiftCount: activeRows.filter((row) => row.latestEffectiveAt && now - new Date(row.latestEffectiveAt).getTime() >= 12 * 60 * 60 * 1000).length,
+    longShiftCount: activeRows.filter((row) => {
+      if (!row.latestEffectiveAt) return false
+      return now - new Date(row.latestEffectiveAt).getTime() >= ACTIVE_CLOCK_IN_REVIEW_LIMIT_HOURS * 60 * 60 * 1000
+    }).length,
   }
 }
 

@@ -1,5 +1,8 @@
 import type { TimekeepingReview, TimekeepingReviewRow } from '../data/timekeeping'
 
+export const ACTIVE_CLOCK_IN_REVIEW_LIMIT_HOURS = 14
+export const SCHEDULED_CLOCK_OUT_GRACE_HOURS = 2
+
 export function isWorkedTimeRow(row: TimekeepingReviewRow): boolean {
   return row.rowKind === 'time_event'
 }
@@ -21,11 +24,15 @@ export function isActiveInProgressTimeRow(row: TimekeepingReviewRow, now = new D
   if (Number.isNaN(startedAt)) return false
 
   const scheduledEnd = row.scheduledEndsAt ? Date.parse(row.scheduledEndsAt) : Number.NaN
-  const reviewUntil = Number.isNaN(scheduledEnd)
-    ? startedAt + 16 * 60 * 60 * 1000
-    : scheduledEnd + 2 * 60 * 60 * 1000
+  const hardLimitUntil = startedAt + ACTIVE_CLOCK_IN_REVIEW_LIMIT_HOURS * 60 * 60 * 1000
+  const scheduledGraceUntil = Number.isNaN(scheduledEnd)
+    ? Number.NaN
+    : scheduledEnd + SCHEDULED_CLOCK_OUT_GRACE_HOURS * 60 * 60 * 1000
+  const reviewUntil = Number.isNaN(scheduledGraceUntil)
+    ? hardLimitUntil
+    : Math.max(hardLimitUntil, scheduledGraceUntil)
 
-  return now.getTime() <= reviewUntil
+  return now.getTime() < reviewUntil
 }
 
 export function workedTimeRows(rows: TimekeepingReviewRow[]): TimekeepingReviewRow[] {
