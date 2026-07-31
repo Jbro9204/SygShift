@@ -25,6 +25,25 @@ deployment status, or major workflow assumptions change.
 
 ## 07/31/2026
 
+### Employee Overview, Break Controls, and Time-Card Correction Requests
+
+- Reworked the Overview landing page so non-operations employees see a personal dashboard instead of company-wide operational totals.
+- Employees now see simple cards for their next shift, their own time card, and time-card help.
+- Operations/Admin/Supervisor/Scheduler/Dispatcher users still keep the broader operations metrics.
+- Added a break action beside the time-clock action:
+  - While clocked in: `Clock out` and `Start break`.
+  - While on break: `End break`.
+- Added employee time-card correction requests inside My Time:
+  - Employees can request a correction from a recent punch or time-card row.
+  - Requests preserve the original punch until reviewed.
+  - Requests route into the existing pending time-correction workflow for supervisor/admin handling.
+- Added UI guard coverage for employee Overview behavior, break controls, correction request wiring, and the supporting layout styles.
+- Validation completed:
+  - `pnpm typecheck`
+  - `pnpm lint`
+  - `pnpm test` — 32 files / 142 tests passing
+  - `pnpm build`
+
 ### Added employee-scoped schedule publishing
 
 - Added a focused Scheduler workflow for publishing one employee's schedule without publishing the entire week.

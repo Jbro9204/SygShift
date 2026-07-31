@@ -2,10 +2,13 @@ import {
   ArrowRight,
   CalendarDays,
   ClipboardCheck,
+  Coffee,
   DatabaseZap,
   Clock3,
+  FileClock,
   Timer,
   TimerReset,
+  UserRoundCheck,
   UsersRound,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -22,7 +25,7 @@ import {
   type TimekeepingDashboard,
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { canUseOwnTimeClock, canViewOwnTime } from '../time/timePermissions'
+import { canUseOwnTimeClock, canViewOwnTime, canViewTeamTime } from '../time/timePermissions'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from '../time/timeQuerySync'
 
 const metrics: Array<{ label: string, key: keyof OverviewMetrics, icon: typeof UsersRound }> = [
@@ -50,16 +53,28 @@ function overviewTimeAction(dashboard: TimekeepingDashboard | undefined): {
 export function OverviewPage() {
   const queryClient = useQueryClient()
   const punchLocked = useRef(false)
-  const overviewQuery = useQuery({
-    queryKey: ['overview-metrics'],
-    queryFn: () => getOverviewMetrics(),
-    enabled: isSupabaseConfigured,
-    refetchInterval: 60_000,
-  })
   const sessionQuery = useQuery({
     enabled: isSupabaseConfigured,
     queryFn: getSessionContext,
     queryKey: ['session-context'],
+  })
+  const role = sessionQuery.data?.role
+  const operationsOverviewAllowed = Boolean(
+    sessionQuery.data
+    && (
+      role === 'admin'
+      || role === 'supervisor'
+      || role === 'scheduler'
+      || role === 'dispatcher'
+      || canViewTeamTime(sessionQuery.data)
+    ),
+  )
+  const employeeLanding = sessionQuery.isSuccess && !operationsOverviewAllowed
+  const overviewQuery = useQuery({
+    queryKey: ['overview-metrics'],
+    queryFn: () => getOverviewMetrics(),
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && operationsOverviewAllowed,
+    refetchInterval: 60_000,
   })
   const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
   const punchAllowed = canUseOwnTimeClock(sessionQuery.data)
@@ -83,45 +98,68 @@ export function OverviewPage() {
   const overview = overviewQuery.data
   const timeAction = overviewTimeAction(timekeepingQuery.data)
 
-  function quickPunch() {
-    if (!timeAction.kind || !timekeepingQuery.data) return
+  function quickPunch(kind = timeAction.kind) {
+    if (!kind || !timekeepingQuery.data) return
     if (!punchAllowed || punchLocked.current || punchMutation.isPending) return
     punchLocked.current = true
     const clockableChoices = getClockableShiftChoices(timekeepingQuery.data.eligibleShifts, timekeepingQuery.data.serverTimestamp)
-    const shiftId = timeAction.kind === 'clock_in'
+    const shiftId = kind === 'clock_in'
       ? clockableChoices.shifts[0]?.shiftId ?? null
       : undefined
-    punchMutation.mutate({ kind: timeAction.kind, shiftId })
+    punchMutation.mutate({ kind, shiftId })
   }
+
+  const timeState = activeTimeState(timekeepingQuery.data?.lastEvent ?? null)
+  const breakAction: { kind: TimeEventKind; label: string } | null = timeState === 'working'
+    ? { kind: 'break_start', label: 'Start break' }
+    : null
+  const activeShift = timekeepingQuery.data?.eligibleShifts.find((shift) => shift.shiftId === timekeepingQuery.data?.lastEvent?.shiftId) ?? null
+  const nextShift = activeShift ?? timekeepingQuery.data?.eligibleShifts
+    .filter((shift) => new Date(shift.endsAt).getTime() >= new Date(timekeepingQuery.data?.serverTimestamp ?? Date.now()).getTime())
+    .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())[0] ?? null
 
   return (
     <div className="page page--overview">
       <section className="page-intro">
         <div>
-          <p className="eyebrow">Operations overview</p>
-          <h1>One clear view of the day.</h1>
+          <p className="eyebrow">{employeeLanding ? 'My dashboard' : 'Operations overview'}</p>
+          <h1>{employeeLanding ? 'Your shift day, simple.' : 'One clear view of the day.'}</h1>
           <p className="page-summary">
-            Coverage, requests, timekeeping, and events stay connected without making the schedule
-            harder to read.
+            {employeeLanding
+              ? 'Clock in, manage breaks, check your schedule, and request time-card help without digging through operations data.'
+              : 'Coverage, requests, timekeeping, and events stay connected without making the schedule harder to read.'}
           </p>
         </div>
         <div className="overview-intro-actions">
-          {ownTimeAllowed && timeAction.requiresTimePage ? (
-            <Link className="primary-action overview-clock-action" to="/time">
-              <Timer aria-hidden="true" size={19} />
-              {timeAction.label}
-            </Link>
-          ) : ownTimeAllowed && punchAllowed ? (
-            <button
-              className="primary-action overview-clock-action"
-              disabled={punchMutation.isPending || timekeepingQuery.isPending}
-              onClick={quickPunch}
-              type="button"
-            >
-              <Timer aria-hidden="true" size={19} />
-              {punchMutation.isPending ? 'Recording...' : timeAction.label}
-            </button>
-          ) : null}
+          <div className="overview-time-actions" aria-label="Quick time actions">
+            {ownTimeAllowed && timeAction.requiresTimePage ? (
+              <Link className="primary-action overview-clock-action" to="/time/my-time">
+                <Timer aria-hidden="true" size={19} />
+                {timeAction.label}
+              </Link>
+            ) : ownTimeAllowed && punchAllowed ? (
+              <button
+                className={`primary-action overview-clock-action${timeAction.kind === 'clock_out' ? ' overview-clock-action--danger' : ''}`}
+                disabled={punchMutation.isPending || timekeepingQuery.isPending || (timeState === 'on_break' && timeAction.kind === 'clock_out')}
+                onClick={() => quickPunch(timeAction.kind)}
+                type="button"
+              >
+                <Timer aria-hidden="true" size={19} />
+                {punchMutation.isPending && timeAction.kind !== 'break_start' && timeAction.kind !== 'break_end' ? 'Recording...' : timeAction.label}
+              </button>
+            ) : null}
+            {breakAction && punchAllowed ? (
+              <button
+                className="secondary-button overview-break-action"
+                disabled={punchMutation.isPending || timekeepingQuery.isPending}
+                onClick={() => quickPunch(breakAction.kind)}
+                type="button"
+              >
+                <Coffee aria-hidden="true" size={18} />
+                {punchMutation.isPending ? 'Recording...' : breakAction.label}
+              </button>
+            ) : null}
+          </div>
           <Link className="secondary-button overview-schedule-action" to="/schedule">
             Schedule
             <ArrowRight aria-hidden="true" size={18} />
@@ -133,7 +171,7 @@ export function OverviewPage() {
         <div className="inline-alert" role="alert">{punchMutation.error.message}</div>
       ) : null}
 
-      {overviewQuery.isError ? (
+      {overviewQuery.isError && operationsOverviewAllowed ? (
         <div className="inline-alert" role="alert">{overviewQuery.error.message}</div>
       ) : null}
 
@@ -153,7 +191,43 @@ export function OverviewPage() {
         </section>
       ) : null}
 
-      <section className="connection-banner" aria-labelledby="connection-title">
+      {employeeLanding ? (
+        <section className="overview-employee-grid" aria-label="Employee dashboard">
+          <article className="overview-employee-card overview-employee-card--primary">
+            <div className="overview-employee-card__icon"><UserRoundCheck aria-hidden="true" size={24} /></div>
+            <div>
+              <p className="eyebrow">Next shift</p>
+              <h2>{nextShift ? shiftTitle(nextShift) : 'No immediate shift shown'}</h2>
+              <p>
+                {nextShift
+                  ? `${shiftLocation(nextShift)} - ${formatShiftTime(nextShift.startsAt, nextShift.endsAt, nextShift.timeZone)}`
+                  : 'Open Schedule to review your upcoming work.'}
+              </p>
+            </div>
+            <Link className="secondary-button" to="/schedule">Open Schedule</Link>
+          </article>
+          <article className="overview-employee-card">
+            <div className="overview-employee-card__icon"><FileClock aria-hidden="true" size={24} /></div>
+            <div>
+              <p className="eyebrow">Time card</p>
+              <h2>{timekeepingQuery.data?.pendingCorrectionCount ? `${timekeepingQuery.data.pendingCorrectionCount} pending request${timekeepingQuery.data.pendingCorrectionCount === 1 ? '' : 's'}` : 'No pending requests'}</h2>
+              <p>Review punches, breaks, and request a correction if something looks wrong.</p>
+            </div>
+            <Link className="secondary-button" to="/time/my-time">Open My Time</Link>
+          </article>
+          <article className="overview-employee-card">
+            <div className="overview-employee-card__icon"><ClipboardCheck aria-hidden="true" size={24} /></div>
+            <div>
+              <p className="eyebrow">Requests</p>
+              <h2>Time off and coverage</h2>
+              <p>Request time off or review open shifts without seeing company-wide staffing totals.</p>
+            </div>
+            <Link className="secondary-button" to="/requests">Open Requests</Link>
+          </article>
+        </section>
+      ) : (
+        <>
+          <section className="connection-banner" aria-labelledby="connection-title">
         <div className="connection-icon">
           <DatabaseZap aria-hidden="true" size={24} />
         </div>
@@ -234,6 +308,27 @@ export function OverviewPage() {
           </div>
         </section>
       </div>
+        </>
+      )}
     </div>
   )
+}
+
+function formatShiftTime(startsAt: string, endsAt: string, timeZone: string): string {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    month: '2-digit',
+    timeZone,
+  })
+  return `${formatter.format(new Date(startsAt))} - ${formatter.format(new Date(endsAt))}`
+}
+
+function shiftLocation(shift: { siteCode?: string | null; siteName?: string | null; locationName?: string | null }): string {
+  return [shift.siteCode, shift.siteName ?? shift.locationName].filter(Boolean).join(' - ') || 'Location pending'
+}
+
+function shiftTitle(shift: { postName?: string | null; eventName?: string | null; locationName?: string | null }): string {
+  return shift.postName ?? shift.eventName ?? shift.locationName ?? 'Assigned shift'
 }

@@ -27,11 +27,13 @@ import {
   payrollHours,
   recordTimeEvent,
   reportAttendanceIssue,
+  requestTimeEventCorrection,
   type PendingCorrection,
   type ClockableShiftChoices,
   type AttendanceReportResult,
   type TimeEventKind,
   type TimekeepingDashboard,
+  type TimekeepingEvent,
   type TimekeepingReviewRow,
   type TimekeepingShift,
   type TimekeepingState,
@@ -53,6 +55,9 @@ import {
 } from './TimeKit'
 
 type AttendanceIssueType = 'called_in_sick' | 'call_off'
+type TimeCorrectionMode = 'change_time' | 'void' | 'review_note'
+
+const OPERATIONAL_TIME_ZONE = 'America/Denver'
 
 const actionLabels: Record<TimeEventKind, string> = {
   break_end: 'End break',
@@ -77,6 +82,7 @@ export function MyTimePage() {
   const [attendanceReportShiftId, setAttendanceReportShiftId] = useState('')
   const [attendanceReportDate, setAttendanceReportDate] = useState('')
   const [attendanceReportNote, setAttendanceReportNote] = useState('')
+  const [correctionEvent, setCorrectionEvent] = useState<TimekeepingEvent | null>(null)
   const defaultPeriod = currentPayrollPeriod()
 
   const sessionQuery = useQuery({
@@ -158,6 +164,19 @@ export function MyTimePage() {
         queryClient.invalidateQueries({ queryKey: ['my-time-dashboard'] }),
         queryClient.invalidateQueries({ queryKey: ['my-time-review'] }),
         queryClient.invalidateQueries({ queryKey: ['time-payroll-accountability'] }),
+      ])
+    },
+  })
+
+  const correctionMutation = useMutation({
+    mutationFn: (input: { timeEventId: string; replacementTime: string | null; voided: boolean; reason: string }) => requestTimeEventCorrection(input),
+    onSuccess: async () => {
+      setCorrectionEvent(null)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['my-time-dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['my-time-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-command-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-exceptions-review'] }),
       ])
     },
   })
@@ -262,8 +281,18 @@ export function MyTimePage() {
           <p>{attendanceReportMutation.error.message}</p>
         </TimeAlertCard>
       ) : null}
+      {correctionMutation.isError ? (
+        <TimeAlertCard icon={CircleAlert} title="Correction request could not be saved" tone="danger">
+          <p>{correctionMutation.error.message}</p>
+        </TimeAlertCard>
+      ) : null}
       {attendanceReportMutation.isSuccess ? (
         <AttendanceReportSuccess result={attendanceReportMutation.data} />
+      ) : null}
+      {correctionMutation.isSuccess ? (
+        <TimeAlertCard icon={CheckCircle2} title="Correction request sent" tone="good">
+          <p>Your request was saved for supervisor/admin review. The original punch remains unchanged until it is approved.</p>
+        </TimeAlertCard>
       ) : null}
 
       <section className="my-time-dashboard-grid">
@@ -301,11 +330,17 @@ export function MyTimePage() {
       </section>
 
       <section className="my-time-two-column">
-        <RecentPunchesPanel dashboard={dashboard} />
+        <RecentPunchesPanel dashboard={dashboard} onRequestCorrection={setCorrectionEvent} />
         <CorrectionPanel corrections={reviewQuery.data?.pendingCorrections ?? []} loading={reviewQuery.isPending} />
       </section>
 
-      <MyTimeRows loading={reviewQuery.isPending} rows={rows} serverTimestamp={reviewQuery.data?.serverTimestamp} />
+      <MyTimeRows
+        loading={reviewQuery.isPending}
+        onRequestCorrection={setCorrectionEvent}
+        recentEvents={dashboard.recentEvents}
+        rows={rows}
+        serverTimestamp={reviewQuery.data?.serverTimestamp}
+      />
 
       {attendanceReportOpen ? (
         <AttendanceReportModal
@@ -321,6 +356,14 @@ export function MyTimePage() {
           pending={attendanceReportMutation.isPending}
           selectedShiftId={attendanceReportShiftId}
           shifts={dashboard.eligibleShifts}
+        />
+      ) : null}
+      {correctionEvent ? (
+        <TimeCorrectionRequestModal
+          event={correctionEvent}
+          onClose={() => setCorrectionEvent(null)}
+          onSubmit={(input) => correctionMutation.mutate(input)}
+          pending={correctionMutation.isPending}
         />
       ) : null}
     </main>
@@ -580,7 +623,13 @@ function AttendanceReportModal({
   )
 }
 
-function RecentPunchesPanel({ dashboard }: { dashboard: TimekeepingDashboard }) {
+function RecentPunchesPanel({
+  dashboard,
+  onRequestCorrection,
+}: {
+  dashboard: TimekeepingDashboard
+  onRequestCorrection: (event: TimekeepingEvent) => void
+}) {
   return (
     <section className="time-card">
       <TimeSectionHeader
@@ -598,6 +647,14 @@ function RecentPunchesPanel({ dashboard }: { dashboard: TimekeepingDashboard }) 
                 <small>{formatOperationalDateTime(event.effectiveAt ?? event.recordedAt, { includeTimeZoneName: true })}</small>
               </div>
               {event.voided ? <em>Voided</em> : null}
+              <button
+                className="secondary-button secondary-button--small time-event__correction-button"
+                disabled={Boolean(event.voided)}
+                onClick={() => onRequestCorrection(event)}
+                type="button"
+              >
+                Request correction
+              </button>
             </li>
           ))}
         </ul>
@@ -650,10 +707,14 @@ function CorrectionPanel({
 
 function MyTimeRows({
   loading,
+  onRequestCorrection,
+  recentEvents,
   rows,
   serverTimestamp,
 }: {
   loading: boolean
+  onRequestCorrection: (event: TimekeepingEvent) => void
+  recentEvents: TimekeepingEvent[]
   rows: TimekeepingReviewRow[]
   serverTimestamp?: string
 }) {
@@ -675,7 +736,13 @@ function MyTimeRows({
       ) : rows.length > 0 ? (
         <div className="my-time-history__list">
           {rows.map((row) => (
-            <MyTimecardRow key={`${row.rowKind}-${row.employeeId}-${row.operationalDate}-${row.shiftId ?? row.locationName}`} row={row} serverNow={reviewNow} />
+            <MyTimecardRow
+              key={`${row.rowKind}-${row.employeeId}-${row.operationalDate}-${row.shiftId ?? row.locationName}`}
+              onRequestCorrection={onRequestCorrection}
+              recentEvents={recentEvents}
+              row={row}
+              serverNow={reviewNow}
+            />
           ))}
         </div>
       ) : (
@@ -687,12 +754,23 @@ function MyTimeRows({
   )
 }
 
-function MyTimecardRow({ row, serverNow }: { row: TimekeepingReviewRow; serverNow: Date }) {
+function MyTimecardRow({
+  onRequestCorrection,
+  recentEvents,
+  row,
+  serverNow,
+}: {
+  onRequestCorrection: (event: TimekeepingEvent) => void
+  recentEvents: TimekeepingEvent[]
+  row: TimekeepingReviewRow
+  serverNow: Date
+}) {
   const activeInProgress = isActiveInProgressTimeRow(row, serverNow)
   const visibleExceptions = activeInProgress
     ? row.exceptionCodes.filter((code) => code !== 'missing_clock_out' && code !== 'zero_paid_minutes')
     : row.exceptionCodes
   const ready = row.payrollReady || activeInProgress
+  const correctionEvent = findCorrectionEventForRow(row, recentEvents)
 
   return (
     <article className="my-time-row">
@@ -713,8 +791,196 @@ function MyTimecardRow({ row, serverNow }: { row: TimekeepingReviewRow; serverNo
         <TimeStatusBadge tone={ready ? 'good' : 'warning'}>{activeInProgress ? 'In progress' : ready ? 'Ready' : 'Needs review'}</TimeStatusBadge>
         {visibleExceptions.length > 0 ? <small>{visibleExceptions.join(', ')}</small> : null}
       </div>
+      <div className="my-time-row__actions">
+        {correctionEvent ? (
+          <button
+            className="secondary-button secondary-button--small"
+            disabled={correctionEvent.voided}
+            onClick={() => onRequestCorrection(correctionEvent)}
+            type="button"
+          >
+            Request correction
+          </button>
+        ) : (
+          <small>Open Recent Punches for correction options.</small>
+        )}
+      </div>
     </article>
   )
+}
+
+function findCorrectionEventForRow(row: TimekeepingReviewRow, events: TimekeepingEvent[]): TimekeepingEvent | null {
+  if (row.rowKind !== 'time_event') return null
+  const rowDate = row.operationalDate
+  const candidates = events.filter((event) => {
+    const eventDate = dateInputValue(event.effectiveAt ?? event.recordedAt)
+    if (eventDate !== rowDate) return false
+    if (row.shiftId && event.shiftId === row.shiftId) return true
+    return !row.shiftId
+  })
+  return candidates.find((event) => event.kind === 'clock_out')
+    ?? candidates.find((event) => event.kind === 'clock_in')
+    ?? candidates[0]
+    ?? null
+}
+
+function TimeCorrectionRequestModal({
+  event,
+  onClose,
+  onSubmit,
+  pending,
+}: {
+  event: TimekeepingEvent
+  onClose: () => void
+  onSubmit: (input: { timeEventId: string; replacementTime: string | null; voided: boolean; reason: string }) => void
+  pending: boolean
+}) {
+  const [mode, setMode] = useState<TimeCorrectionMode>('change_time')
+  const [date, setDate] = useState(dateInputValue(event.effectiveAt ?? event.recordedAt))
+  const [time, setTime] = useState(timeInputValue(event.effectiveAt ?? event.recordedAt))
+  const [reason, setReason] = useState('')
+  const reasonReady = reason.trim().length >= 8
+  const canSubmit = reasonReady && !pending
+
+  function submit(formEvent: FormEvent<HTMLFormElement>) {
+    formEvent.preventDefault()
+    if (!canSubmit) return
+    onSubmit({
+      reason: correctionReason(mode, reason),
+      replacementTime: mode === 'void' ? null : mode === 'review_note' ? (event.effectiveAt ?? event.recordedAt) : zonedDateTimeToIso(date, time),
+      timeEventId: event.id,
+      voided: mode === 'void',
+    })
+  }
+
+  return (
+    <ModalDialog
+      busy={pending}
+      busyLabel="Sending correction request..."
+      className="modal-dialog--time-correction-request"
+      description="Request a supervisor/admin review without changing the original punch until it is approved."
+      onClose={onClose}
+      title="Request a time-card correction"
+    >
+      <form className="time-correction-request-form" onSubmit={submit}>
+        <article className="time-correction-request-punch">
+          <span>{eventLabels[event.kind]}</span>
+          <strong>{formatOperationalDateTime(event.effectiveAt ?? event.recordedAt, { includeTimeZoneName: true })}</strong>
+          <small>Original punch remains protected while this request is reviewed.</small>
+        </article>
+
+        <fieldset className="time-correction-request-modes">
+          <legend>What needs to change?</legend>
+          <label className={mode === 'change_time' ? 'time-correction-request-mode time-correction-request-mode--selected' : 'time-correction-request-mode'}>
+            <input checked={mode === 'change_time'} disabled={pending} name="time-correction-mode" onChange={() => setMode('change_time')} type="radio" />
+            <span><strong>Wrong time</strong><small>Request a corrected date/time for this punch.</small></span>
+          </label>
+          <label className={mode === 'void' ? 'time-correction-request-mode time-correction-request-mode--selected' : 'time-correction-request-mode'}>
+            <input checked={mode === 'void'} disabled={pending} name="time-correction-mode" onChange={() => setMode('void')} type="radio" />
+            <span><strong>Wrong punch</strong><small>Ask for this punch to be voided.</small></span>
+          </label>
+          <label className={mode === 'review_note' ? 'time-correction-request-mode time-correction-request-mode--selected' : 'time-correction-request-mode'}>
+            <input checked={mode === 'review_note'} disabled={pending} name="time-correction-mode" onChange={() => setMode('review_note')} type="radio" />
+            <span><strong>Other issue</strong><small>Use for break, missing punch, or location issues that need supervisor help.</small></span>
+          </label>
+        </fieldset>
+
+        {mode === 'change_time' ? (
+          <div className="time-correction-request-fields">
+            <label>
+              <span>Correct date</span>
+              <input disabled={pending} onChange={(inputEvent) => setDate(inputEvent.target.value)} required type="date" value={date} />
+            </label>
+            <label>
+              <span>Correct time / Mountain</span>
+              <input disabled={pending} onChange={(inputEvent) => setTime(inputEvent.target.value)} required type="time" value={time} />
+            </label>
+          </div>
+        ) : null}
+
+        <label className="time-correction-request-reason">
+          <span>Explain the request</span>
+          <textarea
+            disabled={pending}
+            maxLength={2000}
+            onChange={(inputEvent) => setReason(inputEvent.target.value)}
+            placeholder="Example: I forgot to clock out at the end of my shift. I left at 6:00 PM."
+            rows={5}
+            value={reason}
+          />
+          <small>{reason.trim().length < 8 ? 'Enter at least 8 characters so payroll has context.' : `${reason.trim().length}/2000 characters`}</small>
+        </label>
+
+        <div className="modal-actions time-correction-request-actions">
+          <button className="secondary-button" disabled={pending} onClick={onClose} type="button">Cancel</button>
+          <TimeButton disabled={!canSubmit} loading={pending} type="submit" variant="primary">
+            Send correction request
+          </TimeButton>
+        </div>
+      </form>
+    </ModalDialog>
+  )
+}
+
+function correctionReason(mode: TimeCorrectionMode, reason: string): string {
+  const prefix = mode === 'change_time'
+    ? 'Employee requested time correction'
+    : mode === 'void'
+      ? 'Employee requested punch void'
+      : 'Employee requested time-card review'
+  return `${prefix}: ${reason.trim()}`
+}
+
+function dateInputValue(value: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: OPERATIONAL_TIME_ZONE,
+    year: 'numeric',
+  }).format(new Date(value))
+}
+
+function timeInputValue(value: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    hour: '2-digit',
+    hour12: false,
+    minute: '2-digit',
+    timeZone: OPERATIONAL_TIME_ZONE,
+  }).formatToParts(new Date(value))
+  const hour = parts.find((part) => part.type === 'hour')?.value ?? '00'
+  const minute = parts.find((part) => part.type === 'minute')?.value ?? '00'
+  return `${hour}:${minute}`
+}
+
+function zonedDateTimeToIso(dateKey: string, timeValue: string): string {
+  const [year, month, day] = dateKey.split('-').map(Number)
+  const [hour, minute] = timeValue.split(':').map(Number)
+  const targetUtc = Date.UTC(year, month - 1, day, hour, minute)
+  let guess = targetUtc
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+    minute: '2-digit',
+    month: '2-digit',
+    timeZone: OPERATIONAL_TIME_ZONE,
+    year: 'numeric',
+  })
+
+  for (let index = 0; index < 3; index += 1) {
+    const parts = formatter.formatToParts(new Date(guess))
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? '0'
+    const renderedUtc = Date.UTC(
+      Number(part('year')),
+      Number(part('month')) - 1,
+      Number(part('day')),
+      Number(part('hour')),
+      Number(part('minute')),
+    )
+    guess += targetUtc - renderedUtc
+  }
+
+  return new Date(guess).toISOString()
 }
 
 function activeShift(dashboard: TimekeepingDashboard): TimekeepingShift | null {

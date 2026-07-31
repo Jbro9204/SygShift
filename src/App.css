@@ -1706,8 +1706,37 @@
   gap: 10px;
 }
 
+.overview-time-actions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .overview-clock-action {
   min-width: 150px;
+}
+
+.overview-clock-action--danger {
+  color: #fff8f1;
+  background: #8f3c2f;
+  border-color: #793126;
+  box-shadow: 0 3px 0 #5f231b;
+}
+
+.overview-clock-action--danger:hover {
+  background: #a64a3b;
+  box-shadow: 0 4px 0 #5f231b;
+}
+
+.overview-break-action {
+  min-width: 142px;
+  min-height: 46px;
+  color: #4b3b22;
+  background: #fffaf0;
+  border: 1px solid #dac9aa;
+  box-shadow: none;
 }
 
 .overview-schedule-action {
@@ -1752,6 +1781,73 @@
   color: #665f54;
   font-size: 14px;
   line-height: 1.4;
+}
+
+.overview-employee-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(240px, 0.9fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.overview-employee-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-content: start;
+  min-width: 0;
+  padding: 20px;
+  color: #2d2922;
+  background: #fffdf8;
+  border: 1px solid #dfd6c8;
+  border-top: 4px solid #b9b4aa;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.overview-employee-card--primary {
+  border-top-color: #c9953d;
+}
+
+.overview-employee-card__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  color: #805715;
+  background: #f7ead0;
+  border-radius: 12px;
+}
+
+.overview-employee-card h2,
+.overview-employee-card p {
+  margin: 0;
+}
+
+.overview-employee-card h2 {
+  color: #211d17;
+  font-size: clamp(21px, 2.3vw, 28px);
+  letter-spacing: -0.025em;
+  line-height: 1.12;
+}
+
+.overview-employee-card p:not(.eyebrow) {
+  margin-top: 8px;
+  color: #665f54;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.overview-employee-card .secondary-button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-height: 42px;
+  padding: 9px 13px;
+  color: #4b3b22;
+  background: #fffaf0;
+  border: 1px solid #dac9aa;
+  box-shadow: none;
+  text-decoration: none;
 }
 
 .primary-action,
@@ -7698,6 +7794,161 @@
   line-height: 1.42;
 }
 
+.modal-dialog--time-correction-request {
+  width: min(96vw, 820px);
+}
+
+.time-correction-request-form {
+  display: grid;
+  gap: 16px;
+  padding: 20px 22px 22px;
+}
+
+.time-correction-request-punch {
+  display: grid;
+  gap: 5px;
+  padding: 15px;
+  background: #fffaf0;
+  border: 1px solid #e2d0ab;
+  border-left: 4px solid #c79339;
+  border-radius: 12px;
+}
+
+.time-correction-request-punch span {
+  color: #7a541a;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.time-correction-request-punch strong {
+  color: #211d17;
+  font-size: 18px;
+}
+
+.time-correction-request-punch small {
+  color: #6d655a;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.time-correction-request-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.time-correction-request-modes legend,
+.time-correction-request-fields label > span,
+.time-correction-request-reason > span {
+  color: #4b4439;
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+
+.time-correction-request-modes legend {
+  grid-column: 1 / -1;
+}
+
+.time-correction-request-mode {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  background: #fffdf8;
+  border: 1px solid #ded5c5;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.time-correction-request-mode--selected {
+  background: #fff6df;
+  border-color: #c08a28;
+  box-shadow: 0 0 0 3px rgb(194 139 39 / 15%);
+}
+
+.time-correction-request-mode input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: #9b6a1f;
+}
+
+.time-correction-request-mode strong,
+.time-correction-request-mode small {
+  display: block;
+}
+
+.time-correction-request-mode strong {
+  color: #201c16;
+  font-size: 15px;
+}
+
+.time-correction-request-mode small {
+  margin-top: 5px;
+  color: #6d655a;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.time-correction-request-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.time-correction-request-fields label,
+.time-correction-request-reason {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.time-correction-request-fields input,
+.time-correction-request-reason textarea {
+  width: 100%;
+  min-width: 0;
+  color: #201c16;
+  background: #fffdf8;
+  border: 1px solid #cfc3b0;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 750;
+}
+
+.time-correction-request-fields input {
+  min-height: 48px;
+  padding: 0 14px;
+}
+
+.time-correction-request-reason textarea {
+  min-height: 126px;
+  padding: 13px 14px;
+  resize: vertical;
+}
+
+.time-correction-request-reason small {
+  justify-self: end;
+  color: #746b60;
+  font-size: 13px;
+}
+
+.time-correction-request-actions {
+  padding: 0;
+}
+
+.time-correction-request-actions .secondary-button,
+.time-correction-request-actions .time-button {
+  min-width: 174px;
+  min-height: 48px;
+}
+
 .my-time-official-note {
   display: block;
   color: #6d655a;
@@ -7860,15 +8111,45 @@
 }
 
 @media (max-width: 720px) {
+  .overview-intro-actions,
+  .overview-time-actions,
+  .overview-clock-action,
+  .overview-break-action,
+  .overview-schedule-action {
+    width: 100%;
+  }
+
+  .overview-intro-actions,
+  .overview-time-actions {
+    justify-content: stretch;
+  }
+
+  .overview-employee-grid {
+    grid-template-columns: 1fr;
+  }
+
   .my-time-coverage-actions,
   .attendance-report-choice-grid,
-  .attendance-report-grid {
+  .attendance-report-grid,
+  .time-correction-request-modes,
+  .time-correction-request-fields {
     grid-template-columns: 1fr;
+  }
+
+  .time-event {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .time-event__correction-button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .my-time-coverage-actions .time-button,
   .attendance-report-actions .secondary-button,
-  .attendance-report-actions .time-button {
+  .attendance-report-actions .time-button,
+  .time-correction-request-actions .secondary-button,
+  .time-correction-request-actions .time-button {
     width: 100%;
   }
 }
@@ -8404,7 +8685,7 @@
 
 .time-event {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 13px;
   padding: 14px;
@@ -8630,7 +8911,7 @@
 
 .my-time-row {
   display: grid;
-  grid-template-columns: minmax(150px, 0.25fr) minmax(0, 1fr) minmax(130px, 0.18fr) minmax(130px, 0.18fr);
+  grid-template-columns: minmax(150px, 0.22fr) minmax(0, 1fr) minmax(130px, 0.16fr) minmax(130px, 0.16fr) minmax(150px, auto);
   align-items: center;
   gap: 14px;
   padding: 15px;
@@ -8672,6 +8953,25 @@
   display: grid;
   justify-items: start;
   gap: 5px;
+}
+
+.my-time-row__actions {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.my-time-row__actions .secondary-button,
+.time-event__correction-button {
+  min-height: 38px;
+  padding: 8px 11px;
+  white-space: nowrap;
+}
+
+.my-time-row__actions small {
+  max-width: 170px;
+  color: #7a7164;
+  text-align: right;
 }
 
 .time-review-actions {
