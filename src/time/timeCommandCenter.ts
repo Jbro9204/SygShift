@@ -1,11 +1,11 @@
 import type {
   PayrollExportBatch,
   PayrollRules,
+  TeamAttendanceSummary,
+  TeamAttendanceSummaryRow,
   TimekeepingDashboard,
   TimekeepingReview,
   TimekeepingReviewRow,
-  TimeMaintenance,
-  TimeMaintenanceEvent,
 } from '../data/timekeeping'
 import { activeTimeState } from '../data/timekeeping'
 import type { SessionContext } from '../data/auth'
@@ -70,9 +70,9 @@ export function commandRoleMode(session: SessionContext | null | undefined, dash
 }
 
 export function buildTimeCommandCenterModel(input: {
+  attendanceSummary?: TeamAttendanceSummary
   dashboard: TimekeepingDashboard
   exportHistory?: PayrollExportBatch[]
-  maintenance?: TimeMaintenance
   payrollRules?: PayrollRules
   review?: TimekeepingReview
   session?: SessionContext | null
@@ -86,7 +86,7 @@ export function buildTimeCommandCenterModel(input: {
   const todayRows = selfRows.filter((row) => row.operationalDate === input.dashboard.operationalDate)
 
   return {
-    clockedIn: summarizeClockedIn(input.maintenance),
+    clockedIn: summarizeClockedIn(input.attendanceSummary),
     exceptions: summarizeExceptions(workedReview),
     missingPunches: summarizeMissingPunches(workedReview),
     overtimeRisk: summarizeOvertimeRisk(workedReview),
@@ -177,24 +177,20 @@ function summarizeOvertimeRisk(review?: TimekeepingReview): TimeCommandCenterMod
   }
 }
 
-function summarizeClockedIn(maintenance?: TimeMaintenance): TimeCommandCenterModel['clockedIn'] {
-  if (!maintenance) return { atScheduledLocation: 0, atUnexpectedLocation: 0, count: 0, longShiftCount: 0 }
-  const latestEvents = new Map<string, TimeMaintenanceEvent>()
-  for (const event of maintenance.events) {
-    const previous = latestEvents.get(event.employeeId)
-    if (!previous || new Date(event.effectiveAt).getTime() > new Date(previous.effectiveAt).getTime()) {
-      latestEvents.set(event.employeeId, event)
-    }
-  }
-
-  const activeEvents = [...latestEvents.values()].filter((event) => ['clock_in', 'break_start', 'break_end'].includes(event.kind) && !event.voided)
-  const now = new Date(maintenance.serverTimestamp).getTime()
+function summarizeClockedIn(attendanceSummary?: TeamAttendanceSummary): TimeCommandCenterModel['clockedIn'] {
+  if (!attendanceSummary) return { atScheduledLocation: 0, atUnexpectedLocation: 0, count: 0, longShiftCount: 0 }
+  const activeRows = attendanceSummary.rows.filter((row) => row.latestKind && ['clock_in', 'break_start', 'break_end'].includes(row.latestKind))
+  const now = new Date(attendanceSummary.serverTimestamp).getTime()
   return {
-    atScheduledLocation: activeEvents.filter((event) => Boolean(event.shiftId)).length,
-    atUnexpectedLocation: activeEvents.filter((event) => !event.shiftId).length,
-    count: activeEvents.length,
-    longShiftCount: activeEvents.filter((event) => now - new Date(event.effectiveAt).getTime() >= 12 * 60 * 60 * 1000).length,
+    atScheduledLocation: activeRows.filter(isAtScheduledLocation).length,
+    atUnexpectedLocation: activeRows.filter((row) => !isAtScheduledLocation(row)).length,
+    count: activeRows.length,
+    longShiftCount: activeRows.filter((row) => row.latestEffectiveAt && now - new Date(row.latestEffectiveAt).getTime() >= 12 * 60 * 60 * 1000).length,
   }
+}
+
+function isAtScheduledLocation(row: TeamAttendanceSummaryRow): boolean {
+  return Boolean(row.latestSiteCode || row.latestSiteName || row.latestPostName || row.latestEventName)
 }
 
 function countRowsWithException(rows: TimekeepingReviewRow[], exception: TimekeepingReviewRow['exceptionCodes'][number]): number {

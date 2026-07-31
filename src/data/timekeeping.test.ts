@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   activeTimeState,
   applyRecordedTimeEventToDashboard,
+  dedupeTimeMaintenanceShiftOptions,
   getClockableShiftChoices,
   nextTimeEventKinds,
   parsePayrollExportBatch,
   parsePayrollExportDetail,
   parsePayrollExportHistory,
+  parseTeamAttendanceSummary,
   parseTimeMaintenance,
   parseTimekeepingDashboard,
   parseTimekeepingEvent,
@@ -15,6 +17,7 @@ import {
   reviewRowsToPayrollSummaryCsv,
   reviewRowsToPayrollCsv,
   summarizePayrollRowsByEmployee,
+  type TimeMaintenanceShiftOption,
   type TimekeepingShift,
 } from './timekeeping'
 
@@ -112,6 +115,49 @@ describe('timekeeping validation', () => {
     expect(choices.hiddenCount).toBe(2)
   })
 
+  it('deduplicates time maintenance location options while preserving distinct posts', () => {
+    const baseOption: TimeMaintenanceShiftOption = {
+      assignedEmployees: [],
+      endsAt: '2026-07-31T00:00:00.000Z',
+      eventId: null,
+      eventName: null,
+      headcountRequired: 1,
+      isOvertime: false,
+      locationName: 'Neon Local Apt-Unarmed',
+      postId: '73000000-0000-4000-8000-000000000302',
+      postName: 'Unarmed coverage',
+      requiresArmed: false,
+      scheduleRevision: 4,
+      scheduleStatus: 'published',
+      selectedEmployeeAssigned: false,
+      shiftId: '73000000-0000-4000-8000-000000000202',
+      siteCode: 'NLA',
+      siteId: '73000000-0000-4000-8000-000000000301',
+      siteName: 'Neon Local Apt-Unarmed',
+      startsAt: '2026-07-30T16:00:00.000Z',
+      timeZone: 'America/Denver',
+    }
+
+    const deduped = dedupeTimeMaintenanceShiftOptions([
+      baseOption,
+      {
+        ...baseOption,
+        scheduleRevision: 3,
+        shiftId: '73000000-0000-4000-8000-000000000203',
+      },
+      {
+        ...baseOption,
+        postId: '73000000-0000-4000-8000-000000000303',
+        postName: 'Patrol',
+        shiftId: '73000000-0000-4000-8000-000000000204',
+      },
+    ])
+
+    expect(deduped).toHaveLength(2)
+    expect(deduped.map((option) => option.shiftId)).toContain(baseOption.shiftId)
+    expect(deduped.map((option) => option.postName)).toEqual(['Patrol', 'Unarmed coverage'])
+  })
+
   it('applies a saved punch to visible dashboard state immediately', () => {
     const dashboard = parseTimekeepingDashboard({
       serverTimestamp: '2026-07-30T14:00:00.000Z',
@@ -152,6 +198,46 @@ describe('timekeeping validation', () => {
       '73000000-0000-4000-8000-000000000002',
     ])
     expect(updated.serverTimestamp).toBe('2026-07-30T15:00:00.000Z')
+  })
+
+  it('validates concise team attendance summaries by employee', () => {
+    const summary = parseTeamAttendanceSummary({
+      serverTimestamp: '2026-07-30T15:00:00.000Z',
+      fromDate: '2026-07-30',
+      throughDate: '2026-07-30',
+      operationalTimeZone: 'America/Denver',
+      rows: [{
+        employeeId: '73000000-0000-4000-8000-000000000001',
+        username: 'fgomez',
+        employeeName: 'Fernando Gomez',
+        role: 'guard',
+        employmentType: 'hourly',
+        latestKind: 'clock_in',
+        latestEffectiveAt: '2026-07-30T13:30:00.000Z',
+        latestLocationName: 'Cobalt',
+        latestSiteName: 'Cobalt',
+        latestSiteCode: 'COB',
+        latestPostName: 'Executive Protection',
+        latestEventName: null,
+        latestTimeZone: 'America/Denver',
+        firstClockIn: '2026-07-30T13:30:00.000Z',
+        lastClockOut: null,
+        eventCount: 1,
+        scheduledShiftCount: 1,
+        scheduledStartsAt: '2026-07-30T13:30:00.000Z',
+        scheduledEndsAt: '2026-07-30T23:30:00.000Z',
+        scheduledLocationName: 'Cobalt',
+        scheduledSiteName: 'Cobalt',
+        scheduledSiteCode: 'COB',
+        scheduledPostName: 'Executive Protection',
+        scheduledEventName: null,
+        scheduledTimeZone: 'America/Denver',
+      }],
+    })
+
+    expect(summary.rows).toHaveLength(1)
+    expect(summary.rows[0]?.employeeName).toBe('Fernando Gomez')
+    expect(summary.rows[0]?.scheduledShiftCount).toBe(1)
   })
 
   it('validates supervisor review rows and exports payroll CSV safely', () => {

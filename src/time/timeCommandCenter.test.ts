@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionContext } from '../data/auth'
-import type { TimekeepingDashboard, TimekeepingReview, TimeMaintenance } from '../data/timekeeping'
+import type { TeamAttendanceSummary, TimekeepingDashboard, TimekeepingReview } from '../data/timekeeping'
 import { buildTimeCommandCenterModel, canViewTeamTime } from './timeCommandCenter'
 import { canUseOwnTimeClock, canViewOwnTime } from './timePermissions'
 
@@ -109,44 +109,43 @@ const review: TimekeepingReview = {
   throughDate: '2026-08-08',
 }
 
-const maintenance: TimeMaintenance = {
-  employees: [],
-  events: [{
-    clientRecordedAt: null,
-    createdBy: null,
-    createdByName: null,
-    effectiveAt: '2026-07-30T14:00:00.000Z',
+const attendanceSummary: TeamAttendanceSummary = {
+  fromDate: '2026-07-26',
+  operationalTimeZone: 'America/Denver',
+  rows: [{
     employeeId: dashboard.employee.id,
     employeeName: 'Zach Ward',
     employmentType: 'flex',
-    eventName: null,
-    id: '73000000-0000-4000-8000-000000000002',
-    kind: 'clock_in',
-    latestAction: null,
-    latestNote: null,
-    locationName: 'Administrative',
-    maintenanceNoteCount: 0,
-    pendingCorrectionCount: 0,
-    postName: 'Recruiting and Licensure',
-    recordedAt: '2026-07-30T14:00:00.000Z',
+    eventCount: 1,
+    firstClockIn: '2026-07-30T14:00:00.000Z',
+    lastClockOut: null,
+    latestEffectiveAt: '2026-07-30T14:00:00.000Z',
+    latestEventName: null,
+    latestKind: 'clock_in',
+    latestLocationName: 'Administrative',
+    latestPostName: null,
+    latestSiteCode: null,
+    latestSiteName: null,
+    latestTimeZone: 'America/Denver',
     role: 'guard',
-    shiftId: null,
-    siteCode: 'ADMIN',
-    siteName: 'Administrative',
-    source: 'web',
-    timeZone: 'America/Denver',
+    scheduledEndsAt: null,
+    scheduledEventName: null,
+    scheduledLocationName: null,
+    scheduledPostName: null,
+    scheduledShiftCount: 0,
+    scheduledSiteCode: null,
+    scheduledSiteName: null,
+    scheduledStartsAt: null,
+    scheduledTimeZone: 'America/Denver',
     username: 'zward',
-    voided: false,
   }],
-  fromDate: '2026-07-26',
-  operationalTimeZone: 'America/Denver',
   serverTimestamp: '2026-07-30T16:00:00.000Z',
   throughDate: '2026-08-08',
 }
 
 describe('time command center model', () => {
-  it('summarizes real review and maintenance data without dropping active punches', () => {
-    const model = buildTimeCommandCenterModel({ dashboard, maintenance, review })
+  it('summarizes real review and team attendance data without depending on raw maintenance punches', () => {
+    const model = buildTimeCommandCenterModel({ attendanceSummary, dashboard, review })
 
     expect(model.self.clockState).toBe('working')
     expect(model.clockedIn.count).toBe(1)

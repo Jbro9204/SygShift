@@ -9044,6 +9044,163 @@
   background: #fffaf1;
 }
 
+.time-team-controls,
+.time-team-panel,
+.time-exception-reference {
+  margin-bottom: 16px;
+}
+
+.time-team-controls .time-section-header,
+.time-team-panel .time-section-header,
+.time-exception-reference .time-section-header {
+  margin: 0;
+}
+
+.time-team-controls__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.time-team-controls__grid label,
+.time-exception-card label {
+  display: grid;
+  gap: 7px;
+  color: #4f483d;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.time-team-controls__grid input,
+.time-team-controls__grid select,
+.time-exception-card textarea {
+  width: 100%;
+  min-height: 46px;
+  box-sizing: border-box;
+  color: #29261f;
+  background: #ffffff;
+  border: 1px solid #d5cec0;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 15px;
+}
+
+.time-team-controls__grid input,
+.time-team-controls__grid select {
+  padding: 9px 11px;
+}
+
+.time-exception-card textarea {
+  min-height: 76px;
+  padding: 10px 12px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.time-team-table {
+  min-width: 980px;
+}
+
+.time-team-table .time-button {
+  min-height: 40px;
+  padding: 9px 12px;
+  white-space: nowrap;
+}
+
+.time-exception-guide {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.time-exception-guide__item {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  background: #fffdf8;
+  border: 1px solid #e1d8c8;
+  border-radius: 10px;
+}
+
+.time-exception-guide__item--selected {
+  background: #fff4df;
+  border-color: #c7943b;
+  box-shadow: inset 0 0 0 1px rgba(184, 135, 49, 0.14);
+}
+
+.time-exception-guide__item strong {
+  color: #27231d;
+  font-size: 15px;
+}
+
+.time-exception-guide__item span {
+  color: #675f54;
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.time-exception-card-list {
+  display: grid;
+  gap: 10px;
+}
+
+.time-exception-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 15px;
+  background: #ffffff;
+  border: 1px solid #e1d8c8;
+  border-radius: 10px;
+}
+
+.time-exception-card--pending {
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.44fr) auto;
+  align-items: end;
+  background: #fffaf1;
+  border-color: #e2d0ae;
+}
+
+.time-exception-card strong,
+.time-exception-card span,
+.time-exception-card small,
+.time-exception-card p {
+  display: block;
+  margin: 0;
+}
+
+.time-exception-card strong {
+  color: #27231d;
+  font-size: 16px;
+}
+
+.time-exception-card span,
+.time-exception-card small,
+.time-exception-card p {
+  margin-top: 4px;
+  color: #6b6257;
+  font-size: 13px;
+  line-height: 1.42;
+}
+
+.time-exception-card__badges,
+.time-exception-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.time-exception-card__actions {
+  justify-content: flex-end;
+  margin-top: 0;
+}
+
+.time-exception-card__actions .time-button {
+  min-width: 116px;
+}
+
 .time-maintenance-workbench {
   margin-top: 16px;
   overflow: hidden;
@@ -9083,6 +9240,18 @@
   line-height: 1.5;
 }
 
+.time-maintenance-heading__controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.time-maintenance-heading__controls .secondary-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .time-maintenance-tools {
   display: grid;
   grid-template-columns: minmax(260px, 0.3fr) minmax(0, 1fr);
@@ -9113,6 +9282,7 @@
 .time-maintenance-add select,
 .time-maintenance-add input,
 .time-maintenance-add textarea,
+.time-correction-editor select,
 .time-correction-editor input,
 .time-correction-editor textarea {
   width: 100%;
@@ -9231,10 +9401,22 @@
 }
 
 .time-correction-editor__fields input,
-.time-correction-editor__location input {
+.time-correction-editor__location input,
+.time-correction-editor__location select {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
+}
+
+.time-correction-editor__location small {
+  color: #6f6658;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.time-correction-editor__location .field-error {
+  color: #8f352f;
 }
 
 .time-correction-editor__mode {
@@ -9409,6 +9591,43 @@
 .time-maintenance-actions button {
   min-height: 38px;
   gap: 6px;
+}
+
+.time-maintenance-overview {
+  display: grid;
+  gap: 14px;
+  padding: 18px 22px 22px;
+}
+
+.time-maintenance-overview__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.time-maintenance-overview__heading h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.time-maintenance-overview__heading p:not(.eyebrow) {
+  max-width: 760px;
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.time-maintenance-overview-table td {
+  vertical-align: middle;
+}
+
+.time-maintenance-overview-table .secondary-button {
+  min-width: 116px;
+  justify-content: center;
 }
 
 .time-review-jump-button {
@@ -10524,6 +10743,21 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .time-team-controls__grid,
+  .time-exception-guide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .time-exception-card,
+  .time-exception-card--pending {
+    grid-template-columns: 1fr;
+  }
+
+  .time-exception-card .time-button,
+  .time-exception-card__actions .time-button {
+    width: 100%;
+  }
+
   .time-command-grid--period {
     grid-template-columns: 1fr;
   }
@@ -10544,6 +10778,7 @@
   .time-review-workbench__heading,
   .my-time-history__heading,
   .time-maintenance-heading,
+  .time-maintenance-heading__controls,
   .time-review-actions {
     align-items: stretch;
     flex-direction: column;
@@ -10746,6 +10981,8 @@
 
   .time-review-range,
   .time-review-metrics,
+  .time-team-controls__grid,
+  .time-exception-guide,
   .time-correction-editor__fields,
   .payroll-rules-panel,
   .payroll-period-controls__fields,

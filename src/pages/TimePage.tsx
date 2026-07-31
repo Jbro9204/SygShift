@@ -25,6 +25,8 @@ import {
   getClockableShiftChoices,
   getOwnTimekeepingReview,
   getPayrollExportHistory,
+  getTeamAttendanceSummary,
+  getTimeMaintenanceShiftOptions,
   getTimeMaintenance,
   getTimekeepingDashboard,
   getTimekeepingReview,
@@ -33,14 +35,19 @@ import {
   recordTimeEvent,
   reviewRowsToPayrollSummaryCsv,
   reviewTimeEventCorrection,
+  summarizePayrollRowsByEmployee,
   supervisorCorrectTimeEvent,
   supervisorRecordTimeEvent,
+  supervisorUpdateTimeEventSitePost,
   supervisorUpdateTimeEventLocation,
   verifiedTimekeepingBaseline,
   type PendingCorrection,
   type PayrollExportBatch,
+  type PayrollEmployeeSummary,
   type ClockableShiftChoices,
+  type TeamAttendanceSummaryRow,
   type TimeMaintenanceEvent,
+  type TimeMaintenanceShiftOption,
   type TimeEventKind,
   type TimekeepingDashboard,
   type TimekeepingEvent,
@@ -54,6 +61,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTime, OPERATIONAL_TIME_ZONE, operationalToday } from '../lib/time'
 import { TimeCommandCenterPage } from '../time/TimeCommandCenterPage'
 import { workedTimePayrollReview } from '../time/timePayroll'
+import { completedPayrollPeriod } from '../time/timeRules'
 import {
   canExportPayroll as sessionCanExportPayroll,
   canManageTime as sessionCanManageTime,
@@ -103,12 +111,6 @@ function formatDateKey(date: Date): string {
     timeZone: OPERATIONAL_TIME_ZONE,
     year: 'numeric',
   }).format(date)
-}
-
-function addDaysKey(dateKey: string, days: number): string {
-  const [year, month, day] = dateKey.split('-').map(Number)
-  const date = new Date(year, month - 1, day + days, 12)
-  return formatDateKey(date)
 }
 
 function payrollWeekRange(dateKey: string): { fromDate: string; throughDate: string } {
@@ -211,6 +213,19 @@ function shiftLocation(shift: TimekeepingShift): string {
   return [shift.siteCode, shift.siteName ?? shift.locationName].filter(Boolean).join(' · ') || 'Location pending'
 }
 
+function sitePostOptionTitle(option: TimeMaintenanceShiftOption): string {
+  const site = [option.siteCode, option.siteName ?? option.locationName].filter(Boolean).join(' · ') || option.locationName
+  const post = option.postName ?? option.eventName
+  if (!post || post === site) return `${site} - Site`
+  return `${site} - ${post}`
+}
+
+function sitePostOptionSchedule(option: TimeMaintenanceShiftOption): string {
+  const assignedNames = option.assignedEmployees.map((employee) => employee.name).join(', ')
+  const assignedText = assignedNames ? ` · assigned: ${assignedNames}` : ' · open/unassigned'
+  return `${formatDate(option.startsAt)} · ${formatTime(option.startsAt, option.timeZone)} - ${formatTime(option.endsAt, option.timeZone)} · ${option.scheduleStatus} r${option.scheduleRevision}${assignedText}`
+}
+
 function activeShift(dashboard: TimekeepingDashboard): TimekeepingShift | null {
   const activeShiftId = dashboard.lastEvent?.shiftId
   if (!activeShiftId) return null
@@ -224,31 +239,179 @@ function maintenanceEventLabel(event: TimeMaintenanceEvent): string {
 function MaintenanceEventStatus({ event }: { event: TimeMaintenanceEvent }) {
   if (event.voided) return <span className="payroll-status payroll-status--hold">Voided</span>
   if (event.pendingCorrectionCount > 0) return <span className="payroll-status payroll-status--hold">Correction pending</span>
+  if (event.latestAction === 'site_post_update') return <span className="payroll-status payroll-status--ready">Site/Post fixed</span>
   if (event.latestAction === 'time_adjust') return <span className="payroll-status payroll-status--ready">Adjusted</span>
   if (event.latestAction === 'manual_add') return <span className="payroll-status payroll-status--ready">Manual</span>
+  if (event.latestAction === 'location_update') return <span className="payroll-status payroll-status--ready">Location fixed</span>
   return <span className="payroll-status payroll-status--ready">Active</span>
 }
 
-interface TimeMaintenanceFocusRequest {
+export interface TimeMaintenanceFocusRequest {
   employeeId: string
   fromDate: string
   throughDate: string
   requestId: number
 }
 
-function TimeMaintenanceWorkbench({
+const MANUAL_SITE_POST_OPTION = '__manual_site_post__'
+
+interface TimeMaintenanceOverviewRow {
+  employeeId: string
+  employeeName: string
+  username: string
+  employmentType: TeamAttendanceSummaryRow['employmentType']
+  role: TeamAttendanceSummaryRow['role']
+  latestKind: TeamAttendanceSummaryRow['latestKind']
+  latestEffectiveAt: string | null
+  currentLocation: string
+  firstClockIn: string | null
+  lastClockOut: string | null
+  eventCount: number
+  scheduledShiftCount: number
+  scheduledSummary: string
+  paidMinutes: number
+  breakMinutes: number
+  overtimeMinutes: number
+  workedShiftCount: number
+  exceptionCount: number
+  pendingCorrectionCount: number
+}
+
+function maintenanceClockState(kind: TeamAttendanceSummaryRow['latestKind']): TimekeepingState {
+  if (!kind || kind === 'clock_out') return 'off_clock'
+  if (kind === 'break_start') return 'on_break'
+  return 'working'
+}
+
+function maintenanceClockLabel(kind: TeamAttendanceSummaryRow['latestKind']): string {
+  const state = maintenanceClockState(kind)
+  if (state === 'working') return 'Clocked in'
+  if (state === 'on_break') return 'On break'
+  return 'Off clock'
+}
+
+function maintenanceSummaryLocation(row: TeamAttendanceSummaryRow): string {
+  const liveLocation = row.latestKind && row.latestKind !== 'clock_out'
+    ? [row.latestSiteCode, row.latestSiteName, row.latestPostName ?? row.latestEventName].filter(Boolean).join(' / ')
+      || row.latestLocationName
+    : null
+
+  return liveLocation
+    || [row.scheduledSiteCode, row.scheduledSiteName, row.scheduledPostName ?? row.scheduledEventName].filter(Boolean).join(' / ')
+    || row.scheduledLocationName
+    || 'No location in range'
+}
+
+function maintenanceScheduledSummary(row: TeamAttendanceSummaryRow): string {
+  if (row.scheduledShiftCount === 0) return 'No scheduled shifts in range'
+  const location = [row.scheduledSiteCode, row.scheduledSiteName, row.scheduledPostName ?? row.scheduledEventName].filter(Boolean).join(' / ')
+    || row.scheduledLocationName
+    || 'Scheduled location'
+  return `${row.scheduledShiftCount} scheduled · ${location}`
+}
+
+function buildTimeMaintenanceOverviewRows(
+  attendanceRows: TeamAttendanceSummaryRow[],
+  payrollSummaries: PayrollEmployeeSummary[],
+  pendingCorrections: PendingCorrection[],
+): TimeMaintenanceOverviewRow[] {
+  const payrollByEmployee = new Map(payrollSummaries.map((summary) => [summary.employeeId, summary]))
+  const attendanceByEmployee = new Map(attendanceRows.map((row) => [row.employeeId, row]))
+  const pendingByEmployee = new Map<string, number>()
+
+  for (const correction of pendingCorrections) {
+    pendingByEmployee.set(correction.employeeId, (pendingByEmployee.get(correction.employeeId) ?? 0) + 1)
+  }
+
+  const rows = new Map<string, TimeMaintenanceOverviewRow>()
+
+  for (const attendance of attendanceRows) {
+    const payroll = payrollByEmployee.get(attendance.employeeId)
+    rows.set(attendance.employeeId, {
+      breakMinutes: payroll?.breakMinutes ?? 0,
+      currentLocation: maintenanceSummaryLocation(attendance),
+      employeeId: attendance.employeeId,
+      employeeName: attendance.employeeName,
+      employmentType: attendance.employmentType,
+      eventCount: attendance.eventCount,
+      exceptionCount: payroll?.exceptionCount ?? 0,
+      firstClockIn: attendance.firstClockIn,
+      lastClockOut: attendance.lastClockOut,
+      latestEffectiveAt: attendance.latestEffectiveAt,
+      latestKind: attendance.latestKind,
+      overtimeMinutes: payroll?.overtimeMinutes ?? 0,
+      paidMinutes: payroll?.paidMinutes ?? 0,
+      pendingCorrectionCount: pendingByEmployee.get(attendance.employeeId) ?? 0,
+      role: attendance.role,
+      scheduledShiftCount: attendance.scheduledShiftCount,
+      scheduledSummary: maintenanceScheduledSummary(attendance),
+      username: attendance.username,
+      workedShiftCount: payroll?.workedShiftCount ?? 0,
+    })
+  }
+
+  for (const payroll of payrollSummaries) {
+    if (rows.has(payroll.employeeId)) continue
+    const attendance = attendanceByEmployee.get(payroll.employeeId)
+    rows.set(payroll.employeeId, {
+      breakMinutes: payroll.breakMinutes,
+      currentLocation: attendance ? maintenanceSummaryLocation(attendance) : 'Time clock activity',
+      employeeId: payroll.employeeId,
+      employeeName: payroll.employeeName,
+      employmentType: payroll.employmentType,
+      eventCount: attendance?.eventCount ?? 0,
+      exceptionCount: payroll.exceptionCount,
+      firstClockIn: attendance?.firstClockIn ?? null,
+      lastClockOut: attendance?.lastClockOut ?? null,
+      latestEffectiveAt: attendance?.latestEffectiveAt ?? null,
+      latestKind: attendance?.latestKind ?? null,
+      overtimeMinutes: payroll.overtimeMinutes,
+      paidMinutes: payroll.paidMinutes,
+      pendingCorrectionCount: pendingByEmployee.get(payroll.employeeId) ?? 0,
+      role: payroll.role,
+      scheduledShiftCount: attendance?.scheduledShiftCount ?? 0,
+      scheduledSummary: attendance ? maintenanceScheduledSummary(attendance) : 'No scheduled shifts in range',
+      username: payroll.username,
+      workedShiftCount: payroll.workedShiftCount,
+    })
+  }
+
+  return [...rows.values()].sort((left, right) => {
+    const stateWeight: Record<TimekeepingState, number> = { working: 0, on_break: 1, off_clock: 2 }
+    const stateCompare = stateWeight[maintenanceClockState(left.latestKind)] - stateWeight[maintenanceClockState(right.latestKind)]
+    if (stateCompare !== 0) return stateCompare
+    return left.employeeName.localeCompare(right.employeeName, undefined, { sensitivity: 'base' })
+  })
+}
+
+export function TimeMaintenanceWorkbench({
+  defaultPeriod,
   defaultDate,
   focusRequest,
+  headingEyebrow = 'Time maintenance',
+  headingSummary = 'Search an employee, review their punches, add missing events, and correct mistakes without erasing the original history.',
+  headingTitle = 'Work employee time records',
+  initialEmployeeId,
+  lockEmployeeFilter = false,
+  onClose,
 }: {
+  defaultPeriod?: { fromDate: string; throughDate: string }
   defaultDate: string
   focusRequest: TimeMaintenanceFocusRequest | null
+  headingEyebrow?: string
+  headingSummary?: string
+  headingTitle?: string
+  initialEmployeeId?: string
+  lockEmployeeFilter?: boolean
+  onClose?: () => void
 }) {
   const queryClient = useQueryClient()
   const workbenchRef = useRef<HTMLElement | null>(null)
-  const [fromDate, setFromDate] = useState(() => addDaysKey(defaultDate, -6))
-  const [throughDate, setThroughDate] = useState(defaultDate)
-  const [employeeId, setEmployeeId] = useState('')
-  const [addEmployeeId, setAddEmployeeId] = useState('')
+  const defaultMaintenancePeriod = useMemo(() => defaultPeriod ?? completedPayrollPeriod(), [defaultPeriod])
+  const [fromDate, setFromDate] = useState(defaultMaintenancePeriod.fromDate)
+  const [throughDate, setThroughDate] = useState(defaultMaintenancePeriod.throughDate)
+  const [employeeId, setEmployeeId] = useState(initialEmployeeId ?? '')
+  const [addEmployeeId, setAddEmployeeId] = useState(initialEmployeeId ?? '')
   const [addKind, setAddKind] = useState<TimeEventKind>('clock_in')
   const [addDate, setAddDate] = useState(defaultDate)
   const [addTime, setAddTime] = useState('08:00')
@@ -256,19 +419,51 @@ function TimeMaintenanceWorkbench({
   const [addShiftId, setAddShiftId] = useState<string | null>(null)
   const [addContext, setAddContext] = useState<string | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<TimeMaintenanceEvent | null>(null)
-  const [correctionMode, setCorrectionMode] = useState<'adjust' | 'void' | 'location'>('adjust')
+  const [correctionMode, setCorrectionMode] = useState<'adjust' | 'void' | 'site_post'>('adjust')
   const [correctionDate, setCorrectionDate] = useState(defaultDate)
   const [correctionTime, setCorrectionTime] = useState('08:00')
-  const [correctionLocation, setCorrectionLocation] = useState('')
+  const [correctionShiftId, setCorrectionShiftId] = useState('')
+  const [correctionManualLocation, setCorrectionManualLocation] = useState('')
   const [correctionReason, setCorrectionReason] = useState('')
+  const showOverview = !lockEmployeeFilter && employeeId === ''
+  const overviewSummaryQuery = useQuery({
+    enabled: isSupabaseConfigured && showOverview,
+    queryKey: ['time-maintenance-overview', fromDate, throughDate],
+    queryFn: () => getTeamAttendanceSummary({ fromDate, throughDate }),
+    refetchInterval: 30_000,
+  })
+  const overviewReviewQuery = useQuery({
+    enabled: isSupabaseConfigured && showOverview,
+    queryKey: ['time-maintenance-review-summary', fromDate, throughDate],
+    queryFn: () => getTimekeepingReview({ fromDate, throughDate }),
+    refetchInterval: 30_000,
+  })
   const maintenanceQuery = useQuery({
+    enabled: !lockEmployeeFilter || employeeId !== '',
     queryKey: ['time-maintenance', fromDate, throughDate, employeeId || null],
     queryFn: () => getTimeMaintenance({ employeeId: employeeId || null, fromDate, throughDate }),
+    refetchInterval: 30_000,
+  })
+  const shiftOptionsEmployeeId = selectedEvent?.employeeId ?? (employeeId || null)
+  const shiftOptionsQuery = useQuery({
+    enabled: selectedEvent !== null && correctionMode === 'site_post',
+    queryKey: ['time-maintenance-shift-options', fromDate, throughDate, shiftOptionsEmployeeId],
+    queryFn: () => getTimeMaintenanceShiftOptions({
+      employeeId: shiftOptionsEmployeeId,
+      fromDate,
+      throughDate,
+    }),
   })
   const refreshTimeQueries = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['time-maintenance'] }),
+      queryClient.invalidateQueries({ queryKey: ['time-maintenance-overview'] }),
+      queryClient.invalidateQueries({ queryKey: ['time-maintenance-review-summary'] }),
+      queryClient.invalidateQueries({ queryKey: ['time-maintenance-shift-options'] }),
+      queryClient.invalidateQueries({ queryKey: ['time-payroll-review'] }),
       queryClient.invalidateQueries({ queryKey: ['timekeeping-review'] }),
+      queryClient.invalidateQueries({ queryKey: ['my-time-review'] }),
+      queryClient.invalidateQueries({ queryKey: ['time-command-review'] }),
       queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'] }),
     ])
   }
@@ -290,12 +485,19 @@ function TimeMaintenanceWorkbench({
   const correctionMutation = useMutation<unknown, Error>({
     mutationFn: () => {
       if (!selectedEvent) throw new Error('Select a time event first.')
-      if (correctionMode === 'location') {
-        return supervisorUpdateTimeEventLocation({
-          locationName: correctionLocation.trim(),
+      if (correctionMode === 'site_post') {
+        if (correctionShiftId === MANUAL_SITE_POST_OPTION) {
+          return supervisorUpdateTimeEventLocation({
+            locationName: correctionManualLocation.trim(),
+            reason: correctionReason.trim(),
+            timeEventId: selectedEvent.id,
+            timeZone: selectedEvent.timeZone,
+          })
+        }
+        return supervisorUpdateTimeEventSitePost({
           reason: correctionReason.trim(),
+          shiftId: correctionShiftId,
           timeEventId: selectedEvent.id,
-          timeZone: selectedEvent.timeZone,
         })
       }
       return supervisorCorrectTimeEvent({
@@ -307,7 +509,8 @@ function TimeMaintenanceWorkbench({
     },
     onSuccess: async () => {
       setSelectedEvent(null)
-      setCorrectionLocation('')
+      setCorrectionShiftId('')
+      setCorrectionManualLocation('')
       setCorrectionReason('')
       await refreshTimeQueries()
     },
@@ -315,14 +518,35 @@ function TimeMaintenanceWorkbench({
   const maintenance = maintenanceQuery.data
   const events = maintenance?.events ?? []
   const employees = maintenance?.employees ?? []
+  const overviewPayrollSummaries = useMemo(() => {
+    const workedReview = workedTimePayrollReview(overviewReviewQuery.data)
+    return summarizePayrollRowsByEmployee(workedReview?.rows ?? [])
+  }, [overviewReviewQuery.data])
+  const overviewRows = useMemo(() => buildTimeMaintenanceOverviewRows(
+    overviewSummaryQuery.data?.rows ?? [],
+    overviewPayrollSummaries,
+    overviewReviewQuery.data?.pendingCorrections ?? [],
+  ), [overviewPayrollSummaries, overviewReviewQuery.data?.pendingCorrections, overviewSummaryQuery.data?.rows])
+  const visibleEvents = showOverview ? [] : events
+  const overviewEventCount = overviewRows.reduce((total, row) => total + row.eventCount, 0)
+  const overviewPendingCount = overviewRows.reduce((total, row) => total + row.pendingCorrectionCount, 0)
+  const overviewExceptionCount = overviewRows.reduce((total, row) => total + row.exceptionCount, 0)
+  const overviewPaidMinutes = overviewRows.reduce((total, row) => total + row.paidMinutes, 0)
   const canAdd = addEmployeeId !== '' && addReason.trim().length > 0 && !addMutation.isPending
   const canCorrect = selectedEvent !== null
     && correctionReason.trim().length > 0
     && !correctionMutation.isPending
-    && (correctionMode !== 'location' || correctionLocation.trim().length > 0)
-  const manualCount = events.filter((event) => event.source === 'supervisor').length
-  const voidedCount = events.filter((event) => event.voided).length
-  const pendingCount = events.filter((event) => event.pendingCorrectionCount > 0).length
+    && (correctionMode !== 'site_post' || (correctionShiftId !== '' && (correctionShiftId !== MANUAL_SITE_POST_OPTION || correctionManualLocation.trim().length > 0)))
+  const manualCount = visibleEvents.filter((event) => event.source === 'supervisor').length
+  const voidedCount = visibleEvents.filter((event) => event.voided).length
+  const pendingCount = showOverview ? overviewPendingCount : visibleEvents.filter((event) => event.pendingCorrectionCount > 0).length
+  const selectedEventDate = selectedEvent ? dateInputValue(selectedEvent.effectiveAt) : ''
+  const correctionShiftOptions = useMemo(() => {
+    const options = shiftOptionsQuery.data ?? []
+    if (!selectedEventDate) return options
+    return options.filter((option) =>
+      dateInputValue(option.startsAt) === selectedEventDate || dateInputValue(option.endsAt) === selectedEventDate)
+  }, [selectedEventDate, shiftOptionsQuery.data])
 
   useEffect(() => {
     if (!focusRequest) return
@@ -335,12 +559,26 @@ function TimeMaintenanceWorkbench({
     })
   }, [focusRequest])
 
-  function beginCorrection(event: TimeMaintenanceEvent, mode: 'adjust' | 'void' | 'location') {
+  useEffect(() => {
+    if (!initialEmployeeId) return
+    setEmployeeId(initialEmployeeId)
+    setAddEmployeeId(initialEmployeeId)
+  }, [initialEmployeeId])
+
+  useEffect(() => {
+    setSelectedEvent(null)
+    setCorrectionShiftId('')
+    setCorrectionManualLocation('')
+    setCorrectionReason('')
+  }, [employeeId, fromDate, throughDate])
+
+  function beginCorrection(event: TimeMaintenanceEvent, mode: 'adjust' | 'void' | 'site_post') {
     setSelectedEvent(event)
     setCorrectionMode(mode)
     setCorrectionDate(dateInputValue(event.effectiveAt))
     setCorrectionTime(timeInputValue(event.effectiveAt))
-    setCorrectionLocation(event.locationName === 'Unscheduled' || event.locationName === 'Unscheduled Location' ? '' : event.locationName)
+    setCorrectionShiftId(event.shiftId ?? '')
+    setCorrectionManualLocation(event.locationName === 'Unscheduled' || event.locationName === 'Unscheduled Location' ? '' : event.locationName)
     setCorrectionReason('')
   }
 
@@ -359,15 +597,16 @@ function TimeMaintenanceWorkbench({
     <section className="time-maintenance-workbench" aria-labelledby="time-maintenance-title" ref={workbenchRef}>
       <div className="time-maintenance-heading">
         <div>
-          <p className="eyebrow">Time maintenance</p>
-          <h2 id="time-maintenance-title">Work employee time records</h2>
-          <p>
-            Search an employee, review their punches, add missing events, and correct mistakes without erasing the original history.
-          </p>
+          <p className="eyebrow">{headingEyebrow}</p>
+          <h2 id="time-maintenance-title">{headingTitle}</h2>
+          <p>{headingSummary}</p>
         </div>
-        <div className="time-review-range" aria-label="Time maintenance date range">
-          <label><span>From</span><input max={throughDate} onChange={(event) => setFromDate(event.target.value)} type="date" value={fromDate} /></label>
-          <label><span>Through</span><input min={fromDate} onChange={(event) => setThroughDate(event.target.value)} type="date" value={throughDate} /></label>
+        <div className="time-maintenance-heading__controls">
+          <div className="time-review-range" aria-label="Time maintenance date range">
+            <label><span>From</span><input max={throughDate} onChange={(event) => setFromDate(event.target.value)} type="date" value={fromDate} /></label>
+            <label><span>Through</span><input min={fromDate} onChange={(event) => setThroughDate(event.target.value)} type="date" value={throughDate} /></label>
+          </div>
+          {onClose ? <button className="secondary-button" onClick={onClose} type="button">Close details</button> : null}
         </div>
       </div>
 
@@ -378,27 +617,40 @@ function TimeMaintenanceWorkbench({
       ) : maintenance ? (
         <>
           <section className="time-review-metrics" aria-label="Time maintenance totals">
-            <article><span>Events</span><strong>{events.length}</strong><small>Punches in range</small></article>
-            <article><span>Manual</span><strong>{manualCount}</strong><small>Supervisor-entered punches</small></article>
-            <article className={pendingCount ? 'import-metric--attention' : ''}><span>Pending</span><strong>{pendingCount}</strong><small>Employee corrections</small></article>
-            <article className={voidedCount ? 'import-metric--attention' : ''}><span>Voided</span><strong>{voidedCount}</strong><small>Excluded from payroll</small></article>
+            {showOverview ? (
+              <>
+                <article><span>People</span><strong>{overviewRows.length}</strong><small>Employees with time or schedule activity</small></article>
+                <article><span>Punches</span><strong>{overviewEventCount}</strong><small>Clock events in range</small></article>
+                <article className={overviewPendingCount + overviewExceptionCount ? 'import-metric--attention' : ''}><span>Needs review</span><strong>{overviewPendingCount + overviewExceptionCount}</strong><small>Corrections or payroll exceptions</small></article>
+                <article><span>Paid hours</span><strong>{payrollHours(overviewPaidMinutes)}</strong><small>Worked time in range</small></article>
+              </>
+            ) : (
+              <>
+                <article><span>Events</span><strong>{visibleEvents.length}</strong><small>Punches for selected employee</small></article>
+                <article><span>Manual</span><strong>{manualCount}</strong><small>Supervisor-entered punches</small></article>
+                <article className={pendingCount ? 'import-metric--attention' : ''}><span>Pending</span><strong>{pendingCount}</strong><small>Employee corrections</small></article>
+                <article className={voidedCount ? 'import-metric--attention' : ''}><span>Voided</span><strong>{voidedCount}</strong><small>Excluded from payroll</small></article>
+              </>
+            )}
           </section>
 
           <div className="time-maintenance-tools">
             <label className="time-maintenance-filter">
               <span>Employee filter</span>
               <select
+                disabled={lockEmployeeFilter}
                 onChange={(event) => {
                   setEmployeeId(event.target.value)
                   if (event.target.value && addEmployeeId === '') setAddEmployeeId(event.target.value)
                 }}
                 value={employeeId}
               >
-                <option value="">All active employees</option>
+                {lockEmployeeFilter ? null : <option value="">All active employees</option>}
                 {employees.map((employee) => (
                   <option key={employee.id} value={employee.id}>{employee.displayName} (@{employee.username})</option>
                 ))}
               </select>
+              {lockEmployeeFilter ? <small>Detail view is locked to the selected employee.</small> : null}
             </label>
 
             <form
@@ -488,8 +740,11 @@ function TimeMaintenanceWorkbench({
               </div>
               <div className="time-correction-editor__mode" role="radiogroup" aria-label="Correction type">
                 <label><input checked={correctionMode === 'adjust'} onChange={() => setCorrectionMode('adjust')} type="radio" /> Change time</label>
+                <label><input checked={correctionMode === 'site_post'} onChange={() => {
+                  setCorrectionMode('site_post')
+                  setCorrectionShiftId(selectedEvent.shiftId ?? '')
+                }} type="radio" /> Fix Site/Post</label>
                 <label><input checked={correctionMode === 'void'} onChange={() => setCorrectionMode('void')} type="radio" /> Void punch</label>
-                <label><input checked={correctionMode === 'location'} onChange={() => setCorrectionMode('location')} type="radio" /> Fix location</label>
               </div>
               {correctionMode === 'adjust' ? (
                 <div className="time-correction-editor__fields">
@@ -497,17 +752,44 @@ function TimeMaintenanceWorkbench({
                   <label><span>New time / Mountain</span><input onChange={(event) => setCorrectionTime(event.target.value)} required type="time" value={correctionTime} /></label>
                 </div>
               ) : null}
-              {correctionMode === 'location' ? (
+              {correctionMode === 'site_post' ? (
                 <label className="time-correction-editor__location">
-                  <span>Correct location</span>
-                  <input
-                    maxLength={180}
-                    onChange={(event) => setCorrectionLocation(event.target.value)}
-                    placeholder="Example: Cobalt / Executive Protection"
+                  <span>Correct Site/Post</span>
+                  <select
+                    disabled={shiftOptionsQuery.isPending}
+                    onChange={(event) => setCorrectionShiftId(event.target.value)}
                     required
-                    type="text"
-                    value={correctionLocation}
-                  />
+                    value={correctionShiftId}
+                  >
+                    <option value="">{shiftOptionsQuery.isPending ? 'Loading schedule blocks...' : 'Choose the correct Site/Post shift'}</option>
+                    {correctionShiftOptions.map((option) => (
+                      <option key={option.shiftId} value={option.shiftId}>
+                        {sitePostOptionTitle(option)}
+                      </option>
+                    ))}
+                    <option value={MANUAL_SITE_POST_OPTION}>Other / manual label only</option>
+                  </select>
+                  {correctionShiftId === MANUAL_SITE_POST_OPTION ? (
+                    <>
+                      <input
+                        maxLength={180}
+                        onChange={(event) => setCorrectionManualLocation(event.target.value)}
+                        placeholder="Example: Cobalt / Executive Protection"
+                        required
+                        type="text"
+                        value={correctionManualLocation}
+                      />
+                      <small>Use this only when the schedule block does not exist yet. It fixes the payroll label but does not link the punch to a schedule block.</small>
+                    </>
+                  ) : correctionShiftOptions.length > 0 && correctionShiftId ? (
+                    <small>{sitePostOptionSchedule(correctionShiftOptions.find((option) => option.shiftId === correctionShiftId) ?? correctionShiftOptions[0])}</small>
+                  ) : (
+                    <small>Select the actual scheduled block. This removes the Unscheduled payroll flag for the corrected punch group.</small>
+                  )}
+                  {shiftOptionsQuery.isError ? <small className="field-error">{shiftOptionsQuery.error.message}</small> : null}
+                  {!shiftOptionsQuery.isPending && correctionShiftOptions.length === 0 ? (
+                    <small className="field-error">No schedule blocks were found on this punch date. Add the shift to the schedule first for a true Site/Post link, or choose Other for a manual payroll label.</small>
+                  ) : null}
                 </label>
               ) : null}
               <label className="time-maintenance-add__reason">
@@ -524,15 +806,103 @@ function TimeMaintenanceWorkbench({
               <div className="time-correction-editor__actions">
                 <button className="secondary-button" onClick={() => setSelectedEvent(null)} type="button">Cancel</button>
                 <button className={correctionMode === 'void' ? 'danger-primary' : 'primary-action'} disabled={!canCorrect} type="submit">
-                  {correctionMutation.isPending ? 'Saving...' : correctionMode === 'void' ? 'Void punch' : correctionMode === 'location' ? 'Save location' : 'Save corrected time'}
+                  {correctionMutation.isPending ? 'Saving...' : correctionMode === 'void' ? 'Void punch' : correctionMode === 'site_post' ? 'Save Site/Post' : 'Save corrected time'}
                 </button>
               </div>
             </form>
           ) : null}
 
-          {events.length === 0 ? (
+          {showOverview ? (
+            overviewSummaryQuery.isPending || overviewReviewQuery.isPending ? (
+              <DataStatePanel icon={FileClock} title="Loading employee summaries">
+                <p>Building the team overview for this pay-period range.</p>
+              </DataStatePanel>
+            ) : overviewSummaryQuery.isError ? (
+              <DataStatePanel icon={ShieldAlert} title="Employee summaries unavailable" tone="error">
+                <p>{overviewSummaryQuery.error.message}</p>
+              </DataStatePanel>
+            ) : overviewReviewQuery.isError ? (
+              <DataStatePanel icon={ShieldAlert} title="Payroll totals unavailable" tone="error">
+                <p>{overviewReviewQuery.error.message}</p>
+              </DataStatePanel>
+            ) : overviewRows.length === 0 ? (
+              <DataStatePanel icon={UserRound} title="No team time activity in this range">
+                <p>No scheduled or clocked time was found for the selected dates. Choose an employee above if you need to add a verified missing punch.</p>
+              </DataStatePanel>
+            ) : (
+              <div className="time-maintenance-overview">
+                <div className="time-maintenance-overview__heading">
+                  <div>
+                    <p className="eyebrow">Team overview</p>
+                    <h3>Review by employee first</h3>
+                    <p>Select an employee to open their punch-level maintenance record. The full punch list is intentionally hidden from the all-employee view.</p>
+                  </div>
+                </div>
+                <div className="time-review-table-wrap">
+                  <table className="time-review-table time-maintenance-overview-table">
+                    <thead>
+                      <tr>
+                        <th>Employee</th>
+                        <th>Status</th>
+                        <th>Worked time</th>
+                        <th>Schedule / location</th>
+                        <th>Activity</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {overviewRows.map((row) => {
+                        const clockState = maintenanceClockState(row.latestKind)
+                        const reviewCount = row.pendingCorrectionCount + row.exceptionCount
+                        return (
+                          <tr key={row.employeeId}>
+                            <td>
+                              <strong>{row.employeeName}</strong>
+                              <span>@{row.username} · {row.employmentType}</span>
+                            </td>
+                            <td>
+                              <span className={clockState === 'on_break' ? 'payroll-status payroll-status--hold' : 'payroll-status payroll-status--ready'}>
+                                {maintenanceClockLabel(row.latestKind)}
+                              </span>
+                              {row.latestEffectiveAt ? <small>{formatTime(row.latestEffectiveAt)}</small> : <small>No punch in range</small>}
+                            </td>
+                            <td>
+                              <strong>{payrollHours(row.paidMinutes)} hr paid</strong>
+                              <span>{row.workedShiftCount} worked row{row.workedShiftCount === 1 ? '' : 's'}</span>
+                              <small>{payrollHours(row.breakMinutes)} hr break · {payrollHours(row.overtimeMinutes)} hr OT</small>
+                            </td>
+                            <td>
+                              <strong>{row.currentLocation}</strong>
+                              <span>{row.scheduledSummary}</span>
+                            </td>
+                            <td>
+                              <strong>{row.eventCount} punch{row.eventCount === 1 ? '' : 'es'}</strong>
+                              {row.firstClockIn ? <span>First: {formatDateOnly(dateInputValue(row.firstClockIn))}</span> : <span>No clock-in</span>}
+                              {reviewCount > 0 ? <small className="field-error">{reviewCount} item{reviewCount === 1 ? '' : 's'} need review</small> : <small>Ready for detail review</small>}
+                            </td>
+                            <td>
+                              <button
+                                className="secondary-button secondary-button--small"
+                                onClick={() => {
+                                  setEmployeeId(row.employeeId)
+                                  setAddEmployeeId(row.employeeId)
+                                }}
+                                type="button"
+                              >
+                                View details
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          ) : visibleEvents.length === 0 ? (
             <DataStatePanel icon={UserRound} title="No employee time events in this range">
-              <p>Use the employee filter or add a missing punch if a supervisor has verified the time.</p>
+              <p>This employee has no punch-level time events in the selected range. Add a missing punch only when a supervisor has verified the time.</p>
             </DataStatePanel>
           ) : (
             <div className="time-review-table-wrap">
@@ -548,7 +918,7 @@ function TimeMaintenanceWorkbench({
                   </tr>
                 </thead>
                 <tbody>
-                  {events.map((event) => (
+                  {visibleEvents.map((event) => (
                     <tr className={event.voided ? 'time-maintenance-row--voided' : ''} key={event.id}>
                       <td>
                         <strong>{event.employeeName}</strong>
@@ -579,8 +949,8 @@ function TimeMaintenanceWorkbench({
                           <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'adjust')} type="button">
                             <Pencil aria-hidden="true" size={15} /> Change
                           </button>
-                          <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'location')} type="button">
-                            Location
+                          <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'site_post')} type="button">
+                            Site/Post
                           </button>
                           <button className="danger-secondary" disabled={event.voided} onClick={() => beginCorrection(event, 'void')} type="button">
                             Void

@@ -168,7 +168,7 @@ const timeMaintenanceEventSchema = z.object({
   pendingCorrectionCount: z.number().int().nonnegative(),
   maintenanceNoteCount: z.number().int().nonnegative(),
   latestNote: z.string().nullable(),
-  latestAction: z.enum(['manual_add', 'time_adjust', 'void', 'location_update']).nullable(),
+  latestAction: z.enum(['manual_add', 'time_adjust', 'void', 'location_update', 'site_post_update']).nullable(),
   siteName: z.string().nullable(),
   siteCode: z.string().nullable(),
   postName: z.string().nullable(),
@@ -184,6 +184,68 @@ const timeMaintenanceSchema = z.object({
   operationalTimeZone: z.literal('America/Denver'),
   employees: z.array(timeMaintenanceEmployeeSchema),
   events: z.array(timeMaintenanceEventSchema),
+})
+
+const timeMaintenanceShiftOptionSchema = z.object({
+  shiftId: z.string().uuid(),
+  siteId: z.string().uuid().nullable().optional(),
+  postId: z.string().uuid().nullable().optional(),
+  eventId: z.string().uuid().nullable().optional(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  timeZone: z.string(),
+  requiresArmed: z.boolean(),
+  isOvertime: z.boolean(),
+  headcountRequired: z.number().int().positive(),
+  scheduleStatus: z.enum(['draft', 'published']),
+  scheduleRevision: z.number().int().positive(),
+  siteName: z.string().nullable(),
+  siteCode: z.string().nullable(),
+  postName: z.string().nullable(),
+  eventName: z.string().nullable(),
+  locationName: z.string(),
+  assignedEmployees: z.array(z.object({
+    employeeId: z.string().uuid(),
+    name: z.string(),
+    username: z.string().nullable(),
+  })),
+  selectedEmployeeAssigned: z.boolean(),
+})
+
+const teamAttendanceSummaryRowSchema = z.object({
+  employeeId: z.string().uuid(),
+  username: z.string(),
+  employeeName: z.string(),
+  role: appRoleSchema,
+  employmentType: employmentTypeSchema,
+  latestKind: timeEventKindSchema.nullable(),
+  latestEffectiveAt: z.string().nullable(),
+  latestLocationName: z.string().nullable(),
+  latestSiteName: z.string().nullable(),
+  latestSiteCode: z.string().nullable(),
+  latestPostName: z.string().nullable(),
+  latestEventName: z.string().nullable(),
+  latestTimeZone: z.string(),
+  firstClockIn: z.string().nullable(),
+  lastClockOut: z.string().nullable(),
+  eventCount: z.number().int().nonnegative(),
+  scheduledShiftCount: z.number().int().nonnegative(),
+  scheduledStartsAt: z.string().nullable(),
+  scheduledEndsAt: z.string().nullable(),
+  scheduledLocationName: z.string().nullable(),
+  scheduledSiteName: z.string().nullable(),
+  scheduledSiteCode: z.string().nullable(),
+  scheduledPostName: z.string().nullable(),
+  scheduledEventName: z.string().nullable(),
+  scheduledTimeZone: z.string(),
+})
+
+const teamAttendanceSummarySchema = z.object({
+  serverTimestamp: z.string(),
+  fromDate: z.string(),
+  throughDate: z.string(),
+  operationalTimeZone: z.literal('America/Denver'),
+  rows: z.array(teamAttendanceSummaryRowSchema),
 })
 
 const timekeepingReviewSchema = z.object({
@@ -251,6 +313,9 @@ export type PayrollExportDetail = z.infer<typeof payrollExportDetailSchema>
 export type TimeMaintenance = z.infer<typeof timeMaintenanceSchema>
 export type TimeMaintenanceEmployee = z.infer<typeof timeMaintenanceEmployeeSchema>
 export type TimeMaintenanceEvent = z.infer<typeof timeMaintenanceEventSchema>
+export type TimeMaintenanceShiftOption = z.infer<typeof timeMaintenanceShiftOptionSchema>
+export type TeamAttendanceSummary = z.infer<typeof teamAttendanceSummarySchema>
+export type TeamAttendanceSummaryRow = z.infer<typeof teamAttendanceSummaryRowSchema>
 export type PayrollRules = z.infer<typeof payrollRulesSchema>
 
 export interface PayrollEmployeeSummary {
@@ -309,6 +374,10 @@ export function parseTimekeepingReview(value: unknown): TimekeepingReview {
 
 export function parseTimeMaintenance(value: unknown): TimeMaintenance {
   return timeMaintenanceSchema.parse(value)
+}
+
+export function parseTeamAttendanceSummary(value: unknown): TeamAttendanceSummary {
+  return teamAttendanceSummarySchema.parse(value)
 }
 
 export function parsePayrollRules(value: unknown): PayrollRules {
@@ -417,6 +486,77 @@ function requestKey(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+function optionTextKey(value: string | null | undefined): string {
+  return (value ?? '').trim().toLocaleLowerCase().replace(/\s+/g, ' ')
+}
+
+function optionDateKey(value: string, timeZone: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10)
+  return new Intl.DateTimeFormat('en-CA', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone,
+    year: 'numeric',
+  }).format(date)
+}
+
+function shiftOptionIdentity(option: TimeMaintenanceShiftOption): string {
+  const dateKey = optionDateKey(option.startsAt, option.timeZone)
+  const siteKey = optionTextKey(option.siteCode || option.siteName || option.locationName)
+  const postKey = optionTextKey(option.postName)
+  const eventKey = optionTextKey(option.eventName)
+  const locationKey = optionTextKey(option.locationName)
+  const kind = option.eventName ? 'event' : 'post'
+
+  return [
+    dateKey,
+    kind,
+    siteKey,
+    postKey,
+    eventKey,
+    locationKey,
+    option.requiresArmed ? 'armed' : 'unarmed',
+  ].join('|')
+}
+
+function shiftOptionRank(option: TimeMaintenanceShiftOption): number {
+  let rank = 0
+  if (option.scheduleStatus === 'published') rank -= 100_000
+  if (option.selectedEmployeeAssigned) rank -= 10_000
+  rank -= option.scheduleRevision * 100
+  return rank
+}
+
+export function dedupeTimeMaintenanceShiftOptions(options: TimeMaintenanceShiftOption[]): TimeMaintenanceShiftOption[] {
+  const selected = new Map<string, TimeMaintenanceShiftOption>()
+
+  for (const option of options) {
+    const key = shiftOptionIdentity(option)
+    const existing = selected.get(key)
+    if (!existing) {
+      selected.set(key, option)
+      continue
+    }
+
+    const rankDiff = shiftOptionRank(option) - shiftOptionRank(existing)
+    if (rankDiff < 0 || (rankDiff === 0 && option.startsAt.localeCompare(existing.startsAt) < 0)) {
+      selected.set(key, option)
+    }
+  }
+
+  return [...selected.values()].sort((left, right) => {
+    const leftDate = optionDateKey(left.startsAt, left.timeZone)
+    const rightDate = optionDateKey(right.startsAt, right.timeZone)
+    if (leftDate !== rightDate) return leftDate.localeCompare(rightDate)
+    const leftName = [left.siteCode, left.siteName, left.postName ?? left.eventName, left.locationName].filter(Boolean).join(' ')
+    const rightName = [right.siteCode, right.siteName, right.postName ?? right.eventName, right.locationName].filter(Boolean).join(' ')
+    const nameCompare = leftName.localeCompare(rightName, undefined, { sensitivity: 'base' })
+    if (nameCompare !== 0) return nameCompare
+    return left.startsAt.localeCompare(right.startsAt)
+  })
+}
+
 export async function getTimekeepingDashboard(operationalDate?: string): Promise<TimekeepingDashboard> {
   const { data, error } = await getSupabaseClient().rpc('get_timekeeping_dashboard', {
     target_operational_date: operationalDate ?? null,
@@ -466,6 +606,18 @@ export async function getTimekeepingReview(input: {
   })
   if (error) throw new Error('Supervisor time review could not be loaded. MFA is required.')
   return parseTimekeepingReview(data)
+}
+
+export async function getTeamAttendanceSummary(input: {
+  fromDate: string
+  throughDate: string
+}): Promise<TeamAttendanceSummary> {
+  const { data, error } = await getSupabaseClient().rpc('get_team_attendance_summary', {
+    target_from_date: input.fromDate,
+    target_through_date: input.throughDate,
+  })
+  if (error) throw new Error(error.message || 'Team Attendance could not be loaded. MFA is required.')
+  return parseTeamAttendanceSummary(data)
 }
 
 function summarizeTimekeepingRows(rows: TimekeepingReviewRow[], pendingCorrections: PendingCorrection[]): TimekeepingReview['summary'] {
@@ -532,6 +684,20 @@ export async function getTimeMaintenance(input: {
   })
   if (error) throw new Error(error.message || 'Time maintenance could not be loaded. MFA is required.')
   return parseTimeMaintenance(data)
+}
+
+export async function getTimeMaintenanceShiftOptions(input: {
+  fromDate: string
+  throughDate: string
+  employeeId?: string | null
+}): Promise<TimeMaintenanceShiftOption[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_time_maintenance_shift_options', {
+    target_employee_id: input.employeeId ?? null,
+    target_from_date: input.fromDate,
+    target_through_date: input.throughDate,
+  })
+  if (error) throw new Error(error.message || 'Site/Post shift options could not be loaded. MFA is required.')
+  return dedupeTimeMaintenanceShiftOptions(z.array(timeMaintenanceShiftOptionSchema).parse(data))
 }
 
 export async function reviewTimeEventCorrection(input: {
@@ -608,6 +774,40 @@ export async function supervisorUpdateTimeEventLocation(input: {
     locationName: z.string(),
     timeZone: z.string(),
     reason: z.string(),
+  }).parse(data)
+}
+
+export async function supervisorUpdateTimeEventSitePost(input: {
+  timeEventId: string
+  shiftId: string
+  reason: string
+}): Promise<{
+  timeEventId: string
+  shiftId: string
+  affectedEventCount: number
+  locationName: string
+  siteName: string | null
+  siteCode: string | null
+  postName: string | null
+  eventName: string | null
+  reason: string
+}> {
+  const { data, error } = await getSupabaseClient().rpc('supervisor_update_time_event_site_post', {
+    target_reason: input.reason,
+    target_shift_id: input.shiftId,
+    target_time_event_id: input.timeEventId,
+  })
+  if (error) throw new Error(error.message || 'The punch Site/Post could not be updated.')
+  return z.object({
+    affectedEventCount: z.number().int().positive(),
+    eventName: z.string().nullable(),
+    locationName: z.string(),
+    postName: z.string().nullable(),
+    reason: z.string(),
+    shiftId: z.string().uuid(),
+    siteCode: z.string().nullable(),
+    siteName: z.string().nullable(),
+    timeEventId: z.string().uuid(),
   }).parse(data)
 }
 

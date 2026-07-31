@@ -16,10 +16,10 @@ import {
 import { DataStatePanel } from '../components/DataStatePanel'
 import { getSessionContext } from '../data/auth'
 import {
+  getTeamAttendanceSummary,
   getOwnTimekeepingReview,
   getPayrollExportHistory,
   getPayrollRules,
-  getTimeMaintenance,
   getTimekeepingDashboard,
   getTimekeepingReview,
   payrollHours,
@@ -76,10 +76,10 @@ export function TimeCommandCenterPage() {
       })
     },
   })
-  const maintenanceQuery = useQuery({
+  const attendanceSummaryQuery = useQuery({
     enabled: isSupabaseConfigured && teamAllowed,
-    queryKey: ['time-command-maintenance', fromDate, throughDate],
-    queryFn: () => getTimeMaintenance({ fromDate, throughDate }),
+    queryKey: ['time-command-attendance-summary', fromDate, throughDate],
+    queryFn: () => getTeamAttendanceSummary({ fromDate, throughDate }),
     refetchInterval: 30_000,
   })
   const exportHistoryQuery = useQuery({
@@ -145,15 +145,15 @@ export function TimeCommandCenterPage() {
   }
 
   const model = buildTimeCommandCenterModel({
+    attendanceSummary: attendanceSummaryQuery.data,
     dashboard,
     exportHistory: exportHistoryQuery.data,
-    maintenance: maintenanceQuery.data,
     payrollRules: rulesQuery.data,
     review: reviewQuery.data,
     session: sessionQuery.data,
   })
-  const loadingMetrics = reviewQuery.isPending || (teamAllowed && maintenanceQuery.isPending)
-  const partialError = reviewQuery.isError || maintenanceQuery.isError || rulesQuery.isError || exportHistoryQuery.isError
+  const loadingMetrics = reviewQuery.isPending || (teamAllowed && attendanceSummaryQuery.isPending)
+  const partialError = reviewQuery.isError || attendanceSummaryQuery.isError || rulesQuery.isError || exportHistoryQuery.isError
   const employeeView = model.roleMode === 'employee' || model.roleMode === 'salary'
 
   return (
@@ -162,17 +162,17 @@ export function TimeCommandCenterPage() {
         actions={
           <>
             <Link className="time-button time-button--secondary" to="/time/my-time"><UserRoundCheck aria-hidden="true" size={18} /><span>My Time</span></Link>
-            {punchAllowed ? <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Open Time Tools</span></Link> : null}
+            {punchAllowed ? <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Time Maintenance</span></Link> : null}
           </>
         }
         eyebrow="SygShift Time"
-        summary="A calm command center for clock status, exceptions, payroll readiness, and the time tools already in production."
+        summary="A calm command center for clock status, exceptions, payroll readiness, and time maintenance."
         title="Time Command Center"
       />
 
       {partialError ? (
         <TimeAlertCard icon={AlertTriangle} title="Some time data could not be loaded" tone="warning">
-          <p>The page is showing the safe data that loaded successfully. Open Time Tools if you need to work a record directly.</p>
+          <p>The page is showing the safe data that loaded successfully. Open Time Maintenance if you need to work a record directly.</p>
         </TimeAlertCard>
       ) : null}
 
@@ -238,7 +238,7 @@ function EmployeeTimeOverview({
         />
       </section>
       <section className="time-action-panel">
-        <TimeSectionHeader title="What you can do next" summary="Keep it simple: check your hours or open the working time tools if you need to clock in, clock out, or review details." />
+        <TimeSectionHeader title="What you can do next" summary="Keep it simple: check your hours or open Time Maintenance if you need to clock in, clock out, or review details." />
         <div className="time-action-panel__actions">
           {punchAllowed ? <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Clock / Review My Time</span></Link> : null}
           <Link className="time-button time-button--secondary" to="/time/my-time"><ArrowRight aria-hidden="true" size={18} /><span>Open My Time</span></Link>
@@ -314,7 +314,7 @@ function OperationsTimeOverview({
       <section className="time-action-panel">
         <TimeSectionHeader title="Quick actions" summary="Actions are shown only when your role or permissions allow them." />
         <div className="time-action-panel__actions">
-          <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Open Existing Time Tools</span></Link>
+          <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Open Time Maintenance</span></Link>
           {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/team"><UserRoundCheck aria-hidden="true" size={18} /><span>Team Attendance</span></Link> : null}
           {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/exceptions"><AlertTriangle aria-hidden="true" size={18} /><span>Review Exceptions</span></Link> : null}
           {payrollAllowed ? <Link className="time-button time-button--secondary" to="/time/payroll"><FileClock aria-hidden="true" size={18} /><span>Payroll</span></Link> : null}
@@ -340,10 +340,10 @@ export function TimeFuturePage({ area }: { area: 'My Time' | 'Team Attendance' |
         title={area}
       />
       <TimeAlertCard icon={ShieldAlert} title={`${area} is staged for a future phase`} tone="neutral">
-        <p>Phase 1 created the structure without pretending this screen is finished. Use the existing Time Tools until this dedicated area is built and validated.</p>
+        <p>Phase 1 created the structure without pretending this screen is finished. Use Time Maintenance until this dedicated area is built and validated.</p>
       </TimeAlertCard>
       <div className="time-action-panel__actions">
-        <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Open Existing Time Tools</span></Link>
+        <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Open Time Maintenance</span></Link>
       </div>
     </main>
   )
