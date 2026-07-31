@@ -23,6 +23,35 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 07/31/2026
+
+### Added employee-scoped schedule publishing
+
+- Added a focused Scheduler workflow for publishing one employee's schedule without publishing the entire week.
+- When the Scheduler is in Employee Schedule view and a specific employee is selected, SygShift now shows a
+  `Publish [employee] only` action beside the normal full-week publish option.
+- The scoped publish copies the selected employee's active draft assignments into a new live schedule revision
+  while preserving the rest of the team's current live schedule.
+- The remaining working draft is automatically rebased afterward, so other scheduler work stays in draft and is
+  not accidentally pushed live.
+- The normal full-week publish path remains available as `Publish full week`.
+- The publish workflow now closes the employee week/full shift editing surfaces after a successful save/publish
+  so users are not left inside stale windows.
+
+### Production deployment
+
+- Applied targeted Supabase migration: `supabase/migrations/20260731161500_employee_scoped_schedule_publish.sql`.
+- Deployed Cloudflare Worker/site version `c6b8fbae-e5d3-4542-836f-f23dbdaf028a`.
+- Live app: https://app.sygilant.us
+
+### QA completed
+
+- `pnpm vitest run src/schedulerBehaviorGuard.test.ts` passed.
+- `pnpm typecheck` passed.
+- `pnpm lint` passed.
+- `pnpm test` passed: 31 files, 138 tests.
+- `pnpm build` passed.
+
 ## 2026-07-27
 
 ### Added scheduler-safe shift removal

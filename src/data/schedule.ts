@@ -334,6 +334,16 @@ export async function publishScheduleDraft(scheduleId: string): Promise<WeeklySc
   return scheduleSchema.parse(data)
 }
 
+export async function publishEmployeeScheduleSlice(scheduleId: string, employeeId: string): Promise<WeeklySchedule> {
+  const { data, error } = await getSupabaseClient().rpc('publish_employee_schedule_slice', {
+    target_schedule_id: scheduleId,
+    target_employee_id: employeeId,
+  })
+
+  if (error) throw new Error(error.message || 'The employee schedule could not be published.')
+  return scheduleSchema.parse(data)
+}
+
 export async function cancelScheduleDraft(scheduleId: string): Promise<WeeklySchedule | null> {
   const { data, error } = await getSupabaseClient().rpc('cancel_schedule_draft', {
     target_schedule_id: scheduleId,

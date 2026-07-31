@@ -6,6 +6,11 @@ import { join } from 'node:path'
 
 const root = process.cwd()
 const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
+const scheduleData = readFileSync(join(root, 'src', 'data', 'schedule.ts'), 'utf8')
+const employeeScopedPublishMigration = readFileSync(
+  join(root, 'supabase', 'migrations', '20260731161500_employee_scoped_schedule_publish.sql'),
+  'utf8',
+)
 
 describe('scheduler behavior guardrails', () => {
   it('closes the assignment modal after Save assignment succeeds', () => {
@@ -39,5 +44,16 @@ describe('scheduler behavior guardrails', () => {
 
     expect(editSubmitBlock).toContain('shiftId: shift.id')
     expect(editSubmitBlock).toContain('onSuccess: onClose')
+  })
+
+  it('supports publishing one employee schedule without publishing the full week', () => {
+    expect(scheduleData).toContain('publish_employee_schedule_slice')
+    expect(schedulePage).toContain('publishEmployeeScheduleMutation')
+    expect(schedulePage).toContain('Publish ${selectedEmployeeWeekRow.name} only')
+    expect(schedulePage).toContain('The rest of the week remains in draft.')
+    expect(schedulePage).toContain('Publish full week')
+    expect(employeeScopedPublishMigration).toContain('public.publish_employee_schedule_slice')
+    expect(employeeScopedPublishMigration).toContain('rebased_draft_schedule_id')
+    expect(employeeScopedPublishMigration).toContain("status = 'archived'")
   })
 })

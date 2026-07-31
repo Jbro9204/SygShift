@@ -21,6 +21,7 @@ import {
   getScheduleBuilderOptions,
   getScheduleStaffingSuggestions,
   getWeeklySchedule,
+  publishEmployeeScheduleSlice,
   publishScheduleDraft,
   removeScheduleDraftShift,
   resolveScheduleReviewShift,
@@ -1806,7 +1807,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     mutationFn: () => publishScheduleDraft(scheduleQuery.data!.id),
     onSuccess: async (publishedSchedule) => {
       queryClient.setQueryData(['weekly-schedule', weekKey], publishedSchedule)
-      setBuilderMessage(`Revision ${publishedSchedule.revision} is now live.`)
+      setBuilderMessage(`Revision ${publishedSchedule.revision} is now live for the full week.`)
       updateDraftShiftMutation.reset()
       setShiftEditor(null)
       await Promise.all([
@@ -1817,6 +1818,27 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     },
     onError: (error) => {
       setBuilderMessage(error instanceof Error ? error.message : 'The schedule draft could not be published.')
+    },
+  })
+  const publishEmployeeScheduleMutation = useMutation({
+    mutationFn: (input: { scheduleId: string; employeeId: string; employeeName: string }) =>
+      publishEmployeeScheduleSlice(input.scheduleId, input.employeeId),
+    onSuccess: async (updatedSchedule, variables) => {
+      queryClient.setQueryData(['weekly-schedule', weekKey], updatedSchedule)
+      syncOpenScheduleWindows(updatedSchedule)
+      setBuilderMessage(`${variables.employeeName}'s schedule is now live. The rest of the week remains in draft.`)
+      updateDraftShiftMutation.reset()
+      setShiftEditor(null)
+      setEmployeeWeekOpen(false)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['weekly-schedule', weekKey] }),
+        queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions'] }),
+        queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-metrics'] }),
+      ])
+    },
+    onError: (error) => {
+      setBuilderMessage(error instanceof Error ? error.message : 'The employee schedule could not be published.')
     },
   })
   const cancelDraftMutation = useMutation({
@@ -2417,12 +2439,31 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               <div className="scheduler-workspace__actions">
                 {scheduleQuery.data?.status === 'draft' ? (
                   <>
-                    <button className="primary-action" disabled={publishDraftMutation.isPending} onClick={() => publishDraftMutation.mutate()} type="button">
-                      {publishDraftMutation.isPending ? 'Publishing...' : 'Confirm & publish draft'}
+                    {focusedEmployeeId && selectedEmployeeWeekRow ? (
+                      <button
+                        className="primary-action"
+                        disabled={publishEmployeeScheduleMutation.isPending || publishDraftMutation.isPending}
+                        onClick={() => publishEmployeeScheduleMutation.mutate({
+                          scheduleId: scheduleQuery.data!.id,
+                          employeeId: focusedEmployeeId,
+                          employeeName: selectedEmployeeWeekRow.name,
+                        })}
+                        type="button"
+                      >
+                        {publishEmployeeScheduleMutation.isPending ? 'Publishing employee...' : `Publish ${selectedEmployeeWeekRow.name} only`}
+                      </button>
+                    ) : null}
+                    <button
+                      className={focusedEmployeeId ? 'secondary-button' : 'primary-action'}
+                      disabled={publishDraftMutation.isPending || publishEmployeeScheduleMutation.isPending}
+                      onClick={() => publishDraftMutation.mutate()}
+                      type="button"
+                    >
+                      {publishDraftMutation.isPending ? 'Publishing full week...' : 'Publish full week'}
                     </button>
                     <button
                       className="secondary-button"
-                      disabled={cancelDraftMutation.isPending}
+                      disabled={cancelDraftMutation.isPending || publishDraftMutation.isPending || publishEmployeeScheduleMutation.isPending}
                       onClick={() => setCancelDraftConfirmOpen(true)}
                       type="button"
                     >
@@ -2484,8 +2525,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               </article>
               <article>
                 <span>3</span>
-                <strong>Publish once</strong>
-                <p>Review the week, make manual changes if needed, then publish the clean schedule.</p>
+                <strong>Publish safely</strong>
+                <p>Publish the full week when the board is ready, or switch to one employee to publish only that person.</p>
               </article>
             </div>
           ) : null}
