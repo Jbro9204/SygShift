@@ -38,4 +38,5 @@
 
 ### Production status
 
-- Ready for deployment after final commit/deploy step.
+- Deployed to production: `https://app.sygilant.us`
+- Cloudflare Worker version: `58d7a0cc-df54-4645-838a-97e86b405387`
