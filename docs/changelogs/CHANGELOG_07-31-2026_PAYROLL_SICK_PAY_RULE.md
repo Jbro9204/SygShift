@@ -29,3 +29,10 @@ If an employee calls in sick for a scheduled shift, the sick pay amount is based
 - Updated the production export generator to support explicit column widths, merged cells, wrapped metadata rows, and row heights.
 - Regenerated the HR/Finance payroll example workbook and visually verified the Payroll Summary tab.
 - Redeployed SygShift after a clean typecheck, lint, test suite, production build, Wrangler dry run, and live HTTP check.
+
+## Follow-Up Title Bar Fix - 07/31/2026
+
+- Increased payroll workbook title-row height so the black report title band no longer clips or crowds the title text.
+- Added explicit vertical centering to the production workbook title style.
+- Regenerated the payroll example workbook and visually verified the Payroll Summary title area.
+- Redeployed SygShift after a clean typecheck, lint, test suite, production build, Wrangler dry run, and live HTTP check.

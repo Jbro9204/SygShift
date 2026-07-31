@@ -92,6 +92,13 @@ function cellXml(sheet: WorkbookSheet, cell: WorkbookCell, rowIndex: number, col
   return `<c r="${ref}" t="inlineStr"${styleAttribute}><is><t>${xmlEscape(String(cell))}</t></is></c>`
 }
 
+function rowHeightFor(sheet: WorkbookSheet, rowIndex: number): number | undefined {
+  const explicitHeight = sheet.rowHeights?.[rowIndex]
+  if (explicitHeight) return explicitHeight
+  if (sheet.titleRows?.includes(rowIndex)) return 38
+  return undefined
+}
+
 function worksheetXml(sheet: WorkbookSheet): string {
   const columnCount = Math.max(1, ...sheet.rows.map((row) => row.length))
   const rowCount = Math.max(1, sheet.rows.length)
@@ -106,7 +113,7 @@ function worksheetXml(sheet: WorkbookSheet): string {
     return `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`
   }).join('')
   const rows = sheet.rows.map((row, rowIndex) => (
-    `<row r="${rowIndex + 1}"${sheet.rowHeights?.[rowIndex] ? ` ht="${sheet.rowHeights[rowIndex]}" customHeight="1"` : ''}>${row.map((cell, columnIndex) => cellXml(sheet, cell, rowIndex, columnIndex)).join('')}</row>`
+    `<row r="${rowIndex + 1}"${rowHeightFor(sheet, rowIndex) ? ` ht="${rowHeightFor(sheet, rowIndex)}" customHeight="1"` : ''}>${row.map((cell, columnIndex) => cellXml(sheet, cell, rowIndex, columnIndex)).join('')}</row>`
   )).join('')
   const mergeCells = sheet.mergedCells?.length
     ? `<mergeCells count="${sheet.mergedCells.length}">${sheet.mergedCells.map((ref) => `<mergeCell ref="${ref}"/>`).join('')}</mergeCells>`
@@ -710,7 +717,7 @@ const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
   <cellXfs count="5">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
-    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
     <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>
     <xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
     <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
