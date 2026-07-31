@@ -356,6 +356,14 @@ function employeeScheduleWeekCount(range: EmployeeScheduleRange): number {
   return range === '2w' ? 2 : 1
 }
 
+function employeeScheduleDisplayStart(weekStart: Date): Date {
+  return startOfWeek(addDays(weekStart, 1), { weekStartsOn: 1 })
+}
+
+function employeeScheduleCoverageWeekKeys(days: Date[]): string[] {
+  return [...new Set(days.map((day) => format(startOfWeek(day, { weekStartsOn: 0 }), 'yyyy-MM-dd')))]
+}
+
 function shiftSiteLabel(shift: ScheduleShift): string {
   return shift.post?.site.name
     ?? shift.event?.site?.name
@@ -657,6 +665,7 @@ function EmployeePersonalSchedulePanel({
   const visibleDays = search.trim()
     ? days.filter((day) => (shiftDays.get(format(day, 'yyyy-MM-dd')) ?? []).length > 0)
     : days
+  const rangeStart = days[0] ?? weekStart
   const rangeEnd = days[days.length - 1] ?? weekStart
 
   return (
@@ -673,7 +682,7 @@ function EmployeePersonalSchedulePanel({
           <article>
             <span>Showing</span>
             <strong>{employeeScheduleRangeLabel(range)}</strong>
-            <small>{dateKeyDisplay(format(weekStart, 'yyyy-MM-dd'))} - {dateKeyDisplay(format(rangeEnd, 'yyyy-MM-dd'))}</small>
+            <small>{dateKeyDisplay(format(rangeStart, 'yyyy-MM-dd'))} - {dateKeyDisplay(format(rangeEnd, 'yyyy-MM-dd'))}</small>
           </article>
           <article>
             <span>Shifts</span>
@@ -1804,13 +1813,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const canUseScheduler = canBuildSchedule && isSchedulerHome
   const canEditScheduler = canManageSchedule && isSchedulerHome
   const employeeOnlySchedule = sessionQuery.isSuccess && !canViewTeamSchedule && !isSchedulerHome
+  const employeeScheduleStart = useMemo(() => employeeScheduleDisplayStart(weekStart), [weekStart])
   const employeeScheduleDays = useMemo(
-    () => Array.from({ length: employeeScheduleWeekCount(employeeScheduleRange) * 7 }, (_, index) => addDays(weekStart, index)),
-    [employeeScheduleRange, weekStart],
+    () => Array.from({ length: employeeScheduleWeekCount(employeeScheduleRange) * 7 }, (_, index) => addDays(employeeScheduleStart, index)),
+    [employeeScheduleRange, employeeScheduleStart],
   )
   const employeeScheduleWeekKeys = useMemo(
-    () => Array.from({ length: employeeScheduleWeekCount(employeeScheduleRange) }, (_, index) => format(addWeeks(weekStart, index), 'yyyy-MM-dd')),
-    [employeeScheduleRange, weekStart],
+    () => employeeScheduleCoverageWeekKeys(employeeScheduleDays),
+    [employeeScheduleDays],
   )
   const employeeScheduleRangeQuery = useQuery({
     enabled: isSupabaseConfigured && employeeOnlySchedule,

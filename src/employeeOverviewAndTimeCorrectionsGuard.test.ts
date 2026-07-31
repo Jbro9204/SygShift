@@ -51,6 +51,9 @@ describe('employee overview and time correction guardrails', () => {
     expect(scheduleSource).toContain('scheduleQuery.data && canViewTeamSchedule')
     expect(scheduleSource).toContain("setRange={setEmployeeScheduleRange}")
     expect(scheduleSource).toContain("['1w', '2w', 'month']")
+    expect(scheduleSource).toContain('employeeScheduleDisplayStart')
+    expect(scheduleSource).toContain('employeeScheduleCoverageWeekKeys')
+    expect(scheduleSource).toContain('weekStartsOn: 1')
   })
 
   it('lets employees submit protected correction requests from My Time', () => {
@@ -83,6 +86,7 @@ describe('employee overview and time correction guardrails', () => {
     expect(cssSource).toContain('.overview-employee-card__actions')
     expect(cssSource).toContain('.overview-time-actions')
     expect(cssSource).toContain('.employee-schedule-panel')
+    expect(cssSource).toContain('grid-template-columns: repeat(7, minmax(132px, 1fr))')
     expect(cssSource).toContain('.opportunity-card__details')
     expect(cssSource).toContain('.time-correction-request-form')
     expect(cssSource).toContain('.time-event__correction-button')

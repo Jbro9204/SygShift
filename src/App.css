@@ -3881,8 +3881,26 @@
 
 .employee-schedule-days {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  grid-template-columns: repeat(7, minmax(132px, 1fr));
   gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scrollbar-color: #b9904b #f2eadc;
+  scrollbar-width: thin;
+}
+
+.employee-schedule-days::-webkit-scrollbar {
+  height: 10px;
+}
+
+.employee-schedule-days::-webkit-scrollbar-track {
+  background: #f2eadc;
+  border-radius: 999px;
+}
+
+.employee-schedule-days::-webkit-scrollbar-thumb {
+  background: #b9904b;
+  border-radius: 999px;
 }
 
 .employee-schedule-day {
@@ -14493,8 +14511,7 @@
     padding: 16px;
   }
 
-  .employee-schedule-hero__summary,
-  .employee-schedule-days {
+  .employee-schedule-hero__summary {
     grid-template-columns: 1fr;
   }
 
