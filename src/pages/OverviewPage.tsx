@@ -204,7 +204,7 @@ export function OverviewPage() {
         <section className="overview-employee-grid" aria-label="Employee dashboard">
           <article className="overview-employee-card overview-employee-card--primary">
             <div className="overview-employee-card__icon"><UserRoundCheck aria-hidden="true" size={24} /></div>
-            <div>
+            <div className="overview-employee-card__copy">
               <p className="eyebrow">Next shift</p>
               <h2>{nextShift ? shiftTitle(nextShift) : 'No immediate shift shown'}</h2>
               <p>
@@ -213,20 +213,24 @@ export function OverviewPage() {
                   : 'Open Schedule to review your upcoming work.'}
               </p>
             </div>
-            <Link className="secondary-button" to="/schedule">Open Schedule</Link>
+            <div className="overview-employee-card__actions">
+              <Link className="secondary-button" to="/schedule">Open Schedule</Link>
+            </div>
           </article>
           <article className="overview-employee-card">
             <div className="overview-employee-card__icon"><FileClock aria-hidden="true" size={24} /></div>
-            <div>
+            <div className="overview-employee-card__copy">
               <p className="eyebrow">Time card</p>
               <h2>{timekeepingQuery.data?.pendingCorrectionCount ? `${timekeepingQuery.data.pendingCorrectionCount} pending request${timekeepingQuery.data.pendingCorrectionCount === 1 ? '' : 's'}` : 'No pending requests'}</h2>
               <p>Review punches, breaks, and request a correction if something looks wrong.</p>
             </div>
-            <Link className="secondary-button" to="/time/my-time">Open My Time</Link>
+            <div className="overview-employee-card__actions">
+              <Link className="secondary-button" to="/time/my-time">Open My Time</Link>
+            </div>
           </article>
           <article className="overview-employee-card">
             <div className="overview-employee-card__icon"><ClipboardCheck aria-hidden="true" size={24} /></div>
-            <div>
+            <div className="overview-employee-card__copy">
               <p className="eyebrow">Requests</p>
               <h2>Time off and shift pool</h2>
               <p>Request time off, report a call-off, or review open shifts from clear employee tools.</p>
@@ -238,7 +242,7 @@ export function OverviewPage() {
           </article>
           <article className="overview-employee-card overview-employee-card--updates">
             <div className="overview-employee-card__icon"><Megaphone aria-hidden="true" size={24} /></div>
-            <div>
+            <div className="overview-employee-card__copy">
               <p className="eyebrow">Updates</p>
               <h2>Announcements</h2>
               <p>Current messages, open coverage notices, and company updates stay here so they are easy to find.</p>

@@ -1793,9 +1793,12 @@
 .overview-employee-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 14px;
-  align-content: start;
+  align-content: stretch;
+  align-items: start;
   min-width: 0;
+  min-height: 200px;
   padding: 20px;
   color: #2d2922;
   background: #fffdf8;
@@ -1819,6 +1822,10 @@
   border-radius: 12px;
 }
 
+.overview-employee-card__copy {
+  min-width: 0;
+}
+
 .overview-employee-card h2,
 .overview-employee-card p {
   margin: 0;
@@ -1839,13 +1846,12 @@
 }
 
 .overview-employee-card .secondary-button {
-  grid-column: 1 / -1;
-  justify-self: start;
-  min-height: 42px;
-  padding: 9px 13px;
+  min-height: 44px;
+  padding: 10px 14px;
   color: #4b3b22;
   background: #fffaf0;
   border: 1px solid #dac9aa;
+  border-radius: 10px;
   box-shadow: none;
   text-decoration: none;
 }
@@ -1853,12 +1859,18 @@
 .overview-employee-card__actions {
   display: flex;
   grid-column: 1 / -1;
+  grid-row: 3;
+  align-self: end;
   flex-wrap: wrap;
   gap: 10px;
+  min-height: 44px;
+  margin-top: 4px;
 }
 
 .overview-employee-card__actions .secondary-button {
-  grid-column: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .overview-employee-card--updates {

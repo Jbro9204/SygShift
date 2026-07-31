@@ -38,6 +38,7 @@ describe('employee overview and time correction guardrails', () => {
 
   it('keeps employee request and shift-pool routes reachable from the landing card', () => {
     expect(overviewSource).toContain('Time off and shift pool')
+    expect(overviewSource).toContain('overview-employee-card__copy')
     expect(overviewSource).toContain('overview-employee-card__actions')
     expect(overviewSource).toContain('to="/requests"')
     expect(overviewSource).toContain('to="/events"')
@@ -83,7 +84,10 @@ describe('employee overview and time correction guardrails', () => {
   it('keeps the new controls under dedicated layout classes', () => {
     expect(cssSource).toContain('.overview-employee-grid')
     expect(cssSource).toContain('.overview-employee-card--updates')
+    expect(cssSource).toContain('.overview-employee-card__copy')
     expect(cssSource).toContain('.overview-employee-card__actions')
+    expect(cssSource).toContain('grid-row: 3')
+    expect(cssSource).toContain('min-height: 44px')
     expect(cssSource).toContain('.overview-time-actions')
     expect(cssSource).toContain('.employee-schedule-panel')
     expect(cssSource).toContain('grid-template-columns: repeat(7, minmax(132px, 1fr))')
