@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { format, subDays } from 'date-fns'
 import {
   AlertTriangle,
   ArrowRight,
@@ -40,7 +41,7 @@ import {
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTimeRange, formatOperationalDateTime } from '../lib/time'
-import { canUseOwnTimeClock, canViewOwnTime } from './timePermissions'
+import { canUseOwnTimeClock, canViewOwnTime, canViewTeamTime } from './timePermissions'
 import { isActiveInProgressTimeRow } from './timePayroll'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from './timeQuerySync'
 import { currentPayrollPeriod, formatUsDateKey } from './timeRules'
@@ -92,6 +93,7 @@ export function MyTimePage() {
   })
   const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
   const punchAllowed = canUseOwnTimeClock(sessionQuery.data)
+  const teamTimeAllowed = canViewTeamTime(sessionQuery.data)
   const dashboardQuery = useQuery({
     queryFn: () => getTimekeepingDashboard(),
     queryKey: ['my-time-dashboard'],
@@ -253,15 +255,12 @@ export function MyTimePage() {
   return (
     <main className="page page--sygshift-time">
       <TimePageHeader
-        actions={
+        actions={teamTimeAllowed ? (
           <>
-            <TimeButton icon={AlertTriangle} onClick={() => setAttendanceReportOpen(true)} variant="secondary">
-              Report sick / call-off
-            </TimeButton>
             <Link className="time-button time-button--secondary" to="/time"><ArrowRight aria-hidden="true" size={18} /><span>Time Command Center</span></Link>
             <Link className="time-button time-button--secondary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Advanced Time Tools</span></Link>
           </>
-        }
+        ) : undefined}
         eyebrow="My Time"
         summary="A simple place to see your clock status, current pay period, recent punches, and any correction items tied to your time."
         title="My Time"
@@ -407,7 +406,7 @@ function ClockStatusPanel({
           <h2>{statusTitle(state)}</h2>
           <p>{stateCopy(state)}</p>
         </div>
-        <TimeStatusBadge tone={state === 'off_clock' ? 'neutral' : 'good'}>{state.replace('_', ' ')}</TimeStatusBadge>
+        <ClockStatePill state={state} />
       </div>
 
       {currentShift ? (
@@ -490,6 +489,22 @@ function ClockStatusPanel({
         <span>Use this if you cannot work. Dispatch is notified immediately.</span>
       </div>
     </section>
+  )
+}
+
+function ClockStatePill({ state }: { state: TimekeepingState }) {
+  const Icon = state === 'on_break' ? Coffee : state === 'working' ? Timer : Clock3
+
+  return (
+    <span className={`my-time-clock-state my-time-clock-state--${state}`}>
+      <span className="my-time-clock-state__icon">
+        <Icon aria-hidden="true" size={18} />
+      </span>
+      <span className="my-time-clock-state__copy">
+        <small>Status</small>
+        <strong>{statusTitle(state)}</strong>
+      </span>
+    </span>
   )
 }
 
@@ -633,6 +648,10 @@ function RecentPunchesPanel({
   dashboard: TimekeepingDashboard
   onRequestCorrection: (event: TimekeepingEvent) => void
 }) {
+  const recentPunchDays = useMemo(() => groupRecentPunchesByDay(dashboard.recentEvents), [dashboard.recentEvents])
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
+  const selectedDay = recentPunchDays.find((day) => day.dateKey === selectedDateKey) ?? recentPunchDays[0] ?? null
+
   return (
     <section className="time-card">
       <TimeSectionHeader
@@ -640,27 +659,47 @@ function RecentPunchesPanel({
         summary={`Updated ${formatOperationalDateTime(dashboard.serverTimestamp, { includeTimeZoneName: true })}`}
         title="Recent Punches"
       />
-      {dashboard.recentEvents.length > 0 ? (
-        <ul className="time-event-list">
-          {dashboard.recentEvents.slice(0, 6).map((event) => (
-            <li className={`time-event${event.voided ? ' time-event--voided' : ''}`} key={event.id}>
-              <span><History aria-hidden="true" size={18} /></span>
-              <div>
-                <strong>{eventLabels[event.kind]}</strong>
-                <small>{formatOperationalDateTime(event.effectiveAt ?? event.recordedAt, { includeTimeZoneName: true })}</small>
-              </div>
-              {event.voided ? <em>Voided</em> : null}
-              <button
-                className="secondary-button secondary-button--small time-event__correction-button"
-                disabled={Boolean(event.voided)}
-                onClick={() => onRequestCorrection(event)}
-                type="button"
-              >
-                Request correction
-              </button>
-            </li>
-          ))}
-        </ul>
+      {recentPunchDays.length > 0 && selectedDay ? (
+        <>
+          <div className="recent-punch-day-tabs" role="tablist" aria-label="Recent punch days">
+            {recentPunchDays.map((day) => {
+              const selected = day.dateKey === selectedDay.dateKey
+              return (
+                <button
+                  aria-selected={selected}
+                  className={`recent-punch-day-tab${selected ? ' recent-punch-day-tab--active' : ''}`}
+                  key={day.dateKey}
+                  onClick={() => setSelectedDateKey(day.dateKey)}
+                  role="tab"
+                  type="button"
+                >
+                  <strong>{recentPunchDayLabel(day.dateKey, dashboard.operationalDate)}</strong>
+                  <span>{day.events.length} {day.events.length === 1 ? 'punch' : 'punches'}</span>
+                </button>
+              )
+            })}
+          </div>
+          <ul className="time-event-list time-event-list--day">
+            {selectedDay.events.map((event) => (
+              <li className={`time-event${event.voided ? ' time-event--voided' : ''}`} key={event.id}>
+                <span><History aria-hidden="true" size={18} /></span>
+                <div>
+                  <strong>{eventLabels[event.kind]}</strong>
+                  <small>{formatOperationalDateTime(event.effectiveAt ?? event.recordedAt, { includeTimeZoneName: true })}</small>
+                </div>
+                {event.voided ? <em>Voided</em> : null}
+                <button
+                  className="secondary-button secondary-button--small time-event__correction-button"
+                  disabled={Boolean(event.voided)}
+                  onClick={() => onRequestCorrection(event)}
+                  type="button"
+                >
+                  Request correction
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       ) : (
         <TimeEmptyState icon={History} title="No recent punches">
           <p>Your recent clock activity will appear here after time is recorded.</p>
@@ -668,6 +707,48 @@ function RecentPunchesPanel({
       )}
     </section>
   )
+}
+
+type RecentPunchDay = {
+  dateKey: string
+  events: TimekeepingEvent[]
+}
+
+function groupRecentPunchesByDay(events: TimekeepingEvent[]): RecentPunchDay[] {
+  const grouped = new Map<string, TimekeepingEvent[]>()
+
+  for (const event of events) {
+    const dateKey = operationalDateKey(event.effectiveAt ?? event.recordedAt)
+    const dayEvents = grouped.get(dateKey) ?? []
+    dayEvents.push(event)
+    grouped.set(dateKey, dayEvents)
+  }
+
+  return [...grouped.entries()]
+    .map(([dateKey, dayEvents]) => ({
+      dateKey,
+      events: dayEvents.sort((left, right) => new Date(right.effectiveAt ?? right.recordedAt).getTime() - new Date(left.effectiveAt ?? left.recordedAt).getTime()),
+    }))
+    .sort((left, right) => right.dateKey.localeCompare(left.dateKey))
+    .slice(0, 7)
+}
+
+function operationalDateKey(value: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: OPERATIONAL_TIME_ZONE,
+    year: 'numeric',
+  }).formatToParts(new Date(value))
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? ''
+  return `${part('year')}-${part('month')}-${part('day')}`
+}
+
+function recentPunchDayLabel(dateKey: string, operationalToday: string): string {
+  if (dateKey === operationalToday) return 'Today'
+  const yesterday = format(subDays(new Date(`${operationalToday}T12:00:00`), 1), 'yyyy-MM-dd')
+  if (dateKey === yesterday) return 'Yesterday'
+  return format(new Date(`${dateKey}T12:00:00`), 'EEE MM/dd')
 }
 
 function CorrectionPanel({

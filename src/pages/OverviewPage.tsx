@@ -228,10 +228,13 @@ export function OverviewPage() {
             <div className="overview-employee-card__icon"><ClipboardCheck aria-hidden="true" size={24} /></div>
             <div>
               <p className="eyebrow">Requests</p>
-              <h2>Time off and coverage</h2>
-              <p>Request time off or review open shifts without seeing company-wide staffing totals.</p>
+              <h2>Time off and shift pool</h2>
+              <p>Request time off, report a call-off, or review open shifts from clear employee tools.</p>
             </div>
-            <Link className="secondary-button" to="/requests">Open Requests</Link>
+            <div className="overview-employee-card__actions">
+              <Link className="secondary-button" to="/requests">Time-Off Requests</Link>
+              <Link className="secondary-button" to="/events">Shift Pool</Link>
+            </div>
           </article>
           <article className="overview-employee-card overview-employee-card--updates">
             <div className="overview-employee-card__icon"><Megaphone aria-hidden="true" size={24} /></div>
