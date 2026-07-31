@@ -22,3 +22,10 @@ If an employee calls in sick for a scheduled shift, the sick pay amount is based
 - Test suite: 133 tests passed.
 - Production build: passed.
 - Example workbook rendered and scanned with zero formula errors.
+
+## Follow-Up Export Formatting Fix - 07/31/2026
+
+- Fixed the payroll workbook report header so long context fields no longer get clipped inside a narrow two-column block.
+- Updated the production export generator to support explicit column widths, merged cells, wrapped metadata rows, and row heights.
+- Regenerated the HR/Finance payroll example workbook and visually verified the Payroll Summary tab.
+- Redeployed SygShift after a clean typecheck, lint, test suite, production build, Wrangler dry run, and live HTTP check.

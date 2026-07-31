@@ -13,11 +13,14 @@ import { formatUsDateKey } from './timeRules'
 type WorkbookCell = string | number | boolean | null | undefined
 
 interface WorkbookSheet {
+  columnWidths?: number[]
   filterRowIndex?: number
   freezeRows?: number
   headerRows?: number[]
   metadataRows?: number[]
+  mergedCells?: string[]
   name: string
+  rowHeights?: Record<number, number>
   rows: WorkbookCell[][]
   sectionRows?: number[]
   titleRows?: number[]
@@ -99,12 +102,15 @@ function worksheetXml(sheet: WorkbookSheet): string {
     ? `<autoFilter ref="A${sheet.filterRowIndex + 1}:${columnName(columnCount - 1)}${rowCount}"/>`
     : ''
   const columnDefinitions = Array.from({ length: columnCount }, (_, index) => {
-    const width = index === 0 ? 24 : index <= 3 ? 18 : 15
+    const width = sheet.columnWidths?.[index] ?? (index === 0 ? 24 : index <= 3 ? 18 : 15)
     return `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`
   }).join('')
   const rows = sheet.rows.map((row, rowIndex) => (
-    `<row r="${rowIndex + 1}">${row.map((cell, columnIndex) => cellXml(sheet, cell, rowIndex, columnIndex)).join('')}</row>`
+    `<row r="${rowIndex + 1}"${sheet.rowHeights?.[rowIndex] ? ` ht="${sheet.rowHeights[rowIndex]}" customHeight="1"` : ''}>${row.map((cell, columnIndex) => cellXml(sheet, cell, rowIndex, columnIndex)).join('')}</row>`
   )).join('')
+  const mergeCells = sheet.mergedCells?.length
+    ? `<mergeCells count="${sheet.mergedCells.length}">${sheet.mergedCells.map((ref) => `<mergeCell ref="${ref}"/>`).join('')}</mergeCells>`
+    : ''
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
@@ -112,6 +118,7 @@ function worksheetXml(sheet: WorkbookSheet): string {
   <sheetViews><sheetView workbookViewId="0"><pane ySplit="${freezeRows}" topLeftCell="${topLeftCell}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
   <cols>${columnDefinitions}</cols>
   <sheetData>${rows}</sheetData>
+  ${mergeCells}
   ${autoFilter}
 </worksheet>`
 }
@@ -390,11 +397,27 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
   })
 
   return {
+    columnWidths: [24, 14, 22, 14, 18, 18, 14, 16, 18, 16, 18, 16, 18, 14, 14, 14, 20, 16, 16, 52],
     filterRowIndex: titleRows.length,
     freezeRows: titleRows.length + 1,
     headerRows: [titleRows.length],
-    metadataRows: [1, 2, 3, 4, 5, 6],
+    mergedCells: [
+      'A1:T1',
+      'B2:T2',
+      'B3:T3',
+      'B4:T4',
+      'B5:T5',
+      'B6:T6',
+      'B7:T7',
+      'B8:T8',
+    ],
+    metadataRows: [1, 2, 3, 4, 5, 6, 7],
     name: 'Payroll Summary',
+    rowHeights: {
+      3: 32,
+      4: 32,
+      5: 32,
+    },
     rows: [...titleRows, header, ...body],
     titleRows: [0],
   }
@@ -688,7 +711,7 @@ const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <cellXfs count="5">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
-    <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
+    <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>
     <xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
     <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
   </cellXfs>
