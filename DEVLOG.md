@@ -25,6 +25,24 @@ deployment status, or major workflow assumptions change.
 
 ## 07/31/2026
 
+### Directory and Licensing Center workflow cleanup
+
+- Widened the Directory profile modal so employee records have room to breathe on desktop while staying responsive on smaller screens.
+- Removed credential/license management from the Directory profile modal.
+- Kept scheduling availability inside Directory because schedulers need that information beside the employee profile.
+- Replaced the old Directory credential summary with a clean profile snapshot focused on employment, role, title, contact, and schedule availability.
+- Moved credential workflow ownership into Licensing Center:
+  - Added an Employee List view for the licensing workflow.
+  - Added a Credential List view for record-level review.
+  - Added a cleaner employee licensing profile workflow where the licensing user selects one employee, selects one credential/license, and manages that item without scrolling through every credential card at once.
+- Updated navigation so Directory no longer advertises credential-editing access. Licensing Center remains the credential workspace.
+- Added guardrail tests to prevent credentials from being reintroduced into Directory and to protect the new Licensing Center employee/credential layout.
+- Validation completed:
+  - `pnpm typecheck`
+  - `pnpm lint`
+  - `pnpm test` — 32 files / 143 tests passing
+  - `pnpm build`
+
 ### Employee Overview, Break Controls, and Time-Card Correction Requests
 
 - Reworked the Overview landing page so non-operations employees see a personal dashboard instead of company-wide operational totals.

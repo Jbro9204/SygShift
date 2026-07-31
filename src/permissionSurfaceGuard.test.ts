@@ -9,6 +9,7 @@ const navigationSource = readFileSync(join(root, 'src', 'app', 'navigation.ts'),
 const accessControlPage = readFileSync(join(root, 'src', 'pages', 'AccessControlPage.tsx'), 'utf8')
 const appShell = readFileSync(join(root, 'src', 'components', 'AppShell.tsx'), 'utf8')
 const peoplePage = readFileSync(join(root, 'src', 'pages', 'PeoplePage.tsx'), 'utf8')
+const licensingCenterPage = readFileSync(join(root, 'src', 'pages', 'LicensingCenterPage.tsx'), 'utf8')
 const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
 const permissionSweepMigration = readFileSync(
   join(root, 'supabase', 'migrations', '20260729111500_permission_surface_sweep_repair.sql'),
@@ -51,14 +52,33 @@ describe('permission surface guardrails', () => {
     }
   })
 
-  it('keeps Directory permission-based end-to-end access wired', () => {
-    expect(navigationSource).toContain("permissions: ['directory.view', 'directory.edit_basic', 'directory.edit_credentials']")
-    expect(peoplePage).toContain("sessionHasPermission(session, 'directory.edit_credentials')")
+  it('keeps Directory profile and availability access wired without bringing credential editing back into the Directory', () => {
+    expect(navigationSource).toContain("permissions: ['directory.view', 'directory.edit_basic', 'availability.manage']")
+    expect(peoplePage).toContain("sessionHasPermission(session, 'directory.edit_basic')")
+    expect(peoplePage).toContain("sessionHasPermission(session, 'availability.manage')")
+    expect(peoplePage).toContain('DirectoryProfileSnapshot')
+    expect(peoplePage).toContain('DirectoryAvailabilityManager')
+    expect(peoplePage).toContain('modal-dialog--directory-profile')
+    expect(peoplePage).not.toContain("sessionHasPermission(session, 'directory.edit_credentials')")
+    expect(peoplePage).not.toContain('DirectoryCredentialEditor')
+    expect(peoplePage).not.toContain('CredentialSummary')
+    expect(peoplePage).not.toContain('upsertDirectoryCredential')
     expect(permissionSweepMigration).toContain("public.has_effective_permission('directory.view')")
     expect(permissionSweepMigration).toContain("public.has_effective_permission('directory.edit_basic')")
     expect(permissionSweepMigration).toContain("public.has_effective_permission('directory.edit_credentials')")
     expect(permissionSweepMigration).toContain('Directory permission is required.')
     expect(permissionSweepMigration).toContain('Credential editor permission with MFA is required.')
+  })
+
+  it('keeps Licensing Center as the credential workspace with employee-first navigation', () => {
+    expect(licensingCenterPage).toContain("const [licensingView, setLicensingView] = useState<'employees' | 'credentials'>('employees')")
+    expect(licensingCenterPage).toContain('visibleEmployees')
+    expect(licensingCenterPage).toContain('Employee licensing list')
+    expect(licensingCenterPage).toContain('licensing-employee-panel')
+    expect(licensingCenterPage).toContain('licensing-credential-workspace')
+    expect(licensingCenterPage).toContain('Choose credential/license')
+    expect(licensingCenterPage).toContain('Manage selected credential')
+    expect(licensingCenterPage).toContain('upsertLicensingCredential')
   })
 
   it('keeps permission search available in role editing and individual overrides', () => {

@@ -14,9 +14,6 @@ import { getSessionContext, type SessionContext } from '../data/auth'
 import {
   employeeDisplayName,
   getEmployeeDirectory,
-  upsertDirectoryCredential,
-  type CredentialKind,
-  type CredentialStatus,
   type DirectoryEntry,
 } from '../data/workforce'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -42,45 +39,6 @@ const employmentLabels: Record<DirectoryEntry['employment_type'], string> = {
   hourly: 'Hourly',
   salary: 'Salary',
 }
-const credentialStatusLabels: Record<CredentialStatus, string> = {
-  active: 'Active',
-  expired: 'Expired',
-  pending: 'Pending',
-  revoked: 'Revoked',
-  suspended: 'Suspended',
-}
-const credentialOptions: Array<{ kind: CredentialKind; label: string; helper: string }> = [
-  {
-    helper: 'Required for normal guard scheduling records.',
-    kind: 'guard_license',
-    label: 'Guard License',
-  },
-  {
-    helper: 'Controls whether this employee can be assigned to armed posts or events.',
-    kind: 'armed_guard',
-    label: 'Armed Guard Credential',
-  },
-  {
-    helper: 'Track CPR or first aid readiness when a site requires it.',
-    kind: 'first_aid_cpr',
-    label: 'First Aid / CPR',
-  },
-  {
-    helper: 'Use when a post requires driving, patrol vehicle use, or a valid license check.',
-    kind: 'driver_license',
-    label: 'Driver License',
-  },
-  {
-    helper: 'Use for site-specific orientation, post orders, or required client training.',
-    kind: 'site_training',
-    label: 'Site Training',
-  },
-  {
-    helper: 'Use only when the credential does not fit one of the standard categories.',
-    kind: 'other',
-    label: 'Other Credential',
-  },
-]
 const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const dayNamesShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -88,13 +46,13 @@ function sessionHasPermission(session: SessionContext | null | undefined, permis
   return session?.role === 'admin' || Boolean(session?.permissions.includes(permission))
 }
 
-function canEditCredentials(session: SessionContext | null | undefined): boolean {
+function canManageDirectoryProfile(session: SessionContext | null | undefined): boolean {
   return session?.role === 'scheduler'
     || session?.role === 'recruiting_licensing'
     || session?.role === 'supervisor'
     || session?.role === 'admin'
-    || sessionHasPermission(session, 'directory.edit_credentials')
-    || sessionHasPermission(session, 'licensing.manage')
+    || sessionHasPermission(session, 'directory.edit_basic')
+    || sessionHasPermission(session, 'availability.manage')
 }
 
 function formatDateOnly(date: string): string {
@@ -164,20 +122,6 @@ function EmployeeIdentity({ employee }: { employee: DirectoryEntry }) {
   )
 }
 
-function CredentialSummary({ employee }: { employee: DirectoryEntry }) {
-  const active = employee.credentials.filter((credential) => credential.status === 'active')
-  const armed = active.some((credential) => credential.kind === 'armed_guard')
-
-  return (
-    <div className="credential-summary">
-      <span className={armed ? 'qualification qualification--armed' : 'qualification'}>
-        {armed ? 'Armed qualified' : 'Unarmed only'}
-      </span>
-      <small>{active.length} active credential{active.length === 1 ? '' : 's'}</small>
-    </div>
-  )
-}
-
 function ContactSummary({ employee }: { employee: DirectoryEntry }) {
   const email = employee.company_email || employee.personal_email
   return (
@@ -188,125 +132,48 @@ function ContactSummary({ employee }: { employee: DirectoryEntry }) {
   )
 }
 
-function OperationalDetails({ employee }: { employee: DirectoryEntry }) {
+function DirectoryProfileSnapshot({ employee }: { employee: DirectoryEntry }) {
   const profile = employee.operational_profile
-  const hasProfileDetails = profile && [
-    profile.locationText,
-    profile.scheduleAvailability,
-    profile.employeeDg,
-    profile.expectedHoursText,
-    profile.sourceNotes,
-    profile.supervisorLabel,
-  ].some(Boolean)
-  if (!hasProfileDetails && employee.credentials.length === 0) return null
 
   return (
-    <details className="operational-details">
-      <summary>View licenses & operational details</summary>
-      <dl>
-        {profile?.locationText ? <div><dt>Location</dt><dd>{profile.locationText}</dd></div> : null}
-        {profile?.scheduleAvailability ? <div><dt>Availability</dt><dd>{profile.scheduleAvailability}</dd></div> : null}
-        {profile?.expectedHoursText ? <div><dt>Expected hours</dt><dd>{profile.expectedHoursText}</dd></div> : null}
-        {profile?.employeeDg ? <div><dt>Employee details</dt><dd>{profile.employeeDg}</dd></div> : null}
-        {profile?.supervisorLabel ? <div><dt>Supervisor source</dt><dd>{profile.supervisorLabel}</dd></div> : null}
-        {profile?.sourceNotes ? <div><dt>Source notes</dt><dd>{profile.sourceNotes}</dd></div> : null}
-        {employee.credentials.map((credential, index) => (
-          <div key={`${credential.kind}-${index}`}>
-            <dt>{credential.kind.replaceAll('_', ' ')}</dt>
-            <dd>
-              {credential.status}
-              {credential.credential_number ? ` · ${credential.credential_number}` : ''}
-              {credential.expires_on ? ` · expires ${formatDateOnly(credential.expires_on)}` : ''}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </details>
-  )
-}
-
-function DirectoryCredentialEditor({
-  employee,
-  kind,
-  label,
-  helper,
-  onSubmit,
-  pending,
-}: {
-  employee: DirectoryEntry
-  kind: CredentialKind
-  label: string
-  helper: string
-  onSubmit: (payload: {
-    kind: CredentialKind
-    status: CredentialStatus
-    credentialNumber: string | null
-    validFrom: string | null
-    expiresOn: string | null
-    notes: string | null
-  }) => void
-  pending: boolean
-}) {
-  const credential = employee.credentials.find((item) => item.kind === kind)
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const data = new FormData(event.currentTarget)
-    const value = (key: string) => String(data.get(key) ?? '').trim()
-    const optional = (key: string) => value(key) || null
-    onSubmit({
-      credentialNumber: optional('credentialNumber'),
-      expiresOn: optional('expiresOn'),
-      kind,
-      notes: optional('notes'),
-      status: value('status') as CredentialStatus,
-      validFrom: optional('validFrom'),
-    })
-  }
-
-  return (
-    <form className="credential-editor" onSubmit={submit}>
-      <div className="credential-editor__heading">
-        <div>
-          <strong>{label}</strong>
-          <small>{helper}</small>
-        </div>
-        <span>{credential ? credentialStatusLabels[credential.status] : 'Not on file'}</span>
-      </div>
-      <div className="form-grid form-grid--two">
-        <label>
-          <span>Status</span>
-          <select defaultValue={credential?.status ?? 'pending'} name="status">
-            <option value="pending">Pending</option>
-            <option value="active">Active</option>
-            <option value="expired">Expired</option>
-            <option value="suspended">Suspended</option>
-            <option value="revoked">Revoked</option>
-          </select>
-        </label>
-        <label>
-          <span>Credential number</span>
-          <input defaultValue={credential?.credential_number ?? ''} name="credentialNumber" />
-        </label>
-      </div>
-      <div className="form-grid form-grid--two">
-        <label>
-          <span>Valid from</span>
-          <input defaultValue={credential?.valid_from ?? ''} name="validFrom" type="date" />
-        </label>
-        <label>
-          <span>Expires on</span>
-          <input defaultValue={credential?.expires_on ?? ''} name="expiresOn" type="date" />
-        </label>
-      </div>
-      <label className="field-stack">
-        <span>Notes</span>
-        <textarea defaultValue={credential?.notes ?? ''} maxLength={2000} name="notes" rows={2} />
-      </label>
-      <button className="secondary-button secondary-button--small" disabled={pending} type="submit">
-        {pending ? 'Saving...' : `Save ${label}`}
-      </button>
-    </form>
+    <section className="directory-profile-snapshot" aria-label="Employee profile snapshot">
+      <article>
+        <span>Role</span>
+        <strong>{roleLabels[employee.role]}</strong>
+      </article>
+      <article>
+        <span>Employment</span>
+        <strong>{employmentLabels[employee.employment_type]}</strong>
+      </article>
+      <article>
+        <span>Status</span>
+        <strong>{statusLabels[employee.status]}</strong>
+      </article>
+      <article>
+        <span>Title</span>
+        <strong>{employee.job_title || 'Not set'}</strong>
+      </article>
+      <article>
+        <span>Email</span>
+        <strong>{employee.company_email || employee.personal_email || 'No email on file'}</strong>
+      </article>
+      <article>
+        <span>Phone</span>
+        <strong>{employee.mobile_phone || 'No phone on file'}</strong>
+      </article>
+      {profile?.locationText ? (
+        <article>
+          <span>Primary location</span>
+          <strong>{profile.locationText}</strong>
+        </article>
+      ) : null}
+      {profile?.expectedHoursText ? (
+        <article>
+          <span>Expected hours</span>
+          <strong>{profile.expectedHoursText}</strong>
+        </article>
+      ) : null}
+    </section>
   )
 }
 
@@ -483,71 +350,27 @@ function DirectoryProfileModal({
   availabilityPending: boolean
   onClose: () => void
 }) {
-  const queryClient = useQueryClient()
-  const [currentEmployee, setCurrentEmployee] = useState(employee)
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
-  useEffect(() => {
-    setCurrentEmployee(employee)
-  }, [employee])
-
-  const credentialMutation = useMutation({
-    mutationFn: (payload: {
-      kind: CredentialKind
-      status: CredentialStatus
-      credentialNumber: string | null
-      validFrom: string | null
-      expiresOn: string | null
-      notes: string | null
-    }) => upsertDirectoryCredential({ ...payload, employeeId: currentEmployee.id }),
-    onSuccess: async (updatedEmployee) => {
-      setCurrentEmployee(updatedEmployee)
-      queryClient.setQueryData<DirectoryEntry[]>(['employee-directory'], (current) =>
-        current?.map((entry) => entry.id === updatedEmployee.id ? updatedEmployee : entry) ?? current,
-      )
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['employee-directory'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['weekly-schedule'] }),
-        queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions'] }),
-      ])
-    },
-  })
 
   return (
     <ModalDialog
-      busy={credentialMutation.isPending || availabilitySaving}
-      busyLabel={availabilitySaving ? 'Updating availability...' : 'Saving credential information...'}
-      description={`${currentEmployee.employee_number ?? 'ID pending'} · @${currentEmployee.username}`}
+      busy={availabilitySaving}
+      busyLabel="Updating availability..."
+      className="modal-dialog--directory-profile"
+      description={`${employee.employee_number ?? 'ID pending'} · @${employee.username}`}
       onClose={onClose}
-      title={`Directory profile for ${employeeDisplayName(currentEmployee)}`}
+      title={`Directory profile for ${employeeDisplayName(employee)}`}
     >
       <p className="directory-profile-summary">
-        Employment: {employmentLabels[currentEmployee.employment_type]} · Role: {roleLabels[currentEmployee.role]}
+        Employment: {employmentLabels[employee.employment_type]} · Role: {roleLabels[employee.role]}
       </p>
+      <DirectoryProfileSnapshot employee={employee} />
       <DirectoryAvailabilityManager
-        employee={currentEmployee}
+        employee={employee}
         onPendingChange={setAvailabilitySaving}
         pending={availabilityPending}
         records={availabilityRecords}
       />
-      <section className="credential-management-panel credential-management-panel--directory" aria-labelledby="directory-credential-title">
-        <h3 id="directory-credential-title">Credentials & Qualifications</h3>
-        <p className="form-note">
-          Armed assignments are blocked unless the armed guard credential is active and valid for the shift date.
-        </p>
-        {credentialOptions.map((option) => (
-          <DirectoryCredentialEditor
-            employee={currentEmployee}
-            helper={option.helper}
-            key={option.kind}
-            kind={option.kind}
-            label={option.label}
-            onSubmit={(payload) => credentialMutation.mutate(payload)}
-            pending={credentialMutation.isPending}
-          />
-        ))}
-        {credentialMutation.isError ? <div className="inline-alert" role="alert">{credentialMutation.error.message}</div> : null}
-        {credentialMutation.isSuccess ? <div className="form-feedback form-feedback--success" role="status">Credential information saved.</div> : null}
-      </section>
     </ModalDialog>
   )
 }
@@ -566,13 +389,13 @@ export function PeoplePage() {
     queryFn: getSessionContext,
     enabled: isSupabaseConfigured,
   })
-  const canManageCredentials = canEditCredentials(sessionQuery.data)
+  const canManageProfile = canManageDirectoryProfile(sessionQuery.data)
   const todayKey = format(operationalToday(), 'yyyy-MM-dd')
   const throughKey = format(addDays(operationalToday(), 42), 'yyyy-MM-dd')
   const availabilityQuery = useQuery({
     queryKey: ['availability-workspace', todayKey, throughKey],
     queryFn: () => getAvailabilityWorkspace(todayKey, throughKey),
-    enabled: isSupabaseConfigured && canManageCredentials,
+    enabled: isSupabaseConfigured && canManageProfile,
   })
 
   const filteredEmployees = useMemo(() => {
@@ -604,12 +427,12 @@ export function PeoplePage() {
           <h1>Directory</h1>
           <p className="page-summary">
             One dependable record for identity, login name, employment status, contact details,
-            and job qualifications.
+            and scheduling availability.
           </p>
         </div>
         <div className="access-note">
           <ShieldAlert aria-hidden="true" size={19} />
-          Credential updates require Scheduler, Supervisor, or Admin access with MFA
+          Credential records now live in Licensing Center. Directory updates require authorized access with MFA.
         </div>
       </section>
 
@@ -621,7 +444,7 @@ export function PeoplePage() {
           </p>
           <ul>
             <li>System-assigned, permanent usernames</li>
-            <li>Armed and unarmed qualification controls</li>
+            <li>Scheduling availability controls</li>
             <li>Protected contact and employment information</li>
           </ul>
         </DataStatePanel>
@@ -670,7 +493,7 @@ export function PeoplePage() {
                 <div className="directory-row directory-row--header" role="row">
                   <span role="columnheader">Employee</span>
                   <span role="columnheader">Role</span>
-                  <span role="columnheader">Qualifications</span>
+                  <span role="columnheader">Employment</span>
                   <span role="columnheader">Contact</span>
                   <span role="columnheader">Status</span>
                   <span role="columnheader">Action</span>
@@ -679,7 +502,7 @@ export function PeoplePage() {
                   <div className="directory-row" role="row" key={employee.id}>
                     <div role="cell"><EmployeeIdentity employee={employee} /></div>
                     <div role="cell"><span className="plain-value">{roleLabels[employee.role]}</span></div>
-                    <div role="cell"><CredentialSummary employee={employee} /><OperationalDetails employee={employee} /></div>
+                    <div role="cell"><span className="plain-value">{employmentLabels[employee.employment_type]}</span></div>
                     <div role="cell"><ContactSummary employee={employee} /></div>
                     <div role="cell">
                       <span className={`status-badge status-badge--${employee.status}`}>
@@ -687,7 +510,7 @@ export function PeoplePage() {
                       </span>
                     </div>
                     <div role="cell">
-                      {canManageCredentials ? (
+                      {canManageProfile ? (
                         <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployeeId(employee.id)} type="button">
                           <Pencil aria-hidden="true" size={16} />
                           Manage Profile
@@ -709,11 +532,10 @@ export function PeoplePage() {
                     </div>
                     <dl>
                       <div><dt>Role</dt><dd>{roleLabels[employee.role]}</dd></div>
-                      <div><dt>Qualifications</dt><dd><CredentialSummary employee={employee} /></dd></div>
+                      <div><dt>Employment</dt><dd>{employmentLabels[employee.employment_type]}</dd></div>
                       <div><dt>Contact</dt><dd><ContactSummary employee={employee} /></dd></div>
                     </dl>
-                    <OperationalDetails employee={employee} />
-                    {canManageCredentials ? (
+                    {canManageProfile ? (
                       <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployeeId(employee.id)} type="button">
                         <Pencil aria-hidden="true" size={16} />
                         Manage Profile

@@ -115,7 +115,9 @@ describe('button layout guardrails', () => {
     expect(licensingCenterPage).toContain('licensing-toolbar__filter--employment')
     expect(licensingCenterPage).toContain('<X aria-hidden="true" size={17} />')
     expect(licensingCenterPage).toContain('<FolderOpen aria-hidden="true" size={15} />')
-    expect(licensingCenterPage).toContain('<Pencil aria-hidden="true" size={15} />')
+    expect(licensingCenterPage).toContain('<Pencil aria-hidden="true" size={17} />')
+    expect(licensingCenterPage).toContain('Open licensing profile')
+    expect(licensingCenterPage).toContain('Manage selected credential')
 
     const toolbarBlock = blockFor('.licensing-toolbar')
     expect(toolbarBlock).toContain('minmax(260px, 0.9fr)')
@@ -132,6 +134,11 @@ describe('button layout guardrails', () => {
     expect(licensingButtonBlock).toContain('min-width: 0')
     expect(licensingButtonBlock).toContain('white-space: normal')
     expect(licensingButtonBlock).not.toContain('min-width: max-content')
+
+    expect(appCss).toContain('.licensing-view-switch')
+    expect(appCss).toContain('.licensing-employee-panel')
+    expect(appCss).toContain('.licensing-credential-workspace')
+    expect(appCss).toContain('.licensing-selected-credential__actions')
   })
 
   it('keeps multi-day shift creation sequential to avoid duplicate schedule revisions', () => {
