@@ -139,6 +139,16 @@ describe('button layout guardrails', () => {
     expect(appCss).toContain('.licensing-employee-panel')
     expect(appCss).toContain('.licensing-credential-workspace')
     expect(appCss).toContain('.licensing-selected-credential__actions')
+
+    expect(blockFor('.page--licensing')).toContain('max-width: 1760px')
+    expect(blockFor('.licensing-employee-table')).toContain('min-width: 1720px')
+    expect(blockFor('.licensing-employee-row')).toContain('minmax(248px, max-content)')
+    expect(blockFor('.licensing-employee-row')).toContain('gap: 16px')
+    expect(blockFor('.licensing-employee-row')).toContain('padding: 18px 28px')
+    expect(blockFor('.licensing-employee-row__actions')).toContain('justify-content: center')
+    expect(blockFor('.licensing-employee-row__actions')).toContain('min-width: 248px')
+    expect(blockFor('.licensing-employee-row__actions .secondary-button')).toContain('min-width: 218px')
+    expect(blockFor('.licensing-employee-row__actions .secondary-button')).toContain('white-space: nowrap')
   })
 
   it('keeps multi-day shift creation sequential to avoid duplicate schedule revisions', () => {
