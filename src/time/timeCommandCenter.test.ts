@@ -150,9 +150,9 @@ describe('time command center model', () => {
     expect(model.self.clockState).toBe('working')
     expect(model.clockedIn.count).toBe(1)
     expect(model.clockedIn.atUnexpectedLocation).toBe(1)
-    expect(model.missingPunches.missingClockOuts).toBe(1)
-    expect(model.payrollReadiness.percent).toBe(0)
-    expect(model.overtimeRisk.approachingDaily).toBe(1)
+    expect(model.missingPunches.missingClockOuts).toBe(0)
+    expect(model.payrollReadiness.percent).toBeNull()
+    expect(model.overtimeRisk.approachingDaily).toBe(0)
   })
 
   it('keeps employee access separate from team-wide access', () => {

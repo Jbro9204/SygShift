@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { TimekeepingReview } from '../data/timekeeping'
-import { exportableWorkedTimeRows, payrollExportFileName, payrollLockBlocker, payrollReadinessPercent, workedTimePayrollReview } from './timePayroll'
+import {
+  exportableWorkedTimeRows,
+  isActiveInProgressTimeRow,
+  payrollExportFileName,
+  payrollLockBlocker,
+  payrollReadinessPercent,
+  workedTimePayrollReview,
+} from './timePayroll'
 
 const cleanReview: TimekeepingReview = {
   fromDate: '2026-07-12',
@@ -140,5 +147,47 @@ describe('payroll export readiness', () => {
 
     expect(payrollLockBlocker(incompleteReview)).toContain('worked-time row')
     expect(exportableWorkedTimeRows(incompleteReview.rows)).toHaveLength(0)
+  })
+
+  it('does not flag an active clock-in as a missing punch while the shift is still in progress', () => {
+    const activeReview: TimekeepingReview = {
+      ...cleanReview,
+      rows: [{
+        ...cleanReview.rows[0],
+        exceptionCodes: ['missing_clock_out', 'zero_paid_minutes'],
+        firstClockIn: '2026-07-30T14:00:00.000Z',
+        lastClockOut: null,
+        paidMinutes: 0,
+        payrollReady: false,
+        scheduledEndsAt: '2026-07-30T21:00:00.000Z',
+        scheduledStartsAt: '2026-07-30T14:00:00.000Z',
+      }],
+      serverTimestamp: '2026-07-30T18:00:00.000Z',
+    }
+
+    expect(isActiveInProgressTimeRow(activeReview.rows[0], new Date(activeReview.serverTimestamp))).toBe(true)
+    expect(workedTimePayrollReview(activeReview)?.summary.rowCount).toBe(0)
+    expect(payrollLockBlocker(activeReview)).toContain('no SygShift clock-in/out')
+  })
+
+  it('keeps stale open clock-ins blocked after the active shift window has passed', () => {
+    const staleReview: TimekeepingReview = {
+      ...cleanReview,
+      rows: [{
+        ...cleanReview.rows[0],
+        exceptionCodes: ['missing_clock_out', 'zero_paid_minutes'],
+        firstClockIn: '2026-07-29T14:00:00.000Z',
+        lastClockOut: null,
+        paidMinutes: 0,
+        payrollReady: false,
+        scheduledEndsAt: '2026-07-29T21:00:00.000Z',
+        scheduledStartsAt: '2026-07-29T14:00:00.000Z',
+      }],
+      serverTimestamp: '2026-07-30T18:00:00.000Z',
+    }
+
+    expect(isActiveInProgressTimeRow(staleReview.rows[0], new Date(staleReview.serverTimestamp))).toBe(false)
+    expect(workedTimePayrollReview(staleReview)?.summary.exceptionCount).toBe(1)
+    expect(payrollLockBlocker(staleReview)).toContain('worked-time row')
   })
 })

@@ -226,14 +226,15 @@ function EmployeeTimeOverview({
         title="My Time Snapshot"
       />
       <section className="time-command-grid" aria-busy={loadingMetrics}>
-        <TimeMetricCard detail="Paid time recorded for today." icon={Clock3} label="Today" value={`${payrollHours(model.self.todayPaidMinutes)} hrs`} />
-        <TimeMetricCard detail="Current workweek total from reviewed rows." icon={CalendarDays} label="This Week" value={`${payrollHours(model.self.weeklyPaidMinutes)} hrs`} />
-        <TimeMetricCard detail="Current pay-period total from your rows." icon={FileClock} label="Pay Period" value={`${payrollHours(model.self.payPeriodPaidMinutes)} hrs`} />
+        <TimeMetricCard detail="Paid time recorded for today." icon={Clock3} label="Today" to="/time/my-time" value={`${payrollHours(model.self.todayPaidMinutes)} hrs`} />
+        <TimeMetricCard detail="Current workweek total from reviewed rows." icon={CalendarDays} label="This Week" to="/time/my-time" value={`${payrollHours(model.self.weeklyPaidMinutes)} hrs`} />
+        <TimeMetricCard detail="Current pay-period total from your rows." icon={FileClock} label="Pay Period" to="/time/my-time" value={`${payrollHours(model.self.payPeriodPaidMinutes)} hrs`} />
         <TimeMetricCard
           detail="Correction requests tied to your time records."
           icon={AlertTriangle}
           label="Needs Review"
           tone={model.self.pendingCorrections > 0 ? 'warning' : 'good'}
+          to="/time/my-time"
           value={model.self.pendingCorrections}
         />
       </section>
@@ -272,6 +273,7 @@ function OperationsTimeOverview({
           icon={CheckCircle2}
           label="Payroll Ready"
           tone={model.payrollReadiness.blocked > 0 ? 'warning' : 'good'}
+          to={payrollAllowed ? '/time/payroll' : undefined}
           value={model.payrollReadiness.percent === null ? 'Not ready' : `${model.payrollReadiness.percent}%`}
         />
         <TimeMetricCard
@@ -279,6 +281,7 @@ function OperationsTimeOverview({
           icon={AlertTriangle}
           label="Exceptions"
           tone={model.exceptions.total > 0 ? 'warning' : 'good'}
+          to={teamAllowed ? '/time/exceptions' : undefined}
           value={model.exceptions.total}
         />
         <TimeMetricCard
@@ -286,6 +289,7 @@ function OperationsTimeOverview({
           icon={Timer}
           label="Clocked In Now"
           tone={model.clockedIn.atUnexpectedLocation > 0 || model.clockedIn.longShiftCount > 0 ? 'warning' : 'neutral'}
+          to={teamAllowed ? '/time/team?status=working' : undefined}
           value={teamAllowed ? model.clockedIn.count : 'Self only'}
         />
         <TimeMetricCard
@@ -293,6 +297,7 @@ function OperationsTimeOverview({
           icon={FileClock}
           label="Missing Punches"
           tone={model.missingPunches.incompleteShifts > 0 ? 'danger' : 'good'}
+          to={teamAllowed ? '/time/exceptions?show=missing_punches' : undefined}
           value={model.missingPunches.incompleteShifts}
         />
         <TimeMetricCard
@@ -300,6 +305,7 @@ function OperationsTimeOverview({
           icon={History}
           label="Overtime Risk"
           tone={model.overtimeRisk.alreadyInOvertime > 0 ? 'warning' : 'neutral'}
+          to={teamAllowed ? '/time/team' : undefined}
           value={model.overtimeRisk.alreadyInOvertime}
         />
         <TimeMetricCard
@@ -307,6 +313,7 @@ function OperationsTimeOverview({
           icon={LockKeyhole}
           label="Payroll Lock"
           tone={model.period.status === 'exported' ? 'good' : 'neutral'}
+          to={payrollAllowed ? '/time/payroll' : undefined}
           value={model.period.status === 'exported' ? 'Exported' : 'Open'}
         />
       </section>

@@ -36,6 +36,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTimeRange, formatOperationalDateTime } from '../lib/time'
 import { canUseOwnTimeClock, canViewOwnTime } from './timePermissions'
+import { isActiveInProgressTimeRow } from './timePayroll'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from './timeQuerySync'
 import { currentPayrollPeriod, formatUsDateKey } from './timeRules'
 import {
@@ -261,7 +262,7 @@ export function MyTimePage() {
         <CorrectionPanel corrections={reviewQuery.data?.pendingCorrections ?? []} loading={reviewQuery.isPending} />
       </section>
 
-      <MyTimeRows loading={reviewQuery.isPending} rows={rows} />
+      <MyTimeRows loading={reviewQuery.isPending} rows={rows} serverTimestamp={reviewQuery.data?.serverTimestamp} />
     </main>
   )
 }
@@ -449,10 +450,14 @@ function CorrectionPanel({
 function MyTimeRows({
   loading,
   rows,
+  serverTimestamp,
 }: {
   loading: boolean
   rows: TimekeepingReviewRow[]
+  serverTimestamp?: string
 }) {
+  const reviewNow = serverTimestamp ? new Date(serverTimestamp) : new Date()
+
   return (
     <section className="my-time-history">
       <div className="my-time-history__heading">
@@ -469,25 +474,7 @@ function MyTimeRows({
       ) : rows.length > 0 ? (
         <div className="my-time-history__list">
           {rows.map((row) => (
-            <article className="my-time-row" key={`${row.rowKind}-${row.employeeId}-${row.operationalDate}-${row.shiftId ?? row.locationName}`}>
-              <div className="my-time-row__date">
-                <strong>{formatUsDateKey(row.operationalDate)}</strong>
-                <span>{row.rowKind === 'salary_default' ? 'Salary default' : 'Time clock'}</span>
-              </div>
-              <div>
-                <strong>{row.locationName}</strong>
-                <span>{[row.siteCode, row.siteName, row.postName, row.eventName].filter(Boolean).join(' - ') || 'Location pending'}</span>
-                <small>{formatRowWindow(row)}</small>
-              </div>
-              <div className="my-time-row__hours">
-                <strong>{payrollHours(row.paidMinutes)} hrs</strong>
-                <span>{row.breakMinutes} unpaid break min</span>
-              </div>
-              <div className="my-time-row__status">
-                <TimeStatusBadge tone={row.payrollReady ? 'good' : 'warning'}>{row.payrollReady ? 'Ready' : 'Needs review'}</TimeStatusBadge>
-                {row.exceptionCodes.length > 0 ? <small>{row.exceptionCodes.join(', ')}</small> : null}
-              </div>
-            </article>
+            <MyTimecardRow key={`${row.rowKind}-${row.employeeId}-${row.operationalDate}-${row.shiftId ?? row.locationName}`} row={row} serverNow={reviewNow} />
           ))}
         </div>
       ) : (
@@ -499,16 +486,46 @@ function MyTimeRows({
   )
 }
 
+function MyTimecardRow({ row, serverNow }: { row: TimekeepingReviewRow; serverNow: Date }) {
+  const activeInProgress = isActiveInProgressTimeRow(row, serverNow)
+  const visibleExceptions = activeInProgress
+    ? row.exceptionCodes.filter((code) => code !== 'missing_clock_out' && code !== 'zero_paid_minutes')
+    : row.exceptionCodes
+  const ready = row.payrollReady || activeInProgress
+
+  return (
+    <article className="my-time-row">
+      <div className="my-time-row__date">
+        <strong>{formatUsDateKey(row.operationalDate)}</strong>
+        <span>{row.rowKind === 'salary_default' ? 'Salary default' : 'Time clock'}</span>
+      </div>
+      <div>
+        <strong>{row.locationName}</strong>
+        <span>{[row.siteCode, row.siteName, row.postName, row.eventName].filter(Boolean).join(' - ') || 'Location pending'}</span>
+        <small>{formatRowWindow(row, activeInProgress)}</small>
+      </div>
+      <div className="my-time-row__hours">
+        <strong>{payrollHours(row.paidMinutes)} hrs</strong>
+        <span>{row.breakMinutes} unpaid break min</span>
+      </div>
+      <div className="my-time-row__status">
+        <TimeStatusBadge tone={ready ? 'good' : 'warning'}>{activeInProgress ? 'In progress' : ready ? 'Ready' : 'Needs review'}</TimeStatusBadge>
+        {visibleExceptions.length > 0 ? <small>{visibleExceptions.join(', ')}</small> : null}
+      </div>
+    </article>
+  )
+}
+
 function activeShift(dashboard: TimekeepingDashboard): TimekeepingShift | null {
   const activeShiftId = dashboard.lastEvent?.shiftId
   if (!activeShiftId) return null
   return dashboard.eligibleShifts.find((shift) => shift.shiftId === activeShiftId) ?? null
 }
 
-function formatRowWindow(row: TimekeepingReviewRow): string {
+function formatRowWindow(row: TimekeepingReviewRow, activeInProgress = false): string {
   if (row.firstClockIn || row.lastClockOut) {
     const clockIn = row.firstClockIn ? formatOperationalDateTime(row.firstClockIn, { includeTimeZoneName: true }) : 'Missing clock-in'
-    const clockOut = row.lastClockOut ? formatOperationalDateTime(row.lastClockOut, { includeTimeZoneName: true }) : 'Missing clock-out'
+    const clockOut = row.lastClockOut ? formatOperationalDateTime(row.lastClockOut, { includeTimeZoneName: true }) : activeInProgress ? 'Clocked in now' : 'Missing clock-out'
     return `${clockIn} - ${clockOut}`
   }
   if (row.scheduledStartsAt && row.scheduledEndsAt) return formatDualTimeRange(row.scheduledStartsAt, row.scheduledEndsAt, row.timeZone)

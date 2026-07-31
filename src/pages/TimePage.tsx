@@ -464,6 +464,10 @@ export function TimeMaintenanceWorkbench({
       queryClient.invalidateQueries({ queryKey: ['timekeeping-review'] }),
       queryClient.invalidateQueries({ queryKey: ['my-time-review'] }),
       queryClient.invalidateQueries({ queryKey: ['time-command-review'] }),
+      queryClient.invalidateQueries({ queryKey: ['time-command-attendance-summary'] }),
+      queryClient.invalidateQueries({ queryKey: ['time-team-review'] }),
+      queryClient.invalidateQueries({ queryKey: ['time-team-summary'] }),
+      queryClient.invalidateQueries({ queryKey: ['time-exceptions-review'] }),
       queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'] }),
     ])
   }

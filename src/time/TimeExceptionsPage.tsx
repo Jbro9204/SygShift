@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -11,10 +11,10 @@ import {
   UserRoundCheck,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { ModalDialog } from '../components/ModalDialog'
 import { getSessionContext } from '../data/auth'
 import {
   getPayrollRules,
-  getTimeMaintenance,
   getTimekeepingReview,
   payrollHours,
   reviewTimeEventCorrection,
@@ -38,7 +38,7 @@ import {
 } from './TimeKit'
 
 type ExceptionCode = PayrollException | 'pending_correction'
-type ExceptionFilter = 'all' | ExceptionCode
+type ExceptionFilter = 'all' | 'missing_punches' | ExceptionCode
 
 const exceptionCopy: Record<PayrollException | 'pending_correction', { label: string; help: string }> = {
   invalid_sequence: {
@@ -93,6 +93,9 @@ function exceptionCodesForRow(row: TimekeepingReviewRow): ExceptionCode[] {
 function filterExceptionRows(rows: TimekeepingReviewRow[], filter: ExceptionFilter): TimekeepingReviewRow[] {
   const exceptionRows = rows.filter((row) => !row.payrollReady || row.exceptionCodes.length > 0)
   if (filter === 'all') return exceptionRows
+  if (filter === 'missing_punches') {
+    return exceptionRows.filter((row) => row.exceptionCodes.includes('missing_clock_in') || row.exceptionCodes.includes('missing_clock_out'))
+  }
   if (filter === 'pending_correction') return exceptionRows.filter((row) => row.exceptionCodes.length === 0 && !row.payrollReady)
   return exceptionRows.filter((row) => row.exceptionCodes.includes(filter))
 }
@@ -103,6 +106,21 @@ function countException(rows: TimekeepingReviewRow[], code: ExceptionFilter): nu
 
 function periodLabel(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>): string {
   return `${formatUsDateKey(period.fromDate)} - ${formatUsDateKey(period.throughDate)}`
+}
+
+function exceptionFilterFromSearch(value: string | null): ExceptionFilter {
+  if (
+    value === 'missing_punches'
+    || value === 'unscheduled'
+    || value === 'missing_clock_in'
+    || value === 'missing_clock_out'
+    || value === 'invalid_sequence'
+    || value === 'zero_paid_minutes'
+    || value === 'pending_correction'
+  ) {
+    return value
+  }
+  return 'all'
 }
 
 function PendingCorrectionCard({
@@ -150,12 +168,14 @@ function PendingCorrectionCard({
 
 export function TimeExceptionsPage() {
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
   const [focusRequest, setFocusRequest] = useState<TimeMaintenanceFocusRequest | null>(null)
+  const [selectedExceptionRow, setSelectedExceptionRow] = useState<TimekeepingReviewRow | null>(null)
   const defaultPeriod = completedPayrollPeriod()
   const [fromDate, setFromDate] = useState(defaultPeriod.fromDate)
   const [throughDate, setThroughDate] = useState(defaultPeriod.throughDate)
   const [rangeTouched, setRangeTouched] = useState(false)
-  const [filter, setFilter] = useState<ExceptionFilter>('all')
+  const [filter, setFilter] = useState<ExceptionFilter>(exceptionFilterFromSearch(searchParams.get('show')))
   const [decisionNotes, setDecisionNotes] = useState<Record<string, string>>({})
 
   const sessionQuery = useQuery({
@@ -178,15 +198,15 @@ export function TimeExceptionsPage() {
     setThroughDate(completedPeriod.throughDate)
   }, [rangeTouched, rulesQuery.data])
 
+  useEffect(() => {
+    const nextFilter = exceptionFilterFromSearch(searchParams.get('show'))
+    setFilter((current) => (current === nextFilter ? current : nextFilter))
+  }, [searchParams])
+
   const reviewQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && teamAllowed,
     queryFn: () => getTimekeepingReview({ fromDate, throughDate }),
     queryKey: ['time-exceptions-review', fromDate, throughDate],
-  })
-  const maintenanceQuery = useQuery({
-    enabled: isSupabaseConfigured && sessionQuery.isSuccess && teamAllowed,
-    queryFn: () => getTimeMaintenance({ fromDate, throughDate }),
-    queryKey: ['time-exceptions-maintenance', fromDate, throughDate],
   })
   const decisionMutation = useMutation({
     mutationFn: (input: { approved: boolean; correctionId: string; note: string | null }) => reviewTimeEventCorrection(input),
@@ -201,6 +221,9 @@ export function TimeExceptionsPage() {
         queryClient.invalidateQueries({ queryKey: ['time-payroll-review'] }),
         queryClient.invalidateQueries({ queryKey: ['timekeeping-review'] }),
         queryClient.invalidateQueries({ queryKey: ['time-command-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-command-attendance-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-team-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-team-summary'] }),
         queryClient.invalidateQueries({ queryKey: ['time-maintenance'] }),
         queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'] }),
       ])
@@ -222,12 +245,18 @@ export function TimeExceptionsPage() {
   }
 
   function focusRow(row: TimekeepingReviewRow) {
+    setSelectedExceptionRow(row)
     setFocusRequest({
       employeeId: row.employeeId,
       fromDate: row.operationalDate,
       requestId: Date.now(),
       throughDate: row.operationalDate,
     })
+  }
+
+  function closeExceptionModal() {
+    setSelectedExceptionRow(null)
+    setFocusRequest(null)
   }
 
   if (!isSupabaseConfigured) {
@@ -301,6 +330,7 @@ export function TimeExceptionsPage() {
             <span>Show</span>
             <select onChange={(event) => setFilter(event.target.value as ExceptionFilter)} value={filter}>
               <option value="all">All exceptions</option>
+              <option value="missing_punches">Missing punches</option>
               <option value="unscheduled">Unscheduled</option>
               <option value="missing_clock_in">Missing clock-in</option>
               <option value="missing_clock_out">Missing clock-out</option>
@@ -346,14 +376,12 @@ export function TimeExceptionsPage() {
           summary="Click Work events to jump the correction workbench to the employee and day that needs attention."
           title="Rows needing review"
         />
-        {reviewQuery.isPending || maintenanceQuery.isPending ? (
+        {reviewQuery.isPending ? (
           <DataStatePanel icon={Timer} title="Loading exceptions">
-            <p>Checking payroll rows, correction requests, and punch history.</p>
+            <p>Checking payroll rows and correction requests.</p>
           </DataStatePanel>
         ) : reviewQuery.isError ? (
           <DataStatePanel icon={ShieldAlert} title="Exception review unavailable" tone="error"><p>{reviewQuery.error.message}</p></DataStatePanel>
-        ) : maintenanceQuery.isError ? (
-          <DataStatePanel icon={ShieldAlert} title="Punch maintenance unavailable" tone="error"><p>{maintenanceQuery.error.message}</p></DataStatePanel>
         ) : unresolvedRows === 0 ? (
           <DataStatePanel icon={CheckCircle2} title="No rows match this exception view">
             <p>{filter === 'all' ? 'No payroll blockers were found in this range.' : 'Change the filter to see other exception types.'}</p>
@@ -407,14 +435,28 @@ export function TimeExceptionsPage() {
       ) : null}
 
       {manageAllowed ? (
-        <TimeMaintenanceWorkbench
-          defaultDate={fromDate}
-          defaultPeriod={{ fromDate, throughDate }}
-          focusRequest={focusRequest}
-          headingEyebrow="Exception correction"
-          headingSummary="Use this controlled workbench for the actual fix: add missing punches, change times, void mistakes, or fix Site/Post from approved schedule blocks."
-          headingTitle="Fix punch records"
-        />
+        selectedExceptionRow ? (
+          <ModalDialog
+            className="modal-dialog--wide modal-dialog--time-maintenance"
+            description={`${selectedExceptionRow.employeeName} · ${formatUsDateKey(selectedExceptionRow.operationalDate)} · ${rowLocation(selectedExceptionRow)}`}
+            onClose={closeExceptionModal}
+            title="Fix payroll exception"
+          >
+            <div className="time-maintenance-modal-body">
+              <TimeMaintenanceWorkbench
+                defaultDate={selectedExceptionRow.operationalDate}
+                defaultPeriod={{ fromDate: selectedExceptionRow.operationalDate, throughDate: selectedExceptionRow.operationalDate }}
+                focusRequest={focusRequest}
+                initialEmployeeId={selectedExceptionRow.employeeId}
+                lockEmployeeFilter
+                onClose={closeExceptionModal}
+                headingEyebrow="Exception correction"
+                headingSummary="Add missing punches, change times, void mistakes, or correct the Site/Post for this payroll blocker."
+                headingTitle="Fix punch records"
+              />
+            </div>
+          </ModalDialog>
+        ) : null
       ) : null}
     </main>
   )

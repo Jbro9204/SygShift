@@ -13,6 +13,21 @@ export function isExportableWorkedTimeRow(row: TimekeepingReviewRow): boolean {
     && row.paidMinutes > 0
 }
 
+export function isActiveInProgressTimeRow(row: TimekeepingReviewRow, now = new Date()): boolean {
+  if (!isWorkedTimeRow(row) || !row.firstClockIn || row.lastClockOut) return false
+  if (row.exceptionCodes.some((code) => code !== 'missing_clock_out' && code !== 'zero_paid_minutes')) return false
+
+  const startedAt = Date.parse(row.firstClockIn)
+  if (Number.isNaN(startedAt)) return false
+
+  const scheduledEnd = row.scheduledEndsAt ? Date.parse(row.scheduledEndsAt) : Number.NaN
+  const reviewUntil = Number.isNaN(scheduledEnd)
+    ? startedAt + 16 * 60 * 60 * 1000
+    : scheduledEnd + 2 * 60 * 60 * 1000
+
+  return now.getTime() <= reviewUntil
+}
+
 export function workedTimeRows(rows: TimekeepingReviewRow[]): TimekeepingReviewRow[] {
   return rows.filter(isWorkedTimeRow)
 }
@@ -27,7 +42,8 @@ function sumRows(rows: TimekeepingReviewRow[], field: 'breakMinutes' | 'grossMin
 
 export function workedTimePayrollReview(review: TimekeepingReview | undefined): TimekeepingReview | undefined {
   if (!review) return undefined
-  const rows = workedTimeRows(review.rows)
+  const serverNow = new Date(review.serverTimestamp)
+  const rows = workedTimeRows(review.rows).filter((row) => !isActiveInProgressTimeRow(row, serverNow))
   const readyRows = rows.filter((row) => row.payrollReady && row.exceptionCodes.length === 0)
   const blockedRows = rows.filter((row) => !row.payrollReady || row.exceptionCodes.length > 0)
 

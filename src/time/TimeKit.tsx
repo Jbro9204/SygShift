@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import type { LucideIcon } from 'lucide-react'
 
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost'
@@ -71,26 +72,45 @@ export function TimeSectionHeader({
 }
 
 export function TimeMetricCard({
+  ariaLabel,
   detail,
   icon: Icon,
   label,
   tone = 'neutral',
+  to,
   value,
 }: {
+  ariaLabel?: string
   detail: string
   icon?: LucideIcon
   label: string
   tone?: 'neutral' | 'good' | 'warning' | 'danger'
+  to?: string
   value: ReactNode
 }) {
-  return (
-    <article className={`time-card time-metric time-metric--${tone}`}>
+  const className = `time-card time-metric time-metric--${tone}${to ? ' time-metric--actionable' : ''}`
+  const content = (
+    <>
       <div className="time-metric__top">
         <span>{label}</span>
         {Icon ? <Icon aria-hidden="true" size={20} /> : null}
       </div>
       <strong>{value}</strong>
       <small>{detail}</small>
+    </>
+  )
+
+  if (to) {
+    return (
+      <Link aria-label={ariaLabel ?? `${label}: open details`} className={className} to={to}>
+        {content}
+      </Link>
+    )
+  }
+
+  return (
+    <article className={className}>
+      {content}
     </article>
   )
 }

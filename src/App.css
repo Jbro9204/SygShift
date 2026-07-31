@@ -7740,6 +7740,24 @@
   border-top: 4px solid #b9b4aa;
 }
 
+.time-metric--actionable {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.time-metric--actionable:hover,
+.time-metric--actionable:focus-visible {
+  border-color: #c7943b;
+  box-shadow: 0 14px 30px rgb(38 32 23 / 10%), 0 0 0 3px rgb(184 135 49 / 16%);
+  transform: translateY(-1px);
+}
+
+.time-metric--actionable:focus-visible {
+  outline: 3px solid rgb(184 135 49 / 34%);
+  outline-offset: 3px;
+}
+
 .time-metric--good {
   border-top-color: #2f7a58;
 }
@@ -11582,6 +11600,31 @@
 .modal-dialog--wide,
 .modal-dialog--licensing-profile {
   width: min(1100px, calc(100vw - 32px));
+}
+
+.modal-dialog--time-maintenance {
+  width: min(1180px, calc(100vw - 32px));
+}
+
+.time-maintenance-modal-body {
+  padding: 0;
+  background: var(--paper);
+}
+
+.modal-dialog--time-maintenance .time-maintenance-workbench {
+  margin-top: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.modal-dialog--time-maintenance .time-maintenance-heading {
+  padding: 18px 22px;
+  background: #fffdf8;
+}
+
+.modal-dialog--time-maintenance .time-maintenance-heading__controls .secondary-button {
+  display: none;
 }
 
 .modal-dialog--licensing-profile {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -11,6 +11,7 @@ import {
   Timer,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { ModalDialog } from '../components/ModalDialog'
 import { getSessionContext } from '../data/auth'
 import {
   getPayrollRules,
@@ -38,6 +39,7 @@ import {
 } from './TimeKit'
 
 type TeamClockState = 'off_clock' | 'working' | 'on_break'
+type TeamAttendanceFilter = 'all' | TeamClockState | 'exceptions'
 
 interface TeamAttendanceRow {
   employeeId: string
@@ -87,6 +89,11 @@ function statusLabel(state: TeamClockState): string {
   if (state === 'working') return 'Clocked in'
   if (state === 'on_break') return 'On break'
   return 'Off clock'
+}
+
+function statusFilterFromSearch(value: string | null): TeamAttendanceFilter {
+  if (value === 'working' || value === 'on_break' || value === 'off_clock' || value === 'exceptions') return value
+  return 'all'
 }
 
 function rowLocation(row: TimekeepingReviewRow): string {
@@ -179,7 +186,16 @@ function buildTeamRows(
     })
   }
 
-  return [...rows.values()].sort((left, right) => {
+  return [...rows.values()].filter((row) =>
+    row.eventCount > 0
+    || row.rowCount > 0
+    || row.paidMinutes > 0
+    || row.breakMinutes > 0
+    || row.overtimeMinutes > 0
+    || row.exceptionCount > 0
+    || row.pendingCorrectionCount > 0
+    || row.state !== 'off_clock',
+  ).sort((left, right) => {
     const stateWeight = { working: 0, on_break: 1, off_clock: 2 }
     const stateCompare = stateWeight[left.state] - stateWeight[right.state]
     if (stateCompare !== 0) return stateCompare
@@ -192,13 +208,14 @@ function periodLabel(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>): stri
 }
 
 export function TimeTeamAttendancePage() {
+  const [searchParams] = useSearchParams()
   const [focusRequest, setFocusRequest] = useState<TimeMaintenanceFocusRequest | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const defaultPeriod = currentPayrollPeriod()
   const [fromDate, setFromDate] = useState(defaultPeriod.fromDate)
   const [throughDate, setThroughDate] = useState(defaultPeriod.throughDate)
   const [rangeTouched, setRangeTouched] = useState(false)
-  const [statusFilter, setStatusFilter] = useState<'all' | TeamClockState | 'exceptions'>('all')
+  const [statusFilter, setStatusFilter] = useState<TeamAttendanceFilter>(statusFilterFromSearch(searchParams.get('status')))
 
   const sessionQuery = useQuery({
     enabled: isSupabaseConfigured,
@@ -219,6 +236,11 @@ export function TimeTeamAttendancePage() {
     setFromDate(activePeriod.fromDate)
     setThroughDate(activePeriod.throughDate)
   }, [rangeTouched, rulesQuery.data])
+
+  useEffect(() => {
+    const nextFilter = statusFilterFromSearch(searchParams.get('status'))
+    setStatusFilter((current) => (current === nextFilter ? current : nextFilter))
+  }, [searchParams])
 
   const reviewQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && teamAllowed,
@@ -332,7 +354,7 @@ export function TimeTeamAttendancePage() {
           <label>
             <span>Status</span>
             <select onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)} value={statusFilter}>
-              <option value="all">All employees</option>
+              <option value="all">All time activity</option>
               <option value="working">Clocked in</option>
               <option value="on_break">On break</option>
               <option value="off_clock">Off clock</option>
@@ -453,20 +475,32 @@ export function TimeTeamAttendancePage() {
       ) : null}
 
       {manageAllowed && selectedEmployee ? (
-        <TimeMaintenanceWorkbench
-          defaultDate={fromDate}
-          defaultPeriod={{ fromDate, throughDate }}
-          focusRequest={focusRequest}
-          initialEmployeeId={selectedEmployee.employeeId}
-          lockEmployeeFilter
+        <ModalDialog
+          className="modal-dialog--wide modal-dialog--time-maintenance"
+          description={`Review and correct ${selectedEmployee.employeeName}'s punch history for ${periodLabel({ fromDate, throughDate })}.`}
           onClose={() => {
             setSelectedEmployeeId(null)
             setFocusRequest(null)
           }}
-          headingEyebrow="Team time maintenance"
-          headingSummary={`Review and correct ${selectedEmployee.employeeName}'s punch history without leaving this Team Attendance view.`}
-          headingTitle={`${selectedEmployee.employeeName} time details`}
-        />
+          title={`${selectedEmployee.employeeName} time details`}
+        >
+          <div className="time-maintenance-modal-body">
+            <TimeMaintenanceWorkbench
+              defaultDate={fromDate}
+              defaultPeriod={{ fromDate, throughDate }}
+              focusRequest={focusRequest}
+              initialEmployeeId={selectedEmployee.employeeId}
+              lockEmployeeFilter
+              onClose={() => {
+                setSelectedEmployeeId(null)
+                setFocusRequest(null)
+              }}
+              headingEyebrow="Punch editor"
+              headingSummary="Add missing punches, change times, void mistakes, or correct the Site/Post from this focused employee view."
+              headingTitle="Fix employee time"
+            />
+          </div>
+        </ModalDialog>
       ) : null}
     </main>
   )
