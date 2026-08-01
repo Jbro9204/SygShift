@@ -5754,8 +5754,43 @@
 .announcement-form .form-field--wide,
 .announcement-form .inline-alert,
 .announcement-form .form-feedback,
+.announcement-delivery-card,
 .announcement-actions {
   grid-column: 1 / -1;
+}
+
+.announcement-delivery-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: 16px;
+  align-items: end;
+  padding: 15px;
+  background: #fff8ea;
+  border: 1px solid #e3c88b;
+  border-left: 5px solid #c89432;
+  border-radius: 13px;
+}
+
+.announcement-delivery-card .eyebrow {
+  margin-bottom: 6px;
+}
+
+.announcement-delivery-card strong,
+.announcement-delivery-card span {
+  display: block;
+}
+
+.announcement-delivery-card strong {
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.announcement-delivery-card span {
+  margin-top: 5px;
+  color: #625849;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .announcement-actions {
@@ -5922,6 +5957,10 @@
   }
 
   .announcement-banner-audience {
+    grid-template-columns: 1fr;
+  }
+
+  .announcement-delivery-card {
     grid-template-columns: 1fr;
   }
 

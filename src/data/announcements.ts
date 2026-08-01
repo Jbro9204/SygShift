@@ -129,9 +129,13 @@ export async function previewAnnouncementTemplate(templateKey: string, fields: R
   return previewSchema.parse(data)
 }
 
-export async function publishTemplatedAnnouncement(templateKey: string, fields: Record<string, string>): Promise<AnnouncementPreview & { id: string }> {
+export async function publishTemplatedAnnouncement(
+  templateKey: string,
+  fields: Record<string, string>,
+  options: { expiresAt?: string | null } = {},
+): Promise<AnnouncementPreview & { id: string }> {
   const { data, error } = await getSupabaseClient().rpc('publish_templated_announcement', {
-    target_expires_at: null,
+    target_expires_at: options.expiresAt ?? null,
     target_fields: fields,
     target_template_key: templateKey,
   })

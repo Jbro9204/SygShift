@@ -39,6 +39,13 @@ function fromDateTimeLocal(value: string): string | null {
   return value ? new Date(value).toISOString() : null
 }
 
+function defaultAnnouncementExpirationLocal(): string {
+  const date = new Date()
+  date.setDate(date.getDate() + 14)
+  date.setHours(23, 59, 0, 0)
+  return toDateTimeLocal(date.toISOString())
+}
+
 function bannerFormPayload(form: HTMLFormElement, bannerId?: string): AnnouncementBannerMutationInput {
   const data = new FormData(form)
   const value = (key: string) => String(data.get(key) ?? '').trim()
@@ -350,6 +357,7 @@ export function AnnouncementsPage() {
   const [preview, setPreview] = useState<AnnouncementPreview | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [bannerEditor, setBannerEditor] = useState<AnnouncementBanner | 'new' | null>(null)
+  const [announcementExpiresAt, setAnnouncementExpiresAt] = useState(() => defaultAnnouncementExpirationLocal())
   const hasMfa = Boolean(composerQuery.data?.hasMfa)
   const canSend = Boolean(composerQuery.data?.canSend)
   const canManageBanner = Boolean(composerQuery.data?.canManageBanner)
@@ -371,6 +379,7 @@ export function AnnouncementsPage() {
       setFields(emptyFields(selectedTemplate))
       setPreview(null)
       setMessage(null)
+      setAnnouncementExpiresAt(defaultAnnouncementExpirationLocal())
     }
   }, [selectedTemplate])
 
@@ -388,7 +397,9 @@ export function AnnouncementsPage() {
   const publishMutation = useMutation({
     mutationFn: async () => {
       if (!selectedTemplate) throw new Error('Choose an approved template first.')
-      return publishTemplatedAnnouncement(selectedTemplate.key, fields)
+      return publishTemplatedAnnouncement(selectedTemplate.key, fields, {
+        expiresAt: fromDateTimeLocal(announcementExpiresAt),
+      })
     },
     onSuccess: async (result) => {
       setPreview(result)
@@ -533,6 +544,29 @@ export function AnnouncementsPage() {
                     />
                   </label>
                 ))}
+                <section className="announcement-delivery-card" aria-label="Announcement visibility">
+                  <div>
+                    <p className="eyebrow">Employee visibility</p>
+                    <strong>Show on the workspace banner and employee Overview until this date.</strong>
+                    <span>
+                      Email sends immediately. The banner/front-page card expires automatically so guards do not see stale posts.
+                    </span>
+                  </div>
+                  <label className="form-field">
+                    <span>Visible until</span>
+                    <input
+                      min={toDateTimeLocal(new Date().toISOString())}
+                      onChange={(event) => {
+                        setAnnouncementExpiresAt(event.target.value)
+                        setPreview(null)
+                        setMessage(null)
+                      }}
+                      required
+                      type="datetime-local"
+                      value={announcementExpiresAt}
+                    />
+                  </label>
+                </section>
 
                 {previewMutation.isError ? <div className="inline-alert" role="alert">{previewMutation.error.message}</div> : null}
                 {publishMutation.isError ? <div className="inline-alert" role="alert">{publishMutation.error.message}</div> : null}

@@ -11,6 +11,8 @@ const appShell = readFileSync(join(root, 'src', 'components', 'AppShell.tsx'), '
 const peoplePage = readFileSync(join(root, 'src', 'pages', 'PeoplePage.tsx'), 'utf8')
 const licensingCenterPage = readFileSync(join(root, 'src', 'pages', 'LicensingCenterPage.tsx'), 'utf8')
 const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
+const announcementsPage = readFileSync(join(root, 'src', 'pages', 'AnnouncementsPage.tsx'), 'utf8')
+const announcementsData = readFileSync(join(root, 'src', 'data', 'announcements.ts'), 'utf8')
 const permissionSweepMigration = readFileSync(
   join(root, 'supabase', 'migrations', '20260729111500_permission_surface_sweep_repair.sql'),
   'utf8',
@@ -21,6 +23,10 @@ const routeRpcRepairMigration = readFileSync(
 )
 const workspaceAlertMigration = readFileSync(
   join(root, 'supabase', 'migrations', '20260729124500_workspace_alert_banner_audience.sql'),
+  'utf8',
+)
+const employeeAnnouncementLaneMigration = readFileSync(
+  join(root, 'supabase', 'migrations', '20260731162000_employee_announcement_delivery_lane.sql'),
   'utf8',
 )
 const timeClockLockMigration = readFileSync(
@@ -42,7 +48,6 @@ describe('permission surface guardrails', () => {
       'sites.view',
       'patrol.view',
       'requests.view',
-      'announcements.view',
       'notifications.view',
       'reports.view',
       'admin.users.view',
@@ -175,5 +180,18 @@ describe('permission surface guardrails', () => {
     expect(workspaceAlertMigration).toContain('private.announcement_banner_visible_to_current_user')
     expect(workspaceAlertMigration).toContain("banner.audience = 'supervisors'")
     expect(workspaceAlertMigration).toContain('target_audience_roles public.app_role[]')
+  })
+
+  it('keeps employee announcements out of the creator workspace while publishing them to the front-page lane', () => {
+    expect(navigationSource).toContain("permissions: ['announcements.send', 'announcements.banner.manage']")
+    expect(navigationSource).not.toContain("permissions: ['announcements.view', 'announcements.send', 'announcements.banner.manage']")
+    expect(announcementsPage).toContain('defaultAnnouncementExpirationLocal')
+    expect(announcementsPage).toContain('Employee visibility')
+    expect(announcementsPage).toContain('Visible until')
+    expect(announcementsData).toContain('target_expires_at: options.expiresAt ?? null')
+    expect(employeeAnnouncementLaneMigration).toContain('private.announcement_visible_to_current_user')
+    expect(employeeAnnouncementLaneMigration).toContain('private.announcement_workspace_record')
+    expect(employeeAnnouncementLaneMigration).toContain("coalesce(announcement.published_at, announcement.created_at) + interval '14 days'")
+    expect(employeeAnnouncementLaneMigration).toContain("coalesce(announcement.template_key, '') <> 'welcome_to_sygshift'")
   })
 })
