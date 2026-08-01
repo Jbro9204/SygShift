@@ -12788,6 +12788,10 @@
   width: min(1100px, calc(100vw - 32px));
 }
 
+.modal-dialog--licensing-profile {
+  width: min(1280px, calc(100vw - 32px));
+}
+
 .modal-dialog--time-maintenance {
   width: min(1180px, calc(100vw - 32px));
 }
@@ -13050,7 +13054,7 @@
 
 .licensing-credential-workspace {
   display: grid;
-  grid-template-columns: minmax(300px, 0.45fr) minmax(0, 1fr);
+  grid-template-columns: minmax(360px, 0.42fr) minmax(0, 1fr);
   gap: 16px;
   margin-bottom: 22px;
 }
@@ -13087,11 +13091,11 @@
 
 .licensing-credential-picker-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  min-height: 48px;
-  padding: 10px 12px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  min-height: 68px;
+  padding: 12px 14px;
   color: #302b23;
   background: #fffaf0;
   border: 1px solid #e3d6c3;
@@ -13123,9 +13127,19 @@
 }
 
 .licensing-credential-picker-row > span {
-  overflow-wrap: anywhere;
-  font-size: 14px;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  font-size: 15px;
   font-weight: 850;
+  line-height: 1.25;
+}
+
+.licensing-credential-picker-row .licensing-status {
+  justify-self: start;
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
 }
 
 .licensing-selected-credential {
