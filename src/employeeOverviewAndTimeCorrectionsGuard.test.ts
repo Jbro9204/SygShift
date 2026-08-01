@@ -54,7 +54,7 @@ describe('employee overview and time correction guardrails', () => {
     expect(scheduleSource).toContain("['1w', '2w', 'month']")
     expect(scheduleSource).toContain('employeeScheduleDisplayStart')
     expect(scheduleSource).toContain('employeeScheduleCoverageWeekKeys')
-    expect(scheduleSource).toContain('weekStartsOn: 1')
+    expect(scheduleSource).toContain('return startOfWeek(weekStart, { weekStartsOn: 0 })')
   })
 
   it('lets employees submit protected correction requests from My Time', () => {

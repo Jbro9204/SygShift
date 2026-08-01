@@ -357,7 +357,7 @@ function employeeScheduleWeekCount(range: EmployeeScheduleRange): number {
 }
 
 function employeeScheduleDisplayStart(weekStart: Date): Date {
-  return startOfWeek(addDays(weekStart, 1), { weekStartsOn: 1 })
+  return startOfWeek(weekStart, { weekStartsOn: 0 })
 }
 
 function employeeScheduleCoverageWeekKeys(days: Date[]): string[] {
