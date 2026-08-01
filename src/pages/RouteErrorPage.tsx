@@ -12,7 +12,7 @@ export function RouteErrorPage() {
       <h1>{message}</h1>
       <p>No schedule or employee information was changed.</p>
       <Link className="primary-action" to="/">
-        Return to overview
+        Return home
       </Link>
     </main>
   )

@@ -547,7 +547,7 @@ export function AnnouncementsPage() {
                 <section className="announcement-delivery-card" aria-label="Announcement visibility">
                   <div>
                     <p className="eyebrow">Employee visibility</p>
-                    <strong>Show on the workspace banner and employee Overview until this date.</strong>
+                    <strong>Show on the workspace banner and employee Home until this date.</strong>
                     <span>
                       Email sends immediately. The banner/front-page card expires automatically so guards do not see stale posts.
                     </span>

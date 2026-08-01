@@ -75,11 +75,13 @@ describe('permission surface guardrails', () => {
     expect(permissionSweepMigration).toContain('Credential editor permission with MFA is required.')
   })
 
-  it('keeps Licensing Center as the credential workspace with employee-first navigation', () => {
-    expect(licensingCenterPage).toContain("const [licensingView, setLicensingView] = useState<'employees' | 'credentials'>('employees')")
-    expect(licensingCenterPage).toContain('visibleEmployees')
-    expect(licensingCenterPage).toContain('Employee licensing list')
-    expect(licensingCenterPage).toContain('licensing-employee-panel')
+  it('keeps Licensing Center as the credential workspace without duplicating the Directory', () => {
+    expect(licensingCenterPage).not.toContain('licensingView')
+    expect(licensingCenterPage).not.toContain('visibleEmployees')
+    expect(licensingCenterPage).not.toContain('Employee licensing list')
+    expect(licensingCenterPage).not.toContain('licensing-employee-panel')
+    expect(licensingCenterPage).toContain('Credential worklist')
+    expect(licensingCenterPage).toContain('Open credential profile')
     expect(licensingCenterPage).toContain('licensing-credential-workspace')
     expect(licensingCenterPage).toContain('Choose credential/license')
     expect(licensingCenterPage).toContain('Manage selected credential')

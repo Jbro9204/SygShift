@@ -20,14 +20,14 @@ describe('employee overview and time correction guardrails', () => {
     expect(overviewSource.indexOf('overview-employee-grid')).toBeLessThan(overviewSource.indexOf('Operational totals'))
   })
 
-  it('keeps break controls next to the quick clock action on Overview', () => {
+  it('keeps break controls next to the quick clock action on Home', () => {
     expect(overviewSource).toContain("label: 'Start break'")
     expect(overviewSource).toContain("label: 'End break'")
     expect(overviewSource).toContain('overview-time-actions')
     expect(overviewSource).toContain('overview-break-action')
   })
 
-  it('keeps employee updates visible on the Overview landing without exposing operations totals', () => {
+  it('keeps employee updates visible on the Home landing without exposing operations totals', () => {
     expect(overviewSource).toContain('getActiveAnnouncementBanners')
     expect(overviewSource).toContain('overview-employee-card--updates')
     expect(overviewSource).toContain('Updates')

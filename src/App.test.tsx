@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import App from './App'
 
 describe('SygShift shell', () => {
-  it('renders the operations overview without fabricated schedule data', async () => {
+  it('renders the operations home without fabricated schedule data', async () => {
     window.history.replaceState({}, '', '/')
     render(
       <QueryClientProvider client={new QueryClient()}>
@@ -14,6 +14,7 @@ describe('SygShift shell', () => {
 
     expect(await screen.findByRole('heading', { name: 'One clear view of the day.' })).toBeVisible()
     expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Home' })).toBeVisible()
     expect(screen.queryByRole('link', { name: 'Import Review' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Operational Import' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'What needs attention' })).toBeVisible()

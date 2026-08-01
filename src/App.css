@@ -12464,38 +12464,6 @@
   padding-left: 18px;
 }
 
-.licensing-view-switch {
-  display: inline-flex;
-  gap: 6px;
-  margin: 0 0 18px;
-  padding: 5px;
-  background: #f6efe3;
-  border: 1px solid #ded2bf;
-  border-radius: 999px;
-  box-shadow: var(--shadow-sm);
-}
-
-.licensing-view-switch button {
-  min-height: 42px;
-  padding: 9px 18px;
-  color: #594c39;
-  background: transparent;
-  border: 0;
-  border-radius: 999px;
-  cursor: pointer;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 850;
-  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
-}
-
-.licensing-view-switch button:hover,
-.licensing-view-switch button.is-active {
-  color: #1f1a13;
-  background: #ffffff;
-  box-shadow: 0 7px 18px rgba(79, 58, 25, 0.12);
-}
-
 .licensing-work-queue {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -12558,16 +12526,6 @@
   box-shadow: var(--shadow-sm);
 }
 
-.licensing-employee-panel {
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding-bottom: 2px;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: var(--shadow-sm);
-}
-
 .licensing-table-panel__heading {
   display: flex;
   align-items: center;
@@ -12595,12 +12553,6 @@
   overflow-x: auto;
 }
 
-.licensing-employee-table {
-  width: 100%;
-  min-width: 1720px;
-  overflow-x: visible;
-}
-
 .licensing-row {
   display: grid;
   grid-template-columns: minmax(190px, 1.1fr) minmax(210px, 1.15fr) minmax(145px, 0.7fr) minmax(160px, 0.8fr) minmax(135px, 0.65fr) minmax(155px, 0.75fr) minmax(148px, max-content);
@@ -12610,21 +12562,7 @@
   border-bottom: 1px solid #eee8df;
 }
 
-.licensing-employee-row {
-  display: grid;
-  grid-template-columns: minmax(260px, 1.2fr) minmax(220px, 0.9fr) minmax(180px, 0.72fr) minmax(230px, 0.95fr) minmax(195px, 0.75fr) minmax(210px, 0.8fr) minmax(248px, max-content);
-  align-items: center;
-  gap: 16px;
-  box-sizing: border-box;
-  padding: 18px 28px;
-  border-bottom: 1px solid #eee8df;
-}
-
 .licensing-row:last-child {
-  border-bottom: 0;
-}
-
-.licensing-employee-row:last-child {
   border-bottom: 0;
 }
 
@@ -12640,47 +12578,14 @@
   text-transform: uppercase;
 }
 
-.licensing-employee-row--header {
-  min-height: 46px;
-  padding-top: 12px;
-  padding-bottom: 12px;
-  color: #5d5448;
-  background: #faf6ef;
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .licensing-row div[role='cell'] {
   min-width: 0;
-}
-
-.licensing-employee-row div[role='cell'] {
-  min-width: 0;
-}
-
-.licensing-employee-row span[role='columnheader'] {
-  min-width: 0;
-}
-
-.licensing-employee-row span[role='columnheader']:last-child {
-  text-align: center;
 }
 
 .licensing-row__actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-}
-
-.licensing-employee-row__actions {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 248px;
-  box-sizing: border-box;
-  padding-left: 6px;
 }
 
 .licensing-row__actions .secondary-button {
@@ -12690,24 +12595,8 @@
   padding-left: 14px;
 }
 
-.licensing-employee-row__actions .secondary-button {
-  flex: 0 0 auto;
-  width: auto;
-  min-width: 218px;
-  min-height: 44px;
-  justify-content: center;
-  padding: 10px 16px;
-  white-space: nowrap;
-}
-
 .licensing-row strong,
 .licensing-row span {
-  display: block;
-}
-
-.licensing-employee-row strong,
-.licensing-employee-row span,
-.licensing-employee-row small {
   display: block;
 }
 
@@ -12715,44 +12604,6 @@
   overflow-wrap: anywhere;
   color: #27231e;
   font-size: 15px;
-}
-
-.licensing-employee-row strong {
-  overflow-wrap: anywhere;
-  color: #27231e;
-  font-size: 15px;
-}
-
-.licensing-employee-row small,
-.licensing-employee-row div[role='cell'] > span:not(.licensing-status):not(.work-eligibility) {
-  margin-top: 4px;
-  color: #70685d;
-  font-size: 13px;
-  line-height: 1.35;
-}
-
-.licensing-employee-counts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.licensing-employee-counts span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 8px;
-  color: #655845;
-  background: #fbf5e9;
-  border: 1px solid #e4d4b9;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 750;
-}
-
-.licensing-employee-counts strong {
-  color: #2e271d;
-  font-size: 13px;
 }
 
 .licensing-row div[role='cell'] > span:not(.licensing-status):not(.work-eligibility),

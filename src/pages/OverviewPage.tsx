@@ -131,7 +131,7 @@ export function OverviewPage() {
     <div className="page page--overview">
       <section className="page-intro">
         <div>
-          <p className="eyebrow">{employeeLanding ? 'My dashboard' : 'Operations overview'}</p>
+          <p className="eyebrow">{employeeLanding ? 'My dashboard' : 'Operations home'}</p>
           <h1>{employeeLanding ? 'Your shift day, simple.' : 'One clear view of the day.'}</h1>
           <p className="page-summary">
             {employeeLanding

@@ -41,7 +41,7 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: 'Operations',
     items: [
-      { label: 'Overview', path: '/', icon: LayoutDashboard, permissions: ['operations.view'] },
+      { label: 'Home', path: '/', icon: LayoutDashboard, permissions: ['operations.view'] },
       { label: 'Schedule', path: '/schedule', icon: CalendarDays, roles: ALL_EMPLOYEE_ROLES, permissions: ['schedule.view', 'schedule.manage', 'schedule.publish', 'schedule.delete_shift', 'schedule.override_warnings'] },
       { label: 'Scheduler', path: '/scheduler', icon: CalendarPlus, roles: OPERATIONS_ROLES, permissions: ['scheduler.view', 'scheduler.manage', 'schedule.manage'] },
       { label: 'Events & Openings', path: '/events', icon: CalendarClock, roles: ALL_EMPLOYEE_ROLES, permissions: ['events.view', 'events.manage', 'shift_pool.view', 'shift_pool.manage'] },
