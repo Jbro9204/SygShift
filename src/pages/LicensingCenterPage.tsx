@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -166,6 +166,33 @@ function statusToneClass(color: ComplianceColor): string {
 
 function CredentialStatusPill({ color, label }: { color: ComplianceColor; label: string }) {
   return <span className={statusToneClass(color)}>{label}</span>
+}
+
+function credentialTemplateFromType(type: CredentialType): LicensingCredential {
+  return {
+    affectsWorkEligibility: type.affectsWorkEligibility,
+    category: type.category,
+    complianceColor: 'gray',
+    credentialId: null,
+    credentialName: type.name,
+    credentialNumber: null,
+    credentialTypeCode: type.code,
+    credentialTypeId: type.id,
+    daysRemaining: null,
+    documentCount: 0,
+    employeeNotes: null,
+    expirationDate: null,
+    internalNotes: null,
+    issueDate: null,
+    issuingAuthority: type.issuingAuthority,
+    lastEmployeeNotification: null,
+    latestDocumentAt: null,
+    rejectionReason: null,
+    renewalStatus: 'not_started',
+    required: false,
+    status: 'Not Added',
+    statusLabel: 'Ready to add',
+  }
 }
 
 function EmployeeFormModal({
@@ -343,7 +370,7 @@ function CredentialEditModal({
       className="modal-dialog--wide"
       description={`${employee.displayName} • ${credential.credentialName}`}
       onClose={onClose}
-      title="Manage credential"
+      title={credential.credentialId ? 'Manage credential/license' : 'Add credential/license'}
     >
       <form className="request-form licensing-form" onSubmit={submit}>
         <section className={`licensing-alert licensing-alert--${credential.complianceColor}`}>
@@ -387,7 +414,7 @@ function CredentialEditModal({
           <button className="secondary-button" onClick={onClose} type="button">Close</button>
           <button className="primary-action" disabled={credentialMutation.isPending} type="submit">
             <Save aria-hidden="true" size={17} />
-            {credentialMutation.isPending ? 'Saving...' : 'Save credential'}
+            {credentialMutation.isPending ? 'Saving...' : 'Save credential/license'}
           </button>
         </div>
         {credentialMutation.isSuccess ? <div className="form-feedback form-feedback--success" role="status">Credential saved and compliance recalculated.</div> : null}
@@ -518,19 +545,55 @@ function EmployeeLicensingProfile({
 }) {
   const [editingCredentialTypeId, setEditingCredentialTypeId] = useState<string | null>(null)
   const [communicatingCredentialTypeId, setCommunicatingCredentialTypeId] = useState<string | null>(null)
+  const credentialChoices = useMemo(() => {
+    const existingTypeIds = new Set(employee.credentials.map((credential) => credential.credentialTypeId))
+    const readyToAdd = center.credentialTypes
+      .filter((type) => type.active && !existingTypeIds.has(type.id))
+      .map((type) => credentialTemplateFromType(type))
+    return [...employee.credentials, ...readyToAdd].sort((left, right) => {
+      const leftMissing = !left.credentialId || left.complianceColor === 'red'
+      const rightMissing = !right.credentialId || right.complianceColor === 'red'
+      if (leftMissing !== rightMissing) return leftMissing ? -1 : 1
+      return left.credentialName.localeCompare(right.credentialName)
+    })
+  }, [center.credentialTypes, employee.credentials])
   const editingCredential = editingCredentialTypeId
-    ? employee.credentials.find((credential) => credential.credentialTypeId === editingCredentialTypeId) ?? null
+    ? credentialChoices.find((credential) => credential.credentialTypeId === editingCredentialTypeId) ?? null
     : null
   const communicatingCredential = communicatingCredentialTypeId
-    ? employee.credentials.find((credential) => credential.credentialTypeId === communicatingCredentialTypeId) ?? null
+    ? credentialChoices.find((credential) => credential.credentialTypeId === communicatingCredentialTypeId) ?? null
     : null
   const firstAction = employee.credentials.find((credential) => credential.complianceColor === 'red')
     ?? employee.credentials.find((credential) => credential.complianceColor === 'yellow')
-  const [selectedCredentialTypeId, setSelectedCredentialTypeId] = useState(firstAction?.credentialTypeId ?? employee.credentials[0]?.credentialTypeId ?? '')
-  const selectedCredential = employee.credentials.find((credential) => credential.credentialTypeId === selectedCredentialTypeId)
+  const addCredentialTarget = credentialChoices.find((credential) => !credential.credentialId)
     ?? firstAction
-    ?? employee.credentials[0]
+    ?? credentialChoices[0]
     ?? null
+  const [selectedCredentialTypeId, setSelectedCredentialTypeId] = useState(firstAction?.credentialTypeId ?? addCredentialTarget?.credentialTypeId ?? '')
+  const selectedCredential = credentialChoices.find((credential) => credential.credentialTypeId === selectedCredentialTypeId)
+    ?? firstAction
+    ?? credentialChoices[0]
+    ?? null
+
+  useEffect(() => {
+    if (credentialChoices.length === 0) {
+      if (selectedCredentialTypeId) setSelectedCredentialTypeId('')
+      return
+    }
+
+    const selectionStillExists = credentialChoices.some((credential) => credential.credentialTypeId === selectedCredentialTypeId)
+    if (!selectionStillExists) {
+      setSelectedCredentialTypeId(firstAction?.credentialTypeId ?? addCredentialTarget?.credentialTypeId ?? credentialChoices[0].credentialTypeId)
+    }
+  }, [addCredentialTarget?.credentialTypeId, credentialChoices, firstAction?.credentialTypeId, selectedCredentialTypeId])
+
+  function openCredentialEditor(credentialTypeId: string | null | undefined = selectedCredential?.credentialTypeId) {
+    const targetCredential = credentialChoices.find((credential) => credential.credentialTypeId === credentialTypeId)
+      ?? addCredentialTarget
+    if (!targetCredential) return
+    setSelectedCredentialTypeId(targetCredential.credentialTypeId)
+    setEditingCredentialTypeId(targetCredential.credentialTypeId)
+  }
 
   return (
     <ModalDialog
@@ -596,18 +659,51 @@ function EmployeeLicensingProfile({
       ) : null}
 
       <div className="licensing-profile-actions">
+        <button className="primary-action" disabled={!addCredentialTarget} onClick={() => openCredentialEditor(addCredentialTarget?.credentialTypeId)} type="button">
+          <FileText aria-hidden="true" size={17} />
+          Add credential / license
+        </button>
         <button className="secondary-button" onClick={() => onEditEmployee(employee)} type="button">
           <Pencil aria-hidden="true" size={17} />
           Edit employee profile
         </button>
       </div>
 
+      <section className="licensing-add-credential-panel" aria-label="Add credential or license">
+        <div>
+          <span className="eyebrow">Add or update</span>
+          <h3>Add credential / license</h3>
+          <p>
+            Choose the license or credential type, then open the form to add numbers, dates, notes,
+            and supporting documents.
+          </p>
+        </div>
+        <label className="select-field">
+          <span>Choose credential/license</span>
+          <select
+            disabled={credentialChoices.length === 0}
+            onChange={(event) => setSelectedCredentialTypeId(event.target.value)}
+            value={selectedCredential?.credentialTypeId ?? ''}
+          >
+            {credentialChoices.map((credential) => (
+              <option key={credential.credentialTypeId} value={credential.credentialTypeId}>
+                {credential.credentialName} - {credential.credentialId ? credential.statusLabel : 'Add new'}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="primary-action" disabled={!selectedCredential} onClick={() => openCredentialEditor()} type="button">
+          <FileText aria-hidden="true" size={17} />
+          Open add/update form
+        </button>
+      </section>
+
       <section className="licensing-credential-workspace" aria-label="Employee credential workspace">
         <div className="licensing-credential-picker">
           <div>
-            <span className="eyebrow">Credential workspace</span>
-            <h3>Choose credential/license</h3>
-            <p>Select one record to update, upload documents, or record communication.</p>
+            <span className="eyebrow">Review records</span>
+            <h3>Credential/license records</h3>
+            <p>Select any existing or missing record to review the current status before editing.</p>
           </div>
           <label className="select-field">
             <span>Credential or license</span>
@@ -615,15 +711,15 @@ function EmployeeLicensingProfile({
               onChange={(event) => setSelectedCredentialTypeId(event.target.value)}
               value={selectedCredential?.credentialTypeId ?? ''}
             >
-              {employee.credentials.map((credential) => (
+              {credentialChoices.map((credential) => (
                 <option key={credential.credentialTypeId} value={credential.credentialTypeId}>
-                  {credential.credentialName} - {credential.statusLabel}
+                  {credential.credentialName} - {credential.credentialId ? credential.statusLabel : 'Add new'}
                 </option>
               ))}
             </select>
           </label>
           <div className="licensing-credential-picker-list" aria-label="Credential quick pick list">
-            {employee.credentials.map((credential) => (
+            {credentialChoices.map((credential) => (
               <button
                 className={[
                   'licensing-credential-picker-row',
@@ -635,7 +731,7 @@ function EmployeeLicensingProfile({
                 type="button"
               >
                 <span>{credential.credentialName}</span>
-                <CredentialStatusPill color={credential.complianceColor} label={credential.statusLabel} />
+                <CredentialStatusPill color={credential.complianceColor} label={credential.credentialId ? credential.statusLabel : 'Add new'} />
               </button>
             ))}
           </div>
@@ -665,19 +761,21 @@ function EmployeeLicensingProfile({
               <div className="licensing-selected-credential__actions">
                 <button className="primary-action" onClick={() => setEditingCredentialTypeId(selectedCredential.credentialTypeId)} type="button">
                   <Pencil aria-hidden="true" size={17} />
-                  Manage selected credential
+                  {selectedCredential.credentialId ? 'Manage selected credential' : 'Add this credential/license'}
                 </button>
-                <button className="secondary-button" onClick={() => setCommunicatingCredentialTypeId(selectedCredential.credentialTypeId)} type="button">
-                  <Mail aria-hidden="true" size={17} />
-                  Message about credential
-                </button>
+                {selectedCredential.credentialId ? (
+                  <button className="secondary-button" onClick={() => setCommunicatingCredentialTypeId(selectedCredential.credentialTypeId)} type="button">
+                    <Mail aria-hidden="true" size={17} />
+                    Message about credential
+                  </button>
+                ) : null}
               </div>
             </>
           ) : (
             <div className="licensing-empty">
               <ClipboardCheck aria-hidden="true" size={26} />
-              <strong>No credential records are configured for this employee.</strong>
-              <span>Use employee profile setup before adding documents or expiration details.</span>
+              <strong>No credential types are available.</strong>
+              <span>Add an active credential type before adding documents or expiration details.</span>
             </div>
           )}
         </article>

@@ -12984,6 +12984,7 @@
 
 .modal-dialog--licensing-profile > .licensing-alert,
 .licensing-profile-actions,
+.licensing-add-credential-panel,
 .licensing-credential-workspace,
 .licensing-credential-grid {
   margin-right: 22px;
@@ -12993,9 +12994,58 @@
 .licensing-profile-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
   margin-top: 14px;
   margin-bottom: 14px;
+}
+
+.licensing-profile-actions .primary-action,
+.licensing-profile-actions .secondary-button {
+  min-height: 44px;
+}
+
+.licensing-add-credential-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.55fr) max-content;
+  align-items: end;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 18px;
+  background: linear-gradient(135deg, #fffaf0 0%, #fffdf8 58%, #f8efd8 100%);
+  border: 1px solid #dbc49c;
+  border-left: 4px solid #c9953d;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.licensing-add-credential-panel h3,
+.licensing-add-credential-panel p {
+  margin: 0;
+}
+
+.licensing-add-credential-panel h3 {
+  color: #211d17;
+  font-size: 21px;
+  line-height: 1.2;
+}
+
+.licensing-add-credential-panel p {
+  margin-top: 6px;
+  color: #665d4f;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.licensing-add-credential-panel .select-field {
+  width: 100%;
+  min-width: 0;
+}
+
+.licensing-add-credential-panel .primary-action {
+  min-height: 48px;
+  white-space: nowrap;
 }
 
 .licensing-credential-workspace {
@@ -13282,6 +13332,11 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .licensing-add-credential-panel {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
   .licensing-credential-workspace {
     grid-template-columns: 1fr;
   }
@@ -13310,6 +13365,7 @@
   .licensing-work-queue,
   .licensing-profile-summary,
   .licensing-profile-context,
+  .licensing-add-credential-panel,
   .licensing-credential-workspace,
   .licensing-selected-credential__details,
   .licensing-credential-grid,
@@ -13323,7 +13379,9 @@
   .licensing-toolbar .secondary-button,
   .licensing-document-panel .secondary-button,
   .licensing-card-actions .secondary-button,
+  .licensing-profile-actions .primary-action,
   .licensing-profile-actions .secondary-button,
+  .licensing-add-credential-panel .primary-action,
   .licensing-form .modal-actions > * {
     width: 100%;
     min-width: 0;
