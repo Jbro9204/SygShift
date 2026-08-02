@@ -186,6 +186,26 @@ describe('button layout guardrails', () => {
     expect(dangerBlock).toContain('linear-gradient')
   })
 
+  it('keeps scheduler workflow buttons and modals on the shared layout system', () => {
+    expect(schedulePage).toContain('Copy week')
+    expect(schedulePage).toContain('Notify employees')
+    expect(schedulePage).toContain('modal-dialog--scheduler-workflow')
+    expect(schedulePage).toContain('scheduler-workflow-modal')
+    expect(schedulePage).toContain('scheduler-workflow-summary')
+
+    const workspaceActionsBlock = blockFor(
+      '.scheduler-workspace__actions .primary-action,\n.scheduler-workspace__actions .secondary-button',
+    )
+    expect(workspaceActionsBlock).toContain('min-height: 44px')
+    expect(workspaceActionsBlock).toContain('gap: 8px')
+    expect(workspaceActionsBlock).toContain('white-space: nowrap')
+
+    expect(blockFor('.modal-dialog--scheduler-workflow')).toContain('width: min(920px, calc(100vw - 24px))')
+    expect(blockFor('.scheduler-workflow-modal')).toContain('display: grid')
+    expect(blockFor('.scheduler-workflow-summary')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
+    expect(blockFor('.scheduler-workflow-modal .modal-actions .primary-action,\n.scheduler-workflow-modal .modal-actions .secondary-button')).toContain('min-height: 46px')
+  })
+
   it('keeps scheduler removals in the same draft normalization pipeline as edit and publish', () => {
     expect(schedulerRemovalPersistenceMigration).toContain('private.remove_schedule_draft_shift_unmerged')
     expect(schedulerRemovalPersistenceMigration).toContain('perform private.normalize_schedule_duplicate_shift_blocks(result_schedule_id)')

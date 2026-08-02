@@ -2337,6 +2337,14 @@
   gap: 10px;
 }
 
+.scheduler-workspace__actions .primary-action,
+.scheduler-workspace__actions .secondary-button {
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
 .scheduler-week-strip {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -3277,6 +3285,130 @@
 .modal-dialog--scheduler-shift {
   width: min(1220px, calc(100vw - 24px));
   max-height: calc(100dvh - 24px);
+}
+
+.modal-dialog--scheduler-workflow {
+  width: min(920px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+}
+
+.scheduler-workflow-modal {
+  display: grid;
+  gap: 18px;
+  padding: 20px 22px 22px;
+}
+
+.scheduler-workflow-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.scheduler-workflow-summary article {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 15px;
+  background: #fffaf0;
+  border: 1px solid #e4d7c3;
+  border-radius: 11px;
+}
+
+.scheduler-workflow-summary span,
+.scheduler-workflow-summary small {
+  color: #6f675c;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.scheduler-workflow-summary span {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scheduler-workflow-summary strong {
+  color: var(--ink);
+  font-size: clamp(20px, 3vw, 26px);
+  line-height: 1.08;
+}
+
+.scheduler-workflow-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr);
+  gap: 14px;
+}
+
+.scheduler-workflow-grid label {
+  display: grid;
+  gap: 8px;
+  color: #4f493f;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.scheduler-workflow-grid input[type='date'] {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: #fffdf9;
+  border: 1px solid #cfc5b4;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.scheduler-workflow-grid small {
+  color: #6f675c;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.scheduler-workflow-options {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 13px;
+  background: #fbf7ef;
+  border: 1px solid #e5dac8;
+  border-radius: 10px;
+}
+
+.schedule-workflow-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 11px;
+  align-items: start;
+  padding: 14px;
+  color: #614423;
+  background: #fff7e6;
+  border: 1px solid #e8c985;
+  border-radius: 10px;
+}
+
+.schedule-workflow-note--send {
+  color: #1f6045;
+  background: #edf8f2;
+  border-color: #b9dfca;
+}
+
+.schedule-workflow-note p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.scheduler-workflow-modal .modal-actions {
+  margin-top: 2px;
+  margin-bottom: 0;
+}
+
+.scheduler-workflow-modal .modal-actions .primary-action,
+.scheduler-workflow-modal .modal-actions .secondary-button {
+  min-height: 46px;
+  align-items: center;
+  gap: 8px;
 }
 
 .scheduler-shift-modal {
@@ -11741,6 +11873,16 @@
 }
 
 @media (max-width: 680px) {
+  .scheduler-workflow-summary,
+  .scheduler-workflow-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .scheduler-workflow-modal .modal-actions,
+  .scheduler-workflow-modal .modal-actions > * {
+    width: 100%;
+  }
+
   .time-page-header,
   .time-command-grid,
   .time-command-grid--period,

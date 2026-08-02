@@ -11,6 +11,10 @@ const employeeScopedPublishMigration = readFileSync(
   join(root, 'supabase', 'migrations', '20260731161500_employee_scoped_schedule_publish.sql'),
   'utf8',
 )
+const manualScheduleNotificationMigration = readFileSync(
+  join(root, 'supabase', 'migrations', '20260802103000_scheduler_manual_notifications_and_week_copy.sql'),
+  'utf8',
+)
 
 describe('scheduler behavior guardrails', () => {
   it('closes the assignment modal after Save assignment succeeds', () => {
@@ -55,5 +59,34 @@ describe('scheduler behavior guardrails', () => {
     expect(employeeScopedPublishMigration).toContain('public.publish_employee_schedule_slice')
     expect(employeeScopedPublishMigration).toContain('rebased_draft_schedule_id')
     expect(employeeScopedPublishMigration).toContain("status = 'archived'")
+  })
+
+  it('keeps schedule notifications manual after a schedule is published', () => {
+    const publishDraftBlock = manualScheduleNotificationMigration.slice(
+      manualScheduleNotificationMigration.indexOf('create or replace function public.publish_schedule_draft'),
+      manualScheduleNotificationMigration.indexOf('create or replace function public.queue_schedule_published_notification'),
+    )
+
+    expect(scheduleData).toContain('queue_schedule_published_notification')
+    expect(schedulePage).toContain('notifyScheduleMutation')
+    expect(schedulePage).toContain('processNotificationBatch()')
+    expect(schedulePage).toContain('Notify employees')
+    expect(schedulePage).toContain('Send schedule notification')
+    expect(publishDraftBlock).toContain("'notification_queued', false")
+    expect(publishDraftBlock).not.toContain('private.notification_outbox')
+    expect(manualScheduleNotificationMigration).toContain('create or replace function public.queue_schedule_published_notification')
+    expect(manualScheduleNotificationMigration).toContain('schedule-published-manual:')
+  })
+
+  it('supports copying a week into a draft without publishing it', () => {
+    expect(scheduleData).toContain('copy_schedule_week_to_draft')
+    expect(schedulePage).toContain('copyWeekMutation')
+    expect(schedulePage).toContain('Copy week')
+    expect(schedulePage).toContain('Copy into draft')
+    expect(schedulePage).toContain('Nothing publishes and no notification sends')
+    expect(manualScheduleNotificationMigration).toContain('create or replace function public.copy_schedule_week_to_draft')
+    expect(manualScheduleNotificationMigration).toContain("and schedule.status in ('draft', 'published')")
+    expect(manualScheduleNotificationMigration).toContain("and schedule.status = 'draft'")
+    expect(manualScheduleNotificationMigration).toContain("'copy_week_to_draft'")
   })
 })

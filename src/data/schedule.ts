@@ -127,12 +127,28 @@ const staffingSuggestionSchema = z.object({
   })),
 })
 
+const scheduleNotificationResultSchema = z.object({
+  notificationId: z.string().uuid(),
+  scheduleId: z.string().uuid(),
+  weekStartsOn: z.string(),
+  weekEndsOn: z.string(),
+  revision: z.number().int().positive(),
+})
+
+const copyScheduleWeekResultSchema = z.object({
+  schedule: scheduleSchema,
+  copiedCount: z.number().int().nonnegative(),
+  skippedExistingCount: z.number().int().nonnegative(),
+})
+
 export type ScheduleBuilderOptions = z.infer<typeof builderOptionsSchema>
 export type ScheduleBuilderPost = z.infer<typeof builderPostSchema>
 export type ScheduleBuilderEmployee = ScheduleBuilderOptions['employees'][number]
 export type CreateOpenShiftResult = z.infer<typeof createOpenShiftResultSchema>
 export type ResolveReviewShiftResult = z.infer<typeof resolveReviewShiftResultSchema>
 export type StaffingSuggestion = z.infer<typeof staffingSuggestionSchema>
+export type ScheduleNotificationResult = z.infer<typeof scheduleNotificationResultSchema>
+export type CopyScheduleWeekResult = z.infer<typeof copyScheduleWeekResultSchema>
 
 const importedScheduleShiftSchema = z.object({
   id: z.string().uuid(),
@@ -342,6 +358,33 @@ export async function publishEmployeeScheduleSlice(scheduleId: string, employeeI
 
   if (error) throw new Error(error.message || 'The employee schedule could not be published.')
   return scheduleSchema.parse(data)
+}
+
+export async function queueSchedulePublishedNotification(scheduleId: string, note?: string | null): Promise<ScheduleNotificationResult> {
+  const { data, error } = await getSupabaseClient().rpc('queue_schedule_published_notification', {
+    target_schedule_id: scheduleId,
+    notification_note: note?.trim() || null,
+  })
+
+  if (error) throw new Error(error.message || 'The schedule notification could not be queued.')
+  return scheduleNotificationResultSchema.parse(data)
+}
+
+export async function copyScheduleWeekToDraft(input: {
+  sourceWeekStartsOn: string
+  destinationWeekStartsOn: string
+  includeAssignments: boolean
+  includeEvents: boolean
+}): Promise<CopyScheduleWeekResult> {
+  const { data, error } = await getSupabaseClient().rpc('copy_schedule_week_to_draft', {
+    source_week_starts_on: input.sourceWeekStartsOn,
+    destination_week_starts_on: input.destinationWeekStartsOn,
+    include_assignments: input.includeAssignments,
+    include_events: input.includeEvents,
+  })
+
+  if (error) throw new Error(error.message || 'The schedule week could not be copied.')
+  return copyScheduleWeekResultSchema.parse(data)
 }
 
 export async function cancelScheduleDraft(scheduleId: string): Promise<WeeklySchedule | null> {

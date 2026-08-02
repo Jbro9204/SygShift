@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
-import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, DatabaseZap, Edit3, MapPin, Maximize2, MoveHorizontal, Plus, Search, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
+import { AlertCircle, BellRing, CalendarDays, ChevronLeft, ChevronRight, Copy, DatabaseZap, Edit3, MapPin, Maximize2, MoveHorizontal, Plus, Search, Send, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
@@ -13,6 +13,7 @@ import { getSessionContext, type SessionContext } from '../data/auth'
 import {
   assignmentName,
   cancelScheduleDraft,
+  copyScheduleWeekToDraft,
   ensureScheduleDraft,
   importedScheduleRows,
   employeeScheduleRows,
@@ -23,6 +24,7 @@ import {
   getWeeklySchedule,
   publishEmployeeScheduleSlice,
   publishScheduleDraft,
+  queueSchedulePublishedNotification,
   removeScheduleDraftShift,
   resolveScheduleReviewShift,
   scheduleRows,
@@ -35,6 +37,7 @@ import {
   type StaffingSuggestion,
   type WeeklySchedule,
 } from '../data/schedule'
+import { processNotificationBatch } from '../data/operations'
 import { parseImportedScheduleNote, sourceReferenceLabel } from '../data/sourceNotes'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualClockTime, operationalToday } from '../lib/time'
@@ -1695,6 +1698,176 @@ function EmployeeWeekDialog({
   )
 }
 
+function CopyWeekDialog({
+  isCopying,
+  onClose,
+  onCopy,
+  schedule,
+  weekEnd,
+  weekStart,
+}: {
+  isCopying: boolean
+  onClose: () => void
+  onCopy: (input: {
+    sourceWeekStartsOn: string
+    destinationWeekStartsOn: string
+    includeAssignments: boolean
+    includeEvents: boolean
+  }) => void
+  schedule: WeeklySchedule
+  weekEnd: Date
+  weekStart: Date
+}) {
+  const defaultDestination = format(addWeeks(weekStart, 1), 'yyyy-MM-dd')
+  const [destinationWeekStartsOn, setDestinationWeekStartsOn] = useState(defaultDestination)
+  const [includeAssignments, setIncludeAssignments] = useState(true)
+  const [includeEvents, setIncludeEvents] = useState(false)
+  const normalizedDestination = format(startOfWeek(dateKeyToLocalDate(destinationWeekStartsOn), { weekStartsOn: 0 }), 'yyyy-MM-dd')
+  const destinationEnd = format(addDays(dateKeyToLocalDate(normalizedDestination), 6), 'MM/dd/yyyy')
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    onCopy({
+      destinationWeekStartsOn: normalizedDestination,
+      includeAssignments,
+      includeEvents,
+      sourceWeekStartsOn: schedule.week_starts_on,
+    })
+  }
+
+  return (
+    <ModalDialog
+      busy={isCopying}
+      busyLabel="Copying week into a draft..."
+      className="modal-dialog--scheduler-workflow"
+      description="Copy one week into another as a draft. Nothing publishes and no notification sends until you choose those actions."
+      onClose={onClose}
+      title="Copy week"
+    >
+      <form className="scheduler-workflow-modal" onSubmit={handleSubmit}>
+        <div className="scheduler-workflow-summary">
+          <article>
+            <span>Source week</span>
+            <strong>{format(weekStart, 'MM/dd/yyyy')} - {format(weekEnd, 'MM/dd/yyyy')}</strong>
+            <small>Revision {schedule.revision} · {schedule.status === 'draft' ? 'Working draft' : 'Published schedule'}</small>
+          </article>
+          <article>
+            <span>Destination</span>
+            <strong>{format(dateKeyToLocalDate(normalizedDestination), 'MM/dd/yyyy')} - {destinationEnd}</strong>
+            <small>SygShift will create or reuse a working draft.</small>
+          </article>
+        </div>
+
+        <div className="scheduler-workflow-grid">
+          <label>
+            Destination week starts
+            <input
+              min={format(addWeeks(weekStart, -6), 'yyyy-MM-dd')}
+              onChange={(event) => setDestinationWeekStartsOn(event.target.value)}
+              type="date"
+              value={destinationWeekStartsOn}
+            />
+            <small>Weeks are normalized to Sunday so the planner stays aligned with payroll.</small>
+          </label>
+          <div className="scheduler-workflow-options" aria-label="Copy options">
+            <label className="check-field">
+              <input
+                checked={includeAssignments}
+                onChange={(event) => setIncludeAssignments(event.target.checked)}
+                type="checkbox"
+              />
+              Copy assigned employees
+            </label>
+            <label className="check-field">
+              <input
+                checked={includeEvents}
+                onChange={(event) => setIncludeEvents(event.target.checked)}
+                type="checkbox"
+              />
+              Include one-time events
+            </label>
+          </div>
+        </div>
+
+        <div className="schedule-workflow-note">
+          <ShieldAlert aria-hidden="true" size={18} />
+          <p>
+            Exact duplicate blocks in the destination week are skipped. If assignments create a real overlap, SygShift will stop and show the conflict instead of silently making a bad schedule.
+          </p>
+        </div>
+
+        <div className="modal-actions">
+          <button className="secondary-button" disabled={isCopying} onClick={onClose} type="button">
+            Cancel
+          </button>
+          <button className="primary-action" disabled={isCopying} type="submit">
+            <Copy aria-hidden="true" size={18} />
+            {isCopying ? 'Copying week...' : 'Copy into draft'}
+          </button>
+        </div>
+      </form>
+    </ModalDialog>
+  )
+}
+
+function ScheduleNotificationDialog({
+  isSending,
+  onClose,
+  onSend,
+  schedule,
+}: {
+  isSending: boolean
+  onClose: () => void
+  onSend: (scheduleId: string) => void
+  schedule: WeeklySchedule
+}) {
+  const startsOn = dateKeyToLocalDate(schedule.week_starts_on)
+  const endsOn = addDays(startsOn, 6)
+
+  return (
+    <ModalDialog
+      busy={isSending}
+      busyLabel="Sending schedule notification..."
+      className="modal-dialog--scheduler-workflow"
+      description="Send employees the published schedule notice when the scheduler is ready. This does not happen automatically."
+      onClose={onClose}
+      title="Notify employees"
+    >
+      <section className="scheduler-workflow-modal" aria-label="Published schedule notification">
+        <div className="scheduler-workflow-summary">
+          <article>
+            <span>Published week</span>
+            <strong>{format(startsOn, 'MM/dd/yyyy')} - {format(endsOn, 'MM/dd/yyyy')}</strong>
+            <small>Revision {schedule.revision}</small>
+          </article>
+          <article>
+            <span>Notification</span>
+            <strong>Manual send</strong>
+            <small>Use this after final review, not after every draft edit.</small>
+          </article>
+        </div>
+
+        <div className="schedule-workflow-note schedule-workflow-note--send">
+          <BellRing aria-hidden="true" size={20} />
+          <p>
+            Employees will receive the approved SygShift schedule email for this published week. If you still need to change coverage, cancel and update the draft first.
+          </p>
+        </div>
+
+        <div className="modal-actions">
+          <button className="secondary-button" disabled={isSending} onClick={onClose} type="button">
+            Cancel
+          </button>
+          <button className="primary-action" disabled={isSending || schedule.status !== 'published'} onClick={() => onSend(schedule.id)} type="button">
+            <Send aria-hidden="true" size={18} />
+            {isSending ? 'Sending...' : 'Send schedule notification'}
+          </button>
+        </div>
+      </section>
+    </ModalDialog>
+  )
+}
+
 function ImportedShiftCard({ shift }: { shift: ImportedScheduleShift }) {
   const assignee = shift.openCandidate
     ? 'Open shift'
@@ -1746,6 +1919,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const [selectedSchedulerDayKey, setSelectedSchedulerDayKey] = useState<string | null>(null)
   const [employeeWeekOpen, setEmployeeWeekOpen] = useState(false)
   const [cancelDraftConfirmOpen, setCancelDraftConfirmOpen] = useState(false)
+  const [copyWeekOpen, setCopyWeekOpen] = useState(false)
+  const [notifyScheduleOpen, setNotifyScheduleOpen] = useState(false)
   const [builderMessage, setBuilderMessage] = useState<string | null>(null)
   const [boardScrollWidth, setBoardScrollWidth] = useState(0)
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
@@ -2094,7 +2269,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     mutationFn: () => publishScheduleDraft(scheduleQuery.data!.id),
     onSuccess: async (publishedSchedule) => {
       queryClient.setQueryData(['weekly-schedule', weekKey], publishedSchedule)
-      setBuilderMessage(`Revision ${publishedSchedule.revision} is now live for the full week.`)
+      setBuilderMessage(`Revision ${publishedSchedule.revision} is now live for the full week. Send the schedule notification when employees should be alerted.`)
       updateDraftShiftMutation.reset()
       setShiftEditor(null)
       await Promise.all([
@@ -2105,6 +2280,30 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     },
     onError: (error) => {
       setBuilderMessage(error instanceof Error ? error.message : 'The schedule draft could not be published.')
+    },
+  })
+  const notifyScheduleMutation = useMutation({
+    mutationFn: async (input: { scheduleId: string }) => {
+      const queued = await queueSchedulePublishedNotification(input.scheduleId)
+      const delivery = await processNotificationBatch()
+      return { delivery, queued }
+    },
+    onSuccess: async ({ delivery, queued }) => {
+      setNotifyScheduleOpen(false)
+      const weekLabel = `${format(new Date(`${queued.weekStartsOn}T12:00:00`), 'MM/dd/yyyy')} - ${format(new Date(`${queued.weekEndsOn}T12:00:00`), 'MM/dd/yyyy')}`
+      const delivered = delivery.delivered.length
+      const failed = delivery.failed.length
+      const deliverySummary = delivery.processed === 0
+        ? 'No queued emails were waiting to send.'
+        : `${delivery.processed} email${delivery.processed === 1 ? '' : 's'} processed (${delivered} delivered, ${failed} failed).`
+      setBuilderMessage(`Schedule notification sent for ${weekLabel}. ${deliverySummary}`)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['notification-center'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-metrics'] }),
+      ])
+    },
+    onError: (error) => {
+      setBuilderMessage(error instanceof Error ? error.message : 'The schedule notification could not be sent.')
     },
   })
   const publishEmployeeScheduleMutation = useMutation({
@@ -2126,6 +2325,30 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     },
     onError: (error) => {
       setBuilderMessage(error instanceof Error ? error.message : 'The employee schedule could not be published.')
+    },
+  })
+  const copyWeekMutation = useMutation({
+    mutationFn: copyScheduleWeekToDraft,
+    onSuccess: async (result) => {
+      const destinationWeek = new Date(`${result.schedule.week_starts_on}T12:00:00`)
+      const destinationKey = format(destinationWeek, 'yyyy-MM-dd')
+      queryClient.setQueryData(['weekly-schedule', destinationKey], result.schedule)
+      setCopyWeekOpen(false)
+      jumpToWeek(destinationWeek)
+      setBuilderMessage(
+        `Copied ${result.copiedCount} shift${result.copiedCount === 1 ? '' : 's'} into ${format(destinationWeek, 'MM/dd/yyyy')} as a working draft${
+          result.skippedExistingCount ? `; skipped ${result.skippedExistingCount} existing duplicate${result.skippedExistingCount === 1 ? '' : 's'}.` : '.'
+        }`,
+      )
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['weekly-schedule', destinationKey] }),
+        queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions'] }),
+        queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-metrics'] }),
+      ])
+    },
+    onError: (error) => {
+      setBuilderMessage(error instanceof Error ? error.message : 'The week could not be copied into a draft.')
     },
   })
   const cancelDraftMutation = useMutation({
@@ -2488,6 +2711,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     if (canEditScheduler) return
     setBuilderOpen(false)
     setCancelDraftConfirmOpen(false)
+    setCopyWeekOpen(false)
+    setNotifyScheduleOpen(false)
     setResolvingShift(null)
     setRemovingShift(null)
     setShiftEditor(null)
@@ -2540,6 +2765,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     setOpenShiftEmployeeSearch('')
     setBuilderMessage(null)
     setBuilderOpen(false)
+    setCopyWeekOpen(false)
+    setNotifyScheduleOpen(false)
     setSelectedSchedulerDayKey(null)
   }
 
@@ -2716,6 +2943,30 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         </ModalDialog>
       ) : null}
 
+      {canEditScheduler && copyWeekOpen && scheduleQuery.data ? (
+        <CopyWeekDialog
+          isCopying={copyWeekMutation.isPending}
+          onClose={() => {
+            if (!copyWeekMutation.isPending) setCopyWeekOpen(false)
+          }}
+          onCopy={(input) => copyWeekMutation.mutate(input)}
+          schedule={scheduleQuery.data}
+          weekEnd={weekEnd}
+          weekStart={weekStart}
+        />
+      ) : null}
+
+      {canEditScheduler && notifyScheduleOpen && scheduleQuery.data ? (
+        <ScheduleNotificationDialog
+          isSending={notifyScheduleMutation.isPending}
+          onClose={() => {
+            if (!notifyScheduleMutation.isPending) setNotifyScheduleOpen(false)
+          }}
+          onSend={(scheduleId) => notifyScheduleMutation.mutate({ scheduleId })}
+          schedule={scheduleQuery.data}
+        />
+      ) : null}
+
       {canUseScheduler ? (
         <section className={scheduleQuery.data?.status === 'draft' ? 'scheduler-workspace scheduler-workspace--draft' : 'scheduler-workspace'} aria-label="Scheduler workspace">
           <div className="scheduler-workspace__hero">
@@ -2790,6 +3041,32 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   <Plus aria-hidden="true" size={18} />
                   Add shift or event
                 </button>
+                <button
+                  className="secondary-button"
+                  disabled={!scheduleQuery.data || copyWeekMutation.isPending}
+                  onClick={() => {
+                    copyWeekMutation.reset()
+                    setCopyWeekOpen(true)
+                  }}
+                  type="button"
+                >
+                  <Copy aria-hidden="true" size={18} />
+                  Copy week
+                </button>
+                {scheduleQuery.data?.status === 'published' ? (
+                  <button
+                    className="secondary-button"
+                    disabled={notifyScheduleMutation.isPending}
+                    onClick={() => {
+                      notifyScheduleMutation.reset()
+                      setNotifyScheduleOpen(true)
+                    }}
+                    type="button"
+                  >
+                    <BellRing aria-hidden="true" size={18} />
+                    Notify employees
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>
