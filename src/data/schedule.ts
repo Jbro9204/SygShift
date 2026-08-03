@@ -139,7 +139,11 @@ const scheduleNotificationResultSchema = z.object({
 const copyScheduleWeekResultSchema = z.object({
   schedule: scheduleSchema,
   copiedCount: z.number().int().nonnegative(),
-  skippedExistingCount: z.number().int().nonnegative(),
+  copiedAssignmentCount: z.number().int().nonnegative(),
+  replacedCount: z.number().int().nonnegative(),
+  skippedInactiveAssignmentCount: z.number().int().nonnegative(),
+  carriedCredentialOverrideCount: z.number().int().nonnegative(),
+  siteCount: z.number().int().nonnegative(),
 })
 
 export type ScheduleBuilderOptions = z.infer<typeof builderOptionsSchema>
@@ -372,13 +376,13 @@ export async function queueSchedulePublishedNotification(scheduleId: string, not
 }
 
 export async function copyScheduleWeekToDraft(input: {
-  sourceWeekStartsOn: string
+  sourceScheduleId: string
   destinationWeekStartsOn: string
   includeAssignments: boolean
   includeEvents: boolean
 }): Promise<CopyScheduleWeekResult> {
-  const { data, error } = await getSupabaseClient().rpc('copy_schedule_week_to_draft', {
-    source_week_starts_on: input.sourceWeekStartsOn,
+  const { data, error } = await getSupabaseClient().rpc('replace_schedule_week_draft_from_revision', {
+    source_schedule_id: input.sourceScheduleId,
     destination_week_starts_on: input.destinationWeekStartsOn,
     include_assignments: input.includeAssignments,
     include_events: input.includeEvents,

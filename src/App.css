@@ -3399,6 +3399,25 @@
   line-height: 1.5;
 }
 
+.schedule-workflow-confirmation {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 48px;
+  padding: 12px 14px;
+  color: #3f382f;
+  background: #fffdf9;
+  border: 1px solid #d8cbb8;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 1.4;
+}
+
+.schedule-workflow-confirmation input {
+  flex: 0 0 auto;
+}
+
 .scheduler-workflow-modal .modal-actions {
   margin-top: 2px;
   margin-bottom: 0;

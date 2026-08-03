@@ -1723,7 +1723,7 @@ function CopyWeekDialog({
   isCopying: boolean
   onClose: () => void
   onCopy: (input: {
-    sourceWeekStartsOn: string
+    sourceScheduleId: string
     destinationWeekStartsOn: string
     includeAssignments: boolean
     includeEvents: boolean
@@ -1736,6 +1736,7 @@ function CopyWeekDialog({
   const [destinationWeekStartsOn, setDestinationWeekStartsOn] = useState(defaultDestination)
   const [includeAssignments, setIncludeAssignments] = useState(true)
   const [includeEvents, setIncludeEvents] = useState(false)
+  const [replacementConfirmed, setReplacementConfirmed] = useState(false)
   const normalizedDestination = format(startOfWeek(dateKeyToLocalDate(destinationWeekStartsOn), { weekStartsOn: 0 }), 'yyyy-MM-dd')
   const destinationEnd = format(addDays(dateKeyToLocalDate(normalizedDestination), 6), 'MM/dd/yyyy')
 
@@ -1745,7 +1746,7 @@ function CopyWeekDialog({
       destinationWeekStartsOn: normalizedDestination,
       includeAssignments,
       includeEvents,
-      sourceWeekStartsOn: schedule.week_starts_on,
+      sourceScheduleId: schedule.id,
     })
   }
 
@@ -1768,7 +1769,7 @@ function CopyWeekDialog({
           <article>
             <span>Destination</span>
             <strong>{format(dateKeyToLocalDate(normalizedDestination), 'MM/dd/yyyy')} - {destinationEnd}</strong>
-            <small>SygShift will create or reuse a working draft.</small>
+            <small>The destination draft will be replaced by this source revision.</small>
           </article>
         </div>
 
@@ -1806,15 +1807,24 @@ function CopyWeekDialog({
         <div className="schedule-workflow-note">
           <ShieldAlert aria-hidden="true" size={18} />
           <p>
-            Exact duplicate blocks in the destination week are skipped. If assignments create a real overlap, SygShift will stop and show the conflict instead of silently making a bad schedule.
+            This replaces every shift currently in the destination working draft. The destination is verified before the copy commits; if any block or active assignment cannot be copied, the existing draft remains unchanged.
           </p>
         </div>
+
+        <label className="schedule-workflow-confirmation check-field">
+          <input
+            checked={replacementConfirmed}
+            onChange={(event) => setReplacementConfirmed(event.target.checked)}
+            type="checkbox"
+          />
+          I understand this will replace the destination working draft.
+        </label>
 
         <div className="modal-actions">
           <button className="secondary-button" disabled={isCopying} onClick={onClose} type="button">
             Cancel
           </button>
-          <button className="primary-action" disabled={isCopying} type="submit">
+          <button className="primary-action" disabled={isCopying || !replacementConfirmed} type="submit">
             <Copy aria-hidden="true" size={18} />
             {isCopying ? 'Copying week...' : 'Copy into draft'}
           </button>
@@ -2350,8 +2360,10 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       setCopyWeekOpen(false)
       jumpToWeek(destinationWeek)
       setBuilderMessage(
-        `Copied ${result.copiedCount} shift${result.copiedCount === 1 ? '' : 's'} into ${format(destinationWeek, 'MM/dd/yyyy')} as a working draft${
-          result.skippedExistingCount ? `; skipped ${result.skippedExistingCount} existing duplicate${result.skippedExistingCount === 1 ? '' : 's'}.` : '.'
+        `Copied and verified ${result.copiedCount} shift${result.copiedCount === 1 ? '' : 's'} across ${result.siteCount} site${result.siteCount === 1 ? '' : 's'} with ${result.copiedAssignmentCount} active assignment${result.copiedAssignmentCount === 1 ? '' : 's'} into ${format(destinationWeek, 'MM/dd/yyyy')}.${
+          result.skippedInactiveAssignmentCount ? ` ${result.skippedInactiveAssignmentCount} inactive or separated assignment${result.skippedInactiveAssignmentCount === 1 ? '' : 's'} left open for review.` : ''
+        }${
+          result.carriedCredentialOverrideCount ? ` ${result.carriedCredentialOverrideCount} existing armed placement${result.carriedCredentialOverrideCount === 1 ? '' : 's'} carried forward with an audited credential override.` : ''
         }`,
       )
       await Promise.all([

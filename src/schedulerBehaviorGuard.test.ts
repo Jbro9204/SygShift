@@ -16,6 +16,10 @@ const manualScheduleNotificationMigration = readFileSync(
   join(root, 'supabase', 'migrations', '20260802103000_scheduler_manual_notifications_and_week_copy.sql'),
   'utf8',
 )
+const atomicWeekCopyMigration = readFileSync(
+  join(root, 'supabase', 'migrations', '20260803183000_schedule_week_copy_atomic_replacement.sql'),
+  'utf8',
+)
 
 describe('scheduler behavior guardrails', () => {
   it('closes the assignment modal after Save assignment succeeds', () => {
@@ -79,16 +83,23 @@ describe('scheduler behavior guardrails', () => {
     expect(manualScheduleNotificationMigration).toContain('schedule-published-manual:')
   })
 
-  it('supports copying a week into a draft without publishing it', () => {
-    expect(scheduleData).toContain('copy_schedule_week_to_draft')
+  it('atomically replaces a destination draft from the exact visible revision', () => {
+    expect(scheduleData).toContain('replace_schedule_week_draft_from_revision')
+    expect(scheduleData).toContain('source_schedule_id: input.sourceScheduleId')
     expect(schedulePage).toContain('copyWeekMutation')
     expect(schedulePage).toContain('Copy week')
     expect(schedulePage).toContain('Copy into draft')
     expect(schedulePage).toContain('Nothing publishes and no notification sends')
-    expect(manualScheduleNotificationMigration).toContain('create or replace function public.copy_schedule_week_to_draft')
-    expect(manualScheduleNotificationMigration).toContain("and schedule.status in ('draft', 'published')")
-    expect(manualScheduleNotificationMigration).toContain("and schedule.status = 'draft'")
-    expect(manualScheduleNotificationMigration).toContain("'copy_week_to_draft'")
+    expect(schedulePage).toContain('I understand this will replace the destination working draft.')
+    expect(atomicWeekCopyMigration).toContain('create or replace function public.replace_schedule_week_draft_from_revision')
+    expect(atomicWeekCopyMigration).toContain('where schedule.id = source_schedule_id')
+    expect(atomicWeekCopyMigration).toContain("and schedule.status = 'draft'")
+    expect(atomicWeekCopyMigration).toContain("'replace_week_draft_from_revision'")
+    expect(atomicWeekCopyMigration).toContain('The week copy was canceled because the destination did not match the source revision.')
+    expect(atomicWeekCopyMigration).toContain("and employee.status = 'active'")
+    expect(atomicWeekCopyMigration.indexOf('insert into public.schedule_assignment_overrides')).toBeLessThan(
+      atomicWeekCopyMigration.indexOf('insert into public.shift_assignments (', atomicWeekCopyMigration.indexOf('for source_assignment in')),
+    )
   })
 
   it('fits all seven employee schedule days inside the scheduler board', () => {
