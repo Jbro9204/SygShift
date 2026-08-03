@@ -38,6 +38,46 @@ Notes:
 
 ## Pinned For Later
 
+### CRITICAL: Full Permission Enforcement and Access-Control Integrity Audit
+Status: Extremely important future initiative
+Priority: Critical
+Added: 08/03/2026
+
+Goal:
+Make Roles & Permissions the single authoritative source for access throughout SygShift. Navigation visibility, direct page access, buttons, reads, writes, MFA requirements, API/RPC functions, and database mutations must all honor the same effective permission result. Roles may provide default permission bundles, but a hard-coded role name must never silently bypass a permission that an Admin removed.
+
+Non-negotiables:
+- Preserve every active employee's intended access before removing existing role fallbacks.
+- Protect Admin access and provide a tested recovery path so the system cannot lock out all administrators.
+- Do not convert the system in one unverified rewrite; migrate and verify access capability by capability.
+- Permission changes must take effect immediately without requiring logout, browser refresh, or closing and reopening a page.
+- Denied access must remain denied through hidden navigation, direct URLs, browser requests, API/RPC calls, and direct database operations.
+- MFA-sensitive permissions must require a verified MFA session at the database boundary, not only in the interface.
+- Every role change and person-specific allow/deny override must remain audited.
+- Maintain a rollback migration and a documented recovery procedure throughout the conversion.
+
+Required preparation:
+- Inventory every navigation item, route, page, modal, action button, data query, mutation, Worker endpoint, Supabase RPC, and protected database function.
+- Capture a before-state snapshot of roles, role permissions, person-specific overrides, and effective permissions for every active employee.
+- Produce an approved access matrix covering Guard, Dispatcher, Scheduler, Recruiting & Licensing, Supervisor, Admin, custom roles, and person-specific overrides.
+- Identify every hard-coded role fallback and every place where the UI and database currently use different authorization rules.
+
+Controlled implementation phases:
+1. Build automated access-matrix tests from the approved before-state so no employee loses intended access unnoticed.
+2. Standardize effective-permission resolution and immediate session/query refresh behavior.
+3. Convert navigation and direct route access from role fallbacks to effective permissions.
+4. Convert page sections, modals, buttons, and read queries to the same effective permissions.
+5. Verify every write operation at both the application and database boundaries, including MFA requirements.
+6. Remove obsolete hard-coded role bypasses only after the matching permission grants are present and verified.
+7. Run role-by-role and person-override QA for allowed actions, denied actions, direct URLs, stale sessions, MFA, and rollback recovery.
+8. Compare the after-state effective access report with the captured before-state and require zero unexplained access changes before deployment.
+
+Completion standard:
+- No permission displayed in Roles & Permissions may be cosmetic.
+- Removing a permission must remove the related navigation, route, read, and write access unless another explicit role or person-level grant supplies it.
+- Adding a permission must enable the complete intended workflow without code changes.
+- Automated regression tests must fail if any future page or database function introduces a role-only authorization bypass.
+
 ### Time & Attendance Full Rebuild / Time Command Center
 Status: Pinned for phased build
 Added: 07/30/2026
