@@ -290,6 +290,7 @@ describe('schedule builder data contract', () => {
         schedule_revision: 3,
         shift_id: '40000000-0000-4000-8000-000000000001',
         employee_id: '70000000-0000-4000-8000-000000000001',
+        retained_current_assignment: true,
       },
       error: null,
     })
@@ -303,6 +304,7 @@ describe('schedule builder data contract', () => {
       schedule_revision: 3,
       shift_id: '40000000-0000-4000-8000-000000000001',
       employee_id: '70000000-0000-4000-8000-000000000001',
+      retained_current_assignment: true,
     })
 
     expect(rpc).toHaveBeenCalledWith('scheduler_resolve_review_shift', {

@@ -112,6 +112,7 @@ const resolveReviewShiftResultSchema = z.object({
   schedule_revision: z.number().int().positive(),
   shift_id: z.string().uuid(),
   employee_id: z.string().uuid(),
+  retained_current_assignment: z.boolean().optional(),
 })
 
 const staffingSuggestionSchema = z.object({

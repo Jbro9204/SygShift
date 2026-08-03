@@ -1033,7 +1033,9 @@ function ReviewResolutionDialog({
   onClose: () => void
 }) {
   const source = parseImportedScheduleNote(shift.notes)
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
+  const currentAssignments = shift.assignments.filter((assignment) => assignment.status !== 'canceled')
+  const currentEmployeeIds = new Set(currentAssignments.map((assignment) => assignment.employee.id))
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(() => currentAssignments[0]?.employee.id ?? '')
   const [credentialOverrideNote, setCredentialOverrideNote] = useState('')
   const [credentialConfirmedKnown, setCredentialConfirmedKnown] = useState(false)
   const [credentialConfirmedResponsibility, setCredentialConfirmedResponsibility] = useState(false)
@@ -1045,6 +1047,7 @@ function ReviewResolutionDialog({
     credentialConfirmedKnown,
     credentialConfirmedResponsibility,
   )
+  const retainingCurrentCoverage = currentEmployeeIds.has(selectedEmployeeId)
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1061,7 +1064,7 @@ function ReviewResolutionDialog({
     <ModalDialog
       busy={mutation.isPending}
       busyLabel="Resolving assignment..."
-      description="Resolving creates a new schedule revision. The database will reject overlaps or full shifts; armed credential gaps require a logged override."
+      description="Approve the employees already covering this shift, or choose an active employee when coverage is still open. The original imported name remains in the audit history."
       onClose={onClose}
       title="Resolve schedule assignment"
     >
@@ -1072,8 +1075,19 @@ function ReviewResolutionDialog({
         {source.context ? <span>Schedule context: {source.context}</span> : null}
       </div>
       <form className="request-form" onSubmit={submit}>
+        {currentAssignments.length > 0 ? (
+          <div className="confirmation-summary">
+            <strong>Current coverage</strong>
+            <span>{currentAssignments.map(assignmentName).join(', ')}</span>
+            <span>
+              {currentAssignments.length >= shift.headcount_required
+                ? 'This shift is covered. Resolve the review without adding another employee.'
+                : `${shift.headcount_required - currentAssignments.length} additional employee${shift.headcount_required - currentAssignments.length === 1 ? '' : 's'} needed.`}
+            </span>
+          </div>
+        ) : null}
         <label className="field-stack">
-          <span>Assign employee</span>
+          <span>{currentAssignments.length > 0 ? 'Confirm employee' : 'Assign employee'}</span>
           <select
             autoFocus
             name="employeeId"
@@ -1120,7 +1134,7 @@ function ReviewResolutionDialog({
         <div className="modal-actions">
           <button className="secondary-button" onClick={onClose} type="button">Cancel</button>
           <button className="primary-action" disabled={mutation.isPending || employees.length === 0 || !selectedEmployeeId || !credentialOverrideReady} type="submit">
-            {mutation.isPending ? 'Resolving…' : 'Resolve & publish revision'}
+            {mutation.isPending ? 'Resolving...' : retainingCurrentCoverage ? 'Approve current coverage' : 'Resolve & publish revision'}
           </button>
         </div>
       </form>
@@ -2383,7 +2397,11 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       credentialOverrideNote?: string | null
     }) => resolveScheduleReviewShift(input),
     onSuccess: async (result) => {
-      setBuilderMessage(`Review item resolved on revision ${result.schedule_revision}.`)
+      setBuilderMessage(
+        result.retained_current_assignment
+          ? `Current coverage approved on revision ${result.schedule_revision}. The original import name remains in history.`
+          : `Review item resolved on revision ${result.schedule_revision}.`,
+      )
       setResolvingShift(null)
       setSelectedPlannerShiftId(result.shift_id)
       await Promise.all([
