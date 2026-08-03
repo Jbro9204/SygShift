@@ -2,18 +2,16 @@
 
 ## Scheduler employee-view navigation
 
-- Added a dedicated horizontal schedule control directly above the Scheduler employee week board.
-- Made the control remain available while the scheduler moves vertically through a long employee schedule.
-- Synchronized the upper control with the weekly board in both directions, so moving either scrollbar keeps the other at the same position.
-- Preserved the full Sunday-through-Saturday board and the scheduler's current vertical position while viewing later days.
-- Hid the redundant control at the single-column mobile breakpoint, where horizontal scrolling is not required.
-- Expanded resize tracking so the control recalculates when schedule cards or board contents change.
+- Replaced the scrollbar-dependent employee week layout after scheduler feedback showed that moving the scrollbar did not solve the workflow.
+- Fit the full Sunday-through-Saturday employee schedule inside the desktop planning board at once.
+- Reduced only structural spacing and allowed the existing shift content to wrap cleanly within each day; operational details remain available.
+- Preserved the existing single-column phone layout for readable mobile use.
+- Expanded resize tracking for the other schedule boards that still use synchronized scrolling.
 
 ## Quality checks
 
-- Added a scheduler behavior guard test covering the synchronized employee-view scrollbar.
+- Added a scheduler behavior guard test requiring a seven-column, non-scrolling employee week board.
 - Type checking passed.
 - Lint passed with no warnings.
 - All 156 automated tests passed.
 - Production build passed.
-

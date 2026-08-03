@@ -6,6 +6,7 @@ import { join } from 'node:path'
 
 const root = process.cwd()
 const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
+const appStyles = readFileSync(join(root, 'src', 'App.css'), 'utf8')
 const scheduleData = readFileSync(join(root, 'src', 'data', 'schedule.ts'), 'utf8')
 const employeeScopedPublishMigration = readFileSync(
   join(root, 'supabase', 'migrations', '20260731161500_employee_scoped_schedule_publish.sql'),
@@ -90,13 +91,11 @@ describe('scheduler behavior guardrails', () => {
     expect(manualScheduleNotificationMigration).toContain("'copy_week_to_draft'")
   })
 
-  it('keeps the employee schedule horizontal control accessible above the weekly board', () => {
-    expect(schedulePage).toContain('className="scheduler-horizontal-control"')
-    expect(schedulePage).toContain('className="schedule-scrollbar schedule-scrollbar--scheduler"')
-    expect(schedulePage).toContain('aria-label="Horizontal employee schedule scroll"')
-    expect(schedulePage).toContain('onScroll={syncBoardScrollFromTop}')
+  it('fits all seven employee schedule days inside the scheduler board', () => {
     expect(schedulePage).toContain('className="scheduler-day-board"')
-    expect(schedulePage).toContain('onScroll={syncTopScrollFromBoard}')
-    expect(schedulePage).toContain('boardScrollRef.current = node')
+    const schedulerBoardStyles = /\.scheduler-day-board \{[\s\S]+?\}/.exec(appStyles)?.[0] ?? ''
+
+    expect(schedulerBoardStyles).toContain('grid-template-columns: repeat(7, minmax(0, 1fr))')
+    expect(schedulerBoardStyles).toContain('overflow-x: hidden')
   })
 })
