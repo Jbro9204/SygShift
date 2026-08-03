@@ -4,7 +4,7 @@ This folder is the canonical Git-tracked home for SygShift development logs, rol
 
 Desktop backup location:
 
-`C:\Users\Jordan\Desktop\SygShift Changelogs`
+`C:\Users\Jordan\Desktop\Changelog`
 
 ## Current archive
 

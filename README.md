@@ -2,6 +2,10 @@
 
 SygShift is a workforce-operations application for security scheduling, employee qualifications, events, timekeeping, time off, announcements, and payroll preparation.
 
+## Maintainer start here
+
+Before changing SygShift on any workstation, read [AGENTS.md](AGENTS.md) and the complete [Build and Handoff Guide](docs/BUILD_AND_HANDOFF_GUIDE.md). These files define the required repository checks, architecture and security boundaries, interface standards, database process, QA gates, deployment workflow, and cross-computer handoff procedure.
+
 ## Local setup
 
 Requirements:
