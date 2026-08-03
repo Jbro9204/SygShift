@@ -183,11 +183,16 @@ function cleanOptional(value: string | null | undefined): string | null {
 }
 
 function filteredLicensingCenter(center: LicensingCenter, removedEmployeeIds: string[]): LicensingCenter {
-  if (removedEmployeeIds.length === 0) return center
-
   const removed = new Set(removedEmployeeIds)
-  const employees = center.employees.filter((employee) => !removed.has(employee.employeeId))
-  const records = center.records.filter((record) => !removed.has(record.employeeId))
+  const employees = center.employees.filter((employee) => (
+    employee.employmentStatus !== 'separated'
+    && !removed.has(employee.employeeId)
+  ))
+  const activeEmployeeIds = new Set(employees.map((employee) => employee.employeeId))
+  const records = center.records.filter((record) => (
+    record.employmentStatus !== 'separated'
+    && activeEmployeeIds.has(record.employeeId)
+  ))
   const daysRemaining = (minimum: number, maximum: number) => records.filter((record) =>
     typeof record.daysRemaining === 'number'
     && record.daysRemaining >= minimum

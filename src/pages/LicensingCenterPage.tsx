@@ -209,9 +209,8 @@ function EmployeeFormModal({
   const [message, setMessage] = useState<string | null>(null)
   const mutation = useMutation({
     mutationFn: upsertLicensingEmployee,
-    onSuccess: async (payload) => {
+    onSuccess: async () => {
       setMessage(employee ? 'Employee profile saved.' : 'Onboarding employee created.')
-      queryClient.setQueryData(['licensing-center'], payload)
       await queryClient.invalidateQueries({ queryKey: ['licensing-center'], refetchType: 'active' })
       if (!employee) onClose()
     },
@@ -325,15 +324,13 @@ function CredentialEditModal({
       const updatedEmployee = payload.employees.find((item) => item.employeeId === employee.employeeId)
       const updatedCredential = updatedEmployee?.credentials.find((item) => item.credentialTypeId === credential.credentialTypeId)
       setCurrentCredentialId(updatedCredential?.credentialId ?? currentCredentialId)
-      queryClient.setQueryData(['licensing-center'], payload)
       await queryClient.invalidateQueries({ queryKey: ['licensing-center'], refetchType: 'active' })
     },
   })
   const documentMutation = useMutation({
     mutationFn: uploadCredentialDocument,
-    onSuccess: async (payload) => {
+    onSuccess: async () => {
       setSelectedFile(null)
-      queryClient.setQueryData(['licensing-center'], payload)
       await queryClient.invalidateQueries({ queryKey: ['licensing-center'], refetchType: 'active' })
     },
   })
@@ -475,8 +472,7 @@ function CommunicationModal({
 
   const mutation = useMutation({
     mutationFn: recordLicensingCommunication,
-    onSuccess: async (payload) => {
-      queryClient.setQueryData(['licensing-center'], payload)
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['licensing-center'], refetchType: 'active' })
     },
   })
@@ -955,7 +951,6 @@ export function LicensingCenterPage() {
             <option value="active">Active</option>
             <option value="leave">On leave</option>
             <option value="inactive">Inactive</option>
-            <option value="separated">Separated</option>
           </select>
         </label>
         <button className="secondary-button licensing-toolbar__clear" onClick={() => {
