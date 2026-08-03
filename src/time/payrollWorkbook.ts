@@ -137,8 +137,8 @@ function worksheetXml(sheet: WorkbookSheet): string {
   <sheetViews><sheetView workbookViewId="0" showGridLines="0" zoomScale="85" zoomScaleNormal="85"><pane ySplit="${freezeRows}" topLeftCell="${topLeftCell}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
   <cols>${columnDefinitions}</cols>
   <sheetData>${rows}</sheetData>
-  ${mergeCells}
   ${autoFilter}
+  ${mergeCells}
   <pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>
   <pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0" paperSize="9"/>
 </worksheet>`

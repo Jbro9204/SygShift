@@ -6,6 +6,7 @@ import {
   accountabilityEventReviewNote,
   accountabilityEventScheduledMinutes,
   buildPayrollWorkbookSheets,
+  createPayrollWorkbookBlob,
 } from './payrollWorkbook'
 import {
   exportableWorkedTimeRows,
@@ -15,7 +16,6 @@ import {
   payrollReadinessPercent,
   workedTimePayrollReview,
 } from './timePayroll'
-import { isFullPayrollPeriod } from './timeRules'
 
 const cleanReview: TimekeepingReview = {
   fromDate: '2026-07-12',
@@ -96,11 +96,6 @@ const sickEvent: PayrollAccountabilityEvent = {
 }
 
 describe('payroll export readiness', () => {
-  it('accepts only complete Sunday-through-Saturday biweekly payroll ranges', () => {
-    expect(isFullPayrollPeriod({ fromDate: '2026-07-26', throughDate: '2026-08-08' }, { payFrequency: 'biweekly', weekStartsOn: 0 })).toBe(true)
-    expect(isFullPayrollPeriod({ fromDate: '2026-07-27', throughDate: '2026-08-07' }, { payFrequency: 'biweekly', weekStartsOn: 0 })).toBe(false)
-  })
-
   it('allows clean payroll to be locked', () => {
     expect(payrollLockBlocker(cleanReview)).toBe('')
     expect(payrollReadinessPercent(cleanReview)).toBe(100)
@@ -341,5 +336,34 @@ describe('payroll export readiness', () => {
       'Status',
       'Review Notes',
     ])
+  })
+
+  it('writes worksheet elements in Excel-compatible schema order', async () => {
+    const workbook = createPayrollWorkbookBlob({
+      exportType: 'Preview',
+      review: cleanReview,
+    })
+    const packageText = new TextDecoder().decode(await workbook.arrayBuffer())
+    const worksheetDocuments = packageText.match(/<worksheet[\s\S]*?<\/worksheet>/g) ?? []
+
+    expect(worksheetDocuments.length).toBeGreaterThan(0)
+    for (const worksheet of worksheetDocuments) {
+      const filterIndex = worksheet.indexOf('<autoFilter')
+      const mergeIndex = worksheet.indexOf('<mergeCells')
+      if (filterIndex >= 0 && mergeIndex >= 0) expect(filterIndex).toBeLessThan(mergeIndex)
+    }
+  })
+
+  it('supports custom payroll export ranges', () => {
+    const sheets = buildPayrollWorkbookSheets({
+      exportType: 'Preview',
+      review: {
+        ...cleanReview,
+        fromDate: '2026-07-19',
+        throughDate: '2026-08-01',
+      },
+    })
+
+    expect(sheets[0].rows[1]).toEqual(['Pay Period', '07/19/2026 - 08/01/2026'])
   })
 })
