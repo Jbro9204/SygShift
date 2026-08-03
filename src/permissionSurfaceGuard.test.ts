@@ -122,8 +122,8 @@ describe('permission surface guardrails', () => {
     expect(schedulePage).toContain('const canEditScheduler = canManageSchedule && isSchedulerHome')
     expect(schedulePage).toContain('{canUseScheduler ? (')
     expect(schedulePage).toContain('{canEditScheduler && builderOpen ?')
-    expect(schedulePage).toContain('canEdit={canEditScheduler}')
-    expect(schedulePage).toContain('canResolve={canEditScheduler}')
+    expect(schedulePage).toContain('canEdit={canEditScheduler && !isHistoricalSchedulerWeek}')
+    expect(schedulePage).toContain('canResolve={canEditScheduler && !isHistoricalSchedulerWeek}')
   })
 
   it('keeps route RPCs permission-aware beyond hard-coded app roles', () => {

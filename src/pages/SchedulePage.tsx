@@ -1952,6 +1952,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const weekKey = format(weekStart, 'yyyy-MM-dd')
   const weekEndKey = format(weekEnd, 'yyyy-MM-dd')
   const currentOperationalDateKey = format(today, 'yyyy-MM-dd')
+  const isHistoricalSchedulerWeek = isSchedulerHome && weekEndKey < currentOperationalDateKey
   const schedulerWorkDays = days
   const [openShiftEmployeeSearch, setOpenShiftEmployeeSearch] = useState('')
   const planningWeeks = useMemo(() => {
@@ -2543,15 +2544,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   }, [currentOperationalDateKey, employeeRows.length, rows])
   const visibleScheduleSummary = useMemo(() => {
     const activeRows = focusedEmployeeId ? visibleEmployeeRows : visibleRows
-    const shifts = activeRows
-      .flatMap((row) => row.shifts)
-      .filter((shift) => !isSchedulerHome || shiftOperationalDate(shift) >= currentOperationalDateKey)
+    const shifts = activeRows.flatMap((row) => row.shifts)
+    const actionableShifts = shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
     return {
-      open: shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0),
-      review: shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey).length,
+      open: actionableShifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0),
+      review: actionableShifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length,
       shifts: shifts.length,
     }
-  }, [currentOperationalDateKey, focusedEmployeeId, isSchedulerHome, visibleEmployeeRows, visibleRows])
+  }, [currentOperationalDateKey, focusedEmployeeId, visibleEmployeeRows, visibleRows])
   const staffingWorkItems = useMemo(() => {
     if (scheduleQuery.data?.status !== 'draft') return []
     return scheduleQuery.data.shifts
@@ -2597,19 +2597,18 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     const shifts = schedulerRows
       .flatMap((row) => row.shifts)
       .filter((shift) => shiftOperationalDate(shift) === dayKey)
-      .filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
       .sort((left, right) => left.starts_at.localeCompare(right.starts_at))
-    const openSlots = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
-    const reviewCount = shifts.filter((shift) =>
-      parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey,
-    ).length
+    const actionableShifts = shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
+    const openSlots = actionableShifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+    const reviewCount = actionableShifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
     return { day, dayKey, openSlots, reviewCount, shifts }
   }), [currentOperationalDateKey, focusedEmployeeId, schedulerWorkDays, visibleEmployeeRows, visibleRows])
   const schedulerCoverageGroups = useMemo<SchedulerCoverageGroup[]>(() => visibleRows.map((row) => {
     const lanes = new Map<string, SchedulerCoverageLane>()
-    const activeShifts = row.shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
+    const shifts = row.shifts
+    const actionableShifts = shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
 
-    for (const shift of activeShifts) {
+    for (const shift of shifts) {
       const id = shift.post?.id ?? shift.event?.id ?? shift.id
       const lane = lanes.get(id) ?? {
         id,
@@ -2621,11 +2620,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       lanes.set(id, lane)
     }
 
-    const shifts = activeShifts
-    const openSlots = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
-    const reviewCount = shifts.filter((shift) =>
-      parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey,
-    ).length
+    const openSlots = actionableShifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+    const reviewCount = actionableShifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
     const status: SchedulerCoverageGroup['status'] = shifts.length === 0
       ? 'empty'
       : openSlots > 0
@@ -2651,12 +2647,11 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     }
   }).filter((group) => group.shiftCount > 0), [currentOperationalDateKey, visibleRows])
   const schedulerLocationSummaries = useMemo(() => rows.map((row) => {
-    const activeShifts = row.shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
-    const openSlots = activeShifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
-    const reviewCount = activeShifts.filter((shift) =>
-      parseImportedScheduleNote(shift.notes).reviewNeeded && shiftOperationalDate(shift) >= currentOperationalDateKey,
-    ).length
-    const status: SchedulerCoverageGroup['status'] = activeShifts.length === 0
+    const shifts = row.shifts
+    const actionableShifts = shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
+    const openSlots = actionableShifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+    const reviewCount = actionableShifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
+    const status: SchedulerCoverageGroup['status'] = shifts.length === 0
       ? 'empty'
       : openSlots > 0
         ? 'has-open'
@@ -2669,7 +2664,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       name: row.name,
       openSlots,
       reviewCount,
-      shiftCount: activeShifts.length,
+      shiftCount: shifts.length,
       status,
     }
   }).filter((site) => site.shiftCount > 0), [currentOperationalDateKey, rows])
@@ -3940,7 +3935,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   type="button"
                 >
                   <span>All sites</span>
-                  <small>{visibleScheduleSummary.shifts} current/future shifts</small>
+                  <small>{visibleScheduleSummary.shifts} shifts this week</small>
                 </button>
                 <div className="scheduler-location-list">
                   {schedulerLocationSummaries.map((site) => (
@@ -3975,7 +3970,9 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                         <div className="scheduler-location-badges">
                           {group.openSlots ? <span className="status-pill status-pill--attention">{group.openSlots} open</span> : null}
                           {group.reviewCount ? <span className="status-pill status-pill--warning">{group.reviewCount} review</span> : null}
-                          {!group.openSlots && !group.reviewCount ? <span className="status-pill">Covered</span> : null}
+                          {!group.openSlots && !group.reviewCount ? (
+                            <span className="status-pill">{isHistoricalSchedulerWeek ? 'Historical' : 'Covered'}</span>
+                          ) : null}
                         </div>
                       </header>
 
@@ -4002,8 +3999,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                                 <div className="scheduler-coverage-cell" key={dayKey} role="cell">
                                   {shifts.map((shift) => (
                                     <ShiftCard
-                                      canEdit={canEditScheduler}
-                                      canResolve={canEditScheduler}
+                                      canEdit={canEditScheduler && !isHistoricalSchedulerWeek}
+                                      canResolve={canEditScheduler && !isHistoricalSchedulerWeek}
                                       compact
                                       key={shift.id}
                                       onEdit={(targetShift) => setSelectedPlannerShiftId(targetShift.id)}
@@ -4034,7 +4031,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 </div>
               </div>
 
-              {canEditScheduler && selectedPlannerShift ? (
+              {canEditScheduler && !isHistoricalSchedulerWeek && selectedPlannerShift ? (
                 <SchedulerShiftModal
                   availabilityRecords={availabilityQuery.data?.availability ?? []}
                   employees={builderOptionsQuery.data?.employees ?? []}
@@ -4059,10 +4056,10 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             <div className="scheduler-day-board">
               {schedulerDayBuckets.map((bucket) => (
                 <article
-                  className={canEditScheduler ? 'scheduler-day-column scheduler-day-column--interactive' : 'scheduler-day-column'}
+                  className={canEditScheduler && !isHistoricalSchedulerWeek ? 'scheduler-day-column scheduler-day-column--interactive' : 'scheduler-day-column'}
                   key={bucket.dayKey}
                   onClick={(event) => {
-                    if (!canEditScheduler) return
+                    if (!canEditScheduler || isHistoricalSchedulerWeek) return
                     if ((event.target as HTMLElement).closest('button, .shift-card')) return
                     if (bucket.shifts.length === 1) {
                       editShift(bucket.shifts[0])
@@ -4070,7 +4067,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                     }
                     setSelectedSchedulerDayKey(bucket.dayKey)
                   }}
-                  title={canEditScheduler ? (bucket.shifts.length === 1 ? 'Click to edit this day’s shift' : 'Click to open this day’s schedule') : undefined}
+                  title={canEditScheduler && !isHistoricalSchedulerWeek ? (bucket.shifts.length === 1 ? 'Click to edit this day’s shift' : 'Click to open this day’s schedule') : undefined}
                 >
                   <header>
                     <div>
@@ -4088,8 +4085,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   <div className="scheduler-day-column__cards">
                     {bucket.shifts.length ? bucket.shifts.map((shift) => (
                       <ShiftCard
-                        canEdit={canEditScheduler}
-                        canResolve={canEditScheduler}
+                        canEdit={canEditScheduler && !isHistoricalSchedulerWeek}
+                        canResolve={canEditScheduler && !isHistoricalSchedulerWeek}
                         compact
                         key={shift.id}
                         onEdit={editShift}

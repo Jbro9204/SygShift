@@ -109,4 +109,14 @@ describe('scheduler behavior guardrails', () => {
     expect(schedulerBoardStyles).toContain('grid-template-columns: repeat(7, minmax(0, 1fr))')
     expect(schedulerBoardStyles).toContain('overflow-x: hidden')
   })
+
+  it('keeps historical schedule weeks visible without counting them as actionable openings', () => {
+    expect(schedulePage).toContain('const isHistoricalSchedulerWeek = isSchedulerHome && weekEndKey < currentOperationalDateKey')
+    expect(schedulePage).toContain('const shifts = activeRows.flatMap((row) => row.shifts)')
+    expect(schedulePage).toContain('const actionableShifts = shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)')
+    expect(schedulePage).toContain('{visibleScheduleSummary.shifts} shifts this week')
+    expect(schedulePage).toContain("{isHistoricalSchedulerWeek ? 'Historical' : 'Covered'}")
+    expect(schedulePage).toContain('canEdit={canEditScheduler && !isHistoricalSchedulerWeek}')
+    expect(schedulePage).toContain('if (!canEditScheduler || isHistoricalSchedulerWeek) return')
+  })
 })
