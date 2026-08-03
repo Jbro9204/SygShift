@@ -2705,8 +2705,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     updateScrollWidth()
     const observer = new ResizeObserver(updateScrollWidth)
     observer.observe(board)
-    const grid = board.querySelector('.schedule-grid')
-    if (grid) observer.observe(grid)
+    Array.from(board.children).forEach((child) => observer.observe(child))
 
     return () => observer.disconnect()
   }, [
@@ -4045,7 +4044,30 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               ) : null}
             </div>
           ) : (
-            <div className="scheduler-day-board">
+            <>
+              <div className="scheduler-horizontal-control">
+                <p className="schedule-scroll-hint" id="scheduler-scroll-instructions">
+                  <MoveHorizontal aria-hidden="true" size={19} />
+                  Move across the full Sunday through Saturday schedule without leaving your place
+                </p>
+                <div
+                  aria-label="Horizontal employee schedule scroll"
+                  className="schedule-scrollbar schedule-scrollbar--scheduler"
+                  onScroll={syncBoardScrollFromTop}
+                  ref={topScrollRef}
+                  role="region"
+                  tabIndex={0}
+                >
+                  <div style={{ width: `${Math.max(boardScrollWidth, 1)}px` }} />
+                </div>
+              </div>
+              <div
+                aria-describedby="scheduler-scroll-instructions"
+                className="scheduler-day-board"
+                onScroll={syncTopScrollFromBoard}
+                ref={(node) => { boardScrollRef.current = node }}
+                tabIndex={0}
+              >
               {schedulerDayBuckets.map((bucket) => (
                 <article
                   className={canEditScheduler ? 'scheduler-day-column scheduler-day-column--interactive' : 'scheduler-day-column'}
@@ -4098,7 +4120,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   </div>
                 </article>
               ))}
-            </div>
+              </div>
+            </>
           )}
         </section>
       ) : null}

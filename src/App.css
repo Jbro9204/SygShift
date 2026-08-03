@@ -4405,6 +4405,30 @@
   outline-offset: 3px;
 }
 
+.scheduler-horizontal-control {
+  position: sticky;
+  z-index: 9;
+  top: 72px;
+  display: grid;
+  gap: 7px;
+  padding: 10px 12px 0;
+  background: linear-gradient(180deg, rgb(255 253 248 / 98%) 0%, rgb(255 253 248 / 94%) 76%, rgb(255 253 248 / 0%) 100%);
+}
+
+.scheduler-horizontal-control .schedule-scroll-hint {
+  margin: 0;
+  font-size: 13px;
+}
+
+.schedule-scrollbar--scheduler {
+  position: static;
+  top: auto;
+  height: 22px;
+  margin: 0;
+  background: #f8f1e6;
+  box-shadow: 0 7px 18px rgb(38 31 19 / 8%);
+}
+
 .schedule-grid {
   width: max-content;
   min-width: min(100%, 1160px);
@@ -12312,6 +12336,10 @@
     grid-template-columns: 1fr;
     overflow-x: visible;
     background: transparent;
+  }
+
+  .scheduler-horizontal-control {
+    display: none;
   }
 
   .scheduler-day-column {

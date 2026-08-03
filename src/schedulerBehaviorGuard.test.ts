@@ -89,4 +89,14 @@ describe('scheduler behavior guardrails', () => {
     expect(manualScheduleNotificationMigration).toContain("and schedule.status = 'draft'")
     expect(manualScheduleNotificationMigration).toContain("'copy_week_to_draft'")
   })
+
+  it('keeps the employee schedule horizontal control accessible above the weekly board', () => {
+    expect(schedulePage).toContain('className="scheduler-horizontal-control"')
+    expect(schedulePage).toContain('className="schedule-scrollbar schedule-scrollbar--scheduler"')
+    expect(schedulePage).toContain('aria-label="Horizontal employee schedule scroll"')
+    expect(schedulePage).toContain('onScroll={syncBoardScrollFromTop}')
+    expect(schedulePage).toContain('className="scheduler-day-board"')
+    expect(schedulePage).toContain('onScroll={syncTopScrollFromBoard}')
+    expect(schedulePage).toContain('boardScrollRef.current = node')
+  })
 })
