@@ -11731,6 +11731,136 @@
   border-color: #c97970;
 }
 
+.modal-dialog--employee-removal {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.employee-removal-workflow {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.employee-removal-warning {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 16px;
+  color: #702820;
+  background: #fff4f1;
+  border: 1px solid #e5aaa2;
+  border-radius: 10px;
+}
+
+.employee-removal-warning p {
+  margin: 5px 0 0;
+  color: #6f4c46;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.employee-removal-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.employee-removal-counts > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px;
+  background: #fbfaf6;
+  border: 1px solid #e2dacd;
+  border-radius: 9px;
+}
+
+.employee-removal-counts dt {
+  color: #686054;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.employee-removal-counts dd {
+  margin: 0;
+  color: #241f18;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.employee-removal-workflow label {
+  display: grid;
+  gap: 7px;
+  color: #4f483d;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.employee-removal-workflow input,
+.employee-removal-workflow textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 11px 12px;
+  color: #29261f;
+  background: #fff;
+  border: 1px solid #d5cec0;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.employee-removal-workflow small {
+  color: #736b60;
+  font-weight: 500;
+}
+
+.employee-removal-loading {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 22px;
+  padding: 16px;
+  color: #5c554a;
+  background: #fbfaf6;
+  border: 1px solid #e2dacd;
+  border-radius: 9px;
+  font-weight: 750;
+}
+
+.danger-action {
+  display: inline-flex;
+  min-height: 44px;
+  padding: 10px 16px;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: #9d332a;
+  border: 1px solid #842a23;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.danger-action:hover:not(:disabled) {
+  background: #842a23;
+}
+
+.danger-action:disabled {
+  color: #8f8580;
+  background: #e8e2df;
+  border-color: #d7cfcb;
+  cursor: not-allowed;
+}
+
+@media (max-width: 680px) {
+  .employee-removal-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .account-control-kicker {
   display: block;
   color: #8b641e;

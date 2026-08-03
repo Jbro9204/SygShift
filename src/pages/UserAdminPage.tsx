@@ -2,6 +2,7 @@ import { type FormEvent, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BadgeCheck,
+  AlertTriangle,
   Download,
   KeyRound,
   LockKeyhole,
@@ -19,12 +20,13 @@ import { ModalDialog } from '../components/ModalDialog'
 import {
   createEmployee,
   credentialsToCsv,
-  deleteSeparatedEmployee,
+  getEmployeeRemovalPreview,
   getAdminUserDirectory,
   getRecentlyDeletedEmployees,
   provisionEmployeeAccount,
   provisionMissingAccounts,
   revokeEmployeeTrustedDevices,
+  removeSeparatedEmployee,
   sendAllEmployeeLoginEmails,
   sendEmployeeLoginEmail,
   sendEmployeeWelcomeEmail,
@@ -36,6 +38,7 @@ import {
   type EmployeeMutationInput,
   type EmployeeStatus,
   type EmploymentType,
+  type EmployeeRemovalPreview,
   type ProvisioningCredential,
 } from '../data/adminUsers'
 import { getSessionContext } from '../data/auth'
@@ -322,7 +325,7 @@ function ManageUserModal({
   const [loginEmailMessage, setLoginEmailMessage] = useState<string | null>(null)
   const [welcomeEmailMessage, setWelcomeEmailMessage] = useState<string | null>(null)
   const [trustedDeviceMessage, setTrustedDeviceMessage] = useState<string | null>(null)
-  const [deleteMessage, setDeleteMessage] = useState<string | null>(null)
+  const [removingEmployee, setRemovingEmployee] = useState(false)
   const onFileEmail = employee.companyEmail || employee.personalEmail || null
 
   const updateMutation = useMutation({
@@ -332,24 +335,6 @@ function ManageUserModal({
         replaceDirectoryUser(current, updatedEmployee),
       )
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
-    },
-  })
-  const deleteMutation = useMutation({
-    mutationFn: () => deleteSeparatedEmployee(employee.id),
-    onSuccess: async (result) => {
-      setDeleteMessage(`${result.displayName} was deleted. Metadata remains visible for 14 days.`)
-      queryClient.setQueryData<AdminUserDirectory>(['admin-user-directory'], (current) => {
-        if (!current) return current
-        return {
-          ...current,
-          users: current.users.filter((user) => user.id !== employee.id),
-        }
-      })
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' }),
-        queryClient.invalidateQueries({ queryKey: ['recently-deleted-employees'], refetchType: 'active' }),
-      ])
-      onClose()
     },
   })
   const accountStateMutation = useMutation({
@@ -400,7 +385,6 @@ function ManageUserModal({
     || provisionMutation.isPending
     || loginEmailMutation.isPending
     || welcomeEmailMutation.isPending
-    || deleteMutation.isPending
   const employeeFormKey = [
     employee.id,
     employee.firstName,
@@ -571,32 +555,121 @@ function ManageUserModal({
             <div className="account-control-card account-control-card--danger">
               <div>
                 <span className="account-control-kicker">Admin only</span>
-                <h4>Delete separated unused user</h4>
+                <h4>Remove separated employee</h4>
               </div>
               <p>
-                Delete is only allowed after separation and only when the record has no operational history.
-                Metadata remains in Recently Deleted for 14 days.
+                Removes the employee from working lists and disables access. Payroll, schedule, and audit
+                history remains intact so past records are not damaged.
               </p>
               <button
                 className="secondary-button"
-                disabled={deleteMutation.isPending || employee.status !== 'separated'}
-                onClick={() => {
-                  if (window.confirm(`Delete ${employee.displayName}? This only succeeds if the separated employee has no operational history.`)) {
-                    deleteMutation.mutate()
-                  }
-                }}
+                disabled={employee.status !== 'separated'}
+                onClick={() => setRemovingEmployee(true)}
                 type="button"
               >
                 <Trash2 aria-hidden="true" size={18} />
-                Delete user
+                Review removal
               </button>
-              {employee.status !== 'separated' ? <small>Separate the employee before deletion is available.</small> : null}
-              {deleteMessage ? <small>{deleteMessage}</small> : null}
-              {deleteMutation.isError ? <div className="inline-alert" role="alert">{deleteMutation.error.message}</div> : null}
+              {employee.status !== 'separated' ? <small>Separate the employee before removal is available.</small> : null}
             </div>
           ) : null}
         </section>
       </div>
+      {removingEmployee ? (
+        <EmployeeRemovalModal
+          employee={employee}
+          onClose={() => setRemovingEmployee(false)}
+          onRemoved={async () => {
+            queryClient.setQueryData<AdminUserDirectory>(['admin-user-directory'], (current) => {
+              if (!current) return current
+              return { ...current, users: current.users.filter((user) => user.id !== employee.id) }
+            })
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' }),
+              queryClient.invalidateQueries({ queryKey: ['recently-deleted-employees'], refetchType: 'active' }),
+              queryClient.invalidateQueries({ queryKey: ['licensing-center'], refetchType: 'active' }),
+            ])
+            setRemovingEmployee(false)
+            onClose()
+          }}
+        />
+      ) : null}
+    </ModalDialog>
+  )
+}
+
+function EmployeeRemovalModal({
+  employee,
+  onClose,
+  onRemoved,
+}: {
+  employee: AdminUser
+  onClose: () => void
+  onRemoved: (result: Awaited<ReturnType<typeof removeSeparatedEmployee>>) => Promise<void>
+}) {
+  const [confirmation, setConfirmation] = useState('')
+  const [reason, setReason] = useState('')
+  const previewQuery = useQuery({
+    queryFn: () => getEmployeeRemovalPreview(employee.id),
+    queryKey: ['employee-removal-preview', employee.id],
+  })
+  const removalMutation = useMutation({
+    mutationFn: () => removeSeparatedEmployee(employee.id, confirmation, reason),
+    onSuccess: onRemoved,
+  })
+  const preview: EmployeeRemovalPreview | undefined = previewQuery.data
+  const history = preview?.operationalHistory
+  const linkedRecordCount = history
+    ? Object.values(history).reduce((total, count) => total + count, 0)
+    : 0
+  const confirmed = confirmation.trim().toLowerCase() === employee.username.toLowerCase()
+    && reason.trim().length >= 8
+
+  return (
+    <ModalDialog
+      busy={removalMutation.isPending}
+      busyLabel="Removing employee from the working system..."
+      className="modal-dialog--employee-removal"
+      description="This is a restricted administrative action. Historical payroll and audit records will be retained."
+      onClose={onClose}
+      title={`Remove ${employee.displayName}?`}
+    >
+      {previewQuery.isPending ? <div className="employee-removal-loading" role="status"><span aria-hidden="true" className="modal-dialog__spinner" /> Reviewing linked records...</div> : null}
+      {previewQuery.isError ? <div className="inline-alert" role="alert">{previewQuery.error.message}</div> : null}
+      {preview ? (
+        <div className="employee-removal-workflow">
+          <div className="employee-removal-warning">
+            <AlertTriangle aria-hidden="true" size={22} />
+            <div>
+              <strong>This removes the employee from every working directory.</strong>
+              <p>Login access and role permissions are disabled. {linkedRecordCount} linked operational record{linkedRecordCount === 1 ? '' : 's'} will remain available only where required for payroll, schedules, licensing, or audit history.</p>
+            </div>
+          </div>
+          <dl className="employee-removal-counts">
+            <div><dt>Shift assignments</dt><dd>{history?.shiftAssignments ?? 0}</dd></div>
+            <div><dt>Time punches</dt><dd>{history?.timeEvents ?? 0}</dd></div>
+            <div><dt>Requests</dt><dd>{(history?.shiftRequests ?? 0) + (history?.timeOffRequests ?? 0) + (history?.callOffReports ?? 0)}</dd></div>
+            <div><dt>Credentials</dt><dd>{history?.credentials ?? 0}</dd></div>
+          </dl>
+          <label>
+            <span>Removal reason</span>
+            <textarea onChange={(event) => setReason(event.target.value)} placeholder="Example: Test account created during setup." rows={3} value={reason} />
+            <small>Required. At least 8 characters.</small>
+          </label>
+          <label>
+            <span>Type <strong>{employee.username}</strong> to confirm</span>
+            <input autoComplete="off" onChange={(event) => setConfirmation(event.target.value)} value={confirmation} />
+          </label>
+          {removalMutation.isError ? <div className="inline-alert" role="alert">{removalMutation.error.message}</div> : null}
+          <div className="modal-actions">
+            <button className="secondary-button" disabled={removalMutation.isPending} onClick={onClose} type="button">Keep employee</button>
+            <button className="danger-action" disabled={!confirmed || removalMutation.isPending} onClick={() => removalMutation.mutate()} type="button">
+              <Trash2 aria-hidden="true" size={17} />
+              Remove employee
+            </button>
+          </div>
+        </div>
+      ) : null}
     </ModalDialog>
   )
 }

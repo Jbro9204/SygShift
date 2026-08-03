@@ -144,6 +144,33 @@ function CredentialStatusPill({ color, label }: { color: ComplianceColor; label:
   return <span className={statusToneClass(color)}>{label}</span>
 }
 
+function isGuardLicenseCode(code: string): boolean {
+  return code === 'denver_security_guard_license' || code === 'armed_security_guard_credential'
+}
+
+function credentialDisplayName(credential: Pick<LicensingCredential, 'credentialName' | 'credentialTypeCode'>): string {
+  if (credential.credentialTypeCode === 'denver_security_guard_license') return 'Standard Guard License'
+  if (credential.credentialTypeCode === 'armed_security_guard_credential') return 'Armed Guard License / Endorsement'
+  return credential.credentialName
+}
+
+function CredentialChoiceOptions({ credentials }: { credentials: LicensingCredential[] }) {
+  const guardLicenses = credentials.filter((credential) => isGuardLicenseCode(credential.credentialTypeCode))
+  const otherCredentials = credentials.filter((credential) => !isGuardLicenseCode(credential.credentialTypeCode))
+  const option = (credential: LicensingCredential) => (
+    <option key={credential.credentialTypeId} value={credential.credentialTypeId}>
+      {credentialDisplayName(credential)} - {credential.credentialId ? credential.statusLabel : 'Add new'}
+    </option>
+  )
+
+  return (
+    <>
+      {guardLicenses.length > 0 ? <optgroup label="Guard Licenses">{guardLicenses.map(option)}</optgroup> : null}
+      {otherCredentials.length > 0 ? <optgroup label="Other Credentials">{otherCredentials.map(option)}</optgroup> : null}
+    </>
+  )
+}
+
 function credentialTemplateFromType(type: CredentialType): LicensingCredential {
   return {
     affectsWorkEligibility: type.affectsWorkEligibility,
@@ -580,11 +607,11 @@ function EmployeeLicensingProfile({
     >
       <section className="licensing-profile-summary">
         <article className={`licensing-profile-summary__status licensing-profile-summary__status--${employee.overallCompliance}`}>
-          <span>Overall compliance</span>
+          <span>Overall status</span>
           <strong>{complianceLabels[employee.overallCompliance]}</strong>
         </article>
         <article>
-          <span>Work eligibility</span>
+          <span>Shift eligibility</span>
           <strong>{formatEligibility(employee.workEligibility)}</strong>
         </article>
         <article>
@@ -628,7 +655,7 @@ function EmployeeLicensingProfile({
         <section className={`licensing-alert licensing-alert--${firstAction.complianceColor}`}>
           <AlertTriangle aria-hidden="true" size={20} />
           <div>
-            <strong>Top action: {firstAction.credentialName}</strong>
+            <strong>Top action: {credentialDisplayName(firstAction)}</strong>
             <span>{firstAction.statusLabel}</span>
           </div>
         </section>
@@ -661,11 +688,7 @@ function EmployeeLicensingProfile({
             onChange={(event) => setSelectedCredentialTypeId(event.target.value)}
             value={selectedCredential?.credentialTypeId ?? ''}
           >
-            {credentialChoices.map((credential) => (
-              <option key={credential.credentialTypeId} value={credential.credentialTypeId}>
-                {credential.credentialName} - {credential.credentialId ? credential.statusLabel : 'Add new'}
-              </option>
-            ))}
+            <CredentialChoiceOptions credentials={credentialChoices} />
           </select>
         </label>
         <button className="primary-action" disabled={!selectedCredential} onClick={() => openCredentialEditor()} type="button">
@@ -687,11 +710,7 @@ function EmployeeLicensingProfile({
               onChange={(event) => setSelectedCredentialTypeId(event.target.value)}
               value={selectedCredential?.credentialTypeId ?? ''}
             >
-              {credentialChoices.map((credential) => (
-                <option key={credential.credentialTypeId} value={credential.credentialTypeId}>
-                  {credential.credentialName} - {credential.credentialId ? credential.statusLabel : 'Add new'}
-                </option>
-              ))}
+              <CredentialChoiceOptions credentials={credentialChoices} />
             </select>
           </label>
           <div className="licensing-credential-picker-list" aria-label="Credential quick pick list">
@@ -706,7 +725,7 @@ function EmployeeLicensingProfile({
                 onClick={() => setSelectedCredentialTypeId(credential.credentialTypeId)}
                 type="button"
               >
-                <span>{credential.credentialName}</span>
+                <span>{credentialDisplayName(credential)}</span>
                 <CredentialStatusPill color={credential.complianceColor} label={credential.credentialId ? credential.statusLabel : 'Add new'} />
               </button>
             ))}
@@ -718,8 +737,8 @@ function EmployeeLicensingProfile({
             <>
               <div className="licensing-selected-credential__heading">
                 <div>
-                  <span>{selectedCredential.category}</span>
-                  <h3>{selectedCredential.credentialName}</h3>
+                  <span>{isGuardLicenseCode(selectedCredential.credentialTypeCode) ? 'Guard Licenses' : selectedCredential.category}</span>
+                  <h3>{credentialDisplayName(selectedCredential)}</h3>
                 </div>
                 <CredentialStatusPill color={selectedCredential.complianceColor} label={selectedCredential.statusLabel} />
               </div>
@@ -859,10 +878,10 @@ export function LicensingCenterPage() {
     <div className="page page--licensing">
       <section className="page-intro licensing-intro">
         <div>
-          <p className="eyebrow">Compliance</p>
+          <p className="eyebrow">Licensing & Credentials</p>
           <h1>Licensing Center</h1>
           <p className="page-summary">
-            Monitor licenses, credentials, renewals, missing documents, and work eligibility from one controlled workspace.
+            Monitor licenses, credentials, renewals, missing documents, and shift eligibility from one controlled workspace.
           </p>
         </div>
         <div className="licensing-intro__actions">
@@ -879,7 +898,7 @@ export function LicensingCenterPage() {
         </div>
       </section>
 
-      <section className="licensing-summary-grid" aria-label="Licensing compliance summary">
+      <section className="licensing-summary-grid" aria-label="Licensing status summary">
         {summaryCards.map((card) => (
           <button
             className={[
@@ -905,9 +924,9 @@ export function LicensingCenterPage() {
           <input onChange={(event) => setSearch(event.target.value)} placeholder="Search credential, license number, employee, status, or location" type="search" value={search} />
         </label>
         <label className="select-field licensing-toolbar__filter licensing-toolbar__filter--compliance">
-          <span>Compliance</span>
+          <span>Status</span>
           <select onChange={(event) => setComplianceFilter(event.target.value as typeof complianceFilter)} value={complianceFilter}>
-            <option value="all">All colors</option>
+            <option value="all">All statuses</option>
             <option value="green">Green</option>
             <option value="yellow">Yellow</option>
             <option value="red">Red</option>
@@ -918,7 +937,14 @@ export function LicensingCenterPage() {
           <span>Credential</span>
           <select onChange={(event) => setCredentialTypeFilter(event.target.value)} value={credentialTypeFilter}>
             <option value="all">All types</option>
-            {center.credentialTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+            <optgroup label="Guard Licenses">
+              {center.credentialTypes.filter((type) => isGuardLicenseCode(type.code)).map((type) => (
+                <option key={type.id} value={type.id}>{type.code === 'denver_security_guard_license' ? 'Standard Guard License' : 'Armed Guard License / Endorsement'}</option>
+              ))}
+            </optgroup>
+            <optgroup label="Other Credentials">
+              {center.credentialTypes.filter((type) => !isGuardLicenseCode(type.code)).map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+            </optgroup>
           </select>
         </label>
         <label className="select-field licensing-toolbar__filter licensing-toolbar__filter--employment">
@@ -976,9 +1002,9 @@ export function LicensingCenterPage() {
             <span role="columnheader">Employee</span>
             <span role="columnheader">Credential</span>
             <span role="columnheader">Expiration</span>
-            <span role="columnheader">Compliance</span>
+            <span role="columnheader">Status</span>
             <span role="columnheader">Renewal</span>
-            <span role="columnheader">Eligibility</span>
+            <span role="columnheader">Shift Eligibility</span>
             <span role="columnheader">Action</span>
           </div>
           {visibleRecords.map((record) => {
@@ -990,7 +1016,7 @@ export function LicensingCenterPage() {
                   <span>{record.employeeNumber ?? 'ID pending'} • {record.jobTitle || formatRole(record.role)}</span>
                 </div>
                 <div role="cell">
-                  <strong>{record.credentialName}</strong>
+                  <strong>{credentialDisplayName(record)}</strong>
                   <span>{record.credentialNumber || 'No number on file'}</span>
                 </div>
                 <div role="cell">

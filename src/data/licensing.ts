@@ -182,10 +182,48 @@ function cleanOptional(value: string | null | undefined): string | null {
   return clean ? clean : null
 }
 
+function filteredLicensingCenter(center: LicensingCenter, removedEmployeeIds: string[]): LicensingCenter {
+  if (removedEmployeeIds.length === 0) return center
+
+  const removed = new Set(removedEmployeeIds)
+  const employees = center.employees.filter((employee) => !removed.has(employee.employeeId))
+  const records = center.records.filter((record) => !removed.has(record.employeeId))
+  const daysRemaining = (minimum: number, maximum: number) => records.filter((record) =>
+    typeof record.daysRemaining === 'number'
+    && record.daysRemaining >= minimum
+    && record.daysRemaining <= maximum,
+  ).length
+
+  return {
+    ...center,
+    employees,
+    records,
+    summary: {
+      awaitingReview: records.filter((record) => record.status === 'Under Review').length,
+      expired: records.filter((record) => record.statusLabel === 'Expired').length,
+      expiring30: daysRemaining(0, 30),
+      expiring60: daysRemaining(31, 60),
+      expiring90: daysRemaining(61, 90),
+      fullyCompliantEmployees: employees.filter((employee) => employee.overallCompliance === 'green').length,
+      ineligibleEmployees: employees.filter((employee) => employee.workEligibility === 'ineligible').length,
+      missingRequired: records.filter((record) => record.statusLabel === 'Missing Required Credential').length,
+      rejected: records.filter((record) => record.status === 'Rejected').length,
+      renewalsInProgress: records.filter((record) => record.status === 'Renewal In Progress' || record.status === 'Renewal Submitted').length,
+    },
+  }
+}
+
 export async function getLicensingCenter(): Promise<LicensingCenter> {
-  const { data, error } = await getSupabaseClient().rpc('get_licensing_center')
-  if (error) throw new Error(error.message || 'Licensing Center could not be loaded.')
-  return licensingCenterSchema.parse(data)
+  const client = getSupabaseClient()
+  const [centerResult, removedResult] = await Promise.all([
+    client.rpc('get_licensing_center'),
+    client.rpc('get_removed_employee_ids'),
+  ])
+  if (centerResult.error) throw new Error(centerResult.error.message || 'Licensing Center could not be loaded.')
+  if (removedResult.error) throw new Error(removedResult.error.message || 'Removed employee records could not be reconciled.')
+  const center = licensingCenterSchema.parse(centerResult.data)
+  const removedEmployeeIds = z.array(z.string().uuid()).parse(removedResult.data)
+  return filteredLicensingCenter(center, removedEmployeeIds)
 }
 
 export async function upsertLicensingEmployee(input: LicensingEmployeeInput): Promise<LicensingCenter> {

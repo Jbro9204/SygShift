@@ -126,6 +126,21 @@ const deleteEmployeeResponseSchema = z.object({
   employeeId: z.string().uuid(),
   displayName: z.string(),
   expiresAt: z.string(),
+  removalMode: z.literal('history_preserving'),
+})
+
+const employeeRemovalPreviewSchema = z.object({
+  employeeId: z.string().uuid(),
+  displayName: z.string(),
+  username: z.string(),
+  operationalHistory: z.object({
+    shiftAssignments: z.number().int().nonnegative(),
+    shiftRequests: z.number().int().nonnegative(),
+    timeEvents: z.number().int().nonnegative(),
+    timeOffRequests: z.number().int().nonnegative(),
+    callOffReports: z.number().int().nonnegative(),
+    credentials: z.number().int().nonnegative(),
+  }),
 })
 
 export type AppRole = z.infer<typeof appRoleSchema>
@@ -141,6 +156,7 @@ export type LoginEmailResult = z.infer<typeof loginEmailResponseSchema>
 export type WelcomeEmailResult = z.infer<typeof welcomeEmailResponseSchema>
 export type RecentlyDeletedRecord = z.infer<typeof recentlyDeletedRecordSchema>
 export type DeleteEmployeeResult = z.infer<typeof deleteEmployeeResponseSchema>
+export type EmployeeRemovalPreview = z.infer<typeof employeeRemovalPreviewSchema>
 
 export interface EmployeeMutationInput {
   employeeId?: string
@@ -266,11 +282,25 @@ export async function revokeEmployeeTrustedDevices(employeeId: string): Promise<
   return z.number().int().nonnegative().parse(data)
 }
 
-export async function deleteSeparatedEmployee(employeeId: string): Promise<DeleteEmployeeResult> {
-  const { data, error } = await getSupabaseClient().rpc('admin_delete_separated_employee', {
+export async function getEmployeeRemovalPreview(employeeId: string): Promise<EmployeeRemovalPreview> {
+  const { data, error } = await getSupabaseClient().rpc('get_employee_removal_preview', {
     target_employee_id: employeeId,
   })
-  if (error) throw new Error(error.message || 'Separated employee could not be deleted.')
+  if (error) throw new Error(error.message || 'Employee removal details could not be loaded.')
+  return employeeRemovalPreviewSchema.parse(data)
+}
+
+export async function removeSeparatedEmployee(
+  employeeId: string,
+  confirmationUsername: string,
+  reason: string,
+): Promise<DeleteEmployeeResult> {
+  const { data, error } = await getSupabaseClient().rpc('admin_remove_separated_employee', {
+    confirmation_username: confirmationUsername.trim(),
+    removal_reason: reason.trim(),
+    target_employee_id: employeeId,
+  })
+  if (error) throw new Error(error.message || 'Separated employee could not be removed.')
   return deleteEmployeeResponseSchema.parse(data)
 }
 
