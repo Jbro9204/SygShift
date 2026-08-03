@@ -13,10 +13,12 @@ import { formatUsDateKey } from './timeRules'
 type WorkbookCell = string | number | boolean | null | undefined
 
 interface WorkbookSheet {
+  centerColumns?: number[]
   columnWidths?: number[]
   filterRowIndex?: number
   freezeRows?: number
   headerRows?: number[]
+  integerColumns?: number[]
   metadataRows?: number[]
   mergedCells?: string[]
   name: string
@@ -24,6 +26,8 @@ interface WorkbookSheet {
   rows: WorkbookCell[][]
   sectionRows?: number[]
   titleRows?: number[]
+  totalsRows?: number[]
+  wrapColumns?: number[]
 }
 
 export interface PayrollWorkbookInput {
@@ -74,17 +78,24 @@ function columnName(index: number): string {
   return name
 }
 
-function styleForCell(sheet: WorkbookSheet, rowIndex: number): number {
+function styleForCell(sheet: WorkbookSheet, cell: WorkbookCell, rowIndex: number, columnIndex: number): number {
   if (sheet.titleRows?.includes(rowIndex)) return 1
-  if (sheet.headerRows?.includes(rowIndex)) return 3
-  if (sheet.sectionRows?.includes(rowIndex)) return 4
-  if (sheet.metadataRows?.includes(rowIndex)) return 2
-  return 0
+  if (sheet.headerRows?.includes(rowIndex)) return 4
+  if (sheet.sectionRows?.includes(rowIndex)) return 5
+  if (sheet.metadataRows?.includes(rowIndex)) return columnIndex === 0 ? 2 : 3
+  if (String(cell).trim().toLocaleLowerCase() === 'ready') return 8
+  if (String(cell).trim().toLocaleLowerCase() === 'needs review') return 9
+  if (sheet.totalsRows?.includes(rowIndex)) return sheet.integerColumns?.includes(columnIndex) ? 14 : 10
+  if (sheet.wrapColumns?.includes(columnIndex)) return 11
+  if (typeof cell === 'number' && sheet.integerColumns?.includes(columnIndex)) return 13
+  if (typeof cell === 'number') return 7
+  if (sheet.centerColumns?.includes(columnIndex)) return 12
+  return 6
 }
 
 function cellXml(sheet: WorkbookSheet, cell: WorkbookCell, rowIndex: number, columnIndex: number): string {
   const ref = `${columnName(columnIndex)}${rowIndex + 1}`
-  const style = styleForCell(sheet, rowIndex)
+  const style = styleForCell(sheet, cell, rowIndex, columnIndex)
   const styleAttribute = style > 0 ? ` s="${style}"` : ''
   if (cell === null || cell === undefined || cell === '') return `<c r="${ref}"${styleAttribute}/>`
   if (typeof cell === 'number' && Number.isFinite(cell)) return `<c r="${ref}"${styleAttribute}><v>${cell}</v></c>`
@@ -121,12 +132,15 @@ function worksheetXml(sheet: WorkbookSheet): string {
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
   <dimension ref="${dimension}"/>
-  <sheetViews><sheetView workbookViewId="0"><pane ySplit="${freezeRows}" topLeftCell="${topLeftCell}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+  <sheetViews><sheetView workbookViewId="0" showGridLines="0" zoomScale="85" zoomScaleNormal="85"><pane ySplit="${freezeRows}" topLeftCell="${topLeftCell}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
   <cols>${columnDefinitions}</cols>
   <sheetData>${rows}</sheetData>
   ${mergeCells}
   ${autoFilter}
+  <pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.2" footer="0.2"/>
+  <pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0" paperSize="9"/>
 </worksheet>`
 }
 
@@ -304,31 +318,10 @@ export function payrollPayableMinutes(
     + (accountabilitySummary?.otherPaidMinutes ?? 0)
 }
 
-function employeeEventSummary(employeeId: string, events: PayrollAccountabilityEvent[]): string {
-  const counts = new Map<string, number>()
-  for (const event of events.filter((item) => item.employeeId === employeeId)) {
-    const label = eventLabel(event.eventType)
-    counts.set(label, (counts.get(label) ?? 0) + 1)
-  }
-  return [...counts.entries()].map(([label, count]) => `${label}: ${count}`).join('; ')
-}
-
 function summaryScheduledMinutes(employeeId: string, rows: TimekeepingReviewRow[]): number {
   return rows
     .filter((row) => row.employeeId === employeeId)
     .reduce((total, row) => total + scheduledMinutes(row), 0)
-}
-
-function summaryNotes(
-  summary: Pick<PayrollEmployeeSummary, 'notes'> | undefined,
-  accountabilitySummary: string,
-  accountabilityPaySummary?: PayrollAccountabilityPaySummary,
-): string {
-  return [
-    ...(summary?.notes ?? []),
-    accountabilitySummary,
-    ...(accountabilityPaySummary?.notes ?? []),
-  ].filter(Boolean).join(' | ')
 }
 
 function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmployeeSummary[], events: PayrollAccountabilityEvent[]): WorkbookSheet {
@@ -338,54 +331,36 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
   const titleRows: WorkbookCell[][] = [
     ['SygShift Payroll Report'],
     ['Pay Period', `${formatUsDateKey(review.fromDate)} - ${formatUsDateKey(review.throughDate)}`],
-    ['Export Type', input.exportType],
-    ['Generated From', 'Worked time from SygShift clock-in/out records; sick/PTO pay from approved accountability records.'],
+    ['Report Status', input.exportType],
+    ['Pay Basis', 'Completed SygShift clock-in/out records plus approved sick and PTO hours. Scheduled hours are shown only for comparison.'],
     ['Payroll Rules', input.rules ? `${input.rules.weekStartsOnLabel} week start, ${payrollHours(input.rules.dailyOvertimeMinutes)} daily OT, ${payrollHours(input.rules.weeklyOvertimeMinutes)} weekly OT` : 'Rules loaded from SygShift'],
-    ['Sick Pay Rule', 'Sick pay hours equal the scheduled shift length. Date-only sick reports are flagged for payroll review.'],
-    ['Export Note', input.exportNote ?? input.batch?.note ?? ''],
-    ['Locked Batch', input.batch ? `${input.batch.id} / ${input.batch.digest.slice(0, 12)}` : 'Preview only'],
+    ['Review Note', input.exportNote ?? input.batch?.note ?? ''],
+    ['Batch', input.batch ? `Locked payroll batch ${input.batch.id} / ${input.batch.digest.slice(0, 12)}` : 'Preview only — not an official payroll submission'],
     [],
   ]
   const header = [
     'Employee',
-    'Username',
-    'Role',
     'Employment',
-    'First Worked Date',
-    'Last Worked Date',
     'Worked Shifts',
     'Scheduled Hours',
-    'Actual Worked Hours',
+    'Worked Hours',
     'Sick Pay Hours',
-    'Vacation/PTO Hours',
+    'PTO Hours',
     'Other Paid Hours',
-    'Total Payable Hours',
+    'Total Payable',
     'Regular Hours',
     'Overtime Hours',
-    'Break Minutes',
-    'Accountability Items',
-    'Discrepancy Hours',
     'Status',
-    'Notes',
   ]
   const body = [...summaryIds].map((employeeId) => {
     const summary = summaries.find((item) => item.employeeId === employeeId)
     const accountabilityPaySummary = getPayrollAccountabilitySummary(employeeId, accountabilitySummaries)
-    const employeeEvents = events.filter((event) => event.employeeId === employeeId)
     const scheduled = summaryScheduledMinutes(employeeId, review.rows) + (accountabilityPaySummary?.scheduledMinutes ?? 0)
-    const accountabilitySummary = employeeEventSummary(employeeId, events)
-    const eventDates = employeeEvents.map((event) => event.operationalDate).filter(Boolean).sort()
-    const firstDate = summary?.firstDate ?? eventDates[0] ?? ''
-    const lastDate = summary?.lastDate ?? eventDates[eventDates.length - 1] ?? ''
     const payableMinutes = payrollPayableMinutes(summary, accountabilityPaySummary)
     const needsReview = !summary?.payrollReady || (accountabilityPaySummary?.reviewCount ?? 0) > 0
     return [
       summary?.employeeName ?? accountabilityPaySummary?.employeeName ?? 'Employee',
-      summary?.username ?? accountabilityPaySummary?.username ?? '',
-      summary?.role ?? accountabilityPaySummary?.role ?? '',
       summary?.employmentType ?? accountabilityPaySummary?.employmentType ?? '',
-      formatUsDateKey(firstDate),
-      formatUsDateKey(lastDate),
       summary?.workedShiftCount ?? 0,
       hours(scheduled),
       hours(summary?.paidMinutes ?? 0),
@@ -395,54 +370,56 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
       hours(payableMinutes),
       hours(summary?.regularMinutes ?? 0),
       hours(summary?.overtimeMinutes ?? 0),
-      summary?.breakMinutes ?? 0,
-      accountabilitySummary,
-      hours(payableMinutes - scheduled),
       needsReview ? 'Needs review' : 'Ready',
-      summaryNotes(summary, accountabilitySummary, accountabilityPaySummary),
     ]
   })
+  const totals = body.reduce((result, row) => {
+    for (let column = 2; column <= 10; column += 1) result[column] = Number(result[column] ?? 0) + Number(row[column] ?? 0)
+    return result
+  }, ['Payroll totals', '', 0, 0, 0, 0, 0, 0, 0, 0, 0, ''] as WorkbookCell[])
+  totals[11] = body.some((row) => row[11] === 'Needs review') ? 'Needs review' : 'Ready'
+  const headerRowIndex = titleRows.length
+  const totalsRowIndex = headerRowIndex + body.length + 1
 
   return {
-    columnWidths: [24, 14, 22, 14, 18, 18, 14, 16, 18, 16, 18, 16, 18, 14, 14, 14, 20, 16, 16, 52],
-    filterRowIndex: titleRows.length,
-    freezeRows: titleRows.length + 1,
-    headerRows: [titleRows.length],
+    centerColumns: [1, 2, 11],
+    columnWidths: [26, 14, 14, 16, 15, 15, 14, 16, 16, 14, 15, 16],
+    filterRowIndex: headerRowIndex,
+    freezeRows: headerRowIndex + 1,
+    headerRows: [headerRowIndex],
+    integerColumns: [2],
     mergedCells: [
-      'A1:T1',
-      'B2:T2',
-      'B3:T3',
-      'B4:T4',
-      'B5:T5',
-      'B6:T6',
-      'B7:T7',
-      'B8:T8',
+      'A1:L1',
+      'B2:L2',
+      'B3:L3',
+      'B4:L4',
+      'B5:L5',
+      'B6:L6',
+      'B7:L7',
     ],
-    metadataRows: [1, 2, 3, 4, 5, 6, 7],
+    metadataRows: [1, 2, 3, 4, 5, 6],
     name: 'Payroll Summary',
     rowHeights: {
-      3: 32,
-      4: 32,
-      5: 32,
+      3: 34,
+      4: 30,
+      5: 30,
     },
-    rows: [...titleRows, header, ...body],
+    rows: [...titleRows, header, ...body, totals],
     titleRows: [0],
+    totalsRows: [totalsRowIndex],
   }
 }
 
 function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAccountabilityEvent[]): WorkbookSheet {
-  const header = ['Employee', 'Date', 'Type', 'Location', 'Scheduled Hours', 'Actual Worked Hours', 'Payable Hours', 'Difference', 'Status', 'Notes']
+  const header = ['Employee', 'Date', 'Issue', 'Location', 'Scheduled', 'Worked', 'Payable', 'Variance', 'Status', 'Review Notes']
   const rowItems = rows
-    .filter((row) => {
-      const diff = row.paidMinutes - scheduledMinutes(row)
-      return !row.payrollReady || row.exceptionCodes.length > 0 || row.payrollNotes.length > 0 || Math.abs(diff) >= 1 || row.isOvertime
-    })
+    .filter((row) => !row.payrollReady || row.exceptionCodes.length > 0 || row.payrollNotes.length > 0)
     .map((row) => {
       const scheduled = scheduledMinutes(row)
       return [
         row.employeeName,
         formatUsDateKey(row.operationalDate),
-        row.isOvertime ? 'Worked time / Overtime' : 'Worked time',
+        row.exceptionCodes.length > 0 ? row.exceptionCodes.map((code) => code.replaceAll('_', ' ')).join(', ') : 'Payroll review',
         locationLabel(row),
         hours(scheduled),
         hours(row.paidMinutes),
@@ -452,7 +429,7 @@ function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
         [...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')), ...row.payrollNotes].join(' | '),
       ]
     })
-  const eventItems = events.map((event) => {
+  const eventItems = events.filter((event) => accountabilityEventReviewNote(event) !== '').map((event) => {
     const scheduled = accountabilityEventScheduledMinutes(event)
     const payable = accountabilityEventPayableMinutes(event)
     const reviewNote = accountabilityEventReviewNote(event)
@@ -469,15 +446,72 @@ function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
       [reviewNote, event.note].filter(Boolean).join(' | '),
     ]
   })
+  const titleRows: WorkbookCell[][] = [
+    ['Payroll Review Queue'],
+    ['Purpose', 'Only unresolved time, punch, sick-pay, PTO, and accountability items that require attention before payroll is locked.'],
+    [],
+  ]
+  const headerRowIndex = titleRows.length
   return {
-    filterRowIndex: 0,
-    freezeRows: 1,
-    headerRows: [0],
-    name: 'Discrepancies',
+    centerColumns: [1, 4, 5, 6, 7, 8],
+    columnWidths: [24, 14, 24, 38, 13, 13, 13, 13, 16, 48],
+    filterRowIndex: headerRowIndex,
+    freezeRows: headerRowIndex + 1,
+    headerRows: [headerRowIndex],
+    integerColumns: [],
+    mergedCells: ['A1:J1', 'B2:J2'],
+    metadataRows: [1],
+    name: 'Payroll Review',
     rows: [
+      ...titleRows,
       header,
       ...(rowItems.length + eventItems.length > 0 ? [...rowItems, ...eventItems] : [['No discrepancies or accountability events in this range.']]),
     ],
+    titleRows: [0],
+    wrapColumns: [2, 3, 9],
+  }
+}
+
+function buildVarianceSheet(rows: TimekeepingReviewRow[]): WorkbookSheet {
+  const titleRows: WorkbookCell[][] = [
+    ['Scheduled vs. Worked Hours'],
+    ['Purpose', 'Comparison only. Payroll pay comes from completed SygShift time records and approved paid-leave records—not scheduled hours.'],
+    [],
+  ]
+  const header = ['Employee', 'Date', 'Location', 'Scheduled Hours', 'Worked Hours', 'Variance Hours', 'Status']
+  const body = rows
+    .map((row) => {
+      const scheduled = scheduledMinutes(row)
+      const variance = row.paidMinutes - scheduled
+      return [
+        row.employeeName,
+        formatUsDateKey(row.operationalDate),
+        locationLabel(row),
+        hours(scheduled),
+        hours(row.paidMinutes),
+        hours(variance),
+        !row.payrollReady ? 'Needs review' : Math.abs(variance) >= 15 ? 'Variance noted' : 'Ready',
+      ]
+    })
+    .filter((row) => Math.abs(Number(row[5])) > 0)
+  const headerRowIndex = titleRows.length
+  return {
+    centerColumns: [1, 3, 4, 5, 6],
+    columnWidths: [24, 14, 42, 18, 16, 18, 18],
+    filterRowIndex: headerRowIndex,
+    freezeRows: headerRowIndex + 1,
+    headerRows: [headerRowIndex],
+    integerColumns: [],
+    mergedCells: ['A1:G1', 'B2:G2'],
+    metadataRows: [1],
+    name: 'Hours Variance',
+    rows: [
+      ...titleRows,
+      header,
+      ...(body.length > 0 ? body : [['No scheduled-versus-worked variances in this range.']]),
+    ],
+    titleRows: [0],
+    wrapColumns: [2],
   }
 }
 
@@ -556,58 +590,70 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
     .sort(([left], [right]) => left.localeCompare(right, undefined, { sensitivity: 'base' }))
     .map(([location, item]) => [
       location,
-      item.shifts,
-      item.accountabilityItems,
       item.employees.size,
+      item.shifts,
       hours(item.scheduledMinutes),
       hours(item.paidMinutes),
       hours(item.sickPayMinutes),
       hours(item.vacationPayMinutes),
       hours(item.otherPaidMinutes),
       hours(item.paidMinutes + item.sickPayMinutes + item.vacationPayMinutes + item.otherPaidMinutes),
-      hours(item.regularMinutes),
       hours(item.overtimeMinutes),
-      item.breakMinutes,
       item.needsReview,
     ])
 
+  const titleRows: WorkbookCell[][] = [
+    ['Site / Post Payroll Summary'],
+    ['Purpose', 'Operational rollup of worked and paid hours by Site/Post for the selected payroll period.'],
+    [],
+  ]
+  const headerRowIndex = titleRows.length
   return {
-    filterRowIndex: 0,
-    freezeRows: 1,
-    headerRows: [0],
+    centerColumns: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    columnWidths: [42, 12, 15, 16, 15, 14, 14, 16, 17, 15, 16],
+    filterRowIndex: headerRowIndex,
+    freezeRows: headerRowIndex + 1,
+    headerRows: [headerRowIndex],
+    integerColumns: [1, 2, 10],
+    mergedCells: ['A1:K1', 'B2:K2'],
+    metadataRows: [1],
     name: 'Site Summary',
     rows: [
-      ['Site / Post', 'Worked Shifts', 'Accountability Items', 'Employees', 'Scheduled Hours', 'Actual Worked Hours', 'Sick Pay Hours', 'Vacation/PTO Hours', 'Other Paid Hours', 'Total Payable Hours', 'Regular Hours', 'Overtime Hours', 'Break Minutes', 'Needs Review'],
+      ...titleRows,
+      ['Site / Post', 'Employees', 'Worked Shifts', 'Scheduled Hours', 'Worked Hours', 'Sick Pay', 'PTO Hours', 'Other Paid', 'Total Payable', 'Overtime', 'Review Items'],
       ...(rowsOut.length > 0 ? rowsOut : [['No worked time in this range.']]),
     ],
+    titleRows: [0],
+    wrapColumns: [0],
   }
 }
 
-function buildEmployeeSheets(rows: TimekeepingReviewRow[], events: PayrollAccountabilityEvent[]): WorkbookSheet[] {
-  const usedNames = new Set<string>(['payroll summary', 'discrepancies', 'site summary'])
+function buildEmployeeSheets(review: TimekeepingReview, events: PayrollAccountabilityEvent[]): WorkbookSheet[] {
+  const rows = review.rows
+  const usedNames = new Set<string>(['payroll summary', 'payroll review', 'hours variance', 'site summary'])
   const employeeIds = new Set([...rows.map((row) => row.employeeId), ...events.map((event) => event.employeeId)])
 
   return [...employeeIds].map((employeeId) => {
     const employeeRows = rows.filter((row) => row.employeeId === employeeId)
     const employeeEvents = events.filter((event) => event.employeeId === employeeId)
     const employeeName = employeeRows[0]?.employeeName ?? employeeEvents[0]?.employeeName ?? 'Employee'
-    const workedRows: WorkbookCell[][] = employeeRows.map((row) => [
-      formatUsDateKey(row.operationalDate),
-      formatUsDateKey(row.weekStartsOn ?? row.operationalDate),
-      formatUsDateKey(row.weekEndsOn ?? row.operationalDate),
-      locationLabel(row),
-      hours(scheduledMinutes(row)),
-      dateTimeText(row.firstClockIn, row.timeZone),
-      dateTimeText(row.lastClockOut, row.timeZone),
-      hours(row.grossMinutes),
-      row.breakMinutes,
-      hours(row.paidMinutes),
-      hours(row.regularMinutes),
-      hours(row.overtimeMinutes),
-      row.payrollReady ? 'Ready' : 'Needs review',
-      row.exceptionCodes.map((code) => code.replaceAll('_', ' ')).join(' | '),
-      row.payrollNotes.join(' | '),
-    ])
+    const workedRows: WorkbookCell[][] = employeeRows.map((row) => {
+      const scheduled = scheduledMinutes(row)
+      return [
+        formatUsDateKey(row.operationalDate),
+        locationLabel(row),
+        hours(scheduled),
+        dateTimeText(row.firstClockIn, row.timeZone),
+        dateTimeText(row.lastClockOut, row.timeZone),
+        row.breakMinutes,
+        hours(row.paidMinutes),
+        hours(row.regularMinutes),
+        hours(row.overtimeMinutes),
+        hours(row.paidMinutes - scheduled),
+        row.payrollReady ? 'Ready' : 'Needs review',
+        [...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')), ...row.payrollNotes].join(' | '),
+      ]
+    })
     const eventRows: WorkbookCell[][] = employeeEvents.map((event) => [
       formatUsDateKey(event.operationalDate),
       eventLabel(event.eventType),
@@ -623,18 +669,36 @@ function buildEmployeeSheets(rows: TimekeepingReviewRow[], events: PayrollAccoun
       dateTimeText(event.createdAt, event.timeZone),
     ])
 
+    const workedMinutes = employeeRows.reduce((total, row) => total + row.paidMinutes, 0)
+    const scheduledTotal = employeeRows.reduce((total, row) => total + scheduledMinutes(row), 0)
+    const sickMinutes = employeeEvents.filter((event) => event.eventType === 'called_in_sick').reduce((total, event) => total + accountabilityEventPayableMinutes(event), 0)
+    const ptoMinutes = employeeEvents.filter((event) => event.eventType === 'vacation').reduce((total, event) => total + accountabilityEventPayableMinutes(event), 0)
+    const employeeNeedsReview = employeeRows.some((row) => !row.payrollReady) || employeeEvents.some((event) => accountabilityEventReviewNote(event) !== '')
+    const titleRows: WorkbookCell[][] = [
+      [`${employeeName} — Payroll Detail`],
+      ['Pay Period', `${formatUsDateKey(review.fromDate)} - ${formatUsDateKey(review.throughDate)}`],
+      ['Period Totals', `Scheduled ${hours(scheduledTotal)} | Worked ${hours(workedMinutes)} | Sick ${hours(sickMinutes)} | PTO ${hours(ptoMinutes)} | Total Payable ${hours(workedMinutes + sickMinutes + ptoMinutes)}`],
+      ['Review Status', employeeNeedsReview ? 'Needs review' : 'Ready'],
+      [],
+    ]
+    const workedHeaderRow = titleRows.length
     const workedSectionLength = workedRows.length > 0 ? workedRows.length : 1
-    const accountabilityTitleRow = workedSectionLength + 3
-    const accountabilityHeaderRow = workedSectionLength + 4
+    const accountabilityTitleRow = workedHeaderRow + workedSectionLength + 2
+    const accountabilityHeaderRow = accountabilityTitleRow + 1
 
     return {
-      filterRowIndex: 1,
-      freezeRows: 2,
-      headerRows: [1, accountabilityHeaderRow],
+      centerColumns: [0, 2, 5, 6, 7, 8, 9, 10],
+      columnWidths: [14, 38, 14, 24, 24, 14, 14, 14, 14, 15, 16, 46],
+      filterRowIndex: workedHeaderRow,
+      freezeRows: workedHeaderRow + 1,
+      headerRows: [workedHeaderRow, accountabilityHeaderRow],
+      integerColumns: [5],
+      mergedCells: ['A1:L1', 'B2:L2', 'B3:L3', 'B4:L4', `A${accountabilityTitleRow + 1}:L${accountabilityTitleRow + 1}`],
+      metadataRows: [1, 2, 3],
       name: sheetName(employeeName, usedNames),
       rows: [
-        ['Worked Time'],
-        ['Date', 'Week Start', 'Week End', 'Location', 'Scheduled Hours', 'Clock In', 'Clock Out', 'Gross Hours', 'Break Minutes', 'Paid Hours', 'Regular Hours', 'Overtime Hours', 'Status', 'Exceptions', 'Payroll Notes'],
+        ...titleRows,
+        ['Date', 'Site / Post', 'Scheduled', 'Clock In', 'Clock Out', 'Break Min', 'Paid Hours', 'Regular', 'Overtime', 'Variance', 'Status', 'Review Notes'],
         ...(workedRows.length > 0 ? workedRows : [['No worked time rows in this range.']]),
         [],
         ['Accountability / Sick Pay / PTO'],
@@ -643,6 +707,7 @@ function buildEmployeeSheets(rows: TimekeepingReviewRow[], events: PayrollAccoun
       ],
       sectionRows: [accountabilityTitleRow],
       titleRows: [0],
+      wrapColumns: [1, 3, 4, 11],
     }
   })
 }
@@ -653,8 +718,9 @@ export function buildPayrollWorkbookSheets(input: PayrollWorkbookInput): Workboo
   return [
     buildSummarySheet(input, summaries, events),
     buildDiscrepancySheet(input.review.rows, events),
+    buildVarianceSheet(input.review.rows),
     buildSiteSummarySheet(input.review.rows, events),
-    ...buildEmployeeSheets(input.review.rows, events),
+    ...buildEmployeeSheets(input.review, events),
   ]
 }
 
@@ -697,30 +763,49 @@ const rootRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="4">
+  <fonts count="6">
     <font><sz val="11"/><name val="Aptos"/></font>
     <font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Aptos Display"/></font>
     <font><b/><sz val="11"/><color rgb="FF201D19"/><name val="Aptos"/></font>
     <font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font>
+    <font><b/><sz val="11"/><color rgb="FF8B352D"/><name val="Aptos"/></font>
+    <font><b/><sz val="11"/><color rgb="FF166044"/><name val="Aptos"/></font>
   </fonts>
-  <fills count="5">
+  <fills count="10">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FF171511"/><bgColor indexed="64"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FF9B6A17"/><bgColor indexed="64"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFFFF7EA"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFE7F4ED"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFFEDE9"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF5E4BE"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF6F4F0"/><bgColor indexed="64"/></patternFill></fill>
   </fills>
-  <borders count="2">
+  <borders count="4">
     <border><left/><right/><top/><bottom/><diagonal/></border>
     <border><left style="thin"><color rgb="FFE4D8C2"/></left><right style="thin"><color rgb="FFE4D8C2"/></right><top style="thin"><color rgb="FFE4D8C2"/></top><bottom style="thin"><color rgb="FFE4D8C2"/></bottom><diagonal/></border>
+    <border><left/><right/><top/><bottom style="thin"><color rgb="FFE7E1D7"/></bottom><diagonal/></border>
+    <border><left/><right/><top style="medium"><color rgb="FF9B6A17"/></top><bottom style="thin"><color rgb="FFD2B06B"/></bottom><diagonal/></border>
   </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="5">
+  <cellXfs count="15">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
     <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>
-    <xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
-    <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
+    <xf numFmtId="0" fontId="0" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="4" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
+    <xf numFmtId="0" fontId="0" fillId="5" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="2" fontId="0" fillId="5" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="5" fillId="6" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="7" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="2" fontId="2" fillId="8" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="5" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="5" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="5" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="8" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>
   </cellXfs>
 </styleSheet>`
 

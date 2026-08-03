@@ -5,6 +5,7 @@ import {
   accountabilityEventPayableMinutes,
   accountabilityEventReviewNote,
   accountabilityEventScheduledMinutes,
+  buildPayrollWorkbookSheets,
 } from './payrollWorkbook'
 import {
   exportableWorkedTimeRows,
@@ -14,6 +15,7 @@ import {
   payrollReadinessPercent,
   workedTimePayrollReview,
 } from './timePayroll'
+import { isFullPayrollPeriod } from './timeRules'
 
 const cleanReview: TimekeepingReview = {
   fromDate: '2026-07-12',
@@ -94,6 +96,11 @@ const sickEvent: PayrollAccountabilityEvent = {
 }
 
 describe('payroll export readiness', () => {
+  it('accepts only complete Sunday-through-Saturday biweekly payroll ranges', () => {
+    expect(isFullPayrollPeriod({ fromDate: '2026-07-26', throughDate: '2026-08-08' }, { payFrequency: 'biweekly', weekStartsOn: 0 })).toBe(true)
+    expect(isFullPayrollPeriod({ fromDate: '2026-07-27', throughDate: '2026-08-07' }, { payFrequency: 'biweekly', weekStartsOn: 0 })).toBe(false)
+  })
+
   it('allows clean payroll to be locked', () => {
     expect(payrollLockBlocker(cleanReview)).toBe('')
     expect(payrollReadinessPercent(cleanReview)).toBe(100)
@@ -291,5 +298,48 @@ describe('payroll export readiness', () => {
     expect(accountabilityEventScheduledMinutes(callOffEvent)).toBe(600)
     expect(accountabilityEventPayableMinutes(callOffEvent)).toBe(0)
     expect(accountabilityEventPayCategory(callOffEvent)).toBe('Unpaid call-off')
+  })
+
+  it('builds a compact payroll summary with separate review and variance sheets', () => {
+    const sheets = buildPayrollWorkbookSheets({
+      exportType: 'Preview',
+      review: cleanReview,
+    })
+
+    expect(sheets.map((sheet) => sheet.name).slice(0, 4)).toEqual([
+      'Payroll Summary',
+      'Payroll Review',
+      'Hours Variance',
+      'Site Summary',
+    ])
+    expect(sheets[0].rows[8]).toEqual([
+      'Employee',
+      'Employment',
+      'Worked Shifts',
+      'Scheduled Hours',
+      'Worked Hours',
+      'Sick Pay Hours',
+      'PTO Hours',
+      'Other Paid Hours',
+      'Total Payable',
+      'Regular Hours',
+      'Overtime Hours',
+      'Status',
+    ])
+    expect(sheets[0].rows.every((row) => row.length <= 12)).toBe(true)
+    expect(sheets.at(-1)?.rows[5]).toEqual([
+      'Date',
+      'Site / Post',
+      'Scheduled',
+      'Clock In',
+      'Clock Out',
+      'Break Min',
+      'Paid Hours',
+      'Regular',
+      'Overtime',
+      'Variance',
+      'Status',
+      'Review Notes',
+    ])
   })
 })

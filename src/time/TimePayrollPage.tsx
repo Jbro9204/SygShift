@@ -35,7 +35,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { canExportPayroll, canViewTeamTime } from './timePermissions'
-import { completedPayrollPeriod, currentPayrollPeriod, formatUsDateKey, shiftPayrollPeriod, type TimePeriod } from './timeRules'
+import { completedPayrollPeriod, currentPayrollPeriod, formatUsDateKey, isFullPayrollPeriod, shiftPayrollPeriod, type TimePeriod } from './timeRules'
 import { payrollExportFileName, payrollLockBlocker, payrollReadinessPercent, workedTimePayrollReview } from './timePayroll'
 import {
   downloadPayrollWorkbook,
@@ -144,6 +144,7 @@ function PeriodControls({
   const selectedPeriod = { fromDate, throughDate }
   const lastCompleted = completedPayrollPeriod(undefined, periodRules)
   const activePeriod = currentPayrollPeriod(undefined, periodRules)
+  const alignedPeriod = isFullPayrollPeriod(selectedPeriod, periodRules)
 
   return (
     <section className="time-card payroll-period-controls" aria-label="Payroll export date range">
@@ -178,6 +179,11 @@ function PeriodControls({
         <TimeButton onClick={() => onChange(shiftPayrollPeriod(selectedPeriod, -1, periodRules), false)} variant="secondary">Previous period</TimeButton>
         <TimeButton onClick={() => onChange(shiftPayrollPeriod(selectedPeriod, 1, periodRules), false)} variant="secondary">Next period</TimeButton>
       </div>
+      {!alignedPeriod ? (
+        <p className="form-feedback form-feedback--warning" role="alert">
+          This is not a complete Sunday-through-Saturday payroll cycle. Select Current open period or Last completed pay period before downloading payroll.
+        </p>
+      ) : null}
     </section>
   )
 }
@@ -192,6 +198,7 @@ function PayrollExportPanel({
   onNoteChange,
   review,
   rules,
+  validPeriod,
 }: {
   accountabilityEvents: PayrollAccountabilityEvent[]
   canLock: boolean
@@ -202,6 +209,7 @@ function PayrollExportPanel({
   onNoteChange: (value: string) => void
   review: TimekeepingReview
   rules?: PayrollRules
+  validPeriod: boolean
 }) {
   const noteMissing = note.trim().length === 0
 
@@ -228,7 +236,7 @@ function PayrollExportPanel({
         </label>
         <div className="payroll-export-panel__actions">
           <TimeButton
-            disabled={review.rows.length === 0}
+            disabled={review.rows.length === 0 || !validPeriod}
             icon={Download}
             onClick={onDownloadPreview}
             variant="secondary"
@@ -586,7 +594,10 @@ export function TimePayrollPage() {
     queryFn: () => getPayrollExportHistory(20),
   })
   const review = useMemo(() => workedTimePayrollReview(reviewQuery.data), [reviewQuery.data])
-  const lockBlockedReason = payrollLockBlocker(review)
+  const validPeriod = isFullPayrollPeriod({ fromDate, throughDate }, rulesForPeriod(rulesQuery.data))
+  const lockBlockedReason = validPeriod
+    ? payrollLockBlocker(review)
+    : 'Select a complete Sunday-through-Saturday payroll cycle before exporting.'
   const readinessPercent = payrollReadinessPercent(review)
   const employeeSummaries = useMemo(() => summarizePayrollRowsByEmployee(review?.rows ?? []), [review])
   const accountabilityEvents = accountabilityQuery.data ?? []
@@ -832,6 +843,7 @@ export function TimePayrollPage() {
               onNoteChange={setExportNote}
               review={review}
               rules={rulesQuery.data ?? review.payrollRules}
+              validPeriod={validPeriod}
             />
           ) : (
             <TimeAlertCard icon={ShieldAlert} title="Preview only" tone="warning">

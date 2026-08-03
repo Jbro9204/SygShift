@@ -4231,6 +4231,12 @@
   border: 1px solid #dfb8b1;
 }
 
+.form-feedback--warning {
+  color: #68480f;
+  background: #fff7e6;
+  border: 1px solid #e4c47e;
+}
+
 .primary-action:disabled,
 .secondary-button:disabled,
 .icon-button:disabled {

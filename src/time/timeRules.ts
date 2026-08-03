@@ -111,6 +111,16 @@ export function shiftPayrollPeriod(period: Pick<TimePeriod, 'fromDate'>, offsetP
   return periodFromStart(start, lengthDays)
 }
 
+export function isFullPayrollPeriod(
+  period: Pick<TimePeriod, 'fromDate' | 'throughDate'>,
+  rules?: Partial<PeriodRuleInput>,
+): boolean {
+  const start = parseDateKey(period.fromDate)
+  const expectedStartDay = rules?.weekStartsOn ?? DEFAULT_TIME_RULES.weekStartsOn
+  if (start.getDay() !== expectedStartDay) return false
+  return dateKey(addDays(start, periodLengthDays(rules) - 1)) === period.throughDate
+}
+
 export function completedPayrollPeriod(now = new Date(), rules?: Partial<PeriodRuleInput>): TimePeriod {
   return shiftPayrollPeriod(currentPayrollPeriod(now, rules), -1, rules)
 }
