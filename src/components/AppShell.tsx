@@ -14,8 +14,8 @@ import { shouldShowPayrollExportReminder } from '../lib/payrollReminder'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDate, formatOperationalTime, lastCompletedPayrollWeek } from '../lib/time'
 
-const INACTIVITY_WARNING_MS = 8 * 60 * 1000
-const INACTIVITY_LOGOUT_MS = 10 * 60 * 1000
+const INACTIVITY_WARNING_MS = 25 * 60 * 1000
+const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000
 const WORKSPACE_ALERT_ROTATE_MS = 9_000
 
 type WorkspaceAlertEntry = {
@@ -227,7 +227,9 @@ export function AppShell() {
         return
       }
 
-      void loadSessionContext()
+      // Token refreshes commonly occur when a user returns to a background tab.
+      // Refresh permissions without replacing and unmounting the active workspace.
+      void loadSessionContext(false)
     })
 
     const refreshSecurityContext = () => {
