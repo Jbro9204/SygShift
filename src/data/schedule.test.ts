@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   assignmentName,
+  compareScheduleBuilderEmployeesByFirstName,
   importedScheduleRows,
   scheduleRows,
   shiftOperationalDate,
   type ImportedSchedulePreview,
+  type ScheduleBuilderEmployee,
   type ScheduleShift,
   type WeeklySchedule,
 } from './schedule'
@@ -67,6 +69,56 @@ const schedule: WeeklySchedule = {
 }
 
 describe('schedule presentation', () => {
+  it('sorts scheduling employees by preferred or first name, then last name', () => {
+    const employees: ScheduleBuilderEmployee[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000003',
+        first_name: 'Michael',
+        last_name: 'Hinz',
+        preferred_name: null,
+        role: 'scheduler',
+        employment_type: 'hourly',
+        has_armed_guard_credential: false,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000001',
+        first_name: 'Zachary',
+        last_name: 'Ward',
+        preferred_name: 'Zach',
+        role: 'recruiting_licensing',
+        employment_type: 'hourly',
+        has_armed_guard_credential: false,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000004',
+        first_name: 'Jordan',
+        last_name: 'Brown',
+        preferred_name: null,
+        role: 'admin',
+        employment_type: 'salary',
+        has_armed_guard_credential: false,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000002',
+        first_name: 'Jordan',
+        last_name: 'Adams',
+        preferred_name: null,
+        role: 'guard',
+        employment_type: 'flex',
+        has_armed_guard_credential: true,
+      },
+    ]
+
+    expect([...employees].sort(compareScheduleBuilderEmployeesByFirstName).map((employee) => (
+      `${employee.preferred_name || employee.first_name} ${employee.last_name}`
+    ))).toEqual([
+      'Jordan Adams',
+      'Jordan Brown',
+      'Michael Hinz',
+      'Zach Ward',
+    ])
+  })
+
   it('groups site and standalone event coverage without losing shifts', () => {
     const rows = scheduleRows(schedule)
 

@@ -26,15 +26,26 @@ describe('schedule builder data contract', () => {
             time_zone: 'America/Denver',
           },
         }],
-        employees: [{
-          id: '70000000-0000-4000-8000-000000000001',
-          first_name: 'Jordan',
-          last_name: 'Brown',
-          preferred_name: null,
-          role: 'admin',
-          employment_type: 'salary',
-          has_armed_guard_credential: true,
-        }],
+        employees: [
+          {
+            id: '70000000-0000-4000-8000-000000000002',
+            first_name: 'Michael',
+            last_name: 'Adams',
+            preferred_name: null,
+            role: 'scheduler',
+            employment_type: 'hourly',
+            has_armed_guard_credential: false,
+          },
+          {
+            id: '70000000-0000-4000-8000-000000000001',
+            first_name: 'Jordan',
+            last_name: 'Brown',
+            preferred_name: null,
+            role: 'admin',
+            employment_type: 'salary',
+            has_armed_guard_credential: true,
+          },
+        ],
       },
       error: null,
     })
@@ -51,15 +62,26 @@ describe('schedule builder data contract', () => {
           time_zone: 'America/Denver',
         },
       }],
-      employees: [{
-        id: '70000000-0000-4000-8000-000000000001',
-        first_name: 'Jordan',
-        last_name: 'Brown',
-        preferred_name: null,
-        role: 'admin',
-        employment_type: 'salary',
-        has_armed_guard_credential: true,
-      }],
+      employees: [
+        {
+          id: '70000000-0000-4000-8000-000000000001',
+          first_name: 'Jordan',
+          last_name: 'Brown',
+          preferred_name: null,
+          role: 'admin',
+          employment_type: 'salary',
+          has_armed_guard_credential: true,
+        },
+        {
+          id: '70000000-0000-4000-8000-000000000002',
+          first_name: 'Michael',
+          last_name: 'Adams',
+          preferred_name: null,
+          role: 'scheduler',
+          employment_type: 'hourly',
+          has_armed_guard_credential: false,
+        },
+      ],
     })
     expect(rpc).toHaveBeenCalledWith('get_schedule_builder_options')
   })

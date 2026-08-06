@@ -155,6 +155,24 @@ export type StaffingSuggestion = z.infer<typeof staffingSuggestionSchema>
 export type ScheduleNotificationResult = z.infer<typeof scheduleNotificationResultSchema>
 export type CopyScheduleWeekResult = z.infer<typeof copyScheduleWeekResultSchema>
 
+const employeeNameCollator = new Intl.Collator('en-US', {
+  numeric: true,
+  sensitivity: 'base',
+})
+
+export function compareScheduleBuilderEmployeesByFirstName(
+  left: ScheduleBuilderEmployee,
+  right: ScheduleBuilderEmployee,
+): number {
+  const leftFirstName = left.preferred_name?.trim() || left.first_name.trim()
+  const rightFirstName = right.preferred_name?.trim() || right.first_name.trim()
+
+  return employeeNameCollator.compare(leftFirstName, rightFirstName)
+    || employeeNameCollator.compare(left.last_name.trim(), right.last_name.trim())
+    || employeeNameCollator.compare(left.first_name.trim(), right.first_name.trim())
+    || left.id.localeCompare(right.id)
+}
+
 const importedScheduleShiftSchema = z.object({
   id: z.string().uuid(),
   candidateKey: z.string(),
@@ -269,7 +287,11 @@ export async function getWeeklySchedule(weekStartsOn: string): Promise<WeeklySch
 export async function getScheduleBuilderOptions(): Promise<ScheduleBuilderOptions> {
   const { data, error } = await getSupabaseClient().rpc('get_schedule_builder_options')
   if (error) throw new Error('Schedule builder options could not be loaded.')
-  return builderOptionsSchema.parse(data)
+  const options = builderOptionsSchema.parse(data)
+  return {
+    ...options,
+    employees: [...options.employees].sort(compareScheduleBuilderEmployeesByFirstName),
+  }
 }
 
 export async function getImportedSchedulePreview(weekStartsOn: string): Promise<ImportedSchedulePreview | null> {
