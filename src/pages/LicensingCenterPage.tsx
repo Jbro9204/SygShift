@@ -37,6 +37,7 @@ import {
 } from '../data/licensing'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
+import { activeCredentialRenewalCount, groupLicensingRecordsByEmployee } from '../lib/licensingWorklist'
 
 type SummaryFilter =
   | 'all'
@@ -830,6 +831,10 @@ export function LicensingCenterPage() {
         && (!term || searchable.includes(term))
     })
   }, [centerQuery.data?.records, complianceFilter, credentialTypeFilter, employeeById, employmentStatusFilter, search, summaryFilter])
+  const visibleEmployeeRows = useMemo(() => groupLicensingRecordsByEmployee(
+    centerQuery.data?.employees ?? [],
+    visibleRecords,
+  ), [centerQuery.data?.employees, visibleRecords])
 
   if (!isSupabaseConfigured) {
     return (
@@ -988,56 +993,68 @@ export function LicensingCenterPage() {
         <div className="licensing-table-panel__heading">
           <div>
             <h2>Credential worklist</h2>
-            <p>{visibleRecords.length} record{visibleRecords.length === 1 ? '' : 's'} match the current filters.</p>
+            <p>{visibleEmployeeRows.length} employee{visibleEmployeeRows.length === 1 ? '' : 's'} match the current filters.</p>
           </div>
           {summaryFilter !== 'all' ? <CredentialStatusPill color="yellow" label="Summary filter active" /> : null}
         </div>
         <div className="licensing-table" role="table" aria-label="Credential compliance records">
           <div className="licensing-row licensing-row--header" role="row">
             <span role="columnheader">Employee</span>
-            <span role="columnheader">Credential</span>
-            <span role="columnheader">Expiration</span>
-            <span role="columnheader">Status</span>
-            <span role="columnheader">Renewal</span>
+            <span role="columnheader">Licenses &amp; Credentials</span>
+            <span role="columnheader">Next Expiration</span>
+            <span role="columnheader">Overall Status</span>
+            <span role="columnheader">Renewals</span>
             <span role="columnheader">Shift Eligibility</span>
             <span role="columnheader">Action</span>
           </div>
-          {visibleRecords.map((record) => {
-            const employee = employeeById.get(record.employeeId)
+          {visibleEmployeeRows.map(({ employee, records }) => {
+            const credentialsOnFile = employee.credentials.filter((credential) => credential.credentialId)
+            const credentialNames = Array.from(new Set(credentialsOnFile.map(credentialDisplayName)))
+            const credentialPreview = credentialNames.length === 0
+              ? 'No credentials on file'
+              : `${credentialNames.slice(0, 2).join(', ')}${credentialNames.length > 2 ? ` +${credentialNames.length - 2} more` : ''}`
+            const missingCount = employee.credentials.filter((credential) => !credential.credentialId && credential.required).length
+            const closestExpirationCredential = employee.credentials.find((credential) => (
+              credential.expirationDate === employee.closestExpirationDate
+            ))
+            const renewalCount = activeCredentialRenewalCount(employee.credentials)
             return (
-              <div className="licensing-row" key={`${record.employeeId}-${record.credentialTypeId}`} role="row">
+              <div className="licensing-row licensing-row--employee-summary" key={employee.employeeId} role="row">
                 <div role="cell">
-                  <strong>{record.employeeName}</strong>
-                  <span>{record.employeeNumber ?? 'ID pending'} • {record.jobTitle || formatRole(record.role)}</span>
+                  <strong>{employee.displayName}</strong>
+                  <span>{employee.employeeNumber ?? 'ID pending'} | {employee.jobTitle || formatRole(employee.role)}</span>
                 </div>
                 <div role="cell">
-                  <strong>{credentialDisplayName(record)}</strong>
-                  <span>{record.credentialNumber || 'No number on file'}</span>
+                  <strong>{credentialsOnFile.length} on file{missingCount > 0 ? ` | ${missingCount} missing` : ''}</strong>
+                  <span>{credentialPreview}</span>
+                  {records.length < employee.credentials.length ? <span>{records.length} match current filters</span> : null}
                 </div>
                 <div role="cell">
-                  <strong>{formatDate(record.expirationDate)}</strong>
-                  <span>{record.daysRemaining === null ? 'No expiration' : `${record.daysRemaining} days remaining`}</span>
+                  <strong>{formatDate(employee.closestExpirationDate)}</strong>
+                  <span>
+                    {closestExpirationCredential
+                      ? `${credentialDisplayName(closestExpirationCredential)} | ${closestExpirationCredential.daysRemaining} days remaining`
+                      : 'No expiration on file'}
+                  </span>
                 </div>
-                <div role="cell"><CredentialStatusPill color={record.complianceColor} label={record.statusLabel} /></div>
-                <div role="cell"><span className="plain-value">{record.renewalStatus?.replaceAll('_', ' ') ?? '—'}</span></div>
+                <div role="cell"><CredentialStatusPill color={employee.overallCompliance} label={complianceLabels[employee.overallCompliance]} /></div>
+                <div role="cell"><span className="plain-value">{renewalCount > 0 ? `${renewalCount} in progress` : 'No active renewal'}</span></div>
                 <div role="cell">
-                  <span className={`work-eligibility work-eligibility--${employee?.workEligibility ?? 'pending_review'}`}>
-                    {employee ? formatEligibility(employee.workEligibility) : 'Pending Review'}
+                  <span className={`work-eligibility work-eligibility--${employee.workEligibility}`}>
+                    {formatEligibility(employee.workEligibility)}
                   </span>
                 </div>
                 <div className="licensing-row__actions" role="cell">
-                  {employee ? (
-                    <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployeeId(employee.employeeId)} type="button">
-                      <FolderOpen aria-hidden="true" size={15} />
-                      Open credential profile
-                    </button>
-                  ) : null}
+                  <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployeeId(employee.employeeId)} type="button">
+                    <FolderOpen aria-hidden="true" size={15} />
+                    Open credential profile
+                  </button>
                 </div>
               </div>
             )
           })}
         </div>
-        {visibleRecords.length === 0 ? (
+        {visibleEmployeeRows.length === 0 ? (
           <div className="licensing-empty">
             <ClipboardCheck aria-hidden="true" size={26} />
             <strong>No licensing records match these filters.</strong>
