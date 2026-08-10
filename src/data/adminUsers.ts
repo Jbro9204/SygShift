@@ -102,6 +102,14 @@ const loginEmailResponseSchema = z.object({
   action: z.string().optional(),
 })
 
+const mfaResetResponseSchema = z.object({
+  displayName: z.string(),
+  factorsRemoved: z.number().int().nonnegative(),
+  requestId: z.string(),
+  trustedDevicesRevoked: z.number().int().nonnegative(),
+  username: z.string(),
+})
+
 const welcomeEmailResponseSchema = z.object({
   requestId: z.string(),
   displayName: z.string(),
@@ -280,6 +288,18 @@ export async function revokeEmployeeTrustedDevices(employeeId: string): Promise<
   })
   if (error) throw new Error(error.message || 'Remembered devices could not be revoked.')
   return z.number().int().nonnegative().parse(data)
+}
+
+export type EmployeeMfaResetResult = z.infer<typeof mfaResetResponseSchema>
+
+export async function resetEmployeeMfa(employeeId: string): Promise<EmployeeMfaResetResult> {
+  const response = await fetch(`/api/v1/admin/users/${employeeId}/mfa-reset`, {
+    body: JSON.stringify({}),
+    headers: await authHeaders(),
+    method: 'POST',
+  })
+  const payload = await parseApiResponse(response)
+  return mfaResetResponseSchema.parse(payload)
 }
 
 export async function getEmployeeRemovalPreview(employeeId: string): Promise<EmployeeRemovalPreview> {

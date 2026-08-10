@@ -11431,7 +11431,7 @@
 
 .user-admin-toolbar {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) repeat(4, minmax(132px, 165px)) max-content;
+  grid-template-columns: minmax(280px, 1.7fr) repeat(4, minmax(140px, 1fr));
   gap: 12px;
   align-items: end;
   margin-bottom: 16px;
@@ -11443,10 +11443,37 @@
 
 .user-admin-toolbar__actions {
   display: flex;
+  grid-column: 1 / -1;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
   min-width: 0;
+}
+
+.mfa-reset-confirmation {
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+  background: #fff7f5;
+  border: 1px solid #e4b8b2;
+  border-radius: 9px;
+}
+
+.mfa-reset-confirmation strong {
+  color: #672b24;
+  font-size: 14px;
+}
+
+.mfa-reset-confirmation__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.account-control-card .mfa-reset-confirmation__actions .secondary-button {
+  width: auto;
+  min-width: 132px;
 }
 
 .user-admin-toolbar .primary-action,
@@ -12948,6 +12975,7 @@
   }
 
   .user-admin-toolbar__actions {
+    grid-column: auto;
     width: 100%;
     justify-content: stretch;
   }

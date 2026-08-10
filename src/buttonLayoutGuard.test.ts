@@ -255,16 +255,18 @@ describe('button layout guardrails', () => {
 
     const toolbarBlock = topLevelBlockFor('.user-admin-toolbar')
     expect(toolbarBlock).toContain('display: grid')
-    expect(toolbarBlock).toContain('repeat(4, minmax(132px, 165px))')
-    expect(toolbarBlock).toContain('max-content')
+    expect(toolbarBlock).toContain('repeat(4, minmax(140px, 1fr))')
 
     expect(userAdminPage).toContain('className="user-admin-toolbar__actions"')
     expect(blockFor('.user-admin-toolbar__actions')).toContain('display: flex')
     expect(blockFor('.user-admin-toolbar__actions')).toContain('flex-wrap: wrap')
+    expect(blockFor('.user-admin-toolbar__actions')).toContain('grid-column: 1 / -1')
     expect(blockFor('.user-admin-toolbar .select-field')).toContain('width: 100%')
     expect(blockFor('.user-admin-toolbar .select-field select')).toContain('min-width: 0')
     expect(blockFor('.user-admin-toolbar .primary-action,\n.user-admin-toolbar .secondary-button')).toContain('min-width: max-content')
     expect(blockFor('.account-activity-card dl div')).toContain('grid-template-columns')
+    expect(userAdminPage).toContain('Reset MFA setup')
+    expect(userAdminPage).toContain('mfa-reset-confirmation__actions')
   })
 
   it('keeps Employee Access modals purpose-sized and locally aligned', () => {

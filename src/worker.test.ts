@@ -118,6 +118,100 @@ describe('Cloudflare Worker boundary', () => {
     expect(payload.requestId).toBe(response.headers.get('x-request-id'))
   })
 
+  it('requires an authenticated admin session before resetting employee MFA', async () => {
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/admin/users/10000000-0000-4000-8000-000000000010/mfa-reset', {
+        body: '{}',
+        method: 'POST',
+      }),
+      environment(new Response('asset'), configuredEnvironment),
+    )
+    const payload = await response.json() as { error: string; requestId: string }
+
+    expect(response.status).toBe(401)
+    expect(payload.error).toBe('auth_required')
+    expect(payload.requestId).toBe(response.headers.get('x-request-id'))
+  })
+
+  it('resets employee MFA factors and records the audited reset after authorization', async () => {
+    const actorEmployeeId = '10000000-0000-4000-8000-000000000001'
+    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
+    const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
+    const factorId = '30000000-0000-4000-8000-000000000010'
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employee_id: actorEmployeeId,
+        username: 'admin',
+        display_name: 'Admin User',
+        role: 'admin',
+        has_mfa: true,
+        permissions: ['admin.users.manage'],
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ users: [] }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employeeId: targetEmployeeId,
+        employeeNumber: 'SYG-1050',
+        jobTitle: null,
+        username: 'mswinney',
+        authEmail: 'opsmanager@guardianshipsecurity.net',
+        displayName: 'Matthew Swinney',
+        role: 'supervisor',
+        employmentType: 'salary',
+        status: 'active',
+        existingAuthUserId: targetAuthUserId,
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{
+        id: factorId,
+        factor_type: 'totp',
+        status: 'verified',
+      }]), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ trustedDevicesRevoked: 2 }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/mfa-reset`, {
+        body: '{}',
+        headers: { authorization: 'Bearer admin-token' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), configuredEnvironment),
+    )
+    const payload = await response.json() as {
+      displayName: string
+      factorsRemoved: number
+      trustedDevicesRevoked: number
+      username: string
+    }
+
+    expect(response.status).toBe(200)
+    expect(payload).toMatchObject({
+      displayName: 'Matthew Swinney',
+      factorsRemoved: 1,
+      trustedDevicesRevoked: 2,
+      username: 'mswinney',
+    })
+    const requestUrls = fetchMock.mock.calls.map(([input]) => String(input))
+    expect(requestUrls).toContain(`https://example.supabase.co/auth/v1/admin/users/${targetAuthUserId}/factors`)
+    expect(requestUrls).toContain(`https://example.supabase.co/auth/v1/admin/users/${targetAuthUserId}/factors/${factorId}`)
+    const auditRequest = fetchMock.mock.calls.at(-1)
+    expect(String(auditRequest?.[0])).toContain('/rest/v1/rpc/service_record_employee_mfa_reset')
+    expect(JSON.parse(String(auditRequest?.[1]?.body))).toMatchObject({
+      target_actor_employee_id: actorEmployeeId,
+      target_auth_user_id: targetAuthUserId,
+      target_employee_id: targetEmployeeId,
+      target_factor_count: 1,
+    })
+    vi.unstubAllGlobals()
+  })
+
   it('requires an authenticated admin session before notification delivery', async () => {
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/admin/notifications/process', { method: 'POST' }),

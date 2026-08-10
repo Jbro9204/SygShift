@@ -57,6 +57,12 @@ interface AuthUser {
   email?: string
 }
 
+interface AuthMfaFactor {
+  id: string
+  factor_type?: string
+  status?: string
+}
+
 interface NotificationJob {
   id: string
   recipients: string[]
@@ -401,6 +407,33 @@ async function listAuthUsers(config: NonNullable<ReturnType<typeof configuredSup
     if (pageUsers.length < 1000) break
   }
   return users
+}
+
+async function listAuthUserMfaFactors(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  userId: string,
+): Promise<AuthMfaFactor[]> {
+  return supabaseJson<AuthMfaFactor[]>(`${config.url}/auth/v1/admin/users/${userId}/factors`, {
+    headers: {
+      apikey: config.serviceRoleKey,
+      authorization: `Bearer ${config.serviceRoleKey}`,
+    },
+    method: 'GET',
+  })
+}
+
+async function deleteAuthUserMfaFactor(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  userId: string,
+  factorId: string,
+): Promise<void> {
+  await supabaseJson(`${config.url}/auth/v1/admin/users/${userId}/factors/${factorId}`, {
+    headers: {
+      apikey: config.serviceRoleKey,
+      authorization: `Bearer ${config.serviceRoleKey}`,
+    },
+    method: 'DELETE',
+  })
 }
 
 async function createAuthUser(
@@ -799,6 +832,47 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       displayName: target.displayName,
       email: target.contactEmail,
       requestId,
+      username: target.username,
+    })
+  }
+
+  const mfaResetMatch = /^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/mfa-reset$/i.exec(url.pathname)
+  if (mfaResetMatch) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+
+    const target = await callRpc<AuthTarget>(
+      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+      'service_get_employee_auth_target',
+      { target_employee_id: mfaResetMatch[1] },
+      admin.config.serviceRoleKey,
+    )
+    if (!target?.existingAuthUserId) {
+      throw new ApiError('employee_login_missing', 422, 'This employee does not have a login account to reset.')
+    }
+
+    const factors = await listAuthUserMfaFactors(admin.config, target.existingAuthUserId)
+    for (const factor of factors) {
+      await deleteAuthUserMfaFactor(admin.config, target.existingAuthUserId, factor.id)
+    }
+
+    const resetRecord = await callRpc<{ trustedDevicesRevoked?: number }>(
+      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+      'service_record_employee_mfa_reset',
+      {
+        target_actor_employee_id: admin.context.employee_id,
+        target_auth_user_id: target.existingAuthUserId,
+        target_employee_id: target.employeeId,
+        target_factor_count: factors.length,
+        target_request_id: requestId,
+      },
+      admin.config.serviceRoleKey,
+    )
+
+    return json({
+      displayName: target.displayName,
+      factorsRemoved: factors.length,
+      requestId,
+      trustedDevicesRevoked: resetRecord.trustedDevicesRevoked ?? 0,
       username: target.username,
     })
   }

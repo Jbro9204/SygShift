@@ -14,6 +14,7 @@ import {
   UserCog,
   UsersRound,
   Mail,
+  RotateCcw,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
@@ -25,6 +26,7 @@ import {
   getRecentlyDeletedEmployees,
   provisionEmployeeAccount,
   provisionMissingAccounts,
+  resetEmployeeMfa,
   revokeEmployeeTrustedDevices,
   removeSeparatedEmployee,
   sendAllEmployeeLoginEmails,
@@ -325,6 +327,8 @@ function ManageUserModal({
   const [loginEmailMessage, setLoginEmailMessage] = useState<string | null>(null)
   const [welcomeEmailMessage, setWelcomeEmailMessage] = useState<string | null>(null)
   const [trustedDeviceMessage, setTrustedDeviceMessage] = useState<string | null>(null)
+  const [mfaResetMessage, setMfaResetMessage] = useState<string | null>(null)
+  const [confirmingMfaReset, setConfirmingMfaReset] = useState(false)
   const [removingEmployee, setRemovingEmployee] = useState(false)
   const onFileEmail = employee.companyEmail || employee.personalEmail || null
 
@@ -351,6 +355,16 @@ function ManageUserModal({
     onSuccess: async (count) => {
       setTrustedDeviceMessage(`${count} remembered device${count === 1 ? '' : 's'} revoked for ${employee.displayName}.`)
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
+    },
+  })
+  const resetMfaMutation = useMutation({
+    mutationFn: () => resetEmployeeMfa(employee.id),
+    onSuccess: async (result) => {
+      setConfirmingMfaReset(false)
+      setMfaResetMessage(
+        `MFA reset for ${result.displayName}. ${result.factorsRemoved} authenticator factor${result.factorsRemoved === 1 ? '' : 's'} removed and ${result.trustedDevicesRevoked} remembered device${result.trustedDevicesRevoked === 1 ? '' : 's'} revoked.`,
+      )
+      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
     },
   })
   const provisionMutation = useMutation({
@@ -382,6 +396,7 @@ function ManageUserModal({
   const modalBusy = updateMutation.isPending
     || accountStateMutation.isPending
     || revokeTrustedDevicesMutation.isPending
+    || resetMfaMutation.isPending
     || provisionMutation.isPending
     || loginEmailMutation.isPending
     || welcomeEmailMutation.isPending
@@ -501,6 +516,32 @@ function ManageUserModal({
                 Revoke remembered devices ({employee.account.trustedDeviceCount})
               </button>
             ) : null}
+            {employee.account ? (
+              confirmingMfaReset ? (
+                <div className="mfa-reset-confirmation" role="alert">
+                  <strong>Reset MFA for {employee.displayName}?</strong>
+                  <p>Their authenticator enrollment and remembered devices will be removed. Their password, employee record, and history will not change.</p>
+                  <div className="mfa-reset-confirmation__actions">
+                    <button className="secondary-button" disabled={resetMfaMutation.isPending} onClick={() => setConfirmingMfaReset(false)} type="button">Cancel</button>
+                    <button className="secondary-button danger-button" disabled={resetMfaMutation.isPending} onClick={() => resetMfaMutation.mutate()} type="button">
+                      <RotateCcw aria-hidden="true" size={18} /> {resetMfaMutation.isPending ? 'Resetting MFA…' : 'Confirm MFA reset'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  className="secondary-button"
+                  disabled={!canManageLogin || resetMfaMutation.isPending}
+                  onClick={() => {
+                    setMfaResetMessage(null)
+                    setConfirmingMfaReset(true)
+                  }}
+                  type="button"
+                >
+                  <RotateCcw aria-hidden="true" size={18} /> Reset MFA setup
+                </button>
+              )
+            ) : null}
             {employee.status !== 'active' ? <small>Only active employees can receive login accounts.</small> : null}
           </div>
           ) : null}
@@ -521,7 +562,9 @@ function ManageUserModal({
           {loginEmailMutation.isError ? <div className="inline-alert" role="alert">{loginEmailMutation.error.message}</div> : null}
           {accountStateMutation.isError ? <div className="inline-alert" role="alert">{accountStateMutation.error.message}</div> : null}
           {trustedDeviceMessage ? <div className="form-feedback form-feedback--success" role="status">{trustedDeviceMessage}</div> : null}
+          {mfaResetMessage ? <div className="form-feedback form-feedback--success" role="status">{mfaResetMessage}</div> : null}
           {revokeTrustedDevicesMutation.isError ? <div className="inline-alert" role="alert">{revokeTrustedDevicesMutation.error.message}</div> : null}
+          {resetMfaMutation.isError ? <div className="inline-alert" role="alert">{resetMfaMutation.error.message}</div> : null}
 
           <div className="account-control-card account-control-card--welcome">
             <div>
