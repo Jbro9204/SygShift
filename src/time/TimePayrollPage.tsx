@@ -14,6 +14,7 @@ import {
   Timer,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { ModalDialog } from '../components/ModalDialog'
 import { getSessionContext } from '../data/auth'
 import {
   createPayrollExportBatch,
@@ -23,7 +24,9 @@ import {
   getPayrollRules,
   getTimekeepingReview,
   payrollHours,
+  reviewTimeEventCorrection,
   summarizePayrollRowsByEmployee,
+  type PendingCorrection,
   type PayrollAccountabilityEvent,
   type PayrollEmployeeSummary,
   type PayrollExportBatch,
@@ -34,7 +37,8 @@ import {
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
-import { canExportPayroll, canViewTeamTime } from './timePermissions'
+import { TimeMaintenanceWorkbench, type TimeMaintenanceFocusRequest } from '../pages/TimePage'
+import { canExportPayroll, canManageTime, canViewTeamTime } from './timePermissions'
 import { completedPayrollPeriod, currentPayrollPeriod, formatUsDateKey, shiftPayrollPeriod, type TimePeriod } from './timeRules'
 import { payrollExportFileName, payrollLockBlocker, payrollReadinessPercent, workedTimePayrollReview } from './timePayroll'
 import {
@@ -264,10 +268,22 @@ function PayrollExportPanel({
   )
 }
 
-function PayrollExceptions({ rows }: { rows: TimekeepingReviewRow[] }) {
+function PayrollExceptions({
+  canWork,
+  onReviewCorrection,
+  onWorkRow,
+  pendingCorrections,
+  rows,
+}: {
+  canWork: boolean
+  onReviewCorrection: (correction: PendingCorrection) => void
+  onWorkRow: (row: TimekeepingReviewRow) => void
+  pendingCorrections: PendingCorrection[]
+  rows: TimekeepingReviewRow[]
+}) {
   const exceptionRows = rows.filter((row) => !row.payrollReady || row.exceptionCodes.length > 0)
 
-  if (exceptionRows.length === 0) {
+  if (exceptionRows.length === 0 && pendingCorrections.length === 0) {
     return (
       <TimeAlertCard icon={CheckCircle2} title="No payroll blockers in this range" tone="good">
         <p>Rows are ready from an export standpoint. Still review totals before locking the official batch.</p>
@@ -279,17 +295,33 @@ function PayrollExceptions({ rows }: { rows: TimekeepingReviewRow[] }) {
     <section className="time-card payroll-exception-list" aria-labelledby="payroll-exceptions-title">
       <TimeSectionHeader
         eyebrow="Fix before locking"
-        summary="Official export is blocked until these rows are corrected or reviewed."
+        summary="Open each blocker here, make the correction, and return to a refreshed payroll review."
         title="Payroll blockers"
       />
       <div className="payroll-exception-list__items">
+        {pendingCorrections.map((correction) => (
+          <article key={correction.id}>
+            <div className="payroll-exception-list__item-main">
+              <strong>{correction.employeeName}</strong>
+              <span>{formatUsDateKey(correction.recordedAt.slice(0, 10))} | {correction.voided ? 'Void requested' : 'Time change requested'}</span>
+              <small>{correction.reason}</small>
+            </div>
+            <div className="payroll-exception-list__item-actions">
+              <TimeStatusBadge tone="warning">Pending correction</TimeStatusBadge>
+              {canWork ? <TimeButton onClick={() => onReviewCorrection(correction)} variant="primary">Review request</TimeButton> : <span>View only</span>}
+            </div>
+          </article>
+        ))}
         {exceptionRows.map((row) => (
           <article key={`${row.employeeId}-${row.shiftId ?? row.operationalDate}-${row.rowKind}`}>
-            <div>
+            <div className="payroll-exception-list__item-main">
               <strong>{row.employeeName}</strong>
               <span>{formatUsDateKey(row.operationalDate)} · {rowLocation(row)}</span>
             </div>
-            <TimeStatusBadge tone="warning">{row.exceptionCodes.length ? row.exceptionCodes.map(exceptionLabel).join(', ') : 'Needs review'}</TimeStatusBadge>
+            <div className="payroll-exception-list__item-actions">
+              <TimeStatusBadge tone="warning">{row.exceptionCodes.length ? row.exceptionCodes.map(exceptionLabel).join(', ') : 'Needs review'}</TimeStatusBadge>
+              {canWork ? <TimeButton onClick={() => onWorkRow(row)} variant="primary">Fix blocker</TimeButton> : <span>View only</span>}
+            </div>
           </article>
         ))}
       </div>
@@ -549,6 +581,10 @@ export function TimePayrollPage() {
   const [throughDate, setThroughDate] = useState(defaultPeriod.throughDate)
   const [rangeTouched, setRangeTouched] = useState(false)
   const [exportNote, setExportNote] = useState('')
+  const [focusRequest, setFocusRequest] = useState<TimeMaintenanceFocusRequest | null>(null)
+  const [selectedBlockerRow, setSelectedBlockerRow] = useState<TimekeepingReviewRow | null>(null)
+  const [selectedCorrection, setSelectedCorrection] = useState<PendingCorrection | null>(null)
+  const [correctionNote, setCorrectionNote] = useState('')
 
   const sessionQuery = useQuery({
     queryKey: ['session-context'],
@@ -557,6 +593,7 @@ export function TimePayrollPage() {
   })
   const reviewAllowed = canViewTeamTime(sessionQuery.data) || canExportPayroll(sessionQuery.data)
   const exportAllowed = canExportPayroll(sessionQuery.data)
+  const manageAllowed = canManageTime(sessionQuery.data)
   const rulesQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed,
     queryKey: ['time-payroll-rules'],
@@ -584,6 +621,24 @@ export function TimePayrollPage() {
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && exportAllowed,
     queryKey: ['payroll-export-history'],
     queryFn: () => getPayrollExportHistory(20),
+  })
+  const correctionDecisionMutation = useMutation({
+    mutationFn: (input: { approved: boolean; correctionId: string; note: string | null }) => reviewTimeEventCorrection(input),
+    onSuccess: async () => {
+      setSelectedCorrection(null)
+      setCorrectionNote('')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['time-payroll-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-exceptions-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['timekeeping-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-command-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-command-attendance-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-team-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-team-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-maintenance'] }),
+        queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'] }),
+      ])
+    },
   })
   const review = useMemo(() => workedTimePayrollReview(reviewQuery.data), [reviewQuery.data])
   const lockBlockedReason = payrollLockBlocker(review)
@@ -698,6 +753,32 @@ export function TimePayrollPage() {
     setRangeTouched(touched)
   }
 
+  function openRowBlocker(row: TimekeepingReviewRow) {
+    setSelectedBlockerRow(row)
+    setFocusRequest({
+      employeeId: row.employeeId,
+      fromDate: row.operationalDate,
+      requestId: Date.now(),
+      throughDate: row.operationalDate,
+    })
+  }
+
+  function closeRowBlocker() {
+    setSelectedBlockerRow(null)
+    setFocusRequest(null)
+  }
+
+  function openFirstBlocker() {
+    if (!review) return
+    const correction = review.pendingCorrections[0]
+    if (correction) {
+      setSelectedCorrection(correction)
+      return
+    }
+    const row = review.rows.find((candidate) => !candidate.payrollReady || candidate.exceptionCodes.length > 0)
+    if (row) openRowBlocker(row)
+  }
+
   function downloadSummaryPreview() {
     if (!review) return
     downloadPayrollWorkbook({
@@ -803,6 +884,9 @@ export function TimePayrollPage() {
                 {lockBlockedReason ? 'Needs review' : 'Ready to lock'}
               </TimeStatusBadge>
               <small>{lockBlockedReason || 'No blockers found for the selected payroll range.'}</small>
+              {lockBlockedReason && manageAllowed ? (
+                <TimeButton icon={ArrowRight} onClick={openFirstBlocker} variant="primary">Open first blocker</TimeButton>
+              ) : null}
             </div>
           ) : null}
         </section>
@@ -839,7 +923,16 @@ export function TimePayrollPage() {
             </TimeAlertCard>
           )}
 
-          <PayrollExceptions rows={review.rows} />
+          <PayrollExceptions
+            canWork={manageAllowed}
+            onReviewCorrection={(correction) => {
+              setSelectedCorrection(correction)
+              setCorrectionNote('')
+            }}
+            onWorkRow={openRowBlocker}
+            pendingCorrections={review.pendingCorrections}
+            rows={review.rows}
+          />
           <PayrollEmployeeSummaryTable
             accountabilityEvents={accountabilityEvents}
             onSelectEmployee={(employeeId) => setSelectedEmployeeId((current) => current === employeeId ? null : employeeId)}
@@ -869,6 +962,73 @@ export function TimePayrollPage() {
             <PayrollHistory batches={historyQuery.data} downloadMutation={downloadMutation} />
           )}
         </section>
+      ) : null}
+
+      {manageAllowed && selectedBlockerRow ? (
+        <ModalDialog
+          className="modal-dialog--wide modal-dialog--time-maintenance"
+          description={`${selectedBlockerRow.employeeName} | ${formatUsDateKey(selectedBlockerRow.operationalDate)} | ${rowLocation(selectedBlockerRow)}`}
+          onClose={closeRowBlocker}
+          title="Fix payroll blocker"
+        >
+          <div className="payroll-blocker-modal__summary">
+            <div><span>Employee</span><strong>{selectedBlockerRow.employeeName}</strong></div>
+            <div><span>Work date</span><strong>{formatUsDateKey(selectedBlockerRow.operationalDate)}</strong></div>
+            <div><span>Blocker</span><strong>{selectedBlockerRow.exceptionCodes.length ? selectedBlockerRow.exceptionCodes.map(exceptionLabel).join(', ') : 'Needs review'}</strong></div>
+          </div>
+          <div className="time-maintenance-modal-body">
+            <TimeMaintenanceWorkbench
+              defaultDate={selectedBlockerRow.operationalDate}
+              defaultPeriod={{ fromDate: selectedBlockerRow.operationalDate, throughDate: selectedBlockerRow.operationalDate }}
+              focusRequest={focusRequest}
+              initialEmployeeId={selectedBlockerRow.employeeId}
+              lockEmployeeFilter
+              onClose={closeRowBlocker}
+              headingEyebrow="Payroll blocker"
+              headingSummary="Add a missing punch, correct the time, void a mistake, or update the Site/Post without leaving payroll review."
+              headingTitle="Correct this time record"
+            />
+          </div>
+        </ModalDialog>
+      ) : null}
+
+      {manageAllowed && selectedCorrection ? (
+        <ModalDialog
+          busy={correctionDecisionMutation.isPending}
+          busyLabel="Saving payroll decision..."
+          className="modal-dialog--wide payroll-correction-modal"
+          description={`${selectedCorrection.employeeName} | ${selectedCorrection.kind.replaceAll('_', ' ')}`}
+          onClose={() => {
+            setSelectedCorrection(null)
+            setCorrectionNote('')
+          }}
+          title="Review payroll correction"
+        >
+          <div className="payroll-correction-modal__body">
+            <div className="payroll-correction-modal__request">
+              <TimeStatusBadge tone="warning">{selectedCorrection.voided ? 'Void requested' : 'Time change requested'}</TimeStatusBadge>
+              <strong>{selectedCorrection.employeeName}</strong>
+              <span>Original: {formatOperationalDateTime(selectedCorrection.recordedAt, { includeTimeZoneName: true })}</span>
+              {selectedCorrection.replacementTime ? <span>Requested: {formatOperationalDateTime(selectedCorrection.replacementTime, { includeTimeZoneName: true })}</span> : null}
+              <p>{selectedCorrection.reason}</p>
+            </div>
+            <label>
+              <span>Decision note <small>Optional</small></span>
+              <textarea
+                maxLength={240}
+                onChange={(event) => setCorrectionNote(event.target.value)}
+                placeholder="Add context for the payroll audit trail."
+                rows={3}
+                value={correctionNote}
+              />
+            </label>
+            {correctionDecisionMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{correctionDecisionMutation.error.message}</p> : null}
+            <div className="payroll-correction-modal__actions">
+              <TimeButton disabled={correctionDecisionMutation.isPending} onClick={() => correctionDecisionMutation.mutate({ approved: false, correctionId: selectedCorrection.id, note: correctionNote.trim() || null })} variant="danger">Decline</TimeButton>
+              <TimeButton disabled={correctionDecisionMutation.isPending} onClick={() => correctionDecisionMutation.mutate({ approved: true, correctionId: selectedCorrection.id, note: correctionNote.trim() || null })} variant="primary">Approve correction</TimeButton>
+            </div>
+          </div>
+        </ModalDialog>
       ) : null}
     </main>
   )

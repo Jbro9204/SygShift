@@ -10141,6 +10141,113 @@
   line-height: 1.35;
 }
 
+.payroll-exception-list__item-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.payroll-exception-list__item-main small {
+  display: block;
+  margin-top: 5px;
+  color: #71695d;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.payroll-exception-list__item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.payroll-exception-list__item-actions .time-button {
+  min-width: 142px;
+}
+
+.payroll-blocker-modal__summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px 22px;
+  background: #fffaf1;
+  border-bottom: 1px solid #e2d3b6;
+}
+
+.payroll-blocker-modal__summary > div {
+  min-width: 0;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #e2d3b6;
+  border-radius: 10px;
+}
+
+.payroll-blocker-modal__summary span,
+.payroll-blocker-modal__summary strong {
+  display: block;
+}
+
+.payroll-blocker-modal__summary span {
+  margin-bottom: 5px;
+  color: #71695d;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.payroll-correction-modal {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.payroll-correction-modal__body {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.payroll-correction-modal__request {
+  display: grid;
+  gap: 7px;
+  padding: 16px;
+  background: #fffaf1;
+  border: 1px solid #e2d3b6;
+  border-radius: 10px;
+}
+
+.payroll-correction-modal__request .time-status-badge {
+  justify-self: start;
+}
+
+.payroll-correction-modal__request span,
+.payroll-correction-modal__request p {
+  color: #6d6457;
+}
+
+.payroll-correction-modal__body label,
+.payroll-correction-modal__body label > span {
+  display: grid;
+  gap: 7px;
+}
+
+.payroll-correction-modal__body textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 96px;
+  padding: 12px 14px;
+  border: 1px solid #cfc3b0;
+  border-radius: 9px;
+  resize: vertical;
+}
+
+.payroll-correction-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .payroll-employee-summary-panel {
   margin-bottom: 16px;
   padding: 0;
@@ -12386,6 +12493,21 @@
   .payroll-exception-list__items article {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .payroll-exception-list__item-actions,
+  .payroll-correction-modal__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .payroll-exception-list__item-actions .time-button,
+  .payroll-correction-modal__actions .time-button {
+    width: 100%;
+  }
+
+  .payroll-blocker-modal__summary {
+    grid-template-columns: 1fr;
   }
 
   .schedule-admin-summary,
