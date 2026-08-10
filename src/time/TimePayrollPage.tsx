@@ -18,11 +18,13 @@ import { ModalDialog } from '../components/ModalDialog'
 import { getSessionContext } from '../data/auth'
 import {
   createPayrollExportBatch,
+  confirmWorkTypeConfiguration,
   getPayrollAccountabilityEvents,
   getPayrollExportBatchDetail,
   getPayrollExportHistory,
   getPayrollRules,
   getTimekeepingReview,
+  getWorkTypeConfiguration,
   payrollHours,
   reviewTimeEventCorrection,
   summarizePayrollRowsByEmployee,
@@ -34,6 +36,7 @@ import {
   type PayrollRules,
   type TimekeepingReview,
   type TimekeepingReviewRow,
+  type WorkTypeConfiguration,
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
@@ -365,6 +368,8 @@ function PayrollEmployeeSummaryTable({
         hasWorkedDetail: Boolean(workedSummary),
         locationCount: workedSummary?.locationCount ?? 0,
         overtimeMinutes: workedSummary?.overtimeMinutes ?? 0,
+        postMinutes: workedSummary?.postMinutes ?? 0,
+        trainingMinutes: workedSummary?.trainingMinutes ?? 0,
         paidMinutes: payrollPayableMinutes(workedSummary, accountabilitySummary),
         payrollReady: (workedSummary?.payrollReady ?? true) && reviewCount === 0,
         regularMinutes: workedSummary?.regularMinutes ?? 0,
@@ -398,6 +403,8 @@ function PayrollEmployeeSummaryTable({
               <th>Worked shifts</th>
               <th>Regular</th>
               <th>OT</th>
+              <th>Post</th>
+              <th>Training</th>
               <th>Breaks</th>
               <th>Sick/PTO</th>
               <th>Total payable</th>
@@ -418,6 +425,8 @@ function PayrollEmployeeSummaryTable({
                 </td>
                 <td><strong>{payrollHours(summary.regularMinutes)} hr</strong></td>
                 <td><strong>{payrollHours(summary.overtimeMinutes)} hr</strong></td>
+                <td><strong>{payrollHours(summary.postMinutes)} hr</strong></td>
+                <td><strong>{payrollHours(summary.trainingMinutes)} hr</strong></td>
                 <td><strong>{summary.breakMinutes} min</strong></td>
                 <td><strong>{payrollHours(summary.sickPtoMinutes)} hr</strong></td>
                 <td><strong>{payrollHours(summary.paidMinutes)} hr</strong></td>
@@ -477,6 +486,7 @@ function PayrollRowsTable({
               <th>Employee</th>
               <th>Date</th>
               <th>Location</th>
+              <th>Work type</th>
               <th>Clock in</th>
               <th>Clock out</th>
               <th>Regular</th>
@@ -499,6 +509,10 @@ function PayrollRowsTable({
                 <td>
                   <strong>{row.locationName}</strong>
                   <span>{rowLocation(row)}</span>
+                </td>
+                <td>
+                  <strong>{row.mixedWorkTypes ? 'Mixed work types' : row.workTypeLabel}</strong>
+                  <span>{row.payCode}</span>
                 </td>
                 <td>{rowClock(row.firstClockIn, row)}</td>
                 <td>{rowClock(row.lastClockOut, row)}</td>
@@ -585,6 +599,8 @@ export function TimePayrollPage() {
   const [selectedBlockerRow, setSelectedBlockerRow] = useState<TimekeepingReviewRow | null>(null)
   const [selectedCorrection, setSelectedCorrection] = useState<PendingCorrection | null>(null)
   const [correctionNote, setCorrectionNote] = useState('')
+  const [postPayCode, setPostPayCode] = useState('POST')
+  const [trainingPayCode, setTrainingPayCode] = useState('TRAINING')
 
   const sessionQuery = useQuery({
     queryKey: ['session-context'],
@@ -598,6 +614,28 @@ export function TimePayrollPage() {
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed,
     queryKey: ['time-payroll-rules'],
     queryFn: getPayrollRules,
+  })
+  const workTypeConfigurationQuery = useQuery({
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed,
+    queryKey: ['work-type-configuration'],
+    queryFn: getWorkTypeConfiguration,
+  })
+
+  useEffect(() => {
+    const codes = workTypeConfigurationQuery.data?.codes
+    if (!codes) return
+    setPostPayCode(codes.find((code) => code.workType === 'post')?.payCode ?? 'POST')
+    setTrainingPayCode(codes.find((code) => code.workType === 'training')?.payCode ?? 'TRAINING')
+  }, [workTypeConfigurationQuery.data])
+
+  const workTypeConfigurationMutation = useMutation<WorkTypeConfiguration, Error>({
+    mutationFn: () => confirmWorkTypeConfiguration({ postPayCode: postPayCode.trim(), trainingPayCode: trainingPayCode.trim() }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['work-type-configuration'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-payroll-review'] }),
+      ])
+    },
   })
 
   useEffect(() => {
@@ -641,7 +679,15 @@ export function TimePayrollPage() {
     },
   })
   const review = useMemo(() => workedTimePayrollReview(reviewQuery.data), [reviewQuery.data])
-  const lockBlockedReason = payrollLockBlocker(review)
+  const baseLockBlockedReason = payrollLockBlocker(review)
+  const workTypesConfirmed = Boolean(
+    workTypeConfigurationQuery.data
+    && workTypeConfigurationQuery.data.codes.length === 2
+    && workTypeConfigurationQuery.data.codes.every((code) => code.confirmedAt),
+  )
+  const lockBlockedReason = baseLockBlockedReason || (!workTypesConfirmed
+    ? 'Confirm the Post Time and Training Time payroll treatment before locking an official export.'
+    : '')
   const readinessPercent = payrollReadinessPercent(review)
   const employeeSummaries = useMemo(() => summarizePayrollRowsByEmployee(review?.rows ?? []), [review])
   const accountabilityEvents = accountabilityQuery.data ?? []
@@ -903,9 +949,47 @@ export function TimePayrollPage() {
             <TimeMetricCard detail="Daily/weekly overtime calculated by payroll rules." icon={AlertTriangle} label="Overtime" tone={(totals?.overtimeMinutes ?? 0) > 0 ? 'warning' : 'neutral'} value={`${payrollHours(totals?.overtimeMinutes ?? 0)} hr`} />
             <TimeMetricCard detail="Unpaid break minutes subtracted from worked time." icon={LockKeyhole} label="Breaks" value={`${payrollHours(review.summary.grossMinutes - review.summary.paidMinutes)} hr`} />
             <TimeMetricCard detail="Rows or corrections blocking official export." icon={ShieldAlert} label="Blockers" tone={(totals?.exceptionCount ?? 0) + (totals?.pendingCorrectionCount ?? 0) > 0 ? 'danger' : 'good'} value={(totals?.exceptionCount ?? 0) + (totals?.pendingCorrectionCount ?? 0)} />
+            <TimeMetricCard detail="Paid time worked at assigned posts and operational locations." icon={FileClock} label="Post Time" value={`${payrollHours(employeeSummaries.reduce((total, summary) => total + summary.postMinutes, 0))} hr`} />
+            <TimeMetricCard detail="Paid training time, tracked separately while remaining overtime eligible." icon={History} label="Training Time" value={`${payrollHours(employeeSummaries.reduce((total, summary) => total + summary.trainingMinutes, 0))} hr`} />
           </section>
 
           <PayrollRulesSummary period={{ fromDate, throughDate }} rules={rulesQuery.data ?? review.payrollRules} />
+
+          {exportAllowed ? (
+            <section className="time-card payroll-work-type-config" aria-labelledby="payroll-work-type-title">
+              <TimeSectionHeader
+                eyebrow="Paid work classifications"
+                summary="Both categories are paid and overtime eligible. Confirm the payroll codes before the first official export; future changes remain audited."
+                title="Post Time and Training Time"
+              />
+              {workTypeConfigurationQuery.isPending ? (
+                <DataStatePanel icon={FileClock} title="Loading work classifications"><p>Retrieving the current payroll treatment.</p></DataStatePanel>
+              ) : workTypeConfigurationQuery.isError ? (
+                <DataStatePanel icon={ShieldAlert} title="Work classifications unavailable" tone="error"><p>{workTypeConfigurationQuery.error.message}</p></DataStatePanel>
+              ) : (
+                <form
+                  className="payroll-work-type-config__form"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    workTypeConfigurationMutation.mutate()
+                  }}
+                >
+                  <label><span>Post Time pay code</span><input maxLength={40} onChange={(event) => setPostPayCode(event.target.value)} required value={postPayCode} /></label>
+                  <label><span>Training Time pay code</span><input maxLength={40} onChange={(event) => setTrainingPayCode(event.target.value)} required value={trainingPayCode} /></label>
+                  <div className="payroll-work-type-config__facts">
+                    <span><CheckCircle2 aria-hidden="true" size={17} /> Paid time</span>
+                    <span><CheckCircle2 aria-hidden="true" size={17} /> Overtime eligible</span>
+                    <span><CheckCircle2 aria-hidden="true" size={17} /> Employee base rate</span>
+                  </div>
+                  <TimeButton disabled={!postPayCode.trim() || !trainingPayCode.trim() || workTypeConfigurationMutation.isPending} type="submit" variant="primary">
+                    {workTypeConfigurationMutation.isPending ? 'Saving...' : workTypesConfirmed ? 'Save payroll codes' : 'Confirm payroll treatment'}
+                  </TimeButton>
+                  {workTypeConfigurationMutation.isError ? <small className="field-error">{workTypeConfigurationMutation.error.message}</small> : null}
+                  {workTypesConfirmed ? <small>Confirmed. Official exports can include both classifications as separate totals and pay codes.</small> : <small className="field-error">Confirmation is required before an official payroll lock.</small>}
+                </form>
+              )}
+            </section>
+          ) : null}
 
           {exportAllowed ? (
             <PayrollExportPanel

@@ -65,6 +65,7 @@ interface OpenShiftFormState {
   credentialOverrideNote: string
   credentialOverrideConfirmedKnown: boolean
   credentialOverrideConfirmedResponsibility: boolean
+  workType: 'post' | 'training'
 }
 
 interface SchedulerCoverageLane {
@@ -118,6 +119,7 @@ function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
     credentialOverrideNote: '',
     credentialOverrideConfirmedKnown: false,
     credentialOverrideConfirmedResponsibility: false,
+    workType: 'post',
   }
 }
 
@@ -514,6 +516,7 @@ function draftShiftMutationInput(
     employeeId,
     availabilityOverrideNote: availabilityOverrideNote?.trim() || null,
     credentialOverrideNote: credentialOverrideNote?.trim() || null,
+    workType: shift.work_type ?? 'post',
   }
 }
 
@@ -595,6 +598,7 @@ function ShiftCard({
           : <span className="shift-card__unassigned">No one assigned</span>}
       </div>
       <div className="shift-card__footer">
+        <span className="shift-tag">{shift.work_type === 'training' ? 'Training Time' : 'Post Time'}</span>
         {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review needed</span> : null}
         {shift.requires_armed ? <span className="shift-tag shift-tag--armed">Armed</span> : null}
         {openSlots > 0 ? (
@@ -788,6 +792,7 @@ function EmployeePersonalSchedulePanel({
                           </p>
                           {notes ? <p className="employee-shift-card__notes">{notes}</p> : null}
                           <div className="employee-shift-card__tags">
+                            <span>{shift.work_type === 'training' ? 'Training Time' : 'Post Time'}</span>
                             <span>{shift.requires_armed ? 'Armed' : 'Unarmed'}</span>
                             <span>Assigned to you</span>
                           </div>
@@ -836,6 +841,7 @@ function EditShiftDialog({
     employeeId?: string | null
     availabilityOverrideNote?: string | null
     credentialOverrideNote?: string | null
+    workType?: 'post' | 'training'
   }>>
   onClose: () => void
   onRequestRemove: (shift: ScheduleShift) => void
@@ -852,6 +858,7 @@ function EditShiftDialog({
   const [notes, setNotes] = useState(shift.notes ?? '')
   const [isOpen, setIsOpen] = useState(shift.is_open)
   const [isOvertime, setIsOvertime] = useState(shift.is_overtime)
+  const [workType, setWorkType] = useState<'post' | 'training'>(shift.work_type ?? 'post')
   const [overrideNote, setOverrideNote] = useState('')
   const [credentialOverrideNote, setCredentialOverrideNote] = useState('')
   const [credentialConfirmedKnown, setCredentialConfirmedKnown] = useState(false)
@@ -873,6 +880,7 @@ function EditShiftDialog({
     || notes !== (shift.notes ?? '')
     || isOpen !== shift.is_open
     || isOvertime !== shift.is_overtime
+    || workType !== (shift.work_type ?? 'post')
     || overrideNote.trim().length > 0
     || credentialOverrideNote.trim().length > 0
     || credentialConfirmedKnown
@@ -901,6 +909,7 @@ function EditShiftDialog({
       employeeId: String(form.get('employeeId') ?? '') || null,
       availabilityOverrideNote: availabilityConflict ? overrideNote : null,
       credentialOverrideNote: credentialOverrideRequired ? credentialOverrideNote : null,
+      workType,
     }, {
       onSuccess: onClose,
     })
@@ -923,6 +932,14 @@ function EditShiftDialog({
           <label><span>Headcount</span><input min={1} name="headcount" onChange={(event) => setHeadcount(event.target.value)} required type="number" value={headcount} /></label>
         </div>
         <div className="schedule-edit-form__details">
+          <label className="field-stack">
+            <span>Work type</span>
+            <select onChange={(event) => setWorkType(event.target.value as 'post' | 'training')} value={workType}>
+              <option value="post">Post Time</option>
+              <option value="training">Training Time</option>
+            </select>
+            <small>Both categories are paid and overtime-eligible. Payroll keeps the totals separate.</small>
+          </label>
           <label className="field-stack">
             <span>Switch / assign employee</span>
             <select
@@ -1309,7 +1326,7 @@ function SchedulerShiftModal({
           <article>
             <span>Requirement</span>
             <strong>{shift.requires_armed ? 'Armed' : 'Unarmed'}</strong>
-            <small>{shift.is_overtime ? 'Overtime noted' : 'Standard shift'}</small>
+            <small>{shift.work_type === 'training' ? 'Training Time' : 'Post Time'}{shift.is_overtime ? ' · Overtime noted' : ''}</small>
           </article>
         </div>
 
@@ -1322,6 +1339,7 @@ function SchedulerShiftModal({
             <div><dt>Needed</dt><dd>{shift.headcount_required}</dd></div>
             <div><dt>Open</dt><dd>{openSlots}</dd></div>
             <div><dt>Requirement</dt><dd>{shift.requires_armed ? 'Armed credential' : 'Unarmed'}</dd></div>
+            <div><dt>Work type</dt><dd>{shift.work_type === 'training' ? 'Training Time' : 'Post Time'}</dd></div>
           </dl>
           </section>
 
@@ -2175,6 +2193,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           availabilityOverrideNote: openShiftAvailabilityConflict ? openShiftForm.availabilityOverrideNote : null,
           credentialOverrideNote: openShiftCredentialOverrideRequired ? openShiftForm.credentialOverrideNote : null,
           publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
+          workType: openShiftForm.workType,
         }))
       }
       return { dates, results, skippedAssignedDates }
@@ -3228,6 +3247,17 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 >
                   <option value="post">Permanent site/post</option>
                   <option value="event">One-time event</option>
+                </select>
+              </label>
+
+              <label>
+                Work type
+                <select
+                  onChange={(event) => updateOpenShiftForm({ workType: event.target.value as 'post' | 'training' })}
+                  value={openShiftForm.workType}
+                >
+                  <option value="post">Post Time</option>
+                  <option value="training">Training Time</option>
                 </select>
               </label>
 

@@ -63,6 +63,11 @@ interface AuthMfaFactor {
   status?: string
 }
 
+interface MfaRecoveryCodeRecord {
+  hash: string
+  hint: string
+}
+
 interface NotificationJob {
   id: string
   recipients: string[]
@@ -392,6 +397,36 @@ function generateTemporaryPassword(): string {
   return characters.join('')
 }
 
+function accessTokenAssuranceLevel(token: string): string | null {
+  try {
+    const payload = token.split('.')[1]
+    if (!payload) return null
+    const normalized = payload.replaceAll('-', '+').replaceAll('_', '/').padEnd(Math.ceil(payload.length / 4) * 4, '=')
+    const decoded = JSON.parse(atob(normalized)) as { aal?: unknown }
+    return typeof decoded.aal === 'string' ? decoded.aal : null
+  } catch {
+    return null
+  }
+}
+
+function generateRecoveryCode(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let value = ''
+  for (let index = 0; index < 8; index += 1) value += randomFrom(alphabet)
+  return `SYG-${value.slice(0, 4)}-${value.slice(4)}`
+}
+
+function normalizeRecoveryCode(value: string): string {
+  const normalized = value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+  if (!/^SYG[A-Z0-9]{8}$/.test(normalized)) return ''
+  return `SYG-${normalized.slice(3, 7)}-${normalized.slice(7)}`
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
 async function listAuthUsers(config: NonNullable<ReturnType<typeof configuredSupabase>>): Promise<AuthUser[]> {
   const users: AuthUser[] = []
   for (let page = 1; page <= 20; page += 1) {
@@ -681,6 +716,81 @@ async function sendWelcomeEmail(
   })
 }
 
+async function handleAccountMfaRecoveryApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  const session = await requireAuthenticatedSession(request, environment)
+  const body = await readJsonBody(request)
+  const target = await callRpc<AuthTarget>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_employee_auth_target',
+    { target_employee_id: session.context.employee_id },
+    session.config.serviceRoleKey,
+  )
+  if (!target?.existingAuthUserId) throw new ApiError('employee_login_missing', 422, 'This employee does not have a login account.')
+
+  const url = new URL(request.url)
+  if (url.pathname === '/api/v1/account/mfa-recovery-codes') {
+    if (!session.context.has_mfa || accessTokenAssuranceLevel(session.token) !== 'aal2') {
+      throw new ApiError('aal2_required', 403, 'Verify your authenticator code before generating recovery codes.')
+    }
+
+    const rawCodes = Array.from({ length: 10 }, () => generateRecoveryCode())
+    const records: MfaRecoveryCodeRecord[] = await Promise.all(rawCodes.map(async (code) => ({
+      hash: await sha256Hex(code),
+      hint: `****${code.slice(-4)}`,
+    })))
+    const batchId = crypto.randomUUID()
+    const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+    await callRpc(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_replace_mfa_recovery_codes',
+      {
+        target_batch_id: batchId,
+        target_codes: records,
+        target_employee_id: session.context.employee_id,
+        target_expires_at: expiresAt,
+        target_request_id: requestId,
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ batchId, codes: rawCodes, expiresAt, requestId })
+  }
+
+  if (url.pathname === '/api/v1/account/mfa-recovery') {
+    const suppliedCode = typeof body.code === 'string' ? normalizeRecoveryCode(body.code) : ''
+    if (!suppliedCode) throw new ApiError('invalid_recovery_code', 422, 'Enter a valid SygShift recovery code.')
+    const consumed = await callRpc<{ consumed?: boolean }>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_consume_mfa_recovery_code',
+      {
+        target_code_hash: await sha256Hex(suppliedCode),
+        target_employee_id: session.context.employee_id,
+        target_request_id: requestId,
+      },
+      session.config.serviceRoleKey,
+    )
+    if (!consumed.consumed) throw new ApiError('invalid_recovery_code', 422, 'The recovery code is invalid, expired, or already used.')
+
+    const factors = await listAuthUserMfaFactors(session.config, target.existingAuthUserId)
+    for (const factor of factors) await deleteAuthUserMfaFactor(session.config, target.existingAuthUserId, factor.id)
+    const resetRecord = await callRpc<{ trustedDevicesRevoked?: number }>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_record_employee_mfa_reset',
+      {
+        target_actor_employee_id: session.context.employee_id,
+        target_auth_user_id: target.existingAuthUserId,
+        target_employee_id: session.context.employee_id,
+        target_factor_count: factors.length,
+        target_request_id: requestId,
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ factorsRemoved: factors.length, requestId, trustedDevicesRevoked: resetRecord.trustedDevicesRevoked ?? 0 })
+  }
+
+  return errorJson('not_found', requestId, 404)
+}
+
 async function handleAdminUsersApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
   let admin: Awaited<ReturnType<typeof requireAdminMfa>>
   try {
@@ -855,6 +965,17 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       await deleteAuthUserMfaFactor(admin.config, target.existingAuthUserId, factor.id)
     }
 
+    const recoveryCodesRevoked = await callRpc<number>(
+      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+      'service_revoke_mfa_recovery_codes',
+      {
+        target_actor_employee_id: admin.context.employee_id,
+        target_employee_id: target.employeeId,
+        target_request_id: requestId,
+      },
+      admin.config.serviceRoleKey,
+    )
+
     const resetRecord = await callRpc<{ trustedDevicesRevoked?: number }>(
       { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
       'service_record_employee_mfa_reset',
@@ -871,6 +992,7 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
     return json({
       displayName: target.displayName,
       factorsRemoved: factors.length,
+      recoveryCodesRevoked,
       requestId,
       trustedDevicesRevoked: resetRecord.trustedDevicesRevoked ?? 0,
       username: target.username,
@@ -1305,6 +1427,14 @@ export default {
         if (request.method === 'HEAD') {
           response = new Response(null, { headers: response.headers, status: response.status })
         }
+      }
+    } else if (url.pathname.startsWith('/api/v1/account/mfa-recovery')) {
+      try {
+        response = await handleAccountMfaRecoveryApi(request, environment, requestId)
+      } catch (error) {
+        response = error instanceof ApiError
+          ? errorJson(error.code, requestId, error.status, error.message)
+          : errorJson('mfa_recovery_request_failed', requestId, 500, 'The MFA recovery request failed.')
       }
     } else if (url.pathname.startsWith('/api/v1/admin/users')) {
       try {

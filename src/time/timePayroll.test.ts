@@ -63,6 +63,13 @@ const cleanReview: TimekeepingReview = {
     weekEndsOn: '2026-07-25',
     weekStartsOn: '2026-07-12',
     workedSegments: [],
+    workType: 'post',
+    workTypeLabel: 'Post Time',
+    payCode: 'POST',
+    workTypePaid: true,
+    workTypeOvertimeEligible: true,
+    workTypeRateSource: 'employee_base_rate',
+    mixedWorkTypes: false,
   }],
   serverTimestamp: '2026-07-30T16:00:00.000Z',
   summary: {
@@ -322,6 +329,8 @@ describe('payroll export readiness', () => {
       'Worked Shifts',
       'Scheduled Hours',
       'Worked Hours',
+      'Post Hours',
+      'Training Hours',
       'Sick Pay Hours',
       'PTO Hours',
       'Other Paid Hours',
@@ -330,10 +339,12 @@ describe('payroll export readiness', () => {
       'Overtime Hours',
       'Status',
     ])
-    expect(sheets[0].rows.every((row) => row.length <= 12)).toBe(true)
+    expect(sheets[0].rows.every((row) => row.length <= 14)).toBe(true)
     expect(sheets.at(-1)?.rows[5]).toEqual([
       'Date',
       'Site / Post',
+      'Work Type',
+      'Pay Code',
       'Scheduled',
       'Clock In',
       'Clock Out',

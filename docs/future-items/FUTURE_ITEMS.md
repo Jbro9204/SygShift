@@ -174,17 +174,12 @@ Notes:
 - Need to confirm Indeed Employer API access, permissions, costs, and data limits.
 - If direct API access is not realistic, evaluate email parsing, CSV import, or manual intake as fallback options.
 
-### Role-Based Welcome/Login Emails and Clear MFA Setup Instructions
+### Role-Based Welcome/Login Emails
 Status: Pinned for later
 
 Idea:
-Create role-specific welcome/login emails and make MFA setup language much clearer for roles that require MFA.
+Create role-specific welcome/login emails.
 
 Notes:
 - Welcome emails and login credential emails should stay separate.
 - Emails should explain role-specific expectations for Guards, Supervisors, Schedulers, Dispatchers, Recruiting & Licensing, and Admins.
-- MFA-required emails should clearly state that users must install an authenticator app before setup.
-- Recommended authenticator apps: Microsoft Authenticator or Google Authenticator.
-- First-time MFA setup screen should use large, plain language explaining that SygShift does not text the authenticator code; the authenticator app generates a new 6-digit code.
-- Add clear instructions: install the app, open the app, choose Add Account / Scan QR Code, scan the SygShift QR from inside the authenticator app, then enter the 6-digit code shown in the app.
-- Add a warning that scanning the QR code with the normal phone camera may not complete setup.

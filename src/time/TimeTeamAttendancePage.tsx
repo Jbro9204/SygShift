@@ -54,6 +54,8 @@ interface TeamAttendanceRow {
   firstClockIn: string | null
   lastClockOut: string | null
   paidMinutes: number
+  postMinutes: number
+  trainingMinutes: number
   breakMinutes: number
   overtimeMinutes: number
   rowCount: number
@@ -149,12 +151,14 @@ function buildTeamRows(
       latestKind: attendance.latestKind,
       overtimeMinutes: payrollSummary?.overtimeMinutes ?? 0,
       paidMinutes: payrollSummary?.paidMinutes ?? 0,
+      postMinutes: payrollSummary?.postMinutes ?? 0,
       pendingCorrectionCount: pendingByEmployee.get(attendance.employeeId) ?? 0,
       role: attendance.role,
       rowCount: payrollSummary?.workedShiftCount ?? 0,
       scheduledShiftCount: attendance.scheduledShiftCount,
       scheduledSummary: scheduledSummary(attendance),
       state: latestEventState(attendance.latestKind),
+      trainingMinutes: payrollSummary?.trainingMinutes ?? 0,
       username: attendance.username,
     })
   }
@@ -176,12 +180,14 @@ function buildTeamRows(
       latestKind: attendance?.latestKind ?? null,
       overtimeMinutes: payrollSummary.overtimeMinutes,
       paidMinutes: payrollSummary.paidMinutes,
+      postMinutes: payrollSummary.postMinutes,
       pendingCorrectionCount: pendingByEmployee.get(payrollSummary.employeeId) ?? 0,
       role: payrollSummary.role,
       rowCount: payrollSummary.workedShiftCount,
       scheduledShiftCount: attendance?.scheduledShiftCount ?? 0,
       scheduledSummary: attendance ? scheduledSummary(attendance) : 'No scheduled shift in range',
       state: latestEventState(attendance?.latestKind ?? null),
+      trainingMinutes: payrollSummary.trainingMinutes,
       username: payrollSummary.username,
     })
   }
@@ -427,7 +433,8 @@ export function TimeTeamAttendancePage() {
                     </td>
                     <td>
                       <strong>{payrollHours(row.paidMinutes)} hr</strong>
-                      <span>{payrollHours(row.breakMinutes)} hr break · {payrollHours(row.overtimeMinutes)} hr OT</span>
+                      <span>{payrollHours(row.postMinutes)} post · {payrollHours(row.trainingMinutes)} training</span>
+                      <small>{payrollHours(row.breakMinutes)} hr break · {payrollHours(row.overtimeMinutes)} hr OT</small>
                     </td>
                     <td>
                       <TimeStatusBadge tone={row.exceptionCount > 0 || row.pendingCorrectionCount > 0 ? 'warning' : 'good'}>
@@ -465,6 +472,7 @@ export function TimeTeamAttendancePage() {
                 <div>
                   <strong>{row.employeeName}</strong>
                   <span>{formatUsDateKey(row.operationalDate)} · {rowLocation(row)}</span>
+                  <small>{row.mixedWorkTypes ? 'Mixed work types' : `${row.workTypeLabel} · ${row.payCode}`}</small>
                   <small>{row.exceptionCodes.length > 0 ? row.exceptionCodes.map((code) => code.replaceAll('_', ' ')).join(', ') : 'Needs review'}</small>
                 </div>
                 {manageAllowed ? <TimeButton onClick={() => focusEmployee(row.employeeId, row.operationalDate)} variant="secondary">Fix</TimeButton> : null}

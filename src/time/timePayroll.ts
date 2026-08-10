@@ -13,6 +13,7 @@ export function isExportableWorkedTimeRow(row: TimekeepingReviewRow): boolean {
     && Boolean(row.lastClockOut)
     && row.payrollReady
     && row.exceptionCodes.length === 0
+    && !row.mixedWorkTypes
     && row.paidMinutes > 0
 }
 
@@ -77,6 +78,7 @@ export function payrollLockBlocker(review: TimekeepingReview | undefined): strin
   if (!workedReview) return 'Load the payroll review before locking an export.'
   if (workedReview.summary.rowCount === 0) return 'There are no SygShift clock-in/out time records in this range yet.'
   if (workedReview.summary.pendingCorrectionCount > 0) return 'Resolve every pending correction request first.'
+  if (workedReview.rows.some((row) => row.mixedWorkTypes)) return 'Resolve every row with mixed Post and Training time before locking payroll.'
   if (workedReview.summary.exceptionCount > 0) return 'Fix every worked-time row marked Needs review before locking payroll.'
   if (workedReview.summary.readyCount !== workedReview.summary.rowCount) return 'Every worked-time row must be marked Ready before payroll can be locked.'
   return ''

@@ -3,6 +3,7 @@ import { AppShell } from '../components/AppShell'
 import { RouteErrorPage } from '../pages/RouteErrorPage'
 import {
   AccountSecurityPageRoute,
+  ActionCenterPageRoute,
   AccessControlPageRoute,
   AnnouncementsPageRoute,
   AvailabilityPageRoute,
@@ -50,6 +51,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <OverviewPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'actions',
+        element: (
+          <RouteSuspense>
+            <ActionCenterPageRoute />
           </RouteSuspense>
         ),
       },

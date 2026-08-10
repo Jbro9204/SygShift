@@ -14,6 +14,7 @@ export type MfaEnrollment = {
   factorId: string
   qrCode: string
   secret: string
+  uri: string
 }
 
 export type MfaPhoneEnrollment = {
@@ -205,7 +206,7 @@ export async function startTotpEnrollment(): Promise<MfaEnrollment> {
     })
 
     if (!error) {
-      if (!data.totp?.qr_code || !data.totp.secret) {
+      if (!data.totp?.qr_code || !data.totp.secret || !data.totp.uri) {
         throw new Error('Authenticator setup started, but the QR code was not returned. Refresh the page and try again.')
       }
 
@@ -213,6 +214,7 @@ export async function startTotpEnrollment(): Promise<MfaEnrollment> {
         factorId: data.id,
         qrCode: normalizeTotpQrCode(data.totp.qr_code),
         secret: data.totp.secret,
+        uri: data.totp.uri,
       }
     }
 

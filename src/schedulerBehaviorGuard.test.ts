@@ -84,7 +84,7 @@ describe('scheduler behavior guardrails', () => {
   })
 
   it('atomically replaces a destination draft from the exact visible revision', () => {
-    expect(scheduleData).toContain('replace_schedule_week_draft_from_revision')
+    expect(scheduleData).toContain('replace_schedule_week_draft_with_work_types')
     expect(scheduleData).toContain('source_schedule_id: input.sourceScheduleId')
     expect(schedulePage).toContain('copyWeekMutation')
     expect(schedulePage).toContain('Copy week')

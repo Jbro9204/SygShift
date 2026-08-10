@@ -7,6 +7,7 @@ const timeEventSourceSchema = z.enum(['web', 'mobile_web', 'supervisor', 'import
 const assignmentStatusSchema = z.enum(['assigned', 'confirmed', 'canceled', 'completed'])
 const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary', 'flex'])
+const workTypeSchema = z.enum(['post', 'training'])
 
 const timekeepingEmployeeSchema = z.object({
   id: z.string().uuid(),
@@ -30,6 +31,7 @@ const timekeepingShiftSchema = z.object({
   siteCode: z.string().nullable(),
   eventName: z.string().nullable(),
   locationName: z.string().nullable(),
+  workType: workTypeSchema.optional().default('post'),
 })
 
 const timekeepingEventSchema = z.object({
@@ -41,6 +43,7 @@ const timekeepingEventSchema = z.object({
   clientRecordedAt: z.string().nullable().optional(),
   source: timeEventSourceSchema,
   voided: z.boolean().optional(),
+  workType: workTypeSchema.optional().default('post'),
 })
 
 const timekeepingDashboardSchema = z.object({
@@ -191,6 +194,13 @@ const timekeepingReviewRowSchema = z.object({
   unpaidGaps: z.array(timekeepingUnpaidGapSchema).optional().default([]),
   unpaidGapMinutes: z.number().int().nonnegative().optional().default(0),
   payrollNotes: z.array(z.string()).default([]),
+  workType: workTypeSchema.optional().default('post'),
+  workTypeLabel: z.string().optional().default('Post Time'),
+  payCode: z.string().optional().default('POST'),
+  workTypePaid: z.boolean().optional().default(true),
+  workTypeOvertimeEligible: z.boolean().optional().default(true),
+  workTypeRateSource: z.enum(['employee_base_rate', 'configured_rate']).optional().default('employee_base_rate'),
+  mixedWorkTypes: z.boolean().optional().default(false),
 })
 
 const pendingCorrectionSchema = z.object({
@@ -239,13 +249,16 @@ const timeMaintenanceEventSchema = z.object({
   pendingCorrectionCount: z.number().int().nonnegative(),
   maintenanceNoteCount: z.number().int().nonnegative(),
   latestNote: z.string().nullable(),
-  latestAction: z.enum(['manual_add', 'time_adjust', 'void', 'location_update', 'site_post_update']).nullable(),
+  latestAction: z.enum(['manual_add', 'time_adjust', 'void', 'location_update', 'site_post_update', 'work_type_update']).nullable(),
   siteName: z.string().nullable(),
   siteCode: z.string().nullable(),
   postName: z.string().nullable(),
   eventName: z.string().nullable(),
   locationName: z.string(),
   timeZone: z.string(),
+  workType: workTypeSchema.optional().default('post'),
+  workTypeLabel: z.string().optional().default('Post Time'),
+  payCode: z.string().optional().default('POST'),
 })
 
 const timeMaintenanceSchema = z.object({
@@ -281,6 +294,42 @@ const timeMaintenanceShiftOptionSchema = z.object({
     username: z.string().nullable(),
   })),
   selectedEmployeeAssigned: z.boolean(),
+  workType: workTypeSchema.optional().default('post'),
+})
+
+const timeWorkTypeMapItemSchema = z.object({
+  employeeId: z.string().uuid(),
+  shiftId: z.string().uuid().nullable(),
+  operationalDate: z.string(),
+  workType: workTypeSchema,
+  payCode: z.string(),
+  label: z.string(),
+  paid: z.literal(true),
+  overtimeEligible: z.literal(true),
+  rateSource: z.enum(['employee_base_rate', 'configured_rate']).optional().default('employee_base_rate'),
+  mixedWorkTypes: z.boolean().default(false),
+})
+
+const workTypeConfigurationSchema = z.object({
+  codes: z.array(z.object({
+    workType: workTypeSchema,
+    payCode: z.string(),
+    label: z.string(),
+    paid: z.literal(true),
+    overtimeEligible: z.literal(true),
+    rateSource: z.enum(['employee_base_rate', 'configured_rate']),
+    confirmedAt: z.string().nullable(),
+    confirmedBy: z.string().uuid().nullable(),
+  })),
+})
+
+const workTypeCorrectionResultSchema = z.object({
+  correctionCount: z.number().int().positive(),
+  eventIds: z.array(z.string().uuid()),
+  workType: workTypeSchema,
+  reason: z.string(),
+  correctedAt: z.string(),
+  correctedBy: z.string().uuid(),
 })
 
 const teamAttendanceSummaryRowSchema = z.object({
@@ -442,6 +491,8 @@ export type TeamAttendanceSummaryRow = z.infer<typeof teamAttendanceSummaryRowSc
 export type PayrollRules = z.infer<typeof payrollRulesSchema>
 export type PayrollAccountabilityEvent = z.infer<typeof payrollAccountabilityEventSchema>
 export type AttendanceReportResult = z.infer<typeof attendanceReportResultSchema>
+export type WorkType = z.infer<typeof workTypeSchema>
+export type WorkTypeConfiguration = z.infer<typeof workTypeConfigurationSchema>
 
 export interface PayrollEmployeeSummary {
   employeeId: string
@@ -458,6 +509,8 @@ export interface PayrollEmployeeSummary {
   paidMinutes: number
   regularMinutes: number
   overtimeMinutes: number
+  postMinutes: number
+  trainingMinutes: number
   readyCount: number
   exceptionCount: number
   payrollReady: boolean
@@ -752,12 +805,75 @@ export async function getTimekeepingReview(input: {
   fromDate: string
   throughDate: string
 }): Promise<TimekeepingReview> {
-  const { data, error } = await getSupabaseClient().rpc('get_timekeeping_review', {
-    target_from_date: input.fromDate,
-    target_through_date: input.throughDate,
-  })
+  const [reviewResult, workTypeResult] = await Promise.all([
+    getSupabaseClient().rpc('get_timekeeping_review', {
+      target_from_date: input.fromDate,
+      target_through_date: input.throughDate,
+    }),
+    getSupabaseClient().rpc('get_time_work_type_map', {
+      target_from_date: input.fromDate,
+      target_through_date: input.throughDate,
+    }),
+  ])
+  const { data, error } = reviewResult
   if (error) throw new Error('Supervisor time review could not be loaded. MFA is required.')
-  return parseTimekeepingReview(data)
+  const review = parseTimekeepingReview(data)
+  if (workTypeResult.error) throw new Error(workTypeResult.error.message || 'Work classifications could not be loaded.')
+  const workTypes = z.array(timeWorkTypeMapItemSchema).parse(workTypeResult.data ?? [])
+  const workTypeByOccurrence = new Map(workTypes.map((item) => [
+    `${item.employeeId}|${item.shiftId ?? ''}|${item.operationalDate}`,
+    item,
+  ]))
+
+  return {
+    ...review,
+    rows: review.rows.map((row) => {
+      const workType = workTypeByOccurrence.get(`${row.employeeId}|${row.shiftId ?? ''}|${row.operationalDate}`)
+      if (!workType) return row
+      return {
+        ...row,
+        mixedWorkTypes: workType.mixedWorkTypes,
+        payCode: workType.payCode,
+        workType: workType.workType,
+        workTypeLabel: workType.label,
+        workTypeOvertimeEligible: workType.overtimeEligible,
+        workTypePaid: workType.paid,
+        workTypeRateSource: workType.rateSource,
+      }
+    }),
+  }
+}
+
+export async function getWorkTypeConfiguration(): Promise<WorkTypeConfiguration> {
+  const { data, error } = await getSupabaseClient().rpc('get_work_type_configuration')
+  if (error) throw new Error(error.message || 'Payroll work-type configuration could not be loaded.')
+  return workTypeConfigurationSchema.parse(data)
+}
+
+export async function confirmWorkTypeConfiguration(input: {
+  postPayCode: string
+  trainingPayCode: string
+}): Promise<WorkTypeConfiguration> {
+  const { data, error } = await getSupabaseClient().rpc('confirm_work_type_configuration', {
+    target_post_pay_code: input.postPayCode,
+    target_training_pay_code: input.trainingPayCode,
+  })
+  if (error) throw new Error(error.message || 'Payroll work-type configuration could not be confirmed.')
+  return workTypeConfigurationSchema.parse(data)
+}
+
+export async function correctTimeRecordWorkType(input: {
+  timeEventId: string
+  workType: WorkType
+  reason: string
+}): Promise<z.infer<typeof workTypeCorrectionResultSchema>> {
+  const { data, error } = await getSupabaseClient().rpc('correct_time_event_work_type', {
+    target_reason: input.reason,
+    target_time_event_id: input.timeEventId,
+    target_work_type: input.workType,
+  })
+  if (error) throw new Error(error.message || 'The work classification could not be corrected.')
+  return workTypeCorrectionResultSchema.parse(data)
 }
 
 export async function getTeamAttendanceSummary(input: {
@@ -861,13 +977,45 @@ export async function getTimeMaintenance(input: {
   throughDate: string
   employeeId?: string | null
 }): Promise<TimeMaintenance> {
-  const { data, error } = await getSupabaseClient().rpc('get_time_maintenance', {
-    target_employee_id: input.employeeId ?? null,
-    target_from_date: input.fromDate,
-    target_through_date: input.throughDate,
-  })
-  if (error) throw new Error(error.message || 'Time maintenance could not be loaded. MFA is required.')
-  return parseTimeMaintenance(data)
+  const client = getSupabaseClient()
+  const [maintenanceResult, workTypeResult] = await Promise.all([
+    client.rpc('get_time_maintenance', {
+      target_employee_id: input.employeeId ?? null,
+      target_from_date: input.fromDate,
+      target_through_date: input.throughDate,
+    }),
+    client.rpc('get_time_work_type_map', {
+      target_from_date: input.fromDate,
+      target_through_date: input.throughDate,
+    }),
+  ])
+  if (maintenanceResult.error) throw new Error(maintenanceResult.error.message || 'Time maintenance could not be loaded. MFA is required.')
+  if (workTypeResult.error) throw new Error(workTypeResult.error.message || 'Work classifications could not be loaded.')
+
+  const maintenance = parseTimeMaintenance(maintenanceResult.data)
+  const workTypes = z.array(timeWorkTypeMapItemSchema).parse(workTypeResult.data ?? [])
+  const workTypeByOccurrence = new Map(workTypes.map((item) => [
+    `${item.employeeId}|${item.shiftId ?? ''}|${item.operationalDate}`,
+    item,
+  ]))
+  const denverDate = (timestamp: string) => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      day: '2-digit',
+      month: '2-digit',
+      timeZone: 'America/Denver',
+      year: 'numeric',
+    }).formatToParts(new Date(timestamp))
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+    return `${values.year}-${values.month}-${values.day}`
+  }
+
+  return {
+    ...maintenance,
+    events: maintenance.events.map((event) => {
+      const mapped = workTypeByOccurrence.get(`${event.employeeId}|${event.shiftId ?? ''}|${denverDate(event.effectiveAt)}`)
+      return mapped ? { ...event, payCode: mapped.payCode, workType: mapped.workType, workTypeLabel: mapped.label } : event
+    }),
+  }
 }
 
 export async function getTimeMaintenanceShiftOptions(input: {
@@ -1136,9 +1284,11 @@ export function summarizePayrollRowsByEmployee(rows: TimekeepingReviewRow[]): Pa
       overtimeMinutes: 0,
       paidMinutes: 0,
       payrollReady: true,
+      postMinutes: 0,
       readyCount: 0,
       regularMinutes: 0,
       role: row.role,
+      trainingMinutes: 0,
       username: row.username,
       workedShiftCount: 0,
     }
@@ -1148,6 +1298,8 @@ export function summarizePayrollRowsByEmployee(rows: TimekeepingReviewRow[]): Pa
     summary.paidMinutes += row.paidMinutes
     summary.regularMinutes += row.regularMinutes
     summary.overtimeMinutes += row.overtimeMinutes
+    if (row.workType === 'training') summary.trainingMinutes += row.paidMinutes
+    else summary.postMinutes += row.paidMinutes
     summary.workedShiftCount += 1
     summary.firstDate = row.operationalDate < summary.firstDate ? row.operationalDate : summary.firstDate
     summary.lastDate = row.operationalDate > summary.lastDate ? row.operationalDate : summary.lastDate
@@ -1190,6 +1342,8 @@ export function reviewRowsToPayrollSummaryCsv(rows: TimekeepingReviewRow[]): str
     'Locations Worked',
     'Gross Hours',
     'Break Minutes',
+    'Post Hours',
+    'Training Hours',
     'Paid Hours',
     'Regular Hours',
     'Overtime Hours',
@@ -1210,6 +1364,8 @@ export function reviewRowsToPayrollSummaryCsv(rows: TimekeepingReviewRow[]): str
     summary.locationCount,
     payrollHours(summary.grossMinutes),
     summary.breakMinutes,
+    payrollHours(summary.postMinutes),
+    payrollHours(summary.trainingMinutes),
     payrollHours(summary.paidMinutes),
     payrollHours(summary.regularMinutes),
     payrollHours(summary.overtimeMinutes),

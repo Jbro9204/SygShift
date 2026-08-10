@@ -91,6 +91,7 @@ describe('timekeeping validation', () => {
       siteCode: 'NLA',
       eventName: null,
       locationName: 'Neon Local Apt-Unarmed',
+      workType: 'post',
     }
     const choices = getClockableShiftChoices([
       baseShift,
@@ -136,6 +137,7 @@ describe('timekeeping validation', () => {
       siteName: 'Neon Local Apt-Unarmed',
       startsAt: '2026-07-30T16:00:00.000Z',
       timeZone: 'America/Denver',
+      workType: 'post',
     }
 
     const deduped = dedupeTimeMaintenanceShiftOptions([
@@ -451,7 +453,7 @@ describe('timekeeping validation', () => {
     expect(summaries[0]?.paidMinutes).toBe(480)
     expect(summaries[0]?.payrollReady).toBe(false)
     expect(summaries[0]?.exceptionCount).toBe(1)
-    expect(reviewRowsToPayrollSummaryCsv(review.rows)).toContain('Jordan Brown,jbrown,admin,salary,07/12/2026,07/13/2026,2,1,8.50,30,8.00,7.00,1.00,no,1,1')
+    expect(reviewRowsToPayrollSummaryCsv(review.rows)).toContain('Jordan Brown,jbrown,admin,salary,07/12/2026,07/13/2026,2,1,8.50,30,8.00,0.00,8.00,7.00,1.00,no,1,1')
     expect(reviewRowsToPayrollCsv(review.rows)).toContain('Jordan Brown,jbrown,07/12/2026')
     expect(reviewRowsToPayrollCsv(review.rows)).not.toContain('07/13/2026')
   })

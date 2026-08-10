@@ -117,7 +117,7 @@ describe('schedule builder data contract', () => {
       publishAnnouncement: true,
     })
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_create_open_shift', {
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_typed_open_shift', {
       target_week_starts_on: '2026-07-05',
       target_post_id: null,
       event_name: 'Concert coverage',
@@ -135,6 +135,7 @@ describe('schedule builder data contract', () => {
       target_employee_id: null,
       target_availability_override_note: null,
       target_credential_override_note: null,
+      target_work_type: 'post',
     })
   })
 
@@ -170,7 +171,7 @@ describe('schedule builder data contract', () => {
       assignment_id: '80000000-0000-4000-8000-000000000001',
     })
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_create_open_shift', {
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_typed_open_shift', {
       target_week_starts_on: '2026-07-05',
       target_post_id: '10000000-0000-4000-8000-000000000001',
       event_name: null,
@@ -188,6 +189,7 @@ describe('schedule builder data contract', () => {
       target_employee_id: '70000000-0000-4000-8000-000000000001',
       target_availability_override_note: null,
       target_credential_override_note: null,
+      target_work_type: 'post',
     })
   })
 
@@ -255,7 +257,7 @@ describe('schedule builder data contract', () => {
       credentialOverrideNote: '  License verified outside SygShift; upload pending.  ',
     })
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_create_open_shift', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_typed_open_shift', expect.objectContaining({
       target_employee_id: '70000000-0000-4000-8000-000000000001',
       target_credential_override_note: 'License verified outside SygShift; upload pending.',
     }))
@@ -290,7 +292,7 @@ describe('schedule builder data contract', () => {
       status: 'draft',
     })
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_update_draft_shift', {
+    expect(rpc).toHaveBeenCalledWith('scheduler_update_typed_draft_shift', {
       target_shift_id: '40000000-0000-4000-8000-000000000001',
       shift_operational_date: '2026-07-29',
       shift_start_time: '08:00',
@@ -302,6 +304,7 @@ describe('schedule builder data contract', () => {
       target_employee_id: '70000000-0000-4000-8000-000000000001',
       target_availability_override_note: null,
       target_credential_override_note: 'Pending upload',
+      target_work_type: 'post',
     })
   })
 

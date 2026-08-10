@@ -11,6 +11,7 @@ import {
   getAnnouncementComposer,
   previewAnnouncementTemplate,
   publishTemplatedAnnouncement,
+  reviseTemplatedAnnouncement,
   recipientSummary,
   saveAnnouncementBanner,
   type AnnouncementField,
@@ -20,6 +21,7 @@ import {
   type AnnouncementBannerManager,
   type AnnouncementPreview,
   type AnnouncementTemplate,
+  type RecentAnnouncement,
 } from '../data/announcements'
 import { processNotificationBatch } from '../data/operations'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -358,6 +360,9 @@ export function AnnouncementsPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [bannerEditor, setBannerEditor] = useState<AnnouncementBanner | 'new' | null>(null)
   const [announcementExpiresAt, setAnnouncementExpiresAt] = useState(() => defaultAnnouncementExpirationLocal())
+  const [requiresAcknowledgment, setRequiresAcknowledgment] = useState(false)
+  const [acknowledgmentDueAt, setAcknowledgmentDueAt] = useState(() => defaultAnnouncementExpirationLocal())
+  const [revisionSource, setRevisionSource] = useState<RecentAnnouncement | null>(null)
   const hasMfa = Boolean(composerQuery.data?.hasMfa)
   const canSend = Boolean(composerQuery.data?.canSend)
   const canManageBanner = Boolean(composerQuery.data?.canManageBanner)
@@ -376,12 +381,16 @@ export function AnnouncementsPage() {
 
   useEffect(() => {
     if (selectedTemplate) {
-      setFields(emptyFields(selectedTemplate))
+      const revisingThisTemplate = revisionSource?.templateKey === selectedTemplate.key
+      setFields(revisingThisTemplate
+        ? Object.fromEntries(Object.entries(revisionSource.templateFields ?? {}).map(([key, value]) => [key, String(value ?? '')]))
+        : emptyFields(selectedTemplate))
       setPreview(null)
-      setMessage(null)
-      setAnnouncementExpiresAt(defaultAnnouncementExpirationLocal())
+      setAnnouncementExpiresAt(revisingThisTemplate ? toDateTimeLocal(revisionSource.expiresAt) : defaultAnnouncementExpirationLocal())
+      setRequiresAcknowledgment(revisingThisTemplate ? revisionSource.acknowledgmentMode === 'required' : false)
+      setAcknowledgmentDueAt(revisingThisTemplate ? toDateTimeLocal(revisionSource.acknowledgmentDueAt) : defaultAnnouncementExpirationLocal())
     }
-  }, [selectedTemplate])
+  }, [revisionSource, selectedTemplate])
 
   const previewMutation = useMutation({
     mutationFn: async () => {
@@ -397,13 +406,23 @@ export function AnnouncementsPage() {
   const publishMutation = useMutation({
     mutationFn: async () => {
       if (!selectedTemplate) throw new Error('Choose an approved template first.')
-      return publishTemplatedAnnouncement(selectedTemplate.key, fields, {
+      if (revisionSource) {
+        return reviseTemplatedAnnouncement(revisionSource.id, fields, {
+          dueAt: fromDateTimeLocal(acknowledgmentDueAt),
+          expiresAt: fromDateTimeLocal(announcementExpiresAt),
+          required: requiresAcknowledgment,
+        })
+      }
+      const result = await publishTemplatedAnnouncement(selectedTemplate.key, fields, {
+        dueAt: fromDateTimeLocal(acknowledgmentDueAt),
         expiresAt: fromDateTimeLocal(announcementExpiresAt),
+        required: requiresAcknowledgment,
       })
+      return result
     },
     onSuccess: async (result) => {
       setPreview(result)
-      const publishedMessage = `Published "${result.title}" to ${recipientSummary(result)}.`
+      const publishedMessage = `Published version ${result.contentVersion} of "${result.title}" to ${recipientSummary(result)}.`
 
       try {
         const delivery = await processNotificationBatch()
@@ -423,6 +442,7 @@ export function AnnouncementsPage() {
         queryClient.invalidateQueries({ queryKey: ['announcement-composer'] }),
         queryClient.invalidateQueries({ queryKey: ['notification-center'] }),
       ])
+      setRevisionSource(null)
     },
   })
 
@@ -503,7 +523,11 @@ export function AnnouncementsPage() {
                 <button
                   className={template.key === selectedTemplate?.key ? 'announcement-template-card is-selected' : 'announcement-template-card'}
                   key={template.key}
-                  onClick={() => setSelectedKey(template.key)}
+                  onClick={() => {
+                    setRevisionSource(null)
+                    setMessage(null)
+                    setSelectedKey(template.key)
+                  }}
                   type="button"
                 >
                   <span>{kindLabel(template.kind)}</span>
@@ -520,7 +544,8 @@ export function AnnouncementsPage() {
               <div className="section-heading">
                 <div>
                   <p className="eyebrow">Fill in the details</p>
-                  <h2>{selectedTemplate.name}</h2>
+                  <h2>{revisionSource ? `Revise ${selectedTemplate.name}` : selectedTemplate.name}</h2>
+                  {revisionSource ? <p>Publishing creates version {revisionSource.contentVersion + 1}; the prior receipt history is preserved.</p> : null}
                 </div>
               </div>
               <form
@@ -567,6 +592,41 @@ export function AnnouncementsPage() {
                     />
                   </label>
                 </section>
+                <section className="announcement-delivery-card" aria-label="Acknowledgment requirement">
+                  <div>
+                    <p className="eyebrow">Employee response</p>
+                    <strong>{requiresAcknowledgment ? 'Required acknowledgment' : 'Informational only'}</strong>
+                    <span>
+                      Required acknowledgment records receipt and review. It is not an electronic signature or legal agreement.
+                    </span>
+                  </div>
+                  <div className="announcement-ack-controls">
+                    <label className="check-field">
+                      <input
+                        checked={requiresAcknowledgment}
+                        onChange={(event) => {
+                          setRequiresAcknowledgment(event.target.checked)
+                          setPreview(null)
+                          setMessage(null)
+                        }}
+                        type="checkbox"
+                      />
+                      Require acknowledgment
+                    </label>
+                    {requiresAcknowledgment ? (
+                      <label className="form-field">
+                        <span>Acknowledge by</span>
+                        <input
+                          min={toDateTimeLocal(new Date().toISOString())}
+                          onChange={(event) => setAcknowledgmentDueAt(event.target.value)}
+                          required
+                          type="datetime-local"
+                          value={acknowledgmentDueAt}
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                </section>
 
                 {previewMutation.isError ? <div className="inline-alert" role="alert">{previewMutation.error.message}</div> : null}
                 {publishMutation.isError ? <div className="inline-alert" role="alert">{publishMutation.error.message}</div> : null}
@@ -584,7 +644,7 @@ export function AnnouncementsPage() {
                     type="button"
                   >
                     <Send aria-hidden="true" size={18} />
-                    {publishMutation.isPending ? 'Publishing...' : 'Publish approved message'}
+                    {publishMutation.isPending ? 'Publishing...' : revisionSource ? 'Publish revised version' : 'Publish approved message'}
                   </button>
                 </div>
               </form>
@@ -610,10 +670,25 @@ export function AnnouncementsPage() {
                     <div>
                       <strong>{announcement.title}</strong>
                       <span>
-                        {kindLabel(announcement.kind)} by {announcement.createdBy}
+                        {kindLabel(announcement.kind)} · version {announcement.contentVersion} by {announcement.createdBy}
                         {announcement.requiresArmed ? ' · armed-qualified recipients only' : ''}
                       </span>
                     </div>
+                    {canSend && announcement.templateKey ? (
+                      <button
+                        className="secondary-button"
+                        onClick={() => {
+                          setMessage(null)
+                          setRevisionSource(announcement)
+                          setSelectedKey(announcement.templateKey ?? '')
+                          window.scrollTo({ behavior: 'smooth', top: 0 })
+                        }}
+                        type="button"
+                      >
+                        <Edit3 aria-hidden="true" size={16} />
+                        Revise
+                      </button>
+                    ) : null}
                   </article>
                 ))}
               </div>

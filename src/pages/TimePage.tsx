@@ -22,6 +22,7 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import {
   activeTimeState,
   createPayrollExportBatch,
+  correctTimeRecordWorkType,
   getClockableShiftChoices,
   getOwnTimekeepingReview,
   getPayrollExportHistory,
@@ -55,6 +56,7 @@ import {
   type TimekeepingReviewRow,
   type TimekeepingShift,
   type TimekeepingState,
+  type WorkType,
 } from '../data/timekeeping'
 import { getSessionContext } from '../data/auth'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -243,6 +245,7 @@ function MaintenanceEventStatus({ event }: { event: TimeMaintenanceEvent }) {
   if (event.latestAction === 'time_adjust') return <span className="payroll-status payroll-status--ready">Adjusted</span>
   if (event.latestAction === 'manual_add') return <span className="payroll-status payroll-status--ready">Manual</span>
   if (event.latestAction === 'location_update') return <span className="payroll-status payroll-status--ready">Location fixed</span>
+  if (event.latestAction === 'work_type_update') return <span className="payroll-status payroll-status--ready">Work type fixed</span>
   return <span className="payroll-status payroll-status--ready">Active</span>
 }
 
@@ -419,12 +422,13 @@ export function TimeMaintenanceWorkbench({
   const [addShiftId, setAddShiftId] = useState<string | null>(null)
   const [addContext, setAddContext] = useState<string | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<TimeMaintenanceEvent | null>(null)
-  const [correctionMode, setCorrectionMode] = useState<'adjust' | 'void' | 'site_post'>('adjust')
+  const [correctionMode, setCorrectionMode] = useState<'adjust' | 'void' | 'site_post' | 'work_type'>('adjust')
   const [correctionDate, setCorrectionDate] = useState(defaultDate)
   const [correctionTime, setCorrectionTime] = useState('08:00')
   const [correctionShiftId, setCorrectionShiftId] = useState('')
   const [correctionManualLocation, setCorrectionManualLocation] = useState('')
   const [correctionReason, setCorrectionReason] = useState('')
+  const [correctionWorkType, setCorrectionWorkType] = useState<WorkType>('post')
   const showOverview = !lockEmployeeFilter && employeeId === ''
   const overviewSummaryQuery = useQuery({
     enabled: isSupabaseConfigured && showOverview,
@@ -504,6 +508,13 @@ export function TimeMaintenanceWorkbench({
           timeEventId: selectedEvent.id,
         })
       }
+      if (correctionMode === 'work_type') {
+        return correctTimeRecordWorkType({
+          reason: correctionReason.trim(),
+          timeEventId: selectedEvent.id,
+          workType: correctionWorkType,
+        })
+      }
       return supervisorCorrectTimeEvent({
         reason: correctionReason.trim(),
         replacementTime: correctionMode === 'adjust' ? zonedDateTimeToIso(correctionDate, correctionTime) : null,
@@ -576,7 +587,7 @@ export function TimeMaintenanceWorkbench({
     setCorrectionReason('')
   }, [employeeId, fromDate, throughDate])
 
-  function beginCorrection(event: TimeMaintenanceEvent, mode: 'adjust' | 'void' | 'site_post') {
+  function beginCorrection(event: TimeMaintenanceEvent, mode: 'adjust' | 'void' | 'site_post' | 'work_type') {
     setSelectedEvent(event)
     setCorrectionMode(mode)
     setCorrectionDate(dateInputValue(event.effectiveAt))
@@ -584,6 +595,7 @@ export function TimeMaintenanceWorkbench({
     setCorrectionShiftId(event.shiftId ?? '')
     setCorrectionManualLocation(event.locationName === 'Unscheduled' || event.locationName === 'Unscheduled Location' ? '' : event.locationName)
     setCorrectionReason('')
+    setCorrectionWorkType(event.workType)
   }
 
   function prefillRelatedPunch(event: TimeMaintenanceEvent) {
@@ -748,6 +760,10 @@ export function TimeMaintenanceWorkbench({
                   setCorrectionMode('site_post')
                   setCorrectionShiftId(selectedEvent.shiftId ?? '')
                 }} type="radio" /> Fix Site/Post</label>
+                <label><input checked={correctionMode === 'work_type'} onChange={() => {
+                  setCorrectionMode('work_type')
+                  setCorrectionWorkType(selectedEvent.workType)
+                }} type="radio" /> Work type</label>
                 <label><input checked={correctionMode === 'void'} onChange={() => setCorrectionMode('void')} type="radio" /> Void punch</label>
               </div>
               {correctionMode === 'adjust' ? (
@@ -796,6 +812,16 @@ export function TimeMaintenanceWorkbench({
                   ) : null}
                 </label>
               ) : null}
+              {correctionMode === 'work_type' ? (
+                <label className="time-correction-editor__location">
+                  <span>Paid work classification</span>
+                  <select onChange={(event) => setCorrectionWorkType(event.target.value as WorkType)} value={correctionWorkType}>
+                    <option value="post">Post Time</option>
+                    <option value="training">Training Time</option>
+                  </select>
+                  <small>This updates every punch in this employee's same shift/day occurrence and preserves the original punches in the audit history.</small>
+                </label>
+              ) : null}
               <label className="time-maintenance-add__reason">
                 <span>Reason</span>
                 <textarea
@@ -810,7 +836,7 @@ export function TimeMaintenanceWorkbench({
               <div className="time-correction-editor__actions">
                 <button className="secondary-button" onClick={() => setSelectedEvent(null)} type="button">Cancel</button>
                 <button className={correctionMode === 'void' ? 'danger-primary' : 'primary-action'} disabled={!canCorrect} type="submit">
-                  {correctionMutation.isPending ? 'Saving...' : correctionMode === 'void' ? 'Void punch' : correctionMode === 'site_post' ? 'Save Site/Post' : 'Save corrected time'}
+                  {correctionMutation.isPending ? 'Saving...' : correctionMode === 'void' ? 'Void punch' : correctionMode === 'site_post' ? 'Save Site/Post' : correctionMode === 'work_type' ? 'Save work type' : 'Save corrected time'}
                 </button>
               </div>
             </form>
@@ -936,6 +962,7 @@ export function TimeMaintenanceWorkbench({
                       <td>
                         <strong>{maintenanceEventLabel(event)}</strong>
                         <span>{event.source.replaceAll('_', ' ')}</span>
+                        <small>{event.workTypeLabel} · {event.payCode}</small>
                       </td>
                       <td>
                         <strong>{event.locationName}</strong>
@@ -955,6 +982,9 @@ export function TimeMaintenanceWorkbench({
                           </button>
                           <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'site_post')} type="button">
                             Site/Post
+                          </button>
+                          <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'work_type')} type="button">
+                            Work type
                           </button>
                           <button className="danger-secondary" disabled={event.voided} onClick={() => beginCorrection(event, 'void')} type="button">
                             Void

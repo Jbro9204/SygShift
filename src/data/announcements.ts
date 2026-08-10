@@ -25,13 +25,19 @@ const templateSchema = z.object({
 
 const recentAnnouncementSchema = z.object({
   id: z.string().uuid(),
+  rootAnnouncementId: z.string().uuid().optional(),
+  contentVersion: z.number().int().positive().optional().default(1),
   templateKey: z.string().nullable(),
+  templateFields: z.record(z.string(), z.unknown()).nullable().optional(),
   title: z.string(),
+  body: z.string().optional().default(''),
   kind: z.enum(['general', 'open_shift', 'overtime', 'event']),
   publishedAt: z.string().nullable(),
   expiresAt: z.string().nullable(),
   recipientRoles: z.array(appRoleSchema),
   requiresArmed: z.boolean(),
+  acknowledgmentMode: z.enum(['informational', 'required']).optional().default('informational'),
+  acknowledgmentDueAt: z.string().nullable().optional().default(null),
   createdBy: z.string(),
 })
 
@@ -82,6 +88,7 @@ export type AnnouncementField = z.infer<typeof fieldSchema>
 export type AnnouncementTemplate = z.infer<typeof templateSchema>
 export type AnnouncementComposer = z.infer<typeof composerSchema>
 export type AnnouncementPreview = z.infer<typeof previewSchema>
+export type RecentAnnouncement = z.infer<typeof recentAnnouncementSchema>
 export type AnnouncementBanner = z.infer<typeof announcementBannerSchema>
 export type AnnouncementBannerAudience = z.infer<typeof announcementBannerAudienceSchema>
 export type AnnouncementBannerManager = z.infer<typeof announcementBannerManagerSchema>
@@ -132,15 +139,41 @@ export async function previewAnnouncementTemplate(templateKey: string, fields: R
 export async function publishTemplatedAnnouncement(
   templateKey: string,
   fields: Record<string, string>,
-  options: { expiresAt?: string | null } = {},
-): Promise<AnnouncementPreview & { id: string }> {
-  const { data, error } = await getSupabaseClient().rpc('publish_templated_announcement', {
+  options: { dueAt?: string | null, expiresAt?: string | null, required?: boolean } = {},
+): Promise<AnnouncementPreview & { id: string, contentVersion: number, assignmentCount: number }> {
+  const { data, error } = await getSupabaseClient().rpc('publish_templated_announcement_with_acknowledgment', {
+    target_due_at: options.dueAt ?? null,
     target_expires_at: options.expiresAt ?? null,
     target_fields: fields,
+    target_required: options.required ?? false,
     target_template_key: templateKey,
   })
   if (error) throw new Error(error.message || 'This announcement could not be published.')
-  return previewSchema.extend({ id: z.string().uuid() }).parse(data)
+  return previewSchema.extend({
+    assignmentCount: z.number().int().nonnegative(),
+    contentVersion: z.number().int().positive(),
+    id: z.string().uuid(),
+  }).parse(data)
+}
+
+export async function reviseTemplatedAnnouncement(
+  announcementId: string,
+  fields: Record<string, string>,
+  options: { expiresAt?: string | null, required: boolean, dueAt?: string | null },
+): Promise<AnnouncementPreview & { id: string, contentVersion: number, assignmentCount: number }> {
+  const { data, error } = await getSupabaseClient().rpc('revise_templated_announcement', {
+    target_announcement_id: announcementId,
+    target_due_at: options.dueAt ?? null,
+    target_expires_at: options.expiresAt ?? null,
+    target_fields: fields,
+    target_required: options.required,
+  })
+  if (error) throw new Error(error.message || 'This announcement revision could not be published.')
+  return previewSchema.extend({
+    assignmentCount: z.number().int().nonnegative(),
+    contentVersion: z.number().int().positive(),
+    id: z.string().uuid(),
+  }).parse(data)
 }
 
 export async function getActiveAnnouncementBanner(): Promise<AnnouncementBanner | null> {

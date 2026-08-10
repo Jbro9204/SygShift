@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { CheckCircle2, Eye, EyeOff, KeyRound, Loader2, MessageSquareText, QrCode, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, Copy, Download, Eye, EyeOff, KeyRound, Loader2, MessageSquareText, QrCode, ShieldCheck } from 'lucide-react'
 import {
   getSessionContext,
   notifySessionContextChanged,
@@ -20,6 +20,7 @@ import {
   type MfaFactorSummary,
   type MfaPhoneEnrollment,
 } from '../data/mfa'
+import { generateMfaRecoveryCodes, recoverMfaWithCode } from '../data/mfaRecovery'
 import {
   clearRememberedDeviceOnThisBrowser,
   getCurrentTrustedDevices,
@@ -78,11 +79,12 @@ function readStoredTotpEnrollment(): MfaEnrollment | null {
     const raw = window.sessionStorage.getItem(TOTP_SETUP_STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<MfaEnrollment>
-    if (!parsed.factorId || !parsed.qrCode || !parsed.secret) return null
+    if (!parsed.factorId || !parsed.qrCode || !parsed.secret || !parsed.uri) return null
     return {
       factorId: parsed.factorId,
       qrCode: parsed.qrCode,
       secret: parsed.secret,
+      uri: parsed.uri,
     }
   } catch {
     return null
@@ -120,6 +122,11 @@ export function AccountSecurityPage() {
   const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false)
   const [rememberDevice, setRememberDevice] = useState(true)
   const [trustedDevices, setTrustedDevices] = useState<TrustedDevice[]>([])
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([])
+  const [recoveryCode, setRecoveryCode] = useState('')
+  const [showRecoveryEntry, setShowRecoveryEntry] = useState(false)
+  const [showRecoveryRegeneration, setShowRecoveryRegeneration] = useState(false)
+  const [recoveryVerificationCode, setRecoveryVerificationCode] = useState('')
 
   const returnPath = useMemo(() => {
     const state = location.state as AccountSecurityLocationState | null
@@ -457,6 +464,7 @@ export function AccountSecurityPage() {
 
     try {
       let verifiedMethod: MfaMethod = selectedMfaMethod ?? 'totp'
+      const completedNewEnrollment = Boolean(enrollment || phoneEnrollment)
 
       if (enrollment) {
         await verifyTotpEnrollment(enrollment.factorId, mfaCode)
@@ -491,6 +499,10 @@ export function AccountSecurityPage() {
       }
 
       const nextContext = await refreshContext()
+      if (completedNewEnrollment) {
+        const batch = await generateMfaRecoveryCodes()
+        setRecoveryCodes(batch.codes)
+      }
       setEnrollment(null)
       storeTotpEnrollment(null)
       setPhoneEnrollment(null)
@@ -504,7 +516,9 @@ export function AccountSecurityPage() {
       setCheckpointVersion((version) => version + 1)
       await refreshTrustedDevices()
 
-      if (!nextContext.mustChangePassword && !(nextContext.mfaRequired && !nextContext.hasMfa)) {
+      if (completedNewEnrollment) {
+        setMessage('MFA is active. Save your one-time recovery codes before continuing.')
+      } else if (!nextContext.mustChangePassword && !(nextContext.mfaRequired && !nextContext.hasMfa)) {
         setMessage(
           rememberDeviceFailed
             ? `${verifiedMethod === 'phone' ? 'Text message' : 'Authenticator'} verified. This device could not be remembered, but your workspace is opening.`
@@ -523,6 +537,71 @@ export function AccountSecurityPage() {
     } finally {
       setBusyAction(null)
     }
+  }
+
+  async function handleRecovery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErrorMessage(null)
+    setMessage(null)
+    setBusyAction('recover-mfa')
+    try {
+      await recoverMfaWithCode(recoveryCode)
+      clearRememberedDeviceOnThisBrowser()
+      setRecoveryCode('')
+      setShowRecoveryEntry(false)
+      setEnrollment(null)
+      storeTotpEnrollment(null)
+      await refreshContext()
+      setFactors(await listMfaFactors())
+      setSelectedMfaMethod('totp')
+      setMessage('Recovery code accepted. Set up a new authenticator now; the remaining codes in that set have been revoked.')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'The recovery code could not be used.')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function handleRegenerateRecoveryCodes(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErrorMessage(null)
+    setMessage(null)
+    setBusyAction('regenerate-recovery')
+    try {
+      const factor = verifiedTotpFactor ?? verifiedFactors[0]
+      if (!factor) throw new Error('No verified MFA method is available for identity confirmation.')
+      const challengeId = await createMfaChallenge(factor.id, factor.factorType)
+      await verifyMfaChallenge(factor.id, challengeId, recoveryVerificationCode, factor.factorType)
+      const batch = await generateMfaRecoveryCodes()
+      setRecoveryCodes(batch.codes)
+      setRecoveryVerificationCode('')
+      setShowRecoveryRegeneration(false)
+      setMessage('A new recovery-code set was created. All previous unused recovery codes are revoked.')
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Recovery codes could not be regenerated.')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function copyRecoveryCodes(): Promise<void> {
+    await navigator.clipboard.writeText(recoveryCodes.join('\n'))
+    setMessage('Recovery codes copied. Store them somewhere private and separate from this device.')
+  }
+
+  function downloadRecoveryCodes(): void {
+    const content = [
+      'SygShift one-time MFA recovery codes',
+      'Each code can be used once. Store these privately.',
+      '',
+      ...recoveryCodes,
+    ].join('\n')
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'sygshift-mfa-recovery-codes.txt'
+    anchor.click()
+    URL.revokeObjectURL(url)
   }
 
   if (!isSupabaseConfigured) return <Navigate to="/login" replace />
@@ -753,10 +832,28 @@ export function AccountSecurityPage() {
             {enrollment ? (
               <div className="mfa-setup">
                 <img src={enrollment.qrCode} alt="Authenticator setup QR code" />
-                <div>
-                  <strong>Can’t scan the QR code?</strong>
-                  <span>Enter this setup key manually:</span>
-                  <code>{enrollment.secret}</code>
+                <div className="mfa-setup__instructions">
+                  <strong>Setting up MFA on this phone?</strong>
+                  <span>
+                    Install or open Microsoft Authenticator, Google Authenticator, 1Password, Authy,
+                    or another TOTP-compatible authenticator app.
+                  </span>
+                  <a className="primary-action mfa-app-link" href={enrollment.uri}>Open authenticator app</a>
+                  <span>If the app does not open, copy this setup key and add it manually:</span>
+                  <div className="mfa-setup__key-row">
+                    <code>{enrollment.secret}</code>
+                    <button
+                      className="secondary-button secondary-button--small"
+                      onClick={() => void navigator.clipboard.writeText(enrollment.secret)}
+                      type="button"
+                    >
+                      <Copy aria-hidden="true" size={17} /> Copy key
+                    </button>
+                  </div>
+                  <small>
+                    Return to SygShift and enter the six-digit code from the authenticator app.
+                    The setup key will not be shown again after verification.
+                  </small>
                 </div>
               </div>
             ) : null}
@@ -856,6 +953,66 @@ export function AccountSecurityPage() {
                 </button>
               </form>
             ) : null}
+
+            {availableVerifiedFactors.length > 0 && !enrollment && !phoneEnrollment ? (
+              <div className="mfa-recovery-entry">
+                <button className="text-action" onClick={() => setShowRecoveryEntry((current) => !current)} type="button">
+                  {showRecoveryEntry ? 'Use authenticator instead' : 'Use a one-time recovery code'}
+                </button>
+                {showRecoveryEntry ? (
+                  <form className="mfa-form" onSubmit={handleRecovery}>
+                    <label className="field-label">
+                      <span>Recovery code</span>
+                      <input
+                        autoComplete="one-time-code"
+                        disabled={busyAction === 'recover-mfa'}
+                        onChange={(event) => setRecoveryCode(event.target.value.toUpperCase())}
+                        placeholder="SYG-XXXX-XXXX"
+                        required
+                        value={recoveryCode}
+                      />
+                    </label>
+                    <button className="primary-action" disabled={busyAction === 'recover-mfa'} type="submit">
+                      Use recovery code
+                    </button>
+                  </form>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {recoveryCodes.length > 0 ? (
+          <section className="security-panel recovery-code-panel" aria-labelledby="recovery-code-title">
+            <div>
+              <p className="eyebrow">One-time account recovery</p>
+              <h2 id="recovery-code-title">Save these recovery codes now.</h2>
+              <p>
+                Each code works once. SygShift stores only protected hashes, so this is the only time
+                the complete codes can be shown.
+              </p>
+            </div>
+            <div className="recovery-code-grid" aria-label="MFA recovery codes">
+              {recoveryCodes.map((code) => <code key={code}>{code}</code>)}
+            </div>
+            <div className="button-row">
+              <button className="secondary-button" onClick={() => void copyRecoveryCodes()} type="button">
+                <Copy aria-hidden="true" size={18} /> Copy all
+              </button>
+              <button className="secondary-button" onClick={downloadRecoveryCodes} type="button">
+                <Download aria-hidden="true" size={18} /> Download
+              </button>
+              <button
+                className="primary-action"
+                onClick={() => {
+                  setRecoveryCodes([])
+                  navigate(returnPath, { replace: true })
+                }}
+                type="button"
+              >
+                I saved these codes
+              </button>
+            </div>
           </section>
         ) : null}
 
@@ -903,7 +1060,42 @@ export function AccountSecurityPage() {
           </section>
         ) : null}
 
-        {isComplete ? (
+        {context?.mfaRequired && !needsMfa && recoveryCodes.length === 0 ? (
+          <section className="security-panel recovery-regeneration-panel">
+            <div>
+              <h2>Recovery codes</h2>
+              <p>
+                Generate a fresh set after confirming your identity with your current authenticator.
+                Existing unused codes will be revoked.
+              </p>
+            </div>
+            {!showRecoveryRegeneration ? (
+              <button className="secondary-button" onClick={() => setShowRecoveryRegeneration(true)} type="button">
+                Regenerate recovery codes
+              </button>
+            ) : (
+              <form className="mfa-form" onSubmit={handleRegenerateRecoveryCodes}>
+                <label className="field-label">
+                  <span>Current authenticator code</span>
+                  <input
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    maxLength={8}
+                    onChange={(event) => setRecoveryVerificationCode(event.target.value)}
+                    pattern="[0-9 ]{6,8}"
+                    required
+                    value={recoveryVerificationCode}
+                  />
+                </label>
+                <button className="primary-action" disabled={busyAction === 'regenerate-recovery'} type="submit">
+                  Verify and regenerate
+                </button>
+              </form>
+            )}
+          </section>
+        ) : null}
+
+        {isComplete && recoveryCodes.length === 0 ? (
           <section className="security-complete">
             <CheckCircle2 aria-hidden="true" size={34} />
             <div>

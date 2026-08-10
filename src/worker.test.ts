@@ -171,6 +171,9 @@ describe('Cloudflare Worker boundary', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({}), {
         headers: { 'content-type': 'application/json' },
       }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(0), {
+        headers: { 'content-type': 'application/json' },
+      }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ trustedDevicesRevoked: 2 }), {
         headers: { 'content-type': 'application/json' },
       }))

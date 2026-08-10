@@ -61,6 +61,7 @@ describe('MFA enrollment helpers', () => {
         totp: {
           qr_code: '<svg>new setup</svg>',
           secret: 'NEWSECRET',
+          uri: 'otpauth://totp/SygShift:test?secret=NEWSECRET&issuer=SygShift',
         },
       },
       error: null,
@@ -79,6 +80,7 @@ describe('MFA enrollment helpers', () => {
       factorId: 'new-factor',
       qrCode: 'data:image/svg+xml;utf-8,%3Csvg%3Enew%20setup%3C%2Fsvg%3E',
       secret: 'NEWSECRET',
+      uri: 'otpauth://totp/SygShift:test?secret=NEWSECRET&issuer=SygShift',
     })
   })
 
@@ -100,6 +102,7 @@ describe('MFA enrollment helpers', () => {
           totp: {
             qr_code: '<svg>retry setup</svg>',
             secret: 'RETRYSECRET',
+            uri: 'otpauth://totp/SygShift:test?secret=RETRYSECRET&issuer=SygShift',
           },
         },
         error: null,

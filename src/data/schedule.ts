@@ -52,6 +52,7 @@ const shiftSchema = z.object({
   requires_armed: z.boolean(),
   is_open: z.boolean(),
   is_overtime: z.boolean(),
+  work_type: z.enum(['post', 'training']).optional(),
   notes: z.string().nullable(),
   post: postSchema.nullable(),
   event: eventSchema.nullable(),
@@ -106,6 +107,11 @@ const createOpenShiftResultSchema = z.object({
   ends_at: z.string(),
   time_zone: z.string(),
 })
+
+const shiftWorkTypeMapSchema = z.array(z.object({
+  shiftId: z.string().uuid(),
+  workType: z.enum(['post', 'training']),
+}))
 
 const resolveReviewShiftResultSchema = z.object({
   schedule_id: z.string().uuid(),
@@ -231,6 +237,7 @@ export interface CreateOpenShiftInput {
   employeeId?: string | null
   availabilityOverrideNote?: string | null
   credentialOverrideNote?: string | null
+  workType?: 'post' | 'training'
 }
 
 export interface UpdateDraftShiftInput {
@@ -245,6 +252,7 @@ export interface UpdateDraftShiftInput {
   employeeId?: string | null
   availabilityOverrideNote?: string | null
   credentialOverrideNote?: string | null
+  workType?: 'post' | 'training'
 }
 
 export interface RemoveDraftShiftInput {
@@ -267,18 +275,23 @@ export interface EmployeeScheduleRow {
 }
 
 export async function getWeeklySchedule(weekStartsOn: string): Promise<WeeklySchedule | null> {
-  const { data, error } = await getSupabaseClient().rpc('get_weekly_schedule_payload', {
-    target_week_starts_on: weekStartsOn,
-  })
+  const [scheduleResult, workTypeResult] = await Promise.all([
+    getSupabaseClient().rpc('get_weekly_schedule_payload', { target_week_starts_on: weekStartsOn }),
+    getSupabaseClient().rpc('get_shift_work_type_map', { target_week_starts_on: weekStartsOn }),
+  ])
+  const { data, error } = scheduleResult
 
   if (error) throw new Error('The weekly schedule could not be loaded for this account.')
   if (!data) return null
 
   const schedule = scheduleSchema.parse(data)
+  const workTypes = workTypeResult.error ? [] : shiftWorkTypeMapSchema.parse(workTypeResult.data ?? [])
+  const workTypeByShift = new Map(workTypes.map((item) => [item.shiftId, item.workType]))
   return {
     ...schedule,
     shifts: schedule.shifts.map((shift) => ({
       ...shift,
+      work_type: workTypeByShift.get(shift.id) ?? shift.work_type,
       assignments: shift.assignments.filter((assignment) => assignment.status !== 'canceled'),
     })),
   }
@@ -305,7 +318,7 @@ export async function getImportedSchedulePreview(weekStartsOn: string): Promise<
 }
 
 export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Promise<CreateOpenShiftResult> {
-  const { data, error } = await getSupabaseClient().rpc('scheduler_create_open_shift', {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_create_typed_open_shift', {
     target_week_starts_on: input.weekStartsOn,
     target_post_id: input.mode === 'post' ? input.postId : null,
     event_name: input.mode === 'event' ? input.eventName?.trim() : null,
@@ -323,6 +336,7 @@ export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Pr
     target_employee_id: input.employeeId || null,
     target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
     target_credential_override_note: input.credentialOverrideNote?.trim() || null,
+    target_work_type: input.workType ?? 'post',
   })
 
   if (error) throw new Error(error.message || 'The open shift could not be created.')
@@ -340,7 +354,7 @@ export async function ensureScheduleDraft(weekStartsOn: string): Promise<WeeklyS
 }
 
 export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Promise<WeeklySchedule> {
-  const { data, error } = await getSupabaseClient().rpc('scheduler_update_draft_shift', {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_update_typed_draft_shift', {
     target_shift_id: input.shiftId,
     shift_operational_date: input.shiftDate,
     shift_start_time: input.startTime,
@@ -352,10 +366,15 @@ export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Pr
     target_employee_id: input.employeeId || null,
     target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
     target_credential_override_note: input.credentialOverrideNote?.trim() || null,
+    target_work_type: input.workType ?? 'post',
   })
 
   if (error) throw new Error(error.message || 'The draft shift could not be updated.')
-  return scheduleSchema.parse(data)
+  const schedule = scheduleSchema.parse(data)
+  return {
+    ...schedule,
+    shifts: schedule.shifts.map((shift) => shift.id === input.shiftId ? { ...shift, work_type: input.workType ?? 'post' } : shift),
+  }
 }
 
 export async function removeScheduleDraftShift(input: RemoveDraftShiftInput): Promise<WeeklySchedule> {
@@ -403,7 +422,7 @@ export async function copyScheduleWeekToDraft(input: {
   includeAssignments: boolean
   includeEvents: boolean
 }): Promise<CopyScheduleWeekResult> {
-  const { data, error } = await getSupabaseClient().rpc('replace_schedule_week_draft_from_revision', {
+  const { data, error } = await getSupabaseClient().rpc('replace_schedule_week_draft_with_work_types', {
     source_schedule_id: input.sourceScheduleId,
     destination_week_starts_on: input.destinationWeekStartsOn,
     include_assignments: input.includeAssignments,
