@@ -71,7 +71,70 @@ const payrollExceptionSchema = z.enum([
   'invalid_sequence',
   'pending_correction',
   'zero_paid_minutes',
+  'multiple_work_segments',
 ])
+
+const timekeepingExceptionPolicySchema = z.enum(['reviewable', 'hard'])
+const timekeepingReviewStatusSchema = z.enum([
+  'ready',
+  'unresolved',
+  'corrected',
+  'approved_exception',
+  'dismissed_false_positive',
+])
+const timekeepingExceptionResolutionActionSchema = z.enum([
+  'approved_exception',
+  'dismissed_false_positive',
+  'reopened',
+])
+
+const timekeepingExceptionDetailSchema = z.object({
+  code: payrollExceptionSchema,
+  policy: timekeepingExceptionPolicySchema,
+  fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  status: timekeepingReviewStatusSchema.exclude(['ready', 'corrected']),
+  resolutionId: z.string().uuid().nullable().optional(),
+  resolvedBy: z.string().uuid().nullable().optional(),
+  resolvedAt: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
+})
+
+const timekeepingEventTimelineItemSchema = z.object({
+  id: z.string().uuid(),
+  kind: timeEventKindSchema,
+  recordedAt: z.string(),
+  effectiveAt: z.string(),
+  shiftId: z.string().uuid().nullable(),
+})
+
+const timekeepingWorkedSegmentSchema = z.object({
+  segmentNumber: z.number().int().positive(),
+  startsAt: z.string(),
+  endsAt: z.string().nullable(),
+  paidMinutes: z.number().int().nonnegative(),
+  breakMinutes: z.number().int().nonnegative(),
+})
+
+const timekeepingUnpaidGapSchema = z.object({
+  startsAt: z.string(),
+  endsAt: z.string(),
+  minutes: z.number().int().nonnegative(),
+})
+
+const timekeepingExceptionResolutionSchema = z.object({
+  id: z.string().uuid(),
+  employeeId: z.string().uuid(),
+  employeeName: z.string().nullable().optional(),
+  shiftId: z.string().uuid().nullable(),
+  operationalDate: z.string(),
+  exceptionCode: payrollExceptionSchema,
+  occurrenceFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  action: timekeepingExceptionResolutionActionSchema,
+  reason: z.string(),
+  resolvedBy: z.string().uuid(),
+  resolvedByName: z.string().nullable().optional(),
+  resolvedAt: z.string(),
+})
 
 const payrollRulesSchema = z.object({
   timeZone: z.string(),
@@ -120,6 +183,13 @@ const timekeepingReviewRowSchema = z.object({
   isOvertime: z.boolean(),
   payrollReady: z.boolean(),
   exceptionCodes: z.array(payrollExceptionSchema),
+  detectedExceptionCodes: z.array(payrollExceptionSchema).optional().default([]),
+  exceptionDetails: z.array(timekeepingExceptionDetailSchema).optional().default([]),
+  reviewStatus: timekeepingReviewStatusSchema.optional().default('ready'),
+  eventTimeline: z.array(timekeepingEventTimelineItemSchema).optional().default([]),
+  workedSegments: z.array(timekeepingWorkedSegmentSchema).optional().default([]),
+  unpaidGaps: z.array(timekeepingUnpaidGapSchema).optional().default([]),
+  unpaidGapMinutes: z.number().int().nonnegative().optional().default(0),
   payrollNotes: z.array(z.string()).default([]),
 })
 
@@ -269,6 +339,7 @@ const timekeepingReviewSchema = z.object({
   }),
   rows: z.array(timekeepingReviewRowSchema),
   pendingCorrections: z.array(pendingCorrectionSchema),
+  exceptionResolutionHistory: z.array(timekeepingExceptionResolutionSchema).optional().default([]),
 })
 
 const correctionReviewResultSchema = z.object({
@@ -297,6 +368,7 @@ const payrollExportBatchSchema = z.object({
 
 const payrollExportDetailSchema = z.object({
   batch: payrollExportBatchSchema,
+  exceptionResolutionHistory: z.array(timekeepingExceptionResolutionSchema).optional().default([]),
   rows: z.array(timekeepingReviewRowSchema),
 })
 
@@ -353,6 +425,9 @@ export type TimekeepingEvent = z.infer<typeof timekeepingEventSchema>
 export type TimekeepingDashboard = z.infer<typeof timekeepingDashboardSchema>
 export type TimekeepingState = 'off_clock' | 'working' | 'on_break'
 export type PayrollException = z.infer<typeof payrollExceptionSchema>
+export type TimekeepingExceptionDetail = z.infer<typeof timekeepingExceptionDetailSchema>
+export type TimekeepingExceptionResolution = z.infer<typeof timekeepingExceptionResolutionSchema>
+export type TimekeepingExceptionResolutionAction = z.infer<typeof timekeepingExceptionResolutionActionSchema>
 export type TimekeepingReview = z.infer<typeof timekeepingReviewSchema>
 export type TimekeepingReviewRow = z.infer<typeof timekeepingReviewRowSchema>
 export type PendingCorrection = z.infer<typeof pendingCorrectionSchema>
@@ -821,6 +896,28 @@ export async function reviewTimeEventCorrection(input: {
   })
   if (error) throw new Error(error.message || 'The correction decision could not be recorded.')
   return correctionReviewResultSchema.parse(data)
+}
+
+export async function resolveTimekeepingException(input: {
+  employeeId: string
+  shiftId: string | null
+  operationalDate: string
+  exceptionCode: PayrollException
+  occurrenceFingerprint: string
+  action: TimekeepingExceptionResolutionAction
+  reason: string
+}): Promise<TimekeepingExceptionResolution> {
+  const { data, error } = await getSupabaseClient().rpc('resolve_timekeeping_exception', {
+    target_action: input.action,
+    target_employee_id: input.employeeId,
+    target_exception_code: input.exceptionCode,
+    target_occurrence_fingerprint: input.occurrenceFingerprint,
+    target_operational_date: input.operationalDate,
+    target_reason: input.reason,
+    target_shift_id: input.shiftId,
+  })
+  if (error) throw new Error(error.message || 'The payroll exception decision could not be saved.')
+  return timekeepingExceptionResolutionSchema.parse(data)
 }
 
 export async function supervisorRecordTimeEvent(input: {

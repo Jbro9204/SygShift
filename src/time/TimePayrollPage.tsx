@@ -679,6 +679,7 @@ export function TimePayrollPage() {
         review: {
           ...detail,
           fromDate: detail.batch.fromDate,
+          exceptionResolutionHistory: detail.exceptionResolutionHistory,
           operationalTimeZone: 'America/Denver',
           payrollRules: rulesQuery.data,
           pendingCorrections: [],
@@ -719,6 +720,7 @@ export function TimePayrollPage() {
         review: {
           ...detail,
           fromDate: detail.batch.fromDate,
+          exceptionResolutionHistory: detail.exceptionResolutionHistory,
           operationalTimeZone: 'America/Denver',
           payrollRules: rulesQuery.data,
           pendingCorrections: [],

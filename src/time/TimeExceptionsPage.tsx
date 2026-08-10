@@ -17,15 +17,18 @@ import {
   getPayrollRules,
   getTimekeepingReview,
   payrollHours,
+  resolveTimekeepingException,
   reviewTimeEventCorrection,
   type PayrollException,
   type PendingCorrection,
+  type TimekeepingExceptionDetail,
+  type TimekeepingExceptionResolutionAction,
   type TimekeepingReviewRow,
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { TimeMaintenanceWorkbench, type TimeMaintenanceFocusRequest } from '../pages/TimePage'
-import { canManageTime, canViewTeamTime } from './timePermissions'
+import { canManageTime, canResolveTimeExceptions, canViewTeamTime } from './timePermissions'
 import { workedTimePayrollReview } from './timePayroll'
 import { completedPayrollPeriod, currentPayrollPeriod, formatUsDateKey, shiftPayrollPeriod, type TimePeriod } from './timeRules'
 import {
@@ -65,6 +68,16 @@ const exceptionCopy: Record<PayrollException | 'pending_correction', { label: st
     help: 'The row has no payable minutes after review. Correct the times or void the bad punch.',
     label: 'Zero paid time',
   },
+  multiple_work_segments: {
+    help: 'The employee has more than one complete work segment. Confirm the unpaid gap and approve it only when the punches accurately describe the day.',
+    label: 'Multiple work segments',
+  },
+}
+
+const resolutionActionCopy: Record<TimekeepingExceptionResolutionAction, string> = {
+  approved_exception: 'Approve valid exception',
+  dismissed_false_positive: 'Dismiss false positive',
+  reopened: 'Reopen decision',
 }
 
 function rulesForPeriod(rules?: Awaited<ReturnType<typeof getPayrollRules>>): Parameters<typeof currentPayrollPeriod>[1] {
@@ -116,6 +129,7 @@ function exceptionFilterFromSearch(value: string | null): ExceptionFilter {
     || value === 'missing_clock_out'
     || value === 'invalid_sequence'
     || value === 'zero_paid_minutes'
+    || value === 'multiple_work_segments'
     || value === 'pending_correction'
   ) {
     return value
@@ -171,6 +185,12 @@ export function TimeExceptionsPage() {
   const [searchParams] = useSearchParams()
   const [focusRequest, setFocusRequest] = useState<TimeMaintenanceFocusRequest | null>(null)
   const [selectedExceptionRow, setSelectedExceptionRow] = useState<TimekeepingReviewRow | null>(null)
+  const [correctionMode, setCorrectionMode] = useState(false)
+  const [resolutionReason, setResolutionReason] = useState('')
+  const [pendingResolution, setPendingResolution] = useState<{
+    action: TimekeepingExceptionResolutionAction
+    detail: TimekeepingExceptionDetail
+  } | null>(null)
   const defaultPeriod = completedPayrollPeriod()
   const [fromDate, setFromDate] = useState(defaultPeriod.fromDate)
   const [throughDate, setThroughDate] = useState(defaultPeriod.throughDate)
@@ -185,6 +205,7 @@ export function TimeExceptionsPage() {
   })
   const teamAllowed = canViewTeamTime(sessionQuery.data)
   const manageAllowed = canManageTime(sessionQuery.data)
+  const resolveAllowed = canResolveTimeExceptions(sessionQuery.data)
   const rulesQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && teamAllowed,
     queryFn: getPayrollRules,
@@ -229,6 +250,34 @@ export function TimeExceptionsPage() {
       ])
     },
   })
+  const resolutionMutation = useMutation({
+    mutationFn: (input: {
+      action: TimekeepingExceptionResolutionAction
+      detail: TimekeepingExceptionDetail
+      reason: string
+      row: TimekeepingReviewRow
+    }) => resolveTimekeepingException({
+      action: input.action,
+      employeeId: input.row.employeeId,
+      exceptionCode: input.detail.code,
+      occurrenceFingerprint: input.detail.fingerprint,
+      operationalDate: input.row.operationalDate,
+      reason: input.reason,
+      shiftId: input.row.shiftId,
+    }),
+    onSuccess: async () => {
+      setPendingResolution(null)
+      setResolutionReason('')
+      closeExceptionModal()
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['time-exceptions-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-payroll-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['timekeeping-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-command-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-team-review'] }),
+      ])
+    },
+  })
 
   const review = useMemo(() => workedTimePayrollReview(reviewQuery.data), [reviewQuery.data])
   const exceptionRows = useMemo(() => filterExceptionRows(review?.rows ?? [], filter), [filter, review?.rows])
@@ -246,6 +295,9 @@ export function TimeExceptionsPage() {
 
   function focusRow(row: TimekeepingReviewRow) {
     setSelectedExceptionRow(row)
+    setCorrectionMode(false)
+    setResolutionReason('')
+    setPendingResolution(null)
     setFocusRequest({
       employeeId: row.employeeId,
       fromDate: row.operationalDate,
@@ -257,6 +309,9 @@ export function TimeExceptionsPage() {
   function closeExceptionModal() {
     setSelectedExceptionRow(null)
     setFocusRequest(null)
+    setCorrectionMode(false)
+    setResolutionReason('')
+    setPendingResolution(null)
   }
 
   if (!isSupabaseConfigured) {
@@ -316,6 +371,11 @@ export function TimeExceptionsPage() {
           <p>{decisionMutation.error.message}</p>
         </TimeAlertCard>
       ) : null}
+      {resolutionMutation.isError ? (
+        <TimeAlertCard icon={AlertTriangle} title="Exception decision could not be saved" tone="danger">
+          <p>{resolutionMutation.error.message}</p>
+        </TimeAlertCard>
+      ) : null}
 
       <section className="time-card time-team-controls" aria-label="Exception date range and filters">
         <TimeSectionHeader
@@ -336,6 +396,7 @@ export function TimeExceptionsPage() {
               <option value="missing_clock_out">Missing clock-out</option>
               <option value="invalid_sequence">Invalid sequence</option>
               <option value="zero_paid_minutes">Zero paid time</option>
+              <option value="multiple_work_segments">Multiple work segments</option>
               <option value="pending_correction">Pending correction</option>
             </select>
           </label>
@@ -373,7 +434,7 @@ export function TimeExceptionsPage() {
       <section className="time-card time-team-panel" aria-labelledby="exception-list-title">
         <TimeSectionHeader
           eyebrow="Payroll blockers"
-          summary="Click Work events to jump the correction workbench to the employee and day that needs attention."
+          summary="Open a blocker to review its punches, worked segments, unpaid gaps, and the rule that needs a decision."
           title="Rows needing review"
         />
         {reviewQuery.isPending ? (
@@ -401,8 +462,8 @@ export function TimeExceptionsPage() {
                   </div>
                   {row.payrollNotes.length > 0 ? <p>{row.payrollNotes.join(' ')}</p> : null}
                 </div>
-                {manageAllowed ? (
-                  <TimeButton onClick={() => focusRow(row)} variant="secondary">Work events</TimeButton>
+                {manageAllowed || resolveAllowed ? (
+                  <TimeButton onClick={() => focusRow(row)} variant="secondary">Review blocker</TimeButton>
                 ) : (
                   <span>View only</span>
                 )}
@@ -434,15 +495,56 @@ export function TimeExceptionsPage() {
         </section>
       ) : null}
 
-      {manageAllowed ? (
+      {review && (
+        review.rows.some((row) => row.reviewStatus === 'corrected' || row.reviewStatus === 'approved_exception' || row.reviewStatus === 'dismissed_false_positive')
+        || review.exceptionResolutionHistory.length > 0
+      ) ? (
+        <section className="time-card time-team-panel" aria-labelledby="resolved-exception-title">
+          <TimeSectionHeader
+            eyebrow="Audit history"
+            summary="Resolved findings stay visible without changing or deleting the original punches."
+            title="Resolved this period"
+          />
+          <div className="time-exception-card-list">
+            {review.rows
+              .filter((row) => row.reviewStatus === 'corrected' || row.reviewStatus === 'approved_exception' || row.reviewStatus === 'dismissed_false_positive')
+              .map((row) => (
+                <article className="time-exception-card time-exception-card--resolved" key={`resolved-${row.employeeId}-${row.operationalDate}-${row.shiftId ?? row.locationName}`}>
+                  <div>
+                    <TimeStatusBadge tone="good">
+                      {row.reviewStatus === 'corrected' ? 'Corrected timekeeping error' : row.reviewStatus === 'approved_exception' ? 'Approved valid exception' : 'Dismissed false positive'}
+                    </TimeStatusBadge>
+                    <strong>{row.employeeName}</strong>
+                    <span>{formatUsDateKey(row.operationalDate)} · {rowLocation(row)}</span>
+                    <small>{payrollHours(row.paidMinutes)} paid hr · {payrollHours(row.unpaidGapMinutes)} unpaid-gap hr</small>
+                  </div>
+                </article>
+              ))}
+            {review.exceptionResolutionHistory.map((resolution) => (
+              <article className="time-exception-card time-exception-card--history" key={resolution.id}>
+                <div>
+                  <TimeStatusBadge tone={resolution.action === 'reopened' ? 'warning' : 'good'}>{resolutionActionCopy[resolution.action]}</TimeStatusBadge>
+                  <strong>{exceptionCopy[resolution.exceptionCode].label}</strong>
+                  <span>{formatUsDateKey(resolution.operationalDate)} · {resolution.resolvedByName ?? 'Authorized administrator'}</span>
+                  <p>{resolution.reason}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {manageAllowed || resolveAllowed ? (
         selectedExceptionRow ? (
           <ModalDialog
             className="modal-dialog--wide modal-dialog--time-maintenance"
             description={`${selectedExceptionRow.employeeName} · ${formatUsDateKey(selectedExceptionRow.operationalDate)} · ${rowLocation(selectedExceptionRow)}`}
+            busy={resolutionMutation.isPending}
+            busyLabel="Recording the audited exception decision..."
             onClose={closeExceptionModal}
-            title="Fix payroll exception"
+            title={correctionMode ? 'Correct payroll exception' : 'Review payroll exception'}
           >
-            <div className="time-maintenance-modal-body">
+            {correctionMode && manageAllowed ? <div className="time-maintenance-modal-body">
               <TimeMaintenanceWorkbench
                 defaultDate={selectedExceptionRow.operationalDate}
                 defaultPeriod={{ fromDate: selectedExceptionRow.operationalDate, throughDate: selectedExceptionRow.operationalDate }}
@@ -454,7 +556,95 @@ export function TimeExceptionsPage() {
                 headingSummary="Add missing punches, change times, void mistakes, or correct the Site/Post for this payroll blocker."
                 headingTitle="Fix punch records"
               />
-            </div>
+            </div> : (
+              <div className="time-exception-review">
+                <div className="time-exception-review__summary">
+                  <article>
+                    <span>Scheduled shift</span>
+                    <strong>{selectedExceptionRow.scheduledStartsAt && selectedExceptionRow.scheduledEndsAt
+                      ? `${formatOperationalDateTime(selectedExceptionRow.scheduledStartsAt, { timeZone: selectedExceptionRow.timeZone })} - ${formatOperationalDateTime(selectedExceptionRow.scheduledEndsAt, { timeZone: selectedExceptionRow.timeZone })}`
+                      : 'No linked schedule block'}</strong>
+                  </article>
+                  <article><span>Actual worked</span><strong>{payrollHours(selectedExceptionRow.paidMinutes)} hr</strong></article>
+                  <article><span>Unpaid gaps</span><strong>{payrollHours(selectedExceptionRow.unpaidGapMinutes)} hr</strong></article>
+                  <article><span>Review state</span><strong>{selectedExceptionRow.reviewStatus.replaceAll('_', ' ')}</strong></article>
+                </div>
+
+                <section className="time-exception-review__section">
+                  <h3>Punch timeline</h3>
+                  <div className="time-exception-timeline">
+                    {selectedExceptionRow.eventTimeline.map((event) => (
+                      <article key={event.id}>
+                        <TimeStatusBadge tone={event.kind === 'clock_in' || event.kind === 'break_end' ? 'good' : 'neutral'}>{event.kind.replaceAll('_', ' ')}</TimeStatusBadge>
+                        <strong>{formatOperationalDateTime(event.effectiveAt, { includeTimeZoneName: true, timeZone: selectedExceptionRow.timeZone })}</strong>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="time-exception-review__section">
+                  <h3>Calculated work segments</h3>
+                  <div className="time-exception-segments">
+                    {selectedExceptionRow.workedSegments.map((segment) => (
+                      <article key={segment.segmentNumber}>
+                        <strong>Segment {segment.segmentNumber}</strong>
+                        <span>{formatOperationalDateTime(segment.startsAt, { timeZone: selectedExceptionRow.timeZone })} - {segment.endsAt ? formatOperationalDateTime(segment.endsAt, { timeZone: selectedExceptionRow.timeZone }) : 'Open'}</span>
+                        <small>{payrollHours(segment.paidMinutes)} paid hr{segment.breakMinutes > 0 ? ` · ${payrollHours(segment.breakMinutes)} unpaid break hr` : ''}</small>
+                      </article>
+                    ))}
+                    {selectedExceptionRow.unpaidGaps.map((gap) => (
+                      <article className="time-exception-segments__gap" key={`${gap.startsAt}-${gap.endsAt}`}>
+                        <strong>Unpaid gap</strong>
+                        <span>{formatOperationalDateTime(gap.startsAt, { timeZone: selectedExceptionRow.timeZone })} - {formatOperationalDateTime(gap.endsAt, { timeZone: selectedExceptionRow.timeZone })}</span>
+                        <small>{payrollHours(gap.minutes)} unpaid hr</small>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="time-exception-review__section">
+                  <h3>Rules requiring review</h3>
+                  <div className="time-exception-rule-list">
+                    {selectedExceptionRow.exceptionDetails.map((detail) => (
+                      <article className={detail.policy === 'hard' ? 'time-exception-rule time-exception-rule--hard' : 'time-exception-rule'} key={`${detail.code}-${detail.fingerprint}`}>
+                        <div>
+                          <TimeStatusBadge tone={detail.policy === 'hard' ? 'danger' : 'warning'}>{detail.policy === 'hard' ? 'Hard blocker' : 'Human review allowed'}</TimeStatusBadge>
+                          <strong>{exceptionCopy[detail.code].label}</strong>
+                          <p>{exceptionCopy[detail.code].help}</p>
+                          {detail.reason ? <small>Last decision note: {detail.reason}</small> : null}
+                        </div>
+                        {detail.policy === 'reviewable' && resolveAllowed ? (
+                          <div className="time-exception-rule__actions">
+                            <TimeButton onClick={() => setPendingResolution({ action: 'dismissed_false_positive', detail })} variant="secondary">Dismiss false positive</TimeButton>
+                            <TimeButton onClick={() => setPendingResolution({ action: 'approved_exception', detail })} variant="primary">Approve valid exception</TimeButton>
+                          </div>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                {pendingResolution ? (
+                  <section className="time-exception-decision" aria-live="polite">
+                    <h3>Confirm: {resolutionActionCopy[pendingResolution.action]}</h3>
+                    <p>This applies only to this exact set of punches. Any later punch change requires a new review.</p>
+                    <label>
+                      <span>Required reason</span>
+                      <textarea autoFocus maxLength={1000} minLength={8} onChange={(event) => setResolutionReason(event.target.value)} placeholder="Explain what happened and why this record is valid or why the finding is incorrect." rows={4} value={resolutionReason} />
+                    </label>
+                    <div className="time-exception-decision__actions">
+                      <TimeButton onClick={() => { setPendingResolution(null); setResolutionReason('') }} variant="secondary">Cancel</TimeButton>
+                      <TimeButton disabled={resolutionReason.trim().length < 8 || resolutionMutation.isPending} onClick={() => resolutionMutation.mutate({ action: pendingResolution.action, detail: pendingResolution.detail, reason: resolutionReason.trim(), row: selectedExceptionRow })} variant="primary">Confirm audited decision</TimeButton>
+                    </div>
+                  </section>
+                ) : null}
+
+                <div className="time-exception-review__footer">
+                  <TimeButton onClick={closeExceptionModal} variant="secondary">Leave unresolved</TimeButton>
+                  {manageAllowed ? <TimeButton onClick={() => setCorrectionMode(true)} variant="secondary">Correct punches</TimeButton> : null}
+                </div>
+              </div>
+            )}
           </ModalDialog>
         ) : null
       ) : null}

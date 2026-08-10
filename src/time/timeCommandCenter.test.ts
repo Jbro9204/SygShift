@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SessionContext } from '../data/auth'
 import type { TeamAttendanceSummary, TimekeepingDashboard, TimekeepingReview } from '../data/timekeeping'
 import { buildTimeCommandCenterModel, canViewTeamTime } from './timeCommandCenter'
-import { canUseOwnTimeClock, canViewOwnTime } from './timePermissions'
+import { canResolveTimeExceptions, canUseOwnTimeClock, canViewOwnTime } from './timePermissions'
 
 const dashboard: TimekeepingDashboard = {
   eligibleShifts: [],
@@ -28,6 +28,7 @@ const dashboard: TimekeepingDashboard = {
 }
 
 const review: TimekeepingReview = {
+  exceptionResolutionHistory: [],
   fromDate: '2026-07-26',
   operationalTimeZone: 'America/Denver',
   payrollRules: {
@@ -66,6 +67,9 @@ const review: TimekeepingReview = {
     eventCount: 1,
     eventName: null,
     exceptionCodes: ['missing_clock_out'],
+    detectedExceptionCodes: ['missing_clock_out'],
+    exceptionDetails: [],
+    eventTimeline: [],
     firstClockIn: '2026-07-30T14:00:00.000Z',
     grossMinutes: 660,
     isOvertime: false,
@@ -76,6 +80,7 @@ const review: TimekeepingReview = {
     paidMinutes: 630,
     payrollNotes: [],
     payrollReady: false,
+    reviewStatus: 'unresolved',
     postName: 'Recruiting and Licensure',
     regularMinutes: 630,
     requiresArmed: false,
@@ -89,9 +94,12 @@ const review: TimekeepingReview = {
     siteName: 'Administrative',
     timeOffMinutes: 0,
     timeZone: 'America/Denver',
+    unpaidGapMinutes: 0,
+    unpaidGaps: [],
     username: 'zward',
     weekEndsOn: '2026-08-01',
     weekStartsOn: '2026-07-26',
+    workedSegments: [],
   }],
   serverTimestamp: '2026-07-30T16:00:00.000Z',
   summary: {
@@ -189,5 +197,7 @@ describe('time command center model', () => {
     expect(canViewTeamTime({ ...guardSession, role: 'supervisor' })).toBe(false)
     expect(canUseOwnTimeClock({ ...guardSession, permissions: ['time.punch'] })).toBe(true)
     expect(canViewTeamTime({ ...guardSession, permissions: ['time.view'] })).toBe(true)
+    expect(canResolveTimeExceptions(guardSession)).toBe(false)
+    expect(canResolveTimeExceptions({ ...guardSession, hasMfa: true, permissions: ['time.resolve_exceptions'] })).toBe(true)
   })
 })

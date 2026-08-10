@@ -628,9 +628,51 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
   }
 }
 
+function buildExceptionDecisionSheet(review: TimekeepingReview): WorkbookSheet {
+  const titleRows: WorkbookCell[][] = [
+    ['Payroll Exception Decisions'],
+    ['Purpose', 'Audited administrator decisions for exact timekeeping occurrences. Original punches remain unchanged.'],
+    [],
+  ]
+  const header = ['Employee', 'Date', 'Finding', 'Decision', 'Reason', 'Resolved By', 'Resolved At', 'Occurrence ID']
+  const rows = review.exceptionResolutionHistory.map((resolution) => [
+    resolution.employeeName ?? resolution.employeeId,
+    formatUsDateKey(resolution.operationalDate),
+    resolution.exceptionCode.replaceAll('_', ' '),
+    resolution.action === 'approved_exception'
+      ? 'Approved valid exception'
+      : resolution.action === 'dismissed_false_positive'
+        ? 'Dismissed false positive'
+        : 'Reopened',
+    resolution.reason,
+    resolution.resolvedByName ?? resolution.resolvedBy,
+    dateTimeText(resolution.resolvedAt),
+    resolution.occurrenceFingerprint.slice(0, 16),
+  ])
+  const headerRowIndex = titleRows.length
+
+  return {
+    centerColumns: [1, 3, 6, 7],
+    columnWidths: [25, 14, 25, 25, 52, 25, 23, 20],
+    filterRowIndex: headerRowIndex,
+    freezeRows: headerRowIndex + 1,
+    headerRows: [headerRowIndex],
+    mergedCells: ['A1:H1', 'B2:H2'],
+    metadataRows: [1],
+    name: 'Exception Decisions',
+    rows: [
+      ...titleRows,
+      header,
+      ...(rows.length > 0 ? rows : [['No audited exception decisions in this range.']]),
+    ],
+    titleRows: [0],
+    wrapColumns: [2, 3, 4],
+  }
+}
+
 function buildEmployeeSheets(review: TimekeepingReview, events: PayrollAccountabilityEvent[]): WorkbookSheet[] {
   const rows = review.rows
-  const usedNames = new Set<string>(['payroll summary', 'payroll review', 'hours variance', 'site summary'])
+  const usedNames = new Set<string>(['payroll summary', 'payroll review', 'hours variance', 'site summary', 'exception decisions'])
   const employeeIds = new Set([...rows.map((row) => row.employeeId), ...events.map((event) => event.employeeId)])
 
   return [...employeeIds].map((employeeId) => {
@@ -720,6 +762,7 @@ export function buildPayrollWorkbookSheets(input: PayrollWorkbookInput): Workboo
     buildDiscrepancySheet(input.review.rows, events),
     buildVarianceSheet(input.review.rows),
     buildSiteSummarySheet(input.review.rows, events),
+    buildExceptionDecisionSheet(input.review),
     ...buildEmployeeSheets(input.review, events),
   ]
 }

@@ -10487,6 +10487,206 @@
   min-width: 116px;
 }
 
+.time-exception-card--resolved,
+.time-exception-card--history {
+  grid-template-columns: 1fr;
+  background: #fbfdf9;
+  border-color: #cadccc;
+}
+
+.time-exception-card--history {
+  background: #fffdf8;
+  border-color: #e1d8c8;
+}
+
+.time-exception-review {
+  display: grid;
+  gap: 20px;
+  padding: 22px;
+  background: #f7f4ed;
+}
+
+.time-exception-review__summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.time-exception-review__summary article {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-height: 94px;
+  padding: 15px;
+  background: #ffffff;
+  border: 1px solid #ddd4c5;
+  border-top: 3px solid #b88731;
+  border-radius: 10px;
+}
+
+.time-exception-review__summary span,
+.time-exception-review__section h3,
+.time-exception-decision label > span {
+  color: #655b4e;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.time-exception-review__summary strong {
+  color: #211e19;
+  font-size: 17px;
+  line-height: 1.35;
+  text-transform: capitalize;
+}
+
+.time-exception-review__section {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  background: #ffffff;
+  border: 1px solid #ddd4c5;
+  border-radius: 10px;
+}
+
+.time-exception-review__section h3,
+.time-exception-decision h3,
+.time-exception-decision p {
+  margin: 0;
+}
+
+.time-exception-timeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.time-exception-timeline article {
+  display: grid;
+  gap: 7px;
+  min-width: 190px;
+  padding: 12px;
+  background: #faf8f3;
+  border: 1px solid #e3dbce;
+  border-radius: 9px;
+}
+
+.time-exception-timeline strong {
+  color: #302b24;
+  font-size: 14px;
+}
+
+.time-exception-segments,
+.time-exception-rule-list {
+  display: grid;
+  gap: 10px;
+}
+
+.time-exception-segments {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.time-exception-segments article {
+  display: grid;
+  gap: 5px;
+  padding: 13px;
+  background: #f4faf6;
+  border: 1px solid #c8dfcf;
+  border-radius: 9px;
+}
+
+.time-exception-segments__gap {
+  background: #fff8eb !important;
+  border-color: #ead09d !important;
+}
+
+.time-exception-segments span,
+.time-exception-segments small,
+.time-exception-rule p,
+.time-exception-rule small,
+.time-exception-decision p {
+  color: #655e54;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.time-exception-rule {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 15px;
+  background: #fffaf1;
+  border: 1px solid #e6cf9f;
+  border-left: 4px solid #c98a25;
+  border-radius: 9px;
+}
+
+.time-exception-rule--hard {
+  background: #fff4f1;
+  border-color: #e5bbb4;
+  border-left-color: #ae4338;
+}
+
+.time-exception-rule strong,
+.time-exception-rule p,
+.time-exception-rule small {
+  display: block;
+  margin: 6px 0 0;
+}
+
+.time-exception-rule__actions,
+.time-exception-decision__actions,
+.time-exception-review__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.time-exception-rule__actions .time-button {
+  min-width: 190px;
+}
+
+.time-exception-decision {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  background: #fffaf1;
+  border: 1px solid #d9b66f;
+  border-left: 4px solid #b88731;
+  border-radius: 10px;
+}
+
+.time-exception-decision label {
+  display: grid;
+  gap: 7px;
+}
+
+.time-exception-decision textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 104px;
+  padding: 12px;
+  color: #27231d;
+  background: #ffffff;
+  border: 1px solid #d0c5b4;
+  border-radius: 9px;
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.time-exception-review__footer {
+  padding-top: 2px;
+}
+
+.time-exception-review__footer .time-button,
+.time-exception-decision__actions .time-button {
+  min-width: 170px;
+}
+
 .time-maintenance-workbench {
   margin-top: 16px;
   overflow: hidden;
@@ -12235,6 +12435,19 @@
     width: 100%;
   }
 
+  .time-exception-review__summary,
+  .time-exception-segments {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .time-exception-rule {
+    grid-template-columns: 1fr;
+  }
+
+  .time-exception-rule__actions .time-button {
+    flex: 1 1 210px;
+  }
+
   .time-command-grid--period {
     grid-template-columns: 1fr;
   }
@@ -12508,6 +12721,30 @@
 
   .payroll-blocker-modal__summary {
     grid-template-columns: 1fr;
+  }
+
+  .time-exception-review {
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .time-exception-review__summary,
+  .time-exception-segments {
+    grid-template-columns: 1fr;
+  }
+
+  .time-exception-timeline article,
+  .time-exception-rule__actions .time-button,
+  .time-exception-decision__actions .time-button,
+  .time-exception-review__footer .time-button {
+    width: 100%;
+  }
+
+  .time-exception-rule__actions,
+  .time-exception-decision__actions,
+  .time-exception-review__footer {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .schedule-admin-summary,

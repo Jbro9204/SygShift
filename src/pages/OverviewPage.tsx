@@ -140,7 +140,7 @@ export function OverviewPage() {
           </p>
         </div>
         <div className="overview-intro-actions">
-          <div className="overview-time-actions" aria-label="Quick time actions">
+          <div className="overview-time-actions" role="group" aria-label="Quick time actions">
             {ownTimeAllowed && timeAction.requiresTimePage ? (
               <Link className="primary-action overview-clock-action" to="/time/my-time">
                 <Timer aria-hidden="true" size={19} />

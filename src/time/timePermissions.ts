@@ -25,12 +25,17 @@ export function canViewTeamTime(session: SessionContext | null | undefined): boo
   return (
     hasTimePermission(session, 'time.view')
     || hasTimePermission(session, 'time.manage')
+    || hasTimePermission(session, 'time.resolve_exceptions')
     || hasTimePermission(session, 'time.export_payroll')
   )
 }
 
 export function canManageTime(session: SessionContext | null | undefined): boolean {
   return hasTimePermission(session, 'time.manage')
+}
+
+export function canResolveTimeExceptions(session: SessionContext | null | undefined): boolean {
+  return hasTimePermission(session, 'time.resolve_exceptions')
 }
 
 export function canExportPayroll(session: SessionContext | null | undefined): boolean {

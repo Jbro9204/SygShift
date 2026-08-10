@@ -18,6 +18,7 @@ import {
 } from './timePayroll'
 
 const cleanReview: TimekeepingReview = {
+  exceptionResolutionHistory: [],
   fromDate: '2026-07-12',
   operationalTimeZone: 'America/Denver',
   pendingCorrections: [],
@@ -29,6 +30,9 @@ const cleanReview: TimekeepingReview = {
     eventCount: 4,
     eventName: null,
     exceptionCodes: [],
+    detectedExceptionCodes: [],
+    exceptionDetails: [],
+    eventTimeline: [],
     firstClockIn: '2026-07-12T14:00:00.000Z',
     grossMinutes: 510,
     isOvertime: false,
@@ -39,6 +43,7 @@ const cleanReview: TimekeepingReview = {
     paidMinutes: 480,
     payrollNotes: [],
     payrollReady: true,
+    reviewStatus: 'ready',
     postName: 'Administration',
     regularMinutes: 480,
     requiresArmed: false,
@@ -52,9 +57,12 @@ const cleanReview: TimekeepingReview = {
     siteName: 'Administrative',
     timeOffMinutes: 0,
     timeZone: 'America/Denver',
+    unpaidGapMinutes: 0,
+    unpaidGaps: [],
     username: 'jbrown',
     weekEndsOn: '2026-07-25',
     weekStartsOn: '2026-07-12',
+    workedSegments: [],
   }],
   serverTimestamp: '2026-07-30T16:00:00.000Z',
   summary: {
@@ -301,11 +309,12 @@ describe('payroll export readiness', () => {
       review: cleanReview,
     })
 
-    expect(sheets.map((sheet) => sheet.name).slice(0, 4)).toEqual([
+    expect(sheets.map((sheet) => sheet.name).slice(0, 5)).toEqual([
       'Payroll Summary',
       'Payroll Review',
       'Hours Variance',
       'Site Summary',
+      'Exception Decisions',
     ])
     expect(sheets[0].rows[8]).toEqual([
       'Employee',
@@ -336,6 +345,76 @@ describe('payroll export readiness', () => {
       'Status',
       'Review Notes',
     ])
+  })
+
+  it('exports a reviewed medical-appointment split shift without inventing paid time', () => {
+    const fingerprint = 'a'.repeat(64)
+    const medicalReview: TimekeepingReview = {
+      ...cleanReview,
+      exceptionResolutionHistory: [{
+        action: 'approved_exception',
+        employeeId: cleanReview.rows[0].employeeId,
+        employeeName: cleanReview.rows[0].employeeName,
+        exceptionCode: 'multiple_work_segments',
+        id: '73000000-0000-4000-8000-000000000099',
+        occurrenceFingerprint: fingerprint,
+        operationalDate: '2026-07-12',
+        reason: 'Medical appointment; unpaid gap verified by the administrator.',
+        resolvedAt: '2026-07-13T01:00:00.000Z',
+        resolvedBy: '73000000-0000-4000-8000-000000000008',
+        resolvedByName: 'Payroll Administrator',
+        shiftId: cleanReview.rows[0].shiftId,
+      }],
+      rows: [{
+        ...cleanReview.rows[0],
+        breakMinutes: 0,
+        detectedExceptionCodes: ['multiple_work_segments'],
+        exceptionCodes: [],
+        exceptionDetails: [{
+          code: 'multiple_work_segments',
+          fingerprint,
+          policy: 'reviewable',
+          reason: 'Medical appointment; unpaid gap verified by the administrator.',
+          status: 'approved_exception',
+        }],
+        eventCount: 4,
+        eventTimeline: [
+          { effectiveAt: '2026-07-12T14:00:00.000Z', id: '73000000-0000-4000-8000-000000000011', kind: 'clock_in', recordedAt: '2026-07-12T14:00:00.000Z', shiftId: null },
+          { effectiveAt: '2026-07-12T17:00:00.000Z', id: '73000000-0000-4000-8000-000000000012', kind: 'clock_out', recordedAt: '2026-07-12T17:00:00.000Z', shiftId: null },
+          { effectiveAt: '2026-07-12T19:00:00.000Z', id: '73000000-0000-4000-8000-000000000013', kind: 'clock_in', recordedAt: '2026-07-12T19:00:00.000Z', shiftId: null },
+          { effectiveAt: '2026-07-12T22:00:00.000Z', id: '73000000-0000-4000-8000-000000000014', kind: 'clock_out', recordedAt: '2026-07-12T22:00:00.000Z', shiftId: null },
+        ],
+        firstClockIn: '2026-07-12T14:00:00.000Z',
+        grossMinutes: 480,
+        lastClockOut: '2026-07-12T22:00:00.000Z',
+        paidMinutes: 360,
+        payrollReady: true,
+        regularMinutes: 360,
+        reviewStatus: 'approved_exception',
+        unpaidGapMinutes: 120,
+        unpaidGaps: [{ endsAt: '2026-07-12T19:00:00.000Z', minutes: 120, startsAt: '2026-07-12T17:00:00.000Z' }],
+        workedSegments: [
+          { breakMinutes: 0, endsAt: '2026-07-12T17:00:00.000Z', paidMinutes: 180, segmentNumber: 1, startsAt: '2026-07-12T14:00:00.000Z' },
+          { breakMinutes: 0, endsAt: '2026-07-12T22:00:00.000Z', paidMinutes: 180, segmentNumber: 2, startsAt: '2026-07-12T19:00:00.000Z' },
+        ],
+      }],
+      summary: {
+        ...cleanReview.summary,
+        grossMinutes: 480,
+        paidMinutes: 360,
+        regularMinutes: 360,
+      },
+    }
+
+    expect(exportableWorkedTimeRows(medicalReview.rows)).toHaveLength(1)
+    expect(exportableWorkedTimeRows(medicalReview.rows)[0].paidMinutes).toBe(360)
+    expect(payrollLockBlocker(medicalReview)).toBe('')
+
+    const sheets = buildPayrollWorkbookSheets({ exportType: 'Preview', review: medicalReview })
+    const decisionSheet = sheets.find((sheet) => sheet.name === 'Exception Decisions')
+    expect(sheets[0].rows[9]?.[4]).toBe(6)
+    expect(decisionSheet?.rows[4]).toContain('Approved valid exception')
+    expect(decisionSheet?.rows[4]).toContain('Medical appointment; unpaid gap verified by the administrator.')
   })
 
   it('writes worksheet elements in Excel-compatible schema order', async () => {
