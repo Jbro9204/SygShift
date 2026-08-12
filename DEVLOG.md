@@ -35,6 +35,8 @@ deployment status, or major workflow assumptions change.
 - Kept schedule and builder permission boundaries intact while extending the production database payloads.
 - Applied and verified production migration `20260812153000_schedule_name_disambiguation.sql`.
 - Full validation passed: 42 test files, 204 tests, type checking, lint, and production build.
+- Deployed Cloudflare Worker version `245945a4-2071-4f5b-b57b-84e34b308263`.
+- Verified production health, readiness, Schedule route delivery, and the live login surface without browser console errors.
 
 ### New User Invites permission
 
