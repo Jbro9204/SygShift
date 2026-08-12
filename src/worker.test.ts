@@ -118,6 +118,112 @@ describe('Cloudflare Worker boundary', () => {
     expect(payload.requestId).toBe(response.headers.get('x-request-id'))
   })
 
+  it.each([
+    '/api/v1/admin/users/login-emails',
+    '/api/v1/admin/users/10000000-0000-4000-8000-000000000010/login-email',
+    '/api/v1/admin/users/10000000-0000-4000-8000-000000000010/welcome-email',
+  ])('requires the effective New User Invites permission for %s', async (pathname) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      employee_id: '10000000-0000-4000-8000-000000000001',
+      username: 'admin',
+      display_name: 'Admin User',
+      role: 'admin',
+      has_mfa: true,
+      permissions: ['admin.users.manage'],
+    }), { headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request(`https://app.sygshift.example${pathname}`, {
+        body: '{}',
+        headers: { authorization: 'Bearer token' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), configuredEnvironment),
+    )
+    const payload = await response.json() as { error: string }
+
+    expect(response.status).toBe(403)
+    expect(payload.error).toBe('new_user_invites_permission_required')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+
+  it('allows an MFA-verified invitation manager to send the approved welcome email', async () => {
+    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employee_id: '10000000-0000-4000-8000-000000000002',
+        username: 'invitemanager',
+        display_name: 'Invite Manager',
+        role: 'scheduler',
+        has_mfa: true,
+        permissions: ['admin.users.invite'],
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employeeId: targetEmployeeId,
+        employeeNumber: 'SYG-1100',
+        jobTitle: 'Guard',
+        username: 'employee',
+        authEmail: 'employee@sygilant.us',
+        contactEmail: 'employee@example.com',
+        displayName: 'Example Employee',
+        role: 'guard',
+        employmentType: 'hourly',
+        status: 'active',
+        existingAuthUserId: null,
+      }), { headers: { 'content-type': 'application/json' } }))
+    const send = vi.fn().mockResolvedValue({ messageId: 'welcome-message' })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/welcome-email`, {
+        body: '{}',
+        headers: { authorization: 'Bearer token' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        EMAIL: { send },
+        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+      }),
+    )
+    const payload = await response.json() as { email: string; username: string }
+
+    expect(response.status).toBe(200)
+    expect(payload).toMatchObject({ email: 'employee@example.com', username: 'employee' })
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ to: 'employee@example.com' })
+    vi.unstubAllGlobals()
+  })
+
+  it('does not let invitation-only access mutate account security controls', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      employee_id: '10000000-0000-4000-8000-000000000002',
+      username: 'invitemanager',
+      display_name: 'Invite Manager',
+      role: 'scheduler',
+      has_mfa: true,
+      permissions: ['admin.users.invite'],
+    }), { headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/admin/users/10000000-0000-4000-8000-000000000010/account', {
+        body: '{}',
+        headers: { authorization: 'Bearer token' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), configuredEnvironment),
+    )
+
+    expect(response.status).toBe(403)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+
   it('requires an authenticated admin session before resetting employee MFA', async () => {
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/admin/users/10000000-0000-4000-8000-000000000010/mfa-reset', {
@@ -148,9 +254,6 @@ describe('Cloudflare Worker boundary', () => {
         has_mfa: true,
         permissions: ['admin.users.manage'],
       }), { headers: { 'content-type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ users: [] }), {
-        headers: { 'content-type': 'application/json' },
-      }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         employeeId: targetEmployeeId,
         employeeNumber: 'SYG-1050',

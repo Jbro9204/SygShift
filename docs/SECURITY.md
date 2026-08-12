@@ -29,6 +29,7 @@
 - HTML and API responses are not cached; fingerprinted static assets may retain Cloudflare's asset caching behavior.
 - Every Worker response receives an opaque request ID for troubleshooting without echoing request content.
 - Camera, microphone, geolocation, payment, and USB browser permissions are disabled by default.
+- Welcome and login-instruction email delivery requires the effective `admin.users.invite` permission and an MFA-verified session. Hiding the controls in the interface is not treated as authorization; every invitation endpoint enforces the permission in the Worker.
 - Framing is same-origin only. A future company hub should mount SygShift on the same origin or add one exact reviewed hub origin; wildcard framing is prohibited.
 - Local development omits HSTS and CSP so hot reload works, while retaining the remaining response-hardening headers.
 

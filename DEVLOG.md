@@ -23,6 +23,25 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/12/2026
+
+### New User Invites permission
+
+- Added the configurable `New User Invites` permission (`admin.users.invite`).
+- Separated Welcome and Login Instructions email delivery from broad login-account management access.
+- Added a dedicated onboarding-email card in each employee's Users & Access dialog.
+- Added `Send new user invites` as the protected batch action for active employees who still need login accounts.
+- Kept login creation, password resets, account disabling, MFA resets, and remembered-device controls under `Manage Login Access`.
+- Enforced the new permission on all three Worker email routes, including individual welcome emails, individual login-instruction emails, and batch new-user invitations.
+- Effective per-person denies are honored for these email routes even when the employee has an Admin app role.
+- Granted the new permission to the protected system Admin role so existing Admin workflows continue after deployment.
+- Updated the Users & Access directory permission boundary so custom roles or individual grants can use the invitation workflow without receiving login-security controls.
+- Added regression tests for denied delivery, authorized delivery, route coverage, catalog registration, interface separation, and prevention of account-security changes by invite-only users.
+- Applied and verified production migration `20260812133000_new_user_invites_permission.sql`.
+- Full validation passed: 41 test files, 199 tests, type checking, lint, and production build.
+- Cloudflare startup analysis passed with the current Wrangler runtime.
+- Deployed Cloudflare Worker version `2fb56772-a659-4c83-bf52-83f80f03a536`.
+
 ## 07/31/2026
 
 ### Directory and Licensing Center workflow cleanup
@@ -333,14 +352,13 @@ deployment status, or major workflow assumptions change.
 Run these before deploy when code changes:
 
 ```powershell
-$env:Path = 'C:\Users\Jordan\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin;' + $env:Path
-& 'C:\Users\Jordan\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\pnpm.cmd' run lint
-& 'C:\Users\Jordan\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\pnpm.cmd' test -- --run
-& 'C:\Users\Jordan\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\pnpm.cmd' run build
+pnpm lint
+pnpm test
+pnpm build
 ```
 
 Deploy with:
 
 ```powershell
-& 'C:\Users\Jordan\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\pnpm.cmd' exec wrangler deploy --keep-vars
+pnpm exec wrangler deploy --keep-vars
 ```

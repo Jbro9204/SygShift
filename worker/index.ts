@@ -260,13 +260,23 @@ async function callRpc<T>(
   })
 }
 
-async function requireAdminMfa(request: Request, environment: Environment): Promise<{
+async function requireAdminMfa(
+  request: Request,
+  environment: Environment,
+  requiredPermission: 'admin.users.manage' | 'admin.users.invite' = 'admin.users.manage',
+): Promise<{
   config: NonNullable<ReturnType<typeof configuredSupabase>>
   context: SessionContext
 }> {
   const result = await requireVerifiedOperationsSession(request, environment, null, 'admin_mfa_required')
-  if (result.context.role !== 'admin' && !result.context.permissions?.includes('admin.users.manage')) {
-    throw new Response(JSON.stringify({ error: 'admin_mfa_required' }), {
+  const hasRequiredPermission = result.context.permissions?.includes(requiredPermission) === true
+  const hasLegacyAdminAccess = requiredPermission === 'admin.users.manage' && result.context.role === 'admin'
+
+  if (!hasRequiredPermission && !hasLegacyAdminAccess) {
+    const error = requiredPermission === 'admin.users.invite'
+      ? 'new_user_invites_permission_required'
+      : 'admin_mfa_required'
+    throw new Response(JSON.stringify({ error }), {
       headers: { 'content-type': 'application/json; charset=utf-8' },
       status: 403,
     })
@@ -792,9 +802,16 @@ async function handleAccountMfaRecoveryApi(request: Request, environment: Enviro
 }
 
 async function handleAdminUsersApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  const url = new URL(request.url)
+  const isNewUserInviteRequest = url.pathname === '/api/v1/admin/users/login-emails'
+    || /^\/api\/v1\/admin\/users\/[0-9a-f-]{36}\/(?:login-email|welcome-email)$/i.test(url.pathname)
   let admin: Awaited<ReturnType<typeof requireAdminMfa>>
   try {
-    admin = await requireAdminMfa(request, environment)
+    admin = await requireAdminMfa(
+      request,
+      environment,
+      isNewUserInviteRequest ? 'admin.users.invite' : 'admin.users.manage',
+    )
   } catch (error) {
     if (error instanceof Response) {
       const payload = await error.json().catch(() => ({ error: 'auth_failed' })) as { error?: string }
@@ -803,11 +820,16 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
     throw error
   }
 
-  const url = new URL(request.url)
   const body = await readJsonBody(request)
-  const usersByEmail = new Map(
-    (await listAuthUsers(admin.config)).map((user) => [String(user.email).toLowerCase(), user]),
-  )
+  let usersByEmail: Map<string, AuthUser> | null = null
+  const getUsersByEmail = async () => {
+    if (!usersByEmail) {
+      usersByEmail = new Map(
+        (await listAuthUsers(admin.config)).map((user) => [String(user.email).toLowerCase(), user]),
+      )
+    }
+    return usersByEmail
+  }
 
   if (url.pathname === '/api/v1/admin/users/provision-missing') {
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
@@ -823,7 +845,7 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
 
     for (const target of targets) {
       try {
-        const result = await provisionOne(admin.config, target, generateTemporaryPassword(), usersByEmail)
+        const result = await provisionOne(admin.config, target, generateTemporaryPassword(), await getUsersByEmail())
         results.push({
           action: result.action,
           displayName: target.displayName,
@@ -862,7 +884,7 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
 
     for (const target of targets) {
       try {
-        const result = await provisionOne(admin.config, target, generateTemporaryPassword(), usersByEmail)
+        const result = await provisionOne(admin.config, target, generateTemporaryPassword(), await getUsersByEmail())
         await sendLoginInstructions(environment, target, result.password)
         sent.push({
           displayName: target.displayName,
@@ -910,7 +932,7 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       }
     }
 
-    const result = await provisionOne(admin.config, target, suppliedPassword || generateTemporaryPassword(), usersByEmail)
+    const result = await provisionOne(admin.config, target, suppliedPassword || generateTemporaryPassword(), await getUsersByEmail())
     await sendLoginInstructions(environment, target, result.password)
 
     return json({
@@ -1024,7 +1046,7 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
   }
 
   const password = suppliedPassword || generateTemporaryPassword()
-  const result = await provisionOne(admin.config, target, password, usersByEmail)
+  const result = await provisionOne(admin.config, target, password, await getUsersByEmail())
 
   return json({
     action: result.action,

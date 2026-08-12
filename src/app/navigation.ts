@@ -77,7 +77,7 @@ export const navigationGroups: NavigationGroup[] = [
         path: '/users',
         icon: UserCog,
         roles: ['admin'],
-        permissions: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.separate', 'admin.users.delete'],
+        permissions: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.separate', 'admin.users.delete'],
       },
       {
         label: 'Roles & Permissions',

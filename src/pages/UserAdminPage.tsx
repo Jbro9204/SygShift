@@ -309,6 +309,7 @@ function ManageUserModal({
   canEditAdminRole,
   canEditBasic,
   canManageLogin,
+  canSendNewUserInvites,
   canSeparate,
   employee,
   onClose,
@@ -317,6 +318,7 @@ function ManageUserModal({
   canEditAdminRole: boolean
   canEditBasic: boolean
   canManageLogin: boolean
+  canSendNewUserInvites: boolean
   canSeparate: boolean
   employee: AdminUser
   onClose: () => void
@@ -451,7 +453,7 @@ function ManageUserModal({
             <div className="account-control-card">
               <AccountStatusBadge user={employee} />
               <AccountActivityPanel user={employee} />
-              <p>This permission level can view account state, but cannot create, reset, disable, or email login access.</p>
+              <p>This permission level can view account state, but cannot create, reset, or disable login access.</p>
             </div>
           ) : null}
           {canManageLogin ? (
@@ -484,15 +486,6 @@ function ManageUserModal({
             >
               <KeyRound aria-hidden="true" size={18} />
               {employee.accountStatus === 'not_created' ? 'Create login' : 'Reset temporary password'}
-            </button>
-            <button
-              className="secondary-button"
-              disabled={!canManageLogin || loginEmailMutation.isPending || employee.status !== 'active'}
-              onClick={() => loginEmailMutation.mutate()}
-              type="button"
-            >
-              <Mail aria-hidden="true" size={18} />
-              Email login instructions
             </button>
             {employee.account ? (
               <button
@@ -566,21 +559,31 @@ function ManageUserModal({
           {revokeTrustedDevicesMutation.isError ? <div className="inline-alert" role="alert">{revokeTrustedDevicesMutation.error.message}</div> : null}
           {resetMfaMutation.isError ? <div className="inline-alert" role="alert">{resetMfaMutation.error.message}</div> : null}
 
+          {canSendNewUserInvites ? (
           <div className="account-control-card account-control-card--welcome">
             <div>
-              <span className="account-control-kicker">Welcome email</span>
-              <h4>Send the SygShift introduction</h4>
+              <span className="account-control-kicker">New user invites</span>
+              <h4>Send approved onboarding emails</h4>
             </div>
             <p>
-              Sends the branded welcome message only. It does not create a login, reset a
-              password, or include temporary credentials.
+              Welcome emails introduce SygShift. Login instructions prepare access and deliver a
+              one-time temporary password through the approved branded template.
             </p>
             <p>
               Recipient: <strong>{onFileEmail ?? 'No email on file'}</strong>
             </p>
             <button
               className="secondary-button"
-              disabled={!canManageLogin || welcomeEmailMutation.isPending || employee.status !== 'active' || !onFileEmail}
+              disabled={loginEmailMutation.isPending || employee.status !== 'active' || !onFileEmail}
+              onClick={() => loginEmailMutation.mutate()}
+              type="button"
+            >
+              <Mail aria-hidden="true" size={18} />
+              {loginEmailMutation.isPending ? 'Sending instructions…' : 'Email login instructions'}
+            </button>
+            <button
+              className="secondary-button"
+              disabled={welcomeEmailMutation.isPending || employee.status !== 'active' || !onFileEmail}
               onClick={() => welcomeEmailMutation.mutate()}
               type="button"
             >
@@ -590,6 +593,7 @@ function ManageUserModal({
             {employee.status !== 'active' ? <small>Only active employees can receive welcome emails.</small> : null}
             {!onFileEmail ? <small>Add a personal or company email before sending.</small> : null}
           </div>
+          ) : null}
 
           {welcomeEmailMessage ? <div className="form-feedback form-feedback--success" role="status">{welcomeEmailMessage}</div> : null}
           {welcomeEmailMutation.isError ? <div className="inline-alert" role="alert">{welcomeEmailMutation.error.message}</div> : null}
@@ -742,6 +746,7 @@ export function UserAdminPage() {
   const hasPermission = (permission: string) => sessionContext?.role === 'admin' || Boolean(sessionContext?.permissions.includes(permission))
   const canEditBasic = hasPermission('admin.users.basic') || hasPermission('admin.users.manage')
   const canManageLogin = hasPermission('admin.users.manage')
+  const canSendNewUserInvites = Boolean(sessionContext?.permissions.includes('admin.users.invite'))
   const canSeparate = hasPermission('admin.users.separate')
   const canDeleteUsers = sessionContext?.role === 'admin' && hasPermission('admin.users.delete')
   const canEditAdminRole = sessionContext?.role === 'admin'
@@ -865,14 +870,14 @@ export function UserAdminPage() {
                 <button className="secondary-button" onClick={() => setCreating(true)} type="button"><Plus aria-hidden="true" size={18} /> Add employee</button>
               ) : null}
               {canManageLogin ? (
-                <>
                 <button className="primary-action" disabled={bulkProvisionMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkProvisionMutation.mutate()} type="button">
                   <KeyRound aria-hidden="true" size={18} /> Create missing logins
                 </button>
+              ) : null}
+              {canSendNewUserInvites ? (
                 <button className="secondary-button" disabled={bulkLoginEmailMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkLoginEmailMutation.mutate()} type="button">
-                  <Mail aria-hidden="true" size={18} /> Email new logins
+                  <Mail aria-hidden="true" size={18} /> Send new user invites
                 </button>
-                </>
               ) : null}
             </div>
           </section>
@@ -917,7 +922,7 @@ export function UserAdminPage() {
                     <div role="cell"><AccountActivitySummary user={user} /></div>
                     <div role="cell">
                       <button className="secondary-button secondary-button--small" onClick={() => setSelectedUserId(user.id)} type="button">
-                        <UserCog aria-hidden="true" size={17} /> {canEditBasic || canManageLogin || canSeparate || canDeleteUsers ? 'Manage' : 'View'}
+                        <UserCog aria-hidden="true" size={17} /> {canEditBasic || canManageLogin || canSendNewUserInvites || canSeparate || canDeleteUsers ? 'Manage' : 'View'}
                       </button>
                     </div>
                   </div>
@@ -1006,6 +1011,7 @@ export function UserAdminPage() {
           canEditAdminRole={canEditAdminRole}
           canEditBasic={canEditBasic}
           canManageLogin={canManageLogin}
+          canSendNewUserInvites={canSendNewUserInvites}
           canSeparate={canSeparate}
           employee={selectedUser}
           onClose={() => setSelectedUserId(null)}
