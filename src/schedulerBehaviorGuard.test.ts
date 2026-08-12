@@ -20,6 +20,10 @@ const atomicWeekCopyMigration = readFileSync(
   join(root, 'supabase', 'migrations', '20260803183000_schedule_week_copy_atomic_replacement.sql'),
   'utf8',
 )
+const scheduleNameDisambiguationMigration = readFileSync(
+  join(root, 'supabase', 'migrations', '20260812153000_schedule_name_disambiguation.sql'),
+  'utf8',
+)
 
 describe('scheduler behavior guardrails', () => {
   it('closes the assignment modal after Save assignment succeeds', () => {
@@ -108,6 +112,16 @@ describe('scheduler behavior guardrails', () => {
 
     expect(schedulerBoardStyles).toContain('grid-template-columns: repeat(7, minmax(0, 1fr))')
     expect(schedulerBoardStyles).toContain('overflow-x: hidden')
+  })
+
+  it('keeps schedule employees identifiable when preferred names are ambiguous', () => {
+    expect(scheduleData).toContain('scheduleEmployeeName(employee)')
+    expect(scheduleData).toContain('employee_number: z.string().nullable()')
+    expect(schedulePage).toContain('employee.employee_number')
+    expect(scheduleNameDisambiguationMigration).toContain("'employee_number', employee.employee_number")
+    expect(scheduleNameDisambiguationMigration).toContain("public.has_effective_permission('schedule.view')")
+    expect(scheduleNameDisambiguationMigration).toContain('viewer_assignment.employee_id = viewer_employee_id')
+    expect(scheduleNameDisambiguationMigration).toContain('private.can_manage_schedule_drafts()')
   })
 
   it('keeps historical schedule weeks visible without counting them as actionable openings', () => {

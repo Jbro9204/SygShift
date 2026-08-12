@@ -1,12 +1,14 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 import { formatDualTimeRange } from '../lib/time'
+import { employeeScheduleDisplayName, employeeScheduleGivenName } from '../lib/employeeName'
 
 const assignedEmployeeSchema = z.object({
   id: z.string().uuid(),
   first_name: z.string(),
   last_name: z.string(),
   preferred_name: z.string().nullable(),
+  employee_number: z.string().nullable(),
 })
 
 const assignmentOverrideSchema = z.object({
@@ -90,6 +92,7 @@ const builderOptionsSchema = z.object({
     first_name: z.string(),
     last_name: z.string(),
     preferred_name: z.string().nullable(),
+    employee_number: z.string().nullable(),
     role: z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin']),
     employment_type: z.enum(['hourly', 'salary', 'flex']),
     has_armed_guard_credential: z.boolean(),
@@ -170,8 +173,16 @@ export function compareScheduleBuilderEmployeesByFirstName(
   left: ScheduleBuilderEmployee,
   right: ScheduleBuilderEmployee,
 ): number {
-  const leftFirstName = left.preferred_name?.trim() || left.first_name.trim()
-  const rightFirstName = right.preferred_name?.trim() || right.first_name.trim()
+  const leftFirstName = employeeScheduleGivenName({
+    firstName: left.first_name,
+    lastName: left.last_name,
+    preferredName: left.preferred_name,
+  })
+  const rightFirstName = employeeScheduleGivenName({
+    firstName: right.first_name,
+    lastName: right.last_name,
+    preferredName: right.preferred_name,
+  })
 
   return employeeNameCollator.compare(leftFirstName, rightFirstName)
     || employeeNameCollator.compare(left.last_name.trim(), right.last_name.trim())
@@ -563,5 +574,17 @@ export function shiftTimeRange(shift: ScheduleShift): string {
 
 export function assignmentName(assignment: ScheduleShift['assignments'][number]): string {
   const employee = assignment.employee
-  return `${employee.preferred_name || employee.first_name} ${employee.last_name}`
+  return scheduleEmployeeName(employee)
+}
+
+export function scheduleEmployeeName(employee: {
+  first_name: string
+  last_name: string
+  preferred_name: string | null
+}): string {
+  return employeeScheduleDisplayName({
+    firstName: employee.first_name,
+    lastName: employee.last_name,
+    preferredName: employee.preferred_name,
+  })
 }

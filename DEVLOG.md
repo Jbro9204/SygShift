@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 08/12/2026
 
+### Schedule name disambiguation
+
+- Updated Schedule and Scheduler employee names so a one-character preferred name is never shown as an ambiguous initial-only identity.
+- Employees with a normal preferred name continue to use it; for example, `Zachary` with preferred name `Zach` still appears as `Zach Ward`.
+- Employees with a one-character preferred name now include the full first name and preference; for example, `Jainique` with preferred name `J` appears as `Jainique (J) Lee`.
+- Applied the same rule to shift cards, assignment dialogs, employee selectors, staffing suggestions, and employee-specific training assignments.
+- Added employee numbers to scheduling selectors and selected-assignment details as a second identity check when employees have similar names.
+- Kept schedule and builder permission boundaries intact while extending the production database payloads.
+- Applied and verified production migration `20260812153000_schedule_name_disambiguation.sql`.
+- Full validation passed: 42 test files, 204 tests, type checking, lint, and production build.
+
 ### New User Invites permission
 
 - Added the configurable `New User Invites` permission (`admin.users.invite`).

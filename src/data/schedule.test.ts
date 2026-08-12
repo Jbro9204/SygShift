@@ -39,6 +39,7 @@ const siteShift: ScheduleShift = {
       first_name: 'Alexandra',
       last_name: 'Rivera',
       preferred_name: 'Alex',
+      employee_number: 'SYG-1001',
     },
   }],
 }
@@ -76,6 +77,7 @@ describe('schedule presentation', () => {
         first_name: 'Michael',
         last_name: 'Hinz',
         preferred_name: null,
+        employee_number: 'SYG-1002',
         role: 'scheduler',
         employment_type: 'hourly',
         has_armed_guard_credential: false,
@@ -85,6 +87,7 @@ describe('schedule presentation', () => {
         first_name: 'Zachary',
         last_name: 'Ward',
         preferred_name: 'Zach',
+        employee_number: 'SYG-1003',
         role: 'recruiting_licensing',
         employment_type: 'hourly',
         has_armed_guard_credential: false,
@@ -94,6 +97,7 @@ describe('schedule presentation', () => {
         first_name: 'Jordan',
         last_name: 'Brown',
         preferred_name: null,
+        employee_number: 'SYG-1004',
         role: 'admin',
         employment_type: 'salary',
         has_armed_guard_credential: false,
@@ -103,6 +107,7 @@ describe('schedule presentation', () => {
         first_name: 'Jordan',
         last_name: 'Adams',
         preferred_name: null,
+        employee_number: 'SYG-1005',
         role: 'guard',
         employment_type: 'flex',
         has_armed_guard_credential: true,
@@ -133,6 +138,18 @@ describe('schedule presentation', () => {
 
   it('uses a preferred name when one is recorded', () => {
     expect(assignmentName(siteShift.assignments[0])).toBe('Alex Rivera')
+  })
+
+  it('expands a one-letter preferred name in live schedule assignments', () => {
+    expect(assignmentName({
+      ...siteShift.assignments[0],
+      employee: {
+        ...siteShift.assignments[0].employee,
+        first_name: 'Jainique',
+        last_name: 'Lee',
+        preferred_name: 'J',
+      },
+    })).toBe('Jainique (J) Lee')
   })
 
   it('groups imported source shifts by workbook context label', () => {

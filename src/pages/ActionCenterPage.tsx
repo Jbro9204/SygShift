@@ -23,7 +23,7 @@ import {
   type EmployeeActionCenter,
   type TrainingAction,
 } from '../data/actionCenter'
-import { getScheduleBuilderOptions } from '../data/schedule'
+import { getScheduleBuilderOptions, scheduleEmployeeName } from '../data/schedule'
 import { getSites } from '../data/workforce'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
@@ -212,7 +212,7 @@ function TrainingEditor({ onClose, onPublished }: { onClose: () => void; onPubli
         <label className="form-field form-field--wide"><span>Description</span><textarea name="description" rows={3} /></label>
         <label className="form-field form-field--wide"><span>Completion instructions</span><textarea name="instructions" required rows={4} /></label>
         <fieldset className="training-audience"><legend>Assign by role</legend>{['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'].map((role) => <label className="check-field" key={role}><input name="roles" type="checkbox" value={role} />{role.replace('_', ' ')}</label>)}</fieldset>
-        <label className="form-field"><span>Assign specific employees</span><select multiple name="employeeIds" size={6}>{optionsQuery.data?.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.preferred_name || employee.first_name} {employee.last_name}</option>)}</select></label>
+        <label className="form-field"><span>Assign specific employees</span><select multiple name="employeeIds" size={6}>{optionsQuery.data?.employees.map((employee) => <option key={employee.id} value={employee.id}>{scheduleEmployeeName(employee)}{employee.employee_number ? ` · ${employee.employee_number}` : ''}</option>)}</select></label>
         <label className="form-field"><span>Assign scheduled sites</span><select multiple name="siteIds" size={6}>{sitesQuery.data?.filter((site) => site.active).map((site) => <option key={site.id} value={site.id}>{site.code ? `${site.code} · ` : ''}{site.name}</option>)}</select></label>
         <label className="form-field form-field--wide"><span>Assign employee states</span><input name="states" placeholder="CA, CO" /></label>
         <p className="form-help form-field--wide">At least one employee, role, site, or state audience is required. Publishing an existing training item creates a new version and supersedes incomplete prior assignments.</p>

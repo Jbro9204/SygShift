@@ -27,6 +27,7 @@ import {
   queueSchedulePublishedNotification,
   removeScheduleDraftShift,
   resolveScheduleReviewShift,
+  scheduleEmployeeName,
   scheduleRows,
   shiftOperationalDate,
   shiftTimeRange,
@@ -167,11 +168,12 @@ function selectedOpenShiftDateKeys(form: OpenShiftFormState, weekStartsOn: strin
 }
 
 function builderEmployeeName(employee: ScheduleBuilderEmployee): string {
-  return `${employee.preferred_name || employee.first_name} ${employee.last_name}`
+  return scheduleEmployeeName(employee)
 }
 
 function builderEmployeeOptionLabel(employee: ScheduleBuilderEmployee): string {
   const details = [
+    employee.employee_number,
     employee.has_armed_guard_credential ? 'armed credential on file' : 'no armed credential on file',
     employee.employment_type === 'salary' ? 'salary' : null,
     employee.employment_type === 'flex' ? 'flex' : null,
@@ -182,6 +184,14 @@ function builderEmployeeOptionLabel(employee: ScheduleBuilderEmployee): string {
 function selectedBuilderEmployee(employees: ScheduleBuilderEmployee[], employeeId: string | null | undefined): ScheduleBuilderEmployee | null {
   if (!employeeId) return null
   return employees.find((employee) => employee.id === employeeId) ?? null
+}
+
+function staffingCandidateName(
+  employees: ScheduleBuilderEmployee[],
+  candidate: StaffingSuggestion['suggestions'][number],
+): string {
+  const employee = employees.find((item) => item.id === candidate.employeeId)
+  return employee ? builderEmployeeName(employee) : candidate.name
 }
 
 function sessionHasAnyPermission(session: SessionContext | null | undefined, permissions: string[]): boolean {
@@ -1006,7 +1016,7 @@ function EditShiftDialog({
             <Sparkles aria-hidden="true" size={18} />
             <div>
               <strong>Suggested staffing</strong>
-              <p>{suggestions.suggestions.slice(0, 3).map((candidate) => `${candidate.name} (${candidate.reason})`).join('; ')}</p>
+              <p>{suggestions.suggestions.slice(0, 3).map((candidate) => `${staffingCandidateName(employees, candidate)} (${candidate.reason})`).join('; ')}</p>
             </div>
           </div>
         ) : null}
@@ -1355,7 +1365,7 @@ function SchedulerShiftModal({
                   <article className="scheduler-assigned-card" key={assignment.id}>
                     <div>
                       <strong>{assignmentName(assignment)}</strong>
-                      <span>{assignment.status}</span>
+                      <span>{[assignment.employee.employee_number, assignment.status].filter(Boolean).join(' · ')}</span>
                     </div>
                     {credentialOverride || availabilityOverride ? (
                       <div className="scheduler-assigned-card__overrides" aria-label="Saved assignment overrides">
@@ -1399,7 +1409,7 @@ function SchedulerShiftModal({
               {suggestion.suggestions.slice(0, 5).map((candidate) => (
                 <article key={candidate.employeeId}>
                   <div>
-                    <strong>{candidate.name}</strong>
+                    <strong>{staffingCandidateName(employees, candidate)}</strong>
                     <span>{candidate.reason}</span>
                   </div>
                   <button
@@ -3185,7 +3195,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                     <h3>{item.title}</h3>
                     {item.suggestion?.suggestions.length ? (
                       <p>
-                        Best matches: {item.suggestion.suggestions.slice(0, 3).map((candidate) => `${candidate.name} (${candidate.reason})`).join('; ')}
+                        Best matches: {item.suggestion.suggestions.slice(0, 3).map((candidate) => `${staffingCandidateName(builderOptionsQuery.data?.employees ?? [], candidate)} (${candidate.reason})`).join('; ')}
                       </p>
                     ) : (
                       <p>No safe active employee suggestion was found for this slot. Add it manually or leave it open.</p>
