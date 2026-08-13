@@ -455,7 +455,7 @@ export function TimeExceptionsPage() {
                   <strong>{row.employeeName}</strong>
                   <span>{formatUsDateKey(row.operationalDate)} · {rowLocation(row)}</span>
                   <small>{rowWindow(row)}</small>
-                  <small>{row.mixedWorkTypes ? 'Mixed work types' : `${row.workTypeLabel} · ${row.payCode}`}</small>
+                  {row.mixedWorkTypes ? <small>Needs classification review</small> : row.workType === 'training' ? <small>Paid training</small> : null}
                   <div className="time-exception-card__badges">
                     {exceptionCodesForRow(row).map((code) => (
                       <TimeStatusBadge key={code} tone="warning">{exceptionCopy[code].label}</TimeStatusBadge>
@@ -517,7 +517,7 @@ export function TimeExceptionsPage() {
                     </TimeStatusBadge>
                     <strong>{row.employeeName}</strong>
                     <span>{formatUsDateKey(row.operationalDate)} · {rowLocation(row)}</span>
-                    <small>{row.mixedWorkTypes ? 'Mixed work types' : `${row.workTypeLabel} · ${row.payCode}`}</small>
+                    {row.mixedWorkTypes ? <small>Needs classification review</small> : row.workType === 'training' ? <small>Paid training</small> : null}
                     <small>{payrollHours(row.paidMinutes)} paid hr · {payrollHours(row.unpaidGapMinutes)} unpaid-gap hr</small>
                   </div>
                 </article>
@@ -569,8 +569,7 @@ export function TimeExceptionsPage() {
                   </article>
                   <article><span>Actual worked</span><strong>{payrollHours(selectedExceptionRow.paidMinutes)} hr</strong></article>
                   <article><span>Unpaid gaps</span><strong>{payrollHours(selectedExceptionRow.unpaidGapMinutes)} hr</strong></article>
-                  <article><span>Work type</span><strong>{selectedExceptionRow.mixedWorkTypes ? 'Mixed work types' : selectedExceptionRow.workTypeLabel}</strong></article>
-                  <article><span>Pay code</span><strong>{selectedExceptionRow.payCode}</strong></article>
+                  <article><span>Time category</span><strong>{selectedExceptionRow.mixedWorkTypes ? 'Needs classification review' : selectedExceptionRow.workType === 'training' ? 'Paid training' : 'Worked time'}</strong></article>
                   <article><span>Review state</span><strong>{selectedExceptionRow.reviewStatus.replaceAll('_', ' ')}</strong></article>
                 </div>
 

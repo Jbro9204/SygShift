@@ -344,7 +344,6 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
     'Worked Shifts',
     'Scheduled Hours',
     'Worked Hours',
-    'Post Hours',
     'Training Hours',
     'Sick Pay Hours',
     'PTO Hours',
@@ -366,7 +365,6 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
       summary?.workedShiftCount ?? 0,
       hours(scheduled),
       hours(summary?.paidMinutes ?? 0),
-      hours(summary?.postMinutes ?? 0),
       hours(summary?.trainingMinutes ?? 0),
       hours(accountabilityPaySummary?.sickPayMinutes ?? 0),
       hours(accountabilityPaySummary?.vacationPayMinutes ?? 0),
@@ -378,28 +376,28 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
     ]
   })
   const totals = body.reduce((result, row) => {
-    for (let column = 2; column <= 12; column += 1) result[column] = Number(result[column] ?? 0) + Number(row[column] ?? 0)
+    for (let column = 2; column <= 11; column += 1) result[column] = Number(result[column] ?? 0) + Number(row[column] ?? 0)
     return result
-  }, ['Payroll totals', '', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ''] as WorkbookCell[])
-  totals[13] = body.some((row) => row[13] === 'Needs review') ? 'Needs review' : 'Ready'
+  }, ['Payroll totals', '', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ''] as WorkbookCell[])
+  totals[12] = body.some((row) => row[12] === 'Needs review') ? 'Needs review' : 'Ready'
   const headerRowIndex = titleRows.length
   const totalsRowIndex = headerRowIndex + body.length + 1
 
   return {
-    centerColumns: [1, 2, 13],
-    columnWidths: [26, 14, 14, 16, 15, 14, 16, 15, 14, 16, 16, 14, 15, 16],
+    centerColumns: [1, 2, 12],
+    columnWidths: [26, 14, 14, 16, 15, 16, 15, 14, 16, 16, 14, 15, 16],
     filterRowIndex: headerRowIndex,
     freezeRows: headerRowIndex + 1,
     headerRows: [headerRowIndex],
     integerColumns: [2],
     mergedCells: [
-      'A1:N1',
-      'B2:N2',
-      'B3:N3',
-      'B4:N4',
-      'B5:N5',
-      'B6:N6',
-      'B7:N7',
+      'A1:M1',
+      'B2:M2',
+      'B3:M3',
+      'B4:M4',
+      'B5:M5',
+      'B6:M6',
+      'B7:M7',
     ],
     metadataRows: [1, 2, 3, 4, 5, 6],
     name: 'Payroll Summary',
@@ -528,7 +526,6 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
     otherPaidMinutes: number
     overtimeMinutes: number
     paidMinutes: number
-    postMinutes: number
     regularMinutes: number
     scheduledMinutes: number
     shifts: number
@@ -547,7 +544,6 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
       otherPaidMinutes: 0,
       overtimeMinutes: 0,
       paidMinutes: 0,
-      postMinutes: 0,
       regularMinutes: 0,
       scheduledMinutes: 0,
       shifts: 0,
@@ -561,7 +557,6 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
     item.overtimeMinutes += row.overtimeMinutes
     item.paidMinutes += row.paidMinutes
     if (row.workType === 'training') item.trainingMinutes += row.paidMinutes
-    else item.postMinutes += row.paidMinutes
     item.regularMinutes += row.regularMinutes
     item.scheduledMinutes += scheduledMinutes(row)
     item.shifts += 1
@@ -578,7 +573,6 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
       otherPaidMinutes: 0,
       overtimeMinutes: 0,
       paidMinutes: 0,
-      postMinutes: 0,
       regularMinutes: 0,
       scheduledMinutes: 0,
       shifts: 0,
@@ -606,7 +600,6 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
       item.shifts,
       hours(item.scheduledMinutes),
       hours(item.paidMinutes),
-      hours(item.postMinutes),
       hours(item.trainingMinutes),
       hours(item.sickPayMinutes),
       hours(item.vacationPayMinutes),
@@ -623,18 +616,18 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
   ]
   const headerRowIndex = titleRows.length
   return {
-    centerColumns: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-    columnWidths: [42, 12, 15, 16, 15, 14, 16, 14, 14, 16, 17, 15, 16],
+    centerColumns: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+    columnWidths: [42, 12, 15, 16, 15, 16, 14, 14, 16, 17, 15, 16],
     filterRowIndex: headerRowIndex,
     freezeRows: headerRowIndex + 1,
     headerRows: [headerRowIndex],
-    integerColumns: [1, 2, 12],
-    mergedCells: ['A1:M1', 'B2:M2'],
+    integerColumns: [1, 2, 11],
+    mergedCells: ['A1:L1', 'B2:L2'],
     metadataRows: [1],
     name: 'Site Summary',
     rows: [
       ...titleRows,
-      ['Site / Post', 'Employees', 'Worked Shifts', 'Scheduled Hours', 'Worked Hours', 'Post Hours', 'Training Hours', 'Sick Pay', 'PTO Hours', 'Other Paid', 'Total Payable', 'Overtime', 'Review Items'],
+      ['Site / Post', 'Employees', 'Worked Shifts', 'Scheduled Hours', 'Worked Hours', 'Training Hours', 'Sick Pay', 'PTO Hours', 'Other Paid', 'Total Payable', 'Overtime', 'Review Items'],
       ...(rowsOut.length > 0 ? rowsOut : [['No worked time in this range.']]),
     ],
     titleRows: [0],
@@ -698,8 +691,7 @@ function buildEmployeeSheets(review: TimekeepingReview, events: PayrollAccountab
       return [
         formatUsDateKey(row.operationalDate),
         locationLabel(row),
-        row.workTypeLabel,
-        row.payCode,
+        row.workType === 'training' ? 'Paid training' : 'Worked time',
         hours(scheduled),
         dateTimeText(row.firstClockIn, row.timeZone),
         dateTimeText(row.lastClockOut, row.timeZone),
@@ -728,7 +720,6 @@ function buildEmployeeSheets(review: TimekeepingReview, events: PayrollAccountab
     ])
 
     const workedMinutes = employeeRows.reduce((total, row) => total + row.paidMinutes, 0)
-    const postMinutes = employeeRows.filter((row) => row.workType === 'post').reduce((total, row) => total + row.paidMinutes, 0)
     const trainingMinutes = employeeRows.filter((row) => row.workType === 'training').reduce((total, row) => total + row.paidMinutes, 0)
     const scheduledTotal = employeeRows.reduce((total, row) => total + scheduledMinutes(row), 0)
     const sickMinutes = employeeEvents.filter((event) => event.eventType === 'called_in_sick').reduce((total, event) => total + accountabilityEventPayableMinutes(event), 0)
@@ -737,7 +728,7 @@ function buildEmployeeSheets(review: TimekeepingReview, events: PayrollAccountab
     const titleRows: WorkbookCell[][] = [
       [`${employeeName} — Payroll Detail`],
       ['Pay Period', `${formatUsDateKey(review.fromDate)} - ${formatUsDateKey(review.throughDate)}`],
-      ['Period Totals', `Scheduled ${hours(scheduledTotal)} | Post ${hours(postMinutes)} | Training ${hours(trainingMinutes)} | Worked ${hours(workedMinutes)} | Sick ${hours(sickMinutes)} | PTO ${hours(ptoMinutes)} | Total Payable ${hours(workedMinutes + sickMinutes + ptoMinutes)}`],
+      ['Period Totals', `Scheduled ${hours(scheduledTotal)} | Worked ${hours(workedMinutes)} | Paid training ${hours(trainingMinutes)} | Sick ${hours(sickMinutes)} | PTO ${hours(ptoMinutes)} | Total Payable ${hours(workedMinutes + sickMinutes + ptoMinutes)}`],
       ['Review Status', employeeNeedsReview ? 'Needs review' : 'Ready'],
       [],
     ]
@@ -747,18 +738,18 @@ function buildEmployeeSheets(review: TimekeepingReview, events: PayrollAccountab
     const accountabilityHeaderRow = accountabilityTitleRow + 1
 
     return {
-      centerColumns: [0, 2, 3, 4, 7, 8, 9, 10, 11, 12],
-      columnWidths: [14, 38, 17, 14, 14, 24, 24, 14, 14, 14, 14, 15, 16, 46],
+      centerColumns: [0, 2, 3, 6, 7, 8, 9, 10, 11],
+      columnWidths: [14, 38, 17, 14, 24, 24, 14, 14, 14, 14, 15, 16, 46],
       filterRowIndex: workedHeaderRow,
       freezeRows: workedHeaderRow + 1,
       headerRows: [workedHeaderRow, accountabilityHeaderRow],
-      integerColumns: [7],
-      mergedCells: ['A1:N1', 'B2:N2', 'B3:N3', 'B4:N4', `A${accountabilityTitleRow + 1}:N${accountabilityTitleRow + 1}`],
+      integerColumns: [6],
+      mergedCells: ['A1:M1', 'B2:M2', 'B3:M3', 'B4:M4', `A${accountabilityTitleRow + 1}:M${accountabilityTitleRow + 1}`],
       metadataRows: [1, 2, 3],
       name: sheetName(employeeName, usedNames),
       rows: [
         ...titleRows,
-        ['Date', 'Site / Post', 'Work Type', 'Pay Code', 'Scheduled', 'Clock In', 'Clock Out', 'Break Min', 'Paid Hours', 'Regular', 'Overtime', 'Variance', 'Status', 'Review Notes'],
+        ['Date', 'Site / Post', 'Time Category', 'Scheduled', 'Clock In', 'Clock Out', 'Break Min', 'Paid Hours', 'Regular', 'Overtime', 'Variance', 'Status', 'Review Notes'],
         ...(workedRows.length > 0 ? workedRows : [['No worked time rows in this range.']]),
         [],
         ['Accountability / Sick Pay / PTO'],
@@ -767,7 +758,7 @@ function buildEmployeeSheets(review: TimekeepingReview, events: PayrollAccountab
       ],
       sectionRows: [accountabilityTitleRow],
       titleRows: [0],
-      wrapColumns: [1, 5, 6, 13],
+      wrapColumns: [1, 4, 5, 12],
     }
   })
 }

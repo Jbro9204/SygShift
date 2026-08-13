@@ -195,7 +195,7 @@ const timekeepingReviewRowSchema = z.object({
   unpaidGapMinutes: z.number().int().nonnegative().optional().default(0),
   payrollNotes: z.array(z.string()).default([]),
   workType: workTypeSchema.optional().default('post'),
-  workTypeLabel: z.string().optional().default('Post Time'),
+  workTypeLabel: z.string().optional().default('Worked Time'),
   payCode: z.string().optional().default('POST'),
   workTypePaid: z.boolean().optional().default(true),
   workTypeOvertimeEligible: z.boolean().optional().default(true),
@@ -257,7 +257,7 @@ const timeMaintenanceEventSchema = z.object({
   locationName: z.string(),
   timeZone: z.string(),
   workType: workTypeSchema.optional().default('post'),
-  workTypeLabel: z.string().optional().default('Post Time'),
+  workTypeLabel: z.string().optional().default('Worked Time'),
   payCode: z.string().optional().default('POST'),
 })
 
@@ -308,19 +308,6 @@ const timeWorkTypeMapItemSchema = z.object({
   overtimeEligible: z.literal(true),
   rateSource: z.enum(['employee_base_rate', 'configured_rate']).optional().default('employee_base_rate'),
   mixedWorkTypes: z.boolean().default(false),
-})
-
-const workTypeConfigurationSchema = z.object({
-  codes: z.array(z.object({
-    workType: workTypeSchema,
-    payCode: z.string(),
-    label: z.string(),
-    paid: z.literal(true),
-    overtimeEligible: z.literal(true),
-    rateSource: z.enum(['employee_base_rate', 'configured_rate']),
-    confirmedAt: z.string().nullable(),
-    confirmedBy: z.string().uuid().nullable(),
-  })),
 })
 
 const workTypeCorrectionResultSchema = z.object({
@@ -492,7 +479,6 @@ export type PayrollRules = z.infer<typeof payrollRulesSchema>
 export type PayrollAccountabilityEvent = z.infer<typeof payrollAccountabilityEventSchema>
 export type AttendanceReportResult = z.infer<typeof attendanceReportResultSchema>
 export type WorkType = z.infer<typeof workTypeSchema>
-export type WorkTypeConfiguration = z.infer<typeof workTypeConfigurationSchema>
 
 export interface PayrollEmployeeSummary {
   employeeId: string
@@ -842,24 +828,6 @@ export async function getTimekeepingReview(input: {
       }
     }),
   }
-}
-
-export async function getWorkTypeConfiguration(): Promise<WorkTypeConfiguration> {
-  const { data, error } = await getSupabaseClient().rpc('get_work_type_configuration')
-  if (error) throw new Error(error.message || 'Payroll work-type configuration could not be loaded.')
-  return workTypeConfigurationSchema.parse(data)
-}
-
-export async function confirmWorkTypeConfiguration(input: {
-  postPayCode: string
-  trainingPayCode: string
-}): Promise<WorkTypeConfiguration> {
-  const { data, error } = await getSupabaseClient().rpc('confirm_work_type_configuration', {
-    target_post_pay_code: input.postPayCode,
-    target_training_pay_code: input.trainingPayCode,
-  })
-  if (error) throw new Error(error.message || 'Payroll work-type configuration could not be confirmed.')
-  return workTypeConfigurationSchema.parse(data)
 }
 
 export async function correctTimeRecordWorkType(input: {
@@ -1342,7 +1310,6 @@ export function reviewRowsToPayrollSummaryCsv(rows: TimekeepingReviewRow[]): str
     'Locations Worked',
     'Gross Hours',
     'Break Minutes',
-    'Post Hours',
     'Training Hours',
     'Paid Hours',
     'Regular Hours',
@@ -1364,7 +1331,6 @@ export function reviewRowsToPayrollSummaryCsv(rows: TimekeepingReviewRow[]): str
     summary.locationCount,
     payrollHours(summary.grossMinutes),
     summary.breakMinutes,
-    payrollHours(summary.postMinutes),
     payrollHours(summary.trainingMinutes),
     payrollHours(summary.paidMinutes),
     payrollHours(summary.regularMinutes),

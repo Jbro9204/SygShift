@@ -329,7 +329,6 @@ describe('payroll export readiness', () => {
       'Worked Shifts',
       'Scheduled Hours',
       'Worked Hours',
-      'Post Hours',
       'Training Hours',
       'Sick Pay Hours',
       'PTO Hours',
@@ -339,12 +338,11 @@ describe('payroll export readiness', () => {
       'Overtime Hours',
       'Status',
     ])
-    expect(sheets[0].rows.every((row) => row.length <= 14)).toBe(true)
+    expect(sheets[0].rows.every((row) => row.length <= 13)).toBe(true)
     expect(sheets.at(-1)?.rows[5]).toEqual([
       'Date',
       'Site / Post',
-      'Work Type',
-      'Pay Code',
+      'Time Category',
       'Scheduled',
       'Clock In',
       'Clock Out',

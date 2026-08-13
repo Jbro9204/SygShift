@@ -686,7 +686,7 @@ function RecentPunchesPanel({
                 <div>
                   <strong>{eventLabels[event.kind]}</strong>
                   <small>{formatOperationalDateTime(event.effectiveAt ?? event.recordedAt, { includeTimeZoneName: true })}</small>
-                  <small>{event.workType === 'training' ? 'Training Time' : 'Post Time'}</small>
+                  <small>{event.workType === 'training' ? 'Paid training' : 'Worked time'}</small>
                 </div>
                 {event.voided ? <em>Voided</em> : null}
                 <button
@@ -866,7 +866,7 @@ function MyTimecardRow({
       <div>
         <strong>{row.locationName}</strong>
         <span>{[row.siteCode, row.siteName, row.postName, row.eventName].filter(Boolean).join(' - ') || 'Location pending'}</span>
-        <small>{formatRowWindow(row, activeInProgress)} · {row.mixedWorkTypes ? 'Mixed work types' : row.workTypeLabel} ({row.payCode})</small>
+        <small>{formatRowWindow(row, activeInProgress)}{row.mixedWorkTypes ? ' · Needs classification review' : row.workType === 'training' ? ' · Paid training' : ''}</small>
       </div>
       <div className="my-time-row__hours">
         <strong>{payrollHours(row.paidMinutes)} hrs</strong>

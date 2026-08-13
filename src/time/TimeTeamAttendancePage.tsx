@@ -433,7 +433,7 @@ export function TimeTeamAttendancePage() {
                     </td>
                     <td>
                       <strong>{payrollHours(row.paidMinutes)} hr</strong>
-                      <span>{payrollHours(row.postMinutes)} post · {payrollHours(row.trainingMinutes)} training</span>
+                      {row.trainingMinutes > 0 ? <span>{payrollHours(row.trainingMinutes)} hr paid training</span> : null}
                       <small>{payrollHours(row.breakMinutes)} hr break · {payrollHours(row.overtimeMinutes)} hr OT</small>
                     </td>
                     <td>
@@ -472,7 +472,7 @@ export function TimeTeamAttendancePage() {
                 <div>
                   <strong>{row.employeeName}</strong>
                   <span>{formatUsDateKey(row.operationalDate)} · {rowLocation(row)}</span>
-                  <small>{row.mixedWorkTypes ? 'Mixed work types' : `${row.workTypeLabel} · ${row.payCode}`}</small>
+                  {row.mixedWorkTypes ? <small>Needs classification review</small> : row.workType === 'training' ? <small>Paid training</small> : null}
                   <small>{row.exceptionCodes.length > 0 ? row.exceptionCodes.map((code) => code.replaceAll('_', ' ')).join(', ') : 'Needs review'}</small>
                 </div>
                 {manageAllowed ? <TimeButton onClick={() => focusEmployee(row.employeeId, row.operationalDate)} variant="secondary">Fix</TimeButton> : null}

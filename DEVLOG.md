@@ -23,6 +23,19 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/13/2026
+
+### Scheduled paid training
+
+- Removed the global Post Time and Training Time setup from payroll review and removed its export gate.
+- Made regular scheduled work the automatic default without requiring a payroll classification step.
+- Added a Paid training time checkbox to Add Shift/Event and Edit Shift so training is identified where the schedule is created.
+- Replaced visible Post Time terminology with Worked Time across employee time, exceptions, team attendance, payroll review, CSV, and Excel exports.
+- Kept Paid Training separate in payroll totals and employee detail sheets while hiding empty training totals.
+- Retained authorized, audited time-category correction for genuine classification mistakes.
+- Applied and verified targeted production migration `20260813120000_scheduled_paid_training.sql` without changing existing shifts, punches, or payroll history.
+- Full validation passed: 43 test files, 207 tests, type checking, lint, and production build.
+
 ## 08/12/2026
 
 ### Schedule name disambiguation

@@ -245,7 +245,7 @@ function MaintenanceEventStatus({ event }: { event: TimeMaintenanceEvent }) {
   if (event.latestAction === 'time_adjust') return <span className="payroll-status payroll-status--ready">Adjusted</span>
   if (event.latestAction === 'manual_add') return <span className="payroll-status payroll-status--ready">Manual</span>
   if (event.latestAction === 'location_update') return <span className="payroll-status payroll-status--ready">Location fixed</span>
-  if (event.latestAction === 'work_type_update') return <span className="payroll-status payroll-status--ready">Work type fixed</span>
+  if (event.latestAction === 'work_type_update') return <span className="payroll-status payroll-status--ready">Time category fixed</span>
   return <span className="payroll-status payroll-status--ready">Active</span>
 }
 
@@ -763,7 +763,7 @@ export function TimeMaintenanceWorkbench({
                 <label><input checked={correctionMode === 'work_type'} onChange={() => {
                   setCorrectionMode('work_type')
                   setCorrectionWorkType(selectedEvent.workType)
-                }} type="radio" /> Work type</label>
+                }} type="radio" /> Time category</label>
                 <label><input checked={correctionMode === 'void'} onChange={() => setCorrectionMode('void')} type="radio" /> Void punch</label>
               </div>
               {correctionMode === 'adjust' ? (
@@ -816,8 +816,8 @@ export function TimeMaintenanceWorkbench({
                 <label className="time-correction-editor__location">
                   <span>Paid work classification</span>
                   <select onChange={(event) => setCorrectionWorkType(event.target.value as WorkType)} value={correctionWorkType}>
-                    <option value="post">Post Time</option>
-                    <option value="training">Training Time</option>
+                    <option value="post">Worked time</option>
+                    <option value="training">Paid training</option>
                   </select>
                   <small>This updates every punch in this employee's same shift/day occurrence and preserves the original punches in the audit history.</small>
                 </label>
@@ -962,7 +962,7 @@ export function TimeMaintenanceWorkbench({
                       <td>
                         <strong>{maintenanceEventLabel(event)}</strong>
                         <span>{event.source.replaceAll('_', ' ')}</span>
-                        <small>{event.workTypeLabel} · {event.payCode}</small>
+                        {event.workType === 'training' ? <small>Paid training</small> : null}
                       </td>
                       <td>
                         <strong>{event.locationName}</strong>
@@ -984,7 +984,7 @@ export function TimeMaintenanceWorkbench({
                             Site/Post
                           </button>
                           <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'work_type')} type="button">
-                            Work type
+                            Time category
                           </button>
                           <button className="danger-secondary" disabled={event.voided} onClick={() => beginCorrection(event, 'void')} type="button">
                             Void

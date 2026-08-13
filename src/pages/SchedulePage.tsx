@@ -608,7 +608,7 @@ function ShiftCard({
           : <span className="shift-card__unassigned">No one assigned</span>}
       </div>
       <div className="shift-card__footer">
-        <span className="shift-tag">{shift.work_type === 'training' ? 'Training Time' : 'Post Time'}</span>
+        {shift.work_type === 'training' ? <span className="shift-tag shift-tag--training">Paid training</span> : null}
         {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review needed</span> : null}
         {shift.requires_armed ? <span className="shift-tag shift-tag--armed">Armed</span> : null}
         {openSlots > 0 ? (
@@ -802,7 +802,7 @@ function EmployeePersonalSchedulePanel({
                           </p>
                           {notes ? <p className="employee-shift-card__notes">{notes}</p> : null}
                           <div className="employee-shift-card__tags">
-                            <span>{shift.work_type === 'training' ? 'Training Time' : 'Post Time'}</span>
+                            {shift.work_type === 'training' ? <span>Paid training</span> : null}
                             <span>{shift.requires_armed ? 'Armed' : 'Unarmed'}</span>
                             <span>Assigned to you</span>
                           </div>
@@ -942,13 +942,12 @@ function EditShiftDialog({
           <label><span>Headcount</span><input min={1} name="headcount" onChange={(event) => setHeadcount(event.target.value)} required type="number" value={headcount} /></label>
         </div>
         <div className="schedule-edit-form__details">
-          <label className="field-stack">
-            <span>Work type</span>
-            <select onChange={(event) => setWorkType(event.target.value as 'post' | 'training')} value={workType}>
-              <option value="post">Post Time</option>
-              <option value="training">Training Time</option>
-            </select>
-            <small>Both categories are paid and overtime-eligible. Payroll keeps the totals separate.</small>
+          <label className={workType === 'training' ? 'training-time-option is-selected' : 'training-time-option'}>
+            <input checked={workType === 'training'} onChange={(event) => setWorkType(event.target.checked ? 'training' : 'post')} type="checkbox" />
+            <span>
+              <strong>Paid training time</strong>
+              <small>Check only when this scheduled block is employee training. It will be identified in payroll reporting.</small>
+            </span>
           </label>
           <label className="field-stack">
             <span>Switch / assign employee</span>
@@ -1336,7 +1335,7 @@ function SchedulerShiftModal({
           <article>
             <span>Requirement</span>
             <strong>{shift.requires_armed ? 'Armed' : 'Unarmed'}</strong>
-            <small>{shift.work_type === 'training' ? 'Training Time' : 'Post Time'}{shift.is_overtime ? ' · Overtime noted' : ''}</small>
+            {shift.work_type === 'training' || shift.is_overtime ? <small>{[shift.work_type === 'training' ? 'Paid training' : '', shift.is_overtime ? 'Overtime noted' : ''].filter(Boolean).join(' · ')}</small> : null}
           </article>
         </div>
 
@@ -1349,7 +1348,7 @@ function SchedulerShiftModal({
             <div><dt>Needed</dt><dd>{shift.headcount_required}</dd></div>
             <div><dt>Open</dt><dd>{openSlots}</dd></div>
             <div><dt>Requirement</dt><dd>{shift.requires_armed ? 'Armed credential' : 'Unarmed'}</dd></div>
-            <div><dt>Work type</dt><dd>{shift.work_type === 'training' ? 'Training Time' : 'Post Time'}</dd></div>
+            {shift.work_type === 'training' ? <div><dt>Time category</dt><dd>Paid training</dd></div> : null}
           </dl>
           </section>
 
@@ -3260,15 +3259,16 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 </select>
               </label>
 
-              <label>
-                Work type
-                <select
-                  onChange={(event) => updateOpenShiftForm({ workType: event.target.value as 'post' | 'training' })}
-                  value={openShiftForm.workType}
-                >
-                  <option value="post">Post Time</option>
-                  <option value="training">Training Time</option>
-                </select>
+              <label className={openShiftForm.workType === 'training' ? 'training-time-option is-selected' : 'training-time-option'}>
+                <input
+                  checked={openShiftForm.workType === 'training'}
+                  onChange={(event) => updateOpenShiftForm({ workType: event.target.checked ? 'training' : 'post' })}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Paid training time</strong>
+                  <small>Check only for scheduled employee training. Leave unchecked for regular work.</small>
+                </span>
               </label>
 
               {openShiftForm.mode === 'post' ? (

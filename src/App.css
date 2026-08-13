@@ -2,53 +2,6 @@
   min-height: 100vh;
 }
 
-.payroll-work-type-config {
-  display: grid;
-  gap: 1rem;
-}
-
-.payroll-work-type-config__form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-  align-items: end;
-}
-
-.payroll-work-type-config__form label {
-  display: grid;
-  gap: 0.45rem;
-  min-width: 0;
-}
-
-.payroll-work-type-config__form label > span {
-  font-weight: 750;
-}
-
-.payroll-work-type-config__facts {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-}
-
-.payroll-work-type-config__facts span {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--canvas);
-  color: var(--muted);
-  font-weight: 700;
-}
-
-@media (max-width: 760px) {
-  .payroll-work-type-config__form {
-    grid-template-columns: 1fr;
-  }
-}
-
 .page--import-review {
   max-width: 1280px;
 }
@@ -2341,6 +2294,56 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: start;
   gap: 15px;
+}
+
+.form-grid .training-time-option,
+.schedule-edit-form__details .training-time-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  min-height: 74px;
+  padding: 13px 14px;
+  background: #faf8f3;
+  border: 1px solid #d9d1c4;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.form-grid .training-time-option.is-selected,
+.schedule-edit-form__details .training-time-option.is-selected {
+  background: #fff6e4;
+  border-color: #c9902e;
+  box-shadow: 0 0 0 2px rgb(184 135 49 / 10%);
+}
+
+.form-grid .training-time-option input[type='checkbox'],
+.schedule-edit-form__details .training-time-option input[type='checkbox'] {
+  width: 20px;
+  min-height: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  padding: 0;
+  accent-color: #9a681b;
+}
+
+.training-time-option > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.training-time-option strong {
+  color: #201b14;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.training-time-option small {
+  color: #6d655b;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.4;
 }
 
 .schedule-builder-repeat {
