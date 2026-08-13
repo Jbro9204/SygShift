@@ -35,6 +35,8 @@ deployment status, or major workflow assumptions change.
 - Retained authorized, audited time-category correction for genuine classification mistakes.
 - Applied and verified targeted production migration `20260813120000_scheduled_paid_training.sql` without changing existing shifts, punches, or payroll history.
 - Full validation passed: 43 test files, 207 tests, type checking, lint, and production build.
+- Production health, readiness, login route, and deployed asset verification passed.
+- Deployed Cloudflare Worker version `f6410166-3c88-45cf-8ef3-2c28238ef816`.
 
 ## 08/12/2026
 

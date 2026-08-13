@@ -39,3 +39,7 @@ Paid training is now an individual scheduling decision instead of a company-wide
 - Production build: passed.
 - Production database labels and retired-function permissions: verified.
 - Added regression coverage protecting the scheduling checkbox, payroll cleanup, workbook layout, and database permission change.
+- Production health and readiness: passed.
+- Live login route: passed without browser console errors.
+- Live deployed assets: confirmed the scheduling checkbox is present and the retired payroll configuration is absent.
+- Cloudflare deployment: `f6410166-3c88-45cf-8ef3-2c28238ef816`.
