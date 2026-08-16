@@ -9,6 +9,10 @@ const migration = readFileSync(
   join(root, 'supabase', 'migrations', '20260816120000_daily_attendance_reconciliation.sql'),
   'utf8',
 )
+const groupingMigration = readFileSync(
+  join(root, 'supabase', 'migrations', '20260816170000_attendance_review_coverage_grouping.sql'),
+  'utf8',
+)
 const page = readFileSync(join(root, 'src', 'time', 'DailyAttendanceReviewPage.tsx'), 'utf8')
 const reviewHelpers = readFileSync(join(root, 'src', 'time', 'dailyAttendanceReview.ts'), 'utf8')
 
@@ -58,5 +62,25 @@ describe('daily attendance reconciliation guardrails', () => {
     expect(page).toContain('A hard payroll blocker still requires a time correction')
     expect(page).toContain('it cannot bypass an incomplete or impossible punch sequence')
     expect(page).toContain('<TimeMaintenanceWorkbench')
+  })
+
+  it('consolidates identical coverage slots without discarding people or worked time', () => {
+    expect(groupingMigration).toContain('private.get_attendance_reconciliation_group_snapshot')
+    expect(groupingMigration).toContain('member.post_id is not distinct from anchor.post_id')
+    expect(groupingMigration).toContain('member.event_id is not distinct from anchor.event_id')
+    expect(groupingMigration).toContain('member.starts_at = anchor.starts_at')
+    expect(groupingMigration).toContain('member.ends_at = anchor.ends_at')
+    expect(groupingMigration).toContain('greatest(member_stats.maximum_headcount_required, scheduled_rollup.employee_count)')
+    expect(groupingMigration).toContain("'headcountRequired', classified.headcount_required")
+    expect(groupingMigration).toContain("'scheduledEmployees', classified.scheduled_employees")
+    expect(groupingMigration).toContain("'actualEmployees', classified.actual_employees")
+    expect(groupingMigration).toContain("'memberShiftIds', classified.member_shift_ids")
+  })
+
+  it('resolves the consolidated occurrence through its canonical shift and current fingerprint', () => {
+    expect(groupingMigration).toContain("current_snapshot := private.get_attendance_reconciliation_group_snapshot(target_shift_id)")
+    expect(groupingMigration).toContain("(current_snapshot ->> 'shiftId')::uuid <> target_shift_id")
+    expect(groupingMigration).toContain("current_snapshot ->> 'occurrenceFingerprint' <> target_occurrence_fingerprint")
+    expect(groupingMigration).toContain('insert into public.attendance_reconciliation_decisions')
   })
 })

@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 08/16/2026
 
+### Attendance review coverage consolidation
+
+- Fixed Daily Attendance Review so identical published coverage slots no longer appear as repeated review cards.
+- Consolidation is based on the same published schedule, Site/Post or event, start, end, time zone, and armed requirement.
+- Repeated copies of the same employee assignment now remain one scheduled position instead of inflating the required headcount.
+- Legitimately different employees assigned to the same coverage window remain separate people under one combined occurrence.
+- The combined review preserves every underlying shift ID, employee assignment, worked segment, unpaid gap, call-off, punch, and audit record.
+- Attendance decisions now resolve the canonical combined occurrence and remain protected by the current occurrence fingerprint.
+- Applied targeted production migration `20260816170000_attendance_review_coverage_grouping.sql`.
+- Production verification confirmed the reported MG Properties Patrol and Neon Local duplicate groups now calculate as one scheduled employee for one required position.
+- Full validation passed: type checking, lint, 45 test files / 219 tests, and production build.
+
 ### Daily attendance reconciliation
 
 - Added a next-morning review workspace that compares ended published shifts with effective SygShift punches and recorded call-offs after a two-hour grace period.
