@@ -13520,6 +13520,353 @@
   display: none;
 }
 
+/* Daily attendance reconciliation */
+.attendance-review-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(560px, 0.9fr);
+  gap: 24px;
+  align-items: end;
+  padding: 20px 22px;
+}
+
+.attendance-review-panel {
+  padding: 20px 22px 22px;
+}
+
+.attendance-review-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.attendance-review-row {
+  display: grid;
+  grid-template-columns: minmax(250px, 1.15fr) minmax(330px, 1fr) minmax(220px, 0.85fr) auto;
+  gap: 18px;
+  align-items: center;
+  min-width: 0;
+  padding: 16px;
+  background: #fffdf8;
+  border: 1px solid #ded5c6;
+  border-left: 4px solid #c7943b;
+  border-radius: 12px;
+}
+
+.attendance-review-row__identity,
+.attendance-review-row__metrics,
+.attendance-review-row__flags {
+  min-width: 0;
+}
+
+.attendance-review-row__identity {
+  display: grid;
+  gap: 6px;
+}
+
+.attendance-review-row__identity > strong {
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.attendance-review-row__identity > span,
+.attendance-review-row__metrics span {
+  color: #6d655a;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.attendance-review-row__title,
+.attendance-review-row__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.attendance-review-row__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+}
+
+.attendance-review-row__metrics span {
+  display: grid;
+  gap: 2px;
+}
+
+.attendance-review-row__metrics strong {
+  color: #29251e;
+  font-size: 15px;
+}
+
+.attendance-review-row > .time-button {
+  min-width: 126px;
+  white-space: nowrap;
+}
+
+.modal-dialog--attendance-review {
+  width: min(1320px, calc(100vw - 28px));
+  max-height: calc(100vh - 24px);
+}
+
+.attendance-review-detail {
+  display: grid;
+  gap: 18px;
+  padding: 20px 22px 24px;
+  background: var(--paper);
+}
+
+.attendance-review-detail__summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.attendance-review-detail__summary article {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #ddd4c6;
+  border-top: 3px solid #c7943b;
+  border-radius: 10px;
+}
+
+.attendance-review-detail__summary span,
+.attendance-review-worker small,
+.attendance-review-people span,
+.attendance-review-calloffs span,
+.attendance-review-audit span {
+  color: #71685c;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.attendance-review-detail__summary strong {
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.attendance-review-detail__grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.attendance-review-detail__section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #ddd4c6;
+  border-radius: 12px;
+}
+
+.attendance-review-detail__section h3,
+.attendance-review-detail__section p,
+.attendance-review-decision h3,
+.attendance-review-decision p {
+  margin: 0;
+}
+
+.attendance-review-detail__section h3,
+.attendance-review-decision h3 {
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.attendance-review-detail__section > p,
+.attendance-review-decision > p {
+  color: #6d655a;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.attendance-review-people,
+.attendance-review-calloffs,
+.attendance-review-rules,
+.attendance-review-worker__segments {
+  display: grid;
+  gap: 8px;
+}
+
+.attendance-review-people article,
+.attendance-review-calloffs article,
+.attendance-review-rules article {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 11px 12px;
+  background: #fffaf1;
+  border: 1px solid #e3d7c4;
+  border-radius: 9px;
+}
+
+.attendance-review-calloffs p,
+.attendance-review-rules p {
+  margin: 0;
+  color: #62594d;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.attendance-review-worker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 13px;
+  background: #f8fbf8;
+  border: 1px solid #cfe0d3;
+  border-radius: 10px;
+}
+
+.attendance-review-worker > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.attendance-review-worker__segments {
+  grid-column: 1 / -1;
+  padding-top: 10px;
+  border-top: 1px solid #dce7df;
+}
+
+.attendance-review-worker__segments span {
+  color: #4e594f;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.attendance-review-worker__segments .attendance-review-worker__gap {
+  color: #79521b;
+  font-weight: 750;
+}
+
+.attendance-review-audit {
+  background: #f1f8f3;
+  border-color: #bfd9c7;
+}
+
+.attendance-review-decision {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  background: #fff8ea;
+  border: 1px solid #ddc188;
+  border-left: 4px solid #b57917;
+  border-radius: 12px;
+}
+
+.attendance-review-decision__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.attendance-review-decision label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: #51483c;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.attendance-review-decision select,
+.attendance-review-decision textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  color: #29251f;
+  background: #fff;
+  border: 1px solid #d5c9b6;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 15px;
+}
+
+.attendance-review-decision select {
+  min-height: 46px;
+  padding: 9px 11px;
+}
+
+.attendance-review-decision textarea {
+  min-height: 104px;
+  padding: 11px 12px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.attendance-review-decision__actions,
+.attendance-review-detail__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.attendance-review-decision__actions .time-button {
+  min-width: 170px;
+}
+
+@media (max-width: 1120px) {
+  .attendance-review-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .attendance-review-row {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr) auto;
+  }
+
+  .attendance-review-row__flags {
+    grid-column: 1 / 3;
+  }
+}
+
+@media (max-width: 760px) {
+  .attendance-review-controls,
+  .attendance-review-panel,
+  .attendance-review-detail {
+    padding: 16px;
+  }
+
+  .attendance-review-controls .time-team-controls__grid,
+  .attendance-review-row,
+  .attendance-review-detail__summary,
+  .attendance-review-detail__grid,
+  .attendance-review-decision__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .attendance-review-row__flags {
+    grid-column: auto;
+  }
+
+  .attendance-review-row > .time-button,
+  .attendance-review-decision__actions .time-button {
+    width: 100%;
+  }
+
+  .attendance-review-detail__summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .attendance-review-detail__summary,
+  .attendance-review-row__metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .attendance-review-worker {
+    grid-template-columns: 1fr;
+  }
+}
+
 .modal-dialog--licensing-profile {
   max-height: calc(100vh - 24px);
 }

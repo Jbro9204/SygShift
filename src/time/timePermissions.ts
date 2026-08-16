@@ -41,3 +41,18 @@ export function canResolveTimeExceptions(session: SessionContext | null | undefi
 export function canExportPayroll(session: SessionContext | null | undefined): boolean {
   return hasTimePermission(session, 'time.export_payroll')
 }
+
+export function canViewAttendanceReview(session: SessionContext | null | undefined): boolean {
+  return (
+    canViewTeamTime(session)
+    || hasTimePermission(session, 'accountability.view')
+    || hasTimePermission(session, 'accountability.manage')
+  )
+}
+
+export function canManageAttendanceReview(session: SessionContext | null | undefined): boolean {
+  return (
+    hasTimePermission(session, 'time.manage')
+    || hasTimePermission(session, 'accountability.manage')
+  )
+}

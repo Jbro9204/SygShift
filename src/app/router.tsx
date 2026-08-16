@@ -21,6 +21,7 @@ import {
   SchedulerPageRoute,
   SitesPageRoute,
   TimeExceptionsPageRoute,
+  TimeDailyAttendancePageRoute,
   TimeMyTimePageRoute,
   TimePageRoute,
   TimePayrollPageRoute,
@@ -123,6 +124,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <TimeExceptionsPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'time/daily-review',
+        element: (
+          <RouteSuspense>
+            <TimeDailyAttendancePageRoute />
           </RouteSuspense>
         ),
       },

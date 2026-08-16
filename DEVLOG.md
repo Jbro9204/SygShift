@@ -23,6 +23,21 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/16/2026
+
+### Daily attendance reconciliation
+
+- Added a next-morning review workspace that compares ended published shifts with effective SygShift punches and recorded call-offs after a two-hour grace period.
+- Preserved the published schedule as the original staffing plan and preserved all original punches.
+- Added planned-versus-actual employee lists, worked segments, unpaid gaps, schedule variance, call-off context, and plain-language rule explanations.
+- Added controlled outcomes for replacement coverage, call-offs, uncovered work/client impact, legitimate variances, incorrect findings, and reopened reviews.
+- Made review decisions append-only, audited, MFA-protected, permission-enforced, and specific to a fingerprint of the exact underlying occurrence.
+- Kept incomplete or impossible punch sequences as hard correction blockers and linked authorized reviewers directly to Time Maintenance.
+- Applied production migrations `20260816120000_daily_attendance_reconciliation.sql`, `20260816123000_daily_attendance_review_permission_alignment.sql`, and `20260816124500_daily_attendance_resolution_grace_guard.sql`.
+- Full validation passed: 45 test files, 217 tests, type checking, lint, and production build.
+- Production health and readiness checks passed.
+- Deployed Cloudflare Worker version `00118503-b231-46fd-aea4-8ba789fbf2dc`.
+
 ## 08/13/2026
 
 ### Scheduled paid training

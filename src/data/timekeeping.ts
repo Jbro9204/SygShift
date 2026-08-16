@@ -455,6 +455,139 @@ const attendanceReportResultSchema = z.object({
   dispatchError: z.string().nullable().optional(),
 })
 
+const attendanceReconciliationDiscrepancySchema = z.enum([
+  'call_off_reported',
+  'planned_understaffing',
+  'understaffed_or_uncovered',
+  'missing_recorded_time',
+  'scheduled_employee_missing',
+  'replacement_or_unplanned_worker',
+  'incomplete_punch_sequence',
+  'multiple_work_segments',
+  'worked_time_variance',
+])
+
+const attendanceReconciliationActionSchema = z.enum([
+  'confirmed_replacement',
+  'confirmed_call_off',
+  'confirmed_uncovered',
+  'approved_variance',
+  'dismissed_false_positive',
+  'reopened',
+])
+
+const attendanceClientCreditStatusSchema = z.enum([
+  'not_required',
+  'review_required',
+  'approved_credit',
+  'no_credit',
+])
+
+const attendanceReconciliationPersonSchema = z.object({
+  employeeId: z.string().uuid(),
+  employeeName: z.string(),
+  username: z.string().nullable(),
+})
+
+const attendanceReconciliationScheduledEmployeeSchema = attendanceReconciliationPersonSchema.extend({
+  assignmentStatus: assignmentStatusSchema,
+})
+
+const attendanceReconciliationActualEmployeeSchema = attendanceReconciliationPersonSchema.extend({
+  eventCount: z.number().int().nonnegative(),
+  segmentCount: z.number().int().nonnegative(),
+  sequenceComplete: z.boolean(),
+  firstClockIn: z.string().nullable(),
+  lastClockOut: z.string().nullable(),
+  paidMinutes: z.number().int().nonnegative(),
+  breakMinutes: z.number().int().nonnegative(),
+  unpaidGapMinutes: z.number().int().nonnegative(),
+  eventTimeline: z.array(timekeepingEventTimelineItemSchema),
+  workedSegments: z.array(timekeepingWorkedSegmentSchema),
+  unpaidGaps: z.array(timekeepingUnpaidGapSchema),
+})
+
+const attendanceReconciliationCallOffSchema = z.object({
+  id: z.string().uuid(),
+  employeeId: z.string().uuid(),
+  employeeName: z.string(),
+  eventType: z.enum(['called_in_sick', 'call_off', 'no_call_no_show']),
+  status: z.string(),
+  note: z.string(),
+  reportedAt: z.string(),
+})
+
+const attendanceReconciliationResolutionSchema = z.object({
+  id: z.string().uuid(),
+  action: attendanceReconciliationActionSchema,
+  clientCreditStatus: attendanceClientCreditStatusSchema,
+  reason: z.string(),
+  resolvedBy: z.string().uuid(),
+  resolvedByName: z.string().nullable(),
+  resolvedAt: z.string(),
+})
+
+const attendanceReconciliationRowSchema = z.object({
+  shiftId: z.string().uuid(),
+  scheduleId: z.string().uuid(),
+  operationalDate: z.string(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  timeZone: z.string(),
+  headcountRequired: z.number().int().positive(),
+  requiresArmed: z.boolean(),
+  scheduledMinutesPerPosition: z.number().int().nonnegative(),
+  scheduledCoverageMinutes: z.number().int().nonnegative(),
+  actualPaidMinutes: z.number().int().nonnegative(),
+  varianceMinutes: z.number().int(),
+  scheduledEmployeeCount: z.number().int().nonnegative(),
+  actualEmployeeCount: z.number().int().nonnegative(),
+  scheduledMissingCount: z.number().int().nonnegative(),
+  unexpectedActualCount: z.number().int().nonnegative(),
+  siteId: z.string().uuid().nullable(),
+  siteCode: z.string().nullable(),
+  siteName: z.string().nullable(),
+  postId: z.string().uuid().nullable(),
+  postName: z.string().nullable(),
+  eventId: z.string().uuid().nullable(),
+  eventName: z.string().nullable(),
+  locationName: z.string(),
+  scheduledEmployees: z.array(attendanceReconciliationScheduledEmployeeSchema),
+  actualEmployees: z.array(attendanceReconciliationActualEmployeeSchema),
+  callOffs: z.array(attendanceReconciliationCallOffSchema),
+  discrepancyCodes: z.array(attendanceReconciliationDiscrepancySchema),
+  requiresTimeCorrection: z.boolean(),
+  occurrenceFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  reviewStatus: z.union([z.literal('unresolved'), attendanceReconciliationActionSchema]),
+  resolution: attendanceReconciliationResolutionSchema.nullable(),
+})
+
+const dailyAttendanceReviewSchema = z.object({
+  serverTimestamp: z.string(),
+  fromDate: z.string(),
+  throughDate: z.string(),
+  operationalTimeZone: z.literal('America/Denver'),
+  graceMinutes: z.number().int().positive(),
+  rows: z.array(attendanceReconciliationRowSchema),
+  summary: z.object({
+    total: z.number().int().nonnegative(),
+    unresolved: z.number().int().nonnegative(),
+    resolved: z.number().int().nonnegative(),
+  }),
+})
+
+const attendanceReconciliationDecisionResultSchema = z.object({
+  id: z.string().uuid(),
+  shiftId: z.string().uuid(),
+  operationalDate: z.string(),
+  occurrenceFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  action: attendanceReconciliationActionSchema,
+  clientCreditStatus: attendanceClientCreditStatusSchema,
+  reason: z.string(),
+  resolvedBy: z.string().uuid(),
+  resolvedAt: z.string(),
+})
+
 export type TimeEventKind = z.infer<typeof timeEventKindSchema>
 export type TimekeepingShift = z.infer<typeof timekeepingShiftSchema>
 export type TimekeepingEvent = z.infer<typeof timekeepingEventSchema>
@@ -479,6 +612,11 @@ export type PayrollRules = z.infer<typeof payrollRulesSchema>
 export type PayrollAccountabilityEvent = z.infer<typeof payrollAccountabilityEventSchema>
 export type AttendanceReportResult = z.infer<typeof attendanceReportResultSchema>
 export type WorkType = z.infer<typeof workTypeSchema>
+export type AttendanceReconciliationDiscrepancy = z.infer<typeof attendanceReconciliationDiscrepancySchema>
+export type AttendanceReconciliationAction = z.infer<typeof attendanceReconciliationActionSchema>
+export type AttendanceClientCreditStatus = z.infer<typeof attendanceClientCreditStatusSchema>
+export type AttendanceReconciliationRow = z.infer<typeof attendanceReconciliationRowSchema>
+export type DailyAttendanceReview = z.infer<typeof dailyAttendanceReviewSchema>
 
 export interface PayrollEmployeeSummary {
   employeeId: string
@@ -918,6 +1056,38 @@ export async function getPayrollAccountabilityEvents(input: {
   })
   if (error) throw new Error(error.message || 'Payroll accountability events could not be loaded.')
   return z.array(payrollAccountabilityEventSchema).parse(data)
+}
+
+export async function getDailyAttendanceReview(input: {
+  fromDate: string
+  throughDate: string
+  includeResolved?: boolean
+}): Promise<DailyAttendanceReview> {
+  const { data, error } = await getSupabaseClient().rpc('get_daily_attendance_review', {
+    target_from_date: input.fromDate,
+    target_include_resolved: input.includeResolved ?? false,
+    target_through_date: input.throughDate,
+  })
+  if (error) throw new Error(error.message || 'Daily Attendance Review could not be loaded. MFA is required.')
+  return dailyAttendanceReviewSchema.parse(data)
+}
+
+export async function resolveDailyAttendanceReview(input: {
+  shiftId: string
+  occurrenceFingerprint: string
+  action: AttendanceReconciliationAction
+  clientCreditStatus: AttendanceClientCreditStatus
+  reason: string
+}): Promise<z.infer<typeof attendanceReconciliationDecisionResultSchema>> {
+  const { data, error } = await getSupabaseClient().rpc('resolve_daily_attendance_review', {
+    target_action: input.action,
+    target_client_credit_status: input.clientCreditStatus,
+    target_occurrence_fingerprint: input.occurrenceFingerprint,
+    target_reason: input.reason,
+    target_shift_id: input.shiftId,
+  })
+  if (error) throw new Error(error.message || 'The attendance review decision could not be saved.')
+  return attendanceReconciliationDecisionResultSchema.parse(data)
 }
 
 export async function reportAttendanceIssue(input: {

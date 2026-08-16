@@ -66,6 +66,9 @@ export const TimeTeamPageRoute = lazy(() =>
 export const TimeExceptionsPageRoute = lazy(() =>
   import('../time/TimeExceptionsPage').then((module) => ({ default: module.TimeExceptionsPage })),
 )
+export const TimeDailyAttendancePageRoute = lazy(() =>
+  import('../time/DailyAttendanceReviewPage').then((module) => ({ default: module.DailyAttendanceReviewPage })),
+)
 export const TimeTimecardsPageRoute = lazy(() =>
   import('../time/TimeCommandCenterPage').then((module) => ({
     default: () => <module.TimeFuturePage area="Timecards" />,
