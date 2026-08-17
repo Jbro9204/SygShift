@@ -13,6 +13,10 @@ const groupingMigration = readFileSync(
   join(root, 'supabase', 'migrations', '20260816170000_attendance_review_coverage_grouping.sql'),
   'utf8',
 )
+const missingTimeFastPathMigration = readFileSync(
+  join(root, 'supabase', 'migrations', '20260817120000_attendance_review_missing_time_fast_path.sql'),
+  'utf8',
+)
 const page = readFileSync(join(root, 'src', 'time', 'DailyAttendanceReviewPage.tsx'), 'utf8')
 const reviewHelpers = readFileSync(join(root, 'src', 'time', 'dailyAttendanceReview.ts'), 'utf8')
 
@@ -82,5 +86,35 @@ describe('daily attendance reconciliation guardrails', () => {
     expect(groupingMigration).toContain("(current_snapshot ->> 'shiftId')::uuid <> target_shift_id")
     expect(groupingMigration).toContain("current_snapshot ->> 'occurrenceFingerprint' <> target_occurrence_fingerprint")
     expect(groupingMigration).toContain('insert into public.attendance_reconciliation_decisions')
+  })
+
+  it('returns scheduled no-punch occurrences without repeating detailed time calculations', () => {
+    expect(missingTimeFastPathMigration).toContain('private.get_attendance_reconciliation_missing_time_snapshot')
+    expect(missingTimeFastPathMigration).toContain("'missing_recorded_time'")
+    expect(missingTimeFastPathMigration).toContain("case when occurrence.scheduled_employee_count > 0 then 'scheduled_employee_missing' end")
+    expect(missingTimeFastPathMigration).toContain("'scheduledEmployees', classified.scheduled_employees")
+    expect(missingTimeFastPathMigration).toContain("'actualEmployees', '[]'::jsonb")
+    expect(missingTimeFastPathMigration).toContain("'requiresTimeCorrection', false")
+  })
+
+  it('retains the full reconciliation path whenever an occurrence has recorded activity', () => {
+    expect(missingTimeFastPathMigration).toContain('private.get_attendance_reconciliation_group_snapshot_detailed')
+    expect(missingTimeFastPathMigration).toContain('public.time_events')
+    expect(missingTimeFastPathMigration).toContain('public.time_event_shift_overrides')
+    expect(missingTimeFastPathMigration).toContain('public.attendance_accountability_events')
+    expect(missingTimeFastPathMigration).toContain('public.call_off_reports')
+    expect(missingTimeFastPathMigration).toContain('if has_recorded_activity then')
+  })
+
+  it('does not modify schedule or punch history while calculating missing time', () => {
+    const fastSnapshot = missingTimeFastPathMigration.slice(
+      missingTimeFastPathMigration.indexOf('create or replace function private.get_attendance_reconciliation_missing_time_snapshot'),
+      missingTimeFastPathMigration.indexOf('create or replace function private.get_attendance_reconciliation_group_snapshot(', 100),
+    )
+
+    expect(fastSnapshot).not.toContain('update public.shifts')
+    expect(fastSnapshot).not.toContain('delete from public.time_events')
+    expect(fastSnapshot).not.toContain('update public.time_events')
+    expect(fastSnapshot).not.toContain('insert into public.time_events')
   })
 })

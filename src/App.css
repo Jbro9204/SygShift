@@ -4571,6 +4571,38 @@
   min-width: 100%;
 }
 
+.page--schedule:not(.page--scheduler) .schedule-scroll-hint,
+.page--schedule:not(.page--scheduler) .schedule-scrollbar {
+  display: none;
+}
+
+.page--schedule:not(.page--scheduler) .schedule-grid {
+  width: 100%;
+  min-width: 0;
+  padding-right: 0;
+}
+
+.page--schedule:not(.page--scheduler) .schedule-row {
+  grid-template-columns: minmax(138px, 176px) repeat(7, minmax(0, 1fr));
+}
+
+.page--schedule:not(.page--scheduler) .schedule-site-column,
+.page--schedule:not(.page--scheduler) .schedule-day-column,
+.page--schedule:not(.page--scheduler) .schedule-location,
+.page--schedule:not(.page--scheduler) .schedule-day-cell {
+  min-width: 0;
+}
+
+.page--schedule:not(.page--scheduler) .schedule-day-column,
+.page--schedule:not(.page--scheduler) .schedule-day-cell {
+  padding-right: 7px;
+  padding-left: 7px;
+}
+
+.page--schedule:not(.page--scheduler) .shift-card {
+  overflow-wrap: anywhere;
+}
+
 .schedule-row--header {
   position: sticky;
   z-index: 6;

@@ -114,6 +114,17 @@ describe('scheduler behavior guardrails', () => {
     expect(schedulerBoardStyles).toContain('overflow-x: hidden')
   })
 
+  it('fits all seven desktop Schedule days without a horizontal scrollbar', () => {
+    const scheduleGridStyles = /\.page--schedule:not\(\.page--scheduler\) \.schedule-grid \{[\s\S]+?\}/.exec(appStyles)?.[0] ?? ''
+    const scheduleRowStyles = /\.page--schedule:not\(\.page--scheduler\) \.schedule-row \{[\s\S]+?\}/.exec(appStyles)?.[0] ?? ''
+    const scheduleScrollbarStyles = /\.page--schedule:not\(\.page--scheduler\) \.schedule-scroll-hint,[\s\S]+?\.schedule-scrollbar \{[\s\S]+?\}/.exec(appStyles)?.[0] ?? ''
+
+    expect(scheduleGridStyles).toContain('width: 100%')
+    expect(scheduleGridStyles).toContain('min-width: 0')
+    expect(scheduleRowStyles).toContain('repeat(7, minmax(0, 1fr))')
+    expect(scheduleScrollbarStyles).toContain('display: none')
+  })
+
   it('keeps schedule employees identifiable when preferred names are ambiguous', () => {
     expect(scheduleData).toContain('scheduleEmployeeName(employee)')
     expect(scheduleData).toContain('employee_number: z.string().nullable()')

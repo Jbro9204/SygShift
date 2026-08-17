@@ -23,6 +23,20 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/17/2026
+
+### Attendance-review performance and seven-day Schedule layout
+
+- Fixed Daily Attendance Review date-range timeouts that could leave the missed-punch queue empty or incomplete.
+- Added an optimized read-only snapshot for published schedule occurrences with no recorded activity while retaining the full reconciliation path for occurrences with punches, overrides, call-offs, or attendance events.
+- Production verification for 08/09/2026 through 08/16/2026 returned 739 review rows, including 737 no-recorded-time occurrences and 35 distinct scheduled employees missing time, in approximately 4.4 seconds.
+- Verified sampled optimized results exactly matched the existing detailed reconciliation output.
+- Updated the desktop Schedule to fit the Site/Post column plus all seven days without horizontal scrolling, while preserving the dedicated mobile layout.
+- Applied targeted production migration `20260817120000_attendance_review_missing_time_fast_path.sql`.
+- Full validation passed: type checking, lint, 45 test files / 223 tests, and production build.
+- Production health and readiness checks passed.
+- Deployed Cloudflare Worker version `a0a18990-425b-404b-b99d-27e759dbf47b`.
+
 ## 08/16/2026
 
 ### Attendance review coverage consolidation
