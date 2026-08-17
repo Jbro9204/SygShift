@@ -24,4 +24,3 @@
 - Applied production migration `20260817120000_attendance_review_missing_time_fast_path.sql`.
 - Deployed Cloudflare Worker version `a0a18990-425b-404b-b99d-27e759dbf47b`.
 - Verified the production health and readiness endpoints after deployment.
-
