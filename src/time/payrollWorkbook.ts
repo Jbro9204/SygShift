@@ -333,7 +333,8 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
     ['Pay Period', `${formatUsDateKey(review.fromDate)} - ${formatUsDateKey(review.throughDate)}`],
     ['Report Status', input.exportType],
     ['Pay Basis', 'Completed SygShift clock-in/out records plus approved sick and PTO hours. Scheduled hours are shown only for comparison.'],
-    ['Payroll Rules', input.rules ? `${input.rules.weekStartsOnLabel} week start, ${payrollHours(input.rules.dailyOvertimeMinutes)} daily OT, ${payrollHours(input.rules.weeklyOvertimeMinutes)} weekly OT` : 'Rules loaded from SygShift'],
+    ['Payroll Rules', input.rules ? `${input.rules.weekStartsOnLabel} 12:00 AM payroll week; entire overnight occurrence follows scheduled start. ${payrollHours(input.rules.dailyOvertimeMinutes)} daily OT / ${payrollHours(input.rules.weeklyOvertimeMinutes)} weekly OT remain a separate calculation.` : 'Rules loaded from SygShift'],
+    ['Calculation Policy', input.rules ? `${input.rules.payrollCalculationPolicyVersion} / configuration ${input.rules.payrollConfigurationVersion}` : 'Recorded with each official batch'],
     ['Review Note', input.exportNote ?? input.batch?.note ?? ''],
     ['Batch', input.batch ? `Locked payroll batch ${input.batch.id} / ${input.batch.digest.slice(0, 12)}` : 'Preview only — not an official payroll submission'],
     [],
@@ -398,8 +399,9 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
       'B5:M5',
       'B6:M6',
       'B7:M7',
+      'B8:M8',
     ],
-    metadataRows: [1, 2, 3, 4, 5, 6],
+    metadataRows: [1, 2, 3, 4, 5, 6, 7],
     name: 'Payroll Summary',
     rowHeights: {
       3: 34,
@@ -413,7 +415,7 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
 }
 
 function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAccountabilityEvent[]): WorkbookSheet {
-  const header = ['Employee', 'Date', 'Issue', 'Location', 'Scheduled', 'Worked', 'Payable', 'Variance', 'Status', 'Shift Notes', 'Review Notes']
+  const header = ['Employee', 'Date', 'Issue', 'Location', 'Payroll Batch', 'Assignment Source', 'Scheduled', 'Worked', 'Payable', 'Variance', 'Status', 'Shift Notes', 'Review Notes']
   const rowItems = rows
     .filter((row) => !row.payrollReady || row.exceptionCodes.length > 0 || row.payrollNotes.length > 0)
     .map((row) => {
@@ -423,6 +425,8 @@ function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
         formatUsDateKey(row.operationalDate),
         row.exceptionCodes.length > 0 ? row.exceptionCodes.map((code) => code.replaceAll('_', ' ')).join(', ') : 'Payroll review',
         locationLabel(row),
+        row.payrollBatchWeekStartsOn && row.payrollBatchWeekEndsOn ? `${formatUsDateKey(row.payrollBatchWeekStartsOn)} - ${formatUsDateKey(row.payrollBatchWeekEndsOn)}` : 'Unresolved',
+        row.payrollAssignmentSource.replaceAll('_', ' '),
         hours(scheduled),
         hours(row.paidMinutes),
         hours(row.paidMinutes),
@@ -441,6 +445,8 @@ function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
       formatUsDateKey(event.operationalDate),
       `${eventLabel(event.eventType)} / ${accountabilityEventPayCategory(event)}`,
       accountabilityLocation(event),
+      '',
+      'Accountability event',
       hours(scheduled),
       '',
       hours(payable),
@@ -457,13 +463,13 @@ function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
   ]
   const headerRowIndex = titleRows.length
   return {
-    centerColumns: [1, 4, 5, 6, 7, 8],
-    columnWidths: [24, 14, 24, 38, 13, 13, 13, 13, 16, 42, 48],
+    centerColumns: [1, 4, 6, 7, 8, 9, 10],
+    columnWidths: [24, 14, 24, 38, 25, 23, 13, 13, 13, 13, 16, 42, 48],
     filterRowIndex: headerRowIndex,
     freezeRows: headerRowIndex + 1,
     headerRows: [headerRowIndex],
     integerColumns: [],
-    mergedCells: ['A1:K1', 'B2:K2'],
+    mergedCells: ['A1:M1', 'B2:M2'],
     metadataRows: [1],
     name: 'Payroll Review',
     rows: [
@@ -472,7 +478,7 @@ function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
       ...(rowItems.length + eventItems.length > 0 ? [...rowItems, ...eventItems] : [['No discrepancies or accountability events in this range.']]),
     ],
     titleRows: [0],
-    wrapColumns: [2, 3, 9],
+    wrapColumns: [2, 3, 5, 11, 12],
   }
 }
 
@@ -689,19 +695,26 @@ function buildEmployeeSheets(review: TimekeepingReview, events: PayrollAccountab
     const employeeEvents = events.filter((event) => event.employeeId === employeeId)
     const employeeName = employeeRows[0]?.employeeName ?? employeeEvents[0]?.employeeName ?? 'Employee'
     const workedRows: WorkbookCell[][] = employeeRows.map((row) => {
-      const scheduled = scheduledMinutes(row)
       return [
+        row.employeeName,
+        row.employeeId,
+        row.username,
         formatUsDateKey(row.operationalDate),
         locationLabel(row),
         row.workType === 'training' ? 'Paid training' : 'Worked time',
-        hours(scheduled),
+        dateTimeText(row.scheduledStartsAt, row.timeZone),
+        dateTimeText(row.scheduledEndsAt, row.timeZone),
         dateTimeText(row.firstClockIn, row.timeZone),
         dateTimeText(row.lastClockOut, row.timeZone),
-        row.breakMinutes,
         hours(row.paidMinutes),
+        row.payrollBatchWeekStartsOn && row.payrollBatchWeekEndsOn ? `${formatUsDateKey(row.payrollBatchWeekStartsOn)} - ${formatUsDateKey(row.payrollBatchWeekEndsOn)}` : 'Unresolved',
+        row.payrollPeriodStartsOn && row.payrollPeriodEndsOn ? `${formatUsDateKey(row.payrollPeriodStartsOn)} - ${formatUsDateKey(row.payrollPeriodEndsOn)}` : '',
         hours(row.regularMinutes),
         hours(row.overtimeMinutes),
-        hours(row.paidMinutes - scheduled),
+        row.breakMinutes,
+        row.crossesPayrollBoundary ? 'Yes' : 'No',
+        row.payrollAssignmentSource.replaceAll('_', ' '),
+        row.manualAdjustment ? 'Yes' : 'No',
         row.payrollReady ? 'Ready' : 'Needs review',
         row.shiftNotes ?? '',
         [...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')), ...row.payrollNotes].join(' | '),
@@ -741,18 +754,18 @@ function buildEmployeeSheets(review: TimekeepingReview, events: PayrollAccountab
     const accountabilityHeaderRow = accountabilityTitleRow + 1
 
     return {
-      centerColumns: [0, 2, 3, 6, 7, 8, 9, 10, 11],
-      columnWidths: [14, 38, 17, 14, 24, 24, 14, 14, 14, 14, 15, 16, 42, 46],
+      centerColumns: [3, 5, 10, 11, 12, 13, 14, 15, 17, 18],
+      columnWidths: [24, 38, 18, 14, 38, 18, 24, 24, 24, 24, 15, 25, 25, 14, 14, 14, 18, 24, 18, 16, 42, 46],
       filterRowIndex: workedHeaderRow,
       freezeRows: workedHeaderRow + 1,
       headerRows: [workedHeaderRow, accountabilityHeaderRow],
-      integerColumns: [6],
-      mergedCells: ['A1:N1', 'B2:N2', 'B3:N3', 'B4:N4', `A${accountabilityTitleRow + 1}:N${accountabilityTitleRow + 1}`],
+      integerColumns: [14],
+      mergedCells: ['A1:V1', 'B2:V2', 'B3:V3', 'B4:V4', `A${accountabilityTitleRow + 1}:V${accountabilityTitleRow + 1}`],
       metadataRows: [1, 2, 3],
       name: sheetName(employeeName, usedNames),
       rows: [
         ...titleRows,
-        ['Date', 'Site / Post', 'Time Category', 'Scheduled', 'Clock In', 'Clock Out', 'Break Min', 'Paid Hours', 'Regular', 'Overtime', 'Variance', 'Status', 'Shift Notes', 'Review Notes'],
+        ['Employee', 'Employee ID', 'Username', 'Work Date', 'Site / Post', 'Time Category', 'Scheduled Start', 'Scheduled End', 'Actual Clock In', 'Actual Clock Out', 'Worked Hours', 'Payroll Batch Week', 'Payroll Period', 'Regular Hours', 'Overtime Hours', 'Break Minutes', 'Crosses Payroll Boundary', 'Assignment Source', 'Manual Adjustment', 'Exception Status', 'Shift Notes', 'Review Notes'],
         ...(workedRows.length > 0 ? workedRows : [['No worked time rows in this range.']]),
         [],
         ['Accountability / Sick Pay / PTO'],
@@ -761,7 +774,7 @@ function buildEmployeeSheets(review: TimekeepingReview, events: PayrollAccountab
       ],
       sectionRows: [accountabilityTitleRow],
       titleRows: [0],
-      wrapColumns: [1, 4, 5, 12],
+      wrapColumns: [4, 6, 7, 8, 9, 11, 12, 17, 20, 21],
     }
   })
 }

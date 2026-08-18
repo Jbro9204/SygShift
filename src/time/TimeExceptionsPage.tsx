@@ -72,6 +72,10 @@ const exceptionCopy: Record<PayrollException | 'pending_correction', { label: st
     help: 'The employee has more than one complete work segment. Confirm the unpaid gap and approve it only when the punches accurately describe the day.',
     label: 'Multiple work segments',
   },
+  payroll_assignment_unresolved: {
+    help: 'The worked occurrence is missing a reliable payroll-week anchor. Review the schedule and punches, then assign the correct Sunday payroll week with a documented reason.',
+    label: 'Payroll week unresolved',
+  },
 }
 
 const resolutionActionCopy: Record<TimekeepingExceptionResolutionAction, string> = {

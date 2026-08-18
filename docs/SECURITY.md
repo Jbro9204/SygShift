@@ -39,6 +39,8 @@
 - Schedule publication and payroll locking are privileged actions.
 - Timeclock events use server time. Client timestamps may be recorded only as diagnostic metadata.
 - Original punches cannot be edited or deleted; corrections are separate amendments with actor, reason, and time.
+- Correcting an unlocked payroll-batch assignment requires the effective `time.override_payroll_assignment` permission and an MFA-verified session. The correction requires a reason and creates append-only history without rewriting punch evidence.
+- Locked payroll exports and their rows remain append-only. Recalculation skips locked occurrences, and an assignment correction is rejected when the occurrence is already present in a locked export.
 - Username reservations are never reused.
 
 ## Production checks

@@ -186,6 +186,11 @@ Trust model:
 - Colorado display and payroll interpretation use `America/Denver`.
 - Pay weeks run Sunday 12:00 AM through Saturday 11:59 PM.
 - Payroll is biweekly on Friday; the configured pay-period rules and current HR direction govern exact export windows.
+- The payroll-week boundary is Sunday at 12:00 AM in `America/Denver`. Do not introduce an operational-day cutoff such as 6:00 AM into payroll batching.
+- Keep every linked overnight shift in the payroll week containing the scheduled shift start. Replacement assignments and linked manual entries inherit the parent shift; standalone manual entries use manual clock-in; unscheduled work uses actual clock-in.
+- Treat payroll-batch grouping and overtime allocation as separate policies. Changes to one require separate review and version metadata for the other.
+- `src/time/payrollBoundary.ts` is the browser-side reference implementation and `private.get_payroll_batch_week(...)` is the database authority. Both must remain covered by boundary and daylight-saving tests.
+- Open assignment recalculation must be idempotent and must skip locked payroll. Any authorized correction requires `time.override_payroll_assignment`, MFA, a Sunday date, a reason, and append-only audit history.
 - Hourly payroll uses worked time recorded through punches and approved corrections, not scheduled hours.
 - Scheduled hours may appear for comparison and discrepancy reporting but are not silently converted into worked hours.
 - Breaks are unpaid; the usual expected break is 30 minutes.
@@ -481,4 +486,3 @@ Known risks or decisions needed:
 ```
 
 If work is incomplete, do not describe it as complete. Either commit a coherent safe unit or provide the exact dirty-file state and next command. Never leave the next maintainer to infer whether production, Git, and the local workstation match.
-

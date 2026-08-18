@@ -10918,6 +10918,91 @@
   text-transform: uppercase;
 }
 
+.payroll-assignment-review {
+  display: grid;
+  gap: 16px;
+  margin: 20px 22px 0;
+  padding: 18px;
+  background: #fff;
+  border: 1px solid #e2d3b6;
+  border-radius: 12px;
+}
+
+.payroll-assignment-review > div:first-child {
+  display: grid;
+  gap: 5px;
+}
+
+.payroll-assignment-review > div:first-child > span,
+.payroll-assignment-review__correction label > span {
+  color: #71695d;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.payroll-assignment-review h3,
+.payroll-assignment-review p {
+  margin: 0;
+}
+
+.payroll-assignment-review__correction {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.4fr) minmax(320px, 1fr);
+  align-items: end;
+  gap: 14px;
+  padding-top: 16px;
+  border-top: 1px solid #e7dece;
+}
+
+.payroll-assignment-review__candidates {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: var(--canvas);
+}
+
+.payroll-assignment-review__candidates > p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.payroll-assignment-review__candidates ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.payroll-assignment-review__candidates li {
+  display: grid;
+  gap: 0.12rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  background: var(--paper);
+}
+
+.payroll-assignment-review__correction label {
+  display: grid;
+  gap: 7px;
+}
+
+.payroll-assignment-review__correction textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.payroll-assignment-review__correction .time-button,
+.payroll-assignment-review__correction .form-feedback {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+
 .payroll-correction-modal {
   width: min(760px, calc(100vw - 32px));
 }
@@ -11020,7 +11105,7 @@
 }
 
 .payroll-rows-table {
-  min-width: 1180px;
+  min-width: 1380px;
 }
 
 .payroll-history-panel--page {
@@ -13469,6 +13554,19 @@
 
   .payroll-blocker-modal__summary {
     grid-template-columns: 1fr;
+  }
+
+  .payroll-assignment-review {
+    margin: 14px 14px 0;
+    padding: 14px;
+  }
+
+  .payroll-assignment-review__correction {
+    grid-template-columns: 1fr;
+  }
+
+  .payroll-assignment-review__correction .time-button {
+    width: 100%;
   }
 
   .time-exception-review {

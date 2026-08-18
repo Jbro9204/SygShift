@@ -18,6 +18,7 @@ import { ModalDialog } from '../components/ModalDialog'
 import { getSessionContext } from '../data/auth'
 import {
   createPayrollExportBatch,
+  correctPayrollBatchAssignment,
   getPayrollAccountabilityEvents,
   getPayrollExportBatchDetail,
   getPayrollExportHistory,
@@ -38,7 +39,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { TimeMaintenanceWorkbench, type TimeMaintenanceFocusRequest } from '../pages/TimePage'
-import { canExportPayroll, canManageTime, canViewTeamTime } from './timePermissions'
+import { canExportPayroll, canManageTime, canOverridePayrollAssignment, canViewTeamTime } from './timePermissions'
 import { completedPayrollPeriod, currentPayrollPeriod, formatUsDateKey, shiftPayrollPeriod, type TimePeriod } from './timeRules'
 import { payrollExportFileName, payrollLockBlocker, payrollReadinessPercent, workedTimePayrollReview } from './timePayroll'
 import {
@@ -93,6 +94,24 @@ function exceptionLabel(code: string): string {
   return code.replaceAll('_', ' ')
 }
 
+function assignmentSourceLabel(source: TimekeepingReviewRow['payrollAssignmentSource']): string {
+  const labels: Record<TimekeepingReviewRow['payrollAssignmentSource'], string> = {
+    authorized_correction: 'Authorized correction',
+    manual_entry: 'Manual entry clock-in',
+    manual_linked_shift: 'Scheduled shift (manual entry)',
+    replacement_assignment: 'Parent scheduled shift',
+    salary_default: 'Salary payroll default',
+    scheduled_shift: 'Scheduled shift start',
+    unresolved: 'Needs payroll review',
+    unscheduled_actual_punch: 'Actual clock-in',
+  }
+  return labels[source]
+}
+
+function isSundayDateKey(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && new Date(`${value}T12:00:00Z`).getUTCDay() === 0
+}
+
 function PayrollRulesSummary({ rules, period }: { period: Pick<TimePeriod, 'fromDate' | 'throughDate'>; rules?: PayrollRules }) {
   if (!rules) {
     return (
@@ -111,13 +130,13 @@ function PayrollRulesSummary({ rules, period }: { period: Pick<TimePeriod, 'from
       </article>
       <article>
         <span>Payroll week</span>
-        <strong>{rules.weekStartsOnLabel} 12:00 AM - Saturday 11:59 PM</strong>
-        <small>{rules.payFrequency === 'biweekly' ? 'Biweekly pay-period export.' : 'Weekly pay-period export.'}</small>
+        <strong>{rules.weekStartsOnLabel} {rules.payrollWeekStartTime.slice(0, 5)} - Saturday 11:59 PM</strong>
+        <small>Entire overnight occurrences follow the scheduled shift start; there is no fixed morning cutoff.</small>
       </article>
       <article>
         <span>Overtime</span>
         <strong>{payrollHours(rules.dailyOvertimeMinutes)} daily / {payrollHours(rules.weeklyOvertimeMinutes)} weekly</strong>
-        <small>Daily overtime and weekly overtime are calculated before export.</small>
+        <small>Calculated under the separate {rules.overtimePolicyVersion} workweek policy.</small>
       </article>
       <article>
         <span>Export source</span>
@@ -490,6 +509,7 @@ function PayrollRowsTable({
               <th>Regular</th>
               <th>OT</th>
               <th>Paid</th>
+              <th>Payroll batch</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -525,6 +545,14 @@ function PayrollRowsTable({
                 <td>
                   <strong>{payrollHours(row.paidMinutes)} hr</strong>
                   <span>{row.breakMinutes} break min</span>
+                </td>
+                <td>
+                  <strong>{row.payrollBatchWeekStartsOn && row.payrollBatchWeekEndsOn
+                    ? `${formatUsDateKey(row.payrollBatchWeekStartsOn)} - ${formatUsDateKey(row.payrollBatchWeekEndsOn)}`
+                    : 'Needs assignment'}</strong>
+                  <span>{assignmentSourceLabel(row.payrollAssignmentSource)}</span>
+                  {row.crossesPayrollBoundary ? <TimeStatusBadge tone="warning">Crosses payroll boundary</TimeStatusBadge> : null}
+                  {row.manualAdjustment ? <small>Manual adjustment recorded</small> : null}
                 </td>
                 <td>
                   {row.payrollReady ? (
@@ -597,6 +625,8 @@ export function TimePayrollPage() {
   const [selectedBlockerRow, setSelectedBlockerRow] = useState<TimekeepingReviewRow | null>(null)
   const [selectedCorrection, setSelectedCorrection] = useState<PendingCorrection | null>(null)
   const [correctionNote, setCorrectionNote] = useState('')
+  const [payrollAssignmentWeek, setPayrollAssignmentWeek] = useState('')
+  const [payrollAssignmentReason, setPayrollAssignmentReason] = useState('')
 
   const sessionQuery = useQuery({
     queryKey: ['session-context'],
@@ -606,6 +636,7 @@ export function TimePayrollPage() {
   const reviewAllowed = canViewTeamTime(sessionQuery.data) || canExportPayroll(sessionQuery.data)
   const exportAllowed = canExportPayroll(sessionQuery.data)
   const manageAllowed = canManageTime(sessionQuery.data)
+  const assignmentCorrectionAllowed = canOverridePayrollAssignment(sessionQuery.data)
   const rulesQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed,
     queryKey: ['time-payroll-rules'],
@@ -648,6 +679,36 @@ export function TimePayrollPage() {
         queryClient.invalidateQueries({ queryKey: ['time-team-summary'] }),
         queryClient.invalidateQueries({ queryKey: ['time-maintenance'] }),
         queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'] }),
+      ])
+    },
+  })
+  const payrollAssignmentMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedBlockerRow?.payrollOccurrenceFingerprint || !selectedBlockerRow.payrollOccurrenceKey) {
+        throw new Error('This payroll occurrence does not have enough evidence for an audited correction.')
+      }
+      if (!isSundayDateKey(payrollAssignmentWeek)) {
+        throw new Error('Choose the Sunday that begins the correct payroll week.')
+      }
+      return correctPayrollBatchAssignment({
+        assignedWeekStartsOn: payrollAssignmentWeek,
+        employeeId: selectedBlockerRow.employeeId,
+        firstClockIn: selectedBlockerRow.firstClockIn,
+        occurrenceFingerprint: selectedBlockerRow.payrollOccurrenceFingerprint,
+        occurrenceKey: selectedBlockerRow.payrollOccurrenceKey,
+        originalWeekStartsOn: selectedBlockerRow.payrollBatchWeekStartsOn ?? null,
+        reason: payrollAssignmentReason,
+        shiftId: selectedBlockerRow.shiftId,
+      })
+    },
+    onSuccess: async () => {
+      setPayrollAssignmentWeek('')
+      setPayrollAssignmentReason('')
+      closeRowBlocker()
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['time-payroll-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['timekeeping-review'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-command-review'] }),
       ])
     },
   })
@@ -772,6 +833,8 @@ export function TimePayrollPage() {
 
   function openRowBlocker(row: TimekeepingReviewRow) {
     setSelectedBlockerRow(row)
+    setPayrollAssignmentWeek(row.payrollBatchWeekStartsOn ?? '')
+    setPayrollAssignmentReason('')
     setFocusRequest({
       employeeId: row.employeeId,
       fromDate: row.operationalDate,
@@ -783,6 +846,8 @@ export function TimePayrollPage() {
   function closeRowBlocker() {
     setSelectedBlockerRow(null)
     setFocusRequest(null)
+    setPayrollAssignmentWeek('')
+    setPayrollAssignmentReason('')
   }
 
   function openFirstBlocker() {
@@ -994,6 +1059,64 @@ export function TimePayrollPage() {
             <div><span>Work date</span><strong>{formatUsDateKey(selectedBlockerRow.operationalDate)}</strong></div>
             <div><span>Blocker</span><strong>{selectedBlockerRow.exceptionCodes.length ? selectedBlockerRow.exceptionCodes.map(exceptionLabel).join(', ') : 'Needs review'}</strong></div>
           </div>
+          <section className="payroll-assignment-review" aria-labelledby="payroll-assignment-review-title">
+            <div>
+              <span>Payroll batch assignment</span>
+              <h3 id="payroll-assignment-review-title">
+                {selectedBlockerRow.payrollBatchWeekStartsOn && selectedBlockerRow.payrollBatchWeekEndsOn
+                  ? `${formatUsDateKey(selectedBlockerRow.payrollBatchWeekStartsOn)} - ${formatUsDateKey(selectedBlockerRow.payrollBatchWeekEndsOn)}`
+                  : 'Not reliably determined'}
+              </h3>
+              <p>{selectedBlockerRow.payrollAssignmentExplanation}</p>
+              <small>Source: {assignmentSourceLabel(selectedBlockerRow.payrollAssignmentSource)} · Policy {selectedBlockerRow.payrollPolicyVersion}</small>
+            </div>
+            {selectedBlockerRow.crossesPayrollBoundary ? (
+              <TimeAlertCard icon={History} title="Crosses Payroll Boundary" tone="warning">
+                <p>This occurrence begins in one payroll week and ends in the next. The entire occurrence stays with the payroll batch selected from its scheduled start.</p>
+              </TimeAlertCard>
+            ) : null}
+            {selectedBlockerRow.payrollAssignmentStatus === 'unresolved' && selectedBlockerRow.payrollAssignmentCandidates.length > 0 ? (
+              <div className="payroll-assignment-review__candidates">
+                <strong>Nearby schedule evidence</strong>
+                <p>These shifts are shown for review only. Choosing a payroll week does not link or alter a shift.</p>
+                <ul>
+                  {selectedBlockerRow.payrollAssignmentCandidates.slice(0, 6).map((candidate) => (
+                    <li key={candidate.shiftId}>
+                      <span>{candidate.locationName}</span>
+                      <small>{formatOperationalDateTime(candidate.startsAt, { includeTimeZoneName: true, timeZone: candidate.timeZone })} - {formatOperationalDateTime(candidate.endsAt, { includeTimeZoneName: true, timeZone: candidate.timeZone })}</small>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {assignmentCorrectionAllowed && selectedBlockerRow.payrollOccurrenceFingerprint && selectedBlockerRow.payrollOccurrenceKey ? (
+              <div className="payroll-assignment-review__correction">
+                <label>
+                  <span>Corrected week start <small>Sunday only</small></span>
+                  <input onChange={(event) => setPayrollAssignmentWeek(event.target.value)} type="date" value={payrollAssignmentWeek} />
+                </label>
+                <label>
+                  <span>Reason <small>Required</small></span>
+                  <textarea
+                    maxLength={500}
+                    onChange={(event) => setPayrollAssignmentReason(event.target.value)}
+                    placeholder="Explain why this exact unlocked occurrence belongs to another payroll batch."
+                    rows={3}
+                    value={payrollAssignmentReason}
+                  />
+                </label>
+                {payrollAssignmentMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{payrollAssignmentMutation.error.message}</p> : null}
+                <TimeButton
+                  disabled={payrollAssignmentMutation.isPending || payrollAssignmentReason.trim().length < 12 || !isSundayDateKey(payrollAssignmentWeek)}
+                  loading={payrollAssignmentMutation.isPending}
+                  onClick={() => payrollAssignmentMutation.mutate()}
+                  variant="secondary"
+                >
+                  Save audited batch correction
+                </TimeButton>
+              </div>
+            ) : null}
+          </section>
           <div className="time-maintenance-modal-body">
             <TimeMaintenanceWorkbench
               defaultDate={selectedBlockerRow.operationalDate}

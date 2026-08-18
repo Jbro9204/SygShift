@@ -61,6 +61,11 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Supervisors preview CSV payroll rows first; the preview does not create the official record.
 - A locked payroll export is created only through the database, after the server recalculates the review range.
 - Payroll locking is blocked when any row has a missing punch, invalid punch order, unresolved correction, zero paid minutes, or other exception.
+- A linked shift occurrence is assigned as one indivisible unit to the payroll week containing its scheduled start in `America/Denver`. A Saturday shift that ends Sunday remains in the Saturday week; early or late punches do not move it.
+- Standalone manual entries use their manual clock-in, and legitimate unscheduled work uses its actual clock-in. Missing anchors remain unresolved and must be reviewed before export.
+- Payroll-batch assignment and overtime allocation are separate policies. The batch rule never silently changes daily or weekly overtime calculations.
+- Open occurrences may be recalculated under the active versioned policy. Locked export snapshots retain their original assignment, policy version, configuration version, time zone, and grouping rule.
+- Authorized payroll-batch corrections require MFA, a Sunday week-start date, a written reason, and append-only history. They apply only to the selected unlocked occurrence.
 - Locked batches are stored in private tables with row snapshots, totals, the exporting employee, an audit note, and a SHA-256 digest of the clean review rows.
 - Locked batches and their rows are append-only. Duplicate locks for the exact same reviewed range and digest return the existing batch instead of creating clutter.
 - Browser users cannot insert payroll export records directly; they can only request the controlled export function, which requires Supervisor or Admin role plus MFA.

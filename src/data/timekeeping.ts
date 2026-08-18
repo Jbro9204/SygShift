@@ -75,6 +75,7 @@ const payrollExceptionSchema = z.enum([
   'pending_correction',
   'zero_paid_minutes',
   'multiple_work_segments',
+  'payroll_assignment_unresolved',
 ])
 
 const timekeepingExceptionPolicySchema = z.enum(['reviewable', 'hard'])
@@ -151,6 +152,23 @@ const payrollRulesSchema = z.object({
   defaultBreakMinutes: z.number().int().nonnegative(),
   salaryWeeklyDefaultMinutes: z.number().int().nonnegative(),
   salaryTimeOffReducesDefault: z.boolean(),
+  payrollWeekStartTime: z.string().optional().default('00:00:00'),
+  crossBoundaryGroupingPolicy: z.literal('scheduled_shift_start').optional().default('scheduled_shift_start'),
+  payrollPolicyEffectiveFrom: z.string().optional().default('2026-08-16'),
+  payrollConfigurationVersion: z.number().int().positive().optional().default(1),
+  payrollCalculationPolicyVersion: z.string().optional().default('payroll-batch-v1'),
+  overtimeTimeZone: z.string().optional().default('America/Denver'),
+  overtimeWeekStartsOn: z.number().int().min(0).max(6).optional().default(0),
+  overtimeWeekStartTime: z.string().optional().default('00:00:00'),
+  overtimePolicyVersion: z.string().optional().default('colorado-daily-weekly-v1'),
+})
+
+const payrollAssignmentCandidateSchema = z.object({
+  shiftId: z.string().uuid(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  timeZone: z.string(),
+  locationName: z.string(),
 })
 
 const timekeepingReviewRowSchema = z.object({
@@ -202,6 +220,48 @@ const timekeepingReviewRowSchema = z.object({
   workTypeOvertimeEligible: z.boolean().optional().default(true),
   workTypeRateSource: z.enum(['employee_base_rate', 'configured_rate']).optional().default('employee_base_rate'),
   mixedWorkTypes: z.boolean().optional().default(false),
+  payrollOccurrenceKey: z.string().optional().default(''),
+  payrollOccurrenceFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  payrollAssignmentAnchor: z.string().nullable().optional(),
+  payrollBatchWeekStartsOn: z.string().nullable().optional(),
+  payrollBatchWeekEndsOn: z.string().nullable().optional(),
+  payrollPeriodStartsOn: z.string().nullable().optional(),
+  payrollPeriodEndsOn: z.string().nullable().optional(),
+  payrollAssignmentSource: z.enum([
+    'scheduled_shift',
+    'replacement_assignment',
+    'manual_linked_shift',
+    'manual_entry',
+    'unscheduled_actual_punch',
+    'salary_default',
+    'authorized_correction',
+    'unresolved',
+  ]).optional().default('unresolved'),
+  payrollAssignmentStatus: z.enum(['derived', 'corrected', 'unresolved']).optional().default('unresolved'),
+  payrollAssignmentExplanation: z.string().optional().default('Payroll assignment metadata is unavailable for this historical row.'),
+  payrollAssignmentCandidates: z.array(payrollAssignmentCandidateSchema).optional().default([]),
+  crossesPayrollBoundary: z.boolean().optional().default(false),
+  payrollGroupingPolicy: z.string().optional().default('historical'),
+  payrollPolicyVersion: z.string().optional().default('historical'),
+  payrollConfigurationVersion: z.number().int().positive().optional().default(1),
+  overtimeWorkweekStartsOn: z.string().nullable().optional(),
+  overtimeWorkweekEndsOn: z.string().nullable().optional(),
+  overtimePolicyVersion: z.string().optional().default('historical'),
+  manualAdjustment: z.boolean().optional().default(false),
+})
+
+const payrollReconciliationSchema = z.object({
+  passed: z.boolean(),
+  paidMinutes: z.number().int().nonnegative(),
+  regularMinutes: z.number().int().nonnegative(),
+  overtimeMinutes: z.number().int().nonnegative(),
+  regularPlusOvertimeMatchesPaid: z.boolean(),
+  rowCount: z.number().int().nonnegative(),
+  uniqueOccurrenceCount: z.number().int().nonnegative(),
+  duplicateOccurrenceCount: z.number().int().nonnegative(),
+  unresolvedAssignmentCount: z.number().int().nonnegative(),
+  policyVersion: z.string(),
+  configurationVersion: z.number().int().positive(),
 })
 
 const pendingCorrectionSchema = z.object({
@@ -377,6 +437,36 @@ const timekeepingReviewSchema = z.object({
   rows: z.array(timekeepingReviewRowSchema),
   pendingCorrections: z.array(pendingCorrectionSchema),
   exceptionResolutionHistory: z.array(timekeepingExceptionResolutionSchema).optional().default([]),
+  reconciliation: payrollReconciliationSchema.optional(),
+})
+
+const payrollAssignmentCorrectionResultSchema = z.object({
+  occurrenceKey: z.string(),
+  originalWeekStartsOn: z.string().nullable(),
+  assignedWeekStartsOn: z.string(),
+  assignmentStatus: z.literal('corrected'),
+  reason: z.string(),
+  correctedBy: z.string().uuid(),
+  correctedAt: z.string(),
+})
+
+const payrollRecalculationResultSchema = z.object({
+  dryRun: z.boolean(),
+  fromDate: z.string(),
+  throughDate: z.string(),
+  rowCount: z.number().int().nonnegative(),
+  changedCount: z.number().int().nonnegative(),
+  unchangedCount: z.number().int().nonnegative(),
+  unresolvedCount: z.number().int().nonnegative(),
+  lockedSkippedCount: z.number().int().nonnegative(),
+  paidMinutes: z.number().int().nonnegative(),
+  regularMinutes: z.number().int().nonnegative(),
+  overtimeMinutes: z.number().int().nonnegative(),
+  policyVersion: z.string(),
+  configurationVersion: z.number().int().positive(),
+  reconciliationPassed: z.boolean(),
+  runId: z.string().uuid(),
+  runAt: z.string(),
 })
 
 const correctionReviewResultSchema = z.object({
@@ -610,6 +700,8 @@ export type TimeMaintenanceShiftOption = z.infer<typeof timeMaintenanceShiftOpti
 export type TeamAttendanceSummary = z.infer<typeof teamAttendanceSummarySchema>
 export type TeamAttendanceSummaryRow = z.infer<typeof teamAttendanceSummaryRowSchema>
 export type PayrollRules = z.infer<typeof payrollRulesSchema>
+export type PayrollAssignmentCorrectionResult = z.infer<typeof payrollAssignmentCorrectionResultSchema>
+export type PayrollRecalculationResult = z.infer<typeof payrollRecalculationResultSchema>
 export type PayrollAccountabilityEvent = z.infer<typeof payrollAccountabilityEventSchema>
 export type AttendanceReportResult = z.infer<typeof attendanceReportResultSchema>
 export type WorkType = z.infer<typeof workTypeSchema>
@@ -1045,6 +1137,44 @@ export async function getPayrollRules(): Promise<PayrollRules> {
   const { data, error } = await getSupabaseClient().rpc('get_payroll_rules')
   if (error) throw new Error(error.message || 'Payroll rules could not be loaded. MFA is required.')
   return parsePayrollRules(data)
+}
+
+export async function correctPayrollBatchAssignment(input: {
+  occurrenceKey: string
+  occurrenceFingerprint: string
+  employeeId: string
+  shiftId: string | null
+  firstClockIn: string | null
+  originalWeekStartsOn: string | null
+  assignedWeekStartsOn: string
+  reason: string
+}): Promise<PayrollAssignmentCorrectionResult> {
+  const { data, error } = await getSupabaseClient().rpc('correct_payroll_batch_assignment', {
+    target_assigned_week_start: input.assignedWeekStartsOn,
+    target_employee_id: input.employeeId,
+    target_first_clock_in: input.firstClockIn,
+    target_occurrence_fingerprint: input.occurrenceFingerprint,
+    target_occurrence_key: input.occurrenceKey,
+    target_original_week_start: input.originalWeekStartsOn,
+    target_reason: input.reason,
+    target_shift_id: input.shiftId,
+  })
+  if (error) throw new Error(error.message || 'The payroll batch assignment could not be corrected.')
+  return payrollAssignmentCorrectionResultSchema.parse(data)
+}
+
+export async function recalculateOpenPayrollBatchAssignments(input: {
+  fromDate: string
+  throughDate: string
+  dryRun?: boolean
+}): Promise<PayrollRecalculationResult> {
+  const { data, error } = await getSupabaseClient().rpc('recalculate_open_payroll_batch_assignments', {
+    target_dry_run: input.dryRun ?? true,
+    target_from_date: input.fromDate,
+    target_through_date: input.throughDate,
+  })
+  if (error) throw new Error(error.message || 'Open payroll assignments could not be recalculated.')
+  return payrollRecalculationResultSchema.parse(data)
 }
 
 export async function getPayrollAccountabilityEvents(input: {

@@ -42,6 +42,17 @@ const cleanReview: TimekeepingReview = {
     overtimeMinutes: 0,
     paidMinutes: 480,
     payrollNotes: [],
+    payrollOccurrenceKey: 'shift:73000000-0000-4000-8000-000000000010:employee:73000000-0000-4000-8000-000000000001',
+    payrollAssignmentSource: 'scheduled_shift',
+    payrollAssignmentStatus: 'derived',
+    payrollAssignmentExplanation: 'Entire occurrence follows the scheduled shift start in America/Denver.',
+    payrollAssignmentCandidates: [],
+    crossesPayrollBoundary: false,
+    payrollGroupingPolicy: 'scheduled_shift_start',
+    payrollPolicyVersion: 'payroll-batch-v1',
+    payrollConfigurationVersion: 1,
+    overtimePolicyVersion: 'colorado-daily-weekly-v1',
+    manualAdjustment: false,
     payrollReady: true,
     reviewStatus: 'ready',
     postName: 'Administration',
@@ -323,7 +334,9 @@ describe('payroll export readiness', () => {
       'Site Summary',
       'Exception Decisions',
     ])
-    expect(sheets[0].rows[8]).toEqual([
+    const summaryHeaderIndex = sheets[0].rows.findIndex((row) => row[0] === 'Employee')
+    expect(summaryHeaderIndex).toBeGreaterThan(0)
+    expect(sheets[0].rows[summaryHeaderIndex]).toEqual([
       'Employee',
       'Employment',
       'Worked Shifts',
@@ -340,18 +353,26 @@ describe('payroll export readiness', () => {
     ])
     expect(sheets[0].rows.every((row) => row.length <= 14)).toBe(true)
     expect(sheets.at(-1)?.rows[5]).toEqual([
-      'Date',
+      'Employee',
+      'Employee ID',
+      'Username',
+      'Work Date',
       'Site / Post',
       'Time Category',
-      'Scheduled',
-      'Clock In',
-      'Clock Out',
-      'Break Min',
-      'Paid Hours',
-      'Regular',
-      'Overtime',
-      'Variance',
-      'Status',
+      'Scheduled Start',
+      'Scheduled End',
+      'Actual Clock In',
+      'Actual Clock Out',
+      'Worked Hours',
+      'Payroll Batch Week',
+      'Payroll Period',
+      'Regular Hours',
+      'Overtime Hours',
+      'Break Minutes',
+      'Crosses Payroll Boundary',
+      'Assignment Source',
+      'Manual Adjustment',
+      'Exception Status',
       'Shift Notes',
       'Review Notes',
     ])
@@ -422,7 +443,8 @@ describe('payroll export readiness', () => {
 
     const sheets = buildPayrollWorkbookSheets({ exportType: 'Preview', review: medicalReview })
     const decisionSheet = sheets.find((sheet) => sheet.name === 'Exception Decisions')
-    expect(sheets[0].rows[9]?.[4]).toBe(6)
+    const summaryHeaderIndex = sheets[0].rows.findIndex((row) => row[0] === 'Employee')
+    expect(sheets[0].rows[summaryHeaderIndex + 1]?.[4]).toBe(6)
     expect(decisionSheet?.rows[4]).toContain('Approved valid exception')
     expect(decisionSheet?.rows[4]).toContain('Medical appointment; unpaid gap verified by the administrator.')
   })

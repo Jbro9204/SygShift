@@ -42,6 +42,10 @@ export function canExportPayroll(session: SessionContext | null | undefined): bo
   return hasTimePermission(session, 'time.export_payroll')
 }
 
+export function canOverridePayrollAssignment(session: SessionContext | null | undefined): boolean {
+  return hasTimePermission(session, 'time.override_payroll_assignment')
+}
+
 export function canViewAttendanceReview(session: SessionContext | null | undefined): boolean {
   return (
     canViewTeamTime(session)

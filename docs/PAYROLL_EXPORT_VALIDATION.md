@@ -57,6 +57,8 @@ For this operation:
 
 During validation, compare at least five entries from different devices to ensure the displayed work date and time match the Colorado operating schedule.
 
+Payroll-week assignment uses Sunday at 12:00 AM in `America/Denver`. A linked occurrence is never split at that boundary: the complete shift follows its scheduled start. Validate Saturday-to-Sunday overnight shifts, early and late punches around midnight, standalone manual entries, unscheduled work, and both daylight-saving transitions.
+
 ### 4. Exception coverage
 
 Test and approve handling for:
@@ -99,6 +101,9 @@ Use this checklist for each payroll dry run:
 - Overtime is separated or clearly marked.
 - Salary employee day markers are visible when needed.
 - Export totals match review-screen totals.
+- Every row has one unique payroll occurrence key and one resolved payroll-batch week.
+- Paid minutes equal regular minutes plus overtime minutes.
+- Cross-boundary rows disclose their assignment source, policy version, configuration version, and whether a manual adjustment exists.
 - Payroll reviewer signs off before the export is used.
 
 ## Launch rule
