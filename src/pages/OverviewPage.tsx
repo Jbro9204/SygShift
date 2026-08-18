@@ -27,7 +27,7 @@ import {
   type TimekeepingDashboard,
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { canUseOwnTimeClock, canViewOwnTime, canViewTeamTime } from '../time/timePermissions'
+import { canReportEmployeeCallOff, canUseOwnTimeClock, canViewOwnTime, canViewTeamTime } from '../time/timePermissions'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from '../time/timeQuerySync'
 
 const metrics: Array<{ label: string, key: keyof OverviewMetrics, icon: typeof UsersRound }> = [
@@ -87,6 +87,7 @@ export function OverviewPage() {
   })
   const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
   const punchAllowed = canUseOwnTimeClock(sessionQuery.data)
+  const callOffAllowed = canReportEmployeeCallOff(sessionQuery.data)
   const timekeepingQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     queryFn: () => getTimekeepingDashboard(),
@@ -173,6 +174,12 @@ export function OverviewPage() {
             Schedule
             <ArrowRight aria-hidden="true" size={18} />
           </Link>
+          {callOffAllowed ? (
+            <Link className="overview-call-off-action" to="/time/operations">
+              <ClipboardCheck aria-hidden="true" size={19} />
+              Report Sick / Call-Off
+            </Link>
+          ) : null}
         </div>
       </section>
 
@@ -226,6 +233,7 @@ export function OverviewPage() {
             </div>
             <div className="overview-employee-card__actions">
               <Link className="secondary-button" to="/time/my-time">Open My Time</Link>
+              <Link className="secondary-button" to="/time/operations">Request Time Change</Link>
             </div>
           </article>
           <article className="overview-employee-card">

@@ -1,29 +1,20 @@
-interface AssetBinding {
-  fetch(request: Request): Promise<Response>
+/* oxlint-disable typescript/triple-slash-reference -- Wrangler emits global binding declarations. */
+/// <reference path="./bindings.d.ts" />
+/// <reference path="../worker-configuration.d.ts" />
+/* oxlint-enable typescript/triple-slash-reference */
+
+interface WorkerScheduledController {
+  cron: string
+  scheduledTime: number
 }
 
-interface EmailBinding {
-  send(message: {
-    to: string | string[]
-    from: { email: string, name?: string }
-    replyTo?: string
-    subject: string
-    html?: string
-    text: string
-  }): Promise<unknown>
+interface WorkerExecutionContext {
+  waitUntil(promise: Promise<unknown>): void
 }
 
-interface Environment {
-  ASSETS: AssetBinding
-  EMAIL?: EmailBinding
-  SYGSHIFT_PUBLIC_APP_URL?: string
-  SYGSHIFT_EMAIL_FROM?: string
-  SYGSHIFT_EMAIL_FROM_NAME?: string
-  SUPABASE_URL?: string
-  SUPABASE_PUBLISHABLE_KEY?: string
+type Environment = Partial<Env> & {
+  ASSETS: Fetcher
   SUPABASE_SERVICE_ROLE_KEY?: string
-  VITE_SUPABASE_URL?: string
-  VITE_SUPABASE_PUBLISHABLE_KEY?: string
 }
 
 interface SessionContext {
@@ -70,12 +61,27 @@ interface MfaRecoveryCodeRecord {
 
 interface NotificationJob {
   id: string
+  messageType?: string
+  aggregateType?: string
+  aggregateId?: string
   recipients: string[]
   message: {
     subject: string
     text: string
     html?: string
   }
+}
+
+interface EmailAuditContext {
+  notificationType: string
+  relatedRecordType?: string | null
+  relatedRecordId?: string | null
+}
+
+interface EmailDeliveryResult {
+  sent: string[]
+  suppressed: string[]
+  failed: Array<{ recipient: string, error: string }>
 }
 
 interface AttendanceReportPayload {
@@ -258,6 +264,88 @@ async function callRpc<T>(
     },
     method: 'POST',
   })
+}
+
+function blockedEmailDomains(environment: Environment): Set<string> {
+  return new Set(
+    (environment.SYGSHIFT_BLOCKED_EMAIL_DOMAINS?.trim() || 'guardianshipsecurity.net')
+      .split(',')
+      .map((domain) => domain.trim().toLowerCase().replace(/^@/, ''))
+      .filter(Boolean),
+  )
+}
+
+function isBlockedEmailRecipient(environment: Environment, recipient: string): boolean {
+  const domain = recipient.trim().toLowerCase().split('@').at(-1) ?? ''
+  return blockedEmailDomains(environment).has(domain)
+}
+
+async function logEmailDelivery(
+  environment: Environment,
+  recipient: string,
+  status: 'sent' | 'failed' | 'suppressed_blocked_domain',
+  context: EmailAuditContext,
+  failureDetail?: string | null,
+): Promise<void> {
+  const config = configuredSupabase(environment)
+  if (!config) return
+  await callRpc(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_log_email_delivery',
+    {
+      target_delivery_status: status,
+      target_failure_detail: failureDetail ?? null,
+      target_intended_recipient: recipient,
+      target_notification_type: context.notificationType,
+      target_provider_reference: null,
+      target_related_record_id: context.relatedRecordId ?? null,
+      target_related_record_type: context.relatedRecordType ?? null,
+    },
+    config.serviceRoleKey,
+  )
+}
+
+async function sendAuditedEmail(
+  environment: Environment,
+  recipients: string | string[],
+  message: NotificationJob['message'],
+  context: EmailAuditContext,
+  replyTo?: string,
+): Promise<EmailDeliveryResult> {
+  if (!environment.EMAIL) throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
+  const fromEmail = environment.SYGSHIFT_EMAIL_FROM?.trim()
+  if (!fromEmail) throw new ApiError('email_sender_not_configured', 503, 'The email sender address is not configured.')
+
+  const uniqueRecipients = [...new Set((Array.isArray(recipients) ? recipients : [recipients])
+    .map((recipient) => recipient.trim().toLowerCase())
+    .filter(Boolean))]
+  const result: EmailDeliveryResult = { failed: [], sent: [], suppressed: [] }
+
+  for (const recipient of uniqueRecipients) {
+    if (isBlockedEmailRecipient(environment, recipient)) {
+      result.suppressed.push(recipient)
+      await logEmailDelivery(environment, recipient, 'suppressed_blocked_domain', context, 'Suppressed — Blocked Domain')
+      continue
+    }
+    try {
+      await environment.EMAIL.send({
+        from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
+        html: brandedEmailHtml(message, environment.SYGSHIFT_PUBLIC_APP_URL),
+        replyTo,
+        subject: message.subject,
+        text: message.text,
+        to: recipient,
+      })
+      result.sent.push(recipient)
+      await logEmailDelivery(environment, recipient, 'sent', context)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'Email delivery failed.'
+      result.failed.push({ error: detail, recipient })
+      await logEmailDelivery(environment, recipient, 'failed', context, detail)
+    }
+  }
+
+  return result
 }
 
 async function requireAdminMfa(
@@ -675,13 +763,6 @@ async function sendLoginInstructions(
   target: LoginEmailTarget,
   temporaryPassword: string,
 ) {
-  if (!environment.EMAIL) {
-    throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
-  }
-  const fromEmail = environment.SYGSHIFT_EMAIL_FROM?.trim()
-  if (!fromEmail) {
-    throw new ApiError('email_sender_not_configured', 503, 'The email sender address is not configured.')
-  }
   const to = target.contactEmail?.trim().toLowerCase()
   if (!to) {
     throw new ApiError('employee_email_missing', 422, `${target.displayName} does not have an on-file email address.`)
@@ -689,26 +770,21 @@ async function sendLoginInstructions(
 
   const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl
   const message = buildLoginInstructionsEmail(target, temporaryPassword, appUrl)
-  await environment.EMAIL.send({
-    from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
-    html: brandedEmailHtml(message, appUrl),
-    subject: message.subject,
-    text: message.text,
-    to,
+  const result = await sendAuditedEmail(environment, to, message, {
+    notificationType: 'login_instructions',
+    relatedRecordId: target.employeeId,
+    relatedRecordType: 'employee',
   })
+  if (result.suppressed.length > 0) {
+    throw new ApiError('email_recipient_suppressed', 409, 'Email was suppressed because the recipient domain is temporarily blocked.')
+  }
+  if (result.failed.length > 0) throw new ApiError('email_delivery_failed', 502, result.failed[0].error)
 }
 
 async function sendWelcomeEmail(
   environment: Environment,
   target: LoginEmailTarget,
 ): Promise<unknown> {
-  if (!environment.EMAIL) {
-    throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
-  }
-  const fromEmail = environment.SYGSHIFT_EMAIL_FROM?.trim()
-  if (!fromEmail) {
-    throw new ApiError('email_sender_not_configured', 503, 'The email sender address is not configured.')
-  }
   const to = target.contactEmail?.trim().toLowerCase()
   if (!to) {
     throw new ApiError('employee_email_missing', 422, `${target.displayName} does not have an on-file email address.`)
@@ -716,14 +792,16 @@ async function sendWelcomeEmail(
 
   const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl
   const message = buildWelcomeEmail(target, appUrl)
-  return environment.EMAIL.send({
-    from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
-    html: brandedEmailHtml(message, appUrl),
-    replyTo: defaultSupportEmail,
-    subject: message.subject,
-    text: message.text,
-    to,
-  })
+  const result = await sendAuditedEmail(environment, to, message, {
+    notificationType: 'welcome_email',
+    relatedRecordId: target.employeeId,
+    relatedRecordType: 'employee',
+  }, defaultSupportEmail)
+  if (result.suppressed.length > 0) {
+    throw new ApiError('email_recipient_suppressed', 409, 'Email was suppressed because the recipient domain is temporarily blocked.')
+  }
+  if (result.failed.length > 0) throw new ApiError('email_delivery_failed', 502, result.failed[0].error)
+  return result
 }
 
 async function handleAccountMfaRecoveryApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
@@ -1058,14 +1136,6 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
   })
 }
 
-function chunkRecipients(recipients: string[], size = 50): string[][] {
-  const chunks: string[][] = []
-  for (let index = 0; index < recipients.length; index += size) {
-    chunks.push(recipients.slice(index, index + size))
-  }
-  return chunks
-}
-
 function escapeHtml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -1224,14 +1294,10 @@ async function handleAttendanceReportApi(request: Request, environment: Environm
     additionalHeaders,
   )
 
-  const fromEmail = environment.SYGSHIFT_EMAIL_FROM?.trim()
   let dispatchNotified = false
   let dispatchError: string | null = null
 
   try {
-    if (!environment.EMAIL) throw new Error('Cloudflare Email Sending is not configured for this Worker.')
-    if (!fromEmail) throw new Error('The email sender address is not configured.')
-
     const location = [report.siteCode, report.siteName, report.postName ?? report.eventName]
       .filter(Boolean)
       .join(' / ') || report.locationName
@@ -1259,15 +1325,17 @@ async function handleAttendanceReportApi(request: Request, environment: Environm
       '<p>This alert was sent automatically so Dispatch can review coverage immediately.</p>',
     ].join('')
 
-    await environment.EMAIL.send({
-      from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
-      html: brandedEmailHtml({ html, subject, text }, environment.SYGSHIFT_PUBLIC_APP_URL),
-      replyTo: defaultSupportEmail,
-      subject,
-      text,
-      to: dispatchAlertEmail,
-    })
-    dispatchNotified = true
+    const delivery = await sendAuditedEmail(
+      environment,
+      dispatchAlertEmail,
+      { html, subject, text },
+      { notificationType: 'attendance_call_off', relatedRecordId: report.id, relatedRecordType: 'attendance_accountability_event' },
+      defaultSupportEmail,
+    )
+    dispatchNotified = delivery.sent.length > 0
+    dispatchError = delivery.suppressed.length > 0
+      ? 'Suppressed — Blocked Domain'
+      : delivery.failed[0]?.error ?? null
   } catch (error) {
     dispatchError = error instanceof Error ? error.message : 'Dispatch email delivery failed.'
   }
@@ -1312,65 +1380,94 @@ async function handleNotificationProcessApi(request: Request, environment: Envir
     return errorJson('operations_mfa_required', requestId, 403)
   }
 
-  if (!environment.EMAIL) {
-    return errorJson('email_not_configured', requestId, 503, 'Cloudflare Email Sending is not configured for this Worker.')
-  }
-
-  const fromEmail = environment.SYGSHIFT_EMAIL_FROM?.trim()
-  if (!fromEmail) {
-    return errorJson('email_sender_not_configured', requestId, 503, 'The email sender address is not configured.')
-  }
-
-  const jobs = await callRpc<NotificationJob[]>(
-    { serviceRoleKey: operator.config.serviceRoleKey, url: operator.config.url },
-    'service_claim_notification_batch',
-    { target_limit: 10 },
-    operator.config.serviceRoleKey,
-  )
-  const delivered: string[] = []
-  const failed: Array<{ id: string, error: string }> = []
-
-  for (const job of jobs) {
-    try {
-      const recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
-      if (recipients.length === 0) throw new Error('No deliverable recipients were found.')
-
-      for (const to of chunkRecipients(recipients)) {
-        await environment.EMAIL.send({
-          from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
-          html: brandedEmailHtml(job.message, environment.SYGSHIFT_PUBLIC_APP_URL),
-          subject: job.message.subject,
-          text: job.message.text,
-          to,
-        })
-      }
-
-      await callRpc<unknown>(
-        { serviceRoleKey: operator.config.serviceRoleKey, url: operator.config.url },
-        'service_mark_notification_result',
-        { delivered: true, delivery_error: null, target_notification_id: job.id },
-        operator.config.serviceRoleKey,
-      )
-      delivered.push(job.id)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Email delivery failed.'
-      await callRpc<unknown>(
-        { serviceRoleKey: operator.config.serviceRoleKey, url: operator.config.url },
-        'service_mark_notification_result',
-        { delivered: false, delivery_error: message, target_notification_id: job.id },
-        operator.config.serviceRoleKey,
-      )
-      failed.push({ id: job.id, error: message })
-    }
-  }
+  const processing = await processNotificationJobs(environment, 10)
 
   return json({
-    delivered,
-    failed,
-    processed: delivered.length + failed.length,
+    ...processing,
     requestId,
     requestedBy: operator.context.username,
   })
+}
+
+async function processNotificationJobs(environment: Environment, limit = 10): Promise<{
+  delivered: string[]
+  failed: Array<{ id: string, error: string }>
+  processed: number
+  suppressed: string[]
+}> {
+  const config = configuredSupabase(environment)
+  if (!config) throw new ApiError('server_not_configured', 503, 'The protected data service is not configured.')
+  if (!environment.EMAIL) throw new ApiError('email_not_configured', 503, 'Cloudflare Email Sending is not configured for this Worker.')
+
+  const timekeepingJobs = await callRpc<NotificationJob[]>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_claim_timekeeping_notification_batch',
+    { target_limit: limit },
+    config.serviceRoleKey,
+  )
+  const delivered: string[] = []
+  const failed: Array<{ id: string, error: string }> = []
+  const suppressed: string[] = []
+
+  const deliverJobs = async (jobs: NotificationJob[]) => {
+    for (const job of jobs) {
+      try {
+        const recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
+        if (recipients.length === 0) throw new Error('No deliverable recipients were found.')
+
+        const delivery = await sendAuditedEmail(environment, recipients, job.message, {
+          notificationType: job.messageType ?? 'outbox_notification',
+          relatedRecordId: job.aggregateId ?? null,
+          relatedRecordType: job.aggregateType ?? null,
+        })
+        if (delivery.failed.length > 0) throw new Error(delivery.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
+        if (delivery.sent.length === 0 && delivery.suppressed.length > 0) {
+          await callRpc<unknown>(
+            { serviceRoleKey: config.serviceRoleKey, url: config.url },
+            'service_mark_notification_suppressed',
+            { target_notification_id: job.id, target_reason: 'Suppressed — Blocked Domain' },
+            config.serviceRoleKey,
+          )
+          suppressed.push(job.id)
+          continue
+        }
+
+        await callRpc<unknown>(
+          { serviceRoleKey: config.serviceRoleKey, url: config.url },
+          'service_mark_notification_result',
+          { delivered: true, delivery_error: null, target_notification_id: job.id },
+          config.serviceRoleKey,
+        )
+        delivered.push(job.id)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Email delivery failed.'
+        await callRpc<unknown>(
+          { serviceRoleKey: config.serviceRoleKey, url: config.url },
+          'service_mark_notification_result',
+          { delivered: false, delivery_error: message, target_notification_id: job.id },
+          config.serviceRoleKey,
+        )
+        failed.push({ id: job.id, error: message })
+      }
+    }
+  }
+
+  await deliverJobs(timekeepingJobs)
+
+  const generalJobs = await callRpc<NotificationJob[]>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_claim_notification_batch',
+    { target_limit: limit },
+    config.serviceRoleKey,
+  )
+  await deliverJobs(generalJobs)
+
+  return {
+    delivered,
+    failed,
+    processed: delivered.length + failed.length + suppressed.length,
+    suppressed,
+  }
 }
 
 function readiness(environment: Environment, requestId: string): Response {
@@ -1469,8 +1566,10 @@ export default {
     } else if (url.pathname === '/api/v1/admin/notifications/process') {
       try {
         response = await handleNotificationProcessApi(request, environment, requestId)
-      } catch {
-        response = errorJson('notification_process_failed', requestId, 500, 'The notification delivery request failed.')
+      } catch (error) {
+        response = error instanceof ApiError
+          ? errorJson(error.code, requestId, error.status, error.message)
+          : errorJson('notification_process_failed', requestId, 500, 'The notification delivery request failed.')
       }
     } else if (url.pathname === '/api/v1/time/attendance/report') {
       try {
@@ -1487,5 +1586,24 @@ export default {
     }
 
     return secureResponse(request, response, requestId)
+  },
+  async scheduled(
+    controller: WorkerScheduledController,
+    environment: Environment,
+    context: WorkerExecutionContext,
+  ): Promise<void> {
+    context.waitUntil((async () => {
+      const config = configuredSupabase(environment)
+      if (!config) throw new Error('Scheduled timekeeping automation is missing its protected data configuration.')
+      const jobRunId = crypto.randomUUID()
+      const automation = await callRpc<Record<string, unknown>>(
+        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        'service_run_timekeeping_automation',
+        { target_job_run_id: jobRunId },
+        config.serviceRoleKey,
+      )
+      const notifications = await processNotificationJobs(environment, 25)
+      console.info(JSON.stringify({ automation, cron: controller.cron, jobRunId, notifications, scheduledTime: controller.scheduledTime }))
+    })())
   },
 }

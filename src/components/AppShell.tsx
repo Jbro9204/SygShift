@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useIsMutating, useQuery } from '@tanstack/react-query'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { FileClock, LogOut, Megaphone, Menu, ShieldCheck, UserCircle, X } from 'lucide-react'
+import { BellRing, FileClock, LogOut, Megaphone, Menu, ShieldCheck, UserCircle, X } from 'lucide-react'
 import { navigationGroups } from '../app/navigation'
 import { getActiveAnnouncementBanners, type AnnouncementBanner } from '../data/announcements'
+import { getTimekeepingOperationsWorkspace } from '../data/timeOperations'
 import {
   getSessionContext,
   SESSION_CONTEXT_REFRESH_EVENT,
@@ -23,7 +24,7 @@ type WorkspaceAlertEntry = {
   title: string
   message: string
   tone: AnnouncementBanner['tone']
-  icon: 'announcement' | 'payroll'
+  icon: 'announcement' | 'payroll' | 'attendance'
   ctaHref: string | null
   ctaLabel: string | null
 }
@@ -69,7 +70,7 @@ function WorkspaceAlertStrip({ entries }: { entries: WorkspaceAlertEntry[] }) {
   if (entries.length === 0) return null
 
   const current = entries[activeIndex % entries.length]
-  const Icon = current.icon === 'payroll' ? FileClock : Megaphone
+  const Icon = current.icon === 'payroll' ? FileClock : current.icon === 'attendance' ? BellRing : Megaphone
 
   return (
     <section
@@ -117,6 +118,15 @@ export function AppShell() {
     queryKey: ['active-announcement-banners'],
     refetchInterval: 60_000,
   })
+  const operationalAlertQuery = useQuery({
+    enabled: isSupabaseConfigured && Boolean(sessionContext),
+    queryFn: () => {
+      const today = new Date().toISOString().slice(0, 10)
+      return getTimekeepingOperationsWorkspace(today, today)
+    },
+    queryKey: ['time-operations-shell-alerts'],
+    refetchInterval: 30_000,
+  })
   const workspaceAlerts = useMemo<WorkspaceAlertEntry[]>(() => {
     const announcementAlerts = (activeBannerQuery.data ?? []).map((banner) => ({
       id: banner.id,
@@ -128,10 +138,23 @@ export function AppShell() {
       ctaLabel: banner.ctaLabel,
     }))
 
-    if (!showPayrollReminder) return announcementAlerts
+    const attendanceAlerts = (operationalAlertQuery.data?.alerts ?? [])
+      .filter((alert) => !alert.acknowledgedAt && (alert.priority === 'urgent' || alert.priority === 'high'))
+      .map((alert) => ({
+        id: `attendance-${alert.id}`,
+        title: alert.title,
+        message: alert.summary,
+        tone: 'urgent' as const,
+        icon: 'attendance' as const,
+        ctaHref: alert.directPath ?? '/time/operations',
+        ctaLabel: 'Review alert',
+      }))
+    const liveAlerts = [...attendanceAlerts, ...announcementAlerts]
+
+    if (!showPayrollReminder) return liveAlerts
 
     return [
-      ...announcementAlerts,
+      ...liveAlerts,
       {
         id: `payroll-export-reminder-${payrollReminderWeek.fromLabel}-${payrollReminderWeek.throughLabel}`,
         title: 'Payroll export reminder',
@@ -142,7 +165,7 @@ export function AppShell() {
         ctaLabel: 'Open Time & Attendance',
       },
     ]
-  }, [activeBannerQuery.data, payrollReminderWeek.fromLabel, payrollReminderWeek.throughLabel, showPayrollReminder])
+  }, [activeBannerQuery.data, operationalAlertQuery.data?.alerts, payrollReminderWeek.fromLabel, payrollReminderWeek.throughLabel, showPayrollReminder])
 
   const visibleNavigationGroups = navigationGroups
     .map((group) => ({

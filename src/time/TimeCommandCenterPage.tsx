@@ -246,6 +246,7 @@ function EmployeeTimeOverview({
         <div className="time-action-panel__actions">
           {punchAllowed ? <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Clock / Review My Time</span></Link> : null}
           <Link className="time-button time-button--secondary" to="/time/my-time"><ArrowRight aria-hidden="true" size={18} /><span>Open My Time</span></Link>
+          <Link className="time-button time-button--secondary" to="/time/operations"><FileClock aria-hidden="true" size={18} /><span>Request Time Change</span></Link>
         </div>
       </section>
     </>
@@ -330,6 +331,7 @@ function OperationsTimeOverview({
           {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/team"><UserRoundCheck aria-hidden="true" size={18} /><span>Team Attendance</span></Link> : null}
           {attendanceReviewAllowed ? <Link className="time-button time-button--secondary" to="/time/daily-review"><ClipboardCheck aria-hidden="true" size={18} /><span>Daily Attendance Review</span></Link> : null}
           {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/exceptions"><AlertTriangle aria-hidden="true" size={18} /><span>Review Exceptions</span></Link> : null}
+          {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/operations"><ClipboardCheck aria-hidden="true" size={18} /><span>Time Operations</span></Link> : null}
           {payrollAllowed ? <Link className="time-button time-button--secondary" to="/time/payroll"><FileClock aria-hidden="true" size={18} /><span>Payroll</span></Link> : null}
         </div>
       </section>

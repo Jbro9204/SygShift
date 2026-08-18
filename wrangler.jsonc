@@ -16,6 +16,9 @@
       "custom_domain": true
     }
   ],
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
   "send_email": [
     {
       "name": "EMAIL"
@@ -25,6 +28,7 @@
     "SYGSHIFT_PUBLIC_APP_URL": "https://app.sygilant.us",
     "SYGSHIFT_EMAIL_FROM": "scheduling@sygilant.us",
     "SYGSHIFT_EMAIL_FROM_NAME": "SygShift",
+    "SYGSHIFT_BLOCKED_EMAIL_DOMAINS": "guardianshipsecurity.net",
     "SUPABASE_URL": "https://eqkdfrbwtioiqtjsyglg.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_-uU9fD3XIeZ58r815-fl_Q_g4IIRPQ5",
     "VITE_SUPABASE_URL": "https://eqkdfrbwtioiqtjsyglg.supabase.co",

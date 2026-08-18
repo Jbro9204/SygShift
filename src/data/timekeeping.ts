@@ -193,6 +193,7 @@ const timekeepingReviewRowSchema = z.object({
   workedSegments: z.array(timekeepingWorkedSegmentSchema).optional().default([]),
   unpaidGaps: z.array(timekeepingUnpaidGapSchema).optional().default([]),
   unpaidGapMinutes: z.number().int().nonnegative().optional().default(0),
+  shiftNotes: z.string().nullable().optional(),
   payrollNotes: z.array(z.string()).default([]),
   workType: workTypeSchema.optional().default('post'),
   workTypeLabel: z.string().optional().default('Worked Time'),
@@ -1366,7 +1367,8 @@ function payrollDateTime(value: string | null | undefined, timeZone: string): st
 }
 
 function csvEscape(value: unknown): string {
-  const text = value === null || value === undefined ? '' : String(value)
+  const raw = value === null || value === undefined ? '' : String(value)
+  const text = /^[=+\-@]/.test(raw.trimStart()) ? `'${raw}` : raw
   return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
 }
 
@@ -1533,6 +1535,7 @@ export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
     'Overtime',
     'Payroll Ready',
     'Exceptions',
+    'Shift Notes',
     'Notes',
   ]
   const lines = payrollExportRows(rows).map((row) => [
@@ -1553,6 +1556,7 @@ export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
     row.isOvertime ? 'yes' : 'no',
     row.payrollReady ? 'yes' : 'no',
     row.exceptionCodes.join('|'),
+    row.shiftNotes ?? '',
     row.payrollNotes.join('|'),
   ].map(csvEscape).join(','))
 

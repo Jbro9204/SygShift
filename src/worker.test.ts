@@ -174,6 +174,9 @@ describe('Cloudflare Worker boundary', () => {
         status: 'active',
         existingAuthUserId: null,
       }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
     const send = vi.fn().mockResolvedValue({ messageId: 'welcome-message' })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -194,7 +197,7 @@ describe('Cloudflare Worker boundary', () => {
     expect(response.status).toBe(200)
     expect(payload).toMatchObject({ email: 'employee@example.com', username: 'employee' })
     expect(send).toHaveBeenCalledTimes(1)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(send.mock.calls[0]?.[0]).toMatchObject({ to: 'employee@example.com' })
     vi.unstubAllGlobals()
   })
@@ -365,14 +368,23 @@ describe('Cloudflare Worker boundary', () => {
         role: 'scheduler',
         has_mfa: true,
       }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
       .mockResolvedValueOnce(new Response(JSON.stringify([{
         id: '20000000-0000-4000-8000-000000000001',
-        recipients: ['jbrown@guardianshipsecurity.net'],
+        recipients: ['jbrown@example.com'],
+        aggregateId: '30000000-0000-4000-8000-000000000001',
+        aggregateType: 'announcement',
+        messageType: 'announcement_email',
         message: {
           subject: 'Open shift available',
           text: 'A shift is available.',
         },
       }]), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
         headers: { 'content-type': 'application/json' },
       }))
@@ -402,8 +414,115 @@ describe('Cloudflare Worker boundary', () => {
     expect(emailSend).toHaveBeenCalledWith(expect.objectContaining({
       from: { email: 'scheduling@sygilant.us', name: 'SygShift' },
       subject: 'Open shift available',
-      to: ['jbrown@guardianshipsecurity.net'],
+      to: 'jbrown@example.com',
     }))
+    vi.unstubAllGlobals()
+  })
+
+  it('suppresses blocked company-domain recipients and records the attempted delivery', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employee_id: '10000000-0000-4000-8000-000000000002',
+        username: 'scheduler',
+        display_name: 'Schedule User',
+        role: 'scheduler',
+        has_mfa: true,
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{
+        id: '20000000-0000-4000-8000-000000000002',
+        recipients: ['OPS@GUARDIANSHIPSECURITY.NET'],
+        aggregateId: '30000000-0000-4000-8000-000000000002',
+        aggregateType: 'call_off_report',
+        messageType: 'call_off_supervisor_alert',
+        message: {
+          subject: 'Employee call-off reported',
+          text: 'A call-off requires attention.',
+        },
+      }]), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
+    const emailSend = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/admin/notifications/process', {
+        headers: { authorization: 'Bearer scheduler-token' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        EMAIL: { send: emailSend },
+        SYGSHIFT_BLOCKED_EMAIL_DOMAINS: 'guardianshipsecurity.net',
+        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+      }),
+    )
+    const payload = await response.json() as { delivered: string[]; failed: unknown[]; processed: number; suppressed: string[] }
+
+    expect(response.status).toBe(200)
+    expect(payload).toMatchObject({
+      delivered: [],
+      failed: [],
+      processed: 1,
+      suppressed: ['20000000-0000-4000-8000-000000000002'],
+    })
+    expect(emailSend).not.toHaveBeenCalled()
+    const requestBodies = fetchMock.mock.calls
+      .map(([, init]) => typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : null)
+      .filter(Boolean)
+    expect(requestBodies).toContainEqual(expect.objectContaining({
+      target_delivery_status: 'suppressed_blocked_domain',
+      target_intended_recipient: 'ops@guardianshipsecurity.net',
+    }))
+    expect(requestBodies).toContainEqual(expect.objectContaining({
+      target_notification_id: '20000000-0000-4000-8000-000000000002',
+      target_reason: 'Suppressed — Blocked Domain',
+    }))
+    vi.unstubAllGlobals()
+  })
+
+  it('runs the idempotent timekeeping job before processing scheduled notifications', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        jobRunId: 'generated-by-worker',
+        status: 'completed',
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
+    const emailSend = vi.fn()
+    let scheduledWork: Promise<unknown> | undefined
+    vi.stubGlobal('fetch', fetchMock)
+
+    await worker.scheduled(
+      { cron: '* * * * *', scheduledTime: Date.UTC(2026, 7, 18, 18, 0) },
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        EMAIL: { send: emailSend },
+      }),
+      { waitUntil: (promise: Promise<unknown>) => { scheduledWork = promise } },
+    )
+
+    expect(scheduledWork).toBeDefined()
+    await scheduledWork
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/rpc/service_run_timekeeping_automation')
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/rpc/service_claim_timekeeping_notification_batch')
+    expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/rpc/service_claim_notification_batch')
+    const automationBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { target_job_run_id: string }
+    expect(automationBody.target_job_run_id).toMatch(/^[a-f0-9-]{36}$/)
+    expect(emailSend).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
 

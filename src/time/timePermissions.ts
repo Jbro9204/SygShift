@@ -56,3 +56,23 @@ export function canManageAttendanceReview(session: SessionContext | null | undef
     || hasTimePermission(session, 'accountability.manage')
   )
 }
+
+export function canCreateManualTimeEntry(session: SessionContext | null | undefined): boolean {
+  return hasTimePermission(session, 'time.manual_entry.create')
+}
+
+export function canEditManualTimeEntry(session: SessionContext | null | undefined): boolean {
+  return hasTimePermission(session, 'time.manual_entry.edit')
+}
+
+export function canReviewTimeAdjustments(session: SessionContext | null | undefined): boolean {
+  return hasTimePermission(session, 'time.adjustments.review')
+}
+
+export function canReportEmployeeCallOff(session: SessionContext | null | undefined): boolean {
+  return hasTimePermission(session, 'accountability.report_call_off')
+}
+
+export function canViewTimekeepingReports(session: SessionContext | null | undefined): boolean {
+  return hasTimePermission(session, 'time.reports.view')
+}

@@ -66,7 +66,7 @@ export const navigationGroups: NavigationGroup[] = [
     items: [
       { label: 'Announcements', path: '/announcements', icon: Megaphone, permissions: ['announcements.send', 'announcements.banner.manage'] },
       { label: 'Notifications', path: '/notifications', icon: Bell, roles: OPERATIONS_ROLES, permissions: ['notifications.view', 'notifications.manage'] },
-      { label: 'Reports', path: '/reports', icon: FileBarChart, roles: OPERATIONS_ROLES, permissions: ['reports.view', 'reports.export'] },
+      { label: 'Reports', path: '/reports', icon: FileBarChart, roles: OPERATIONS_ROLES, permissions: ['reports.view', 'reports.export', 'time.reports.view'] },
     ],
   },
   {
