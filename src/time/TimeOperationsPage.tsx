@@ -196,7 +196,7 @@ function ManualEntryEditDialog({ entry, onClose, onSaved, workspace }: { entry: 
             <option value="">{linkedShift && !linkedShift.postId ? 'Event location comes from the linked shift' : 'Choose site / post'}</option>
             {workspace.posts.map((post) => <option key={post.id} value={post.id}>{formatTimeOperationsPostLabel(post)}</option>)}
           </select>
-          <small className="field-help">For patrol time, choose the exact client/accounting Site/Post (for example PERA, MG, or Anythink). Use a general Patrol post only when that was the actual assignment.</small>
+          <small className="field-help">For patrol time, choose the exact client/accounting Site/Post, such as MG Properties, PERA, or Patrol Libraries and Elevon. Use a general Patrol post only when that was the actual assignment.</small>
         </label>
         <div className="time-workflow-form__two"><label><span>Clock-in</span><input defaultValue={toZonedLocalDateTimeInput(entry.clockInAt, linkedShift?.timeZone)} name="clockInAt" required type="datetime-local" /></label><label><span>Clock-out</span><input defaultValue={toZonedLocalDateTimeInput(entry.clockOutAt, linkedShift?.timeZone)} name="clockOutAt" required type="datetime-local" /></label></div>
         <label><span>Edit reason</span><input maxLength={200} name="reason" required /></label>
@@ -259,7 +259,7 @@ function ManualEntryDialog({ onClose, onSaved, workspace }: { onClose: () => voi
             <option value="">{linkedShift && !linkedShift.postId ? 'Event location comes from the linked shift' : 'Choose site / post'}</option>
             {workspace.posts.map((post) => <option key={post.id} value={post.id}>{formatTimeOperationsPostLabel(post)}</option>)}
           </select>
-          <small className="field-help">For patrol time, choose the exact client/accounting Site/Post (for example PERA, MG, or Anythink). Use a general Patrol post only when that was the actual assignment.</small>
+          <small className="field-help">For patrol time, choose the exact client/accounting Site/Post, such as MG Properties, PERA, or Patrol Libraries and Elevon. Use a general Patrol post only when that was the actual assignment.</small>
         </label>
         <label><span>Exception being resolved</span><select name="exceptionId"><option value="">None</option>{workspace.exceptions.filter((item) => item.employeeId === employeeId && item.status === 'unresolved').map((item) => <option key={item.id} value={item.id}>{readableStatus(item.exceptionCode)} · {formatOperationalDateTime(item.scheduledStartAt)}</option>)}</select></label>
         <label><span>Work date</span><input defaultValue={dateKey(new Date())} name="workDate" required type="date" /></label>

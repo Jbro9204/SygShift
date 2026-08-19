@@ -15,7 +15,7 @@ Time Maintenance remains usable when new audit actions are present, employee cho
 - Preserved every original punch timestamp, source, and audit record. No punches were merged, moved, deleted, or rewritten.
 - Anchored unlinked overnight payroll assignment to the session's clock-in rather than splitting the occurrence at midnight.
 - Added Site Code to Time Operations Site/Post choices so similar patrol locations can be distinguished.
-- Added clear guidance in manual-time forms to select the exact client/accounting Site/Post, such as PERA, MG, or Anythink, and to use a general Patrol location only when that was the actual assignment.
+- Added clear guidance in manual-time forms to select the exact client/accounting Site/Post, such as MG Properties, PERA, or Patrol Libraries and Elevon, and to use a general Patrol location only when that was the actual assignment.
 - Added forward-only migration `20260819123000_time_maintenance_overnight_and_patrol_clarity.sql`.
 
 ## Production Verification
