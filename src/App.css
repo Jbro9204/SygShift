@@ -11758,6 +11758,23 @@
   min-width: 0;
 }
 
+.time-correction-editor__field--wide {
+  grid-column: 1 / -1;
+}
+
+.time-correction-editor__guidance {
+  align-self: center;
+  margin: 0;
+  padding: 10px 12px;
+  color: #734038;
+  background: #fff4f2;
+  border: 1px solid #e6b9b2;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
 .time-correction-editor__location {
   align-self: end;
 }

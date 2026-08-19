@@ -244,6 +244,7 @@ function MaintenanceEventStatus({ event }: { event: TimeMaintenanceEvent }) {
   if (event.pendingCorrectionCount > 0) return <span className="payroll-status payroll-status--hold">Correction pending</span>
   if (event.latestAction === 'site_post_update') return <span className="payroll-status payroll-status--ready">Site/Post fixed</span>
   if (event.latestAction === 'time_adjust') return <span className="payroll-status payroll-status--ready">Adjusted</span>
+  if (event.latestAction === 'punch_type_update') return <span className="payroll-status payroll-status--ready">Punch type fixed</span>
   if (event.latestAction === 'manual_add') return <span className="payroll-status payroll-status--ready">Manual</span>
   if (event.latestAction === 'location_update') return <span className="payroll-status payroll-status--ready">Location fixed</span>
   if (event.latestAction === 'work_type_update') return <span className="payroll-status payroll-status--ready">Time category fixed</span>
@@ -428,6 +429,7 @@ export function TimeMaintenanceWorkbench({
   const [correctionMode, setCorrectionMode] = useState<'adjust' | 'void' | 'site_post' | 'work_type'>('adjust')
   const [correctionDate, setCorrectionDate] = useState(defaultDate)
   const [correctionTime, setCorrectionTime] = useState('08:00')
+  const [correctionKind, setCorrectionKind] = useState<TimeEventKind>('clock_in')
   const [correctionShiftId, setCorrectionShiftId] = useState('')
   const [correctionManualLocation, setCorrectionManualLocation] = useState('')
   const [correctionReason, setCorrectionReason] = useState('')
@@ -520,6 +522,7 @@ export function TimeMaintenanceWorkbench({
       }
       return supervisorCorrectTimeEvent({
         reason: correctionReason.trim(),
+        replacementKind: correctionMode === 'adjust' ? correctionKind : null,
         replacementTime: correctionMode === 'adjust' ? zonedDateTimeToIso(correctionDate, correctionTime) : null,
         timeEventId: selectedEvent.id,
         voided: correctionMode === 'void',
@@ -598,6 +601,7 @@ export function TimeMaintenanceWorkbench({
     setCorrectionMode(mode)
     setCorrectionDate(dateInputValue(event.effectiveAt))
     setCorrectionTime(timeInputValue(event.effectiveAt))
+    setCorrectionKind(event.kind)
     setCorrectionShiftId(event.shiftId ?? '')
     setCorrectionManualLocation(event.locationName === 'Unscheduled' || event.locationName === 'Unscheduled Location' ? '' : event.locationName)
     setCorrectionReason('')
@@ -761,7 +765,7 @@ export function TimeMaintenanceWorkbench({
                 <p>{formatDate(selectedEvent.effectiveAt)} · {formatTime(selectedEvent.effectiveAt, selectedEvent.timeZone)}</p>
               </div>
               <div className="time-correction-editor__mode" role="radiogroup" aria-label="Correction type">
-                <label><input checked={correctionMode === 'adjust'} onChange={() => setCorrectionMode('adjust')} type="radio" /> Change time</label>
+                <label><input checked={correctionMode === 'adjust'} onChange={() => setCorrectionMode('adjust')} type="radio" /> Change punch</label>
                 <label><input checked={correctionMode === 'site_post'} onChange={() => {
                   setCorrectionMode('site_post')
                   setCorrectionShiftId(selectedEvent.shiftId ?? '')
@@ -770,13 +774,22 @@ export function TimeMaintenanceWorkbench({
                   setCorrectionMode('work_type')
                   setCorrectionWorkType(selectedEvent.workType)
                 }} type="radio" /> Time category</label>
-                <label><input checked={correctionMode === 'void'} onChange={() => setCorrectionMode('void')} type="radio" /> Void punch</label>
+                <label><input checked={correctionMode === 'void'} onChange={() => setCorrectionMode('void')} type="radio" /> Void duplicate/accidental</label>
               </div>
               {correctionMode === 'adjust' ? (
                 <div className="time-correction-editor__fields">
+                  <label className="time-correction-editor__field--wide">
+                    <span>Punch type</span>
+                    <select onChange={(event) => setCorrectionKind(event.target.value as TimeEventKind)} value={correctionKind}>
+                      {Object.entries(actionLabels).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}
+                    </select>
+                  </label>
                   <label><span>New date</span><input onChange={(event) => setCorrectionDate(event.target.value)} required type="date" value={correctionDate} /></label>
                   <label><span>New time / Mountain</span><input onChange={(event) => setCorrectionTime(event.target.value)} required type="time" value={correctionTime} /></label>
                 </div>
+              ) : null}
+              {correctionMode === 'void' ? (
+                <p className="time-correction-editor__guidance">Void is reserved for a duplicate or accidental punch. To fix Clock In versus Clock Out, use Change punch so the original event remains in the audit history.</p>
               ) : null}
               {correctionMode === 'site_post' ? (
                 <label className="time-correction-editor__location">
@@ -833,7 +846,7 @@ export function TimeMaintenanceWorkbench({
                 <textarea
                   maxLength={700}
                   onChange={(event) => setCorrectionReason(event.target.value)}
-                  placeholder="Explain why this punch is being changed."
+                  placeholder={correctionMode === 'void' ? 'Explain why this punch is a duplicate or accidental entry.' : 'Explain why this punch is being corrected.'}
                   required
                   rows={2}
                   value={correctionReason}
@@ -842,7 +855,7 @@ export function TimeMaintenanceWorkbench({
               <div className="time-correction-editor__actions">
                 <button className="secondary-button" onClick={() => setSelectedEvent(null)} type="button">Cancel</button>
                 <button className={correctionMode === 'void' ? 'danger-primary' : 'primary-action'} disabled={!canCorrect} type="submit">
-                  {correctionMutation.isPending ? 'Saving...' : correctionMode === 'void' ? 'Void punch' : correctionMode === 'site_post' ? 'Save Site/Post' : correctionMode === 'work_type' ? 'Save work type' : 'Save corrected time'}
+                  {correctionMutation.isPending ? 'Saving...' : correctionMode === 'void' ? 'Void punch' : correctionMode === 'site_post' ? 'Save Site/Post' : correctionMode === 'work_type' ? 'Save work type' : 'Save corrected punch'}
                 </button>
               </div>
             </form>
@@ -968,6 +981,7 @@ export function TimeMaintenanceWorkbench({
                       <td>
                         <strong>{maintenanceEventLabel(event)}</strong>
                         <span>{event.source.replaceAll('_', ' ')}</span>
+                        {event.recordedKind && event.recordedKind !== event.kind ? <small>Originally: {eventLabels[event.recordedKind]}</small> : null}
                         {event.workType === 'training' ? <small>Paid training</small> : null}
                       </td>
                       <td>

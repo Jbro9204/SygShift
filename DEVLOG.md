@@ -25,6 +25,14 @@ deployment status, or major workflow assumptions change.
 
 ## 08/19/2026
 
+### Audited punch type corrections
+
+- Time Maintenance can now correct Clock In, Clock Out, Start Break, and End Break without voiding a valid punch.
+- Original punches remain immutable; effective type, actor, reason, and approval details are stored in append-only correction history.
+- Corrected types now drive clock state, attendance, reconciliation, payroll, exports, exceptions, and automation consistently.
+- Void is explicitly reserved for duplicate or accidental punches.
+- Added a regression guard covering authorization, audit preservation, database consumers, and the maintenance UI.
+
 ### Time Maintenance overnight and patrol clarity
 
 - Fixed Time Maintenance so newer audited actions, including automatic clock-out history, cannot make the entire employee timecard unreadable.

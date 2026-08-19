@@ -61,6 +61,8 @@ const correctionResultSchema = z.object({
   id: z.string().uuid(),
   timeEventId: z.string().uuid(),
   replacementTime: z.string().nullable(),
+  replacementKind: timeEventKindSchema.nullable().optional(),
+  recordedKind: timeEventKindSchema.optional(),
   voided: z.boolean(),
   requestedBy: z.string().uuid(),
   approvedBy: z.string().uuid().nullable(),
@@ -300,6 +302,7 @@ const timeMaintenanceEventSchema = z.object({
   employmentType: employmentTypeSchema,
   shiftId: z.string().uuid().nullable(),
   kind: timeEventKindSchema,
+  recordedKind: timeEventKindSchema.optional(),
   recordedAt: z.string(),
   effectiveAt: z.string(),
   clientRecordedAt: z.string().nullable(),
@@ -1376,11 +1379,13 @@ export async function supervisorRecordTimeEvent(input: {
 export async function supervisorCorrectTimeEvent(input: {
   timeEventId: string
   replacementTime?: string | null
+  replacementKind?: TimeEventKind | null
   voided?: boolean
   reason: string
 }): Promise<z.infer<typeof correctionResultSchema>> {
-  const { data, error } = await getSupabaseClient().rpc('supervisor_correct_time_event', {
+  const { data, error } = await getSupabaseClient().rpc('supervisor_correct_time_event_details', {
     target_reason: input.reason,
+    target_replacement_kind: input.replacementKind ?? null,
     target_replacement_time: input.replacementTime ?? null,
     target_time_event_id: input.timeEventId,
     target_voided: input.voided ?? false,
