@@ -310,7 +310,10 @@ const timeMaintenanceEventSchema = z.object({
   pendingCorrectionCount: z.number().int().nonnegative(),
   maintenanceNoteCount: z.number().int().nonnegative(),
   latestNote: z.string().nullable(),
-  latestAction: z.enum(['manual_add', 'time_adjust', 'void', 'location_update', 'site_post_update', 'work_type_update']).nullable(),
+  // Maintenance actions are append-only operational history. Accept future
+  // non-empty action names so a newly deployed database action cannot make the
+  // entire maintenance workspace unreadable on an older browser bundle.
+  latestAction: z.string().trim().min(1).nullable(),
   siteName: z.string().nullable(),
   siteCode: z.string().nullable(),
   postName: z.string().nullable(),
@@ -798,6 +801,15 @@ export function parseTimeMaintenance(value: unknown): TimeMaintenance {
   return timeMaintenanceSchema.parse(value)
 }
 
+export function sortTimeMaintenanceEmployees(
+  employees: TimeMaintenanceEmployee[],
+): TimeMaintenanceEmployee[] {
+  return [...employees].sort((left, right) => (
+    left.displayName.localeCompare(right.displayName, 'en-US', { sensitivity: 'base' })
+      || left.username.localeCompare(right.username, 'en-US', { sensitivity: 'base' })
+  ))
+}
+
 export function parseTeamAttendanceSummary(value: unknown): TeamAttendanceSummary {
   return teamAttendanceSummarySchema.parse(value)
 }
@@ -1261,7 +1273,12 @@ export async function getTimeMaintenance(input: {
   if (maintenanceResult.error) throw new Error(maintenanceResult.error.message || 'Time maintenance could not be loaded. MFA is required.')
   if (workTypeResult.error) throw new Error(workTypeResult.error.message || 'Work classifications could not be loaded.')
 
-  const maintenance = parseTimeMaintenance(maintenanceResult.data)
+  let maintenance: TimeMaintenance
+  try {
+    maintenance = parseTimeMaintenance(maintenanceResult.data)
+  } catch {
+    throw new Error('Time maintenance returned an unreadable record. Refresh the page. If the issue continues, contact an administrator.')
+  }
   const workTypes = z.array(timeWorkTypeMapItemSchema).parse(workTypeResult.data ?? [])
   const workTypeByOccurrence = new Map(workTypes.map((item) => [
     `${item.employeeId}|${item.shiftId ?? ''}|${item.operationalDate}`,

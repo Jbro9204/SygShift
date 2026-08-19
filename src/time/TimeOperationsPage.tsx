@@ -11,6 +11,7 @@ import {
   cancelEmployeeCallOff,
   createManualTimeEntry,
   editManualTimeEntry,
+  formatTimeOperationsPostLabel,
   getTimekeepingOperationsWorkspace,
   reportEmployeeCallOff,
   resolveOperationalException,
@@ -185,7 +186,27 @@ function ManualEntryEditDialog({ entry, onClose, onSaved, workspace }: { entry: 
       confirmWarnings,
     })
   }
-  return <ModalDialog busy={mutation.isPending} className="modal-dialog--time-workflow" description="The source punches remain intact. SygShift appends corrections and a before-and-after audit record." onClose={onClose} title={`Edit ${entry.employeeName}'s manual time`}><form className="time-workflow-form" onSubmit={submit}><label><span>Related scheduled shift</span><select onChange={(event) => setShiftId(event.target.value)} value={shiftId}><option value="">No related shift</option>{shifts.map((shift) => <option key={shift.shiftId} value={shift.shiftId}>{formatOperationalDateTime(shift.startsAt, { timeZone: shift.timeZone })} · {shift.location}</option>)}</select></label><label><span>Site / post</span><select disabled={Boolean(linkedShift)} onChange={(event) => setPostId(event.target.value)} required={!linkedShift} value={linkedShift ? (linkedShift.postId ?? '') : postId}><option value="">{linkedShift && !linkedShift.postId ? 'Event location comes from the linked shift' : 'Choose site / post'}</option>{workspace.posts.map((post) => <option key={post.id} value={post.id}>{post.siteName} · {post.postName}</option>)}</select></label><div className="time-workflow-form__two"><label><span>Clock-in</span><input defaultValue={toZonedLocalDateTimeInput(entry.clockInAt, linkedShift?.timeZone)} name="clockInAt" required type="datetime-local" /></label><label><span>Clock-out</span><input defaultValue={toZonedLocalDateTimeInput(entry.clockOutAt, linkedShift?.timeZone)} name="clockOutAt" required type="datetime-local" /></label></div><label><span>Edit reason</span><input maxLength={200} name="reason" required /></label><label><span>Notes</span><textarea defaultValue={entry.notes ?? ''} maxLength={1000} name="notes" rows={3} /></label><label className="time-workflow-confirm"><input checked={confirmWarnings} onChange={(event) => setConfirmWarnings(event.target.checked)} type="checkbox" /><span>I reviewed the corrected times and authorize saving if SygShift detects a disclosed warning.</span></label>{mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}<div className="time-workflow-form__actions"><TimeButton onClick={onClose} type="button" variant="secondary">Cancel</TimeButton><TimeButton type="submit" variant="primary">Save correction</TimeButton></div></form></ModalDialog>
+  return (
+    <ModalDialog busy={mutation.isPending} className="modal-dialog--time-workflow" description="The source punches remain intact. SygShift appends corrections and a before-and-after audit record." onClose={onClose} title={`Edit ${entry.employeeName}'s manual time`}>
+      <form className="time-workflow-form" onSubmit={submit}>
+        <label><span>Related scheduled shift</span><select onChange={(event) => setShiftId(event.target.value)} value={shiftId}><option value="">No related shift</option>{shifts.map((shift) => <option key={shift.shiftId} value={shift.shiftId}>{formatOperationalDateTime(shift.startsAt, { timeZone: shift.timeZone })} · {shift.location}</option>)}</select></label>
+        <label>
+          <span>Site / post</span>
+          <select disabled={Boolean(linkedShift)} onChange={(event) => setPostId(event.target.value)} required={!linkedShift} value={linkedShift ? (linkedShift.postId ?? '') : postId}>
+            <option value="">{linkedShift && !linkedShift.postId ? 'Event location comes from the linked shift' : 'Choose site / post'}</option>
+            {workspace.posts.map((post) => <option key={post.id} value={post.id}>{formatTimeOperationsPostLabel(post)}</option>)}
+          </select>
+          <small className="field-help">For patrol time, choose the exact client/accounting Site/Post (for example PERA, MG, or Anythink). Use a general Patrol post only when that was the actual assignment.</small>
+        </label>
+        <div className="time-workflow-form__two"><label><span>Clock-in</span><input defaultValue={toZonedLocalDateTimeInput(entry.clockInAt, linkedShift?.timeZone)} name="clockInAt" required type="datetime-local" /></label><label><span>Clock-out</span><input defaultValue={toZonedLocalDateTimeInput(entry.clockOutAt, linkedShift?.timeZone)} name="clockOutAt" required type="datetime-local" /></label></div>
+        <label><span>Edit reason</span><input maxLength={200} name="reason" required /></label>
+        <label><span>Notes</span><textarea defaultValue={entry.notes ?? ''} maxLength={1000} name="notes" rows={3} /></label>
+        <label className="time-workflow-confirm"><input checked={confirmWarnings} onChange={(event) => setConfirmWarnings(event.target.checked)} type="checkbox" /><span>I reviewed the corrected times and authorize saving if SygShift detects a disclosed warning.</span></label>
+        {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+        <div className="time-workflow-form__actions"><TimeButton onClick={onClose} type="button" variant="secondary">Cancel</TimeButton><TimeButton type="submit" variant="primary">Save correction</TimeButton></div>
+      </form>
+    </ModalDialog>
+  )
 }
 
 function EmptyMessage({ icon: Icon, title }: { icon: typeof Clock3; title: string }) {
@@ -227,7 +248,30 @@ function ManualEntryDialog({ onClose, onSaved, workspace }: { onClose: () => voi
   const shifts = workspace.shifts.filter((shift) => shift.employeeId === employeeId)
   const linkedShift = shifts.find((shift) => shift.shiftId === shiftId)
   function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); const timeZone = linkedShift?.timeZone ?? workspace.posts.find((post) => post.id === postId)?.timeZone; mutation.mutate({ employeeId, workDate: String(data.get('workDate')), clockInAt: zonedLocalDateTimeToUtc(String(data.get('clockInAt')), timeZone), clockOutAt: zonedLocalDateTimeToUtc(String(data.get('clockOutAt')), timeZone), shiftId: linkedShift?.shiftId ?? null, postId: linkedShift ? linkedShift.postId : (postId || null), reason: String(data.get('reason')), notes: String(data.get('notes') || '') || null, exceptionId: String(data.get('exceptionId') || '') || null, confirmWarnings }) }
-  return <ModalDialog busy={mutation.isPending} className="modal-dialog--time-workflow" description="Creates one audited clock-in/clock-out pair. Existing punches are never overwritten." onClose={onClose} title="Add manual time"><form className="time-workflow-form" onSubmit={submit}><label><span>Employee</span><select onChange={(event) => { setEmployeeId(event.target.value); setShiftId('') }} required value={employeeId}><option value="">Choose employee</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label><label><span>Related scheduled shift</span><select onChange={(event) => setShiftId(event.target.value)} value={shiftId}><option value="">No related shift</option>{shifts.map((shift) => <option key={shift.shiftId} value={shift.shiftId}>{formatOperationalDateTime(shift.startsAt, { timeZone: shift.timeZone })} · {shift.location}</option>)}</select></label><label><span>Site / post</span><select disabled={Boolean(linkedShift)} onChange={(event) => setPostId(event.target.value)} required={!linkedShift} value={linkedShift ? (linkedShift.postId ?? '') : postId}><option value="">{linkedShift && !linkedShift.postId ? 'Event location comes from the linked shift' : 'Choose site / post'}</option>{workspace.posts.map((post) => <option key={post.id} value={post.id}>{post.siteName} · {post.postName}</option>)}</select></label><label><span>Exception being resolved</span><select name="exceptionId"><option value="">None</option>{workspace.exceptions.filter((item) => item.employeeId === employeeId && item.status === 'unresolved').map((item) => <option key={item.id} value={item.id}>{readableStatus(item.exceptionCode)} · {formatOperationalDateTime(item.scheduledStartAt)}</option>)}</select></label><label><span>Work date</span><input defaultValue={dateKey(new Date())} name="workDate" required type="date" /></label><div className="time-workflow-form__two"><label><span>Clock-in</span><input name="clockInAt" required type="datetime-local" /></label><label><span>Clock-out</span><input name="clockOutAt" required type="datetime-local" /></label></div><label><span>Entry reason</span><input maxLength={200} name="reason" required /></label><label><span>Notes</span><textarea maxLength={1000} name="notes" rows={3} /></label><label className="time-workflow-confirm"><input checked={confirmWarnings} onChange={(event) => setConfirmWarnings(event.target.checked)} type="checkbox" /><span>I reviewed the times and authorize saving if SygShift detects a schedule, overlap, or long-shift warning.</span></label>{mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}<div className="time-workflow-form__actions"><TimeButton onClick={onClose} type="button" variant="secondary">Cancel</TimeButton><TimeButton type="submit" variant="primary">Save manual entry</TimeButton></div></form></ModalDialog>
+  return (
+    <ModalDialog busy={mutation.isPending} className="modal-dialog--time-workflow" description="Creates one audited clock-in/clock-out pair. Existing punches are never overwritten." onClose={onClose} title="Add manual time">
+      <form className="time-workflow-form" onSubmit={submit}>
+        <label><span>Employee</span><select onChange={(event) => { setEmployeeId(event.target.value); setShiftId('') }} required value={employeeId}><option value="">Choose employee</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
+        <label><span>Related scheduled shift</span><select onChange={(event) => setShiftId(event.target.value)} value={shiftId}><option value="">No related shift</option>{shifts.map((shift) => <option key={shift.shiftId} value={shift.shiftId}>{formatOperationalDateTime(shift.startsAt, { timeZone: shift.timeZone })} · {shift.location}</option>)}</select></label>
+        <label>
+          <span>Site / post</span>
+          <select disabled={Boolean(linkedShift)} onChange={(event) => setPostId(event.target.value)} required={!linkedShift} value={linkedShift ? (linkedShift.postId ?? '') : postId}>
+            <option value="">{linkedShift && !linkedShift.postId ? 'Event location comes from the linked shift' : 'Choose site / post'}</option>
+            {workspace.posts.map((post) => <option key={post.id} value={post.id}>{formatTimeOperationsPostLabel(post)}</option>)}
+          </select>
+          <small className="field-help">For patrol time, choose the exact client/accounting Site/Post (for example PERA, MG, or Anythink). Use a general Patrol post only when that was the actual assignment.</small>
+        </label>
+        <label><span>Exception being resolved</span><select name="exceptionId"><option value="">None</option>{workspace.exceptions.filter((item) => item.employeeId === employeeId && item.status === 'unresolved').map((item) => <option key={item.id} value={item.id}>{readableStatus(item.exceptionCode)} · {formatOperationalDateTime(item.scheduledStartAt)}</option>)}</select></label>
+        <label><span>Work date</span><input defaultValue={dateKey(new Date())} name="workDate" required type="date" /></label>
+        <div className="time-workflow-form__two"><label><span>Clock-in</span><input name="clockInAt" required type="datetime-local" /></label><label><span>Clock-out</span><input name="clockOutAt" required type="datetime-local" /></label></div>
+        <label><span>Entry reason</span><input maxLength={200} name="reason" required /></label>
+        <label><span>Notes</span><textarea maxLength={1000} name="notes" rows={3} /></label>
+        <label className="time-workflow-confirm"><input checked={confirmWarnings} onChange={(event) => setConfirmWarnings(event.target.checked)} type="checkbox" /><span>I reviewed the times and authorize saving if SygShift detects a schedule, overlap, or long-shift warning.</span></label>
+        {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+        <div className="time-workflow-form__actions"><TimeButton onClick={onClose} type="button" variant="secondary">Cancel</TimeButton><TimeButton type="submit" variant="primary">Save manual entry</TimeButton></div>
+      </form>
+    </ModalDialog>
+  )
 }
 
 function CallOffDialog({ onClose, onSaved, workspace }: { onClose: () => void; onSaved: () => Promise<unknown>; workspace: TimeOperationsWorkspace }) {

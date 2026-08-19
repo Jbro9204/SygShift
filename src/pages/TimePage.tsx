@@ -36,6 +36,7 @@ import {
   recordTimeEvent,
   reviewRowsToPayrollSummaryCsv,
   reviewTimeEventCorrection,
+  sortTimeMaintenanceEmployees,
   summarizePayrollRowsByEmployee,
   supervisorCorrectTimeEvent,
   supervisorRecordTimeEvent,
@@ -246,6 +247,8 @@ function MaintenanceEventStatus({ event }: { event: TimeMaintenanceEvent }) {
   if (event.latestAction === 'manual_add') return <span className="payroll-status payroll-status--ready">Manual</span>
   if (event.latestAction === 'location_update') return <span className="payroll-status payroll-status--ready">Location fixed</span>
   if (event.latestAction === 'work_type_update') return <span className="payroll-status payroll-status--ready">Time category fixed</span>
+  if (event.latestAction === 'automatic_clock_out') return <span className="payroll-status payroll-status--hold">Auto clock-out</span>
+  if (event.latestAction) return <span className="payroll-status payroll-status--ready">Updated</span>
   return <span className="payroll-status payroll-status--ready">Active</span>
 }
 
@@ -532,7 +535,10 @@ export function TimeMaintenanceWorkbench({
   })
   const maintenance = maintenanceQuery.data
   const events = maintenance?.events ?? []
-  const employees = maintenance?.employees ?? []
+  const employees = useMemo(
+    () => sortTimeMaintenanceEmployees(maintenance?.employees ?? []),
+    [maintenance?.employees],
+  )
   const overviewPayrollSummaries = useMemo(() => {
     const workedReview = workedTimePayrollReview(overviewReviewQuery.data)
     return summarizePayrollRowsByEmployee(workedReview?.rows ?? [])

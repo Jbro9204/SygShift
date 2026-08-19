@@ -23,6 +23,19 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/19/2026
+
+### Time Maintenance overnight and patrol clarity
+
+- Fixed Time Maintenance so newer audited actions, including automatic clock-out history, cannot make the entire employee timecard unreadable.
+- Ordered Time Maintenance employee choices by preferred/first name with username as a stable fallback.
+- Grouped unlinked supervisor-entered clock-in/clock-out activity into a bounded work occurrence that can cross midnight without changing either original punch.
+- Anchored unlinked overnight payroll assignment to the actual session clock-in, so a 10:00 PM to 6:00 AM occurrence remains assigned to the Sunday work/payroll week in which it began.
+- Added Site Code to Time Operations Site/Post choices and explicit guidance to select the client/accounting location for patrol work.
+- Applied targeted production migration `20260819123000_time_maintenance_overnight_and_patrol_clarity.sql` and recorded it in migration history.
+- Production verification confirmed Joseph Lee's reported 10:00 PM to 6:00 AM pair remains two original events, one work occurrence, and one 08/09/2026 payroll-week assignment.
+- Full validation passed: type checking, lint, 49 test files / 266 tests, and production build.
+
 ## 08/17/2026
 
 ### Attendance-review performance and seven-day Schedule layout

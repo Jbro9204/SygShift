@@ -16,6 +16,7 @@ import {
   payrollHours,
   reviewRowsToPayrollSummaryCsv,
   reviewRowsToPayrollCsv,
+  sortTimeMaintenanceEmployees,
   summarizePayrollRowsByEmployee,
   type TimeMaintenanceShiftOption,
   type TimekeepingShift,
@@ -585,5 +586,53 @@ describe('timekeeping validation', () => {
 
     expect(maintenance.events[0]?.source).toBe('supervisor')
     expect(maintenance.events[0]?.latestAction).toBe('manual_add')
+  })
+
+  it('keeps Time Maintenance readable when the database adds an operational action', () => {
+    const maintenance = parseTimeMaintenance({
+      serverTimestamp: '2026-08-19T15:00:00.000Z',
+      fromDate: '2026-08-09',
+      throughDate: '2026-08-15',
+      operationalTimeZone: 'America/Denver',
+      employees: [],
+      events: [{
+        id: '73000000-0000-4000-8000-000000000031',
+        employeeId: '73000000-0000-4000-8000-000000000001',
+        username: 'jbrown',
+        employeeName: 'Jordan Brown',
+        role: 'admin',
+        employmentType: 'salary',
+        shiftId: null,
+        kind: 'clock_out',
+        recordedAt: '2026-08-19T22:00:00.000Z',
+        effectiveAt: '2026-08-19T22:00:00.000Z',
+        clientRecordedAt: null,
+        source: 'system',
+        createdBy: null,
+        createdByName: null,
+        voided: false,
+        pendingCorrectionCount: 0,
+        maintenanceNoteCount: 1,
+        latestNote: 'Automatically closed at the scheduled end.',
+        latestAction: 'automatic_clock_out',
+        siteName: 'Administrative',
+        siteCode: 'ADMIN',
+        postName: 'Office',
+        eventName: null,
+        locationName: 'Administrative',
+        timeZone: 'America/Denver',
+      }],
+    })
+
+    expect(maintenance.events[0]?.latestAction).toBe('automatic_clock_out')
+  })
+
+  it('orders Time Maintenance employees by preferred or first display name', () => {
+    const employees = sortTimeMaintenanceEmployees([
+      { id: '73000000-0000-4000-8000-000000000003', username: 'zlee', displayName: 'Zara Lee', role: 'guard', employmentType: 'hourly', status: 'active' },
+      { id: '73000000-0000-4000-8000-000000000002', username: 'ahall', displayName: 'Aaron Hall', role: 'guard', employmentType: 'hourly', status: 'active' },
+    ])
+
+    expect(employees.map((employee) => employee.displayName)).toEqual(['Aaron Hall', 'Zara Lee'])
   })
 })

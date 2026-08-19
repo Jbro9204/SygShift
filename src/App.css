@@ -8470,6 +8470,13 @@
   resize: vertical;
 }
 
+.time-workflow-form .field-help {
+  color: #6d6459;
+  font-size: 0.79rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
 .time-operations-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

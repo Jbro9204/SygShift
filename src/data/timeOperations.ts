@@ -11,6 +11,7 @@ const employeeSchema = z.object({
 const postSchema = z.object({
   id: z.string().uuid(),
   siteId: z.string().uuid(),
+  siteCode: z.string().nullable().optional(),
   siteName: z.string(),
   postName: z.string(),
   timeZone: z.string(),
@@ -172,6 +173,14 @@ export type OperationalException = z.infer<typeof operationalExceptionSchema>
 export type ManualTimeEntry = z.infer<typeof manualEntrySchema>
 export type EmployeeCallOffReport = z.infer<typeof callOffReportSchema>
 export type TimeOperationsReports = z.infer<typeof reportsSchema>
+
+export function formatTimeOperationsPostLabel(
+  post: TimeOperationsWorkspace['posts'][number],
+): string {
+  return [post.siteCode, post.siteName, post.postName]
+    .filter((part, index, parts): part is string => Boolean(part) && parts.indexOf(part) === index)
+    .join(' · ')
+}
 
 async function rpc<T>(name: string, parameters: Record<string, unknown>, schema: z.ZodType<T>): Promise<T> {
   const { data, error } = await getSupabaseClient().rpc(name, parameters)
