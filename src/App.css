@@ -1870,6 +1870,60 @@
   line-height: 1.4;
 }
 
+.overview-call-off-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  margin: -6px 0 22px;
+  padding: 18px 20px;
+  color: #34211e;
+  background: linear-gradient(135deg, #fff8f4 0%, #fffdf9 72%);
+  border: 1px solid #dfb3aa;
+  border-left: 5px solid #a3392f;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.overview-call-off-panel__icon {
+  display: grid;
+  width: 50px;
+  height: 50px;
+  place-items: center;
+  color: #8d2d25;
+  background: #f8e3de;
+  border-radius: 12px;
+}
+
+.overview-call-off-panel__copy {
+  min-width: 0;
+}
+
+.overview-call-off-panel__copy .eyebrow {
+  margin-bottom: 4px;
+  color: #8d2d25;
+  font-size: 12px;
+}
+
+.overview-call-off-panel h2,
+.overview-call-off-panel p {
+  margin: 0;
+}
+
+.overview-call-off-panel h2 {
+  color: #241a18;
+  font-size: clamp(20px, 2vw, 25px);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.overview-call-off-panel__copy p:not(.eyebrow) {
+  margin-top: 5px;
+  color: #675a56;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 .overview-employee-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(240px, 0.9fr));
@@ -9408,6 +9462,15 @@
 
   .overview-employee-grid {
     grid-template-columns: 1fr;
+  }
+
+  .overview-call-off-panel {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .overview-call-off-panel .overview-call-off-action {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .my-time-coverage-actions,

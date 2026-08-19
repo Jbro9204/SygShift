@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, subDays } from 'date-fns'
 import {
@@ -76,6 +76,7 @@ const eventLabels: Record<TimeEventKind, string> = {
 
 export function MyTimePage() {
   const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
   const punchLocked = useRef(false)
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
   const [attendanceReportOpen, setAttendanceReportOpen] = useState(false)
@@ -138,6 +139,15 @@ export function MyTimePage() {
   useEffect(() => {
     if (dashboard?.operationalDate && !attendanceReportDate) setAttendanceReportDate(dashboard.operationalDate)
   }, [attendanceReportDate, dashboard?.operationalDate])
+
+  useEffect(() => {
+    if (!ownTimeAllowed || searchParams.get('report') !== 'call-off') return
+
+    setAttendanceReportOpen(true)
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('report')
+    setSearchParams(nextParams, { replace: true })
+  }, [ownTimeAllowed, searchParams, setSearchParams])
 
   const punchMutation = useMutation({
     mutationFn: (input: { kind: TimeEventKind; shiftId?: string | null }) => recordTimeEvent(input),

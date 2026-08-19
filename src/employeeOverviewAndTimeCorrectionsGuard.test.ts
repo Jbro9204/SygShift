@@ -46,6 +46,15 @@ describe('employee overview and time correction guardrails', () => {
     expect(navigationSource).toContain("{ label: 'Time-Off Requests', path: '/requests', icon: ClipboardCheck, roles: ALL_EMPLOYEE_ROLES")
   })
 
+  it('keeps sick and call-off reporting prominent and opens the protected form directly', () => {
+    expect(overviewSource).toContain('overview-call-off-panel')
+    expect(overviewSource).toContain('Can’t work your shift?')
+    expect(overviewSource).toContain('to="/time/my-time?report=call-off"')
+    expect(myTimeSource).toContain("searchParams.get('report') !== 'call-off'")
+    expect(myTimeSource).toContain('setAttendanceReportOpen(true)')
+    expect(myTimeSource).toContain('Dispatch is notified immediately')
+  })
+
   it('keeps employee schedule personal while team summaries stay behind operations access', () => {
     expect(scheduleSource).toContain('employeeOnlySchedule')
     expect(scheduleSource).toContain('EmployeePersonalSchedulePanel')
@@ -89,6 +98,8 @@ describe('employee overview and time correction guardrails', () => {
     expect(cssSource).toContain('grid-row: 3')
     expect(cssSource).toContain('min-height: 44px')
     expect(cssSource).toContain('.overview-time-actions')
+    expect(cssSource).toContain('.overview-call-off-panel')
+    expect(cssSource).toContain('.overview-call-off-panel__copy')
     expect(cssSource).toContain('.employee-schedule-panel')
     expect(cssSource).toContain('grid-template-columns: repeat(7, minmax(132px, 1fr))')
     expect(cssSource).toContain('.opportunity-card__details')

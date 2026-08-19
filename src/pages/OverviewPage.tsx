@@ -27,7 +27,7 @@ import {
   type TimekeepingDashboard,
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { canReportEmployeeCallOff, canUseOwnTimeClock, canViewOwnTime, canViewTeamTime } from '../time/timePermissions'
+import { canUseOwnTimeClock, canViewOwnTime, canViewTeamTime } from '../time/timePermissions'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from '../time/timeQuerySync'
 
 const metrics: Array<{ label: string, key: keyof OverviewMetrics, icon: typeof UsersRound }> = [
@@ -87,7 +87,6 @@ export function OverviewPage() {
   })
   const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
   const punchAllowed = canUseOwnTimeClock(sessionQuery.data)
-  const callOffAllowed = canReportEmployeeCallOff(sessionQuery.data)
   const timekeepingQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     queryFn: () => getTimekeepingDashboard(),
@@ -174,12 +173,6 @@ export function OverviewPage() {
             Schedule
             <ArrowRight aria-hidden="true" size={18} />
           </Link>
-          {callOffAllowed ? (
-            <Link className="overview-call-off-action" to="/time/operations">
-              <ClipboardCheck aria-hidden="true" size={19} />
-              Report Sick / Call-Off
-            </Link>
-          ) : null}
         </div>
       </section>
 
@@ -204,6 +197,23 @@ export function OverviewPage() {
             </strong>
             <span>Official time is recorded by the secure server. Full time tools remain under Time & Attendance.</span>
           </div>
+        </section>
+      ) : null}
+
+      {ownTimeAllowed ? (
+        <section className="overview-call-off-panel" aria-labelledby="overview-call-off-title">
+          <div className="overview-call-off-panel__icon">
+            <ClipboardCheck aria-hidden="true" size={24} />
+          </div>
+          <div className="overview-call-off-panel__copy">
+            <p className="eyebrow">Need immediate coverage help?</p>
+            <h2 id="overview-call-off-title">Can’t work your shift?</h2>
+            <p>Report sickness or another call-off now. Dispatch is notified immediately, and your shift stays assigned until coverage is approved.</p>
+          </div>
+          <Link className="overview-call-off-action" to="/time/my-time?report=call-off">
+            Report Sick / Call-Off
+            <ArrowRight aria-hidden="true" size={19} />
+          </Link>
         </section>
       ) : null}
 
