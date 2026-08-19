@@ -35,6 +35,7 @@ deployment status, or major workflow assumptions change.
 - Applied targeted production migration `20260819123000_time_maintenance_overnight_and_patrol_clarity.sql` and recorded it in migration history.
 - Production verification confirmed Joseph Lee's reported 10:00 PM to 6:00 AM pair remains two original events, one work occurrence, and one 08/09/2026 payroll-week assignment.
 - Full validation passed: type checking, lint, 49 test files / 266 tests, and production build.
+- Deployed Cloudflare Worker version `8f28a40d-4d3d-422a-9652-d0c2bcbe822b`.
 
 ## 08/17/2026
 
