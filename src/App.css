@@ -10313,6 +10313,48 @@
   font-size: 13px;
 }
 
+.time-maintenance-breakdown {
+  padding: 0 22px 18px;
+  background: #fbfaf7;
+  border-bottom: 1px solid #e7e2d8;
+}
+
+.time-maintenance-breakdown summary {
+  width: fit-content;
+  padding: 2px 0;
+  color: #735016;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.time-maintenance-breakdown__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.time-maintenance-breakdown__grid span {
+  display: grid;
+  gap: 4px;
+  padding: 13px 15px;
+  background: #ffffff;
+  border: 1px solid #e1dcd2;
+  border-radius: 8px;
+}
+
+.time-maintenance-breakdown__grid small {
+  color: #6b655c;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.time-maintenance-breakdown__grid strong {
+  color: #26231e;
+  font-size: 18px;
+}
+
 .my-time-history {
   margin: 16px 0;
   overflow: hidden;
@@ -13395,7 +13437,8 @@
   }
 
   .time-review-metrics,
-  .my-time-history__metrics {
+  .my-time-history__metrics,
+  .time-maintenance-breakdown__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -13603,6 +13646,7 @@
 
   .time-review-range,
   .time-review-metrics,
+  .time-maintenance-breakdown__grid,
   .time-team-controls__grid,
   .time-exception-guide,
   .time-correction-editor__fields,

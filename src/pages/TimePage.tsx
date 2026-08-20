@@ -436,13 +436,13 @@ export function TimeMaintenanceWorkbench({
   const [correctionWorkType, setCorrectionWorkType] = useState<WorkType>('post')
   const showOverview = !lockEmployeeFilter && employeeId === ''
   const overviewSummaryQuery = useQuery({
-    enabled: isSupabaseConfigured && showOverview,
+    enabled: isSupabaseConfigured,
     queryKey: ['time-maintenance-overview', fromDate, throughDate],
     queryFn: () => getTeamAttendanceSummary({ fromDate, throughDate }),
     refetchInterval: 30_000,
   })
   const overviewReviewQuery = useQuery({
-    enabled: isSupabaseConfigured && showOverview,
+    enabled: isSupabaseConfigured,
     queryKey: ['time-maintenance-review-summary', fromDate, throughDate],
     queryFn: () => getTimekeepingReview({ fromDate, throughDate }),
     refetchInterval: 30_000,
@@ -551,6 +551,22 @@ export function TimeMaintenanceWorkbench({
     overviewPayrollSummaries,
     overviewReviewQuery.data?.pendingCorrections ?? [],
   ), [overviewPayrollSummaries, overviewReviewQuery.data?.pendingCorrections, overviewSummaryQuery.data?.rows])
+  const selectedAttendanceSummary = useMemo(
+    () => overviewSummaryQuery.data?.rows.find((row) => row.employeeId === employeeId) ?? null,
+    [employeeId, overviewSummaryQuery.data?.rows],
+  )
+  const selectedPayrollSummary = useMemo(
+    () => overviewPayrollSummaries.find((row) => row.employeeId === employeeId) ?? null,
+    [employeeId, overviewPayrollSummaries],
+  )
+  const selectedPendingCorrections = useMemo(
+    () => overviewReviewQuery.data?.pendingCorrections.filter((correction) => correction.employeeId === employeeId).length ?? 0,
+    [employeeId, overviewReviewQuery.data?.pendingCorrections],
+  )
+  const selectedScheduledMinutes = selectedAttendanceSummary?.scheduledMinutes ?? 0
+  const selectedWorkedMinutes = selectedPayrollSummary?.paidMinutes ?? 0
+  const selectedDifferenceMinutes = selectedWorkedMinutes - selectedScheduledMinutes
+  const selectedNeedsAttention = (selectedPayrollSummary?.exceptionCount ?? 0) + selectedPendingCorrections
   const visibleEvents = showOverview ? [] : events
   const overviewEventCount = overviewRows.reduce((total, row) => total + row.eventCount, 0)
   const overviewPendingCount = overviewRows.reduce((total, row) => total + row.pendingCorrectionCount, 0)
@@ -561,9 +577,6 @@ export function TimeMaintenanceWorkbench({
     && correctionReason.trim().length > 0
     && !correctionMutation.isPending
     && (correctionMode !== 'site_post' || (correctionShiftId !== '' && (correctionShiftId !== MANUAL_SITE_POST_OPTION || correctionManualLocation.trim().length > 0)))
-  const manualCount = visibleEvents.filter((event) => event.source === 'supervisor').length
-  const voidedCount = visibleEvents.filter((event) => event.voided).length
-  const pendingCount = showOverview ? overviewPendingCount : visibleEvents.filter((event) => event.pendingCorrectionCount > 0).length
   const selectedEventDate = selectedEvent ? dateInputValue(selectedEvent.effectiveAt) : ''
   const correctionShiftOptions = useMemo(() => {
     const options = shiftOptionsQuery.data ?? []
@@ -652,13 +665,33 @@ export function TimeMaintenanceWorkbench({
               </>
             ) : (
               <>
-                <article><span>Events</span><strong>{visibleEvents.length}</strong><small>Punches for selected employee</small></article>
-                <article><span>Manual</span><strong>{manualCount}</strong><small>Supervisor-entered punches</small></article>
-                <article className={pendingCount ? 'import-metric--attention' : ''}><span>Pending</span><strong>{pendingCount}</strong><small>Employee corrections</small></article>
-                <article className={voidedCount ? 'import-metric--attention' : ''}><span>Voided</span><strong>{voidedCount}</strong><small>Excluded from payroll</small></article>
+                <article><span>Scheduled</span><strong>{payrollHours(selectedScheduledMinutes)} hr</strong><small>Published schedule in this range</small></article>
+                <article><span>Worked</span><strong>{payrollHours(selectedWorkedMinutes)} hr</strong><small>Paid time from completed punches</small></article>
+                <article className={selectedDifferenceMinutes !== 0 ? 'import-metric--attention' : ''}>
+                  <span>Difference</span>
+                  <strong>{selectedDifferenceMinutes > 0 ? '+' : ''}{payrollHours(selectedDifferenceMinutes)} hr</strong>
+                  <small>Worked minus scheduled time</small>
+                </article>
+                <article className={selectedNeedsAttention ? 'import-metric--attention' : ''}>
+                  <span>Needs attention</span>
+                  <strong>{selectedNeedsAttention}</strong>
+                  <small>Payroll exceptions or pending corrections</small>
+                </article>
               </>
             )}
           </section>
+
+          {!showOverview ? (
+            <details className="time-maintenance-breakdown">
+              <summary>View hours breakdown</summary>
+              <div className="time-maintenance-breakdown__grid">
+                <span><small>Regular</small><strong>{payrollHours(selectedPayrollSummary?.regularMinutes ?? 0)} hr</strong></span>
+                <span><small>Overtime</small><strong>{payrollHours(selectedPayrollSummary?.overtimeMinutes ?? 0)} hr</strong></span>
+                <span><small>Unpaid breaks</small><strong>{payrollHours(selectedPayrollSummary?.breakMinutes ?? 0)} hr</strong></span>
+                <span><small>Completed work segments</small><strong>{selectedPayrollSummary?.workedShiftCount ?? 0}</strong></span>
+              </div>
+            </details>
+          ) : null}
 
           <div className="time-maintenance-tools">
             <label className="time-maintenance-filter">

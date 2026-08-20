@@ -404,6 +404,7 @@ const teamAttendanceSummaryRowSchema = z.object({
   lastClockOut: z.string().nullable(),
   eventCount: z.number().int().nonnegative(),
   scheduledShiftCount: z.number().int().nonnegative(),
+  scheduledMinutes: z.number().int().nonnegative().optional(),
   scheduledStartsAt: z.string().nullable(),
   scheduledEndsAt: z.string().nullable(),
   scheduledLocationName: z.string().nullable(),
