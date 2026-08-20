@@ -3237,7 +3237,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               <p className="eyebrow">Supervisor action</p>
               <h2 id="schedule-builder-heading">Add a shift or event</h2>
             </div>
-            <span className="status-pill">Creates a reviewed schedule revision</span>
+            <span className="status-pill">Saves to the working schedule draft</span>
           </div>
 
           <form className="request-form schedule-builder__form" onSubmit={handleCreateOpenShift}>
