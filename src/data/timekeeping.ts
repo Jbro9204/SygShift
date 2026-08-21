@@ -413,6 +413,11 @@ const teamAttendanceSummaryRowSchema = z.object({
   scheduledPostName: z.string().nullable(),
   scheduledEventName: z.string().nullable(),
   scheduledTimeZone: z.string(),
+  paidMinutes: z.number().int().nonnegative().default(0),
+  breakMinutes: z.number().int().nonnegative().default(0),
+  overtimeMinutes: z.number().int().nonnegative().default(0),
+  workedSegmentCount: z.number().int().nonnegative().default(0),
+  pendingCorrectionCount: z.number().int().nonnegative().default(0),
 })
 
 const teamAttendanceSummarySchema = z.object({
@@ -421,6 +426,21 @@ const teamAttendanceSummarySchema = z.object({
   throughDate: z.string(),
   operationalTimeZone: z.literal('America/Denver'),
   rows: z.array(teamAttendanceSummaryRowSchema),
+})
+
+const teamAttendanceTotalsSchema = z.object({
+  serverTimestamp: z.string(),
+  fromDate: z.string(),
+  throughDate: z.string(),
+  operationalTimeZone: z.literal('America/Denver'),
+  rows: z.array(z.object({
+    employeeId: z.string().uuid(),
+    paidMinutes: z.number().int().nonnegative(),
+    breakMinutes: z.number().int().nonnegative(),
+    overtimeMinutes: z.number().int().nonnegative(),
+    workedSegmentCount: z.number().int().nonnegative(),
+    pendingCorrectionCount: z.number().int().nonnegative(),
+  })),
 })
 
 const timekeepingReviewSchema = z.object({
@@ -1049,7 +1069,7 @@ export async function getTimekeepingReview(input: {
     }),
   ])
   const { data, error } = reviewResult
-  if (error) throw new Error('Supervisor time review could not be loaded. MFA is required.')
+  if (error) throw new Error(error.message || 'Supervisor time review could not be loaded.')
   const review = parseTimekeepingReview(data)
   if (workTypeResult.error) throw new Error(workTypeResult.error.message || 'Work classifications could not be loaded.')
   const workTypes = z.array(timeWorkTypeMapItemSchema).parse(workTypeResult.data ?? [])
@@ -1095,12 +1115,28 @@ export async function getTeamAttendanceSummary(input: {
   fromDate: string
   throughDate: string
 }): Promise<TeamAttendanceSummary> {
-  const { data, error } = await getSupabaseClient().rpc('get_team_attendance_summary', {
+  const parameters = {
     target_from_date: input.fromDate,
     target_through_date: input.throughDate,
-  })
-  if (error) throw new Error(error.message || 'Team Attendance could not be loaded. MFA is required.')
-  return parseTeamAttendanceSummary(data)
+  }
+  const [summaryResult, totalsResult] = await Promise.all([
+    getSupabaseClient().rpc('get_team_attendance_summary', parameters),
+    getSupabaseClient().rpc('get_team_attendance_totals', parameters),
+  ])
+  if (summaryResult.error) throw new Error(summaryResult.error.message || 'Team Attendance could not be loaded.')
+  if (totalsResult.error) throw new Error(totalsResult.error.message || 'Team Attendance totals could not be loaded.')
+
+  const summary = parseTeamAttendanceSummary(summaryResult.data)
+  const totals = teamAttendanceTotalsSchema.parse(totalsResult.data)
+  const totalsByEmployee = new Map(totals.rows.map((row) => [row.employeeId, row]))
+
+  return {
+    ...summary,
+    rows: summary.rows.map((row) => ({
+      ...row,
+      ...totalsByEmployee.get(row.employeeId),
+    })),
+  }
 }
 
 function summarizeTimekeepingRows(rows: TimekeepingReviewRow[], pendingCorrections: PendingCorrection[]): TimekeepingReview['summary'] {

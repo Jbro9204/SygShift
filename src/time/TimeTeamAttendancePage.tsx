@@ -16,19 +16,14 @@ import { getSessionContext } from '../data/auth'
 import {
   getPayrollRules,
   getTeamAttendanceSummary,
-  getTimekeepingReview,
   payrollHours,
-  summarizePayrollRowsByEmployee,
-  type PendingCorrection,
   type TeamAttendanceSummaryRow,
-  type TimekeepingReviewRow,
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { TimeMaintenanceWorkbench, type TimeMaintenanceFocusRequest } from '../pages/TimePage'
 import { currentPayrollPeriod, formatUsDateKey, type TimePeriod } from './timeRules'
 import { canManageTime, canViewTeamTime } from './timePermissions'
-import { workedTimePayrollReview } from './timePayroll'
 import {
   TimeAlertCard,
   TimeButton,
@@ -54,15 +49,12 @@ interface TeamAttendanceRow {
   firstClockIn: string | null
   lastClockOut: string | null
   paidMinutes: number
-  postMinutes: number
-  trainingMinutes: number
   breakMinutes: number
   overtimeMinutes: number
-  rowCount: number
+  workedSegmentCount: number
   scheduledShiftCount: number
   scheduledSummary: string
   eventCount: number
-  exceptionCount: number
   pendingCorrectionCount: number
 }
 
@@ -98,10 +90,6 @@ function statusFilterFromSearch(value: string | null): TeamAttendanceFilter {
   return 'all'
 }
 
-function rowLocation(row: TimekeepingReviewRow): string {
-  return [row.siteCode, row.siteName, row.postName ?? row.eventName].filter(Boolean).join(' / ') || row.locationName
-}
-
 function summaryLocation(row: TeamAttendanceSummaryRow): string {
   const liveLocation = row.latestKind && row.latestKind !== 'clock_out'
     ? [row.latestSiteCode, row.latestSiteName, row.latestPostName ?? row.latestEventName].filter(Boolean).join(' / ')
@@ -124,81 +112,33 @@ function scheduledSummary(row: TeamAttendanceSummaryRow): string {
 
 function buildTeamRows(
   summaries: TeamAttendanceSummaryRow[],
-  reviewRows: TimekeepingReviewRow[],
-  pendingCorrections: PendingCorrection[],
 ): TeamAttendanceRow[] {
-  const payrollSummaries = summarizePayrollRowsByEmployee(reviewRows.filter((row) => row.rowKind === 'time_event'))
-  const attendanceByEmployee = new Map(summaries.map((summary) => [summary.employeeId, summary]))
-  const pendingByEmployee = new Map<string, number>()
-  for (const correction of pendingCorrections) {
-    pendingByEmployee.set(correction.employeeId, (pendingByEmployee.get(correction.employeeId) ?? 0) + 1)
-  }
-  const rows = new Map<string, TeamAttendanceRow>()
-
-  for (const attendance of summaries) {
-    const payrollSummary = payrollSummaries.find((summary) => summary.employeeId === attendance.employeeId)
-    rows.set(attendance.employeeId, {
-      breakMinutes: payrollSummary?.breakMinutes ?? 0,
-      currentLocation: summaryLocation(attendance),
-      employeeId: attendance.employeeId,
-      employeeName: attendance.employeeName,
-      employmentType: attendance.employmentType,
-      eventCount: attendance.eventCount,
-      exceptionCount: payrollSummary?.exceptionCount ?? 0,
-      firstClockIn: attendance.firstClockIn,
-      lastClockOut: attendance.lastClockOut,
-      latestEffectiveAt: attendance.latestEffectiveAt,
-      latestKind: attendance.latestKind,
-      overtimeMinutes: payrollSummary?.overtimeMinutes ?? 0,
-      paidMinutes: payrollSummary?.paidMinutes ?? 0,
-      postMinutes: payrollSummary?.postMinutes ?? 0,
-      pendingCorrectionCount: pendingByEmployee.get(attendance.employeeId) ?? 0,
-      role: attendance.role,
-      rowCount: payrollSummary?.workedShiftCount ?? 0,
-      scheduledShiftCount: attendance.scheduledShiftCount,
-      scheduledSummary: scheduledSummary(attendance),
-      state: latestEventState(attendance.latestKind),
-      trainingMinutes: payrollSummary?.trainingMinutes ?? 0,
-      username: attendance.username,
-    })
-  }
-
-  for (const payrollSummary of payrollSummaries) {
-    if (rows.has(payrollSummary.employeeId)) continue
-    const attendance = attendanceByEmployee.get(payrollSummary.employeeId)
-    rows.set(payrollSummary.employeeId, {
-      breakMinutes: payrollSummary.breakMinutes,
-      currentLocation: attendance ? summaryLocation(attendance) : 'Time clock activity',
-      employeeId: payrollSummary.employeeId,
-      employeeName: payrollSummary.employeeName,
-      employmentType: payrollSummary.employmentType,
-      eventCount: attendance?.eventCount ?? 0,
-      exceptionCount: payrollSummary.exceptionCount,
-      firstClockIn: attendance?.firstClockIn ?? null,
-      lastClockOut: attendance?.lastClockOut ?? null,
-      latestEffectiveAt: attendance?.latestEffectiveAt ?? null,
-      latestKind: attendance?.latestKind ?? null,
-      overtimeMinutes: payrollSummary.overtimeMinutes,
-      paidMinutes: payrollSummary.paidMinutes,
-      postMinutes: payrollSummary.postMinutes,
-      pendingCorrectionCount: pendingByEmployee.get(payrollSummary.employeeId) ?? 0,
-      role: payrollSummary.role,
-      rowCount: payrollSummary.workedShiftCount,
-      scheduledShiftCount: attendance?.scheduledShiftCount ?? 0,
-      scheduledSummary: attendance ? scheduledSummary(attendance) : 'No scheduled shift in range',
-      state: latestEventState(attendance?.latestKind ?? null),
-      trainingMinutes: payrollSummary.trainingMinutes,
-      username: payrollSummary.username,
-    })
-  }
-
-  return [...rows.values()].filter((row) =>
+  return summaries.map((attendance) => ({
+    breakMinutes: attendance.breakMinutes,
+    currentLocation: summaryLocation(attendance),
+    employeeId: attendance.employeeId,
+    employeeName: attendance.employeeName,
+    employmentType: attendance.employmentType,
+    eventCount: attendance.eventCount,
+    firstClockIn: attendance.firstClockIn,
+    lastClockOut: attendance.lastClockOut,
+    latestEffectiveAt: attendance.latestEffectiveAt,
+    latestKind: attendance.latestKind,
+    overtimeMinutes: attendance.overtimeMinutes,
+    paidMinutes: attendance.paidMinutes,
+    pendingCorrectionCount: attendance.pendingCorrectionCount,
+    role: attendance.role,
+    scheduledShiftCount: attendance.scheduledShiftCount,
+    scheduledSummary: scheduledSummary(attendance),
+    state: latestEventState(attendance.latestKind),
+    username: attendance.username,
+    workedSegmentCount: attendance.workedSegmentCount,
+  })).filter((row) =>
     row.eventCount > 0
-    || row.rowCount > 0
+    || row.workedSegmentCount > 0
     || row.paidMinutes > 0
     || row.breakMinutes > 0
     || row.overtimeMinutes > 0
-    || row.exceptionCount > 0
     || row.pendingCorrectionCount > 0
     || row.state !== 'off_clock',
   ).sort((left, right) => {
@@ -248,22 +188,15 @@ export function TimeTeamAttendancePage() {
     setStatusFilter((current) => (current === nextFilter ? current : nextFilter))
   }, [searchParams])
 
-  const reviewQuery = useQuery({
-    enabled: isSupabaseConfigured && sessionQuery.isSuccess && teamAllowed,
-    queryFn: () => getTimekeepingReview({ fromDate, throughDate }),
-    queryKey: ['time-team-review', fromDate, throughDate],
-    refetchInterval: 30_000,
-  })
   const summaryQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && teamAllowed,
     queryFn: () => getTeamAttendanceSummary({ fromDate, throughDate }),
     queryKey: ['time-team-summary', fromDate, throughDate],
     refetchInterval: 30_000,
   })
-  const review = useMemo(() => workedTimePayrollReview(reviewQuery.data), [reviewQuery.data])
   const teamRows = useMemo(
-    () => buildTeamRows(summaryQuery.data?.rows ?? [], review?.rows ?? [], review?.pendingCorrections ?? []),
-    [review?.pendingCorrections, review?.rows, summaryQuery.data?.rows],
+    () => buildTeamRows(summaryQuery.data?.rows ?? []),
+    [summaryQuery.data?.rows],
   )
   const selectedEmployee = useMemo(
     () => teamRows.find((row) => row.employeeId === selectedEmployeeId) ?? null,
@@ -271,13 +204,13 @@ export function TimeTeamAttendancePage() {
   )
   const filteredRows = useMemo(() => {
     if (statusFilter === 'all') return teamRows
-    if (statusFilter === 'exceptions') return teamRows.filter((row) => row.exceptionCount > 0 || row.pendingCorrectionCount > 0)
+    if (statusFilter === 'exceptions') return teamRows.filter((row) => row.pendingCorrectionCount > 0)
     return teamRows.filter((row) => row.state === statusFilter)
   }, [statusFilter, teamRows])
 
   const activeCount = teamRows.filter((row) => row.state === 'working').length
   const breakCount = teamRows.filter((row) => row.state === 'on_break').length
-  const exceptionCount = teamRows.reduce((total, row) => total + row.exceptionCount + row.pendingCorrectionCount, 0)
+  const pendingReviewCount = teamRows.reduce((total, row) => total + row.pendingCorrectionCount, 0)
   const paidMinutes = teamRows.reduce((total, row) => total + row.paidMinutes, 0)
 
   function setPeriod(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>) {
@@ -338,7 +271,7 @@ export function TimeTeamAttendancePage() {
           </>
         }
         eyebrow="Team Attendance"
-        summary="Live team status, pay-period totals, and direct correction access for supervisors, schedulers, and admins."
+        summary="Live team status, worked totals, and direct correction access for supervisors, schedulers, and admins."
         title="Team Attendance"
       />
 
@@ -374,7 +307,7 @@ export function TimeTeamAttendancePage() {
         <TimeMetricCard detail="Employees with a live working punch." icon={Timer} label="Clocked In" tone={activeCount > 0 ? 'good' : 'neutral'} value={activeCount} />
         <TimeMetricCard detail="Employees currently marked on break." icon={Clock3} label="On Break" tone={breakCount > 0 ? 'warning' : 'neutral'} value={breakCount} />
         <TimeMetricCard detail="Worked time in the selected period." icon={FileClock} label="Paid Hours" value={`${payrollHours(paidMinutes)} hr`} />
-        <TimeMetricCard detail="Rows that need payroll attention." icon={AlertTriangle} label="Exceptions" tone={exceptionCount > 0 ? 'danger' : 'good'} value={exceptionCount} />
+        <TimeMetricCard detail="Employee correction requests awaiting review." icon={AlertTriangle} label="Pending Reviews" tone={pendingReviewCount > 0 ? 'danger' : 'good'} value={pendingReviewCount} />
       </section>
 
       <section className="time-card time-team-panel" aria-labelledby="team-attendance-table-title">
@@ -383,12 +316,10 @@ export function TimeTeamAttendancePage() {
           summary="Open an employee to review and fix their punch history below."
           title="Employees"
         />
-        {reviewQuery.isPending || summaryQuery.isPending ? (
+        {summaryQuery.isPending ? (
           <DataStatePanel icon={Timer} title="Loading team attendance">
-            <p>Calculating live status, worked totals, and exception counts.</p>
+            <p>Calculating live status, worked totals, and pending reviews.</p>
           </DataStatePanel>
-        ) : reviewQuery.isError ? (
-          <DataStatePanel icon={ShieldAlert} title="Team review unavailable" tone="error"><p>{reviewQuery.error.message}</p></DataStatePanel>
         ) : summaryQuery.isError ? (
           <DataStatePanel icon={ShieldAlert} title="Team attendance summary unavailable" tone="error"><p>{summaryQuery.error.message}</p></DataStatePanel>
         ) : filteredRows.length === 0 ? (
@@ -405,7 +336,7 @@ export function TimeTeamAttendancePage() {
                   <th>Current location</th>
                   <th>First / Last</th>
                   <th>Paid time</th>
-                  <th>Exceptions</th>
+                  <th>Review</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -433,13 +364,12 @@ export function TimeTeamAttendancePage() {
                     </td>
                     <td>
                       <strong>{payrollHours(row.paidMinutes)} hr</strong>
-                      {row.trainingMinutes > 0 ? <span>{payrollHours(row.trainingMinutes)} hr paid training</span> : null}
                       <small>{payrollHours(row.breakMinutes)} hr break · {payrollHours(row.overtimeMinutes)} hr OT</small>
                     </td>
                     <td>
-                      <TimeStatusBadge tone={row.exceptionCount > 0 || row.pendingCorrectionCount > 0 ? 'warning' : 'good'}>
-                        {row.exceptionCount > 0 || row.pendingCorrectionCount > 0
-                          ? `${row.exceptionCount + row.pendingCorrectionCount} needs review`
+                      <TimeStatusBadge tone={row.pendingCorrectionCount > 0 ? 'warning' : 'good'}>
+                        {row.pendingCorrectionCount > 0
+                          ? `${row.pendingCorrectionCount} needs review`
                           : 'Clean'}
                       </TimeStatusBadge>
                       {row.pendingCorrectionCount > 0 ? <small>{row.pendingCorrectionCount} employee request{row.pendingCorrectionCount === 1 ? '' : 's'}</small> : null}
@@ -458,29 +388,6 @@ export function TimeTeamAttendancePage() {
           </div>
         )}
       </section>
-
-      {review && review.rows.some((row) => !row.payrollReady || row.exceptionCodes.length > 0) ? (
-        <section className="time-card time-team-panel" aria-label="Current exception examples">
-          <TimeSectionHeader
-            eyebrow="Needs attention"
-            summary="Top rows blocking payroll readiness for this period."
-            title="Exception snapshot"
-          />
-          <div className="time-exception-card-list">
-            {review.rows.filter((row) => !row.payrollReady || row.exceptionCodes.length > 0).slice(0, 6).map((row) => (
-              <article className="time-exception-card" key={`${row.employeeId}-${row.operationalDate}-${row.shiftId ?? row.locationName}`}>
-                <div>
-                  <strong>{row.employeeName}</strong>
-                  <span>{formatUsDateKey(row.operationalDate)} · {rowLocation(row)}</span>
-                  {row.mixedWorkTypes ? <small>Needs classification review</small> : row.workType === 'training' ? <small>Paid training</small> : null}
-                  <small>{row.exceptionCodes.length > 0 ? row.exceptionCodes.map((code) => code.replaceAll('_', ' ')).join(', ') : 'Needs review'}</small>
-                </div>
-                {manageAllowed ? <TimeButton onClick={() => focusEmployee(row.employeeId, row.operationalDate)} variant="secondary">Fix</TimeButton> : null}
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
 
       {manageAllowed && selectedEmployee ? (
         <ModalDialog
