@@ -159,12 +159,7 @@ export function AccountSecurityPage() {
   const passwordWaitingForMfa = needsPassword && needsMfa
   const isComplete = Boolean(context && !needsPassword && !needsMfa)
   const canRememberDevice = Boolean(
-    context?.mfaRequired
-    && (context.role === 'admin'
-      || context.role === 'supervisor'
-      || context.role === 'scheduler'
-      || context.role === 'dispatcher'
-      || context.role === 'recruiting_licensing'),
+    context?.mfaRequired,
   )
 
   useEffect(() => {

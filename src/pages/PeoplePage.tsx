@@ -43,15 +43,11 @@ const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frida
 const dayNamesShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 function sessionHasPermission(session: SessionContext | null | undefined, permission: string): boolean {
-  return session?.role === 'admin' || Boolean(session?.permissions.includes(permission))
+  return Boolean(session?.permissions.includes(permission))
 }
 
 function canManageDirectoryProfile(session: SessionContext | null | undefined): boolean {
-  return session?.role === 'scheduler'
-    || session?.role === 'recruiting_licensing'
-    || session?.role === 'supervisor'
-    || session?.role === 'admin'
-    || sessionHasPermission(session, 'directory.edit_basic')
+  return sessionHasPermission(session, 'directory.edit_basic')
     || sessionHasPermission(session, 'availability.manage')
 }
 

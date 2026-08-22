@@ -1,5 +1,3 @@
-import type { AppRole } from '../data/session'
-
-export function shouldShowPayrollExportReminder(sessionContext: { role: AppRole } | null): boolean {
-  return sessionContext?.role === 'admin' || sessionContext?.role === 'supervisor'
+export function shouldShowPayrollExportReminder(sessionContext: { permissions: string[] } | null): boolean {
+  return Boolean(sessionContext?.permissions.includes('time.export_payroll'))
 }

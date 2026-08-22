@@ -129,7 +129,7 @@ describe('Cloudflare Worker boundary', () => {
       display_name: 'Admin User',
       role: 'admin',
       has_mfa: true,
-      permissions: ['admin.users.manage'],
+      permissions: ['admin.users.manage', 'notifications.manage'],
     }), { headers: { 'content-type': 'application/json' } }))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -340,6 +340,7 @@ describe('Cloudflare Worker boundary', () => {
       display_name: 'Admin User',
       role: 'admin',
       has_mfa: true,
+      permissions: ['notifications.manage'],
     }), { headers: { 'content-type': 'application/json' } }))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -367,6 +368,7 @@ describe('Cloudflare Worker boundary', () => {
         display_name: 'Schedule User',
         role: 'scheduler',
         has_mfa: true,
+        permissions: ['announcements.send'],
       }), { headers: { 'content-type': 'application/json' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify([]), {
         headers: { 'content-type': 'application/json' },
@@ -428,6 +430,7 @@ describe('Cloudflare Worker boundary', () => {
         display_name: 'Schedule User',
         role: 'scheduler',
         has_mfa: true,
+        permissions: ['announcements.send'],
       }), { headers: { 'content-type': 'application/json' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify([{
         id: '20000000-0000-4000-8000-000000000002',

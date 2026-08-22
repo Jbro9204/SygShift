@@ -4,7 +4,7 @@ export function hasTimePermission(
   session: SessionContext | null | undefined,
   permission: string,
 ): boolean {
-  return session?.role === 'admin' || Boolean(session?.permissions.includes(permission))
+  return Boolean(session?.permissions.includes(permission))
 }
 
 export function canViewOwnTime(session: SessionContext | null | undefined): boolean {

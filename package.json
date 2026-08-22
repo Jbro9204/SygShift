@@ -14,6 +14,8 @@
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
     "inventory:access": "node tools/access-control-inventory.mjs --verify",
     "inventory:access:production": "node tools/capture-production-access-baseline.mjs",
+    "inventory:access:boundaries": "node tools/capture-production-role-boundaries.mjs",
+    "verify:access:preserved": "node tools/verify-production-access-preservation.mjs outputs/access-control/production-access-baseline-08-21-2026-before-enforcement.json outputs/access-control/production-access-baseline-08-21-2026.json",
     "preview": "pnpm build && vite preview",
     "deploy": "pnpm build && wrangler deploy",
     "bootstrap:admin": "node tools/bootstrap-admin.mjs"

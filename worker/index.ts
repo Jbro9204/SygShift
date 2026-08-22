@@ -111,13 +111,6 @@ const maxJsonBodyBytes = 4096
 const defaultAppUrl = 'https://app.sygilant.us'
 const defaultSupportEmail = 'jbrown@guardianshipsecurity.net'
 const dispatchAlertEmail = 'dispatch@guardianshipsecurity.net'
-const notificationProcessorRoles = new Set<SessionContext['role']>([
-  'dispatcher',
-  'scheduler',
-  'supervisor',
-  'admin',
-])
-
 class ApiError extends Error {
   readonly code: string
   readonly status: number
@@ -356,11 +349,10 @@ async function requireAdminMfa(
   config: NonNullable<ReturnType<typeof configuredSupabase>>
   context: SessionContext
 }> {
-  const result = await requireVerifiedOperationsSession(request, environment, null, 'admin_mfa_required')
+  const result = await requireVerifiedOperationsSession(request, environment, 'admin_mfa_required')
   const hasRequiredPermission = result.context.permissions?.includes(requiredPermission) === true
-  const hasLegacyAdminAccess = requiredPermission === 'admin.users.manage' && result.context.role === 'admin'
 
-  if (!hasRequiredPermission && !hasLegacyAdminAccess) {
+  if (!hasRequiredPermission) {
     const error = requiredPermission === 'admin.users.invite'
       ? 'new_user_invites_permission_required'
       : 'admin_mfa_required'
@@ -419,7 +411,6 @@ async function requireAuthenticatedSession(request: Request, environment: Enviro
 async function requireVerifiedOperationsSession(
   request: Request,
   environment: Environment,
-  allowedRoles: ReadonlySet<SessionContext['role']> | null = notificationProcessorRoles,
   mfaError = 'operations_mfa_required',
 ): Promise<{
   config: NonNullable<ReturnType<typeof configuredSupabase>>
@@ -452,7 +443,7 @@ async function requireVerifiedOperationsSession(
   )
   const context = Array.isArray(payload) ? payload[0] : payload
 
-  if (!context || !context.has_mfa || (allowedRoles && !allowedRoles.has(context.role))) {
+  if (!context || !context.has_mfa) {
     throw new Response(JSON.stringify({ error: mfaError }), {
       headers: { 'content-type': 'application/json; charset=utf-8' },
       status: 403,
@@ -1364,7 +1355,7 @@ async function handleNotificationProcessApi(request: Request, environment: Envir
 
   let operator: Awaited<ReturnType<typeof requireVerifiedOperationsSession>>
   try {
-    operator = await requireVerifiedOperationsSession(request, environment, null)
+    operator = await requireVerifiedOperationsSession(request, environment)
   } catch (error) {
     if (error instanceof Response) {
       const payload = await error.json().catch(() => ({ error: 'auth_failed' })) as { error?: string }
@@ -1373,10 +1364,7 @@ async function handleNotificationProcessApi(request: Request, environment: Envir
     throw error
   }
 
-  if (
-    !notificationProcessorRoles.has(operator.context.role)
-    && !operator.context.permissions?.some((permission) => permission === 'notifications.manage' || permission === 'announcements.send')
-  ) {
+  if (!operator.context.permissions?.some((permission) => permission === 'notifications.manage' || permission === 'announcements.send')) {
     return errorJson('operations_mfa_required', requestId, 403)
   }
 

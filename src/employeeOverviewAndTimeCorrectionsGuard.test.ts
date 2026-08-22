@@ -42,8 +42,8 @@ describe('employee overview and time correction guardrails', () => {
     expect(overviewSource).toContain('overview-employee-card__actions')
     expect(overviewSource).toContain('to="/requests"')
     expect(overviewSource).toContain('to="/events"')
-    expect(navigationSource).toContain("{ label: 'Events & Openings', path: '/events', icon: CalendarClock, roles: ALL_EMPLOYEE_ROLES")
-    expect(navigationSource).toContain("{ label: 'Time-Off Requests', path: '/requests', icon: ClipboardCheck, roles: ALL_EMPLOYEE_ROLES")
+    expect(navigationSource).toContain("{ label: 'Events & Openings', path: '/events', icon: CalendarClock, permissions:")
+    expect(navigationSource).toContain("{ label: 'Time-Off Requests', path: '/requests', icon: ClipboardCheck, permissions:")
   })
 
   it('keeps sick and call-off reporting prominent and opens the protected form directly', () => {

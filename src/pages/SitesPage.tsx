@@ -185,7 +185,7 @@ export function SitesPage() {
     queryFn: getSites,
     enabled: isSupabaseConfigured,
   })
-  const canManageSites = sessionQuery.data?.role === 'admin' || Boolean(sessionQuery.data?.permissions.includes('sites.manage'))
+  const canManageSites = Boolean(sessionQuery.data?.permissions.includes('sites.manage'))
   const recentlyDeletedQuery = useQuery({
     enabled: Boolean(canManageSites),
     queryFn: getRecentlyDeletedSitesAndPosts,

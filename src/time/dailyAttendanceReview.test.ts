@@ -81,11 +81,12 @@ describe('daily attendance review decisions', () => {
 })
 
 describe('daily attendance review permissions', () => {
-  it('separates view and decision permissions while preserving admin access', () => {
+  it('separates view and decision permissions without role-name bypasses', () => {
     expect(canViewAttendanceReview({ ...session, permissions: ['accountability.view'] })).toBe(true)
     expect(canManageAttendanceReview({ ...session, permissions: ['accountability.view'] })).toBe(false)
     expect(canManageAttendanceReview({ ...session, permissions: ['accountability.manage'] })).toBe(true)
     expect(canManageAttendanceReview({ ...session, permissions: ['time.manage'] })).toBe(true)
-    expect(canManageAttendanceReview({ ...session, role: 'admin' })).toBe(true)
+    expect(canManageAttendanceReview({ ...session, role: 'admin' })).toBe(false)
+    expect(canManageAttendanceReview({ ...session, role: 'admin', permissions: ['accountability.manage'] })).toBe(true)
   })
 })

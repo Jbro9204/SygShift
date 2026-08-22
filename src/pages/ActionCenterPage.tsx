@@ -228,8 +228,8 @@ export function ActionCenterPage() {
   const [trainingOpen, setTrainingOpen] = useState(false)
   const sessionQuery = useQuery({ queryKey: ['session-context'], queryFn: getSessionContext, enabled: isSupabaseConfigured })
   const actionQuery = useQuery({ queryKey: ['employee-action-center'], queryFn: getEmployeeActionCenter, enabled: isSupabaseConfigured && sessionQuery.isSuccess })
-  const canManage = sessionQuery.data?.role === 'admin' || Boolean(sessionQuery.data?.permissions.includes('training.manage'))
-  const canReport = sessionQuery.data?.role === 'admin' || Boolean(sessionQuery.data?.permissions.some((permission) => ['training.export', 'schedule.acknowledgments.manage', 'announcements.acknowledgments.manage'].includes(permission)))
+  const canManage = Boolean(sessionQuery.data?.permissions.includes('training.manage'))
+  const canReport = Boolean(sessionQuery.data?.permissions.some((permission) => ['training.export', 'schedule.acknowledgments.manage', 'announcements.acknowledgments.manage'].includes(permission)))
   const reportQuery = useQuery({ queryKey: ['employee-action-report'], queryFn: getEmployeeActionComplianceReport, enabled: isSupabaseConfigured && canReport })
   const [busyId, setBusyId] = useState<string | null>(null)
 

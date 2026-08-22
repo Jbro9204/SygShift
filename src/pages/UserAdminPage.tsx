@@ -743,13 +743,13 @@ export function UserAdminPage() {
   })
 
   const sessionContext = sessionQuery.data
-  const hasPermission = (permission: string) => sessionContext?.role === 'admin' || Boolean(sessionContext?.permissions.includes(permission))
+  const hasPermission = (permission: string) => Boolean(sessionContext?.permissions.includes(permission))
   const canEditBasic = hasPermission('admin.users.basic') || hasPermission('admin.users.manage')
   const canManageLogin = hasPermission('admin.users.manage')
   const canSendNewUserInvites = Boolean(sessionContext?.permissions.includes('admin.users.invite'))
   const canSeparate = hasPermission('admin.users.separate')
-  const canDeleteUsers = sessionContext?.role === 'admin' && hasPermission('admin.users.delete')
-  const canEditAdminRole = sessionContext?.role === 'admin'
+  const canDeleteUsers = hasPermission('admin.users.delete')
+  const canEditAdminRole = hasPermission('admin.roles.manage')
 
   const recentlyDeletedQuery = useQuery({
     enabled: Boolean(canDeleteUsers),

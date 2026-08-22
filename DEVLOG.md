@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 08/21/2026
 
+### Full permission enforcement and access preservation
+
+- Made effective permissions authoritative for navigation, direct routes, protected page actions, Worker endpoints, database functions, row-level policies, and protected storage.
+- Removed reviewed fixed-role authorization bypasses while preserving role names for defaults, labels, targeting, eligibility semantics, and protected Admin-role safety.
+- Applied migration `20260821203000_permission_enforcement_integrity.sql` with a fail-closed transaction fingerprint over roles, grants, assignments, overrides, employee roles, and status.
+- Verified the production before/after access projection matched exactly: 47 active employees, 6 roles, 64 permissions, no additional role assignments, and no person-specific overrides.
+- Confirmed zero current row-level policies retain role-name authorization checks.
+- Added central route policy tests, live access-boundary capture, and production access-preservation verification.
+- Full validation passed: type checking, lint, 56 test files / 295 tests, and production build.
+- Live smoke checks passed for the application and `/api/v1/health` with HTTP 200 responses.
+- Deployed Cloudflare Worker version `abaa7292-382c-4c6d-b861-7bc1d5ed63e4`.
+
 ### Payroll review timeout repair
 
 - Fixed the Payroll Export readiness failure caused by the full review exceeding the database statement timeout.

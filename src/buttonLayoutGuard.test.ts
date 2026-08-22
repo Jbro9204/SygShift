@@ -216,8 +216,9 @@ describe('button layout guardrails', () => {
   })
 
   it('keeps employee self-schedule access visible but backend scoped', () => {
-    expect(navigation).toContain("label: 'Schedule', path: '/schedule', icon: CalendarDays, roles: ALL_EMPLOYEE_ROLES")
-    expect(schedulePage).toContain('const canViewTeamSchedule = sessionHasOperationsRole(sessionQuery.data)')
+    expect(navigation).toContain("label: 'Schedule', path: '/schedule', icon: CalendarDays, permissions:")
+    expect(schedulePage).toContain('const canViewTeamSchedule = sessionHasAnyPermission(sessionQuery.data, [')
+    expect(schedulePage).toContain("'schedule.manage'")
     expect(schedulePage).toContain("setScheduleView('employee')")
     expect(schedulePage).toContain("placeholder={canViewTeamSchedule ? 'Search sites or people' : 'Search your schedule'}")
 

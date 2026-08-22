@@ -174,6 +174,7 @@ for (const match of workerSource.matchAll(/\^\\\/api\\\/[^$]+\$/g)) {
 
 const currentFunctions = new Map()
 const currentPolicies = new Map()
+const unresolvedDynamicFunctionReplacements = []
 for (const path of migrationFiles) {
   const source = readFileSync(path, 'utf8')
   const file = repoPath(path)
@@ -221,6 +222,7 @@ for (const path of migrationFiles) {
       if (bodyEnd >= 0) block = provisionalBlock.slice(0, bodyEnd + delimiterMatch[1].length)
     }
     currentFunctions.set(name, {
+      definition: block,
       file,
       line: lineNumber(source, event.index),
       name,
@@ -233,6 +235,34 @@ for (const path of migrationFiles) {
         .filter(permissionLiteral))],
     })
   })
+
+  for (const match of source.matchAll(/select\s+pg_temp\.replace_function_authorization\(\s*'((?:''|[^'])*)'\s*,\s*'((?:''|[^'])*)'\s*,\s*'((?:''|[^'])*)'\s*\);/gi)) {
+    const signature = match[1].replaceAll("''", "'")
+    const expected = match[2].replaceAll("''", "'")
+    const replacement = match[3].replaceAll("''", "'")
+    const name = signature.slice(0, signature.indexOf('(')).toLowerCase()
+    const current = currentFunctions.get(name)
+    if (!current) continue
+    if (!current.definition.includes(expected)) {
+      // Some historical migrations rewrite a function body through pg_get_functiondef()
+      // before this migration performs its final authorization replacement. The static
+      // inventory cannot execute that dynamic SQL, so retain the last statically known
+      // definition and report the unresolved replacement for live-catalog verification.
+      unresolvedDynamicFunctionReplacements.push({ file, name, signature })
+      continue
+    }
+    const block = current.definition.replace(expected, replacement)
+    currentFunctions.set(name, {
+      ...current,
+      definition: block,
+      effectivePermission: /has_effective_permission|has_any_effective_permission|require_effective_permission|require_any_effective_permission/i.test(block),
+      legacyRoleCheck: /current_app_role|is_admin\s*\(|is_supervisor_or_admin\s*\(|require_admin_mfa|require_supervisor_mfa|role\s+in\s*\(/i.test(block),
+      mfaCheck: /aal2|mfa|required_mfa|require_admin_mfa|require_supervisor_mfa|require_effective_permission|has_effective_permission|has_any_effective_permission/i.test(block),
+      permissions: [...new Set([...block.matchAll(/['"]([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)['"]/g)]
+        .map((item) => item[1])
+        .filter(permissionLiteral))],
+    })
+  }
 
   const policyEvents = [
     ...[...source.matchAll(/drop\s+policy\s+if\s+exists\s+(?:"([^"]+)"|([a-zA-Z0-9_]+))\s+on\s+([a-zA-Z0-9_."]+)/gi)]
@@ -285,6 +315,7 @@ const inventory = {
   backend: {
     currentFunctions: latestFunctions,
     currentPolicies: policies,
+    unresolvedDynamicFunctionReplacements,
     workerEndpoints: uniqueBy(workerEndpoints, (item) => `${item.path}:${item.line}`),
   },
   permissions: [...permissions.entries()]
@@ -297,6 +328,7 @@ const inventory = {
     currentPolicies: policies.length,
     currentPoliciesWithEffectivePermission: policies.filter((item) => item.effectivePermission).length,
     currentPoliciesWithLegacyRoleChecks: policies.filter((item) => item.legacyRoleCheck).length,
+    unresolvedDynamicFunctionReplacements: unresolvedDynamicFunctionReplacements.length,
     navigationItems: navigation.length,
     navigationItemsWithRoleFallback: navigation.filter((item) => item.roleFallback).length,
     permissions: permissions.size,

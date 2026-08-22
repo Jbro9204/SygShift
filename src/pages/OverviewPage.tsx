@@ -60,16 +60,9 @@ export function OverviewPage() {
     queryFn: getSessionContext,
     queryKey: ['session-context'],
   })
-  const role = sessionQuery.data?.role
   const operationsOverviewAllowed = Boolean(
     sessionQuery.data
-    && (
-      role === 'admin'
-      || role === 'supervisor'
-      || role === 'scheduler'
-      || role === 'dispatcher'
-      || canViewTeamTime(sessionQuery.data)
-    ),
+    && canViewTeamTime(sessionQuery.data),
   )
   const employeeLanding = sessionQuery.isSuccess && !operationsOverviewAllowed
   const overviewQuery = useQuery({

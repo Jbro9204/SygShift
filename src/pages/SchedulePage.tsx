@@ -195,14 +195,7 @@ function staffingCandidateName(
 }
 
 function sessionHasAnyPermission(session: SessionContext | null | undefined, permissions: string[]): boolean {
-  return session?.role === 'admin' || permissions.some((permission) => session?.permissions.includes(permission))
-}
-
-function sessionHasOperationsRole(session: SessionContext | null | undefined): boolean {
-  return session?.role === 'dispatcher'
-    || session?.role === 'scheduler'
-    || session?.role === 'supervisor'
-    || session?.role === 'admin'
+  return permissions.some((permission) => session?.permissions.includes(permission))
 }
 
 function builderEmployeeMatchesSearch(employee: ScheduleBuilderEmployee, query: string): boolean {
@@ -2010,8 +2003,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     queryFn: getSessionContext,
     enabled: isSupabaseConfigured,
   })
-  const canBuildSchedule = sessionHasOperationsRole(sessionQuery.data)
-    || sessionHasAnyPermission(sessionQuery.data, [
+  const canBuildSchedule = sessionHasAnyPermission(sessionQuery.data, [
       'scheduler.view',
       'scheduler.manage',
       'schedule.manage',
@@ -2019,16 +2011,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       'schedule.delete_shift',
       'schedule.override_warnings',
     ])
-  const canManageSchedule = sessionHasOperationsRole(sessionQuery.data)
-    || sessionHasAnyPermission(sessionQuery.data, [
+  const canManageSchedule = sessionHasAnyPermission(sessionQuery.data, [
       'scheduler.manage',
       'schedule.manage',
       'schedule.publish',
       'schedule.delete_shift',
       'schedule.override_warnings',
     ])
-  const canViewTeamSchedule = sessionHasOperationsRole(sessionQuery.data)
-    || sessionHasAnyPermission(sessionQuery.data, [
+  const canViewTeamSchedule = sessionHasAnyPermission(sessionQuery.data, [
       'schedule.view',
       'scheduler.view',
       'scheduler.manage',

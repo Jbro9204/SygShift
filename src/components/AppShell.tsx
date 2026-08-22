@@ -3,6 +3,7 @@ import { useIsMutating, useQuery } from '@tanstack/react-query'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BellRing, FileClock, LogOut, Megaphone, Menu, ShieldCheck, UserCircle, X } from 'lucide-react'
 import { navigationGroups } from '../app/navigation'
+import { canAccessRoute, hasAnyEffectivePermission } from '../app/accessPolicy'
 import { getActiveAnnouncementBanners, type AnnouncementBanner } from '../data/announcements'
 import { getTimekeepingOperationsWorkspace } from '../data/timeOperations'
 import {
@@ -43,11 +44,8 @@ function canOpenNavigationItem(
   sessionContext: SessionContext | null,
 ): boolean {
   if (!isSupabaseConfigured) return true
-  const itemPermissions = [item.permission, ...(item.permissions ?? [])].filter((permission): permission is string => Boolean(permission))
-  if (!item.roles && itemPermissions.length === 0) return true
   if (!sessionContext) return false
-  if (itemPermissions.some((permission) => sessionContext.permissions.includes(permission))) return true
-  return Boolean(item.roles?.includes(sessionContext.role))
+  return hasAnyEffectivePermission(sessionContext, item.permissions)
 }
 
 function WorkspaceAlertStrip({ entries }: { entries: WorkspaceAlertEntry[] }) {
@@ -180,13 +178,9 @@ export function AppShell() {
     sessionContext?.mustChangePassword || (sessionContext?.mfaRequired && !sessionContext.hasMfa),
   )
   const isAccountSecurityRoute = location.pathname === '/account-security'
-  const requestedNavigationItem = navigationGroups
-    .flatMap((group) => group.items)
-    .find((item) => item.path === location.pathname)
   const lacksRouteAccess = Boolean(
     sessionContext
-      && requestedNavigationItem
-      && !canOpenNavigationItem(requestedNavigationItem, sessionContext),
+      && !canAccessRoute(location.pathname, sessionContext),
   )
 
   useEffect(() => {
