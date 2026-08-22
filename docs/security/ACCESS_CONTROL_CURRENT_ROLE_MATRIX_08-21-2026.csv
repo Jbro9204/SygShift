@@ -1,0 +1,65 @@
+Permission code,Category,Permission name,Risk level,MFA required,Admin,Dispatcher,Guard,Recruiting & Licensing,Scheduler,Supervisor
+accountability.create,Accountability,Create accountability events,sensitive,Yes,Granted,Granted,Granted,,Granted,Granted
+accountability.manage,Accountability,Manage accountability events,critical,Yes,Granted,Granted,,,Granted,Granted
+accountability.report_call_off,Accountability,Report Sick / Call-Off,critical,Yes,Granted,Granted,,,Granted,Granted
+accountability.view,Accountability,View accountability events,sensitive,Yes,Granted,Granted,,Granted,Granted,Granted
+admin.roles.manage,Administration,Manage roles and permissions,critical,Yes,Granted,,,,,
+admin.roles.view,Administration,View roles and permissions,sensitive,Yes,Granted,,,,,
+admin.security.manage,Administration,Manage security,critical,Yes,Granted,,,,,
+admin.users.basic,Administration,Manage basic user details,sensitive,Yes,Granted,,,Granted,Granted,
+admin.users.delete,Administration,Remove separated employees,critical,Yes,Granted,,,,,
+admin.users.invite,Administration,New User Invites,sensitive,Yes,Granted,,,,Granted,
+admin.users.manage,Administration,Manage login access,critical,Yes,Granted,,,Granted,,
+admin.users.separate,Administration,Separate users,critical,Yes,Granted,,,,,
+admin.users.view,Administration,View user administration,sensitive,Yes,Granted,,,,,
+announcements.acknowledgments.manage,Announcements,Manage announcement acknowledgments,sensitive,Yes,Granted,,,,,
+announcements.banner.manage,Announcements,Manage announcement banner,sensitive,Yes,Granted,,,,,Granted
+announcements.send,Announcements,Send announcements,critical,Yes,Granted,,,,Granted,Granted
+announcements.view,Announcements,View announcements,standard,Yes,Granted,Granted,Granted,Granted,Granted,Granted
+availability.manage,Availability,Manage availability,sensitive,Yes,Granted,,,,Granted,Granted
+availability.view,Availability,View availability,standard,Yes,Granted,Granted,Granted,,Granted,Granted
+directory.edit_basic,Directory,Edit employee profile,sensitive,Yes,Granted,,,Granted,Granted,Granted
+directory.edit_credentials,Directory,Edit credentials,critical,Yes,Granted,,,Granted,Granted,Granted
+directory.view,Directory,View directory,standard,Yes,Granted,Granted,,Granted,Granted,Granted
+actions.self.view,Employee Actions,View own action center,standard,No,Granted,Granted,Granted,Granted,Granted,Granted
+events.manage,Events & Openings,Manage events and openings,sensitive,Yes,Granted,,,,Granted,Granted
+events.view,Events & Openings,View events and openings,standard,No,Granted,Granted,Granted,,Granted,Granted
+licensing.communicate,Licensing,Send licensing communication,sensitive,Yes,Granted,,,Granted,,
+licensing.configure,Licensing,Configure licensing rules,critical,Yes,Granted,,,Granted,,
+licensing.manage,Licensing,Manage licensing,critical,Yes,Granted,,,Granted,,
+licensing.view,Licensing,View licensing center,standard,Yes,Granted,,,Granted,,
+notifications.manage,Notifications,Manage notifications,sensitive,Yes,Granted,,,,,Granted
+notifications.view,Notifications,View notifications,standard,Yes,Granted,Granted,,Granted,Granted,Granted
+operations.view,Operations,View operations dashboard,standard,No,Granted,Granted,Granted,Granted,Granted,Granted
+patrol.manage,Patrol,Manage patrol,sensitive,Yes,Granted,,,,Granted,Granted
+patrol.view,Patrol,View patrol,standard,Yes,Granted,Granted,,,Granted,Granted
+reports.export,Reports,Export reports,sensitive,Yes,Granted,,,,,Granted
+reports.view,Reports,View reports,standard,Yes,Granted,Granted,,Granted,Granted,Granted
+schedule.acknowledgments.manage,Schedule,Manage schedule acknowledgments,sensitive,Yes,Granted,,,,Granted,Granted
+schedule.delete_shift,Schedule,Remove shifts,critical,Yes,Granted,,,,Granted,Granted
+schedule.manage,Schedule,Manage schedule,sensitive,Yes,Granted,,,,Granted,Granted
+schedule.override_warnings,Schedule,Override schedule warnings,critical,Yes,Granted,,,,Granted,Granted
+schedule.publish,Schedule,Publish schedule,critical,Yes,Granted,,,,Granted,Granted
+schedule.view,Schedule,View schedule,standard,No,Granted,Granted,Granted,,Granted,Granted
+scheduler.manage,Scheduler,Manage scheduler workspace,sensitive,Yes,Granted,,,,Granted,Granted
+scheduler.view,Scheduler,View scheduler workspace,standard,Yes,Granted,Granted,,,Granted,Granted
+shift_pool.manage,Shift Pool,Manage shift pool,sensitive,Yes,Granted,,,,Granted,Granted
+shift_pool.view,Shift Pool,View shift pool,standard,No,Granted,Granted,Granted,,Granted,Granted
+sites.manage,Sites & Posts,Manage sites and posts,critical,Yes,Granted,,,,Granted,Granted
+sites.view,Sites & Posts,View sites and posts,standard,Yes,Granted,Granted,,,Granted,Granted
+time.adjustments.review,Time & Attendance,Review Time Adjustments,critical,Yes,Granted,,,,,Granted
+time.export_payroll,Time & Attendance,Export payroll,critical,Yes,Granted,,,,,Granted
+time.manage,Time & Attendance,Manage time records,critical,Yes,Granted,,,,Granted,Granted
+time.manual_entry.create,Time & Attendance,Create Manual Time Entry,critical,Yes,Granted,,,,,Granted
+time.manual_entry.edit,Time & Attendance,Edit Manual Time Entry,critical,Yes,Granted,,,,,Granted
+time.override_payroll_assignment,Time & Attendance,Correct payroll batch assignment,critical,Yes,Granted,,,,,
+time.punch,Time & Attendance,Use time clock,standard,No,Granted,Granted,Granted,Granted,Granted,Granted
+time.reports.view,Time & Attendance,View Timekeeping Reports,sensitive,Yes,Granted,Granted,,,Granted,Granted
+time.resolve_exceptions,Time & Attendance,Resolve payroll exceptions,critical,Yes,Granted,,,,Granted,
+time.self.view,Time & Attendance,View own time,standard,No,Granted,Granted,Granted,Granted,Granted,Granted
+time.view,Time & Attendance,View team time records,standard,Yes,Granted,,Granted,,Granted,Granted
+requests.manage,Time-Off Requests,Manage requests,critical,Yes,Granted,,,,Granted,Granted
+requests.view,Time-Off Requests,View requests,standard,Yes,Granted,Granted,Granted,,Granted,Granted
+training.export,Training,Export training records,sensitive,Yes,Granted,,,,,
+training.manage,Training,Manage training,critical,Yes,Granted,,,,,
+training.view,Training,View assigned training,standard,No,Granted,Granted,Granted,Granted,Granted,Granted

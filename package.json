@@ -12,6 +12,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "inventory:access": "node tools/access-control-inventory.mjs --verify",
+    "inventory:access:production": "node tools/capture-production-access-baseline.mjs",
     "preview": "pnpm build && vite preview",
     "deploy": "pnpm build && wrangler deploy",
     "bootstrap:admin": "node tools/bootstrap-admin.mjs"

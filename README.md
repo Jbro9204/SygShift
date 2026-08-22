@@ -73,6 +73,8 @@ Use [docs/PILOT_TEST_PLAN.md](docs/PILOT_TEST_PLAN.md) to run the first controll
 
 Use [docs/PAYROLL_EXPORT_VALIDATION.md](docs/PAYROLL_EXPORT_VALIDATION.md) to validate timekeeping and payroll export accuracy before any payroll run depends on SygShift.
 
+Use [docs/security/ACCESS_CONTROL_INVENTORY_08-21-2026.md](docs/security/ACCESS_CONTROL_INVENTORY_08-21-2026.md) for the verified permission-enforcement baseline, current production role matrix, and prioritized access-control gap register.
+
 Production deployment requires successful quality checks, database migrations, row-level security verification, source reconciliation, accessibility review, and a tested backup restore.
 
 ## Repository boundaries
