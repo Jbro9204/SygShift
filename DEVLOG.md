@@ -23,6 +23,22 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/23/2026
+
+### Overnight operational workday and Time Maintenance workflow
+
+- Fixed Time Maintenance range filtering so an overnight occurrence stays on the workday and payroll week where it started, even when the clock-out occurs after midnight or outside the selected calendar-date boundary.
+- Verified Daron Jones's 08/15/2026 11:00 PM through 08/16/2026 7:00 AM occurrence remains one 08/15/2026 workday, belongs to the week ending 08/15/2026, totals 480 paid minutes, and produces no missing-punch exception.
+- Added operational workday context to each punch row so the physical punch date remains visible without misrepresenting payroll ownership.
+- Made the employee's Needs Attention total open that exact employee and date range in Time Exceptions.
+- Moved all punch correction choices into a centered, responsive modal that stays at the point of work and retains the existing audited correction functions.
+- Simplified the employee punch table to five fixed-layout columns and removed the unnecessary horizontal scrollbar at desktop and phone widths.
+- Clarified worked-versus-scheduled totals: only completed punches count as worked time, and actual clocked-out gaps remain unpaid without requiring a fabricated schedule break.
+- Preserved existing MFA and `time.manage` enforcement, original punches, correction history, payroll rules, employee access, roles, and permissions.
+- Applied and recorded production migration `20260823123000_time_maintenance_operational_workday.sql`.
+- Full validation passed: type checking, lint, 59 test files / 312 tests, production build, and two Chrome viewport checks.
+- Deployed Cloudflare Worker version `dcc75844-a009-4de2-b3ee-25dd75e0a456`.
+
 ## 08/22/2026
 
 ### Accountability Tracker

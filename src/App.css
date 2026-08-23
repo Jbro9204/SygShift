@@ -12252,6 +12252,63 @@
   justify-content: center;
 }
 
+.modal-dialog--time-correction {
+  width: min(960px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+}
+
+.time-correction-editor--modal {
+  width: 100%;
+  grid-template-columns: minmax(210px, 0.7fr) minmax(300px, 1fr);
+  align-items: start;
+  margin: 0;
+  padding: 22px;
+  background: var(--paper);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.time-correction-editor--modal > .time-correction-editor__mode,
+.time-correction-editor--modal > .time-maintenance-add__reason,
+.time-correction-editor--modal > .time-correction-editor__error,
+.time-correction-editor--modal > .time-correction-editor__actions {
+  grid-column: 1 / -1;
+}
+
+.time-correction-editor--modal .time-correction-editor__mode {
+  align-self: start;
+  padding: 14px;
+  background: #fbfaf6;
+  border: 1px solid #e3dccf;
+  border-radius: 8px;
+}
+
+.time-correction-editor--modal .time-correction-editor__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.time-correction-editor--modal .time-correction-editor__actions button {
+  width: auto;
+  min-width: 160px;
+}
+
+.time-maintenance-attention {
+  display: flex;
+  flex-direction: column;
+}
+
+.time-maintenance-attention__link {
+  align-self: flex-start;
+  margin-top: 10px;
+  color: #7a4f13;
+  font-size: 13px;
+  font-weight: 900;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .availability-layout {
   display: grid;
   grid-template-columns: minmax(320px, 0.78fr) minmax(320px, 1fr) minmax(320px, 1fr);
@@ -12376,6 +12433,38 @@
   vertical-align: middle;
 }
 
+.time-maintenance-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.time-maintenance-table th:nth-child(1) {
+  width: 21%;
+}
+
+.time-maintenance-table th:nth-child(2) {
+  width: 17%;
+}
+
+.time-maintenance-table th:nth-child(3) {
+  width: 23%;
+}
+
+.time-maintenance-table th:nth-child(4) {
+  width: 18%;
+}
+
+.time-maintenance-table th:nth-child(5) {
+  width: 21%;
+}
+
+.time-maintenance-table th,
+.time-maintenance-table td {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .time-maintenance-row--voided {
   opacity: 0.72;
 }
@@ -12389,6 +12478,11 @@
 .time-maintenance-actions button {
   min-height: 38px;
   gap: 6px;
+}
+
+.time-maintenance-actions .secondary-button {
+  flex: 1 1 110px;
+  justify-content: center;
 }
 
 .time-maintenance-overview {
@@ -13934,6 +14028,11 @@
 }
 
 @media (max-width: 720px) {
+  .time-correction-editor--modal {
+    width: 100%;
+    padding: 16px;
+  }
+
   .time-command-grid,
   .time-command-grid--period,
   .time-period-card {

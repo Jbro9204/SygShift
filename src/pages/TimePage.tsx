@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import {
   Archive,
   BadgeCheck,
@@ -19,6 +20,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { ModalDialog } from '../components/ModalDialog'
 import {
   activeTimeState,
   createPayrollExportBatch,
@@ -668,14 +670,22 @@ export function TimeMaintenanceWorkbench({
                 <article><span>Scheduled</span><strong>{payrollHours(selectedScheduledMinutes)} hr</strong><small>Published schedule in this range</small></article>
                 <article><span>Worked</span><strong>{payrollHours(selectedWorkedMinutes)} hr</strong><small>Paid time from completed punches</small></article>
                 <article className={selectedDifferenceMinutes !== 0 ? 'import-metric--attention' : ''}>
-                  <span>Difference</span>
+                  <span>Worked vs schedule</span>
                   <strong>{selectedDifferenceMinutes > 0 ? '+' : ''}{payrollHours(selectedDifferenceMinutes)} hr</strong>
-                  <small>Worked minus scheduled time</small>
+                  <small>Punch-based worked time minus scheduled coverage. Clocked-out gaps stay unpaid.</small>
                 </article>
-                <article className={selectedNeedsAttention ? 'import-metric--attention' : ''}>
+                <article className={selectedNeedsAttention ? 'import-metric--attention time-maintenance-attention' : ''}>
                   <span>Needs attention</span>
                   <strong>{selectedNeedsAttention}</strong>
                   <small>Payroll exceptions or pending corrections</small>
+                  {selectedNeedsAttention ? (
+                    <Link
+                      className="time-maintenance-attention__link"
+                      to={`/time/exceptions?employee=${encodeURIComponent(employeeId)}&from=${encodeURIComponent(fromDate)}&through=${encodeURIComponent(throughDate)}`}
+                    >
+                      Review this employee
+                    </Link>
+                  ) : null}
                 </article>
               </>
             )}
@@ -782,21 +792,22 @@ export function TimeMaintenanceWorkbench({
           </div>
 
           {addMutation.isError ? <div className="inline-alert" role="alert">{addMutation.error.message}</div> : null}
-          {correctionMutation.isError ? <div className="inline-alert" role="alert">{correctionMutation.error.message}</div> : null}
-
           {selectedEvent ? (
-            <form
-              className="time-correction-editor"
-              onSubmit={(event) => {
-                event.preventDefault()
-                correctionMutation.mutate()
-              }}
+            <ModalDialog
+              busy={correctionMutation.isPending}
+              busyLabel="Saving time correction..."
+              className="modal-dialog--time-workflow modal-dialog--time-correction"
+              description={`${selectedEvent.employeeName} · Workday ${formatDateOnly(selectedEvent.operationalDate)} · ${formatTime(selectedEvent.effectiveAt, selectedEvent.timeZone)}`}
+              onClose={() => setSelectedEvent(null)}
+              title="Correct punch"
             >
-              <div>
-                <p className="eyebrow">Correct selected punch</p>
-                <h3>{selectedEvent.employeeName} · {maintenanceEventLabel(selectedEvent)}</h3>
-                <p>{formatDate(selectedEvent.effectiveAt)} · {formatTime(selectedEvent.effectiveAt, selectedEvent.timeZone)}</p>
-              </div>
+              <form
+                className="time-correction-editor time-correction-editor--modal"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  correctionMutation.mutate()
+                }}
+              >
               <div className="time-correction-editor__mode" role="radiogroup" aria-label="Correction type">
                 <label><input checked={correctionMode === 'adjust'} onChange={() => setCorrectionMode('adjust')} type="radio" /> Change punch</label>
                 <label><input checked={correctionMode === 'site_post'} onChange={() => {
@@ -885,13 +896,15 @@ export function TimeMaintenanceWorkbench({
                   value={correctionReason}
                 />
               </label>
+              {correctionMutation.isError ? <div className="inline-alert time-correction-editor__error" role="alert">{correctionMutation.error.message}</div> : null}
               <div className="time-correction-editor__actions">
                 <button className="secondary-button" onClick={() => setSelectedEvent(null)} type="button">Cancel</button>
                 <button className={correctionMode === 'void' ? 'danger-primary' : 'primary-action'} disabled={!canCorrect} type="submit">
                   {correctionMutation.isPending ? 'Saving...' : correctionMode === 'void' ? 'Void punch' : correctionMode === 'site_post' ? 'Save Site/Post' : correctionMode === 'work_type' ? 'Save work type' : 'Save corrected punch'}
                 </button>
               </div>
-            </form>
+              </form>
+            </ModalDialog>
           ) : null}
 
           {showOverview ? (
@@ -991,10 +1004,9 @@ export function TimeMaintenanceWorkbench({
               <table className="time-review-table time-maintenance-table">
                 <thead>
                   <tr>
-                    <th>Employee</th>
-                    <th>Effective time</th>
+                    <th>Workday / punch time</th>
                     <th>Punch</th>
-                    <th>Location</th>
+                    <th>Site/Post</th>
                     <th>Status</th>
                     <th>Maintenance</th>
                   </tr>
@@ -1003,12 +1015,8 @@ export function TimeMaintenanceWorkbench({
                   {visibleEvents.map((event) => (
                     <tr className={event.voided ? 'time-maintenance-row--voided' : ''} key={event.id}>
                       <td>
-                        <strong>{event.employeeName}</strong>
-                        <span>@{event.username} · {event.employmentType}</span>
-                      </td>
-                      <td>
-                        <strong>{formatDateOnly(dateInputValue(event.effectiveAt))}</strong>
-                        <span>{formatTime(event.effectiveAt, event.timeZone)}</span>
+                        <strong>Workday {formatDateOnly(event.operationalDate)}</strong>
+                        <span>{formatDateOnly(dateInputValue(event.effectiveAt))} · {formatTime(event.effectiveAt, event.timeZone)}</span>
                         {event.effectiveAt !== event.recordedAt ? <small>Original: {formatTime(event.recordedAt, event.timeZone)}</small> : null}
                       </td>
                       <td>
@@ -1031,16 +1039,7 @@ export function TimeMaintenanceWorkbench({
                             Add punch
                           </button>
                           <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'adjust')} type="button">
-                            <Pencil aria-hidden="true" size={15} /> Change
-                          </button>
-                          <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'site_post')} type="button">
-                            Site/Post
-                          </button>
-                          <button className="secondary-button secondary-button--small" disabled={event.voided} onClick={() => beginCorrection(event, 'work_type')} type="button">
-                            Time category
-                          </button>
-                          <button className="danger-secondary" disabled={event.voided} onClick={() => beginCorrection(event, 'void')} type="button">
-                            Void
+                            <Pencil aria-hidden="true" size={15} /> Correct punch
                           </button>
                         </div>
                       </td>

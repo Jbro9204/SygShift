@@ -563,6 +563,9 @@ describe('timekeeping validation', () => {
         role: 'admin',
         employmentType: 'salary',
         shiftId: null,
+        occurrenceKey: 'unscheduled-session:73000000-0000-4000-8000-000000000030:employee:73000000-0000-4000-8000-000000000001',
+        assignmentAnchor: '2026-07-16T14:00:00.000Z',
+        operationalDate: '2026-07-16',
         kind: 'clock_out',
         recordedAt: '2026-07-16T22:00:00.000Z',
         effectiveAt: '2026-07-16T22:00:00.000Z',
@@ -603,6 +606,9 @@ describe('timekeeping validation', () => {
         role: 'admin',
         employmentType: 'salary',
         shiftId: null,
+        occurrenceKey: 'unscheduled-session:73000000-0000-4000-8000-000000000031:employee:73000000-0000-4000-8000-000000000001',
+        assignmentAnchor: '2026-08-19T14:00:00.000Z',
+        operationalDate: '2026-08-19',
         kind: 'clock_out',
         recordedAt: '2026-08-19T22:00:00.000Z',
         effectiveAt: '2026-08-19T22:00:00.000Z',
@@ -625,6 +631,49 @@ describe('timekeeping validation', () => {
     })
 
     expect(maintenance.events[0]?.latestAction).toBe('automatic_clock_out')
+  })
+
+  it('keeps an overnight clock-out assigned to the workday where the occurrence started', () => {
+    const maintenance = parseTimeMaintenance({
+      serverTimestamp: '2026-08-16T14:00:00.000Z',
+      fromDate: '2026-08-15',
+      throughDate: '2026-08-15',
+      operationalTimeZone: 'America/Denver',
+      employees: [],
+      events: [{
+        id: '73000000-0000-4000-8000-000000000032',
+        employeeId: '73000000-0000-4000-8000-000000000001',
+        username: 'djones',
+        employeeName: 'Daron Jones',
+        role: 'guard',
+        employmentType: 'hourly',
+        shiftId: null,
+        occurrenceKey: 'unscheduled-session:73000000-0000-4000-8000-000000000033:employee:73000000-0000-4000-8000-000000000001',
+        assignmentAnchor: '2026-08-16T05:00:00.000Z',
+        operationalDate: '2026-08-15',
+        kind: 'clock_out',
+        recordedAt: '2026-08-16T13:00:00.000Z',
+        effectiveAt: '2026-08-16T13:00:00.000Z',
+        clientRecordedAt: null,
+        source: 'supervisor',
+        createdBy: null,
+        createdByName: null,
+        voided: false,
+        pendingCorrectionCount: 0,
+        maintenanceNoteCount: 0,
+        latestNote: null,
+        latestAction: null,
+        siteName: 'PERA',
+        siteCode: 'PERA',
+        postName: 'Armed coverage',
+        eventName: null,
+        locationName: 'PERA-Denver - Armed',
+        timeZone: 'America/Denver',
+      }],
+    })
+
+    expect(maintenance.events[0]?.operationalDate).toBe('2026-08-15')
+    expect(maintenance.events[0]?.effectiveAt).toBe('2026-08-16T13:00:00.000Z')
   })
 
   it('orders Time Maintenance employees by preferred or first display name', () => {

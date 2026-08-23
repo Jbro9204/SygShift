@@ -141,6 +141,14 @@ function exceptionFilterFromSearch(value: string | null): ExceptionFilter {
   return 'all'
 }
 
+function dateFromSearch(value: string | null, fallback: string): string {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback
+}
+
+function filterRowsForEmployee(rows: TimekeepingReviewRow[], focusedEmployeeId: string | null): TimekeepingReviewRow[] {
+  return focusedEmployeeId ? rows.filter((row) => row.employeeId === focusedEmployeeId) : rows
+}
+
 function PendingCorrectionCard({
   correction,
   disabled,
@@ -196,9 +204,10 @@ export function TimeExceptionsPage() {
     detail: TimekeepingExceptionDetail
   } | null>(null)
   const defaultPeriod = completedPayrollPeriod()
-  const [fromDate, setFromDate] = useState(defaultPeriod.fromDate)
-  const [throughDate, setThroughDate] = useState(defaultPeriod.throughDate)
-  const [rangeTouched, setRangeTouched] = useState(false)
+  const focusedEmployeeId = searchParams.get('employee')
+  const [fromDate, setFromDate] = useState(() => dateFromSearch(searchParams.get('from'), defaultPeriod.fromDate))
+  const [throughDate, setThroughDate] = useState(() => dateFromSearch(searchParams.get('through'), defaultPeriod.throughDate))
+  const [rangeTouched, setRangeTouched] = useState(() => Boolean(searchParams.get('from') || searchParams.get('through')))
   const [filter, setFilter] = useState<ExceptionFilter>(exceptionFilterFromSearch(searchParams.get('show')))
   const [decisionNotes, setDecisionNotes] = useState<Record<string, string>>({})
 
@@ -284,11 +293,27 @@ export function TimeExceptionsPage() {
   })
 
   const review = useMemo(() => workedTimePayrollReview(reviewQuery.data), [reviewQuery.data])
-  const exceptionRows = useMemo(() => filterExceptionRows(review?.rows ?? [], filter), [filter, review?.rows])
+  const focusedRows = useMemo(
+    () => filterRowsForEmployee(review?.rows ?? [], focusedEmployeeId),
+    [focusedEmployeeId, review?.rows],
+  )
+  const exceptionRows = useMemo(
+    () => filterExceptionRows(focusedRows, filter),
+    [filter, focusedRows],
+  )
+  const focusedPendingCorrections = useMemo(
+    () => (review?.pendingCorrections ?? []).filter((correction) => !focusedEmployeeId || correction.employeeId === focusedEmployeeId),
+    [focusedEmployeeId, review?.pendingCorrections],
+  )
   const activePeriod = rulesQuery.data ? currentPayrollPeriod(undefined, rulesForPeriod(rulesQuery.data)) : currentPayrollPeriod()
   const previousPeriod = shiftPayrollPeriod({ fromDate }, -1, rulesForPeriod(rulesQuery.data))
-  const totalPending = review?.pendingCorrections.length ?? 0
-  const totalExceptions = review?.summary.exceptionCount ?? 0
+  const totalPending = focusedPendingCorrections.length
+  const totalExceptions = focusedEmployeeId
+    ? filterExceptionRows(focusedRows, 'all').length
+    : review?.summary.exceptionCount ?? 0
+  const focusedPaidMinutes = focusedEmployeeId
+    ? focusedRows.reduce((sum, row) => sum + row.paidMinutes, 0)
+    : review?.summary.paidMinutes ?? 0
   const unresolvedRows = exceptionRows.length
 
   function setPeriod(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>) {
@@ -361,7 +386,9 @@ export function TimeExceptionsPage() {
           </>
         }
         eyebrow="Time Exceptions"
-        summary="Find and fix the records that can block payroll: missing punches, unscheduled time, bad punch order, and pending correction requests."
+        summary={focusedEmployeeId
+          ? 'Reviewing only the selected employee and date range from Time Maintenance.'
+          : 'Find and fix the records that can block payroll: missing punches, unscheduled time, bad punch order, and pending correction requests.'}
         title="Exceptions"
       />
 
@@ -415,8 +442,8 @@ export function TimeExceptionsPage() {
       <section className="time-command-grid" aria-label="Exception summary">
         <TimeMetricCard detail="Worked rows currently blocking payroll readiness." icon={AlertTriangle} label="Blocked Rows" tone={totalExceptions > 0 ? 'danger' : 'good'} value={totalExceptions} />
         <TimeMetricCard detail="Employee correction requests waiting for action." icon={FileClock} label="Pending Requests" tone={totalPending > 0 ? 'warning' : 'good'} value={totalPending} />
-        <TimeMetricCard detail="Unscheduled rows need Site/Post correction or a manual label." icon={ShieldAlert} label="Unscheduled" tone={countException(review?.rows ?? [], 'unscheduled') > 0 ? 'warning' : 'good'} value={countException(review?.rows ?? [], 'unscheduled')} />
-        <TimeMetricCard detail="Paid hours across worked-time rows in this range." icon={CheckCircle2} label="Paid Hours" value={`${payrollHours(review?.summary.paidMinutes ?? 0)} hr`} />
+        <TimeMetricCard detail="Unscheduled rows need Site/Post correction or a manual label." icon={ShieldAlert} label="Unscheduled" tone={countException(focusedRows, 'unscheduled') > 0 ? 'warning' : 'good'} value={countException(focusedRows, 'unscheduled')} />
+        <TimeMetricCard detail="Paid hours across worked-time rows in this range." icon={CheckCircle2} label="Paid Hours" value={`${payrollHours(focusedPaidMinutes)} hr`} />
       </section>
 
       <section className="time-card time-exception-reference" aria-label="Exception meanings">
@@ -478,7 +505,7 @@ export function TimeExceptionsPage() {
         )}
       </section>
 
-      {manageAllowed && review && review.pendingCorrections.length > 0 ? (
+      {manageAllowed && review && focusedPendingCorrections.length > 0 ? (
         <section className="time-card time-team-panel" aria-labelledby="pending-correction-review-title">
           <TimeSectionHeader
             eyebrow="Employee requests"
@@ -486,7 +513,7 @@ export function TimeExceptionsPage() {
             title="Pending correction requests"
           />
           <div className="time-exception-card-list time-exception-card-list--pending">
-            {review.pendingCorrections.map((correction) => (
+            {focusedPendingCorrections.map((correction) => (
               <PendingCorrectionCard
                 correction={correction}
                 disabled={decisionMutation.isPending}
