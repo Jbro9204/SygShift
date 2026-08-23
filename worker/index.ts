@@ -747,7 +747,7 @@ export function buildWelcomeEmail(target: LoginEmailTarget, appUrl: string, supp
       `We are still testing and polishing the system before full rollout. If you notice a bug, missing information, confusing screen, or anything that does not look right, please email Jordan Brown at ${supportEmail}.`,
       'Thank you for helping us make this stronger and easier for everyone to use.',
       'Jordan Brown',
-      'Chief Systems and Automation Officer',
+      'IT and Business Development Engineer',
     ].join('\n\n'),
     html: `
       <p>Hello ${safeFirstName},</p>
@@ -763,7 +763,7 @@ export function buildWelcomeEmail(target: LoginEmailTarget, appUrl: string, supp
       </ul>
       <p>We are still testing and polishing the system before full rollout. If you notice a bug, missing information, confusing screen, or anything that does not look right, please email Jordan Brown at <a href="mailto:${safeSupportEmail}">${safeSupportEmail}</a>.</p>
       <p>Thank you for helping us make this stronger and easier for everyone to use.</p>
-      <p><strong>Jordan Brown</strong><br>Chief Systems and Automation Officer</p>
+      <p><strong>Jordan Brown</strong><br>IT and Business Development Engineer</p>
     `,
   }
 }

@@ -29,7 +29,7 @@ describe('admin user helpers', () => {
         firstName: 'Jordan',
         hiredOn: null,
         id: '73000000-0000-4000-8000-000000000001',
-        jobTitle: 'Chief Systems and Automation Officer',
+        jobTitle: 'IT and Business Development Engineer',
         lastName: 'Brown',
         middleName: null,
         mobilePhone: null,

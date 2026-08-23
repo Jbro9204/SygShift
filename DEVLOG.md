@@ -25,6 +25,15 @@ deployment status, or major workflow assumptions change.
 
 ## 08/23/2026
 
+### Professional title update
+
+- Updated Jordan Brown's active SygShift title to `IT and Business Development Engineer`.
+- Updated the branded Welcome email signature and stored Welcome announcement template to use the current title.
+- Removed the former abbreviated title from the active Users & Access job-title guidance.
+- Added a regression guard to keep the employee record, email signature, and active administration surface aligned.
+- Applied targeted production migration `20260823193000_jordan_brown_title_update.sql`.
+- Deployed Cloudflare Worker version `0b415a56-c5ac-412c-a60e-c65d00ef4e94`; live health, readiness, and login-route checks passed.
+
 ### Personal-first employee email delivery
 
 - Made personal email the primary employee delivery address across onboarding, announcements, schedule publication, call-off alerts, and automatic clock-out notifications.

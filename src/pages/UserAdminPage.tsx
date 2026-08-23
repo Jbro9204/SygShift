@@ -257,7 +257,7 @@ function EmployeeForm({
             readOnly
           />
         </label>
-        <label><span>Job title</span><input defaultValue={employee?.jobTitle ?? ''} disabled={!canEditThisProfile} maxLength={140} name="jobTitle" placeholder="Guard, Owner, CS&AO..." /></label>
+        <label><span>Job title</span><input defaultValue={employee?.jobTitle ?? ''} disabled={!canEditThisProfile} maxLength={140} name="jobTitle" placeholder="Guard, Owner, IT and Business Development Engineer..." /></label>
       </div>
       <div className="form-grid form-grid--three">
         <label>
