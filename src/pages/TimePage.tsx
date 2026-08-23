@@ -426,6 +426,8 @@ export function TimeMaintenanceWorkbench({
   const [addTime, setAddTime] = useState('08:00')
   const [addReason, setAddReason] = useState('')
   const [addShiftId, setAddShiftId] = useState<string | null>(null)
+  const [addManualLocation, setAddManualLocation] = useState('')
+  const [addUsesManualLocation, setAddUsesManualLocation] = useState(false)
   const [addContext, setAddContext] = useState<string | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<TimeMaintenanceEvent | null>(null)
   const [correctionMode, setCorrectionMode] = useState<'adjust' | 'void' | 'site_post' | 'work_type'>('adjust')
@@ -456,6 +458,15 @@ export function TimeMaintenanceWorkbench({
     refetchInterval: 30_000,
   })
   const shiftOptionsEmployeeId = selectedEvent?.employeeId ?? (employeeId || null)
+  const addShiftOptionsQuery = useQuery({
+    enabled: addEmployeeId !== '' && addDate !== '',
+    queryKey: ['time-maintenance-add-shift-options', addDate, addEmployeeId],
+    queryFn: () => getTimeMaintenanceShiftOptions({
+      employeeId: addEmployeeId,
+      fromDate: addDate,
+      throughDate: addDate,
+    }),
+  })
   const shiftOptionsQuery = useQuery({
     enabled: selectedEvent !== null && correctionMode === 'site_post',
     queryKey: ['time-maintenance-shift-options', fromDate, throughDate, shiftOptionsEmployeeId],
@@ -487,12 +498,13 @@ export function TimeMaintenanceWorkbench({
       effectiveAt: zonedDateTimeToIso(addDate, addTime),
       employeeId: addEmployeeId,
       kind: addKind,
+      locationName: addUsesManualLocation ? addManualLocation.trim() : null,
       reason: addReason.trim(),
-      shiftId: addShiftId,
+      shiftId: addUsesManualLocation ? null : addShiftId,
+      timeZone: 'America/Denver',
     }),
     onSuccess: async () => {
       setAddReason('')
-      setAddShiftId(null)
       setAddContext(null)
       await refreshTimeQueries()
     },
@@ -574,7 +586,17 @@ export function TimeMaintenanceWorkbench({
   const overviewPendingCount = overviewRows.reduce((total, row) => total + row.pendingCorrectionCount, 0)
   const overviewExceptionCount = overviewRows.reduce((total, row) => total + row.exceptionCount, 0)
   const overviewPaidMinutes = overviewRows.reduce((total, row) => total + row.paidMinutes, 0)
-  const canAdd = addEmployeeId !== '' && addReason.trim().length > 0 && !addMutation.isPending
+  const addShiftOptions = useMemo(() => {
+    const options = [...(addShiftOptionsQuery.data ?? [])]
+    return options.sort((left, right) => {
+      if (left.selectedEmployeeAssigned !== right.selectedEmployeeAssigned) return left.selectedEmployeeAssigned ? -1 : 1
+      return sitePostOptionTitle(left).localeCompare(sitePostOptionTitle(right), undefined, { sensitivity: 'base' })
+    })
+  }, [addShiftOptionsQuery.data])
+  const canAdd = addEmployeeId !== ''
+    && addReason.trim().length > 0
+    && (addUsesManualLocation ? addManualLocation.trim().length > 0 : addShiftId !== null)
+    && !addMutation.isPending
   const canCorrect = selectedEvent !== null
     && correctionReason.trim().length > 0
     && !correctionMutation.isPending
@@ -626,6 +648,11 @@ export function TimeMaintenanceWorkbench({
   function prefillRelatedPunch(event: TimeMaintenanceEvent) {
     setAddEmployeeId(event.employeeId)
     setAddShiftId(event.shiftId)
+    const hasManualLocation = event.shiftId === null
+      && event.locationName !== 'Unscheduled'
+      && event.locationName !== 'Unscheduled Location'
+    setAddUsesManualLocation(hasManualLocation)
+    setAddManualLocation(hasManualLocation ? event.locationName : '')
     setAddContext(event.shiftId
       ? `${event.employeeName} · ${event.locationName} · same shift`
       : `${event.employeeName} · unscheduled time`)
@@ -739,6 +766,8 @@ export function TimeMaintenanceWorkbench({
                   onChange={(event) => {
                     setAddEmployeeId(event.target.value)
                     setAddShiftId(null)
+                    setAddManualLocation('')
+                    setAddUsesManualLocation(false)
                     setAddContext(null)
                   }}
                   required
@@ -756,8 +785,67 @@ export function TimeMaintenanceWorkbench({
                   {Object.entries(actionLabels).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}
                 </select>
               </label>
-              <label><span>Date</span><input onChange={(event) => setAddDate(event.target.value)} required type="date" value={addDate} /></label>
+              <label><span>Date</span><input onChange={(event) => {
+                setAddDate(event.target.value)
+                setAddShiftId(null)
+                setAddManualLocation('')
+                setAddUsesManualLocation(false)
+                setAddContext(null)
+              }} required type="date" value={addDate} /></label>
               <label><span>Time / Mountain</span><input onChange={(event) => setAddTime(event.target.value)} required type="time" value={addTime} /></label>
+              <div className="time-maintenance-add__site-post">
+                <label>
+                  <span>Site/Post</span>
+                  <select
+                    disabled={!addEmployeeId || addShiftOptionsQuery.isPending}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      const useManualLocation = value === MANUAL_SITE_POST_OPTION
+                      setAddUsesManualLocation(useManualLocation)
+                      setAddShiftId(useManualLocation || value === '' ? null : value)
+                      if (!useManualLocation) setAddManualLocation('')
+                      setAddContext(null)
+                    }}
+                    required
+                    value={addUsesManualLocation ? MANUAL_SITE_POST_OPTION : addShiftId ?? ''}
+                  >
+                    <option value="">{addShiftOptionsQuery.isPending ? 'Loading Site/Post options...' : 'Choose Site/Post'}</option>
+                    {addShiftOptions.filter((option) => option.selectedEmployeeAssigned).length ? (
+                      <optgroup label="Assigned shifts">
+                        {addShiftOptions.filter((option) => option.selectedEmployeeAssigned).map((option) => (
+                          <option key={option.shiftId} value={option.shiftId}>
+                            {sitePostOptionTitle(option)} · {formatTime(option.startsAt, option.timeZone)} - {formatTime(option.endsAt, option.timeZone)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                    {addShiftOptions.filter((option) => !option.selectedEmployeeAssigned).length ? (
+                      <optgroup label="Other scheduled Site/Posts">
+                        {addShiftOptions.filter((option) => !option.selectedEmployeeAssigned).map((option) => (
+                          <option key={option.shiftId} value={option.shiftId}>
+                            {sitePostOptionTitle(option)} · {formatTime(option.startsAt, option.timeZone)} - {formatTime(option.endsAt, option.timeZone)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                    <option value={MANUAL_SITE_POST_OPTION}>Other location</option>
+                  </select>
+                  <small>Saved with this punch so a second Site/Post correction is not required.</small>
+                </label>
+                {addUsesManualLocation ? (
+                  <label>
+                    <span>Other location</span>
+                    <input
+                      maxLength={180}
+                      onChange={(event) => setAddManualLocation(event.target.value)}
+                      placeholder="Enter the verified work location"
+                      required
+                      value={addManualLocation}
+                    />
+                  </label>
+                ) : null}
+                {addShiftOptionsQuery.isError ? <small className="field-error">{addShiftOptionsQuery.error.message}</small> : null}
+              </div>
               <label className="time-maintenance-add__reason">
                 <span>Reason</span>
                 <textarea
@@ -777,6 +865,8 @@ export function TimeMaintenanceWorkbench({
                     className="text-button"
                     onClick={() => {
                       setAddShiftId(null)
+                      setAddManualLocation('')
+                      setAddUsesManualLocation(false)
                       setAddContext(null)
                     }}
                     type="button"

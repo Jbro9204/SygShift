@@ -25,6 +25,16 @@ deployment status, or major workflow assumptions change.
 
 ## 08/23/2026
 
+### Manual punch Site/Post completion
+
+- Added a required Site/Post step directly to the supervisor-entered time event form so an authorized user no longer has to create a punch and then repair its location afterward.
+- The form now separates employee-assigned shifts from other scheduled Site/Posts for the selected date and also supports a verified Other location when no schedule block applies.
+- Punch and location are saved together in one audited database transaction; a partial save cannot leave a new punch without its chosen location.
+- Preserved database-enforced `time.manage` permission and MFA requirements, append-only maintenance notes, original punch history, and the existing Site/Post correction workflow.
+- Added unit, database-boundary, desktop-layout, mobile-layout, type, lint, full regression, and production-build validation.
+- Applied targeted production migration `20260823170000_manual_time_event_site_post.sql`.
+- Deployed Cloudflare Worker version `6b959ca8-ca47-411b-baa4-c96d700126a7`; live health, readiness, and application route checks passed.
+
 ### Overnight operational workday and Time Maintenance workflow
 
 - Fixed Time Maintenance range filtering so an overnight occurrence stays on the workday and payroll week where it started, even when the clock-out occurs after midnight or outside the selected calendar-date boundary.

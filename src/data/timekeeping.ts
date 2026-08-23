@@ -1402,15 +1402,19 @@ export async function supervisorRecordTimeEvent(input: {
   kind: TimeEventKind
   effectiveAt: string
   shiftId?: string | null
+  locationName?: string | null
+  timeZone?: string | null
   reason: string
 }): Promise<TimekeepingEvent> {
-  const { data, error } = await getSupabaseClient().rpc('supervisor_record_time_event', {
+  const { data, error } = await getSupabaseClient().rpc('supervisor_record_time_event_with_location', {
     target_effective_at: input.effectiveAt,
     target_employee_id: input.employeeId,
     target_idempotency_key: requestKey(),
     target_kind: input.kind,
+    target_location_name: input.locationName ?? null,
     target_reason: input.reason,
     target_shift_id: input.shiftId ?? null,
+    target_time_zone: input.timeZone ?? 'America/Denver',
   })
   if (error) throw new Error(error.message || 'The time event could not be added.')
   return parseTimekeepingEvent(data)
