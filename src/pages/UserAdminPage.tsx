@@ -44,6 +44,7 @@ import {
   type ProvisioningCredential,
 } from '../data/adminUsers'
 import { getSessionContext } from '../data/auth'
+import { preferredEmployeeDeliveryEmail } from '../lib/emailRecipients'
 import { formatOperationalDateTime } from '../lib/time'
 
 const roleLabels: Record<AppRole, string> = {
@@ -332,7 +333,7 @@ function ManageUserModal({
   const [mfaResetMessage, setMfaResetMessage] = useState<string | null>(null)
   const [confirmingMfaReset, setConfirmingMfaReset] = useState(false)
   const [removingEmployee, setRemovingEmployee] = useState(false)
-  const onFileEmail = employee.companyEmail || employee.personalEmail || null
+  const deliveryEmail = preferredEmployeeDeliveryEmail(employee.personalEmail, employee.companyEmail)
 
   const updateMutation = useMutation({
     mutationFn: (payload: EmployeeMutationInput) => updateEmployee({ ...payload, employeeId: employee.id }),
@@ -382,7 +383,7 @@ function ManageUserModal({
     onSuccess: async (result) => {
       setTemporaryPassword('')
       setLastCredential(null)
-      setLoginEmailMessage(`Login instructions sent to ${result.email ?? employee.companyEmail ?? employee.personalEmail ?? 'the on-file email address'}.`)
+      setLoginEmailMessage(`Login instructions sent to ${result.email ?? deliveryEmail ?? 'the approved email address'}.`)
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
   })
@@ -390,7 +391,7 @@ function ManageUserModal({
     mutationFn: () => sendEmployeeWelcomeEmail(employee.id),
     onSuccess: async (result) => {
       setWelcomeEmailMessage(
-        `Welcome email accepted for ${result.email ?? onFileEmail ?? 'the on-file email address'}. Request ${result.requestId}.`,
+        `Welcome email accepted for ${result.email ?? deliveryEmail ?? 'the approved email address'}. Request ${result.requestId}.`,
       )
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
@@ -570,11 +571,11 @@ function ManageUserModal({
               one-time temporary password through the approved branded template.
             </p>
             <p>
-              Recipient: <strong>{onFileEmail ?? 'No email on file'}</strong>
+              Delivery email: <strong>{deliveryEmail ?? 'No approved email available'}</strong>
             </p>
             <button
               className="secondary-button"
-              disabled={loginEmailMutation.isPending || employee.status !== 'active' || !onFileEmail}
+              disabled={loginEmailMutation.isPending || employee.status !== 'active' || !deliveryEmail}
               onClick={() => loginEmailMutation.mutate()}
               type="button"
             >
@@ -583,7 +584,7 @@ function ManageUserModal({
             </button>
             <button
               className="secondary-button"
-              disabled={welcomeEmailMutation.isPending || employee.status !== 'active' || !onFileEmail}
+              disabled={welcomeEmailMutation.isPending || employee.status !== 'active' || !deliveryEmail}
               onClick={() => welcomeEmailMutation.mutate()}
               type="button"
             >
@@ -591,7 +592,11 @@ function ManageUserModal({
               {welcomeEmailMutation.isPending ? 'Sending welcome…' : 'Send welcome email'}
             </button>
             {employee.status !== 'active' ? <small>Only active employees can receive welcome emails.</small> : null}
-            {!onFileEmail ? <small>Add a personal or company email before sending.</small> : null}
+            {!deliveryEmail ? (
+              <small>
+                Add a personal email before sending. SygShift is not sending to @guardianshipsecurity.net while company delivery is blocked.
+              </small>
+            ) : null}
           </div>
           ) : null}
 

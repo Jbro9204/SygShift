@@ -208,6 +208,8 @@ Trust model:
 ### Notifications and announcements
 
 - Queued, attempted, delivered, and failed are different states. Never label a queued email as sent.
+- Prefer a valid personal employee email for every delivery. Until the company-domain block is formally removed, do not send to `@guardianshipsecurity.net`; enforce this in recipient selection and again at the Worker provider boundary.
+- Login-instruction delivery eligibility must be checked before creating an account or resetting a temporary password.
 - Employee announcements appear through the approved front-page/banner lane and honor audience and expiration.
 - Publication notifications are deliberate; schedule editing must not automatically create repeated employee email blasts.
 - Sensitive site instructions do not belong in announcement or email bodies.

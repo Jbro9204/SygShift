@@ -25,6 +25,15 @@ deployment status, or major workflow assumptions change.
 
 ## 08/23/2026
 
+### Personal-first employee email delivery
+
+- Made personal email the primary employee delivery address across onboarding, announcements, schedule publication, call-off alerts, and automatic clock-out notifications.
+- Excluded `@guardianshipsecurity.net` during database recipient selection and retained the independent Worker-level provider suppression safeguard.
+- Added preflight protection so login creation or temporary-password reset does not occur when an employee lacks an approved delivery address.
+- Updated Users & Access recipient messaging and added routing, database-boundary, and Worker regression coverage.
+- Applied targeted production migration `20260823190000_personal_email_delivery_routing.sql`.
+- Deployed Cloudflare Worker version `9b5da939-b8f0-4686-b90c-a8bd88f19f0f`; live health, readiness, and login-route checks passed.
+
 ### Manual punch Site/Post completion
 
 - Added a required Site/Post step directly to the supervisor-entered time event form so an authorized user no longer has to create a punch and then repair its location afterward.

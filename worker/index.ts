@@ -273,6 +273,25 @@ function isBlockedEmailRecipient(environment: Environment, recipient: string): b
   return blockedEmailDomains(environment).has(domain)
 }
 
+function requireApprovedEmployeeEmail(environment: Environment, target: LoginEmailTarget): string {
+  const recipient = target.contactEmail?.trim().toLowerCase()
+  if (!recipient) {
+    throw new ApiError(
+      'employee_personal_email_required',
+      422,
+      `${target.displayName} needs a personal email before SygShift email can be sent.`,
+    )
+  }
+  if (isBlockedEmailRecipient(environment, recipient)) {
+    throw new ApiError(
+      'email_recipient_suppressed',
+      409,
+      'SygShift is not sending to @guardianshipsecurity.net while company delivery is blocked. Add a personal email and try again.',
+    )
+  }
+  return recipient
+}
+
 async function logEmailDelivery(
   environment: Environment,
   recipient: string,
@@ -754,10 +773,7 @@ async function sendLoginInstructions(
   target: LoginEmailTarget,
   temporaryPassword: string,
 ) {
-  const to = target.contactEmail?.trim().toLowerCase()
-  if (!to) {
-    throw new ApiError('employee_email_missing', 422, `${target.displayName} does not have an on-file email address.`)
-  }
+  const to = requireApprovedEmployeeEmail(environment, target)
 
   const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl
   const message = buildLoginInstructionsEmail(target, temporaryPassword, appUrl)
@@ -776,10 +792,7 @@ async function sendWelcomeEmail(
   environment: Environment,
   target: LoginEmailTarget,
 ): Promise<unknown> {
-  const to = target.contactEmail?.trim().toLowerCase()
-  if (!to) {
-    throw new ApiError('employee_email_missing', 422, `${target.displayName} does not have an on-file email address.`)
-  }
+  const to = requireApprovedEmployeeEmail(environment, target)
 
   const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl
   const message = buildWelcomeEmail(target, appUrl)
@@ -953,6 +966,7 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
 
     for (const target of targets) {
       try {
+        requireApprovedEmployeeEmail(environment, target)
         const result = await provisionOne(admin.config, target, generateTemporaryPassword(), await getUsersByEmail())
         await sendLoginInstructions(environment, target, result.password)
         sent.push({
@@ -988,6 +1002,7 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       admin.config.serviceRoleKey,
     )
     if (!target) throw new ApiError('employee_not_found', 404, 'The employee record was not found.')
+    requireApprovedEmployeeEmail(environment, target)
 
     if ('temporaryPassword' in body && body.temporaryPassword !== null && typeof body.temporaryPassword !== 'string') {
       throw new ApiError('invalid_temporary_password', 400, 'Temporary password must be text.')

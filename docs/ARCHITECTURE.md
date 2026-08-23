@@ -77,3 +77,4 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - A call-off queues a supervisor alert but does not claim delivery. A supervisor with MFA must review it and publish the replacement opening.
 - Publishing a replacement opening cancels the original assignment, opens the shift, creates the announcement, and queues qualified delivery atomically.
 - Notification records distinguish queued, attempted, delivered, and failed states. The interface must never describe a queued message as sent.
+- Employee email routing is personal-first. Database queues exclude the temporarily blocked `@guardianshipsecurity.net` domain, and the Worker independently suppresses that domain before the provider is called.

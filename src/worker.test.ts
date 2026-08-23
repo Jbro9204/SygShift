@@ -202,6 +202,55 @@ describe('Cloudflare Worker boundary', () => {
     vi.unstubAllGlobals()
   })
 
+  it('rejects a blocked company-domain login email before changing the employee account', async () => {
+    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employee_id: '10000000-0000-4000-8000-000000000002',
+        username: 'invitemanager',
+        display_name: 'Invite Manager',
+        role: 'scheduler',
+        has_mfa: true,
+        permissions: ['admin.users.invite'],
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employeeId: targetEmployeeId,
+        username: 'employee',
+        authEmail: 'employee@accounts.sygshift.invalid',
+        contactEmail: 'employee@guardianshipsecurity.net',
+        displayName: 'Example Employee',
+        role: 'guard',
+        employmentType: 'hourly',
+        status: 'active',
+        existingAuthUserId: null,
+      }), { headers: { 'content-type': 'application/json' } }))
+    const send = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/login-email`, {
+        body: '{}',
+        headers: { authorization: 'Bearer token' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        EMAIL: { send },
+        SYGSHIFT_BLOCKED_EMAIL_DOMAINS: 'guardianshipsecurity.net',
+        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+      }),
+    )
+    const payload = await response.json() as { detail: string; error: string }
+
+    expect(response.status).toBe(409)
+    expect(payload.error).toBe('email_recipient_suppressed')
+    expect(payload.detail).toContain('Add a personal email')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(send).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
   it('does not let invitation-only access mutate account security controls', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       employee_id: '10000000-0000-4000-8000-000000000002',
