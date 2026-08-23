@@ -23,6 +23,7 @@ import {
   TimeExceptionsPageRoute,
   TimeOperationsPageRoute,
   TimeDailyAttendancePageRoute,
+  TimeAccountabilityPageRoute,
   TimeMyTimePageRoute,
   TimePageRoute,
   TimePayrollPageRoute,
@@ -141,6 +142,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <TimeDailyAttendancePageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'time/accountability',
+        element: (
+          <RouteSuspense>
+            <TimeAccountabilityPageRoute />
           </RouteSuspense>
         ),
       },

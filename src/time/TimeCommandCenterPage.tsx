@@ -11,6 +11,7 @@ import {
   History,
   LockKeyhole,
   ShieldAlert,
+  ShieldCheck,
   Timer,
   UserRoundCheck,
 } from 'lucide-react'
@@ -28,7 +29,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { buildTimeCommandCenterModel, canExportPayroll, canViewTeamTime } from './timeCommandCenter'
-import { canUseOwnTimeClock, canViewAttendanceReview, canViewOwnTime } from './timePermissions'
+import { canUseOwnTimeClock, canViewAccountability, canViewAttendanceReview, canViewOwnTime } from './timePermissions'
 import { currentPayrollPeriod, formatUsDateKey } from './timeRules'
 import {
   TimeAlertCard,
@@ -65,6 +66,7 @@ export function TimeCommandCenterPage() {
   const teamAllowed = canViewTeamTime(sessionQuery.data)
   const payrollAllowed = canExportPayroll(sessionQuery.data)
   const attendanceReviewAllowed = canViewAttendanceReview(sessionQuery.data)
+  const accountabilityAllowed = canViewAccountability(sessionQuery.data)
 
   const reviewQuery = useQuery({
     enabled: isSupabaseConfigured && Boolean(dashboardQuery.data),
@@ -202,6 +204,7 @@ export function TimeCommandCenterPage() {
       ) : (
         <OperationsTimeOverview
           attendanceReviewAllowed={attendanceReviewAllowed}
+          accountabilityAllowed={accountabilityAllowed}
           model={model}
           loadingMetrics={loadingMetrics}
           payrollAllowed={payrollAllowed}
@@ -254,12 +257,14 @@ function EmployeeTimeOverview({
 }
 
 function OperationsTimeOverview({
+  accountabilityAllowed,
   attendanceReviewAllowed,
   loadingMetrics,
   model,
   payrollAllowed,
   teamAllowed,
 }: {
+  accountabilityAllowed: boolean
   attendanceReviewAllowed: boolean
   loadingMetrics: boolean
   model: ReturnType<typeof buildTimeCommandCenterModel>
@@ -330,6 +335,7 @@ function OperationsTimeOverview({
           <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Open Time Maintenance</span></Link>
           {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/team"><UserRoundCheck aria-hidden="true" size={18} /><span>Team Attendance</span></Link> : null}
           {attendanceReviewAllowed ? <Link className="time-button time-button--secondary" to="/time/daily-review"><ClipboardCheck aria-hidden="true" size={18} /><span>Daily Attendance Review</span></Link> : null}
+          {accountabilityAllowed ? <Link className="time-button time-button--secondary" to="/time/accountability"><ShieldCheck aria-hidden="true" size={18} /><span>Accountability Tracker</span></Link> : null}
           {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/exceptions"><AlertTriangle aria-hidden="true" size={18} /><span>Review Exceptions</span></Link> : null}
           {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/operations"><ClipboardCheck aria-hidden="true" size={18} /><span>Time Operations</span></Link> : null}
           {payrollAllowed ? <Link className="time-button time-button--secondary" to="/time/payroll"><FileClock aria-hidden="true" size={18} /><span>Payroll</span></Link> : null}

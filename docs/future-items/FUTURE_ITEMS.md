@@ -48,18 +48,6 @@ Outcome:
 
 ## Pinned For Later
 
-### Accountability Tracker
-Status: Pinned for later
-
-Idea:
-Allow approved operations users to mark call-offs, late arrivals, and early departures on a shift, with a reliability view per employee.
-
-Requirements before build:
-- Protected / state-mandated sick time must be explicitly excluded from negative reliability counts.
-- Every entry needs an audit trail showing who recorded it and when.
-- Employee-facing language must be careful and professional.
-- Reports should separate operational history from payroll/timekeeping records.
-
 ### Supervisor Assignment / Scoped Visibility
 Status: Pinned for later
 

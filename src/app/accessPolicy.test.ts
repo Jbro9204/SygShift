@@ -20,6 +20,12 @@ describe('central access policy', () => {
     expect(canAccessRoute('/account-security', session([]))).toBe(true)
   })
 
+  it('allows the Accountability Tracker only with an effective accountability permission', () => {
+    expect(canAccessRoute('/time/accountability', session(['accountability.view']))).toBe(true)
+    expect(canAccessRoute('/time/accountability', session(['accountability.manage']))).toBe(true)
+    expect(canAccessRoute('/time/accountability', session(['time.manage']))).toBe(false)
+  })
+
   it('keeps every navigation destination covered by the route policy', () => {
     const navigationPaths = navigationGroups.flatMap((group) => group.items.map((item) => item.path))
     expect(navigationPaths.every((path) => path in routeAccessPolicies)).toBe(true)

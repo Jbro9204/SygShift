@@ -23,6 +23,27 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/22/2026
+
+### Accountability Tracker
+
+- Added a permission-controlled Accountability Tracker inside the Time Command Center for authorized operations users.
+- Added factual occurrence entry for late arrivals, early departures, no-call/no-show events, and other documented attendance events.
+- Kept sick reports and call-offs in Time Operations and time-off requests in their existing approval workflow.
+- Added occurrence-specific review outcomes: confirmed, excused/protected, corrected, dismissed, voided, and reopened.
+- Added an append-only decision history recording the actor, action, time, reason, and before/after state.
+- Added schedule, worked-segment, unpaid-gap, variance, and time-rule context to each review without changing original punches.
+- Limited negative reliability totals to reviewed and confirmed call-offs, no-call/no-show events, late arrivals, and early departures.
+- Excluded protected sick time, vacation, excused events, dismissed events, corrected events, voided events, and open reviews from negative reliability totals.
+- Kept hard payroll/timekeeping blockers in Time Exceptions instead of allowing them to be bypassed in Accountability Tracker.
+- Updated the missing-clock-in grace period to 14 hours to support 12-hour operations before creating a missing-punch exception.
+- Preserved all production roles, effective permissions, employee access, and individual overrides exactly.
+- Added database, permission, UI-state, audit-history, and reliability-total regression coverage.
+- Applied and recorded targeted production migration `20260822143000_accountability_tracker_workspace.sql`.
+- Full validation passed: type checking, lint, 58 test files / 308 tests, and production build.
+- Live health and readiness checks passed, and the protected route correctly redirected an unauthenticated browser session to sign-in.
+- Deployed Cloudflare Worker version `f3a8c659-8836-4034-b9a5-14f71636fd59`.
+
 ## 08/21/2026
 
 ### Full permission enforcement and access preservation
