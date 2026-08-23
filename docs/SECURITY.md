@@ -30,6 +30,8 @@
 - Every Worker response receives an opaque request ID for troubleshooting without echoing request content.
 - Camera, microphone, geolocation, payment, and USB browser permissions are disabled by default.
 - Welcome and login-instruction email delivery requires the effective `admin.users.invite` permission and an MFA-verified session. Hiding the controls in the interface is not treated as authorization; every invitation endpoint enforces the permission in the Worker.
+- Login-instruction content is selected from the employee's effective MFA requirement, using the same base-role, assigned-role, and person-specific permission sources as the authenticated session. This prevents privileged employees from receiving incomplete setup instructions and prevents ordinary employees from receiving unnecessary MFA language.
+- Onboarding sends no more than one Welcome email and one applicable Login Instructions email per deliberate admin action. Standard and MFA Login Instructions are mutually exclusive.
 - Employee delivery prefers a valid personal email address. While company-domain delivery is blocked, `@guardianshipsecurity.net` recipients are excluded in database recipient selection and suppressed again at the Worker provider boundary. A blocked or missing recipient must never trigger account creation or a password reset.
 - Framing is same-origin only. A future company hub should mount SygShift on the same origin or add one exact reviewed hub origin; wildcard framing is prohibited.
 - Local development omits HSTS and CSP so hot reload works, while retaining the remaining response-hardening headers.

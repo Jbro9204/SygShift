@@ -571,6 +571,10 @@ function ManageUserModal({
               one-time temporary password through the approved branded template.
             </p>
             <p>
+              SygShift automatically includes authenticator setup only when this employee’s
+              effective access requires MFA.
+            </p>
+            <p>
               Delivery email: <strong>{deliveryEmail ?? 'No approved email available'}</strong>
             </p>
             <button

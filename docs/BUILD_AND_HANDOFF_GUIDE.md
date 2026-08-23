@@ -210,6 +210,9 @@ Trust model:
 - Queued, attempted, delivered, and failed are different states. Never label a queued email as sent.
 - Prefer a valid personal employee email for every delivery. Until the company-domain block is formally removed, do not send to `@guardianshipsecurity.net`; enforce this in recipient selection and again at the Worker provider boundary.
 - Login-instruction delivery eligibility must be checked before creating an account or resetting a temporary password.
+- Onboarding uses two separate messages: one Welcome email and exactly one Login Instructions email. The login message is either standard or MFA setup—not both.
+- MFA onboarding language must use the same effective-access calculation as the authenticated session: base system role, assigned access roles, and person-specific MFA-sensitive permission grants.
+- Employees whose effective access does not require MFA must not receive authenticator setup language. Employees whose access does require MFA must be told to install Microsoft Authenticator or Google Authenticator and that codes are generated in the app, not sent by email or text.
 - Employee announcements appear through the approved front-page/banner lane and honor audience and expiration.
 - Publication notifications are deliberate; schedule editing must not automatically create repeated employee email blasts.
 - Sensitive site instructions do not belong in announcement or email bodies.

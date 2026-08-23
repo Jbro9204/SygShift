@@ -41,6 +41,7 @@ interface AuthTarget {
 
 interface LoginEmailTarget extends AuthTarget {
   contactEmail: string | null
+  requiresMfa: boolean
 }
 
 interface AuthUser {
@@ -678,44 +679,109 @@ async function provisionOne(
   }
 }
 
-function buildLoginInstructionsEmail(target: LoginEmailTarget, temporaryPassword: string, appUrl: string): NotificationJob['message'] {
+export function buildLoginInstructionsEmail(
+  target: LoginEmailTarget,
+  temporaryPassword: string,
+  appUrl: string,
+  supportEmail = defaultSupportEmail,
+): NotificationJob['message'] {
   const normalizedAppUrl = appUrl.replace(/\/+$/, '')
-  const safeName = escapeHtml(target.displayName)
+  const firstName = greetingName(target.displayName)
+  const safeFirstName = escapeHtml(firstName)
   const safeUsername = escapeHtml(target.username)
   const safePassword = escapeHtml(temporaryPassword)
   const safeUrl = escapeHtml(normalizedAppUrl)
+  const safeSupportEmail = escapeHtml(supportEmail)
+
+  if (target.requiresMfa) {
+    return {
+      subject: 'Your SygShift Login Is Ready — Authenticator Setup Required',
+      text: [
+        `Hello ${firstName},`,
+        'Your SygShift account is ready. Because your access includes protected company information or operational tools, you must secure the account with multi-factor authentication (MFA).',
+        'Before you begin:',
+        'Install Microsoft Authenticator or Google Authenticator on your phone. The six-digit verification code is generated inside the authenticator app. It is not sent by email or text message.',
+        `SygShift: ${normalizedAppUrl}`,
+        `Username: ${target.username}`,
+        `Temporary password: ${temporaryPassword}`,
+        'Getting started:',
+        '1. Install Microsoft Authenticator or Google Authenticator.',
+        '2. Open SygShift and sign in with your username and temporary password.',
+        '3. Select Start Authenticator Setup.',
+        '4. In the authenticator app, add a new account and scan the QR code shown by SygShift. Do not scan it with your regular phone camera.',
+        '5. Enter the six-digit code shown in the authenticator app.',
+        '6. Create your permanent password when prompted.',
+        'Authenticator codes change about every 30 seconds. Keep the SygShift entry in your authenticator app for future sign-ins.',
+        'If you are completing setup on the same phone, keep the SygShift page open and use your phone’s app switcher to move between SygShift and the authenticator app.',
+        `If setup does not work, contact Jordan Brown at ${supportEmail}.`,
+        'SygShift',
+        'Guardianship Security',
+      ].join('\n\n'),
+      html: `
+        <p>Hello ${safeFirstName},</p>
+        <p>Your SygShift account is ready. Because your access includes protected company information or operational tools, you must secure the account with <strong>multi-factor authentication (MFA)</strong>.</p>
+        <div style="margin:18px 0; padding:16px 18px; border:1px solid #d9b15f; border-radius:12px; background:#fff8e8;">
+          <p style="margin:0 0 8px; font-size:17px; font-weight:800;">Before you begin</p>
+          <p style="margin:0;">Install <strong>Microsoft Authenticator</strong> or <strong>Google Authenticator</strong> on your phone. The six-digit verification code is generated inside the authenticator app. It is <strong>not</strong> sent by email or text message.</p>
+        </div>
+        <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse; margin:18px 0; width:100%; max-width:520px;">
+          <tr><td style="padding:10px 12px; border:1px solid #e4ddcf; background:#f8f3e9; font-weight:700;">SygShift</td><td style="padding:10px 12px; border:1px solid #e4ddcf;"><a href="${safeUrl}">${safeUrl}</a></td></tr>
+          <tr><td style="padding:10px 12px; border:1px solid #e4ddcf; background:#f8f3e9; font-weight:700;">Username</td><td style="padding:10px 12px; border:1px solid #e4ddcf;">${safeUsername}</td></tr>
+          <tr><td style="padding:10px 12px; border:1px solid #e4ddcf; background:#f8f3e9; font-weight:700;">Temporary password</td><td style="padding:10px 12px; border:1px solid #e4ddcf; font-family:Consolas, Menlo, monospace;">${safePassword}</td></tr>
+        </table>
+        <p><strong>Getting started:</strong></p>
+        <ol>
+          <li>Install Microsoft Authenticator or Google Authenticator.</li>
+          <li>Open SygShift and sign in with your username and temporary password.</li>
+          <li>Select <strong>Start Authenticator Setup</strong>.</li>
+          <li>In the authenticator app, add a new account and scan the QR code shown by SygShift. <strong>Do not scan it with your regular phone camera.</strong></li>
+          <li>Enter the six-digit code shown in the authenticator app.</li>
+          <li>Create your permanent password when prompted.</li>
+        </ol>
+        <p>Authenticator codes change about every 30 seconds. Keep the SygShift entry in your authenticator app for future sign-ins.</p>
+        <p>If you are completing setup on the same phone, keep the SygShift page open and use your phone’s app switcher to move between SygShift and the authenticator app.</p>
+        <p>If setup does not work, contact Jordan Brown at <a href="mailto:${safeSupportEmail}">${safeSupportEmail}</a>.</p>
+        <p><strong>SygShift</strong><br>Guardianship Security</p>
+      `,
+    }
+  }
 
   return {
-    subject: 'Your SygShift login is ready',
+    subject: 'Your SygShift Login Is Ready',
     text: [
-      `Hello ${target.displayName},`,
+      `Hello ${firstName},`,
       'Your SygShift account is ready.',
-      `Site: ${normalizedAppUrl}`,
+      `SygShift: ${normalizedAppUrl}`,
       `Username: ${target.username}`,
       `Temporary password: ${temporaryPassword}`,
       'Getting started:',
-      '1. Open the SygShift site link above.',
+      '1. Open the SygShift link above.',
       '2. Sign in with your username and temporary password.',
       '3. Create your permanent password when prompted.',
-      '4. Review your schedule, open shifts, requests, and time clock.',
-      'For security, do not share this temporary password. If it does not work, contact a supervisor or administrator so they can reset your access from SygShift.',
+      '4. Confirm that the SygShift Home page opens.',
+      'For security, do not share your temporary password.',
+      `If sign-in does not work, contact Jordan Brown at ${supportEmail}.`,
+      'SygShift',
+      'Guardianship Security',
     ].join('\n\n'),
     html: `
-      <p>Hello ${safeName},</p>
+      <p>Hello ${safeFirstName},</p>
       <p>Your SygShift account is ready.</p>
       <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse; margin:18px 0; width:100%; max-width:520px;">
-        <tr><td style="padding:10px 12px; border:1px solid #e4ddcf; background:#f8f3e9; font-weight:700;">Site</td><td style="padding:10px 12px; border:1px solid #e4ddcf;"><a href="${safeUrl}">${safeUrl}</a></td></tr>
+        <tr><td style="padding:10px 12px; border:1px solid #e4ddcf; background:#f8f3e9; font-weight:700;">SygShift</td><td style="padding:10px 12px; border:1px solid #e4ddcf;"><a href="${safeUrl}">${safeUrl}</a></td></tr>
         <tr><td style="padding:10px 12px; border:1px solid #e4ddcf; background:#f8f3e9; font-weight:700;">Username</td><td style="padding:10px 12px; border:1px solid #e4ddcf;">${safeUsername}</td></tr>
         <tr><td style="padding:10px 12px; border:1px solid #e4ddcf; background:#f8f3e9; font-weight:700;">Temporary password</td><td style="padding:10px 12px; border:1px solid #e4ddcf; font-family:Consolas, Menlo, monospace;">${safePassword}</td></tr>
       </table>
       <p><strong>Getting started:</strong></p>
       <ol>
-        <li>Open the SygShift site link above.</li>
+        <li>Open the SygShift link above.</li>
         <li>Sign in with your username and temporary password.</li>
         <li>Create your permanent password when prompted.</li>
-        <li>Review your schedule, open shifts, requests, and time clock.</li>
+        <li>Confirm that the SygShift Home page opens.</li>
       </ol>
-      <p>For security, do not share this temporary password. If it does not work, contact a supervisor or administrator so they can reset your access from SygShift.</p>
+      <p>For security, do not share your temporary password.</p>
+      <p>If sign-in does not work, contact Jordan Brown at <a href="mailto:${safeSupportEmail}">${safeSupportEmail}</a>.</p>
+      <p><strong>SygShift</strong><br>Guardianship Security</p>
     `,
   }
 }
@@ -736,34 +802,39 @@ export function buildWelcomeEmail(target: LoginEmailTarget, appUrl: string, supp
     subject: 'Welcome to SygShift',
     text: [
       `Hello ${firstName},`,
-      'Welcome to SygShift, our new scheduling, time, and workforce coordination system.',
-      `Site link: ${normalizedAppUrl}`,
-      'What SygShift will help with:',
-      '- Viewing current schedules in one easy-to-read place.',
-      '- Seeing open shifts, overtime opportunities, and event coverage needs.',
-      '- Requesting time off and tracking schedule-related requests.',
-      '- Using time clock and attendance tools as rollout continues.',
-      '- Receiving company scheduling announcements in one consistent format.',
-      `We are still testing and polishing the system before full rollout. If you notice a bug, missing information, confusing screen, or anything that does not look right, please email Jordan Brown at ${supportEmail}.`,
-      'Thank you for helping us make this stronger and easier for everyone to use.',
+      'Welcome to SygShift, Guardianship Security’s scheduling and timekeeping system.',
+      'SygShift gives you one secure place for:',
+      '- Viewing your work schedule.',
+      '- Clocking in, clocking out, and recording unpaid breaks.',
+      '- Reviewing your time card.',
+      '- Requesting time off.',
+      '- Viewing open shifts and coverage opportunities.',
+      '- Receiving company announcements and schedule updates.',
+      'Your access is based on your job responsibilities, so you may not see every tool available in SygShift.',
+      'You will receive a separate Login Instructions email with your username, temporary password, and the steps required to finish setting up your account.',
+      `Open SygShift: ${normalizedAppUrl}`,
+      `If you have questions, contact Jordan Brown at ${supportEmail}.`,
       'Jordan Brown',
       'IT and Business Development Engineer',
+      'Guardianship Security',
     ].join('\n\n'),
     html: `
       <p>Hello ${safeFirstName},</p>
-      <p>Welcome to <strong>SygShift</strong>, our new scheduling, time, and workforce coordination system.</p>
-      <p><strong>Site link:</strong> <a href="${safeUrl}">${safeUrl}</a></p>
-      <p><strong>What SygShift will help with:</strong></p>
+      <p>Welcome to <strong>SygShift</strong>, Guardianship Security’s scheduling and timekeeping system.</p>
+      <p>SygShift gives you one secure place for:</p>
       <ul>
-        <li>Viewing current schedules in one easy-to-read place.</li>
-        <li>Seeing open shifts, overtime opportunities, and event coverage needs.</li>
-        <li>Requesting time off and tracking schedule-related requests.</li>
-        <li>Using time clock and attendance tools as rollout continues.</li>
-        <li>Receiving company scheduling announcements in one consistent format.</li>
+        <li>Viewing your work schedule.</li>
+        <li>Clocking in, clocking out, and recording unpaid breaks.</li>
+        <li>Reviewing your time card.</li>
+        <li>Requesting time off.</li>
+        <li>Viewing open shifts and coverage opportunities.</li>
+        <li>Receiving company announcements and schedule updates.</li>
       </ul>
-      <p>We are still testing and polishing the system before full rollout. If you notice a bug, missing information, confusing screen, or anything that does not look right, please email Jordan Brown at <a href="mailto:${safeSupportEmail}">${safeSupportEmail}</a>.</p>
-      <p>Thank you for helping us make this stronger and easier for everyone to use.</p>
-      <p><strong>Jordan Brown</strong><br>IT and Business Development Engineer</p>
+      <p>Your access is based on your job responsibilities, so you may not see every tool available in SygShift.</p>
+      <p>You will receive a separate <strong>Login Instructions</strong> email with your username, temporary password, and the steps required to finish setting up your account.</p>
+      <p><a href="${safeUrl}">Open SygShift</a></p>
+      <p>If you have questions, contact Jordan Brown at <a href="mailto:${safeSupportEmail}">${safeSupportEmail}</a>.</p>
+      <p><strong>Jordan Brown</strong><br>IT and Business Development Engineer<br>Guardianship Security</p>
     `,
   }
 }

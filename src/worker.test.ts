@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import worker, { brandedEmailHtml, buildWelcomeEmail, validateSuppliedTemporaryPassword } from '../worker'
+import worker, {
+  brandedEmailHtml,
+  buildLoginInstructionsEmail,
+  buildWelcomeEmail,
+  validateSuppliedTemporaryPassword,
+} from '../worker'
 
 function environment(response: Response = new Response('asset'), values: Record<string, unknown> = {}) {
   return { ASSETS: { fetch: vi.fn().mockResolvedValue(response) }, ...values }
@@ -607,15 +612,66 @@ describe('Cloudflare Worker boundary', () => {
       employmentType: 'hourly',
       existingAuthUserId: null,
       role: 'dispatcher',
+      requiresMfa: true,
       status: 'active',
       username: 'lhood',
     }, 'https://shift.sygilant.us/')
 
     expect(message.subject).toBe('Welcome to SygShift')
     expect(message.text).toContain('Hello Lorinda,')
+    expect(message.text).toContain('Guardianship Security’s scheduling and timekeeping system')
+    expect(message.text).toContain('You will receive a separate Login Instructions email')
+    expect(message.text).toContain('IT and Business Development Engineer')
     expect(message.text).toContain('jbrown@guardianshipsecurity.net')
-    expect(message.text.toLowerCase()).not.toContain('temporary password')
+    expect(message.text).not.toContain('still testing')
+    expect(message.text).not.toContain('Temporary password:')
     expect(message.html).toContain('Hello Lorinda,')
+    expect(message.html).toContain('mailto:jbrown@guardianshipsecurity.net')
+  })
+
+  it('builds standard login instructions without MFA language for employees who do not require it', () => {
+    const message = buildLoginInstructionsEmail({
+      authEmail: 'guard@accounts.sygshift.invalid',
+      contactEmail: 'guard@example.com',
+      displayName: 'Taylor Guard',
+      employeeId: '10000000-0000-4000-8000-000000000011',
+      employmentType: 'hourly',
+      existingAuthUserId: null,
+      requiresMfa: false,
+      role: 'guard',
+      status: 'active',
+      username: 'tguard',
+    }, 'Temporary!234', 'https://app.sygilant.us/')
+
+    expect(message.subject).toBe('Your SygShift Login Is Ready')
+    expect(message.text).toContain('Hello Taylor,')
+    expect(message.text).toContain('Confirm that the SygShift Home page opens.')
+    expect(message.text).toContain('Temporary password: Temporary!234')
+    expect(message.text).not.toContain('Authenticator')
+    expect(message.text).not.toContain('multi-factor')
+    expect(message.html).not.toContain('Authenticator')
+  })
+
+  it('builds authenticator setup instructions only for employees whose effective access requires MFA', () => {
+    const message = buildLoginInstructionsEmail({
+      authEmail: 'scheduler@accounts.sygshift.invalid',
+      contactEmail: 'scheduler@example.com',
+      displayName: 'Morgan Scheduler',
+      employeeId: '10000000-0000-4000-8000-000000000012',
+      employmentType: 'salary',
+      existingAuthUserId: null,
+      requiresMfa: true,
+      role: 'scheduler',
+      status: 'active',
+      username: 'mscheduler',
+    }, 'Temporary!234', 'https://app.sygilant.us/')
+
+    expect(message.subject).toBe('Your SygShift Login Is Ready — Authenticator Setup Required')
+    expect(message.text).toContain('Microsoft Authenticator or Google Authenticator')
+    expect(message.text).toContain('It is not sent by email or text message.')
+    expect(message.text).toContain('Do not scan it with your regular phone camera.')
+    expect(message.text).toContain('use your phone’s app switcher')
+    expect(message.html).toContain('Start Authenticator Setup')
     expect(message.html).toContain('mailto:jbrown@guardianshipsecurity.net')
   })
 })
