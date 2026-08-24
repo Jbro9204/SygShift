@@ -7,6 +7,7 @@ import {
   accountabilityEventScheduledMinutes,
   buildPayrollWorkbookSheets,
   createPayrollWorkbookBlob,
+  payrollWorkbookWeeks,
 } from './payrollWorkbook'
 import {
   exportableWorkedTimeRows,
@@ -329,30 +330,33 @@ describe('payroll export readiness', () => {
 
     expect(sheets.map((sheet) => sheet.name).slice(0, 5)).toEqual([
       'Payroll Summary',
+      'Week 1 Detail',
+      'Week 2 Detail',
       'Payroll Review',
       'Hours Variance',
-      'Site Summary',
-      'Exception Decisions',
     ])
     const summaryHeaderIndex = sheets[0].rows.findIndex((row) => row[0] === 'Employee')
     expect(summaryHeaderIndex).toBeGreaterThan(0)
     expect(sheets[0].rows[summaryHeaderIndex]).toEqual([
       'Employee',
       'Employment',
+      'Payroll Week',
+      'Week Dates',
       'Worked Shifts',
       'Scheduled Hours',
       'Worked Hours',
       'Training Hours',
+      'Regular Hours',
+      'Overtime Hours',
       'Sick Pay Hours',
       'PTO Hours',
       'Other Paid Hours',
       'Total Payable',
-      'Regular Hours',
-      'Overtime Hours',
       'Status',
     ])
-    expect(sheets[0].rows.every((row) => row.length <= 14)).toBe(true)
-    expect(sheets.at(-1)?.rows[5]).toEqual([
+    expect(sheets[0].rows.every((row) => row.length <= 15)).toBe(true)
+    const employeeHeader = sheets.at(-1)?.rows.find((row) => row[0] === 'Employee' && row[1] === 'Employee ID')
+    expect(employeeHeader).toEqual([
       'Employee',
       'Employee ID',
       'Username',
@@ -444,7 +448,7 @@ describe('payroll export readiness', () => {
     const sheets = buildPayrollWorkbookSheets({ exportType: 'Preview', review: medicalReview })
     const decisionSheet = sheets.find((sheet) => sheet.name === 'Exception Decisions')
     const summaryHeaderIndex = sheets[0].rows.findIndex((row) => row[0] === 'Employee')
-    expect(sheets[0].rows[summaryHeaderIndex + 1]?.[4]).toBe(6)
+    expect(sheets[0].rows[summaryHeaderIndex + 1]?.[6]).toBe(6)
     expect(decisionSheet?.rows[4]).toContain('Approved valid exception')
     expect(decisionSheet?.rows[4]).toContain('Medical appointment; unpaid gap verified by the administrator.')
   })
@@ -476,5 +480,139 @@ describe('payroll export readiness', () => {
     })
 
     expect(sheets[0].rows[1]).toEqual(['Pay Period', '07/19/2026 - 08/01/2026'])
+  })
+
+  it('builds distinct Sunday-through-Saturday payroll weeks for a biweekly export', () => {
+    expect(payrollWorkbookWeeks({ exportType: 'Preview', review: cleanReview })).toEqual([
+      { label: 'Week 1', weekEndsOn: '2026-07-18', weekStartsOn: '2026-07-12' },
+      { label: 'Week 2', weekEndsOn: '2026-07-25', weekStartsOn: '2026-07-19' },
+    ])
+  })
+
+  it('keeps a Saturday-night occurrence entirely in week one of the payroll workbook', () => {
+    const overnightRow = {
+      ...cleanReview.rows[0],
+      breakMinutes: 0,
+      crossesPayrollBoundary: true,
+      firstClockIn: '2026-08-16T05:00:00.000Z',
+      grossMinutes: 480,
+      lastClockOut: '2026-08-16T13:00:00.000Z',
+      operationalDate: '2026-08-15',
+      paidMinutes: 480,
+      payrollAssignmentAnchor: '2026-08-16T05:00:00.000Z',
+      payrollBatchWeekEndsOn: '2026-08-15',
+      payrollBatchWeekStartsOn: '2026-08-09',
+      payrollPeriodEndsOn: '2026-08-22',
+      payrollPeriodStartsOn: '2026-08-09',
+      regularMinutes: 480,
+      scheduledEndsAt: '2026-08-16T13:00:00.000Z',
+      scheduledStartsAt: '2026-08-16T05:00:00.000Z',
+    }
+    const review: TimekeepingReview = {
+      ...cleanReview,
+      fromDate: '2026-08-09',
+      rows: [overnightRow],
+      throughDate: '2026-08-22',
+    }
+    const sheets = buildPayrollWorkbookSheets({ exportType: 'Preview', review })
+    const summaryHeaderIndex = sheets[0].rows.findIndex((row) => row[0] === 'Employee')
+    const weekOne = sheets[0].rows[summaryHeaderIndex + 1]
+    const weekTwo = sheets[0].rows[summaryHeaderIndex + 2]
+
+    expect(weekOne?.[2]).toBe('Week 1')
+    expect(weekOne?.[6]).toBe(8)
+    expect(weekTwo?.[2]).toBe('Week 2')
+    expect(weekTwo?.[6]).toBe(0)
+    expect(sheets.find((sheet) => sheet.name === 'Week 1 Detail')?.rows.some((row) => row[0] === 'Jordan Brown' && row[11] === 8)).toBe(true)
+    expect(sheets.find((sheet) => sheet.name === 'Week 2 Detail')?.rows.some((row) => row[0] === 'Jordan Brown')).toBe(false)
+  })
+
+  it('places a Sunday-night occurrence in week two without splitting its hours', () => {
+    const overnightRow = {
+      ...cleanReview.rows[0],
+      breakMinutes: 0,
+      crossesPayrollBoundary: false,
+      firstClockIn: '2026-08-17T05:00:00.000Z',
+      grossMinutes: 480,
+      lastClockOut: '2026-08-17T13:00:00.000Z',
+      operationalDate: '2026-08-16',
+      paidMinutes: 480,
+      payrollAssignmentAnchor: '2026-08-17T05:00:00.000Z',
+      payrollBatchWeekEndsOn: '2026-08-22',
+      payrollBatchWeekStartsOn: '2026-08-16',
+      payrollPeriodEndsOn: '2026-08-22',
+      payrollPeriodStartsOn: '2026-08-09',
+      regularMinutes: 480,
+      scheduledEndsAt: '2026-08-17T13:00:00.000Z',
+      scheduledStartsAt: '2026-08-17T05:00:00.000Z',
+    }
+    const review: TimekeepingReview = {
+      ...cleanReview,
+      fromDate: '2026-08-09',
+      rows: [overnightRow],
+      throughDate: '2026-08-22',
+    }
+    const sheets = buildPayrollWorkbookSheets({ exportType: 'Preview', review })
+    const summaryHeaderIndex = sheets[0].rows.findIndex((row) => row[0] === 'Employee')
+    expect(sheets[0].rows[summaryHeaderIndex + 1]?.[6]).toBe(0)
+    expect(sheets[0].rows[summaryHeaderIndex + 2]?.[6]).toBe(8)
+  })
+
+  it('keeps weekly worked, overtime, sick-pay, and payable totals in their correct payroll week', () => {
+    const employeeId = cleanReview.rows[0].employeeId
+    const weekOneRow = {
+      ...cleanReview.rows[0],
+      breakMinutes: 0,
+      firstClockIn: '2026-08-10T14:00:00.000Z',
+      grossMinutes: 480,
+      lastClockOut: '2026-08-10T22:00:00.000Z',
+      operationalDate: '2026-08-10',
+      paidMinutes: 480,
+      payrollAssignmentAnchor: '2026-08-10T14:00:00.000Z',
+      payrollBatchWeekEndsOn: '2026-08-15',
+      payrollBatchWeekStartsOn: '2026-08-09',
+      regularMinutes: 480,
+      scheduledEndsAt: '2026-08-10T22:00:00.000Z',
+      scheduledStartsAt: '2026-08-10T14:00:00.000Z',
+    }
+    const weekTwoRow = {
+      ...weekOneRow,
+      firstClockIn: '2026-08-17T14:00:00.000Z',
+      lastClockOut: '2026-08-17T22:00:00.000Z',
+      operationalDate: '2026-08-17',
+      overtimeMinutes: 120,
+      payrollAssignmentAnchor: '2026-08-17T14:00:00.000Z',
+      payrollBatchWeekEndsOn: '2026-08-22',
+      payrollBatchWeekStartsOn: '2026-08-16',
+      regularMinutes: 360,
+      scheduledEndsAt: '2026-08-17T22:00:00.000Z',
+      scheduledStartsAt: '2026-08-17T14:00:00.000Z',
+    }
+    const weekTwoSickEvent: PayrollAccountabilityEvent = {
+      ...sickEvent,
+      employeeId,
+      employeeName: weekTwoRow.employeeName,
+      endsAt: '2026-08-18T16:00:00.000Z',
+      operationalDate: '2026-08-18',
+      startsAt: '2026-08-18T14:00:00.000Z',
+      username: weekTwoRow.username,
+    }
+    const review: TimekeepingReview = {
+      ...cleanReview,
+      fromDate: '2026-08-09',
+      rows: [weekOneRow, weekTwoRow],
+      throughDate: '2026-08-22',
+    }
+    const sheets = buildPayrollWorkbookSheets({
+      accountabilityEvents: [weekTwoSickEvent],
+      exportType: 'Preview',
+      review,
+    })
+    const summaryHeaderIndex = sheets[0].rows.findIndex((row) => row[0] === 'Employee')
+    const weekOne = sheets[0].rows[summaryHeaderIndex + 1]
+    const weekTwo = sheets[0].rows[summaryHeaderIndex + 2]
+
+    expect(weekOne?.slice(6, 15)).toEqual([8, 0, 8, 0, 0, 0, 0, 8, 'Ready'])
+    expect(weekTwo?.slice(6, 15)).toEqual([8, 0, 6, 2, 2, 0, 0, 10, 'Ready'])
   })
 })

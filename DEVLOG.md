@@ -25,6 +25,19 @@ deployment status, or major workflow assumptions change.
 
 ## 08/24/2026
 
+### Weekly payroll export by payroll week
+
+- Reorganized payroll workbooks so Finance receives one employee row for each Sunday-through-Saturday payroll week in the selected range, followed by separate Week 1, Week 2, and pay-period totals.
+- Added clear weekly columns for scheduled, worked, training, regular, overtime, sick, PTO, other paid, and total payable hours.
+- Added separate `Week 1 Detail` and `Week 2 Detail` worksheets for a standard biweekly export, with additional numbered weekly worksheets when a custom range spans more weeks.
+- Added weekly rollups to every employee detail worksheet while preserving the full punch-level audit trail.
+- Kept each overnight occurrence entirely in the payroll week containing its authoritative scheduled start or clock-in; Saturday-night work is not split at Sunday midnight.
+- Preserved the distinction between worked punch time, scheduled comparison hours, and approved paid-time categories.
+- No production punches, schedules, payroll batches, locked exports, or audit history were rewritten.
+- Full validation passed: type checking, lint, 72 test files / 367 tests, production build, Cloudflare deployment dry-run, and live production health/readiness checks.
+- Generated and visually reviewed all eight worksheets in a representative workbook; workbook formula-error inspection returned zero errors.
+- Deployed Cloudflare Worker version `1992a2c1-7d46-4870-86f6-0e966e56d354`.
+
 ### Authoritative overnight occurrence resolution
 
 - Consolidated overnight punch assignment, workday grouping, Time Maintenance, team attendance totals, payroll review, and exports onto one canonical occurrence resolver.
