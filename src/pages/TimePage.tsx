@@ -68,6 +68,7 @@ import { formatDualTime, OPERATIONAL_TIME_ZONE, operationalToday } from '../lib/
 import { TimeCommandCenterPage } from '../time/TimeCommandCenterPage'
 import { workedTimePayrollReview } from '../time/timePayroll'
 import { completedPayrollPeriod } from '../time/timeRules'
+import { recommendedManualPunchTimestamp } from '../time/manualPunchWorkday'
 import {
   canExportPayroll as sessionCanExportPayroll,
   canManageTime as sessionCanManageTime,
@@ -424,6 +425,7 @@ export function TimeMaintenanceWorkbench({
   const [addEmployeeId, setAddEmployeeId] = useState(initialEmployeeId ?? '')
   const [addKind, setAddKind] = useState<TimeEventKind>('clock_in')
   const [addDate, setAddDate] = useState(defaultDate)
+  const [addOperationalDate, setAddOperationalDate] = useState(defaultDate)
   const [addTime, setAddTime] = useState('08:00')
   const [addReason, setAddReason] = useState('')
   const [addShiftId, setAddShiftId] = useState<string | null>(null)
@@ -460,12 +462,12 @@ export function TimeMaintenanceWorkbench({
   })
   const shiftOptionsEmployeeId = selectedEvent?.employeeId ?? (employeeId || null)
   const addShiftOptionsQuery = useQuery({
-    enabled: addEmployeeId !== '' && addDate !== '',
-    queryKey: ['time-maintenance-add-shift-options', addDate, addEmployeeId],
+    enabled: addEmployeeId !== '' && addOperationalDate !== '',
+    queryKey: ['time-maintenance-add-shift-options', addOperationalDate, addEmployeeId],
     queryFn: () => getTimeMaintenanceShiftOptions({
       employeeId: addEmployeeId,
-      fromDate: addDate,
-      throughDate: addDate,
+      fromDate: addOperationalDate,
+      throughDate: addOperationalDate,
     }),
   })
   const shiftOptionsQuery = useQuery({
@@ -588,12 +590,12 @@ export function TimeMaintenanceWorkbench({
   const overviewExceptionCount = overviewRows.reduce((total, row) => total + row.exceptionCount, 0)
   const overviewPaidMinutes = overviewRows.reduce((total, row) => total + row.paidMinutes, 0)
   const addShiftOptions = useMemo(() => {
-    const options = shiftOptionsForOperationalDate(addShiftOptionsQuery.data ?? [], addDate)
+    const options = shiftOptionsForOperationalDate(addShiftOptionsQuery.data ?? [], addOperationalDate)
     return options.sort((left, right) => {
       if (left.selectedEmployeeAssigned !== right.selectedEmployeeAssigned) return left.selectedEmployeeAssigned ? -1 : 1
       return sitePostOptionTitle(left).localeCompare(sitePostOptionTitle(right), undefined, { sensitivity: 'base' })
     })
-  }, [addDate, addShiftOptionsQuery.data])
+  }, [addOperationalDate, addShiftOptionsQuery.data])
   const canAdd = addEmployeeId !== ''
     && addReason.trim().length > 0
     && (addUsesManualLocation ? addManualLocation.trim().length > 0 : addShiftId !== null)
@@ -658,6 +660,7 @@ export function TimeMaintenanceWorkbench({
       ? `${event.employeeName} · ${event.locationName} · same shift`
       : `${event.employeeName} · unscheduled time`)
     setAddDate(dateInputValue(event.effectiveAt))
+    setAddOperationalDate(event.operationalDate)
     setAddTime(timeInputValue(event.effectiveAt))
     setAddReason('')
   }
@@ -782,19 +785,38 @@ export function TimeMaintenanceWorkbench({
               </label>
               <label>
                 <span>Punch type</span>
-                <select onChange={(event) => setAddKind(event.target.value as TimeEventKind)} value={addKind}>
+                <select onChange={(event) => {
+                  const nextKind = event.target.value as TimeEventKind
+                  setAddKind(nextKind)
+                  const selectedShift = addShiftOptions.find((option) => option.shiftId === addShiftId)
+                  if (!selectedShift) return
+                  const recommended = recommendedManualPunchTimestamp(selectedShift, nextKind)
+                  if (!recommended) return
+                  setAddDate(recommended.date)
+                  setAddTime(recommended.time)
+                }} value={addKind}>
                   {Object.entries(actionLabels).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}
                 </select>
               </label>
-              <label><span>Date</span><input onChange={(event) => {
-                setAddDate(event.target.value)
-                setAddShiftId(null)
-                setAddManualLocation('')
-                setAddUsesManualLocation(false)
-                setAddContext(null)
-              }} required type="date" value={addDate} /></label>
+              <label><span>Punch date</span><input onChange={(event) => setAddDate(event.target.value)} required type="date" value={addDate} /></label>
               <label><span>Time / Mountain</span><input onChange={(event) => setAddTime(event.target.value)} required type="time" value={addTime} /></label>
               <div className="time-maintenance-add__site-post">
+                <label>
+                  <span>Workday</span>
+                  <input
+                    onChange={(event) => {
+                      setAddOperationalDate(event.target.value)
+                      setAddShiftId(null)
+                      setAddManualLocation('')
+                      setAddUsesManualLocation(false)
+                      setAddContext(null)
+                    }}
+                    required
+                    type="date"
+                    value={addOperationalDate}
+                  />
+                  <small>For an overnight shift, use the date the shift starts.</small>
+                </label>
                 <label>
                   <span>Site/Post</span>
                   <select
@@ -802,10 +824,19 @@ export function TimeMaintenanceWorkbench({
                     onChange={(event) => {
                       const value = event.target.value
                       const useManualLocation = value === MANUAL_SITE_POST_OPTION
+                      const selectedShift = addShiftOptions.find((option) => option.shiftId === value)
                       setAddUsesManualLocation(useManualLocation)
                       setAddShiftId(useManualLocation || value === '' ? null : value)
                       if (!useManualLocation) setAddManualLocation('')
                       setAddContext(null)
+                      if (selectedShift) {
+                        setAddOperationalDate(selectedShift.operationalDate)
+                        const recommended = recommendedManualPunchTimestamp(selectedShift, addKind)
+                        if (recommended) {
+                          setAddDate(recommended.date)
+                          setAddTime(recommended.time)
+                        }
+                      }
                     }}
                     required
                     value={addUsesManualLocation ? MANUAL_SITE_POST_OPTION : addShiftId ?? ''}
@@ -815,7 +846,7 @@ export function TimeMaintenanceWorkbench({
                       <optgroup label="Assigned shifts">
                         {addShiftOptions.filter((option) => option.selectedEmployeeAssigned).map((option) => (
                           <option key={option.shiftId} value={option.shiftId}>
-                            {sitePostOptionTitle(option)} · {formatTime(option.startsAt, option.timeZone)} - {formatTime(option.endsAt, option.timeZone)}
+                            Workday {formatDateOnly(option.operationalDate)} · {sitePostOptionTitle(option)} · {formatTime(option.startsAt, option.timeZone)} - {formatTime(option.endsAt, option.timeZone)}
                           </option>
                         ))}
                       </optgroup>
@@ -824,7 +855,7 @@ export function TimeMaintenanceWorkbench({
                       <optgroup label="Other scheduled Site/Posts">
                         {addShiftOptions.filter((option) => !option.selectedEmployeeAssigned).map((option) => (
                           <option key={option.shiftId} value={option.shiftId}>
-                            {sitePostOptionTitle(option)} · {formatTime(option.startsAt, option.timeZone)} - {formatTime(option.endsAt, option.timeZone)}
+                            Workday {formatDateOnly(option.operationalDate)} · {sitePostOptionTitle(option)} · {formatTime(option.startsAt, option.timeZone)} - {formatTime(option.endsAt, option.timeZone)}
                           </option>
                         ))}
                       </optgroup>

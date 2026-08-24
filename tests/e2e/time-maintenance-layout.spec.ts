@@ -24,9 +24,10 @@ test("Time Maintenance fits the viewport and opens corrections in place", async 
           <div><p class="eyebrow">Add missing punch</p><h3>Supervisor-entered time event</h3></div>
           <label><span>Employee</span><select><option>Marcos Lopez</option></select></label>
           <label><span>Punch type</span><select><option>Clock out</option></select></label>
-          <label><span>Date</span><input type="date" value="2026-08-21" /></label>
+          <label><span>Punch date</span><input type="date" value="2026-08-21" /></label>
           <label><span>Time / Mountain</span><input type="time" value="06:00" /></label>
           <div class="time-maintenance-add__site-post">
+            <label><span>Workday</span><input type="date" value="2026-08-20" /><small>For an overnight shift, use the date the shift starts.</small></label>
             <label><span>Site/Post</span><select><option>PERA · Denver - Armed coverage</option></select><small>Saved with this punch so a second Site/Post correction is not required.</small></label>
           </div>
           <label class="time-maintenance-add__reason">Reason<textarea>Verified missing clock-out.</textarea></label>
@@ -57,6 +58,7 @@ test("Time Maintenance fits the viewport and opens corrections in place", async 
     (element) => element.scrollWidth - element.clientWidth,
   );
   expect(punchFormOverflow).toBeLessThanOrEqual(1);
+  await expect(punchForm.getByText("Workday", { exact: true })).toBeVisible();
   await expect(punchForm.getByText("Site/Post", { exact: true })).toBeVisible();
 
   const modal = page.getByRole("dialog", {
