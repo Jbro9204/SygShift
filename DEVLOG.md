@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 08/24/2026
 
+### Authoritative overnight occurrence resolution
+
+- Consolidated overnight punch assignment, workday grouping, Time Maintenance, team attendance totals, payroll review, and exports onto one canonical occurrence resolver.
+- Made the session clock-in authoritative so later break and clock-out events remain on the workday and assignment where the session began, including across midnight and payroll boundaries.
+- Invalid stored shift links are now rejected; only a single deterministic assigned candidate is repaired automatically, while unsupported or ambiguous events remain unscheduled for human review.
+- Updated live and supervisor-entered punch paths to use the same occurrence relationship and timestamp guardrails.
+- Updated Time Maintenance to display the canonical Shift/Site/Post instead of an obsolete raw event link.
+- Preserved every source punch and stored historical repairs in the append-only audited occurrence-override ledger.
+- Production verification found zero resolved punch links outside their shift working window and confirmed real overnight clock-in/out pairs share one occurrence and operational date.
+- Full validation passed: type checking, lint, 70 test files / 356 tests, and the production build.
+- Applied targeted production migrations `20260824224500_authoritative_overnight_occurrence_resolution.sql` and `20260824230000_time_maintenance_canonical_occurrence_display.sql`.
+
 ### Overnight manual-punch workday integrity
 
 - Corrected Gaston Musambay's 08/13/2026 6:00 PM clock-in so it belongs to the 08/13/2026 operational shift and pairs with the 08/14/2026 6:00 AM clock-out.
