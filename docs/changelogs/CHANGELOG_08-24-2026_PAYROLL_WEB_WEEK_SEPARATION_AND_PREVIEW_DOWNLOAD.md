@@ -36,3 +36,6 @@ Date: 08/24/2026
 - Production build passed.
 - Workbook XML/package validation passed.
 - Git whitespace validation passed.
+- Cloudflare deployment dry run passed.
+- Live custom-domain and Worker-fallback health/readiness checks passed.
+- Deployed Cloudflare Worker version: `59ee2599-8e27-467c-9eb1-06050a98269a`.

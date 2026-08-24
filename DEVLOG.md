@@ -36,6 +36,7 @@ deployment status, or major workflow assumptions change.
 - Hardened workbook XML generation against illegal control characters while retaining correct XML escaping for names and other text.
 - No punches, schedules, payroll calculations, locked exports, or audit records were rewritten.
 - Full validation passed: type checking, lint, 72 test files / 369 tests, production build, workbook XML/package validation, and Git whitespace validation.
+- Deployed Cloudflare Worker version `59ee2599-8e27-467c-9eb1-06050a98269a`; custom-domain and Worker-fallback health/readiness checks passed, and the live payroll asset contains the weekly-summary release.
 
 ### Weekly payroll export by payroll week
 
