@@ -6,11 +6,26 @@ export interface RouteAccessPolicy {
   anyOf: readonly PermissionCode[]
 }
 
+export const scheduleTeamViewPermissions = [
+  'schedule.view',
+  'scheduler.view',
+  'scheduler.manage',
+  'schedule.manage',
+  'schedule.publish',
+  'schedule.delete_shift',
+  'schedule.override_warnings',
+] as const
+
+export const scheduleRoutePermissions = [
+  'schedule.self.view',
+  ...scheduleTeamViewPermissions,
+] as const
+
 export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = {
   '/': { anyOf: ['operations.view'] },
   '/account-security': { anyOf: [] },
   '/actions': { anyOf: ['actions.self.view'] },
-  '/schedule': { anyOf: ['schedule.view', 'schedule.manage', 'schedule.publish', 'schedule.delete_shift', 'schedule.override_warnings'] },
+  '/schedule': { anyOf: scheduleRoutePermissions },
   '/scheduler': { anyOf: ['scheduler.view', 'scheduler.manage', 'schedule.manage'] },
   '/events': { anyOf: ['events.view', 'events.manage', 'shift_pool.view', 'shift_pool.manage'] },
   '/time': { anyOf: ['time.self.view', 'time.punch', 'time.view', 'time.manage', 'time.export_payroll'] },

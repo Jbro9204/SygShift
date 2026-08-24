@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 const root = process.cwd()
 const navigationSource = readFileSync(join(root, 'src', 'app', 'navigation.ts'), 'utf8')
+const accessPolicySource = readFileSync(join(root, 'src', 'app', 'accessPolicy.ts'), 'utf8')
 const accessControlPage = readFileSync(join(root, 'src', 'pages', 'AccessControlPage.tsx'), 'utf8')
 const appShell = readFileSync(join(root, 'src', 'components', 'AppShell.tsx'), 'utf8')
 const peoplePage = readFileSync(join(root, 'src', 'pages', 'PeoplePage.tsx'), 'utf8')
@@ -38,6 +39,7 @@ describe('permission surface guardrails', () => {
   it('wires permission-backed navigation for every permission-controlled workspace', () => {
     for (const permission of [
       'operations.view',
+      'schedule.self.view',
       'schedule.view',
       'scheduler.view',
       'events.view',
@@ -53,7 +55,7 @@ describe('permission surface guardrails', () => {
       'admin.users.view',
       'admin.roles.view',
     ]) {
-      expect(navigationSource).toContain(permission)
+      expect(`${navigationSource}\n${accessPolicySource}`).toContain(permission)
     }
   })
 

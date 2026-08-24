@@ -12,6 +12,7 @@ const licensingCenterPage = readFileSync(join(root, 'src', 'pages', 'LicensingCe
 const navigation = readFileSync(join(root, 'src', 'app', 'navigation.ts'), 'utf8')
 const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
 const employeeSelfScheduleScopeMigration = readFileSync(join(root, 'supabase', 'migrations', '20260729191000_employee_self_schedule_scope.sql'), 'utf8')
+const scheduleSelfViewPermissionMigration = readFileSync(join(root, 'supabase', 'migrations', '20260824113000_schedule_self_view_permission.sql'), 'utf8')
 const schedulerRemovalPersistenceMigration = readFileSync(join(root, 'supabase', 'migrations', '20260730183000_scheduler_removal_draft_persistence.sql'), 'utf8')
 const supabaseClient = readFileSync(join(root, 'src', 'lib', 'supabase.ts'), 'utf8')
 const userAdminPage = readFileSync(join(root, 'src', 'pages', 'UserAdminPage.tsx'), 'utf8')
@@ -217,14 +218,15 @@ describe('button layout guardrails', () => {
 
   it('keeps employee self-schedule access visible but backend scoped', () => {
     expect(navigation).toContain("label: 'Schedule', path: '/schedule', icon: CalendarDays, permissions:")
-    expect(schedulePage).toContain('const canViewTeamSchedule = sessionHasAnyPermission(sessionQuery.data, [')
-    expect(schedulePage).toContain("'schedule.manage'")
+    expect(schedulePage).toContain('const canViewTeamSchedule = sessionHasAnyPermission(sessionQuery.data, scheduleTeamViewPermissions)')
     expect(schedulePage).toContain("setScheduleView('employee')")
     expect(schedulePage).toContain("placeholder={canViewTeamSchedule ? 'Search sites or people' : 'Search your schedule'}")
 
     expect(employeeSelfScheduleScopeMigration).toContain('viewer_assignment.employee_id = viewer_employee_id')
     expect(employeeSelfScheduleScopeMigration).not.toContain('or not shift.requires_armed')
     expect(employeeSelfScheduleScopeMigration).toContain('Operations roles see team coverage')
+    expect(scheduleSelfViewPermissionMigration).toContain("public.has_effective_permission('schedule.self.view')")
+    expect(scheduleSelfViewPermissionMigration).toContain('viewer_assignment.employee_id = viewer_employee_id')
   })
 
   it('keeps trusted-device MFA headers attached without dropping Supabase auth headers', () => {

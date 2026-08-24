@@ -23,6 +23,22 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/24/2026
+
+### Personal and company-wide schedule access
+
+- Added the locked baseline permission `schedule.self.view` (`View own schedule`) for every system role so active employees can always reach their own published schedule without an individual permission grant.
+- Redefined the existing `schedule.view` permission as `View all schedules`. It remains the elevated company-wide schedule permission and now requires MFA.
+- Removed inherited company-wide schedule access from Guard and Recruiting & Licensing while preserving every other role and person-specific permission.
+- Kept Dispatch, Scheduler, Supervisor, and Admin access to company-wide schedules through their existing elevated roles.
+- Enforced the separation in the production schedule database function: personal-only users receive only shifts assigned to their employee record, while authorized team viewers retain all schedule coverage and draft access.
+- Confirmed Zachary Ward receives personal schedule access through the Recruiting & Licensing role; no person-specific grant was added.
+- Added route, navigation, UI, SQL-boundary, and regression tests for the access split.
+- Full validation passed: type checking, lint, 66 test files / 337 tests, and the production build.
+- Applied targeted production migration `20260824113000_schedule_self_view_permission.sql`.
+- Deployed Cloudflare Worker version `cc3cecf7-a3c9-4565-a43b-ac5514bb1e8c`.
+- Live production health returned `ok` and readiness returned `ready` on the custom domain; the Worker fallback health endpoint also returned `ok`.
+
 ## 08/23/2026
 
 ### MFA-aware onboarding emails

@@ -18,6 +18,7 @@ import {
   UsersRound,
   type LucideIcon,
 } from 'lucide-react'
+import { scheduleRoutePermissions } from './accessPolicy'
 export interface NavigationItem {
   label: string
   path: string
@@ -35,7 +36,7 @@ export const navigationGroups: NavigationGroup[] = [
     label: 'Operations',
     items: [
       { label: 'Home', path: '/', icon: LayoutDashboard, permissions: ['operations.view'] },
-      { label: 'Schedule', path: '/schedule', icon: CalendarDays, permissions: ['schedule.view', 'schedule.manage', 'schedule.publish', 'schedule.delete_shift', 'schedule.override_warnings'] },
+      { label: 'Schedule', path: '/schedule', icon: CalendarDays, permissions: [...scheduleRoutePermissions] },
       { label: 'Scheduler', path: '/scheduler', icon: CalendarPlus, permissions: ['scheduler.view', 'scheduler.manage', 'schedule.manage'] },
       { label: 'Events & Openings', path: '/events', icon: CalendarClock, permissions: ['events.view', 'events.manage', 'shift_pool.view', 'shift_pool.manage'] },
       { label: 'Time & Attendance', path: '/time', icon: Timer, permissions: ['time.self.view', 'time.punch', 'time.view', 'time.manage', 'time.export_payroll'] },

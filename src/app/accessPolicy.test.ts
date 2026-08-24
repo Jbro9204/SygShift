@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { canAccessRoute, hasAnyEffectivePermission, hasEffectivePermission, routeAccessPolicies } from './accessPolicy'
+import {
+  canAccessRoute,
+  hasAnyEffectivePermission,
+  hasEffectivePermission,
+  routeAccessPolicies,
+  scheduleRoutePermissions,
+  scheduleTeamViewPermissions,
+} from './accessPolicy'
 import { navigationGroups } from './navigation'
 
 const session = (permissions: string[]) => ({ permissions })
@@ -14,6 +21,13 @@ describe('central access policy', () => {
   it('denies unknown and unpermitted routes', () => {
     expect(canAccessRoute('/schedule', session([]))).toBe(false)
     expect(canAccessRoute('/not-a-real-route', session(['operations.view']))).toBe(false)
+  })
+
+  it('separates personal schedule access from company-wide schedule access', () => {
+    expect(canAccessRoute('/schedule', session(['schedule.self.view']))).toBe(true)
+    expect(scheduleRoutePermissions).toContain('schedule.self.view')
+    expect(scheduleTeamViewPermissions).toContain('schedule.view')
+    expect(scheduleTeamViewPermissions).not.toContain('schedule.self.view')
   })
 
   it('allows account security so users can complete required security setup', () => {

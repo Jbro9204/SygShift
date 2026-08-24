@@ -42,6 +42,7 @@ import { processNotificationBatch } from '../data/operations'
 import { parseImportedScheduleNote, sourceReferenceLabel } from '../data/sourceNotes'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualClockTime, operationalToday } from '../lib/time'
+import { scheduleTeamViewPermissions } from '../app/accessPolicy'
 
 interface OpenShiftFormState {
   mode: 'post' | 'event'
@@ -194,7 +195,7 @@ function staffingCandidateName(
   return employee ? builderEmployeeName(employee) : candidate.name
 }
 
-function sessionHasAnyPermission(session: SessionContext | null | undefined, permissions: string[]): boolean {
+function sessionHasAnyPermission(session: SessionContext | null | undefined, permissions: readonly string[]): boolean {
   return permissions.some((permission) => session?.permissions.includes(permission))
 }
 
@@ -2018,15 +2019,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       'schedule.delete_shift',
       'schedule.override_warnings',
     ])
-  const canViewTeamSchedule = sessionHasAnyPermission(sessionQuery.data, [
-      'schedule.view',
-      'scheduler.view',
-      'scheduler.manage',
-      'schedule.manage',
-      'schedule.publish',
-      'schedule.delete_shift',
-      'schedule.override_warnings',
-    ])
+  const canViewTeamSchedule = sessionHasAnyPermission(sessionQuery.data, scheduleTeamViewPermissions)
   const canUseScheduler = canBuildSchedule && isSchedulerHome
   const canEditScheduler = canManageSchedule && isSchedulerHome
   const employeeOnlySchedule = sessionQuery.isSuccess && !canViewTeamSchedule && !isSchedulerHome
