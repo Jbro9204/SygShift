@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 08/24/2026
 
+### Time Maintenance scheduled-hours boundary
+
+- Corrected the scheduled-hours range rule so an overnight shift belongs to the operational date on which it starts.
+- Prevented a prior-day overnight shift from leaking into the next selected Time Maintenance range merely because its clock-out occurs after midnight.
+- Excluded canceled shifts from the scheduled-hours summary.
+- Verified Bernard Petermon's 08/09/2026 through 08/22/2026 production data: the former overlap rule returned 9 shifts / 64.00 hours; the corrected operational-date rule returns 8 shifts / 56.00 hours.
+- Confirmed `Needs attention: 0` is correct for this record: 56 hours are divided across two payroll weeks at 28 hours per week, worked time matches scheduled time, and no correction or payroll exception is pending.
+- Added regression coverage for the operational-date boundary and the removal of the old overlap rule.
+- Full validation passed: type checking, lint, 67 test files / 339 tests, and the production build.
+- Applied targeted production migration `20260824170000_time_maintenance_operational_schedule_range.sql`; this database-only correction became live immediately and did not require a Worker redeployment.
+
 ### Personal and company-wide schedule access
 
 - Added the locked baseline permission `schedule.self.view` (`View own schedule`) for every system role so active employees can always reach their own published schedule without an individual permission grant.
