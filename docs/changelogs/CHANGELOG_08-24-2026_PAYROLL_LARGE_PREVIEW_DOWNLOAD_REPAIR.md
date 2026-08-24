@@ -22,4 +22,6 @@ Date: 08/24/2026
 - Lint passed with zero warnings.
 - 72 test files / 370 tests passed.
 - Production build passed.
-
+- Cloudflare deployment dry run passed.
+- Live custom-domain and Worker-fallback health/readiness checks passed.
+- Deployed Cloudflare Worker version: `18034a71-2c86-419c-b52e-b6368e9db473`.

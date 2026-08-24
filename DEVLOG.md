@@ -33,6 +33,7 @@ deployment status, or major workflow assumptions change.
 - Preserved workbook layout, Week 1 / Week 2 separation, employee detail sheets, and all payroll calculations.
 - No production punches, schedules, payroll records, locked exports, or audit history were modified.
 - Full validation passed: type checking, lint, 72 test files / 370 tests, and the production build.
+- Deployed Cloudflare Worker version `18034a71-2c86-419c-b52e-b6368e9db473`; custom-domain and Worker-fallback health/readiness checks passed, and the live payroll asset contains the bounded workbook packager.
 
 ### Payroll web week separation and preview download reliability
 
