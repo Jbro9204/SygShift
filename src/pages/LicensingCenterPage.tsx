@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { getSessionContext } from '../data/auth'
 import {
   formatEligibility,
   formatRole,
@@ -533,11 +534,17 @@ function CommunicationModal({
 }
 
 function EmployeeLicensingProfile({
+  canCommunicate,
+  canEditCredentials,
+  canManageEmployeeProfile,
   center,
   employee,
   onClose,
   onEditEmployee,
 }: {
+  canCommunicate: boolean
+  canEditCredentials: boolean
+  canManageEmployeeProfile: boolean
   center: LicensingCenter
   employee: LicensingEmployee
   onClose: () => void
@@ -588,6 +595,7 @@ function EmployeeLicensingProfile({
   }, [addCredentialTarget?.credentialTypeId, credentialChoices, firstAction?.credentialTypeId, selectedCredentialTypeId])
 
   function openCredentialEditor(credentialTypeId: string | null | undefined = selectedCredential?.credentialTypeId) {
+    if (!canEditCredentials) return
     const targetCredential = credentialChoices.find((credential) => credential.credentialTypeId === credentialTypeId)
       ?? addCredentialTarget
     if (!targetCredential) return
@@ -658,41 +666,49 @@ function EmployeeLicensingProfile({
         </section>
       ) : null}
 
-      <div className="licensing-profile-actions">
-        <button className="primary-action" disabled={!addCredentialTarget} onClick={() => openCredentialEditor(addCredentialTarget?.credentialTypeId)} type="button">
-          <FileText aria-hidden="true" size={17} />
-          Add credential / license
-        </button>
-        <button className="secondary-button" onClick={() => onEditEmployee(employee)} type="button">
-          <Pencil aria-hidden="true" size={17} />
-          Edit employee profile
-        </button>
-      </div>
-
-      <section className="licensing-add-credential-panel" aria-label="Add credential or license">
-        <div>
-          <span className="eyebrow">Add or update</span>
-          <h3>Add credential / license</h3>
-          <p>
-            Choose the license or credential type, then open the form to add numbers, dates, notes,
-            and supporting documents.
-          </p>
+      {canEditCredentials || canManageEmployeeProfile ? (
+        <div className="licensing-profile-actions">
+          {canEditCredentials ? (
+            <button className="primary-action" disabled={!addCredentialTarget} onClick={() => openCredentialEditor(addCredentialTarget?.credentialTypeId)} type="button">
+              <FileText aria-hidden="true" size={17} />
+              Add credential / license
+            </button>
+          ) : null}
+          {canManageEmployeeProfile ? (
+            <button className="secondary-button" onClick={() => onEditEmployee(employee)} type="button">
+              <Pencil aria-hidden="true" size={17} />
+              Edit employee profile
+            </button>
+          ) : null}
         </div>
-        <label className="select-field">
-          <span>Choose credential/license</span>
-          <select
-            disabled={credentialChoices.length === 0}
-            onChange={(event) => setSelectedCredentialTypeId(event.target.value)}
-            value={selectedCredential?.credentialTypeId ?? ''}
-          >
-            <CredentialChoiceOptions credentials={credentialChoices} />
-          </select>
-        </label>
-        <button className="primary-action" disabled={!selectedCredential} onClick={() => openCredentialEditor()} type="button">
-          <FileText aria-hidden="true" size={17} />
-          Open add/update form
-        </button>
-      </section>
+      ) : null}
+
+      {canEditCredentials ? (
+        <section className="licensing-add-credential-panel" aria-label="Add credential or license">
+          <div>
+            <span className="eyebrow">Add or update</span>
+            <h3>Add credential / license</h3>
+            <p>
+              Choose the license or credential type, then open the form to add numbers, dates, notes,
+              and supporting documents.
+            </p>
+          </div>
+          <label className="select-field">
+            <span>Choose credential/license</span>
+            <select
+              disabled={credentialChoices.length === 0}
+              onChange={(event) => setSelectedCredentialTypeId(event.target.value)}
+              value={selectedCredential?.credentialTypeId ?? ''}
+            >
+              <CredentialChoiceOptions credentials={credentialChoices} />
+            </select>
+          </label>
+          <button className="primary-action" disabled={!selectedCredential} onClick={() => openCredentialEditor()} type="button">
+            <FileText aria-hidden="true" size={17} />
+            Open add/update form
+          </button>
+        </section>
+      ) : null}
 
       <section className="licensing-credential-workspace" aria-label="Employee credential workspace">
         <div className="licensing-credential-picker">
@@ -750,18 +766,22 @@ function EmployeeLicensingProfile({
                 <div><dt>Last notice</dt><dd>{formatTimestamp(selectedCredential.lastEmployeeNotification)}</dd></div>
               </dl>
               {selectedCredential.rejectionReason ? <p className="credential-rejection-note">{selectedCredential.rejectionReason}</p> : null}
-              <div className="licensing-selected-credential__actions">
-                <button className="primary-action" onClick={() => setEditingCredentialTypeId(selectedCredential.credentialTypeId)} type="button">
-                  <Pencil aria-hidden="true" size={17} />
-                  {selectedCredential.credentialId ? 'Manage selected credential' : 'Add this credential/license'}
-                </button>
-                {selectedCredential.credentialId ? (
+              {canEditCredentials || (canCommunicate && selectedCredential.credentialId) ? (
+                <div className="licensing-selected-credential__actions">
+                  {canEditCredentials ? (
+                    <button className="primary-action" onClick={() => setEditingCredentialTypeId(selectedCredential.credentialTypeId)} type="button">
+                      <Pencil aria-hidden="true" size={17} />
+                      {selectedCredential.credentialId ? 'Manage selected credential' : 'Add this credential/license'}
+                    </button>
+                  ) : null}
+                  {canCommunicate && selectedCredential.credentialId ? (
                   <button className="secondary-button" onClick={() => setCommunicatingCredentialTypeId(selectedCredential.credentialTypeId)} type="button">
                     <Mail aria-hidden="true" size={17} />
                     Message about credential
                   </button>
-                ) : null}
-              </div>
+                  ) : null}
+                </div>
+              ) : null}
             </>
           ) : (
             <div className="licensing-empty">
@@ -774,7 +794,7 @@ function EmployeeLicensingProfile({
 
       </section>
 
-      {editingCredential ? (
+      {canEditCredentials && editingCredential ? (
         <CredentialEditModal
           credential={editingCredential}
           credentialTypes={center.credentialTypes}
@@ -783,7 +803,7 @@ function EmployeeLicensingProfile({
           onClose={() => setEditingCredentialTypeId(null)}
         />
       ) : null}
-      {communicatingCredential ? (
+      {canCommunicate && communicatingCredential ? (
         <CommunicationModal
           credential={communicatingCredential}
           employee={employee}
@@ -807,6 +827,11 @@ export function LicensingCenterPage() {
     enabled: isSupabaseConfigured,
     queryFn: getLicensingCenter,
     queryKey: ['licensing-center'],
+  })
+  const sessionQuery = useQuery({
+    enabled: isSupabaseConfigured,
+    queryFn: getSessionContext,
+    queryKey: ['session-context'],
   })
 
   const employeeById = useMemo(() => new Map((centerQuery.data?.employees ?? []).map((employee) => [employee.employeeId, employee])), [centerQuery.data?.employees])
@@ -868,6 +893,8 @@ export function LicensingCenterPage() {
   }
 
   const center = centerQuery.data
+  const canEditCredentials = center.permissions.canManage
+    || Boolean(sessionQuery.data?.permissions.includes('directory.edit_credentials'))
   const selectedEmployee = selectedEmployeeId
     ? center.employees.find((employee) => employee.employeeId === selectedEmployeeId) ?? null
     : null
@@ -1065,6 +1092,9 @@ export function LicensingCenterPage() {
 
       {selectedEmployee ? (
         <EmployeeLicensingProfile
+          canCommunicate={center.permissions.canCommunicate}
+          canEditCredentials={canEditCredentials}
+          canManageEmployeeProfile={center.permissions.canManage}
           center={center}
           employee={selectedEmployee}
           onClose={() => setSelectedEmployeeId(null)}

@@ -40,6 +40,11 @@ describe('central access policy', () => {
     expect(canAccessRoute('/time/accountability', session(['time.manage']))).toBe(false)
   })
 
+  it('makes credential-editor access to the Licensing Center functional without granting broader licensing management', () => {
+    expect(canAccessRoute('/licensing', session(['directory.edit_credentials']))).toBe(true)
+    expect(canAccessRoute('/licensing', session([]))).toBe(false)
+  })
+
   it('keeps every navigation destination covered by the route policy', () => {
     const navigationPaths = navigationGroups.flatMap((group) => group.items.map((item) => item.path))
     expect(navigationPaths.every((path) => path in routeAccessPolicies)).toBe(true)

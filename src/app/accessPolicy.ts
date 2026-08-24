@@ -40,7 +40,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/time/payroll': { anyOf: ['time.view', 'time.manage', 'time.export_payroll'] },
   '/time/rules': { anyOf: ['time.manage', 'time.export_payroll'] },
   '/people': { anyOf: ['directory.view', 'directory.edit_basic', 'availability.manage'] },
-  '/licensing': { anyOf: ['licensing.view', 'licensing.manage', 'licensing.configure', 'licensing.communicate'] },
+  '/licensing': { anyOf: ['licensing.view', 'licensing.manage', 'licensing.configure', 'licensing.communicate', 'directory.edit_credentials'] },
   '/availability': { anyOf: ['availability.view', 'availability.manage'] },
   '/sites': { anyOf: ['sites.view', 'sites.manage'] },
   '/patrol': { anyOf: ['patrol.view', 'patrol.manage'] },

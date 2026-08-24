@@ -25,6 +25,20 @@ deployment status, or major workflow assumptions change.
 
 ## 08/24/2026
 
+### Role and permission QA with Guard least-privilege hardening
+
+- Audited the live permission catalog, all six system roles, 47 active employee assignments, route/navigation policies, protected page actions, public database functions, and row-level database policies.
+- Reduced the Guard role to the approved 11-permission self-service baseline: Home, own action center, own published schedule, own time and time clock, own availability, own requests, employee announcements, eligible events/open shifts, and assigned training.
+- Removed team-wide time visibility and accountability-event creation from Guards.
+- Made Guard request, availability, and announcement viewing usable without MFA while keeping each database read restricted to the signed-in employee or the intended announcement audience.
+- Restricted raw employee, schedule, shift, assignment, availability, site, post, event, and announcement reads at the production database boundary.
+- Made the existing Scheduler and Supervisor `Edit credentials` permission functional by allowing credential editors into the Licensing Center while independently hiding employee-profile, configuration, and communication actions they are not permitted to use.
+- Preserved all employee role assignments: 35 Guards, 3 Dispatchers, 1 Scheduler, 5 Supervisors, 2 Admins, and 1 Recruiting & Licensing employee. No additional access-role assignment or person-specific override exists.
+- Verified all 47 active employees have an enabled account.
+- Production role impersonation confirmed a Guard can see only their own published assignment records and cannot access team or Licensing Center data; Scheduler and Supervisor credential editing succeeds only in an MFA-verified session.
+- Full validation passed: type checking, lint, 68 test files / 347 tests, production build, and access-control inventory.
+- Deployed Cloudflare Worker version `5d17d26a-e401-460b-8847-914bfa77281f`; live health, readiness, login-route, and static-asset checks passed.
+
 ### Time Maintenance scheduled-hours boundary
 
 - Corrected the scheduled-hours range rule so an overnight shift belongs to the operational date on which it starts.

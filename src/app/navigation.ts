@@ -47,7 +47,7 @@ export const navigationGroups: NavigationGroup[] = [
     label: 'Workforce',
     items: [
       { label: 'Directory', path: '/people', icon: UsersRound, permissions: ['directory.view', 'directory.edit_basic', 'availability.manage'] },
-      { label: 'Licensing Center', path: '/licensing', icon: BadgeCheck, permissions: ['licensing.view', 'licensing.manage', 'licensing.configure', 'licensing.communicate'] },
+      { label: 'Licensing Center', path: '/licensing', icon: BadgeCheck, permissions: ['licensing.view', 'licensing.manage', 'licensing.configure', 'licensing.communicate', 'directory.edit_credentials'] },
       { label: 'Availability', path: '/availability', icon: CalendarCheck2, permissions: ['availability.view', 'availability.manage'] },
       { label: 'Sites & Posts', path: '/sites', icon: Building2, permissions: ['sites.view', 'sites.manage'] },
       { label: 'Patrol', path: '/patrol', icon: MapPinned, permissions: ['patrol.view', 'patrol.manage'] },
