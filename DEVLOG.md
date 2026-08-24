@@ -25,6 +25,15 @@ deployment status, or major workflow assumptions change.
 
 ## 08/24/2026
 
+### Large payroll preview download repair
+
+- Reproduced the production `Maximum call stack size exceeded` error with a 1,200-row payroll workbook fixture.
+- Replaced unsafe large-array expansion in the XLSX ZIP writer with bounded typed-array writes and one final allocation.
+- Added explicit ZIP-format limit checks so unsupported sizes fail with a controlled explanation instead of creating a broken workbook.
+- Preserved workbook layout, Week 1 / Week 2 separation, employee detail sheets, and all payroll calculations.
+- No production punches, schedules, payroll records, locked exports, or audit history were modified.
+- Full validation passed: type checking, lint, 72 test files / 370 tests, and the production build.
+
 ### Payroll web week separation and preview download reliability
 
 - Separated the browser payroll summary into distinct Sunday-through-Saturday Week 1 and Week 2 sections instead of presenting only one combined pay-period total.

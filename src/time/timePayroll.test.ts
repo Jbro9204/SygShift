@@ -486,6 +486,32 @@ describe('payroll export readiness', () => {
     expect(packageText).toContain('Jordan &amp; &lt;Payroll&gt;')
   })
 
+  it('packages production-sized payroll workbooks without overflowing the browser call stack', async () => {
+    const sourceRow = cleanReview.rows[0]
+    const rows = Array.from({ length: 1_200 }, (_, index) => ({
+      ...sourceRow,
+      payrollOccurrenceKey: `large-payroll-occurrence-${index + 1}`,
+    }))
+    const review: TimekeepingReview = {
+      ...cleanReview,
+      rows,
+      summary: {
+        ...cleanReview.summary,
+        grossMinutes: sourceRow.grossMinutes * rows.length,
+        paidMinutes: sourceRow.paidMinutes * rows.length,
+        readyCount: rows.length,
+        regularMinutes: sourceRow.regularMinutes * rows.length,
+        rowCount: rows.length,
+      },
+    }
+
+    const workbook = createPayrollWorkbookBlob({ exportType: 'Preview', review })
+    const bytes = new Uint8Array(await workbook.arrayBuffer())
+
+    expect(workbook.size).toBeGreaterThan(500_000)
+    expect(Array.from(bytes.slice(0, 4))).toEqual([0x50, 0x4b, 0x03, 0x04])
+  })
+
   it('supports custom payroll export ranges', () => {
     const sheets = buildPayrollWorkbookSheets({
       exportType: 'Preview',

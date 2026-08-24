@@ -1219,70 +1219,114 @@ function crc32(bytes: Uint8Array): number {
   return (crc ^ -1) >>> 0
 }
 
-function writeUInt32(output: number[], value: number) {
-  output.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff)
+class ZipByteWriter {
+  private readonly chunks: Uint8Array[] = []
+  private totalLength = 0
+
+  get length(): number {
+    return this.totalLength
+  }
+
+  writeUInt16(value: number) {
+    this.writeBytes(Uint8Array.of(value & 0xff, (value >>> 8) & 0xff))
+  }
+
+  writeUInt32(value: number) {
+    this.writeBytes(Uint8Array.of(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff))
+  }
+
+  writeBytes(bytes: Uint8Array) {
+    if (bytes.byteLength === 0) return
+    this.chunks.push(bytes)
+    this.totalLength += bytes.byteLength
+  }
+
+  toUint8Array(): Uint8Array {
+    const output = new Uint8Array(this.totalLength)
+    let offset = 0
+    for (const chunk of this.chunks) {
+      output.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    return output
+  }
 }
 
-function writeUInt16(output: number[], value: number) {
-  output.push(value & 0xff, (value >>> 8) & 0xff)
+function assertZip16(value: number, label: string) {
+  if (!Number.isInteger(value) || value < 0 || value > 0xffff) {
+    throw new Error(`Payroll workbook ${label} exceeds the supported ZIP format limit.`)
+  }
 }
 
-function writeZipEntry(output: number[], name: string, content: Uint8Array): { crc: number; nameBytes: Uint8Array; offset: number; size: number } {
+function assertZip32(value: number, label: string) {
+  if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) {
+    throw new Error(`Payroll workbook ${label} exceeds the supported ZIP format limit.`)
+  }
+}
+
+function writeZipEntry(output: ZipByteWriter, name: string, content: Uint8Array): { crc: number; nameBytes: Uint8Array; offset: number; size: number } {
   const nameBytes = new TextEncoder().encode(name)
   const crc = crc32(content)
   const offset = output.length
-  writeUInt32(output, 0x04034b50)
-  writeUInt16(output, 20)
-  writeUInt16(output, 0)
-  writeUInt16(output, 0)
-  writeUInt16(output, 0)
-  writeUInt16(output, 0)
-  writeUInt32(output, crc)
-  writeUInt32(output, content.length)
-  writeUInt32(output, content.length)
-  writeUInt16(output, nameBytes.length)
-  writeUInt16(output, 0)
-  output.push(...nameBytes, ...content)
+  assertZip16(nameBytes.length, 'entry name')
+  assertZip32(content.length, 'entry size')
+  assertZip32(offset, 'entry offset')
+  output.writeUInt32(0x04034b50)
+  output.writeUInt16(20)
+  output.writeUInt16(0)
+  output.writeUInt16(0)
+  output.writeUInt16(0)
+  output.writeUInt16(0)
+  output.writeUInt32(crc)
+  output.writeUInt32(content.length)
+  output.writeUInt32(content.length)
+  output.writeUInt16(nameBytes.length)
+  output.writeUInt16(0)
+  output.writeBytes(nameBytes)
+  output.writeBytes(content)
   return { crc, nameBytes, offset, size: content.length }
 }
 
 function createZip(files: Array<{ name: string; text: string }>): Uint8Array {
-  const output: number[] = []
+  assertZip16(files.length, 'entry count')
+  const output = new ZipByteWriter()
   const encoder = new TextEncoder()
   const entries = files.map((file) => writeZipEntry(output, file.name, encoder.encode(file.text)))
   const centralDirectoryOffset = output.length
 
   for (const entry of entries) {
-    writeUInt32(output, 0x02014b50)
-    writeUInt16(output, 20)
-    writeUInt16(output, 20)
-    writeUInt16(output, 0)
-    writeUInt16(output, 0)
-    writeUInt16(output, 0)
-    writeUInt16(output, 0)
-    writeUInt32(output, entry.crc)
-    writeUInt32(output, entry.size)
-    writeUInt32(output, entry.size)
-    writeUInt16(output, entry.nameBytes.length)
-    writeUInt16(output, 0)
-    writeUInt16(output, 0)
-    writeUInt16(output, 0)
-    writeUInt16(output, 0)
-    writeUInt32(output, 0)
-    writeUInt32(output, entry.offset)
-    output.push(...entry.nameBytes)
+    output.writeUInt32(0x02014b50)
+    output.writeUInt16(20)
+    output.writeUInt16(20)
+    output.writeUInt16(0)
+    output.writeUInt16(0)
+    output.writeUInt16(0)
+    output.writeUInt16(0)
+    output.writeUInt32(entry.crc)
+    output.writeUInt32(entry.size)
+    output.writeUInt32(entry.size)
+    output.writeUInt16(entry.nameBytes.length)
+    output.writeUInt16(0)
+    output.writeUInt16(0)
+    output.writeUInt16(0)
+    output.writeUInt16(0)
+    output.writeUInt32(0)
+    output.writeUInt32(entry.offset)
+    output.writeBytes(entry.nameBytes)
   }
 
   const centralDirectorySize = output.length - centralDirectoryOffset
-  writeUInt32(output, 0x06054b50)
-  writeUInt16(output, 0)
-  writeUInt16(output, 0)
-  writeUInt16(output, entries.length)
-  writeUInt16(output, entries.length)
-  writeUInt32(output, centralDirectorySize)
-  writeUInt32(output, centralDirectoryOffset)
-  writeUInt16(output, 0)
-  return new Uint8Array(output)
+  assertZip32(centralDirectoryOffset, 'central-directory offset')
+  assertZip32(centralDirectorySize, 'central-directory size')
+  output.writeUInt32(0x06054b50)
+  output.writeUInt16(0)
+  output.writeUInt16(0)
+  output.writeUInt16(entries.length)
+  output.writeUInt16(entries.length)
+  output.writeUInt32(centralDirectorySize)
+  output.writeUInt32(centralDirectoryOffset)
+  output.writeUInt16(0)
+  return output.toUint8Array()
 }
 
 export function createPayrollWorkbookBlob(input: PayrollWorkbookInput): Blob {
