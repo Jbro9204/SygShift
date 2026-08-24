@@ -44,9 +44,12 @@ import { completedPayrollPeriod, currentPayrollPeriod, formatUsDateKey, shiftPay
 import { payrollExportFileName, payrollLockBlocker, payrollReadinessPercent, workedTimePayrollReview } from './timePayroll'
 import {
   downloadPayrollWorkbook,
-  getPayrollAccountabilitySummary,
-  payrollPayableMinutes,
-  summarizePayrollAccountabilityByEmployee,
+  payrollWeeklyTotalPayableMinutes,
+  payrollWorkbookWeekForRow,
+  summarizePayrollWorkbookByWeek,
+  type PayrollWeeklySummaryGroup,
+  type PayrollWorkbookDownloadResult,
+  type PayrollWorkbookWeek,
 } from './payrollWorkbook'
 import {
   TimeAlertCard,
@@ -64,6 +67,11 @@ interface PayrollDownloadRequest {
 interface PayrollWorkbookDownload {
   accountabilityEvents: PayrollAccountabilityEvent[]
   detail: PayrollExportDetail
+}
+
+interface PayrollSummarySelection {
+  employeeId: string
+  weekStartsOn: string
 }
 
 function formatPeriod(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>): string {
@@ -211,8 +219,8 @@ function PayrollExportPanel({
   exportMutation,
   lockBlockedReason,
   note,
-  onDownloadPreview,
   onNoteChange,
+  previewMutation,
   review,
   rules,
 }: {
@@ -221,8 +229,8 @@ function PayrollExportPanel({
   exportMutation: UseMutationResult<PayrollWorkbookDownload, Error, string>
   lockBlockedReason: string
   note: string
-  onDownloadPreview: () => void
   onNoteChange: (value: string) => void
+  previewMutation: UseMutationResult<PayrollWorkbookDownloadResult, Error, void>
   review: TimekeepingReview
   rules?: PayrollRules
 }) {
@@ -251,9 +259,10 @@ function PayrollExportPanel({
         </label>
         <div className="payroll-export-panel__actions">
           <TimeButton
-            disabled={review.rows.length === 0}
+            disabled={(review.rows.length === 0 && accountabilityEvents.length === 0) || previewMutation.isPending}
             icon={Download}
-            onClick={onDownloadPreview}
+            loading={previewMutation.isPending}
+            onClick={() => previewMutation.mutate()}
             variant="secondary"
           >
             Download Preview Workbook
@@ -275,6 +284,12 @@ function PayrollExportPanel({
           <small>{accountabilityEvents.length} accountability/time-off item{accountabilityEvents.length === 1 ? '' : 's'} will be included in the workbook.</small>
         ) : null}
         {rules ? <small>Workbook dates use MM/DD/YYYY and times show civilian plus military time.</small> : null}
+        {previewMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">Preview download failed: {previewMutation.error.message}</p> : null}
+        {previewMutation.isSuccess ? (
+          <p className="form-feedback form-feedback--success" role="status">
+            Preview workbook downloaded: {previewMutation.data.fileName}.
+          </p>
+        ) : null}
         {exportMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{exportMutation.error.message}</p> : null}
         {exportMutation.isSuccess ? (
           <p className="form-feedback form-feedback--success" role="status">
@@ -349,55 +364,22 @@ function PayrollExceptions({
 }
 
 function PayrollEmployeeSummaryTable({
-  accountabilityEvents,
-  onSelectEmployee,
-  selectedEmployeeId,
-  summaries,
+  groups,
+  onSelectSummary,
+  selectedSummary,
 }: {
-  accountabilityEvents: PayrollAccountabilityEvent[]
-  onSelectEmployee: (employeeId: string) => void
-  selectedEmployeeId: string | null
-  summaries: PayrollEmployeeSummary[]
+  groups: PayrollWeeklySummaryGroup[]
+  onSelectSummary: (selection: PayrollSummarySelection) => void
+  selectedSummary: PayrollSummarySelection | null
 }) {
-  const accountabilitySummaries = useMemo(
-    () => summarizePayrollAccountabilityByEmployee(accountabilityEvents),
-    [accountabilityEvents],
-  )
-  const tableSummaries = useMemo(() => {
-    const employeeIds = [...new Set([
-      ...summaries.map((summary) => summary.employeeId),
-      ...accountabilitySummaries.map((summary) => summary.employeeId),
-    ])]
+  const visibleGroups = groups.map((group) => ({
+    ...group,
+    summaries: group.summaries.filter((summary) => summary.hasActivity),
+  }))
+  const hasActivity = visibleGroups.some((group) => group.summaries.length > 0)
+  const hasTrainingTime = visibleGroups.some((group) => group.summaries.some((summary) => summary.trainingMinutes > 0))
 
-    return employeeIds.map((employeeId) => {
-      const workedSummary = summaries.find((summary) => summary.employeeId === employeeId)
-      const accountabilitySummary = getPayrollAccountabilitySummary(employeeId, accountabilitySummaries)
-      const sickPtoMinutes = (accountabilitySummary?.sickPayMinutes ?? 0) + (accountabilitySummary?.vacationPayMinutes ?? 0)
-      const reviewCount = accountabilitySummary?.reviewCount ?? 0
-      return {
-        accountabilityCount: accountabilitySummary?.accountabilityCount ?? 0,
-        breakMinutes: workedSummary?.breakMinutes ?? 0,
-        employeeId,
-        employeeName: workedSummary?.employeeName ?? accountabilitySummary?.employeeName ?? 'Employee',
-        employmentType: workedSummary?.employmentType ?? accountabilitySummary?.employmentType ?? 'hourly',
-        exceptionCount: (workedSummary?.exceptionCount ?? 0) + reviewCount,
-        hasWorkedDetail: Boolean(workedSummary),
-        locationCount: workedSummary?.locationCount ?? 0,
-        overtimeMinutes: workedSummary?.overtimeMinutes ?? 0,
-        trainingMinutes: workedSummary?.trainingMinutes ?? 0,
-        paidMinutes: payrollPayableMinutes(workedSummary, accountabilitySummary),
-        payrollReady: (workedSummary?.payrollReady ?? true) && reviewCount === 0,
-        regularMinutes: workedSummary?.regularMinutes ?? 0,
-        sickPtoMinutes,
-        username: workedSummary?.username ?? accountabilitySummary?.username ?? 'unknown',
-        workedMinutes: workedSummary?.paidMinutes ?? 0,
-        workedShiftCount: workedSummary?.workedShiftCount ?? 0,
-      }
-    })
-  }, [accountabilitySummaries, summaries])
-  const hasTrainingTime = tableSummaries.some((summary) => summary.trainingMinutes > 0)
-
-  if (tableSummaries.length === 0) {
+  if (!hasActivity) {
     return (
       <DataStatePanel icon={FileClock} title="No worked time in this range">
         <p>No SygShift clock-in/out totals, sick reports, or PTO records are available for the selected payroll range.</p>
@@ -408,12 +390,30 @@ function PayrollEmployeeSummaryTable({
   return (
     <section className="time-card payroll-employee-summary-panel" aria-labelledby="payroll-employee-summary-title">
       <TimeSectionHeader
-        eyebrow="Employee totals"
-        summary="The main payroll view is grouped by person. Open an employee only when you need the shift-by-shift audit detail."
-        title="Pay period summary"
+        eyebrow="Weekly employee totals"
+        summary="Each Sunday-through-Saturday payroll week is shown separately. Overnight work remains with the week in which the occurrence began."
+        title="Payroll weeks"
       />
-      <div className="time-review-table-wrap">
-        <table className="time-review-table payroll-employee-summary-table">
+      <div className="payroll-week-summary-list">
+        {visibleGroups.map((group) => {
+          const weekTotal = group.summaries.reduce((total, summary) => total + payrollWeeklyTotalPayableMinutes(summary), 0)
+          return (
+            <section className="payroll-week-summary" key={group.week.weekStartsOn}>
+              <header className="payroll-week-summary__header">
+                <div>
+                  <p className="eyebrow">{group.week.label}</p>
+                  <h3>{formatUsDateKey(group.week.weekStartsOn)} - {formatUsDateKey(group.week.weekEndsOn)}</h3>
+                </div>
+                <div className="payroll-week-summary__totals">
+                  <strong>{payrollHours(weekTotal)} hr payable</strong>
+                  <span>{group.summaries.length} employee{group.summaries.length === 1 ? '' : 's'} with activity</span>
+                </div>
+              </header>
+              {group.summaries.length === 0 ? (
+                <div className="payroll-week-summary__empty">No worked time, sick time, or PTO is recorded in this payroll week.</div>
+              ) : (
+                <div className="time-review-table-wrap">
+                  <table className="time-review-table payroll-employee-summary-table">
           <thead>
             <tr>
               <th>Employee</th>
@@ -430,8 +430,11 @@ function PayrollEmployeeSummaryTable({
             </tr>
           </thead>
           <tbody>
-            {tableSummaries.map((summary) => (
-              <tr className={selectedEmployeeId === summary.employeeId ? 'payroll-summary-row payroll-summary-row--selected' : 'payroll-summary-row'} key={summary.employeeId}>
+            {group.summaries.map((summary) => {
+              const isSelected = selectedSummary?.employeeId === summary.employeeId && selectedSummary.weekStartsOn === group.week.weekStartsOn
+              const sickPtoMinutes = summary.sickPayMinutes + summary.vacationPayMinutes
+              return (
+              <tr className={isSelected ? 'payroll-summary-row payroll-summary-row--selected' : 'payroll-summary-row'} key={`${group.week.weekStartsOn}-${summary.employeeId}`}>
                 <td>
                   <strong>{summary.employeeName}</strong>
                   <span>@{summary.username} · {summary.employmentType}</span>
@@ -442,33 +445,38 @@ function PayrollEmployeeSummaryTable({
                 </td>
                 <td><strong>{payrollHours(summary.regularMinutes)} hr</strong></td>
                 <td><strong>{payrollHours(summary.overtimeMinutes)} hr</strong></td>
-                <td><strong>{payrollHours(summary.workedMinutes)} hr</strong></td>
+                <td><strong>{payrollHours(summary.paidMinutes)} hr</strong></td>
                 {hasTrainingTime ? <td><strong>{payrollHours(summary.trainingMinutes)} hr</strong></td> : null}
                 <td><strong>{summary.breakMinutes} min</strong></td>
-                <td><strong>{payrollHours(summary.sickPtoMinutes)} hr</strong></td>
-                <td><strong>{payrollHours(summary.paidMinutes)} hr</strong></td>
+                <td><strong>{payrollHours(sickPtoMinutes)} hr</strong></td>
+                <td><strong>{payrollHours(payrollWeeklyTotalPayableMinutes(summary))} hr</strong></td>
                 <td>
-                  <TimeStatusBadge tone={summary.payrollReady ? 'good' : 'warning'}>
-                    {summary.payrollReady ? 'Ready' : 'Needs review'}
+                  <TimeStatusBadge tone={summary.needsReview ? 'warning' : 'good'}>
+                    {summary.needsReview ? 'Needs review' : 'Ready'}
                   </TimeStatusBadge>
                   {summary.exceptionCount > 0 ? <small>{summary.exceptionCount} row{summary.exceptionCount === 1 ? '' : 's'} need review</small> : null}
                 </td>
                 <td>
                   {summary.hasWorkedDetail ? (
                     <TimeButton
-                      onClick={() => onSelectEmployee(summary.employeeId)}
-                      variant={selectedEmployeeId === summary.employeeId ? 'primary' : 'secondary'}
+                      onClick={() => onSelectSummary({ employeeId: summary.employeeId, weekStartsOn: group.week.weekStartsOn })}
+                      variant={isSelected ? 'primary' : 'secondary'}
                     >
-                      {selectedEmployeeId === summary.employeeId ? 'Viewing details' : 'View details'}
+                      {isSelected ? 'Viewing details' : 'View details'}
                     </TimeButton>
                   ) : (
                     <TimeStatusBadge tone="neutral">Events only</TimeStatusBadge>
                   )}
                 </td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
+                </div>
+              )}
+            </section>
+          )
+        })}
       </div>
     </section>
   )
@@ -477,9 +485,11 @@ function PayrollEmployeeSummaryTable({
 function PayrollRowsTable({
   rows,
   summary,
+  week,
 }: {
   rows: TimekeepingReviewRow[]
   summary: PayrollEmployeeSummary
+  week: PayrollWorkbookWeek
 }) {
   if (rows.length === 0) {
     return (
@@ -493,8 +503,8 @@ function PayrollRowsTable({
     <section className="time-card payroll-rows-panel" aria-labelledby="payroll-rows-title">
       <TimeSectionHeader
         eyebrow="Employee detail"
-        summary={`${summary.workedShiftCount} worked shift${summary.workedShiftCount === 1 ? '' : 's'} · ${payrollHours(summary.paidMinutes)} paid hours · ${summary.exceptionCount === 0 ? 'ready for payroll' : `${summary.exceptionCount} row${summary.exceptionCount === 1 ? '' : 's'} need review`}.`}
-        title={`${summary.employeeName} payroll detail`}
+        summary={`${formatUsDateKey(week.weekStartsOn)} - ${formatUsDateKey(week.weekEndsOn)} · ${summary.workedShiftCount} worked shift${summary.workedShiftCount === 1 ? '' : 's'} · ${payrollHours(summary.paidMinutes)} paid hours · ${summary.exceptionCount === 0 ? 'ready for payroll' : `${summary.exceptionCount} row${summary.exceptionCount === 1 ? '' : 's'} need review`}.`}
+        title={`${summary.employeeName} — ${week.label} detail`}
       />
       <div className="time-review-table-wrap">
         <table className="time-review-table payroll-rows-table">
@@ -720,22 +730,42 @@ export function TimePayrollPage() {
     () => employeeSummaries.reduce((total, summary) => total + summary.trainingMinutes, 0),
     [employeeSummaries],
   )
-  const accountabilityEvents = accountabilityQuery.data ?? []
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
-  const selectedSummary = useMemo(
-    () => employeeSummaries.find((summary) => summary.employeeId === selectedEmployeeId) ?? null,
-    [employeeSummaries, selectedEmployeeId],
+  const accountabilityEvents = useMemo(() => accountabilityQuery.data ?? [], [accountabilityQuery.data])
+  const payrollWorkbookInput = useMemo(() => review ? ({
+    accountabilityEvents,
+    exportType: 'Preview' as const,
+    review,
+    rules: rulesQuery.data ?? review.payrollRules,
+  }) : null, [accountabilityEvents, review, rulesQuery.data])
+  const weeklySummaryGroups = useMemo(
+    () => payrollWorkbookInput ? summarizePayrollWorkbookByWeek(payrollWorkbookInput) : [],
+    [payrollWorkbookInput],
   )
+  const [selectedPayrollSummary, setSelectedPayrollSummary] = useState<PayrollSummarySelection | null>(null)
   const selectedRows = useMemo(
-    () => review?.rows.filter((row) => row.employeeId === selectedEmployeeId) ?? [],
-    [review, selectedEmployeeId],
+    () => review && selectedPayrollSummary
+      ? review.rows.filter((row) => row.employeeId === selectedPayrollSummary.employeeId
+        && payrollWorkbookWeekForRow(payrollWorkbookInput!, row) === selectedPayrollSummary.weekStartsOn)
+      : [],
+    [payrollWorkbookInput, review, selectedPayrollSummary],
+  )
+  const selectedSummary = useMemo(
+    () => summarizePayrollRowsByEmployee(selectedRows)[0] ?? null,
+    [selectedRows],
+  )
+  const selectedWeek = useMemo(
+    () => selectedPayrollSummary
+      ? weeklySummaryGroups.find((group) => group.week.weekStartsOn === selectedPayrollSummary.weekStartsOn)?.week ?? null
+      : null,
+    [selectedPayrollSummary, weeklySummaryGroups],
   )
 
   useEffect(() => {
-    if (selectedEmployeeId && !employeeSummaries.some((summary) => summary.employeeId === selectedEmployeeId)) {
-      setSelectedEmployeeId(null)
+    if (selectedPayrollSummary && !weeklySummaryGroups.some((group) => group.week.weekStartsOn === selectedPayrollSummary.weekStartsOn
+      && group.summaries.some((summary) => summary.employeeId === selectedPayrollSummary.employeeId && summary.hasWorkedDetail))) {
+      setSelectedPayrollSummary(null)
     }
-  }, [employeeSummaries, selectedEmployeeId])
+  }, [selectedPayrollSummary, weeklySummaryGroups])
 
   const downloadMutation = useMutation({
     mutationFn: async (request: PayrollDownloadRequest): Promise<PayrollWorkbookDownload> => {
@@ -821,6 +851,18 @@ export function TimePayrollPage() {
       await queryClient.invalidateQueries({ queryKey: ['payroll-export-history'] })
     },
   })
+  const previewDownloadMutation = useMutation({
+    mutationFn: async (): Promise<PayrollWorkbookDownloadResult> => {
+      if (!payrollWorkbookInput) throw new Error('The payroll preview is not ready yet. Please wait for the review to finish loading.')
+      return downloadPayrollWorkbook(
+        {
+          ...payrollWorkbookInput,
+          exportNote: 'Preview workbook. Official export requires locking the reviewed payroll batch.',
+        },
+        payrollExportFileName(payrollWorkbookInput.review.fromDate, payrollWorkbookInput.review.throughDate, 'preview'),
+      )
+    },
+  })
 
   const totals = useMemo(() => review?.summary, [review])
   const canLock = Boolean(exportAllowed && review && lockBlockedReason === '' && exportNote.trim().length > 0 && !exportMutation.isPending)
@@ -859,17 +901,6 @@ export function TimePayrollPage() {
     }
     const row = review.rows.find((candidate) => !candidate.payrollReady || candidate.exceptionCodes.length > 0)
     if (row) openRowBlocker(row)
-  }
-
-  function downloadSummaryPreview() {
-    if (!review) return
-    downloadPayrollWorkbook({
-      accountabilityEvents,
-      exportNote: 'Preview workbook. Official export requires locking the reviewed payroll batch.',
-      exportType: 'Preview',
-      review,
-      rules: rulesQuery.data ?? review.payrollRules,
-    }, payrollExportFileName(review.fromDate, review.throughDate, 'preview'))
   }
 
   if (!isSupabaseConfigured) {
@@ -995,8 +1026,8 @@ export function TimePayrollPage() {
               exportMutation={exportMutation}
               lockBlockedReason={lockBlockedReason}
               note={exportNote}
-              onDownloadPreview={downloadSummaryPreview}
               onNoteChange={setExportNote}
+              previewMutation={previewDownloadMutation}
               review={review}
               rules={rulesQuery.data ?? review.payrollRules}
             />
@@ -1017,12 +1048,11 @@ export function TimePayrollPage() {
             rows={review.rows}
           />
           <PayrollEmployeeSummaryTable
-            accountabilityEvents={accountabilityEvents}
-            onSelectEmployee={(employeeId) => setSelectedEmployeeId((current) => current === employeeId ? null : employeeId)}
-            selectedEmployeeId={selectedEmployeeId}
-            summaries={employeeSummaries}
+            groups={weeklySummaryGroups}
+            onSelectSummary={(selection) => setSelectedPayrollSummary((current) => current?.employeeId === selection.employeeId && current.weekStartsOn === selection.weekStartsOn ? null : selection)}
+            selectedSummary={selectedPayrollSummary}
           />
-          {selectedSummary ? <PayrollRowsTable rows={selectedRows} summary={selectedSummary} /> : null}
+          {selectedSummary && selectedWeek ? <PayrollRowsTable rows={selectedRows} summary={selectedSummary} week={selectedWeek} /> : null}
         </>
       ) : null}
 

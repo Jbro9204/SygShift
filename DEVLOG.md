@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 08/24/2026
 
+### Payroll web week separation and preview download reliability
+
+- Separated the browser payroll summary into distinct Sunday-through-Saturday Week 1 and Week 2 sections instead of presenting only one combined pay-period total.
+- Added a clear weekly payable total and employee count to each section, with employee detail opening in the correct payroll week.
+- Made the browser summary and Excel workbook use the same weekly grouping and total-calculation source so the two views cannot silently disagree.
+- Kept overnight work entirely in the payroll week containing its authoritative scheduled start or clock-in.
+- Repaired preview downloads by validating the generated workbook, attaching the download element to the page, and retaining its object URL long enough for Chrome and Edge to finish the save.
+- Added visible download progress, success, and actionable failure feedback instead of allowing the download button to appear unresponsive.
+- Hardened workbook XML generation against illegal control characters while retaining correct XML escaping for names and other text.
+- No punches, schedules, payroll calculations, locked exports, or audit records were rewritten.
+- Full validation passed: type checking, lint, 72 test files / 369 tests, production build, workbook XML/package validation, and Git whitespace validation.
+
 ### Weekly payroll export by payroll week
 
 - Reorganized payroll workbooks so Finance receives one employee row for each Sunday-through-Saturday payroll week in the selected range, followed by separate Week 1, Week 2, and pay-period totals.

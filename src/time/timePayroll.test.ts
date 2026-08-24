@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PayrollAccountabilityEvent, TimekeepingReview } from '../data/timekeeping'
 import {
   accountabilityEventPayCategory,
@@ -7,7 +7,9 @@ import {
   accountabilityEventScheduledMinutes,
   buildPayrollWorkbookSheets,
   createPayrollWorkbookBlob,
+  downloadPayrollWorkbook,
   payrollWorkbookWeeks,
+  summarizePayrollWorkbookByWeek,
 } from './payrollWorkbook'
 import {
   exportableWorkedTimeRows,
@@ -98,6 +100,11 @@ const cleanReview: TimekeepingReview = {
   },
   throughDate: '2026-07-25',
 }
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 const sickEvent: PayrollAccountabilityEvent = {
   createdAt: '2026-07-30T12:00:00.000Z',
@@ -456,17 +463,27 @@ describe('payroll export readiness', () => {
   it('writes worksheet elements in Excel-compatible schema order', async () => {
     const workbook = createPayrollWorkbookBlob({
       exportType: 'Preview',
-      review: cleanReview,
+      review: {
+        ...cleanReview,
+        rows: cleanReview.rows.map((row, index) => index === 0
+          ? { ...row, employeeName: `Jordan & <Payroll>${String.fromCharCode(1)}` }
+          : row),
+      },
     })
     const packageText = new TextDecoder().decode(await workbook.arrayBuffer())
     const worksheetDocuments = packageText.match(/<worksheet[\s\S]*?<\/worksheet>/g) ?? []
+    const parser = new DOMParser()
 
     expect(worksheetDocuments.length).toBeGreaterThan(0)
     for (const worksheet of worksheetDocuments) {
+      const document = parser.parseFromString(worksheet, 'application/xml')
+      expect(document.querySelector('parsererror')).toBeNull()
+      expect(worksheet).not.toContain(String.fromCharCode(1))
       const filterIndex = worksheet.indexOf('<autoFilter')
       const mergeIndex = worksheet.indexOf('<mergeCells')
       if (filterIndex >= 0 && mergeIndex >= 0) expect(filterIndex).toBeLessThan(mergeIndex)
     }
+    expect(packageText).toContain('Jordan &amp; &lt;Payroll&gt;')
   })
 
   it('supports custom payroll export ranges', () => {
@@ -487,6 +504,39 @@ describe('payroll export readiness', () => {
       { label: 'Week 1', weekEndsOn: '2026-07-18', weekStartsOn: '2026-07-12' },
       { label: 'Week 2', weekEndsOn: '2026-07-25', weekStartsOn: '2026-07-19' },
     ])
+  })
+
+  it('provides the same separate weekly employee totals used by the browser and workbook', () => {
+    const groups = summarizePayrollWorkbookByWeek({ exportType: 'Preview', review: cleanReview })
+    const weekOne = groups[0]?.summaries.find((summary) => summary.employeeId === cleanReview.rows[0]?.employeeId)
+    const weekTwo = groups[1]?.summaries.find((summary) => summary.employeeId === cleanReview.rows[0]?.employeeId)
+
+    expect(groups.map((group) => group.week.label)).toEqual(['Week 1', 'Week 2'])
+    expect(weekOne).toMatchObject({ hasActivity: true, paidMinutes: 480, workedShiftCount: 1 })
+    expect(weekTwo).toMatchObject({ hasActivity: false, paidMinutes: 0, workedShiftCount: 0 })
+  })
+
+  it('keeps the workbook URL alive long enough for the browser to finish the download', () => {
+    vi.useFakeTimers()
+    const createObjectUrl = vi.fn(() => 'blob:sygshift-payroll-preview')
+    const revokeObjectUrl = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectUrl })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectUrl })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+
+    const result = downloadPayrollWorkbook(
+      { exportType: 'Preview', review: cleanReview },
+      'sygshift-payroll-preview.xlsx',
+    )
+
+    expect(result.fileName).toBe('sygshift-payroll-preview.xlsx')
+    expect(result.size).toBeGreaterThan(0)
+    expect(createObjectUrl).toHaveBeenCalledOnce()
+    expect(click).toHaveBeenCalledOnce()
+    expect(revokeObjectUrl).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(60_000)
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:sygshift-payroll-preview')
   })
 
   it('keeps a Saturday-night occurrence entirely in week one of the payroll workbook', () => {

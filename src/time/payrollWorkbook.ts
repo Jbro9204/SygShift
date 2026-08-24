@@ -43,7 +43,11 @@ export interface PayrollWorkbookInput {
 const workbookMimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 
 function xmlEscape(value: string): string {
-  return value
+  const xmlSafeValue = [...value].filter((character) => {
+    const code = character.charCodeAt(0)
+    return code === 9 || code === 10 || code === 13 || code >= 32
+  }).join('')
+  return xmlSafeValue
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
@@ -331,11 +335,16 @@ export interface PayrollWorkbookWeek {
   weekStartsOn: string
 }
 
-interface WeeklyPayrollSummary {
+export interface PayrollWeeklyEmployeeSummary {
+  accountabilityCount: number
+  breakMinutes: number
   employeeId: string
   employeeName: string
   employmentType: string
+  exceptionCount: number
   hasActivity: boolean
+  hasWorkedDetail: boolean
+  locationCount: number
   needsReview: boolean
   otherPaidMinutes: number
   overtimeMinutes: number
@@ -344,8 +353,14 @@ interface WeeklyPayrollSummary {
   scheduledMinutes: number
   sickPayMinutes: number
   trainingMinutes: number
+  username: string
   vacationPayMinutes: number
   workedShiftCount: number
+}
+
+export interface PayrollWeeklySummaryGroup {
+  summaries: PayrollWeeklyEmployeeSummary[]
+  week: PayrollWorkbookWeek
 }
 
 function payrollWeekStartForDate(dateKey: string, weekStartsOn: number): string {
@@ -371,7 +386,7 @@ function payrollWeekForInstant(input: PayrollWorkbookInput, instant: string): st
   }).weekStartsOn!
 }
 
-function payrollWeekForRow(input: PayrollWorkbookInput, row: TimekeepingReviewRow): string {
+export function payrollWorkbookWeekForRow(input: PayrollWorkbookInput, row: TimekeepingReviewRow): string {
   if (row.payrollBatchWeekStartsOn) return row.payrollBatchWeekStartsOn
   const anchor = row.payrollAssignmentAnchor ?? row.scheduledStartsAt ?? row.firstClockIn
   if (anchor) return payrollWeekForInstant(input, anchor)
@@ -406,8 +421,8 @@ function weeklyPayrollSummary(
   employeeId: string,
   week: PayrollWorkbookWeek,
   events: PayrollAccountabilityEvent[],
-): WeeklyPayrollSummary {
-  const rows = input.review.rows.filter((row) => row.employeeId === employeeId && payrollWeekForRow(input, row) === week.weekStartsOn)
+): PayrollWeeklyEmployeeSummary {
+  const rows = input.review.rows.filter((row) => row.employeeId === employeeId && payrollWorkbookWeekForRow(input, row) === week.weekStartsOn)
   const weekEvents = events.filter((event) => event.employeeId === employeeId && payrollWeekForAccountabilityEvent(input, event) === week.weekStartsOn)
   const worked = summarizePayrollRowsByEmployee(rows)[0]
   const accountability = summarizePayrollAccountabilityByEmployee(weekEvents)[0]
@@ -415,10 +430,15 @@ function weeklyPayrollSummary(
   const sampleEvent = weekEvents[0]
   const hasActivity = rows.length > 0 || weekEvents.length > 0
   return {
+    accountabilityCount: accountability?.accountabilityCount ?? 0,
+    breakMinutes: worked?.breakMinutes ?? 0,
     employeeId,
     employeeName: worked?.employeeName ?? accountability?.employeeName ?? sampleRow?.employeeName ?? sampleEvent?.employeeName ?? 'Employee',
     employmentType: worked?.employmentType ?? accountability?.employmentType ?? sampleRow?.employmentType ?? sampleEvent?.employmentType ?? '',
+    exceptionCount: (worked?.exceptionCount ?? 0) + (accountability?.reviewCount ?? 0),
     hasActivity,
+    hasWorkedDetail: rows.length > 0,
+    locationCount: worked?.locationCount ?? 0,
     needsReview: rows.some((row) => !row.payrollReady || row.exceptionCodes.length > 0)
       || weekEvents.some((event) => accountabilityEventReviewNote(event) !== ''),
     otherPaidMinutes: accountability?.otherPaidMinutes ?? 0,
@@ -428,29 +448,43 @@ function weeklyPayrollSummary(
     scheduledMinutes: summaryScheduledMinutes(employeeId, rows) + (accountability?.scheduledMinutes ?? 0),
     sickPayMinutes: accountability?.sickPayMinutes ?? 0,
     trainingMinutes: worked?.trainingMinutes ?? 0,
+    username: worked?.username ?? accountability?.username ?? sampleRow?.username ?? sampleEvent?.username ?? 'unknown',
     vacationPayMinutes: accountability?.vacationPayMinutes ?? 0,
     workedShiftCount: worked?.workedShiftCount ?? 0,
   }
 }
 
-function totalPayableMinutes(summary: WeeklyPayrollSummary): number {
+export function payrollWeeklyTotalPayableMinutes(summary: PayrollWeeklyEmployeeSummary): number {
   return summary.paidMinutes + summary.sickPayMinutes + summary.vacationPayMinutes + summary.otherPaidMinutes
 }
 
-function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmployeeSummary[], events: PayrollAccountabilityEvent[]): WorkbookSheet {
-  const review = input.review
+export function summarizePayrollWorkbookByWeek(input: PayrollWorkbookInput): PayrollWeeklySummaryGroup[] {
+  const events = input.accountabilityEvents ?? []
+  const workedSummaries = summarizePayrollRowsByEmployee(input.review.rows)
   const accountabilitySummaries = summarizePayrollAccountabilityByEmployee(events)
-  const weeks = payrollWorkbookWeeks(input)
-  const summaryIds = [...new Set([...summaries.map((summary) => summary.employeeId), ...accountabilitySummaries.map((summary) => summary.employeeId)])]
-    .sort((left, right) => {
-      const leftName = summaries.find((summary) => summary.employeeId === left)?.employeeName
-        ?? accountabilitySummaries.find((summary) => summary.employeeId === left)?.employeeName
-        ?? left
-      const rightName = summaries.find((summary) => summary.employeeId === right)?.employeeName
-        ?? accountabilitySummaries.find((summary) => summary.employeeId === right)?.employeeName
-        ?? right
-      return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' })
-    })
+  const employeeIds = [...new Set([
+    ...workedSummaries.map((summary) => summary.employeeId),
+    ...accountabilitySummaries.map((summary) => summary.employeeId),
+  ])].sort((left, right) => {
+    const leftName = workedSummaries.find((summary) => summary.employeeId === left)?.employeeName
+      ?? accountabilitySummaries.find((summary) => summary.employeeId === left)?.employeeName
+      ?? left
+    const rightName = workedSummaries.find((summary) => summary.employeeId === right)?.employeeName
+      ?? accountabilitySummaries.find((summary) => summary.employeeId === right)?.employeeName
+      ?? right
+    return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' })
+  })
+
+  return payrollWorkbookWeeks(input).map((week) => ({
+    summaries: employeeIds.map((employeeId) => weeklyPayrollSummary(input, employeeId, week, events)),
+    week,
+  }))
+}
+
+function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountabilityEvent[]): WorkbookSheet {
+  const review = input.review
+  const weeklyGroups = summarizePayrollWorkbookByWeek({ ...input, accountabilityEvents: events })
+  const weeks = weeklyGroups.map((group) => group.week)
   const titleRows: WorkbookCell[][] = [
     ['SygShift Payroll Report'],
     ['Pay Period', `${formatUsDateKey(review.fromDate)} - ${formatUsDateKey(review.throughDate)}`],
@@ -479,9 +513,9 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
     'Total Payable',
     'Status',
   ]
-  const weeklySummaries = summaryIds.flatMap((employeeId) => weeks.map((week) => ({
-    summary: weeklyPayrollSummary(input, employeeId, week, events),
-    week,
+  const weeklySummaries = weeklyGroups.flatMap((group) => group.summaries.map((summary) => ({
+    summary,
+    week: group.week,
   })))
   const body: WorkbookCell[][] = weeklySummaries.map(({ summary, week }) => [
     summary.employeeName,
@@ -497,10 +531,10 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
     hours(summary.sickPayMinutes),
     hours(summary.vacationPayMinutes),
     hours(summary.otherPaidMinutes),
-    hours(totalPayableMinutes(summary)),
+    hours(payrollWeeklyTotalPayableMinutes(summary)),
     summary.needsReview ? 'Needs review' : summary.hasActivity ? 'Ready' : 'No activity',
   ])
-  const totalRow = (label: string, matching: Array<{ summary: WeeklyPayrollSummary }>): WorkbookCell[] => {
+  const totalRow = (label: string, matching: Array<{ summary: PayrollWeeklyEmployeeSummary }>): WorkbookCell[] => {
     const minuteTotals = matching.reduce((result, item) => {
       result.workedShiftCount += item.summary.workedShiftCount
       result.scheduledMinutes += item.summary.scheduledMinutes
@@ -511,7 +545,7 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
       result.sickPayMinutes += item.summary.sickPayMinutes
       result.vacationPayMinutes += item.summary.vacationPayMinutes
       result.otherPaidMinutes += item.summary.otherPaidMinutes
-      result.totalPayableMinutes += totalPayableMinutes(item.summary)
+      result.totalPayableMinutes += payrollWeeklyTotalPayableMinutes(item.summary)
       return result
     }, {
       otherPaidMinutes: 0,
@@ -590,7 +624,7 @@ function buildSummarySheet(input: PayrollWorkbookInput, summaries: PayrollEmploy
 function buildWeeklyDetailSheets(input: PayrollWorkbookInput, events: PayrollAccountabilityEvent[]): WorkbookSheet[] {
   return payrollWorkbookWeeks(input).map((week) => {
     const workedRows: WorkbookCell[][] = input.review.rows
-      .filter((row) => payrollWeekForRow(input, row) === week.weekStartsOn)
+      .filter((row) => payrollWorkbookWeekForRow(input, row) === week.weekStartsOn)
       .sort((left, right) => left.employeeName.localeCompare(right.employeeName, undefined, { sensitivity: 'base' })
         || left.operationalDate.localeCompare(right.operationalDate)
         || (left.firstClockIn ?? '').localeCompare(right.firstClockIn ?? ''))
@@ -1032,7 +1066,7 @@ function buildEmployeeSheets(input: PayrollWorkbookInput, events: PayrollAccount
       const summary = weeklyPayrollSummary(input, employeeId, week, events)
       return [
         week.label,
-        `${formatUsDateKey(week.weekStartsOn)} - ${formatUsDateKey(week.weekEndsOn)} | Scheduled ${hours(summary.scheduledMinutes)} | Worked ${hours(summary.paidMinutes)} | Regular ${hours(summary.regularMinutes)} | OT ${hours(summary.overtimeMinutes)} | Sick ${hours(summary.sickPayMinutes)} | PTO ${hours(summary.vacationPayMinutes)} | Total Payable ${hours(totalPayableMinutes(summary))}`,
+        `${formatUsDateKey(week.weekStartsOn)} - ${formatUsDateKey(week.weekEndsOn)} | Scheduled ${hours(summary.scheduledMinutes)} | Worked ${hours(summary.paidMinutes)} | Regular ${hours(summary.regularMinutes)} | OT ${hours(summary.overtimeMinutes)} | Sick ${hours(summary.sickPayMinutes)} | PTO ${hours(summary.vacationPayMinutes)} | Total Payable ${hours(payrollWeeklyTotalPayableMinutes(summary))}`,
       ]
     })
     const titleRows: WorkbookCell[][] = [
@@ -1079,10 +1113,9 @@ function buildEmployeeSheets(input: PayrollWorkbookInput, events: PayrollAccount
 }
 
 export function buildPayrollWorkbookSheets(input: PayrollWorkbookInput): WorkbookSheet[] {
-  const summaries = summarizePayrollRowsByEmployee(input.review.rows)
   const events = input.accountabilityEvents ?? []
   return [
-    buildSummarySheet(input, summaries, events),
+    buildSummarySheet(input, events),
     ...buildWeeklyDetailSheets(input, events),
     buildDiscrepancySheet(input.review.rows, events),
     buildVarianceSheet(input.review.rows),
@@ -1268,13 +1301,22 @@ export function createPayrollWorkbookBlob(input: PayrollWorkbookInput): Blob {
   return new Blob([workbookBuffer], { type: workbookMimeType })
 }
 
-export function downloadPayrollWorkbook(input: PayrollWorkbookInput, fileName: string) {
-  const url = URL.createObjectURL(createPayrollWorkbookBlob(input))
+export interface PayrollWorkbookDownloadResult {
+  fileName: string
+  size: number
+}
+
+export function downloadPayrollWorkbook(input: PayrollWorkbookInput, fileName: string): PayrollWorkbookDownloadResult {
+  const workbook = createPayrollWorkbookBlob(input)
+  if (workbook.size === 0) throw new Error('The payroll workbook could not be created. Please try again.')
+  const url = URL.createObjectURL(workbook)
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = fileName
-  document.body.append(anchor)
+  anchor.style.display = 'none'
+  document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  return { fileName, size: workbook.size }
 }

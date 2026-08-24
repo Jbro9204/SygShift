@@ -11641,6 +11641,65 @@
   padding: 20px 20px 0;
 }
 
+.payroll-week-summary-list {
+  display: grid;
+  gap: 18px;
+  padding: 18px 20px 22px;
+}
+
+.payroll-week-summary {
+  overflow: hidden;
+  border: 1px solid #d8cfbf;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.payroll-week-summary__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e5ded2;
+  background: #faf7f1;
+}
+
+.payroll-week-summary__header h3,
+.payroll-week-summary__header p {
+  margin: 0;
+}
+
+.payroll-week-summary__header h3 {
+  margin-top: 3px;
+  font-size: 1.15rem;
+  line-height: 1.25;
+}
+
+.payroll-week-summary__totals {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.payroll-week-summary__totals strong {
+  font-size: 1rem;
+}
+
+.payroll-week-summary__totals span,
+.payroll-week-summary__empty {
+  color: #6c655b;
+  font-size: 0.875rem;
+}
+
+.payroll-week-summary__empty {
+  padding: 20px 18px;
+}
+
+.payroll-week-summary .time-review-table-wrap {
+  border: 0;
+  border-radius: 0;
+}
+
 .payroll-employee-summary-table {
   min-width: 980px;
 }
@@ -11667,6 +11726,22 @@
 
 .payroll-summary-row td > .time-status-badge {
   margin-bottom: 4px;
+}
+
+@media (max-width: 720px) {
+  .payroll-week-summary-list {
+    padding: 14px;
+  }
+
+  .payroll-week-summary__header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .payroll-week-summary__totals {
+    text-align: left;
+  }
 }
 
 .payroll-rows-panel {
