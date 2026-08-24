@@ -342,6 +342,7 @@ const timeMaintenanceSchema = z.object({
 
 const timeMaintenanceShiftOptionSchema = z.object({
   shiftId: z.string().uuid(),
+  operationalDate: z.string(),
   siteId: z.string().uuid().nullable().optional(),
   postId: z.string().uuid().nullable().optional(),
   eventId: z.string().uuid().nullable().optional(),
@@ -1016,6 +1017,13 @@ export function dedupeTimeMaintenanceShiftOptions(options: TimeMaintenanceShiftO
     if (nameCompare !== 0) return nameCompare
     return left.startsAt.localeCompare(right.startsAt)
   })
+}
+
+export function shiftOptionsForOperationalDate(
+  options: TimeMaintenanceShiftOption[],
+  operationalDate: string,
+): TimeMaintenanceShiftOption[] {
+  return options.filter((option) => option.operationalDate === operationalDate)
 }
 
 export async function getTimekeepingDashboard(operationalDate?: string): Promise<TimekeepingDashboard> {

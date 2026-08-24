@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 08/24/2026
 
+### Overnight manual-punch workday integrity
+
+- Corrected Gaston Musambay's 08/13/2026 6:00 PM clock-in so it belongs to the 08/13/2026 operational shift and pairs with the 08/14/2026 6:00 AM clock-out.
+- Preserved the original punch record and added a separate append-only occurrence correction with its own reason, source, and audit history.
+- Added an explicit operational date to Time Maintenance shift choices and limited manual-punch Site/Post choices to shifts that start on the selected workday.
+- Added a database guard that rejects a new manual punch when the selected shift is outside the punch's permitted working window.
+- Confirmed production now groups 08/12/2026 6:00 PM–08/13/2026 6:00 AM as the 08/12 workday and 08/13/2026 6:00 PM–08/14/2026 6:00 AM as the 08/13 workday.
+- Full validation passed: type checking, lint, 69 test files / 351 tests, and the production build.
+- Applied targeted production migration `20260824213000_time_event_operational_shift_integrity.sql`.
+- Deployed Cloudflare Worker version `76f367b7-1c8d-44f4-a17e-bde2b14525f1`.
+
 ### Role and permission QA with Guard least-privilege hardening
 
 - Audited the live permission catalog, all six system roles, 47 active employee assignments, route/navigation policies, protected page actions, public database functions, and row-level database policies.

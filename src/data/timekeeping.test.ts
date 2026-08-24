@@ -126,6 +126,7 @@ describe('timekeeping validation', () => {
       headcountRequired: 1,
       isOvertime: false,
       locationName: 'Neon Local Apt-Unarmed',
+      operationalDate: '2026-07-30',
       postId: '73000000-0000-4000-8000-000000000302',
       postName: 'Unarmed coverage',
       requiresArmed: false,

@@ -30,6 +30,7 @@ import {
   getPayrollExportHistory,
   getTeamAttendanceSummary,
   getTimeMaintenanceShiftOptions,
+  shiftOptionsForOperationalDate,
   getTimeMaintenance,
   getTimekeepingDashboard,
   getTimekeepingReview,
@@ -587,12 +588,12 @@ export function TimeMaintenanceWorkbench({
   const overviewExceptionCount = overviewRows.reduce((total, row) => total + row.exceptionCount, 0)
   const overviewPaidMinutes = overviewRows.reduce((total, row) => total + row.paidMinutes, 0)
   const addShiftOptions = useMemo(() => {
-    const options = [...(addShiftOptionsQuery.data ?? [])]
+    const options = shiftOptionsForOperationalDate(addShiftOptionsQuery.data ?? [], addDate)
     return options.sort((left, right) => {
       if (left.selectedEmployeeAssigned !== right.selectedEmployeeAssigned) return left.selectedEmployeeAssigned ? -1 : 1
       return sitePostOptionTitle(left).localeCompare(sitePostOptionTitle(right), undefined, { sensitivity: 'base' })
     })
-  }, [addShiftOptionsQuery.data])
+  }, [addDate, addShiftOptionsQuery.data])
   const canAdd = addEmployeeId !== ''
     && addReason.trim().length > 0
     && (addUsesManualLocation ? addManualLocation.trim().length > 0 : addShiftId !== null)
