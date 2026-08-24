@@ -9,9 +9,10 @@ const migrations = [
   '20260821174500_payroll_review_context_equivalence.sql',
   '20260821175000_occurrence_context_effective_event_performance.sql',
   '20260821175500_set_based_occurrence_identity.sql',
+  '20260824234500_payroll_review_session_timeout_repair.sql',
 ].map((name) => readFileSync(join(process.cwd(), 'supabase', 'migrations', name), 'utf8'))
 
-const [reviewMigration, equivalenceMigration, contextMigration, identityMigration] = migrations
+const [reviewMigration, equivalenceMigration, contextMigration, identityMigration, timeoutRepairMigration] = migrations
 
 describe('payroll review performance and occurrence integrity', () => {
   it('reads corrections and overrides once from a shared set-based punch source', () => {
@@ -42,5 +43,16 @@ describe('payroll review performance and occurrence integrity', () => {
     expect(identityMigration).toContain('event.occurrence_key = (select anchor.occurrence_key')
     expect(identityMigration).not.toContain('update public.time_events')
     expect(identityMigration).not.toContain('delete from public.time_events')
+  })
+
+  it('keeps payroll session assignment set-based for full pay-period reviews', () => {
+    expect(timeoutRepairMigration).toContain('session_membership as materialized (')
+    expect(timeoutRepairMigration).toContain('session_candidates as materialized (')
+    expect(timeoutRepairMigration).toContain('rows between unbounded preceding and 1 preceding')
+    expect(timeoutRepairMigration).toContain("target.effective_at - interval '24 hours'")
+    expect(timeoutRepairMigration).toContain('private.get_effective_time_events(target_employee_id)')
+    expect(timeoutRepairMigration).toContain("position('private.get_unscheduled_time_session_start(event.id' in review_sql) > 0")
+    expect(timeoutRepairMigration).not.toContain('update public.time_events')
+    expect(timeoutRepairMigration).not.toContain('delete from public.time_events')
   })
 })
