@@ -1,4 +1,5 @@
 import { RefreshCw } from 'lucide-react'
+import { useIsMutating } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { releaseAssetFromHtml } from '../lib/releaseUpdate'
 
@@ -10,6 +11,8 @@ function currentReleaseAsset() {
 
 export function ReleaseUpdateNotice() {
   const [updateAvailable, setUpdateAvailable] = useState(false)
+  const activeSaves = useIsMutating()
+  const saveInProgress = activeSaves > 0
 
   useEffect(() => {
     const loadedAsset = currentReleaseAsset()
@@ -68,9 +71,18 @@ export function ReleaseUpdateNotice() {
       <RefreshCw aria-hidden="true" size={22} />
       <div>
         <strong>A SygShift update is ready</strong>
-        <span>Refresh once to load the latest forms and fixes.</span>
+        <span>
+          {saveInProgress
+            ? 'Finish the current save, then refresh to load the update.'
+            : 'Refresh once to load the latest forms and fixes.'}
+        </span>
       </div>
-      <button className="release-update-notice__action" onClick={() => window.location.reload()} type="button">
+      <button
+        className="release-update-notice__action"
+        disabled={saveInProgress}
+        onClick={() => window.location.reload()}
+        type="button"
+      >
         Refresh SygShift
       </button>
     </aside>

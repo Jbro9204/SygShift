@@ -15,6 +15,8 @@ import {
 import { shouldShowPayrollExportReminder } from '../lib/payrollReminder'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDate, formatOperationalTime, lastCompletedPayrollWeek } from '../lib/time'
+import { MaintenanceNotice, MaintenanceUnavailablePanel } from './MaintenanceNotice'
+import { getMaintenanceStatus, maintenanceFeatureForPath } from '../data/maintenance'
 
 const INACTIVITY_WARNING_MS = 25 * 60 * 1000
 const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000
@@ -125,6 +127,12 @@ export function AppShell() {
     queryKey: ['time-operations-shell-alerts'],
     refetchInterval: 30_000,
   })
+  const maintenanceStatusQuery = useQuery({
+    enabled: isSupabaseConfigured && Boolean(sessionContext),
+    queryFn: getMaintenanceStatus,
+    queryKey: ['maintenance-status'],
+    refetchInterval: 30_000,
+  })
   const workspaceAlerts = useMemo<WorkspaceAlertEntry[]>(() => {
     const announcementAlerts = (activeBannerQuery.data ?? []).map((banner) => ({
       id: banner.id,
@@ -173,6 +181,16 @@ export function AppShell() {
       }),
     }))
     .filter((group) => group.items.length > 0)
+
+  const activeMaintenance = maintenanceStatusQuery.data?.active[0] ?? null
+  const upcomingMaintenance = maintenanceStatusQuery.data?.upcoming[0] ?? null
+  const completedMaintenance = maintenanceStatusQuery.data?.recentlyCompleted[0] ?? null
+  const routeMaintenanceFeature = maintenanceFeatureForPath(location.pathname)
+  const unavailableRouteWindow = (maintenanceStatusQuery.data?.active ?? []).find((window) => {
+    if (window.accessMode !== 'unavailable') return false
+    if (location.pathname === '/time') return window.featureCodes.includes('time_clock')
+    return routeMaintenanceFeature ? window.featureCodes.includes(routeMaintenanceFeature) : false
+  }) ?? null
 
   const needsSecurityCheckpoint = Boolean(
     sessionContext?.mustChangePassword || (sessionContext?.mfaRequired && !sessionContext.hasMfa),
@@ -478,10 +496,12 @@ export function AppShell() {
           </div>
         ) : null}
 
+        <MaintenanceNotice active={activeMaintenance} completed={completedMaintenance} upcoming={upcomingMaintenance} />
+
         <WorkspaceAlertStrip entries={workspaceAlerts} />
 
         <main id="main-content" tabIndex={-1}>
-          <Outlet />
+          {unavailableRouteWindow ? <MaintenanceUnavailablePanel window={unavailableRouteWindow} /> : <Outlet />}
         </main>
       </div>
     </div>

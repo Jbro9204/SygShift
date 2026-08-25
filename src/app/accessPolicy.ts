@@ -50,6 +50,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/reports': { anyOf: ['reports.view', 'reports.export', 'time.reports.view'] },
   '/users': { anyOf: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.separate', 'admin.users.delete'] },
   '/access-control': { anyOf: ['admin.roles.view', 'admin.roles.manage'] },
+  '/system-operations': { anyOf: ['admin.maintenance.manage'] },
 }
 
 export function hasEffectivePermission(

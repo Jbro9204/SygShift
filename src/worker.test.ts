@@ -3,6 +3,7 @@ import worker, {
   brandedEmailHtml,
   buildLoginInstructionsEmail,
   buildWelcomeEmail,
+  protectedMaintenanceWindow,
   validateSuppliedTemporaryPassword,
 } from '../worker'
 
@@ -16,7 +17,46 @@ const configuredEnvironment = {
   SUPABASE_URL: 'https://example.supabase.co',
 }
 
+function withClearMaintenanceStatus(
+  fetchMock: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
+) {
+  return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).includes('/rest/v1/rpc/get_maintenance_status')) {
+      return Promise.resolve(new Response(JSON.stringify({
+        active: [],
+        recentlyCompleted: [],
+        serverTime: '2026-08-25T19:00:00.000Z',
+        upcoming: [],
+      }), { headers: { 'content-type': 'application/json' } }))
+    }
+    return fetchMock(input, init)
+  })
+}
+
 describe('Cloudflare Worker boundary', () => {
+  it('protects service-role writes only for active read-only or unavailable feature windows', () => {
+    const status = {
+      active: [
+        {
+          accessMode: 'notice' as const,
+          endsAt: '2026-08-25T20:00:00.000Z',
+          featureCodes: ['communications'],
+          title: 'Communication notice',
+        },
+        {
+          accessMode: 'read_only' as const,
+          endsAt: '2026-08-25T20:00:00.000Z',
+          featureCodes: ['user_accounts'],
+          title: 'Account maintenance',
+        },
+      ],
+    }
+
+    expect(protectedMaintenanceWindow(status, 'communications')).toBeNull()
+    expect(protectedMaintenanceWindow(status, 'user_accounts')?.title).toBe('Account maintenance')
+    expect(protectedMaintenanceWindow(status, 'schedule')).toBeNull()
+  })
+
   it('returns a no-store health response with request tracing and production security headers', async () => {
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/health'),
@@ -136,7 +176,7 @@ describe('Cloudflare Worker boundary', () => {
       has_mfa: true,
       permissions: ['admin.users.manage', 'notifications.manage'],
     }), { headers: { 'content-type': 'application/json' } }))
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
     const response = await worker.fetch(
       new Request(`https://app.sygshift.example${pathname}`, {
@@ -183,7 +223,7 @@ describe('Cloudflare Worker boundary', () => {
         headers: { 'content-type': 'application/json' },
       }))
     const send = vi.fn().mockResolvedValue({ messageId: 'welcome-message' })
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
     const response = await worker.fetch(
       new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/welcome-email`, {
@@ -231,7 +271,7 @@ describe('Cloudflare Worker boundary', () => {
         existingAuthUserId: null,
       }), { headers: { 'content-type': 'application/json' } }))
     const send = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
     const response = await worker.fetch(
       new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/login-email`, {
@@ -265,7 +305,7 @@ describe('Cloudflare Worker boundary', () => {
       has_mfa: true,
       permissions: ['admin.users.invite'],
     }), { headers: { 'content-type': 'application/json' } }))
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/admin/users/10000000-0000-4000-8000-000000000010/account', {
@@ -337,7 +377,7 @@ describe('Cloudflare Worker boundary', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ trustedDevicesRevoked: 2 }), {
         headers: { 'content-type': 'application/json' },
       }))
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
     const response = await worker.fetch(
       new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/mfa-reset`, {
@@ -396,7 +436,7 @@ describe('Cloudflare Worker boundary', () => {
       has_mfa: true,
       permissions: ['notifications.manage'],
     }), { headers: { 'content-type': 'application/json' } }))
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/admin/notifications/process', {
@@ -445,7 +485,7 @@ describe('Cloudflare Worker boundary', () => {
         headers: { 'content-type': 'application/json' },
       }))
     const emailSend = vi.fn().mockResolvedValue({ messageId: 'test-message' })
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/admin/notifications/process', {
@@ -507,7 +547,7 @@ describe('Cloudflare Worker boundary', () => {
         headers: { 'content-type': 'application/json' },
       }))
     const emailSend = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/admin/notifications/process', {

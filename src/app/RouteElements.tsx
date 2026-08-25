@@ -91,6 +91,9 @@ export const TimeRulesPageRoute = lazy(() =>
 export const UserAdminPageRoute = lazy(() =>
   import('../pages/UserAdminPage').then((module) => ({ default: module.UserAdminPage })),
 )
+export const SystemOperationsPageRoute = lazy(() =>
+  import('../pages/SystemOperationsPage').then((module) => ({ default: module.SystemOperationsPage })),
+)
 
 function RouteFallback() {
   return (

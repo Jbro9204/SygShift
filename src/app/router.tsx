@@ -20,6 +20,7 @@ import {
   SchedulePageRoute,
   SchedulerPageRoute,
   SitesPageRoute,
+  SystemOperationsPageRoute,
   TimeExceptionsPageRoute,
   TimeOperationsPageRoute,
   TimeDailyAttendancePageRoute,
@@ -246,6 +247,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <AccessControlPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'system-operations',
+        element: (
+          <RouteSuspense>
+            <SystemOperationsPageRoute />
           </RouteSuspense>
         ),
       },

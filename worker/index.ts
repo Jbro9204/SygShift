@@ -108,6 +108,17 @@ interface AttendanceReportPayload {
   dispatchTo: string
 }
 
+interface MaintenanceStatusWindow {
+  accessMode: 'notice' | 'read_only' | 'unavailable'
+  endsAt: string
+  featureCodes: string[]
+  title: string
+}
+
+interface MaintenanceStatusPayload {
+  active?: MaintenanceStatusWindow[]
+}
+
 const maxJsonBodyBytes = 4096
 const defaultAppUrl = 'https://app.sygilant.us'
 const defaultSupportEmail = 'jbrown@guardianshipsecurity.net'
@@ -258,6 +269,36 @@ async function callRpc<T>(
     },
     method: 'POST',
   })
+}
+
+export function protectedMaintenanceWindow(
+  status: MaintenanceStatusPayload,
+  featureCode: string,
+): MaintenanceStatusWindow | null {
+  return status.active?.find((window) => (
+    window.featureCodes.includes(featureCode)
+    && (window.accessMode === 'read_only' || window.accessMode === 'unavailable')
+  )) ?? null
+}
+
+async function requireMaintenanceWriteAccess(
+  config: { serviceRoleKey: string; url: string },
+  featureCode: string,
+): Promise<void> {
+  const status = await callRpc<MaintenanceStatusPayload>(
+    config,
+    'get_maintenance_status',
+    {},
+    config.serviceRoleKey,
+  )
+  const activeWindow = protectedMaintenanceWindow(status, featureCode)
+  if (!activeWindow) return
+
+  throw new ApiError(
+    'maintenance_write_protected',
+    503,
+    `${activeWindow.title} is in progress. This area is temporarily read-only and your change was not saved.`,
+  )
 }
 
 function blockedEmailDomains(environment: Environment): Set<string> {
@@ -973,6 +1014,11 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
     throw error
   }
 
+  await requireMaintenanceWriteAccess(
+    { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+    'user_accounts',
+  )
+
   const body = await readJsonBody(request)
   let usersByEmail: Map<string, AuthUser> | null = null
   const getUsersByEmail = async () => {
@@ -1453,6 +1499,11 @@ async function handleNotificationProcessApi(request: Request, environment: Envir
   if (!operator.context.permissions?.some((permission) => permission === 'notifications.manage' || permission === 'announcements.send')) {
     return errorJson('operations_mfa_required', requestId, 403)
   }
+
+  await requireMaintenanceWriteAccess(
+    { serviceRoleKey: operator.config.serviceRoleKey, url: operator.config.url },
+    'communications',
+  )
 
   const processing = await processNotificationJobs(environment, 10)
 

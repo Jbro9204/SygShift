@@ -397,6 +397,8 @@ docs: add production build and handoff guide
 
 Use the repository configuration in `wrangler.jsonc`.
 
+For a release that requires employee communication or protected access, follow `docs/operations/MAINTENANCE_RELEASE_RUNBOOK.md`. Maintenance is controlled from **Administration → System Operations** and remains inactive unless an authorized System Admin explicitly schedules a window. Use notice-only mode when writes do not need to pause. When protection is necessary, select only the affected features and keep the employee Time Clock available whenever safely possible.
+
 Production deployment:
 
 ```powershell
@@ -412,6 +414,8 @@ Invoke-RestMethod https://app.sygilant.us/api/v1/ready
 ```
 
 Then verify the changed live workflow with the appropriate role. A successful Wrangler upload is not the same as a verified release.
+
+Before and after a protected release, confirm the maintenance status endpoint reports the intended active, upcoming, and recently completed states. Every window must have an automatic end time; never rely only on a person remembering to restore access.
 
 Do not deploy unrelated dirty files. Do not claim that a migration is live merely because the frontend deployed.
 

@@ -16,6 +16,7 @@ import {
   Timer,
   UserCog,
   UsersRound,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react'
 import { scheduleRoutePermissions } from './accessPolicy'
@@ -76,6 +77,12 @@ export const navigationGroups: NavigationGroup[] = [
         path: '/access-control',
         icon: ShieldCheck,
         permissions: ['admin.roles.view', 'admin.roles.manage'],
+      },
+      {
+        label: 'System Operations',
+        path: '/system-operations',
+        icon: Wrench,
+        permissions: ['admin.maintenance.manage'],
       },
     ],
   },
