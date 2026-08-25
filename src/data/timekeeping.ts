@@ -46,6 +46,11 @@ const timekeepingEventSchema = z.object({
   workType: workTypeSchema.optional().default('post'),
 })
 
+const supervisorRecordedTimeEventSchema = timekeepingEventSchema.extend({
+  automaticClockOutEventId: z.string().uuid().nullable().optional(),
+  automaticClockOutAt: z.string().nullable().optional(),
+})
+
 const timekeepingDashboardSchema = z.object({
   serverTimestamp: z.string(),
   operationalDate: z.string(),
@@ -713,6 +718,7 @@ const attendanceReconciliationDecisionResultSchema = z.object({
 export type TimeEventKind = z.infer<typeof timeEventKindSchema>
 export type TimekeepingShift = z.infer<typeof timekeepingShiftSchema>
 export type TimekeepingEvent = z.infer<typeof timekeepingEventSchema>
+export type SupervisorRecordedTimeEvent = z.infer<typeof supervisorRecordedTimeEventSchema>
 export type TimekeepingDashboard = z.infer<typeof timekeepingDashboardSchema>
 export type TimekeepingState = 'off_clock' | 'working' | 'on_break'
 export type PayrollException = z.infer<typeof payrollExceptionSchema>
@@ -1413,7 +1419,7 @@ export async function supervisorRecordTimeEvent(input: {
   locationName?: string | null
   timeZone?: string | null
   reason: string
-}): Promise<TimekeepingEvent> {
+}): Promise<SupervisorRecordedTimeEvent> {
   const { data, error } = await getSupabaseClient().rpc('supervisor_record_time_event_with_location', {
     target_effective_at: input.effectiveAt,
     target_employee_id: input.employeeId,
@@ -1425,7 +1431,7 @@ export async function supervisorRecordTimeEvent(input: {
     target_time_zone: input.timeZone ?? 'America/Denver',
   })
   if (error) throw new Error(error.message || 'The time event could not be added.')
-  return parseTimekeepingEvent(data)
+  return supervisorRecordedTimeEventSchema.parse(data)
 }
 
 export async function supervisorCorrectTimeEvent(input: {

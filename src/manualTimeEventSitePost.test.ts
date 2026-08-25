@@ -10,7 +10,7 @@ vi.mock('./lib/supabase', () => ({
 }))
 
 const migration = readFileSync(
-  join(process.cwd(), 'supabase', 'migrations', '20260823170000_manual_time_event_site_post.sql'),
+  join(process.cwd(), 'supabase', 'migrations', '20260825103000_historical_manual_clock_in_reconciliation.sql'),
   'utf8',
 )
 

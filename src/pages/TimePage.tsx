@@ -432,6 +432,7 @@ export function TimeMaintenanceWorkbench({
   const [addManualLocation, setAddManualLocation] = useState('')
   const [addUsesManualLocation, setAddUsesManualLocation] = useState(false)
   const [addContext, setAddContext] = useState<string | null>(null)
+  const [addSuccessMessage, setAddSuccessMessage] = useState<string | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<TimeMaintenanceEvent | null>(null)
   const [correctionMode, setCorrectionMode] = useState<'adjust' | 'void' | 'site_post' | 'work_type'>('adjust')
   const [correctionDate, setCorrectionDate] = useState(defaultDate)
@@ -506,9 +507,12 @@ export function TimeMaintenanceWorkbench({
       shiftId: addUsesManualLocation ? null : addShiftId,
       timeZone: 'America/Denver',
     }),
-    onSuccess: async () => {
+    onSuccess: async (savedEvent) => {
       setAddReason('')
       setAddContext(null)
+      setAddSuccessMessage(savedEvent.automaticClockOutAt
+        ? `Clock-in saved. SygShift also added the scheduled clock-out at ${formatTime(savedEvent.automaticClockOutAt, 'America/Denver')}. Do not add another clock-out for this work session.`
+        : `${actionLabels[savedEvent.kind]} saved. The employee time record is current.`)
       await refreshTimeQueries()
     },
   })
@@ -757,6 +761,7 @@ export function TimeMaintenanceWorkbench({
               className="time-maintenance-add"
               onSubmit={(event) => {
                 event.preventDefault()
+                setAddSuccessMessage(null)
                 addMutation.mutate()
               }}
             >
@@ -913,6 +918,7 @@ export function TimeMaintenanceWorkbench({
             </form>
           </div>
 
+          {addSuccessMessage ? <div className="inline-success" role="status">{addSuccessMessage}</div> : null}
           {addMutation.isError ? <div className="inline-alert" role="alert">{addMutation.error.message}</div> : null}
           {selectedEvent ? (
             <ModalDialog
