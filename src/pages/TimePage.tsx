@@ -29,6 +29,7 @@ import {
   getOwnTimekeepingReview,
   getPayrollExportHistory,
   getTeamAttendanceSummary,
+  getTimeMaintenanceLocationOptions,
   getTimeMaintenanceShiftOptions,
   shiftOptionsForOperationalDate,
   getTimeMaintenance,
@@ -52,6 +53,7 @@ import {
   type ClockableShiftChoices,
   type TeamAttendanceSummaryRow,
   type TimeMaintenanceEvent,
+  type TimeMaintenanceLocationOption,
   type TimeMaintenanceShiftOption,
   type TimeEventKind,
   type TimekeepingDashboard,
@@ -265,6 +267,28 @@ export interface TimeMaintenanceFocusRequest {
 }
 
 const MANUAL_SITE_POST_OPTION = '__manual_site_post__'
+const ACTIVE_SITE_POST_OPTION_PREFIX = '__active_site_post__:'
+
+function activeSitePostOptionValue(postId: string): string {
+  return `${ACTIVE_SITE_POST_OPTION_PREFIX}${postId}`
+}
+
+function activeSitePostOptionId(value: string): string | null {
+  return value.startsWith(ACTIVE_SITE_POST_OPTION_PREFIX)
+    ? value.slice(ACTIVE_SITE_POST_OPTION_PREFIX.length)
+    : null
+}
+
+function activeSitePostOptionTitle(option: TimeMaintenanceLocationOption): string {
+  const site = [option.siteCode, option.siteName].filter(Boolean).join(' · ')
+  return `${site} - ${option.postName}`
+}
+
+function activeSitePostLocationName(option: TimeMaintenanceLocationOption): string {
+  return option.siteName === option.postName
+    ? option.siteName
+    : `${option.siteName} / ${option.postName}`
+}
 
 interface TimeMaintenanceOverviewRow {
   employeeId: string
@@ -429,6 +453,7 @@ export function TimeMaintenanceWorkbench({
   const [addTime, setAddTime] = useState('08:00')
   const [addReason, setAddReason] = useState('')
   const [addShiftId, setAddShiftId] = useState<string | null>(null)
+  const [addLocationPostId, setAddLocationPostId] = useState<string | null>(null)
   const [addManualLocation, setAddManualLocation] = useState('')
   const [addUsesManualLocation, setAddUsesManualLocation] = useState(false)
   const [addContext, setAddContext] = useState<string | null>(null)
@@ -480,12 +505,19 @@ export function TimeMaintenanceWorkbench({
       throughDate,
     }),
   })
+  const locationOptionsQuery = useQuery({
+    enabled: addEmployeeId !== '' || (selectedEvent !== null && correctionMode === 'site_post'),
+    queryKey: ['time-maintenance-location-options'],
+    queryFn: getTimeMaintenanceLocationOptions,
+    staleTime: 5 * 60_000,
+  })
   const refreshTimeQueries = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['time-maintenance'] }),
       queryClient.invalidateQueries({ queryKey: ['time-maintenance-overview'] }),
       queryClient.invalidateQueries({ queryKey: ['time-maintenance-review-summary'] }),
       queryClient.invalidateQueries({ queryKey: ['time-maintenance-shift-options'] }),
+      queryClient.invalidateQueries({ queryKey: ['time-maintenance-location-options'] }),
       queryClient.invalidateQueries({ queryKey: ['time-payroll-review'] }),
       queryClient.invalidateQueries({ queryKey: ['timekeeping-review'] }),
       queryClient.invalidateQueries({ queryKey: ['my-time-review'] }),
@@ -498,15 +530,23 @@ export function TimeMaintenanceWorkbench({
     ])
   }
   const addMutation = useMutation({
-    mutationFn: () => supervisorRecordTimeEvent({
-      effectiveAt: zonedDateTimeToIso(addDate, addTime),
-      employeeId: addEmployeeId,
-      kind: addKind,
-      locationName: addUsesManualLocation ? addManualLocation.trim() : null,
-      reason: addReason.trim(),
-      shiftId: addUsesManualLocation ? null : addShiftId,
-      timeZone: 'America/Denver',
-    }),
+    mutationFn: () => {
+      const activeLocation = locationOptionsQuery.data?.find((option) => option.postId === addLocationPostId) ?? null
+      if (addLocationPostId && !activeLocation) {
+        throw new Error('Choose an active Site/Post before saving this time event.')
+      }
+      return supervisorRecordTimeEvent({
+        effectiveAt: zonedDateTimeToIso(addDate, addTime),
+        employeeId: addEmployeeId,
+        kind: addKind,
+        locationName: activeLocation
+          ? activeSitePostLocationName(activeLocation)
+          : addUsesManualLocation ? addManualLocation.trim() : null,
+        reason: addReason.trim(),
+        shiftId: activeLocation || addUsesManualLocation ? null : addShiftId,
+        timeZone: activeLocation?.timeZone ?? 'America/Denver',
+      })
+    },
     onSuccess: async (savedEvent) => {
       setAddReason('')
       setAddContext(null)
@@ -526,6 +566,17 @@ export function TimeMaintenanceWorkbench({
             reason: correctionReason.trim(),
             timeEventId: selectedEvent.id,
             timeZone: selectedEvent.timeZone,
+          })
+        }
+        const activePostId = activeSitePostOptionId(correctionShiftId)
+        if (activePostId) {
+          const activeLocation = locationOptionsQuery.data?.find((option) => option.postId === activePostId)
+          if (!activeLocation) throw new Error('Choose an active Site/Post before saving this correction.')
+          return supervisorUpdateTimeEventLocation({
+            locationName: activeSitePostLocationName(activeLocation),
+            reason: correctionReason.trim(),
+            timeEventId: selectedEvent.id,
+            timeZone: activeLocation.timeZone,
           })
         }
         return supervisorUpdateTimeEventSitePost({
@@ -600,9 +651,13 @@ export function TimeMaintenanceWorkbench({
       return sitePostOptionTitle(left).localeCompare(sitePostOptionTitle(right), undefined, { sensitivity: 'base' })
     })
   }, [addOperationalDate, addShiftOptionsQuery.data])
+  const addActiveLocationOptions = useMemo(() => {
+    const scheduledPostIds = new Set(addShiftOptions.map((option) => option.postId).filter(Boolean))
+    return (locationOptionsQuery.data ?? []).filter((option) => !scheduledPostIds.has(option.postId))
+  }, [addShiftOptions, locationOptionsQuery.data])
   const canAdd = addEmployeeId !== ''
     && addReason.trim().length > 0
-    && (addUsesManualLocation ? addManualLocation.trim().length > 0 : addShiftId !== null)
+    && (addLocationPostId !== null || (addUsesManualLocation ? addManualLocation.trim().length > 0 : addShiftId !== null))
     && !addMutation.isPending
   const canCorrect = selectedEvent !== null
     && correctionReason.trim().length > 0
@@ -615,6 +670,10 @@ export function TimeMaintenanceWorkbench({
     return options.filter((option) =>
       dateInputValue(option.startsAt) === selectedEventDate || dateInputValue(option.endsAt) === selectedEventDate)
   }, [selectedEventDate, shiftOptionsQuery.data])
+  const correctionActiveLocationOptions = useMemo(() => {
+    const scheduledPostIds = new Set(correctionShiftOptions.map((option) => option.postId).filter(Boolean))
+    return (locationOptionsQuery.data ?? []).filter((option) => !scheduledPostIds.has(option.postId))
+  }, [correctionShiftOptions, locationOptionsQuery.data])
 
   useEffect(() => {
     if (!focusRequest) return
@@ -655,6 +714,7 @@ export function TimeMaintenanceWorkbench({
   function prefillRelatedPunch(event: TimeMaintenanceEvent) {
     setAddEmployeeId(event.employeeId)
     setAddShiftId(event.shiftId)
+    setAddLocationPostId(null)
     const hasManualLocation = event.shiftId === null
       && event.locationName !== 'Unscheduled'
       && event.locationName !== 'Unscheduled Location'
@@ -775,6 +835,7 @@ export function TimeMaintenanceWorkbench({
                   onChange={(event) => {
                     setAddEmployeeId(event.target.value)
                     setAddShiftId(null)
+                    setAddLocationPostId(null)
                     setAddManualLocation('')
                     setAddUsesManualLocation(false)
                     setAddContext(null)
@@ -812,6 +873,7 @@ export function TimeMaintenanceWorkbench({
                     onChange={(event) => {
                       setAddOperationalDate(event.target.value)
                       setAddShiftId(null)
+                      setAddLocationPostId(null)
                       setAddManualLocation('')
                       setAddUsesManualLocation(false)
                       setAddContext(null)
@@ -825,13 +887,15 @@ export function TimeMaintenanceWorkbench({
                 <label>
                   <span>Site/Post</span>
                   <select
-                    disabled={!addEmployeeId || addShiftOptionsQuery.isPending}
+                    disabled={!addEmployeeId || addShiftOptionsQuery.isPending || locationOptionsQuery.isPending}
                     onChange={(event) => {
                       const value = event.target.value
                       const useManualLocation = value === MANUAL_SITE_POST_OPTION
+                      const activePostId = activeSitePostOptionId(value)
                       const selectedShift = addShiftOptions.find((option) => option.shiftId === value)
                       setAddUsesManualLocation(useManualLocation)
-                      setAddShiftId(useManualLocation || value === '' ? null : value)
+                      setAddLocationPostId(activePostId)
+                      setAddShiftId(useManualLocation || activePostId || value === '' ? null : value)
                       if (!useManualLocation) setAddManualLocation('')
                       setAddContext(null)
                       if (selectedShift) {
@@ -844,9 +908,11 @@ export function TimeMaintenanceWorkbench({
                       }
                     }}
                     required
-                    value={addUsesManualLocation ? MANUAL_SITE_POST_OPTION : addShiftId ?? ''}
+                    value={addLocationPostId
+                      ? activeSitePostOptionValue(addLocationPostId)
+                      : addUsesManualLocation ? MANUAL_SITE_POST_OPTION : addShiftId ?? ''}
                   >
-                    <option value="">{addShiftOptionsQuery.isPending ? 'Loading Site/Post options...' : 'Choose Site/Post'}</option>
+                    <option value="">{addShiftOptionsQuery.isPending || locationOptionsQuery.isPending ? 'Loading Site/Post options...' : 'Choose Site/Post'}</option>
                     {addShiftOptions.filter((option) => option.selectedEmployeeAssigned).length ? (
                       <optgroup label="Assigned shifts">
                         {addShiftOptions.filter((option) => option.selectedEmployeeAssigned).map((option) => (
@@ -865,9 +931,18 @@ export function TimeMaintenanceWorkbench({
                         ))}
                       </optgroup>
                     ) : null}
+                    {addActiveLocationOptions.length ? (
+                      <optgroup label="All active Site/Posts">
+                        {addActiveLocationOptions.map((option) => (
+                          <option key={option.postId} value={activeSitePostOptionValue(option.postId)}>
+                            {activeSitePostOptionTitle(option)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
                     <option value={MANUAL_SITE_POST_OPTION}>Other location</option>
                   </select>
-                  <small>Saved with this punch so a second Site/Post correction is not required.</small>
+                  <small>Scheduled shifts appear first. Every active Site/Post remains available even when no shift exists on this workday.</small>
                 </label>
                 {addUsesManualLocation ? (
                   <label>
@@ -882,6 +957,7 @@ export function TimeMaintenanceWorkbench({
                   </label>
                 ) : null}
                 {addShiftOptionsQuery.isError ? <small className="field-error">{addShiftOptionsQuery.error.message}</small> : null}
+                {locationOptionsQuery.isError ? <small className="field-error">{locationOptionsQuery.error.message}</small> : null}
               </div>
               <label className="time-maintenance-add__reason">
                 <span>Reason</span>
@@ -967,17 +1043,30 @@ export function TimeMaintenanceWorkbench({
                 <label className="time-correction-editor__location">
                   <span>Correct Site/Post</span>
                   <select
-                    disabled={shiftOptionsQuery.isPending}
+                    disabled={shiftOptionsQuery.isPending || locationOptionsQuery.isPending}
                     onChange={(event) => setCorrectionShiftId(event.target.value)}
                     required
                     value={correctionShiftId}
                   >
-                    <option value="">{shiftOptionsQuery.isPending ? 'Loading schedule blocks...' : 'Choose the correct Site/Post shift'}</option>
-                    {correctionShiftOptions.map((option) => (
-                      <option key={option.shiftId} value={option.shiftId}>
-                        {sitePostOptionTitle(option)}
-                      </option>
-                    ))}
+                    <option value="">{shiftOptionsQuery.isPending || locationOptionsQuery.isPending ? 'Loading Site/Post options...' : 'Choose the correct Site/Post'}</option>
+                    {correctionShiftOptions.length ? (
+                      <optgroup label="Scheduled shifts">
+                        {correctionShiftOptions.map((option) => (
+                          <option key={option.shiftId} value={option.shiftId}>
+                            {sitePostOptionTitle(option)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                    {correctionActiveLocationOptions.length ? (
+                      <optgroup label="All active Site/Posts">
+                        {correctionActiveLocationOptions.map((option) => (
+                          <option key={option.postId} value={activeSitePostOptionValue(option.postId)}>
+                            {activeSitePostOptionTitle(option)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
                     <option value={MANUAL_SITE_POST_OPTION}>Other / manual label only</option>
                   </select>
                   {correctionShiftId === MANUAL_SITE_POST_OPTION ? (
@@ -992,15 +1081,15 @@ export function TimeMaintenanceWorkbench({
                       />
                       <small>Use this only when the schedule block does not exist yet. It fixes the payroll label but does not link the punch to a schedule block.</small>
                     </>
+                  ) : activeSitePostOptionId(correctionShiftId) ? (
+                    <small>This uses the canonical active Site/Post and preserves the punch even though it is not linked to a scheduled shift.</small>
                   ) : correctionShiftOptions.length > 0 && correctionShiftId ? (
                     <small>{sitePostOptionSchedule(correctionShiftOptions.find((option) => option.shiftId === correctionShiftId) ?? correctionShiftOptions[0])}</small>
                   ) : (
-                    <small>Select the actual scheduled block. This removes the Unscheduled payroll flag for the corrected punch group.</small>
+                    <small>Select a scheduled shift when one exists. Otherwise choose the verified active Site/Post.</small>
                   )}
                   {shiftOptionsQuery.isError ? <small className="field-error">{shiftOptionsQuery.error.message}</small> : null}
-                  {!shiftOptionsQuery.isPending && correctionShiftOptions.length === 0 ? (
-                    <small className="field-error">No schedule blocks were found on this punch date. Add the shift to the schedule first for a true Site/Post link, or choose Other for a manual payroll label.</small>
-                  ) : null}
+                  {locationOptionsQuery.isError ? <small className="field-error">{locationOptionsQuery.error.message}</small> : null}
                 </label>
               ) : null}
               {correctionMode === 'work_type' ? (

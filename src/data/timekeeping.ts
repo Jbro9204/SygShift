@@ -373,6 +373,16 @@ const timeMaintenanceShiftOptionSchema = z.object({
   workType: workTypeSchema.optional().default('post'),
 })
 
+const timeMaintenanceLocationOptionSchema = z.object({
+  postId: z.string().uuid(),
+  siteId: z.string().uuid(),
+  siteCode: z.string().nullable(),
+  siteName: z.string(),
+  postName: z.string(),
+  timeZone: z.string(),
+  requiresArmed: z.boolean(),
+})
+
 const timeWorkTypeMapItemSchema = z.object({
   employeeId: z.string().uuid(),
   shiftId: z.string().uuid().nullable(),
@@ -734,6 +744,7 @@ export type TimeMaintenance = z.infer<typeof timeMaintenanceSchema>
 export type TimeMaintenanceEmployee = z.infer<typeof timeMaintenanceEmployeeSchema>
 export type TimeMaintenanceEvent = z.infer<typeof timeMaintenanceEventSchema>
 export type TimeMaintenanceShiftOption = z.infer<typeof timeMaintenanceShiftOptionSchema>
+export type TimeMaintenanceLocationOption = z.infer<typeof timeMaintenanceLocationOptionSchema>
 export type TeamAttendanceSummary = z.infer<typeof teamAttendanceSummarySchema>
 export type TeamAttendanceSummaryRow = z.infer<typeof teamAttendanceSummaryRowSchema>
 export type PayrollRules = z.infer<typeof payrollRulesSchema>
@@ -1373,6 +1384,12 @@ export async function getTimeMaintenanceShiftOptions(input: {
   })
   if (error) throw new Error(error.message || 'Site/Post shift options could not be loaded. MFA is required.')
   return dedupeTimeMaintenanceShiftOptions(z.array(timeMaintenanceShiftOptionSchema).parse(data))
+}
+
+export async function getTimeMaintenanceLocationOptions(): Promise<TimeMaintenanceLocationOption[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_time_maintenance_location_options')
+  if (error) throw new Error(error.message || 'Active Site/Post options could not be loaded. MFA is required.')
+  return z.array(timeMaintenanceLocationOptionSchema).parse(data)
 }
 
 export async function reviewTimeEventCorrection(input: {

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { supervisorRecordTimeEvent } from './data/timekeeping'
+import { getTimeMaintenanceLocationOptions, supervisorRecordTimeEvent } from './data/timekeeping'
 
 const rpc = vi.hoisted(() => vi.fn())
 
@@ -13,6 +13,11 @@ const migration = readFileSync(
   join(process.cwd(), 'supabase', 'migrations', '20260825103000_historical_manual_clock_in_reconciliation.sql'),
   'utf8',
 )
+const activeLocationMigration = readFileSync(
+  join(process.cwd(), 'supabase', 'migrations', '20260825124500_time_maintenance_active_site_post_options.sql'),
+  'utf8',
+)
+const timePageSource = readFileSync(join(process.cwd(), 'src', 'pages', 'TimePage.tsx'), 'utf8')
 
 const employeeId = '73000000-0000-4000-8000-000000000001'
 const shiftId = '73000000-0000-4000-8000-000000000002'
@@ -76,5 +81,34 @@ describe('manual time event Site/Post workflow', () => {
     expect(migration).toContain('insert into public.time_event_location_overrides')
     expect(migration).toContain('insert into public.time_event_maintenance_notes')
     expect(migration).toContain('revoke all on function public.supervisor_record_time_event_with_location')
+  })
+
+  it('loads every active Site/Post independently of schedule occurrences', async () => {
+    rpc.mockResolvedValueOnce({
+      data: [{
+        postId: '73000000-0000-4000-8000-000000000004',
+        requiresArmed: false,
+        siteCode: 'NLA',
+        siteId: '73000000-0000-4000-8000-000000000005',
+        siteName: 'Neon Local Apt-Unarmed',
+        postName: 'Unarmed coverage',
+        timeZone: 'America/Denver',
+      }],
+      error: null,
+    })
+
+    const options = await getTimeMaintenanceLocationOptions()
+
+    expect(rpc).toHaveBeenCalledWith('get_time_maintenance_location_options')
+    expect(options[0]).toMatchObject({ siteCode: 'NLA', siteName: 'Neon Local Apt-Unarmed' })
+  })
+
+  it('protects active Site/Post choices with time-management permission and active-record filters', () => {
+    expect(activeLocationMigration).toContain("private.timekeeping_require_permission('time.manage')")
+    expect(activeLocationMigration).toContain('where site.active')
+    expect(activeLocationMigration).toContain('and post.active')
+    expect(activeLocationMigration).toContain('revoke all on function public.get_time_maintenance_location_options() from public, anon')
+    expect(timePageSource).toContain('<optgroup label="All active Site/Posts">')
+    expect(timePageSource).toContain('Every active Site/Post remains available even when no shift exists on this workday.')
   })
 })
