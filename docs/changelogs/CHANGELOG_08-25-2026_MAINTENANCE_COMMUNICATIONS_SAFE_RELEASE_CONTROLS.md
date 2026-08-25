@@ -45,3 +45,13 @@ Give SygShift a controlled, employee-visible maintenance process so releases can
 - Production build passed.
 - Added coverage for status parsing, admin operations, feature routing, Mountain Time conversion, and Worker/API enforcement.
 - Verified whitespace and patch formatting with `git diff --check`.
+
+## Release Verification
+
+- Git release commit: `9a8544f` (`Add maintenance communications and safe release controls`).
+- Cloudflare Worker version: `72c2abe7-d505-4ed1-b279-cb057e6aed35`.
+- Confirmed `https://app.sygilant.us/api/v1/health` returns HTTP 200 with an `ok` status.
+- Confirmed `https://app.sygilant.us/api/v1/ready` returns HTTP 200 with all required bindings ready.
+- Confirmed the protected System Operations route redirects a signed-out browser to Login.
+- Verified the live public shell at 1280 × 720 and 390 × 844 with no horizontal overflow or browser console warnings/errors.
+- Confirmed zero active maintenance windows after deployment. Normal production access remains in effect.
