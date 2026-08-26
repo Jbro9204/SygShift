@@ -7,6 +7,7 @@ import { join } from 'node:path'
 const root = process.cwd()
 const appCss = readFileSync(join(root, 'src', 'App.css'), 'utf8')
 const accessControlPage = readFileSync(join(root, 'src', 'pages', 'AccessControlPage.tsx'), 'utf8')
+const employeeAccessWorkspace = readFileSync(join(root, 'src', 'components', 'EmployeeAccessWorkspace.tsx'), 'utf8')
 const availabilityPage = readFileSync(join(root, 'src', 'pages', 'AvailabilityPage.tsx'), 'utf8')
 const licensingCenterPage = readFileSync(join(root, 'src', 'pages', 'LicensingCenterPage.tsx'), 'utf8')
 const navigation = readFileSync(join(root, 'src', 'app', 'navigation.ts'), 'utf8')
@@ -272,19 +273,20 @@ describe('button layout guardrails', () => {
     expect(userAdminPage).toContain('mfa-reset-confirmation__actions')
   })
 
-  it('keeps Employee Access modals purpose-sized and locally aligned', () => {
-    expect(accessControlPage).toContain('access-modal access-modal--employee-menu')
-    expect(accessControlPage).toContain('access-modal access-modal--employee-editor')
-    expect(accessControlPage).toContain('modal-actions employee-access-menu-actions')
+  it('keeps Employee Access in one responsive, locally scrolling workspace', () => {
+    expect(accessControlPage).toContain('<EmployeeAccessWorkspace')
+    expect(accessControlPage).not.toContain('employeeEditorOpen')
+    expect(employeeAccessWorkspace).toContain('access-modal access-modal--employee-workspace')
+    expect(employeeAccessWorkspace).toContain('employee-access-tabs')
+    expect(employeeAccessWorkspace).toContain('Role memberships')
+    expect(employeeAccessWorkspace).toContain('Individual exceptions')
+    expect(employeeAccessWorkspace).toContain('Effective access')
 
-    expect(blockFor('.access-modal--employee-menu')).toContain('width: min(96vw, 820px)')
-    expect(blockFor('.access-modal--employee-editor')).toContain('width: min(98vw, 1280px)')
-
-    const menuActionsBlock = blockFor('.employee-access-menu-actions')
-    expect(menuActionsBlock).toContain('justify-content: space-between')
-    expect(menuActionsBlock).toContain('border-top: 1px solid var(--line)')
-
-    expect(appCss).toContain('.employee-access-launcher {\n  gap: 18px;\n  padding: 22px;')
-    expect(appCss).toContain('box-shadow: 0 14px 32px rgba(45, 32, 12, 0.08)')
+    expect(blockFor('.access-modal--employee-workspace')).toContain('width: min(98vw, 1480px)')
+    expect(blockFor('.access-modal--employee-workspace')).toContain('overflow: hidden')
+    expect(topLevelBlockFor('.employee-access-workspace')).toContain('grid-template-columns: minmax(270px, 320px) minmax(0, 1fr)')
+    expect(blockFor('.employee-access-tabpanel')).toContain('overflow-y: auto')
+    expect(blockFor('.employee-access-actionbar')).toContain('position: sticky')
+    expect(blocksFor('.employee-access-workspace__footer').some((block) => block.includes('justify-content: space-between'))).toBe(true)
   })
 })

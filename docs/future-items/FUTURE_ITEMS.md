@@ -13,26 +13,6 @@ Keep this repository copy synchronized with:
 - Do not mark an item complete because a screen or button exists. The full authorized workflow, persistence, audit behavior, tests, and production verification must be complete.
 - All displayed dates and dated documentation use MM/DD/YYYY.
 
-## Access, Identity & User Administration
-
-### Manage Employee Access Workspace Redesign
-
-- Priority: High
-- Target window: Next user-administration release
-- Status: Approved / queued
-- Added: 08/25/2026
-
-Replace the current long, confusing employee-access modal with a clear task-focused workspace for individual access changes.
-
-Required outcomes:
-
-- Use a comfortably sized, responsive workspace instead of a cramped or excessively long modal.
-- Separate role memberships, individual grants/denials, active overrides, and effective-access review into clear steps or tabs.
-- Group permissions under the established application categories.
-- Explain inherited role access versus person-specific exceptions in plain language.
-- Keep save actions close to the setting being changed and show immediate loading, success, and refreshed state.
-- Preserve server-enforced authorization, MFA requirements, audit notes, and Admin recovery safeguards.
-
 ## Time, Attendance & Payroll
 
 ### Employee Timecard History and Current-Period Defaults

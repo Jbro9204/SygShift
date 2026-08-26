@@ -25,6 +25,16 @@ deployment status, or major workflow assumptions change.
 
 ## 08/26/2026
 
+### Manage Employee Access workspace redesign
+
+- Replaced the two-step employee chooser and oversized access editor with one focused, responsive workspace.
+- Added a searchable active-employee directory and clear tabs for role memberships, individual exceptions, and effective-access review.
+- Grouped permissions by the established application categories and collapsed effective-access details so administrators can inspect them without scrolling through one continuous list.
+- Kept role saves and exception actions beside the settings they change, with required audit reasons, loading states, success/error feedback, and immediate server-confirmed refreshes.
+- Preserved all existing role assignments, employee-specific grants and denials, server-enforced Admin/MFA authorization, audit records, and protected Admin recovery rules.
+- Added regression coverage for the complete workspace, mutation boundaries, refreshed state, responsive modal sizing, controlled scrolling, and button layout.
+- Full validation passed: type checking, linting, 85 test files / 426 tests, and production build.
+
 ### Production data connection recovery and actionable service diagnostics
 
 - Restored browser-side data and authentication access after a production build supplied blank public connection values.

@@ -13,21 +13,16 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   UserRoundCog,
-  X,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { EmployeeAccessWorkspace } from '../components/EmployeeAccessWorkspace'
 import { ModalDialog } from '../components/ModalDialog'
 import {
-  clearEmployeePermissionOverride,
   getAccessControlCenter,
   setAccessRolePermissions,
-  setEmployeeAccessRoles,
-  setEmployeePermissionOverride,
   upsertAccessRole,
   type AccessControlCenter,
-  type AccessControlUser,
   type AccessRoleDefinition,
-  type OverrideEffect,
   type PermissionDefinition,
 } from '../data/accessControl'
 
@@ -428,265 +423,6 @@ function RolePermissionEditor({
   )
 }
 
-function EmployeeAccessEditor({
-  onClose,
-  permissions,
-  roles,
-  user,
-}: {
-  onClose: () => void
-  permissions: PermissionDefinition[]
-  roles: AccessRoleDefinition[]
-  user: AccessControlUser
-}) {
-  const queryClient = useQueryClient()
-  const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set(user.assignedRoleIds))
-  const [message, setMessage] = useState<string | null>(null)
-  const [overridePermissionSearch, setOverridePermissionSearch] = useState('')
-  const permissionByCode = useMemo(() => new Map(permissions.map((permission) => [permission.code, permission])), [permissions])
-  const overridePermissions = useMemo(
-    () => filterPermissions(permissions, overridePermissionSearch),
-    [overridePermissionSearch, permissions],
-  )
-  const groupedEffective = useMemo(() => {
-    const visible = user.effectivePermissionCodes
-      .map((code) => permissionByCode.get(code))
-      .filter((permission): permission is PermissionDefinition => Boolean(permission))
-    return groupedPermissions(visible)
-  }, [permissionByCode, user.effectivePermissionCodes])
-
-  const roleMutation = useMutation({
-    mutationFn: (roleIds: string[]) => setEmployeeAccessRoles(user.id, roleIds),
-    onSuccess: (center) => {
-      updateCenter(queryClient, center)
-      setMessage('Employee role assignments saved.')
-    },
-  })
-
-  const overrideMutation = useMutation({
-    mutationFn: setEmployeePermissionOverride,
-    onSuccess: (center) => {
-      updateCenter(queryClient, center)
-      setMessage('Employee permission override saved.')
-    },
-  })
-
-  const clearMutation = useMutation({
-    mutationFn: clearEmployeePermissionOverride,
-    onSuccess: (center) => {
-      updateCenter(queryClient, center)
-      setMessage('Employee permission override removed.')
-    },
-  })
-  const modalBusy = roleMutation.isPending || overrideMutation.isPending || clearMutation.isPending
-
-  useEffect(() => {
-    setSelectedRoleIds(new Set(user.assignedRoleIds))
-    setMessage(null)
-  }, [user.id, user.assignedRoleIds])
-
-  function toggleRole(roleId: string) {
-    setSelectedRoleIds((current) => {
-      const next = new Set(current)
-      if (next.has(roleId)) next.delete(roleId)
-      else next.add(roleId)
-      return next
-    })
-  }
-
-  function submitOverride(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const form = event.currentTarget
-    const data = new FormData(form)
-    overrideMutation.mutate({
-      effect: String(data.get('effect')) as OverrideEffect,
-      employeeId: user.id,
-      permissionCode: String(data.get('permissionCode')),
-      reason: String(data.get('reason') ?? '').trim(),
-    }, {
-      onSuccess: () => form.reset(),
-    })
-  }
-
-  return (
-    <ModalDialog
-      busy={modalBusy}
-      busyLabel="Updating employee access..."
-      className="access-modal access-modal--employee-editor"
-      description="Adjust extra role memberships, individual grants, individual denies, and review final effective permissions."
-      onClose={onClose}
-      title={`Employee access: ${user.displayName}`}
-    >
-      <div className="employee-access-window">
-        <section className="employee-access-banner">
-          <div>
-            <p className="eyebrow">Selected employee</p>
-            <h3>{user.displayName}</h3>
-            <span>@{user.username || 'no-login'} · Primary role: {roleLabels[user.primaryRole]}{user.jobTitle ? ` · ${user.jobTitle}` : ''}</span>
-          </div>
-          <span className="status-pill status-pill--green">Active</span>
-        </section>
-
-        <div className="employee-access-grid">
-          <section className="access-modal-card">
-            <h3>Additional role memberships</h3>
-            <div className="employee-role-picklist">
-              {roles.map((role) => (
-                <label className="access-checkline access-checkline--card" key={role.id}>
-                  <input checked={selectedRoleIds.has(role.id)} onChange={() => toggleRole(role.id)} type="checkbox" />
-                  <span>
-                    <strong>{role.name}</strong>
-                    <small>{role.systemRole ? 'System role can be assigned as an extra group.' : 'Custom role'}</small>
-                  </span>
-                </label>
-              ))}
-            </div>
-            <button
-              className="access-control-button access-control-button--primary"
-              disabled={roleMutation.isPending}
-              onClick={() => roleMutation.mutate([...selectedRoleIds])}
-              type="button"
-            >
-              <Save aria-hidden="true" size={18} />
-              Save employee roles
-            </button>
-          </section>
-
-          <section className="access-modal-card">
-            <h3>Individual permission override</h3>
-            <form className="access-override-form" onSubmit={submitOverride}>
-              <label className="permission-search permission-search--override">
-                <Search aria-hidden="true" size={18} />
-                <span className="visually-hidden">Search override permissions</span>
-                <input
-                  onChange={(event) => setOverridePermissionSearch(event.target.value)}
-                  placeholder="Search permission to grant or deny"
-                  type="search"
-                  value={overridePermissionSearch}
-                />
-              </label>
-              <label>
-                <span>Permission</span>
-                <select disabled={overridePermissions.length === 0} name="permissionCode">
-                  {overridePermissions.map((permission) => (
-                    <option key={permission.code} value={permission.code}>
-                      {permission.category} — {permission.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {overridePermissions.length === 0 ? (
-                <p className="permission-search-empty">No permissions match that search.</p>
-              ) : null}
-              <label>
-                <span>Effect</span>
-                <select name="effect">
-                  <option value="grant">Grant</option>
-                  <option value="deny">Deny</option>
-                </select>
-              </label>
-              <label>
-                <span>Reason</span>
-                <textarea name="reason" placeholder="Required audit note." required rows={3} />
-              </label>
-              <button className="access-control-button access-control-button--secondary" disabled={overrideMutation.isPending || overridePermissions.length === 0} type="submit">
-                Apply override
-              </button>
-            </form>
-          </section>
-        </div>
-
-        <section className="access-override-list">
-          <h3>Active individual overrides</h3>
-          {user.overrides.length === 0 ? (
-            <p>No person-specific overrides are active.</p>
-          ) : (
-            <div className="override-chip-list">
-              {user.overrides.map((override) => (
-                <span className={`override-chip override-chip--${override.effect}`} key={override.id}>
-                  <strong>{override.effect === 'grant' ? 'Grant' : 'Deny'}:</strong> {permissionByCode.get(override.permissionCode)?.name ?? override.permissionCode}
-                  <button onClick={() => clearMutation.mutate(override.id)} type="button">Remove</button>
-                </span>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="effective-permissions">
-          <h3>Effective permissions preview</h3>
-          <p>This is the final calculated access after primary role, extra role memberships, grants, and denies.</p>
-          {Object.entries(groupedEffective).map(([category, categoryPermissions]) => (
-            <div className="effective-permissions__group" key={category}>
-              <strong>{category}</strong>
-              <div>
-                {categoryPermissions.map((permission) => (
-                  <span key={permission.code}>{permission.name}</span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </section>
-        {message ? <p className="form-feedback form-feedback--success" role="status">{message}</p> : null}
-        {roleMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{roleMutation.error.message}</p> : null}
-        {overrideMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{overrideMutation.error.message}</p> : null}
-        {clearMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{clearMutation.error.message}</p> : null}
-      </div>
-    </ModalDialog>
-  )
-}
-
-function EmployeeAccessLauncher({
-  onSelect,
-  selectedUserId,
-  users,
-}: {
-  onSelect: (userId: string) => void
-  selectedUserId: string
-  users: AccessControlUser[]
-}) {
-  const [query, setQuery] = useState('')
-  const filteredUsers = useMemo(() => {
-    const normalized = query.trim().toLowerCase()
-    if (!normalized) return users
-    return users.filter((user) => [
-      user.displayName,
-      user.username ?? '',
-      roleLabels[user.primaryRole],
-      user.jobTitle ?? '',
-    ].some((value) => value.toLowerCase().includes(normalized)))
-  }, [query, users])
-
-  return (
-    <section className="employee-access-launcher">
-      <div>
-        <p className="eyebrow">Employee exceptions</p>
-        <h2>Work a person only when needed</h2>
-        <p>Use this for one-off access changes. Normal permissions should live in roles.</p>
-      </div>
-      <div className="employee-access-search">
-        <Search aria-hidden="true" size={18} />
-        <input
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search employee, username, role, or title"
-          value={query}
-        />
-      </div>
-      <select
-        className="access-employee-select"
-        onChange={(event) => onSelect(event.target.value)}
-        value={selectedUserId}
-      >
-        {filteredUsers.map((user) => (
-          <option key={user.id} value={user.id}>
-            {user.displayName} — {roleLabels[user.primaryRole]}
-          </option>
-        ))}
-      </select>
-      {filteredUsers.length === 0 ? <p className="form-feedback form-feedback--error">No active employees match that search.</p> : null}
-    </section>
-  )
-}
-
 function AccessControlState({
   children,
   icon,
@@ -720,7 +456,6 @@ export function AccessControlPage() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [createRoleOpen, setCreateRoleOpen] = useState(false)
   const [employeeAccessOpen, setEmployeeAccessOpen] = useState(false)
-  const [employeeEditorOpen, setEmployeeEditorOpen] = useState(false)
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
   const centerQuery = useQuery({
     queryFn: getAccessControlCenter,
@@ -866,56 +601,13 @@ export function AccessControlPage() {
       ) : null}
 
       {employeeAccessOpen ? (
-        <ModalDialog
-          className="access-modal access-modal--employee-menu"
-          description="Choose an employee before opening their access editor."
+        <EmployeeAccessWorkspace
           onClose={() => setEmployeeAccessOpen(false)}
-          title="Manage employee access"
-        >
-          <EmployeeAccessLauncher
-            onSelect={(userId) => setSelectedUserId(userId)}
-            selectedUserId={selectedUser?.id ?? ''}
-            users={center.users}
-          />
-          <div className="modal-actions employee-access-menu-actions">
-            <button className="access-control-button access-control-button--secondary" onClick={() => setEmployeeAccessOpen(false)} type="button">
-              <X aria-hidden="true" size={18} />
-              Close
-            </button>
-            <button
-              className="access-control-button access-control-button--primary"
-              disabled={!selectedUser}
-              onClick={() => {
-                if (!selectedUser) return
-                setEmployeeAccessOpen(false)
-                setEmployeeEditorOpen(true)
-              }}
-              type="button"
-            >
-              Open editor
-            </button>
-          </div>
-        </ModalDialog>
-      ) : null}
-
-      {!employeeAccessOpen && selectedUser ? (
-        <button
-          aria-label="Open employee access chooser"
-          className="employee-access-floating-button"
-          onClick={() => setEmployeeAccessOpen(true)}
-          type="button"
-        >
-          <UserRoundCog aria-hidden="true" size={20} />
-          Employee access
-        </button>
-      ) : null}
-
-      {employeeEditorOpen && selectedUser ? (
-        <EmployeeAccessEditor
-          onClose={() => setEmployeeEditorOpen(false)}
+          onSelectUser={setSelectedUserId}
           permissions={center.permissions}
           roles={center.roles}
-          user={selectedUser}
+          selectedUserId={selectedUser?.id ?? ''}
+          users={center.users}
         />
       ) : null}
     </div>

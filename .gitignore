@@ -53,6 +53,7 @@ test-results/
 screenshots/
 tmp/
 *.lcov
+*.cpuprofile
 
 # Local package/runtime caches and non-SygShift reference material
 .pnpm-store/
