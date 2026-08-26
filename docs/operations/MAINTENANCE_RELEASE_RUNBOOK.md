@@ -78,3 +78,16 @@ SygShift does not activate maintenance merely because code was deployed. The sav
 - The end time restores access automatically.
 - Completion/cancellation appears in recent maintenance history.
 - The audit record identifies the administrator and action.
+
+## Production acceptance record
+
+The first controlled production rehearsal was completed on 08/25/2026 Mountain Time.
+
+- A Communications-only read-only window displayed upcoming and active states at the expected server times.
+- A protected Communications write was rejected at the database boundary.
+- Time Clock remained outside the maintenance scope, and the verification transaction left production time records unchanged.
+- The MFA/System Admin close control restored Communications writes immediately and created the expected audit history.
+- A second notice-only rehearsal ended automatically and appeared as expired in System Operations before its history record was closed.
+- Production was returned to zero scheduled, active, or upcoming windows after validation.
+
+This acceptance record verifies the safe default and recovery path. Future releases must still follow the checklist above and use the smallest safe feature scope.

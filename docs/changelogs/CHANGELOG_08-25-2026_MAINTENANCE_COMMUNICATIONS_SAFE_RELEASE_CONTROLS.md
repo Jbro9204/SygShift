@@ -54,4 +54,17 @@ Give SygShift a controlled, employee-visible maintenance process so releases can
 - Confirmed `https://app.sygilant.us/api/v1/ready` returns HTTP 200 with all required bindings ready.
 - Confirmed the protected System Operations route redirects a signed-out browser to Login.
 - Verified the live public shell at 1280 × 720 and 390 × 844 with no horizontal overflow or browser console warnings/errors.
-- Confirmed zero active maintenance windows after deployment. Normal production access remains in effect.
+- Completed a controlled production activation on 08/25/2026 Mountain Time using a Communications-only read-only window.
+- Confirmed the upcoming warning state before the window activated.
+- Confirmed the live status changed to active at the scheduled server time.
+- Confirmed a Communications write was rejected by the database maintenance guard with no partial data change.
+- Confirmed a transactional Time Clock write remained available outside the selected scope and was rolled back without changing production time records.
+- Completed the active window through the protected MFA/System Admin close function and confirmed Communications writes were restored immediately.
+- Confirmed the completion message, two audit events for the controlled window, and unchanged Time Clock record count.
+- Completed a second notice-only production rehearsal and confirmed it moved to expired automatically at its saved end time without manual intervention.
+- Closed the expired rehearsal record through the protected administrator function for clean operational history.
+- Confirmed zero scheduled, active, or upcoming maintenance windows after the rehearsals. Normal production access is in effect.
+
+## Production Acceptance
+
+The Maintenance Communications and Safe Release Controls release is fully deployed and production-accepted. The passive foundation, user notifications, feature-scoped restrictions, database enforcement, administrator recovery control, automatic expiration, audit trail, mobile/public-shell behavior, save-aware refresh handling, and rollback procedure have all been verified.
