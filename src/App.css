@@ -17517,6 +17517,89 @@
   font-size: 12px;
 }
 
+.system-health-diagnostics {
+  margin-top: 16px;
+  padding: 18px;
+  background: #fffaf0;
+  border: 1px solid #dfc28d;
+  border-left: 4px solid #b87916;
+  border-radius: 12px;
+}
+
+.system-health-diagnostics--disruption {
+  background: #fff7f5;
+  border-color: #e2aaa3;
+  border-left-color: #ad4336;
+}
+
+.system-health-diagnostics__heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.system-health-diagnostics__heading svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #9a6312;
+}
+
+.system-health-diagnostics--disruption .system-health-diagnostics__heading svg {
+  color: #a13b30;
+}
+
+.system-health-diagnostics__heading h3,
+.system-health-diagnostics__heading p,
+.system-health-diagnostics__list p {
+  margin: 0;
+}
+
+.system-health-diagnostics__heading h3 {
+  font-size: 19px;
+}
+
+.system-health-diagnostics__heading p {
+  margin-top: 3px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.system-health-diagnostics__list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.system-health-diagnostics__list article {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(180px, 1.4fr) minmax(180px, 1.4fr) minmax(180px, 1.5fr);
+  gap: 14px;
+  padding: 14px;
+  background: rgb(255 255 255 / 78%);
+  border: 1px solid rgb(120 95 65 / 18%);
+  border-radius: 10px;
+}
+
+.system-health-diagnostics__list article > div {
+  min-width: 0;
+}
+
+.system-health-diagnostics__list span {
+  display: block;
+  margin-bottom: 3px;
+  color: #6d6459;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.system-health-diagnostics__list strong,
+.system-health-diagnostics__list p {
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 .maintenance-principles {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -18147,6 +18230,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .system-health-diagnostics__list article {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .maintenance-feature-groups {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -18192,6 +18279,14 @@
   .system-health-section,
   .maintenance-section {
     padding: 18px;
+  }
+
+  .system-health-diagnostics {
+    padding: 15px;
+  }
+
+  .system-health-diagnostics__list article {
+    grid-template-columns: 1fr;
   }
 
   .maintenance-principles {

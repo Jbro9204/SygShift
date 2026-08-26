@@ -5,17 +5,21 @@ const defaultSupabaseUrl = 'https://eqkdfrbwtioiqtjsyglg.supabase.co'
 const defaultSupabasePublishableKey = 'sb_publishable_-uU9fD3XIeZ58r815-fl_Q_g4IIRPQ5'
 
 type SupabaseBuildEnv = {
+  PROD?: boolean
   VITE_SUPABASE_URL?: string
   VITE_SUPABASE_PUBLISHABLE_KEY?: string
 }
 
 export function resolveSupabaseConfig(env: SupabaseBuildEnv) {
-  const configuredUrl = env.VITE_SUPABASE_URL
-  const configuredPublishableKey = env.VITE_SUPABASE_PUBLISHABLE_KEY
-  const supabaseUrl = (configuredUrl === undefined ? defaultSupabaseUrl : configuredUrl.trim()).replace(/\/$/, '')
-  const supabasePublishableKey = configuredPublishableKey === undefined
-    ? defaultSupabasePublishableKey
-    : configuredPublishableKey.trim()
+  const configuredUrl = env.VITE_SUPABASE_URL?.trim()
+  const configuredPublishableKey = env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim()
+  const recoverBlankProductionConfig = env.PROD === true
+  const supabaseUrl = (
+    configuredUrl
+    || (env.VITE_SUPABASE_URL === undefined || recoverBlankProductionConfig ? defaultSupabaseUrl : '')
+  ).replace(/\/$/, '')
+  const supabasePublishableKey = configuredPublishableKey
+    || (env.VITE_SUPABASE_PUBLISHABLE_KEY === undefined || recoverBlankProductionConfig ? defaultSupabasePublishableKey : '')
 
   return {
     supabaseUrl,

@@ -288,6 +288,30 @@ export function SystemOperationsPage() {
             <div><span>Safe release controls</span><strong>{activeWindows.length > 0 ? `${activeWindows.length} active` : scheduledWindows.length > 0 ? `${scheduledWindows.length} scheduled` : 'No restrictions'}</strong><small>Feature-specific maintenance access controls</small></div>
           </article>
         </div>
+        {serviceStatus.issues.length > 0 ? (
+          <section
+            aria-labelledby="system-health-diagnostics-heading"
+            className={`system-health-diagnostics system-health-diagnostics--${serviceStatus.state}`}
+          >
+            <div className="system-health-diagnostics__heading">
+              <AlertTriangle aria-hidden="true" size={22} />
+              <div>
+                <h3 id="system-health-diagnostics-heading">What needs attention</h3>
+                <p>The affected service, operational impact, and next action are listed below.</p>
+              </div>
+            </div>
+            <div className="system-health-diagnostics__list">
+              {serviceStatus.issues.map((issue) => (
+                <article key={`${issue.service}-${issue.summary}`}>
+                  <div><span>Service</span><strong>{issue.service}</strong></div>
+                  <div><span>Problem</span><p>{issue.summary}</p></div>
+                  <div><span>Impact</span><p>{issue.impact}</p></div>
+                  <div><span>Next action</span><p>{issue.action}</p></div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
         <p className="system-health-section__checked">{lastCheckedAt > 0 ? `Last checked ${formatOperationalDateTime(new Date(lastCheckedAt), { includeTimeZoneName: true })}.` : 'Running the first protected system check.'}</p>
       </section>
 

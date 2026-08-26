@@ -27,7 +27,7 @@ function baseInput() {
 
 describe('deriveSystemServiceStatus', () => {
   it('reports online only after readiness and maintenance checks succeed', () => {
-    expect(deriveSystemServiceStatus(baseInput()).state).toBe('online')
+    expect(deriveSystemServiceStatus(baseInput())).toMatchObject({ issues: [], state: 'online' })
   })
 
   it('reports attention for an active notice or read-only maintenance window', () => {
@@ -38,6 +38,37 @@ describe('deriveSystemServiceStatus', () => {
   it('reports disruption for unavailable maintenance or failed readiness', () => {
     expect(deriveSystemServiceStatus({ ...baseInput(), maintenanceAccessModes: ['unavailable'] }).state).toBe('disruption')
     expect(deriveSystemServiceStatus({ ...baseInput(), readiness: { ...ready, ready: false, status: 'misconfigured' } }).state).toBe('disruption')
+  })
+
+  it('identifies the exact service and recovery action for a blank browser release configuration', () => {
+    const status = deriveSystemServiceStatus({ ...baseInput(), configured: false })
+
+    expect(status.state).toBe('disruption')
+    expect(status.issues).toContainEqual(expect.objectContaining({
+      service: 'Browser data connection',
+      severity: 'disruption',
+    }))
+    expect(status.issues[0]?.action).toContain('Redeploy')
+  })
+
+  it('identifies each failed protected readiness component', () => {
+    const status = deriveSystemServiceStatus({
+      ...baseInput(),
+      readiness: {
+        ...ready,
+        checks: {
+          assetsBinding: true,
+          supabasePublishableKey: true,
+          supabaseServiceRoleKey: false,
+          supabaseUrl: true,
+        },
+        ready: false,
+        status: 'misconfigured',
+      },
+    })
+
+    expect(status.issues).toHaveLength(1)
+    expect(status.issues[0]?.service).toBe('Protected integrations')
   })
 
   it('does not claim online while checks are pending or unavailable', () => {

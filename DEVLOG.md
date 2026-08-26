@@ -25,6 +25,16 @@ deployment status, or major workflow assumptions change.
 
 ## 08/26/2026
 
+### Production data connection recovery and actionable service diagnostics
+
+- Restored browser-side data and authentication access after a production build supplied blank public connection values.
+- Confirmed the incident was a frontend release-configuration defect, not a Cloudflare outage, Supabase outage, maintenance restriction, or loss of operational data.
+- Production releases now recover from blank public build values using the approved public browser configuration; local/test disconnected-state coverage remains available.
+- Expanded the protected System Operations health view so administrators see the affected service, detected problem, operational impact, and recommended next action.
+- Added focused configuration and diagnostic regression tests plus responsive diagnostic presentation guards.
+- Full validation passed: type checking, linting, 84 test files / 423 tests, production build, Cloudflare dry run, compiled release inspection, and live custom-domain/fallback health and readiness checks.
+- Released Cloudflare production version `05625299-3dcd-4dc3-a785-8c90e0397911`.
+
 ### User Accounts and legal-name boundary
 
 - Renamed the employee account-administration workspace from **Users & Access** to **User Accounts** across active navigation, headings, tests, and operating documentation.

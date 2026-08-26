@@ -11,6 +11,8 @@ describe('system status presentation guard', () => {
     expect(overview).not.toContain('exact source reconciliation safeguards')
     expect(operations).toContain('Service health')
     expect(operations).toContain('Data & authentication')
+    expect(operations).toContain('What needs attention')
+    expect(operations).toContain('Next action')
     expect(shell).toContain('SystemStatusIndicator')
   })
 })
