@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { employeeScheduleDisplayName, employeeScheduleGivenName } from './employeeName'
+import { employeeLegalDisplayName, employeeScheduleDisplayName, employeeScheduleGivenName } from './employeeName'
 
 describe('employee schedule names', () => {
   it('uses a normal preferred name without adding unnecessary legal-name detail', () => {
@@ -29,5 +29,25 @@ describe('employee schedule names', () => {
       lastName: 'Lee',
       preferredName: null,
     })).toBe('Joseph Lee')
+  })
+})
+
+describe('employee legal names', () => {
+  it('uses the complete legal name and never substitutes the schedule preference', () => {
+    expect(employeeLegalDisplayName({
+      firstName: 'Zachary',
+      middleName: 'Allen',
+      lastName: 'Ward',
+      preferredName: 'Zach',
+    })).toBe('Zachary Allen Ward')
+  })
+
+  it('omits blank middle names without leaving extra whitespace', () => {
+    expect(employeeLegalDisplayName({
+      firstName: ' Jainique ',
+      middleName: ' ',
+      lastName: ' Lee ',
+      preferredName: 'J',
+    })).toBe('Jainique Lee')
   })
 })

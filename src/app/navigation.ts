@@ -67,7 +67,7 @@ export const navigationGroups: NavigationGroup[] = [
     label: 'Administration',
     items: [
       {
-        label: 'Users & Access',
+        label: 'User Accounts',
         path: '/users',
         icon: UserCog,
         permissions: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.separate', 'admin.users.delete'],

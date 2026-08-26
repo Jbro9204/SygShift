@@ -98,7 +98,11 @@ function downloadCredentialCsv(credentials: ProvisioningCredential[], filename =
   URL.revokeObjectURL(url)
 }
 
-function employeeFormPayload(form: HTMLFormElement, employeeId?: string): EmployeeMutationInput {
+function employeeFormPayload(
+  form: HTMLFormElement,
+  employeeId?: string,
+  preservedPreferredName?: string | null,
+): EmployeeMutationInput {
   const data = new FormData(form)
   const value = (key: string) => String(data.get(key) ?? '').trim()
   const optional = (key: string) => value(key) || null
@@ -113,7 +117,7 @@ function employeeFormPayload(form: HTMLFormElement, employeeId?: string): Employ
     middleName: optional('middleName'),
     mobilePhone: optional('mobilePhone'),
     personalEmail: optional('personalEmail'),
-    preferredName: optional('preferredName'),
+    preferredName: preservedPreferredName ?? null,
     role: value('role') as AppRole,
     status: value('status') as EmployeeStatus,
   }
@@ -235,7 +239,7 @@ function EmployeeForm({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!canEditThisProfile) return
-    onSubmit(employeeFormPayload(event.currentTarget, employee?.id))
+    onSubmit(employeeFormPayload(event.currentTarget, employee?.id, employee?.preferredName))
   }
 
   return (
@@ -245,8 +249,7 @@ function EmployeeForm({
         <label><span>Middle name</span><input defaultValue={employee?.middleName ?? ''} disabled={!canEditThisProfile} name="middleName" /></label>
         <label><span>Last name</span><input defaultValue={employee?.lastName} disabled={!canEditThisProfile} name="lastName" required /></label>
       </div>
-      <div className="form-grid form-grid--three">
-        <label><span>Preferred name</span><input defaultValue={employee?.preferredName ?? ''} disabled={!canEditThisProfile} name="preferredName" /></label>
+      <div className="form-grid form-grid--two">
         <label>
           <span>Employee ID</span>
           <input
@@ -365,7 +368,7 @@ function ManageUserModal({
     onSuccess: async (result) => {
       setConfirmingMfaReset(false)
       setMfaResetMessage(
-        `MFA reset for ${result.displayName}. ${result.factorsRemoved} authenticator factor${result.factorsRemoved === 1 ? '' : 's'} removed and ${result.trustedDevicesRevoked} remembered device${result.trustedDevicesRevoked === 1 ? '' : 's'} revoked.`,
+        `MFA reset for ${employee.displayName}. ${result.factorsRemoved} authenticator factor${result.factorsRemoved === 1 ? '' : 's'} removed and ${result.trustedDevicesRevoked} remembered device${result.trustedDevicesRevoked === 1 ? '' : 's'} revoked.`,
       )
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
     },
@@ -373,7 +376,7 @@ function ManageUserModal({
   const provisionMutation = useMutation({
     mutationFn: () => provisionEmployeeAccount(employee.id, temporaryPassword),
     onSuccess: async (credential) => {
-      setLastCredential(credential)
+      setLastCredential({ ...credential, displayName: employee.displayName })
       setTemporaryPassword('')
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
@@ -408,7 +411,6 @@ function ManageUserModal({
     employee.firstName,
     employee.middleName ?? '',
     employee.lastName,
-    employee.preferredName ?? '',
     employee.employeeNumber ?? '',
     employee.jobTitle ?? '',
     employee.role,
@@ -750,6 +752,7 @@ export function UserAdminPage() {
     queryFn: getAdminUserDirectory,
     queryKey: ['admin-user-directory'],
   })
+  const users = directoryQuery.data?.users ?? EMPTY_USERS
 
   const sessionContext = sessionQuery.data
   const hasPermission = (permission: string) => Boolean(sessionContext?.permissions.includes(permission))
@@ -780,9 +783,13 @@ export function UserAdminPage() {
   const bulkProvisionMutation = useMutation({
     mutationFn: provisionMissingAccounts,
     onSuccess: async (result) => {
-      setBulkCredentials(result.provisioned)
-      if (result.provisioned.length > 0) {
-        downloadCredentialCsv(result.provisioned, 'sygshift-new-temporary-logins.csv')
+      const credentials = result.provisioned.map((credential) => ({
+        ...credential,
+        displayName: users.find((user) => user.username === credential.username)?.displayName ?? credential.displayName,
+      }))
+      setBulkCredentials(credentials)
+      if (credentials.length > 0) {
+        downloadCredentialCsv(credentials, 'sygshift-new-temporary-logins.csv')
       }
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
@@ -797,7 +804,6 @@ export function UserAdminPage() {
     },
   })
 
-  const users = directoryQuery.data?.users ?? EMPTY_USERS
   const metrics = useMemo(() => ({
     active: users.filter((user) => user.status === 'active').length,
     admins: users.filter((user) => user.role === 'admin').length,
@@ -835,10 +841,10 @@ export function UserAdminPage() {
       <section className="page-intro user-admin-intro">
         <div>
           <p className="eyebrow">Administration</p>
-          <h1>Users & Access</h1>
+          <h1>User Accounts</h1>
           <p className="page-summary">
-            Manage employees, permanent usernames, roles, employment status, and login access
-            from one controlled admin workspace.
+            Manage employee account records, permanent usernames, login status, MFA, onboarding,
+            and recovery. Role and permission design remains in Roles &amp; Permissions.
           </p>
         </div>
         <div className="access-note">
@@ -857,14 +863,14 @@ export function UserAdminPage() {
         </DataStatePanel>
       ) : (
         <>
-          <section className="user-admin-metrics" aria-label="User access totals">
+          <section className="user-admin-metrics" aria-label="User account totals">
             <article><span>Total people</span><strong>{metrics.total}</strong><small>Live employee records</small></article>
             <article><span>Active</span><strong>{metrics.active}</strong><small>Can receive login access</small></article>
             <article className={metrics.missingLogins ? 'import-metric--attention' : ''}><span>Need logins</span><strong>{metrics.missingLogins}</strong><small>Active employees without accounts</small></article>
             <article><span>Admins</span><strong>{metrics.admins}</strong><small>Highest access level</small></article>
           </section>
 
-          <section className="user-admin-toolbar" aria-label="User filters and actions">
+          <section className="user-admin-toolbar" aria-label="User account filters and actions">
             <label className="search-field search-field--wide">
               <Search aria-hidden="true" size={20} />
               <span className="visually-hidden">Search users</span>
@@ -907,7 +913,7 @@ export function UserAdminPage() {
                 <p>Change the filters to see other employee records.</p>
               </DataStatePanel>
             ) : (
-              <div className="user-admin-table" role="table" aria-label="Users and login access">
+              <div className="user-admin-table" role="table" aria-label="User accounts and login access">
                 <div className="user-admin-row user-admin-row--header" role="row">
                   <span role="columnheader">Employee</span>
                   <span role="columnheader">Role</span>

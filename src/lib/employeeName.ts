@@ -1,6 +1,7 @@
 export interface EmployeeNameParts {
   firstName: string
   lastName: string
+  middleName?: string | null
   preferredName?: string | null
 }
 
@@ -23,4 +24,12 @@ export function employeeScheduleDisplayName(employee: EmployeeNameParts): string
   return [employeeScheduleGivenName(employee), cleanNamePart(employee.lastName)]
     .filter(Boolean)
     .join(' ')
+}
+
+export function employeeLegalDisplayName(employee: EmployeeNameParts): string {
+  return [
+    cleanNamePart(employee.firstName),
+    cleanNamePart(employee.middleName),
+    cleanNamePart(employee.lastName),
+  ].filter(Boolean).join(' ')
 }

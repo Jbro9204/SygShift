@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test'
 
-test('Users & Access controls remain contained and separated from the filter row', async ({ page }) => {
+test('User Accounts controls remain contained and separated from the filter row', async ({ page }) => {
   await page.goto('/')
 
   await page.locator('#root').evaluate((root) => {
     root.innerHTML = `
       <main style="max-width: 1372px; margin: 32px auto; padding: 0 20px;">
-        <section class="user-admin-toolbar" aria-label="Users and access controls">
+        <section class="user-admin-toolbar" aria-label="User account controls">
           <label><span class="sr-only">Search employees</span><input aria-label="Search employees" value="matth" /></label>
           <label>Role<select aria-label="Role"><option>All roles</option></select></label>
           <label>Status<select aria-label="Status"><option>Active</option></select></label>
@@ -21,7 +21,7 @@ test('Users & Access controls remain contained and separated from the filter row
       </main>`
   })
 
-  const toolbar = page.getByRole('region', { name: 'Users and access controls' })
+  const toolbar = page.getByRole('region', { name: 'User account controls' })
   const toolbarBox = await toolbar.boundingBox()
   expect(toolbarBox).not.toBeNull()
 

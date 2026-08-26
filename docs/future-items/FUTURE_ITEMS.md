@@ -33,23 +33,6 @@ Required outcomes:
 - Keep save actions close to the setting being changed and show immediate loading, success, and refreshed state.
 - Preserve server-enforced authorization, MFA requirements, audit notes, and Admin recovery safeguards.
 
-### User Accounts Consolidation and Preferred-Name Boundary
-
-- Priority: High
-- Target window: Near-term user-administration release
-- Status: Approved / queued
-- Added: 08/25/2026
-
-Refine the current Users & Access area into a focused User Accounts workspace now that roles and permissions have their own administration area.
-
-Required outcomes:
-
-- Evaluate and apply the clearer `User Accounts` name throughout navigation, headings, and documentation.
-- Keep account activation, usernames, login history, MFA reset, onboarding messages, and account recovery in this workspace.
-- Keep role and permission design in Roles & Permissions while still showing the employee's effective role/access summary where useful.
-- Treat preferred names as schedule-facing display data; use legal/profile names in User Accounts and other controlled employee records unless a specific workflow calls for the preferred name.
-- Preserve the existing first-name schedule disambiguation rules so similar employee names remain clear.
-
 ## Time, Attendance & Payroll
 
 ### Employee Timecard History and Current-Period Defaults

@@ -250,7 +250,7 @@ describe('button layout guardrails', () => {
     expect(blockFor('.recently-deleted-empty')).toContain('padding: 14px 16px 16px')
   })
 
-  it('keeps Users & Access filters and actions separated in a real grid', () => {
+  it('keeps User Accounts filters and actions separated in a real grid', () => {
     expect(userAdminPage).toContain('className="user-admin-toolbar"')
     expect(userAdminPage).toContain('<span role="columnheader">Account activity</span>')
     expect(userAdminPage).toContain('<AccountActivitySummary user={user} />')

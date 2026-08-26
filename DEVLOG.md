@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 08/26/2026
 
+### User Accounts and legal-name boundary
+
+- Renamed the employee account-administration workspace from **Users & Access** to **User Accounts** across active navigation, headings, tests, and operating documentation.
+- Kept usernames, account activation, login history, MFA recovery, onboarding messages, and account-state controls together while leaving role and permission design in the separate Roles & Permissions workspace.
+- Removed preferred-name editing from User Accounts and preserved existing preferred-name values when an administrator updates account data.
+- Standardized controlled account and current payroll-review records on the employee's legal/profile name, including a recorded middle name when present.
+- Preserved preferred-name use and existing name-disambiguation behavior in schedule-facing workflows, including clear handling for employees who share a last name.
+- Added a protected payroll-review database boundary so current review and export data uses legal/profile names without rewriting immutable historical export snapshots.
+- Applied and recorded targeted production migration `20260826220000_user_accounts_legal_name_boundary.sql`.
+- Removed the completed initiative from the active future queue; the separate Manage Employee Access workspace redesign remains queued.
+
 ### Operational alert lifecycle and backlog reconciliation
 
 - Added stable occurrence identities so schedule revisions and repeated automation runs cannot create multiple unresolved alerts for the same employee, rule, shift window, and work location.

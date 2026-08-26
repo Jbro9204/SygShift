@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 import { getTrustedDeviceToken } from '../lib/trustedDeviceToken'
+import { employeeLegalDisplayName } from '../lib/employeeName'
 
 const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary', 'flex'])
@@ -192,6 +193,13 @@ export interface EmployeeCredentialMutationInput {
   notes?: string | null
 }
 
+function withLegalDisplayName(user: AdminUser): AdminUser {
+  return {
+    ...user,
+    displayName: employeeLegalDisplayName(user),
+  }
+}
+
 function cleanOptional(value: string | null | undefined): string | null {
   const clean = value?.trim()
   return clean ? clean : null
@@ -241,13 +249,17 @@ async function parseApiResponse(response: Response) {
 export async function getAdminUserDirectory(): Promise<AdminUserDirectory> {
   const { data, error } = await getSupabaseClient().rpc('get_admin_user_directory')
   if (error) throw new Error('Admin user directory could not be loaded. Admin MFA is required.')
-  return adminUserDirectorySchema.parse(data)
+  const directory = adminUserDirectorySchema.parse(data)
+  return {
+    ...directory,
+    users: directory.users.map(withLegalDisplayName),
+  }
 }
 
 export async function createEmployee(input: EmployeeMutationInput): Promise<AdminUser> {
   const { data, error } = await getSupabaseClient().rpc('admin_create_employee', employeeRpcPayload(input))
   if (error) throw new Error(error.message || 'Employee could not be created.')
-  return adminUserSchema.parse(data)
+  return withLegalDisplayName(adminUserSchema.parse(data))
 }
 
 export async function updateEmployee(input: EmployeeMutationInput & { employeeId: string }): Promise<AdminUser> {
@@ -256,7 +268,7 @@ export async function updateEmployee(input: EmployeeMutationInput & { employeeId
     ...employeeRpcPayload(input),
   })
   if (error) throw new Error(error.message || 'Employee could not be updated.')
-  return adminUserSchema.parse(data)
+  return withLegalDisplayName(adminUserSchema.parse(data))
 }
 
 export async function upsertEmployeeCredential(input: EmployeeCredentialMutationInput): Promise<AdminUser> {
@@ -270,7 +282,7 @@ export async function upsertEmployeeCredential(input: EmployeeCredentialMutation
     target_valid_from: cleanOptional(input.validFrom),
   })
   if (error) throw new Error(error.message || 'Credential could not be updated.')
-  return adminUserSchema.parse(data)
+  return withLegalDisplayName(adminUserSchema.parse(data))
 }
 
 export async function setEmployeeAccountState(employeeId: string, disabled: boolean): Promise<AdminUser> {
@@ -279,7 +291,7 @@ export async function setEmployeeAccountState(employeeId: string, disabled: bool
     target_employee_id: employeeId,
   })
   if (error) throw new Error(error.message || 'Account state could not be changed.')
-  return adminUserSchema.parse(data)
+  return withLegalDisplayName(adminUserSchema.parse(data))
 }
 
 export async function revokeEmployeeTrustedDevices(employeeId: string): Promise<number> {
