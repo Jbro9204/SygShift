@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 08/26/2026
 
+### Operational alert lifecycle and backlog reconciliation
+
+- Added stable occurrence identities so schedule revisions and repeated automation runs cannot create multiple unresolved alerts for the same employee, rule, shift window, and work location.
+- Reconciled the production backlog from 693 active alerts to 22 current actionable alerts, moved 235 older unresolved occurrences to payroll review, retained 436 resolved occurrences in history, and reduced unresolved duplicate occurrence groups to zero.
+- Automatically resolves missing-clock-in occurrences only when a valid clock-in, canceled shift, reassignment, or valid call-off proves the alert is no longer applicable.
+- Keeps genuine missed clock-ins visible to Dispatch through the shift and for one hour afterward, then transfers unresolved occurrences to payroll review without deleting history.
+- Added one-minute incremental reconciliation and a 02:00 Mountain Time full safety pass.
+- Preserved original punches, schedules, acknowledgments, exception actions, and payroll history.
+- Applied and recorded targeted production migration `20260826210000_operational_alert_lifecycle_reconciliation.sql`.
+- Full validation passed: type checking, linting, 83 test files / 415 tests, production build, Cloudflare package dry-run, live data reconciliation, and production health/readiness checks.
+- Released Cloudflare production version `14992d6d-2c02-4e7d-9446-a5c7b453ffbc`.
+
 ### Mixed coverage and additive guard assignment
 
 - Added explicit **Total guards needed** and **Armed positions** controls so schedulers can create any supported armed/unarmed staffing mix for a Site/Post or event.

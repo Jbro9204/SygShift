@@ -1727,8 +1727,23 @@ export default {
         { target_job_run_id: jobRunId },
         config.serviceRoleKey,
       )
+      const denverTimeParts = new Intl.DateTimeFormat('en-US', {
+        hour: '2-digit',
+        hourCycle: 'h23',
+        minute: '2-digit',
+        timeZone: 'America/Denver',
+      }).formatToParts(new Date(controller.scheduledTime))
+      const denverHour = denverTimeParts.find((part) => part.type === 'hour')?.value
+      const denverMinute = denverTimeParts.find((part) => part.type === 'minute')?.value
+      const fullReconciliation = denverHour === '02' && denverMinute === '00'
+      const alertLifecycle = await callRpc<Record<string, unknown>>(
+        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        'service_reconcile_operational_alert_lifecycle',
+        { target_full_reconciliation: fullReconciliation },
+        config.serviceRoleKey,
+      )
       const notifications = await processNotificationJobs(environment, 25)
-      console.info(JSON.stringify({ automation, cron: controller.cron, jobRunId, notifications, scheduledTime: controller.scheduledTime }))
+      console.info(JSON.stringify({ alertLifecycle, automation, cron: controller.cron, fullReconciliation, jobRunId, notifications, scheduledTime: controller.scheduledTime }))
     })())
   },
 }

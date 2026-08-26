@@ -592,6 +592,10 @@ describe('Cloudflare Worker boundary', () => {
         jobRunId: 'generated-by-worker',
         status: 'completed',
       }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        status: 'completed',
+        fullReconciliation: false,
+      }), { headers: { 'content-type': 'application/json' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify([]), {
         headers: { 'content-type': 'application/json' },
       }))
@@ -613,12 +617,15 @@ describe('Cloudflare Worker boundary', () => {
 
     expect(scheduledWork).toBeDefined()
     await scheduledWork
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/rpc/service_run_timekeeping_automation')
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/rpc/service_claim_timekeeping_notification_batch')
-    expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/rpc/service_claim_notification_batch')
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/rpc/service_reconcile_operational_alert_lifecycle')
+    expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/rpc/service_claim_timekeeping_notification_batch')
+    expect(String(fetchMock.mock.calls[3]?.[0])).toContain('/rpc/service_claim_notification_batch')
     const automationBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { target_job_run_id: string }
+    const lifecycleBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as { target_full_reconciliation: boolean }
     expect(automationBody.target_job_run_id).toMatch(/^[a-f0-9-]{36}$/)
+    expect(lifecycleBody.target_full_reconciliation).toBe(false)
     expect(emailSend).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })

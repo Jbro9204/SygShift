@@ -13,27 +13,6 @@ Keep this repository copy synchronized with:
 - Do not mark an item complete because a screen or button exists. The full authorized workflow, persistence, audit behavior, tests, and production verification must be complete.
 - All displayed dates and dated documentation use MM/DD/YYYY.
 
-## Data Quality & Operational Reliability
-
-### Operational Alert Lifecycle and Backlog Reconciliation
-
-- Priority: Critical
-- Target window: Next production cycle
-- Status: Approved / queued
-- Added: 08/25/2026
-
-Build a controlled lifecycle for the accumulated operational and payroll alerts so legitimate issues remain visible without leaving stale, duplicate, or already-corrected alerts in the queue.
-
-Required outcomes:
-
-- Classify alerts by rule, employee, workday, source record, and severity.
-- Deduplicate repeated alerts that describe the same underlying occurrence.
-- Automatically resolve only alerts whose source condition is provably corrected or no longer applicable.
-- Keep ambiguous records available for authorized human review.
-- Preserve the original alert, resolution reason, resolver, timestamp, and supporting record references.
-- Provide focused filters and batch-safe actions without weakening hard payroll blockers.
-- Reconcile the existing backlog before enabling ongoing automated lifecycle handling.
-
 ## Access, Identity & User Administration
 
 ### Manage Employee Access Workspace Redesign
