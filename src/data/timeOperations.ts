@@ -55,6 +55,11 @@ const adjustmentRequestSchema = z.object({
   issueType: z.enum(['clock_in', 'clock_out', 'both_punches', 'missing_shift', 'other']),
   requestedClockInAt: z.string().nullable(),
   requestedClockOutAt: z.string().nullable(),
+  requestedPostId: z.string().uuid().nullable().optional().default(null),
+  requestedLocation: z.string().nullable().optional().default(null),
+  requestedTimeZone: z.string().nullable().optional().default(null),
+  requestedUnpaidBreakMinutes: z.number().int().nonnegative().optional().default(0),
+  appliedTimeEventIds: z.array(z.string().uuid()).optional().default([]),
   reason: z.string(),
   notes: z.string().nullable(),
   status: z.enum(['submitted', 'under_review', 'approved', 'partially_approved', 'rejected', 'canceled']),
@@ -62,6 +67,13 @@ const adjustmentRequestSchema = z.object({
   reviewedAt: z.string().nullable(),
   decisionNote: z.string().nullable(),
   reviewer: z.string().nullable(),
+})
+
+const missingTimeRequestWorkspaceSchema = z.object({
+  serverTimestamp: z.string(),
+  canReviewAdjustments: z.boolean(),
+  posts: z.array(postSchema),
+  requests: z.array(adjustmentRequestSchema),
 })
 
 const alertSchema = z.object({
@@ -168,6 +180,7 @@ const reportsSchema = z.object({
 
 export type TimeOperationsWorkspace = z.infer<typeof workspaceSchema>
 export type TimeAdjustmentRequest = z.infer<typeof adjustmentRequestSchema>
+export type MissingTimeRequestWorkspace = z.infer<typeof missingTimeRequestWorkspaceSchema>
 export type OperationalAlert = z.infer<typeof alertSchema>
 export type OperationalException = z.infer<typeof operationalExceptionSchema>
 export type ManualTimeEntry = z.infer<typeof manualEntrySchema>
@@ -190,6 +203,31 @@ async function rpc<T>(name: string, parameters: Record<string, unknown>, schema:
 
 export async function getTimekeepingOperationsWorkspace(fromDate: string, throughDate: string): Promise<TimeOperationsWorkspace> {
   return rpc('get_timekeeping_operations_workspace', { target_from_date: fromDate, target_through_date: throughDate }, workspaceSchema)
+}
+
+export async function getMissingTimeRequestWorkspace(fromDate: string, throughDate: string): Promise<MissingTimeRequestWorkspace> {
+  return rpc('get_missing_time_request_workspace', {
+    target_from_date: fromDate,
+    target_through_date: throughDate,
+  }, missingTimeRequestWorkspaceSchema)
+}
+
+export async function submitMissingTimeRequest(input: {
+  workDate: string
+  requestedClockInAt: string
+  requestedClockOutAt: string
+  postId: string
+  unpaidBreakMinutes: number
+  reason: string
+}) {
+  return rpc('submit_missing_time_request', {
+    target_work_date: input.workDate,
+    target_requested_clock_in_at: input.requestedClockInAt,
+    target_requested_clock_out_at: input.requestedClockOutAt,
+    target_post_id: input.postId,
+    target_unpaid_break_minutes: input.unpaidBreakMinutes,
+    target_reason: input.reason,
+  }, z.object({ id: z.string().uuid(), status: z.string(), submittedAt: z.string() }))
 }
 
 export async function submitTimeAdjustmentRequest(input: {
@@ -276,6 +314,25 @@ export async function reviewTimeAdjustmentRequest(input: {
     target_decision_note: input.decisionNote,
     target_confirm_warnings: input.confirmWarnings ?? false,
   }, z.object({ id: z.string().uuid(), status: z.string(), manualEntry: z.unknown().nullable() }))
+}
+
+export async function reviewMissingTimeRequest(input: {
+  id: string
+  status: 'under_review' | 'approved' | 'rejected'
+  decisionNote: string
+  confirmWarnings?: boolean
+}) {
+  return rpc('review_missing_time_request', {
+    target_request_id: input.id,
+    target_decision: input.status,
+    target_decision_note: input.decisionNote,
+    target_confirm_warnings: input.confirmWarnings ?? false,
+  }, z.object({
+    id: z.string().uuid(),
+    status: z.string(),
+    timeEventIds: z.array(z.string().uuid()),
+    warningCodes: z.array(z.string()),
+  }))
 }
 
 export async function resolveOperationalException(input: { id: string; action: 'resolved' | 'dismissed'; method: string; note: string }) {

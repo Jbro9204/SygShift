@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { format, subDays } from 'date-fns'
+import { addDays, format, subDays } from 'date-fns'
 import {
   AlertTriangle,
   ArrowRight,
@@ -19,6 +19,14 @@ import {
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import { getSessionContext } from '../data/auth'
+import {
+  formatTimeOperationsPostLabel,
+  getMissingTimeRequestWorkspace,
+  submitMissingTimeRequest,
+  zonedLocalDateTimeToUtc,
+  type MissingTimeRequestWorkspace,
+  type TimeAdjustmentRequest,
+} from '../data/timeOperations'
 import {
   activeTimeState,
   getClockableShiftChoices,
@@ -85,7 +93,12 @@ export function MyTimePage() {
   const [attendanceReportDate, setAttendanceReportDate] = useState('')
   const [attendanceReportNote, setAttendanceReportNote] = useState('')
   const [correctionEvent, setCorrectionEvent] = useState<TimekeepingEvent | null>(null)
+  const [missingTimeRequestOpen, setMissingTimeRequestOpen] = useState(false)
   const defaultPeriod = currentPayrollPeriod()
+  const missingTimeHistoryFromDate = format(
+    subDays(new Date(`${defaultPeriod.throughDate}T12:00:00`), 365),
+    'yyyy-MM-dd',
+  )
 
   const sessionQuery = useQuery({
     queryFn: getSessionContext,
@@ -111,6 +124,11 @@ export function MyTimePage() {
       throughDate: defaultPeriod.throughDate,
     }),
     queryKey: ['my-time-review', dashboard?.employee.id, defaultPeriod.fromDate, defaultPeriod.throughDate],
+  })
+  const missingTimeWorkspaceQuery = useQuery({
+    enabled: isSupabaseConfigured && ownTimeAllowed,
+    queryFn: () => getMissingTimeRequestWorkspace(missingTimeHistoryFromDate, defaultPeriod.throughDate),
+    queryKey: ['my-missing-time-workspace', missingTimeHistoryFromDate, defaultPeriod.throughDate],
   })
 
   const reviewPeriod = reviewQuery.data?.payrollRules ? currentPayrollPeriod(undefined, reviewQuery.data.payrollRules) : defaultPeriod
@@ -189,6 +207,17 @@ export function MyTimePage() {
         queryClient.invalidateQueries({ queryKey: ['my-time-review'] }),
         queryClient.invalidateQueries({ queryKey: ['time-command-review'] }),
         queryClient.invalidateQueries({ queryKey: ['time-exceptions-review'] }),
+      ])
+    },
+  })
+  const missingTimeMutation = useMutation({
+    mutationFn: submitMissingTimeRequest,
+    onSuccess: async () => {
+      setMissingTimeRequestOpen(false)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['my-missing-time-workspace'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-operations-workspace'] }),
+        queryClient.invalidateQueries({ queryKey: ['missing-time-request-workspace'] }),
       ])
     },
   })
@@ -298,12 +327,22 @@ export function MyTimePage() {
           <p>{correctionMutation.error.message}</p>
         </TimeAlertCard>
       ) : null}
+      {missingTimeMutation.isError ? (
+        <TimeAlertCard icon={CircleAlert} title="Missing-time request could not be saved" tone="danger">
+          <p>{missingTimeMutation.error.message}</p>
+        </TimeAlertCard>
+      ) : null}
       {attendanceReportMutation.isSuccess ? (
         <AttendanceReportSuccess result={attendanceReportMutation.data} />
       ) : null}
       {correctionMutation.isSuccess ? (
         <TimeAlertCard icon={CheckCircle2} title="Correction request sent" tone="good">
           <p>Your request was saved for supervisor/admin review. The original punch remains unchanged until it is approved.</p>
+        </TimeAlertCard>
+      ) : null}
+      {missingTimeMutation.isSuccess ? (
+        <TimeAlertCard icon={CheckCircle2} title="Missing-time request sent" tone="good">
+          <p>Your request is pending authorized review. It will not change payroll until it is approved.</p>
         </TimeAlertCard>
       ) : null}
 
@@ -314,6 +353,7 @@ export function MyTimePage() {
           nextKinds={nextKinds}
           onPunch={record}
           onReportIssue={() => setAttendanceReportOpen(true)}
+          onRequestMissingTime={() => setMissingTimeRequestOpen(true)}
           pending={punchMutation.isPending}
           punchAllowed={punchAllowed}
           selectedShiftId={selectedShiftId}
@@ -351,7 +391,11 @@ export function MyTimePage() {
 
       <section className="my-time-two-column">
         <RecentPunchesPanel dashboard={dashboard} onRequestCorrection={setCorrectionEvent} />
-        <CorrectionPanel corrections={reviewQuery.data?.pendingCorrections ?? []} loading={reviewQuery.isPending} />
+        <CorrectionPanel
+          corrections={reviewQuery.data?.pendingCorrections ?? []}
+          loading={reviewQuery.isPending || missingTimeWorkspaceQuery.isPending}
+          missingRequests={missingTimeWorkspaceQuery.data?.requests ?? []}
+        />
       </section>
 
       {attendanceReportOpen ? (
@@ -378,6 +422,16 @@ export function MyTimePage() {
           pending={correctionMutation.isPending}
         />
       ) : null}
+      {missingTimeRequestOpen ? (
+        <MissingTimeRequestModal
+          employeeName={dashboard.employee.displayName}
+          onClose={() => setMissingTimeRequestOpen(false)}
+          onSubmit={(input) => missingTimeMutation.mutate(input)}
+          operationalDate={dashboard.operationalDate}
+          pending={missingTimeMutation.isPending}
+          posts={missingTimeWorkspaceQuery.data?.posts ?? []}
+        />
+      ) : null}
     </main>
   )
 }
@@ -388,6 +442,7 @@ function ClockStatusPanel({
   nextKinds,
   onPunch,
   onReportIssue,
+  onRequestMissingTime,
   pending,
   punchAllowed,
   selectedShiftId,
@@ -399,6 +454,7 @@ function ClockStatusPanel({
   nextKinds: TimeEventKind[]
   onPunch: (kind: TimeEventKind) => void
   onReportIssue: () => void
+  onRequestMissingTime: () => void
   pending: boolean
   punchAllowed: boolean
   selectedShiftId: string | null
@@ -497,6 +553,12 @@ function ClockStatusPanel({
           Report sick / call-off
         </TimeButton>
         <span>Use this if you cannot work. Dispatch is notified immediately.</span>
+      </div>
+      <div className="my-time-coverage-actions">
+        <TimeButton icon={FileClock} onClick={onRequestMissingTime} variant="secondary">
+          Request missing time
+        </TimeButton>
+        <span>Use this when an entire worked shift is missing. A required explanation is sent for review.</span>
       </div>
     </section>
   )
@@ -765,10 +827,15 @@ function recentPunchDayLabel(dateKey: string, operationalToday: string): string 
 function CorrectionPanel({
   corrections,
   loading,
+  missingRequests,
 }: {
   corrections: PendingCorrection[]
   loading: boolean
+  missingRequests: TimeAdjustmentRequest[]
 }) {
+  const pendingMissingRequests = missingRequests.filter((request) => request.status === 'submitted' || request.status === 'under_review')
+  const hasPendingRequests = corrections.length > 0 || pendingMissingRequests.length > 0
+
   return (
     <section className="time-card">
       <TimeSectionHeader
@@ -780,7 +847,7 @@ function CorrectionPanel({
         <DataStatePanel icon={Timer} title="Loading corrections">
           <p>Checking your correction requests.</p>
         </DataStatePanel>
-      ) : corrections.length > 0 ? (
+      ) : hasPendingRequests ? (
         <div className="my-time-correction-list">
           {corrections.map((correction) => (
             <article className="my-time-correction-card" key={correction.id}>
@@ -790,6 +857,20 @@ function CorrectionPanel({
               <p>{correction.reason}</p>
             </article>
           ))}
+          {pendingMissingRequests.map((request) => (
+            <article className="my-time-correction-card" key={request.id}>
+              <TimeStatusBadge tone="warning">{request.status === 'under_review' ? 'Under Review' : 'Pending'}</TimeStatusBadge>
+              <strong>Missing worked time</strong>
+              <span>{formatUsDateKey(request.workDate)} · {request.requestedLocation ?? 'Site/Post pending'}</span>
+              <p>{request.reason}</p>
+              <small>
+                {request.requestedClockInAt ? formatOperationalDateTime(request.requestedClockInAt, { timeZone: request.requestedTimeZone ?? OPERATIONAL_TIME_ZONE }) : 'Clock-in pending'}
+                {' – '}
+                {request.requestedClockOutAt ? formatOperationalDateTime(request.requestedClockOutAt, { timeZone: request.requestedTimeZone ?? OPERATIONAL_TIME_ZONE }) : 'Clock-out pending'}
+                {request.requestedUnpaidBreakMinutes > 0 ? ` · ${request.requestedUnpaidBreakMinutes} unpaid break min` : ''}
+              </small>
+            </article>
+          ))}
         </div>
       ) : (
         <TimeAlertCard icon={CheckCircle2} title="No pending correction requests" tone="good">
@@ -797,6 +878,138 @@ function CorrectionPanel({
         </TimeAlertCard>
       )}
     </section>
+  )
+}
+
+function MissingTimeRequestModal({
+  employeeName,
+  onClose,
+  onSubmit,
+  operationalDate,
+  pending,
+  posts,
+}: {
+  employeeName: string
+  onClose: () => void
+  onSubmit: (input: {
+    workDate: string
+    requestedClockInAt: string
+    requestedClockOutAt: string
+    postId: string
+    unpaidBreakMinutes: number
+    reason: string
+  }) => void
+  operationalDate: string
+  pending: boolean
+  posts: MissingTimeRequestWorkspace['posts']
+}) {
+  const [workDate, setWorkDate] = useState(operationalDate)
+  const [clockInTime, setClockInTime] = useState('08:00')
+  const [clockOutTime, setClockOutTime] = useState('16:00')
+  const [postId, setPostId] = useState('')
+  const [unpaidBreakMinutes, setUnpaidBreakMinutes] = useState(0)
+  const [reason, setReason] = useState('')
+  const selectedPost = posts.find((post) => post.id === postId)
+  const ready = Boolean(selectedPost && workDate && clockInTime && clockOutTime && reason.trim().length >= 10)
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!ready || !selectedPost) return
+
+    const startLocal = `${workDate}T${clockInTime}`
+    const startMinutes = Number(clockInTime.slice(0, 2)) * 60 + Number(clockInTime.slice(3, 5))
+    const endMinutes = Number(clockOutTime.slice(0, 2)) * 60 + Number(clockOutTime.slice(3, 5))
+    const endDate = endMinutes <= startMinutes
+      ? format(addDays(new Date(`${workDate}T12:00:00`), 1), 'yyyy-MM-dd')
+      : workDate
+
+    onSubmit({
+      postId,
+      reason: reason.trim(),
+      requestedClockInAt: zonedLocalDateTimeToUtc(startLocal, selectedPost.timeZone),
+      requestedClockOutAt: zonedLocalDateTimeToUtc(`${endDate}T${clockOutTime}`, selectedPost.timeZone),
+      unpaidBreakMinutes,
+      workDate,
+    })
+  }
+
+  return (
+    <ModalDialog
+      busy={pending}
+      busyLabel="Submitting missing-time request..."
+      className="modal-dialog--missing-time-request"
+      description="Report an entire worked shift that is missing. Your identity is filled automatically. No punches or payroll hours are created until an authorized reviewer approves this request."
+      onClose={onClose}
+      title="Request missing time"
+    >
+      <form className="missing-time-request-form" onSubmit={submit}>
+        <section className="missing-time-request-identity" aria-label="Requesting employee">
+          <span>Employee</span>
+          <strong>{employeeName}</strong>
+          <small>This request is securely tied to your signed-in account.</small>
+        </section>
+
+        <div className="missing-time-request-grid">
+          <label>
+            <span>Work date</span>
+            <input disabled={pending} max={operationalDate} onChange={(event) => setWorkDate(event.target.value)} required type="date" value={workDate} />
+          </label>
+          <label>
+            <span>Clock-in time</span>
+            <input disabled={pending} onChange={(event) => setClockInTime(event.target.value)} required type="time" value={clockInTime} />
+          </label>
+          <label>
+            <span>Clock-out time</span>
+            <input disabled={pending} onChange={(event) => setClockOutTime(event.target.value)} required type="time" value={clockOutTime} />
+            <small>Choose the morning time for an overnight shift. SygShift will use the next day automatically.</small>
+          </label>
+          <label>
+            <span>Unpaid break</span>
+            <select disabled={pending} onChange={(event) => setUnpaidBreakMinutes(Number(event.target.value))} value={unpaidBreakMinutes}>
+              <option value={0}>No unpaid break</option>
+              <option value={15}>15 minutes</option>
+              <option value={30}>30 minutes</option>
+              <option value={45}>45 minutes</option>
+              <option value={60}>60 minutes</option>
+            </select>
+          </label>
+        </div>
+
+        <label className="missing-time-request-post">
+          <span>Site / Post</span>
+          <select disabled={pending} onChange={(event) => setPostId(event.target.value)} required value={postId}>
+            <option value="">Choose where you worked</option>
+            {posts.map((post) => <option key={post.id} value={post.id}>{formatTimeOperationsPostLabel(post)}</option>)}
+          </select>
+        </label>
+
+        <label className="missing-time-request-reason">
+          <span>Explanation <strong>Required</strong></span>
+          <textarea
+            disabled={pending}
+            maxLength={1000}
+            minLength={10}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Explain why the time is missing and any details the reviewer should verify."
+            required
+            rows={5}
+            value={reason}
+          />
+          <small>{reason.trim().length}/1000 characters · minimum 10</small>
+        </label>
+
+        {posts.length === 0 ? (
+          <TimeAlertCard icon={AlertTriangle} title="Site/Post list unavailable" tone="warning">
+            <p>The request cannot be submitted until the active Site/Post list loads. Close this window and try again.</p>
+          </TimeAlertCard>
+        ) : null}
+
+        <div className="missing-time-request-actions">
+          <TimeButton disabled={pending} onClick={onClose} type="button" variant="secondary">Cancel</TimeButton>
+          <TimeButton disabled={!ready} loading={pending} type="submit" variant="primary">Submit for review</TimeButton>
+        </div>
+      </form>
+    </ModalDialog>
   )
 }
 

@@ -12,9 +12,11 @@ import {
   createManualTimeEntry,
   editManualTimeEntry,
   formatTimeOperationsPostLabel,
+  getMissingTimeRequestWorkspace,
   getTimekeepingOperationsWorkspace,
   reportEmployeeCallOff,
   resolveOperationalException,
+  reviewMissingTimeRequest,
   reviewTimeAdjustmentRequest,
   submitTimeAdjustmentRequest,
   updateEmployeeCallOff,
@@ -47,6 +49,8 @@ function invalidateOperations(queryClient: ReturnType<typeof useQueryClient>) {
     queryClient.invalidateQueries({ queryKey: ['time-command-review'] }),
     queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'] }),
     queryClient.invalidateQueries({ queryKey: ['my-time-review'] }),
+    queryClient.invalidateQueries({ queryKey: ['my-missing-time-workspace'] }),
+    queryClient.invalidateQueries({ queryKey: ['missing-time-request-workspace'] }),
   ])
 }
 
@@ -67,21 +71,31 @@ export function TimeOperationsPage() {
     queryKey: ['time-operations-workspace', fromDate, throughDate],
     refetchInterval: 30_000,
   })
+  const missingTimeWorkspaceQuery = useQuery({
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess,
+    queryFn: () => getMissingTimeRequestWorkspace(fromDate, throughDate),
+    queryKey: ['missing-time-request-workspace', fromDate, throughDate],
+    refetchInterval: 30_000,
+  })
   const workspace = workspaceQuery.data
+  const adjustmentRequests = useMemo(() => {
+    const requests = [...(workspace?.adjustmentRequests ?? []), ...(missingTimeWorkspaceQuery.data?.requests ?? [])]
+    return [...new Map(requests.map((request) => [request.id, request])).values()]
+  }, [missingTimeWorkspaceQuery.data?.requests, workspace?.adjustmentRequests])
   const ownRequests = useMemo(
-    () => workspace?.adjustmentRequests.filter((request) => request.employeeId === sessionQuery.data?.employeeId) ?? [],
-    [sessionQuery.data?.employeeId, workspace?.adjustmentRequests],
+    () => adjustmentRequests.filter((request) => request.employeeId === sessionQuery.data?.employeeId),
+    [adjustmentRequests, sessionQuery.data?.employeeId],
   )
 
-  if (!isSupabaseConfigured || sessionQuery.isPending || workspaceQuery.isPending) {
+  if (!isSupabaseConfigured || sessionQuery.isPending || workspaceQuery.isPending || missingTimeWorkspaceQuery.isPending) {
     return <main className="page page--sygshift-time"><DataStatePanel icon={Clock3} title="Loading time workflows"><p>Loading requests, exceptions, manual entries, and operational alerts.</p></DataStatePanel></main>
   }
-  if (sessionQuery.isError || workspaceQuery.isError || !workspace) {
-    return <main className="page page--sygshift-time"><DataStatePanel icon={ShieldAlert} title="Time workflows unavailable" tone="error"><p>{workspaceQuery.error?.message ?? sessionQuery.error?.message ?? 'The secure workspace could not be loaded.'}</p></DataStatePanel></main>
+  if (sessionQuery.isError || workspaceQuery.isError || missingTimeWorkspaceQuery.isError || !workspace) {
+    return <main className="page page--sygshift-time"><DataStatePanel icon={ShieldAlert} title="Time workflows unavailable" tone="error"><p>{workspaceQuery.error?.message ?? missingTimeWorkspaceQuery.error?.message ?? sessionQuery.error?.message ?? 'The secure workspace could not be loaded.'}</p></DataStatePanel></main>
   }
 
   const unresolved = workspace.exceptions.filter((exception) => exception.status === 'unresolved')
-  const pending = workspace.adjustmentRequests.filter((request) => request.status === 'submitted' || request.status === 'under_review')
+  const pending = adjustmentRequests.filter((request) => request.status === 'submitted' || request.status === 'under_review')
   const urgent = workspace.alerts.filter((alert) => alert.priority === 'urgent' && !alert.acknowledgedAt)
 
   return (
@@ -305,9 +319,45 @@ function CallOffMaintenanceDialog({ onClose, onSaved, report }: { onClose: () =>
 function RequestReviewDialog({ onClose, onSaved, request }: { onClose: () => void; onSaved: () => Promise<unknown>; request: TimeAdjustmentRequest }) {
   const [decision, setDecision] = useState<'under_review' | 'approved' | 'partially_approved' | 'rejected'>('under_review')
   const [confirmWarnings, setConfirmWarnings] = useState(false)
-  const mutation = useMutation({ mutationFn: reviewTimeAdjustmentRequest, onSuccess: async () => { await onSaved(); onClose() } })
+  const isMissingTimeRequest = request.issueType === 'missing_shift' && Boolean(request.requestedPostId)
+  const requestTimeZone = request.requestedTimeZone ?? 'America/Denver'
+  const mutation = useMutation({
+    mutationFn: async (input: { id: string; status: typeof decision; decisionNote: string; confirmWarnings: boolean }) => {
+      if (isMissingTimeRequest) {
+        if (input.status === 'partially_approved') throw new Error('Missing-time requests must be approved, rejected, or left under review.')
+        return reviewMissingTimeRequest({ ...input, status: input.status })
+      }
+      return reviewTimeAdjustmentRequest(input)
+    },
+    onSuccess: async () => { await onSaved(); onClose() },
+  })
   function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); mutation.mutate({ id: request.id, status: decision, decisionNote: String(data.get('decisionNote')), confirmWarnings }) }
-  return <ModalDialog busy={mutation.isPending} className="modal-dialog--time-workflow" description="The original request and every decision remain in audit history." onClose={onClose} title={`Review ${request.employeeName}'s request`}><form className="time-workflow-form" onSubmit={submit}><div className="time-request-summary"><strong>{readableStatus(request.issueType)} · {request.workDate}</strong><span>{request.reason}</span><small>{request.requestedClockInAt ? `Requested in: ${formatOperationalDateTime(request.requestedClockInAt)}` : 'No clock-in requested'} · {request.requestedClockOutAt ? `Requested out: ${formatOperationalDateTime(request.requestedClockOutAt)}` : 'No clock-out requested'}</small></div><label><span>Decision</span><select onChange={(event) => setDecision(event.target.value as typeof decision)} value={decision}><option value="under_review">Mark under review</option><option value="approved">Approve</option><option value="partially_approved">Partially approve</option><option value="rejected">Reject</option></select></label><label><span>Decision note</span><textarea maxLength={1000} name="decisionNote" required rows={4} /></label>{decision === 'approved' || decision === 'partially_approved' ? <label className="time-workflow-confirm"><input checked={confirmWarnings} onChange={(event) => setConfirmWarnings(event.target.checked)} type="checkbox" /><span>I reviewed the requested times and authorize any disclosed validation warnings.</span></label> : null}{mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}<div className="time-workflow-form__actions"><TimeButton onClick={onClose} type="button" variant="secondary">Cancel</TimeButton><TimeButton type="submit" variant="primary">Save decision</TimeButton></div></form></ModalDialog>
+  return (
+    <ModalDialog busy={mutation.isPending} className="modal-dialog--time-workflow" description="The original request and every decision remain in audit history." onClose={onClose} title={`Review ${request.employeeName}'s request`}>
+      <form className="time-workflow-form" onSubmit={submit}>
+        <div className="time-request-summary">
+          <strong>{readableStatus(request.issueType)} · {request.workDate}</strong>
+          {request.requestedLocation ? <span>{request.requestedLocation}</span> : null}
+          <span>{request.reason}</span>
+          <small>{request.requestedClockInAt ? `Requested in: ${formatOperationalDateTime(request.requestedClockInAt, { timeZone: requestTimeZone })}` : 'No clock-in requested'} · {request.requestedClockOutAt ? `Requested out: ${formatOperationalDateTime(request.requestedClockOutAt, { timeZone: requestTimeZone })}` : 'No clock-out requested'}</small>
+          {isMissingTimeRequest ? <small>{request.requestedUnpaidBreakMinutes > 0 ? `${request.requestedUnpaidBreakMinutes} unpaid break minutes` : 'No unpaid break reported'} · No payroll effect until approved</small> : null}
+        </div>
+        <label>
+          <span>Decision</span>
+          <select onChange={(event) => setDecision(event.target.value as typeof decision)} value={decision}>
+            <option value="under_review">Mark under review</option>
+            <option value="approved">Approve</option>
+            {!isMissingTimeRequest ? <option value="partially_approved">Partially approve</option> : null}
+            <option value="rejected">Reject</option>
+          </select>
+        </label>
+        <label><span>Decision note</span><textarea maxLength={1000} name="decisionNote" required rows={4} /></label>
+        {decision === 'approved' || decision === 'partially_approved' ? <label className="time-workflow-confirm"><input checked={confirmWarnings} onChange={(event) => setConfirmWarnings(event.target.checked)} type="checkbox" /><span>I reviewed the requested times, Site/Post, unpaid break, and authorize any disclosed validation warnings.</span></label> : null}
+        {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+        <div className="time-workflow-form__actions"><TimeButton onClick={onClose} type="button" variant="secondary">Cancel</TimeButton><TimeButton type="submit" variant="primary">Save decision</TimeButton></div>
+      </form>
+    </ModalDialog>
+  )
 }
 
 function ExceptionReviewDialog({ exception, onClose, onSaved }: { exception: OperationalException; onClose: () => void; onSaved: () => Promise<unknown> }) {

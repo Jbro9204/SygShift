@@ -8912,6 +8912,104 @@
   width: min(900px, calc(100vw - 32px));
 }
 
+.modal-dialog--missing-time-request {
+  width: min(920px, calc(100vw - 32px));
+}
+
+.missing-time-request-form {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.missing-time-request-identity {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+  border: 1px solid #dfc999;
+  border-radius: 12px;
+  background: #fff9ed;
+}
+
+.missing-time-request-identity span,
+.missing-time-request-grid label > span,
+.missing-time-request-post > span,
+.missing-time-request-reason > span {
+  color: #51483b;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.missing-time-request-identity strong {
+  color: #1e1a15;
+  font-size: 19px;
+}
+
+.missing-time-request-identity small,
+.missing-time-request-grid small,
+.missing-time-request-reason small {
+  color: #71675a;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.missing-time-request-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.missing-time-request-grid label,
+.missing-time-request-post,
+.missing-time-request-reason {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.missing-time-request-grid input,
+.missing-time-request-grid select,
+.missing-time-request-post select,
+.missing-time-request-reason textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid #cfc3b0;
+  border-radius: 10px;
+  background: #fffdf8;
+  color: #201c16;
+  box-sizing: border-box;
+  font: inherit;
+  font-weight: 750;
+}
+
+.missing-time-request-reason textarea {
+  min-height: 128px;
+  resize: vertical;
+}
+
+.missing-time-request-reason > span strong {
+  color: #9f3329;
+  font-size: inherit;
+}
+
+.missing-time-request-reason small {
+  justify-self: end;
+}
+
+.missing-time-request-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.missing-time-request-actions .time-button {
+  min-width: 170px;
+}
+
 .time-workflow-form {
   display: grid;
   gap: 1rem;
@@ -9015,8 +9113,22 @@
 
   .time-operations-metrics,
   .time-operations-grid,
-  .time-workflow-form__two {
+  .time-workflow-form__two,
+  .missing-time-request-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .missing-time-request-form {
+    padding: 16px;
+  }
+
+  .missing-time-request-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .missing-time-request-actions .time-button {
+    width: 100%;
   }
 
   .time-workflow-row,
