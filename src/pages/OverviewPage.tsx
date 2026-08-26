@@ -3,7 +3,6 @@ import {
   CalendarDays,
   ClipboardCheck,
   Coffee,
-  DatabaseZap,
   Clock3,
   FileClock,
   Megaphone,
@@ -279,23 +278,6 @@ export function OverviewPage() {
         </section>
       ) : (
         <>
-          <section className="connection-banner" aria-labelledby="connection-title">
-        <div className="connection-icon">
-          <DatabaseZap aria-hidden="true" size={24} />
-        </div>
-        <div>
-          <h2 id="connection-title">
-            {isSupabaseConfigured ? 'Secure data connection configured' : 'Protected setup in progress'}
-          </h2>
-          <p>
-            {isSupabaseConfigured
-              ? 'The application is using protected authentication, operational schedule data, and exact source reconciliation safeguards.'
-              : 'No employee or schedule information will appear until the protected database is connected.'}
-          </p>
-        </div>
-        <span className="status-pill">{isSupabaseConfigured ? 'Connected' : 'No data loaded'}</span>
-      </section>
-
       <section aria-label="Operational totals" className="metric-grid">
         {metrics.map((metric) => {
           const Icon = metric.icon

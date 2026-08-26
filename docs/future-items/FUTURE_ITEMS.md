@@ -13,29 +13,6 @@ Keep this repository copy synchronized with:
 - Do not mark an item complete because a screen or button exists. The full authorized workflow, persistence, audit behavior, tests, and production verification must be complete.
 - All displayed dates and dated documentation use MM/DD/YYYY.
 
-## Platform Operations & Release Safety
-
-### Maintenance Banner Audience and Expiration Cleanup
-
-- Priority: Urgent
-- Target window: Next production hotfix
-- Status: Approved / queued
-- Added: 08/25/2026
-
-Replace technical maintenance-test language with calm, audience-appropriate communication and prevent completed-maintenance notices from lingering or repeatedly appearing.
-
-Required outcomes:
-
-- Never expose rehearsal, diagnostic, or verification wording to employees.
-- Keep internal maintenance verification details in the protected System Operations workspace and audit history.
-- Keep upcoming-maintenance notices visible but dismissible.
-- Keep active-maintenance notices persistent until the maintenance window ends.
-- Show a simple completion message for no more than 15 seconds and provide a manual close action.
-- Remember dismissal by maintenance event so the same completion notice does not return during page navigation or a later session.
-- Keep update-available prompts separate and visible until a safe refresh is completed.
-- Preserve screen-reader announcements, keyboard access, mobile layout, unsaved-work protection, and existing server-enforced maintenance controls.
-- Remove the current automatic-expiration verification message from employee-facing production surfaces.
-
 ## Data Quality & Operational Reliability
 
 ### Operational Alert Lifecycle and Backlog Reconciliation

@@ -17,6 +17,8 @@ import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDate, formatOperationalTime, lastCompletedPayrollWeek } from '../lib/time'
 import { MaintenanceNotice, MaintenanceUnavailablePanel } from './MaintenanceNotice'
 import { getMaintenanceStatus, maintenanceFeatureForPath } from '../data/maintenance'
+import { deriveSystemServiceStatus, getSystemReadiness } from '../data/systemStatus'
+import { SystemStatusIndicator } from './SystemStatusIndicator'
 
 const INACTIVITY_WARNING_MS = 25 * 60 * 1000
 const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000
@@ -30,15 +32,6 @@ type WorkspaceAlertEntry = {
   icon: 'announcement' | 'payroll' | 'attendance'
   ctaHref: string | null
   ctaLabel: string | null
-}
-
-function displayRole(role: SessionContext['role']): string {
-  if (role === 'admin') return 'Admin'
-  if (role === 'dispatcher') return 'Dispatcher'
-  if (role === 'recruiting_licensing') return 'Recruiting & Licensing'
-  if (role === 'scheduler') return 'Scheduler'
-  if (role === 'supervisor') return 'Supervisor'
-  return 'Guard'
 }
 
 function canOpenNavigationItem(
@@ -133,6 +126,12 @@ export function AppShell() {
     queryKey: ['maintenance-status'],
     refetchInterval: 30_000,
   })
+  const readinessQuery = useQuery({
+    enabled: isSupabaseConfigured && Boolean(sessionContext),
+    queryFn: getSystemReadiness,
+    queryKey: ['system-readiness'],
+    refetchInterval: 30_000,
+  })
   const workspaceAlerts = useMemo<WorkspaceAlertEntry[]>(() => {
     const announcementAlerts = (activeBannerQuery.data ?? []).map((banner) => ({
       id: banner.id,
@@ -185,6 +184,18 @@ export function AppShell() {
   const activeMaintenance = maintenanceStatusQuery.data?.active[0] ?? null
   const upcomingMaintenance = maintenanceStatusQuery.data?.upcoming[0] ?? null
   const completedMaintenance = maintenanceStatusQuery.data?.recentlyCompleted[0] ?? null
+  const systemServiceStatus = deriveSystemServiceStatus({
+    configured: isSupabaseConfigured,
+    maintenanceAccessModes: (maintenanceStatusQuery.data?.active ?? []).map((window) => window.accessMode),
+    maintenanceError: maintenanceStatusQuery.isError,
+    maintenancePending: maintenanceStatusQuery.isPending,
+    readiness: readinessQuery.data,
+    readinessError: readinessQuery.isError,
+    readinessPending: readinessQuery.isPending,
+  })
+  const canOpenSystemOperations = Boolean(
+    sessionContext && hasAnyEffectivePermission(sessionContext, ['admin.maintenance.manage']),
+  )
   const routeMaintenanceFeature = maintenanceFeatureForPath(location.pathname)
   const unavailableRouteWindow = (maintenanceStatusQuery.data?.active ?? []).find((window) => {
     if (window.accessMode !== 'unavailable') return false
@@ -438,19 +449,7 @@ export function AppShell() {
           ))}
         </nav>
 
-        <div className="sidebar-status" role="status">
-          <ShieldCheck aria-hidden="true" size={22} />
-          <div>
-            <strong>{isSupabaseConfigured ? 'Secure workspace' : 'Setup mode'}</strong>
-            <span>
-              {isSupabaseConfigured
-                ? sessionContext
-                  ? `${displayRole(sessionContext.role)} access verified`
-                  : 'Sign in required'
-                : 'Operational data is protected'}
-            </span>
-          </div>
-        </div>
+        <SystemStatusIndicator canOpenOperations={canOpenSystemOperations} status={systemServiceStatus} />
       </aside>
 
       <div className="workspace">

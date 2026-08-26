@@ -6,13 +6,17 @@ import {
   CheckCircle2,
   CircleOff,
   Clock3,
+  Database,
   History,
   Plus,
+  RefreshCw,
+  Server,
   ShieldCheck,
   Wrench,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { SystemStatusIndicator } from '../components/SystemStatusIndicator'
 import {
   closeMaintenanceWindow,
   getMaintenanceAdminWorkspace,
@@ -24,7 +28,9 @@ import {
   type MaintenanceReleaseKind,
   type MaintenanceWindow,
 } from '../data/maintenance'
+import { deriveSystemServiceStatus, getSystemReadiness } from '../data/systemStatus'
 import { defaultMaintenanceWindow, fromOperationalDateTimeInput, toOperationalDateTimeInput } from '../lib/operationalDateTime'
+import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 
 type WindowFormState = {
@@ -144,6 +150,12 @@ export function SystemOperationsPage() {
   const workspaceQuery = useQuery({
     queryFn: getMaintenanceAdminWorkspace,
     queryKey: ['maintenance-admin-workspace'],
+    refetchInterval: 30_000,
+  })
+  const readinessQuery = useQuery({
+    queryFn: getSystemReadiness,
+    queryKey: ['system-readiness'],
+    refetchInterval: 30_000,
   })
   const saveMutation = useMutation({
     mutationFn: saveMaintenanceWindow,
@@ -169,6 +181,19 @@ export function SystemOperationsPage() {
   const windows = workspaceQuery.data?.windows ?? []
   const currentWindows = windows.filter((window) => window.status === 'active' || window.status === 'scheduled')
   const history = windows.filter((window) => window.status !== 'active' && window.status !== 'scheduled')
+  const activeWindows = currentWindows.filter((window) => window.status === 'active')
+  const scheduledWindows = currentWindows.filter((window) => window.status === 'scheduled')
+  const serviceStatus = deriveSystemServiceStatus({
+    configured: isSupabaseConfigured,
+    maintenanceAccessModes: activeWindows.map((window) => window.accessMode),
+    maintenanceError: workspaceQuery.isError,
+    maintenancePending: workspaceQuery.isPending,
+    readiness: readinessQuery.data,
+    readinessError: readinessQuery.isError,
+    readinessPending: readinessQuery.isPending,
+  })
+  const lastCheckedAt = Math.max(readinessQuery.dataUpdatedAt, workspaceQuery.dataUpdatedAt)
+  const refreshingHealth = readinessQuery.isFetching || workspaceQuery.isFetching
   const groupedFeatures = useMemo(() => Object.entries(
     MAINTENANCE_FEATURES.reduce<Record<string, typeof MAINTENANCE_FEATURES[number][]>>((groups, feature) => {
       groups[feature.group] ??= []
@@ -221,6 +246,50 @@ export function SystemOperationsPage() {
           <Plus aria-hidden="true" size={19} /> Schedule maintenance
         </button>
       </header>
+
+      <section className="system-health-section" aria-labelledby="system-health-heading">
+        <div className="system-health-section__heading">
+          <div>
+            <p className="eyebrow">Protected system status</p>
+            <h2 id="system-health-heading">Service health</h2>
+            <p>Sanitized operational checks are shown here for authorized administrators. No keys, credentials, or private connection values are displayed.</p>
+          </div>
+          <div className="system-health-section__actions">
+            <SystemStatusIndicator canOpenOperations={false} status={serviceStatus} />
+            <button
+              className="secondary-button"
+              disabled={refreshingHealth}
+              onClick={() => {
+                void readinessQuery.refetch()
+                void workspaceQuery.refetch()
+              }}
+              type="button"
+            >
+              <RefreshCw aria-hidden="true" className={refreshingHealth ? 'system-health-refresh-icon system-health-refresh-icon--active' : 'system-health-refresh-icon'} size={17} />
+              {refreshingHealth ? 'Checking...' : 'Refresh checks'}
+            </button>
+          </div>
+        </div>
+        <div className="system-health-grid">
+          <article>
+            <Server aria-hidden="true" size={21} />
+            <div><span>Application delivery</span><strong>{readinessQuery.data?.checks.assetsBinding ? 'Operational' : 'Attention needed'}</strong><small>Application assets and the production runtime</small></div>
+          </article>
+          <article>
+            <Database aria-hidden="true" size={21} />
+            <div><span>Data & authentication</span><strong>{readinessQuery.data?.checks.supabaseUrl && readinessQuery.data?.checks.supabasePublishableKey && workspaceQuery.data ? 'Connected' : 'Attention needed'}</strong><small>Employee authentication and operational records</small></div>
+          </article>
+          <article>
+            <ShieldCheck aria-hidden="true" size={21} />
+            <div><span>Protected integrations</span><strong>{readinessQuery.data?.checks.supabaseServiceRoleKey ? 'Configured' : 'Attention needed'}</strong><small>Server-only administrative operations</small></div>
+          </article>
+          <article>
+            <Wrench aria-hidden="true" size={21} />
+            <div><span>Safe release controls</span><strong>{activeWindows.length > 0 ? `${activeWindows.length} active` : scheduledWindows.length > 0 ? `${scheduledWindows.length} scheduled` : 'No restrictions'}</strong><small>Feature-specific maintenance access controls</small></div>
+          </article>
+        </div>
+        <p className="system-health-section__checked">{lastCheckedAt > 0 ? `Last checked ${formatOperationalDateTime(new Date(lastCheckedAt), { includeTimeZoneName: true })}.` : 'Running the first protected system check.'}</p>
+      </section>
 
       <section className="maintenance-principles" aria-label="Safe release controls">
         <article><ShieldCheck aria-hidden="true" /><div><strong>Inactive by default</strong><span>A deployment cannot turn maintenance on by itself.</span></div></article>

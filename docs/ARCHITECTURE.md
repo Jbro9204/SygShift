@@ -78,3 +78,12 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Publishing a replacement opening cancels the original assignment, opens the shift, creates the announcement, and queues qualified delivery atomically.
 - Notification records distinguish queued, attempted, delivered, and failed states. The interface must never describe a queued message as sent.
 - Employee email routing is personal-first. Database queues exclude the temporarily blocked `@guardianshipsecurity.net` domain, and the Worker independently suppresses that domain before the provider is called.
+
+## System status and release communication
+
+- The application shell shows every signed-in user one compact service state: Online, Attention Needed, or Service Disruption.
+- Detailed readiness and integration checks are restricted to the System Operations workspace and the `admin.maintenance.manage` permission.
+- The Worker readiness endpoint returns sanitized booleans only. Secret values, private URLs, credentials, and request diagnostics are never rendered in the browser.
+- Upcoming maintenance notices are dismissible. Active maintenance remains persistent until the protected window ends.
+- Completed maintenance uses employee-safe language, automatically dismisses after 15 seconds, and stores dismissal per maintenance event so it does not reappear during navigation or a later session.
+- Feature access continues to be enforced at the server and database boundaries; the service indicator is informational and never substitutes for authorization or health enforcement.

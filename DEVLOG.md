@@ -25,6 +25,19 @@ deployment status, or major workflow assumptions change.
 
 ## 08/26/2026
 
+### Platform status and maintenance communication cleanup
+
+- Removed the oversized technical data-connection banner from Home.
+- Added one compact service indicator with plain-language `Online`, `Attention Needed`, and `Service Disruption` states.
+- Limited detailed, sanitized platform checks to the protected System Operations workspace for authorized administrators.
+- Added live checks for application delivery, data and authentication, protected integrations, and safe release controls without exposing credentials or private connection values.
+- Replaced internal maintenance-test wording with the calm employee-facing message: `Maintenance complete. SygShift is available normally.`
+- Added manual dismissal for upcoming and completed notices, 15-second automatic dismissal for completed notices, and event-specific persistence so dismissed notices do not reappear.
+- Kept active maintenance persistent and preserved existing server enforcement, permissions, update prompts, unsaved-work protection, and automatic maintenance expiration.
+- Removed the completed maintenance-communication item from the active future queue and synchronized the Desktop mirror.
+- Full validation passed: type checking, lint, 80 test files / 401 tests, production build, Git whitespace validation, and live production health/readiness checks.
+- Released Cloudflare production version `9a5858d8-8f86-47f2-9965-3c6da6c65298`.
+
 ### Live scheduled no-show visibility for dispatch
 
 - Corrected the Time Command Center so Missing Punches includes employees who are currently scheduled but have not clocked in.
