@@ -305,7 +305,7 @@ The long-term model is Active Directory-style effective permissions:
 - An added permission must enable the full intended workflow without a code change.
 - MFA-sensitive permissions require verified MFA at the protected boundary.
 
-The full permission enforcement audit remains a critical future initiative in `docs/future-items/FUTURE_ITEMS.md`. Until it is complete, inspect both permission checks and any legacy role fallback before changing access. Never remove a fallback without first preserving intended production access and testing an Admin recovery path.
+The full permission enforcement audit and Guard access hardening were completed in August 2026. Permission changes must preserve the effective-access model across navigation, direct routes, reads, writes, Worker endpoints, RPCs, and database functions. The remaining access item in `docs/future-items/FUTURE_ITEMS.md` is a usability redesign of the employee-access workspace; it does not authorize weakening the enforced permission model. Always preserve intended production access and test an Admin recovery path.
 
 ## 12. Test strategy
 

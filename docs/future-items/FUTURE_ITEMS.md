@@ -1,72 +1,149 @@
 # SygShift Future Items
 
-Use this file for ideas we want to keep visible but are not building yet.
+This is the active queue for approved or retained work that has not been completed.
 
-Keep this repo copy in sync with:
+Keep this repository copy synchronized with:
 `C:\Users\Jordan\Desktop\SygShift Future Items\FUTURE_ITEMS.md`
 
-Maintenance rule:
-When a future item is implemented, record it in the proper changelog/devlog, then remove it from this active future list so this file stays current.
+## Queue Rules
 
-## Active / Recently Closed
+- Every item must have a category, priority, target window, status, and added date.
+- Assign work to the category that owns the outcome, even when implementation touches several areas.
+- When an item is completed, record it in the dated changelog and `DEVLOG.md`, then remove it from this active queue.
+- Do not mark an item complete because a screen or button exists. The full authorized workflow, persistence, audit behavior, tests, and production verification must be complete.
+- All displayed dates and dated documentation use MM/DD/YYYY.
 
-### Employee Time & Attendance Self-View
-Status: Completed 07/29/2026
+## Data Quality & Operational Reliability
 
-Outcome:
-Employees can view their own Time & Attendance without exposing supervisor payroll review tools.
+### Operational Alert Lifecycle and Backlog Reconciliation
 
-### Users & Access Account Activity Filters
-Status: Completed 07/29/2026
+- Priority: Critical
+- Target window: Next production cycle
+- Status: Approved / queued
+- Added: 08/25/2026
 
-Idea:
-Let admins filter by account setup and activity status so rollout issues are easier to find.
+Build a controlled lifecycle for the accumulated operational and payroll alerts so legitimate issues remain visible without leaving stale, duplicate, or already-corrected alerts in the queue.
 
-Notes:
-- Built filters should use real account activity data only.
-- Email delivery filters require persisted welcome/login email send timestamps before they are added.
+Required outcomes:
 
-### Multi-Day Manual Shift Creation
-Status: Completed 07/29/2026
+- Classify alerts by rule, employee, workday, source record, and severity.
+- Deduplicate repeated alerts that describe the same underlying occurrence.
+- Automatically resolve only alerts whose source condition is provably corrected or no longer applicable.
+- Keep ambiguous records available for authorized human review.
+- Preserve the original alert, resolution reason, resolver, timestamp, and supporting record references.
+- Provide focused filters and batch-safe actions without weakening hard payroll blockers.
+- Reconcile the existing backlog before enabling ongoing automated lifecycle handling.
 
-Idea:
-Schedulers need to add the same shift to multiple days without recreating it one day at a time.
+## Access, Identity & User Administration
 
-Notes:
-- Keep this limited to the selected schedule week until a full recurring-shift preview and approval flow is designed.
-- The UI must show the dates being created before save.
+### Manage Employee Access Workspace Redesign
 
-### Timekeeping Operations Expansion
-Status: Completed 08/18/2026
+- Priority: High
+- Target window: Next user-administration release
+- Status: Approved / queued
+- Added: 08/25/2026
 
-Outcome:
-- Added automatic scheduled-end clock-out protection with exception, audit, and employee-notification records.
-- Added missing clock-in detection without creating false punches.
-- Added controlled manual time entry, employee adjustment requests, call-off reporting, urgent operations alerts, and eight operational reports.
-- Added server-enforced permissions, MFA checks, validation, idempotency, and audit history for every new workflow.
-- Added schedule notes to payroll exports and preserved the existing one-week-at-a-time publishing boundary.
+Replace the current long, confusing employee-access modal with a clear task-focused workspace for individual access changes.
 
-## Pinned For Later
+Required outcomes:
 
-### Supervisor Assignment / Scoped Visibility
-Status: Pinned for later
+- Use a comfortably sized, responsive workspace instead of a cramped or excessively long modal.
+- Separate role memberships, individual grants/denials, active overrides, and effective-access review into clear steps or tabs.
+- Group permissions under the established application categories.
+- Explain inherited role access versus person-specific exceptions in plain language.
+- Keep save actions close to the setting being changed and show immediate loading, success, and refreshed state.
+- Preserve server-enforced authorization, MFA requirements, audit notes, and Admin recovery safeguards.
 
-Idea:
-Add an Assigned Supervisor field to employee profiles so supervisors can default to seeing only their own employees instead of the full company.
+### User Accounts Consolidation and Preferred-Name Boundary
 
-Notes:
-- Keep access permissions separate from employee visibility scope.
-- Admins should still see everyone.
-- Decide whether assignment should be employee-based, site/post-based, or both.
-- Consider views for All employees, My employees, Unassigned, and By supervisor.
+- Priority: High
+- Target window: Near-term user-administration release
+- Status: Approved / queued
+- Added: 08/25/2026
 
-### Indeed Employer / Recruiting Depot
-Status: Pinned for later
+Refine the current Users & Access area into a focused User Accounts workspace now that roles and permissions have their own administration area.
 
-Idea:
-Explore whether Indeed Employer can connect into SygShift/Sygilant through an API or integration, then use that connection to support a Recruiting Depot.
+Required outcomes:
 
-Notes:
-- Goal is to better organize applicants, recruiting stages, licensing progress, and onboarding handoff.
-- Need to confirm Indeed Employer API access, permissions, costs, and data limits.
-- If direct API access is not realistic, evaluate email parsing, CSV import, or manual intake as fallback options.
+- Evaluate and apply the clearer `User Accounts` name throughout navigation, headings, and documentation.
+- Keep account activation, usernames, login history, MFA reset, onboarding messages, and account recovery in this workspace.
+- Keep role and permission design in Roles & Permissions while still showing the employee's effective role/access summary where useful.
+- Treat preferred names as schedule-facing display data; use legal/profile names in User Accounts and other controlled employee records unless a specific workflow calls for the preferred name.
+- Preserve the existing first-name schedule disambiguation rules so similar employee names remain clear.
+
+## Time, Attendance & Payroll
+
+### Employee Timecard History and Current-Period Defaults
+
+- Priority: High
+- Target window: Near-term timekeeping release
+- Status: Approved / queued
+- Added: 08/25/2026
+
+Give employees a clean way to review their own current and prior timecards without exposing team-level payroll controls.
+
+Required outcomes:
+
+- Default employee and authorized staff time views to the current pay period.
+- Provide simple previous/next pay-period navigation and a clearly labeled custom range only where appropriate.
+- Let employees review their own punches, breaks, work locations, calculated worked time, and submitted correction status for prior periods.
+- Keep supervisor/admin correction tools permission-controlled and separate from employee self-service.
+- Apply the established Sunday-through-Saturday workweek and overnight workday ownership rules everywhere.
+
+### Dedicated Payroll Workspace and Export Navigation
+
+- Priority: High
+- Target window: Near-term payroll experience release
+- Status: Approved / queued
+- Added: 08/25/2026
+
+Separate payroll work from the general Time & Attendance workspace and remove the need to scroll through a long employee list before reaching export controls.
+
+Required outcomes:
+
+- Give Payroll Export a dedicated, permission-controlled navigation destination.
+- Keep Time & Attendance focused on clock status, employee time review, exceptions, and corrections.
+- Replace the long always-expanded employee section with a compact searchable summary and open-on-demand employee detail.
+- Default payroll views to the current pay period while retaining approved period shortcuts and custom-range export.
+- Preserve one summary row per employee, Week 1/Week 2 payroll separation, employee detail sheets, overnight attribution, exception readiness, and official-export locking.
+
+## Workforce Organization & Scheduling
+
+### Supervisor Assignment and Scoped Workforce Visibility
+
+- Priority: Medium
+- Target window: After current access and payroll usability work
+- Status: Pinned for later
+- Added: Before 08/25/2026
+
+Add an Assigned Supervisor field to employee profiles so supervisors can default to the employees they are responsible for without changing the permissions that authorize each action.
+
+Required outcomes:
+
+- Keep permission authorization separate from employee visibility scope.
+- Preserve full-company visibility for authorized Admin users.
+- Define whether assignments can be employee-based, site/post-based, or both.
+- Provide focused views for My Employees, All Employees, Unassigned, and By Supervisor where authorized.
+- Preserve audited exception access when a supervisor needs to help outside their normal scope.
+
+## Recruiting & External Integrations
+
+### Indeed Employer Integration and Recruiting Depot
+
+- Priority: Research
+- Target window: Later expansion
+- Status: Pinned for later
+- Added: Before 08/25/2026
+
+Research whether Indeed Employer can connect to SygShift/Sygilant and support a dedicated Recruiting Depot for applicants, recruiting stages, licensing progress, and onboarding handoff.
+
+Required outcomes:
+
+- Confirm available Indeed Employer APIs, permissions, costs, and data-use limitations before committing to an integration.
+- Define the recruiting record lifecycle and its handoff into the employee, licensing, and user-account workflows.
+- Evaluate secure email parsing, controlled CSV intake, or manual intake if a direct integration is not viable.
+- Keep the recruiting expansion separate from current production-critical scheduling and payroll work.
+
+## Completed Work
+
+Completed initiatives do not remain in this active queue. Their implementation history is retained in `docs/changelogs/` and `DEVLOG.md`.

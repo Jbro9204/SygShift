@@ -23,6 +23,19 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/25/2026
+
+### Future work queue categorization
+
+- Rebuilt `docs/future-items/FUTURE_ITEMS.md` as an active queue containing only unfinished or intentionally retained work.
+- Assigned every active item an owning category, priority, target window, status, and added date.
+- Added the approved operational-alert lifecycle, employee-access redesign, User Accounts consolidation, employee timecard history, and dedicated payroll workspace initiatives that had been discussed but were missing from the file.
+- Retained supervisor-scoped workforce visibility and Indeed integration research in their proper long-term categories.
+- Removed completed initiatives from the active queue; their history remains in dated changelogs and this development log.
+- Updated the Build and Handoff Guide to reflect the completed permission-enforcement audit and Guard access hardening.
+- Synchronized the repository queue with the Desktop Future Items mirror.
+- No production behavior, permissions, schedules, time records, payroll data, or employee information changed.
+
 ## 08/24/2026
 
 ### Large payroll preview download repair
