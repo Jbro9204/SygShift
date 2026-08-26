@@ -23,6 +23,20 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/26/2026
+
+### Automatic clock-out schedule-revision continuity
+
+- Corrected a production defect that could skip automatic clock-out when an employee clocked into a shift and the schedule was later republished as a new revision.
+- Kept each punch linked to its original immutable shift for audit integrity; no punch or shift relationship was rewritten.
+- Automatic clock-out now accepts the exact session-linked shift when its parent schedule is either published or superseded, while draft and archived schedules remain excluded.
+- Missing-clock-in detection remains restricted to the current published schedule so obsolete revisions cannot create duplicate attendance alerts.
+- Audited the live one-minute automation across all active employees: the scheduler was healthy, no job failures occurred, and one additional unambiguous overdue scheduled session was automatically closed at its authoritative scheduled end after the correction.
+- Left one unrelated supervisor-entered session without a linked shift untouched for human review because no authoritative end time exists.
+- Added a dedicated regression guard for revision continuity, exact shift matching, duplicate protection, excluded schedule states, and published-only missing-clock-in detection.
+- Applied targeted production migration `20260826100000_auto_clock_out_revision_continuity.sql` and recorded it in remote migration history.
+- Full validation passed: type checking, lint, 76 test files / 385 tests, production build, current Wrangler startup analysis, live health/readiness, and post-release automation reconciliation.
+
 ## 08/25/2026
 
 ### Future work queue categorization
