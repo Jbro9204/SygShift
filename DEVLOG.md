@@ -34,6 +34,7 @@ deployment status, or major workflow assumptions change.
 - Removed completed initiatives from the active queue; their history remains in dated changelogs and this development log.
 - Updated the Build and Handoff Guide to reflect the completed permission-enforcement audit and Guard access hardening.
 - Synchronized the repository queue with the Desktop Future Items mirror.
+- Added the urgent Platform Operations follow-up for employee-safe maintenance banner wording, audience controls, and 15-second completion-message expiration.
 - No production behavior, permissions, schedules, time records, payroll data, or employee information changed.
 
 ## 08/24/2026
