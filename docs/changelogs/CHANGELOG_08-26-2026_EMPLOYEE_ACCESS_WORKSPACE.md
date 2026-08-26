@@ -38,6 +38,15 @@ The individual employee-access workflow is now one focused administrative worksp
 - Type checking and linting passed.
 - All 85 automated test files and 426 tests passed.
 - Production build passed.
+- Cloudflare package and startup validation passed; Worker startup measured 4 ms.
+- Production version `cd600e36-3420-4071-9226-c0a19f8d1634` was deployed.
+- The custom domain and Workers fallback health/readiness checks returned HTTP 200.
+- The live sign-in route loaded successfully and the deployed access-control asset contains the new workspace.
+
+## Production
+
+- Primary application: https://app.sygilant.us
+- Worker fallback: https://sygshift.sygilant.workers.dev
 
 ## Future queue
 

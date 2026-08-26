@@ -34,6 +34,9 @@ deployment status, or major workflow assumptions change.
 - Preserved all existing role assignments, employee-specific grants and denials, server-enforced Admin/MFA authorization, audit records, and protected Admin recovery rules.
 - Added regression coverage for the complete workspace, mutation boundaries, refreshed state, responsive modal sizing, controlled scrolling, and button layout.
 - Full validation passed: type checking, linting, 85 test files / 426 tests, and production build.
+- Cloudflare packaging and startup validation passed; the deployed Worker started in 4 ms.
+- Released Cloudflare production version `cd600e36-3420-4071-9226-c0a19f8d1634`.
+- Verified HTTP 200 health and readiness responses on both the custom domain and Workers fallback, confirmed the public sign-in route loads, and confirmed the live access-control asset contains the new role-membership, individual-exception, and effective-access workspace.
 
 ### Production data connection recovery and actionable service diagnostics
 
