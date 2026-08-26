@@ -69,7 +69,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTime, OPERATIONAL_TIME_ZONE, operationalToday } from '../lib/time'
 import { TimeCommandCenterPage } from '../time/TimeCommandCenterPage'
 import { workedTimePayrollReview } from '../time/timePayroll'
-import { completedPayrollPeriod } from '../time/timeRules'
+import { currentPayrollWeek } from '../time/timeRules'
 import { recommendedManualPunchTimestamp } from '../time/manualPunchWorkday'
 import {
   canExportPayroll as sessionCanExportPayroll,
@@ -442,7 +442,7 @@ export function TimeMaintenanceWorkbench({
 }) {
   const queryClient = useQueryClient()
   const workbenchRef = useRef<HTMLElement | null>(null)
-  const defaultMaintenancePeriod = useMemo(() => defaultPeriod ?? completedPayrollPeriod(), [defaultPeriod])
+  const defaultMaintenancePeriod = useMemo(() => defaultPeriod ?? currentPayrollWeek(), [defaultPeriod])
   const [fromDate, setFromDate] = useState(defaultMaintenancePeriod.fromDate)
   const [throughDate, setThroughDate] = useState(defaultMaintenancePeriod.throughDate)
   const [employeeId, setEmployeeId] = useState(initialEmployeeId ?? '')

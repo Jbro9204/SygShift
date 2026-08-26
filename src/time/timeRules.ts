@@ -28,6 +28,7 @@ export interface TimePeriod {
 }
 
 type PeriodRuleInput = Pick<PayrollRules, 'payDateAnchor' | 'payFrequency' | 'weekStartsOn'>
+type WeekRuleInput = Pick<PayrollRules, 'weekStartsOn'>
 
 export function dateKey(date: Date): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -103,6 +104,14 @@ export function currentPayrollPeriod(now = new Date(), rules?: Partial<PeriodRul
   const dayOffset = (today.getDay() - weekStartsOn + 7) % 7
   const weekStart = addDays(today, -dayOffset)
   return periodFromStart(weekStart, periodLengthDays(rules), 'open', now)
+}
+
+export function currentPayrollWeek(now = new Date(), rules?: Partial<WeekRuleInput>): TimePeriod {
+  const today = operationalToday(now)
+  const weekStartsOn = rules?.weekStartsOn ?? DEFAULT_TIME_RULES.weekStartsOn
+  const dayOffset = (today.getDay() - weekStartsOn + 7) % 7
+  const weekStart = addDays(today, -dayOffset)
+  return periodFromStart(weekStart, 7, 'open', now)
 }
 
 export function shiftPayrollPeriod(period: Pick<TimePeriod, 'fromDate'>, offsetPeriods: number, rules?: Partial<PeriodRuleInput>): TimePeriod {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { completedPayrollPeriod, currentPayrollPeriod, shiftPayrollPeriod } from './timeRules'
+import { completedPayrollPeriod, currentPayrollPeriod, currentPayrollWeek, shiftPayrollPeriod } from './timeRules'
 
 const biweeklyRules = {
   payDateAnchor: '2026-07-31',
@@ -32,6 +32,20 @@ describe('payroll period rules', () => {
     expect(shiftPayrollPeriod(selected, 1, biweeklyRules)).toMatchObject({
       fromDate: '2026-08-09',
       throughDate: '2026-08-22',
+    })
+  })
+
+  it('returns the current Sunday through Saturday payroll week independently of pay frequency', () => {
+    expect(currentPayrollWeek(new Date('2026-08-26T16:00:00.000Z'), biweeklyRules)).toMatchObject({
+      fromDate: '2026-08-23',
+      throughDate: '2026-08-29',
+    })
+  })
+
+  it('keeps Sunday inside the new current week', () => {
+    expect(currentPayrollWeek(new Date('2026-08-23T16:00:00.000Z'), biweeklyRules)).toMatchObject({
+      fromDate: '2026-08-23',
+      throughDate: '2026-08-29',
     })
   })
 })

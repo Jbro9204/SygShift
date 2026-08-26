@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 08/26/2026
 
+### Timecard and Team Attendance current-week default
+
+- Corrected Time Maintenance so it no longer reopens on the last completed payroll period.
+- Corrected Team Attendance so it opens to the current Sunday-through-Saturday operational week instead of the full biweekly payroll period.
+- Preserved deliberate Team Attendance ranges in the URL so browser navigation and saved links restore the selected dates.
+- Kept employee changes from resetting the active review range.
+- Preserved exact one-day/date-specific ranges opened from Exceptions, Payroll Review, and Daily Attendance.
+- Left Payroll Export and payroll exception period logic unchanged.
+- Full validation passed: type checking, lint, 77 test files / 390 tests, and production build.
+- Released Cloudflare production version `e150c43e-edc5-4e8a-b380-9d5c85fb0ef8`; health and readiness returned HTTP 200 on both the custom domain and Workers fallback.
+
 ### Automatic clock-out schedule-revision continuity
 
 - Corrected a production defect that could skip automatic clock-out when an employee clocked into a shift and the schedule was later republished as a new revision.

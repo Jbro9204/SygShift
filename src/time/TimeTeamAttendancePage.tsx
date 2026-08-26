@@ -22,7 +22,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { TimeMaintenanceWorkbench, type TimeMaintenanceFocusRequest } from '../pages/TimePage'
-import { currentPayrollPeriod, formatUsDateKey, type TimePeriod } from './timeRules'
+import { currentPayrollWeek, formatUsDateKey, type TimePeriod } from './timeRules'
 import { canManageTime, canViewTeamTime } from './timePermissions'
 import {
   TimeAlertCard,
@@ -58,13 +58,24 @@ interface TeamAttendanceRow {
   pendingCorrectionCount: number
 }
 
-function rulesForPeriod(rules?: Awaited<ReturnType<typeof getPayrollRules>>): Parameters<typeof currentPayrollPeriod>[1] {
+function rulesForWeek(rules?: Awaited<ReturnType<typeof getPayrollRules>>): Parameters<typeof currentPayrollWeek>[1] {
   if (!rules) return undefined
   return {
-    payDateAnchor: rules.payDateAnchor,
-    payFrequency: rules.payFrequency,
     weekStartsOn: rules.weekStartsOn,
   }
+}
+
+function isDateKey(value: string | null): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T12:00:00`)
+  return !Number.isNaN(parsed.getTime()) && value === parsed.toLocaleDateString('en-CA')
+}
+
+function periodFromSearch(searchParams: URLSearchParams): Pick<TimePeriod, 'fromDate' | 'throughDate'> | null {
+  const fromDate = searchParams.get('from')
+  const throughDate = searchParams.get('through')
+  if (!isDateKey(fromDate) || !isDateKey(throughDate) || fromDate > throughDate) return null
+  return { fromDate, throughDate }
 }
 
 function latestEventState(kind: TeamAttendanceSummaryRow['latestKind']): TeamClockState {
@@ -154,13 +165,14 @@ function periodLabel(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>): stri
 }
 
 export function TimeTeamAttendancePage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [focusRequest, setFocusRequest] = useState<TimeMaintenanceFocusRequest | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
-  const defaultPeriod = currentPayrollPeriod()
+  const requestedPeriod = periodFromSearch(searchParams)
+  const defaultPeriod = requestedPeriod ?? currentPayrollWeek()
   const [fromDate, setFromDate] = useState(defaultPeriod.fromDate)
   const [throughDate, setThroughDate] = useState(defaultPeriod.throughDate)
-  const [rangeTouched, setRangeTouched] = useState(false)
+  const [rangeTouched, setRangeTouched] = useState(requestedPeriod !== null)
   const [statusFilter, setStatusFilter] = useState<TeamAttendanceFilter>(statusFilterFromSearch(searchParams.get('status')))
 
   const sessionQuery = useQuery({
@@ -178,10 +190,18 @@ export function TimeTeamAttendancePage() {
 
   useEffect(() => {
     if (rangeTouched || !rulesQuery.data) return
-    const activePeriod = currentPayrollPeriod(undefined, rulesForPeriod(rulesQuery.data))
+    const activePeriod = currentPayrollWeek(undefined, rulesForWeek(rulesQuery.data))
     setFromDate(activePeriod.fromDate)
     setThroughDate(activePeriod.throughDate)
   }, [rangeTouched, rulesQuery.data])
+
+  useEffect(() => {
+    const requested = periodFromSearch(searchParams)
+    if (!requested) return
+    setFromDate((current) => current === requested.fromDate ? current : requested.fromDate)
+    setThroughDate((current) => current === requested.throughDate ? current : requested.throughDate)
+    setRangeTouched(true)
+  }, [searchParams])
 
   useEffect(() => {
     const nextFilter = statusFilterFromSearch(searchParams.get('status'))
@@ -217,6 +237,10 @@ export function TimeTeamAttendancePage() {
     setFromDate(period.fromDate)
     setThroughDate(period.throughDate)
     setRangeTouched(true)
+    const nextSearchParams = new URLSearchParams(searchParams)
+    nextSearchParams.set('from', period.fromDate)
+    nextSearchParams.set('through', period.throughDate)
+    setSearchParams(nextSearchParams, { replace: true })
   }
 
   function focusEmployee(employeeId: string, date?: string) {
