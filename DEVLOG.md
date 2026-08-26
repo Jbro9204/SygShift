@@ -35,6 +35,8 @@ deployment status, or major workflow assumptions change.
 - Added a protected payroll-review database boundary so current review and export data uses legal/profile names without rewriting immutable historical export snapshots.
 - Applied and recorded targeted production migration `20260826220000_user_accounts_legal_name_boundary.sql`.
 - Removed the completed initiative from the active future queue; the separate Manage Employee Access workspace redesign remains queued.
+- Full validation passed: type checking, linting, 84 test files / 420 tests, 20 focused browser tests across both configured viewports, production build, Cloudflare package dry-run, current Worker startup profiling, and live database authorization checks.
+- Released Cloudflare production version `75f5bb9c-9b1a-4da6-95c9-13bcd4d5e018`; the custom domain and Workers fallback health/readiness endpoints returned HTTP 200, and the live User Accounts bundle passed the release-content checks.
 
 ### Operational alert lifecycle and backlog reconciliation
 

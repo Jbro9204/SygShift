@@ -34,7 +34,13 @@ SygShift now separates account administration from schedule-facing preferred nam
 - Added unit coverage for legal-name construction and schedule-name preservation.
 - Added guard coverage for the User Accounts preferred-name boundary and database authorization.
 - Verified the live production database function, protected implementation, authenticated execution, anonymous denial, and legal-name replacement behavior.
-- Completed type checking, linting, automated tests, production build, deployment, and live health/readiness verification before release.
+- Type checking and linting passed.
+- All 84 automated test files and 420 tests passed.
+- All 20 focused browser tests passed across both configured viewports.
+- Production build, Cloudflare package dry-run, and current Worker startup profiling passed.
+- Custom-domain and Workers-fallback health/readiness checks returned HTTP 200.
+- The live User Accounts bundle contains the new heading and no longer contains the old heading or preferred-name field.
+- Released Cloudflare production version `75f5bb9c-9b1a-4da6-95c9-13bcd4d5e018`.
 
 ## Future queue
 
