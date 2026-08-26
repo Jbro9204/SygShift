@@ -25,6 +25,19 @@ deployment status, or major workflow assumptions change.
 
 ## 08/26/2026
 
+### Live scheduled no-show visibility for dispatch
+
+- Corrected the Time Command Center so Missing Punches includes employees who are currently scheduled but have not clocked in.
+- Restored the operational missing-clock-in grace period to 15 minutes after a published shift starts.
+- Kept the separate 14-hour guardrail for unusually long active clock-ins; the two rules no longer share one threshold.
+- Added a focused dispatcher panel with the employee name, Site/Post, and scheduled start time, plus a direct route to the actionable Time Operations queue.
+- Limited the live dashboard panel to shifts that are currently in progress; older missed starts remain in operational history instead of cluttering the current dispatch view.
+- Preserved all punches, schedules, exception history, and audit data.
+- Applied and recorded targeted production migration `20260826150000_missing_clock_in_dispatch_visibility.sql`.
+- Verified the live 15-minute setting and confirmed production generated the expected current missing-clock-in record for Randall Hurst.
+- Full validation passed: type checking, linting, 77 test files / 392 tests, production build, Cloudflare package dry-run, and live health/readiness checks.
+- Released Cloudflare production version `ccd5a6ea-7e83-4700-9523-80ab530e49fd`.
+
 ### Timecard and Team Attendance current-week default
 
 - Corrected Time Maintenance so it no longer reopens on the last completed payroll period.

@@ -9544,6 +9544,63 @@
   margin-bottom: 16px;
 }
 
+.time-live-no-show-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 18px;
+  background: #fff8f5;
+  border: 1px solid #e2b2a8;
+  border-left: 4px solid #b54a3b;
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.time-live-no-show-panel .time-section-header {
+  margin: 0;
+}
+
+.time-live-no-show-list {
+  display: grid;
+  gap: 10px;
+}
+
+.time-live-no-show-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 14px;
+  background: #fff;
+  border: 1px solid #ead3cd;
+  border-radius: 9px;
+}
+
+.time-live-no-show-row > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.time-live-no-show-row strong {
+  color: var(--ink);
+  font-size: 16px;
+}
+
+.time-live-no-show-row span {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+@media (max-width: 720px) {
+  .time-live-no-show-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+}
+
 .my-time-dashboard-grid {
   display: grid;
   grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.1fr);

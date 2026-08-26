@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionContext } from '../data/auth'
 import type { TeamAttendanceSummary, TimekeepingDashboard, TimekeepingReview } from '../data/timekeeping'
+import type { TimeOperationsWorkspace } from '../data/timeOperations'
 import { buildTimeCommandCenterModel, canViewTeamTime } from './timeCommandCenter'
 import { canResolveTimeExceptions, canUseOwnTimeClock, canViewOwnTime } from './timePermissions'
 
@@ -184,6 +185,42 @@ const attendanceSummary: TeamAttendanceSummary = {
   throughDate: '2026-08-08',
 }
 
+const operationsWorkspace: TimeOperationsWorkspace = {
+  adjustmentRequestActions: [],
+  adjustmentRequests: [],
+  alerts: [],
+  callOffReports: [],
+  canCreateManualEntry: true,
+  canEditManualEntry: true,
+  canReportCallOff: true,
+  canResolveExceptions: true,
+  canReviewAdjustments: true,
+  canViewOperations: true,
+  employees: [],
+  exceptions: [{
+    detectedAt: '2026-07-30T14:16:00.000Z',
+    employeeId: '73000000-0000-4000-8000-000000000005',
+    employeeName: 'Randy Meiddinger',
+    exceptionCode: 'missing_clock_in',
+    id: '73000000-0000-4000-8000-000000000006',
+    location: 'PERA - Armed',
+    resolutionMethod: null,
+    resolutionNote: null,
+    resolvedAt: null,
+    resolvedBy: null,
+    scheduledEndAt: '2026-07-30T22:00:00.000Z',
+    scheduledStartAt: '2026-07-30T14:00:00.000Z',
+    severity: 'blocking',
+    shiftId: '73000000-0000-4000-8000-000000000007',
+    sourceTimeEventId: null,
+    status: 'unresolved',
+  }],
+  manualEntries: [],
+  posts: [],
+  serverTimestamp: '2026-07-30T16:00:00.000Z',
+  shifts: [],
+}
+
 describe('time command center model', () => {
   it('summarizes real review and team attendance data without depending on raw maintenance punches', () => {
     const model = buildTimeCommandCenterModel({ attendanceSummary, dashboard, review })
@@ -208,6 +245,27 @@ describe('time command center model', () => {
 
     expect(buildTimeCommandCenterModel({ attendanceSummary: thirteenHourSummary, dashboard, review }).clockedIn.longShiftCount).toBe(0)
     expect(buildTimeCommandCenterModel({ attendanceSummary: fourteenHourSummary, dashboard, review }).clockedIn.longShiftCount).toBe(1)
+  })
+
+  it('shows an unresolved scheduled no-show while the shift is in progress', () => {
+    const model = buildTimeCommandCenterModel({ attendanceSummary, dashboard, operationsWorkspace, review })
+
+    expect(model.missingPunches.missingClockIns).toBe(1)
+    expect(model.missingPunches.incompleteShifts).toBe(1)
+    expect(model.missingPunches.liveMissingClockIns).toEqual([{
+      employeeName: 'Randy Meiddinger',
+      id: '73000000-0000-4000-8000-000000000006',
+      location: 'PERA - Armed',
+      scheduledStartAt: '2026-07-30T14:00:00.000Z',
+    }])
+  })
+
+  it('keeps a past missed start in operations history without showing it as a current dispatch no-show', () => {
+    const pastWorkspace = { ...operationsWorkspace, serverTimestamp: '2026-07-30T23:00:00.000Z' }
+    const model = buildTimeCommandCenterModel({ attendanceSummary, dashboard, operationsWorkspace: pastWorkspace, review })
+
+    expect(model.missingPunches.missingClockIns).toBe(0)
+    expect(model.missingPunches.liveMissingClockIns).toEqual([])
   })
 
   it('keeps employee access separate from team-wide access', () => {

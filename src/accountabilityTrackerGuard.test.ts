@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const migration = readFileSync('supabase/migrations/20260822143000_accountability_tracker_workspace.sql', 'utf8')
+const missingClockInCorrection = readFileSync('supabase/migrations/20260826150000_missing_clock_in_dispatch_visibility.sql', 'utf8')
 const page = readFileSync('src/time/AccountabilityPage.tsx', 'utf8')
 const accessPolicy = readFileSync('src/app/accessPolicy.ts', 'utf8')
 
@@ -27,9 +28,11 @@ describe('Accountability Tracker production guardrails', () => {
     expect(migration).not.toContain('delete from public.access_role_permissions')
   })
 
-  it('keeps long-shift clock-in review aligned to twelve-hour operations', () => {
-    expect(migration).toContain("'timekeeping.missing_clock_in_grace_minutes'")
-    expect(migration).toContain("'840'::jsonb")
+  it('keeps missed starts distinct from the fourteen-hour active-clock guardrail', () => {
+    expect(missingClockInCorrection).toContain("'timekeeping.missing_clock_in_grace_minutes'")
+    expect(missingClockInCorrection).toContain("'15'::jsonb")
+    expect(missingClockInCorrection).toContain('insert into private.system_settings')
+    expect(missingClockInCorrection).toContain('fourteen-hour UI guardrail')
   })
 
   it('preserves punches and directs hard payroll controls to Time Exceptions', () => {

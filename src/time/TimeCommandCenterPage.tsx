@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { getSessionContext } from '../data/auth'
+import { getTimekeepingOperationsWorkspace } from '../data/timeOperations'
 import {
   getTeamAttendanceSummary,
   getOwnTimekeepingReview,
@@ -86,6 +87,12 @@ export function TimeCommandCenterPage() {
     queryFn: () => getTeamAttendanceSummary({ fromDate, throughDate }),
     refetchInterval: 30_000,
   })
+  const operationsWorkspaceQuery = useQuery({
+    enabled: isSupabaseConfigured && teamAllowed,
+    queryKey: ['time-command-operations-workspace', fromDate, throughDate],
+    queryFn: () => getTimekeepingOperationsWorkspace(fromDate, throughDate),
+    refetchInterval: 30_000,
+  })
   const exportHistoryQuery = useQuery({
     enabled: isSupabaseConfigured && payrollAllowed,
     queryKey: ['time-command-export-history'],
@@ -152,12 +159,13 @@ export function TimeCommandCenterPage() {
     attendanceSummary: attendanceSummaryQuery.data,
     dashboard,
     exportHistory: exportHistoryQuery.data,
+    operationsWorkspace: operationsWorkspaceQuery.data,
     payrollRules: rulesQuery.data,
     review: reviewQuery.data,
     session: sessionQuery.data,
   })
-  const loadingMetrics = reviewQuery.isPending || (teamAllowed && attendanceSummaryQuery.isPending)
-  const partialError = reviewQuery.isError || attendanceSummaryQuery.isError || rulesQuery.isError || exportHistoryQuery.isError
+  const loadingMetrics = reviewQuery.isPending || (teamAllowed && (attendanceSummaryQuery.isPending || operationsWorkspaceQuery.isPending))
+  const partialError = reviewQuery.isError || attendanceSummaryQuery.isError || operationsWorkspaceQuery.isError || rulesQuery.isError || exportHistoryQuery.isError
   const employeeView = model.roleMode === 'employee' || model.roleMode === 'salary'
 
   return (
@@ -304,11 +312,13 @@ function OperationsTimeOverview({
           value={teamAllowed ? model.clockedIn.count : 'Self only'}
         />
         <TimeMetricCard
-          detail={`${model.missingPunches.correctionsAwaitingReview} corrections awaiting review.`}
+          detail={`${model.missingPunches.missingClockIns} missing clock-in${model.missingPunches.missingClockIns === 1 ? '' : 's'} · ${model.missingPunches.missingClockOuts} missing clock-out${model.missingPunches.missingClockOuts === 1 ? '' : 's'}.`}
           icon={FileClock}
           label="Missing Punches"
           tone={model.missingPunches.incompleteShifts > 0 ? 'danger' : 'good'}
-          to={teamAllowed ? '/time/exceptions?show=missing_punches' : undefined}
+          to={teamAllowed
+            ? (model.missingPunches.liveMissingClockIns.length > 0 ? '/time/operations' : '/time/exceptions?show=missing_punches')
+            : undefined}
           value={model.missingPunches.incompleteShifts}
         />
         <TimeMetricCard
@@ -328,6 +338,28 @@ function OperationsTimeOverview({
           value={model.period.status === 'exported' ? 'Exported' : 'Open'}
         />
       </section>
+
+      {model.missingPunches.liveMissingClockIns.length > 0 ? (
+        <section className="time-live-no-show-panel" aria-label="Scheduled employees not clocked in">
+          <TimeSectionHeader
+            action={<Link className="time-button time-button--secondary" to="/time/operations"><ClipboardCheck aria-hidden="true" size={18} /><span>Open Time Operations</span></Link>}
+            eyebrow="Dispatch attention"
+            summary="These employees are scheduled now and have not clocked in after the 15-minute grace period."
+            title="Scheduled employees not clocked in"
+          />
+          <div className="time-live-no-show-list">
+            {model.missingPunches.liveMissingClockIns.map((exception) => (
+              <article className="time-live-no-show-row" key={exception.id}>
+                <div>
+                  <strong>{exception.employeeName}</strong>
+                  <span>{exception.location}</span>
+                </div>
+                <span>Scheduled {formatOperationalDateTime(exception.scheduledStartAt, { timeZone: 'America/Denver' })}</span>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="time-action-panel">
         <TimeSectionHeader title="Quick actions" summary="Actions are shown only when your role or permissions allow them." />

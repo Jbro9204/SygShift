@@ -9,6 +9,7 @@ import type {
 } from '../data/timekeeping'
 import { activeTimeState } from '../data/timekeeping'
 import type { SessionContext } from '../data/auth'
+import type { TimeOperationsWorkspace } from '../data/timeOperations'
 import { DEFAULT_TIME_RULES, TIME_RISK_THRESHOLDS, currentPayrollPeriod, type TimePeriod } from './timeRules'
 import { ACTIVE_CLOCK_IN_REVIEW_LIMIT_HOURS, workedTimePayrollReview } from './timePayroll'
 export { canExportPayroll, canViewTeamTime } from './timePermissions'
@@ -31,6 +32,12 @@ export interface TimeCommandCenterModel {
   missingPunches: {
     correctionsAwaitingReview: number
     incompleteShifts: number
+    liveMissingClockIns: Array<{
+      employeeName: string
+      id: string
+      location: string
+      scheduledStartAt: string
+    }>
     missingClockIns: number
     missingClockOuts: number
   }
@@ -74,6 +81,7 @@ export function buildTimeCommandCenterModel(input: {
   dashboard: TimekeepingDashboard
   exportHistory?: PayrollExportBatch[]
   payrollRules?: PayrollRules
+  operationsWorkspace?: TimeOperationsWorkspace
   review?: TimekeepingReview
   session?: SessionContext | null
 }): TimeCommandCenterModel {
@@ -88,7 +96,7 @@ export function buildTimeCommandCenterModel(input: {
   return {
     clockedIn: summarizeClockedIn(input.attendanceSummary),
     exceptions: summarizeExceptions(workedReview),
-    missingPunches: summarizeMissingPunches(workedReview),
+    missingPunches: summarizeMissingPunches(workedReview, input.operationsWorkspace),
     overtimeRisk: summarizeOvertimeRisk(workedReview),
     payrollReadiness: summarizePayrollReadiness(workedReview),
     period: {
@@ -142,21 +150,32 @@ function summarizeExceptions(review?: TimekeepingReview): TimeCommandCenterModel
   }
 }
 
-function summarizeMissingPunches(review?: TimekeepingReview): TimeCommandCenterModel['missingPunches'] {
-  if (!review) {
-    return {
-      correctionsAwaitingReview: 0,
-      incompleteShifts: 0,
-      missingClockIns: 0,
-      missingClockOuts: 0,
-    }
-  }
+function summarizeMissingPunches(
+  review?: TimekeepingReview,
+  operationsWorkspace?: TimeOperationsWorkspace,
+): TimeCommandCenterModel['missingPunches'] {
+  const serverNow = operationsWorkspace ? new Date(operationsWorkspace.serverTimestamp).getTime() : Number.NaN
+  const liveMissingClockIns = operationsWorkspace?.exceptions
+    .filter((exception) => (
+      exception.exceptionCode === 'missing_clock_in'
+      && exception.status === 'unresolved'
+      && serverNow >= new Date(exception.scheduledStartAt).getTime()
+      && serverNow < new Date(exception.scheduledEndAt).getTime()
+    ))
+    .map((exception) => ({
+      employeeName: exception.employeeName,
+      id: exception.id,
+      location: exception.location,
+      scheduledStartAt: exception.scheduledStartAt,
+    })) ?? []
 
-  const missingClockIns = countRowsWithException(review.rows, 'missing_clock_in')
-  const missingClockOuts = countRowsWithException(review.rows, 'missing_clock_out')
+  const reviewMissingClockIns = review ? countRowsWithException(review.rows, 'missing_clock_in') : 0
+  const missingClockOuts = review ? countRowsWithException(review.rows, 'missing_clock_out') : 0
+  const missingClockIns = reviewMissingClockIns + liveMissingClockIns.length
   return {
-    correctionsAwaitingReview: review.pendingCorrections.length,
+    correctionsAwaitingReview: review?.pendingCorrections.length ?? 0,
     incompleteShifts: missingClockIns + missingClockOuts,
+    liveMissingClockIns,
     missingClockIns,
     missingClockOuts,
   }
