@@ -26,13 +26,14 @@ const scheduleNameDisambiguationMigration = readFileSync(
 )
 
 describe('scheduler behavior guardrails', () => {
-  it('closes the assignment modal after Save assignment succeeds', () => {
-    expect(schedulePage).toContain('function closePlannerAssignmentAfterSave()')
+  it('adds one guard without replacing existing assignments and closes the modal after success', () => {
+    expect(schedulePage).toContain('addScheduleDraftShiftAssignment')
     expect(schedulePage).toContain('setSelectedPlannerShiftId(null)')
-    expect(schedulePage).toContain('Assignment saved. Publish the draft when the week is ready.')
+    expect(schedulePage).toContain('Guard added to the open position. Everyone already assigned remains on the draft.')
+    expect(schedulePage).toContain('Add guard to open position')
 
-    const directDraftSave = /draftShiftMutationInput\(shift, employeeId, availabilityOverrideNote, credentialOverrideNote\),\s*\{\s*onSuccess: closePlannerAssignmentAfterSave\s*\}/
-    const openedDraftSave = /draftShiftMutationInput\(copiedShift, employeeId, availabilityOverrideNote, credentialOverrideNote\),\s*\{\s*onSuccess: closePlannerAssignmentAfterSave\s*\}/
+    const directDraftSave = /addDraftShiftAssignmentMutation\.mutate\(\{\s*shiftId: shift\.id,\s*employeeId,\s*availabilityOverrideNote,\s*credentialOverrideNote,\s*\}\)/
+    const openedDraftSave = /addDraftShiftAssignmentMutation\.mutate\(\{\s*shiftId: copiedShift\.id,\s*employeeId,\s*availabilityOverrideNote,\s*credentialOverrideNote,\s*\}\)/
 
     expect(schedulePage).toMatch(directDraftSave)
     expect(schedulePage).toMatch(openedDraftSave)
@@ -43,8 +44,8 @@ describe('scheduler behavior guardrails', () => {
     expect(schedulePage).toContain('busyLabel="Saving schedule draft..."')
     expect(schedulePage).toContain('Save ${openShiftDateKeys.length === 1 ? \'draft shift\'')
     expect(schedulePage).toContain('Save ${openShiftDateKeys.length === 1 ? \'open draft shift\'')
-    expect(schedulePage).toContain('assigned draft shift${createdCount === 1 ? \'\' : \'s\'} saved')
-    expect(schedulePage).toContain('open draft shift${createdCount === 1 ? \'\' : \'s\'} saved')
+    expect(schedulePage).toContain('assigned coverage plan${createdCount === 1 ? \'\' : \'s\'} saved to the draft')
+    expect(schedulePage).toContain('open coverage plan${createdCount === 1 ? \'\' : \'s\'} saved to the draft')
 
     const addShiftButtonBlock = /createOpenShiftMutation\.isPending[\s\S]+?<\/button>/.exec(schedulePage)?.[0] ?? ''
     expect(addShiftButtonBlock).not.toContain('Publishing...')

@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 08/26/2026
 
+### Mixed coverage and additive guard assignment
+
+- Added explicit **Total guards needed** and **Armed positions** controls so schedulers can create any supported armed/unarmed staffing mix for a Site/Post or event.
+- Represented mixed coverage as separate armed and unarmed coverage blocks at the same location and time, preserving the existing schedule, qualification, publish, copy, and payroll architecture.
+- Changed the focused staffing action to **Add guard to open position** so each save fills one remaining position without replacing or canceling guards already assigned.
+- Kept intentional reassignment in the full-block editing workflow and left the existing Miss Fits schedule entry unchanged.
+- Preserved permissions, MFA, availability checks, credential checks and documented overrides, capacity limits, audit history, and immediate post-save refresh behavior.
+- Applied and recorded targeted production migration `20260826200000_scheduler_mixed_coverage_assignments.sql`.
+- Passed a rollback-safe production database regression proving a 1-armed/2-unarmed plan and two retained additive assignments, with no residual test data.
+- Full validation passed: type checking, linting, 82 test files / 410 tests, production build, Cloudflare package dry-run, live bundle inspection, and production health/readiness checks.
+- Released Cloudflare production version `347b38fe-0091-4b57-a2af-2dd1a9734fa9`.
+
 ### Platform status and maintenance communication cleanup
 
 - Removed the oversized technical data-connection banner from Home.

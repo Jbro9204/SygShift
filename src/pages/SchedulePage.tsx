@@ -11,13 +11,14 @@ import {
 } from '../data/availability'
 import { getSessionContext, type SessionContext } from '../data/auth'
 import {
+  addScheduleDraftShiftAssignment,
   assignmentName,
   cancelScheduleDraft,
   copyScheduleWeekToDraft,
   ensureScheduleDraft,
   importedScheduleRows,
   employeeScheduleRows,
-  createSupervisorOpenShift,
+  createSupervisorCoveragePlan,
   getImportedSchedulePreview,
   getScheduleBuilderOptions,
   getScheduleStaffingSuggestions,
@@ -51,12 +52,13 @@ interface OpenShiftFormState {
   eventLocationName: string
   eventSiteId: string
   eventTimeZone: string
-  eventRequiresArmed: boolean
   shiftDate: string
   startTime: string
   endTime: string
   headcount: string
+  armedHeadcount: string
   employeeId: string
+  assignmentRequirement: 'armed' | 'unarmed'
   isOvertime: boolean
   notes: string
   publishAnnouncement: boolean
@@ -105,12 +107,13 @@ function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
     eventLocationName: '',
     eventSiteId: '',
     eventTimeZone: 'America/Denver',
-    eventRequiresArmed: false,
     shiftDate: weekKey,
     startTime: '08:00',
     endTime: '16:00',
     headcount: '1',
+    armedHeadcount: '0',
     employeeId: '',
+    assignmentRequirement: 'unarmed',
     isOvertime: false,
     notes: '',
     publishAnnouncement: true,
@@ -500,28 +503,6 @@ function shiftLocalTimeValue(shift: ScheduleShift, instant: string): string {
   }).formatToParts(new Date(instant))
   const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '00'
   return `${value('hour')}:${value('minute')}`
-}
-
-function draftShiftMutationInput(
-  shift: ScheduleShift,
-  employeeId: string | null,
-  availabilityOverrideNote?: string | null,
-  credentialOverrideNote?: string | null,
-) {
-  return {
-    shiftId: shift.id,
-    shiftDate: shiftOperationalDate(shift),
-    startTime: shiftLocalTimeValue(shift, shift.starts_at),
-    endTime: shiftLocalTimeValue(shift, shift.ends_at),
-    headcount: shift.headcount_required,
-    isOpen: employeeId ? shift.headcount_required > 1 : shift.is_open,
-    isOvertime: shift.is_overtime,
-    notes: shift.notes ?? '',
-    employeeId,
-    availabilityOverrideNote: availabilityOverrideNote?.trim() || null,
-    credentialOverrideNote: credentialOverrideNote?.trim() || null,
-    workType: shift.work_type ?? 'post',
-  }
 }
 
 function findMatchingDraftShift(draft: { shifts: ScheduleShift[] }, sourceShift: ScheduleShift): ScheduleShift | undefined {
@@ -1250,7 +1231,7 @@ function SchedulerShiftModal({
   employees: ScheduleBuilderEmployee[]
   isDraft: boolean
   isSaving: boolean
-  onAssignEmployee: (employeeId: string | null, availabilityOverrideNote?: string | null, credentialOverrideNote?: string | null) => void
+  onAssignEmployee: (employeeId: string, availabilityOverrideNote?: string | null, credentialOverrideNote?: string | null) => void
   onClose: () => void
   onEdit: () => void
   onRequestRemove: () => void
@@ -1292,15 +1273,16 @@ function SchedulerShiftModal({
 
   function submitAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!manualEmployeeId || openSlots === 0) return
     onAssignEmployee(
-      manualEmployeeId || null,
+      manualEmployeeId,
       manualConflict ? overrideNote : null,
       credentialOverrideRequired ? credentialOverrideNote : null,
     )
   }
 
   function requestClose() {
-    if ((!manualEmployeeId && !overrideNote.trim() && !credentialOverrideNote.trim()) || window.confirm('Close without saving this assignment change?')) {
+    if ((!manualEmployeeId && !overrideNote.trim() && !credentialOverrideNote.trim()) || window.confirm('Close without adding this guard?')) {
       onClose()
     }
   }
@@ -1308,7 +1290,7 @@ function SchedulerShiftModal({
   return (
     <ModalDialog
       busy={isSaving}
-      busyLabel={isDraft ? 'Saving assignment...' : 'Opening draft and saving assignment...'}
+      busyLabel={isDraft ? 'Adding guard...' : 'Opening draft and adding guard...'}
       className="modal-dialog--scheduler-shift"
       description={`${location} · ${format(new Date(`${shiftOperationalDate(shift)}T12:00:00`), 'EEEE, MM/dd/yyyy')} · ${shiftTimeRange(shift)}`}
       onClose={requestClose}
@@ -1407,18 +1389,20 @@ function SchedulerShiftModal({
                   </div>
                   <button
                     className="secondary-button secondary-button--small"
-                    disabled={!isDraft || isSaving}
+                    disabled={isSaving || openSlots === 0}
                     onClick={() => onAssignEmployee(candidate.employeeId)}
                     type="button"
                   >
-                    Assign
+                    Add
                   </button>
                 </article>
               ))}
             </div>
           ) : (
             <p className="scheduler-muted">
-              {isDraft ? 'No automatic suggestion is available. Choose an eligible employee below.' : 'Open a draft to see and apply staffing suggestions.'}
+              {openSlots === 0
+                ? 'This position block is fully staffed.'
+                : 'No automatic suggestion is available. Choose an eligible employee below.'}
             </p>
           )}
           </section>
@@ -1437,9 +1421,9 @@ function SchedulerShiftModal({
             </span>
           </label>
           <label>
-            Switch / assign manually
+            Add guard to open position
             <select
-              disabled={isSaving || employees.length === 0}
+              disabled={isSaving || employees.length === 0 || openSlots === 0}
               name="employeeId"
               onChange={(event) => {
                 setManualEmployeeId(event.target.value)
@@ -1449,7 +1433,7 @@ function SchedulerShiftModal({
               }}
               value={manualEmployeeId}
             >
-              <option value="">Leave open / unassigned</option>
+              <option value="">Choose a guard</option>
               {visibleManualEmployees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {builderEmployeeOptionLabel(employee)}
@@ -1492,14 +1476,14 @@ function SchedulerShiftModal({
               onNoteChange={setCredentialOverrideNote}
             />
           ) : null}
-          <button className="primary-action" disabled={isSaving || employees.length === 0 || Boolean(manualConflict && !overrideNote.trim()) || !credentialOverrideReady} type="submit">
-            {isSaving ? 'Saving...' : isDraft ? 'Save assignment' : 'Open draft & save assignment'}
+          <button className="primary-action" disabled={isSaving || employees.length === 0 || openSlots === 0 || !manualEmployeeId || Boolean(manualConflict && !overrideNote.trim()) || !credentialOverrideReady} type="submit">
+            {isSaving ? 'Adding guard...' : isDraft ? 'Add guard' : 'Open draft & add guard'}
           </button>
           {saveError ? (
             <p className="scheduler-save-error" role="alert">{saveError}</p>
           ) : null}
           <p className="form-note">
-            Use this for call-offs and coverage changes. Saving replaces the current active assignment for this shift and keeps the draft unpublished until you approve it.
+            Adding a guard fills one open position and keeps everyone already assigned. Use Edit full block only when you intentionally need to replace or remove an assignment.
           </p>
           </form>
 
@@ -2100,15 +2084,20 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     ],
   )
   const openShiftAvailabilityConflict = openShiftAvailabilityConflicts[0] ?? null
-  const openShiftRequiresArmed = openShiftForm.mode === 'event'
-    ? openShiftForm.eventRequiresArmed
-    : Boolean(selectedPost?.requires_armed)
+  const openShiftHeadcount = Math.max(Number.parseInt(openShiftForm.headcount, 10) || 1, 1)
+  const openShiftArmedHeadcount = Math.min(
+    Math.max(Number.parseInt(openShiftForm.armedHeadcount, 10) || 0, 0),
+    openShiftHeadcount,
+  )
+  const openShiftUnarmedHeadcount = openShiftHeadcount - openShiftArmedHeadcount
+  const openShiftAssignmentRequiresArmed = openShiftArmedHeadcount > 0
+    && (openShiftUnarmedHeadcount === 0 || openShiftForm.assignmentRequirement === 'armed')
   const openShiftEmployee = selectedBuilderEmployee(builderOptionsQuery.data?.employees ?? [], openShiftForm.employeeId)
   const visibleOpenShiftEmployees = useMemo(
     () => filterBuilderEmployees(builderOptionsQuery.data?.employees ?? [], openShiftEmployeeSearch, openShiftForm.employeeId),
     [builderOptionsQuery.data?.employees, openShiftEmployeeSearch, openShiftForm.employeeId],
   )
-  const openShiftCredentialOverrideRequired = needsArmedCredentialOverride(openShiftRequiresArmed, openShiftEmployee)
+  const openShiftCredentialOverrideRequired = needsArmedCredentialOverride(openShiftAssignmentRequiresArmed, openShiftEmployee)
   const openShiftCredentialOverrideReady = credentialOverrideComplete(
     openShiftCredentialOverrideRequired,
     openShiftForm.credentialOverrideNote,
@@ -2166,7 +2155,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
       const results = []
       for (const shiftDate of dates) {
-        results.push(await createSupervisorOpenShift({
+        results.push(await createSupervisorCoveragePlan({
           weekStartsOn: weekKey,
           mode: openShiftForm.mode,
           postId: openShiftForm.postId || null,
@@ -2174,12 +2163,13 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           eventLocationName: openShiftForm.eventLocationName,
           eventSiteId: openShiftForm.eventSiteId || null,
           eventTimeZone: openShiftForm.eventTimeZone,
-          eventRequiresArmed: openShiftForm.eventRequiresArmed,
           shiftDate,
           startTime: openShiftForm.startTime,
           endTime: openShiftForm.endTime,
-          headcount: Number.parseInt(openShiftForm.headcount, 10),
+          headcount: openShiftHeadcount,
+          armedHeadcount: openShiftArmedHeadcount,
           employeeId: openShiftForm.employeeId || null,
+          assignmentRequirement: openShiftAssignmentRequiresArmed ? 'armed' : 'unarmed',
           isOvertime: openShiftForm.isOvertime,
           notes: openShiftForm.notes,
           availabilityOverrideNote: openShiftAvailabilityConflict ? openShiftForm.availabilityOverrideNote : null,
@@ -2198,15 +2188,21 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         : ''
       setBuilderMessage(
         result.assignment_id
-          ? `${createdCount} assigned draft shift${createdCount === 1 ? '' : 's'} saved. Publish the schedule draft when the week is ready.${skippedMessage}`
-          : `${createdCount} open draft shift${createdCount === 1 ? '' : 's'} saved. Publish the schedule draft when the week is ready.${skippedMessage}`,
+          ? `${createdCount} assigned coverage plan${createdCount === 1 ? '' : 's'} saved to the draft. Publish the schedule draft when the week is ready.${skippedMessage}`
+          : `${createdCount} open coverage plan${createdCount === 1 ? '' : 's'} saved to the draft. Publish the schedule draft when the week is ready.${skippedMessage}`,
       )
       setOpenShiftForm(defaultOpenShiftForm(weekKey))
       setOpenShiftEmployeeSearch('')
       setBuilderOpen(false)
       const refreshedScheduleResult = await scheduleQuery.refetch()
       syncOpenScheduleWindows(refreshedScheduleResult.data)
-      setSelectedPlannerShiftId(result?.shift_id ?? null)
+      const selectedShiftId = result
+        ? (openShiftAssignmentRequiresArmed ? result.armed_shift_id : result.unarmed_shift_id)
+          ?? result.unarmed_shift_id
+          ?? result.armed_shift_id
+          ?? result.shift_ids[0]
+        : null
+      setSelectedPlannerShiftId(selectedShiftId)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
         queryClient.invalidateQueries({ queryKey: ['request-center'] }),
@@ -2271,6 +2267,25 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     },
     onError: (error) => {
       setBuilderMessage(error instanceof Error ? error.message : 'The draft shift could not be saved.')
+    },
+  })
+  const addDraftShiftAssignmentMutation = useMutation({
+    mutationFn: addScheduleDraftShiftAssignment,
+    onSuccess: async (updatedSchedule) => {
+      queryClient.setQueryData(['weekly-schedule', weekKey], updatedSchedule)
+      syncOpenScheduleWindows(updatedSchedule)
+      setSelectedPlannerShiftId(null)
+      setBuilderMessage('Guard added to the open position. Everyone already assigned remains on the draft.')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['weekly-schedule', weekKey] }),
+        queryClient.invalidateQueries({ queryKey: ['schedule-staffing-suggestions', updatedSchedule.id] }),
+        queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
+        queryClient.invalidateQueries({ queryKey: ['request-center'] }),
+        queryClient.invalidateQueries({ queryKey: ['overview-metrics'] }),
+      ])
+    },
+    onError: (error) => {
+      setBuilderMessage(error instanceof Error ? error.message : 'The guard could not be added to this shift.')
     },
   })
   const removeDraftShiftMutation = useMutation({
@@ -2835,9 +2850,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   }
 
   function applySuggestedEmployee(shift: ScheduleShift, employeeId: string) {
-    updateDraftShiftMutation.reset()
-    setBuilderMessage(null)
-    updateDraftShiftMutation.mutate(draftShiftMutationInput(shift, employeeId))
+    assignPlannerEmployee(shift, employeeId)
   }
 
   function closeShiftEditor() {
@@ -2845,29 +2858,25 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     setShiftEditor(null)
   }
 
-  function closePlannerAssignmentAfterSave() {
-    setSelectedPlannerShiftId(null)
-    setBuilderMessage('Assignment saved. Publish the draft when the week is ready.')
-  }
-
   function assignPlannerEmployee(
     shift: ScheduleShift,
-    employeeId: string | null,
+    employeeId: string,
     availabilityOverrideNote?: string | null,
     credentialOverrideNote?: string | null,
   ) {
     setBuilderMessage(null)
-    updateDraftShiftMutation.reset()
+    addDraftShiftAssignmentMutation.reset()
     if (scheduleQuery.data?.status === 'draft') {
-      updateDraftShiftMutation.mutate(
-        draftShiftMutationInput(shift, employeeId, availabilityOverrideNote, credentialOverrideNote),
-        { onSuccess: closePlannerAssignmentAfterSave },
-      )
+      addDraftShiftAssignmentMutation.mutate({
+        shiftId: shift.id,
+        employeeId,
+        availabilityOverrideNote,
+        credentialOverrideNote,
+      })
       return
     }
 
-    setBuilderMessage('Opening a working draft before saving this assignment...')
-    updateDraftShiftMutation.reset()
+    setBuilderMessage('Opening a working draft before adding this guard...')
     ensureDraftMutation.mutate({ openEditor: false, shift }, {
       onSuccess: ({ draft }) => {
         if (!draft) return
@@ -2876,10 +2885,12 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           setBuilderMessage('Draft opened, but the selected shift could not be matched. Select the shift again and retry.')
           return
         }
-        updateDraftShiftMutation.mutate(
-          draftShiftMutationInput(copiedShift, employeeId, availabilityOverrideNote, credentialOverrideNote),
-          { onSuccess: closePlannerAssignmentAfterSave },
-        )
+        addDraftShiftAssignmentMutation.mutate({
+          shiftId: copiedShift.id,
+          employeeId,
+          availabilityOverrideNote,
+          credentialOverrideNote,
+        })
       },
     })
   }
@@ -3187,7 +3198,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                     {item.suggestion?.suggestions[0] ? (
                       <button
                         className="primary-action"
-                        disabled={updateDraftShiftMutation.isPending}
+                        disabled={addDraftShiftAssignmentMutation.isPending || ensureDraftMutation.isPending}
                         onClick={() => applySuggestedEmployee(item.shift, item.suggestion!.suggestions[0].employeeId)}
                         type="button"
                       >
@@ -3259,12 +3270,18 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   Site and post
                   <select
                     disabled={builderOptionsQuery.isPending}
-                    onChange={(event) => updateOpenShiftForm({
-                      postId: event.target.value,
-                      credentialOverrideNote: '',
-                      credentialOverrideConfirmedKnown: false,
-                      credentialOverrideConfirmedResponsibility: false,
-                    })}
+                    onChange={(event) => {
+                      const post = builderOptionsQuery.data?.posts.find((item) => item.id === event.target.value)
+                      const total = Math.max(Number.parseInt(openShiftForm.headcount, 10) || 1, 1)
+                      updateOpenShiftForm({
+                        postId: event.target.value,
+                        armedHeadcount: post?.requires_armed ? String(total) : '0',
+                        assignmentRequirement: post?.requires_armed ? 'armed' : 'unarmed',
+                        credentialOverrideNote: '',
+                        credentialOverrideConfirmedKnown: false,
+                        credentialOverrideConfirmedResponsibility: false,
+                      })
+                    }}
                     required
                     value={openShiftForm.postId}
                   >
@@ -3353,14 +3370,35 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 />
               </label>
               <label>
-                Guards needed
+                Total guards needed
                 <input
                   min="1"
                   max="50"
-                  onChange={(event) => updateOpenShiftForm({ headcount: event.target.value })}
+                  onChange={(event) => {
+                    const total = Math.max(Number.parseInt(event.target.value, 10) || 1, 1)
+                    const armed = Math.min(Number.parseInt(openShiftForm.armedHeadcount, 10) || 0, total)
+                    updateOpenShiftForm({ headcount: event.target.value, armedHeadcount: String(armed) })
+                  }}
                   required
                   type="number"
                   value={openShiftForm.headcount}
+                />
+              </label>
+              <label>
+                Armed positions
+                <input
+                  min="0"
+                  max={openShiftHeadcount}
+                  onChange={(event) => updateOpenShiftForm({
+                    armedHeadcount: event.target.value,
+                    assignmentRequirement: Number.parseInt(event.target.value, 10) >= openShiftHeadcount ? 'armed' : 'unarmed',
+                    credentialOverrideNote: '',
+                    credentialOverrideConfirmedKnown: false,
+                    credentialOverrideConfirmedResponsibility: false,
+                  })}
+                  required
+                  type="number"
+                  value={openShiftForm.armedHeadcount}
                 />
               </label>
               <label>
@@ -3396,7 +3434,36 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   <small>No active guards match that search.</small>
                 ) : null}
               </label>
+              {openShiftForm.employeeId && openShiftArmedHeadcount > 0 && openShiftUnarmedHeadcount > 0 ? (
+                <label>
+                  Initial guard position
+                  <select
+                    onChange={(event) => updateOpenShiftForm({
+                      assignmentRequirement: event.target.value as OpenShiftFormState['assignmentRequirement'],
+                      credentialOverrideNote: '',
+                      credentialOverrideConfirmedKnown: false,
+                      credentialOverrideConfirmedResponsibility: false,
+                    })}
+                    value={openShiftForm.assignmentRequirement}
+                  >
+                    <option value="unarmed">Unarmed position</option>
+                    <option value="armed">Armed position</option>
+                  </select>
+                </label>
+              ) : null}
             </div>
+
+            <section className="schedule-builder-coverage-mix" aria-label="Coverage qualification mix">
+              <div>
+                <span>Coverage plan</span>
+                <strong>{openShiftHeadcount} total position{openShiftHeadcount === 1 ? '' : 's'}</strong>
+              </div>
+              <div className="schedule-builder-coverage-mix__counts">
+                <span>{openShiftArmedHeadcount} armed</span>
+                <span>{openShiftUnarmedHeadcount} unarmed</span>
+              </div>
+              <p>Armed and unarmed positions are tracked separately so each position keeps the correct qualification and staffing count.</p>
+            </section>
 
             <section className="schedule-builder-repeat" aria-label="Multiple-day shift creation">
               <label className="check-field">
@@ -3503,21 +3570,6 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 />
                 Mark this as overtime
               </label>
-              {openShiftForm.mode === 'event' ? (
-                <label className="check-field">
-                  <input
-                    checked={openShiftForm.eventRequiresArmed}
-                    onChange={(event) => updateOpenShiftForm({
-                      eventRequiresArmed: event.target.checked,
-                      credentialOverrideNote: '',
-                      credentialOverrideConfirmedKnown: false,
-                      credentialOverrideConfirmedResponsibility: false,
-                    })}
-                    type="checkbox"
-                  />
-                  Requires armed guard credentials
-                </label>
-              ) : null}
               <label className="check-field">
                 <input
                   checked={!openShiftForm.employeeId && openShiftForm.publishAnnouncement}
@@ -3531,8 +3583,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
             <p className="form-note">
               {openShiftForm.mode === 'post' && selectedPost
-                ? `${selectedPost.site.name} uses ${selectedPost.site.time_zone}. Armed requirements come from the selected post.`
-                : 'Times are saved in the site or event time zone so payroll and the schedule stay consistent.'}
+                ? `${selectedPost.site.name} uses ${selectedPost.site.time_zone}. The armed and unarmed position counts above control qualification requirements for this coverage plan.`
+                : 'Times are saved in the site or event time zone. The armed and unarmed position counts above control qualification requirements.'}
             </p>
 
             {builderMessage ? (
@@ -4059,7 +4111,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   availabilityRecords={availabilityQuery.data?.availability ?? []}
                   employees={builderOptionsQuery.data?.employees ?? []}
                   isDraft={scheduleQuery.data.status === 'draft'}
-                  isSaving={updateDraftShiftMutation.isPending}
+                  isSaving={addDraftShiftAssignmentMutation.isPending || ensureDraftMutation.isPending}
                   onAssignEmployee={(employeeId, availabilityOverrideNote, credentialOverrideNote) => assignPlannerEmployee(selectedPlannerShift, employeeId, availabilityOverrideNote, credentialOverrideNote)}
                   onClose={() => setSelectedPlannerShiftId(null)}
                   onEdit={() => editShift(selectedPlannerShift)}
@@ -4069,7 +4121,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                     setBuilderMessage(null)
                     setResolvingShift(selectedPlannerShift)
                   }}
-                  saveError={updateDraftShiftMutation.error instanceof Error ? updateDraftShiftMutation.error.message : null}
+                  saveError={addDraftShiftAssignmentMutation.error instanceof Error ? addDraftShiftAssignmentMutation.error.message : null}
                   shift={selectedPlannerShift}
                   suggestion={staffingSuggestionsQuery.data?.find((item) => item.shiftId === selectedPlannerShift.id)}
                 />

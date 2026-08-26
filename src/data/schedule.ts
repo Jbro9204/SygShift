@@ -111,6 +111,23 @@ const createOpenShiftResultSchema = z.object({
   time_zone: z.string(),
 })
 
+const createCoveragePlanResultSchema = z.object({
+  schedule_id: z.string().uuid(),
+  schedule_revision: z.number().int().positive(),
+  shift_ids: z.array(z.string().uuid()).min(1),
+  armed_shift_id: z.string().uuid().nullable(),
+  unarmed_shift_id: z.string().uuid().nullable(),
+  assignment_id: z.string().uuid().nullable().optional(),
+  event_id: z.string().uuid().nullable().optional(),
+  announcement_id: z.string().uuid().nullable().optional(),
+  starts_at: z.string(),
+  ends_at: z.string(),
+  time_zone: z.string(),
+  headcount: z.number().int().positive(),
+  armed_headcount: z.number().int().nonnegative(),
+  unarmed_headcount: z.number().int().nonnegative(),
+})
+
 const shiftWorkTypeMapSchema = z.array(z.object({
   shiftId: z.string().uuid(),
   workType: z.enum(['post', 'training']),
@@ -159,6 +176,7 @@ export type ScheduleBuilderOptions = z.infer<typeof builderOptionsSchema>
 export type ScheduleBuilderPost = z.infer<typeof builderPostSchema>
 export type ScheduleBuilderEmployee = ScheduleBuilderOptions['employees'][number]
 export type CreateOpenShiftResult = z.infer<typeof createOpenShiftResultSchema>
+export type CreateCoveragePlanResult = z.infer<typeof createCoveragePlanResultSchema>
 export type ResolveReviewShiftResult = z.infer<typeof resolveReviewShiftResultSchema>
 export type StaffingSuggestion = z.infer<typeof staffingSuggestionSchema>
 export type ScheduleNotificationResult = z.infer<typeof scheduleNotificationResultSchema>
@@ -249,6 +267,36 @@ export interface CreateOpenShiftInput {
   availabilityOverrideNote?: string | null
   credentialOverrideNote?: string | null
   workType?: 'post' | 'training'
+}
+
+export interface CreateCoveragePlanInput {
+  weekStartsOn: string
+  mode: 'post' | 'event'
+  postId?: string | null
+  eventName?: string
+  eventLocationName?: string
+  eventSiteId?: string | null
+  eventTimeZone?: string
+  shiftDate: string
+  startTime: string
+  endTime: string
+  headcount: number
+  armedHeadcount: number
+  isOvertime: boolean
+  notes?: string
+  publishAnnouncement: boolean
+  employeeId?: string | null
+  assignmentRequirement?: 'armed' | 'unarmed'
+  availabilityOverrideNote?: string | null
+  credentialOverrideNote?: string | null
+  workType?: 'post' | 'training'
+}
+
+export interface AddDraftShiftAssignmentInput {
+  shiftId: string
+  employeeId: string
+  availabilityOverrideNote?: string | null
+  credentialOverrideNote?: string | null
 }
 
 export interface UpdateDraftShiftInput {
@@ -354,6 +402,33 @@ export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Pr
   return createOpenShiftResultSchema.parse(data)
 }
 
+export async function createSupervisorCoveragePlan(input: CreateCoveragePlanInput): Promise<CreateCoveragePlanResult> {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_create_coverage_plan', {
+    target_week_starts_on: input.weekStartsOn,
+    target_post_id: input.mode === 'post' ? input.postId : null,
+    event_name: input.mode === 'event' ? input.eventName?.trim() : null,
+    event_location_name: input.mode === 'event' ? input.eventLocationName?.trim() : null,
+    event_site_id: input.mode === 'event' ? input.eventSiteId ?? null : null,
+    event_time_zone: input.mode === 'event' ? input.eventTimeZone?.trim() || 'America/Denver' : null,
+    shift_operational_date: input.shiftDate,
+    shift_start_time: input.startTime,
+    shift_end_time: input.endTime,
+    target_headcount: input.headcount,
+    target_armed_headcount: input.armedHeadcount,
+    target_is_overtime: input.isOvertime,
+    target_notes: input.notes?.trim() || null,
+    target_work_type: input.workType ?? 'post',
+    publish_announcement: input.publishAnnouncement,
+    target_employee_id: input.employeeId || null,
+    target_assignment_requires_armed: input.assignmentRequirement === 'armed',
+    target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
+    target_credential_override_note: input.credentialOverrideNote?.trim() || null,
+  })
+
+  if (error) throw new Error(error.message || 'The coverage plan could not be created.')
+  return createCoveragePlanResultSchema.parse(data)
+}
+
 export async function ensureScheduleDraft(weekStartsOn: string): Promise<WeeklySchedule | null> {
   const { data, error } = await getSupabaseClient().rpc('ensure_schedule_draft', {
     target_week_starts_on: weekStartsOn,
@@ -385,6 +460,25 @@ export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Pr
   return {
     ...schedule,
     shifts: schedule.shifts.map((shift) => shift.id === input.shiftId ? { ...shift, work_type: input.workType ?? 'post' } : shift),
+  }
+}
+
+export async function addScheduleDraftShiftAssignment(input: AddDraftShiftAssignmentInput): Promise<WeeklySchedule> {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_add_draft_shift_assignment', {
+    target_shift_id: input.shiftId,
+    target_employee_id: input.employeeId,
+    target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
+    target_credential_override_note: input.credentialOverrideNote?.trim() || null,
+  })
+
+  if (error) throw new Error(error.message || 'The guard could not be added to this shift.')
+  const schedule = scheduleSchema.parse(data)
+  return {
+    ...schedule,
+    shifts: schedule.shifts.map((shift) => ({
+      ...shift,
+      assignments: shift.assignments.filter((assignment) => assignment.status !== 'canceled'),
+    })),
   }
 }
 
