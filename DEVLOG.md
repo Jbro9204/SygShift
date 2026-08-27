@@ -23,6 +23,21 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/27/2026
+
+### Sites & Posts directory redesign
+
+- Rebuilt Sites & Posts as a compact, full-width operational directory with one expanded site at a time.
+- Added search across sites, posts, codes, cities, and addresses plus All, Active, and Inactive filters.
+- Added focused Add Site, Recently Deleted, Manage, Edit Site, Add Post, Edit Post, and protected Delete workflows.
+- Kept new posts locked to their selected parent site and displayed post coverage times in civilian and military formats.
+- Added responsive desktop, tablet, and mobile layouts without horizontal page scrolling.
+- Preserved `sites.manage` authorization, existing API calls, validation, audit logging, protected deletion, and 14-day deleted-record retention.
+- No database migration or operational data change was required.
+- Added 10 focused Sites & Posts tests; full validation passed with 86 test files / 437 tests, type checking, linting, production build, Cloudflare packaging, and production health/readiness checks.
+- Released Cloudflare production version `7c1e4ee0-9ba0-4b61-8302-ed42ace44679`.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-27-2026_SITES_AND_POSTS_DIRECTORY_REDESIGN.md`.
+
 ## 08/26/2026
 
 ### User Accounts redesign
