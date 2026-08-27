@@ -244,59 +244,66 @@ function PhotoEditor({
     <section className="account-photo-panel" aria-labelledby="account-photo-title">
       <header className="account-photo-panel__heading">
         <div><h3 id="account-photo-title">Profile photo</h3><p>Use a clear, recent JPG or PNG photo up to 5 MB.</p></div>
-        <button className="secondary-button" onClick={() => fileInput.current?.click()} type="button"><Camera size={18} />{sourceUrl ? 'Choose different photo' : 'Choose photo'}</button>
       </header>
       <input accept="image/jpeg,image/png" className="visually-hidden" onChange={choosePhoto} ref={fileInput} type="file" />
-      <div className="account-photo-workspace">
-        <div className="account-photo-current">
-          <span className="account-photo-label">Current photo</span>
+      {sourceUrl ? (
+        <div className="account-photo-editing">
+          <div className="account-photo-editing__heading">
+            <div>
+              <strong>Position your photo</strong>
+              <p>Drag the image inside the circle and adjust the zoom if needed.</p>
+            </div>
+            <button className="secondary-button" disabled={busy} onClick={() => fileInput.current?.click()} type="button"><Camera size={18} />Choose different photo</button>
+          </div>
+          <div className="account-photo-cropper">
+            <div
+              aria-label="Drag the photo to position it in the frame"
+              className={dragging ? 'account-photo-cropper__stage account-photo-cropper__stage--dragging' : 'account-photo-cropper__stage'}
+              onPointerCancel={stopDragging}
+              onPointerDown={startDragging}
+              onPointerMove={movePhoto}
+              onPointerUp={stopDragging}
+              ref={cropStage}
+              role="img"
+            >
+              <img
+                alt="Position your selected profile photo"
+                draggable="false"
+                onLoad={(event) => setSourceSize({ height: event.currentTarget.naturalHeight, width: event.currentTarget.naturalWidth })}
+                src={sourceUrl}
+                style={{
+                  height: sourceSize.height >= sourceSize.width ? `${100 * zoom}%` : 'auto',
+                  transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))`,
+                  width: sourceSize.width > sourceSize.height ? `${100 * zoom}%` : 'auto',
+                }}
+              />
+              <span className="account-photo-cropper__guide" aria-hidden="true" />
+            </div>
+            <div className="account-photo-cropper__controls">
+              <label><span>Zoom</span><input max="3" min="1" onChange={(event) => setZoom(Number(event.target.value))} step="0.05" type="range" value={zoom} /></label>
+              <button className="text-action" onClick={resetFraming} type="button">Reset framing</button>
+            </div>
+            <div className="account-actions account-actions--start">
+              <LoadingButton busy={busy} className="primary-action" onClick={savePhoto} type="button">Save photo</LoadingButton>
+              <button className="secondary-button" disabled={busy} onClick={() => setSourceUrl(null)} type="button">Cancel</button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="account-photo-summary">
           <div className="account-photo-panel__preview">
             {photoUrl ? <img alt="Your current SygShift profile" src={photoUrl} /> : <span>{initials(account.profile.displayName)}</span>}
           </div>
-          {photoUrl ? <LoadingButton busy={busy} className="quiet-danger-button" onClick={removePhoto} type="button"><Trash2 size={17} />Remove photo</LoadingButton> : <p>No photo saved.</p>}
+          <div className="account-photo-summary__copy">
+            <strong>{photoUrl ? 'Current profile photo' : 'Add a profile photo'}</strong>
+            <p>{photoUrl ? 'This photo appears with your SygShift account.' : 'A profile photo helps your team identify you.'}</p>
+          </div>
+          <div className="account-photo-summary__actions">
+            <button className="secondary-button" disabled={busy} onClick={() => fileInput.current?.click()} type="button"><Camera size={18} />{photoUrl ? 'Change photo' : 'Add photo'}</button>
+            {photoUrl ? <LoadingButton busy={busy} className="quiet-danger-button" onClick={removePhoto} type="button"><Trash2 size={17} />Remove</LoadingButton> : null}
+          </div>
         </div>
-        <div className="account-photo-new">
-          <span className="account-photo-label">New photo</span>
-          {sourceUrl ? (
-            <div className="account-photo-cropper">
-              <div
-                aria-label="Drag the photo to position it in the frame"
-                className={dragging ? 'account-photo-cropper__stage account-photo-cropper__stage--dragging' : 'account-photo-cropper__stage'}
-                onPointerCancel={stopDragging}
-                onPointerDown={startDragging}
-                onPointerMove={movePhoto}
-                onPointerUp={stopDragging}
-                ref={cropStage}
-                role="img"
-              >
-                <img
-                  alt="Position your selected profile photo"
-                  draggable="false"
-                  onLoad={(event) => setSourceSize({ height: event.currentTarget.naturalHeight, width: event.currentTarget.naturalWidth })}
-                  src={sourceUrl}
-                  style={{
-                    height: sourceSize.height >= sourceSize.width ? `${100 * zoom}%` : 'auto',
-                    transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))`,
-                    width: sourceSize.width > sourceSize.height ? `${100 * zoom}%` : 'auto',
-                  }}
-                />
-                <span className="account-photo-cropper__guide" aria-hidden="true" />
-              </div>
-              <div className="account-photo-cropper__controls">
-                <label><span>Zoom</span><input max="3" min="1" onChange={(event) => setZoom(Number(event.target.value))} step="0.05" type="range" value={zoom} /></label>
-                <button className="text-action" onClick={resetFraming} type="button">Reset framing</button>
-              </div>
-              <p className="account-photo-cropper__hint">Drag the image to position it. The circle shows the final avatar.</p>
-              <div className="account-actions account-actions--start">
-                <LoadingButton busy={busy} className="primary-action" onClick={savePhoto} type="button">Save photo</LoadingButton>
-                <button className="secondary-button" disabled={busy} onClick={() => setSourceUrl(null)} type="button">Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <button className="account-photo-empty" onClick={() => fileInput.current?.click()} type="button"><Camera size={24} /><strong>Choose a new photo</strong><span>The full image will be visible before you adjust it.</span></button>
-          )}
-        </div>
-      </div>
+      )}
       <div className="account-photo-panel__body">
         <StatusMessage feedback={feedback} />
       </div>

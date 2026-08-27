@@ -54,4 +54,12 @@ describe('My Account self-service guardrails', () => {
     expect(data).toContain('record_my_account_security_action')
     expect(shell).toContain('to="/account"')
   })
+
+  it('keeps the profile photo idle state compact and opens editing only after selection', () => {
+    expect(page).toContain('className="account-photo-summary"')
+    expect(page).toContain("photoUrl ? 'Change photo' : 'Add photo'")
+    expect(page).toContain("sourceUrl ? (")
+    expect(page).not.toContain('Choose a new photo')
+    expect(page).not.toContain('account-photo-empty')
+  })
 })
