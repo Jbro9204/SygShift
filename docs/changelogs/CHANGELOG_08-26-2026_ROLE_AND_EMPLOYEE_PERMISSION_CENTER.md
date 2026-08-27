@@ -66,5 +66,4 @@ No employee role, permission, account, or operational record was reassigned by t
 
 - Primary application: https://app.sygilant.us
 - Worker fallback: https://sygshift.sygilant.workers.dev
-- Production version: recorded after release validation
-
+- Production version: `ebf73765-e3b6-4783-bf31-82e9ac0de721`
