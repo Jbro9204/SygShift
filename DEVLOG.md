@@ -35,6 +35,7 @@ deployment status, or major workflow assumptions change.
 - Consolidated password, authenticator, trusted-device, session, recovery-code, and security-activity controls into the Security tab with confirmation and audit safeguards.
 - Applied targeted production migration `20260827110000_my_account_self_service.sql`; all required RPCs, the verification column, and the private photo bucket were verified remotely.
 - Full validation passed with type checking, linting, 87 test files / 442 tests, access-control inventory, and the production build.
+- Released Cloudflare production version `e413f329-edc4-4ba3-9b24-65102ecf0327`; live health/readiness and protected-endpoint checks passed.
 - Full release details are recorded in `docs/changelogs/CHANGELOG_08-27-2026_MY_ACCOUNT.md`.
 
 ### Sites & Posts directory redesign

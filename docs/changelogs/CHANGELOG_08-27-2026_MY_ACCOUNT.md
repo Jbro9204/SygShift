@@ -72,6 +72,16 @@ The migration was applied as targeted SQL because the repository retains a docum
 - Source formatting and whitespace checks passed.
 - Changed source and release files were checked for prohibited generator attribution.
 
+## Production release
+
+- Cloudflare dry-run packaging passed with production variables preserved.
+- Released Worker version `e413f329-edc4-4ba3-9b24-65102ecf0327` to `app.sygilant.us` and the Workers fallback domain.
+- Worker startup time was 6 ms.
+- Live health returned `ok` and readiness returned `ready`.
+- The public login and My Account application route both returned HTTP 200.
+- The private profile-photo endpoint correctly returned HTTP 401 without an authenticated session.
+- The deployed public interface produced no browser console warnings or errors during the release smoke test.
+
 ## Employee workflow
 
 1. Open **My Account** from the signed-in identity area.
