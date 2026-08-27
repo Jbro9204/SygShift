@@ -56,4 +56,4 @@ The User Accounts administration page has been reorganized into a compact accoun
 
 - Primary application: https://app.sygilant.us
 - Worker fallback: https://sygshift.sygilant.workers.dev
-- Production version: recorded after deployment.
+- Production version: `cf006eba-5dcf-4a8a-b36c-4d8dace8c1e9`
