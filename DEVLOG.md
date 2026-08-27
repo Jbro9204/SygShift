@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 08/26/2026
 
+### Role and Employee Permission Center
+
+- Rebuilt Roles & Permissions into two focused workspaces: **Role & Group Permissions** and **Employee Permissions**.
+- Added compact, searchable permission categories; role summaries; employee search; additional role memberships; individual additive permissions; and effective-access totals.
+- Replaced the normal employee deny workflow with a safer additive-only editor while preserving existing legacy restrictions.
+- Added dirty-state save controls, required employee audit reasons, sensitive-access confirmations, and unsaved-navigation protection.
+- Added server-authorized atomic employee access saves with active Admin, MFA, and `admin.roles.manage` enforcement.
+- Added row locking, permission/role validation, inherited-access normalization, and before-and-after access audit records.
+- Corrected active role assignment counts and kept legal employee names in the administrative access workspace.
+- Applied and recorded targeted production migration `20260826230000_additive_employee_access_profile.sql` without changing existing employee access assignments.
+- Full release validation and production version are recorded in `docs/changelogs/CHANGELOG_08-26-2026_ROLE_AND_EMPLOYEE_PERMISSION_CENTER.md`.
+
 ### Manage Employee Access workspace redesign
 
 - Replaced the two-step employee chooser and oversized access editor with one focused, responsive workspace.

@@ -111,6 +111,22 @@ export async function setEmployeeAccessRoles(employeeId: string, roleIds: string
   return parseCenter(data)
 }
 
+export async function setEmployeeAccessProfile(input: {
+  employeeId: string
+  roleIds: string[]
+  permissionCodes: string[]
+  reason: string
+}): Promise<AccessControlCenter> {
+  const { data, error } = await getSupabaseClient().rpc('set_employee_access_profile', {
+    target_employee_id: input.employeeId,
+    target_permission_codes: input.permissionCodes,
+    target_reason: input.reason,
+    target_role_ids: input.roleIds,
+  })
+  if (error) throw new Error(error.message || 'Employee access could not be saved.')
+  return parseCenter(data)
+}
+
 export async function setEmployeePermissionOverride(input: {
   employeeId: string
   permissionCode: string

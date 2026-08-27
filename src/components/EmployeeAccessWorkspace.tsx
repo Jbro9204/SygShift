@@ -1,14 +1,24 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, ChevronDown, Save, Search, ShieldAlert, ShieldCheck } from 'lucide-react'
 import {
-  clearEmployeePermissionOverride,
-  setEmployeeAccessRoles,
-  setEmployeePermissionOverride,
+  Check,
+  CheckCircle2,
+  Info,
+  LockKeyhole,
+  Minus,
+  Plus,
+  Save,
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  UserRoundCog,
+  UsersRound,
+} from 'lucide-react'
+import {
+  setEmployeeAccessProfile,
   type AccessControlCenter,
   type AccessControlUser,
   type AccessRoleDefinition,
-  type OverrideEffect,
   type PermissionDefinition,
 } from '../data/accessControl'
 import { ModalDialog } from './ModalDialog'
@@ -22,14 +32,6 @@ const roleLabels: Record<string, string> = {
   supervisor: 'Supervisor',
 }
 
-type EmployeeAccessTab = 'roles' | 'exceptions' | 'effective'
-
-function permissionTone(permission: PermissionDefinition): string {
-  if (permission.riskLevel === 'critical') return 'Critical'
-  if (permission.riskLevel === 'sensitive') return 'Sensitive'
-  return 'Standard'
-}
-
 function groupedPermissions(permissions: PermissionDefinition[]) {
   return permissions.reduce<Record<string, PermissionDefinition[]>>((groups, permission) => {
     groups[permission.category] ??= []
@@ -41,19 +43,17 @@ function groupedPermissions(permissions: PermissionDefinition[]) {
 function permissionMatchesSearch(permission: PermissionDefinition, query: string): boolean {
   const term = query.trim().toLocaleLowerCase()
   if (!term) return true
-  return [
-    permission.category,
-    permission.code,
-    permission.description,
-    permission.name,
-    permission.riskLevel,
-    permission.requiresMfa ? 'mfa authenticator secure' : 'no mfa',
-  ].some((value) => String(value ?? '').toLocaleLowerCase().includes(term))
+  return [permission.category, permission.code, permission.description, permission.name, permission.riskLevel]
+    .some((value) => String(value ?? '').toLocaleLowerCase().includes(term))
 }
 
-function identifierSetsMatch(selectedIds: Set<string>, assignedIds: string[]): boolean {
-  if (selectedIds.size !== assignedIds.length) return false
-  return assignedIds.every((id) => selectedIds.has(id))
+function setsMatch(left: Set<string>, right: string[]): boolean {
+  if (left.size !== right.length) return false
+  return right.every((value) => left.has(value))
+}
+
+function updateCenter(queryClient: ReturnType<typeof useQueryClient>, center: AccessControlCenter) {
+  queryClient.setQueryData(['access-control-center'], center)
 }
 
 function employeeInitials(displayName: string): string {
@@ -63,12 +63,14 @@ function employeeInitials(displayName: string): string {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
 }
 
-function updateCenter(queryClient: ReturnType<typeof useQueryClient>, center: AccessControlCenter) {
-  queryClient.setQueryData(['access-control-center'], center)
+function riskLabel(permission: PermissionDefinition): string | null {
+  if (permission.riskLevel === 'critical') return 'Critical'
+  if (permission.riskLevel === 'sensitive') return 'Sensitive'
+  return null
 }
 
 interface EmployeeAccessWorkspaceProps {
-  onClose: () => void
+  onDirtyChange: (dirty: boolean) => void
   onSelectUser: (userId: string) => void
   permissions: PermissionDefinition[]
   roles: AccessRoleDefinition[]
@@ -77,7 +79,7 @@ interface EmployeeAccessWorkspaceProps {
 }
 
 export function EmployeeAccessWorkspace({
-  onClose,
+  onDirtyChange,
   onSelectUser,
   permissions,
   roles,
@@ -85,96 +87,162 @@ export function EmployeeAccessWorkspace({
   users,
 }: EmployeeAccessWorkspaceProps) {
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<EmployeeAccessTab>('roles')
   const [employeeSearch, setEmployeeSearch] = useState('')
+  const [permissionSearch, setPermissionSearch] = useState('')
+  const [showSelectedOnly, setShowSelectedOnly] = useState(false)
+  const [openCategory, setOpenCategory] = useState<string | null>(null)
   const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set())
-  const [roleMessage, setRoleMessage] = useState<string | null>(null)
-  const [overrideMessage, setOverrideMessage] = useState<string | null>(null)
-  const [overridePermissionSearch, setOverridePermissionSearch] = useState('')
-  const [overridePermissionCode, setOverridePermissionCode] = useState(permissions[0]?.code ?? '')
-  const [overrideEffect, setOverrideEffect] = useState<OverrideEffect>('grant')
-  const [overrideReason, setOverrideReason] = useState('')
+  const [selectedAdditionCodes, setSelectedAdditionCodes] = useState<Set<string>>(new Set())
+  const [reason, setReason] = useState('')
+  const [message, setMessage] = useState<string | null>(null)
+  const [confirmSensitive, setConfirmSensitive] = useState(false)
   const user = users.find((candidate) => candidate.id === selectedUserId) ?? users[0]
-  const permissionByCode = useMemo(() => new Map(permissions.map((permission) => [permission.code, permission])), [permissions])
+
+  const permissionByCode = useMemo(
+    () => new Map(permissions.map((permission) => [permission.code, permission])),
+    [permissions],
+  )
+  const roleById = useMemo(() => new Map(roles.map((role) => [role.id, role])), [roles])
+  const primaryRole = useMemo(
+    () => roles.find((role) => role.systemRole && role.baseAppRole === user?.primaryRole),
+    [roles, user?.primaryRole],
+  )
+  const assignableRoles = useMemo(
+    () => roles.filter((role) => role.id !== primaryRole?.id),
+    [primaryRole?.id, roles],
+  )
+  const inheritedCodes = useMemo(() => {
+    const codes = new Set(primaryRole?.permissionCodes ?? [])
+    selectedRoleIds.forEach((roleId) => roleById.get(roleId)?.permissionCodes.forEach((code) => codes.add(code)))
+    return codes
+  }, [primaryRole?.permissionCodes, roleById, selectedRoleIds])
+  const storedGrantCodes = useMemo(
+    () => user?.overrides.filter((override) => override.effect === 'grant').map((override) => override.permissionCode) ?? [],
+    [user?.overrides],
+  )
+  const legacyDenies = useMemo(
+    () => user?.overrides.filter((override) => override.effect === 'deny') ?? [],
+    [user?.overrides],
+  )
+  const legacyDeniedCodes = useMemo(
+    () => new Set(legacyDenies.map((override) => override.permissionCode)),
+    [legacyDenies],
+  )
+  const originalAdditionCodes = useMemo(
+    () => storedGrantCodes.filter((code) => !inheritedCodes.has(code)),
+    [inheritedCodes, storedGrantCodes],
+  )
+  const effectiveCodes = useMemo(() => {
+    const codes = new Set(inheritedCodes)
+    selectedAdditionCodes.forEach((code) => codes.add(code))
+    legacyDenies.forEach((override) => codes.delete(override.permissionCode))
+    return codes
+  }, [inheritedCodes, legacyDenies, selectedAdditionCodes])
+  const availableAdditions = useMemo(
+    () => permissions.filter((permission) => (
+      !inheritedCodes.has(permission.code)
+      && !legacyDeniedCodes.has(permission.code)
+    )),
+    [inheritedCodes, legacyDeniedCodes, permissions],
+  )
+  const visiblePermissions = useMemo(
+    () => availableAdditions.filter((permission) => (
+      (!showSelectedOnly || selectedAdditionCodes.has(permission.code))
+      && permissionMatchesSearch(permission, permissionSearch)
+    )),
+    [availableAdditions, permissionSearch, selectedAdditionCodes, showSelectedOnly],
+  )
+  const grouped = useMemo(() => groupedPermissions(visiblePermissions), [visiblePermissions])
   const filteredUsers = useMemo(() => {
-    const normalized = employeeSearch.trim().toLowerCase()
-    if (!normalized) return users
+    const query = employeeSearch.trim().toLocaleLowerCase()
+    if (!query) return users
     return users.filter((candidate) => [
       candidate.displayName,
       candidate.username ?? '',
-      roleLabels[candidate.primaryRole],
       candidate.jobTitle ?? '',
-    ].some((value) => value.toLowerCase().includes(normalized)))
+      roleLabels[candidate.primaryRole],
+    ].some((value) => value.toLocaleLowerCase().includes(query)))
   }, [employeeSearch, users])
-  const overridePermissions = useMemo(
-    () => permissions.filter((permission) => permissionMatchesSearch(permission, overridePermissionSearch)),
-    [overridePermissionSearch, permissions],
+  const rolesChanged = user ? !setsMatch(selectedRoleIds, user.assignedRoleIds) : false
+  const additionsChanged = !setsMatch(selectedAdditionCodes, originalAdditionCodes)
+  const hasUnsavedChanges = rolesChanged || additionsChanged
+  const changeCount = (
+    [...selectedRoleIds].filter((id) => !user?.assignedRoleIds.includes(id)).length
+    + (user?.assignedRoleIds.filter((id) => !selectedRoleIds.has(id)).length ?? 0)
+    + [...selectedAdditionCodes].filter((code) => !originalAdditionCodes.includes(code)).length
+    + originalAdditionCodes.filter((code) => !selectedAdditionCodes.has(code)).length
   )
-  const groupedOverridePermissions = useMemo(
-    () => groupedPermissions(overridePermissions),
-    [overridePermissions],
+  const newlyGrantedSensitive = useMemo(
+    () => [...effectiveCodes].filter((code) => (
+      !user?.effectivePermissionCodes.includes(code)
+      && ['sensitive', 'critical'].includes(permissionByCode.get(code)?.riskLevel ?? '')
+    )),
+    [effectiveCodes, permissionByCode, user?.effectivePermissionCodes],
   )
-  const groupedEffective = useMemo(() => {
-    if (!user) return {}
-    const visible = user.effectivePermissionCodes
-      .map((code) => permissionByCode.get(code))
-      .filter((permission): permission is PermissionDefinition => Boolean(permission))
-    return groupedPermissions(visible)
-  }, [permissionByCode, user])
-  const rolesChanged = user ? !identifierSetsMatch(selectedRoleIds, user.assignedRoleIds) : false
 
-  const roleMutation = useMutation({
-    mutationFn: ({ employeeId, roleIds }: { employeeId: string, roleIds: string[] }) => setEmployeeAccessRoles(employeeId, roleIds),
+  const mutation = useMutation({
+    mutationFn: setEmployeeAccessProfile,
     onSuccess: (center) => {
       updateCenter(queryClient, center)
-      setRoleMessage('Additional role memberships saved and effective access refreshed.')
+      setMessage('Employee access saved and effective permissions refreshed.')
+      setReason('')
+      setConfirmSensitive(false)
     },
   })
-
-  const overrideMutation = useMutation({
-    mutationFn: setEmployeePermissionOverride,
-    onSuccess: (center) => {
-      updateCenter(queryClient, center)
-      setOverrideMessage('Individual permission exception saved and effective access refreshed.')
-      setOverrideReason('')
-    },
-  })
-
-  const clearMutation = useMutation({
-    mutationFn: clearEmployeePermissionOverride,
-    onSuccess: (center) => {
-      updateCenter(queryClient, center)
-      setOverrideMessage('Individual permission exception removed and effective access refreshed.')
-    },
-  })
-  const modalBusy = roleMutation.isPending || overrideMutation.isPending || clearMutation.isPending
 
   useEffect(() => {
     if (!user) return
-    setSelectedRoleIds(new Set(user.assignedRoleIds))
-    setRoleMessage(null)
-    setOverrideMessage(null)
-  }, [user])
+    const nextRoles = new Set(user.assignedRoleIds)
+    const baseCodes = new Set(primaryRole?.permissionCodes ?? [])
+    nextRoles.forEach((roleId) => roleById.get(roleId)?.permissionCodes.forEach((code) => baseCodes.add(code)))
+    setSelectedRoleIds(nextRoles)
+    setSelectedAdditionCodes(new Set(
+      user.overrides
+        .filter((override) => override.effect === 'grant' && !baseCodes.has(override.permissionCode))
+        .map((override) => override.permissionCode),
+    ))
+    setReason('')
+    setMessage(null)
+    setOpenCategory(null)
+  }, [primaryRole?.permissionCodes, roleById, user])
 
   useEffect(() => {
-    if (overridePermissions.some((permission) => permission.code === overridePermissionCode)) return
-    setOverridePermissionCode(overridePermissions[0]?.code ?? '')
-  }, [overridePermissionCode, overridePermissions])
+    setSelectedAdditionCodes((current) => new Set([...current].filter((code) => !inheritedCodes.has(code))))
+  }, [inheritedCodes])
+
+  useEffect(() => {
+    if (!permissionSearch.trim()) return
+    const firstCategory = Object.keys(grouped)[0]
+    if (firstCategory) setOpenCategory(firstCategory)
+  }, [grouped, permissionSearch])
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return undefined
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [hasUnsavedChanges])
+
+  useEffect(() => {
+    onDirtyChange(hasUnsavedChanges)
+    return () => onDirtyChange(false)
+  }, [hasUnsavedChanges, onDirtyChange])
 
   if (!user) {
     return (
-      <ModalDialog
-        className="access-modal access-modal--employee-workspace"
-        description="Manage role memberships and individual access exceptions."
-        onClose={onClose}
-        title="Employee access workspace"
-      >
-        <div className="employee-access-empty">
-          <ShieldAlert aria-hidden="true" size={24} />
-          <p>No active employees are available for access management.</p>
-        </div>
-      </ModalDialog>
+      <section className="employee-access-empty">
+        <ShieldAlert aria-hidden="true" size={24} />
+        <p>No active employees are available for access management.</p>
+      </section>
     )
+  }
+
+  function chooseUser(userId: string) {
+    if (userId === user.id) return
+    if (hasUnsavedChanges && !window.confirm('Discard unsaved employee access changes?')) return
+    onSelectUser(userId)
   }
 
   function toggleRole(roleId: string) {
@@ -184,266 +252,182 @@ export function EmployeeAccessWorkspace({
       else next.add(roleId)
       return next
     })
-    setRoleMessage(null)
+    setMessage(null)
   }
 
-  function submitOverride(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!overridePermissionCode || !overrideReason.trim()) return
-    setOverrideMessage(null)
-    overrideMutation.mutate({
-      effect: overrideEffect,
-      employeeId: user.id,
-      permissionCode: overridePermissionCode,
-      reason: overrideReason.trim(),
+  function togglePermission(code: string) {
+    setSelectedAdditionCodes((current) => {
+      const next = new Set(current)
+      if (next.has(code)) next.delete(code)
+      else next.add(code)
+      return next
     })
+    setMessage(null)
+  }
+
+  function resetChanges() {
+    const nextRoles = new Set(user.assignedRoleIds)
+    const baseCodes = new Set(primaryRole?.permissionCodes ?? [])
+    nextRoles.forEach((roleId) => roleById.get(roleId)?.permissionCodes.forEach((code) => baseCodes.add(code)))
+    setSelectedRoleIds(nextRoles)
+    setSelectedAdditionCodes(new Set(storedGrantCodes.filter((code) => !baseCodes.has(code))))
+    setReason('')
+    setMessage(null)
+  }
+
+  function saveProfile() {
+    if (!reason.trim()) return
+    if (newlyGrantedSensitive.length > 0) {
+      setConfirmSensitive(true)
+      return
+    }
+    mutation.mutate({ employeeId: user.id, permissionCodes: [...selectedAdditionCodes], reason: reason.trim(), roleIds: [...selectedRoleIds] })
+  }
+
+  function confirmSave() {
+    mutation.mutate({ employeeId: user.id, permissionCodes: [...selectedAdditionCodes], reason: reason.trim(), roleIds: [...selectedRoleIds] })
   }
 
   return (
-    <ModalDialog
-      busy={modalBusy}
-      busyLabel="Updating employee access and recalculating permissions..."
-      className="access-modal access-modal--employee-workspace"
-      description="Choose an employee, manage only the access layer you need, and verify the final result before closing."
-      onClose={onClose}
-      title="Employee access workspace"
-    >
-      <div className="employee-access-workspace">
-        <aside className="employee-access-directory" aria-label="Active employees">
-          <div className="employee-access-directory__heading">
-            <p className="eyebrow">Active employees</p>
-            <strong>{users.length}</strong>
+    <section className="access-employee-mode">
+      <aside className="access-employee-directory" aria-label="Active employees">
+        <div className="access-panel-heading">
+          <div><p className="eyebrow">Employees</p><h2>Choose a person</h2></div>
+          <span>{users.length}</span>
+        </div>
+        <label className="access-search-field">
+          <Search aria-hidden="true" size={18} />
+          <span className="visually-hidden">Search active employees</span>
+          <input onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Search name, username, role, or title" type="search" value={employeeSearch} />
+        </label>
+        <div className="access-employee-list">
+          {filteredUsers.map((candidate) => (
+            <button aria-current={candidate.id === user.id ? 'true' : undefined} className={candidate.id === user.id ? 'access-person access-person--selected' : 'access-person'} key={candidate.id} onClick={() => chooseUser(candidate.id)} type="button">
+              <span className="access-person__initials" aria-hidden="true">{employeeInitials(candidate.displayName)}</span>
+              <span><strong>{candidate.displayName}</strong><small>@{candidate.username || 'no-login'} · {roleLabels[candidate.primaryRole]}</small></span>
+            </button>
+          ))}
+          {filteredUsers.length === 0 ? <p className="permission-search-empty">No employees match that search.</p> : null}
+        </div>
+      </aside>
+
+      <div className="access-employee-editor">
+        <header className="access-employee-summary">
+          <div><p className="eyebrow">Employee access</p><h2>{user.displayName}</h2><p>@{user.username || 'no-login'}{user.jobTitle ? ` · ${user.jobTitle}` : ''}</p></div>
+          <span className="status-pill status-pill--green">Active</span>
+        </header>
+
+        <div className="access-summary-strip" aria-label="Employee access summary">
+          <div><strong>{roleLabels[user.primaryRole]}</strong><span>Primary role</span></div>
+          <div><strong>{selectedRoleIds.size}</strong><span>Additional roles</span></div>
+          <div><strong>{inheritedCodes.size}</strong><span>Inherited access</span></div>
+          <div><strong>{selectedAdditionCodes.size}</strong><span>Individual additions</span></div>
+          <div><strong>{effectiveCodes.size}</strong><span>Effective access</span></div>
+        </div>
+
+        <section className="access-editor-section">
+          <div className="access-section-heading">
+            <div><UsersRound aria-hidden="true" size={20} /><span><strong>Additional role memberships</strong><small>The employee always keeps their primary {roleLabels[user.primaryRole]} role.</small></span></div>
+            <span>{selectedRoleIds.size} selected</span>
           </div>
-          <label className="employee-access-search">
-            <Search aria-hidden="true" size={18} />
-            <span className="visually-hidden">Search active employees</span>
-            <input
-              onChange={(event) => setEmployeeSearch(event.target.value)}
-              placeholder="Search name, username, role, or title"
-              type="search"
-              value={employeeSearch}
-            />
-          </label>
-          <div className="employee-access-directory__list">
-            {filteredUsers.map((candidate) => (
-              <button
-                aria-current={candidate.id === user.id ? 'true' : undefined}
-                className={candidate.id === user.id ? 'employee-access-person employee-access-person--selected' : 'employee-access-person'}
-                disabled={modalBusy}
-                key={candidate.id}
-                onClick={() => onSelectUser(candidate.id)}
-                type="button"
-              >
-                <span className="employee-access-person__initials" aria-hidden="true">
-                  {employeeInitials(candidate.displayName)}
-                </span>
-                <span>
-                  <strong>{candidate.displayName}</strong>
-                  <small>@{candidate.username || 'no-login'} · {roleLabels[candidate.primaryRole]}</small>
-                </span>
-                {candidate.overrides.length > 0 ? <em>{candidate.overrides.length} exception{candidate.overrides.length === 1 ? '' : 's'}</em> : null}
-              </button>
+          <div className="access-role-memberships">
+            {assignableRoles.map((role) => (
+              <label className={selectedRoleIds.has(role.id) ? 'access-role-check access-role-check--selected' : 'access-role-check'} key={role.id}>
+                <input checked={selectedRoleIds.has(role.id)} onChange={() => toggleRole(role.id)} type="checkbox" />
+                <span><strong>{role.name}</strong><small>{role.permissionCodes.length} permissions{role.mfaRequired ? ' · MFA required' : ''}</small></span>
+                {selectedRoleIds.has(role.id) ? <Check aria-hidden="true" size={18} /> : null}
+              </label>
             ))}
-            {filteredUsers.length === 0 ? <p className="employee-access-directory__empty">No active employees match that search.</p> : null}
-          </div>
-        </aside>
-
-        <section className="employee-access-workarea">
-          <header className="employee-access-banner">
-            <div>
-              <p className="eyebrow">Selected employee</p>
-              <h3>{user.displayName}</h3>
-              <span>@{user.username || 'no-login'} · Primary role: {roleLabels[user.primaryRole]}{user.jobTitle ? ` · ${user.jobTitle}` : ''}</span>
-            </div>
-            <span className="status-pill status-pill--green">Active</span>
-          </header>
-
-          <div className="employee-access-guidance">
-            <ShieldCheck aria-hidden="true" size={20} />
-            <p><strong>Roles provide normal access.</strong> Use an individual exception only for a documented one-person need. A deny takes priority over a grant.</p>
-          </div>
-
-          <div className="employee-access-tabs" role="tablist" aria-label="Employee access sections">
-            <button aria-selected={activeTab === 'roles'} onClick={() => setActiveTab('roles')} role="tab" type="button">
-              Role memberships
-              <span>{selectedRoleIds.size}</span>
-            </button>
-            <button aria-selected={activeTab === 'exceptions'} onClick={() => setActiveTab('exceptions')} role="tab" type="button">
-              Individual exceptions
-              <span>{user.overrides.length}</span>
-            </button>
-            <button aria-selected={activeTab === 'effective'} onClick={() => setActiveTab('effective')} role="tab" type="button">
-              Effective access
-              <span>{user.effectivePermissionCodes.length}</span>
-            </button>
-          </div>
-
-          <div className="employee-access-tabpanel" role="tabpanel">
-            {activeTab === 'roles' ? (
-              <section className="employee-access-step">
-                <div className="employee-access-step__heading">
-                  <div>
-                    <p className="eyebrow">Standard access</p>
-                    <h3>Additional role memberships</h3>
-                    <p>The employee keeps their primary {roleLabels[user.primaryRole]} role. Select only the extra groups they also need.</p>
-                  </div>
-                  <span>{selectedRoleIds.size} selected</span>
-                </div>
-                <div className="employee-role-grid">
-                  {roles.map((role) => (
-                    <label className={selectedRoleIds.has(role.id) ? 'employee-role-option employee-role-option--selected' : 'employee-role-option'} key={role.id}>
-                      <input checked={selectedRoleIds.has(role.id)} onChange={() => toggleRole(role.id)} type="checkbox" />
-                      <span>
-                        <strong>{role.name}</strong>
-                        <small>{role.description || (role.systemRole ? 'Standard SygShift role.' : 'Custom access role.')}</small>
-                      </span>
-                      <em>{role.permissionCodes.length} permissions</em>
-                    </label>
-                  ))}
-                </div>
-                <div className="employee-access-actionbar">
-                  <div className={rolesChanged ? 'access-save-status access-save-status--dirty' : 'access-save-status access-save-status--idle'} role="status" aria-live="polite">
-                    {rolesChanged ? <ShieldAlert aria-hidden="true" size={18} /> : <CheckCircle2 aria-hidden="true" size={18} />}
-                    <span>{rolesChanged ? 'Unsaved role changes' : 'Role memberships are saved.'}</span>
-                  </div>
-                  <button
-                    className="access-control-button access-control-button--primary"
-                    disabled={roleMutation.isPending || !rolesChanged}
-                    onClick={() => roleMutation.mutate({ employeeId: user.id, roleIds: [...selectedRoleIds] })}
-                    type="button"
-                  >
-                    <Save aria-hidden="true" size={18} />
-                    {roleMutation.isPending ? 'Saving roles...' : 'Save role memberships'}
-                  </button>
-                </div>
-                {roleMessage ? <p className="form-feedback form-feedback--success" role="status">{roleMessage}</p> : null}
-                {roleMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{roleMutation.error.message}</p> : null}
-              </section>
-            ) : null}
-
-            {activeTab === 'exceptions' ? (
-              <section className="employee-access-step">
-                <div className="employee-access-step__heading">
-                  <div>
-                    <p className="eyebrow">One-person access</p>
-                    <h3>Individual permission exceptions</h3>
-                    <p>Grant or deny one permission without changing the employee’s roles. Every exception requires an audit reason.</p>
-                  </div>
-                  <span>{user.overrides.length} active</span>
-                </div>
-                <div className="employee-exception-grid">
-                  <form className="employee-exception-form" onSubmit={submitOverride}>
-                    <h4>Add or replace an exception</h4>
-                    <label className="permission-search permission-search--override">
-                      <Search aria-hidden="true" size={18} />
-                      <span className="visually-hidden">Search permissions to grant or deny</span>
-                      <input
-                        onChange={(event) => setOverridePermissionSearch(event.target.value)}
-                        placeholder="Search permission name, category, or code"
-                        type="search"
-                        value={overridePermissionSearch}
-                      />
-                    </label>
-                    <label>
-                      <span>Permission</span>
-                      <select disabled={overridePermissions.length === 0} onChange={(event) => setOverridePermissionCode(event.target.value)} value={overridePermissionCode}>
-                        {Object.entries(groupedOverridePermissions).map(([category, categoryPermissions]) => (
-                          <optgroup key={category} label={category}>
-                            {categoryPermissions.map((permission) => <option key={permission.code} value={permission.code}>{permission.name}</option>)}
-                          </optgroup>
-                        ))}
-                      </select>
-                    </label>
-                    {overridePermissions.length === 0 ? <p className="permission-search-empty">No permissions match that search.</p> : null}
-                    <fieldset className="employee-exception-effect">
-                      <legend>Exception type</legend>
-                      <label className={overrideEffect === 'grant' ? 'employee-exception-effect__option employee-exception-effect__option--selected' : 'employee-exception-effect__option'}>
-                        <input checked={overrideEffect === 'grant'} name="override-effect" onChange={() => setOverrideEffect('grant')} type="radio" value="grant" />
-                        <span><strong>Grant</strong><small>Add this permission for this person.</small></span>
-                      </label>
-                      <label className={overrideEffect === 'deny' ? 'employee-exception-effect__option employee-exception-effect__option--selected' : 'employee-exception-effect__option'}>
-                        <input checked={overrideEffect === 'deny'} name="override-effect" onChange={() => setOverrideEffect('deny')} type="radio" value="deny" />
-                        <span><strong>Deny</strong><small>Block this permission for this person.</small></span>
-                      </label>
-                    </fieldset>
-                    <label>
-                      <span>Required audit reason</span>
-                      <textarea onChange={(event) => setOverrideReason(event.target.value)} placeholder="Explain the business reason for this one-person exception." required rows={4} value={overrideReason} />
-                    </label>
-                    <button className="access-control-button access-control-button--primary" disabled={overrideMutation.isPending || overridePermissions.length === 0 || !overrideReason.trim()} type="submit">
-                      {overrideMutation.isPending ? 'Saving exception...' : 'Save individual exception'}
-                    </button>
-                  </form>
-
-                  <div className="employee-exception-list">
-                    <h4>Active exceptions</h4>
-                    {user.overrides.length === 0 ? (
-                      <div className="employee-exception-empty">
-                        <CheckCircle2 aria-hidden="true" size={22} />
-                        <strong>No individual exceptions</strong>
-                        <p>This employee currently receives access only through their primary role and additional role memberships.</p>
-                      </div>
-                    ) : user.overrides.map((override) => {
-                      const permission = permissionByCode.get(override.permissionCode)
-                      return (
-                        <article className={`employee-exception-card employee-exception-card--${override.effect}`} key={override.id}>
-                          <header><span>{override.effect === 'grant' ? 'Granted' : 'Denied'}</span><strong>{permission?.name ?? override.permissionCode}</strong></header>
-                          <p>{permission?.category ?? 'Permission'} · {permission?.description || override.permissionCode}</p>
-                          <dl>
-                            <div><dt>Reason</dt><dd>{override.reason}</dd></div>
-                            <div><dt>Recorded</dt><dd>{override.createdAt}</dd></div>
-                          </dl>
-                          <button className="access-control-button access-control-button--secondary" disabled={clearMutation.isPending} onClick={() => clearMutation.mutate(override.id)} type="button">Remove exception</button>
-                        </article>
-                      )
-                    })}
-                  </div>
-                </div>
-                {overrideMessage ? <p className="form-feedback form-feedback--success" role="status">{overrideMessage}</p> : null}
-                {overrideMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{overrideMutation.error.message}</p> : null}
-                {clearMutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{clearMutation.error.message}</p> : null}
-              </section>
-            ) : null}
-
-            {activeTab === 'effective' ? (
-              <section className="employee-access-step">
-                <div className="employee-access-step__heading">
-                  <div>
-                    <p className="eyebrow">Read-only verification</p>
-                    <h3>Final effective access</h3>
-                    <p>This is the access SygShift calculates after the primary role, additional roles, individual grants, and individual denies are combined.</p>
-                  </div>
-                  <span>{user.effectivePermissionCodes.length} permissions</span>
-                </div>
-                <div className="effective-access-summary">
-                  <div><strong>{roleLabels[user.primaryRole]}</strong><span>Primary role</span></div>
-                  <div><strong>{user.assignedRoleIds.length}</strong><span>Additional roles</span></div>
-                  <div><strong>{user.overrides.length}</strong><span>Individual exceptions</span></div>
-                </div>
-                <div className="effective-access-groups">
-                  {Object.entries(groupedEffective).map(([category, categoryPermissions]) => (
-                    <details className="effective-access-group" key={category}>
-                      <summary><span><strong>{category}</strong><small>{categoryPermissions.length} permissions</small></span><ChevronDown aria-hidden="true" size={20} /></summary>
-                      <div>
-                        {categoryPermissions.map((permission) => (
-                          <article key={permission.code}>
-                            <span><strong>{permission.name}</strong><small>{permission.description}</small></span>
-                            <em>{permission.requiresMfa ? 'MFA' : permissionTone(permission)}</em>
-                          </article>
-                        ))}
-                      </div>
-                    </details>
-                  ))}
-                </div>
-              </section>
-            ) : null}
           </div>
         </section>
+
+        <section className="access-editor-section">
+          <div className="access-section-heading">
+            <div><UserRoundCog aria-hidden="true" size={20} /><span><strong>Individual permission additions</strong><small>Only permissions not already inherited from a role are available.</small></span></div>
+            <span>{selectedAdditionCodes.size} selected</span>
+          </div>
+          <div className="access-permission-toolbar">
+            <label className="access-search-field">
+              <Search aria-hidden="true" size={18} />
+              <span className="visually-hidden">Search available permission additions</span>
+              <input onChange={(event) => setPermissionSearch(event.target.value)} placeholder="Search permissions" type="search" value={permissionSearch} />
+            </label>
+            <label className="access-filter-check"><input checked={showSelectedOnly} onChange={(event) => setShowSelectedOnly(event.target.checked)} type="checkbox" /><span>Show selected only</span></label>
+          </div>
+          <div className="access-permission-accordion">
+            {Object.entries(grouped).map(([category, categoryPermissions]) => {
+              const activeCount = categoryPermissions.filter((permission) => selectedAdditionCodes.has(permission.code)).length
+              const open = openCategory === category
+              return (
+                <section className={open ? 'access-permission-group access-permission-group--open' : 'access-permission-group'} key={category}>
+                  <button aria-expanded={open} className="access-permission-group__header" onClick={() => setOpenCategory(open ? null : category)} type="button">
+                    <span><strong>{category}</strong><small>{activeCount > 0 ? `${activeCount} added` : 'None added'} · {categoryPermissions.length} available</small></span>
+                    {open ? <Minus aria-hidden="true" size={18} /> : <Plus aria-hidden="true" size={18} />}
+                  </button>
+                  {open ? (
+                    <div className="access-permission-group__body">
+                      {categoryPermissions.map((permission) => {
+                        const selected = selectedAdditionCodes.has(permission.code)
+                        const tone = riskLabel(permission)
+                        return (
+                          <label className={selected ? 'access-permission-row access-permission-row--selected' : 'access-permission-row'} key={permission.code}>
+                            <span><strong>{permission.name}</strong></span>
+                            <span
+                              aria-hidden={permission.description ? undefined : 'true'}
+                              className={permission.description ? 'access-permission-info' : 'access-permission-info access-permission-info--empty'}
+                              title={permission.description ?? undefined}
+                            >
+                              <Info aria-hidden="true" size={16} />
+                              {permission.description ? <span className="visually-hidden">{permission.description}</span> : null}
+                            </span>
+                            <span className="access-permission-badges">
+                              {tone ? <em className={`access-risk access-risk--${permission.riskLevel}`}>{tone}</em> : null}
+                              {permission.requiresMfa ? <em className="access-risk access-risk--mfa">MFA</em> : null}
+                            </span>
+                            <input aria-label={`${selected ? 'Remove' : 'Add'} ${permission.name}`} checked={selected} onChange={() => togglePermission(permission.code)} type="checkbox" />
+                          </label>
+                        )
+                      })}
+                    </div>
+                  ) : null}
+                </section>
+              )
+            })}
+            {visiblePermissions.length === 0 ? <p className="permission-search-empty">No available permissions match this view.</p> : null}
+          </div>
+        </section>
+
+        {legacyDenies.length > 0 ? (
+          <details className="access-legacy-restrictions">
+            <summary><LockKeyhole aria-hidden="true" size={18} /><span><strong>{legacyDenies.length} protected legacy restriction{legacyDenies.length === 1 ? '' : 's'}</strong><small>Preserved to prevent an unintended production access change.</small></span><Plus aria-hidden="true" size={18} /></summary>
+            <div>{legacyDenies.map((override) => <p key={override.id}><strong>{permissionByCode.get(override.permissionCode)?.name ?? override.permissionCode}</strong><span>{override.reason}</span></p>)}</div>
+          </details>
+        ) : null}
+
+        {hasUnsavedChanges ? (
+          <div className="access-sticky-savebar">
+            <div><ShieldAlert aria-hidden="true" size={20} /><span><strong>{changeCount} unsaved change{changeCount === 1 ? '' : 's'}</strong><small>All changes are applied together and written to the audit history.</small></span></div>
+            <label><span>Required audit reason</span><input onChange={(event) => setReason(event.target.value)} placeholder="Why is this access changing?" value={reason} /></label>
+            <button className="access-control-button access-control-button--secondary" disabled={mutation.isPending} onClick={resetChanges} type="button">Cancel</button>
+            <button className="access-control-button access-control-button--primary" disabled={mutation.isPending || !reason.trim()} onClick={saveProfile} type="button"><Save aria-hidden="true" size={18} />{mutation.isPending ? 'Saving...' : 'Save employee permissions'}</button>
+          </div>
+        ) : null}
+
+        {message ? <p className="form-feedback form-feedback--success" role="status"><CheckCircle2 aria-hidden="true" size={18} />{message}</p> : null}
+        {mutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{mutation.error.message}</p> : null}
       </div>
-      <div className="employee-access-workspace__footer">
-        <p>Changes are protected by MFA, applied by the server, and recorded in the audit history.</p>
-        <button className="access-control-button access-control-button--secondary" disabled={modalBusy} onClick={onClose} type="button">Close workspace</button>
-      </div>
-    </ModalDialog>
+
+      {confirmSensitive ? (
+        <ModalDialog busy={mutation.isPending} busyLabel="Applying protected access changes..." className="access-modal access-modal--confirmation" description="This employee will receive one or more sensitive permissions that may expose protected information or administrative actions." onClose={() => setConfirmSensitive(false)} title="Confirm sensitive access">
+          <div className="access-confirmation-list">
+            {newlyGrantedSensitive.map((code) => <p key={code}><ShieldAlert aria-hidden="true" size={18} /><span><strong>{permissionByCode.get(code)?.name ?? code}</strong><small>{permissionByCode.get(code)?.description}</small></span></p>)}
+          </div>
+          <div className="modal-actions">
+            <button className="access-control-button access-control-button--secondary" onClick={() => setConfirmSensitive(false)} type="button">Go back</button>
+            <button className="access-control-button access-control-button--primary" disabled={mutation.isPending} onClick={confirmSave} type="button"><ShieldCheck aria-hidden="true" size={18} />Confirm and save</button>
+          </div>
+        </ModalDialog>
+      ) : null}
+    </section>
   )
 }

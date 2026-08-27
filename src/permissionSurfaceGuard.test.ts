@@ -95,10 +95,11 @@ describe('permission surface guardrails', () => {
     expect(accessControlPage).toContain('permissionMatchesSearch')
     expect(accessControlPage).toContain('filterPermissions(permissions, permissionSearch)')
     expect(accessControlPage).toContain('Search permissions, categories, codes, or MFA')
-    expect(accessControlPage).toContain('permission-search--workspace')
-    expect(employeeAccessWorkspace).toContain('Search permissions to grant or deny')
-    expect(employeeAccessWorkspace).toContain('Search permission name, category, or code')
-    expect(employeeAccessWorkspace).toContain('overridePermissions.length === 0')
+    expect(accessControlPage).toContain('placeholder="Search permissions"')
+    expect(employeeAccessWorkspace).toContain('permissionMatchesSearch')
+    expect(employeeAccessWorkspace).toContain('Search available permission additions')
+    expect(employeeAccessWorkspace).toContain('placeholder="Search permissions"')
+    expect(employeeAccessWorkspace).toContain('visiblePermissions.length === 0')
   })
 
   it('keeps guard search available in scheduler assignment flows', () => {

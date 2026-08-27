@@ -97,8 +97,9 @@ describe('button layout guardrails', () => {
     expect(accessControlPage).not.toContain('className="secondary-button"')
     expect(accessControlPage).toContain('access-control-button access-control-button--primary')
     expect(accessControlPage).toContain('access-control-button access-control-button--secondary')
-    expect(accessControlPage).toContain('access-save-status access-save-status--${saveStatusState}')
-    expect(accessControlPage).toContain('Saving complete.')
+    expect(accessControlPage).toContain('access-page-save-notice')
+    expect(accessControlPage).toContain('access-sticky-savebar')
+    expect(accessControlPage).toContain('unsaved change')
 
     const accessButtonBlock = topLevelBlockFor('.access-control-button')
     expect(accessButtonBlock).toContain('box-sizing: border-box')
@@ -108,8 +109,8 @@ describe('button layout guardrails', () => {
 
     expect(blockFor('.access-control-button--primary')).toContain('linear-gradient')
     expect(blockFor('.access-control-button--secondary')).toContain('background: #fffdfa')
-    expect(blockFor('.access-save-status')).toContain('min-height: 42px')
-    expect(blockFor('.access-save-status')).toContain('font-weight: 900')
+    expect(blocksFor('.access-sticky-savebar').some((block) => block.includes('position: sticky'))).toBe(true)
+    expect(blocksFor('.access-sticky-savebar').some((block) => block.includes('align-items: center'))).toBe(true)
   })
 
   it('keeps Licensing Center filters separated and actions icon-safe', () => {
@@ -276,17 +277,15 @@ describe('button layout guardrails', () => {
   it('keeps Employee Access in one responsive, locally scrolling workspace', () => {
     expect(accessControlPage).toContain('<EmployeeAccessWorkspace')
     expect(accessControlPage).not.toContain('employeeEditorOpen')
-    expect(employeeAccessWorkspace).toContain('access-modal access-modal--employee-workspace')
-    expect(employeeAccessWorkspace).toContain('employee-access-tabs')
-    expect(employeeAccessWorkspace).toContain('Role memberships')
-    expect(employeeAccessWorkspace).toContain('Individual exceptions')
+    expect(employeeAccessWorkspace).toContain('access-employee-mode')
+    expect(employeeAccessWorkspace).toContain('Additional role memberships')
+    expect(employeeAccessWorkspace).toContain('Individual permission additions')
     expect(employeeAccessWorkspace).toContain('Effective access')
 
-    expect(blockFor('.access-modal--employee-workspace')).toContain('width: min(98vw, 1480px)')
-    expect(blockFor('.access-modal--employee-workspace')).toContain('overflow: hidden')
-    expect(topLevelBlockFor('.employee-access-workspace')).toContain('grid-template-columns: minmax(270px, 320px) minmax(0, 1fr)')
-    expect(blockFor('.employee-access-tabpanel')).toContain('overflow-y: auto')
-    expect(blockFor('.employee-access-actionbar')).toContain('position: sticky')
-    expect(blocksFor('.employee-access-workspace__footer').some((block) => block.includes('justify-content: space-between'))).toBe(true)
+    expect(topLevelBlockFor('.access-role-mode,\n.access-employee-mode')).toContain('grid-template-columns: minmax(250px, 300px) minmax(0, 1fr)')
+    expect(blocksFor('.access-employee-directory').some((block) => block.includes('position: sticky'))).toBe(true)
+    expect(blocksFor('.access-employee-list').some((block) => block.includes('overflow-y: auto'))).toBe(true)
+    expect(blocksFor('.access-sticky-savebar').some((block) => block.includes('position: sticky'))).toBe(true)
+    expect(blocksFor('.access-employee-editor').some((block) => block.includes('min-width: 0'))).toBe(true)
   })
 })
