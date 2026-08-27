@@ -1,6 +1,7 @@
 # SygShift My Account Release
 
-**Release date:** 08/27/2026  
+**Release date:** 08/27/2026
+
 **Area:** Employee self-service, account security, profile information, and notifications
 
 ## Summary
