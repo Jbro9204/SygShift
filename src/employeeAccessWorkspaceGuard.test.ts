@@ -8,6 +8,7 @@ const root = process.cwd()
 const accessControlPage = readFileSync(join(root, 'src', 'pages', 'AccessControlPage.tsx'), 'utf8')
 const workspace = readFileSync(join(root, 'src', 'components', 'EmployeeAccessWorkspace.tsx'), 'utf8')
 const accessData = readFileSync(join(root, 'src', 'data', 'accessControl.ts'), 'utf8')
+const appCss = readFileSync(join(root, 'src', 'App.css'), 'utf8')
 const accessProfileMigration = readFileSync(
   join(root, 'supabase', 'migrations', '20260826230000_additive_employee_access_profile.sql'),
   'utf8',
@@ -24,6 +25,15 @@ describe('employee access workspace guardrails', () => {
     expect(workspace).toContain('Effective access')
     expect(accessControlPage).toContain('Role & Group Permissions')
     expect(accessControlPage).toContain('Employee Permissions')
+  })
+
+  it('keeps the employee directory bounded, searchable, and independently scrollable', () => {
+    expect(workspace).toContain('Showing {filteredUsers.length} of {users.length}')
+    expect(workspace).toContain('aria-label="Employee search results"')
+    expect(appCss).toContain('.access-employee-list {')
+    expect(appCss).toContain('max-height: min(56vh, 520px)')
+    expect(appCss).toContain('overflow-y: auto')
+    expect(appCss).toContain('.access-employee-list::-webkit-scrollbar-thumb')
   })
 
   it('saves employee role memberships and permission additions atomically on the server', () => {

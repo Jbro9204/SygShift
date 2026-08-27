@@ -300,7 +300,11 @@ export function EmployeeAccessWorkspace({
           <span className="visually-hidden">Search active employees</span>
           <input onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Search name, username, role, or title" type="search" value={employeeSearch} />
         </label>
-        <div className="access-employee-list">
+        <div className="access-employee-list-meta" aria-live="polite">
+          <span>Showing {filteredUsers.length} of {users.length}</span>
+          <span>Scroll to browse</span>
+        </div>
+        <div className="access-employee-list" aria-label="Employee search results">
           {filteredUsers.map((candidate) => (
             <button aria-current={candidate.id === user.id ? 'true' : undefined} className={candidate.id === user.id ? 'access-person access-person--selected' : 'access-person'} key={candidate.id} onClick={() => chooseUser(candidate.id)} type="button">
               <span className="access-person__initials" aria-hidden="true">{employeeInitials(candidate.displayName)}</span>

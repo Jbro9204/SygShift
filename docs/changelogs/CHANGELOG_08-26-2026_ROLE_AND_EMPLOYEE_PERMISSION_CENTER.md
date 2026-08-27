@@ -35,6 +35,8 @@ No employee role, permission, account, or operational record was reassigned by t
 ## Usability and accessibility
 
 - Added clear top-level tabs for role work and employee work.
+- Constrained the employee chooser to a bounded, independently scrollable results area so large employee lists cannot expand over the workspace.
+- Added a visible employee-list scrollbar and a live **Showing X of Y** result count while preserving search and selection state.
 - Added responsive desktop, tablet, and mobile layouts without horizontal page overflow.
 - Standardized control heights, button alignment, spacing, typography, focus states, and permission-row density.
 - Added navigation and browser-leave warnings when permission changes have not been saved.

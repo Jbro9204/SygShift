@@ -97,6 +97,11 @@
   padding: 18px;
 }
 
+.access-employee-directory {
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
 .access-panel-heading,
 .access-section-heading,
 .access-employee-summary {
@@ -139,6 +144,43 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.access-employee-list-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  color: #786e60;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.access-employee-list {
+  max-height: min(56vh, 520px);
+  padding: 2px 8px 2px 2px;
+  border-radius: 12px;
+  scrollbar-color: #b98028 #eee6d9;
+  scrollbar-width: auto;
+}
+
+.access-employee-list::-webkit-scrollbar {
+  width: 12px;
+}
+
+.access-employee-list::-webkit-scrollbar-track {
+  background: #eee6d9;
+  border-radius: 999px;
+}
+
+.access-employee-list::-webkit-scrollbar-thumb {
+  background: #b98028;
+  border: 3px solid #eee6d9;
+  border-radius: 999px;
+}
+
+.access-employee-list::-webkit-scrollbar-thumb:hover {
+  background: #946317;
 }
 
 .access-role-list .role-tile {
@@ -703,6 +745,10 @@
   .access-role-list,
   .access-employee-list {
     max-height: 320px;
+  }
+
+  .access-employee-directory {
+    overflow: hidden;
   }
 
   .access-summary-strip {
