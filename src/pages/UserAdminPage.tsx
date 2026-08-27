@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BadgeCheck,
   AlertTriangle,
-  Download,
   KeyRound,
   LockKeyhole,
   Plus,
@@ -24,13 +23,13 @@ import {
   getEmployeeRemovalPreview,
   getAdminUserDirectory,
   getRecentlyDeletedEmployees,
-  provisionEmployeeAccount,
   provisionMissingAccounts,
   resetEmployeeMfa,
   revokeEmployeeTrustedDevices,
   removeSeparatedEmployee,
   sendAllEmployeeLoginEmails,
   sendEmployeeLoginEmail,
+  sendEmployeePasswordReset,
   sendEmployeeWelcomeEmail,
   setEmployeeAccountState,
   updateEmployee,
@@ -316,9 +315,8 @@ function ManageUserModal({
   const [profileDirty, setProfileDirty] = useState(false)
   const [profileFormVersion, setProfileFormVersion] = useState(0)
   const [profileSaveMessage, setProfileSaveMessage] = useState<string | null>(null)
-  const [temporaryPassword, setTemporaryPassword] = useState('')
-  const [lastCredential, setLastCredential] = useState<ProvisioningCredential | null>(null)
   const [loginEmailMessage, setLoginEmailMessage] = useState<string | null>(null)
+  const [passwordResetMessage, setPasswordResetMessage] = useState<string | null>(null)
   const [welcomeEmailMessage, setWelcomeEmailMessage] = useState<string | null>(null)
   const [trustedDeviceMessage, setTrustedDeviceMessage] = useState<string | null>(null)
   const [mfaResetMessage, setMfaResetMessage] = useState<string | null>(null)
@@ -363,21 +361,18 @@ function ManageUserModal({
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
     },
   })
-  const provisionMutation = useMutation({
-    mutationFn: () => provisionEmployeeAccount(employee.id, temporaryPassword),
-    onSuccess: async (credential) => {
-      setLastCredential({ ...credential, displayName: employee.displayName })
-      setTemporaryPassword('')
+  const loginEmailMutation = useMutation({
+    mutationFn: () => sendEmployeeLoginEmail(employee.id),
+    onSuccess: async (result) => {
+      setLoginEmailMessage(`Login instructions sent to ${result.email ?? deliveryEmail ?? 'the approved email address'}.`)
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
     },
   })
-  const loginEmailMutation = useMutation({
-    mutationFn: () => sendEmployeeLoginEmail(employee.id, temporaryPassword),
+  const passwordResetMutation = useMutation({
+    mutationFn: () => sendEmployeePasswordReset(employee.id),
     onSuccess: async (result) => {
-      setTemporaryPassword('')
-      setLastCredential(null)
-      setLoginEmailMessage(`Login instructions sent to ${result.email ?? deliveryEmail ?? 'the approved email address'}.`)
-      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'] })
+      setPasswordResetMessage(`Secure password reset sent to ${result.email}.`)
+      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
     },
   })
   const welcomeEmailMutation = useMutation({
@@ -393,7 +388,7 @@ function ManageUserModal({
     || accountStateMutation.isPending
     || revokeTrustedDevicesMutation.isPending
     || resetMfaMutation.isPending
-    || provisionMutation.isPending
+    || passwordResetMutation.isPending
     || loginEmailMutation.isPending
     || welcomeEmailMutation.isPending
   const employeeFormKey = [
@@ -546,38 +541,52 @@ function ManageUserModal({
               <p>Review account activity and use audited security actions without changing the employee profile.</p>
             </div>
             <AccountActivityPanel user={employee} />
-            <div className="user-account-security-actions">
-              <div className="user-account-action-copy">
+            <div className="user-account-security-grid">
+              <article className="user-account-security-card user-account-security-card--status">
                 <AccountStatusBadge user={employee} />
                 <strong>{employee.accountStatus === 'not_created' ? 'Login has not been created' : employee.accountStatus === 'disabled' ? 'Login is disabled' : 'Login is active'}</strong>
-                <p>{canManageLogin ? 'Security actions below take effect immediately and are recorded separately from profile changes.' : 'This permission level can review account state, but cannot create, reset, or disable login access.'}</p>
-              </div>
+                <p>{employee.accountStatus === 'not_created'
+                  ? 'Use Onboarding to create access and send approved login instructions.'
+                  : employee.accountStatus === 'disabled'
+                    ? 'The employee cannot sign in until login access is enabled.'
+                    : employee.account?.activatedAt
+                      ? 'The employee has completed initial account setup.'
+                      : 'The login exists and is waiting for the employee to complete initial setup.'}</p>
+              </article>
               {canManageLogin ? (
-                <div className="user-account-action-controls">
-                  <label>
-                    <span>Temporary password override</span>
-                    <input autoComplete="new-password" disabled={!canManageLogin} onChange={(event) => setTemporaryPassword(event.target.value)} placeholder="Leave blank to generate securely" type="password" value={temporaryPassword} />
-                    <small>Leave blank to use SygShift’s secure password generator.</small>
-                  </label>
-                  <div className="user-account-button-row">
-                    <button className="primary-action" disabled={!canManageLogin || provisionMutation.isPending || employee.status !== 'active'} onClick={() => provisionMutation.mutate()} type="button">
-                      <KeyRound aria-hidden="true" size={18} /> {employee.accountStatus === 'not_created' ? 'Create login' : 'Reset temporary password'}
-                    </button>
-                    {employee.account ? (
-                      <button className="secondary-button" disabled={!canManageLogin || accountStateMutation.isPending} onClick={() => accountStateMutation.mutate(employee.accountStatus !== 'disabled')} type="button">
-                        <LockKeyhole aria-hidden="true" size={18} /> {employee.accountStatus === 'disabled' ? 'Enable login' : 'Disable login'}
+                <article className="user-account-security-card user-account-security-card--actions">
+                  <span className="account-control-kicker">Account actions</span>
+                  <h4>Help the employee regain access</h4>
+                  <p>Every action is immediate, permission-checked, and recorded in the audit history.</p>
+                  <div className="user-account-security-button-stack">
+                    {employee.accountStatus === 'not_created' ? (
+                      <button className="primary-action" disabled={employee.status !== 'active'} onClick={() => setActiveTab('onboarding')} type="button">
+                        <KeyRound aria-hidden="true" size={18} /> Open onboarding
                       </button>
                     ) : null}
-                  </div>
-                  <div className="user-account-button-row user-account-button-row--secondary">
-                    {employee.account && (employee.account.trustedDeviceCount ?? 0) > 0 ? (
-                      <button className="secondary-button" disabled={!canManageLogin || revokeTrustedDevicesMutation.isPending} onClick={() => revokeTrustedDevicesMutation.mutate()} type="button">
-                        <ShieldAlert aria-hidden="true" size={18} /> Revoke remembered devices ({employee.account.trustedDeviceCount})
+                    {employee.accountStatus === 'active' && employee.account?.activatedAt ? (
+                      <button className="primary-action" disabled={passwordResetMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => { setPasswordResetMessage(null); passwordResetMutation.mutate() }} type="button">
+                        <Mail aria-hidden="true" size={18} /> {passwordResetMutation.isPending ? 'Sending reset…' : 'Send password reset'}
                       </button>
                     ) : null}
-                    {employee.account && !confirmingMfaReset ? (
-                      <button className="secondary-button" disabled={!canManageLogin || resetMfaMutation.isPending} onClick={() => { setMfaResetMessage(null); setConfirmingMfaReset(true) }} type="button">
+                    {employee.accountStatus === 'active' && !employee.account?.activatedAt ? (
+                      <button className="primary-action" disabled={employee.status !== 'active'} onClick={() => setActiveTab('onboarding')} type="button">
+                        <Mail aria-hidden="true" size={18} /> Open login instructions
+                      </button>
+                    ) : null}
+                    {employee.accountStatus === 'disabled' && employee.account ? (
+                      <button className="primary-action" disabled={accountStateMutation.isPending} onClick={() => accountStateMutation.mutate(false)} type="button">
+                        <LockKeyhole aria-hidden="true" size={18} /> {accountStateMutation.isPending ? 'Enabling…' : 'Enable login'}
+                      </button>
+                    ) : null}
+                    {employee.accountStatus === 'active' && employee.account && !confirmingMfaReset ? (
+                      <button className="secondary-button" disabled={resetMfaMutation.isPending} onClick={() => { setMfaResetMessage(null); setConfirmingMfaReset(true) }} type="button">
                         <RotateCcw aria-hidden="true" size={18} /> Reset MFA setup
+                      </button>
+                    ) : null}
+                    {employee.accountStatus === 'active' && employee.account && (employee.account.trustedDeviceCount ?? 0) > 0 ? (
+                      <button className="secondary-button" disabled={revokeTrustedDevicesMutation.isPending} onClick={() => revokeTrustedDevicesMutation.mutate()} type="button">
+                        <ShieldAlert aria-hidden="true" size={18} /> Revoke remembered devices ({employee.account.trustedDeviceCount})
                       </button>
                     ) : null}
                   </div>
@@ -592,21 +601,32 @@ function ManageUserModal({
                     </div>
                   ) : null}
                   {employee.status !== 'active' ? <small>Only active employees can receive login accounts.</small> : null}
-                </div>
+                  {!deliveryEmail && employee.accountStatus === 'active' ? <small>Add an approved personal email before sending a password reset.</small> : null}
+                </article>
+              ) : null}
+              {!canManageLogin ? (
+                <article className="user-account-security-card user-account-security-card--actions">
+                  <span className="account-control-kicker">Read only</span>
+                  <h4>Security actions unavailable</h4>
+                  <p>This permission level can review account status but cannot change login access.</p>
+                </article>
+              ) : null}
+              {canManageLogin && employee.accountStatus === 'active' && employee.account ? (
+                <article className="user-account-security-card user-account-security-card--danger">
+                  <span className="account-control-kicker">Danger zone</span>
+                  <h4>Disable login access</h4>
+                  <p>The employee will be signed out and cannot return until access is enabled.</p>
+                  <button className="secondary-button danger-button" disabled={accountStateMutation.isPending} onClick={() => accountStateMutation.mutate(true)} type="button">
+                    <LockKeyhole aria-hidden="true" size={18} /> {accountStateMutation.isPending ? 'Disabling…' : 'Disable login'}
+                  </button>
+                </article>
               ) : null}
             </div>
-            {lastCredential ? (
-              <div className="temporary-password-card" role="status">
-                <strong>Temporary password created</strong>
-                <p>Copy or download it now. It will not be shown again.</p>
-                <code>{lastCredential.temporaryPassword}</code>
-                <button className="secondary-button" onClick={() => downloadCredentialCsv([lastCredential], `${lastCredential.username}-temporary-login.csv`)} type="button"><Download aria-hidden="true" size={18} /> Download one-user CSV</button>
-              </div>
-            ) : null}
-            {provisionMutation.isError ? <div className="inline-alert" role="alert">{provisionMutation.error.message}</div> : null}
             {accountStateMutation.isError ? <div className="inline-alert" role="alert">{accountStateMutation.error.message}</div> : null}
+            {passwordResetMessage ? <div className="form-feedback form-feedback--success" role="status">{passwordResetMessage}</div> : null}
             {trustedDeviceMessage ? <div className="form-feedback form-feedback--success" role="status">{trustedDeviceMessage}</div> : null}
             {mfaResetMessage ? <div className="form-feedback form-feedback--success" role="status">{mfaResetMessage}</div> : null}
+            {passwordResetMutation.isError ? <div className="inline-alert" role="alert">{passwordResetMutation.error.message}</div> : null}
             {revokeTrustedDevicesMutation.isError ? <div className="inline-alert" role="alert">{revokeTrustedDevicesMutation.error.message}</div> : null}
             {resetMfaMutation.isError ? <div className="inline-alert" role="alert">{resetMfaMutation.error.message}</div> : null}
           </section>

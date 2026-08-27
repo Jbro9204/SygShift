@@ -336,6 +336,101 @@ describe('Cloudflare Worker boundary', () => {
     expect(payload.requestId).toBe(response.headers.get('x-request-id'))
   })
 
+  it('requires an authenticated admin session before sending an employee password reset', async () => {
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/admin/users/10000000-0000-4000-8000-000000000010/password-reset', {
+        body: '{}',
+        method: 'POST',
+      }),
+      environment(new Response('asset'), configuredEnvironment),
+    )
+    const payload = await response.json() as { error: string; requestId: string }
+
+    expect(response.status).toBe(401)
+    expect(payload.error).toBe('auth_required')
+    expect(payload.requestId).toBe(response.headers.get('x-request-id'))
+  })
+
+  it('sends an audited password-recovery link without exposing the employee email', async () => {
+    const actorEmployeeId = '10000000-0000-4000-8000-000000000001'
+    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
+    const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employee_id: actorEmployeeId,
+        username: 'admin',
+        display_name: 'Admin User',
+        role: 'admin',
+        has_mfa: true,
+        permissions: ['admin.users.manage'],
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        employeeId: targetEmployeeId,
+        employeeNumber: 'SYG-1050',
+        jobTitle: 'Supervisor',
+        username: 'employee',
+        authEmail: 'employee@accounts.sygshift.invalid',
+        contactEmail: 'employee@example.com',
+        displayName: 'Example Employee',
+        role: 'supervisor',
+        employmentType: 'salary',
+        status: 'active',
+        existingAuthUserId: targetAuthUserId,
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        action_link: 'https://example.supabase.co/auth/v1/verify?token=single-use-token&type=recovery',
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ logged: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ recorded: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+    const send = vi.fn().mockResolvedValue({ messageId: 'password-reset-message' })
+    vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
+
+    const response = await worker.fetch(
+      new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/password-reset`, {
+        body: '{}',
+        headers: { authorization: 'Bearer admin-token' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        EMAIL: { send },
+        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+        SYGSHIFT_PUBLIC_APP_URL: 'https://app.sygilant.us',
+      }),
+    )
+    const payload = await response.json() as { email: string; username: string }
+
+    expect(response.status).toBe(200)
+    expect(payload).toMatchObject({ email: 'em******@example.com', username: 'employee' })
+    expect(JSON.stringify(payload)).not.toContain('employee@example.com')
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ to: 'employee@example.com' })
+    expect(send.mock.calls[0]?.[0].html).toContain('token=single-use-token')
+
+    const generateRequest = fetchMock.mock.calls.find(([input]) => String(input).includes('/auth/v1/admin/generate_link'))
+    expect(generateRequest).toBeDefined()
+    expect(JSON.parse(String(generateRequest?.[1]?.body))).toEqual({
+      email: 'employee@accounts.sygshift.invalid',
+      redirect_to: 'https://app.sygilant.us/account-security?mode=password-recovery',
+      type: 'recovery',
+    })
+
+    const auditRequest = fetchMock.mock.calls.at(-1)
+    expect(String(auditRequest?.[0])).toContain('/rest/v1/rpc/service_record_employee_password_reset')
+    expect(JSON.parse(String(auditRequest?.[1]?.body))).toMatchObject({
+      target_actor_employee_id: actorEmployeeId,
+      target_auth_user_id: targetAuthUserId,
+      target_delivery_email_masked: 'em******@example.com',
+      target_employee_id: targetEmployeeId,
+    })
+    vi.unstubAllGlobals()
+  })
+
   it('resets employee MFA factors and records the audited reset after authorization', async () => {
     const actorEmployeeId = '10000000-0000-4000-8000-000000000001'
     const targetEmployeeId = '10000000-0000-4000-8000-000000000010'

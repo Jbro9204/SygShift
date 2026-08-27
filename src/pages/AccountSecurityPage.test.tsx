@@ -98,6 +98,31 @@ describe('AccountSecurityPage', () => {
     expect(screen.queryByText('The password confirmation does not match.')).not.toBeInTheDocument()
   })
 
+  it('uses the recovery checkpoint without changing onboarding password state', async () => {
+    authMock.getSessionContext.mockReset()
+    authMock.getSessionContext.mockResolvedValue(sessionContext({
+      mustChangePassword: false,
+      passwordChangedAt: '2026-07-05T21:05:00.000Z',
+    }))
+
+    render(
+      <MemoryRouter initialEntries={['/account-security?mode=password-recovery']}>
+        <AccountSecurityPage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'Reset your SygShift password.' })).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'StrongAdmin123!' } })
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'StrongAdmin123!' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save password' }))
+
+    await waitFor(() => {
+      expect(supabaseMock.client.auth.updateUser).toHaveBeenCalledWith({ password: 'StrongAdmin123!' })
+    })
+    expect(supabaseMock.client.rpc).not.toHaveBeenCalledWith('mark_password_changed')
+    expect(mfaData.listMfaFactors).not.toHaveBeenCalled()
+  })
+
   it('allows permanent password fields to be shown and hidden independently', async () => {
     render(
       <MemoryRouter>

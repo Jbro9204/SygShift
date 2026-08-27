@@ -120,10 +120,13 @@ function PhotoEditor({
   onChanged: (hasPhoto: boolean) => Promise<void>
 }) {
   const fileInput = useRef<HTMLInputElement>(null)
+  const cropStage = useRef<HTMLDivElement>(null)
+  const dragState = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null)
   const [sourceUrl, setSourceUrl] = useState<string | null>(null)
+  const [sourceSize, setSourceSize] = useState({ height: 1, width: 1 })
   const [zoom, setZoom] = useState(1)
-  const [horizontal, setHorizontal] = useState(0)
-  const [vertical, setVertical] = useState(0)
+  const [position, setPosition] = useState({ x: 0, y: 0 })
+  const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<Feedback>(null)
 
@@ -140,9 +143,41 @@ function PhotoEditor({
     if (sourceUrl) URL.revokeObjectURL(sourceUrl)
     setSourceUrl(URL.createObjectURL(file))
     setZoom(1)
-    setHorizontal(0)
-    setVertical(0)
+    setPosition({ x: 0, y: 0 })
     setFeedback(null)
+  }
+
+  function resetFraming() {
+    setZoom(1)
+    setPosition({ x: 0, y: 0 })
+  }
+
+  function startDragging(event: React.PointerEvent<HTMLDivElement>) {
+    if (!sourceUrl) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragState.current = {
+      originX: position.x,
+      originY: position.y,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+    }
+    setDragging(true)
+  }
+
+  function movePhoto(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragState.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    setPosition({
+      x: drag.originX + event.clientX - drag.startX,
+      y: drag.originY + event.clientY - drag.startY,
+    })
+  }
+
+  function stopDragging(event: React.PointerEvent<HTMLDivElement>) {
+    if (dragState.current?.pointerId !== event.pointerId) return
+    dragState.current = null
+    setDragging(false)
   }
 
   async function croppedPhoto(): Promise<Blob> {
@@ -155,14 +190,16 @@ function PhotoEditor({
     canvas.height = 800
     const context = canvas.getContext('2d')
     if (!context) throw new Error('The photo editor could not be opened.')
-    const baseScale = Math.max(800 / image.naturalWidth, 800 / image.naturalHeight)
+    const baseScale = Math.min(800 / image.naturalWidth, 800 / image.naturalHeight)
     const scale = baseScale * zoom
     const width = image.naturalWidth * scale
     const height = image.naturalHeight * scale
-    const availableX = Math.max(0, width - 800)
-    const availableY = Math.max(0, height - 800)
-    const x = (800 - width) / 2 + (horizontal / 100) * (availableX / 2)
-    const y = (800 - height) / 2 + (vertical / 100) * (availableY / 2)
+    const stageSize = cropStage.current?.clientWidth || 320
+    const offsetScale = 800 / stageSize
+    const x = (800 - width) / 2 + position.x * offsetScale
+    const y = (800 - height) / 2 + position.y * offsetScale
+    context.fillStyle = '#f4efe5'
+    context.fillRect(0, 0, 800, 800)
     context.drawImage(image, x, y, width, height)
     return await new Promise<Blob>((resolve, reject) => canvas.toBlob(
       (blob) => blob ? resolve(blob) : reject(new Error('The edited photo could not be prepared.')),
@@ -205,31 +242,62 @@ function PhotoEditor({
 
   return (
     <section className="account-photo-panel" aria-labelledby="account-photo-title">
-      <div className="account-photo-panel__preview">
-        {photoUrl ? <img alt="Your SygShift profile" src={photoUrl} /> : <span>{initials(account.profile.displayName)}</span>}
+      <header className="account-photo-panel__heading">
+        <div><h3 id="account-photo-title">Profile photo</h3><p>Use a clear, recent JPG or PNG photo up to 5 MB.</p></div>
+        <button className="secondary-button" onClick={() => fileInput.current?.click()} type="button"><Camera size={18} />{sourceUrl ? 'Choose different photo' : 'Choose photo'}</button>
+      </header>
+      <input accept="image/jpeg,image/png" className="visually-hidden" onChange={choosePhoto} ref={fileInput} type="file" />
+      <div className="account-photo-workspace">
+        <div className="account-photo-current">
+          <span className="account-photo-label">Current photo</span>
+          <div className="account-photo-panel__preview">
+            {photoUrl ? <img alt="Your current SygShift profile" src={photoUrl} /> : <span>{initials(account.profile.displayName)}</span>}
+          </div>
+          {photoUrl ? <LoadingButton busy={busy} className="quiet-danger-button" onClick={removePhoto} type="button"><Trash2 size={17} />Remove photo</LoadingButton> : <p>No photo saved.</p>}
+        </div>
+        <div className="account-photo-new">
+          <span className="account-photo-label">New photo</span>
+          {sourceUrl ? (
+            <div className="account-photo-cropper">
+              <div
+                aria-label="Drag the photo to position it in the frame"
+                className={dragging ? 'account-photo-cropper__stage account-photo-cropper__stage--dragging' : 'account-photo-cropper__stage'}
+                onPointerCancel={stopDragging}
+                onPointerDown={startDragging}
+                onPointerMove={movePhoto}
+                onPointerUp={stopDragging}
+                ref={cropStage}
+                role="img"
+              >
+                <img
+                  alt="Position your selected profile photo"
+                  draggable="false"
+                  onLoad={(event) => setSourceSize({ height: event.currentTarget.naturalHeight, width: event.currentTarget.naturalWidth })}
+                  src={sourceUrl}
+                  style={{
+                    height: sourceSize.height >= sourceSize.width ? `${100 * zoom}%` : 'auto',
+                    transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))`,
+                    width: sourceSize.width > sourceSize.height ? `${100 * zoom}%` : 'auto',
+                  }}
+                />
+                <span className="account-photo-cropper__guide" aria-hidden="true" />
+              </div>
+              <div className="account-photo-cropper__controls">
+                <label><span>Zoom</span><input max="3" min="1" onChange={(event) => setZoom(Number(event.target.value))} step="0.05" type="range" value={zoom} /></label>
+                <button className="text-action" onClick={resetFraming} type="button">Reset framing</button>
+              </div>
+              <p className="account-photo-cropper__hint">Drag the image to position it. The circle shows the final avatar.</p>
+              <div className="account-actions account-actions--start">
+                <LoadingButton busy={busy} className="primary-action" onClick={savePhoto} type="button">Save photo</LoadingButton>
+                <button className="secondary-button" disabled={busy} onClick={() => setSourceUrl(null)} type="button">Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <button className="account-photo-empty" onClick={() => fileInput.current?.click()} type="button"><Camera size={24} /><strong>Choose a new photo</strong><span>The full image will be visible before you adjust it.</span></button>
+          )}
+        </div>
       </div>
       <div className="account-photo-panel__body">
-        <h3 id="account-photo-title">Profile photo</h3>
-        <p>Use a clear, recent photo. JPG or PNG, up to 5 MB.</p>
-        <input accept="image/jpeg,image/png" className="visually-hidden" onChange={choosePhoto} ref={fileInput} type="file" />
-        <div className="account-actions account-actions--start">
-          <button className="secondary-button" onClick={() => fileInput.current?.click()} type="button"><Camera size={18} />{photoUrl ? 'Replace photo' : 'Choose photo'}</button>
-          {photoUrl ? <LoadingButton busy={busy} className="quiet-danger-button" onClick={removePhoto} type="button"><Trash2 size={17} />Remove</LoadingButton> : null}
-        </div>
-        {sourceUrl ? (
-          <div className="account-photo-cropper">
-            <div className="account-photo-cropper__frame" style={{ '--crop-x': `${horizontal}%`, '--crop-y': `${vertical}%`, '--crop-zoom': zoom } as React.CSSProperties}>
-              <img alt="Position your selected profile photo" src={sourceUrl} />
-            </div>
-            <label>Zoom<input max="2" min="1" onChange={(event) => setZoom(Number(event.target.value))} step="0.05" type="range" value={zoom} /></label>
-            <label>Move left or right<input max="100" min="-100" onChange={(event) => setHorizontal(Number(event.target.value))} type="range" value={horizontal} /></label>
-            <label>Move up or down<input max="100" min="-100" onChange={(event) => setVertical(Number(event.target.value))} type="range" value={vertical} /></label>
-            <div className="account-actions account-actions--start">
-              <LoadingButton busy={busy} className="primary-action" onClick={savePhoto} type="button">Save photo</LoadingButton>
-              <button className="secondary-button" disabled={busy} onClick={() => setSourceUrl(null)} type="button">Cancel</button>
-            </div>
-          </div>
-        ) : null}
         <StatusMessage feedback={feedback} />
       </div>
     </section>

@@ -111,6 +111,13 @@ const mfaResetResponseSchema = z.object({
   username: z.string(),
 })
 
+const passwordResetResponseSchema = z.object({
+  displayName: z.string(),
+  email: z.string(),
+  requestId: z.string(),
+  username: z.string(),
+})
+
 const welcomeEmailResponseSchema = z.object({
   requestId: z.string(),
   displayName: z.string(),
@@ -162,6 +169,7 @@ export type AdminUser = z.infer<typeof adminUserSchema>
 export type AdminUserDirectory = z.infer<typeof adminUserDirectorySchema>
 export type ProvisioningCredential = z.infer<typeof provisioningCredentialSchema>
 export type LoginEmailResult = z.infer<typeof loginEmailResponseSchema>
+export type EmployeePasswordResetResult = z.infer<typeof passwordResetResponseSchema>
 export type WelcomeEmailResult = z.infer<typeof welcomeEmailResponseSchema>
 export type RecentlyDeletedRecord = z.infer<typeof recentlyDeletedRecordSchema>
 export type DeleteEmployeeResult = z.infer<typeof deleteEmployeeResponseSchema>
@@ -233,17 +241,17 @@ async function authHeaders(): Promise<Headers> {
   return headers
 }
 
-async function parseApiResponse(response: Response) {
+async function parseApiResponse(response: Response): Promise<unknown> {
   const payload = await response.json().catch(() => null)
   if (!response.ok) {
     const message = typeof payload?.detail === 'string'
       ? payload.detail
       : typeof payload?.error === 'string'
         ? payload.error.replaceAll('_', ' ')
-        : 'The user provisioning request failed.'
+        : 'The account request failed.'
     throw new Error(message)
   }
-  return provisioningResponseSchema.parse(payload)
+  return payload
 }
 
 export async function getAdminUserDirectory(): Promise<AdminUserDirectory> {
@@ -314,6 +322,15 @@ export async function resetEmployeeMfa(employeeId: string): Promise<EmployeeMfaR
   return mfaResetResponseSchema.parse(payload)
 }
 
+export async function sendEmployeePasswordReset(employeeId: string): Promise<EmployeePasswordResetResult> {
+  const response = await fetch(`/api/v1/admin/users/${employeeId}/password-reset`, {
+    body: JSON.stringify({}),
+    headers: await authHeaders(),
+    method: 'POST',
+  })
+  return passwordResetResponseSchema.parse(await parseApiResponse(response))
+}
+
 export async function getEmployeeRemovalPreview(employeeId: string): Promise<EmployeeRemovalPreview> {
   const { data, error } = await getSupabaseClient().rpc('get_employee_removal_preview', {
     target_employee_id: employeeId,
@@ -351,15 +368,16 @@ export async function provisionEmployeeAccount(employeeId: string, temporaryPass
     method: 'POST',
   })
   const payload = await parseApiResponse(response)
-  if (!payload.username || !payload.role || !payload.temporaryPassword || !payload.action) {
+  const parsed = provisioningResponseSchema.parse(payload)
+  if (!parsed.username || !parsed.role || !parsed.temporaryPassword || !parsed.action) {
     throw new Error('Provisioning response was incomplete.')
   }
   return {
-    action: payload.action,
-    displayName: payload.displayName ?? payload.username,
-    role: payload.role,
-    temporaryPassword: payload.temporaryPassword,
-    username: payload.username,
+    action: parsed.action,
+    displayName: parsed.displayName ?? parsed.username,
+    role: parsed.role,
+    temporaryPassword: parsed.temporaryPassword,
+    username: parsed.username,
   }
 }
 
@@ -372,7 +390,7 @@ export async function provisionMissingAccounts(): Promise<{
     headers: await authHeaders(),
     method: 'POST',
   })
-  const payload = await parseApiResponse(response)
+  const payload = provisioningResponseSchema.parse(await parseApiResponse(response))
   return {
     failures: payload.failures ?? [],
     provisioned: payload.provisioned ?? [],

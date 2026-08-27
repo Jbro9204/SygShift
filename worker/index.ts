@@ -334,6 +334,13 @@ function requireApprovedEmployeeEmail(environment: Environment, target: LoginEma
   return recipient
 }
 
+function maskEmailAddress(email: string): string {
+  const [localPart, domain] = email.split('@')
+  if (!localPart || !domain) return 'the employee’s approved personal email'
+  const visible = localPart.slice(0, Math.min(2, localPart.length))
+  return `${visible}${'*'.repeat(Math.max(3, localPart.length - visible.length))}@${domain}`
+}
+
 async function logEmailDelivery(
   environment: Environment,
   recipient: string,
@@ -880,6 +887,30 @@ export function buildWelcomeEmail(target: LoginEmailTarget, appUrl: string, supp
   }
 }
 
+function buildPasswordResetEmail(target: LoginEmailTarget, actionLink: string): NotificationJob['message'] {
+  const firstName = greetingName(target.displayName)
+  const safeFirstName = escapeHtml(firstName)
+  const safeActionLink = escapeHtml(actionLink)
+  return {
+    subject: 'Reset your SygShift password',
+    text: [
+      `Hello ${firstName},`,
+      'A SygShift administrator requested a secure password reset for your account.',
+      `Reset your password: ${actionLink}`,
+      'This single-use link expires after a short time. If you did not expect this message, contact Jordan Brown before taking action.',
+      'SygShift',
+      'Guardianship Security',
+    ].join('\n\n'),
+    html: `
+      <p>Hello ${safeFirstName},</p>
+      <p>A SygShift administrator requested a secure password reset for your account.</p>
+      <p><a href="${safeActionLink}">Reset your SygShift password</a></p>
+      <p>This single-use link expires after a short time. If you did not expect this message, contact Jordan Brown before taking action.</p>
+      <p><strong>SygShift</strong><br>Guardianship Security</p>
+    `,
+  }
+}
+
 async function sendLoginInstructions(
   environment: Environment,
   target: LoginEmailTarget,
@@ -1346,6 +1377,66 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       delivery,
       displayName: target.displayName,
       email: target.contactEmail,
+      requestId,
+      username: target.username,
+    })
+  }
+
+  const passwordResetMatch = /^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/password-reset$/i.exec(url.pathname)
+  if (passwordResetMatch) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+
+    const target = await callRpc<LoginEmailTarget>(
+      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+      'service_get_employee_login_email_target',
+      { target_employee_id: passwordResetMatch[1] },
+      admin.config.serviceRoleKey,
+    )
+    if (!target?.existingAuthUserId) {
+      throw new ApiError('employee_login_missing', 422, 'This employee does not have an active login account to reset.')
+    }
+    const recipient = requireApprovedEmployeeEmail(environment, target)
+    const appUrl = (environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl).replace(/\/+$/, '')
+    const generated = await supabaseJson<{ action_link?: string }>(`${admin.config.url}/auth/v1/admin/generate_link`, {
+      body: JSON.stringify({
+        email: target.authEmail,
+        redirect_to: `${appUrl}/account-security?mode=password-recovery`,
+        type: 'recovery',
+      }),
+      headers: {
+        apikey: admin.config.serviceRoleKey,
+        authorization: `Bearer ${admin.config.serviceRoleKey}`,
+        'content-type': 'application/json',
+      },
+      method: 'POST',
+    })
+    if (!generated.action_link) throw new ApiError('password_reset_link_failed', 502, 'A secure password-reset link could not be generated.')
+
+    const delivery = await sendAuditedEmail(environment, recipient, buildPasswordResetEmail(target, generated.action_link), {
+      notificationType: 'password_reset',
+      relatedRecordId: target.employeeId,
+      relatedRecordType: 'employee',
+    }, defaultSupportEmail)
+    if (delivery.suppressed.length > 0) throw new ApiError('email_recipient_suppressed', 409, 'The reset email was suppressed by the active recipient safeguards.')
+    if (delivery.failed.length > 0) throw new ApiError('email_delivery_failed', 502, delivery.failed[0].error)
+
+    const maskedEmail = maskEmailAddress(recipient)
+    await callRpc(
+      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+      'service_record_employee_password_reset',
+      {
+        target_actor_employee_id: admin.context.employee_id,
+        target_auth_user_id: target.existingAuthUserId,
+        target_delivery_email_masked: maskedEmail,
+        target_employee_id: target.employeeId,
+        target_request_id: requestId,
+      },
+      admin.config.serviceRoleKey,
+    )
+
+    return json({
+      displayName: target.displayName,
+      email: maskedEmail,
       requestId,
       username: target.username,
     })

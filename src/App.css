@@ -147,7 +147,9 @@
 .account-tabs {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  overflow: hidden;
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
   padding: 7px;
 }
 
@@ -334,17 +336,66 @@
 
 .account-photo-panel {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 24px;
+  gap: 20px;
   padding: 22px;
   box-shadow: none;
 }
 
+.account-photo-panel__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e8e1d5;
+}
+
+.account-photo-panel__heading p,
+.account-photo-current p,
+.account-photo-cropper__hint {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.account-photo-workspace {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.34fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 18px;
+}
+
+.account-photo-current,
+.account-photo-new {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 14px;
+  padding: 18px;
+  background: #fffdf9;
+  border: 1px solid #e1d7c8;
+  border-radius: 12px;
+}
+
+.account-photo-current {
+  justify-items: center;
+  text-align: center;
+}
+
+.account-photo-label {
+  justify-self: start;
+  color: #76531b;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .account-photo-panel__preview {
-  width: 120px;
-  height: 120px;
-  font-size: 30px;
+  width: 132px;
+  height: 132px;
+  font-size: 32px;
 }
 
 .account-photo-panel__body {
@@ -355,46 +406,97 @@
 
 .account-photo-cropper {
   display: grid;
-  max-width: 620px;
-  gap: 12px;
-  margin-top: 6px;
-  padding: 18px;
+  width: 100%;
+  gap: 14px;
+  padding: 16px;
   background: #f8f5ee;
   border: 1px solid #ddd2be;
-  border-radius: 10px;
+  border-radius: 12px;
 }
 
-.account-photo-cropper__frame {
+.account-photo-cropper__stage {
   position: relative;
-  width: min(260px, 100%);
+  width: min(380px, 100%);
   aspect-ratio: 1;
   overflow: hidden;
   margin: 0 auto;
-  background: #24211b;
-  border: 4px solid #d6a957;
-  border-radius: 50%;
+  touch-action: none;
+  cursor: grab;
+  background:
+    linear-gradient(45deg, #ece5d8 25%, transparent 25%, transparent 75%, #ece5d8 75%),
+    linear-gradient(45deg, #ece5d8 25%, #f8f5ee 25%, #f8f5ee 75%, #ece5d8 75%);
+  background-position: 0 0, 12px 12px;
+  background-size: 24px 24px;
+  border: 1px solid #cfc2ae;
+  border-radius: 12px;
+  user-select: none;
 }
 
-.account-photo-cropper__frame img {
+.account-photo-cropper__stage--dragging {
+  cursor: grabbing;
+}
+
+.account-photo-cropper__stage img {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: auto;
-  min-width: 100%;
-  height: auto;
-  min-height: 100%;
-  transform: translate(calc(-50% + var(--crop-x)), calc(-50% + var(--crop-y))) scale(var(--crop-zoom));
+  max-width: none;
+  pointer-events: none;
   transform-origin: center;
 }
 
-.account-photo-cropper label {
+.account-photo-cropper__guide {
+  position: absolute;
+  inset: 3px;
+  border: 3px solid #d6a957;
+  border-radius: 50%;
+  box-shadow: 0 0 0 999px rgb(28 27 23 / 33%), inset 0 0 0 1px rgb(255 255 255 / 70%);
+  pointer-events: none;
+}
+
+.account-photo-cropper__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.account-photo-cropper__controls label {
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
+  grid-template-columns: auto minmax(140px, 1fr);
+  min-width: min(360px, 100%);
   align-items: center;
   gap: 12px;
   color: #4b463d;
   font-size: 14px;
   font-weight: 750;
+}
+
+.account-photo-empty {
+  display: grid;
+  min-height: 290px;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 28px;
+  color: #5f574b;
+  background: #f8f5ee;
+  border: 1px dashed #cdbfa9;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.account-photo-empty:hover {
+  color: #3f2c0c;
+  background: #fbf4e6;
+  border-color: #c38b31;
+}
+
+.account-photo-empty span {
+  max-width: 300px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .account-feedback {
@@ -638,8 +740,14 @@
     grid-template-columns: 1fr;
   }
 
-  .account-photo-panel {
+  .account-photo-workspace {
     grid-template-columns: 1fr;
+  }
+
+  .account-photo-panel__heading,
+  .account-photo-cropper__controls {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .account-photo-panel__preview {
@@ -658,6 +766,20 @@
   }
 
   .account-device-row .quiet-danger-button {
+    width: 100%;
+  }
+
+  .user-account-security-button-stack {
+    grid-template-columns: 1fr;
+  }
+
+  .user-account-security-card--danger {
+    grid-template-columns: 1fr;
+  }
+
+  .user-account-security-card--danger button {
+    grid-column: 1;
+    grid-row: auto;
     width: 100%;
   }
 }
@@ -693,7 +815,7 @@
     padding: 16px;
   }
 
-  .account-photo-cropper label {
+  .account-photo-cropper__controls label {
     grid-template-columns: 1fr;
     gap: 4px;
   }
@@ -15877,45 +15999,74 @@
   text-align: right;
 }
 
-.user-account-security-actions {
+.user-account-security-grid {
   display: grid;
-  grid-template-columns: minmax(250px, 0.42fr) minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+}
+
+.user-account-security-card {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 10px;
   padding: 18px;
   background: #fffaf1;
   border: 1px solid #e8d9bf;
   border-radius: 12px;
 }
 
-.user-account-action-copy,
-.user-account-action-controls {
-  display: grid;
-  align-content: start;
-  gap: 12px;
+.user-account-security-card--status {
+  min-height: 100%;
+  background: #fbfaf7;
+  border-color: #ddd6c9;
 }
 
-.user-account-action-copy strong {
+.user-account-security-card--danger {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  background: #fff7f5;
+  border-color: #e2b9b2;
+}
+
+.user-account-security-card--danger .account-control-kicker,
+.user-account-security-card--danger h4,
+.user-account-security-card--danger p {
+  grid-column: 1;
+}
+
+.user-account-security-card--danger button {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+}
+
+.user-account-security-card > strong,
+.user-account-security-card h4 {
+  margin: 0;
   color: #2d2922;
   font-size: 18px;
 }
 
-.user-account-action-copy p {
+.user-account-security-card p {
   margin: 0;
   color: #6d6457;
   font-size: 13px;
   line-height: 1.5;
 }
 
-.user-account-button-row {
-  display: flex;
-  flex-wrap: wrap;
+.user-account-security-button-stack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px;
+  margin-top: 4px;
 }
 
-.user-account-button-row .primary-action,
-.user-account-button-row .secondary-button {
+.user-account-security-button-stack .primary-action,
+.user-account-security-button-stack .secondary-button {
+  width: 100%;
   min-height: 44px;
-  width: auto;
 }
 
 .user-account-onboarding-summary {
@@ -16980,7 +17131,7 @@
     grid-column: span 2;
   }
 
-  .user-account-security-actions,
+  .user-account-security-grid,
   .user-account-email-options {
     grid-template-columns: 1fr;
   }
@@ -17469,15 +17620,12 @@
     text-align: left;
   }
 
-  .user-account-button-row,
   .user-account-savebar,
   .user-account-savebar > div {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .user-account-button-row .primary-action,
-  .user-account-button-row .secondary-button,
   .user-account-savebar .primary-action,
   .user-account-savebar .secondary-button,
   .user-account-email-options .secondary-button {

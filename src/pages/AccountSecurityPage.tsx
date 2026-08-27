@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Copy, Download, Eye, EyeOff, KeyRound, Loader2, MessageSquareText, QrCode, ShieldCheck } from 'lucide-react'
 import {
   getSessionContext,
@@ -103,6 +103,7 @@ function storeTotpEnrollment(enrollment: MfaEnrollment | null): void {
 export function AccountSecurityPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const [searchParams] = useSearchParams()
   const [context, setContext] = useState<SessionContext | null>(null)
   const [factors, setFactors] = useState<MfaFactorSummary[]>([])
   const [enrollment, setEnrollment] = useState<MfaEnrollment | null>(null)
@@ -154,8 +155,9 @@ export function AccountSecurityPage() {
     : availableVerifiedFactors.length === 1
       ? availableVerifiedFactors[0]
       : null
-  const needsPassword = Boolean(context?.mustChangePassword)
-  const needsMfa = Boolean(context?.mfaRequired && !context.hasMfa)
+  const isPasswordRecovery = searchParams.get('mode') === 'password-recovery'
+  const needsPassword = Boolean(context?.mustChangePassword || isPasswordRecovery)
+  const needsMfa = Boolean(!isPasswordRecovery && context?.mfaRequired && !context.hasMfa)
   const passwordWaitingForMfa = needsPassword && needsMfa
   const isComplete = Boolean(context && !needsPassword && !needsMfa)
   const canRememberDevice = Boolean(
@@ -293,11 +295,11 @@ export function AccountSecurityPage() {
       const update = await getSupabaseClient().auth.updateUser({ password: submittedPassword })
       if (update.error) {
         if (isAlreadyCurrentPasswordError(update.error)) {
-          await markPasswordChangedWithRetry()
+          if (context?.mustChangePassword) await markPasswordChangedWithRetry()
         } else {
           throw new Error(update.error.message || 'The password could not be updated.')
         }
-      } else {
+      } else if (context?.mustChangePassword) {
         await markPasswordChangedWithRetry()
       }
 
@@ -308,6 +310,12 @@ export function AccountSecurityPage() {
       setShowPassword(false)
       setShowPasswordConfirmation(false)
       setCheckpointVersion((version) => version + 1)
+
+      if (isPasswordRecovery) {
+        setMessage('Password reset complete. Opening your account.')
+        navigate('/account', { replace: true })
+        return
+      }
 
       const nextNeedsMfa = nextContext.mfaRequired && !nextContext.hasMfa
       if (nextNeedsMfa) {
@@ -608,10 +616,11 @@ export function AccountSecurityPage() {
         <div className="security-card__heading">
           <div>
             <p className="eyebrow">Account security</p>
-            <h1 id="security-title">Finish securing your SygShift account.</h1>
+            <h1 id="security-title">{isPasswordRecovery ? 'Reset your SygShift password.' : 'Finish securing your SygShift account.'}</h1>
             <p>
-              This checkpoint keeps protected schedules, employee records, and import tools behind
-              verified access before the workspace opens.
+              {isPasswordRecovery
+                ? 'Choose a new private password for your account. The recovery link can be used only once.'
+                : 'This checkpoint keeps protected schedules, employee records, and administrative tools behind verified access before the workspace opens.'}
             </p>
           </div>
           <ShieldCheck aria-hidden="true" size={42} />
@@ -636,7 +645,9 @@ export function AccountSecurityPage() {
                   {passwordWaitingForMfa
                     ? 'Verify MFA first, then save your permanent password.'
                     : needsPassword
-                      ? 'Replace the temporary password with a stronger private password.'
+                      ? isPasswordRecovery
+                        ? 'Choose a new private password for your account.'
+                        : 'Replace the temporary password with a stronger private password.'
                       : 'Your password setup is complete.'}
                 </p>
               </div>
@@ -694,7 +705,7 @@ export function AccountSecurityPage() {
 
         {context && needsPassword && !needsMfa ? (
           <form className="security-panel" key={`password-${context.employeeId}-${checkpointVersion}`} onSubmit={handlePasswordUpdate}>
-            <h2>Create your permanent password</h2>
+            <h2>{isPasswordRecovery ? 'Choose a new password' : 'Create your permanent password'}</h2>
             <div className="security-form-grid">
               <div className="field-label">
                 <label htmlFor="new-password">New password</label>
