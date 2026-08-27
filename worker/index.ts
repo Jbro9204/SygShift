@@ -995,6 +995,188 @@ async function handleAccountMfaRecoveryApi(request: Request, environment: Enviro
   return errorJson('not_found', requestId, 404)
 }
 
+function verifiedImageType(bytes: Uint8Array, contentType: string): 'image/jpeg' | 'image/png' | null {
+  if (
+    contentType === 'image/png'
+    && bytes.length >= 8
+    && bytes[0] === 0x89
+    && bytes[1] === 0x50
+    && bytes[2] === 0x4e
+    && bytes[3] === 0x47
+    && bytes[4] === 0x0d
+    && bytes[5] === 0x0a
+    && bytes[6] === 0x1a
+    && bytes[7] === 0x0a
+  ) return 'image/png'
+  if (contentType === 'image/jpeg' && bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg'
+  }
+  return null
+}
+
+function storageObjectUrl(config: { url: string }, path: string): string {
+  return `${config.url}/storage/v1/object/employee-photos/${path.split('/').map(encodeURIComponent).join('/')}`
+}
+
+async function deleteStoredPhoto(
+  config: { serviceRoleKey: string; url: string },
+  path: string | null | undefined,
+): Promise<void> {
+  if (!path) return
+  const response = await fetch(storageObjectUrl(config, path), {
+    headers: {
+      apikey: config.serviceRoleKey,
+      authorization: `Bearer ${config.serviceRoleKey}`,
+    },
+    method: 'DELETE',
+  })
+  if (!response.ok && response.status !== 404) throw new Error('The previous profile photo could not be removed.')
+}
+
+async function handleMyAccountApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  const session = await requireAuthenticatedSession(request, environment)
+  const url = new URL(request.url)
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+
+  if (url.pathname === '/api/v1/account/photo') {
+    const currentPath = await callRpc<string | null>(
+      serviceConfig,
+      'service_get_employee_photo_path',
+      { target_employee_id: session.context.employee_id },
+      session.config.serviceRoleKey,
+    )
+
+    if (request.method === 'GET') {
+      if (!currentPath) return errorJson('profile_photo_not_found', requestId, 404, 'No profile photo is on file.')
+      const stored = await fetch(storageObjectUrl(session.config, currentPath), {
+        headers: {
+          apikey: session.config.serviceRoleKey,
+          authorization: `Bearer ${session.config.serviceRoleKey}`,
+        },
+      })
+      if (!stored.ok) return errorJson('profile_photo_not_found', requestId, 404, 'The profile photo could not be loaded.')
+      const headers = new Headers()
+      headers.set('cache-control', 'private, no-store')
+      headers.set('content-type', stored.headers.get('content-type') || 'application/octet-stream')
+      return new Response(stored.body, { headers })
+    }
+
+    if (request.method === 'DELETE') {
+      await requireMaintenanceWriteAccess(serviceConfig, 'user_accounts')
+      await callRpc(
+        serviceConfig,
+        'service_update_employee_photo',
+        { target_employee_id: session.context.employee_id, target_photo_path: null },
+        session.config.serviceRoleKey,
+      )
+      await deleteStoredPhoto(session.config, currentPath).catch(() => undefined)
+      return json({ removed: true, requestId })
+    }
+
+    if (request.method !== 'PUT') return errorJson('method_not_allowed', requestId, 405)
+    await requireMaintenanceWriteAccess(serviceConfig, 'user_accounts')
+    const contentLength = Number(request.headers.get('content-length') || 0)
+    if (contentLength > 5 * 1024 * 1024) throw new ApiError('profile_photo_too_large', 413, 'Choose a JPG or PNG photo no larger than 5 MB.')
+    const suppliedType = request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() || ''
+    const buffer = await request.arrayBuffer()
+    if (buffer.byteLength === 0 || buffer.byteLength > 5 * 1024 * 1024) {
+      throw new ApiError('profile_photo_too_large', 413, 'Choose a JPG or PNG photo no larger than 5 MB.')
+    }
+    const imageType = verifiedImageType(new Uint8Array(buffer), suppliedType)
+    if (!imageType) throw new ApiError('profile_photo_invalid', 422, 'The selected file must be a valid JPG or PNG image.')
+
+    const extension = imageType === 'image/png' ? 'png' : 'jpg'
+    const newPath = `${session.context.employee_id}/${crypto.randomUUID()}.${extension}`
+    const uploaded = await fetch(storageObjectUrl(session.config, newPath), {
+      body: buffer,
+      headers: {
+        apikey: session.config.serviceRoleKey,
+        authorization: `Bearer ${session.config.serviceRoleKey}`,
+        'content-type': imageType,
+        'x-upsert': 'false',
+      },
+      method: 'POST',
+    })
+    if (!uploaded.ok) throw new ApiError('profile_photo_upload_failed', 502, 'The profile photo could not be saved.')
+
+    try {
+      await callRpc(
+        serviceConfig,
+        'service_update_employee_photo',
+        { target_employee_id: session.context.employee_id, target_photo_path: newPath },
+        session.config.serviceRoleKey,
+      )
+    } catch (error) {
+      await deleteStoredPhoto(session.config, newPath).catch(() => undefined)
+      throw error
+    }
+    await deleteStoredPhoto(session.config, currentPath).catch(() => undefined)
+    return json({ saved: true, requestId })
+  }
+
+  if (url.pathname === '/api/v1/account/email-verification/request') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    await requireMaintenanceWriteAccess(serviceConfig, 'user_accounts')
+    const body = await readJsonBody(request)
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+      throw new ApiError('invalid_personal_email', 422, 'Enter a valid personal email address.')
+    }
+    if (isBlockedEmailRecipient(environment, email)) {
+      throw new ApiError('company_email_not_allowed', 422, 'Use a personal email address. Company-domain delivery is currently disabled.')
+    }
+    const rawToken = `${crypto.randomUUID()}${crypto.randomUUID().replaceAll('-', '')}`
+    const tokenHash = await sha256Hex(rawToken)
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+    await callRpc(
+      serviceConfig,
+      'service_create_email_verification',
+      {
+        target_email: email,
+        target_employee_id: session.context.employee_id,
+        target_expires_at: expiresAt,
+        target_token_hash: tokenHash,
+      },
+      session.config.serviceRoleKey,
+    )
+    const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl
+    const verificationUrl = `${appUrl}/account?verify=${encodeURIComponent(rawToken)}`
+    const delivery = await sendAuditedEmail(environment, email, {
+      subject: 'Verify your SygShift personal email',
+      text: `Confirm this personal email for your SygShift account: ${verificationUrl}\n\nThis link expires in one hour. If you did not request this change, no action is required.`,
+    }, {
+      notificationType: 'personal_email_verification',
+      relatedRecordId: session.context.employee_id,
+      relatedRecordType: 'employee',
+    }, defaultSupportEmail)
+    if (delivery.failed.length) throw new ApiError('email_delivery_failed', 502, delivery.failed[0].error)
+    if (delivery.suppressed.length) throw new ApiError('email_recipient_suppressed', 409, 'That email address cannot receive SygShift messages right now.')
+    return json({ expiresAt, requestId, sent: true })
+  }
+
+  if (url.pathname === '/api/v1/account/email-verification/confirm') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const body = await readJsonBody(request)
+    const token = typeof body.token === 'string' ? body.token.trim() : ''
+    if (token.length < 40) throw new ApiError('invalid_verification_token', 422, 'This verification link is invalid or has expired.')
+    const verified = await callRpc<{ employeeId?: string }>(
+      serviceConfig,
+      'service_confirm_email_verification',
+      {
+        target_employee_id: session.context.employee_id,
+        target_token_hash: await sha256Hex(token),
+      },
+      session.config.serviceRoleKey,
+    )
+    if (verified.employeeId !== session.context.employee_id) {
+      throw new ApiError('verification_account_mismatch', 403, 'Sign in to the account that requested this email change.')
+    }
+    return json({ requestId, verified: true })
+  }
+
+  return errorJson('not_found', requestId, 404)
+}
+
 async function handleAdminUsersApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
   const url = new URL(request.url)
   const isNewUserInviteRequest = url.pathname === '/api/v1/admin/users/login-emails'
@@ -1534,11 +1716,32 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
   const failed: Array<{ id: string, error: string }> = []
   const suppressed: string[] = []
 
-  const deliverJobs = async (jobs: NotificationJob[]) => {
+  const deliverJobs = async (jobs: NotificationJob[], respectEmployeePreferences = false) => {
     for (const job of jobs) {
       try {
-        const recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
-        if (recipients.length === 0) throw new Error('No deliverable recipients were found.')
+        let recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
+        if (respectEmployeePreferences && recipients.length > 0) {
+          recipients = await callRpc<string[]>(
+            { serviceRoleKey: config.serviceRoleKey, url: config.url },
+            'service_filter_notification_recipients',
+            {
+              target_aggregate_id: job.aggregateId ?? null,
+              target_message_type: job.messageType ?? 'outbox_notification',
+              target_recipients: recipients,
+            },
+            config.serviceRoleKey,
+          )
+        }
+        if (recipients.length === 0) {
+          await callRpc<unknown>(
+            { serviceRoleKey: config.serviceRoleKey, url: config.url },
+            'service_mark_notification_suppressed',
+            { target_notification_id: job.id, target_reason: 'Suppressed — Employee Preference' },
+            config.serviceRoleKey,
+          )
+          suppressed.push(job.id)
+          continue
+        }
 
         const delivery = await sendAuditedEmail(environment, recipients, job.message, {
           notificationType: job.messageType ?? 'outbox_notification',
@@ -1585,7 +1788,7 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
     { target_limit: limit },
     config.serviceRoleKey,
   )
-  await deliverJobs(generalJobs)
+  await deliverJobs(generalJobs, true)
 
   return {
     delivered,
@@ -1670,6 +1873,22 @@ export default {
         response = readiness(environment, requestId)
         if (request.method === 'HEAD') {
           response = new Response(null, { headers: response.headers, status: response.status })
+        }
+      }
+    } else if (
+      url.pathname === '/api/v1/account/photo'
+      || url.pathname.startsWith('/api/v1/account/email-verification/')
+    ) {
+      try {
+        response = await handleMyAccountApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('account_request_failed', requestId, 500, 'Your account request could not be completed.')
         }
       }
     } else if (url.pathname.startsWith('/api/v1/account/mfa-recovery')) {

@@ -34,6 +34,10 @@ describe('central access policy', () => {
     expect(canAccessRoute('/account-security', session([]))).toBe(true)
   })
 
+  it('allows every signed-in employee to manage their own account', () => {
+    expect(canAccessRoute('/account', session([]))).toBe(true)
+  })
+
   it('allows the Accountability Tracker only with an effective accountability permission', () => {
     expect(canAccessRoute('/time/accountability', session(['accountability.view']))).toBe(true)
     expect(canAccessRoute('/time/accountability', session(['accountability.manage']))).toBe(true)

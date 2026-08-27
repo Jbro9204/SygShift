@@ -478,6 +478,9 @@ describe('Cloudflare Worker boundary', () => {
           text: 'A shift is available.',
         },
       }]), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(['jbrown@example.com']), {
+        headers: { 'content-type': 'application/json' },
+      }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
         headers: { 'content-type': 'application/json' },
       }))
@@ -500,7 +503,7 @@ describe('Cloudflare Worker boundary', () => {
     )
     const payload = await response.json() as { delivered: string[]; failed: unknown[]; processed: number; requestedBy: string }
 
-    expect(response.status).toBe(200)
+    expect(response.status, JSON.stringify(payload)).toBe(200)
     expect(payload).toMatchObject({
       delivered: ['20000000-0000-4000-8000-000000000001'],
       failed: [],

@@ -23,6 +23,7 @@ export const scheduleRoutePermissions = [
 
 export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = {
   '/': { anyOf: ['operations.view'] },
+  '/account': { anyOf: [] },
   '/account-security': { anyOf: [] },
   '/actions': { anyOf: ['actions.self.view'] },
   '/schedule': { anyOf: scheduleRoutePermissions },
@@ -72,6 +73,6 @@ export function canAccessRoute(
   session: Pick<SessionContext, 'permissions'> | null | undefined,
 ): boolean {
   const policy = routeAccessPolicies[pathname]
-  if (pathname === '/account-security') return Boolean(policy)
+  if (pathname === '/account' || pathname === '/account-security') return Boolean(policy)
   return policy ? hasAnyEffectivePermission(session, policy.anyOf) : false
 }

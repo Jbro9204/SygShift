@@ -18,6 +18,7 @@ import { formatOperationalDate, formatOperationalTime, lastCompletedPayrollWeek 
 import { MaintenanceNotice, MaintenanceUnavailablePanel } from './MaintenanceNotice'
 import { getMaintenanceStatus, maintenanceFeatureForPath } from '../data/maintenance'
 import { deriveSystemServiceStatus, getSystemReadiness } from '../data/systemStatus'
+import { getMyAccount, getMyAccountPhoto } from '../data/myAccount'
 import { SystemStatusIndicator } from './SystemStatusIndicator'
 
 const INACTIVITY_WARNING_MS = 25 * 60 * 1000
@@ -100,6 +101,8 @@ export function AppShell() {
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [authMessage, setAuthMessage] = useState<string | null>(null)
   const [logoutWarningRemaining, setLogoutWarningRemaining] = useState<number | null>(null)
+  const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(null)
+  const [accountRefreshVersion, setAccountRefreshVersion] = useState(0)
   const activeMutationCount = useIsMutating()
   const location = useLocation()
   const navigate = useNavigate()
@@ -279,6 +282,7 @@ export function AppShell() {
     })
 
     const refreshSecurityContext = () => {
+      setAccountRefreshVersion((current) => current + 1)
       void loadSessionContext(false)
     }
     window.addEventListener(SESSION_CONTEXT_REFRESH_EVENT, refreshSecurityContext)
@@ -289,6 +293,30 @@ export function AppShell() {
       window.removeEventListener(SESSION_CONTEXT_REFRESH_EVENT, refreshSecurityContext)
     }
   }, [])
+
+  useEffect(() => {
+    let active = true
+    let objectUrl: string | null = null
+
+    setAccountPhotoUrl(null)
+    if (!sessionContext?.employeeId) return () => { active = false }
+
+    void (async () => {
+      try {
+        const account = await getMyAccount()
+        if (!account.profile.hasPhoto) return
+        objectUrl = URL.createObjectURL(await getMyAccountPhoto())
+        if (active) setAccountPhotoUrl(objectUrl)
+      } catch {
+        if (active) setAccountPhotoUrl(null)
+      }
+    })()
+
+    return () => {
+      active = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [accountRefreshVersion, sessionContext?.employeeId])
 
   async function handleSignOut() {
     setAuthMessage(null)
@@ -461,13 +489,15 @@ export function AppShell() {
 
           {sessionContext ? (
             <div className="user-menu">
-              <UserCircle aria-hidden="true" size={22} />
+              <span className="user-menu__avatar" aria-hidden="true">
+                {accountPhotoUrl ? <img alt="" src={accountPhotoUrl} /> : <UserCircle size={22} />}
+              </span>
               <div>
                 <strong>{sessionContext.displayName}</strong>
                 <span>@{sessionContext.username}</span>
               </div>
-              <Link className="secondary-button secondary-button--small" to="/account-security">
-                Security
+              <Link className="secondary-button secondary-button--small" to="/account">
+                My Account
               </Link>
               <button className="secondary-button secondary-button--small" onClick={handleSignOut} type="button">
                 <LogOut aria-hidden="true" size={17} />

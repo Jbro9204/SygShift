@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 08/27/2026
 
+### My Account self-service workspace
+
+- Added a dedicated My Account workspace for every signed-in employee with focused Profile & Contact, Employment, Security, and Notifications tabs.
+- Moved the normal account-security entry point into My Account while preserving the protected first-login and MFA checkpoint route.
+- Added audited self-service updates for preferred name, personal email, and mobile phone; company email and employment records remain read-only.
+- Added private profile-photo upload, replacement, and removal with JPEG/PNG validation, a 5 MB limit, immediate header refresh, and protected object storage.
+- Added personal-email verification and employee-controlled email preferences while preserving mandatory operational call-off delivery.
+- Consolidated password, authenticator, trusted-device, session, recovery-code, and security-activity controls into the Security tab with confirmation and audit safeguards.
+- Applied targeted production migration `20260827110000_my_account_self_service.sql`; all required RPCs, the verification column, and the private photo bucket were verified remotely.
+- Full validation passed with type checking, linting, 87 test files / 442 tests, access-control inventory, and the production build.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-27-2026_MY_ACCOUNT.md`.
+
 ### Sites & Posts directory redesign
 
 - Rebuilt Sites & Posts as a compact, full-width operational directory with one expanded site at a time.
