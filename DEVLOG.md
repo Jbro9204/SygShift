@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 08/26/2026
 
+### User Accounts redesign
+
+- Reorganized User Accounts into a compact summary, focused account filters, separate bulk actions, and a responsive five-column employee account list.
+- Rebuilt the employee account workspace into Profile, Login & Security, and Onboarding tabs while preserving every existing account field, security action, onboarding action, permission check, and backend operation.
+- Added explicit profile dirty-state handling, close/tab-change confirmation, and a sticky save bar without introducing autosave.
+- Kept MFA reset, trusted-device revocation, password, account-status, invite, welcome-email, and login-instruction actions independent from profile saving.
+- Moved sensitive separation and deletion controls into an administrator-only collapsed area and retained the Licensing Center boundary for credentials.
+- Added responsive account cards, standardized modal and button layout, and expanded regression coverage.
+- No database migration or account-data change was required.
+- Full release validation and production version are recorded in `docs/changelogs/CHANGELOG_08-26-2026_USER_ACCOUNTS_REDESIGN.md`.
+
 ### Role and Employee Permission Center
 
 - Rebuilt Roles & Permissions into two focused workspaces: **Role & Group Permissions** and **Employee Permissions**.

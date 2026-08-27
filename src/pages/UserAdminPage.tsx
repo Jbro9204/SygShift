@@ -139,30 +139,6 @@ function formatAccountDateTime(value: string | null): string {
   return formatOperationalDateTime(value)
 }
 
-function AccountActivitySummary({ user }: { user: AdminUser }) {
-  if (!user.account) {
-    return (
-      <div className="account-activity">
-        <AccountStatusBadge user={user} />
-        <span className="account-activity__line">Activation: Not created</span>
-        <span className="account-activity__line">Last login: Never</span>
-      </div>
-    )
-  }
-
-  return (
-    <div className="account-activity">
-      <AccountStatusBadge user={user} />
-      <span className="account-activity__line">
-        Activation: {user.account.activatedAt ? formatAccountDateTime(user.account.activatedAt) : 'Pending'}
-      </span>
-      <span className="account-activity__line">
-        Last login: {formatAccountDateTime(user.account.lastSignInAt)}
-      </span>
-    </div>
-  )
-}
-
 function AccountActivityPanel({ user }: { user: AdminUser }) {
   if (!user.account) {
     return (
@@ -220,17 +196,23 @@ function EmployeeForm({
   canEditBasic,
   canSeparate,
   employee,
+  formId,
+  onDirty,
   onCancel,
   onSubmit,
   pending,
+  showActions = true,
 }: {
   canEditAdminRole: boolean
   canEditBasic: boolean
   canSeparate: boolean
   employee?: AdminUser
+  formId?: string
+  onDirty?: () => void
   onCancel: () => void
   onSubmit: (payload: EmployeeMutationInput) => void
   pending: boolean
+  showActions?: boolean
 }) {
   const canEditThisProfile = canEditBasic
     && (canEditAdminRole || employee?.role !== 'admin')
@@ -243,7 +225,7 @@ function EmployeeForm({
   }
 
   return (
-    <form className="request-form user-admin-form" onSubmit={submit}>
+    <form className="request-form user-admin-form" id={formId} onChange={onDirty} onSubmit={submit}>
       <div className="form-grid form-grid--three">
         <label><span>First name</span><input defaultValue={employee?.firstName} disabled={!canEditThisProfile} name="firstName" required /></label>
         <label><span>Middle name</span><input defaultValue={employee?.middleName ?? ''} disabled={!canEditThisProfile} name="middleName" /></label>
@@ -298,12 +280,14 @@ function EmployeeForm({
         <label><span>Personal email</span><input defaultValue={employee?.personalEmail ?? ''} disabled={!canEditThisProfile} name="personalEmail" type="email" /></label>
         <label><span>Company email</span><input defaultValue={employee?.companyEmail ?? ''} disabled={!canEditThisProfile} name="companyEmail" type="email" /></label>
       </div>
-      <div className="modal-actions">
-        <button className="secondary-button" onClick={onCancel} type="button">Cancel</button>
-        <button className="primary-action" disabled={pending || !canEditThisProfile} type="submit">
-          {pending ? 'Saving…' : employee ? 'Save employee' : 'Create employee'}
-        </button>
-      </div>
+      {showActions ? (
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onCancel} type="button">Cancel</button>
+          <button className="primary-action" disabled={pending || !canEditThisProfile} type="submit">
+            {pending ? 'Saving…' : employee ? 'Save employee' : 'Create employee'}
+          </button>
+        </div>
+      ) : null}
     </form>
   )
 }
@@ -328,6 +312,10 @@ function ManageUserModal({
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
+  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'onboarding'>('profile')
+  const [profileDirty, setProfileDirty] = useState(false)
+  const [profileFormVersion, setProfileFormVersion] = useState(0)
+  const [profileSaveMessage, setProfileSaveMessage] = useState<string | null>(null)
   const [temporaryPassword, setTemporaryPassword] = useState('')
   const [lastCredential, setLastCredential] = useState<ProvisioningCredential | null>(null)
   const [loginEmailMessage, setLoginEmailMessage] = useState<string | null>(null)
@@ -341,6 +329,8 @@ function ManageUserModal({
   const updateMutation = useMutation({
     mutationFn: (payload: EmployeeMutationInput) => updateEmployee({ ...payload, employeeId: employee.id }),
     onSuccess: async (updatedEmployee) => {
+      setProfileDirty(false)
+      setProfileSaveMessage('Employee profile saved.')
       queryClient.setQueryData<AdminUserDirectory>(['admin-user-directory'], (current) =>
         replaceDirectoryUser(current, updatedEmployee),
       )
@@ -407,6 +397,7 @@ function ManageUserModal({
     || loginEmailMutation.isPending
     || welcomeEmailMutation.isPending
   const employeeFormKey = [
+    profileFormVersion,
     employee.id,
     employee.firstName,
     employee.middleName ?? '',
@@ -420,218 +411,252 @@ function ManageUserModal({
     employee.personalEmail ?? '',
     employee.companyEmail ?? '',
   ].join('|')
+  const profileFormId = `employee-profile-${employee.id}`
+  const canEditThisProfile = canEditBasic
+    && (canEditAdminRole || employee.role !== 'admin')
+    && (canSeparate || employee.status !== 'separated')
+
+  function closeWorkspace() {
+    if (profileDirty && !window.confirm('Discard the unsaved employee profile changes?')) return
+    onClose()
+  }
+
+  function chooseTab(tab: typeof activeTab) {
+    if (tab === activeTab) return
+    if (profileDirty && !window.confirm('Discard the unsaved employee profile changes before changing sections?')) return
+    if (profileDirty) {
+      setProfileDirty(false)
+      setProfileFormVersion((version) => version + 1)
+    }
+    setActiveTab(tab)
+  }
+
+  function discardProfileChanges() {
+    setProfileDirty(false)
+    setProfileSaveMessage(null)
+    setProfileFormVersion((version) => version + 1)
+  }
 
   return (
     <ModalDialog
       busy={modalBusy}
       busyLabel="Updating employee record..."
+      className="modal-dialog--user-account"
       description={`${employee.employeeNumber ?? 'Employee ID pending'} · Permanent username: @${employee.username}${employee.jobTitle ? ` · ${employee.jobTitle}` : ''}`}
-      onClose={onClose}
-      title={`Manage ${employee.displayName}`}
+      onClose={closeWorkspace}
+      title={`Employee account: ${employee.displayName}`}
     >
-      <div className="user-admin-modal-grid">
-        <section aria-labelledby="employee-profile-title">
-          <h3 id="employee-profile-title">Employee profile</h3>
-          <EmployeeForm
-            canEditAdminRole={canEditAdminRole}
-            canEditBasic={canEditBasic}
-            canSeparate={canSeparate}
-            employee={employee}
-            key={employeeFormKey}
-            onCancel={onClose}
-            onSubmit={(payload) => updateMutation.mutate(payload)}
-            pending={updateMutation.isPending}
-          />
-          {updateMutation.isError ? <div className="inline-alert" role="alert">{updateMutation.error.message}</div> : null}
-          <p className="form-note">
-            {canEditBasic
-              ? 'Credential updates are handled in Directory so schedulers can maintain qualification records without account-security access.'
-              : 'This access level can review user records, but cannot edit employee profile details.'}
-          </p>
-        </section>
-
-        <section className="account-control-panel" aria-labelledby="account-control-title">
-          <h3 id="account-control-title">Login access</h3>
-          {!canManageLogin ? (
-            <div className="account-control-card">
-              <AccountStatusBadge user={employee} />
-              <AccountActivityPanel user={employee} />
-              <p>This permission level can view account state, but cannot create, reset, or disable login access.</p>
-            </div>
-          ) : null}
-          {canManageLogin ? (
-          <div className="account-control-card">
+      <div className="user-account-workspace">
+        <section className="user-account-snapshot" aria-label="Selected employee account summary">
+          <div>
+            <span>Employee</span>
+            <strong>{employee.displayName}</strong>
+          </div>
+          <div>
+            <span>Employee ID</span>
+            <strong>{employee.employeeNumber ?? 'Pending'}</strong>
+          </div>
+          <div>
+            <span>Username</span>
+            <strong>@{employee.username}</strong>
+          </div>
+          <div>
+            <span>Role</span>
+            <strong>{roleLabels[employee.role]}</strong>
+          </div>
+          <div>
+            <span>Account</span>
             <AccountStatusBadge user={employee} />
-            <AccountActivityPanel user={employee} />
-            <p>
-              {employee.accountStatus === 'not_created'
-                ? 'Create a login when this employee is ready to access SygShift.'
-                : employee.accountStatus === 'disabled'
-                  ? 'The employee record remains for history, but login access is blocked.'
-                  : 'The account can sign in. Temporary password resets require a new password change.'}
-            </p>
-            <label>
-              <span>Temporary password override</span>
-              <input
-                autoComplete="new-password"
-                onChange={(event) => setTemporaryPassword(event.target.value)}
-                placeholder="Leave blank to generate securely"
-                type="password"
-                disabled={!canManageLogin}
-                value={temporaryPassword}
-              />
-            </label>
-            <button
-              className="primary-action"
-              disabled={!canManageLogin || provisionMutation.isPending || employee.status !== 'active'}
-              onClick={() => provisionMutation.mutate()}
-              type="button"
-            >
-              <KeyRound aria-hidden="true" size={18} />
-              {employee.accountStatus === 'not_created' ? 'Create login' : 'Reset temporary password'}
-            </button>
-            {employee.account ? (
-              <button
-                className="secondary-button"
-                disabled={!canManageLogin || accountStateMutation.isPending}
-                onClick={() => accountStateMutation.mutate(employee.accountStatus !== 'disabled')}
-                type="button"
-              >
-                <LockKeyhole aria-hidden="true" size={18} />
-                {employee.accountStatus === 'disabled' ? 'Enable login' : 'Disable login'}
-              </button>
-            ) : null}
-            {employee.account && (employee.account.trustedDeviceCount ?? 0) > 0 ? (
-              <button
-                className="secondary-button"
-                disabled={!canManageLogin || revokeTrustedDevicesMutation.isPending}
-                onClick={() => revokeTrustedDevicesMutation.mutate()}
-                type="button"
-              >
-                <ShieldAlert aria-hidden="true" size={18} />
-                Revoke remembered devices ({employee.account.trustedDeviceCount})
-              </button>
-            ) : null}
-            {employee.account ? (
-              confirmingMfaReset ? (
-                <div className="mfa-reset-confirmation" role="alert">
-                  <strong>Reset MFA for {employee.displayName}?</strong>
-                  <p>Their authenticator enrollment and remembered devices will be removed. Their password, employee record, and history will not change.</p>
-                  <div className="mfa-reset-confirmation__actions">
-                    <button className="secondary-button" disabled={resetMfaMutation.isPending} onClick={() => setConfirmingMfaReset(false)} type="button">Cancel</button>
-                    <button className="secondary-button danger-button" disabled={resetMfaMutation.isPending} onClick={() => resetMfaMutation.mutate()} type="button">
-                      <RotateCcw aria-hidden="true" size={18} /> {resetMfaMutation.isPending ? 'Resetting MFA…' : 'Confirm MFA reset'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  className="secondary-button"
-                  disabled={!canManageLogin || resetMfaMutation.isPending}
-                  onClick={() => {
-                    setMfaResetMessage(null)
-                    setConfirmingMfaReset(true)
-                  }}
-                  type="button"
-                >
-                  <RotateCcw aria-hidden="true" size={18} /> Reset MFA setup
-                </button>
-              )
-            ) : null}
-            {employee.status !== 'active' ? <small>Only active employees can receive login accounts.</small> : null}
           </div>
-          ) : null}
-
-          {lastCredential ? (
-            <div className="temporary-password-card" role="status">
-              <strong>Temporary password created</strong>
-              <p>Copy or download it now. It will not be shown again.</p>
-              <code>{lastCredential.temporaryPassword}</code>
-              <button className="secondary-button" onClick={() => downloadCredentialCsv([lastCredential], `${lastCredential.username}-temporary-login.csv`)} type="button">
-                <Download aria-hidden="true" size={18} /> Download one-user CSV
-              </button>
-            </div>
-          ) : null}
-
-          {loginEmailMessage ? <div className="form-feedback form-feedback--success" role="status">{loginEmailMessage}</div> : null}
-          {provisionMutation.isError ? <div className="inline-alert" role="alert">{provisionMutation.error.message}</div> : null}
-          {loginEmailMutation.isError ? <div className="inline-alert" role="alert">{loginEmailMutation.error.message}</div> : null}
-          {accountStateMutation.isError ? <div className="inline-alert" role="alert">{accountStateMutation.error.message}</div> : null}
-          {trustedDeviceMessage ? <div className="form-feedback form-feedback--success" role="status">{trustedDeviceMessage}</div> : null}
-          {mfaResetMessage ? <div className="form-feedback form-feedback--success" role="status">{mfaResetMessage}</div> : null}
-          {revokeTrustedDevicesMutation.isError ? <div className="inline-alert" role="alert">{revokeTrustedDevicesMutation.error.message}</div> : null}
-          {resetMfaMutation.isError ? <div className="inline-alert" role="alert">{resetMfaMutation.error.message}</div> : null}
-
-          {canSendNewUserInvites ? (
-          <div className="account-control-card account-control-card--welcome">
-            <div>
-              <span className="account-control-kicker">New user invites</span>
-              <h4>Send approved onboarding emails</h4>
-            </div>
-            <p>
-              Welcome emails introduce SygShift. Login instructions prepare access and deliver a
-              one-time temporary password through the approved branded template.
-            </p>
-            <p>
-              SygShift automatically includes authenticator setup only when this employee’s
-              effective access requires MFA.
-            </p>
-            <p>
-              Delivery email: <strong>{deliveryEmail ?? 'No approved email available'}</strong>
-            </p>
-            <button
-              className="secondary-button"
-              disabled={loginEmailMutation.isPending || employee.status !== 'active' || !deliveryEmail}
-              onClick={() => loginEmailMutation.mutate()}
-              type="button"
-            >
-              <Mail aria-hidden="true" size={18} />
-              {loginEmailMutation.isPending ? 'Sending instructions…' : 'Email login instructions'}
-            </button>
-            <button
-              className="secondary-button"
-              disabled={welcomeEmailMutation.isPending || employee.status !== 'active' || !deliveryEmail}
-              onClick={() => welcomeEmailMutation.mutate()}
-              type="button"
-            >
-              <Mail aria-hidden="true" size={18} />
-              {welcomeEmailMutation.isPending ? 'Sending welcome…' : 'Send welcome email'}
-            </button>
-            {employee.status !== 'active' ? <small>Only active employees can receive welcome emails.</small> : null}
-            {!deliveryEmail ? (
-              <small>
-                Add a personal email before sending. SygShift is not sending to @guardianshipsecurity.net while company delivery is blocked.
-              </small>
-            ) : null}
-          </div>
-          ) : null}
-
-          {welcomeEmailMessage ? <div className="form-feedback form-feedback--success" role="status">{welcomeEmailMessage}</div> : null}
-          {welcomeEmailMutation.isError ? <div className="inline-alert" role="alert">{welcomeEmailMutation.error.message}</div> : null}
-
-          {canDeleteUsers ? (
-            <div className="account-control-card account-control-card--danger">
-              <div>
-                <span className="account-control-kicker">Admin only</span>
-                <h4>Remove separated employee</h4>
-              </div>
-              <p>
-                Removes the employee from working lists and disables access. Payroll, schedule, and audit
-                history remains intact so past records are not damaged.
-              </p>
-              <button
-                className="secondary-button"
-                disabled={employee.status !== 'separated'}
-                onClick={() => setRemovingEmployee(true)}
-                type="button"
-              >
-                <Trash2 aria-hidden="true" size={18} />
-                Review removal
-              </button>
-              {employee.status !== 'separated' ? <small>Separate the employee before removal is available.</small> : null}
-            </div>
-          ) : null}
         </section>
+
+        <nav className="user-account-tabs" aria-label="Employee account sections">
+          <button aria-current={activeTab === 'profile' ? 'page' : undefined} className={activeTab === 'profile' ? 'is-active' : ''} onClick={() => chooseTab('profile')} type="button">Profile</button>
+          <button aria-current={activeTab === 'security' ? 'page' : undefined} className={activeTab === 'security' ? 'is-active' : ''} onClick={() => chooseTab('security')} type="button">Login &amp; Security</button>
+          <button aria-current={activeTab === 'onboarding' ? 'page' : undefined} className={activeTab === 'onboarding' ? 'is-active' : ''} onClick={() => chooseTab('onboarding')} type="button">Onboarding</button>
+        </nav>
+
+        {activeTab === 'profile' ? (
+          <section className="user-account-tab-panel user-account-profile" aria-labelledby="employee-profile-title">
+            <div className="user-account-section-heading">
+              <div>
+                <span className="account-control-kicker">Employee record</span>
+                <h3 id="employee-profile-title">Profile and employment</h3>
+              </div>
+              <p>Update legal identity, contact information, role, and employment status.</p>
+            </div>
+            <EmployeeForm
+              canEditAdminRole={canEditAdminRole}
+              canEditBasic={canEditBasic}
+              canSeparate={canSeparate}
+              employee={employee}
+              formId={profileFormId}
+              key={employeeFormKey}
+              onCancel={discardProfileChanges}
+              onDirty={() => {
+                setProfileDirty(true)
+                setProfileSaveMessage(null)
+              }}
+              onSubmit={(payload) => updateMutation.mutate(payload)}
+              pending={updateMutation.isPending}
+              showActions={false}
+            />
+            {profileSaveMessage ? <div className="form-feedback form-feedback--success" role="status">{profileSaveMessage}</div> : null}
+            {updateMutation.isError ? <div className="inline-alert" role="alert">{updateMutation.error.message}</div> : null}
+            <p className="form-note">
+              {canEditBasic
+                ? 'Credential updates are handled in Directory so schedulers can maintain qualification records without account-security access.'
+                : 'This access level can review user records, but cannot edit employee profile details.'}
+            </p>
+            {canDeleteUsers ? (
+              <details className="user-account-employment-admin">
+                <summary>Employment and removal controls</summary>
+                <div className="account-control-card account-control-card--danger">
+                  <div>
+                    <span className="account-control-kicker">Admin only</span>
+                    <h4>Remove separated employee</h4>
+                  </div>
+                  <p>
+                    Removes the employee from working lists and disables access. Payroll, schedule, and audit
+                    history remains intact so past records are not damaged.
+                  </p>
+                  <button
+                    className="secondary-button"
+                    disabled={employee.status !== 'separated'}
+                    onClick={() => setRemovingEmployee(true)}
+                    type="button"
+                  >
+                    <Trash2 aria-hidden="true" size={18} />
+                    Review removal
+                  </button>
+                  {employee.status !== 'separated' ? <small>Separate the employee before removal is available.</small> : null}
+                </div>
+              </details>
+            ) : null}
+          </section>
+        ) : null}
+
+        {activeTab === 'security' ? (
+          <section className="user-account-tab-panel" aria-labelledby="account-control-title">
+            <div className="user-account-section-heading">
+              <div>
+                <span className="account-control-kicker">Authentication</span>
+                <h3 id="account-control-title">Login &amp; Security</h3>
+              </div>
+              <p>Review account activity and use audited security actions without changing the employee profile.</p>
+            </div>
+            <AccountActivityPanel user={employee} />
+            <div className="user-account-security-actions">
+              <div className="user-account-action-copy">
+                <AccountStatusBadge user={employee} />
+                <strong>{employee.accountStatus === 'not_created' ? 'Login has not been created' : employee.accountStatus === 'disabled' ? 'Login is disabled' : 'Login is active'}</strong>
+                <p>{canManageLogin ? 'Security actions below take effect immediately and are recorded separately from profile changes.' : 'This permission level can review account state, but cannot create, reset, or disable login access.'}</p>
+              </div>
+              {canManageLogin ? (
+                <div className="user-account-action-controls">
+                  <label>
+                    <span>Temporary password override</span>
+                    <input autoComplete="new-password" disabled={!canManageLogin} onChange={(event) => setTemporaryPassword(event.target.value)} placeholder="Leave blank to generate securely" type="password" value={temporaryPassword} />
+                    <small>Leave blank to use SygShift’s secure password generator.</small>
+                  </label>
+                  <div className="user-account-button-row">
+                    <button className="primary-action" disabled={!canManageLogin || provisionMutation.isPending || employee.status !== 'active'} onClick={() => provisionMutation.mutate()} type="button">
+                      <KeyRound aria-hidden="true" size={18} /> {employee.accountStatus === 'not_created' ? 'Create login' : 'Reset temporary password'}
+                    </button>
+                    {employee.account ? (
+                      <button className="secondary-button" disabled={!canManageLogin || accountStateMutation.isPending} onClick={() => accountStateMutation.mutate(employee.accountStatus !== 'disabled')} type="button">
+                        <LockKeyhole aria-hidden="true" size={18} /> {employee.accountStatus === 'disabled' ? 'Enable login' : 'Disable login'}
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="user-account-button-row user-account-button-row--secondary">
+                    {employee.account && (employee.account.trustedDeviceCount ?? 0) > 0 ? (
+                      <button className="secondary-button" disabled={!canManageLogin || revokeTrustedDevicesMutation.isPending} onClick={() => revokeTrustedDevicesMutation.mutate()} type="button">
+                        <ShieldAlert aria-hidden="true" size={18} /> Revoke remembered devices ({employee.account.trustedDeviceCount})
+                      </button>
+                    ) : null}
+                    {employee.account && !confirmingMfaReset ? (
+                      <button className="secondary-button" disabled={!canManageLogin || resetMfaMutation.isPending} onClick={() => { setMfaResetMessage(null); setConfirmingMfaReset(true) }} type="button">
+                        <RotateCcw aria-hidden="true" size={18} /> Reset MFA setup
+                      </button>
+                    ) : null}
+                  </div>
+                  {confirmingMfaReset ? (
+                    <div className="mfa-reset-confirmation" role="alert">
+                      <strong>Reset MFA for {employee.displayName}?</strong>
+                      <p>Their authenticator enrollment and remembered devices will be removed. Their password, employee record, and history will not change.</p>
+                      <div className="mfa-reset-confirmation__actions">
+                        <button className="secondary-button" disabled={resetMfaMutation.isPending} onClick={() => setConfirmingMfaReset(false)} type="button">Cancel</button>
+                        <button className="secondary-button danger-button" disabled={resetMfaMutation.isPending} onClick={() => resetMfaMutation.mutate()} type="button"><RotateCcw aria-hidden="true" size={18} /> {resetMfaMutation.isPending ? 'Resetting MFA…' : 'Confirm MFA reset'}</button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {employee.status !== 'active' ? <small>Only active employees can receive login accounts.</small> : null}
+                </div>
+              ) : null}
+            </div>
+            {lastCredential ? (
+              <div className="temporary-password-card" role="status">
+                <strong>Temporary password created</strong>
+                <p>Copy or download it now. It will not be shown again.</p>
+                <code>{lastCredential.temporaryPassword}</code>
+                <button className="secondary-button" onClick={() => downloadCredentialCsv([lastCredential], `${lastCredential.username}-temporary-login.csv`)} type="button"><Download aria-hidden="true" size={18} /> Download one-user CSV</button>
+              </div>
+            ) : null}
+            {provisionMutation.isError ? <div className="inline-alert" role="alert">{provisionMutation.error.message}</div> : null}
+            {accountStateMutation.isError ? <div className="inline-alert" role="alert">{accountStateMutation.error.message}</div> : null}
+            {trustedDeviceMessage ? <div className="form-feedback form-feedback--success" role="status">{trustedDeviceMessage}</div> : null}
+            {mfaResetMessage ? <div className="form-feedback form-feedback--success" role="status">{mfaResetMessage}</div> : null}
+            {revokeTrustedDevicesMutation.isError ? <div className="inline-alert" role="alert">{revokeTrustedDevicesMutation.error.message}</div> : null}
+            {resetMfaMutation.isError ? <div className="inline-alert" role="alert">{resetMfaMutation.error.message}</div> : null}
+          </section>
+        ) : null}
+
+        {activeTab === 'onboarding' ? (
+          <section className="user-account-tab-panel" aria-labelledby="onboarding-title">
+            <div className="user-account-section-heading">
+              <div>
+                <span className="account-control-kicker">New user invites</span>
+                <h3 id="onboarding-title">Approved onboarding emails</h3>
+              </div>
+              <p>Welcome and login instructions remain separate, approved communications.</p>
+            </div>
+            <div className="user-account-onboarding-summary">
+              <div><span>Delivery email</span><strong>{deliveryEmail ?? 'No approved email available'}</strong></div>
+              <div><span>Employee status</span><strong>{statusLabels[employee.status]}</strong></div>
+              <div><span>Login status</span><strong>{employee.accountStatus === 'not_created' ? 'Not created' : employee.accountStatus === 'disabled' ? 'Disabled' : 'Created'}</strong></div>
+            </div>
+            <div className="user-account-email-options">
+              <article>
+                <Mail aria-hidden="true" size={22} />
+                <div><h4>Welcome email</h4><p>Introduces SygShift and the employee experience without including login credentials.</p></div>
+                <button className="secondary-button" disabled={!canSendNewUserInvites || welcomeEmailMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => welcomeEmailMutation.mutate()} type="button">{welcomeEmailMutation.isPending ? 'Sending welcome…' : 'Send welcome email'}</button>
+              </article>
+              <article>
+                <KeyRound aria-hidden="true" size={22} />
+                <div><h4>Login instructions</h4><p>Prepares access, delivers a one-time temporary password, and explains authenticator setup only when MFA is required.</p></div>
+                <button className="secondary-button" disabled={!canSendNewUserInvites || loginEmailMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => loginEmailMutation.mutate()} type="button">{loginEmailMutation.isPending ? 'Sending instructions…' : 'Email login instructions'}</button>
+              </article>
+            </div>
+            {!canSendNewUserInvites ? <p className="form-note">New User Invites permission is required to send onboarding emails.</p> : null}
+            {employee.status !== 'active' ? <p className="form-note">Only active employees can receive onboarding emails.</p> : null}
+            {!deliveryEmail ? <p className="form-note">Add a personal email before sending. SygShift is not sending to @guardianshipsecurity.net while company delivery is blocked.</p> : null}
+            {loginEmailMessage ? <div className="form-feedback form-feedback--success" role="status">{loginEmailMessage}</div> : null}
+            {welcomeEmailMessage ? <div className="form-feedback form-feedback--success" role="status">{welcomeEmailMessage}</div> : null}
+            {loginEmailMutation.isError ? <div className="inline-alert" role="alert">{loginEmailMutation.error.message}</div> : null}
+            {welcomeEmailMutation.isError ? <div className="inline-alert" role="alert">{welcomeEmailMutation.error.message}</div> : null}
+          </section>
+        ) : null}
+
+        {activeTab === 'profile' ? (
+          <footer className="user-account-savebar">
+            <span className={profileDirty ? 'is-dirty' : ''}>{profileDirty ? 'Unsaved profile changes' : profileSaveMessage ?? 'Profile is up to date'}</span>
+            <div>
+              <button className="secondary-button" disabled={!profileDirty || updateMutation.isPending} onClick={discardProfileChanges} type="button">Cancel</button>
+              <button className="primary-action" disabled={!profileDirty || updateMutation.isPending || !canEditThisProfile} form={profileFormId} type="submit">{updateMutation.isPending ? 'Saving…' : 'Save employee'}</button>
+            </div>
+          </footer>
+        ) : null}
       </div>
       {removingEmployee ? (
         <EmployeeRemovalModal
@@ -847,9 +872,14 @@ export function UserAdminPage() {
             and recovery. Role and permission design remains in Roles &amp; Permissions.
           </p>
         </div>
-        <div className="access-note">
-          <ShieldCheck aria-hidden="true" size={19} />
-          MFA permission checked
+        <div className="user-admin-intro__actions">
+          <div className="access-note">
+            <ShieldCheck aria-hidden="true" size={19} />
+            MFA policy active
+          </div>
+          {canEditBasic ? (
+            <button className="primary-action" onClick={() => setCreating(true)} type="button"><Plus aria-hidden="true" size={18} /> Add employee</button>
+          ) : null}
         </div>
       </section>
 
@@ -863,27 +893,28 @@ export function UserAdminPage() {
         </DataStatePanel>
       ) : (
         <>
-          <section className="user-admin-metrics" aria-label="User account totals">
-            <article><span>Total people</span><strong>{metrics.total}</strong><small>Live employee records</small></article>
-            <article><span>Active</span><strong>{metrics.active}</strong><small>Can receive login access</small></article>
-            <article className={metrics.missingLogins ? 'import-metric--attention' : ''}><span>Need logins</span><strong>{metrics.missingLogins}</strong><small>Active employees without accounts</small></article>
-            <article><span>Admins</span><strong>{metrics.admins}</strong><small>Highest access level</small></article>
+          <section className="user-admin-summary" aria-label="User account totals">
+            <article><span>Total people</span><strong>{metrics.total}</strong><small>Employee records</small></article>
+            <article><span>Active</span><strong>{metrics.active}</strong><small>Eligible for access</small></article>
+            <article className={metrics.missingLogins ? 'is-attention' : ''}><span>Need accounts</span><strong>{metrics.missingLogins}</strong><small>Active without login</small></article>
+            <article><span>Admins</span><strong>{metrics.admins}</strong><small>Highest access</small></article>
           </section>
 
-          <section className="user-admin-toolbar" aria-label="User account filters and actions">
-            <label className="search-field search-field--wide">
-              <Search aria-hidden="true" size={20} />
-              <span className="visually-hidden">Search users</span>
-              <input onChange={(event) => setSearch(event.target.value)} placeholder="Search name, username, email, or phone" type="search" value={search} />
-            </label>
-            <label className="select-field"><span>Role</span><select onChange={(event) => setRole(event.target.value as typeof role)} value={role}><option value="all">All roles</option><option value="guard">Guards</option><option value="dispatcher">Dispatchers</option><option value="scheduler">Schedulers</option><option value="recruiting_licensing">Recruiting & Licensing</option><option value="supervisor">Supervisors</option><option value="admin">Admins</option></select></label>
-            <label className="select-field"><span>Status</span><select onChange={(event) => setStatus(event.target.value as typeof status)} value={status}><option value="active">Active</option><option value="leave">On leave</option><option value="inactive">Inactive</option><option value="separated">Separated</option><option value="all">All</option></select></label>
-            <label className="select-field"><span>Login</span><select onChange={(event) => setAccount(event.target.value as typeof account)} value={account}><option value="all">All logins</option><option value="not_created">No login</option><option value="active">Active login</option><option value="disabled">Disabled</option></select></label>
-            <label className="select-field"><span>Activity</span><select onChange={(event) => setActivity(event.target.value as AccountActivityFilter)} value={activity}><option value="all">All activity</option><option value="pending_setup">Pending setup</option><option value="activated">Activated</option><option value="signed_in">Has signed in</option><option value="never_signed_in">Never signed in</option></select></label>
-            <div className="user-admin-toolbar__actions">
-              {canEditBasic ? (
-                <button className="secondary-button" onClick={() => setCreating(true)} type="button"><Plus aria-hidden="true" size={18} /> Add employee</button>
-              ) : null}
+          <section className="user-admin-controls" aria-label="User account filters and actions">
+            <div className="user-admin-toolbar">
+              <label className="search-field search-field--wide">
+                <Search aria-hidden="true" size={20} />
+                <span className="visually-hidden">Search users</span>
+                <input onChange={(event) => setSearch(event.target.value)} placeholder="Search name, username, email, or phone" type="search" value={search} />
+              </label>
+              <label className="select-field"><span>Role</span><select onChange={(event) => setRole(event.target.value as typeof role)} value={role}><option value="all">All roles</option><option value="guard">Guards</option><option value="dispatcher">Dispatchers</option><option value="scheduler">Schedulers</option><option value="recruiting_licensing">Recruiting & Licensing</option><option value="supervisor">Supervisors</option><option value="admin">Admins</option></select></label>
+              <label className="select-field"><span>Employment</span><select onChange={(event) => setStatus(event.target.value as typeof status)} value={status}><option value="active">Active</option><option value="leave">On leave</option><option value="inactive">Inactive</option><option value="separated">Separated</option><option value="all">All statuses</option></select></label>
+              <label className="select-field"><span>Login</span><select onChange={(event) => setAccount(event.target.value as typeof account)} value={account}><option value="all">All logins</option><option value="not_created">No login</option><option value="active">Active login</option><option value="disabled">Disabled</option></select></label>
+              <label className="select-field"><span>Activity</span><select onChange={(event) => setActivity(event.target.value as AccountActivityFilter)} value={activity}><option value="all">All activity</option><option value="pending_setup">Pending setup</option><option value="activated">Activated</option><option value="signed_in">Has signed in</option><option value="never_signed_in">Never signed in</option></select></label>
+            </div>
+            <div className="user-admin-toolbar__actions" aria-label="Bulk account actions">
+              <span>{filteredUsers.length} account{filteredUsers.length === 1 ? '' : 's'} shown</span>
+              <div>
               {canManageLogin ? (
                 <button className="primary-action" disabled={bulkProvisionMutation.isPending || metrics.missingLogins === 0} onClick={() => bulkProvisionMutation.mutate()} type="button">
                   <KeyRound aria-hidden="true" size={18} /> Create missing logins
@@ -894,6 +925,7 @@ export function UserAdminPage() {
                   <Mail aria-hidden="true" size={18} /> Send new user invites
                 </button>
               ) : null}
+              </div>
             </div>
           </section>
 
@@ -916,10 +948,10 @@ export function UserAdminPage() {
               <div className="user-admin-table" role="table" aria-label="User accounts and login access">
                 <div className="user-admin-row user-admin-row--header" role="row">
                   <span role="columnheader">Employee</span>
-                  <span role="columnheader">Role</span>
-                  <span role="columnheader">Employment</span>
-                  <span role="columnheader">Account activity</span>
-                  <span role="columnheader">Action</span>
+                  <span role="columnheader">Role &amp; Employment</span>
+                  <span role="columnheader">Login</span>
+                  <span role="columnheader">Last Activity</span>
+                  <span role="columnheader">Manage</span>
                 </div>
                 {filteredUsers.map((user) => (
                   <div className="user-admin-row" key={user.id} role="row">
@@ -929,13 +961,19 @@ export function UserAdminPage() {
                       {user.jobTitle ? <small>{user.jobTitle}</small> : null}
                       <small>{user.companyEmail || user.personalEmail || user.mobilePhone || 'No contact on file'}</small>
                     </div>
-                    <div role="cell"><span className="plain-value">{roleLabels[user.role]}</span></div>
-                    <div role="cell">
-                      <span className="plain-value">{employmentLabels[user.employmentType]}</span>
-                      <small>{statusLabels[user.status]}</small>
+                    <div role="cell" className="user-admin-role-employment" data-label="Role & Employment">
+                      <span className="plain-value">{roleLabels[user.role]}</span>
+                      <small>{employmentLabels[user.employmentType]} · {statusLabels[user.status]}</small>
                     </div>
-                    <div role="cell"><AccountActivitySummary user={user} /></div>
-                    <div role="cell">
+                    <div role="cell" className="user-admin-login-state" data-label="Login">
+                      <AccountStatusBadge user={user} />
+                      <small>{user.account?.activatedAt ? 'Activated' : user.accountStatus === 'active' ? 'Setup pending' : user.accountStatus === 'disabled' ? 'Access disabled' : 'No account'}</small>
+                    </div>
+                    <div role="cell" className="user-admin-last-activity" data-label="Last Activity">
+                      <strong>{user.account?.lastSignInAt ? formatAccountDateTime(user.account.lastSignInAt) : 'Never signed in'}</strong>
+                      <small>{user.account?.trustedDeviceCount ? `${user.account.trustedDeviceCount} remembered device${user.account.trustedDeviceCount === 1 ? '' : 's'}` : 'No remembered devices'}</small>
+                    </div>
+                    <div role="cell" data-label="Manage">
                       <button className="secondary-button secondary-button--small" onClick={() => setSelectedUserId(user.id)} type="button">
                         <UserCog aria-hidden="true" size={17} /> {canEditBasic || canManageLogin || canSendNewUserInvites || canSeparate || canDeleteUsers ? 'Manage' : 'View'}
                       </button>
