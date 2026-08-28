@@ -776,7 +776,7 @@ export function TimeMaintenanceWorkbench({
                   {selectedNeedsAttention ? (
                     <Link
                       className="time-maintenance-attention__link"
-                      to={`/time/exceptions?employee=${encodeURIComponent(employeeId)}&from=${encodeURIComponent(fromDate)}&through=${encodeURIComponent(throughDate)}`}
+                      to={`/time/review?employee=${encodeURIComponent(employeeId)}&from=${encodeURIComponent(fromDate)}&through=${encodeURIComponent(throughDate)}`}
                     >
                       Review this employee
                     </Link>

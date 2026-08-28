@@ -139,7 +139,7 @@ export function AccountabilityPage() {
         <TimeMetricCard detail="Reports waiting for human review." icon={AlertTriangle} label="Open Review" tone={summary.open > 0 ? 'warning' : 'good'} value={summary.open} />
         <TimeMetricCard detail="Reviewed and confirmed attendance occurrences." icon={CheckCircle2} label="Confirmed" tone="neutral" value={summary.confirmed} />
         <TimeMetricCard detail="Excused or protected records excluded from reliability totals." icon={ShieldCheck} label="Protected / Excused" tone="good" value={summary.protected} />
-        <TimeMetricCard detail={`${workspace.exceptionSummaries.reduce((total, item) => total + item.blockingCount, 0)} blocking exception(s) remain in Time Exceptions.`} icon={FileWarning} label="Hard Time Controls" tone={workspace.exceptionSummaries.length > 0 ? 'danger' : 'good'} to="/time/exceptions" value={workspace.exceptionSummaries.reduce((total, item) => total + item.unresolvedCount, 0)} />
+        <TimeMetricCard detail={`${workspace.exceptionSummaries.reduce((total, item) => total + item.blockingCount, 0)} blocking exception(s) remain in Review Queue.`} icon={FileWarning} label="Hard Time Controls" tone={workspace.exceptionSummaries.length > 0 ? 'danger' : 'good'} to="/time/review" value={workspace.exceptionSummaries.reduce((total, item) => total + item.unresolvedCount, 0)} />
       </section>
 
       <section className="accountability-workspace time-card">
@@ -192,7 +192,7 @@ function EmployeeOverview({ rows, onOpen }: { rows: ReturnType<typeof buildEmplo
 }
 
 function HardControlSummary({ rows }: { rows: AccountabilityWorkspace['exceptionSummaries'] }) {
-  return <section className="accountability-hard-controls time-card"><TimeSectionHeader eyebrow="Payroll integrity" summary="These are impossible or incomplete time records. They cannot be overridden from Accountability Tracker." title="Hard time controls" /><div className="accountability-hard-controls__list">{rows.slice(0, 6).map((row) => <div key={row.employeeId}><strong>{row.employeeName}</strong><span>{row.unresolvedCount} unresolved · {row.blockingCount} blocking</span><small>{row.codes.map(readableCode).join(', ')}</small></div>)}</div><Link className="time-button time-button--secondary" to="/time/exceptions"><FileWarning aria-hidden="true" size={18} /><span>Open Time Exceptions</span></Link></section>
+  return <section className="accountability-hard-controls time-card"><TimeSectionHeader eyebrow="Payroll integrity" summary="These are impossible or incomplete time records. They cannot be overridden from Accountability Tracker." title="Hard time controls" /><div className="accountability-hard-controls__list">{rows.slice(0, 6).map((row) => <div key={row.employeeId}><strong>{row.employeeName}</strong><span>{row.unresolvedCount} unresolved · {row.blockingCount} blocking</span><small>{row.codes.map(readableCode).join(', ')}</small></div>)}</div><Link className="time-button time-button--secondary" to="/time/review"><FileWarning aria-hidden="true" size={18} /><span>Open Review Queue</span></Link></section>
 }
 
 function CreateOccurrenceDialog({ onClose, onSaved, workspace }: { onClose: () => void; onSaved: () => Promise<void>; workspace: AccountabilityWorkspace }) {

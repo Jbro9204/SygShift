@@ -30,6 +30,7 @@ import { formatOperationalDateTime } from '../lib/time'
 import { TimeMaintenanceWorkbench, type TimeMaintenanceFocusRequest } from '../pages/TimePage'
 import { canManageTime, canResolveTimeExceptions, canViewTeamTime } from './timePermissions'
 import { workedTimePayrollReview } from './timePayroll'
+import { TimeReviewQueueNavigation } from './TimeReviewQueueNavigation'
 import { completedPayrollPeriod, currentPayrollPeriod, formatUsDateKey, shiftPayrollPeriod, type TimePeriod } from './timeRules'
 import {
   TimeAlertCard,
@@ -315,6 +316,7 @@ export function TimeExceptionsPage() {
     ? focusedRows.reduce((sum, row) => sum + row.paidMinutes, 0)
     : review?.summary.paidMinutes ?? 0
   const unresolvedRows = exceptionRows.length
+  const pageTitle = filter === 'pending_correction' ? 'Correction Requests' : 'Exceptions'
 
   function setPeriod(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>) {
     setFromDate(period.fromDate)
@@ -385,12 +387,14 @@ export function TimeExceptionsPage() {
             <Link className="time-button time-button--secondary" to="/time/payroll"><FileClock aria-hidden="true" size={18} /><span>Payroll</span></Link>
           </>
         }
-        eyebrow="Time Exceptions"
+        eyebrow="Review Queue"
         summary={focusedEmployeeId
           ? 'Reviewing only the selected employee and date range from Time Maintenance.'
           : 'Find and fix the records that can block payroll: missing punches, unscheduled time, bad punch order, and pending correction requests.'}
-        title="Exceptions"
+        title={pageTitle}
       />
+
+      <TimeReviewQueueNavigation />
 
       {rulesQuery.isError ? (
         <TimeAlertCard icon={AlertTriangle} title="Payroll rules could not be loaded" tone="warning">

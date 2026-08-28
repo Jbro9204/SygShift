@@ -61,7 +61,7 @@ export const TimeWorkspaceRoute = lazy(() =>
   import('../time/TimeWorkspace').then((module) => ({ default: module.TimeWorkspace })),
 )
 export const TimeToolsPageRoute = lazy(() =>
-  import('../pages/TimePage').then((module) => ({ default: module.LegacyTimeToolsPage })),
+  import('../time/TimeLegacyRedirects').then((module) => ({ default: module.LegacyTimeToolsRedirect })),
 )
 export const TimeMyTimePageRoute = lazy(() =>
   import('../time/MyTimePage').then((module) => ({ default: module.MyTimePage })),
@@ -71,6 +71,9 @@ export const TimeTeamPageRoute = lazy(() =>
 )
 export const TimeExceptionsPageRoute = lazy(() =>
   import('../time/TimeExceptionsPage').then((module) => ({ default: module.TimeExceptionsPage })),
+)
+export const TimeExceptionsLegacyRoute = lazy(() =>
+  import('../time/TimeLegacyRedirects').then((module) => ({ default: module.LegacyTimeExceptionsRedirect })),
 )
 export const TimeOperationsPageRoute = lazy(() =>
   import('../time/TimeOperationsPage').then((module) => ({ default: module.TimeOperationsPage })),
@@ -82,9 +85,7 @@ export const TimeAccountabilityPageRoute = lazy(() =>
   import('../time/AccountabilityPage').then((module) => ({ default: module.AccountabilityPage })),
 )
 export const TimeTimecardsPageRoute = lazy(() =>
-  import('../time/TimeCommandCenterPage').then((module) => ({
-    default: () => <module.TimeFuturePage area="Timecards" />,
-  })),
+  import('../time/TimeLegacyRedirects').then((module) => ({ default: module.LegacyTimecardsRedirect })),
 )
 export const TimePayrollPageRoute = lazy(() =>
   import('../time/TimePayrollPage').then((module) => ({ default: module.TimePayrollPage })),

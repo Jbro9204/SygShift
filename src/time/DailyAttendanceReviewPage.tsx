@@ -36,6 +36,7 @@ import {
 } from './dailyAttendanceReview'
 import { formatUsDateKey } from './timeRules'
 import { canManageAttendanceReview, canViewAttendanceReview } from './timePermissions'
+import { TimeReviewQueueNavigation } from './TimeReviewQueueNavigation'
 import {
   TimeAlertCard,
   TimeButton,
@@ -181,13 +182,15 @@ export function DailyAttendanceReviewPage() {
         actions={
           <>
             <Link className="time-button time-button--secondary" to="/time"><ArrowRight aria-hidden="true" size={18} /><span>Time Command Center</span></Link>
-            <Link className="time-button time-button--secondary" to="/time/exceptions"><AlertTriangle aria-hidden="true" size={18} /><span>Payroll Exceptions</span></Link>
+            <Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Exceptions</span></Link>
           </>
         }
-        eyebrow="Post-shift reconciliation"
+        eyebrow="Review Queue"
         summary="Compare the published plan with SygShift punches and call-off records without rewriting schedule history or deleting valid time."
         title="Daily Attendance Review"
       />
+
+      <TimeReviewQueueNavigation />
 
       <TimeAlertCard icon={ClipboardCheck} title="The published schedule remains unchanged" tone="neutral">
         <p>Review decisions document what actually happened. A two-hour grace period prevents a shift from appearing before normal clock-out cleanup is complete.</p>

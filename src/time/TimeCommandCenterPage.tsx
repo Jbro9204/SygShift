@@ -289,7 +289,7 @@ function OperationsTimeOverview({
           icon={AlertTriangle}
           label="Exceptions"
           tone={model.exceptions.total > 0 ? 'warning' : 'good'}
-          to={teamAllowed ? '/time/exceptions' : undefined}
+          to={teamAllowed ? '/time/review' : undefined}
           value={model.exceptions.total}
         />
         <TimeMetricCard
@@ -306,7 +306,7 @@ function OperationsTimeOverview({
           label="Missing Punches"
           tone={model.missingPunches.incompleteShifts > 0 ? 'danger' : 'good'}
           to={teamAllowed
-            ? (model.missingPunches.liveMissingClockIns.length > 0 ? '/time/operations' : '/time/exceptions?show=missing_punches')
+            ? (model.missingPunches.liveMissingClockIns.length > 0 ? '/time/operations' : '/time/review?show=missing_punches')
             : undefined}
           value={model.missingPunches.incompleteShifts}
         />

@@ -71,6 +71,7 @@ export function TimeWorkspace() {
   const reviewAllowed = canViewAttendanceReview(session)
   const operationsAllowed = teamAllowed || canManageTime(session)
   const accountabilityAllowed = canViewAccountability(session)
+  const reviewQueuePathActive = location.pathname === '/time/daily-review' || location.pathname === '/time/exceptions'
   const dashboardQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     queryFn: () => getTimekeepingDashboard(),
@@ -195,7 +196,7 @@ export function TimeWorkspace() {
           const Icon = tab.icon
           return (
             <NavLink
-              className={({ isActive }) => isActive ? 'time-workspace-tab time-workspace-tab--active' : 'time-workspace-tab'}
+              className={({ isActive }) => (isActive || (tab.path === '/time/review' && reviewQueuePathActive)) ? 'time-workspace-tab time-workspace-tab--active' : 'time-workspace-tab'}
               end={tab.end}
               key={tab.path}
               state={{ from: location.pathname }}

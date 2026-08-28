@@ -39,7 +39,7 @@ describe('Accountability Tracker production guardrails', () => {
     expect(page).toContain('never changes punches')
     expect(page).toContain('Gaps are not counted as worked time.')
     expect(page).toContain('They cannot be overridden from Accountability Tracker.')
-    expect(page).toContain('to="/time/exceptions"')
+    expect(page).toContain('to="/time/review"')
   })
 
   it('requires reasons, shows loading state, refreshes connected views, and closes saved dialogs', () => {
