@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 08/27/2026
 
+### Licensing Center redesign
+
+- Rebuilt the Licensing Center into a compact active-employee worklist with clear priority cards, focused filtering, sorting, and separate historical access for non-active employees.
+- Kept legal employee names authoritative throughout Licensing while expanding search to username, employee number, credential number, and credential type.
+- Replaced the oversized nested credential workspace with a focused employee licensing profile using Credentials, Renewals, and Documents & Activity tabs.
+- Added one-record-at-a-time credential disclosure and grouped standard guard licensing with armed endorsements without merging their underlying records.
+- Preserved credential editing, renewal tracking, document handling, communications, onboarding, MFA enforcement, permissions, audit behavior, and server APIs.
+- Current workload totals now include active employees only; inactive, leave, and separated records remain intentionally accessible through the employment filter.
+- No database migration or credential data change was required.
+- Full validation passed with type checking, linting, 88 test files / 451 tests, and the production build.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-27-2026_LICENSING_CENTER_REDESIGN.md`.
+
 ### My Account self-service workspace
 
 - Added a dedicated My Account workspace for every signed-in employee with focused Profile & Contact, Employment, Security, and Notifications tabs.

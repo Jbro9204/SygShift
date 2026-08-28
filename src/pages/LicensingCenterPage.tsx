@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   BadgeCheck,
   BellRing,
+  ChevronDown,
+  ChevronLeft,
   ClipboardCheck,
   FileText,
   FolderOpen,
@@ -33,25 +35,37 @@ import {
   type LicensingCenter,
   type LicensingCredential,
   type LicensingEmployee,
-  type LicensingRecord,
   type RenewalStatus,
 } from '../data/licensing'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
-import { activeCredentialRenewalCount, groupLicensingRecordsByEmployee } from '../lib/licensingWorklist'
+import { activeCredentialRenewalCount } from '../lib/licensingWorklist'
 
 type SummaryFilter =
   | 'all'
+  | 'needsAction'
+  | 'dueSoon'
   | 'compliant'
-  | 'expiring90'
-  | 'expiring60'
-  | 'expiring30'
   | 'expired'
   | 'missing'
   | 'awaitingReview'
-  | 'rejected'
-  | 'renewals'
   | 'ineligible'
+
+type StatusFilter =
+  | 'all'
+  | 'needsAction'
+  | 'missing'
+  | 'awaitingReview'
+  | 'verified'
+  | 'expiring'
+  | 'expired'
+  | 'rejected'
+  | 'renewal'
+
+type EligibilityFilter = 'all' | 'armed' | 'unarmed' | 'ineligible'
+type ExpirationFilter = 'all' | '30' | '60' | '90'
+type WorklistSort = 'employee' | 'expiration' | 'status' | 'eligibility'
+type ProfileTab = 'credentials' | 'renewals' | 'activity'
 
 const complianceLabels: Record<ComplianceColor, string> = {
   gray: 'Neutral',
@@ -86,25 +100,6 @@ const renewalStatusOptions: Array<{ value: RenewalStatus; label: string }> = [
   { label: 'Completed', value: 'completed' },
 ]
 
-const summaryCards: Array<{
-  key: SummaryFilter
-  label: string
-  helper: string
-  tone: ComplianceColor
-  value: keyof LicensingCenter['summary']
-}> = [
-  { helper: 'No immediate licensing action required', key: 'compliant', label: 'Fully compliant employees', tone: 'green', value: 'fullyCompliantEmployees' },
-  { helper: 'Early renewal window', key: 'expiring90', label: 'Expiring within 90 days', tone: 'yellow', value: 'expiring90' },
-  { helper: 'Follow-up window', key: 'expiring60', label: 'Expiring within 60 days', tone: 'yellow', value: 'expiring60' },
-  { helper: 'Final warning window', key: 'expiring30', label: 'Expiring within 30 days', tone: 'red', value: 'expiring30' },
-  { helper: 'Past expiration date', key: 'expired', label: 'Expired credentials', tone: 'red', value: 'expired' },
-  { helper: 'Required but not on file', key: 'missing', label: 'Missing required credentials', tone: 'red', value: 'missingRequired' },
-  { helper: 'Submitted or pending review', key: 'awaitingReview', label: 'Awaiting review', tone: 'yellow', value: 'awaitingReview' },
-  { helper: 'Rejected or invalid documents', key: 'rejected', label: 'Rejected credentials', tone: 'red', value: 'rejected' },
-  { helper: 'Renewal started or submitted', key: 'renewals', label: 'Renewals in progress', tone: 'yellow', value: 'renewalsInProgress' },
-  { helper: 'Cannot work required assignments', key: 'ineligible', label: 'Ineligible employees', tone: 'red', value: 'ineligibleEmployees' },
-]
-
 function formatDate(value: string | null): string {
   if (!value) return '—'
   return new Intl.DateTimeFormat('en-US', {
@@ -123,19 +118,95 @@ function normalized(value: unknown): string {
   return String(value ?? '').toLocaleLowerCase()
 }
 
-function recordMatchesSummary(record: LicensingRecord, employee: LicensingEmployee | undefined, filter: SummaryFilter): boolean {
+function legalEmployeeName(employee: LicensingEmployee): string {
+  return [employee.firstName, employee.middleName, employee.lastName].filter(Boolean).join(' ')
+}
+
+function credentialIsMissing(credential: LicensingCredential): boolean {
+  return credential.required && !credential.credentialId
+}
+
+function credentialIsAwaitingReview(credential: LicensingCredential): boolean {
+  return normalized(credential.status).includes('review') || credential.status === 'Pending'
+}
+
+function credentialIsRejected(credential: LicensingCredential): boolean {
+  return normalized(credential.status).includes('reject') || Boolean(credential.rejectionReason)
+}
+
+function credentialIsExpired(credential: LicensingCredential): boolean {
+  return credential.statusLabel === 'Expired'
+    || credential.status === 'Expired'
+    || (typeof credential.daysRemaining === 'number' && credential.daysRemaining < 0)
+}
+
+function credentialHasActiveRenewal(credential: LicensingCredential): boolean {
+  return credential.renewalStatus !== 'not_started' && credential.renewalStatus !== 'completed'
+}
+
+function credentialNeedsAction(credential: LicensingCredential): boolean {
+  return credential.complianceColor === 'red'
+    || credentialIsMissing(credential)
+    || credentialIsExpired(credential)
+    || credentialIsRejected(credential)
+}
+
+function employeeIsArmedEligible(employee: LicensingEmployee): boolean {
+  if (employee.workEligibility === 'ineligible' || employee.workEligibility === 'restricted') return false
+  return employee.credentials.some((credential) => (
+    credential.credentialTypeCode === 'armed_security_guard_credential'
+      && Boolean(credential.credentialId)
+      && credential.complianceColor !== 'red'
+      && !credentialIsExpired(credential)
+  ))
+}
+
+function employeeMatchesStatus(employee: LicensingEmployee, filter: StatusFilter): boolean {
   if (filter === 'all') return true
-  if (filter === 'compliant') return employee?.overallCompliance === 'green'
-  if (filter === 'expiring90') return typeof record.daysRemaining === 'number' && record.daysRemaining >= 61 && record.daysRemaining <= 90
-  if (filter === 'expiring60') return typeof record.daysRemaining === 'number' && record.daysRemaining >= 31 && record.daysRemaining <= 60
-  if (filter === 'expiring30') return typeof record.daysRemaining === 'number' && record.daysRemaining >= 0 && record.daysRemaining <= 30
-  if (filter === 'expired') return record.statusLabel === 'Expired'
-  if (filter === 'missing') return record.statusLabel === 'Missing Required Credential'
-  if (filter === 'awaitingReview') return record.status === 'Under Review'
-  if (filter === 'rejected') return record.status === 'Rejected'
-  if (filter === 'renewals') return record.status === 'Renewal In Progress' || record.status === 'Renewal Submitted'
-  if (filter === 'ineligible') return employee?.workEligibility === 'ineligible'
+  if (filter === 'needsAction') return employee.overallCompliance === 'red' || employee.credentials.some(credentialNeedsAction)
+  if (filter === 'missing') return employee.credentials.some(credentialIsMissing)
+  if (filter === 'awaitingReview') return employee.credentials.some(credentialIsAwaitingReview)
+  if (filter === 'verified') return employee.overallCompliance === 'green'
+  if (filter === 'expiring') return employee.credentials.some((credential) => (
+    typeof credential.daysRemaining === 'number' && credential.daysRemaining >= 0 && credential.daysRemaining <= 90
+  ))
+  if (filter === 'expired') return employee.credentials.some(credentialIsExpired)
+  if (filter === 'rejected') return employee.credentials.some(credentialIsRejected)
+  if (filter === 'renewal') return employee.credentials.some(credentialHasActiveRenewal)
   return true
+}
+
+function employeeMatchesSummary(employee: LicensingEmployee, filter: SummaryFilter): boolean {
+  if (filter === 'all') return true
+  if (filter === 'needsAction') return employeeMatchesStatus(employee, 'needsAction') || employee.workEligibility === 'ineligible'
+  if (filter === 'dueSoon') return employee.credentials.some((credential) => (
+    typeof credential.daysRemaining === 'number' && credential.daysRemaining >= 0 && credential.daysRemaining <= 30
+  ))
+  if (filter === 'compliant') return employee.overallCompliance === 'green'
+  if (filter === 'expired') return employeeMatchesStatus(employee, 'expired')
+  if (filter === 'missing') return employeeMatchesStatus(employee, 'missing')
+  if (filter === 'awaitingReview') return employeeMatchesStatus(employee, 'awaitingReview')
+  if (filter === 'ineligible') return employee.workEligibility === 'ineligible'
+  return true
+}
+
+function employeeMatchesEligibility(employee: LicensingEmployee, filter: EligibilityFilter): boolean {
+  if (filter === 'all') return true
+  if (filter === 'ineligible') return employee.workEligibility === 'ineligible'
+  if (filter === 'armed') return employeeIsArmedEligible(employee)
+  return employee.workEligibility !== 'ineligible' && !employeeIsArmedEligible(employee)
+}
+
+function employeeMatchesExpiration(employee: LicensingEmployee, filter: ExpirationFilter): boolean {
+  if (filter === 'all') return true
+  const days = Number(filter)
+  return employee.credentials.some((credential) => (
+    typeof credential.daysRemaining === 'number' && credential.daysRemaining >= 0 && credential.daysRemaining <= days
+  ))
+}
+
+function statusRank(color: ComplianceColor): number {
+  return color === 'red' ? 0 : color === 'yellow' ? 1 : color === 'gray' ? 2 : 3
 }
 
 function statusToneClass(color: ComplianceColor): string {
@@ -154,23 +225,6 @@ function credentialDisplayName(credential: Pick<LicensingCredential, 'credential
   if (credential.credentialTypeCode === 'denver_security_guard_license') return 'Standard Guard License'
   if (credential.credentialTypeCode === 'armed_security_guard_credential') return 'Armed Guard License / Endorsement'
   return credential.credentialName
-}
-
-function CredentialChoiceOptions({ credentials }: { credentials: LicensingCredential[] }) {
-  const guardLicenses = credentials.filter((credential) => isGuardLicenseCode(credential.credentialTypeCode))
-  const otherCredentials = credentials.filter((credential) => !isGuardLicenseCode(credential.credentialTypeCode))
-  const option = (credential: LicensingCredential) => (
-    <option key={credential.credentialTypeId} value={credential.credentialTypeId}>
-      {credentialDisplayName(credential)} - {credential.credentialId ? credential.statusLabel : 'Add new'}
-    </option>
-  )
-
-  return (
-    <>
-      {guardLicenses.length > 0 ? <optgroup label="Guard Licenses">{guardLicenses.map(option)}</optgroup> : null}
-      {otherCredentials.length > 0 ? <optgroup label="Other Credentials">{otherCredentials.map(option)}</optgroup> : null}
-    </>
-  )
 }
 
 function credentialTemplateFromType(type: CredentialType): LicensingCredential {
@@ -552,6 +606,7 @@ function EmployeeLicensingProfile({
 }) {
   const [editingCredentialTypeId, setEditingCredentialTypeId] = useState<string | null>(null)
   const [communicatingCredentialTypeId, setCommunicatingCredentialTypeId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<ProfileTab>('credentials')
   const credentialChoices = useMemo(() => {
     const existingTypeIds = new Set(employee.credentials.map((credential) => credential.credentialTypeId))
     const readyToAdd = center.credentialTypes
@@ -572,227 +627,210 @@ function EmployeeLicensingProfile({
     : null
   const firstAction = employee.credentials.find((credential) => credential.complianceColor === 'red')
     ?? employee.credentials.find((credential) => credential.complianceColor === 'yellow')
-  const addCredentialTarget = credentialChoices.find((credential) => !credential.credentialId)
-    ?? firstAction
-    ?? credentialChoices[0]
-    ?? null
-  const [selectedCredentialTypeId, setSelectedCredentialTypeId] = useState(firstAction?.credentialTypeId ?? addCredentialTarget?.credentialTypeId ?? '')
-  const selectedCredential = credentialChoices.find((credential) => credential.credentialTypeId === selectedCredentialTypeId)
-    ?? firstAction
-    ?? credentialChoices[0]
-    ?? null
+  const credentialsOnFile = credentialChoices.filter((credential) => credential.credentialId)
+  const credentialsAvailable = credentialChoices.filter((credential) => !credential.credentialId)
+  const firstCredential = firstAction ?? credentialsOnFile[0] ?? credentialsAvailable[0] ?? null
+  const [expandedCredentialTypeId, setExpandedCredentialTypeId] = useState(firstCredential?.credentialTypeId ?? '')
 
   useEffect(() => {
     if (credentialChoices.length === 0) {
-      if (selectedCredentialTypeId) setSelectedCredentialTypeId('')
+      if (expandedCredentialTypeId) setExpandedCredentialTypeId('')
       return
     }
 
-    const selectionStillExists = credentialChoices.some((credential) => credential.credentialTypeId === selectedCredentialTypeId)
+    const selectionStillExists = credentialChoices.some((credential) => credential.credentialTypeId === expandedCredentialTypeId)
     if (!selectionStillExists) {
-      setSelectedCredentialTypeId(firstAction?.credentialTypeId ?? addCredentialTarget?.credentialTypeId ?? credentialChoices[0].credentialTypeId)
+      setExpandedCredentialTypeId(firstCredential?.credentialTypeId ?? credentialChoices[0].credentialTypeId)
     }
-  }, [addCredentialTarget?.credentialTypeId, credentialChoices, firstAction?.credentialTypeId, selectedCredentialTypeId])
+  }, [credentialChoices, expandedCredentialTypeId, firstCredential?.credentialTypeId])
 
-  function openCredentialEditor(credentialTypeId: string | null | undefined = selectedCredential?.credentialTypeId) {
+  function openCredentialEditor(credentialTypeId: string | null | undefined = firstCredential?.credentialTypeId) {
     if (!canEditCredentials) return
     const targetCredential = credentialChoices.find((credential) => credential.credentialTypeId === credentialTypeId)
-      ?? addCredentialTarget
+      ?? credentialsAvailable[0]
+      ?? firstCredential
     if (!targetCredential) return
-    setSelectedCredentialTypeId(targetCredential.credentialTypeId)
+    setExpandedCredentialTypeId(targetCredential.credentialTypeId)
     setEditingCredentialTypeId(targetCredential.credentialTypeId)
   }
 
-  return (
-    <ModalDialog
-      className="modal-dialog--licensing-profile"
-      description={`${employee.employeeNumber ?? 'ID pending'} • @${employee.username}`}
-      onClose={onClose}
-      title={`Licensing profile - ${employee.displayName}`}
-    >
-      <section className="licensing-profile-summary">
-        <article className={`licensing-profile-summary__status licensing-profile-summary__status--${employee.overallCompliance}`}>
-          <span>Overall status</span>
-          <strong>{complianceLabels[employee.overallCompliance]}</strong>
-        </article>
-        <article>
-          <span>Shift eligibility</span>
-          <strong>{formatEligibility(employee.workEligibility)}</strong>
-        </article>
-        <article>
-          <span>Required</span>
-          <strong>{employee.requiredCredentialCount}</strong>
-        </article>
-        <article>
-          <span>Verified</span>
-          <strong>{employee.verifiedCredentialCount}</strong>
-        </article>
-        <article>
-          <span>Missing</span>
-          <strong>{employee.missingCredentialCount}</strong>
-        </article>
-        <article>
-          <span>Closest expiration</span>
-          <strong>{formatDate(employee.closestExpirationDate)}</strong>
-        </article>
-      </section>
+  function renderCredential(credential: LicensingCredential) {
+    const isExpanded = expandedCredentialTypeId === credential.credentialTypeId
+    return (
+      <article className={`licensing-credential-accordion licensing-credential-accordion--${credential.complianceColor}`} key={credential.credentialTypeId}>
+        <button
+          aria-expanded={isExpanded}
+          className="licensing-credential-accordion__trigger"
+          onClick={() => setExpandedCredentialTypeId(isExpanded ? '' : credential.credentialTypeId)}
+          type="button"
+        >
+          <span className="licensing-credential-accordion__identity">
+            <strong>{credentialDisplayName(credential)}</strong>
+            <small>
+              {credential.credentialNumber || (credential.credentialId ? 'Number not recorded' : 'Not on file')}
+              {credential.expirationDate ? ` | Expires ${formatDate(credential.expirationDate)}` : ''}
+            </small>
+          </span>
+          <span className="licensing-credential-accordion__state">
+            <CredentialStatusPill color={credential.complianceColor} label={credential.credentialId ? credential.statusLabel : 'Available to add'} />
+            <ChevronDown aria-hidden="true" className={isExpanded ? 'is-open' : ''} size={19} />
+          </span>
+        </button>
+        {isExpanded ? (
+          <div className="licensing-credential-accordion__body">
+            <dl className="licensing-selected-credential__details">
+              <div><dt>Credential number</dt><dd>{credential.credentialNumber || 'Not recorded'}</dd></div>
+              <div><dt>Issuing authority</dt><dd>{credential.issuingAuthority || 'Not recorded'}</dd></div>
+              <div><dt>Issue date</dt><dd>{formatDate(credential.issueDate)}</dd></div>
+              <div><dt>Expiration</dt><dd>{formatDate(credential.expirationDate)}</dd></div>
+              <div><dt>Days remaining</dt><dd>{credential.daysRemaining ?? '—'}</dd></div>
+              <div><dt>Renewal status</dt><dd>{(credential.renewalStatus ?? 'not_started').replaceAll('_', ' ')}</dd></div>
+              <div><dt>Documents</dt><dd>{credential.documentCount}</dd></div>
+              <div><dt>Last employee notice</dt><dd>{formatTimestamp(credential.lastEmployeeNotification)}</dd></div>
+            </dl>
+            {credential.internalNotes ? <p className="licensing-credential-note"><strong>Internal note:</strong> {credential.internalNotes}</p> : null}
+            {credential.employeeNotes ? <p className="licensing-credential-note"><strong>Employee note:</strong> {credential.employeeNotes}</p> : null}
+            {credential.rejectionReason ? <p className="credential-rejection-note">Rejection reason: {credential.rejectionReason}</p> : null}
+            {canEditCredentials || (canCommunicate && credential.credentialId) ? (
+              <div className="licensing-selected-credential__actions">
+                {canEditCredentials ? (
+                  <button className="primary-action" onClick={() => openCredentialEditor(credential.credentialTypeId)} type="button">
+                    <Pencil aria-hidden="true" size={17} />
+                    {credential.credentialId ? 'Manage credential' : 'Add credential'}
+                  </button>
+                ) : null}
+                {canCommunicate && credential.credentialId ? (
+                  <button className="secondary-button" onClick={() => setCommunicatingCredentialTypeId(credential.credentialTypeId)} type="button">
+                    <Mail aria-hidden="true" size={17} />
+                    Record communication
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </article>
+    )
+  }
 
-      <section className="licensing-profile-context">
-        <div>
-          <span>Position</span>
-          <strong>{employee.jobTitle || formatRole(employee.role)}</strong>
+  return (
+    <section className="licensing-profile-page" aria-label={`Licensing profile for ${legalEmployeeName(employee)}`}>
+      <header className="licensing-profile-header">
+        <div className="licensing-profile-header__identity">
+          <button className="secondary-button secondary-button--small" onClick={onClose} type="button">
+            <ChevronLeft aria-hidden="true" size={17} /> Back to worklist
+          </button>
+          <div>
+            <span className="eyebrow">Employee licensing profile</span>
+            <h1>{legalEmployeeName(employee)}</h1>
+            <p>
+              {employee.employeeNumber ?? 'ID pending'} | @{employee.username} | {employee.jobTitle || formatRole(employee.role)} | {employmentStatusLabels[employee.employmentStatus]}
+            </p>
+          </div>
         </div>
-        <div>
-          <span>Status</span>
-          <strong>{employmentStatusLabels[employee.employmentStatus]}</strong>
+        <div className="licensing-profile-header__actions">
+          <CredentialStatusPill color={employee.overallCompliance} label={complianceLabels[employee.overallCompliance]} />
+          <span className={`work-eligibility work-eligibility--${employee.workEligibility}`}>{formatEligibility(employee.workEligibility)}</span>
+          {canEditCredentials && credentialsAvailable[0] ? (
+            <button className="primary-action" onClick={() => openCredentialEditor(credentialsAvailable[0].credentialTypeId)} type="button">
+              <FileText aria-hidden="true" size={17} /> Add credential
+            </button>
+          ) : null}
+          {canManageEmployeeProfile ? (
+            <button className="secondary-button" onClick={() => onEditEmployee(employee)} type="button">
+              <Pencil aria-hidden="true" size={17} /> Edit employee
+            </button>
+          ) : null}
         </div>
-        <div>
-          <span>Future shifts affected</span>
-          <strong>{employee.affectedFutureShiftCount}</strong>
-        </div>
-        <div>
-          <span>Last communication</span>
-          <strong>{formatTimestamp(employee.lastEmployeeNotification)}</strong>
-        </div>
+      </header>
+
+      <section className="licensing-profile-summary" aria-label="Credential summary">
+        <article><span>Required</span><strong>{employee.requiredCredentialCount}</strong></article>
+        <article><span>Verified</span><strong>{employee.verifiedCredentialCount}</strong></article>
+        <article><span>Missing</span><strong>{employee.missingCredentialCount}</strong></article>
+        <article><span>Closest expiration</span><strong>{formatDate(employee.closestExpirationDate)}</strong></article>
+        <article><span>Future shifts affected</span><strong>{employee.affectedFutureShiftCount}</strong></article>
+        <article><span>Last communication</span><strong>{formatTimestamp(employee.lastEmployeeNotification)}</strong></article>
       </section>
 
       {firstAction ? (
         <section className={`licensing-alert licensing-alert--${firstAction.complianceColor}`}>
           <AlertTriangle aria-hidden="true" size={20} />
-          <div>
-            <strong>Top action: {credentialDisplayName(firstAction)}</strong>
-            <span>{firstAction.statusLabel}</span>
-          </div>
+          <div><strong>Recommended next action: {credentialDisplayName(firstAction)}</strong><span>{firstAction.statusLabel}</span></div>
+          {canEditCredentials ? <button className="secondary-button secondary-button--small" onClick={() => openCredentialEditor(firstAction.credentialTypeId)} type="button">Work this item</button> : null}
+        </section>
+      ) : (
+        <section className="licensing-alert licensing-alert--green">
+          <BadgeCheck aria-hidden="true" size={20} />
+          <div><strong>No immediate licensing action is required.</strong><span>Review renewals and documents as needed.</span></div>
+        </section>
+      )}
+
+      <nav className="licensing-profile-tabs" aria-label="Licensing profile sections">
+        {([
+          ['credentials', 'Credentials'],
+          ['renewals', 'Renewals'],
+          ['activity', 'Documents & Activity'],
+        ] as Array<[ProfileTab, string]>).map(([tab, label]) => (
+          <button aria-current={activeTab === tab ? 'page' : undefined} className={activeTab === tab ? 'is-active' : ''} key={tab} onClick={() => setActiveTab(tab)} type="button">{label}</button>
+        ))}
+      </nav>
+
+      {activeTab === 'credentials' ? (
+        <section className="licensing-profile-tab-panel">
+          <div className="licensing-profile-tab-panel__heading"><div><h2>Credentials on file</h2><p>Open one record at a time to review or update it.</p></div><strong>{credentialsOnFile.length}</strong></div>
+          {credentialsOnFile.length > 0 ? (
+            <div className="licensing-credential-accordion-list">
+              {credentialsOnFile.filter((credential) => isGuardLicenseCode(credential.credentialTypeCode)).length > 0 ? (
+                <section className="licensing-credential-group"><span className="eyebrow">Guard license package</span>{credentialsOnFile.filter((credential) => isGuardLicenseCode(credential.credentialTypeCode)).map(renderCredential)}</section>
+              ) : null}
+              {credentialsOnFile.filter((credential) => !isGuardLicenseCode(credential.credentialTypeCode)).length > 0 ? (
+                <section className="licensing-credential-group"><span className="eyebrow">Other credentials</span>{credentialsOnFile.filter((credential) => !isGuardLicenseCode(credential.credentialTypeCode)).map(renderCredential)}</section>
+              ) : null}
+            </div>
+          ) : <div className="licensing-empty"><ClipboardCheck aria-hidden="true" size={26} /><strong>No credentials are on file.</strong><span>Use Add credential to create the first record.</span></div>}
+          {credentialsAvailable.length > 0 ? (
+            <details className="licensing-available-credentials">
+              <summary>Available and missing credential types <span>{credentialsAvailable.length}</span></summary>
+              <div className="licensing-credential-accordion-list">{credentialsAvailable.map(renderCredential)}</div>
+            </details>
+          ) : null}
         </section>
       ) : null}
 
-      {canEditCredentials || canManageEmployeeProfile ? (
-        <div className="licensing-profile-actions">
-          {canEditCredentials ? (
-            <button className="primary-action" disabled={!addCredentialTarget} onClick={() => openCredentialEditor(addCredentialTarget?.credentialTypeId)} type="button">
-              <FileText aria-hidden="true" size={17} />
-              Add credential / license
-            </button>
-          ) : null}
-          {canManageEmployeeProfile ? (
-            <button className="secondary-button" onClick={() => onEditEmployee(employee)} type="button">
-              <Pencil aria-hidden="true" size={17} />
-              Edit employee profile
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {canEditCredentials ? (
-        <section className="licensing-add-credential-panel" aria-label="Add credential or license">
-          <div>
-            <span className="eyebrow">Add or update</span>
-            <h3>Add credential / license</h3>
-            <p>
-              Choose the license or credential type, then open the form to add numbers, dates, notes,
-              and supporting documents.
-            </p>
-          </div>
-          <label className="select-field">
-            <span>Choose credential/license</span>
-            <select
-              disabled={credentialChoices.length === 0}
-              onChange={(event) => setSelectedCredentialTypeId(event.target.value)}
-              value={selectedCredential?.credentialTypeId ?? ''}
-            >
-              <CredentialChoiceOptions credentials={credentialChoices} />
-            </select>
-          </label>
-          <button className="primary-action" disabled={!selectedCredential} onClick={() => openCredentialEditor()} type="button">
-            <FileText aria-hidden="true" size={17} />
-            Open add/update form
-          </button>
-        </section>
-      ) : null}
-
-      <section className="licensing-credential-workspace" aria-label="Employee credential workspace">
-        <div className="licensing-credential-picker">
-          <div>
-            <span className="eyebrow">Review records</span>
-            <h3>Credential/license records</h3>
-            <p>Select any existing or missing record to review the current status before editing.</p>
-          </div>
-          <label className="select-field">
-            <span>Credential or license</span>
-            <select
-              onChange={(event) => setSelectedCredentialTypeId(event.target.value)}
-              value={selectedCredential?.credentialTypeId ?? ''}
-            >
-              <CredentialChoiceOptions credentials={credentialChoices} />
-            </select>
-          </label>
-          <div className="licensing-credential-picker-list" aria-label="Credential quick pick list">
-            {credentialChoices.map((credential) => (
-              <button
-                className={[
-                  'licensing-credential-picker-row',
-                  `licensing-credential-picker-row--${credential.complianceColor}`,
-                  selectedCredential?.credentialTypeId === credential.credentialTypeId ? 'is-active' : '',
-                ].filter(Boolean).join(' ')}
-                key={credential.credentialTypeId}
-                onClick={() => setSelectedCredentialTypeId(credential.credentialTypeId)}
-                type="button"
-              >
-                <span>{credentialDisplayName(credential)}</span>
-                <CredentialStatusPill color={credential.complianceColor} label={credential.credentialId ? credential.statusLabel : 'Add new'} />
-              </button>
+      {activeTab === 'renewals' ? (
+        <section className="licensing-profile-tab-panel">
+          <div className="licensing-profile-tab-panel__heading"><div><h2>Renewal work</h2><p>Current renewal state and expiration timing for each credential.</p></div><strong>{activeCredentialRenewalCount(employee.credentials)} active</strong></div>
+          <div className="licensing-renewal-list">
+            {credentialsOnFile.slice().sort((left, right) => (left.daysRemaining ?? Number.MAX_SAFE_INTEGER) - (right.daysRemaining ?? Number.MAX_SAFE_INTEGER)).map((credential) => (
+              <article key={credential.credentialTypeId}>
+                <div><strong>{credentialDisplayName(credential)}</strong><span>{credential.credentialNumber || 'Number not recorded'}</span></div>
+                <div><span>Expiration</span><strong>{formatDate(credential.expirationDate)}</strong></div>
+                <div><span>Renewal</span><strong>{(credential.renewalStatus ?? 'not_started').replaceAll('_', ' ')}</strong></div>
+                {canEditCredentials ? <button className="secondary-button secondary-button--small" onClick={() => openCredentialEditor(credential.credentialTypeId)} type="button">Manage</button> : null}
+              </article>
             ))}
           </div>
-        </div>
+        </section>
+      ) : null}
 
-        <article className={`licensing-selected-credential licensing-selected-credential--${selectedCredential?.complianceColor ?? 'gray'}`}>
-          {selectedCredential ? (
-            <>
-              <div className="licensing-selected-credential__heading">
-                <div>
-                  <span>{isGuardLicenseCode(selectedCredential.credentialTypeCode) ? 'Guard Licenses' : selectedCredential.category}</span>
-                  <h3>{credentialDisplayName(selectedCredential)}</h3>
-                </div>
-                <CredentialStatusPill color={selectedCredential.complianceColor} label={selectedCredential.statusLabel} />
-              </div>
-              <dl className="licensing-selected-credential__details">
-                <div><dt>Credential #</dt><dd>{selectedCredential.credentialNumber || '—'}</dd></div>
-                <div><dt>Issuing authority</dt><dd>{selectedCredential.issuingAuthority || '—'}</dd></div>
-                <div><dt>Issue date</dt><dd>{formatDate(selectedCredential.issueDate)}</dd></div>
-                <div><dt>Expiration</dt><dd>{formatDate(selectedCredential.expirationDate)}</dd></div>
-                <div><dt>Days remaining</dt><dd>{selectedCredential.daysRemaining ?? '—'}</dd></div>
-                <div><dt>Renewal</dt><dd>{selectedCredential.renewalStatus?.replaceAll('_', ' ') ?? '—'}</dd></div>
-                <div><dt>Documents</dt><dd>{selectedCredential.documentCount}</dd></div>
-                <div><dt>Last notice</dt><dd>{formatTimestamp(selectedCredential.lastEmployeeNotification)}</dd></div>
-              </dl>
-              {selectedCredential.rejectionReason ? <p className="credential-rejection-note">{selectedCredential.rejectionReason}</p> : null}
-              {canEditCredentials || (canCommunicate && selectedCredential.credentialId) ? (
+      {activeTab === 'activity' ? (
+        <section className="licensing-profile-tab-panel">
+          <div className="licensing-profile-tab-panel__heading"><div><h2>Documents &amp; activity</h2><p>Document totals and the latest recorded employee communication by credential.</p></div></div>
+          <div className="licensing-activity-list">
+            {credentialsOnFile.map((credential) => (
+              <article key={credential.credentialTypeId}>
+                <div><strong>{credentialDisplayName(credential)}</strong><CredentialStatusPill color={credential.complianceColor} label={credential.statusLabel} /></div>
+                <dl><div><dt>Documents</dt><dd>{credential.documentCount}</dd></div><div><dt>Latest upload</dt><dd>{formatTimestamp(credential.latestDocumentAt)}</dd></div><div><dt>Last notice</dt><dd>{formatTimestamp(credential.lastEmployeeNotification)}</dd></div></dl>
                 <div className="licensing-selected-credential__actions">
-                  {canEditCredentials ? (
-                    <button className="primary-action" onClick={() => setEditingCredentialTypeId(selectedCredential.credentialTypeId)} type="button">
-                      <Pencil aria-hidden="true" size={17} />
-                      {selectedCredential.credentialId ? 'Manage selected credential' : 'Add this credential/license'}
-                    </button>
-                  ) : null}
-                  {canCommunicate && selectedCredential.credentialId ? (
-                  <button className="secondary-button" onClick={() => setCommunicatingCredentialTypeId(selectedCredential.credentialTypeId)} type="button">
-                    <Mail aria-hidden="true" size={17} />
-                    Message about credential
-                  </button>
-                  ) : null}
+                  {canEditCredentials ? <button className="secondary-button secondary-button--small" onClick={() => openCredentialEditor(credential.credentialTypeId)} type="button"><Upload aria-hidden="true" size={15} /> Manage documents</button> : null}
+                  {canCommunicate ? <button className="secondary-button secondary-button--small" onClick={() => setCommunicatingCredentialTypeId(credential.credentialTypeId)} type="button"><Mail aria-hidden="true" size={15} /> Record communication</button> : null}
                 </div>
-              ) : null}
-            </>
-          ) : (
-            <div className="licensing-empty">
-              <ClipboardCheck aria-hidden="true" size={26} />
-              <strong>No credential types are available.</strong>
-              <span>Add an active credential type before adding documents or expiration details.</span>
-            </div>
-          )}
-        </article>
-
-      </section>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {canEditCredentials && editingCredential ? (
         <CredentialEditModal
@@ -810,16 +848,19 @@ function EmployeeLicensingProfile({
           onClose={() => setCommunicatingCredentialTypeId(null)}
         />
       ) : null}
-    </ModalDialog>
+    </section>
   )
 }
 
 export function LicensingCenterPage() {
   const [summaryFilter, setSummaryFilter] = useState<SummaryFilter>('all')
   const [search, setSearch] = useState('')
-  const [complianceFilter, setComplianceFilter] = useState<'all' | ComplianceColor>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [credentialTypeFilter, setCredentialTypeFilter] = useState('all')
-  const [employmentStatusFilter, setEmploymentStatusFilter] = useState<'all' | LicensingEmployee['employmentStatus']>('all')
+  const [employmentStatusFilter, setEmploymentStatusFilter] = useState<'all' | LicensingEmployee['employmentStatus']>('active')
+  const [eligibilityFilter, setEligibilityFilter] = useState<EligibilityFilter>('all')
+  const [expirationFilter, setExpirationFilter] = useState<ExpirationFilter>('all')
+  const [sortBy, setSortBy] = useState<WorklistSort>('employee')
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const [employeeBeingEditedId, setEmployeeBeingEditedId] = useState<string | null | 'new'>(null)
 
@@ -834,32 +875,46 @@ export function LicensingCenterPage() {
     queryKey: ['session-context'],
   })
 
-  const employeeById = useMemo(() => new Map((centerQuery.data?.employees ?? []).map((employee) => [employee.employeeId, employee])), [centerQuery.data?.employees])
-  const visibleRecords = useMemo(() => {
+  const visibleEmployees = useMemo(() => {
     const term = normalized(search.trim())
-    return (centerQuery.data?.records ?? []).filter((record) => {
-      const employee = employeeById.get(record.employeeId)
+    const matching = (centerQuery.data?.employees ?? []).filter((employee) => {
       const searchable = [
-        record.employeeName,
-        record.employeeNumber,
-        record.credentialName,
-        record.credentialNumber,
-        record.status,
-        record.statusLabel,
-        record.jobTitle,
-        record.primaryLocation,
+        legalEmployeeName(employee),
+        employee.username,
+        employee.employeeNumber,
+        employee.jobTitle,
+        ...employee.credentials.flatMap((credential) => [
+          credentialDisplayName(credential),
+          credential.credentialName,
+          credential.credentialNumber,
+          credential.status,
+          credential.statusLabel,
+        ]),
       ].map(normalized).join(' ')
-      return recordMatchesSummary(record, employee, summaryFilter)
-        && (complianceFilter === 'all' || record.complianceColor === complianceFilter)
-        && (credentialTypeFilter === 'all' || record.credentialTypeId === credentialTypeFilter)
-        && (employmentStatusFilter === 'all' || record.employmentStatus === employmentStatusFilter)
+      return employeeMatchesSummary(employee, summaryFilter)
+        && employeeMatchesStatus(employee, statusFilter)
+        && (credentialTypeFilter === 'all' || employee.credentials.some((credential) => credential.credentialTypeId === credentialTypeFilter))
+        && (employmentStatusFilter === 'all' || employee.employmentStatus === employmentStatusFilter)
+        && employeeMatchesEligibility(employee, eligibilityFilter)
+        && employeeMatchesExpiration(employee, expirationFilter)
         && (!term || searchable.includes(term))
     })
-  }, [centerQuery.data?.records, complianceFilter, credentialTypeFilter, employeeById, employmentStatusFilter, search, summaryFilter])
-  const visibleEmployeeRows = useMemo(() => groupLicensingRecordsByEmployee(
-    centerQuery.data?.employees ?? [],
-    visibleRecords,
-  ), [centerQuery.data?.employees, visibleRecords])
+    return matching.sort((left, right) => {
+      if (sortBy === 'expiration') {
+        return (left.closestExpirationDate ?? '9999-12-31').localeCompare(right.closestExpirationDate ?? '9999-12-31')
+          || legalEmployeeName(left).localeCompare(legalEmployeeName(right))
+      }
+      if (sortBy === 'status') {
+        return statusRank(left.overallCompliance) - statusRank(right.overallCompliance)
+          || legalEmployeeName(left).localeCompare(legalEmployeeName(right))
+      }
+      if (sortBy === 'eligibility') {
+        return formatEligibility(left.workEligibility).localeCompare(formatEligibility(right.workEligibility))
+          || legalEmployeeName(left).localeCompare(legalEmployeeName(right))
+      }
+      return legalEmployeeName(left).localeCompare(legalEmployeeName(right))
+    })
+  }, [centerQuery.data?.employees, credentialTypeFilter, eligibilityFilter, employmentStatusFilter, expirationFilter, search, sortBy, statusFilter, summaryFilter])
 
   if (!isSupabaseConfigured) {
     return (
@@ -902,6 +957,52 @@ export function LicensingCenterPage() {
     ? center.employees.find((employee) => employee.employeeId === employeeBeingEditedId) ?? null
     : null
 
+  const workingEmployees = center.employees.filter((employee) => employee.employmentStatus === 'active')
+  const needsActionCount = workingEmployees.filter((employee) => employeeMatchesSummary(employee, 'needsAction')).length
+  const dueSoonCount = workingEmployees.filter((employee) => employeeMatchesSummary(employee, 'dueSoon')).length
+  const awaitingReviewCount = workingEmployees.filter((employee) => employeeMatchesSummary(employee, 'awaitingReview')).length
+  const filtersAreActive = summaryFilter !== 'all'
+    || search.trim() !== ''
+    || statusFilter !== 'all'
+    || credentialTypeFilter !== 'all'
+    || employmentStatusFilter !== 'active'
+    || eligibilityFilter !== 'all'
+    || expirationFilter !== 'all'
+
+  function clearFilters() {
+    setSummaryFilter('all')
+    setSearch('')
+    setStatusFilter('all')
+    setCredentialTypeFilter('all')
+    setEmploymentStatusFilter('active')
+    setEligibilityFilter('all')
+    setExpirationFilter('all')
+    setSortBy('employee')
+  }
+
+  if (selectedEmployee) {
+    return (
+      <div className="page page--licensing">
+        <EmployeeLicensingProfile
+          canCommunicate={center.permissions.canCommunicate}
+          canEditCredentials={canEditCredentials}
+          canManageEmployeeProfile={center.permissions.canManage}
+          center={center}
+          employee={selectedEmployee}
+          onClose={() => setSelectedEmployeeId(null)}
+          onEditEmployee={(employee) => setEmployeeBeingEditedId(employee.employeeId)}
+        />
+        {employeeBeingEdited ? (
+          <EmployeeFormModal
+            employee={employeeBeingEdited}
+            key={`${employeeBeingEdited.employeeId}-${employeeBeingEdited.firstName}-${employeeBeingEdited.lastName}-${employeeBeingEdited.jobTitle ?? ''}-${employeeBeingEdited.employmentStatus}`}
+            onClose={() => setEmployeeBeingEditedId(null)}
+          />
+        ) : null}
+      </div>
+    )
+  }
+
   return (
     <div className="page page--licensing">
       <section className="page-intro licensing-intro">
@@ -926,101 +1027,80 @@ export function LicensingCenterPage() {
         </div>
       </section>
 
-      <section className="licensing-summary-grid" aria-label="Licensing status summary">
-        {summaryCards.map((card) => (
+      <section className="licensing-priority-grid" aria-label="Priority licensing work">
+        {([
+          { count: needsActionCount, helper: 'Expired, missing, rejected, or ineligible', key: 'needsAction' as const, label: 'Needs action', tone: 'red' as const },
+          { count: dueSoonCount, helper: 'Credential expires within 30 days', key: 'dueSoon' as const, label: 'Due soon', tone: 'yellow' as const },
+          { count: awaitingReviewCount, helper: 'Submitted credential needs review', key: 'awaitingReview' as const, label: 'Awaiting review', tone: 'yellow' as const },
+        ]).map((card) => (
           <button
             className={[
-              'licensing-summary-card',
-              `licensing-summary-card--${card.tone}`,
+              'licensing-priority-card',
+              `licensing-priority-card--${card.tone}`,
               summaryFilter === card.key ? 'is-active' : '',
             ].filter(Boolean).join(' ')}
             key={card.key}
             onClick={() => setSummaryFilter(summaryFilter === card.key ? 'all' : card.key)}
             type="button"
           >
+            <span className="licensing-priority-card__icon">{card.tone === 'red' ? <AlertTriangle aria-hidden="true" size={20} /> : <BellRing aria-hidden="true" size={20} />}</span>
             <span>{card.label}</span>
-            <strong>{center.summary[card.value]}</strong>
+            <strong>{card.count}</strong>
             <small>{card.helper}</small>
           </button>
         ))}
       </section>
 
-      <section className="licensing-toolbar" aria-label="Licensing filters">
-        <label className="search-field search-field--wide">
-          <Search aria-hidden="true" size={20} />
-          <span className="visually-hidden">Search licensing records</span>
-          <input onChange={(event) => setSearch(event.target.value)} placeholder="Search credential, license number, employee, status, or location" type="search" value={search} />
-        </label>
-        <label className="select-field licensing-toolbar__filter licensing-toolbar__filter--compliance">
-          <span>Status</span>
-          <select onChange={(event) => setComplianceFilter(event.target.value as typeof complianceFilter)} value={complianceFilter}>
-            <option value="all">All statuses</option>
-            <option value="green">Green</option>
-            <option value="yellow">Yellow</option>
-            <option value="red">Red</option>
-            <option value="gray">Gray</option>
-          </select>
-        </label>
-        <label className="select-field licensing-toolbar__filter licensing-toolbar__filter--credential">
-          <span>Credential</span>
-          <select onChange={(event) => setCredentialTypeFilter(event.target.value)} value={credentialTypeFilter}>
-            <option value="all">All types</option>
-            <optgroup label="Guard Licenses">
-              {center.credentialTypes.filter((type) => isGuardLicenseCode(type.code)).map((type) => (
-                <option key={type.id} value={type.id}>{type.code === 'denver_security_guard_license' ? 'Standard Guard License' : 'Armed Guard License / Endorsement'}</option>
-              ))}
-            </optgroup>
-            <optgroup label="Other Credentials">
-              {center.credentialTypes.filter((type) => !isGuardLicenseCode(type.code)).map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
-            </optgroup>
-          </select>
-        </label>
-        <label className="select-field licensing-toolbar__filter licensing-toolbar__filter--employment">
-          <span>Employment status</span>
-          <select onChange={(event) => setEmploymentStatusFilter(event.target.value as typeof employmentStatusFilter)} value={employmentStatusFilter}>
-            <option value="all">All statuses</option>
-            <option value="onboarding">Onboarding</option>
-            <option value="active">Active</option>
-            <option value="leave">On leave</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        </label>
-        <button className="secondary-button licensing-toolbar__clear" onClick={() => {
-          setSummaryFilter('all')
-          setSearch('')
-          setComplianceFilter('all')
-          setCredentialTypeFilter('all')
-          setEmploymentStatusFilter('all')
-        }} type="button">
-          <X aria-hidden="true" size={17} />
-          Clear filters
-        </button>
-      </section>
+      <details className="licensing-status-details">
+        <summary>More status details <ChevronDown aria-hidden="true" size={18} /></summary>
+        <div>
+          <button className={summaryFilter === 'compliant' ? 'is-active' : ''} onClick={() => setSummaryFilter(summaryFilter === 'compliant' ? 'all' : 'compliant')} type="button"><span>Fully compliant</span><strong>{center.summary.fullyCompliantEmployees}</strong></button>
+          <button className={summaryFilter === 'ineligible' ? 'is-active' : ''} onClick={() => setSummaryFilter(summaryFilter === 'ineligible' ? 'all' : 'ineligible')} type="button"><span>Ineligible</span><strong>{center.summary.ineligibleEmployees}</strong></button>
+          <button className={summaryFilter === 'missing' ? 'is-active' : ''} onClick={() => setSummaryFilter(summaryFilter === 'missing' ? 'all' : 'missing')} type="button"><span>Missing credentials</span><strong>{center.summary.missingRequired}</strong></button>
+          <button className={summaryFilter === 'expired' ? 'is-active' : ''} onClick={() => setSummaryFilter(summaryFilter === 'expired' ? 'all' : 'expired')} type="button"><span>Expired credentials</span><strong>{center.summary.expired}</strong></button>
+          <article><span>Expiring in 90 days</span><strong>{center.summary.expiring90}</strong></article>
+          <article><span>Expiring in 60 days</span><strong>{center.summary.expiring60}</strong></article>
+          <article><span>Expiring in 30 days</span><strong>{center.summary.expiring30}</strong></article>
+          <article><span>Renewals in progress</span><strong>{center.summary.renewalsInProgress}</strong></article>
+          <article><span>Rejected</span><strong>{center.summary.rejected}</strong></article>
+        </div>
+      </details>
 
-      <section className="licensing-work-queue" aria-label="Coordinator work queue">
-        <article className="licensing-queue-card licensing-queue-card--red">
-          <AlertTriangle aria-hidden="true" size={20} />
-          <div><span>Immediate action</span><strong>{center.summary.expired + center.summary.missingRequired + center.summary.rejected + center.summary.ineligibleEmployees}</strong></div>
-        </article>
-        <article className="licensing-queue-card licensing-queue-card--red">
-          <BellRing aria-hidden="true" size={20} />
-          <div><span>Due soon</span><strong>{center.summary.expiring30}</strong></div>
-        </article>
-        <article className="licensing-queue-card licensing-queue-card--yellow">
-          <FileText aria-hidden="true" size={20} />
-          <div><span>Follow-up</span><strong>{center.summary.expiring60 + center.summary.renewalsInProgress}</strong></div>
-        </article>
-        <article className="licensing-queue-card licensing-queue-card--yellow">
-          <BadgeCheck aria-hidden="true" size={20} />
-          <div><span>Upcoming</span><strong>{center.summary.expiring90}</strong></div>
-        </article>
+      <section className="licensing-toolbar licensing-toolbar--compact" aria-label="Licensing filters">
+        <div className="licensing-toolbar__primary">
+          <label className="search-field search-field--wide">
+            <Search aria-hidden="true" size={20} />
+            <span className="visually-hidden">Search employees and credentials</span>
+            <input onChange={(event) => setSearch(event.target.value)} placeholder="Search legal name, username, employee ID, license number, or credential" type="search" value={search} />
+          </label>
+          <label className="select-field"><span>Credential status</span><select onChange={(event) => setStatusFilter(event.target.value as StatusFilter)} value={statusFilter}>
+            <option value="all">All statuses</option><option value="needsAction">Needs action</option><option value="missing">Missing</option><option value="awaitingReview">Awaiting review</option><option value="verified">Verified</option><option value="expiring">Expiring</option><option value="expired">Expired</option><option value="rejected">Rejected</option><option value="renewal">Renewal in progress</option>
+          </select></label>
+          <label className="select-field"><span>Credential type</span><select onChange={(event) => setCredentialTypeFilter(event.target.value)} value={credentialTypeFilter}>
+            <option value="all">All types</option>
+            <optgroup label="Guard license package">{center.credentialTypes.filter((type) => isGuardLicenseCode(type.code)).map((type) => <option key={type.id} value={type.id}>{type.code === 'denver_security_guard_license' ? 'Standard Guard License' : 'Armed Guard License / Endorsement'}</option>)}</optgroup>
+            <optgroup label="Other credentials">{center.credentialTypes.filter((type) => !isGuardLicenseCode(type.code)).map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</optgroup>
+          </select></label>
+          <label className="select-field"><span>Employment</span><select onChange={(event) => setEmploymentStatusFilter(event.target.value as typeof employmentStatusFilter)} value={employmentStatusFilter}>
+            <option value="active">Active</option><option value="onboarding">Onboarding</option><option value="leave">On leave</option><option value="inactive">Inactive</option><option value="separated">Separated</option><option value="all">All statuses</option>
+          </select></label>
+        </div>
+        <details className="licensing-more-filters">
+          <summary>More filters <ChevronDown aria-hidden="true" size={17} /></summary>
+          <div>
+            <label className="select-field"><span>Shift eligibility</span><select onChange={(event) => setEligibilityFilter(event.target.value as EligibilityFilter)} value={eligibilityFilter}><option value="all">All eligibility</option><option value="armed">Armed eligible</option><option value="unarmed">Unarmed only</option><option value="ineligible">Ineligible</option></select></label>
+            <label className="select-field"><span>Expiration window</span><select onChange={(event) => setExpirationFilter(event.target.value as ExpirationFilter)} value={expirationFilter}><option value="all">Any expiration</option><option value="30">Within 30 days</option><option value="60">Within 60 days</option><option value="90">Within 90 days</option></select></label>
+            <label className="select-field"><span>Sort worklist</span><select onChange={(event) => setSortBy(event.target.value as WorklistSort)} value={sortBy}><option value="employee">Employee name</option><option value="expiration">Next expiration</option><option value="status">Overall status</option><option value="eligibility">Shift eligibility</option></select></label>
+          </div>
+        </details>
+        <div className="licensing-toolbar__footer"><span>{visibleEmployees.length} employee{visibleEmployees.length === 1 ? '' : 's'} match</span><button className="secondary-button" disabled={!filtersAreActive} onClick={clearFilters} type="button"><X aria-hidden="true" size={17} /> Clear filters</button></div>
       </section>
 
       <section className="licensing-table-panel" aria-label="Licensing records">
         <div className="licensing-table-panel__heading">
           <div>
             <h2>Credential worklist</h2>
-            <p>{visibleEmployeeRows.length} employee{visibleEmployeeRows.length === 1 ? '' : 's'} match the current filters.</p>
+            <p>Active employees are shown by default. Open a profile only when licensing work is needed.</p>
           </div>
           {summaryFilter !== 'all' ? <CredentialStatusPill color="yellow" label="Summary filter active" /> : null}
         </div>
@@ -1030,11 +1110,10 @@ export function LicensingCenterPage() {
             <span role="columnheader">Licenses &amp; Credentials</span>
             <span role="columnheader">Next Expiration</span>
             <span role="columnheader">Overall Status</span>
-            <span role="columnheader">Renewals</span>
             <span role="columnheader">Shift Eligibility</span>
             <span role="columnheader">Action</span>
           </div>
-          {visibleEmployeeRows.map(({ employee, records }) => {
+          {visibleEmployees.map((employee) => {
             const credentialsOnFile = employee.credentials.filter((credential) => credential.credentialId)
             const credentialNames = Array.from(new Set(credentialsOnFile.map(credentialDisplayName)))
             const credentialPreview = credentialNames.length === 0
@@ -1048,13 +1127,12 @@ export function LicensingCenterPage() {
             return (
               <div className="licensing-row licensing-row--employee-summary" key={employee.employeeId} role="row">
                 <div role="cell">
-                  <strong>{employee.displayName}</strong>
-                  <span>{employee.employeeNumber ?? 'ID pending'} | {employee.jobTitle || formatRole(employee.role)}</span>
+                  <strong>{legalEmployeeName(employee)}</strong>
+                  <span>{employee.employeeNumber ?? 'ID pending'} | @{employee.username} | {employee.jobTitle || formatRole(employee.role)}</span>
                 </div>
                 <div role="cell">
                   <strong>{credentialsOnFile.length} on file{missingCount > 0 ? ` | ${missingCount} missing` : ''}</strong>
                   <span>{credentialPreview}</span>
-                  {records.length < employee.credentials.length ? <span>{records.length} match current filters</span> : null}
                 </div>
                 <div role="cell">
                   <strong>{formatDate(employee.closestExpirationDate)}</strong>
@@ -1065,11 +1143,11 @@ export function LicensingCenterPage() {
                   </span>
                 </div>
                 <div role="cell"><CredentialStatusPill color={employee.overallCompliance} label={complianceLabels[employee.overallCompliance]} /></div>
-                <div role="cell"><span className="plain-value">{renewalCount > 0 ? `${renewalCount} in progress` : 'No active renewal'}</span></div>
                 <div role="cell">
                   <span className={`work-eligibility work-eligibility--${employee.workEligibility}`}>
-                    {formatEligibility(employee.workEligibility)}
+                    {employeeIsArmedEligible(employee) ? 'Armed eligible' : employee.workEligibility === 'ineligible' ? 'Ineligible' : 'Unarmed only'}
                   </span>
+                  {renewalCount > 0 ? <span>{renewalCount} renewal{renewalCount === 1 ? '' : 's'} in progress</span> : null}
                 </div>
                 <div className="licensing-row__actions" role="cell">
                   <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployeeId(employee.employeeId)} type="button">
@@ -1081,7 +1159,7 @@ export function LicensingCenterPage() {
             )
           })}
         </div>
-        {visibleEmployeeRows.length === 0 ? (
+          {visibleEmployees.length === 0 ? (
           <div className="licensing-empty">
             <ClipboardCheck aria-hidden="true" size={26} />
             <strong>No licensing records match these filters.</strong>
@@ -1090,17 +1168,6 @@ export function LicensingCenterPage() {
         ) : null}
       </section>
 
-      {selectedEmployee ? (
-        <EmployeeLicensingProfile
-          canCommunicate={center.permissions.canCommunicate}
-          canEditCredentials={canEditCredentials}
-          canManageEmployeeProfile={center.permissions.canManage}
-          center={center}
-          employee={selectedEmployee}
-          onClose={() => setSelectedEmployeeId(null)}
-          onEditEmployee={(employee) => setEmployeeBeingEditedId(employee.employeeId)}
-        />
-      ) : null}
       {selectedEmployeeId && !selectedEmployee && centerQuery.isFetching ? (
         <ModalDialog
           busy

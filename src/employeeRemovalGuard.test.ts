@@ -37,10 +37,10 @@ describe('controlled employee removal', () => {
     expect(migration).not.toContain("lower(btrim(employee.first_name)) = 'lucius'")
   })
 
-  it('keeps separated employees and their credentials out of the Licensing Center', () => {
-    expect(licensingData).toContain("employee.employmentStatus !== 'separated'")
-    expect(licensingData).toContain("record.employmentStatus !== 'separated'")
-    expect(licensingData).toContain('activeEmployeeIds.has(record.employeeId)')
-    expect(licensingPage.match(/<option value="separated">Separated<\/option>/g)).toHaveLength(1)
+  it('keeps separated employees out of the active licensing workload while preserving intentional historical access', () => {
+    expect(licensingData).toContain("workingEmployees = employees.filter((employee) => employee.employmentStatus === 'active')")
+    expect(licensingData).toContain('retainedEmployeeIds.has(record.employeeId)')
+    expect(licensingPage).toContain("useState<'all' | LicensingEmployee['employmentStatus']>('active')")
+    expect(licensingPage).toContain('<option value="separated">Separated</option>')
   })
 })

@@ -184,16 +184,17 @@ function cleanOptional(value: string | null | undefined): string | null {
 
 function filteredLicensingCenter(center: LicensingCenter, removedEmployeeIds: string[]): LicensingCenter {
   const removed = new Set(removedEmployeeIds)
-  const employees = center.employees.filter((employee) => (
-    employee.employmentStatus !== 'separated'
-    && !removed.has(employee.employeeId)
-  ))
-  const activeEmployeeIds = new Set(employees.map((employee) => employee.employeeId))
+  const employees = center.employees.filter((employee) => !removed.has(employee.employeeId))
+  const retainedEmployeeIds = new Set(employees.map((employee) => employee.employeeId))
   const records = center.records.filter((record) => (
-    record.employmentStatus !== 'separated'
-    && activeEmployeeIds.has(record.employeeId)
+    retainedEmployeeIds.has(record.employeeId)
   ))
-  const daysRemaining = (minimum: number, maximum: number) => records.filter((record) =>
+  // Historical and non-active employees remain available through an intentional filter,
+  // but only active employees contribute to the coordinator's current workload summary.
+  const workingEmployees = employees.filter((employee) => employee.employmentStatus === 'active')
+  const workingEmployeeIds = new Set(workingEmployees.map((employee) => employee.employeeId))
+  const workingRecords = records.filter((record) => workingEmployeeIds.has(record.employeeId))
+  const daysRemaining = (minimum: number, maximum: number) => workingRecords.filter((record) =>
     typeof record.daysRemaining === 'number'
     && record.daysRemaining >= minimum
     && record.daysRemaining <= maximum,
@@ -204,16 +205,16 @@ function filteredLicensingCenter(center: LicensingCenter, removedEmployeeIds: st
     employees,
     records,
     summary: {
-      awaitingReview: records.filter((record) => record.status === 'Under Review').length,
-      expired: records.filter((record) => record.statusLabel === 'Expired').length,
+      awaitingReview: workingRecords.filter((record) => record.status === 'Under Review').length,
+      expired: workingRecords.filter((record) => record.statusLabel === 'Expired').length,
       expiring30: daysRemaining(0, 30),
       expiring60: daysRemaining(31, 60),
       expiring90: daysRemaining(61, 90),
-      fullyCompliantEmployees: employees.filter((employee) => employee.overallCompliance === 'green').length,
-      ineligibleEmployees: employees.filter((employee) => employee.workEligibility === 'ineligible').length,
-      missingRequired: records.filter((record) => record.statusLabel === 'Missing Required Credential').length,
-      rejected: records.filter((record) => record.status === 'Rejected').length,
-      renewalsInProgress: records.filter((record) => record.status === 'Renewal In Progress' || record.status === 'Renewal Submitted').length,
+      fullyCompliantEmployees: workingEmployees.filter((employee) => employee.overallCompliance === 'green').length,
+      ineligibleEmployees: workingEmployees.filter((employee) => employee.workEligibility === 'ineligible').length,
+      missingRequired: workingRecords.filter((record) => record.statusLabel === 'Missing Required Credential').length,
+      rejected: workingRecords.filter((record) => record.status === 'Rejected').length,
+      renewalsInProgress: workingRecords.filter((record) => record.status === 'Renewal In Progress' || record.status === 'Renewal Submitted').length,
     },
   }
 }

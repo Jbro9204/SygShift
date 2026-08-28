@@ -80,14 +80,14 @@ describe('permission surface guardrails', () => {
 
   it('keeps Licensing Center as the credential workspace without duplicating the Directory', () => {
     expect(licensingCenterPage).not.toContain('licensingView')
-    expect(licensingCenterPage).not.toContain('visibleEmployees')
     expect(licensingCenterPage).not.toContain('Employee licensing list')
     expect(licensingCenterPage).not.toContain('licensing-employee-panel')
     expect(licensingCenterPage).toContain('Credential worklist')
+    expect(licensingCenterPage).toContain('legalEmployeeName')
     expect(licensingCenterPage).toContain('Open credential profile')
-    expect(licensingCenterPage).toContain('licensing-credential-workspace')
-    expect(licensingCenterPage).toContain('Choose credential/license')
-    expect(licensingCenterPage).toContain('Manage selected credential')
+    expect(licensingCenterPage).toContain('licensing-profile-page')
+    expect(licensingCenterPage).toContain('Credentials on file')
+    expect(licensingCenterPage).toContain('Available and missing credential types')
     expect(licensingCenterPage).toContain('upsertLicensingCredential')
   })
 

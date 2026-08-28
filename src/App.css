@@ -22117,3 +22117,715 @@
     padding: 24px 18px;
   }
 }
+
+/* Licensing Center: compact worklist and focused employee profile */
+.licensing-priority-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.licensing-priority-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  min-height: 112px;
+  padding: 17px 18px;
+  color: #302a22;
+  background: #fffdf8;
+  border: 1px solid #ded4c5;
+  border-left: 4px solid #c99845;
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.licensing-priority-card:hover,
+.licensing-priority-card:focus-visible,
+.licensing-priority-card.is-active {
+  border-color: #ad7924;
+  box-shadow: 0 14px 30px rgb(62 45 18 / 13%);
+  transform: translateY(-1px);
+}
+
+.licensing-priority-card--red {
+  border-left-color: #b34b3f;
+}
+
+.licensing-priority-card__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  grid-row: 1 / 3;
+  place-items: center;
+  color: #8a611e;
+  background: #f8ecd5;
+  border-radius: 10px;
+}
+
+.licensing-priority-card--red .licensing-priority-card__icon {
+  color: #8f3c33;
+  background: #fae9e6;
+}
+
+.licensing-priority-card > span:not(.licensing-priority-card__icon) {
+  align-self: end;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.licensing-priority-card > strong {
+  grid-row: 1 / 3;
+  grid-column: 3;
+  font-size: 34px;
+  line-height: 1;
+}
+
+.licensing-priority-card > small {
+  align-self: start;
+  color: #70675a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.licensing-status-details {
+  margin-bottom: 14px;
+  background: #fbf8f1;
+  border: 1px solid #ddd3c4;
+  border-radius: 11px;
+}
+
+.licensing-status-details > summary,
+.licensing-more-filters > summary,
+.licensing-available-credentials > summary {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 15px;
+  color: #4f4436;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 850;
+  list-style: none;
+}
+
+.licensing-status-details > summary::-webkit-details-marker,
+.licensing-more-filters > summary::-webkit-details-marker,
+.licensing-available-credentials > summary::-webkit-details-marker {
+  display: none;
+}
+
+.licensing-status-details[open] > summary svg,
+.licensing-more-filters[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+.licensing-status-details > div {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 9px;
+  padding: 0 14px 14px;
+}
+
+.licensing-status-details button,
+.licensing-status-details article {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  color: #3e382f;
+  background: #fff;
+  border: 1px solid #e0d7ca;
+  border-radius: 9px;
+  text-align: left;
+}
+
+.licensing-status-details button {
+  cursor: pointer;
+}
+
+.licensing-status-details button:hover,
+.licensing-status-details button:focus-visible,
+.licensing-status-details button.is-active {
+  background: #fff6e5;
+  border-color: #c8943c;
+}
+
+.licensing-status-details span {
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+.licensing-status-details strong {
+  font-size: 19px;
+}
+
+.licensing-toolbar--compact {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 12px;
+  padding: 15px;
+}
+
+.licensing-toolbar__primary {
+  display: grid;
+  grid-template-columns: minmax(300px, 1.45fr) repeat(3, minmax(170px, 0.7fr));
+  align-items: end;
+  gap: 12px;
+}
+
+.licensing-more-filters {
+  overflow: hidden;
+  background: #fbf8f1;
+  border: 1px solid #e0d7ca;
+  border-radius: 9px;
+}
+
+.licensing-more-filters > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 0 14px 14px;
+}
+
+.licensing-toolbar__footer {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: #6a6155;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.licensing-toolbar--compact .licensing-toolbar__footer .secondary-button {
+  width: auto;
+}
+
+.licensing-row--employee-summary,
+.licensing-row--header {
+  grid-template-columns: minmax(190px, 1.05fr) minmax(220px, 1.2fr) minmax(185px, 0.85fr) minmax(130px, 0.62fr) minmax(150px, 0.75fr) minmax(170px, max-content);
+}
+
+.licensing-row--employee-summary {
+  min-height: 92px;
+}
+
+.licensing-row--employee-summary:hover {
+  background: #fffdf9;
+}
+
+.licensing-profile-page {
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #dcd2c4;
+  border-radius: 16px;
+  box-shadow: 0 18px 44px rgb(45 34 18 / 10%);
+}
+
+.licensing-profile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 28px;
+  background: linear-gradient(135deg, #201c16 0%, #2c251b 100%);
+  border-bottom: 3px solid #bd8430;
+}
+
+.licensing-profile-header__identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 18px;
+}
+
+.licensing-profile-header__identity > div {
+  min-width: 0;
+}
+
+.licensing-profile-header h1,
+.licensing-profile-header p {
+  margin: 0;
+}
+
+.licensing-profile-header h1 {
+  margin-top: 4px;
+  color: #fff;
+  font-size: clamp(27px, 3vw, 38px);
+  letter-spacing: -0.035em;
+}
+
+.licensing-profile-header p {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  color: #d8ccba;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.licensing-profile-header .eyebrow {
+  color: #e1ad55;
+}
+
+.licensing-profile-header__identity > .secondary-button,
+.licensing-profile-header__actions > .secondary-button {
+  color: #fff6e7;
+  background: rgb(255 255 255 / 8%);
+  border-color: rgb(255 255 255 / 24%);
+}
+
+.licensing-profile-header__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.licensing-profile-page .licensing-profile-summary {
+  margin: 18px 22px 14px;
+}
+
+.licensing-profile-page > .licensing-alert {
+  align-items: center;
+  margin: 0 22px 16px;
+}
+
+.licensing-profile-page > .licensing-alert > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.licensing-profile-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 0 22px;
+  overflow-x: auto;
+  border-bottom: 1px solid #ded5c8;
+}
+
+.licensing-profile-tabs button {
+  min-height: 48px;
+  padding: 10px 18px;
+  color: #665c4e;
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.licensing-profile-tabs button:hover,
+.licensing-profile-tabs button:focus-visible,
+.licensing-profile-tabs button.is-active {
+  color: #2b241b;
+  border-bottom-color: #b87d24;
+}
+
+.licensing-profile-tab-panel {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+}
+
+.licensing-profile-tab-panel__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.licensing-profile-tab-panel__heading h2,
+.licensing-profile-tab-panel__heading p {
+  margin: 0;
+}
+
+.licensing-profile-tab-panel__heading h2 {
+  font-size: 22px;
+}
+
+.licensing-profile-tab-panel__heading p {
+  margin-top: 4px;
+  color: #6f665a;
+  font-size: 14px;
+}
+
+.licensing-profile-tab-panel__heading > strong {
+  flex: 0 0 auto;
+  color: #7b5316;
+  font-size: 15px;
+}
+
+.licensing-credential-accordion-list,
+.licensing-credential-group,
+.licensing-renewal-list,
+.licensing-activity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.licensing-credential-group + .licensing-credential-group {
+  margin-top: 8px;
+}
+
+.licensing-credential-group > .eyebrow {
+  margin: 5px 2px 0;
+}
+
+.licensing-credential-accordion {
+  overflow: hidden;
+  background: #fffdf8;
+  border: 1px solid #ddd3c5;
+  border-left: 4px solid #bdb4a6;
+  border-radius: 11px;
+}
+
+.licensing-credential-accordion--green {
+  border-left-color: #397d5d;
+}
+
+.licensing-credential-accordion--yellow {
+  border-left-color: #c58a2e;
+}
+
+.licensing-credential-accordion--red {
+  border-left-color: #b24c40;
+}
+
+.licensing-credential-accordion__trigger {
+  display: flex;
+  width: 100%;
+  min-height: 66px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 16px;
+  color: #28231d;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.licensing-credential-accordion__trigger:hover,
+.licensing-credential-accordion__trigger:focus-visible {
+  background: #fbf6ec;
+}
+
+.licensing-credential-accordion__identity,
+.licensing-credential-accordion__state {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.licensing-credential-accordion__identity {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.licensing-credential-accordion__identity strong,
+.licensing-credential-accordion__identity small {
+  overflow-wrap: anywhere;
+}
+
+.licensing-credential-accordion__identity strong {
+  font-size: 16px;
+}
+
+.licensing-credential-accordion__identity small {
+  color: #73695c;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.licensing-credential-accordion__state > svg {
+  transition: transform 150ms ease;
+}
+
+.licensing-credential-accordion__state > svg.is-open {
+  transform: rotate(180deg);
+}
+
+.licensing-credential-accordion__body {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  background: #fff;
+  border-top: 1px solid #e4dbcf;
+}
+
+.licensing-credential-note {
+  margin: 0;
+  padding: 11px 12px;
+  color: #554d42;
+  background: #f8f4ec;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.licensing-available-credentials {
+  overflow: hidden;
+  background: #fbf8f1;
+  border: 1px solid #ddd3c5;
+  border-radius: 11px;
+}
+
+.licensing-available-credentials > summary span {
+  display: inline-grid;
+  min-width: 28px;
+  min-height: 28px;
+  place-items: center;
+  color: #5a421a;
+  background: #f3dfb7;
+  border-radius: 999px;
+}
+
+.licensing-available-credentials > .licensing-credential-accordion-list {
+  padding: 0 12px 12px;
+}
+
+.licensing-renewal-list article,
+.licensing-activity-list article {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.35fr) repeat(2, minmax(140px, 0.55fr)) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: #fffdf8;
+  border: 1px solid #ddd4c6;
+  border-radius: 10px;
+}
+
+.licensing-renewal-list article > div,
+.licensing-activity-list article > div {
+  min-width: 0;
+}
+
+.licensing-renewal-list article span,
+.licensing-activity-list article span,
+.licensing-activity-list dt {
+  color: #70675b;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.licensing-renewal-list article strong,
+.licensing-activity-list article strong,
+.licensing-activity-list dd {
+  display: block;
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: #2b261f;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.licensing-activity-list article {
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.35fr) auto;
+  align-items: start;
+}
+
+.licensing-activity-list article > div:first-child {
+  display: grid;
+  gap: 7px;
+}
+
+.licensing-activity-list dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(110px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.licensing-activity-list dl div {
+  min-width: 0;
+}
+
+@media (max-width: 1180px) {
+  .licensing-toolbar__primary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .licensing-toolbar__primary .search-field--wide {
+    grid-column: 1 / -1;
+  }
+
+  .licensing-profile-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .licensing-profile-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .licensing-profile-header__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 880px) {
+  .licensing-priority-grid,
+  .licensing-status-details > div,
+  .licensing-more-filters > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .licensing-table {
+    min-width: 0;
+  }
+
+  .licensing-row--header {
+    display: none;
+  }
+
+  .licensing-row--employee-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 15px;
+    padding: 18px;
+  }
+
+  .licensing-row--employee-summary > div[role='cell']::before {
+    display: block;
+    margin-bottom: 5px;
+    color: #7a5a25;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+
+  .licensing-row--employee-summary > div[role='cell']:nth-child(1)::before { content: 'Employee'; }
+  .licensing-row--employee-summary > div[role='cell']:nth-child(2)::before { content: 'Licenses & Credentials'; }
+  .licensing-row--employee-summary > div[role='cell']:nth-child(3)::before { content: 'Next Expiration'; }
+  .licensing-row--employee-summary > div[role='cell']:nth-child(4)::before { content: 'Overall Status'; }
+  .licensing-row--employee-summary > div[role='cell']:nth-child(5)::before { content: 'Shift Eligibility'; }
+  .licensing-row--employee-summary > div[role='cell']:nth-child(6)::before { content: 'Action'; }
+
+  .licensing-row__actions {
+    justify-content: stretch;
+  }
+
+  .licensing-renewal-list article,
+  .licensing-activity-list article {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .licensing-activity-list dl,
+  .licensing-activity-list .licensing-selected-credential__actions {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 680px) {
+  .licensing-intro__actions,
+  .licensing-intro__actions .primary-action,
+  .licensing-intro__actions .access-note {
+    width: 100%;
+  }
+
+  .licensing-priority-grid,
+  .licensing-status-details > div,
+  .licensing-toolbar__primary,
+  .licensing-more-filters > div,
+  .licensing-profile-summary,
+  .licensing-row--employee-summary,
+  .licensing-renewal-list article,
+  .licensing-activity-list article,
+  .licensing-activity-list dl {
+    grid-template-columns: 1fr;
+  }
+
+  .licensing-profile-header,
+  .licensing-profile-page .licensing-profile-summary,
+  .licensing-profile-page > .licensing-alert,
+  .licensing-profile-tab-panel,
+  .licensing-profile-tabs {
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .licensing-profile-header,
+  .licensing-profile-tab-panel {
+    padding: 18px 16px;
+  }
+
+  .licensing-profile-header__identity {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .licensing-profile-header__identity > .secondary-button,
+  .licensing-profile-header__actions > button,
+  .licensing-profile-header__actions > .licensing-status,
+  .licensing-profile-header__actions > .work-eligibility {
+    width: 100%;
+  }
+
+  .licensing-profile-page .licensing-profile-summary {
+    margin: 14px 16px;
+  }
+
+  .licensing-profile-page > .licensing-alert {
+    align-items: stretch;
+    flex-direction: column;
+    margin: 0 16px 14px;
+  }
+
+  .licensing-profile-tabs {
+    padding: 0 10px;
+  }
+
+  .licensing-profile-tabs button {
+    flex: 1 0 auto;
+  }
+
+  .licensing-toolbar__footer,
+  .licensing-profile-tab-panel__heading,
+  .licensing-credential-accordion__trigger,
+  .licensing-credential-accordion__state,
+  .licensing-selected-credential__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .licensing-toolbar__footer .secondary-button,
+  .licensing-selected-credential__actions .primary-action,
+  .licensing-selected-credential__actions .secondary-button {
+    width: 100%;
+  }
+
+  .licensing-credential-accordion__state {
+    width: 100%;
+    align-items: center;
+    flex-direction: row;
+    justify-content: space-between;
+  }
+
+  .licensing-activity-list dl,
+  .licensing-activity-list .licensing-selected-credential__actions {
+    grid-column: auto;
+  }
+}
