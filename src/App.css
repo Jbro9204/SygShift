@@ -12332,6 +12332,10 @@
   margin-bottom: 16px;
 }
 
+.time-command-grid--period-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .time-live-no-show-panel {
   display: grid;
   gap: 14px;
@@ -12408,6 +12412,29 @@
 
 .my-time-summary-card__metrics {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.my-time-self-service-card {
+  display: grid;
+  gap: 16px;
+}
+
+.my-time-self-service-card .time-section-header {
+  margin: 0;
+}
+
+.my-time-self-service-card__actions {
+  display: grid;
+  grid-template-columns: minmax(190px, auto) minmax(0, 1fr);
+  gap: 10px 14px;
+  align-items: center;
+}
+
+.my-time-self-service-card__actions p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
 }
 
 .my-time-two-column {
@@ -17197,6 +17224,14 @@
 
   .time-command-grid {
     gap: 12px;
+  }
+
+  .my-time-self-service-card__actions {
+    grid-template-columns: 1fr;
+  }
+
+  .my-time-self-service-card__actions .time-button {
+    width: 100%;
   }
 
   .operational-details dl > div {

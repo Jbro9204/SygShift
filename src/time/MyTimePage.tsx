@@ -1,18 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, format, subDays } from 'date-fns'
 import {
   AlertTriangle,
-  ArrowRight,
   CalendarDays,
   CheckCircle2,
   CircleAlert,
   Clock3,
-  Coffee,
   FileClock,
   History,
-  MapPin,
   ShieldAlert,
   Timer,
 } from 'lucide-react'
@@ -28,30 +25,23 @@ import {
   type TimeAdjustmentRequest,
 } from '../data/timeOperations'
 import {
-  activeTimeState,
-  getClockableShiftChoices,
   getOwnTimekeepingReview,
   getTimekeepingDashboard,
-  nextTimeEventKinds,
   payrollHours,
-  recordTimeEvent,
   reportAttendanceIssue,
   requestTimeEventCorrection,
   type PendingCorrection,
-  type ClockableShiftChoices,
   type AttendanceReportResult,
   type TimeEventKind,
   type TimekeepingDashboard,
   type TimekeepingEvent,
   type TimekeepingReviewRow,
   type TimekeepingShift,
-  type TimekeepingState,
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTimeRange, formatOperationalDateTime } from '../lib/time'
-import { canUseOwnTimeClock, canViewOwnTime, canViewTeamTime } from './timePermissions'
+import { canViewOwnTime } from './timePermissions'
 import { isActiveInProgressTimeRow } from './timePayroll'
-import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from './timeQuerySync'
 import { currentPayrollPeriod, formatUsDateKey } from './timeRules'
 import {
   TimeAlertCard,
@@ -68,13 +58,6 @@ type TimeCorrectionMode = 'change_time' | 'void' | 'review_note'
 
 const OPERATIONAL_TIME_ZONE = 'America/Denver'
 
-const actionLabels: Record<TimeEventKind, string> = {
-  break_end: 'End break',
-  break_start: 'Start break',
-  clock_in: 'Clock in',
-  clock_out: 'Clock out',
-}
-
 const eventLabels: Record<TimeEventKind, string> = {
   break_end: 'Break ended',
   break_start: 'Break started',
@@ -85,8 +68,6 @@ const eventLabels: Record<TimeEventKind, string> = {
 export function MyTimePage() {
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
-  const punchLocked = useRef(false)
-  const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
   const [attendanceReportOpen, setAttendanceReportOpen] = useState(false)
   const [attendanceReportType, setAttendanceReportType] = useState<AttendanceIssueType>('called_in_sick')
   const [attendanceReportShiftId, setAttendanceReportShiftId] = useState('')
@@ -106,8 +87,6 @@ export function MyTimePage() {
     enabled: isSupabaseConfigured,
   })
   const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
-  const punchAllowed = canUseOwnTimeClock(sessionQuery.data)
-  const teamTimeAllowed = canViewTeamTime(sessionQuery.data)
   const dashboardQuery = useQuery({
     queryFn: () => getTimekeepingDashboard(),
     queryKey: ['my-time-dashboard'],
@@ -137,23 +116,6 @@ export function MyTimePage() {
     () => dashboard ? rows.filter((row) => row.operationalDate === dashboard.operationalDate) : [],
     [dashboard, rows],
   )
-  const currentShift = dashboard ? activeShift(dashboard) : null
-  const state = activeTimeState(dashboard?.lastEvent ?? null)
-  const nextKinds = nextTimeEventKinds(state)
-  const dashboardEligibleShifts = dashboard?.eligibleShifts
-  const dashboardServerTimestamp = dashboard?.serverTimestamp
-  const clockableChoices = useMemo(
-    () => dashboardEligibleShifts && dashboardServerTimestamp ? getClockableShiftChoices(dashboardEligibleShifts, dashboardServerTimestamp) : null,
-    [dashboardEligibleShifts, dashboardServerTimestamp],
-  )
-  const defaultShiftId = selectedShiftId ?? clockableChoices?.shifts[0]?.shiftId ?? null
-
-  useEffect(() => {
-    if (!clockableChoices || state !== 'off_clock') return
-    if (clockableChoices.shifts.some((shift) => shift.shiftId === selectedShiftId)) return
-    setSelectedShiftId(clockableChoices.shifts[0]?.shiftId ?? null)
-  }, [clockableChoices, selectedShiftId, state])
-
   useEffect(() => {
     if (dashboard?.operationalDate && !attendanceReportDate) setAttendanceReportDate(dashboard.operationalDate)
   }, [attendanceReportDate, dashboard?.operationalDate])
@@ -166,18 +128,6 @@ export function MyTimePage() {
     nextParams.delete('report')
     setSearchParams(nextParams, { replace: true })
   }, [ownTimeAllowed, searchParams, setSearchParams])
-
-  const punchMutation = useMutation({
-    mutationFn: (input: { kind: TimeEventKind; shiftId?: string | null }) => recordTimeEvent(input),
-    onSuccess: (event) => {
-      applyTimeEventToCachedDashboards(queryClient, event)
-      setSelectedShiftId(null)
-    },
-    onSettled: async () => {
-      punchLocked.current = false
-      await refreshTimekeepingQueriesAfterPunch(queryClient)
-    },
-  })
 
   const attendanceReportMutation = useMutation({
     mutationFn: () => reportAttendanceIssue({
@@ -232,15 +182,6 @@ export function MyTimePage() {
     }
   }, [dashboard?.operationalDate, dashboard?.pendingCorrectionCount, reviewQuery.data?.pendingCorrections.length, rows, todayRows])
 
-  function record(kind: TimeEventKind) {
-    if (!punchAllowed || punchLocked.current || punchMutation.isPending) return
-    punchLocked.current = true
-    punchMutation.mutate({
-      kind,
-      shiftId: kind === 'clock_in' ? defaultShiftId : undefined,
-    })
-  }
-
   if (!isSupabaseConfigured) {
     return (
       <main className="page page--sygshift-time">
@@ -294,26 +235,14 @@ export function MyTimePage() {
   return (
     <main className="page page--sygshift-time">
       <TimePageHeader
-        actions={teamTimeAllowed ? (
-          <>
-            <Link className="time-button time-button--secondary" to="/time"><ArrowRight aria-hidden="true" size={18} /><span>Time Command Center</span></Link>
-            <Link className="time-button time-button--secondary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Advanced Time Tools</span></Link>
-          </>
-        ) : undefined}
         eyebrow="My Time"
-        summary="A simple place to see your clock status, current pay period, recent punches, and any correction items tied to your time."
+        summary="Review your current pay period, recent punches, and correction requests. Your time clock remains available above while you work."
         title="My Time"
       />
 
       {reviewQuery.isError ? (
         <TimeAlertCard icon={AlertTriangle} title="Pay-period details could not be loaded" tone="warning">
           <p>Your live clock status is still shown. Advanced review details may require account access to be refreshed.</p>
-        </TimeAlertCard>
-      ) : null}
-
-      {punchMutation.isError ? (
-        <TimeAlertCard icon={CircleAlert} title="The punch could not be recorded" tone="danger">
-          <p>{punchMutation.error.message}</p>
         </TimeAlertCard>
       ) : null}
 
@@ -347,19 +276,6 @@ export function MyTimePage() {
       ) : null}
 
       <section className="my-time-dashboard-grid">
-        <ClockStatusPanel
-          currentShift={currentShift}
-          clockableChoices={clockableChoices ?? { duplicateCount: 0, hiddenCount: 0, outsideWindowCount: 0, shifts: [] }}
-          nextKinds={nextKinds}
-          onPunch={record}
-          onReportIssue={() => setAttendanceReportOpen(true)}
-          onRequestMissingTime={() => setMissingTimeRequestOpen(true)}
-          pending={punchMutation.isPending}
-          punchAllowed={punchAllowed}
-          selectedShiftId={selectedShiftId}
-          setSelectedShiftId={setSelectedShiftId}
-          state={state}
-        />
         <section className="time-card my-time-summary-card">
           <TimeSectionHeader
             eyebrow="Current pay period"
@@ -377,6 +293,23 @@ export function MyTimePage() {
               tone={totals.pendingCorrections > 0 ? 'warning' : 'good'}
               value={totals.pendingCorrections}
             />
+          </div>
+        </section>
+        <section className="time-card my-time-self-service-card">
+          <TimeSectionHeader
+            eyebrow="Self-service"
+            summary="Send the right request without changing the original time record."
+            title="Report or correct time"
+          />
+          <div className="my-time-self-service-card__actions">
+            <TimeButton icon={AlertTriangle} onClick={() => setAttendanceReportOpen(true)} variant="secondary">
+              Report sick / call-off
+            </TimeButton>
+            <p>Use this if you cannot work. Dispatch is notified immediately.</p>
+            <TimeButton icon={FileClock} onClick={() => setMissingTimeRequestOpen(true)} variant="secondary">
+              Request missing time
+            </TimeButton>
+            <p>Use this when an entire worked shift is missing. An explanation is required for review.</p>
           </div>
         </section>
       </section>
@@ -433,150 +366,6 @@ export function MyTimePage() {
         />
       ) : null}
     </main>
-  )
-}
-
-function ClockStatusPanel({
-  clockableChoices,
-  currentShift,
-  nextKinds,
-  onPunch,
-  onReportIssue,
-  onRequestMissingTime,
-  pending,
-  punchAllowed,
-  selectedShiftId,
-  setSelectedShiftId,
-  state,
-}: {
-  clockableChoices: ClockableShiftChoices
-  currentShift: TimekeepingShift | null
-  nextKinds: TimeEventKind[]
-  onPunch: (kind: TimeEventKind) => void
-  onReportIssue: () => void
-  onRequestMissingTime: () => void
-  pending: boolean
-  punchAllowed: boolean
-  selectedShiftId: string | null
-  setSelectedShiftId: (value: string | null) => void
-  state: TimekeepingState
-}) {
-  const clockInMode = state === 'off_clock'
-  const shifts = clockableChoices.shifts
-
-  return (
-    <section className={`time-clock-card time-clock-card--${state}`}>
-      <div className="time-clock-card__header">
-        <div>
-          <p className="eyebrow">Clock status</p>
-          <h2>{statusTitle(state)}</h2>
-          <p>{stateCopy(state)}</p>
-        </div>
-        <ClockStatePill state={state} />
-      </div>
-
-      {currentShift ? (
-        <article className="active-shift-card">
-          <MapPin aria-hidden="true" size={22} />
-          <div>
-            <strong>{shiftTitle(currentShift)}</strong>
-            <span>{shiftLocation(currentShift)} - {formatDualTimeRange(currentShift.startsAt, currentShift.endsAt, currentShift.timeZone)}</span>
-          </div>
-        </article>
-      ) : null}
-
-      {clockInMode ? (
-        <fieldset className="time-shift-list">
-          <legend>Clock into</legend>
-          {clockableChoices.hiddenCount > 0 ? (
-            <p className="time-shift-list__note">
-              Showing only shifts available for clock-in right now. {clockableChoices.hiddenCount} future or duplicate schedule {clockableChoices.hiddenCount === 1 ? 'entry is' : 'entries are'} hidden.
-            </p>
-          ) : null}
-          {shifts.length > 0 ? shifts.map((shift) => {
-            const checked = selectedShiftId === shift.shiftId || (!selectedShiftId && shifts[0]?.shiftId === shift.shiftId)
-            return (
-              <label className={`time-shift-option${checked ? ' time-shift-option--selected' : ''}`} key={shift.assignmentId}>
-                <input
-                  checked={checked}
-                  disabled={pending}
-                  name="my-time-shift"
-                  onChange={() => setSelectedShiftId(shift.shiftId)}
-                  type="radio"
-                />
-                <span>
-                  <strong>{shiftTitle(shift)}</strong>
-                  <small>{shiftLocation(shift)}</small>
-                  <em>{formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}</em>
-                </span>
-                {shift.requiresArmed ? <b>Armed</b> : null}
-                {shift.isOvertime ? <b>OT</b> : null}
-              </label>
-            )
-          }) : (
-            <article className="time-shift-empty">
-              <AlertTriangle aria-hidden="true" size={21} />
-              <div>
-                <strong>No assigned shift is currently available.</strong>
-                <p>If you clock in anyway, it will be recorded as unscheduled time for supervisor review.</p>
-                {clockableChoices.hiddenCount > 0 ? (
-                  <p>{clockableChoices.hiddenCount} future or duplicate schedule {clockableChoices.hiddenCount === 1 ? 'entry is' : 'entries are'} hidden from this clock-in list.</p>
-                ) : null}
-              </div>
-            </article>
-          )}
-        </fieldset>
-      ) : null}
-
-      <div className="time-action-row">
-        {nextKinds.map((kind) => (
-          <TimeButton
-            icon={kind === 'break_start' || kind === 'break_end' ? Coffee : Timer}
-            key={kind}
-            disabled={!punchAllowed}
-            loading={pending}
-            onClick={() => onPunch(kind)}
-            variant={kind === 'clock_out' ? 'danger' : 'primary'}
-          >
-            {actionLabels[kind]}
-          </TimeButton>
-        ))}
-      </div>
-
-      <small className="my-time-official-note">
-        {punchAllowed
-          ? 'Official time is recorded by the secure server. The page updates as soon as each punch is saved.'
-          : 'Your account can view time, but time clock punches are not enabled.'}
-      </small>
-      <div className="my-time-coverage-actions">
-        <TimeButton icon={AlertTriangle} onClick={onReportIssue} variant="secondary">
-          Report sick / call-off
-        </TimeButton>
-        <span>Use this if you cannot work. Dispatch is notified immediately.</span>
-      </div>
-      <div className="my-time-coverage-actions">
-        <TimeButton icon={FileClock} onClick={onRequestMissingTime} variant="secondary">
-          Request missing time
-        </TimeButton>
-        <span>Use this when an entire worked shift is missing. A required explanation is sent for review.</span>
-      </div>
-    </section>
-  )
-}
-
-function ClockStatePill({ state }: { state: TimekeepingState }) {
-  const Icon = state === 'on_break' ? Coffee : state === 'working' ? Timer : Clock3
-
-  return (
-    <span className={`my-time-clock-state my-time-clock-state--${state}`}>
-      <span className="my-time-clock-state__icon">
-        <Icon aria-hidden="true" size={18} />
-      </span>
-      <span className="my-time-clock-state__copy">
-        <small>Status</small>
-        <strong>{statusTitle(state)}</strong>
-      </span>
-    </span>
   )
 }
 
@@ -1291,12 +1080,6 @@ function zonedDateTimeToIso(dateKey: string, timeValue: string): string {
   return new Date(guess).toISOString()
 }
 
-function activeShift(dashboard: TimekeepingDashboard): TimekeepingShift | null {
-  const activeShiftId = dashboard.lastEvent?.shiftId
-  if (!activeShiftId) return null
-  return dashboard.eligibleShifts.find((shift) => shift.shiftId === activeShiftId) ?? null
-}
-
 function formatRowWindow(row: TimekeepingReviewRow, activeInProgress = false): string {
   if (row.firstClockIn || row.lastClockOut) {
     const clockIn = row.firstClockIn ? formatOperationalDateTime(row.firstClockIn, { includeTimeZoneName: true }) : 'Missing clock-in'
@@ -1313,18 +1096,6 @@ function shiftLocation(shift: TimekeepingShift): string {
 
 function shiftTitle(shift: TimekeepingShift): string {
   return shift.postName ?? shift.eventName ?? shift.locationName ?? 'Assigned shift'
-}
-
-function stateCopy(state: TimekeepingState): string {
-  if (state === 'working') return 'You are clocked in. Start a break or clock out when your work status changes.'
-  if (state === 'on_break') return 'You are on break. End the break before clocking out so unpaid break time is calculated correctly.'
-  return 'You are currently off the clock. Choose the correct assigned shift when available.'
-}
-
-function statusTitle(state: TimekeepingState): string {
-  if (state === 'working') return 'Clocked in'
-  if (state === 'on_break') return 'On break'
-  return 'Off the clock'
 }
 
 function sumPaidMinutes(rows: TimekeepingReviewRow[]): number {

@@ -30,7 +30,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { buildTimeCommandCenterModel, canExportPayroll, canViewTeamTime } from './timeCommandCenter'
-import { canUseOwnTimeClock, canViewAccountability, canViewAttendanceReview, canViewOwnTime } from './timePermissions'
+import { canViewAccountability, canViewAttendanceReview, canViewOwnTime } from './timePermissions'
 import { currentPayrollPeriod, formatUsDateKey } from './timeRules'
 import {
   TimeAlertCard,
@@ -48,7 +48,6 @@ export function TimeCommandCenterPage() {
     enabled: isSupabaseConfigured,
   })
   const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
-  const punchAllowed = canUseOwnTimeClock(sessionQuery.data)
   const dashboardQuery = useQuery({
     queryKey: ['time-command-dashboard'],
     queryFn: () => getTimekeepingDashboard(),
@@ -174,7 +173,7 @@ export function TimeCommandCenterPage() {
         actions={
           <>
             <Link className="time-button time-button--secondary" to="/time/my-time"><UserRoundCheck aria-hidden="true" size={18} /><span>My Time</span></Link>
-            {punchAllowed ? <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Time Maintenance</span></Link> : null}
+            {teamAllowed ? <Link className="time-button time-button--primary" to="/time/team"><Timer aria-hidden="true" size={18} /><span>Team Time</span></Link> : null}
           </>
         }
         eyebrow="SygShift Time"
@@ -188,7 +187,7 @@ export function TimeCommandCenterPage() {
         </TimeAlertCard>
       ) : null}
 
-      <section className="time-command-grid time-command-grid--period" aria-label="Current pay period">
+      <section className="time-command-grid time-command-grid--period time-command-grid--period-single" aria-label="Current pay period">
         <article className="time-card time-period-card">
           <div>
             <p className="eyebrow">Current Pay Period</p>
@@ -197,18 +196,10 @@ export function TimeCommandCenterPage() {
           </div>
           <TimeStatusBadge tone={model.period.status === 'exported' ? 'good' : 'neutral'}>{model.period.status}</TimeStatusBadge>
         </article>
-        <article className="time-card time-period-card">
-          <div>
-            <p className="eyebrow">Your Clock Status</p>
-            <h2>{statusTitle(model.self.clockState)}</h2>
-            <p>{model.self.displayName} · {model.self.employmentType} employee · Updated {formatOperationalDateTime(dashboard.serverTimestamp)}</p>
-          </div>
-          <TimeStatusBadge tone={model.self.clockState === 'off_clock' ? 'neutral' : 'good'}>{model.self.clockState.replace('_', ' ')}</TimeStatusBadge>
-        </article>
       </section>
 
       {employeeView ? (
-        <EmployeeTimeOverview model={model} loadingMetrics={loadingMetrics} punchAllowed={punchAllowed} />
+        <EmployeeTimeOverview model={model} loadingMetrics={loadingMetrics} />
       ) : (
         <OperationsTimeOverview
           attendanceReviewAllowed={attendanceReviewAllowed}
@@ -226,11 +217,9 @@ export function TimeCommandCenterPage() {
 function EmployeeTimeOverview({
   loadingMetrics,
   model,
-  punchAllowed,
 }: {
   loadingMetrics: boolean
   model: ReturnType<typeof buildTimeCommandCenterModel>
-  punchAllowed: boolean
 }) {
   return (
     <>
@@ -253,11 +242,11 @@ function EmployeeTimeOverview({
         />
       </section>
       <section className="time-action-panel">
-        <TimeSectionHeader title="What you can do next" summary="Keep it simple: check your hours or open Time Maintenance if you need to clock in, clock out, or review details." />
+        <TimeSectionHeader title="What you can do next" summary="Review your hours, report a call-off, or request a correction from one place." />
         <div className="time-action-panel__actions">
-          {punchAllowed ? <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Clock / Review My Time</span></Link> : null}
-          <Link className="time-button time-button--secondary" to="/time/my-time"><ArrowRight aria-hidden="true" size={18} /><span>Open My Time</span></Link>
-          <Link className="time-button time-button--secondary" to="/time/operations"><FileClock aria-hidden="true" size={18} /><span>Request Time Change</span></Link>
+          <Link className="time-button time-button--primary" to="/time/my-time"><ArrowRight aria-hidden="true" size={18} /><span>Open My Time</span></Link>
+          <Link className="time-button time-button--secondary" to="/time/my-time?report=call-off"><ShieldAlert aria-hidden="true" size={18} /><span>Report Sick / Call-Off</span></Link>
+          <Link className="time-button time-button--secondary" to="/time/my-time?request=missing-time"><FileClock aria-hidden="true" size={18} /><span>Request Missing Time</span></Link>
         </div>
       </section>
     </>
@@ -364,23 +353,16 @@ function OperationsTimeOverview({
       <section className="time-action-panel">
         <TimeSectionHeader title="Quick actions" summary="Actions are shown only when your role or permissions allow them." />
         <div className="time-action-panel__actions">
-          <Link className="time-button time-button--primary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Open Time Maintenance</span></Link>
-          {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/team"><UserRoundCheck aria-hidden="true" size={18} /><span>Team Attendance</span></Link> : null}
+          {teamAllowed ? <Link className="time-button time-button--primary" to="/time/team"><UserRoundCheck aria-hidden="true" size={18} /><span>Team Attendance</span></Link> : null}
           {attendanceReviewAllowed ? <Link className="time-button time-button--secondary" to="/time/daily-review"><ClipboardCheck aria-hidden="true" size={18} /><span>Daily Attendance Review</span></Link> : null}
           {accountabilityAllowed ? <Link className="time-button time-button--secondary" to="/time/accountability"><ShieldCheck aria-hidden="true" size={18} /><span>Accountability Tracker</span></Link> : null}
-          {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/exceptions"><AlertTriangle aria-hidden="true" size={18} /><span>Review Exceptions</span></Link> : null}
+          {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Review Queue</span></Link> : null}
           {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/operations"><ClipboardCheck aria-hidden="true" size={18} /><span>Time Operations</span></Link> : null}
           {payrollAllowed ? <Link className="time-button time-button--secondary" to="/time/payroll"><FileClock aria-hidden="true" size={18} /><span>Payroll</span></Link> : null}
         </div>
       </section>
     </>
   )
-}
-
-function statusTitle(status: 'off_clock' | 'working' | 'on_break'): string {
-  if (status === 'working') return 'Clocked in'
-  if (status === 'on_break') return 'On break'
-  return 'Off the clock'
 }
 
 export function TimeFuturePage({ area }: { area: 'My Time' | 'Team Attendance' | 'Exceptions' | 'Timecards' | 'Payroll' | 'Time Rules' }) {

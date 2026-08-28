@@ -9,6 +9,7 @@ const scheduleSource = readFileSync(join(sourceRoot, 'pages', 'SchedulePage.tsx'
 const eventsSource = readFileSync(join(sourceRoot, 'pages', 'EventsPage.tsx'), 'utf8')
 const opportunitiesSource = readFileSync(join(sourceRoot, 'data', 'opportunities.ts'), 'utf8')
 const myTimeSource = readFileSync(join(sourceRoot, 'time', 'MyTimePage.tsx'), 'utf8')
+const timeWorkspaceSource = readFileSync(join(sourceRoot, 'time', 'TimeWorkspace.tsx'), 'utf8')
 const cssSource = readFileSync(join(sourceRoot, 'App.css'), 'utf8')
 
 describe('employee overview and time correction guardrails', () => {
@@ -75,7 +76,9 @@ describe('employee overview and time correction guardrails', () => {
 
   it('keeps My Time focused on employee actions before raw punch history', () => {
     expect(myTimeSource).toContain('Report sick / call-off')
-    expect(myTimeSource).toContain('ClockStatePill')
+    expect(timeWorkspaceSource).toContain('aria-label="Current time clock"')
+    expect(timeWorkspaceSource).toContain('recordTimeEvent')
+    expect(myTimeSource).not.toContain('ClockStatusPanel')
     expect(myTimeSource).toContain('groupRecentPunchesByDay')
     expect(myTimeSource).toContain('recent-punch-day-tabs')
     expect(myTimeSource.indexOf('<MyTimeRows')).toBeLessThan(
