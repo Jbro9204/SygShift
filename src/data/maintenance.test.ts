@@ -10,6 +10,8 @@ describe('maintenance feature boundaries', () => {
     expect(maintenanceFeatureForPath('/scheduler')).toBe('schedule')
     expect(maintenanceFeatureForPath('/schedule/week/2026-08-23')).toBe('schedule')
     expect(maintenanceFeatureForPath('/time/payroll')).toBe('payroll')
+    expect(maintenanceFeatureForPath('/payroll')).toBe('payroll')
+    expect(maintenanceFeatureForPath('/payroll/review')).toBe('payroll')
     expect(maintenanceFeatureForPath('/time/operations')).toBe('time_attendance')
     expect(maintenanceFeatureForPath('/users')).toBe('user_accounts')
     expect(maintenanceFeatureForPath('/system-operations')).toBeNull()

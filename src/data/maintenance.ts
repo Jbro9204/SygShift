@@ -95,6 +95,7 @@ export const MAINTENANCE_FEATURES: ReadonlyArray<{
 
 const routeFeatureMap: ReadonlyArray<[string, MaintenanceFeatureCode]> = [
   ['/time/payroll', 'payroll'],
+  ['/payroll', 'payroll'],
   ['/time', 'time_attendance'],
   ['/scheduler', 'schedule'],
   ['/schedule', 'schedule'],

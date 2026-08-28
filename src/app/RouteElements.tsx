@@ -90,6 +90,12 @@ export const TimeTimecardsPageRoute = lazy(() =>
 export const TimePayrollPageRoute = lazy(() =>
   import('../time/TimePayrollPage').then((module) => ({ default: module.TimePayrollPage })),
 )
+export const PayrollLegacyExportRoute = lazy(() =>
+  import('../payroll/PayrollLegacyRedirects').then((module) => ({ default: module.PayrollLegacyExportRedirect })),
+)
+export const PayrollLegacyRulesRoute = lazy(() =>
+  import('../payroll/PayrollLegacyRedirects').then((module) => ({ default: module.PayrollLegacyRulesRedirect })),
+)
 export const TimeRulesPageRoute = lazy(() =>
   import('../time/TimeCommandCenterPage').then((module) => ({
     default: () => <module.TimeFuturePage area="Time Rules" />,

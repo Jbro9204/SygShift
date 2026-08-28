@@ -1,5 +1,6 @@
 import {
   BadgeCheck,
+  BadgeDollarSign,
   Bell,
   Building2,
   CalendarCheck2,
@@ -59,6 +60,17 @@ export const navigationGroups: NavigationGroup[] = [
       { label: 'Sites & Posts', path: '/sites', icon: Building2, permissions: ['sites.view', 'sites.manage'] },
       { label: 'Patrol', path: '/patrol', icon: MapPinned, permissions: ['patrol.view', 'patrol.manage'] },
       { label: 'Time-Off Requests', path: '/requests', icon: ClipboardCheck, permissions: ['requests.view', 'requests.manage'] },
+    ],
+  },
+  {
+    label: 'HR & Finance',
+    items: [
+      {
+        label: 'Payroll',
+        path: '/payroll',
+        icon: BadgeDollarSign,
+        permissions: ['time.view', 'time.manage', 'time.export_payroll'],
+      },
     ],
   },
   {

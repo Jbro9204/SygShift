@@ -31,7 +31,8 @@ import {
   TimePageRoute,
   TimeWorkspaceRoute,
   TimePayrollPageRoute,
-  TimeRulesPageRoute,
+  PayrollLegacyExportRoute,
+  PayrollLegacyRulesRoute,
   TimeTeamPageRoute,
   TimeTimecardsPageRoute,
   TimeToolsPageRoute,
@@ -124,7 +125,7 @@ export const router = createBrowserRouter([
         path: 'time/payroll',
         element: (
           <RouteSuspense>
-            <TimePayrollPageRoute />
+            <PayrollLegacyExportRoute />
           </RouteSuspense>
         ),
       },
@@ -132,7 +133,47 @@ export const router = createBrowserRouter([
         path: 'time/rules',
         element: (
           <RouteSuspense>
-            <TimeRulesPageRoute />
+            <PayrollLegacyRulesRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'payroll',
+        element: (
+          <RouteSuspense>
+            <TimePayrollPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'payroll/review',
+        element: (
+          <RouteSuspense>
+            <TimePayrollPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'payroll/employees',
+        element: (
+          <RouteSuspense>
+            <TimePayrollPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'payroll/export',
+        element: (
+          <RouteSuspense>
+            <TimePayrollPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'payroll/rules',
+        element: (
+          <RouteSuspense>
+            <TimePayrollPageRoute />
           </RouteSuspense>
         ),
       },
