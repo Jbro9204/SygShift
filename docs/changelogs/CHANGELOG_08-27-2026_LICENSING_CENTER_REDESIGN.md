@@ -51,9 +51,11 @@ The Licensing Center is now a compact operational worklist with a focused employ
 - Linting passed with zero warnings.
 - All 88 automated test files passed: 451 tests.
 - Production build passed.
+- Production health and readiness checks passed on both the primary domain and Worker fallback.
+- The deployed Licensing Center route loaded successfully, enforced the expected sign-in boundary, and produced no browser console warnings or errors.
 
 ## Production
 
 - Primary application: https://app.sygilant.us/licensing
 - Worker fallback: https://sygshift.sygilant.workers.dev/licensing
-- Production version: pending deployment verification
+- Production version: `0bfb5ae9-7685-45e1-861d-1121bbda6ebb`

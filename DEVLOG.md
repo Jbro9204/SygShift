@@ -35,6 +35,7 @@ deployment status, or major workflow assumptions change.
 - Current workload totals now include active employees only; inactive, leave, and separated records remain intentionally accessible through the employment filter.
 - No database migration or credential data change was required.
 - Full validation passed with type checking, linting, 88 test files / 451 tests, and the production build.
+- Released Cloudflare production version `0bfb5ae9-7685-45e1-861d-1121bbda6ebb`.
 - Full release details are recorded in `docs/changelogs/CHANGELOG_08-27-2026_LICENSING_CENTER_REDESIGN.md`.
 
 ### My Account self-service workspace
