@@ -5,8 +5,11 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   FileClock,
+  MapPin,
+  Search,
   ShieldAlert,
   Timer,
 } from 'lucide-react'
@@ -168,6 +171,8 @@ export function TimeTeamAttendancePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [focusRequest, setFocusRequest] = useState<TimeMaintenanceFocusRequest | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
+  const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   const requestedPeriod = periodFromSearch(searchParams)
   const defaultPeriod = requestedPeriod ?? currentPayrollWeek()
   const [fromDate, setFromDate] = useState(defaultPeriod.fromDate)
@@ -223,10 +228,16 @@ export function TimeTeamAttendancePage() {
     [selectedEmployeeId, teamRows],
   )
   const filteredRows = useMemo(() => {
-    if (statusFilter === 'all') return teamRows
-    if (statusFilter === 'exceptions') return teamRows.filter((row) => row.pendingCorrectionCount > 0)
-    return teamRows.filter((row) => row.state === statusFilter)
-  }, [statusFilter, teamRows])
+    const normalizedQuery = searchQuery.trim().toLocaleLowerCase()
+    return teamRows.filter((row) => {
+      const statusMatches = statusFilter === 'all'
+        || (statusFilter === 'exceptions' ? row.pendingCorrectionCount > 0 : row.state === statusFilter)
+      if (!statusMatches) return false
+      if (!normalizedQuery) return true
+      return [row.employeeName, row.username, row.role, row.employmentType, row.currentLocation, row.scheduledSummary]
+        .some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
+    })
+  }, [searchQuery, statusFilter, teamRows])
 
   const activeCount = teamRows.filter((row) => row.state === 'working').length
   const breakCount = teamRows.filter((row) => row.state === 'on_break').length
@@ -291,7 +302,7 @@ export function TimeTeamAttendancePage() {
         actions={
           <>
             <Link className="time-button time-button--secondary" to="/time"><ArrowRight aria-hidden="true" size={18} /><span>Time Command Center</span></Link>
-            <Link className="time-button time-button--secondary" to="/time/exceptions"><AlertTriangle aria-hidden="true" size={18} /><span>Exceptions</span></Link>
+            <Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Review Queue</span></Link>
           </>
         }
         eyebrow="Team Attendance"
@@ -311,7 +322,11 @@ export function TimeTeamAttendancePage() {
           summary={`Current view: ${periodLabel({ fromDate, throughDate })}`}
           title="Team time period"
         />
-        <div className="time-team-controls__grid">
+        <div className="time-team-controls__grid time-team-controls__grid--searchable">
+          <label className="time-team-search">
+            <span>Find employee</span>
+            <span className="time-team-search__field"><Search aria-hidden="true" size={18} /><input onChange={(event) => setSearchQuery(event.target.value)} placeholder="Name, username, role, or location" type="search" value={searchQuery} /></span>
+          </label>
           <label><span>From</span><input max={throughDate} onChange={(event) => setPeriod({ fromDate: event.target.value, throughDate })} type="date" value={fromDate} /></label>
           <label><span>Through</span><input min={fromDate} onChange={(event) => setPeriod({ fromDate, throughDate: event.target.value })} type="date" value={throughDate} /></label>
           <label>
@@ -351,64 +366,44 @@ export function TimeTeamAttendancePage() {
             <p>Change the filter or date range to review team attendance.</p>
           </DataStatePanel>
         ) : (
-          <div className="time-review-table-wrap">
-            <table className="time-review-table time-team-table">
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>Status</th>
-                  <th>Current location</th>
-                  <th>First / Last</th>
-                  <th>Paid time</th>
-                  <th>Review</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.map((row) => (
-                  <tr key={row.employeeId}>
-                    <td>
+          <div className="time-team-list">
+            {filteredRows.map((row) => {
+              const expanded = expandedEmployeeId === row.employeeId
+              return (
+                <article className={expanded ? 'time-team-person time-team-person--expanded' : 'time-team-person'} key={row.employeeId}>
+                  <button
+                    aria-expanded={expanded}
+                    className="time-team-person__summary"
+                    onClick={() => setExpandedEmployeeId(expanded ? null : row.employeeId)}
+                    type="button"
+                  >
+                    <span className="time-team-person__identity">
                       <strong>{row.employeeName}</strong>
-                      <span>@{row.username} · {row.role} · {row.employmentType}</span>
-                    </td>
-                    <td><TimeStatusBadge tone={statusTone(row.state)}>{statusLabel(row.state)}</TimeStatusBadge></td>
-                    <td>
-                      <strong>{row.currentLocation}</strong>
-                      <span>{row.scheduledSummary}</span>
-                    </td>
-                    <td>
-                      {row.firstClockIn ? (
-                        <>
-                          <strong>{formatOperationalDateTime(row.firstClockIn, { includeTimeZoneName: true })}</strong>
-                          <span>{row.lastClockOut ? formatOperationalDateTime(row.lastClockOut, { includeTimeZoneName: true }) : 'Clock-out missing'}</span>
-                        </>
-                      ) : (
-                        <span>No punch in range</span>
-                      )}
-                    </td>
-                    <td>
-                      <strong>{payrollHours(row.paidMinutes)} hr</strong>
-                      <small>{payrollHours(row.breakMinutes)} hr break · {payrollHours(row.overtimeMinutes)} hr OT</small>
-                    </td>
-                    <td>
-                      <TimeStatusBadge tone={row.pendingCorrectionCount > 0 ? 'warning' : 'good'}>
-                        {row.pendingCorrectionCount > 0
-                          ? `${row.pendingCorrectionCount} needs review`
-                          : 'Clean'}
-                      </TimeStatusBadge>
-                      {row.pendingCorrectionCount > 0 ? <small>{row.pendingCorrectionCount} employee request{row.pendingCorrectionCount === 1 ? '' : 's'}</small> : null}
-                    </td>
-                    <td>
-                      {manageAllowed ? (
-                        <TimeButton onClick={() => focusEmployee(row.employeeId)} variant="secondary">View Details</TimeButton>
-                      ) : (
-                        <span>View only</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <small>@{row.username} · {row.role} · {row.employmentType}</small>
+                    </span>
+                    <TimeStatusBadge tone={statusTone(row.state)}>{statusLabel(row.state)}</TimeStatusBadge>
+                    <span className="time-team-person__location"><MapPin aria-hidden="true" size={16} /><span>{row.currentLocation}</span></span>
+                    <span className="time-team-person__hours"><strong>{payrollHours(row.paidMinutes)} hr</strong><small>{row.workedSegmentCount} worked segment{row.workedSegmentCount === 1 ? '' : 's'}</small></span>
+                    <TimeStatusBadge tone={row.pendingCorrectionCount > 0 ? 'warning' : 'good'}>{row.pendingCorrectionCount > 0 ? `${row.pendingCorrectionCount} review` : 'Clean'}</TimeStatusBadge>
+                    <ChevronDown aria-hidden="true" className="time-team-person__chevron" size={20} />
+                  </button>
+                  {expanded ? (
+                    <div className="time-team-person__details">
+                      <dl>
+                        <div><dt>Scheduled</dt><dd>{row.scheduledSummary}</dd></div>
+                        <div><dt>First punch</dt><dd>{row.firstClockIn ? formatOperationalDateTime(row.firstClockIn, { includeTimeZoneName: true }) : 'No punch in range'}</dd></div>
+                        <div><dt>Last punch</dt><dd>{row.lastClockOut ? formatOperationalDateTime(row.lastClockOut, { includeTimeZoneName: true }) : row.firstClockIn ? 'Clock-out not recorded' : 'No punch in range'}</dd></div>
+                        <div><dt>Break / OT</dt><dd>{payrollHours(row.breakMinutes)} hr break · {payrollHours(row.overtimeMinutes)} hr OT</dd></div>
+                      </dl>
+                      <div className="time-team-person__actions">
+                        {manageAllowed ? <TimeButton onClick={() => focusEmployee(row.employeeId)} variant="primary">Open Employee Time</TimeButton> : <span>View-only access</span>}
+                        {row.pendingCorrectionCount > 0 ? <Link className="time-button time-button--secondary" to={`/time/review?employee=${row.employeeId}`}><AlertTriangle aria-hidden="true" size={18} /><span>Review Requests</span></Link> : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+              )
+            })}
           </div>
         )}
       </section>

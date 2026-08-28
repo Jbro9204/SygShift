@@ -14697,6 +14697,10 @@
   gap: 12px;
 }
 
+.time-team-controls__grid--searchable {
+  grid-template-columns: minmax(260px, 1.35fr) repeat(3, minmax(170px, 1fr));
+}
+
 .time-team-controls__grid label,
 .time-exception-card label {
   display: grid;
@@ -14725,6 +14729,30 @@
   padding: 9px 11px;
 }
 
+.time-team-search__field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  min-height: 46px;
+  padding: 0 11px;
+  color: #756a59;
+  background: #ffffff;
+  border: 1px solid #d5cec0;
+  border-radius: 9px;
+}
+
+.time-team-search__field input {
+  min-height: 44px;
+  padding: 9px;
+  border: 0;
+  outline: 0;
+}
+
+.time-team-search__field:focus-within {
+  border-color: #b77d20;
+  box-shadow: 0 0 0 3px rgba(183, 125, 32, 0.14);
+}
+
 .time-exception-card textarea {
   min-height: 76px;
   padding: 10px 12px;
@@ -14739,6 +14767,132 @@
 .time-team-table .time-button {
   min-height: 40px;
   padding: 9px 12px;
+  white-space: nowrap;
+}
+
+.time-team-list {
+  display: grid;
+  gap: 10px;
+}
+
+.time-team-person {
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #dfd7c9;
+  border-radius: 11px;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.time-team-person--expanded {
+  border-color: #c9953d;
+  box-shadow: 0 8px 22px rgba(52, 43, 29, 0.08);
+}
+
+.time-team-person__summary {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.4fr) auto minmax(200px, 1fr) minmax(120px, 0.55fr) auto auto;
+  gap: 14px;
+  align-items: center;
+  width: 100%;
+  min-height: 76px;
+  padding: 14px 16px;
+  color: #28251f;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.time-team-person__summary:hover,
+.time-team-person__summary:focus-visible {
+  background: #fffaf0;
+}
+
+.time-team-person__identity,
+.time-team-person__hours {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.time-team-person__identity strong,
+.time-team-person__location span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.time-team-person__identity small,
+.time-team-person__hours small {
+  color: #736b5f;
+  font-size: 12px;
+}
+
+.time-team-person__location {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+  color: #554d40;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.time-team-person__chevron {
+  transition: transform 150ms ease;
+}
+
+.time-team-person--expanded .time-team-person__chevron {
+  transform: rotate(180deg);
+}
+
+.time-team-person__details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: end;
+  padding: 16px;
+  background: #fffdf8;
+  border-top: 1px solid #e7dfd1;
+}
+
+.time-team-person__details dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.time-team-person__details dl div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.time-team-person__details dt {
+  color: #8c621f;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.time-team-person__details dd {
+  margin: 0;
+  color: #4f483e;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.time-team-person__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.time-team-person__actions .time-button {
+  min-height: 42px;
   white-space: nowrap;
 }
 
@@ -17291,6 +17445,23 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .time-team-controls__grid--searchable .time-team-search {
+    grid-column: 1 / -1;
+  }
+
+  .time-team-person__summary {
+    grid-template-columns: minmax(190px, 1.3fr) auto minmax(170px, 1fr) minmax(110px, 0.55fr) auto auto;
+    gap: 10px;
+  }
+
+  .time-team-person__details {
+    grid-template-columns: 1fr;
+  }
+
+  .time-team-person__actions {
+    justify-content: flex-start;
+  }
+
   .time-exception-card,
   .time-exception-card--pending {
     grid-template-columns: 1fr;
@@ -17615,6 +17786,57 @@
   .payroll-period-controls__fields,
   .payroll-summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .time-team-controls__grid--searchable .time-team-search {
+    grid-column: auto;
+  }
+
+  .time-team-person__summary {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .time-team-person__identity {
+    grid-column: 1;
+  }
+
+  .time-team-person__summary > .time-status-badge:first-of-type {
+    grid-column: 2;
+  }
+
+  .time-team-person__location,
+  .time-team-person__hours {
+    grid-column: 1 / -1;
+  }
+
+  .time-team-person__summary > .time-status-badge:last-of-type {
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  .time-team-person__chevron {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .time-team-person__details {
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .time-team-person__details dl {
+    grid-template-columns: 1fr;
+  }
+
+  .time-team-person__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .time-team-person__actions .time-button {
+    width: 100%;
   }
 
   .payroll-period-controls__actions,
