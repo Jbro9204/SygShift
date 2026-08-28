@@ -13,25 +13,6 @@ Keep this repository copy synchronized with:
 - Do not mark an item complete because a screen or button exists. The full authorized workflow, persistence, audit behavior, tests, and production verification must be complete.
 - All displayed dates and dated documentation use MM/DD/YYYY.
 
-## Time, Attendance & Payroll
-
-### Dedicated Payroll Workspace and Export Navigation
-
-- Priority: High
-- Target window: Near-term payroll experience release
-- Status: Approved / queued
-- Added: 08/25/2026
-
-Separate payroll work from the general Time & Attendance workspace and remove the need to scroll through a long employee list before reaching export controls.
-
-Required outcomes:
-
-- Give Payroll Export a dedicated, permission-controlled navigation destination.
-- Keep Time & Attendance focused on clock status, employee time review, exceptions, and corrections.
-- Replace the long always-expanded employee section with a compact searchable summary and open-on-demand employee detail.
-- Default payroll views to the current pay period while retaining approved period shortcuts and custom-range export.
-- Preserve one summary row per employee, Week 1/Week 2 payroll separation, employee detail sheets, overnight attribution, exception readiness, and official-export locking.
-
 ## HR, Finance & Employee Lifecycle
 
 ### SygShift HR & Finance Suite
@@ -91,7 +72,7 @@ Required access and security:
 
 Planned delivery sequence:
 
-1. Dedicated Payroll workspace and HR & Finance navigation foundation.
+1. Dedicated Payroll workspace and HR & Finance navigation foundation. **Completed 08/28/2026.**
 2. HR Center foundation, private document storage, permission model, audit model, and secure employee-file profiles.
 3. Company documents, policy assignment, acknowledgments, reminders, and employee self-service.
 4. Onboarding and offboarding workflows.

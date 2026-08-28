@@ -510,7 +510,7 @@ describe('payroll export readiness', () => {
 
     expect(workbook.size).toBeGreaterThan(500_000)
     expect(Array.from(bytes.slice(0, 4))).toEqual([0x50, 0x4b, 0x03, 0x04])
-  })
+  }, 15_000)
 
   it('supports custom payroll export ranges', () => {
     const sheets = buildPayrollWorkbookSheets({

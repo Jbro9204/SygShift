@@ -25,6 +25,21 @@ deployment status, or major workflow assumptions change.
 
 ## 08/28/2026
 
+### HR & Finance navigation and dedicated Payroll workspace
+
+- Added a permission-aware **HR & Finance** navigation group and moved Payroll into its own focused workspace.
+- Added Payroll Overview, Review Queue, Employee Payroll, Export & History, and administrator-only Rules destinations.
+- Preserved existing payroll calculations, Week 1/Week 2 separation, overnight attribution, exception resolution, workbook generation, official locks, and export history.
+- Added one selected pay-period control shared through Payroll URLs and reloads, with current, previous, next, last-completed, and custom date-range workflows.
+- Kept Payroll Overview concise with readiness metrics and no more than five priority records.
+- Added searchable, filterable, sortable, paginated Review Queue and Employee Payroll workspaces with 10 rows by default and 25/50 row options.
+- Added open-on-demand employee payroll detail with Week 1 and Week 2 totals and vertical punch detail.
+- Reduced Time & Attendance list density by paginating Team Attendance and Review Queue at 10 rows by default and limiting live missing-clock-in summaries to five items.
+- Kept Payroll Rules out of non-admin navigation, content, and data-query execution.
+- Added `src/payrollWorkspaceGuard.test.ts` and `docs/PAYROLL_WORKSPACE_PRESERVATION_MATRIX.md` to protect the new boundaries and existing payroll behavior.
+- Staged rollback points: `11cb93c`, `68eeaf4`, `a5aedcd`, and `15c4df1`.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-28-2026_HR_FINANCE_PAYROLL_WORKSPACE.md`.
+
 ### Time navigation and button polish
 
 - Made the sidebar Back control inherit the same transparent navigation treatment and hover behavior as Home.

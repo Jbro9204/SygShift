@@ -58,6 +58,9 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 
 ## Payroll export control
 
+- Payroll is a dedicated workspace under the permission-aware **HR & Finance** navigation group. Time & Attendance remains responsible for punches, attendance, corrections, and operational exception work.
+- The Payroll workspace uses focused Overview, Review Queue, Employee Payroll, Export & History, and administrator-only Rules destinations. The selected pay period is carried in the URL so it remains consistent across tabs and reloads.
+- Overview pages show summaries and a maximum of five priority items. Full employee and review lists use search, filters, sorting, pagination, and open-on-demand detail instead of rendering all records at once.
 - Supervisors preview CSV payroll rows first; the preview does not create the official record.
 - A locked payroll export is created only through the database, after the server recalculates the review range.
 - Payroll locking is blocked when any row has a missing punch, invalid punch order, unresolved correction, zero paid minutes, or other exception.
