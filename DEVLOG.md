@@ -34,6 +34,7 @@ deployment status, or major workflow assumptions change.
 - Added `src/timeNavigationPolishGuard.test.ts` to prevent the navigation and wrapping regressions from returning.
 - No database, permission, payroll, or time-record behavior changed.
 - Full validation passed with type checking, linting, 90 test files / 458 tests, production build, and 10 desktop/mobile browser tests.
+- Released Cloudflare production version `3b125a09-04a8-4d29-9ab6-e07ff32c37b7`; custom-domain and Worker-fallback health and readiness checks passed after deployment.
 - Full release details are recorded in `docs/changelogs/CHANGELOG_08-28-2026_TIME_NAVIGATION_AND_BUTTON_POLISH.md`.
 
 ## 08/27/2026

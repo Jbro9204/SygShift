@@ -1,7 +1,7 @@
 # SygShift Release — Time Navigation and Button Polish
 
 **Release date:** 08/28/2026  
-**Production Worker version:** Pending production release
+**Production Worker version:** `3b125a09-04a8-4d29-9ab6-e07ff32c37b7`
 
 ## Navigation and button behavior
 
@@ -23,3 +23,4 @@
 - All 90 test files passed: 458 tests.
 - Production build passed.
 - All 10 desktop and mobile browser tests passed.
+- Production health and readiness checks passed on both `app.sygilant.us` and the Worker fallback URL.
