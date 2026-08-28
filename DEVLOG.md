@@ -25,6 +25,23 @@ deployment status, or major workflow assumptions change.
 
 ## 08/27/2026
 
+### Time & Attendance workspace redesign
+
+- Consolidated employee and operations timekeeping into one permission-aware Time & Attendance workspace with Overview, My Time, Team, Review Queue, Operations, and Accountability tabs.
+- Added distinct Back and Home controls. Back follows safe in-app history and falls back to the last valid SygShift location; Home always returns to the role-appropriate landing page.
+- Reorganized the primary sidebar into collapsible operational groups while preserving permission-based visibility and the mobile navigation boundary.
+- Added a persistent clock-status strip across the Time workspace so employees can clock in/out or start/end a break without leaving their current time view.
+- Simplified the employee My Time experience around the current pay period, prior-period navigation, punch and break history, worked totals, locations, and correction-request status.
+- Rebuilt Team as a compact searchable employee summary with details opened only when needed instead of rendering every employee's punch history at once.
+- Grouped Exceptions, Correction Requests, and Daily Reconciliation into a clear Review Queue and preserved deep links into each existing audited workflow.
+- Kept Operations focused on missing starts, manual time entry, call-offs, and operational history; Accountability remains a distinct factual occurrence record.
+- Added safe redirects from the superseded `/time/tools`, `/time/timecards`, and `/time/exceptions` routes so saved links do not strand users.
+- Preserved payroll calculations and export behavior unchanged; the separate Payroll workspace remains an approved future initiative.
+- No database migration or time-record mutation was required.
+- Full validation passed with type checking, linting, 89 test files / 455 tests, production build, and 10 desktop/mobile browser tests covering accessibility, authentication boundaries, password visibility, Time Maintenance layout, and User Accounts containment.
+- The staged rollback checkpoints are `b5bd343`, `5f4cfb3`, `7d761aa`, `19e1281`, `703d1b3`, `23235bf`, and `aeb4f1e`.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-27-2026_TIME_ATTENDANCE_WORKSPACE_REDESIGN.md`.
+
 ### Licensing Center redesign
 
 - Rebuilt the Licensing Center into a compact active-employee worklist with clear priority cards, focused filtering, sorting, and separate historical access for non-active employees.

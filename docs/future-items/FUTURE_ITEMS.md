@@ -15,23 +15,6 @@ Keep this repository copy synchronized with:
 
 ## Time, Attendance & Payroll
 
-### Employee Timecard History and Current-Period Defaults
-
-- Priority: High
-- Target window: Near-term timekeeping release
-- Status: Approved / queued
-- Added: 08/25/2026
-
-Give employees a clean way to review their own current and prior timecards without exposing team-level payroll controls.
-
-Required outcomes:
-
-- Default employee and authorized staff time views to the current pay period.
-- Provide simple previous/next pay-period navigation and a clearly labeled custom range only where appropriate.
-- Let employees review their own punches, breaks, work locations, calculated worked time, and submitted correction status for prior periods.
-- Keep supervisor/admin correction tools permission-controlled and separate from employee self-service.
-- Apply the established Sunday-through-Saturday workweek and overnight workday ownership rules everywhere.
-
 ### Dedicated Payroll Workspace and Export Navigation
 
 - Priority: High
