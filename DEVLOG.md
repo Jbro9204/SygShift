@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 08/28/2026
 
+### Role-aware Home redesign
+
+- Replaced the shared operational landing page with two focused Home experiences: **Employee Home** for hourly and non-operational staff, and **Operations Home** for Administrators and Supervisors.
+- Deployed production version `4928a460-05bc-4d06-80cf-a8ecb38f5b37` to `https://app.sygilant.us` on 08/28/2026.
+- Employee Home now prioritizes current clock status, clock/break actions, the next shift, personal schedule, time-card help, time-off and shift-pool access, and a concise announcement preview.
+- Operations Home now prioritizes payroll readiness, live attendance, schedule coverage, time-off and correction queues, and permission-filtered operational workspaces without removing personal schedule or time actions.
+- Preserved all existing time-clock, schedule, request, announcement, payroll, and permission services; this release changes presentation and routing composition rather than creating parallel business logic.
+- Moved Time-Off Requests into **HR & Finance** and prevented normal announcements from duplicating the urgent global banner.
+- Added responsive layouts and regression guards for role mapping, greeting fallbacks, Sunday week boundaries, preview limits, announcement separation, permission filtering, canonical time actions, and mobile behavior.
+- Rollback checkpoint: `dffac10`.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-28-2026_HOME_REDESIGN.md`.
+
 ### HR & Finance navigation and dedicated Payroll workspace
 
 - Added a permission-aware **HR & Finance** navigation group and moved Payroll into its own focused workspace.
