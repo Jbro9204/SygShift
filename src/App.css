@@ -15104,6 +15104,14 @@
   grid-template-columns: minmax(260px, 1.35fr) repeat(3, minmax(170px, 1fr));
 }
 
+.time-team-controls__grid--review {
+  grid-template-columns: minmax(250px, 1.4fr) repeat(5, minmax(135px, 0.8fr));
+}
+
+.time-team-controls__grid--review .time-team-search {
+  min-width: 0;
+}
+
 .time-team-controls__grid label,
 .time-exception-card label {
   display: grid;
@@ -15154,6 +15162,12 @@
 .time-team-search__field:focus-within {
   border-color: #b77d20;
   box-shadow: 0 0 0 3px rgba(183, 125, 32, 0.14);
+}
+
+.time-live-no-show-panel__summary {
+  margin: 14px 0 0;
+  color: #665f54;
+  font-size: 14px;
 }
 
 .time-exception-card textarea {
@@ -17889,7 +17903,8 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .time-team-controls__grid--searchable .time-team-search {
+  .time-team-controls__grid--searchable .time-team-search,
+  .time-team-controls__grid--review .time-team-search {
     grid-column: 1 / -1;
   }
 
@@ -18232,7 +18247,8 @@
     grid-template-columns: 1fr;
   }
 
-  .time-team-controls__grid--searchable .time-team-search {
+  .time-team-controls__grid--searchable .time-team-search,
+  .time-team-controls__grid--review .time-team-search {
     grid-column: auto;
   }
 

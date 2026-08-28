@@ -337,7 +337,7 @@ function OperationsTimeOverview({
             title="Scheduled employees not clocked in"
           />
           <div className="time-live-no-show-list">
-            {model.missingPunches.liveMissingClockIns.map((exception) => (
+            {model.missingPunches.liveMissingClockIns.slice(0, 5).map((exception) => (
               <article className="time-live-no-show-row" key={exception.id}>
                 <div>
                   <strong>{exception.employeeName}</strong>
@@ -347,6 +347,11 @@ function OperationsTimeOverview({
               </article>
             ))}
           </div>
+          {model.missingPunches.liveMissingClockIns.length > 5 ? (
+            <p className="time-live-no-show-panel__summary">
+              Showing the five longest-waiting employees. Open Time Operations to review all {model.missingPunches.liveMissingClockIns.length} records.
+            </p>
+          ) : null}
         </section>
       ) : null}
 

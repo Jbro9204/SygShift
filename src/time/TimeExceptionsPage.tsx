@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   FileClock,
+  Search,
   ShieldAlert,
   Timer,
   UserRoundCheck,
@@ -42,6 +43,7 @@ import {
 
 type ExceptionCode = PayrollException | 'pending_correction'
 type ExceptionFilter = 'all' | 'missing_punches' | ExceptionCode
+type ExceptionSort = 'priority' | 'date' | 'employee'
 
 const exceptionCopy: Record<PayrollException | 'pending_correction', { label: string; help: string }> = {
   invalid_sequence: {
@@ -209,6 +211,11 @@ export function TimeExceptionsPage() {
   const [throughDate, setThroughDate] = useState(() => dateFromSearch(searchParams.get('through'), defaultPeriod.throughDate))
   const [rangeTouched, setRangeTouched] = useState(() => Boolean(searchParams.get('from') || searchParams.get('through')))
   const [filter, setFilter] = useState<ExceptionFilter>(exceptionFilterFromSearch(searchParams.get('show')))
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortOrder, setSortOrder] = useState<ExceptionSort>('priority')
+  const [pageSize, setPageSize] = useState(10)
+  const [page, setPage] = useState(1)
+  const [pendingPage, setPendingPage] = useState(1)
   const [decisionNotes, setDecisionNotes] = useState<Record<string, string>>({})
 
   const sessionQuery = useQuery({
@@ -297,14 +304,43 @@ export function TimeExceptionsPage() {
     () => filterRowsForEmployee(review?.rows ?? [], focusedEmployeeId),
     [focusedEmployeeId, review?.rows],
   )
-  const exceptionRows = useMemo(
-    () => filterExceptionRows(focusedRows, filter),
-    [filter, focusedRows],
-  )
+  const exceptionRows = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLocaleLowerCase()
+    return filterExceptionRows(focusedRows, filter)
+      .filter((row) => !normalizedSearch || [
+        row.employeeName,
+        row.username,
+        row.operationalDate,
+        rowLocation(row),
+        ...row.exceptionCodes.map((code) => exceptionCopy[code].label),
+      ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch)))
+      .sort((left, right) => {
+        if (sortOrder === 'employee') return left.employeeName.localeCompare(right.employeeName) || left.operationalDate.localeCompare(right.operationalDate)
+        if (sortOrder === 'date') return right.operationalDate.localeCompare(left.operationalDate) || left.employeeName.localeCompare(right.employeeName)
+        const leftHard = left.exceptionDetails.some((detail) => detail.policy === 'hard') ? 0 : 1
+        const rightHard = right.exceptionDetails.some((detail) => detail.policy === 'hard') ? 0 : 1
+        return leftHard - rightHard || right.operationalDate.localeCompare(left.operationalDate) || left.employeeName.localeCompare(right.employeeName)
+      })
+  }, [filter, focusedRows, searchQuery, sortOrder])
   const focusedPendingCorrections = useMemo(
     () => (review?.pendingCorrections ?? []).filter((correction) => !focusedEmployeeId || correction.employeeId === focusedEmployeeId),
     [focusedEmployeeId, review?.pendingCorrections],
   )
+  const matchedPendingCorrections = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLocaleLowerCase()
+    return focusedPendingCorrections
+      .filter((correction) => !normalizedSearch || [correction.employeeName, correction.username, correction.reason, correction.kind]
+        .some((value) => value.toLocaleLowerCase().includes(normalizedSearch)))
+      .sort((left, right) => sortOrder === 'employee'
+        ? left.employeeName.localeCompare(right.employeeName)
+        : right.recordedAt.localeCompare(left.recordedAt) || left.employeeName.localeCompare(right.employeeName))
+  }, [focusedPendingCorrections, searchQuery, sortOrder])
+  const pageCount = Math.max(1, Math.ceil(exceptionRows.length / pageSize))
+  const safePage = Math.min(page, pageCount)
+  const visibleExceptionRows = exceptionRows.slice((safePage - 1) * pageSize, safePage * pageSize)
+  const pendingPageCount = Math.max(1, Math.ceil(matchedPendingCorrections.length / pageSize))
+  const safePendingPage = Math.min(pendingPage, pendingPageCount)
+  const visiblePendingCorrections = matchedPendingCorrections.slice((safePendingPage - 1) * pageSize, safePendingPage * pageSize)
   const activePeriod = rulesQuery.data ? currentPayrollPeriod(undefined, rulesForPeriod(rulesQuery.data)) : currentPayrollPeriod()
   const previousPeriod = shiftPayrollPeriod({ fromDate }, -1, rulesForPeriod(rulesQuery.data))
   const totalPending = focusedPendingCorrections.length
@@ -316,6 +352,11 @@ export function TimeExceptionsPage() {
     : review?.summary.paidMinutes ?? 0
   const unresolvedRows = exceptionRows.length
   const pageTitle = filter === 'pending_correction' ? 'Correction Requests' : 'Exceptions'
+
+  useEffect(() => {
+    setPage(1)
+    setPendingPage(1)
+  }, [filter, fromDate, pageSize, searchQuery, sortOrder, throughDate])
 
   function setPeriod(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>) {
     setFromDate(period.fromDate)
@@ -416,7 +457,11 @@ export function TimeExceptionsPage() {
           summary={`Normal payroll cleanup should use the last completed pay period. Current view: ${periodLabel({ fromDate, throughDate })}`}
           title="Exception review range"
         />
-        <div className="time-team-controls__grid">
+        <div className="time-team-controls__grid time-team-controls__grid--review">
+          <label className="time-team-search">
+            <span>Find record</span>
+            <span className="time-team-search__field"><Search aria-hidden="true" size={18} /><input onChange={(event) => setSearchQuery(event.target.value)} placeholder="Employee, date, location, or issue" type="search" value={searchQuery} /></span>
+          </label>
           <label><span>From</span><input max={throughDate} onChange={(event) => setPeriod({ fromDate: event.target.value, throughDate })} type="date" value={fromDate} /></label>
           <label><span>Through</span><input min={fromDate} onChange={(event) => setPeriod({ fromDate, throughDate: event.target.value })} type="date" value={throughDate} /></label>
           <label>
@@ -431,6 +476,22 @@ export function TimeExceptionsPage() {
               <option value="zero_paid_minutes">Zero paid time</option>
               <option value="multiple_work_segments">Multiple work segments</option>
               <option value="pending_correction">Pending correction</option>
+            </select>
+          </label>
+          <label>
+            <span>Sort</span>
+            <select onChange={(event) => setSortOrder(event.target.value as ExceptionSort)} value={sortOrder}>
+              <option value="priority">Highest priority</option>
+              <option value="date">Newest workday</option>
+              <option value="employee">Employee name</option>
+            </select>
+          </label>
+          <label>
+            <span>Rows</span>
+            <select onChange={(event) => setPageSize(Number(event.target.value))} value={pageSize}>
+              <option value={10}>10 per page</option>
+              <option value={25}>25 per page</option>
+              <option value={50}>50 per page</option>
             </select>
           </label>
         </div>
@@ -482,7 +543,7 @@ export function TimeExceptionsPage() {
           </DataStatePanel>
         ) : (
           <div className="time-exception-card-list">
-            {exceptionRows.map((row) => (
+            {visibleExceptionRows.map((row) => (
               <article className="time-exception-card" key={`${row.employeeId}-${row.operationalDate}-${row.shiftId ?? row.locationName}-${row.firstClockIn ?? 'missing-in'}-${row.lastClockOut ?? 'missing-out'}`}>
                 <div>
                   <strong>{row.employeeName}</strong>
@@ -505,6 +566,16 @@ export function TimeExceptionsPage() {
             ))}
           </div>
         )}
+        {exceptionRows.length > pageSize ? (
+          <div className="payroll-pagination" aria-label="Time exception pages">
+            <span>Showing {(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, exceptionRows.length)} of {exceptionRows.length}</span>
+            <div>
+              <TimeButton disabled={safePage === 1} onClick={() => setPage((current) => Math.max(1, current - 1))} variant="secondary">Previous</TimeButton>
+              <span>Page {safePage} of {pageCount}</span>
+              <TimeButton disabled={safePage === pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))} variant="secondary">Next</TimeButton>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {manageAllowed && review && focusedPendingCorrections.length > 0 ? (
@@ -515,7 +586,7 @@ export function TimeExceptionsPage() {
             title="Pending correction requests"
           />
           <div className="time-exception-card-list time-exception-card-list--pending">
-            {focusedPendingCorrections.map((correction) => (
+            {visiblePendingCorrections.map((correction) => (
               <PendingCorrectionCard
                 correction={correction}
                 disabled={decisionMutation.isPending}
@@ -526,6 +597,16 @@ export function TimeExceptionsPage() {
               />
             ))}
           </div>
+          {matchedPendingCorrections.length > pageSize ? (
+            <div className="payroll-pagination" aria-label="Pending correction pages">
+              <span>Showing {(safePendingPage - 1) * pageSize + 1}-{Math.min(safePendingPage * pageSize, matchedPendingCorrections.length)} of {matchedPendingCorrections.length}</span>
+              <div>
+                <TimeButton disabled={safePendingPage === 1} onClick={() => setPendingPage((current) => Math.max(1, current - 1))} variant="secondary">Previous</TimeButton>
+                <span>Page {safePendingPage} of {pendingPageCount}</span>
+                <TimeButton disabled={safePendingPage === pendingPageCount} onClick={() => setPendingPage((current) => Math.min(pendingPageCount, current + 1))} variant="secondary">Next</TimeButton>
+              </div>
+            </div>
+          ) : null}
         </section>
       ) : null}
 

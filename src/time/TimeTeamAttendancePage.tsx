@@ -37,6 +37,7 @@ import {
 
 type TeamClockState = 'off_clock' | 'working' | 'on_break'
 type TeamAttendanceFilter = 'all' | TeamClockState | 'exceptions'
+type TeamAttendanceSort = 'status' | 'name' | 'hours'
 
 interface TeamAttendanceRow {
   employeeId: string
@@ -172,6 +173,9 @@ export function TimeTeamAttendancePage() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [sortOrder, setSortOrder] = useState<TeamAttendanceSort>('status')
+  const [pageSize, setPageSize] = useState(10)
+  const [page, setPage] = useState(1)
   const requestedPeriod = periodFromSearch(searchParams)
   const defaultPeriod = requestedPeriod ?? currentPayrollWeek()
   const [fromDate, setFromDate] = useState(defaultPeriod.fromDate)
@@ -228,15 +232,30 @@ export function TimeTeamAttendancePage() {
   )
   const filteredRows = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLocaleLowerCase()
-    return teamRows.filter((row) => {
-      const statusMatches = statusFilter === 'all'
-        || (statusFilter === 'exceptions' ? row.pendingCorrectionCount > 0 : row.state === statusFilter)
-      if (!statusMatches) return false
-      if (!normalizedQuery) return true
-      return [row.employeeName, row.username, row.role, row.employmentType, row.currentLocation, row.scheduledSummary]
-        .some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
-    })
-  }, [searchQuery, statusFilter, teamRows])
+    return teamRows
+      .filter((row) => {
+        const statusMatches = statusFilter === 'all'
+          || (statusFilter === 'exceptions' ? row.pendingCorrectionCount > 0 : row.state === statusFilter)
+        if (!statusMatches) return false
+        if (!normalizedQuery) return true
+        return [row.employeeName, row.username, row.role, row.employmentType, row.currentLocation, row.scheduledSummary]
+          .some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
+      })
+      .sort((left, right) => {
+        if (sortOrder === 'name') return left.employeeName.localeCompare(right.employeeName, undefined, { sensitivity: 'base' })
+        if (sortOrder === 'hours') return right.paidMinutes - left.paidMinutes || left.employeeName.localeCompare(right.employeeName)
+        const stateWeight = { working: 0, on_break: 1, off_clock: 2 }
+        return stateWeight[left.state] - stateWeight[right.state] || left.employeeName.localeCompare(right.employeeName)
+      })
+  }, [searchQuery, sortOrder, statusFilter, teamRows])
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize))
+  const safePage = Math.min(page, pageCount)
+  const visibleRows = filteredRows.slice((safePage - 1) * pageSize, safePage * pageSize)
+
+  useEffect(() => {
+    setPage(1)
+    setExpandedEmployeeId(null)
+  }, [fromDate, pageSize, searchQuery, sortOrder, statusFilter, throughDate])
 
   const activeCount = teamRows.filter((row) => row.state === 'working').length
   const breakCount = teamRows.filter((row) => row.state === 'on_break').length
@@ -333,6 +352,22 @@ export function TimeTeamAttendancePage() {
               <option value="exceptions">Exceptions only</option>
             </select>
           </label>
+          <label>
+            <span>Sort</span>
+            <select onChange={(event) => setSortOrder(event.target.value as TeamAttendanceSort)} value={sortOrder}>
+              <option value="status">Current status</option>
+              <option value="name">Employee name</option>
+              <option value="hours">Most paid hours</option>
+            </select>
+          </label>
+          <label>
+            <span>Rows</span>
+            <select onChange={(event) => setPageSize(Number(event.target.value))} value={pageSize}>
+              <option value={10}>10 per page</option>
+              <option value={25}>25 per page</option>
+              <option value={50}>50 per page</option>
+            </select>
+          </label>
         </div>
       </section>
 
@@ -361,7 +396,7 @@ export function TimeTeamAttendancePage() {
           </DataStatePanel>
         ) : (
           <div className="time-team-list">
-            {filteredRows.map((row) => {
+            {visibleRows.map((row) => {
               const expanded = expandedEmployeeId === row.employeeId
               return (
                 <article className={expanded ? 'time-team-person time-team-person--expanded' : 'time-team-person'} key={row.employeeId}>
@@ -400,6 +435,16 @@ export function TimeTeamAttendancePage() {
             })}
           </div>
         )}
+        {filteredRows.length > pageSize ? (
+          <div className="payroll-pagination" aria-label="Team Attendance pages">
+            <span>Showing {(safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, filteredRows.length)} of {filteredRows.length}</span>
+            <div>
+              <TimeButton disabled={safePage === 1} onClick={() => setPage((current) => Math.max(1, current - 1))} variant="secondary">Previous</TimeButton>
+              <span>Page {safePage} of {pageCount}</span>
+              <TimeButton disabled={safePage === pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))} variant="secondary">Next</TimeButton>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {manageAllowed && selectedEmployee ? (
