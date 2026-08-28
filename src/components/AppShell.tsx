@@ -150,15 +150,17 @@ export function AppShell() {
     refetchInterval: 30_000,
   })
   const workspaceAlerts = useMemo<WorkspaceAlertEntry[]>(() => {
-    const announcementAlerts = (activeBannerQuery.data ?? []).map((banner) => ({
-      id: banner.id,
-      title: banner.title,
-      message: banner.message,
-      tone: banner.tone,
-      icon: 'announcement' as const,
-      ctaHref: banner.ctaHref,
-      ctaLabel: banner.ctaLabel,
-    }))
+    const announcementAlerts = (activeBannerQuery.data ?? [])
+      .filter((banner) => banner.tone === 'urgent')
+      .map((banner) => ({
+        id: banner.id,
+        title: banner.title,
+        message: banner.message,
+        tone: banner.tone,
+        icon: 'announcement' as const,
+        ctaHref: banner.ctaHref,
+        ctaLabel: banner.ctaLabel,
+      }))
 
     const attendanceAlerts = (operationalAlertQuery.data?.alerts ?? [])
       .filter((alert) => !alert.acknowledgedAt && (alert.priority === 'urgent' || alert.priority === 'high'))

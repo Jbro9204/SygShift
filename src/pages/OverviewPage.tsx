@@ -1,22 +1,30 @@
 import {
   ArrowRight,
+  BadgeDollarSign,
+  CalendarClock,
   CalendarDays,
+  CheckCircle2,
   ClipboardCheck,
   Coffee,
-  Clock3,
   FileClock,
   Megaphone,
+  ShieldAlert,
   Timer,
   TimerReset,
+  UserCog,
   UserRoundCheck,
   UsersRound,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useRef } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { getSessionContext } from '../data/auth'
+import { canAccessRoute } from '../app/accessPolicy'
 import { getActiveAnnouncementBanners } from '../data/announcements'
+import { getSessionContext, type SessionContext } from '../data/auth'
+import { getOpenOpportunities, opportunityLocation, opportunityTitle } from '../data/opportunities'
 import { getOverviewMetrics, overviewMetricNote, type OverviewMetrics } from '../data/overview'
+import { getRequestCenter, type RequestCenter } from '../data/requests'
+import { getWeeklySchedule } from '../data/schedule'
 import {
   activeTimeState,
   getClockableShiftChoices,
@@ -24,17 +32,63 @@ import {
   recordTimeEvent,
   type TimeEventKind,
   type TimekeepingDashboard,
+  type TimekeepingShift,
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { canUseOwnTimeClock, canViewOwnTime, canViewTeamTime } from '../time/timePermissions'
+import {
+  formatDualTime,
+  formatOperationalDate,
+  formatOperationalDateTime,
+  operationalToday,
+} from '../lib/time'
+import { canUseOwnTimeClock, canViewOwnTime } from '../time/timePermissions'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from '../time/timeQuerySync'
+import {
+  boundedHomeItems,
+  dateKeyInTimeZone,
+  greetingName,
+  greetingPeriod,
+  homeModeForRole,
+  sundayWeekStart,
+  summarizeTodayCoverage,
+} from './homeModel'
 
-const metrics: Array<{ label: string, key: keyof OverviewMetrics, icon: typeof UsersRound }> = [
-  { label: 'On duty now', key: 'onDutyNow', icon: UsersRound },
-  { label: 'Open shifts', key: 'openShifts', icon: CalendarDays },
-  { label: 'Pending requests', key: 'pendingRequests', icon: ClipboardCheck },
-  { label: 'Clock exceptions', key: 'clockExceptions', icon: TimerReset },
+type HomeLink = {
+  label: string
+  description: string
+  path: string
+  icon: typeof CalendarDays
+}
+
+const operationsMetrics: Array<{
+  label: string
+  key: keyof OverviewMetrics
+  icon: typeof UsersRound
+  path: string
+}> = [
+  { label: 'On duty now', key: 'onDutyNow', icon: UsersRound, path: '/time/operations' },
+  { label: 'Open coverage', key: 'openShifts', icon: CalendarClock, path: '/scheduler' },
+  { label: 'Pending reviews', key: 'pendingRequests', icon: ClipboardCheck, path: '/requests' },
+  { label: 'Clock exceptions', key: 'clockExceptions', icon: TimerReset, path: '/time/exceptions' },
 ]
+
+const workspaceLinks: HomeLink[] = [
+  { label: 'Schedule', description: 'Review personal or team coverage.', path: '/schedule', icon: CalendarDays },
+  { label: 'Scheduler', description: 'Build and publish staffing plans.', path: '/scheduler', icon: CalendarClock },
+  { label: 'Time review', description: 'Review attendance and time records.', path: '/time/team', icon: FileClock },
+  { label: 'Payroll', description: 'Prepare and export approved payroll.', path: '/payroll', icon: BadgeDollarSign },
+  { label: 'Licensing', description: 'Maintain credentials and eligibility.', path: '/licensing', icon: CheckCircle2 },
+  { label: 'User accounts', description: 'Manage employee sign-in access.', path: '/users', icon: UserCog },
+]
+
+function weekStartKey(now = operationalToday()): string {
+  const operationalDateKey = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-')
+  return sundayWeekStart(operationalDateKey)
+}
 
 function overviewTimeAction(dashboard: TimekeepingDashboard | undefined): {
   kind: TimeEventKind | null
@@ -42,13 +96,42 @@ function overviewTimeAction(dashboard: TimekeepingDashboard | undefined): {
   requiresTimePage: boolean
 } {
   if (!dashboard) return { kind: null, label: 'Open time clock', requiresTimePage: true }
-
   const state = activeTimeState(dashboard.lastEvent)
   if (state === 'working') return { kind: 'clock_out', label: 'Clock out', requiresTimePage: false }
   if (state === 'on_break') return { kind: 'break_end', label: 'End break', requiresTimePage: false }
-  const clockableChoices = getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp)
-  if (clockableChoices.shifts.length > 1) return { kind: null, label: 'Choose shift to clock in', requiresTimePage: true }
+  const choices = getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp)
+  if (choices.shifts.length > 1) return { kind: null, label: 'Choose shift', requiresTimePage: true }
   return { kind: 'clock_in', label: 'Clock in', requiresTimePage: false }
+}
+
+function shiftLocation(shift: Pick<TimekeepingShift, 'siteCode' | 'siteName' | 'locationName'>): string {
+  return [shift.siteCode, shift.siteName ?? shift.locationName].filter(Boolean).join(' · ') || 'Location pending'
+}
+
+function shiftTitle(shift: Pick<TimekeepingShift, 'postName' | 'eventName' | 'locationName'>): string {
+  return shift.postName ?? shift.eventName ?? shift.locationName ?? 'Assigned shift'
+}
+
+function pendingRequestCount(center: RequestCenter | undefined): number {
+  if (!center) return 0
+  return center.timeOff.filter((item) => item.status === 'pending').length
+    + center.shiftRequests.filter((item) => item.status === 'pending').length
+    + center.callOffs.filter((item) => !item.resolved_at).length
+}
+
+function activeShiftForDashboard(dashboard: TimekeepingDashboard | undefined): TimekeepingShift | null {
+  if (!dashboard?.lastEvent?.shiftId) return null
+  return dashboard.eligibleShifts.find((shift) => shift.shiftId === dashboard.lastEvent?.shiftId) ?? null
+}
+
+function nextShiftForDashboard(dashboard: TimekeepingDashboard | undefined): TimekeepingShift | null {
+  if (!dashboard) return null
+  const activeShift = activeShiftForDashboard(dashboard)
+  if (activeShift) return activeShift
+  const serverTime = new Date(dashboard.serverTimestamp).getTime()
+  return [...dashboard.eligibleShifts]
+    .filter((shift) => new Date(shift.endsAt).getTime() >= serverTime)
+    .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())[0] ?? null
 }
 
 export function OverviewPage() {
@@ -59,26 +142,31 @@ export function OverviewPage() {
     queryFn: getSessionContext,
     queryKey: ['session-context'],
   })
-  const operationsOverviewAllowed = Boolean(
-    sessionQuery.data
-    && canViewTeamTime(sessionQuery.data),
-  )
-  const employeeLanding = sessionQuery.isSuccess && !operationsOverviewAllowed
+  const session = sessionQuery.data
+  const homeMode = session ? homeModeForRole(session.role) : 'employee'
+  const operationsHome = homeMode === 'operations'
+  const ownTimeAllowed = canViewOwnTime(session)
+  const punchAllowed = canUseOwnTimeClock(session)
+  const requestsAllowed = canAccessRoute('/requests', session)
+  const opportunitiesAllowed = canAccessRoute('/events', session)
+  const scheduleAllowed = canAccessRoute('/schedule', session)
+  const actionCenterAllowed = canAccessRoute('/actions', session)
+  const availableWorkspaces = session ? workspaceLinks.filter((item) => canAccessRoute(item.path, session)) : []
+  const announcementArchivePath = canAccessRoute('/notifications', session)
+    ? '/notifications'
+    : canAccessRoute('/announcements', session)
+      ? '/announcements'
+      : actionCenterAllowed
+        ? '/actions'
+        : null
+  const currentWeek = weekStartKey()
+
   const overviewQuery = useQuery({
-    queryKey: ['overview-metrics'],
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && operationsHome,
     queryFn: () => getOverviewMetrics(),
-    enabled: isSupabaseConfigured && sessionQuery.isSuccess && operationsOverviewAllowed,
+    queryKey: ['overview-metrics'],
     refetchInterval: 60_000,
   })
-  const employeeAnnouncementQuery = useQuery({
-    enabled: isSupabaseConfigured && employeeLanding,
-    queryFn: getActiveAnnouncementBanners,
-    queryKey: ['active-announcement-banners', 'overview'],
-    refetchInterval: 60_000,
-    retry: false,
-  })
-  const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
-  const punchAllowed = canUseOwnTimeClock(sessionQuery.data)
   const timekeepingQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     queryFn: () => getTimekeepingDashboard(),
@@ -86,283 +174,354 @@ export function OverviewPage() {
     refetchInterval: 15_000,
     retry: false,
   })
+  const requestsQuery = useQuery({
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && requestsAllowed,
+    queryFn: getRequestCenter,
+    queryKey: ['request-center', 'home'],
+    refetchInterval: 60_000,
+    retry: false,
+  })
+  const opportunitiesQuery = useQuery({
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && opportunitiesAllowed && !operationsHome,
+    queryFn: getOpenOpportunities,
+    queryKey: ['open-opportunities', 'home'],
+    refetchInterval: 60_000,
+    retry: false,
+  })
+  const announcementsQuery = useQuery({
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess,
+    queryFn: getActiveAnnouncementBanners,
+    queryKey: ['active-announcement-banners', 'home'],
+    refetchInterval: 60_000,
+    retry: false,
+  })
+  const scheduleQuery = useQuery({
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && operationsHome && scheduleAllowed,
+    queryFn: () => getWeeklySchedule(currentWeek),
+    queryKey: ['weekly-schedule', currentWeek, 'home'],
+    refetchInterval: 60_000,
+    retry: false,
+  })
   const punchMutation = useMutation({
     mutationFn: (input: { kind: TimeEventKind; shiftId?: string | null }) => recordTimeEvent(input),
-    onSuccess: (event) => {
-      applyTimeEventToCachedDashboards(queryClient, event)
-    },
+    onSuccess: (event) => applyTimeEventToCachedDashboards(queryClient, event),
     onSettled: async () => {
       punchLocked.current = false
       await refreshTimekeepingQueriesAfterPunch(queryClient)
     },
   })
-  const overview = overviewQuery.data
+
   const timeAction = overviewTimeAction(timekeepingQuery.data)
+  const timeState = activeTimeState(timekeepingQuery.data?.lastEvent ?? null)
+  const activeShift = activeShiftForDashboard(timekeepingQuery.data)
+  const nextShift = nextShiftForDashboard(timekeepingQuery.data)
 
   function quickPunch(kind = timeAction.kind) {
-    if (!kind || !timekeepingQuery.data) return
-    if (!punchAllowed || punchLocked.current || punchMutation.isPending) return
+    if (!kind || !timekeepingQuery.data || !punchAllowed || punchLocked.current || punchMutation.isPending) return
     punchLocked.current = true
-    const clockableChoices = getClockableShiftChoices(timekeepingQuery.data.eligibleShifts, timekeepingQuery.data.serverTimestamp)
-    const shiftId = kind === 'clock_in'
-      ? clockableChoices.shifts[0]?.shiftId ?? null
-      : undefined
-    punchMutation.mutate({ kind, shiftId })
+    const choices = getClockableShiftChoices(timekeepingQuery.data.eligibleShifts, timekeepingQuery.data.serverTimestamp)
+    punchMutation.mutate({ kind, shiftId: kind === 'clock_in' ? choices.shifts[0]?.shiftId ?? null : undefined })
   }
 
-  const timeState = activeTimeState(timekeepingQuery.data?.lastEvent ?? null)
-  const breakAction: { kind: TimeEventKind; label: string } | null = timeState === 'working'
-    ? { kind: 'break_start', label: 'Start break' }
-    : null
-  const activeShift = timekeepingQuery.data?.eligibleShifts.find((shift) => shift.shiftId === timekeepingQuery.data?.lastEvent?.shiftId) ?? null
-  const nextShift = activeShift ?? timekeepingQuery.data?.eligibleShifts
-    .filter((shift) => new Date(shift.endsAt).getTime() >= new Date(timekeepingQuery.data?.serverTimestamp ?? Date.now()).getTime())
-    .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())[0] ?? null
+  if (sessionQuery.isPending) {
+    return <div className="page home-page"><div className="home-loading" role="status">Preparing your Home page...</div></div>
+  }
+
+  if (sessionQuery.isError || !session) {
+    return <div className="page home-page"><div className="inline-alert" role="alert">Your Home page could not be loaded. Refresh and try again.</div></div>
+  }
 
   return (
-    <div className="page page--overview">
-      <section className="page-intro">
-        <div>
-          <p className="eyebrow">{employeeLanding ? 'My dashboard' : 'Operations home'}</p>
-          <h1>{employeeLanding ? 'Your shift day, simple.' : 'One clear view of the day.'}</h1>
-          <p className="page-summary">
-            {employeeLanding
-              ? 'Clock in, manage breaks, check your schedule, and request time-card help without digging through operations data.'
-              : 'Coverage, requests, timekeeping, and events stay connected without making the schedule harder to read.'}
-          </p>
-        </div>
-        <div className="overview-intro-actions">
-          <div className="overview-time-actions" role="group" aria-label="Quick time actions">
-            {ownTimeAllowed && timeAction.requiresTimePage ? (
-              <Link className="primary-action overview-clock-action" to="/time/my-time">
-                <Timer aria-hidden="true" size={19} />
-                {timeAction.label}
-              </Link>
-            ) : ownTimeAllowed && punchAllowed ? (
-              <button
-                className={`primary-action overview-clock-action${timeAction.kind === 'clock_out' ? ' overview-clock-action--danger' : ''}`}
-                disabled={punchMutation.isPending || timekeepingQuery.isPending || (timeState === 'on_break' && timeAction.kind === 'clock_out')}
-                onClick={() => quickPunch(timeAction.kind)}
-                type="button"
-              >
-                <Timer aria-hidden="true" size={19} />
-                {punchMutation.isPending && timeAction.kind !== 'break_start' && timeAction.kind !== 'break_end' ? 'Recording...' : timeAction.label}
-              </button>
-            ) : null}
-            {breakAction && punchAllowed ? (
-              <button
-                className="secondary-button overview-break-action"
-                disabled={punchMutation.isPending || timekeepingQuery.isPending}
-                onClick={() => quickPunch(breakAction.kind)}
-                type="button"
-              >
-                <Coffee aria-hidden="true" size={18} />
-                {punchMutation.isPending ? 'Recording...' : breakAction.label}
-              </button>
-            ) : null}
-          </div>
-          <Link className="secondary-button overview-schedule-action" to="/schedule">
-            Schedule
-            <ArrowRight aria-hidden="true" size={18} />
-          </Link>
-        </div>
-      </section>
-
-      {punchMutation.isError ? (
-        <div className="inline-alert" role="alert">{punchMutation.error.message}</div>
-      ) : null}
-
-      {overviewQuery.isError && operationsOverviewAllowed ? (
-        <div className="inline-alert" role="alert">{overviewQuery.error.message}</div>
-      ) : null}
-
-      {timekeepingQuery.data ? (
-        <section className="overview-time-card" aria-label="Quick time clock">
-          <Clock3 aria-hidden="true" size={22} />
-          <div>
-            <strong>
-              {activeTimeState(timekeepingQuery.data.lastEvent) === 'off_clock'
-                ? 'You are off the clock'
-                : activeTimeState(timekeepingQuery.data.lastEvent) === 'on_break'
-                  ? 'You are on break'
-                  : 'You are clocked in'}
-            </strong>
-            <span>Official time is recorded by the secure server. Full time tools remain under Time & Attendance.</span>
-          </div>
-        </section>
-      ) : null}
-
+    <div className={`page home-page home-page--${homeMode}`}>
+      <HomeGreeting mode={homeMode} session={session} />
       {ownTimeAllowed ? (
-        <section className="overview-call-off-panel" aria-labelledby="overview-call-off-title">
-          <div className="overview-call-off-panel__icon">
-            <ClipboardCheck aria-hidden="true" size={24} />
-          </div>
-          <div className="overview-call-off-panel__copy">
-            <p className="eyebrow">Need immediate coverage help?</p>
-            <h2 id="overview-call-off-title">Can’t work your shift?</h2>
-            <p>Report sickness or another call-off now. Dispatch is notified immediately, and your shift stays assigned until coverage is approved.</p>
-          </div>
-          <Link className="overview-call-off-action" to="/time/my-time?report=call-off">
-            Report Sick / Call-Off
-            <ArrowRight aria-hidden="true" size={19} />
-          </Link>
-        </section>
+        <TimeStatusStrip
+          activeShift={activeShift}
+          dashboard={timekeepingQuery.data}
+          error={punchMutation.isError ? punchMutation.error.message : null}
+          onPunch={quickPunch}
+          pending={punchMutation.isPending || timekeepingQuery.isPending}
+          punchAllowed={punchAllowed}
+          requestsAllowed={requestsAllowed}
+          scheduleAllowed={scheduleAllowed}
+          showPersonalLinks={operationsHome}
+          state={timeState}
+          timeAction={timeAction}
+        />
       ) : null}
 
-      {employeeLanding ? (
-        <section className="overview-employee-grid" aria-label="Employee dashboard">
-          <article className="overview-employee-card overview-employee-card--primary">
-            <div className="overview-employee-card__icon"><UserRoundCheck aria-hidden="true" size={24} /></div>
-            <div className="overview-employee-card__copy">
-              <p className="eyebrow">Next shift</p>
-              <h2>{nextShift ? shiftTitle(nextShift) : 'No immediate shift shown'}</h2>
-              <p>
-                {nextShift
-                  ? `${shiftLocation(nextShift)} - ${formatShiftTime(nextShift.startsAt, nextShift.endsAt, nextShift.timeZone)}`
-                  : 'Open Schedule to review your upcoming work.'}
-              </p>
-            </div>
-            <div className="overview-employee-card__actions">
-              <Link className="secondary-button" to="/schedule">Open Schedule</Link>
-            </div>
-          </article>
-          <article className="overview-employee-card">
-            <div className="overview-employee-card__icon"><FileClock aria-hidden="true" size={24} /></div>
-            <div className="overview-employee-card__copy">
-              <p className="eyebrow">Time card</p>
-              <h2>{timekeepingQuery.data?.pendingCorrectionCount ? `${timekeepingQuery.data.pendingCorrectionCount} pending request${timekeepingQuery.data.pendingCorrectionCount === 1 ? '' : 's'}` : 'No pending requests'}</h2>
-              <p>Review punches, breaks, and request a correction if something looks wrong.</p>
-            </div>
-            <div className="overview-employee-card__actions">
-              <Link className="secondary-button" to="/time/my-time">Open My Time</Link>
-              <Link className="secondary-button" to="/time/operations">Request Time Change</Link>
-            </div>
-          </article>
-          <article className="overview-employee-card">
-            <div className="overview-employee-card__icon"><ClipboardCheck aria-hidden="true" size={24} /></div>
-            <div className="overview-employee-card__copy">
-              <p className="eyebrow">Requests</p>
-              <h2>Time off and shift pool</h2>
-              <p>Request time off, report a call-off, or review open shifts from clear employee tools.</p>
-            </div>
-            <div className="overview-employee-card__actions">
-              <Link className="secondary-button" to="/requests">Time-Off Requests</Link>
-              <Link className="secondary-button" to="/events">Shift Pool</Link>
-            </div>
-          </article>
-          <article className="overview-employee-card overview-employee-card--updates">
-            <div className="overview-employee-card__icon"><Megaphone aria-hidden="true" size={24} /></div>
-            <div className="overview-employee-card__copy">
-              <p className="eyebrow">Updates</p>
-              <h2>Announcements</h2>
-              <p>Current messages, open coverage notices, and company updates stay here so they are easy to find.</p>
-            </div>
-            {employeeAnnouncementQuery.isPending ? (
-              <p className="overview-employee-updates__empty">Checking for current updates...</p>
-            ) : employeeAnnouncementQuery.data?.length ? (
-              <div className="overview-employee-updates" aria-label="Current announcements">
-                {employeeAnnouncementQuery.data.slice(0, 3).map((banner) => (
-                  <article className={`overview-employee-update overview-employee-update--${banner.tone}`} key={banner.id}>
-                    <strong>{banner.title}</strong>
-                    <span>{banner.message}</span>
-                    {banner.ctaHref && banner.ctaLabel ? (
-                      <Link to={banner.ctaHref}>{banner.ctaLabel}</Link>
-                    ) : null}
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <p className="overview-employee-updates__empty">No active announcements right now.</p>
-            )}
-          </article>
-        </section>
+      {operationsHome ? (
+        <OperationsHome
+          announcementArchivePath={announcementArchivePath}
+          announcements={boundedHomeItems((announcementsQuery.data ?? []).filter((item) => item.tone !== 'urgent'))}
+          announcementsError={announcementsQuery.isError}
+          onRetryAnnouncements={() => void announcementsQuery.refetch()}
+          onRetryMetrics={() => void overviewQuery.refetch()}
+          onRetryRequests={() => void requestsQuery.refetch()}
+          onRetrySchedule={() => void scheduleQuery.refetch()}
+          metrics={overviewQuery.data}
+          metricsError={overviewQuery.isError}
+          metricsPending={overviewQuery.isPending}
+          requestCenter={requestsQuery.data}
+          requestsError={requestsQuery.isError}
+          schedule={scheduleQuery.data?.shifts ?? []}
+          scheduleAllowed={scheduleAllowed}
+          scheduleError={scheduleQuery.isError}
+          session={session}
+          workspaces={availableWorkspaces}
+        />
       ) : (
-        <>
-      <section aria-label="Operational totals" className="metric-grid">
-        {metrics.map((metric) => {
-          const Icon = metric.icon
-          const value = overview?.[metric.key] ?? null
-          return (
-            <article className="metric" key={metric.label}>
-              <div className="metric-heading">
-                <span>{metric.label}</span>
-                <Icon aria-hidden="true" size={21} />
-              </div>
-              <strong aria-label={`${metric.label}: ${value ?? 'not available'}`}>
-                {overviewQuery.isPending && isSupabaseConfigured ? '…' : value ?? '—'}
-              </strong>
-              <p>{overviewMetricNote(metric.key, value)}</p>
-            </article>
-          )
-        })}
-      </section>
-
-      <div className="overview-grid">
-        <section className="panel coverage-panel" aria-labelledby="coverage-heading">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Command check</p>
-              <h2 id="coverage-heading">What needs attention</h2>
-            </div>
-          </div>
-          <div className="empty-state empty-state--schedule">
-            <CalendarDays aria-hidden="true" size={28} />
-            <div>
-              <strong>
-                {isSupabaseConfigured
-                  ? `${overview?.openShifts ?? '—'} current/upcoming open shift${overview?.openShifts === 1 ? '' : 's'}`
-                  : 'Schedule data is not connected yet.'}
-              </strong>
-              <p>
-                {isSupabaseConfigured
-                  ? 'This count excludes past openings. Use Events & Openings to fill them, or Schedule to review the full week.'
-                  : 'Published coverage will appear here after the secure schedule is ready.'}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="panel" aria-labelledby="queue-heading">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Attention</p>
-              <h2 id="queue-heading">Action queue</h2>
-            </div>
-          </div>
-          <div className="empty-state">
-            <ClipboardCheck aria-hidden="true" size={28} />
-            <div>
-              <strong>
-                {overview?.pendingRequests && overview.pendingRequests > 0
-                  ? `${overview.pendingRequests} item${overview.pendingRequests === 1 ? '' : 's'} waiting`
-                  : 'Nothing to review right now.'}
-              </strong>
-              <p>Time off, call-offs, shift requests, and exceptions route to the protected review areas.</p>
-            </div>
-          </div>
-        </section>
-      </div>
-        </>
+        <EmployeeHome
+          announcements={boundedHomeItems((announcementsQuery.data ?? []).filter((item) => item.tone !== 'urgent'))}
+          announcementArchivePath={announcementArchivePath}
+          announcementsError={announcementsQuery.isError}
+          nextShift={nextShift}
+          onRetryAnnouncements={() => void announcementsQuery.refetch()}
+          onRetryOpportunities={() => void opportunitiesQuery.refetch()}
+          onRetryRequests={() => void requestsQuery.refetch()}
+          opportunity={opportunitiesQuery.data?.opportunities
+            .filter((item) => new Date(item.ends_at).getTime() >= Date.now())
+            .sort((left, right) => new Date(left.starts_at).getTime() - new Date(right.starts_at).getTime())[0] ?? null}
+          pendingRequests={pendingRequestCount(requestsQuery.data)}
+          requestsAllowed={requestsAllowed}
+          requestsError={requestsQuery.isError}
+          opportunitiesError={opportunitiesQuery.isError}
+          scheduleAllowed={scheduleAllowed}
+          workspaces={availableWorkspaces.filter((item) => item.path !== '/schedule')}
+        />
       )}
     </div>
   )
 }
 
-function formatShiftTime(startsAt: string, endsAt: string, timeZone: string): string {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    day: '2-digit',
-    hour: 'numeric',
-    minute: '2-digit',
-    month: '2-digit',
-    timeZone,
-  })
-  return `${formatter.format(new Date(startsAt))} - ${formatter.format(new Date(endsAt))}`
+function HomeGreeting({ mode, session }: { mode: 'employee' | 'operations'; session: SessionContext }) {
+  const now = new Date()
+  return (
+    <section className="home-greeting">
+      <div>
+        <p className="eyebrow">{mode === 'operations' ? 'Operations Home' : 'My Home'}</p>
+        <h1>Good {greetingPeriod(now)}, {greetingName(session.displayName, session.username)}.</h1>
+        <p>{mode === 'operations' ? 'Lead clearly, act early, and keep the team safe.' : 'Stay alert, stay prepared, and have a safe shift.'}</p>
+      </div>
+      <div className="home-greeting__date" aria-label="Current Mountain Time">
+        <strong>{formatOperationalDate(now)}</strong>
+        <span>{formatDualTime(now, { includeTimeZoneName: true })}</span>
+      </div>
+    </section>
+  )
 }
 
-function shiftLocation(shift: { siteCode?: string | null; siteName?: string | null; locationName?: string | null }): string {
-  return [shift.siteCode, shift.siteName ?? shift.locationName].filter(Boolean).join(' - ') || 'Location pending'
+function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punchAllowed, requestsAllowed, scheduleAllowed, showPersonalLinks, state, timeAction }: {
+  activeShift: TimekeepingShift | null
+  dashboard: TimekeepingDashboard | undefined
+  error: string | null
+  onPunch: (kind: TimeEventKind | null) => void
+  pending: boolean
+  punchAllowed: boolean
+  requestsAllowed: boolean
+  scheduleAllowed: boolean
+  showPersonalLinks: boolean
+  state: ReturnType<typeof activeTimeState>
+  timeAction: ReturnType<typeof overviewTimeAction>
+}) {
+  const statusLabel = error
+    ? 'Time action needs attention'
+    : pending
+      ? 'Saving your time...'
+      : state === 'working'
+        ? 'You are working'
+        : state === 'on_break'
+          ? 'You are on break'
+          : 'You are off the clock'
+  const lastEventTime = dashboard?.lastEvent
+    ? formatOperationalDateTime(dashboard.lastEvent.effectiveAt ?? dashboard.lastEvent.recordedAt, { includeTimeZoneName: true })
+    : null
+
+  return (
+    <section className={`home-time-strip home-time-strip--${error ? 'error' : state}`} aria-label="Current time status">
+      <div className="home-time-strip__status">
+        <Timer aria-hidden="true" size={22} />
+        <div>
+          <strong>{statusLabel}</strong>
+          <span>{error ?? (activeShift ? `${shiftLocation(activeShift)} · ${lastEventTime ?? 'Time recorded'}` : 'Ready for your next scheduled shift.')}</span>
+        </div>
+      </div>
+      <div className="home-time-strip__actions" role="group" aria-label="Time clock actions">
+        {timeAction.requiresTimePage ? (
+          <Link className="primary-action" to="/time/my-time"><Timer aria-hidden="true" size={18} />{timeAction.label}</Link>
+        ) : punchAllowed ? (
+          <button className={timeAction.kind === 'clock_out' ? 'danger-button' : 'primary-action'} disabled={pending} onClick={() => onPunch(timeAction.kind)} type="button">
+            <Timer aria-hidden="true" size={18} />{pending ? 'Saving...' : timeAction.label}
+          </button>
+        ) : null}
+        {state === 'working' && punchAllowed ? (
+          <button className="secondary-button" disabled={pending} onClick={() => onPunch('break_start')} type="button"><Coffee aria-hidden="true" size={18} />Start break</button>
+        ) : null}
+        {scheduleAllowed ? <Link className="secondary-button" to="/schedule"><CalendarDays aria-hidden="true" size={18} />Schedule</Link> : null}
+        {showPersonalLinks && requestsAllowed ? <Link className="secondary-button" to="/requests"><ClipboardCheck aria-hidden="true" size={18} />Request time off</Link> : null}
+        {showPersonalLinks ? <Link className="danger-button" to="/time/my-time?report=call-off"><ShieldAlert aria-hidden="true" size={18} />Report sick / call-off</Link> : null}
+      </div>
+    </section>
+  )
 }
 
-function shiftTitle(shift: { postName?: string | null; eventName?: string | null; locationName?: string | null }): string {
-  return shift.postName ?? shift.eventName ?? shift.locationName ?? 'Assigned shift'
+function EmployeeHome({ announcementArchivePath, announcements, announcementsError, nextShift, onRetryAnnouncements, onRetryOpportunities, onRetryRequests, opportunitiesError, opportunity, pendingRequests, requestsAllowed, requestsError, scheduleAllowed, workspaces }: {
+  announcementArchivePath: string | null
+  announcements: Awaited<ReturnType<typeof getActiveAnnouncementBanners>>
+  announcementsError: boolean
+  nextShift: TimekeepingShift | null
+  onRetryAnnouncements: () => void
+  onRetryOpportunities: () => void
+  onRetryRequests: () => void
+  opportunitiesError: boolean
+  opportunity: Awaited<ReturnType<typeof getOpenOpportunities>>['opportunities'][number] | null
+  pendingRequests: number
+  requestsAllowed: boolean
+  requestsError: boolean
+  scheduleAllowed: boolean
+  workspaces: HomeLink[]
+}) {
+  return (
+    <>
+      <section className="home-quick-actions" aria-labelledby="home-quick-actions-title">
+        <div><p className="eyebrow">Quick actions</p><h2 id="home-quick-actions-title">What do you need to do?</h2></div>
+        <div className="home-quick-actions__buttons">
+          {requestsAllowed ? <Link className="home-quick-action" to="/requests"><CalendarDays aria-hidden="true" size={20} /><span><strong>Request time off</strong><small>Choose dates and track approval.</small></span><ArrowRight aria-hidden="true" size={17} /></Link> : null}
+          <Link className="home-quick-action home-quick-action--danger" to="/time/my-time?report=call-off"><ShieldAlert aria-hidden="true" size={20} /><span><strong>Report sick / call-off</strong><small>Notify Dispatch and request coverage.</small></span><ArrowRight aria-hidden="true" size={17} /></Link>
+        </div>
+      </section>
+
+      <section className="home-section" aria-labelledby="today-heading">
+        <div className="home-section__heading"><div><p className="eyebrow">Today</p><h2 id="today-heading">Your workday</h2></div></div>
+        <div className="home-card-grid">
+          <HomeCard icon={UserRoundCheck} title="Next shift" value={nextShift ? shiftTitle(nextShift) : 'No upcoming shift'}>
+            <p>{nextShift ? `${shiftLocation(nextShift)} · ${formatOperationalDateTime(nextShift.startsAt)} – ${formatDualTime(nextShift.endsAt, { timeZone: nextShift.timeZone })}` : 'Your next published assignment will appear here.'}</p>
+            {nextShift ? <span className="home-card__status"><CheckCircle2 aria-hidden="true" size={15} />Published assignment</span> : null}
+            {scheduleAllowed ? <Link className="text-link" to="/schedule">Open Schedule <ArrowRight aria-hidden="true" size={16} /></Link> : null}
+          </HomeCard>
+          <HomeCard icon={ClipboardCheck} title="My requests" value={pendingRequests ? `${pendingRequests} pending` : 'No pending requests'}>
+            {requestsError ? <ModuleRetry label="Requests could not be loaded." onRetry={onRetryRequests} /> : <p>Review time-off, coverage, and shift-request status.</p>}
+            {requestsAllowed ? <Link className="text-link" to="/requests">Open requests <ArrowRight aria-hidden="true" size={16} /></Link> : null}
+          </HomeCard>
+          {opportunity ? <HomeCard icon={CalendarClock} title="Available opportunity" value={opportunityTitle(opportunity)}>
+            <p>{`${opportunityLocation(opportunity)} · ${formatOperationalDateTime(opportunity.starts_at)} – ${formatDualTime(opportunity.ends_at, { timeZone: opportunity.time_zone })}`}</p>
+            <span className="home-card__status">{opportunity.requires_armed ? 'Armed shift' : opportunity.event ? 'Event' : 'Open shift'}</span>
+            <Link className="text-link" to="/events">View shift <ArrowRight aria-hidden="true" size={16} /></Link>
+          </HomeCard> : opportunitiesError ? <HomeCard icon={CalendarClock} title="Available opportunity" value="Could not load opportunities"><ModuleRetry label="Shift Pool data is temporarily unavailable." onRetry={onRetryOpportunities} /></HomeCard> : null}
+          <HomeCard className="home-card--announcements" icon={Megaphone} title="Announcements" value={announcements.length ? `${announcements.length} current` : 'No current announcements'}>
+            {announcementsError ? <ModuleRetry label="Announcements could not be loaded." onRetry={onRetryAnnouncements} /> : announcements.length ? (
+              <div className="home-announcement-list">
+                {announcements.map((item) => <article key={item.id}><strong>{item.title}</strong><span>{item.message}</span>{item.ctaHref && item.ctaLabel ? <Link to={item.ctaHref}>{item.ctaLabel}</Link> : null}</article>)}
+              </div>
+            ) : <p>Company updates will appear here when posted.</p>}
+            {announcementArchivePath ? <Link className="text-link" to={announcementArchivePath}>View all <ArrowRight aria-hidden="true" size={16} /></Link> : null}
+          </HomeCard>
+        </div>
+      </section>
+
+      {workspaces.length ? <WorkspaceSection items={workspaces} title="Your workspaces" /> : null}
+    </>
+  )
+}
+
+function OperationsHome({ announcementArchivePath, announcements, announcementsError, metrics, metricsError, metricsPending, onRetryAnnouncements, onRetryMetrics, onRetryRequests, onRetrySchedule, requestCenter, requestsError, schedule, scheduleAllowed, scheduleError, session, workspaces }: {
+  announcementArchivePath: string | null
+  announcements: Awaited<ReturnType<typeof getActiveAnnouncementBanners>>
+  announcementsError: boolean
+  metrics: OverviewMetrics | undefined
+  metricsError: boolean
+  metricsPending: boolean
+  onRetryAnnouncements: () => void
+  onRetryMetrics: () => void
+  onRetryRequests: () => void
+  onRetrySchedule: () => void
+  requestCenter: RequestCenter | undefined
+  requestsError: boolean
+  schedule: NonNullable<Awaited<ReturnType<typeof getWeeklySchedule>>>['shifts']
+  scheduleAllowed: boolean
+  scheduleError: boolean
+  session: SessionContext
+  workspaces: HomeLink[]
+}) {
+  const todayKey = dateKeyInTimeZone(new Date())
+  const coverage = summarizeTodayCoverage(schedule, todayKey)
+  const openCallOffs = requestCenter?.callOffs.filter((item) => !item.resolved_at).length ?? 0
+  const pendingTimeOff = requestCenter?.timeOff.filter((item) => item.status === 'pending').length ?? 0
+  const pendingShiftRequests = requestCenter?.shiftRequests.filter((item) => item.status === 'pending').length ?? 0
+  const authorizedQueue = [
+    ...(openCallOffs ? [{ label: 'Call-offs awaiting review', value: openCallOffs, path: '/time/operations' }] : []),
+    ...(pendingTimeOff ? [{ label: 'Time-off requests', value: pendingTimeOff, path: '/requests' }] : []),
+    ...(pendingShiftRequests ? [{ label: 'Shift requests', value: pendingShiftRequests, path: '/requests' }] : []),
+    ...(metrics?.clockExceptions ? [{ label: 'Time exceptions', value: metrics.clockExceptions, path: '/time/exceptions' }] : []),
+  ].filter((item) => canAccessRoute(item.path, session))
+  const queue = boundedHomeItems(authorizedQueue)
+  const queueTotal = authorizedQueue.reduce((total, item) => total + item.value, 0)
+  const actionCenterPath = canAccessRoute('/time/operations', session)
+    ? '/time/operations'
+    : canAccessRoute('/requests', session)
+      ? '/requests'
+      : canAccessRoute('/time/exceptions', session)
+        ? '/time/exceptions'
+        : null
+  const coverageGaps = boundedHomeItems(coverage.shifts.filter((shift) => shift.assignments.length < shift.headcount_required))
+  const coverageActionPath = canAccessRoute('/scheduler', session) ? '/scheduler' : '/schedule'
+
+  return (
+    <>
+      <section className="home-metric-grid" aria-label="Today's operations metrics">
+        {operationsMetrics.filter((item) => canAccessRoute(item.path, session)).map((item) => {
+          const Icon = item.icon
+          const value = metrics?.[item.key] ?? null
+          const content = <><div><span>{item.label}</span><Icon aria-hidden="true" size={20} /></div><strong>{metricsPending ? '…' : value ?? '—'}</strong><small>{metricsError ? 'Metric temporarily unavailable' : overviewMetricNote(item.key, value)}</small></>
+          return <Link className={`home-metric-card home-metric-card--${value ? 'attention' : 'clear'}`} key={item.key} to={item.path}>{content}</Link>
+        })}
+      </section>
+      {metricsError ? <ModuleRetry className="home-module-retry--standalone" label="Operations metrics could not be refreshed." onRetry={onRetryMetrics} /> : null}
+      <section className="home-operations-grid">
+        <article className="home-priority-card">
+          <div className="home-section__heading"><div><p className="eyebrow">Priority queue</p><h2>What needs attention</h2></div><span className="home-count-label">{queueTotal} total</span></div>
+          {requestsError ? <ModuleRetry label="Request queues could not be loaded." onRetry={onRetryRequests} /> : queue.length ? <div className="home-priority-list">{queue.map((item) => <Link key={item.label} to={item.path}><span><strong>{item.label}</strong><small>Open the authorized workspace to review this item.</small></span><b>{item.value}</b><ArrowRight aria-hidden="true" size={17} /></Link>)}</div> : <div className="home-empty-state"><CheckCircle2 aria-hidden="true" size={22} /><span>No priority items right now.</span></div>}
+          {actionCenterPath ? <Link className="text-link home-card-action" to={actionCenterPath}>View Full Action Center <ArrowRight aria-hidden="true" size={16} /></Link> : null}
+        </article>
+        <article className="home-coverage-card">
+          <div className="home-section__heading"><div><p className="eyebrow">Coverage today</p><h2>{coverage.assigned} of {coverage.required} posts covered</h2></div>{scheduleAllowed ? <Link className="text-link" to="/schedule">Open Schedule <ArrowRight aria-hidden="true" size={16} /></Link> : null}</div>
+          {scheduleError ? <ModuleRetry label="Today's coverage could not be loaded." onRetry={onRetrySchedule} /> : <>
+            <div className="home-coverage-meter" aria-label={`${coverage.assigned} of ${coverage.required} required assignments covered`}><span style={{ width: `${coverage.required ? Math.min(100, (coverage.assigned / coverage.required) * 100) : 100}%` }} /></div>
+            <div className="home-coverage-summary"><div><span>Required</span><strong>{coverage.required}</strong></div><div><span>Assigned</span><strong>{coverage.assigned}</strong></div><div><span>Open</span><strong>{coverage.open}</strong></div></div>
+            {coverageGaps.length ? <div className="home-gap-list">{coverageGaps.map((shift) => <div key={shift.id}><span><strong>{shift.post?.site.name ?? shift.event?.site?.name ?? shift.event?.location_name ?? 'Coverage location'}</strong><small>{shift.post?.name ?? shift.event?.name ?? 'Shift'} · {formatDualTime(shift.starts_at, { timeZone: shift.time_zone })}</small></span><Link to={coverageActionPath}>{canAccessRoute('/scheduler', session) ? 'Fill' : 'Review'}</Link></div>)}</div> : <div className="home-empty-state"><CheckCircle2 aria-hidden="true" size={22} /><span>No immediate coverage gaps.</span></div>}
+          </>}
+        </article>
+      </section>
+      {workspaces.length ? <WorkspaceSection items={workspaces} metrics={metrics} title="Operations work modules" /> : null}
+      <AnnouncementSection announcementArchivePath={announcementArchivePath} announcements={announcements} error={announcementsError} onRetry={onRetryAnnouncements} />
+    </>
+  )
+}
+
+function HomeCard({ children, className = '', icon: Icon, title, value }: { children: ReactNode; className?: string; icon: typeof CalendarDays; title: string; value: string }) {
+  return <article className={`home-card ${className}`.trim()}><div className="home-card__title"><Icon aria-hidden="true" size={20} /><span>{title}</span></div><h3>{value}</h3><div className="home-card__body">{children}</div></article>
+}
+
+function AnnouncementSection({ announcementArchivePath, announcements, error, onRetry }: {
+  announcementArchivePath: string | null
+  announcements: Awaited<ReturnType<typeof getActiveAnnouncementBanners>>
+  error: boolean
+  onRetry: () => void
+}) {
+  return <section className="home-section" aria-labelledby="operations-announcements-heading"><div className="home-section__heading"><div><p className="eyebrow">Updates</p><h2 id="operations-announcements-heading">Announcements</h2></div>{announcementArchivePath ? <Link className="text-link" to={announcementArchivePath}>View all <ArrowRight aria-hidden="true" size={16} /></Link> : null}</div>{error ? <ModuleRetry label="Announcements could not be loaded." onRetry={onRetry} /> : announcements.length ? <div className="home-announcement-list home-announcement-list--wide">{announcements.map((item) => <article key={item.id}><strong>{item.title}</strong><span>{item.message}</span>{item.ctaHref && item.ctaLabel ? <Link to={item.ctaHref}>{item.ctaLabel}</Link> : null}</article>)}</div> : <div className="home-empty-state"><Megaphone aria-hidden="true" size={22} /><span>No current announcements.</span></div>}</section>
+}
+
+function ModuleRetry({ className = '', label, onRetry }: { className?: string; label: string; onRetry: () => void }) {
+  return <div className={`home-module-retry ${className}`.trim()} role="alert"><span>{label}</span><button className="secondary-button" onClick={onRetry} type="button">Retry</button></div>
+}
+
+function WorkspaceSection({ items, metrics, title }: { items: HomeLink[]; metrics?: OverviewMetrics; title: string }) {
+  function workspacePreview(item: HomeLink): string {
+    if (item.path === '/scheduler') return metrics?.openShifts ? `${metrics.openShifts} open shift${metrics.openShifts === 1 ? '' : 's'} need coverage.` : 'No open shifts need attention.'
+    if (item.path === '/time/team') return metrics?.clockExceptions ? `${metrics.clockExceptions} clock exception${metrics.clockExceptions === 1 ? '' : 's'} need review.` : 'No clock exceptions need review.'
+    if (item.path === '/payroll') return metrics?.clockExceptions ? 'Resolve time exceptions before payroll handoff.' : 'Payroll review is ready for its next step.'
+    return item.description
+  }
+
+  return <section className="home-section" aria-labelledby="home-workspaces-heading"><div className="home-section__heading"><div><p className="eyebrow">Access</p><h2 id="home-workspaces-heading">{title}</h2></div></div><div className="home-workspace-grid">{items.map((item) => { const Icon = item.icon; return <Link key={item.path} to={item.path}><Icon aria-hidden="true" size={21} /><div><strong>{item.label}</strong><span>{workspacePreview(item)}</span></div><ArrowRight aria-hidden="true" size={17} /></Link> })}</div></section>
 }

@@ -59,12 +59,17 @@ export const navigationGroups: NavigationGroup[] = [
       { label: 'Availability', path: '/availability', icon: CalendarCheck2, permissions: ['availability.view', 'availability.manage'] },
       { label: 'Sites & Posts', path: '/sites', icon: Building2, permissions: ['sites.view', 'sites.manage'] },
       { label: 'Patrol', path: '/patrol', icon: MapPinned, permissions: ['patrol.view', 'patrol.manage'] },
-      { label: 'Time-Off Requests', path: '/requests', icon: ClipboardCheck, permissions: ['requests.view', 'requests.manage'] },
     ],
   },
   {
     label: 'HR & Finance',
     items: [
+      {
+        label: 'Time-Off Requests',
+        path: '/requests',
+        icon: ClipboardCheck,
+        permissions: ['requests.view', 'requests.manage'],
+      },
       {
         label: 'Payroll',
         path: '/payroll',
