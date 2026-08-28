@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { canAccessRoute } from '../app/accessPolicy'
 import { getSessionContext } from '../data/auth'
 import {
   getPayrollRules,
@@ -226,6 +227,9 @@ export function TimeExceptionsPage() {
   const teamAllowed = canViewTeamTime(sessionQuery.data)
   const manageAllowed = canManageTime(sessionQuery.data)
   const resolveAllowed = canResolveTimeExceptions(sessionQuery.data)
+  const teamRouteAllowed = canAccessRoute('/time/team', sessionQuery.data)
+  const payrollRouteAllowed = canAccessRoute('/time/payroll', sessionQuery.data)
+  const dailyReviewRouteAllowed = canAccessRoute('/time/daily-review', sessionQuery.data)
   const rulesQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && teamAllowed,
     queryFn: getPayrollRules,
@@ -422,8 +426,8 @@ export function TimeExceptionsPage() {
       <TimePageHeader
         actions={
           <>
-            <Link className="time-button time-button--secondary" to="/time/team"><UserRoundCheck aria-hidden="true" size={18} /><span>Team Attendance</span></Link>
-            <Link className="time-button time-button--secondary" to="/time/payroll"><FileClock aria-hidden="true" size={18} /><span>Payroll</span></Link>
+            {teamRouteAllowed ? <Link className="time-button time-button--secondary" to="/time/team"><UserRoundCheck aria-hidden="true" size={18} /><span>Team Attendance</span></Link> : null}
+            {payrollRouteAllowed ? <Link className="time-button time-button--secondary" to="/time/payroll"><FileClock aria-hidden="true" size={18} /><span>Payroll</span></Link> : null}
           </>
         }
         eyebrow="Review Queue"
@@ -433,7 +437,7 @@ export function TimeExceptionsPage() {
         title={pageTitle}
       />
 
-      <TimeReviewQueueNavigation />
+      <TimeReviewQueueNavigation canAccessDailyReview={dailyReviewRouteAllowed} canAccessExceptions />
 
       {rulesQuery.isError ? (
         <TimeAlertCard icon={AlertTriangle} title="Payroll rules could not be loaded" tone="warning">

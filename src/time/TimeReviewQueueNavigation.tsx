@@ -22,14 +22,23 @@ const reviewDestinations = [
   },
 ] as const
 
-export function TimeReviewQueueNavigation() {
+export function TimeReviewQueueNavigation({
+  canAccessDailyReview,
+  canAccessExceptions,
+}: {
+  canAccessDailyReview: boolean
+  canAccessExceptions: boolean
+}) {
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const correctionRequestsActive = location.pathname === '/time/review' && searchParams.get('show') === 'pending_correction'
+  const visibleDestinations = reviewDestinations.filter((destination) => (
+    destination.label === 'Daily Reconciliation' ? canAccessDailyReview : canAccessExceptions
+  ))
 
   return (
     <nav aria-label="Review Queue views" className="time-review-queue-navigation">
-      {reviewDestinations.map((destination) => {
+      {visibleDestinations.map((destination) => {
         const Icon = destination.icon
         const active = destination.label === 'Daily Reconciliation'
           ? location.pathname === '/time/daily-review'

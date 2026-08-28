@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { canAccessRoute } from '../app/accessPolicy'
 import { getSessionContext } from '../data/auth'
 import {
   getPayrollRules,
@@ -190,6 +191,7 @@ export function TimeTeamAttendancePage() {
   })
   const teamAllowed = canViewTeamTime(sessionQuery.data)
   const manageAllowed = canManageTime(sessionQuery.data)
+  const reviewQueueAllowed = canAccessRoute('/time/review', sessionQuery.data)
   const rulesQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && teamAllowed,
     queryFn: getPayrollRules,
@@ -317,7 +319,7 @@ export function TimeTeamAttendancePage() {
   return (
     <main className="page page--sygshift-time">
       <TimePageHeader
-        actions={<Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Review Queue</span></Link>}
+        actions={reviewQueueAllowed ? <Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Review Queue</span></Link> : undefined}
         eyebrow="Team Attendance"
         summary="Live team status, worked totals, and direct correction access for supervisors, schedulers, and admins."
         title="Team Attendance"
@@ -426,7 +428,7 @@ export function TimeTeamAttendancePage() {
                       </dl>
                       <div className="time-team-person__actions">
                         {manageAllowed ? <TimeButton onClick={() => focusEmployee(row.employeeId)} variant="primary">Open Employee Time</TimeButton> : <span>View-only access</span>}
-                        {row.pendingCorrectionCount > 0 ? <Link className="time-button time-button--secondary" to={`/time/review?employee=${row.employeeId}`}><AlertTriangle aria-hidden="true" size={18} /><span>Review Requests</span></Link> : null}
+                        {row.pendingCorrectionCount > 0 && reviewQueueAllowed ? <Link className="time-button time-button--secondary" to={`/time/review?employee=${row.employeeId}`}><AlertTriangle aria-hidden="true" size={18} /><span>Review Requests</span></Link> : null}
                       </div>
                     </div>
                   ) : null}

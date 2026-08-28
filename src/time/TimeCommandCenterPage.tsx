@@ -16,6 +16,7 @@ import {
   UserRoundCheck,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { canAccessRoute } from '../app/accessPolicy'
 import { getSessionContext } from '../data/auth'
 import { getTimekeepingOperationsWorkspace } from '../data/timeOperations'
 import {
@@ -29,8 +30,8 @@ import {
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
-import { buildTimeCommandCenterModel, canExportPayroll, canViewTeamTime } from './timeCommandCenter'
-import { canViewAccountability, canViewAttendanceReview, canViewOwnTime } from './timePermissions'
+import { buildTimeCommandCenterModel, canViewTeamTime } from './timeCommandCenter'
+import { canViewOwnTime } from './timePermissions'
 import { currentPayrollPeriod, formatUsDateKey } from './timeRules'
 import {
   TimeAlertCard,
@@ -64,9 +65,12 @@ export function TimeCommandCenterPage() {
   const fromDate = activePeriod.fromDate || fallbackPeriod.fromDate
   const throughDate = activePeriod.throughDate || fallbackPeriod.throughDate
   const teamAllowed = canViewTeamTime(sessionQuery.data)
-  const payrollAllowed = canExportPayroll(sessionQuery.data)
-  const attendanceReviewAllowed = canViewAttendanceReview(sessionQuery.data)
-  const accountabilityAllowed = canViewAccountability(sessionQuery.data)
+  const teamRouteAllowed = canAccessRoute('/time/team', sessionQuery.data)
+  const reviewQueueAllowed = canAccessRoute('/time/review', sessionQuery.data)
+  const operationsRouteAllowed = canAccessRoute('/time/operations', sessionQuery.data)
+  const payrollAllowed = canAccessRoute('/payroll', sessionQuery.data)
+  const attendanceReviewAllowed = canAccessRoute('/time/daily-review', sessionQuery.data)
+  const accountabilityAllowed = canAccessRoute('/time/accountability', sessionQuery.data)
 
   const reviewQuery = useQuery({
     enabled: isSupabaseConfigured && Boolean(dashboardQuery.data),
@@ -173,7 +177,7 @@ export function TimeCommandCenterPage() {
         actions={
           <>
             <Link className="time-button time-button--secondary" to="/time/my-time"><UserRoundCheck aria-hidden="true" size={18} /><span>My Time</span></Link>
-            {teamAllowed ? <Link className="time-button time-button--primary" to="/time/team"><Timer aria-hidden="true" size={18} /><span>Team Time</span></Link> : null}
+            {teamRouteAllowed ? <Link className="time-button time-button--primary" to="/time/team"><Timer aria-hidden="true" size={18} /><span>Team Time</span></Link> : null}
           </>
         }
         eyebrow="SygShift Time"
@@ -207,7 +211,10 @@ export function TimeCommandCenterPage() {
           model={model}
           loadingMetrics={loadingMetrics}
           payrollAllowed={payrollAllowed}
+          operationsRouteAllowed={operationsRouteAllowed}
+          reviewQueueAllowed={reviewQueueAllowed}
           teamAllowed={teamAllowed}
+          teamRouteAllowed={teamRouteAllowed}
         />
       )}
     </main>
@@ -259,14 +266,20 @@ function OperationsTimeOverview({
   loadingMetrics,
   model,
   payrollAllowed,
+  operationsRouteAllowed,
+  reviewQueueAllowed,
   teamAllowed,
+  teamRouteAllowed,
 }: {
   accountabilityAllowed: boolean
   attendanceReviewAllowed: boolean
   loadingMetrics: boolean
   model: ReturnType<typeof buildTimeCommandCenterModel>
   payrollAllowed: boolean
+  operationsRouteAllowed: boolean
+  reviewQueueAllowed: boolean
   teamAllowed: boolean
+  teamRouteAllowed: boolean
 }) {
   return (
     <>
@@ -289,7 +302,7 @@ function OperationsTimeOverview({
           icon={AlertTriangle}
           label="Exceptions"
           tone={model.exceptions.total > 0 ? 'warning' : 'good'}
-          to={teamAllowed ? '/time/review' : undefined}
+          to={reviewQueueAllowed ? '/time/review' : undefined}
           value={model.exceptions.total}
         />
         <TimeMetricCard
@@ -297,7 +310,7 @@ function OperationsTimeOverview({
           icon={Timer}
           label="Clocked In Now"
           tone={model.clockedIn.atUnexpectedLocation > 0 || model.clockedIn.longShiftCount > 0 ? 'warning' : 'neutral'}
-          to={teamAllowed ? '/time/team?status=working' : undefined}
+          to={teamRouteAllowed ? '/time/team?status=working' : undefined}
           value={teamAllowed ? model.clockedIn.count : 'Self only'}
         />
         <TimeMetricCard
@@ -305,9 +318,9 @@ function OperationsTimeOverview({
           icon={FileClock}
           label="Missing Punches"
           tone={model.missingPunches.incompleteShifts > 0 ? 'danger' : 'good'}
-          to={teamAllowed
-            ? (model.missingPunches.liveMissingClockIns.length > 0 ? '/time/operations' : '/time/review?show=missing_punches')
-            : undefined}
+          to={model.missingPunches.liveMissingClockIns.length > 0
+            ? (operationsRouteAllowed ? '/time/operations' : undefined)
+            : (reviewQueueAllowed ? '/time/review?show=missing_punches' : undefined)}
           value={model.missingPunches.incompleteShifts}
         />
         <TimeMetricCard
@@ -315,7 +328,7 @@ function OperationsTimeOverview({
           icon={History}
           label="Overtime Risk"
           tone={model.overtimeRisk.alreadyInOvertime > 0 ? 'warning' : 'neutral'}
-          to={teamAllowed ? '/time/team' : undefined}
+          to={teamRouteAllowed ? '/time/team' : undefined}
           value={model.overtimeRisk.alreadyInOvertime}
         />
         <TimeMetricCard
@@ -331,7 +344,7 @@ function OperationsTimeOverview({
       {model.missingPunches.liveMissingClockIns.length > 0 ? (
         <section className="time-live-no-show-panel" aria-label="Scheduled employees not clocked in">
           <TimeSectionHeader
-            action={<Link className="time-button time-button--secondary" to="/time/operations"><ClipboardCheck aria-hidden="true" size={18} /><span>Open Time Operations</span></Link>}
+            action={operationsRouteAllowed ? <Link className="time-button time-button--secondary" to="/time/operations"><ClipboardCheck aria-hidden="true" size={18} /><span>Open Time Operations</span></Link> : undefined}
             eyebrow="Dispatch attention"
             summary="These employees are scheduled now and have not clocked in after the 15-minute grace period."
             title="Scheduled employees not clocked in"
@@ -358,11 +371,11 @@ function OperationsTimeOverview({
       <section className="time-action-panel">
         <TimeSectionHeader title="Quick actions" summary="Actions are shown only when your role or permissions allow them." />
         <div className="time-action-panel__actions">
-          {teamAllowed ? <Link className="time-button time-button--primary" to="/time/team"><UserRoundCheck aria-hidden="true" size={18} /><span>Team Attendance</span></Link> : null}
+          {teamRouteAllowed ? <Link className="time-button time-button--primary" to="/time/team"><UserRoundCheck aria-hidden="true" size={18} /><span>Team Attendance</span></Link> : null}
           {attendanceReviewAllowed ? <Link className="time-button time-button--secondary" to="/time/daily-review"><ClipboardCheck aria-hidden="true" size={18} /><span>Daily Attendance Review</span></Link> : null}
           {accountabilityAllowed ? <Link className="time-button time-button--secondary" to="/time/accountability"><ShieldCheck aria-hidden="true" size={18} /><span>Accountability Tracker</span></Link> : null}
-          {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Review Queue</span></Link> : null}
-          {teamAllowed ? <Link className="time-button time-button--secondary" to="/time/operations"><ClipboardCheck aria-hidden="true" size={18} /><span>Time Operations</span></Link> : null}
+          {reviewQueueAllowed ? <Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Review Queue</span></Link> : null}
+          {operationsRouteAllowed ? <Link className="time-button time-button--secondary" to="/time/operations"><ClipboardCheck aria-hidden="true" size={18} /><span>Time Operations</span></Link> : null}
           {payrollAllowed ? <Link className="time-button time-button--secondary" to="/time/payroll"><FileClock aria-hidden="true" size={18} /><span>Payroll</span></Link> : null}
         </div>
       </section>

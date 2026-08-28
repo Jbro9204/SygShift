@@ -90,6 +90,10 @@ function weekStartKey(now = operationalToday()): string {
   return sundayWeekStart(operationalDateKey)
 }
 
+function routePathFromHref(href: string): string {
+  return href.split(/[?#]/, 1)[0] || '/'
+}
+
 function overviewTimeAction(dashboard: TimekeepingDashboard | undefined): {
   kind: TimeEventKind | null
   label: string
@@ -287,6 +291,7 @@ export function OverviewPage() {
           requestsError={requestsQuery.isError}
           opportunitiesError={opportunitiesQuery.isError}
           scheduleAllowed={scheduleAllowed}
+          session={session}
           workspaces={availableWorkspaces.filter((item) => item.path !== '/schedule')}
         />
       )}
@@ -365,7 +370,7 @@ function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punc
   )
 }
 
-function EmployeeHome({ announcementArchivePath, announcements, announcementsError, nextShift, onRetryAnnouncements, onRetryOpportunities, onRetryRequests, opportunitiesError, opportunity, pendingRequests, requestsAllowed, requestsError, scheduleAllowed, workspaces }: {
+function EmployeeHome({ announcementArchivePath, announcements, announcementsError, nextShift, onRetryAnnouncements, onRetryOpportunities, onRetryRequests, opportunitiesError, opportunity, pendingRequests, requestsAllowed, requestsError, scheduleAllowed, session, workspaces }: {
   announcementArchivePath: string | null
   announcements: Awaited<ReturnType<typeof getActiveAnnouncementBanners>>
   announcementsError: boolean
@@ -379,6 +384,7 @@ function EmployeeHome({ announcementArchivePath, announcements, announcementsErr
   requestsAllowed: boolean
   requestsError: boolean
   scheduleAllowed: boolean
+  session: SessionContext
   workspaces: HomeLink[]
 }) {
   return (
@@ -411,7 +417,10 @@ function EmployeeHome({ announcementArchivePath, announcements, announcementsErr
           <HomeCard className="home-card--announcements" icon={Megaphone} title="Announcements" value={announcements.length ? `${announcements.length} current` : 'No current announcements'}>
             {announcementsError ? <ModuleRetry label="Announcements could not be loaded." onRetry={onRetryAnnouncements} /> : announcements.length ? (
               <div className="home-announcement-list">
-                {announcements.map((item) => <article key={item.id}><strong>{item.title}</strong><span>{item.message}</span>{item.ctaHref && item.ctaLabel ? <Link to={item.ctaHref}>{item.ctaLabel}</Link> : null}</article>)}
+                {announcements.map((item) => {
+                  const ctaAllowed = item.ctaHref && canAccessRoute(routePathFromHref(item.ctaHref), session)
+                  return <article key={item.id}><strong>{item.title}</strong><span>{item.message}</span>{ctaAllowed && item.ctaLabel ? <Link to={item.ctaHref!}>{item.ctaLabel}</Link> : null}</article>
+                })}
               </div>
             ) : <p>Company updates will appear here when posted.</p>}
             {announcementArchivePath ? <Link className="text-link" to={announcementArchivePath}>View all <ArrowRight aria-hidden="true" size={16} /></Link> : null}
@@ -493,7 +502,7 @@ function OperationsHome({ announcementArchivePath, announcements, announcementsE
         </article>
       </section>
       {workspaces.length ? <WorkspaceSection items={workspaces} metrics={metrics} title="Operations work modules" /> : null}
-      <AnnouncementSection announcementArchivePath={announcementArchivePath} announcements={announcements} error={announcementsError} onRetry={onRetryAnnouncements} />
+      <AnnouncementSection announcementArchivePath={announcementArchivePath} announcements={announcements} error={announcementsError} onRetry={onRetryAnnouncements} session={session} />
     </>
   )
 }
@@ -502,13 +511,14 @@ function HomeCard({ children, className = '', icon: Icon, title, value }: { chil
   return <article className={`home-card ${className}`.trim()}><div className="home-card__title"><Icon aria-hidden="true" size={20} /><span>{title}</span></div><h3>{value}</h3><div className="home-card__body">{children}</div></article>
 }
 
-function AnnouncementSection({ announcementArchivePath, announcements, error, onRetry }: {
+function AnnouncementSection({ announcementArchivePath, announcements, error, onRetry, session }: {
   announcementArchivePath: string | null
   announcements: Awaited<ReturnType<typeof getActiveAnnouncementBanners>>
   error: boolean
   onRetry: () => void
+  session: SessionContext
 }) {
-  return <section className="home-section" aria-labelledby="operations-announcements-heading"><div className="home-section__heading"><div><p className="eyebrow">Updates</p><h2 id="operations-announcements-heading">Announcements</h2></div>{announcementArchivePath ? <Link className="text-link" to={announcementArchivePath}>View all <ArrowRight aria-hidden="true" size={16} /></Link> : null}</div>{error ? <ModuleRetry label="Announcements could not be loaded." onRetry={onRetry} /> : announcements.length ? <div className="home-announcement-list home-announcement-list--wide">{announcements.map((item) => <article key={item.id}><strong>{item.title}</strong><span>{item.message}</span>{item.ctaHref && item.ctaLabel ? <Link to={item.ctaHref}>{item.ctaLabel}</Link> : null}</article>)}</div> : <div className="home-empty-state"><Megaphone aria-hidden="true" size={22} /><span>No current announcements.</span></div>}</section>
+  return <section className="home-section" aria-labelledby="operations-announcements-heading"><div className="home-section__heading"><div><p className="eyebrow">Updates</p><h2 id="operations-announcements-heading">Announcements</h2></div>{announcementArchivePath ? <Link className="text-link" to={announcementArchivePath}>View all <ArrowRight aria-hidden="true" size={16} /></Link> : null}</div>{error ? <ModuleRetry label="Announcements could not be loaded." onRetry={onRetry} /> : announcements.length ? <div className="home-announcement-list home-announcement-list--wide">{announcements.map((item) => { const ctaAllowed = item.ctaHref && canAccessRoute(routePathFromHref(item.ctaHref), session); return <article key={item.id}><strong>{item.title}</strong><span>{item.message}</span>{ctaAllowed && item.ctaLabel ? <Link to={item.ctaHref!}>{item.ctaLabel}</Link> : null}</article> })}</div> : <div className="home-empty-state"><Megaphone aria-hidden="true" size={22} /><span>No current announcements.</span></div>}</section>
 }
 
 function ModuleRetry({ className = '', label, onRetry }: { className?: string; label: string; onRetry: () => void }) {

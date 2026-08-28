@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { canAccessRoute } from '../app/accessPolicy'
 import {
   createAccountabilityOccurrence,
   getAccountabilityWorkspace,
@@ -71,6 +72,7 @@ export function AccountabilityPage() {
     queryKey: ['session-context'],
   })
   const allowed = canViewAccountability(sessionQuery.data)
+  const reviewQueueAllowed = canAccessRoute('/time/review', sessionQuery.data)
   const workspaceQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && allowed,
     queryFn: () => getAccountabilityWorkspace({ fromDate, throughDate }),
@@ -139,7 +141,7 @@ export function AccountabilityPage() {
         <TimeMetricCard detail="Reports waiting for human review." icon={AlertTriangle} label="Open Review" tone={summary.open > 0 ? 'warning' : 'good'} value={summary.open} />
         <TimeMetricCard detail="Reviewed and confirmed attendance occurrences." icon={CheckCircle2} label="Confirmed" tone="neutral" value={summary.confirmed} />
         <TimeMetricCard detail="Excused or protected records excluded from reliability totals." icon={ShieldCheck} label="Protected / Excused" tone="good" value={summary.protected} />
-        <TimeMetricCard detail={`${workspace.exceptionSummaries.reduce((total, item) => total + item.blockingCount, 0)} blocking exception(s) remain in Review Queue.`} icon={FileWarning} label="Hard Time Controls" tone={workspace.exceptionSummaries.length > 0 ? 'danger' : 'good'} to="/time/review" value={workspace.exceptionSummaries.reduce((total, item) => total + item.unresolvedCount, 0)} />
+        <TimeMetricCard detail={`${workspace.exceptionSummaries.reduce((total, item) => total + item.blockingCount, 0)} blocking exception(s) remain${reviewQueueAllowed ? ' in Review Queue' : ' for an authorized timekeeper'}.`} icon={FileWarning} label="Hard Time Controls" tone={workspace.exceptionSummaries.length > 0 ? 'danger' : 'good'} to={reviewQueueAllowed ? '/time/review' : undefined} value={workspace.exceptionSummaries.reduce((total, item) => total + item.unresolvedCount, 0)} />
       </section>
 
       <section className="accountability-workspace time-card">
@@ -164,7 +166,7 @@ export function AccountabilityPage() {
         )}
       </section>
 
-      {workspace.exceptionSummaries.length > 0 ? <HardControlSummary rows={workspace.exceptionSummaries} /> : null}
+      {workspace.exceptionSummaries.length > 0 ? <HardControlSummary canOpenReviewQueue={reviewQueueAllowed} rows={workspace.exceptionSummaries} /> : null}
 
       {createOpen ? <CreateOccurrenceDialog onClose={() => setCreateOpen(false)} onSaved={refreshWorkspace} workspace={workspace} /> : null}
       {selectedEvent ? <OccurrenceReviewDialog event={selectedEvent} onClose={() => setSelectedEventId(null)} onSaved={refreshWorkspace} workspace={workspace} /> : null}
@@ -191,8 +193,8 @@ function EmployeeOverview({ rows, onOpen }: { rows: ReturnType<typeof buildEmplo
   return <div className="accountability-team-grid">{rows.map((row) => <article className="time-card accountability-person-card" key={row.employeeId}><div><strong>{row.employeeName}</strong><span>{row.total} documented occurrence{row.total === 1 ? '' : 's'}</span></div><dl><div><dt>Open</dt><dd>{row.open}</dd></div><div><dt>Confirmed</dt><dd>{row.confirmed}</dd></div><div><dt>Protected</dt><dd>{row.protected}</dd></div><div><dt>Reliability</dt><dd>{row.confirmedReliabilityOccurrences}</dd></div></dl><TimeButton onClick={() => onOpen(row.employeeId)} variant="secondary">View occurrences</TimeButton></article>)}</div>
 }
 
-function HardControlSummary({ rows }: { rows: AccountabilityWorkspace['exceptionSummaries'] }) {
-  return <section className="accountability-hard-controls time-card"><TimeSectionHeader eyebrow="Payroll integrity" summary="These are impossible or incomplete time records. They cannot be overridden from Accountability Tracker." title="Hard time controls" /><div className="accountability-hard-controls__list">{rows.slice(0, 6).map((row) => <div key={row.employeeId}><strong>{row.employeeName}</strong><span>{row.unresolvedCount} unresolved · {row.blockingCount} blocking</span><small>{row.codes.map(readableCode).join(', ')}</small></div>)}</div><Link className="time-button time-button--secondary" to="/time/review"><FileWarning aria-hidden="true" size={18} /><span>Open Review Queue</span></Link></section>
+function HardControlSummary({ canOpenReviewQueue, rows }: { canOpenReviewQueue: boolean; rows: AccountabilityWorkspace['exceptionSummaries'] }) {
+  return <section className="accountability-hard-controls time-card"><TimeSectionHeader eyebrow="Payroll integrity" summary="These are impossible or incomplete time records. They cannot be overridden from Accountability Tracker." title="Hard time controls" /><div className="accountability-hard-controls__list">{rows.slice(0, 6).map((row) => <div key={row.employeeId}><strong>{row.employeeName}</strong><span>{row.unresolvedCount} unresolved · {row.blockingCount} blocking</span><small>{row.codes.map(readableCode).join(', ')}</small></div>)}</div>{canOpenReviewQueue ? <Link className="time-button time-button--secondary" to="/time/review"><FileWarning aria-hidden="true" size={18} /><span>Open Review Queue</span></Link> : <p>An authorized timekeeper must resolve these records in Review Queue.</p>}</section>
 }
 
 function CreateOccurrenceDialog({ onClose, onSaved, workspace }: { onClose: () => void; onSaved: () => Promise<void>; workspace: AccountabilityWorkspace }) {

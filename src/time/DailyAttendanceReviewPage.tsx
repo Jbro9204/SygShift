@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { canAccessRoute } from '../app/accessPolicy'
 import { getSessionContext } from '../data/auth'
 import {
   getDailyAttendanceReview,
@@ -81,6 +82,8 @@ export function DailyAttendanceReviewPage() {
   })
   const viewAllowed = canViewAttendanceReview(sessionQuery.data)
   const manageAllowed = canManageAttendanceReview(sessionQuery.data)
+  const reviewQueueAllowed = canAccessRoute('/time/review', sessionQuery.data)
+  const dailyReviewAllowed = canAccessRoute('/time/daily-review', sessionQuery.data)
   const reviewQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && viewAllowed,
     queryFn: () => getDailyAttendanceReview({ fromDate, includeResolved: true, throughDate }),
@@ -178,13 +181,13 @@ export function DailyAttendanceReviewPage() {
   return (
     <main className="page page--sygshift-time">
       <TimePageHeader
-        actions={<Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Exceptions</span></Link>}
+        actions={reviewQueueAllowed ? <Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Exceptions</span></Link> : undefined}
         eyebrow="Review Queue"
         summary="Compare the published plan with SygShift punches and call-off records without rewriting schedule history or deleting valid time."
         title="Daily Attendance Review"
       />
 
-      <TimeReviewQueueNavigation />
+      <TimeReviewQueueNavigation canAccessDailyReview={dailyReviewAllowed} canAccessExceptions={reviewQueueAllowed} />
 
       <TimeAlertCard icon={ClipboardCheck} title="The published schedule remains unchanged" tone="neutral">
         <p>Review decisions document what actually happened. A two-hour grace period prevents a shift from appearing before normal clock-out cleanup is complete.</p>

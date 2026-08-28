@@ -25,6 +25,16 @@ deployment status, or major workflow assumptions change.
 
 ## 08/28/2026
 
+### Permission-aware navigation and workflow controls
+
+- Removed dead-end controls that were visible even when the signed-in employee could not open the destination workflow.
+- Review Queue, Team Attendance, Time Operations, Daily Attendance Review, Accountability, Payroll, announcement actions, and operational-alert actions now use the same route-access policy that protects the destination page.
+- Updated the primary sidebar and Time workspace navigation to derive visibility from the canonical route policy instead of maintaining separate permission lists that could drift.
+- Prevented the application shell from loading operational attendance alerts for users who cannot access Time Operations.
+- Preserved every existing role, role membership, individual permission grant, and individual permission denial; this release changes visibility only.
+- Added route-policy and source regression tests to prevent unauthorized dead-end controls from returning.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-28-2026_PERMISSION_AWARE_NAVIGATION.md`.
+
 ### Role-aware Home redesign
 
 - Replaced the shared operational landing page with two focused Home experiences: **Employee Home** for hourly and non-operational staff, and **Operations Home** for Administrators and Supervisors.

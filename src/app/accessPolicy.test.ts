@@ -44,6 +44,18 @@ describe('central access policy', () => {
     expect(canAccessRoute('/time/accountability', session(['time.manage']))).toBe(false)
   })
 
+  it('keeps time workspace links aligned with their exact destination permissions', () => {
+    const accountabilityOnly = session(['accountability.view'])
+    expect(canAccessRoute('/time/accountability', accountabilityOnly)).toBe(true)
+    expect(canAccessRoute('/time/daily-review', accountabilityOnly)).toBe(true)
+    expect(canAccessRoute('/time/review', accountabilityOnly)).toBe(false)
+
+    const exceptionReviewer = session(['time.resolve_exceptions'])
+    expect(canAccessRoute('/time/review', exceptionReviewer)).toBe(true)
+    expect(canAccessRoute('/time/team', exceptionReviewer)).toBe(false)
+    expect(canAccessRoute('/time/operations', exceptionReviewer)).toBe(false)
+  })
+
   it('makes credential-editor access to the Licensing Center functional without granting broader licensing management', () => {
     expect(canAccessRoute('/licensing', session(['directory.edit_credentials']))).toBe(true)
     expect(canAccessRoute('/licensing', session([]))).toBe(false)

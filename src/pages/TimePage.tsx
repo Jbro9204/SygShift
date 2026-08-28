@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { canAccessRoute } from '../app/accessPolicy'
 import {
   activeTimeState,
   createPayrollExportBatch,
@@ -441,6 +442,12 @@ export function TimeMaintenanceWorkbench({
   onClose?: () => void
 }) {
   const queryClient = useQueryClient()
+  const sessionQuery = useQuery({
+    enabled: isSupabaseConfigured,
+    queryFn: getSessionContext,
+    queryKey: ['session-context'],
+  })
+  const canOpenReviewQueue = canAccessRoute('/time/review', sessionQuery.data)
   const workbenchRef = useRef<HTMLElement | null>(null)
   const defaultMaintenancePeriod = useMemo(() => defaultPeriod ?? currentPayrollWeek(), [defaultPeriod])
   const [fromDate, setFromDate] = useState(defaultMaintenancePeriod.fromDate)
@@ -773,7 +780,7 @@ export function TimeMaintenanceWorkbench({
                   <span>Needs attention</span>
                   <strong>{selectedNeedsAttention}</strong>
                   <small>Payroll exceptions or pending corrections</small>
-                  {selectedNeedsAttention ? (
+                  {selectedNeedsAttention && canOpenReviewQueue ? (
                     <Link
                       className="time-maintenance-attention__link"
                       to={`/time/review?employee=${encodeURIComponent(employeeId)}&from=${encodeURIComponent(fromDate)}&through=${encodeURIComponent(throughDate)}`}

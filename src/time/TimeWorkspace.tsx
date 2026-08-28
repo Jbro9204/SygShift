@@ -16,6 +16,7 @@ import {
   UsersRound,
 } from 'lucide-react'
 import { getSessionContext } from '../data/auth'
+import { canAccessRoute } from '../app/accessPolicy'
 import {
   activeTimeState,
   getClockableShiftChoices,
@@ -29,12 +30,8 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTimeRange } from '../lib/time'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from './timeQuerySync'
 import {
-  canManageTime,
   canUseOwnTimeClock,
-  canViewAccountability,
-  canViewAttendanceReview,
   canViewOwnTime,
-  canViewTeamTime,
 } from './timePermissions'
 import { TimeButton, TimeStatusBadge } from './TimeKit'
 
@@ -67,10 +64,10 @@ export function TimeWorkspace() {
   const session = sessionQuery.data
   const ownTimeAllowed = canViewOwnTime(session)
   const punchAllowed = canUseOwnTimeClock(session)
-  const teamAllowed = canViewTeamTime(session)
-  const reviewAllowed = canViewAttendanceReview(session)
-  const operationsAllowed = teamAllowed || canManageTime(session)
-  const accountabilityAllowed = canViewAccountability(session)
+  const teamAllowed = canAccessRoute('/time/team', session)
+  const reviewAllowed = canAccessRoute('/time/review', session)
+  const operationsAllowed = canAccessRoute('/time/operations', session)
+  const accountabilityAllowed = canAccessRoute('/time/accountability', session)
   const reviewQueuePathActive = location.pathname === '/time/daily-review' || location.pathname === '/time/exceptions'
   const dashboardQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,

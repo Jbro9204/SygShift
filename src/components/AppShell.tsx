@@ -51,7 +51,11 @@ function canOpenNavigationItem(
 ): boolean {
   if (!isSupabaseConfigured) return true
   if (!sessionContext) return false
-  return hasAnyEffectivePermission(sessionContext, item.permissions)
+  return canAccessRoute(item.path, sessionContext)
+}
+
+function routePathFromHref(href: string): string {
+  return href.split(/[?#]/, 1)[0] || '/'
 }
 
 function WorkspaceAlertStrip({ entries }: { entries: WorkspaceAlertEntry[] }) {
@@ -122,6 +126,7 @@ export function AppShell() {
   const navigate = useNavigate()
   const payrollReminderWeek = lastCompletedPayrollWeek()
   const showPayrollReminder = shouldShowPayrollExportReminder(sessionContext)
+  const canViewOperationalAlerts = canAccessRoute('/time/operations', sessionContext)
   const activeBannerQuery = useQuery({
     enabled: isSupabaseConfigured && Boolean(sessionContext),
     queryFn: getActiveAnnouncementBanners,
@@ -129,7 +134,7 @@ export function AppShell() {
     refetchInterval: 60_000,
   })
   const operationalAlertQuery = useQuery({
-    enabled: isSupabaseConfigured && Boolean(sessionContext),
+    enabled: isSupabaseConfigured && canViewOperationalAlerts,
     queryFn: () => {
       const today = new Date().toISOString().slice(0, 10)
       return getTimekeepingOperationsWorkspace(today, today)
@@ -152,27 +157,38 @@ export function AppShell() {
   const workspaceAlerts = useMemo<WorkspaceAlertEntry[]>(() => {
     const announcementAlerts = (activeBannerQuery.data ?? [])
       .filter((banner) => banner.tone === 'urgent')
-      .map((banner) => ({
-        id: banner.id,
-        title: banner.title,
-        message: banner.message,
-        tone: banner.tone,
-        icon: 'announcement' as const,
-        ctaHref: banner.ctaHref,
-        ctaLabel: banner.ctaLabel,
-      }))
+      .map((banner) => {
+        const ctaAllowed = Boolean(
+          banner.ctaHref
+          && sessionContext
+          && canAccessRoute(routePathFromHref(banner.ctaHref), sessionContext),
+        )
+        return {
+          id: banner.id,
+          title: banner.title,
+          message: banner.message,
+          tone: banner.tone,
+          icon: 'announcement' as const,
+          ctaHref: ctaAllowed ? banner.ctaHref : null,
+          ctaLabel: ctaAllowed ? banner.ctaLabel : null,
+        }
+      })
 
     const attendanceAlerts = (operationalAlertQuery.data?.alerts ?? [])
       .filter((alert) => !alert.acknowledgedAt && (alert.priority === 'urgent' || alert.priority === 'high'))
-      .map((alert) => ({
-        id: `attendance-${alert.id}`,
-        title: alert.title,
-        message: alert.summary,
-        tone: 'urgent' as const,
-        icon: 'attendance' as const,
-        ctaHref: alert.directPath ?? '/time/operations',
-        ctaLabel: 'Review alert',
-      }))
+      .flatMap((alert) => {
+        const directPath = alert.directPath ?? '/time/operations'
+        if (!sessionContext || !canAccessRoute(routePathFromHref(directPath), sessionContext)) return []
+        return [{
+          id: `attendance-${alert.id}`,
+          title: alert.title,
+          message: alert.summary,
+          tone: 'urgent' as const,
+          icon: 'attendance' as const,
+          ctaHref: directPath,
+          ctaLabel: 'Review alert',
+        }]
+      })
     const liveAlerts = [...attendanceAlerts, ...announcementAlerts]
 
     if (!showPayrollReminder) return liveAlerts
@@ -189,7 +205,7 @@ export function AppShell() {
         ctaLabel: 'Open Time & Attendance',
       },
     ]
-  }, [activeBannerQuery.data, operationalAlertQuery.data?.alerts, payrollReminderWeek.fromLabel, payrollReminderWeek.throughLabel, showPayrollReminder])
+  }, [activeBannerQuery.data, operationalAlertQuery.data?.alerts, payrollReminderWeek.fromLabel, payrollReminderWeek.throughLabel, sessionContext, showPayrollReminder])
 
   const visibleNavigationGroups = navigationGroups
     .map((group) => ({

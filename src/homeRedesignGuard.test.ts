@@ -42,10 +42,10 @@ describe('Home redesign guardrails', () => {
   it('keeps every clock state and canonical time action on Home', () => {
     expect(overviewSource).toContain("state === 'working'")
     expect(overviewSource).toContain("state === 'on_break'")
-    expect(overviewSource).toContain("timeAction === 'break_start'")
-    expect(overviewSource).toContain("timeAction === 'break_end'")
-    expect(overviewSource).toContain("timeAction === 'clock_out'")
-    expect(overviewSource).toContain("timeAction === 'clock_in'")
+    expect(overviewSource).toContain("kind: 'break_end'")
+    expect(overviewSource).toContain("kind: 'clock_out'")
+    expect(overviewSource).toContain("kind: 'clock_in'")
+    expect(overviewSource).toContain("onPunch('break_start')")
     expect(overviewSource).toContain('recordTimeEvent')
   })
 
