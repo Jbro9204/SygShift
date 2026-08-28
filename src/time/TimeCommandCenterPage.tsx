@@ -369,7 +369,6 @@ export function TimeFuturePage({ area }: { area: 'My Time' | 'Team Attendance' |
   return (
     <main className="page page--sygshift-time">
       <TimePageHeader
-        actions={<Link className="time-button time-button--secondary" to="/time"><ArrowRight aria-hidden="true" size={18} /><span>Back to Time Command Center</span></Link>}
         eyebrow="SygShift Time"
         summary="This area is intentionally reserved for the next dedicated build phase. The current production tools remain available."
         title={area}

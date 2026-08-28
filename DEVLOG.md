@@ -23,6 +23,19 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/28/2026
+
+### Time navigation and button polish
+
+- Made the sidebar Back control inherit the same transparent navigation treatment and hover behavior as Home.
+- Prevented Time workspace action labels from wrapping inside their buttons; complete buttons wrap as units when the action row runs out of space.
+- Removed repeated Time Command Center links from nested Time pages because the persistent Time workspace tabs already provide that navigation.
+- Preserved useful contextual actions and the existing full-width mobile button layout.
+- Added `src/timeNavigationPolishGuard.test.ts` to prevent the navigation and wrapping regressions from returning.
+- No database, permission, payroll, or time-record behavior changed.
+- Full validation passed with type checking, linting, 90 test files / 458 tests, production build, and 10 desktop/mobile browser tests.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-28-2026_TIME_NAVIGATION_AND_BUTTON_POLISH.md`.
+
 ## 08/27/2026
 
 ### Time & Attendance workspace redesign

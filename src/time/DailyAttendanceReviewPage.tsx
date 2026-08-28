@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
-  ArrowRight,
   CheckCircle2,
   ClipboardCheck,
   FileClock,
@@ -179,12 +178,7 @@ export function DailyAttendanceReviewPage() {
   return (
     <main className="page page--sygshift-time">
       <TimePageHeader
-        actions={
-          <>
-            <Link className="time-button time-button--secondary" to="/time"><ArrowRight aria-hidden="true" size={18} /><span>Time Command Center</span></Link>
-            <Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Exceptions</span></Link>
-          </>
-        }
+        actions={<Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Exceptions</span></Link>}
         eyebrow="Review Queue"
         summary="Compare the published plan with SygShift punches and call-off records without rewriting schedule history or deleting valid time."
         title="Daily Attendance Review"

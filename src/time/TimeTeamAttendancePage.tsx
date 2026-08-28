@@ -3,7 +3,6 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
-  ArrowRight,
   CheckCircle2,
   ChevronDown,
   Clock3,
@@ -299,12 +298,7 @@ export function TimeTeamAttendancePage() {
   return (
     <main className="page page--sygshift-time">
       <TimePageHeader
-        actions={
-          <>
-            <Link className="time-button time-button--secondary" to="/time"><ArrowRight aria-hidden="true" size={18} /><span>Time Command Center</span></Link>
-            <Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Review Queue</span></Link>
-          </>
-        }
+        actions={<Link className="time-button time-button--secondary" to="/time/review"><AlertTriangle aria-hidden="true" size={18} /><span>Review Queue</span></Link>}
         eyebrow="Team Attendance"
         summary="Live team status, worked totals, and direct correction access for supervisors, schedulers, and admins."
         title="Team Attendance"

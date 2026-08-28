@@ -2495,7 +2495,11 @@
 }
 
 .navigation-link--button {
+  appearance: none;
   width: 100%;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
   text-align: left;
 }
 
@@ -11228,7 +11232,7 @@
     box-shadow 160ms ease,
     color 160ms ease,
     transform 160ms ease;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .time-button svg,
@@ -12292,7 +12296,8 @@
 
 .time-button > span:not(.time-button__spinner) {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  white-space: nowrap;
 }
 
 .time-button:hover,

@@ -941,12 +941,7 @@ export function TimePayrollPage() {
   return (
     <main className="page page--sygshift-time">
       <TimePageHeader
-        actions={
-          <>
-            <Link className="time-button time-button--secondary" to="/time"><ArrowRight aria-hidden="true" size={18} /><span>Time Command Center</span></Link>
-            <Link className="time-button time-button--secondary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Time Tools</span></Link>
-          </>
-        }
+        actions={<Link className="time-button time-button--secondary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Time Tools</span></Link>}
         eyebrow="Payroll export"
         summary="Review the pay period, correct exceptions, download a clean workbook preview, then lock the official payroll batch with an audit trail."
         title="Payroll Export"
