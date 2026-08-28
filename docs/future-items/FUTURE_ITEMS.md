@@ -13,6 +13,88 @@ Keep this repository copy synchronized with:
 - Do not mark an item complete because a screen or button exists. The full authorized workflow, persistence, audit behavior, tests, and production verification must be complete.
 - All displayed dates and dated documentation use MM/DD/YYYY.
 
+## Security, Identity & Account Protection
+
+### Hardware Security Key MFA Pilot
+
+- Priority: High
+- Target window: Controlled administrator pilot after the current workspace usability corrections
+- Status: Approved / queued
+- Added: 08/28/2026
+
+Add FIDO2/WebAuthn hardware security keys as a phishing-resistant MFA option, beginning with Jordan Brown as the only pilot user. A verified security-key challenge must satisfy the application's MFA requirement; it is not a password-only bypass. When a key is unavailable, cancelled, or fails, the existing authenticator-app workflow remains available and all users without a registered key continue under the current rules.
+
+Required My Account experience:
+
+- Add a focused **Security Keys** area under **My Account > Security**.
+- Allow the signed-in employee to add a key, give it a friendly name, view the date added and last-used date, rename it, and remove it.
+- Keep the existing authenticator method enrolled during the pilot so the user has a controlled fallback.
+- Require recent authentication before registering, renaming, or removing a security key.
+- Explain in plain language that the physical key replaces the authenticator-code step when used successfully; it does not remove account security.
+
+Required login behavior:
+
+- Verify the username and password first, then offer a registered FIDO2/WebAuthn key as the preferred MFA factor.
+- Treat a successful security-key challenge as verified MFA at the same protected access level required for administrative workflows.
+- Fall back to the normal authenticator-app challenge when the key is unavailable or the user chooses another method.
+- Never fall back to password-only access and never weaken server-side AAL2 or permission enforcement.
+- Preserve safe return-to-page behavior, trusted-device rules, inactivity handling, and existing session protections.
+
+Required administration and audit controls:
+
+- Add authorized User Accounts controls to view registered-key status and revoke or reset a lost or compromised key without exposing key material.
+- Record key registration, rename, successful use, removal, administrative revocation, and recovery actions in the audit history.
+- Send a security notification when a key is added or removed.
+- Use a feature flag and a single-user allowlist for the initial pilot, with a tested rollback that leaves authenticator MFA operational.
+- Keep the relying-party identity stable for the production SygShift domain so later URL or deployment changes do not invalidate enrolled keys.
+
+Required validation:
+
+- Confirm current Supabase/WebAuthn support and production limitations before implementation; do not rely on an experimental authentication path without a controlled fallback.
+- Test Chrome, Edge, supported mobile behavior, cancelled challenges, absent keys, lost keys, authenticator fallback, revocation, concurrent sessions, server authorization, and audit records.
+- Complete the Jordan-only pilot before deciding whether to expand security-key enrollment to other users.
+
+## Navigation & Workspace Usability
+
+### Canonical My Time and Review Queue Navigation
+
+- Priority: High
+- Target window: Next focused usability release
+- Status: Approved / queued
+- Added: 08/28/2026
+
+Audit the Time & Attendance routes and navigation because the employee-facing destination reached from **My Time** currently appears to duplicate the **Review Queue** experience. Create one clear path for employee self-service and one clearly identified path for authorized team review without maintaining duplicate-looking pages or ambiguous buttons.
+
+Required outcomes:
+
+- Keep **My Time** focused on the signed-in employee's own punches, breaks, pay periods, correction requests, and request status.
+- Keep **Review Queue** focused on authorized Supervisor, Scheduler, Dispatcher, Admin, Payroll, or other specifically permitted review work.
+- Consolidate duplicate routes or shared content into one canonical implementation where appropriate instead of maintaining visually identical copies.
+- Give each destination a distinct page title, description, breadcrumb/back behavior, empty state, and primary actions.
+- Ensure employee users cannot see team records merely because a route or button is visible; enforce the difference on the server and through effective permissions.
+- Remove or rename redundant links so a user can predict where each action will take them.
+- Preserve direct links, back navigation, pending form state, mobile behavior, and current correction-request history.
+- Add navigation, permission, and route tests for employee self-service and authorized team-review users.
+
+### Accessible Sidebar Collapse Control
+
+- Priority: High
+- Target window: Next focused usability release
+- Status: Approved / queued
+- Added: 08/28/2026
+
+Replace the nearly invisible sidebar-collapse control with a clear, accessible navigation control that is easy to find and use without disrupting the premium SygShift layout.
+
+Required outcomes:
+
+- Provide a clearly visible control attached to the sidebar edge with an approximately 44-by-44-pixel interaction target.
+- Use the established SygShift color, border, icon, hover, active, and keyboard-focus styles; do not use a tiny white sliver or an unrelated button treatment.
+- Provide accessible labels and tooltips that change between **Collapse navigation** and **Expand navigation**.
+- Keep the control visible at supported desktop resolutions without covering page content or becoming clipped.
+- Use the existing mobile navigation pattern rather than forcing the desktop collapse control onto narrow screens.
+- Preserve the user's navigation preference where appropriate without causing a page reset, route change, or loss of unsaved work.
+- Test expanded and collapsed states, keyboard use, zoom, high-contrast visibility, supported viewport sizes, and mobile navigation.
+
 ## HR, Finance & Employee Lifecycle
 
 ### SygShift HR & Finance Suite
