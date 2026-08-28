@@ -28,6 +28,7 @@ import {
   TimeAccountabilityPageRoute,
   TimeMyTimePageRoute,
   TimePageRoute,
+  TimeWorkspaceRoute,
   TimePayrollPageRoute,
   TimeRulesPageRoute,
   TimeTeamPageRoute,
@@ -95,65 +96,20 @@ export const router = createBrowserRouter([
         path: 'time',
         element: (
           <RouteSuspense>
-            <TimePageRoute />
+            <TimeWorkspaceRoute />
           </RouteSuspense>
         ),
-      },
-      {
-        path: 'time/tools',
-        element: (
-          <RouteSuspense>
-            <TimeToolsPageRoute />
-          </RouteSuspense>
-        ),
-      },
-      {
-        path: 'time/my-time',
-        element: (
-          <RouteSuspense>
-            <TimeMyTimePageRoute />
-          </RouteSuspense>
-        ),
-      },
-      {
-        path: 'time/team',
-        element: (
-          <RouteSuspense>
-            <TimeTeamPageRoute />
-          </RouteSuspense>
-        ),
-      },
-      {
-        path: 'time/exceptions',
-        element: (
-          <RouteSuspense>
-            <TimeExceptionsPageRoute />
-          </RouteSuspense>
-        ),
-      },
-      {
-        path: 'time/operations',
-        element: (
-          <RouteSuspense>
-            <TimeOperationsPageRoute />
-          </RouteSuspense>
-        ),
-      },
-      {
-        path: 'time/daily-review',
-        element: (
-          <RouteSuspense>
-            <TimeDailyAttendancePageRoute />
-          </RouteSuspense>
-        ),
-      },
-      {
-        path: 'time/accountability',
-        element: (
-          <RouteSuspense>
-            <TimeAccountabilityPageRoute />
-          </RouteSuspense>
-        ),
+        children: [
+          { index: true, element: <RouteSuspense><TimePageRoute /></RouteSuspense> },
+          { path: '/time/tools', element: <RouteSuspense><TimeToolsPageRoute /></RouteSuspense> },
+          { path: '/time/my-time', element: <RouteSuspense><TimeMyTimePageRoute /></RouteSuspense> },
+          { path: '/time/team', element: <RouteSuspense><TimeTeamPageRoute /></RouteSuspense> },
+          { path: '/time/review', element: <RouteSuspense><TimeExceptionsPageRoute /></RouteSuspense> },
+          { path: '/time/exceptions', element: <RouteSuspense><TimeExceptionsPageRoute /></RouteSuspense> },
+          { path: '/time/operations', element: <RouteSuspense><TimeOperationsPageRoute /></RouteSuspense> },
+          { path: '/time/daily-review', element: <RouteSuspense><TimeDailyAttendancePageRoute /></RouteSuspense> },
+          { path: '/time/accountability', element: <RouteSuspense><TimeAccountabilityPageRoute /></RouteSuspense> },
+        ],
       },
       {
         path: 'time/timecards',

@@ -57,6 +57,9 @@ export const SitesPageRoute = lazy(() =>
 export const TimePageRoute = lazy(() =>
   import('../pages/TimePage').then((module) => ({ default: module.TimePage })),
 )
+export const TimeWorkspaceRoute = lazy(() =>
+  import('../time/TimeWorkspace').then((module) => ({ default: module.TimeWorkspace })),
+)
 export const TimeToolsPageRoute = lazy(() =>
   import('../pages/TimePage').then((module) => ({ default: module.LegacyTimeToolsPage })),
 )
