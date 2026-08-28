@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient, type UseMutationResult } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -10,8 +10,10 @@ import {
   FileClock,
   History,
   LockKeyhole,
+  Search,
   ShieldAlert,
   Timer,
+  Users,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
@@ -45,9 +47,9 @@ import { payrollExportFileName, payrollLockBlocker, payrollReadinessPercent, wor
 import {
   downloadPayrollWorkbook,
   payrollWeeklyTotalPayableMinutes,
-  payrollWorkbookWeekForRow,
   summarizePayrollWorkbookByWeek,
   type PayrollWeeklySummaryGroup,
+  type PayrollWeeklyEmployeeSummary,
   type PayrollWorkbookDownloadResult,
   type PayrollWorkbookWeek,
 } from './payrollWorkbook'
@@ -74,8 +76,65 @@ interface PayrollSummarySelection {
   weekStartsOn: string
 }
 
+type PayrollWorkspaceSection = 'overview' | 'review' | 'employees' | 'export' | 'rules'
+
+const payrollWorkspaceSections: Array<{ label: string; path: string; section: PayrollWorkspaceSection }> = [
+  { label: 'Overview', path: '/payroll', section: 'overview' },
+  { label: 'Review Queue', path: '/payroll/review', section: 'review' },
+  { label: 'Employee Payroll', path: '/payroll/employees', section: 'employees' },
+  { label: 'Export & History', path: '/payroll/export', section: 'export' },
+  { label: 'Rules', path: '/payroll/rules', section: 'rules' },
+]
+
+function payrollWorkspaceSection(pathname: string): PayrollWorkspaceSection {
+  if (pathname.startsWith('/payroll/review')) return 'review'
+  if (pathname.startsWith('/payroll/employees')) return 'employees'
+  if (pathname.startsWith('/payroll/export')) return 'export'
+  if (pathname.startsWith('/payroll/rules')) return 'rules'
+  return 'overview'
+}
+
+function validDateKey(value: string | null): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value))
+}
+
+function PayrollWorkspaceNavigation({
+  activeSection,
+  search,
+  showRules,
+}: {
+  activeSection: PayrollWorkspaceSection
+  search: string
+  showRules: boolean
+}) {
+  const visibleSections = showRules
+    ? payrollWorkspaceSections
+    : payrollWorkspaceSections.filter((item) => item.section !== 'rules')
+
+  return (
+    <nav aria-label="Payroll workspace" className="payroll-workspace-tabs">
+      {visibleSections.map((item) => (
+        <Link
+          aria-current={activeSection === item.section ? 'page' : undefined}
+          className={activeSection === item.section ? 'payroll-workspace-tabs__link payroll-workspace-tabs__link--active' : 'payroll-workspace-tabs__link'}
+          key={item.section}
+          to={`${item.path}${search}`}
+        >
+          {item.label}
+        </Link>
+      ))}
+    </nav>
+  )
+}
+
 function formatPeriod(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>): string {
   return `${formatUsDateKey(period.fromDate)} - ${formatUsDateKey(period.throughDate)}`
+}
+
+function addDateDays(dateKey: string, days: number): string {
+  const date = new Date(`${dateKey}T12:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
 }
 
 function rulesForPeriod(rules?: PayrollRules): Partial<Pick<PayrollRules, 'payDateAnchor' | 'payFrequency' | 'weekStartsOn'>> | undefined {
@@ -180,9 +239,16 @@ function PeriodControls({
     <section className="time-card payroll-period-controls" aria-label="Payroll export date range">
       <TimeSectionHeader
         eyebrow="Pay period"
-        summary="Choose any date range HR needs, or use a suggested payroll-period shortcut."
-        title="Export range"
+        summary="The selected period stays with you across every Payroll page and after a reload."
+        title="Selected pay period"
       />
+      <div className="payroll-period-status" aria-label="Selected payroll weeks">
+        <TimeStatusBadge tone={fromDate === activePeriod.fromDate && throughDate === activePeriod.throughDate ? 'good' : 'neutral'}>
+          {fromDate === activePeriod.fromDate && throughDate === activePeriod.throughDate ? 'Current open period' : fromDate === lastCompleted.fromDate && throughDate === lastCompleted.throughDate ? 'Last completed period' : 'Custom range'}
+        </TimeStatusBadge>
+        <span>Week 1 starts {formatUsDateKey(fromDate)}</span>
+        {throughDate >= addDateDays(fromDate, 7) ? <span>Week 2 starts {formatUsDateKey(addDateDays(fromDate, 7))}</span> : null}
+      </div>
       <div className="payroll-period-controls__fields">
         <label>
           <span>From</span>
@@ -204,10 +270,10 @@ function PeriodControls({
         </label>
       </div>
       <div className="payroll-period-controls__actions">
-        <TimeButton onClick={() => onChange(lastCompleted, false)} variant="primary">Last completed pay period</TimeButton>
-        <TimeButton onClick={() => onChange(activePeriod, false)} variant="secondary">Current open period</TimeButton>
-        <TimeButton onClick={() => onChange(shiftPayrollPeriod(selectedPeriod, -1, periodRules), false)} variant="secondary">Previous period</TimeButton>
-        <TimeButton onClick={() => onChange(shiftPayrollPeriod(selectedPeriod, 1, periodRules), false)} variant="secondary">Next period</TimeButton>
+        <TimeButton onClick={() => onChange(lastCompleted)} variant="primary">Last completed pay period</TimeButton>
+        <TimeButton onClick={() => onChange(activePeriod)} variant="secondary">Current open period</TimeButton>
+        <TimeButton onClick={() => onChange(shiftPayrollPeriod(selectedPeriod, -1, periodRules))} variant="secondary">Previous period</TimeButton>
+        <TimeButton onClick={() => onChange(shiftPayrollPeriod(selectedPeriod, 1, periodRules))} variant="secondary">Next period</TimeButton>
       </div>
     </section>
   )
@@ -315,7 +381,42 @@ function PayrollExceptions({
   pendingCorrections: PendingCorrection[]
   rows: TimekeepingReviewRow[]
 }) {
-  const exceptionRows = rows.filter((row) => !row.payrollReady || row.exceptionCodes.length > 0)
+  const exceptionRows = useMemo(
+    () => rows.filter((row) => !row.payrollReady || row.exceptionCodes.length > 0),
+    [rows],
+  )
+  const [search, setSearch] = useState('')
+  const [queueFilter, setQueueFilter] = useState<'all' | 'blockers' | 'corrections'>('all')
+  const [sortOrder, setSortOrder] = useState<'employee' | 'date'>('date')
+  const [pageSize, setPageSize] = useState(10)
+  const [page, setPage] = useState(1)
+  const queueItems = useMemo(() => {
+    const normalizedSearch = search.trim().toLocaleLowerCase()
+    const corrections = queueFilter === 'blockers' ? [] : pendingCorrections.map((correction) => ({
+      correction,
+      date: correction.recordedAt.slice(0, 10),
+      employeeName: correction.employeeName,
+      key: `correction-${correction.id}`,
+      kind: 'correction' as const,
+    }))
+    const blockers = queueFilter === 'corrections' ? [] : exceptionRows.map((row) => ({
+      date: row.operationalDate,
+      employeeName: row.employeeName,
+      key: `row-${row.employeeId}-${row.shiftId ?? row.operationalDate}-${row.rowKind}`,
+      kind: 'blocker' as const,
+      row,
+    }))
+    return [...corrections, ...blockers]
+      .filter((item) => !normalizedSearch || `${item.employeeName} ${item.date} ${item.kind === 'blocker' ? rowLocation(item.row) : item.correction.reason}`.toLocaleLowerCase().includes(normalizedSearch))
+      .sort((left, right) => sortOrder === 'employee'
+        ? left.employeeName.localeCompare(right.employeeName) || left.date.localeCompare(right.date)
+        : left.date.localeCompare(right.date) || left.employeeName.localeCompare(right.employeeName))
+  }, [exceptionRows, pendingCorrections, queueFilter, search, sortOrder])
+  const pageCount = Math.max(1, Math.ceil(queueItems.length / pageSize))
+  const safePage = Math.min(page, pageCount)
+  const visibleItems = queueItems.slice((safePage - 1) * pageSize, safePage * pageSize)
+
+  useEffect(() => setPage(1), [pageSize, queueFilter, search, sortOrder])
 
   if (exceptionRows.length === 0 && pendingCorrections.length === 0) {
     return (
@@ -332,38 +433,77 @@ function PayrollExceptions({
         summary="Open each blocker here, make the correction, and return to a refreshed payroll review."
         title="Payroll blockers"
       />
+      <div className="payroll-queue-controls">
+        <label className="payroll-queue-search">
+          <span className="sr-only">Search payroll review queue</span>
+          <Search aria-hidden="true" size={18} />
+          <input onChange={(event) => setSearch(event.target.value)} placeholder="Search employee, date, location, or reason" type="search" value={search} />
+        </label>
+        <label>
+          <span>Show</span>
+          <select onChange={(event) => setQueueFilter(event.target.value as typeof queueFilter)} value={queueFilter}>
+            <option value="all">All items</option>
+            <option value="blockers">Payroll blockers</option>
+            <option value="corrections">Correction requests</option>
+          </select>
+        </label>
+        <label>
+          <span>Sort</span>
+          <select onChange={(event) => setSortOrder(event.target.value as typeof sortOrder)} value={sortOrder}>
+            <option value="date">Work date</option>
+            <option value="employee">Employee name</option>
+          </select>
+        </label>
+        <label>
+          <span>Rows</span>
+          <select onChange={(event) => setPageSize(Number(event.target.value))} value={pageSize}>
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+          </select>
+        </label>
+      </div>
       <div className="payroll-exception-list__items">
-        {pendingCorrections.map((correction) => (
-          <article key={correction.id}>
+        {visibleItems.map((item) => item.kind === 'correction' ? (
+          <article key={item.key}>
             <div className="payroll-exception-list__item-main">
-              <strong>{correction.employeeName}</strong>
-              <span>{formatUsDateKey(correction.recordedAt.slice(0, 10))} | {correction.voided ? 'Void requested' : 'Time change requested'}</span>
-              <small>{correction.reason}</small>
+              <strong>{item.correction.employeeName}</strong>
+              <span>{formatUsDateKey(item.correction.recordedAt.slice(0, 10))} | {item.correction.voided ? 'Void requested' : 'Time change requested'}</span>
+              <small>{item.correction.reason}</small>
             </div>
             <div className="payroll-exception-list__item-actions">
               <TimeStatusBadge tone="warning">Pending correction</TimeStatusBadge>
-              {canWork ? <TimeButton onClick={() => onReviewCorrection(correction)} variant="primary">Review request</TimeButton> : <span>View only</span>}
+              {canWork ? <TimeButton onClick={() => onReviewCorrection(item.correction)} variant="primary">Review request</TimeButton> : <span>View only</span>}
             </div>
           </article>
-        ))}
-        {exceptionRows.map((row) => (
-          <article key={`${row.employeeId}-${row.shiftId ?? row.operationalDate}-${row.rowKind}`}>
+        ) : (
+          <article key={item.key}>
             <div className="payroll-exception-list__item-main">
-              <strong>{row.employeeName}</strong>
-              <span>{formatUsDateKey(row.operationalDate)} · {rowLocation(row)}</span>
+              <strong>{item.row.employeeName}</strong>
+              <span>{formatUsDateKey(item.row.operationalDate)} · {rowLocation(item.row)}</span>
             </div>
             <div className="payroll-exception-list__item-actions">
-              <TimeStatusBadge tone="warning">{row.exceptionCodes.length ? row.exceptionCodes.map(exceptionLabel).join(', ') : 'Needs review'}</TimeStatusBadge>
-              {canWork ? <TimeButton onClick={() => onWorkRow(row)} variant="primary">Fix blocker</TimeButton> : <span>View only</span>}
+              <TimeStatusBadge tone="warning">{item.row.exceptionCodes.length ? item.row.exceptionCodes.map(exceptionLabel).join(', ') : 'Needs review'}</TimeStatusBadge>
+              {canWork ? <TimeButton onClick={() => onWorkRow(item.row)} variant="primary">Fix blocker</TimeButton> : <span>View only</span>}
             </div>
           </article>
         ))}
+        {visibleItems.length === 0 ? <p className="payroll-queue-empty">No review items match these filters.</p> : null}
       </div>
+      {queueItems.length > pageSize ? (
+        <div className="payroll-pagination" aria-label="Payroll review queue pages">
+          <span>{queueItems.length} items · Page {safePage} of {pageCount}</span>
+          <div>
+            <TimeButton disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} variant="secondary">Previous</TimeButton>
+            <TimeButton disabled={safePage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} variant="secondary">Next</TimeButton>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
 
-function PayrollEmployeeSummaryTable({
+export function PayrollEmployeeSummaryTable({
   groups,
   onSelectSummary,
   selectedSummary,
@@ -482,7 +622,141 @@ function PayrollEmployeeSummaryTable({
   )
 }
 
-function PayrollRowsTable({
+function PayrollEmployeeWorkspace({
+  groups,
+  onOpenEmployee,
+}: {
+  groups: PayrollWeeklySummaryGroup[]
+  onOpenEmployee: (employeeId: string) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [status, setStatus] = useState<'all' | 'ready' | 'review'>('all')
+  const [sortOrder, setSortOrder] = useState<'employee' | 'hours-desc'>('employee')
+  const [pageSize, setPageSize] = useState(10)
+  const [page, setPage] = useState(1)
+  const employees = useMemo(() => {
+    const records = new Map<string, {
+      employeeId: string
+      employeeName: string
+      employmentType: string
+      needsReview: boolean
+      totalMinutes: number
+      username: string
+      weeks: Array<{ summary: PayrollWeeklyEmployeeSummary; week: PayrollWorkbookWeek }>
+    }>()
+    for (const group of groups) {
+      for (const summary of group.summaries.filter((candidate) => candidate.hasActivity)) {
+        const record = records.get(summary.employeeId) ?? {
+          employeeId: summary.employeeId,
+          employeeName: summary.employeeName,
+          employmentType: summary.employmentType,
+          needsReview: false,
+          totalMinutes: 0,
+          username: summary.username,
+          weeks: [],
+        }
+        record.weeks.push({ summary, week: group.week })
+        record.needsReview ||= summary.needsReview
+        record.totalMinutes += payrollWeeklyTotalPayableMinutes(summary)
+        records.set(summary.employeeId, record)
+      }
+    }
+    const normalizedSearch = search.trim().toLocaleLowerCase()
+    return [...records.values()]
+      .filter((record) => !normalizedSearch || `${record.employeeName} ${record.username} ${record.employmentType}`.toLocaleLowerCase().includes(normalizedSearch))
+      .filter((record) => status === 'all' || (status === 'review' ? record.needsReview : !record.needsReview))
+      .sort((left, right) => sortOrder === 'hours-desc'
+        ? right.totalMinutes - left.totalMinutes || left.employeeName.localeCompare(right.employeeName)
+        : left.employeeName.localeCompare(right.employeeName))
+  }, [groups, search, sortOrder, status])
+  const pageCount = Math.max(1, Math.ceil(employees.length / pageSize))
+  const safePage = Math.min(page, pageCount)
+  const visibleEmployees = employees.slice((safePage - 1) * pageSize, safePage * pageSize)
+
+  useEffect(() => setPage(1), [pageSize, search, sortOrder, status])
+
+  return (
+    <section className="time-card payroll-employee-workspace" aria-labelledby="payroll-employee-workspace-title">
+      <TimeSectionHeader
+        eyebrow="Employee payroll"
+        summary="Review one person at a time. Week 1 and Week 2 remain separate, with detailed punches available only when needed."
+        title="Employee totals"
+      />
+      <div className="payroll-queue-controls payroll-employee-workspace__controls">
+        <label className="payroll-queue-search">
+          <span className="sr-only">Search employees</span>
+          <Search aria-hidden="true" size={18} />
+          <input onChange={(event) => setSearch(event.target.value)} placeholder="Search employee or username" type="search" value={search} />
+        </label>
+        <label>
+          <span>Status</span>
+          <select onChange={(event) => setStatus(event.target.value as typeof status)} value={status}>
+            <option value="all">All statuses</option>
+            <option value="ready">Ready</option>
+            <option value="review">Needs review</option>
+          </select>
+        </label>
+        <label>
+          <span>Sort</span>
+          <select onChange={(event) => setSortOrder(event.target.value as typeof sortOrder)} value={sortOrder}>
+            <option value="employee">Employee name</option>
+            <option value="hours-desc">Highest payable hours</option>
+          </select>
+        </label>
+        <label>
+          <span>Rows</span>
+          <select onChange={(event) => setPageSize(Number(event.target.value))} value={pageSize}>
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+          </select>
+        </label>
+      </div>
+      {visibleEmployees.length === 0 ? (
+        <DataStatePanel icon={Users} title="No employee payroll matches">
+          <p>Change the search or status filter to view another employee.</p>
+        </DataStatePanel>
+      ) : (
+        <div className="payroll-employee-list">
+          {visibleEmployees.map((employee) => (
+            <article className="payroll-employee-list__item" key={employee.employeeId}>
+              <div className="payroll-employee-list__identity">
+                <strong>{employee.employeeName}</strong>
+                <span>@{employee.username} · {employee.employmentType}</span>
+                <TimeStatusBadge tone={employee.needsReview ? 'warning' : 'good'}>{employee.needsReview ? 'Needs review' : 'Ready'}</TimeStatusBadge>
+              </div>
+              <div className="payroll-employee-list__weeks">
+                {employee.weeks.map(({ summary, week }, index) => (
+                  <div key={week.weekStartsOn}>
+                    <span>{week.label || `Week ${index + 1}`}</span>
+                    <strong>{payrollHours(payrollWeeklyTotalPayableMinutes(summary))} hr</strong>
+                    <small>{payrollHours(summary.regularMinutes)} regular · {payrollHours(summary.overtimeMinutes)} OT · {payrollHours(summary.sickPayMinutes + summary.vacationPayMinutes)} sick/PTO</small>
+                  </div>
+                ))}
+              </div>
+              <div className="payroll-employee-list__total">
+                <span>Pay-period total</span>
+                <strong>{payrollHours(employee.totalMinutes)} hr</strong>
+                <TimeButton onClick={() => onOpenEmployee(employee.employeeId)} variant="secondary">View details</TimeButton>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+      {employees.length > pageSize ? (
+        <div className="payroll-pagination" aria-label="Employee payroll pages">
+          <span>{employees.length} employees · Page {safePage} of {pageCount}</span>
+          <div>
+            <TimeButton disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} variant="secondary">Previous</TimeButton>
+            <TimeButton disabled={safePage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} variant="secondary">Next</TimeButton>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+export function PayrollRowsTable({
   rows,
   summary,
   week,
@@ -626,10 +900,16 @@ function PayrollHistory({
 
 export function TimePayrollPage() {
   const queryClient = useQueryClient()
-  const defaultPeriod = completedPayrollPeriod()
-  const [fromDate, setFromDate] = useState(defaultPeriod.fromDate)
-  const [throughDate, setThroughDate] = useState(defaultPeriod.throughDate)
-  const [rangeTouched, setRangeTouched] = useState(false)
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeSection = payrollWorkspaceSection(location.pathname)
+  const defaultPeriod = currentPayrollPeriod()
+  const requestedFromDate = searchParams.get('from')
+  const requestedThroughDate = searchParams.get('through')
+  const hasRequestedPeriod = validDateKey(requestedFromDate) && validDateKey(requestedThroughDate) && requestedFromDate <= requestedThroughDate
+  const [fromDate, setFromDate] = useState(hasRequestedPeriod ? requestedFromDate : defaultPeriod.fromDate)
+  const [throughDate, setThroughDate] = useState(hasRequestedPeriod ? requestedThroughDate : defaultPeriod.throughDate)
+  const [rangeTouched, setRangeTouched] = useState(hasRequestedPeriod)
   const [exportNote, setExportNote] = useState('')
   const [focusRequest, setFocusRequest] = useState<TimeMaintenanceFocusRequest | null>(null)
   const [selectedBlockerRow, setSelectedBlockerRow] = useState<TimekeepingReviewRow | null>(null)
@@ -637,6 +917,7 @@ export function TimePayrollPage() {
   const [correctionNote, setCorrectionNote] = useState('')
   const [payrollAssignmentWeek, setPayrollAssignmentWeek] = useState('')
   const [payrollAssignmentReason, setPayrollAssignmentReason] = useState('')
+  const [selectedPayrollEmployeeId, setSelectedPayrollEmployeeId] = useState<string | null>(null)
 
   const sessionQuery = useQuery({
     queryKey: ['session-context'],
@@ -647,6 +928,8 @@ export function TimePayrollPage() {
   const exportAllowed = canExportPayroll(sessionQuery.data)
   const manageAllowed = canManageTime(sessionQuery.data)
   const assignmentCorrectionAllowed = canOverridePayrollAssignment(sessionQuery.data)
+  const rulesAllowed = sessionQuery.data?.role === 'admin'
+  const reviewNeeded = activeSection !== 'rules'
   const rulesQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed,
     queryKey: ['time-payroll-rules'],
@@ -654,23 +937,25 @@ export function TimePayrollPage() {
   })
   useEffect(() => {
     if (rangeTouched || !rulesQuery.data) return
-    const completedPeriod = completedPayrollPeriod(undefined, rulesForPeriod(rulesQuery.data))
-    setFromDate(completedPeriod.fromDate)
-    setThroughDate(completedPeriod.throughDate)
-  }, [rangeTouched, rulesQuery.data])
+    const activePeriod = currentPayrollPeriod(undefined, rulesForPeriod(rulesQuery.data))
+    setFromDate(activePeriod.fromDate)
+    setThroughDate(activePeriod.throughDate)
+    setRangeTouched(true)
+    setSearchParams({ from: activePeriod.fromDate, through: activePeriod.throughDate }, { replace: true })
+  }, [rangeTouched, rulesQuery.data, setSearchParams])
 
   const reviewQuery = useQuery({
-    enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed,
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed && reviewNeeded,
     queryKey: ['time-payroll-review', fromDate, throughDate],
     queryFn: () => getTimekeepingReview({ fromDate, throughDate }),
   })
   const accountabilityQuery = useQuery({
-    enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed,
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed && activeSection === 'export',
     queryKey: ['time-payroll-accountability', fromDate, throughDate],
     queryFn: () => getPayrollAccountabilityEvents({ fromDate, throughDate }),
   })
   const historyQuery = useQuery({
-    enabled: isSupabaseConfigured && sessionQuery.isSuccess && exportAllowed,
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && exportAllowed && activeSection === 'export',
     queryKey: ['payroll-export-history'],
     queryFn: () => getPayrollExportHistory(20),
   })
@@ -741,32 +1026,15 @@ export function TimePayrollPage() {
     () => payrollWorkbookInput ? summarizePayrollWorkbookByWeek(payrollWorkbookInput) : [],
     [payrollWorkbookInput],
   )
-  const [selectedPayrollSummary, setSelectedPayrollSummary] = useState<PayrollSummarySelection | null>(null)
-  const selectedRows = useMemo(
-    () => review && selectedPayrollSummary
-      ? review.rows.filter((row) => row.employeeId === selectedPayrollSummary.employeeId
-        && payrollWorkbookWeekForRow(payrollWorkbookInput!, row) === selectedPayrollSummary.weekStartsOn)
-      : [],
-    [payrollWorkbookInput, review, selectedPayrollSummary],
-  )
-  const selectedSummary = useMemo(
-    () => summarizePayrollRowsByEmployee(selectedRows)[0] ?? null,
-    [selectedRows],
-  )
-  const selectedWeek = useMemo(
-    () => selectedPayrollSummary
-      ? weeklySummaryGroups.find((group) => group.week.weekStartsOn === selectedPayrollSummary.weekStartsOn)?.week ?? null
-      : null,
-    [selectedPayrollSummary, weeklySummaryGroups],
-  )
-
-  useEffect(() => {
-    if (selectedPayrollSummary && !weeklySummaryGroups.some((group) => group.week.weekStartsOn === selectedPayrollSummary.weekStartsOn
-      && group.summaries.some((summary) => summary.employeeId === selectedPayrollSummary.employeeId && summary.hasWorkedDetail))) {
-      setSelectedPayrollSummary(null)
-    }
-  }, [selectedPayrollSummary, weeklySummaryGroups])
-
+  const selectedEmployeeWeeks = useMemo(() => selectedPayrollEmployeeId
+    ? weeklySummaryGroups.flatMap((group) => group.summaries
+      .filter((summary) => summary.employeeId === selectedPayrollEmployeeId && summary.hasActivity)
+      .map((summary) => ({ summary, week: group.week })))
+    : [], [selectedPayrollEmployeeId, weeklySummaryGroups])
+  const selectedEmployeeRows = useMemo(() => review && selectedPayrollEmployeeId
+    ? review.rows.filter((row) => row.employeeId === selectedPayrollEmployeeId)
+    : [], [review, selectedPayrollEmployeeId])
+  const selectedEmployeeName = selectedEmployeeWeeks[0]?.summary.employeeName ?? selectedEmployeeRows[0]?.employeeName ?? ''
   const downloadMutation = useMutation({
     mutationFn: async (request: PayrollDownloadRequest): Promise<PayrollWorkbookDownload> => {
       const detail = await getPayrollExportBatchDetail(request.batchId)
@@ -866,11 +1134,40 @@ export function TimePayrollPage() {
 
   const totals = useMemo(() => review?.summary, [review])
   const canLock = Boolean(exportAllowed && review && lockBlockedReason === '' && exportNote.trim().length > 0 && !exportMutation.isPending)
+  const workspaceSearch = `?from=${encodeURIComponent(fromDate)}&through=${encodeURIComponent(throughDate)}`
+  const workspaceHeading: Record<PayrollWorkspaceSection, { eyebrow: string; summary: string; title: string }> = {
+    employees: {
+      eyebrow: 'Payroll workspace',
+      summary: 'Review Week 1, Week 2, and pay-period totals by employee without crowding the screen with punch detail.',
+      title: 'Employee Payroll',
+    },
+    export: {
+      eyebrow: 'Payroll workspace',
+      summary: 'Download a clean workbook preview, then lock the official payroll batch with a complete audit trail.',
+      title: 'Payroll Export & History',
+    },
+    overview: {
+      eyebrow: 'HR & Finance',
+      summary: 'See payroll readiness, priority work, and the selected pay period before moving into detailed review.',
+      title: 'Payroll',
+    },
+    review: {
+      eyebrow: 'Payroll workspace',
+      summary: 'Resolve genuine blockers and employee correction requests from one focused, auditable queue.',
+      title: 'Payroll Review Queue',
+    },
+    rules: {
+      eyebrow: 'Payroll administration',
+      summary: 'Review the effective pay-cycle, overtime, break, and worked-time rules used by payroll.',
+      title: 'Payroll Rules',
+    },
+  }
 
   function setPeriod(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>, touched = true) {
     setFromDate(period.fromDate)
     setThroughDate(period.throughDate)
     setRangeTouched(touched)
+    setSearchParams({ from: period.fromDate, through: period.throughDate }, { replace: true })
   }
 
   function openRowBlocker(row: TimekeepingReviewRow) {
@@ -942,10 +1239,11 @@ export function TimePayrollPage() {
     <main className="page page--sygshift-time">
       <TimePageHeader
         actions={<Link className="time-button time-button--secondary" to="/time/tools"><Timer aria-hidden="true" size={18} /><span>Time Tools</span></Link>}
-        eyebrow="Payroll export"
-        summary="Review the pay period, correct exceptions, download a clean workbook preview, then lock the official payroll batch with an audit trail."
-        title="Payroll Export"
+        eyebrow={workspaceHeading[activeSection].eyebrow}
+        summary={workspaceHeading[activeSection].summary}
+        title={workspaceHeading[activeSection].title}
       />
+      <PayrollWorkspaceNavigation activeSection={activeSection} search={workspaceSearch} showRules={rulesAllowed} />
 
       {rulesQuery.isError ? (
         <TimeAlertCard icon={AlertTriangle} title="Payroll rules could not be loaded" tone="warning">
@@ -963,14 +1261,14 @@ export function TimePayrollPage() {
         </TimeAlertCard>
       ) : null}
 
-      <section className="payroll-command-grid">
+      <section className={activeSection === 'overview' ? 'payroll-command-grid' : 'payroll-command-grid payroll-command-grid--period-only'}>
         <PeriodControls
           fromDate={fromDate}
           onChange={setPeriod}
           rules={rulesQuery.data}
           throughDate={throughDate}
         />
-        <section className="time-card payroll-readiness-card">
+        {activeSection === 'overview' ? <section className="time-card payroll-readiness-card">
           <TimeSectionHeader
             eyebrow="Readiness"
             summary="Official exports stay disabled until the review is clean."
@@ -997,61 +1295,87 @@ export function TimePayrollPage() {
               ) : null}
             </div>
           ) : null}
-        </section>
+        </section> : null}
       </section>
 
-      {review ? (
+      {activeSection !== 'rules' && reviewQuery.isPending ? (
+        <DataStatePanel icon={FileClock} title="Loading payroll workspace">
+          <p>Calculating worked time, scheduled comparisons, exceptions, and weekly payroll totals.</p>
+        </DataStatePanel>
+      ) : null}
+      {activeSection !== 'rules' && reviewQuery.isError ? (
+        <DataStatePanel icon={ShieldAlert} title="Payroll workspace unavailable" tone="error">
+          <p>{reviewQuery.error.message}</p>
+        </DataStatePanel>
+      ) : null}
+
+      {review && activeSection === 'overview' ? (
         <>
           <section className="time-command-grid payroll-summary-grid" aria-label="Payroll export totals">
             <TimeMetricCard detail="Only SygShift timeclock rows in the selected range." icon={FileClock} label="Worked Rows" value={totals?.rowCount ?? 0} />
             <TimeMetricCard detail="Paid hours from completed clock-in/out records after unpaid breaks." icon={CheckCircle2} label="Paid Hours" tone="good" value={`${payrollHours(totals?.paidMinutes ?? 0)} hr`} />
-            <TimeMetricCard detail="Regular hours ready for HR/Finance." icon={History} label="Regular" value={`${payrollHours(totals?.regularMinutes ?? 0)} hr`} />
             <TimeMetricCard detail="Daily/weekly overtime calculated by payroll rules." icon={AlertTriangle} label="Overtime" tone={(totals?.overtimeMinutes ?? 0) > 0 ? 'warning' : 'neutral'} value={`${payrollHours(totals?.overtimeMinutes ?? 0)} hr`} />
-            <TimeMetricCard detail="Unpaid break minutes subtracted from worked time." icon={LockKeyhole} label="Breaks" value={`${payrollHours(review.summary.grossMinutes - review.summary.paidMinutes)} hr`} />
             <TimeMetricCard detail="Rows or corrections blocking official export." icon={ShieldAlert} label="Blockers" tone={(totals?.exceptionCount ?? 0) + (totals?.pendingCorrectionCount ?? 0) > 0 ? 'danger' : 'good'} value={(totals?.exceptionCount ?? 0) + (totals?.pendingCorrectionCount ?? 0)} />
             {trainingMinutes > 0 ? <TimeMetricCard detail="Paid training marked on scheduled shifts and included in worked hours." icon={History} label="Training Time" value={`${payrollHours(trainingMinutes)} hr`} /> : null}
           </section>
-
-          <PayrollRulesSummary period={{ fromDate, throughDate }} rules={rulesQuery.data ?? review.payrollRules} />
-
-          {exportAllowed ? (
-            <PayrollExportPanel
-              accountabilityEvents={accountabilityEvents}
-              canLock={canLock}
-              exportMutation={exportMutation}
-              lockBlockedReason={lockBlockedReason}
-              note={exportNote}
-              onNoteChange={setExportNote}
-              previewMutation={previewDownloadMutation}
-              review={review}
-              rules={rulesQuery.data ?? review.payrollRules}
-            />
-          ) : (
-            <TimeAlertCard icon={ShieldAlert} title="Preview only" tone="warning">
-              <p>You can review payroll rows, but your account does not have Payroll export permission to lock official batches.</p>
-            </TimeAlertCard>
-          )}
-
-          <PayrollExceptions
-            canWork={manageAllowed}
-            onReviewCorrection={(correction) => {
-              setSelectedCorrection(correction)
-              setCorrectionNote('')
-            }}
-            onWorkRow={openRowBlocker}
-            pendingCorrections={review.pendingCorrections}
-            rows={review.rows}
-          />
-          <PayrollEmployeeSummaryTable
-            groups={weeklySummaryGroups}
-            onSelectSummary={(selection) => setSelectedPayrollSummary((current) => current?.employeeId === selection.employeeId && current.weekStartsOn === selection.weekStartsOn ? null : selection)}
-            selectedSummary={selectedPayrollSummary}
-          />
-          {selectedSummary && selectedWeek ? <PayrollRowsTable rows={selectedRows} summary={selectedSummary} week={selectedWeek} /> : null}
+          <section className="time-card payroll-priority-panel" aria-labelledby="payroll-priority-title">
+            <TimeSectionHeader eyebrow="Priority work" summary="Only the first five items needing attention are shown here. Use Review Queue for the complete list." title="What needs attention" />
+            <div className="payroll-priority-list">
+              {review.pendingCorrections.slice(0, 5).map((correction) => (
+                <article key={correction.id}>
+                  <div><strong>{correction.employeeName}</strong><span>Employee correction request · {formatUsDateKey(correction.recordedAt.slice(0, 10))}</span></div>
+                  <TimeStatusBadge tone="warning">Review</TimeStatusBadge>
+                </article>
+              ))}
+              {review.rows.filter((row) => !row.payrollReady || row.exceptionCodes.length > 0).slice(0, Math.max(0, 5 - review.pendingCorrections.length)).map((row) => (
+                <article key={`${row.employeeId}-${row.operationalDate}-${row.shiftId ?? row.rowKind}`}>
+                  <div><strong>{row.employeeName}</strong><span>{formatUsDateKey(row.operationalDate)} · {rowLocation(row)}</span></div>
+                  <TimeStatusBadge tone="warning">{row.exceptionCodes.length ? row.exceptionCodes.map(exceptionLabel).join(', ') : 'Needs review'}</TimeStatusBadge>
+                </article>
+              ))}
+              {review.pendingCorrections.length === 0 && !review.rows.some((row) => !row.payrollReady || row.exceptionCodes.length > 0) ? (
+                <div className="payroll-priority-list__empty"><CheckCircle2 aria-hidden="true" size={22} /><span>No priority payroll work for this period.</span></div>
+              ) : null}
+            </div>
+            <div className="payroll-priority-panel__actions">
+              <Link className="time-button time-button--primary" to={`/payroll/review${workspaceSearch}`}>Open Review Queue</Link>
+              <Link className="time-button time-button--secondary" to={`/payroll/employees${workspaceSearch}`}>Review employees</Link>
+              {exportAllowed ? <Link className="time-button time-button--secondary" to={`/payroll/export${workspaceSearch}`}>Export payroll</Link> : null}
+            </div>
+          </section>
         </>
       ) : null}
 
-      {exportAllowed ? (
+      {review && activeSection === 'review' ? (
+        <PayrollExceptions
+          canWork={manageAllowed}
+          onReviewCorrection={(correction) => {
+            setSelectedCorrection(correction)
+            setCorrectionNote('')
+          }}
+          onWorkRow={openRowBlocker}
+          pendingCorrections={review.pendingCorrections}
+          rows={review.rows}
+        />
+      ) : null}
+
+      {review && activeSection === 'employees' ? (
+        <PayrollEmployeeWorkspace groups={weeklySummaryGroups} onOpenEmployee={setSelectedPayrollEmployeeId} />
+      ) : null}
+
+      {review && activeSection === 'export' ? exportAllowed ? (
+        <>
+          <PayrollExportPanel
+            accountabilityEvents={accountabilityEvents}
+            canLock={canLock}
+            exportMutation={exportMutation}
+            lockBlockedReason={lockBlockedReason}
+            note={exportNote}
+            onNoteChange={setExportNote}
+            previewMutation={previewDownloadMutation}
+            review={review}
+            rules={rulesQuery.data ?? review.payrollRules}
+          />
         <section className="time-card payroll-history-panel payroll-history-panel--page" aria-labelledby="payroll-history-title">
           <TimeSectionHeader
             eyebrow="Audit history"
@@ -1070,6 +1394,50 @@ export function TimePayrollPage() {
             <PayrollHistory batches={historyQuery.data} downloadMutation={downloadMutation} />
           )}
         </section>
+        </>
+      ) : (
+        <TimeAlertCard icon={ShieldAlert} title="Payroll export access is required" tone="warning">
+          <p>Your account can review payroll, but only authorized HR/Finance users can preview or lock official export workbooks.</p>
+        </TimeAlertCard>
+      ) : null}
+
+      {activeSection === 'rules' ? rulesAllowed ? (
+        <PayrollRulesSummary period={{ fromDate, throughDate }} rules={rulesQuery.data} />
+      ) : (
+        <DataStatePanel icon={ShieldAlert} title="Payroll rules are restricted" tone="error">
+          <p>Only administrators can view company-wide payroll configuration.</p>
+        </DataStatePanel>
+      ) : null}
+
+      {selectedPayrollEmployeeId ? (
+        <ModalDialog
+          className="modal-dialog--wide payroll-employee-detail-modal"
+          description={`${formatUsDateKey(fromDate)} - ${formatUsDateKey(throughDate)} · Week 1 and Week 2 remain separated.`}
+          onClose={() => setSelectedPayrollEmployeeId(null)}
+          title={selectedEmployeeName || 'Employee payroll detail'}
+        >
+          <div className="payroll-employee-detail-modal__weeks">
+            {selectedEmployeeWeeks.map(({ summary, week }) => (
+              <article key={week.weekStartsOn}>
+                <span>{week.label}</span>
+                <strong>{formatUsDateKey(week.weekStartsOn)} - {formatUsDateKey(week.weekEndsOn)}</strong>
+                <div><b>{payrollHours(summary.regularMinutes)} hr</b><small>Regular</small></div>
+                <div><b>{payrollHours(summary.overtimeMinutes)} hr</b><small>Overtime</small></div>
+                <div><b>{payrollHours(summary.sickPayMinutes + summary.vacationPayMinutes)} hr</b><small>Sick/PTO</small></div>
+                <div><b>{payrollHours(payrollWeeklyTotalPayableMinutes(summary))} hr</b><small>Total payable</small></div>
+              </article>
+            ))}
+          </div>
+          <div className="payroll-employee-detail-list">
+            {selectedEmployeeRows.map((row) => (
+              <article key={`${row.operationalDate}-${row.shiftId ?? row.rowKind}-${row.firstClockIn ?? row.scheduledStartsAt ?? 'row'}`}>
+                <div><strong>{formatUsDateKey(row.operationalDate)}</strong><span>{rowLocation(row)}</span></div>
+                <div><span>{rowClock(row.firstClockIn, row)} - {rowClock(row.lastClockOut, row)}</span><small>{row.breakMinutes} unpaid break min</small></div>
+                <div><strong>{payrollHours(row.paidMinutes)} paid hr</strong><TimeStatusBadge tone={row.payrollReady ? 'good' : 'warning'}>{row.payrollReady ? 'Ready' : 'Needs review'}</TimeStatusBadge></div>
+              </article>
+            ))}
+          </div>
+        </ModalDialog>
       ) : null}
 
       {manageAllowed && selectedBlockerRow ? (
