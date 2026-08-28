@@ -87,13 +87,12 @@ The release gate passed:
 
 The build reports one existing advisory for a client chunk larger than 500 kB. It does not fail the build and is not a functional release blocker; future performance work can further split that shared application bundle.
 
-## Release verification
+## Production release verification
 
-After deployment, verify:
-
-1. The production health endpoint is ready.
-2. A signed-in employee can open Overview and My Time and use the persistent clock controls.
-3. Authorized operations users can open Team, Review Queue, Operations, and Accountability according to their effective permissions.
-4. Back returns to the prior valid SygShift page and Home returns to the role landing page.
-5. Desktop and mobile layouts do not introduce horizontal page overflow.
-6. Browser console logs show no new application errors while moving through the Time workspace.
+- Released Cloudflare production version `54001f50-93a4-4fb4-b7b9-576a25805144`.
+- The custom-domain health and readiness endpoints returned HTTP 200 with the application, assets, and required Supabase bindings ready.
+- The Worker fallback readiness endpoint also returned HTTP 200 and ready.
+- The live protected Time route redirected signed-out visitors to the login page as required.
+- The live login boundary rendered correctly without horizontal page overflow at desktop and phone-sized viewports.
+- The authenticated desktop/mobile browser suite verified the Time workspace tabs, persistent clock controls, permission-aware navigation, Back/Home controls, and responsive containment before deployment.
+- No production database migration or data rewrite was performed for this release.

@@ -40,6 +40,7 @@ deployment status, or major workflow assumptions change.
 - No database migration or time-record mutation was required.
 - Full validation passed with type checking, linting, 89 test files / 455 tests, production build, and 10 desktop/mobile browser tests covering accessibility, authentication boundaries, password visibility, Time Maintenance layout, and User Accounts containment.
 - The staged rollback checkpoints are `b5bd343`, `5f4cfb3`, `7d761aa`, `19e1281`, `703d1b3`, `23235bf`, and `aeb4f1e`.
+- Released Cloudflare production version `54001f50-93a4-4fb4-b7b9-576a25805144`; custom-domain and Worker-fallback health/readiness checks passed after deployment.
 - Full release details are recorded in `docs/changelogs/CHANGELOG_08-27-2026_TIME_ATTENDANCE_WORKSPACE_REDESIGN.md`.
 
 ### Licensing Center redesign
