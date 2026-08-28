@@ -1,8 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useIsMutating, useQuery } from '@tanstack/react-query'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { BellRing, FileClock, LogOut, Megaphone, Menu, ShieldCheck, UserCircle, X } from 'lucide-react'
-import { navigationGroups } from '../app/navigation'
+import { ArrowLeft, BellRing, ChevronDown, ChevronsLeft, ChevronsRight, FileClock, Home, LogOut, Megaphone, Menu, ShieldCheck, UserCircle, X } from 'lucide-react'
+import { homeNavigationItem, navigationGroups } from '../app/navigation'
+import {
+  INTERNAL_NAVIGATION_STORAGE_KEY,
+  internalHref,
+  parseInternalHistory,
+  previousInternalLocation,
+  recordInternalLocation,
+  type InternalNavigationEntry,
+} from '../app/internalNavigation'
 import { canAccessRoute, hasAnyEffectivePermission } from '../app/accessPolicy'
 import { getActiveAnnouncementBanners, type AnnouncementBanner } from '../data/announcements'
 import { getTimekeepingOperationsWorkspace } from '../data/timeOperations'
@@ -24,6 +32,8 @@ import { SystemStatusIndicator } from './SystemStatusIndicator'
 const INACTIVITY_WARNING_MS = 25 * 60 * 1000
 const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000
 const WORKSPACE_ALERT_ROTATE_MS = 9_000
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sygshift.sidebar.collapsed'
+const SIDEBAR_GROUP_STORAGE_KEY = 'sygshift.sidebar.open-group'
 
 type WorkspaceAlertEntry = {
   id: string
@@ -97,6 +107,8 @@ function WorkspaceAlertStrip({ entries }: { entries: WorkspaceAlertEntry[] }) {
 
 export function AppShell() {
   const [navigationOpen, setNavigationOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true')
+  const [openNavigationGroup, setOpenNavigationGroup] = useState(() => window.localStorage.getItem(SIDEBAR_GROUP_STORAGE_KEY) ?? 'Operations')
   const [sessionContext, setSessionContext] = useState<SessionContext | null>(null)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [authMessage, setAuthMessage] = useState<string | null>(null)
@@ -104,6 +116,8 @@ export function AppShell() {
   const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(null)
   const [accountRefreshVersion, setAccountRefreshVersion] = useState(0)
   const activeMutationCount = useIsMutating()
+  const internalHistoryRef = useRef<InternalNavigationEntry[]>(parseInternalHistory(window.sessionStorage.getItem(INTERNAL_NAVIGATION_STORAGE_KEY)))
+  const previousScrollRef = useRef(0)
   const location = useLocation()
   const navigate = useNavigate()
   const payrollReminderWeek = lastCompletedPayrollWeek()
@@ -183,6 +197,10 @@ export function AppShell() {
       }),
     }))
     .filter((group) => group.items.length > 0)
+  const homeVisible = canOpenNavigationItem(homeNavigationItem, sessionContext)
+  const activeNavigationGroup = visibleNavigationGroups.find((group) => group.items.some((item) => (
+    item.path === '/' ? location.pathname === '/' : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
+  )))?.label ?? null
 
   const activeMaintenance = maintenanceStatusQuery.data?.active[0] ?? null
   const upcomingMaintenance = maintenanceStatusQuery.data?.upcoming[0] ?? null
@@ -218,6 +236,55 @@ export function AppShell() {
   useEffect(() => {
     setNavigationOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    if (!activeNavigationGroup) return
+    setOpenNavigationGroup(activeNavigationGroup)
+    window.localStorage.setItem(SIDEBAR_GROUP_STORAGE_KEY, activeNavigationGroup)
+  }, [activeNavigationGroup])
+
+  useEffect(() => {
+    const href = internalHref(location.pathname, location.search, location.hash)
+    internalHistoryRef.current = recordInternalLocation(internalHistoryRef.current, href, previousScrollRef.current)
+    window.sessionStorage.setItem(INTERNAL_NAVIGATION_STORAGE_KEY, JSON.stringify(internalHistoryRef.current))
+    previousScrollRef.current = window.scrollY
+  }, [location.hash, location.pathname, location.search])
+
+  useEffect(() => {
+    const captureScroll = () => { previousScrollRef.current = window.scrollY }
+    window.addEventListener('scroll', captureScroll, { passive: true })
+    return () => window.removeEventListener('scroll', captureScroll)
+  }, [])
+
+  function handleInternalBack() {
+    const currentHref = internalHref(location.pathname, location.search, location.hash)
+    const result = previousInternalLocation(internalHistoryRef.current, currentHref)
+    internalHistoryRef.current = result.entries
+    window.sessionStorage.setItem(INTERNAL_NAVIGATION_STORAGE_KEY, JSON.stringify(result.entries))
+    if (!result.target) {
+      navigate('/')
+      return
+    }
+
+    navigate(result.target.href)
+    window.setTimeout(() => window.scrollTo({ top: result.target?.scrollY ?? 0 }), 0)
+  }
+
+  function toggleSidebarCollapsed() {
+    setSidebarCollapsed((current) => {
+      const next = !current
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next))
+      return next
+    })
+  }
+
+  function toggleNavigationGroup(label: string) {
+    setOpenNavigationGroup((current) => {
+      const next = current === label ? '' : label
+      window.localStorage.setItem(SIDEBAR_GROUP_STORAGE_KEY, next)
+      return next
+    })
+  }
 
   useEffect(() => {
     document.documentElement.toggleAttribute('data-sygshift-busy', activeMutationCount > 0)
@@ -415,7 +482,7 @@ export function AppShell() {
   }
 
   return (
-    <div className="app-shell">
+    <div className={sidebarCollapsed ? 'app-shell app-shell--sidebar-collapsed' : 'app-shell'}>
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
@@ -438,11 +505,20 @@ export function AppShell() {
       />
 
       <aside
-        className={navigationOpen ? 'sidebar sidebar--open' : 'sidebar'}
+        className={`${navigationOpen ? 'sidebar sidebar--open' : 'sidebar'}${sidebarCollapsed ? ' sidebar--collapsed' : ''}`}
         id="primary-navigation"
       >
         <div className="sidebar-brand">
           <img src="/brand/sygshift-logo.png" alt="SygShift" />
+          <button
+            aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            className="sidebar-collapse"
+            onClick={toggleSidebarCollapsed}
+            title={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            type="button"
+          >
+            {sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={19} /> : <ChevronsLeft aria-hidden="true" size={19} />}
+          </button>
           <button
             aria-label="Close navigation"
             className="sidebar-close"
@@ -454,9 +530,36 @@ export function AppShell() {
         </div>
 
         <nav aria-label="Primary navigation" className="sidebar-navigation">
+          <div className="sidebar-primary-actions">
+            <button className="navigation-link navigation-link--button" onClick={handleInternalBack} title="Back" type="button">
+              <ArrowLeft aria-hidden="true" size={20} strokeWidth={1.8} />
+              <span>Back</span>
+            </button>
+            {homeVisible ? (
+              <NavLink
+                className={({ isActive }) => isActive ? 'navigation-link navigation-link--active' : 'navigation-link'}
+                end
+                title="Home"
+                to="/"
+              >
+                <Home aria-hidden="true" size={20} strokeWidth={1.8} />
+                <span>Home</span>
+              </NavLink>
+            ) : null}
+          </div>
           {visibleNavigationGroups.map((group) => (
             <div className="navigation-group" key={group.label}>
-              <p>{group.label}</p>
+              <button
+                aria-expanded={openNavigationGroup === group.label}
+                className="navigation-group__toggle"
+                onClick={() => toggleNavigationGroup(group.label)}
+                title={group.label}
+                type="button"
+              >
+                <span>{group.label}</span>
+                <ChevronDown aria-hidden="true" size={17} />
+              </button>
+              <div className={openNavigationGroup === group.label ? 'navigation-group__items navigation-group__items--open' : 'navigation-group__items'}>
               {group.items.map((item) => {
                 const Icon = item.icon
                 return (
@@ -466,6 +569,7 @@ export function AppShell() {
                     }
                     end={item.path === '/'}
                     key={item.path}
+                    title={item.label}
                     to={item.path}
                   >
                     <Icon aria-hidden="true" size={20} strokeWidth={1.8} />
@@ -473,6 +577,7 @@ export function AppShell() {
                   </NavLink>
                 )
               })}
+              </div>
             </div>
           ))}
         </nav>

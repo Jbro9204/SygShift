@@ -32,11 +32,17 @@ export interface NavigationGroup {
   items: NavigationItem[]
 }
 
+export const homeNavigationItem: NavigationItem = {
+  label: 'Home',
+  path: '/',
+  icon: LayoutDashboard,
+  permissions: ['operations.view'],
+}
+
 export const navigationGroups: NavigationGroup[] = [
   {
     label: 'Operations',
     items: [
-      { label: 'Home', path: '/', icon: LayoutDashboard, permissions: ['operations.view'] },
       { label: 'Schedule', path: '/schedule', icon: CalendarDays, permissions: [...scheduleRoutePermissions] },
       { label: 'Scheduler', path: '/scheduler', icon: CalendarPlus, permissions: ['scheduler.view', 'scheduler.manage', 'schedule.manage'] },
       { label: 'Events & Openings', path: '/events', icon: CalendarClock, permissions: ['events.view', 'events.manage', 'shift_pool.view', 'shift_pool.manage'] },
