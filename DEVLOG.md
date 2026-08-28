@@ -28,6 +28,7 @@ deployment status, or major workflow assumptions change.
 ### HR & Finance navigation and dedicated Payroll workspace
 
 - Added a permission-aware **HR & Finance** navigation group and moved Payroll into its own focused workspace.
+- Deployed production version `ef99ef8e-baf8-4e99-aa41-23d482965a0c` to `https://app.sygilant.us` on 08/28/2026.
 - Added Payroll Overview, Review Queue, Employee Payroll, Export & History, and administrator-only Rules destinations.
 - Preserved existing payroll calculations, Week 1/Week 2 separation, overnight attribution, exception resolution, workbook generation, official locks, and export history.
 - Added one selected pay-period control shared through Payroll URLs and reloads, with current, previous, next, last-completed, and custom date-range workflows.

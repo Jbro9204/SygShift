@@ -1,7 +1,10 @@
 # SygShift Release — HR & Finance and Payroll Workspace
 
-**Release date:** 08/28/2026  
+**Release date:** 08/28/2026
+
 **Production URL:** https://app.sygilant.us
+
+**Cloudflare version:** `ef99ef8e-baf8-4e99-aa41-23d482965a0c`
 
 ## Outcome
 
@@ -63,7 +66,8 @@ Payroll is no longer buried beneath the long Time & Attendance workflow. It now 
 
 - Focused Payroll workspace guard tests passed.
 - Type checking, linting, the full automated test suite, and the production build were run before release.
-- Production health, readiness, and authenticated browser behavior are verified as the final release step after deployment.
+- Production health and readiness checks passed after deployment.
+- A live browser confirmed that protected Payroll routes redirect an unauthenticated visitor to SygShift sign-in; authenticated route boundaries and workspace behavior are covered by the automated regression suite.
 
 ## Remaining HR initiative
 
