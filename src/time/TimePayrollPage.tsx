@@ -931,7 +931,9 @@ export function TimePayrollPage() {
   const rulesAllowed = sessionQuery.data?.role === 'admin'
   const reviewNeeded = activeSection !== 'rules'
   const rulesQuery = useQuery({
-    enabled: isSupabaseConfigured && sessionQuery.isSuccess && reviewAllowed,
+    enabled: isSupabaseConfigured
+      && sessionQuery.isSuccess
+      && (activeSection === 'rules' ? rulesAllowed : reviewAllowed),
     queryKey: ['time-payroll-rules'],
     queryFn: getPayrollRules,
   })
