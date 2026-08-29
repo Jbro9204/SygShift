@@ -54,7 +54,8 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/requests': { anyOf: ['requests.view', 'requests.manage'] },
   '/announcements': { anyOf: ['announcements.send', 'announcements.banner.manage'] },
   '/notifications': { anyOf: ['notifications.view', 'notifications.manage'] },
-  '/reports': { anyOf: ['reports.view', 'reports.export', 'time.reports.view'] },
+  '/reports': { anyOf: ['time.reports.view'] },
+  '/reports/:reportKey': { anyOf: ['time.reports.view'] },
   '/users': { anyOf: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.separate', 'admin.users.delete'] },
   '/access-control': { anyOf: ['admin.roles.view', 'admin.roles.manage'] },
   '/system-operations': { anyOf: ['admin.maintenance.manage'] },
@@ -78,7 +79,8 @@ export function canAccessRoute(
   pathname: string,
   session: Pick<SessionContext, 'permissions'> | null | undefined,
 ): boolean {
-  const policy = routeAccessPolicies[pathname]
+  const policyKey = pathname.startsWith('/reports/') ? '/reports/:reportKey' : pathname
+  const policy = routeAccessPolicies[policyKey]
   if (pathname === '/account' || pathname === '/account-security' || pathname === '/requests') return Boolean(policy)
   return policy ? hasAnyEffectivePermission(session, policy.anyOf) : false
 }

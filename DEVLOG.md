@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 08/28/2026
 
+### Reports workspace redesign
+
+- Rebuilt Reports as a compact library with exactly eight operational reports and focused nested workspaces.
+- Added shared date-range persistence, report-specific search and filters, active/archive views, stable sorting, 10/25/50-row server pagination, bounded detail modals, and canonical workflow links.
+- Kept Reports read-only and left Payroll in its dedicated HR & Finance workspace.
+- Added the server-authoritative `get_timekeeping_operations_report_page(...)` RPC with a 50-row request cap, legal-name projection, validated inputs, stable ordering, total counts, and `time.reports.view` enforcement.
+- Preserved every existing role assignment, employee role membership, individual grant, and individual denial.
+- Applied targeted production migration `20260828203000_reports_workspace_server_pagination.sql` and verified the function and authenticated execution grant remotely.
+- Confirmed 97 test files / 490 tests, type checking, linting, the production build, and Git whitespace validation pass.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-28-2026_REPORTS_WORKSPACE_REDESIGN.md`.
+
 ### Compact operational exception queue
 
 - Replaced the unbounded Operational Time Exceptions list with a compact queue that shows 10 records initially.

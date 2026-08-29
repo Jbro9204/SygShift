@@ -178,6 +178,32 @@ const reportsSchema = z.object({
   overtimePayrollRisk: z.array(z.record(z.string(), z.unknown())),
 })
 
+export const operationalReportKeySchema = z.enum([
+  'timekeepingExceptions',
+  'automaticClockOuts',
+  'manualTimeEntryAudit',
+  'timeAdjustmentRequests',
+  'attendanceCallOffs',
+  'scheduledVsActual',
+  'coverageUnfilled',
+  'overtimePayrollRisk',
+])
+
+const reportPageSchema = z.object({
+  reportKey: operationalReportKeySchema,
+  generatedAt: z.string(),
+  fromDate: z.string(),
+  throughDate: z.string(),
+  scope: z.enum(['active', 'archive', 'all']),
+  page: z.number().int().positive(),
+  pageSize: z.union([z.literal(10), z.literal(25), z.literal(50)]),
+  totalCount: z.number().int().nonnegative(),
+  totalPages: z.number().int().nonnegative(),
+  activeCount: z.number().int().nonnegative(),
+  archiveCount: z.number().int().nonnegative(),
+  rows: z.array(z.record(z.string(), z.unknown())),
+})
+
 export type TimeOperationsWorkspace = z.infer<typeof workspaceSchema>
 export type TimeAdjustmentRequest = z.infer<typeof adjustmentRequestSchema>
 export type MissingTimeRequestWorkspace = z.infer<typeof missingTimeRequestWorkspaceSchema>
@@ -186,6 +212,8 @@ export type OperationalException = z.infer<typeof operationalExceptionSchema>
 export type ManualTimeEntry = z.infer<typeof manualEntrySchema>
 export type EmployeeCallOffReport = z.infer<typeof callOffReportSchema>
 export type TimeOperationsReports = z.infer<typeof reportsSchema>
+export type OperationalReportKey = z.infer<typeof operationalReportKeySchema>
+export type OperationalReportPage = z.infer<typeof reportPageSchema>
 
 export function formatTimeOperationsPostLabel(
   post: TimeOperationsWorkspace['posts'][number],
@@ -386,6 +414,32 @@ export async function cancelEmployeeCallOff(id: string, reason: string) {
 
 export async function getTimekeepingOperationsReports(fromDate: string, throughDate: string): Promise<TimeOperationsReports> {
   return rpc('get_timekeeping_operations_reports', { target_from_date: fromDate, target_through_date: throughDate }, reportsSchema)
+}
+
+export async function getTimekeepingOperationsReportPage(input: {
+  reportKey: OperationalReportKey
+  fromDate: string
+  throughDate: string
+  scope: 'active' | 'archive' | 'all'
+  search?: string
+  filterKey?: string
+  filterValue?: string
+  sort: 'priority' | 'newest' | 'oldest' | 'employee'
+  page: number
+  pageSize: 10 | 25 | 50
+}): Promise<OperationalReportPage> {
+  return rpc('get_timekeeping_operations_report_page', {
+    target_report_key: input.reportKey,
+    target_from_date: input.fromDate,
+    target_through_date: input.throughDate,
+    target_scope: input.scope,
+    target_search: input.search?.trim() || null,
+    target_filter_key: input.filterKey || null,
+    target_filter_value: input.filterValue || null,
+    target_sort: input.sort,
+    target_page: input.page,
+    target_page_size: input.pageSize,
+  }, reportPageSchema)
 }
 
 export function zonedLocalDateTimeToUtc(value: string, timeZone = 'America/Denver'): string {

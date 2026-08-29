@@ -289,6 +289,14 @@ export const router = createBrowserRouter([
           </RouteSuspense>
         ),
       },
+      {
+        path: 'reports/:reportKey',
+        element: (
+          <RouteSuspense>
+            <ReportsPageRoute />
+          </RouteSuspense>
+        ),
+      },
     ],
   },
 ])

@@ -13,6 +13,7 @@ const integrity = readFileSync(join(root, 'supabase', 'migrations', '20260818123
 const visibility = readFileSync(join(root, 'supabase', 'migrations', '20260818126000_timekeeping_operations_visibility_hardening.sql'), 'utf8')
 const operationsPage = readFileSync(join(root, 'src', 'time', 'TimeOperationsPage.tsx'), 'utf8')
 const reportsPage = readFileSync(join(root, 'src', 'pages', 'ReportsPage.tsx'), 'utf8')
+const reportDefinitions = readFileSync(join(root, 'src', 'reports', 'reportDefinitions.ts'), 'utf8')
 const workbook = readFileSync(join(root, 'src', 'time', 'payrollWorkbook.ts'), 'utf8')
 const worker = readFileSync(join(root, 'worker', 'index.ts'), 'utf8')
 const wrangler = readFileSync(join(root, 'wrangler.jsonc'), 'utf8')
@@ -103,10 +104,12 @@ describe('production timekeeping operations expansion', () => {
       'attendanceCallOffs', 'scheduledVsActual', 'coverageUnfilled', 'overtimePayrollRisk',
     ]) {
       expect(reporting).toContain(`'${report}'`)
-      expect(reportsPage).toContain(`key: '${report}'`)
+      expect(reportDefinitions).toContain(`key: '${report}'`)
     }
     expect(reporting).toContain("private.timekeeping_require_permission('time.reports.view')")
-    expect(reportsPage).toContain('Filter this report')
+    expect(reportsPage).toContain('getTimekeepingOperationsReportPage')
+    expect(reportsPage).toContain('Choose one report')
+    expect(reportsPage).toContain('pageSizes = [10, 25, 50]')
     expect(reportsPage).toContain('type="date"')
   })
 
