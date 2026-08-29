@@ -25,3 +25,10 @@
 - Linting passed with warnings denied.
 - The complete automated suite passed: 95 test files and 485 tests.
 - The production build passed.
+
+## Production release
+
+- Production URL: `https://app.sygilant.us`
+- Cloudflare Worker version: `91f047ee-86fe-41d6-9c06-0a5f58210a1d`
+- Source and rollback commit: `95ebdaa`
+- Public health and readiness checks returned healthy after deployment.
