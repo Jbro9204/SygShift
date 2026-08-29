@@ -34,6 +34,8 @@ deployment status, or major workflow assumptions change.
 - Preserved every existing role assignment, employee role membership, individual grant, and individual denial.
 - Applied targeted production migration `20260828203000_reports_workspace_server_pagination.sql` and verified the function and authenticated execution grant remotely.
 - Confirmed 97 test files / 490 tests, type checking, linting, the production build, and Git whitespace validation pass.
+- Released implementation commit `443deed` as Cloudflare Worker version `60587ba8-6ec9-44f9-94bb-6f5993869256`.
+- Confirmed the primary and fallback health/readiness endpoints, the deployed Reports route, the branded login boundary, and a clean browser console after release.
 - Full release details are recorded in `docs/changelogs/CHANGELOG_08-28-2026_REPORTS_WORKSPACE_REDESIGN.md`.
 
 ### Compact operational exception queue

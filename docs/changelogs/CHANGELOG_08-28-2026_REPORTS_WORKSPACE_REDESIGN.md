@@ -1,10 +1,10 @@
 # SygShift Change Log — Reports Workspace Redesign
 
-**Date:** 08/28/2026  
-**Status:** Release validation complete; production deployment pending  
-**Production URL:** https://app.sygilant.us  
-**Cloudflare version:** Pending deployment  
-**Implementation commit:** Pending release commit
+**Date:** 08/28/2026
+**Status:** Released to production
+**Production URL:** https://app.sygilant.us
+**Cloudflare version:** `60587ba8-6ec9-44f9-94bb-6f5993869256`
+**Implementation commit:** `443deed`
 
 ## Outcome
 
@@ -68,6 +68,8 @@ The main Reports page now provides:
   - Production build
   - Git whitespace validation
 - The production database function and authenticated execution grant were verified after migration.
+- The primary and fallback Worker health and readiness endpoints passed after deployment.
+- The deployed `/reports` route returned the production application and correctly enforced the branded authentication boundary without browser console errors.
 
 ## Rollback
 
