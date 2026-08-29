@@ -11,4 +11,3 @@ export function appendProtectedSessionHeaders(source?: HeadersInit): Headers {
 
   return headers
 }
-

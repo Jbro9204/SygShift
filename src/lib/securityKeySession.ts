@@ -40,4 +40,3 @@ export function getSecurityKeySessionToken(): string | null {
 
   return token
 }
-

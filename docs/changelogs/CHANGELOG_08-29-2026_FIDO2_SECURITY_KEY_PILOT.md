@@ -1,7 +1,9 @@
 # SygShift FIDO2 Hardware Security Key Pilot
 
-**Date:** 08/29/2026  
-**Category:** Security, Identity & Account Protection  
+**Date:** 08/29/2026
+
+**Category:** Security, Identity & Account Protection
+
 **Release scope:** Controlled `jbrown`-only production pilot
 
 ## Outcome
