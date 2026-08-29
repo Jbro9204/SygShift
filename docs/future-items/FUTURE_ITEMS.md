@@ -79,7 +79,7 @@ Required outcomes:
 
 - Priority: **Urgent**
 - Target window: Staged enterprise program; approximately 24–28 controlled runs
-- Status: Approved / not started
+- Status: Stage 1 completed 08/29/2026 / Stage 2 not started
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
@@ -89,7 +89,7 @@ Existing foundation: the dedicated Payroll workspace and HR & Finance navigation
 
 Program controls:
 
-- [ ] Treat security as the first stage and a release gate for every later stage.
+- [x] Treat security as the first stage and a release gate for every later stage.
 - [ ] Preserve Schedule, Availability, Time & Attendance, Licensing, User Accounts, Roles & Permissions, and Payroll as the authoritative systems for their existing domains.
 - [ ] Preserve the current Payroll workspace until Stage 10 reconciliation and controlled integration are complete.
 - [ ] Keep every database change additive, reversible, backed up, and protected by tested rollback procedures.
@@ -97,14 +97,16 @@ Program controls:
 - [ ] Use compact queues, pagination, search, filters, saved views, and open-on-demand detail; never introduce uncontrolled long-scroll record lists.
 - [ ] Use MM/DD/YYYY dates and civilian time with military time throughout applicable production workflows.
 
-#### Stage 1 — Discovery and HR Security Foundation (2–3 runs)
+#### Stage 1 — Discovery and HR Security Foundation (completed 08/29/2026)
 
-- [ ] Inventory current schemas, routes, services, storage, permissions, background jobs, notifications, audits, tests, and production integrations.
-- [ ] Create an authoritative source-of-truth and data-boundary map for every employee and HR domain.
-- [ ] Classify HR data and define separately protected vaults for general HR, financial, identity, medical, disciplinary, and other restricted records.
-- [ ] Define deny-by-default module, row, field, action, and document authorization enforced by the server.
-- [ ] Define recent-MFA requirements, break-glass recovery, session controls, append-only audits, backup/restore, feature flags, maintenance controls, and rollback.
-- [ ] Validate the security foundation before any new protected HR records enter production.
+- [x] Inventory current schemas, routes, services, storage, permissions, background jobs, notifications, audits, tests, and production integrations.
+- [x] Create an authoritative source-of-truth and data-boundary map for every employee and HR domain.
+- [x] Classify HR data and define separately protected vaults for general HR, financial, identity, medical, disciplinary, and other restricted records.
+- [x] Define deny-by-default module, row, field, action, and document authorization enforced by the server.
+- [x] Define recent-MFA requirements, break-glass recovery, session controls, append-only audits, backup/restore, feature flags, maintenance controls, and rollback.
+- [x] Validate the security foundation before any new protected HR records enter production.
+
+Stage 1 closed the protected-data release gate by default and added a machine-validated control contract. The gate remains closed until each later stage supplies its required authorization tests, isolated backup/restore drill, document quarantine validation, production verification, and rollback evidence.
 
 #### Stage 2 — Core HR Data Architecture (2–3 runs)
 

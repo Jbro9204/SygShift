@@ -1,0 +1,278 @@
+{
+  "schemaVersion": 1,
+  "approvedOn": "08/29/2026",
+  "releaseGate": {
+    "defaultEnabled": false,
+    "featureFlag": "hris_suite_enabled",
+    "protectedProductionDataAllowed": false,
+    "requiredEvidence": [
+      "authorization-tests",
+      "audit-integrity-tests",
+      "backup-restore-drill",
+      "document-quarantine-validation",
+      "rollback-validation"
+    ]
+  },
+  "securityDefaults": {
+    "authorization": "deny_by_default",
+    "serverEnforced": true,
+    "databaseEnforced": true,
+    "directObjectAccessDenied": true,
+    "listDefaultPageSize": 10,
+    "listMaximumPageSize": 100,
+    "recentMfaMinutes": 15,
+    "auditMode": "append_only",
+    "sessionMode": "least_privilege",
+    "breakGlass": {
+      "enabledByDefault": false,
+      "maximumMinutes": 60,
+      "requiresRecentMfa": true,
+      "requiresReason": true,
+      "requiresSecondPersonReview": true,
+      "audited": true
+    }
+  },
+  "classifications": [
+    {
+      "code": "internal",
+      "examples": ["department", "position title", "work location"],
+      "recentMfaRequired": false
+    },
+    {
+      "code": "confidential",
+      "examples": ["personal contact information", "employment history", "manager notes"],
+      "recentMfaRequired": false
+    },
+    {
+      "code": "restricted",
+      "examples": ["compensation", "benefit elections", "disciplinary records", "HR cases"],
+      "recentMfaRequired": true
+    },
+    {
+      "code": "highly_restricted",
+      "examples": ["government identifiers", "banking data", "medical records", "background checks"],
+      "recentMfaRequired": true
+    }
+  ],
+  "authoritativeDomains": [
+    {
+      "domain": "person_identity",
+      "owner": "public.employees",
+      "identifier": "employee_id",
+      "rule": "HRIS modules extend the permanent employee identity and never create a second employee directory."
+    },
+    {
+      "domain": "authentication_and_accounts",
+      "owner": "private.employee_accounts_and_supabase_auth",
+      "identifier": "employee_id",
+      "rule": "User Accounts remains authoritative for sign-in identity, account state, MFA, and recovery."
+    },
+    {
+      "domain": "effective_permissions",
+      "owner": "public.access_roles_and_effective_permissions",
+      "identifier": "employee_id",
+      "rule": "Roles and Permissions remains authoritative; HR pages cannot infer authorization from titles or navigation visibility."
+    },
+    {
+      "domain": "schedule_and_availability",
+      "owner": "public.schedules_shifts_assignments_and_employee_availability",
+      "identifier": "employee_id",
+      "rule": "HR records may reference schedules but cannot rewrite published schedule history outside existing services."
+    },
+    {
+      "domain": "time_and_attendance",
+      "owner": "public.time_events_and_append_only_corrections",
+      "identifier": "employee_id",
+      "rule": "HR workflows may request approved actions but cannot replace punch evidence or timekeeping calculations."
+    },
+    {
+      "domain": "licensing_and_training_eligibility",
+      "owner": "public.employee_credentials_and_licensing_tables",
+      "identifier": "employee_id",
+      "rule": "Licensing Center remains authoritative for credentials and shift eligibility."
+    },
+    {
+      "domain": "payroll",
+      "owner": "private.payroll_export_batches_and_rows",
+      "identifier": "employee_id",
+      "rule": "Payroll remains authoritative until the controlled Stage 10 contract and reconciliation are approved."
+    },
+    {
+      "domain": "hr_employment_record",
+      "owner": "future.employee_records",
+      "identifier": "employee_id",
+      "rule": "The HR employee record will own effective-dated employment, manager, department, position, status, classification, and compensation history."
+    }
+  ],
+  "modules": [
+    {
+      "code": "people_hr",
+      "classification": "confidential",
+      "readPermission": "hr.people.view",
+      "writePermission": "hr.people.manage",
+      "sensitivePermission": "hr.people.restricted",
+      "recentMfaForWrites": true,
+      "auditActions": ["create", "view_restricted", "update", "archive", "restore"],
+      "featureFlag": "hris_people_enabled"
+    },
+    {
+      "code": "documents",
+      "classification": "highly_restricted",
+      "readPermission": "hr.documents.view",
+      "writePermission": "hr.documents.manage",
+      "sensitivePermission": "hr.documents.restricted",
+      "recentMfaForWrites": true,
+      "auditActions": ["upload", "preview", "download", "replace", "archive", "restore", "hold"],
+      "featureFlag": "hris_documents_enabled"
+    },
+    {
+      "code": "automation",
+      "classification": "restricted",
+      "readPermission": "hr.workflows.view",
+      "writePermission": "hr.workflows.manage",
+      "sensitivePermission": "hr.workflows.override",
+      "recentMfaForWrites": true,
+      "auditActions": ["create", "publish", "pause", "resume", "cancel", "retry", "override"],
+      "featureFlag": "hris_automation_enabled"
+    },
+    {
+      "code": "recruiting_onboarding",
+      "classification": "confidential",
+      "readPermission": "hr.recruiting.view",
+      "writePermission": "hr.recruiting.manage",
+      "sensitivePermission": "hr.recruiting.restricted",
+      "recentMfaForWrites": true,
+      "auditActions": ["create", "stage_change", "offer", "disposition", "convert_to_employee"],
+      "featureFlag": "hris_recruiting_enabled"
+    },
+    {
+      "code": "leave_benefits_compensation",
+      "classification": "highly_restricted",
+      "readPermission": "hr.total_rewards.view",
+      "writePermission": "hr.total_rewards.manage",
+      "sensitivePermission": "hr.total_rewards.restricted",
+      "recentMfaForWrites": true,
+      "auditActions": ["view_restricted", "request", "approve", "deny", "change_effective_date"],
+      "featureFlag": "hris_total_rewards_enabled"
+    },
+    {
+      "code": "talent_learning",
+      "classification": "restricted",
+      "readPermission": "hr.talent.view",
+      "writePermission": "hr.talent.manage",
+      "sensitivePermission": "hr.talent.restricted",
+      "recentMfaForWrites": true,
+      "auditActions": ["assign", "acknowledge", "complete", "review", "amend"],
+      "featureFlag": "hris_talent_enabled"
+    },
+    {
+      "code": "cases_safety",
+      "classification": "highly_restricted",
+      "readPermission": "hr.cases.view",
+      "writePermission": "hr.cases.manage",
+      "sensitivePermission": "hr.cases.restricted",
+      "recentMfaForWrites": true,
+      "auditActions": ["create", "view_restricted", "assign", "update", "close", "reopen"],
+      "featureFlag": "hris_cases_enabled"
+    },
+    {
+      "code": "assets",
+      "classification": "confidential",
+      "readPermission": "hr.assets.view",
+      "writePermission": "hr.assets.manage",
+      "sensitivePermission": "hr.assets.restricted",
+      "recentMfaForWrites": true,
+      "auditActions": ["issue", "acknowledge", "transfer", "return", "write_off"],
+      "featureFlag": "hris_assets_enabled"
+    },
+    {
+      "code": "offboarding_self_service",
+      "classification": "restricted",
+      "readPermission": "hr.lifecycle.view",
+      "writePermission": "hr.lifecycle.manage",
+      "sensitivePermission": "hr.lifecycle.restricted",
+      "recentMfaForWrites": true,
+      "auditActions": ["initiate", "approve", "complete_task", "separate", "rehire"],
+      "featureFlag": "hris_lifecycle_enabled"
+    },
+    {
+      "code": "reporting",
+      "classification": "restricted",
+      "readPermission": "hr.reports.view",
+      "writePermission": "hr.reports.manage",
+      "sensitivePermission": "hr.reports.restricted",
+      "recentMfaForWrites": true,
+      "auditActions": ["run", "export", "schedule", "share", "delete"],
+      "featureFlag": "hris_reporting_enabled"
+    },
+    {
+      "code": "payroll_integration",
+      "classification": "highly_restricted",
+      "readPermission": "payroll.view",
+      "writePermission": "payroll.manage",
+      "sensitivePermission": "payroll.lock",
+      "recentMfaForWrites": true,
+      "auditActions": ["preview", "reconcile", "approve", "lock", "export", "rollback"],
+      "featureFlag": "hris_payroll_integration_enabled"
+    }
+  ],
+  "vaults": [
+    {
+      "code": "hr-general",
+      "classification": "confidential",
+      "readPermission": "hr.documents.view",
+      "writePermission": "hr.documents.manage",
+      "private": true
+    },
+    {
+      "code": "hr-financial",
+      "classification": "highly_restricted",
+      "readPermission": "hr.documents.financial",
+      "writePermission": "hr.documents.financial_manage",
+      "private": true
+    },
+    {
+      "code": "hr-identity",
+      "classification": "highly_restricted",
+      "readPermission": "hr.documents.identity",
+      "writePermission": "hr.documents.identity_manage",
+      "private": true
+    },
+    {
+      "code": "hr-medical",
+      "classification": "highly_restricted",
+      "readPermission": "hr.documents.medical",
+      "writePermission": "hr.documents.medical_manage",
+      "private": true
+    },
+    {
+      "code": "hr-disciplinary",
+      "classification": "highly_restricted",
+      "readPermission": "hr.documents.disciplinary",
+      "writePermission": "hr.documents.disciplinary_manage",
+      "private": true
+    },
+    {
+      "code": "hr-legal-safety",
+      "classification": "highly_restricted",
+      "readPermission": "hr.documents.legal_safety",
+      "writePermission": "hr.documents.legal_safety_manage",
+      "private": true
+    }
+  ],
+  "documentControls": {
+    "publicAccess": false,
+    "directStorageUrls": false,
+    "quarantineRequired": true,
+    "malwareScanRequired": true,
+    "signatureValidationRequired": true,
+    "mimeValidationRequired": true,
+    "extensionValidationRequired": true,
+    "shortLivedAccessRequired": true,
+    "immutableVersions": true,
+    "retentionPolicyRequired": true,
+    "legalHoldSupported": true,
+    "previewAudited": true,
+    "downloadAudited": true
+  }
+}

@@ -946,6 +946,7 @@ Deploy with:
 ```powershell
 pnpm exec wrangler deploy --keep-vars
 ```
+
 ## 08/28/2026 — Home Time-Off Request Workflow
 
 - Added a universal Home time-off request action for every authenticated user with an active employee record.
@@ -981,3 +982,11 @@ pnpm exec wrangler deploy --keep-vars
 - Added migrations `20260829163000_security_key_mfa.sql` and `20260829213000_security_key_pilot_controls.sql` and verified both production control functions.
 - Full automated validation passed: type checking, zero-warning lint, 102 test files, 508 tests, Worker build, and client production build.
 - The only remaining pilot step is the physical key ceremony and Chrome/Edge validation by Jordan Brown; the allowlist must not be expanded before that evidence is recorded.
+
+## 08/29/2026 — HRIS Stage 1 Discovery and Security Foundation
+
+- Completed the current-system inventory and authoritative source-of-truth map for the approved HRIS/HCM program.
+- Defined HR data classifications, six isolated document-vault families, deny-by-default authorization, recent-MFA controls, audited break-glass requirements, recovery, maintenance, feature-flag, and rollback rules.
+- Added a machine-readable foundation contract, validator, and regression tests.
+- Kept the protected HR production-data gate closed until later stages supply their required authorization, quarantine, backup/restore, production-verification, and rollback evidence.
+- No production database, employee data, role assignments, or deployed runtime behavior changed in this stage.
