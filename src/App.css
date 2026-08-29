@@ -12706,6 +12706,34 @@ a.home-metric-card:focus-visible {
   border-bottom: 0;
 }
 
+.time-operations-panel--compact-queue .time-workflow-row--compact {
+  min-height: 72px;
+  padding-block: 0.75rem;
+}
+
+.time-operations-queue-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.25rem;
+  border-top: 1px solid #e7dfd3;
+  background: #fbf8f2;
+}
+
+.time-operations-queue-controls > span {
+  color: #6d655c;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.time-operations-queue-controls > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
 .time-workflow-row > div {
   display: grid;
   gap: 0.25rem;
@@ -13216,6 +13244,16 @@ a.home-metric-card:focus-visible {
   .time-workflow-row .time-button,
   .operational-alert-queue .time-button,
   .time-workflow-form__actions .time-button {
+    width: 100%;
+  }
+
+  .time-operations-queue-controls,
+  .time-operations-queue-controls > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .time-operations-queue-controls .time-button {
     width: 100%;
   }
 

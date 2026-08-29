@@ -34,6 +34,8 @@ import { TimeButton, TimePageHeader, TimeStatusBadge } from './TimeKit'
 
 type DialogName = 'adjustment' | 'manual' | 'calloff' | null
 
+const EXCEPTION_QUEUE_BATCH_SIZE = 10
+
 function dateKey(value: Date): string {
   return format(value, 'yyyy-MM-dd')
 }
@@ -64,6 +66,7 @@ export function TimeOperationsPage() {
   const [selectedException, setSelectedException] = useState<OperationalException | null>(null)
   const [selectedManualEntry, setSelectedManualEntry] = useState<ManualTimeEntry | null>(null)
   const [selectedCallOff, setSelectedCallOff] = useState<EmployeeCallOffReport | null>(null)
+  const [exceptionVisibleCount, setExceptionVisibleCount] = useState(EXCEPTION_QUEUE_BATCH_SIZE)
   const sessionQuery = useQuery({ enabled: isSupabaseConfigured, queryFn: getSessionContext, queryKey: ['session-context'] })
   const workspaceQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess,
@@ -95,6 +98,8 @@ export function TimeOperationsPage() {
   }
 
   const unresolved = workspace.exceptions.filter((exception) => exception.status === 'unresolved')
+  const visibleUnresolved = unresolved.slice(0, exceptionVisibleCount)
+  const hiddenExceptionCount = Math.max(0, unresolved.length - visibleUnresolved.length)
   const pending = adjustmentRequests.filter((request) => request.status === 'submitted' || request.status === 'under_review')
   const urgent = workspace.alerts.filter((alert) => alert.priority === 'urgent' && !alert.acknowledgedAt)
 
@@ -108,8 +113,8 @@ export function TimeOperationsPage() {
       />
 
       <section className="time-operations-range" aria-label="Workspace date range">
-        <label><span>From</span><input onChange={(event) => setFromDate(event.target.value)} type="date" value={fromDate} /></label>
-        <label><span>Through</span><input onChange={(event) => setThroughDate(event.target.value)} type="date" value={throughDate} /></label>
+        <label><span>From</span><input onChange={(event) => { setFromDate(event.target.value); setExceptionVisibleCount(EXCEPTION_QUEUE_BATCH_SIZE) }} type="date" value={fromDate} /></label>
+        <label><span>Through</span><input onChange={(event) => { setThroughDate(event.target.value); setExceptionVisibleCount(EXCEPTION_QUEUE_BATCH_SIZE) }} type="date" value={throughDate} /></label>
       </section>
 
       {urgent.length > 0 ? <AlertQueue alerts={urgent} onChanged={() => invalidateOperations(queryClient)} /> : null}
@@ -122,14 +127,23 @@ export function TimeOperationsPage() {
       </section>
 
       <div className="time-operations-grid">
-        <section className="time-operations-panel">
+        <section className="time-operations-panel time-operations-panel--compact-queue">
           <div className="time-operations-panel__heading"><div><p className="eyebrow">Exception queue</p><h2>Operational time exceptions</h2></div><TimeStatusBadge tone={unresolved.length ? 'warning' : 'good'}>{unresolved.length ? `${unresolved.length} open` : 'Clear'}</TimeStatusBadge></div>
-          {workspace.canViewOperations ? unresolved.length ? unresolved.map((exception) => (
-            <article className="time-workflow-row" key={exception.id}>
+          {workspace.canViewOperations ? unresolved.length ? visibleUnresolved.map((exception) => (
+            <article className="time-workflow-row time-workflow-row--compact" key={exception.id}>
               <div><strong>{exception.employeeName}</strong><span>{readableStatus(exception.exceptionCode)} · {exception.location}</span><small>{formatOperationalDateTime(exception.scheduledStartAt, { timeZone: 'America/Denver' })} – {formatOperationalDateTime(exception.scheduledEndAt, { timeZone: 'America/Denver' })}</small></div>
               {workspace.canResolveExceptions ? <TimeButton onClick={() => setSelectedException(exception)} variant="secondary">Review</TimeButton> : null}
             </article>
           )) : <EmptyMessage icon={CheckCircle2} title="No unresolved operational exceptions" /> : <EmptyMessage icon={ShieldAlert} title="Operations access is not enabled" />}
+          {workspace.canViewOperations && unresolved.length > EXCEPTION_QUEUE_BATCH_SIZE ? (
+            <div className="time-operations-queue-controls" aria-live="polite">
+              <span>Showing {visibleUnresolved.length} of {unresolved.length}</span>
+              <div>
+                {hiddenExceptionCount > 0 ? <TimeButton onClick={() => setExceptionVisibleCount((count) => Math.min(count + EXCEPTION_QUEUE_BATCH_SIZE, unresolved.length))} type="button" variant="secondary">Show next {Math.min(EXCEPTION_QUEUE_BATCH_SIZE, hiddenExceptionCount)}</TimeButton> : null}
+                {exceptionVisibleCount > EXCEPTION_QUEUE_BATCH_SIZE ? <TimeButton onClick={() => setExceptionVisibleCount(EXCEPTION_QUEUE_BATCH_SIZE)} type="button" variant="secondary">Show first 10</TimeButton> : null}
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <section className="time-operations-panel">
