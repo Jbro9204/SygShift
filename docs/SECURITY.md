@@ -36,6 +36,22 @@
 - Framing is same-origin only. A future company hub should mount SygShift on the same origin or add one exact reviewed hub origin; wildcard framing is prohibited.
 - Local development omits HSTS and CSP so hot reload works, while retaining the remaining response-hardening headers.
 
+## Hardware security keys
+
+- FIDO2/WebAuthn security keys are an optional phishing-resistant MFA factor. They never replace the account password and never create password-only access.
+- Security-key authentication is offered only after a successful username-and-password sign-in and satisfies the same protected SygShift MFA boundary as the authenticator-app challenge.
+- The production relying-party identity is fixed to `sygilant.us`, with `https://app.sygilant.us` as the only accepted origin. Preview and `workers.dev` origins cannot register or authenticate a production key.
+- The initial release is protected by both a feature flag and an explicit username allowlist. The first pilot is limited to `jbrown`; users outside the allowlist keep the existing authenticator workflow without a UI or policy change.
+- Authenticator MFA remains enrolled and available as the fallback during the pilot. A cancelled, absent, unknown, or failed key challenge never falls back to password-only access.
+- Key registration, rename, and removal require a freshly verified authenticator session at raw Supabase AAL2. A remembered device or security-key application session cannot authorize key-management changes.
+- A successful key challenge creates a browser-session-scoped, server-validated security-key session. It is bound to the current Supabase JWT session identifier, expires after no more than 12 hours, and is cleared during sign-out.
+- User verification and a physical authenticator are required. Platform-only passkeys are not accepted during the hardware-key pilot.
+- Credential public keys, counters, transports, and credential identifiers remain in the private database schema. The interface exposes only the friendly name, creation date, last-used date, and limited device metadata.
+- Registration, rename, successful verification, user removal, administrator revocation, and MFA recovery actions create append-only audit records.
+- Authorized User Accounts administrators can inspect registered-key status and revoke a lost key. Resetting MFA also revokes every registered security key and active security-key session for that employee.
+- Adding, removing, or administratively revoking a key sends a security notice through the established recipient-safety rules. No email is sent to the temporarily blocked company domain.
+- Disabling the feature flag immediately removes the key option while preserving the authenticator path and stored credential records for controlled rollback.
+
 ## Workforce rules
 
 - Armed posts require a current armed qualification. The rule applies to visibility, requests, approvals, and direct assignment.

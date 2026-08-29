@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck } from 'lucide-react'
-import { getSessionContext, signInWithUsername } from '../data/auth'
+import { getSessionContext, signInWithUsername, signOut } from '../data/auth'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 
 type LoginLocationState = {
@@ -51,7 +51,7 @@ export function LoginPage() {
         await getSessionContext()
         if (active) setAlreadySignedIn(true)
       } catch {
-        await getSupabaseClient().auth.signOut()
+        await signOut()
       } finally {
         if (active) setCheckingSession(false)
       }

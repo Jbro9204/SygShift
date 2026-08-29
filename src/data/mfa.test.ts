@@ -1,12 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { normalizeSmsPhoneNumber, normalizeTotpQrCode, startPhoneEnrollment, startTotpEnrollment } from './mfa'
+import {
+  normalizeSmsPhoneNumber,
+  normalizeTotpQrCode,
+  startPhoneEnrollment,
+  startTotpEnrollment,
+} from './mfa'
 
 const supabaseMock = vi.hoisted(() => ({
   client: {
     auth: {
+      refreshSession: vi.fn(),
       mfa: {
         challenge: vi.fn(),
         enroll: vi.fn(),
+        getAuthenticatorAssuranceLevel: vi.fn(),
         listFactors: vi.fn(),
         unenroll: vi.fn(),
       },
@@ -22,6 +29,14 @@ describe('MFA enrollment helpers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useRealTimers()
+    supabaseMock.client.auth.refreshSession.mockResolvedValue({ data: {}, error: null })
+    supabaseMock.client.auth.mfa.listFactors.mockResolvedValue({ data: { all: [] }, error: null })
+    supabaseMock.client.auth.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
+      data: { currentLevel: 'aal2', nextLevel: 'aal2' },
+      error: null,
+    })
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })
+    Object.defineProperty(window, 'PublicKeyCredential', { configurable: true, value: class PublicKeyCredential {} })
   })
 
   it('normalizes raw SVG QR codes into browser-safe image sources', () => {
@@ -180,4 +195,5 @@ describe('MFA enrollment helpers', () => {
       'Text message MFA is not enabled in Supabase yet.',
     )
   })
+
 })

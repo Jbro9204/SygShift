@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
-import { getTrustedDeviceToken } from '../lib/trustedDeviceToken'
+import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 import { employeeLegalDisplayName } from '../lib/employeeName'
+import { securityKeySchema, type SecurityKeySummary } from './securityKeys'
 
 const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary', 'flex'])
@@ -107,8 +108,25 @@ const mfaResetResponseSchema = z.object({
   displayName: z.string(),
   factorsRemoved: z.number().int().nonnegative(),
   requestId: z.string(),
+  securityKeysRevoked: z.number().int().nonnegative(),
+  securityKeySessionsRevoked: z.number().int().nonnegative(),
   trustedDevicesRevoked: z.number().int().nonnegative(),
   username: z.string(),
+})
+
+const adminSecurityKeysResponseSchema = z.object({
+  displayName: z.string(),
+  employeeId: z.string().uuid(),
+  keys: z.array(securityKeySchema),
+  requestId: z.string(),
+})
+
+const adminSecurityKeyRemovalResponseSchema = z.object({
+  displayName: z.string(),
+  employeeId: z.string().uuid(),
+  removed: z.boolean(),
+  requestId: z.string(),
+  securityKeySessionsRevoked: z.number().int().nonnegative(),
 })
 
 const passwordResetResponseSchema = z.object({
@@ -233,12 +251,10 @@ function employeeRpcPayload(input: EmployeeMutationInput) {
 async function authHeaders(): Promise<Headers> {
   const { data, error } = await getSupabaseClient().auth.getSession()
   if (error || !data.session?.access_token) throw new Error('Your secure session is not available.')
-  const headers = new Headers()
-  headers.set('authorization', `Bearer ${data.session.access_token}`)
-  headers.set('content-type', 'application/json')
-  const trustedDeviceToken = getTrustedDeviceToken()
-  if (trustedDeviceToken) headers.set('x-sygshift-trusted-device', trustedDeviceToken)
-  return headers
+  return appendProtectedSessionHeaders({
+    authorization: `Bearer ${data.session.access_token}`,
+    'content-type': 'application/json',
+  })
 }
 
 async function parseApiResponse(response: Response): Promise<unknown> {
@@ -320,6 +336,29 @@ export async function resetEmployeeMfa(employeeId: string): Promise<EmployeeMfaR
   })
   const payload = await parseApiResponse(response)
   return mfaResetResponseSchema.parse(payload)
+}
+
+export async function getEmployeeSecurityKeys(employeeId: string): Promise<SecurityKeySummary[]> {
+  const response = await fetch(`/api/v1/admin/users/${employeeId}/security-keys`, {
+    headers: await authHeaders(),
+    method: 'GET',
+  })
+  return adminSecurityKeysResponseSchema.parse(await parseApiResponse(response)).keys
+}
+
+export async function revokeEmployeeSecurityKey(employeeId: string, keyId: string): Promise<{
+  removed: boolean
+  securityKeySessionsRevoked: number
+}> {
+  const response = await fetch(`/api/v1/admin/users/${employeeId}/security-keys/${encodeURIComponent(keyId)}`, {
+    headers: await authHeaders(),
+    method: 'DELETE',
+  })
+  const result = adminSecurityKeyRemovalResponseSchema.parse(await parseApiResponse(response))
+  return {
+    removed: result.removed,
+    securityKeySessionsRevoked: result.securityKeySessionsRevoked,
+  }
 }
 
 export async function sendEmployeePasswordReset(employeeId: string): Promise<EmployeePasswordResetResult> {

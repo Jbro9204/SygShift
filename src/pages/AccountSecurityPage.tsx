@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { CheckCircle2, Copy, Download, Eye, EyeOff, KeyRound, Loader2, MessageSquareText, QrCode, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, Copy, Download, Eye, EyeOff, KeyRound, Loader2, MessageSquareText, QrCode, ShieldCheck, Usb } from 'lucide-react'
 import {
   getSessionContext,
   notifySessionContextChanged,
+  signOut,
   type SessionContext,
   validatePassword,
 } from '../data/auth'
 import {
   createMfaChallenge,
+  getAuthenticatorLevel,
   listMfaFactors,
   startTotpEnrollment,
   startPhoneEnrollment,
@@ -21,6 +23,11 @@ import {
   type MfaPhoneEnrollment,
 } from '../data/mfa'
 import { generateMfaRecoveryCodes, recoverMfaWithCode } from '../data/mfaRecovery'
+import {
+  authenticateWithSecurityKey,
+  listSecurityKeys,
+  type SecurityKeySummary,
+} from '../data/securityKeys'
 import {
   clearRememberedDeviceOnThisBrowser,
   getCurrentTrustedDevices,
@@ -106,6 +113,7 @@ export function AccountSecurityPage() {
   const [searchParams] = useSearchParams()
   const [context, setContext] = useState<SessionContext | null>(null)
   const [factors, setFactors] = useState<MfaFactorSummary[]>([])
+  const [securityKeys, setSecurityKeys] = useState<SecurityKeySummary[]>([])
   const [enrollment, setEnrollment] = useState<MfaEnrollment | null>(null)
   const [phoneEnrollment, setPhoneEnrollment] = useState<MfaPhoneEnrollment | null>(null)
   const [selectedMfaMethod, setSelectedMfaMethod] = useState<MfaMethod | null>(null)
@@ -128,6 +136,7 @@ export function AccountSecurityPage() {
   const [showRecoveryEntry, setShowRecoveryEntry] = useState(false)
   const [showRecoveryRegeneration, setShowRecoveryRegeneration] = useState(false)
   const [recoveryVerificationCode, setRecoveryVerificationCode] = useState('')
+  const [rawAuthenticatorLevel, setRawAuthenticatorLevel] = useState<string | null>(null)
 
   const returnPath = useMemo(() => {
     const state = location.state as AccountSecurityLocationState | null
@@ -140,8 +149,11 @@ export function AccountSecurityPage() {
     () => validatePassword(password, context?.username),
     [context?.username, password],
   )
+  const isPasswordRecovery = searchParams.get('mode') === 'password-recovery'
+  const isSecurityKeyManagement = searchParams.get('mode') === 'security-key-management'
   const verifiedFactors = factors.filter((factor) => factor.status === 'verified')
-  const availableVerifiedFactors = verifiedFactors.filter((factor) => SMS_MFA_ENABLED || factor.factorType === 'totp')
+  const verifiedSecurityKeys = isSecurityKeyManagement ? [] : securityKeys
+  const availableVerifiedFactors = verifiedFactors.filter((factor) => factor.factorType === 'totp' || (SMS_MFA_ENABLED && factor.factorType === 'phone'))
   const verifiedTotpFactor = verifiedFactors.find((factor) => factor.factorType === 'totp') ?? null
   const verifiedPhoneFactor = SMS_MFA_ENABLED
     ? verifiedFactors.find((factor) => factor.factorType === 'phone') ?? null
@@ -155,9 +167,13 @@ export function AccountSecurityPage() {
     : availableVerifiedFactors.length === 1
       ? availableVerifiedFactors[0]
       : null
-  const isPasswordRecovery = searchParams.get('mode') === 'password-recovery'
   const needsPassword = Boolean(context?.mustChangePassword || isPasswordRecovery)
-  const needsMfa = Boolean(!isPasswordRecovery && context?.mfaRequired && !context.hasMfa)
+  const needsMfa = Boolean(
+    !isPasswordRecovery
+      && (isSecurityKeyManagement
+        ? rawAuthenticatorLevel !== 'aal2'
+        : context?.mfaRequired && !context.hasMfa),
+  )
   const passwordWaitingForMfa = needsPassword && needsMfa
   const isComplete = Boolean(context && !needsPassword && !needsMfa)
   const canRememberDevice = Boolean(
@@ -178,12 +194,18 @@ export function AccountSecurityPage() {
         if (!active) return
         setContext(nextContext)
 
-        if (nextContext.mfaRequired) {
-          const nextFactors = await listMfaFactors()
-          if (active) setFactors(nextFactors)
+        const [nextFactors, level, nextSecurityKeys] = await Promise.all([
+          listMfaFactors(),
+          getAuthenticatorLevel(),
+          listSecurityKeys(),
+        ])
+        if (active) {
+          setFactors(nextFactors)
+          setRawAuthenticatorLevel(level.currentLevel)
+          setSecurityKeys(nextSecurityKeys)
         }
       } catch {
-        await getSupabaseClient().auth.signOut()
+        await signOut()
         if (active) setContext(null)
       } finally {
         if (active) setLoading(false)
@@ -201,11 +223,14 @@ export function AccountSecurityPage() {
     const nextContext = await getSessionContext()
     setContext(nextContext)
 
-    if (nextContext.mfaRequired) {
-      setFactors(await listMfaFactors())
-    } else {
-      setFactors([])
-    }
+    const [nextFactors, level, nextSecurityKeys] = await Promise.all([
+      listMfaFactors(),
+      getAuthenticatorLevel(),
+      listSecurityKeys(),
+    ])
+    setFactors(nextFactors)
+    setRawAuthenticatorLevel(level.currentLevel)
+    setSecurityKeys(nextSecurityKeys)
 
     notifySessionContextChanged()
     return nextContext
@@ -255,7 +280,8 @@ export function AccountSecurityPage() {
       return
     }
     if (availableVerifiedFactors.length !== 1) return
-    setSelectedMfaMethod(availableVerifiedFactors[0].factorType)
+    const factorType = availableVerifiedFactors[0].factorType
+    if (factorType === 'totp' || factorType === 'phone') setSelectedMfaMethod(factorType)
   }, [availableVerifiedFactors, needsMfa, selectedMfaMethod])
 
   useEffect(() => {
@@ -542,6 +568,30 @@ export function AccountSecurityPage() {
     }
   }
 
+  async function handleSecurityKeyVerification() {
+    setErrorMessage(null)
+    setMessage(null)
+    setBusyAction('security-key')
+
+    try {
+      await authenticateWithSecurityKey()
+      const nextContext = await refreshContext()
+      setCheckpointVersion((version) => version + 1)
+      await refreshTrustedDevices()
+
+      if (!nextContext.mustChangePassword && !(nextContext.mfaRequired && !nextContext.hasMfa)) {
+        setMessage('Security key verified. Opening your workspace.')
+        navigate(returnPath, { replace: true })
+      } else {
+        setMessage('Security key verified. Continue with the remaining security step.')
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Security key verification failed.')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   async function handleRecovery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setErrorMessage(null)
@@ -571,8 +621,8 @@ export function AccountSecurityPage() {
     setMessage(null)
     setBusyAction('regenerate-recovery')
     try {
-      const factor = verifiedTotpFactor ?? verifiedFactors[0]
-      if (!factor) throw new Error('No verified MFA method is available for identity confirmation.')
+      const factor = verifiedTotpFactor ?? verifiedPhoneFactor
+      if (!factor) throw new Error('No verified code-based MFA method is available for identity confirmation.')
       const challengeId = await createMfaChallenge(factor.id, factor.factorType)
       await verifyMfaChallenge(factor.id, challengeId, recoveryVerificationCode, factor.factorType)
       const batch = await generateMfaRecoveryCodes()
@@ -774,14 +824,42 @@ export function AccountSecurityPage() {
 
         {context && needsMfa ? (
           <section className="security-panel">
-            <h2>{availableVerifiedFactors.length > 0 ? 'Verify your account' : SMS_MFA_ENABLED ? 'Choose your MFA method' : 'Set up an authenticator app'}</h2>
+            <h2>{verifiedFactors.length > 0 ? 'Verify your account' : SMS_MFA_ENABLED ? 'Choose your MFA method' : 'Set up an authenticator app'}</h2>
             <p>
-              {SMS_MFA_ENABLED
+              {verifiedSecurityKeys.length > 0
+                ? 'Use a registered security key, or continue with your authenticator app. Your password and normal account protections remain in place.'
+                : SMS_MFA_ENABLED
                 ? 'You can use either an authenticator app or a text message code. Set up one method now; add the other later if you want a backup.'
                 : 'Use an authenticator app such as Microsoft Authenticator, Google Authenticator, 1Password, Authy, or Apple Passwords.'}
             </p>
 
-            <div className={SMS_MFA_ENABLED ? 'mfa-method-grid' : 'mfa-method-grid mfa-method-grid--single'} role="list" aria-label="MFA method options">
+            {verifiedSecurityKeys.length > 0 ? (
+              <div className="security-key-checkpoint" aria-label="Registered security keys">
+                <div className="security-key-checkpoint__heading">
+                  <span><Usb aria-hidden="true" size={24} /></span>
+                  <div>
+                    <strong>Security key</strong>
+                    <p>Insert or tap your registered key. A successful key check completes MFA for this session.</p>
+                  </div>
+                </div>
+                <div className="security-key-checkpoint__actions">
+                  <button
+                    className="primary-action"
+                    disabled={busyAction !== null}
+                    onClick={() => void handleSecurityKeyVerification()}
+                    type="button"
+                  >
+                    {busyAction === 'security-key' ? (
+                      <><Loader2 aria-hidden="true" size={18} />Waiting for key…</>
+                    ) : (
+                      <><Usb aria-hidden="true" size={18} />Use security key</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className={SMS_MFA_ENABLED ? 'mfa-method-grid' : 'mfa-method-grid mfa-method-grid--single'} role="list" aria-label="Other MFA method options">
               <button
                 aria-pressed={selectedMfaMethod === 'totp'}
                 className={selectedMfaMethod === 'totp' ? 'mfa-method-card mfa-method-card--active' : 'mfa-method-card'}

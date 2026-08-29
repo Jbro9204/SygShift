@@ -32,7 +32,7 @@ describe('My Account self-service guardrails', () => {
     expect(worker).toContain("url.pathname === '/api/v1/account/email-verification/request'")
     expect(worker).toContain("url.pathname === '/api/v1/account/email-verification/confirm'")
     expect(migration).toContain('Wait one minute and try again')
-    expect(data).toContain("getTrustedDeviceToken()")
+    expect(data).toContain('appendProtectedSessionHeaders(headers)')
   })
 
   it('makes notification preferences operational without suppressing required alerts', () => {

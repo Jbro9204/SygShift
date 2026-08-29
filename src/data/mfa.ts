@@ -155,13 +155,13 @@ export async function listMfaFactors(): Promise<MfaFactorSummary[]> {
   }
 
   return [...factorsById.values()].map((factor) => {
-    const factorType = factor.factor_type === 'phone' ? 'phone' : 'totp'
+    const factorType: MfaFactorType = factor.factor_type === 'phone' ? 'phone' : 'totp'
     return {
-    id: factor.id,
-    factorType,
-    friendlyName: factor.friendly_name ?? null,
-    status: factor.status ?? null,
-    phone: factor.phone ?? null,
+      id: factor.id,
+      factorType,
+      friendlyName: factor.friendly_name ?? null,
+      status: factor.status ?? null,
+      phone: factor.phone ?? null,
     }
   })
 }

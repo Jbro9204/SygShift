@@ -966,3 +966,18 @@ pnpm exec wrangler deploy --keep-vars
 - Applied production migration `20260829120000_communications_workspaces.sql`.
 - Full validation passed: 98 test files, 493 tests, lint, type checking, production build, database verification, deployment, and live route checks.
 - Production Cloudflare version: `94fecbf4-5a09-49ad-b062-16a4af578018`.
+
+## 08/29/2026 — FIDO2 Hardware Security Key Pilot
+
+- Added optional FIDO2/WebAuthn hardware-key authentication after the existing username-and-password step.
+- Preserved authenticator MFA as the fallback and left every non-pilot user's login behavior unchanged.
+- Restricted the initial production pilot to `jbrown` through a server-enforced feature flag and allowlist.
+- Fixed the production relying-party boundary to `sygilant.us` and accepted only `https://app.sygilant.us`; preview and `workers.dev` origins cannot use production credentials.
+- Added **My Account > Security** controls to register, name, rename, inspect, and remove a physical key.
+- Required fresh raw authenticator AAL2 before adding, renaming, or removing keys.
+- Added browser-session-scoped security-key sessions bound to the current Supabase authentication session, with a maximum 12-hour lifetime and sign-out revocation.
+- Added authorized User Accounts visibility, individual lost-key revocation, and MFA reset integration that revokes all keys and key sessions for the employee.
+- Added security notices and append-only audit records for registration, rename, successful verification, removal, administrator revocation, and recovery.
+- Added migrations `20260829163000_security_key_mfa.sql` and `20260829213000_security_key_pilot_controls.sql` and verified both production control functions.
+- Full automated validation passed: type checking, zero-warning lint, 102 test files, 508 tests, Worker build, and client production build.
+- The only remaining pilot step is the physical key ceremony and Chrome/Edge validation by Jordan Brown; the allowlist must not be expanded before that evidence is recorded.

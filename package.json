@@ -21,6 +21,8 @@
     "bootstrap:admin": "node tools/bootstrap-admin.mjs"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.3",
     "@supabase/supabase-js": "^2.110.0",
     "@tanstack/react-query": "^5.101.2",
     "date-fns": "^4.4.0",

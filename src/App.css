@@ -2157,6 +2157,119 @@ a.home-metric-card:focus-visible {
   line-height: 1.55;
 }
 
+.account-security-keys {
+  gap: 18px;
+}
+
+.account-security-key-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+  gap: 18px;
+  align-items: start;
+  min-width: 0;
+}
+
+.account-security-key-list,
+.account-security-key-enrollment {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+  padding: 18px;
+  background: #fbf9f4;
+  border: 1px solid #ded6c8;
+  border-radius: 12px;
+}
+
+.account-security-key-list__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.account-security-key-list__heading > span {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: #6c4a14;
+  background: #f4e6c8;
+  border-radius: 999px;
+  font-weight: 850;
+}
+
+.account-security-key-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #e2dbcf;
+  border-radius: 10px;
+}
+
+.account-security-key-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.account-security-key-row__actions .secondary-button,
+.account-security-key-row__actions .quiet-danger-button {
+  min-height: 40px;
+}
+
+.account-security-key-rename {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-column: 2 / -1;
+  gap: 12px;
+  align-items: end;
+  min-width: 0;
+}
+
+.account-security-key-row__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  color: #855b17;
+  background: #f6ead1;
+  border-radius: 9px;
+}
+
+.account-security-key-row strong,
+.account-security-key-row span,
+.account-security-key-enrollment strong,
+.account-security-key-enrollment p {
+  display: block;
+}
+
+.account-security-key-row span,
+.account-security-key-enrollment p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.account-security-key-verification {
+  display: grid;
+  gap: 13px;
+  padding: 14px;
+  background: #fff8e8;
+  border: 1px solid #dfc58f;
+  border-radius: 9px;
+}
+
+.account-security-key-verification .primary-action,
+.account-security-key-enrollment > .primary-action {
+  width: fit-content;
+}
+
 .form-field {
   display: grid;
   min-width: 0;
@@ -2629,6 +2742,10 @@ a.home-metric-card:focus-visible {
   .account-readonly-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .account-security-key-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -2682,6 +2799,20 @@ a.home-metric-card:focus-visible {
   .user-account-security-card--danger button {
     grid-column: 1;
     grid-row: auto;
+    width: 100%;
+  }
+
+  .account-security-key-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .account-security-key-row .quiet-danger-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .account-security-key-verification .primary-action,
+  .account-security-key-enrollment > .primary-action {
     width: 100%;
   }
 }
@@ -6167,6 +6298,48 @@ a.home-metric-card:focus-visible {
   gap: 14px;
 }
 
+.security-key-checkpoint {
+  display: grid;
+  gap: 15px;
+  padding: 18px;
+  background: #f8f4eb;
+  border: 1px solid #d9caaa;
+  border-radius: 12px;
+}
+
+.security-key-checkpoint__heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 13px;
+  align-items: start;
+}
+
+.security-key-checkpoint__heading > span {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  color: #805714;
+  background: #f2e2bf;
+  border-radius: 10px;
+}
+
+.security-key-checkpoint__heading strong {
+  color: #29241d;
+  font-size: 18px;
+}
+
+.security-key-checkpoint__heading p {
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+.security-key-checkpoint__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .mfa-method-grid--single {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -6293,6 +6466,11 @@ a.home-metric-card:focus-visible {
 
   .recovery-code-grid {
     grid-template-columns: 1fr;
+  }
+
+  .security-key-checkpoint__actions .primary-action,
+  .security-key-checkpoint__actions .secondary-button {
+    width: 100%;
   }
 }
 
@@ -19402,6 +19580,50 @@ a.home-metric-card:focus-visible {
   border-color: #ddd6c9;
 }
 
+.user-account-security-card--keys {
+  grid-column: 1 / -1;
+}
+
+.user-account-security-key-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.user-account-security-key-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #e2d7c5;
+  border-radius: 10px;
+}
+
+.user-account-security-key-row > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.user-account-security-key-row strong {
+  color: #2d2922;
+  font-size: 14px;
+}
+
+.user-account-security-key-row span,
+.user-account-security-key-empty {
+  color: #70685c;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.user-account-security-key-row .secondary-button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
 .user-account-security-card--danger {
   grid-column: 1 / -1;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -20580,6 +20802,15 @@ a.home-metric-card:focus-visible {
   .user-account-security-grid,
   .user-account-email-options {
     grid-template-columns: 1fr;
+  }
+
+  .user-account-security-key-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .user-account-security-key-row .secondary-button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .user-admin-form .form-grid--three {

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
-import { getTrustedDeviceToken } from '../lib/trustedDeviceToken'
+import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 
 const recoveryCodeBatchSchema = z.object({
   batchId: z.string().uuid(),
@@ -22,14 +22,12 @@ async function accountRequest<T>(path: string, body: Record<string, unknown>, sc
   const { data, error } = await getSupabaseClient().auth.getSession()
   if (error || !data.session?.access_token) throw new Error('Your secure session has expired. Sign in again.')
 
-  const trustedDeviceToken = getTrustedDeviceToken()
   const response = await fetch(path, {
     body: JSON.stringify(body),
-    headers: {
+    headers: appendProtectedSessionHeaders({
       authorization: `Bearer ${data.session.access_token}`,
       'content-type': 'application/json',
-      ...(trustedDeviceToken ? { 'x-sygshift-trusted-device': trustedDeviceToken } : {}),
-    },
+    }),
     method: 'POST',
   })
   const payload = await response.json().catch(() => null) as { message?: string; error?: string } | null

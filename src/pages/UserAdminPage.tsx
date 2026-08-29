@@ -14,6 +14,7 @@ import {
   UsersRound,
   Mail,
   RotateCcw,
+  Usb,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
@@ -21,10 +22,12 @@ import {
   createEmployee,
   credentialsToCsv,
   getEmployeeRemovalPreview,
+  getEmployeeSecurityKeys,
   getAdminUserDirectory,
   getRecentlyDeletedEmployees,
   provisionMissingAccounts,
   resetEmployeeMfa,
+  revokeEmployeeSecurityKey,
   revokeEmployeeTrustedDevices,
   removeSeparatedEmployee,
   sendAllEmployeeLoginEmails,
@@ -42,6 +45,7 @@ import {
   type EmployeeRemovalPreview,
   type ProvisioningCredential,
 } from '../data/adminUsers'
+import type { SecurityKeySummary } from '../data/securityKeys'
 import { getSessionContext } from '../data/auth'
 import { preferredEmployeeDeliveryEmail } from '../lib/emailRecipients'
 import { formatOperationalDateTime } from '../lib/time'
@@ -320,9 +324,16 @@ function ManageUserModal({
   const [welcomeEmailMessage, setWelcomeEmailMessage] = useState<string | null>(null)
   const [trustedDeviceMessage, setTrustedDeviceMessage] = useState<string | null>(null)
   const [mfaResetMessage, setMfaResetMessage] = useState<string | null>(null)
+  const [securityKeyMessage, setSecurityKeyMessage] = useState<string | null>(null)
   const [confirmingMfaReset, setConfirmingMfaReset] = useState(false)
   const [removingEmployee, setRemovingEmployee] = useState(false)
   const deliveryEmail = preferredEmployeeDeliveryEmail(employee.personalEmail, employee.companyEmail)
+
+  const securityKeysQuery = useQuery({
+    enabled: activeTab === 'security' && canManageLogin && employee.accountStatus === 'active',
+    queryFn: () => getEmployeeSecurityKeys(employee.id),
+    queryKey: ['employee-security-keys', employee.id],
+  })
 
   const updateMutation = useMutation({
     mutationFn: (payload: EmployeeMutationInput) => updateEmployee({ ...payload, employeeId: employee.id }),
@@ -356,9 +367,17 @@ function ManageUserModal({
     onSuccess: async (result) => {
       setConfirmingMfaReset(false)
       setMfaResetMessage(
-        `MFA reset for ${employee.displayName}. ${result.factorsRemoved} authenticator factor${result.factorsRemoved === 1 ? '' : 's'} removed and ${result.trustedDevicesRevoked} remembered device${result.trustedDevicesRevoked === 1 ? '' : 's'} revoked.`,
+        `MFA reset for ${employee.displayName}. ${result.factorsRemoved} authenticator factor${result.factorsRemoved === 1 ? '' : 's'}, ${result.trustedDevicesRevoked} remembered device${result.trustedDevicesRevoked === 1 ? '' : 's'}, and ${result.securityKeysRevoked} security key${result.securityKeysRevoked === 1 ? '' : 's'} revoked.`,
       )
+      await queryClient.invalidateQueries({ queryKey: ['employee-security-keys', employee.id], refetchType: 'active' })
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
+    },
+  })
+  const revokeSecurityKeyMutation = useMutation({
+    mutationFn: (key: SecurityKeySummary) => revokeEmployeeSecurityKey(employee.id, key.id),
+    onSuccess: async (result, key) => {
+      setSecurityKeyMessage(`${key.label} was revoked. ${result.securityKeySessionsRevoked} active security-key session${result.securityKeySessionsRevoked === 1 ? '' : 's'} ended.`)
+      await queryClient.invalidateQueries({ queryKey: ['employee-security-keys', employee.id], refetchType: 'active' })
     },
   })
   const loginEmailMutation = useMutation({
@@ -388,6 +407,7 @@ function ManageUserModal({
     || accountStateMutation.isPending
     || revokeTrustedDevicesMutation.isPending
     || resetMfaMutation.isPending
+    || revokeSecurityKeyMutation.isPending
     || passwordResetMutation.isPending
     || loginEmailMutation.isPending
     || welcomeEmailMutation.isPending
@@ -593,7 +613,7 @@ function ManageUserModal({
                   {confirmingMfaReset ? (
                     <div className="mfa-reset-confirmation" role="alert">
                       <strong>Reset MFA for {employee.displayName}?</strong>
-                      <p>Their authenticator enrollment and remembered devices will be removed. Their password, employee record, and history will not change.</p>
+                      <p>Their authenticator enrollment, recovery codes, remembered devices, and registered security keys will be removed. Their password, employee record, and history will not change.</p>
                       <div className="mfa-reset-confirmation__actions">
                         <button className="secondary-button" disabled={resetMfaMutation.isPending} onClick={() => setConfirmingMfaReset(false)} type="button">Cancel</button>
                         <button className="secondary-button danger-button" disabled={resetMfaMutation.isPending} onClick={() => resetMfaMutation.mutate()} type="button"><RotateCcw aria-hidden="true" size={18} /> {resetMfaMutation.isPending ? 'Resetting MFA…' : 'Confirm MFA reset'}</button>
@@ -602,6 +622,39 @@ function ManageUserModal({
                   ) : null}
                   {employee.status !== 'active' ? <small>Only active employees can receive login accounts.</small> : null}
                   {!deliveryEmail && employee.accountStatus === 'active' ? <small>Add an approved personal email before sending a password reset.</small> : null}
+                </article>
+              ) : null}
+              {canManageLogin && employee.accountStatus === 'active' ? (
+                <article className="user-account-security-card user-account-security-card--keys">
+                  <span className="account-control-kicker">Physical security keys</span>
+                  <h4>Registered FIDO2 keys</h4>
+                  <p>Revoke a lost or unavailable key without resetting the employee's password or other MFA methods.</p>
+                  {securityKeysQuery.isPending ? <p className="user-account-security-key-empty">Loading registered keys…</p> : null}
+                  {securityKeysQuery.isError ? <div className="inline-alert" role="alert">{securityKeysQuery.error.message}</div> : null}
+                  {securityKeysQuery.data?.length ? (
+                    <div className="user-account-security-key-list">
+                      {securityKeysQuery.data.map((key) => (
+                        <div className="user-account-security-key-row" key={key.id}>
+                          <Usb aria-hidden="true" size={19} />
+                          <div>
+                            <strong>{key.label}</strong>
+                            <span>{key.lastUsedAt ? `Last used ${formatOperationalDateTime(key.lastUsedAt)}` : `Added ${formatOperationalDateTime(key.createdAt)}`}</span>
+                          </div>
+                          <button
+                            className="secondary-button danger-button"
+                            disabled={revokeSecurityKeyMutation.isPending}
+                            onClick={() => {
+                              setSecurityKeyMessage(null)
+                              if (window.confirm(`Revoke ${key.label} for ${employee.displayName}? The key will stop working immediately.`)) revokeSecurityKeyMutation.mutate(key)
+                            }}
+                            type="button"
+                          >
+                            Revoke
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : !securityKeysQuery.isPending && !securityKeysQuery.isError ? <p className="user-account-security-key-empty">No physical security keys are registered.</p> : null}
                 </article>
               ) : null}
               {!canManageLogin ? (
@@ -626,9 +679,11 @@ function ManageUserModal({
             {passwordResetMessage ? <div className="form-feedback form-feedback--success" role="status">{passwordResetMessage}</div> : null}
             {trustedDeviceMessage ? <div className="form-feedback form-feedback--success" role="status">{trustedDeviceMessage}</div> : null}
             {mfaResetMessage ? <div className="form-feedback form-feedback--success" role="status">{mfaResetMessage}</div> : null}
+            {securityKeyMessage ? <div className="form-feedback form-feedback--success" role="status">{securityKeyMessage}</div> : null}
             {passwordResetMutation.isError ? <div className="inline-alert" role="alert">{passwordResetMutation.error.message}</div> : null}
             {revokeTrustedDevicesMutation.isError ? <div className="inline-alert" role="alert">{revokeTrustedDevicesMutation.error.message}</div> : null}
             {resetMfaMutation.isError ? <div className="inline-alert" role="alert">{resetMfaMutation.error.message}</div> : null}
+            {revokeSecurityKeyMutation.isError ? <div className="inline-alert" role="alert">{revokeSecurityKeyMutation.error.message}</div> : null}
           </section>
         ) : null}
 

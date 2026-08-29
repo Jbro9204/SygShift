@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
-import { getTrustedDeviceToken } from '../lib/trustedDeviceToken'
+import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 
 const nullableText = z.string().nullable()
 
@@ -83,9 +83,7 @@ async function accountApiHeaders(contentType?: string): Promise<Headers> {
   if (error || !data.session?.access_token) throw new Error('Your secure session is not available.')
   const headers = new Headers({ authorization: `Bearer ${data.session.access_token}` })
   if (contentType) headers.set('content-type', contentType)
-  const trustedDeviceToken = getTrustedDeviceToken()
-  if (trustedDeviceToken) headers.set('x-sygshift-trusted-device', trustedDeviceToken)
-  return headers
+  return appendProtectedSessionHeaders(headers)
 }
 
 async function parseAccountApi(response: Response): Promise<Record<string, unknown>> {

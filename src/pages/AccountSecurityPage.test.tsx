@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as mfaData from '../data/mfa'
+import * as securityKeyData from '../data/securityKeys'
 import { AccountSecurityPage } from './AccountSecurityPage'
 
 const authMock = vi.hoisted(() => ({
@@ -36,12 +37,18 @@ vi.mock('../lib/supabase', () => ({
 
 vi.mock('../data/mfa', () => ({
   createMfaChallenge: vi.fn(),
+  getAuthenticatorLevel: vi.fn(),
   listMfaFactors: vi.fn(),
   listTotpFactors: vi.fn(),
   startPhoneEnrollment: vi.fn(),
   startTotpEnrollment: vi.fn(),
   verifyMfaChallenge: vi.fn(),
   verifyTotpEnrollment: vi.fn(),
+}))
+
+vi.mock('../data/securityKeys', () => ({
+  authenticateWithSecurityKey: vi.fn(),
+  listSecurityKeys: vi.fn(),
 }))
 
 function sessionContext(overrides: Partial<Awaited<ReturnType<typeof authMock.getSessionContext>>> = {}) {
@@ -73,6 +80,8 @@ describe('AccountSecurityPage', () => {
     supabaseMock.client.auth.updateUser.mockResolvedValue({ data: {}, error: null })
     supabaseMock.client.rpc.mockResolvedValue({ data: true, error: null })
     vi.mocked(mfaData.listMfaFactors).mockResolvedValue([])
+    vi.mocked(mfaData.getAuthenticatorLevel).mockResolvedValue({ currentLevel: 'aal2', nextLevel: 'aal2' })
+    vi.mocked(securityKeyData.listSecurityKeys).mockResolvedValue([])
   })
 
   it('submits the actual password field values even when browser autofill bypasses React change state', async () => {
@@ -120,7 +129,7 @@ describe('AccountSecurityPage', () => {
       expect(supabaseMock.client.auth.updateUser).toHaveBeenCalledWith({ password: 'StrongAdmin123!' })
     })
     expect(supabaseMock.client.rpc).not.toHaveBeenCalledWith('mark_password_changed')
-    expect(mfaData.listMfaFactors).not.toHaveBeenCalled()
+    expect(mfaData.listMfaFactors).toHaveBeenCalled()
   })
 
   it('allows permanent password fields to be shown and hidden independently', async () => {
@@ -190,5 +199,38 @@ describe('AccountSecurityPage', () => {
     )
 
     expect(await screen.findByLabelText('Remember this device for 14 days')).toBeInTheDocument()
+  })
+
+  it('offers and verifies a registered FIDO2 security key without removing authenticator fallback', async () => {
+    authMock.getSessionContext.mockReset()
+    authMock.getSessionContext
+      .mockResolvedValueOnce(sessionContext({ hasMfa: false, mfaRequired: true }))
+      .mockResolvedValue(sessionContext({ hasMfa: true, mfaRequired: true }))
+    vi.mocked(mfaData.getAuthenticatorLevel)
+      .mockResolvedValueOnce({ currentLevel: 'aal1', nextLevel: 'aal2' })
+      .mockResolvedValue({ currentLevel: 'aal2', nextLevel: 'aal2' })
+    vi.mocked(securityKeyData.listSecurityKeys).mockResolvedValue([{
+      id: 'key-1',
+      credentialId: 'credential-key-1',
+      label: 'Jordan office key',
+      deviceType: 'singleDevice',
+      backedUp: false,
+      createdAt: '2026-08-29T12:00:00.000Z',
+      lastUsedAt: null,
+    }])
+    vi.mocked(securityKeyData.authenticateWithSecurityKey).mockResolvedValue()
+
+    render(
+      <MemoryRouter>
+        <AccountSecurityPage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('button', { name: 'Use security key' })).toBeInTheDocument()
+    expect(screen.getByText('Authenticator app')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Use security key' }))
+
+    await waitFor(() => expect(securityKeyData.authenticateWithSecurityKey).toHaveBeenCalledTimes(1))
+    expect(supabaseMock.client.rpc).not.toHaveBeenCalledWith('mark_mfa_enrolled')
   })
 })

@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { getTrustedDeviceToken } from './trustedDeviceToken'
+import { appendProtectedSessionHeaders } from './protectedSessionHeaders'
 
 const defaultSupabaseUrl = 'https://eqkdfrbwtioiqtjsyglg.supabase.co'
 const defaultSupabasePublishableKey = 'sb_publishable_-uU9fD3XIeZ58r815-fl_Q_g4IIRPQ5'
@@ -37,9 +37,6 @@ export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKe
 let client: SupabaseClient | undefined
 
 export function attachTrustedDeviceHeader(input: RequestInfo | URL, init?: RequestInit): RequestInit | undefined {
-  const trustedToken = getTrustedDeviceToken()
-  if (!trustedToken) return init
-
   const target = typeof input === 'string'
     ? input
     : input instanceof URL
@@ -52,8 +49,7 @@ export function attachTrustedDeviceHeader(input: RequestInfo | URL, init?: Reque
   new Headers(init?.headers).forEach((value, key) => {
     headers.set(key, value)
   })
-  headers.set('x-sygshift-trusted-device', trustedToken)
-  return { ...init, headers }
+  return { ...init, headers: appendProtectedSessionHeaders(headers) }
 }
 
 export function getSupabaseClient(): SupabaseClient {

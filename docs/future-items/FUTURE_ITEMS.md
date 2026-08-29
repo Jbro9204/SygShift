@@ -15,44 +15,22 @@ Keep this repository copy synchronized with:
 
 ## Security, Identity & Account Protection
 
-### Hardware Security Key MFA Pilot
+### Hardware Security Key Pilot Validation
 
 - Priority: High
-- Target window: Controlled administrator pilot after the current workspace usability corrections
-- Status: Approved / queued
-- Added: 08/28/2026
+- Target window: Jordan-only controlled production pilot
+- Status: Deployed / awaiting physical-key enrollment and device validation
+- Added: 08/29/2026
 
-Add FIDO2/WebAuthn hardware security keys as a phishing-resistant MFA option, beginning with Jordan Brown as the only pilot user. A verified security-key challenge must satisfy the application's MFA requirement; it is not a password-only bypass. When a key is unavailable, cancelled, or fails, the existing authenticator-app workflow remains available and all users without a registered key continue under the current rules.
+The full FIDO2/WebAuthn implementation, production database controls, administrator recovery tools, audit trail, security notices, feature flag, and `jbrown`-only allowlist are deployed. Complete the final human hardware ceremony and supported-device checks before considering any broader rollout.
 
-Required My Account experience:
+Remaining pilot validation:
 
-- Add a focused **Security Keys** area under **My Account > Security**.
-- Allow the signed-in employee to add a key, give it a friendly name, view the date added and last-used date, rename it, and remove it.
-- Keep the existing authenticator method enrolled during the pilot so the user has a controlled fallback.
-- Require recent authentication before registering, renaming, or removing a security key.
-- Explain in plain language that the physical key replaces the authenticator-code step when used successfully; it does not remove account security.
-
-Required login behavior:
-
-- Verify the username and password first, then offer a registered FIDO2/WebAuthn key as the preferred MFA factor.
-- Treat a successful security-key challenge as verified MFA at the same protected access level required for administrative workflows.
-- Fall back to the normal authenticator-app challenge when the key is unavailable or the user chooses another method.
-- Never fall back to password-only access and never weaken server-side AAL2 or permission enforcement.
-- Preserve safe return-to-page behavior, trusted-device rules, inactivity handling, and existing session protections.
-
-Required administration and audit controls:
-
-- Add authorized User Accounts controls to view registered-key status and revoke or reset a lost or compromised key without exposing key material.
-- Record key registration, rename, successful use, removal, administrative revocation, and recovery actions in the audit history.
-- Send a security notification when a key is added or removed.
-- Use a feature flag and a single-user allowlist for the initial pilot, with a tested rollback that leaves authenticator MFA operational.
-- Keep the relying-party identity stable for the production SygShift domain so later URL or deployment changes do not invalidate enrolled keys.
-
-Required validation:
-
-- Confirm current Supabase/WebAuthn support and production limitations before implementation; do not rely on an experimental authentication path without a controlled fallback.
-- Test Chrome, Edge, supported mobile behavior, cancelled challenges, absent keys, lost keys, authenticator fallback, revocation, concurrent sessions, server authorization, and audit records.
-- Complete the Jordan-only pilot before deciding whether to expand security-key enrollment to other users.
+- Enroll Jordan Brown's physical key from **My Account > Security** after completing authenticator MFA.
+- Verify successful key sign-in in current Chrome and Edge on `https://app.sygilant.us`.
+- Verify cancellation and absent-key flows leave **Use authenticator instead** available.
+- Verify key removal, administrator revocation, and MFA reset using the physical pilot credential.
+- Keep the authenticator factor enrolled throughout the pilot and do not expand the allowlist until the pilot evidence is recorded.
 
 ## Navigation & Workspace Usability
 

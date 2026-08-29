@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Smartphone,
   Trash2,
+  Usb,
   UserRound,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -44,6 +45,19 @@ import {
   type SessionContext,
   validatePassword,
 } from '../data/auth'
+import {
+  getAuthenticatorLevel,
+  listMfaFactors,
+  type MfaFactorSummary,
+} from '../data/mfa'
+import {
+  getSecurityKeyDirectory,
+  isSecurityKeySupported,
+  registerSecurityKey,
+  removeSecurityKey,
+  renameSecurityKey,
+  type SecurityKeySummary,
+} from '../data/securityKeys'
 import { formatOperationalDateTime } from '../lib/time'
 
 type AccountTab = 'profile' | 'employment' | 'security' | 'notifications'
@@ -419,18 +433,132 @@ function EmploymentTab({ account }: { account: MyAccount }) {
 function SecurityTab({ account, refreshAccount }: { account: MyAccount; refreshAccount: () => Promise<void> }) {
   const [devices, setDevices] = useState<TrustedDevice[]>([])
   const [devicesLoading, setDevicesLoading] = useState(true)
+  const [factors, setFactors] = useState<MfaFactorSummary[]>([])
+  const [securityKeys, setSecurityKeys] = useState<SecurityKeySummary[]>([])
+  const [securityKeyPilotEligible, setSecurityKeyPilotEligible] = useState(false)
+  const [securityMethodsLoading, setSecurityMethodsLoading] = useState(true)
+  const [rawAuthenticatorLevel, setRawAuthenticatorLevel] = useState<string | null>(null)
+  const [securityKeyName, setSecurityKeyName] = useState('Primary security key')
+  const [editingSecurityKeyId, setEditingSecurityKeyId] = useState<string | null>(null)
+  const [securityKeyRename, setSecurityKeyRename] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<Feedback>(null)
   const policy = validatePassword(password, account.employment.username)
+  const verifiedFactors = factors.filter((factor) => factor.status === 'verified')
+  const verifiedAuthenticatorFactors = verifiedFactors.filter((factor) => factor.factorType === 'totp' || factor.factorType === 'phone')
+  const securityKeySupported = isSecurityKeySupported()
+  const needsFreshMfaForManagement = rawAuthenticatorLevel !== 'aal2'
 
   const loadDevices = useCallback(async () => {
     setDevicesLoading(true)
     try { setDevices(await getCurrentTrustedDevices()) } catch { setDevices([]) } finally { setDevicesLoading(false) }
   }, [])
-  useEffect(() => { void loadDevices() }, [loadDevices])
+
+  const loadSecurityMethods = useCallback(async () => {
+    setSecurityMethodsLoading(true)
+    try {
+      const [nextFactors, level, securityKeyDirectory] = await Promise.all([
+        listMfaFactors(),
+        getAuthenticatorLevel(),
+        getSecurityKeyDirectory(),
+      ])
+      setFactors(nextFactors)
+      setRawAuthenticatorLevel(level.currentLevel)
+      setSecurityKeyPilotEligible(securityKeyDirectory.pilotEligible)
+      setSecurityKeys(securityKeyDirectory.keys)
+    } catch {
+      setFactors([])
+      setRawAuthenticatorLevel(null)
+      setSecurityKeyPilotEligible(false)
+      setSecurityKeys([])
+    } finally {
+      setSecurityMethodsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadDevices()
+    void loadSecurityMethods()
+  }, [loadDevices, loadSecurityMethods])
+
+  async function addSecurityKey(event: React.FormEvent) {
+    event.preventDefault()
+    setFeedback(null)
+
+    if (needsFreshMfaForManagement) {
+      setFeedback({ kind: 'error', text: 'Verify an existing MFA method before adding a security key.' })
+      return
+    }
+
+    setBusy('security-key-add')
+    try {
+      await registerSecurityKey(securityKeyName)
+      setSecurityKeyName('Primary security key')
+      await Promise.all([loadSecurityMethods(), refreshAccount()])
+      notifySessionContextChanged()
+      setFeedback({ kind: 'success', text: 'Your security key is registered and can now verify SygShift sign-ins.' })
+    } catch (error) {
+      setFeedback({ kind: 'error', text: error instanceof Error ? error.message : 'The security key could not be added.' })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function handleRemoveSecurityKey(key: SecurityKeySummary) {
+    setFeedback(null)
+
+    if (rawAuthenticatorLevel !== 'aal2') {
+      setFeedback({ kind: 'error', text: 'Verify MFA before removing a security key.' })
+      return
+    }
+    if (!window.confirm(`Remove ${key.label || 'this security key'} from your SygShift account?`)) return
+
+    setBusy(`security-key-remove-${key.id}`)
+    try {
+      await removeSecurityKey(key.id)
+      await Promise.all([loadSecurityMethods(), refreshAccount()])
+      notifySessionContextChanged()
+      setFeedback({ kind: 'success', text: 'The security key was removed.' })
+    } catch (error) {
+      setFeedback({ kind: 'error', text: error instanceof Error ? error.message : 'The security key could not be removed.' })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  function beginRenameSecurityKey(key: SecurityKeySummary) {
+    setFeedback(null)
+    if (rawAuthenticatorLevel !== 'aal2') {
+      setFeedback({ kind: 'error', text: 'Verify MFA before renaming a security key.' })
+      return
+    }
+    setEditingSecurityKeyId(key.id)
+    setSecurityKeyRename(key.label)
+  }
+
+  async function handleRenameSecurityKey(event: React.FormEvent, key: SecurityKeySummary) {
+    event.preventDefault()
+    setFeedback(null)
+    if (rawAuthenticatorLevel !== 'aal2') {
+      setFeedback({ kind: 'error', text: 'Verify MFA before renaming a security key.' })
+      return
+    }
+    setBusy(`security-key-rename-${key.id}`)
+    try {
+      await renameSecurityKey(key.id, securityKeyRename)
+      setEditingSecurityKeyId(null)
+      setSecurityKeyRename('')
+      await loadSecurityMethods()
+      setFeedback({ kind: 'success', text: 'The security key name was updated.' })
+    } catch (error) {
+      setFeedback({ kind: 'error', text: error instanceof Error ? error.message : 'The security key name could not be updated.' })
+    } finally {
+      setBusy(null)
+    }
+  }
 
   async function changePassword(event: React.FormEvent) {
     event.preventDefault()
@@ -505,6 +633,82 @@ function SecurityTab({ account, refreshAccount }: { account: MyAccount; refreshA
           <div className="account-actions account-actions--start"><Link className="secondary-button" to="/account-security">Open security tools</Link><LoadingButton busy={busy === 'sessions'} className="secondary-button" onClick={signOutOthers} type="button"><LogOut size={17} />Sign out other sessions</LoadingButton></div>
         </section>
       </div>
+
+      {securityKeyPilotEligible ? <section className="account-card account-card--wide account-security-keys">
+        <div className="account-card__heading"><div><p className="eyebrow">Phishing-resistant MFA</p><h2>Security keys</h2></div><Usb size={22} /></div>
+        <p className="account-card__intro">Register a FIDO2 security key to complete SygShift MFA with a physical key. Your password remains required, and your authenticator app stays available as a backup. Verify your authenticator before adding or removing security keys.</p>
+
+        {securityMethodsLoading ? (
+          <p className="account-loading-inline"><LoaderCircle className="account-spinner" size={18} />Loading security methods…</p>
+        ) : (
+          <div className="account-security-key-layout">
+            <div className="account-security-key-list" aria-label="Registered security keys">
+              <div className="account-security-key-list__heading">
+                <strong>Registered keys</strong>
+                <span>{securityKeys.length}</span>
+              </div>
+              {securityKeys.length ? securityKeys.map((key) => (
+                <div className="account-security-key-row" key={key.id}>
+                  <span className="account-security-key-row__icon"><Usb aria-hidden="true" size={19} /></span>
+                  {editingSecurityKeyId === key.id ? (
+                    <form className="account-security-key-rename" onSubmit={(event) => void handleRenameSecurityKey(event, key)}>
+                      <label className="form-field"><span>Key name</span><input autoComplete="off" autoFocus maxLength={60} onChange={(event) => setSecurityKeyRename(event.target.value)} value={securityKeyRename} /></label>
+                      <div className="account-security-key-row__actions">
+                        <LoadingButton busy={busy === `security-key-rename-${key.id}`} className="secondary-button" type="submit">Save name</LoadingButton>
+                        <button className="secondary-button" onClick={() => { setEditingSecurityKeyId(null); setSecurityKeyRename('') }} type="button">Cancel</button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      <div>
+                        <strong>{key.label}</strong>
+                        <span>
+                          Added {formatOperationalDateTime(key.createdAt)}
+                          {key.lastUsedAt ? ` · Last used ${formatOperationalDateTime(key.lastUsedAt)}` : ' · Not used yet'}
+                        </span>
+                      </div>
+                      <div className="account-security-key-row__actions">
+                        <button className="secondary-button" disabled={rawAuthenticatorLevel !== 'aal2'} onClick={() => beginRenameSecurityKey(key)} type="button">Rename</button>
+                        <LoadingButton busy={busy === `security-key-remove-${key.id}`} className="quiet-danger-button" disabled={rawAuthenticatorLevel !== 'aal2'} onClick={() => void handleRemoveSecurityKey(key)} type="button">Remove</LoadingButton>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )) : <p className="account-empty">No security keys are registered.</p>}
+            </div>
+
+            <form className="account-security-key-enrollment" onSubmit={addSecurityKey}>
+              <div><strong>Add a security key</strong><p>Use a unique name so you can identify the key later.</p></div>
+              {!securityKeySupported ? (
+                <div className="account-feedback account-feedback--error" role="alert">This browser or connection cannot use security keys. Use a current browser at the secure SygShift address.</div>
+              ) : verifiedAuthenticatorFactors.length === 0 ? (
+                <div className="account-security-key-verification">
+                  <p>Set up an authenticator app before registering a security key. The authenticator remains your protected recovery path.</p>
+                  <Link className="primary-action" to="/account-security">
+                    <ShieldCheck size={17} />Set up authenticator
+                  </Link>
+                </div>
+              ) : needsFreshMfaForManagement ? (
+                <div className="account-security-key-verification">
+                  <p>For protection, verify an existing MFA method before changing registered keys.</p>
+                  <Link
+                    className="primary-action"
+                    state={{ from: { pathname: '/account', search: '?tab=security' } }}
+                    to="/account-security?mode=security-key-management"
+                  >
+                    <ShieldCheck size={17} />Verify identity
+                  </Link>
+                </div>
+              ) : (
+                <>
+                  <label className="form-field"><span>Key name</span><input autoComplete="off" maxLength={60} onChange={(event) => setSecurityKeyName(event.target.value)} value={securityKeyName} /></label>
+                  <LoadingButton busy={busy === 'security-key-add'} className="primary-action" disabled={securityKeys.length >= 5} type="submit"><Usb size={17} />{securityKeys.length >= 5 ? 'Key limit reached' : 'Add security key'}</LoadingButton>
+                </>
+              )}
+            </form>
+          </div>
+        )}
+      </section> : null}
 
       <section className="account-card account-card--wide">
         <div className="account-card__heading"><div><p className="eyebrow">Trusted access</p><h2>Remembered devices</h2></div><Smartphone size={22} /></div>

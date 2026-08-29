@@ -340,7 +340,7 @@ export function AppShell() {
         const context = await getSessionContext()
         if (active) setSessionContext(context)
       } catch {
-        await getSupabaseClient().auth.signOut()
+        await signOut()
         if (active) {
           setSessionContext(null)
           setAuthMessage('Your account is not linked to an active SygShift employee record.')

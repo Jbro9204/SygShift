@@ -3,6 +3,20 @@
 /// <reference path="../worker-configuration.d.ts" />
 /* oxlint-enable typescript/triple-slash-reference */
 
+import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
+} from '@simplewebauthn/server'
+import type {
+  AuthenticationResponseJSON,
+  AuthenticatorTransportFuture,
+  RegistrationResponseJSON,
+  WebAuthnCredential,
+} from '@simplewebauthn/server'
+import { isSecurityKeyPilotEligible, securityKeyFeatureEnabled } from './securityKeyPilot'
+
 interface WorkerScheduledController {
   cron: string
   scheduledTime: number
@@ -15,6 +29,8 @@ interface WorkerExecutionContext {
 type Environment = Partial<Env> & {
   ASSETS: Fetcher
   SUPABASE_SERVICE_ROLE_KEY?: string
+  SYGSHIFT_SECURITY_KEYS_ENABLED?: string
+  SYGSHIFT_SECURITY_KEY_PILOT_USERNAMES?: string
 }
 
 interface SessionContext {
@@ -58,6 +74,31 @@ interface AuthMfaFactor {
 interface MfaRecoveryCodeRecord {
   hash: string
   hint: string
+}
+
+interface SecurityKeyCredentialRecord {
+  id: string
+  credentialId: string
+  publicKey: string
+  counter: number
+  transports: AuthenticatorTransportFuture[]
+  deviceType: string | null
+  backedUp: boolean
+  label: string
+  createdAt: string
+  lastUsedAt: string | null
+}
+
+interface SecurityKeyChallengeRecord {
+  id: string
+  challenge: string
+  expiresAt: string
+}
+
+interface AccessTokenClaims {
+  aal?: string
+  exp?: number
+  session_id?: string
 }
 
 interface NotificationJob {
@@ -120,6 +161,7 @@ interface MaintenanceStatusPayload {
 }
 
 const maxJsonBodyBytes = 4096
+const maxWebAuthnBodyBytes = 64 * 1024
 const defaultAppUrl = 'https://app.sygilant.us'
 const defaultSupportEmail = 'jbrown@guardianshipsecurity.net'
 const dispatchAlertEmail = 'dispatch@guardianshipsecurity.net'
@@ -207,6 +249,26 @@ async function readJsonBody(request: Request): Promise<Record<string, unknown>> 
     throw new ApiError('invalid_json', 400, 'The request body must be a JSON object.')
   }
   return payload as Record<string, unknown>
+}
+
+async function readWebAuthnBody(request: Request): Promise<Record<string, unknown>> {
+  if (!request.body) return {}
+  const contentLength = request.headers.get('content-length')
+  if (contentLength && Number(contentLength) > maxWebAuthnBodyBytes) {
+    throw new ApiError('request_body_too_large', 413, 'The security-key response is too large.')
+  }
+  const text = await request.text()
+  if (new TextEncoder().encode(text).length > maxWebAuthnBodyBytes) {
+    throw new ApiError('request_body_too_large', 413, 'The security-key response is too large.')
+  }
+  if (!text.trim()) return {}
+  try {
+    const payload = JSON.parse(text) as unknown
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('invalid object')
+    return payload as Record<string, unknown>
+  } catch {
+    throw new ApiError('invalid_json', 400, 'The request body must be a valid JSON object.')
+  }
 }
 
 export function validateSuppliedTemporaryPassword(password: string, username: string): string[] {
@@ -409,6 +471,69 @@ async function sendAuditedEmail(
   return result
 }
 
+function buildSecurityKeyChangeEmail(
+  target: LoginEmailTarget,
+  action: 'added' | 'removed',
+  label: string,
+  appUrl: string,
+): NotificationJob['message'] {
+  const verb = action === 'added' ? 'added to' : 'removed from'
+  const subject = action === 'added' ? 'Security key added to your SygShift account' : 'Security key removed from your SygShift account'
+  const safeLabel = label.trim() || 'Security key'
+  return {
+    subject,
+    text: [
+      `Hello ${target.displayName},`,
+      '',
+      `The security key “${safeLabel}” was ${verb} your SygShift account.`,
+      '',
+      'If you made this change, no action is needed.',
+      'If you did not make this change, contact an administrator immediately and reset your password.',
+      '',
+      `Review your account security: ${appUrl}/my-account?tab=security`,
+    ].join('\n'),
+  }
+}
+
+async function sendSecurityKeyChangeNotice(
+  environment: Environment,
+  employeeId: string,
+  action: 'added' | 'removed',
+  label: string,
+  keyId: string,
+): Promise<void> {
+  const config = configuredSupabase(environment)
+  if (!config) return
+  try {
+    const target = await callRpc<LoginEmailTarget>(
+      { serviceRoleKey: config.serviceRoleKey, url: config.url },
+      'service_get_employee_login_email_target',
+      { target_employee_id: employeeId },
+      config.serviceRoleKey,
+    )
+    if (!target) return
+    const recipient = requireApprovedEmployeeEmail(environment, target)
+    const appUrl = (environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl).replace(/\/+$/, '')
+    const delivery = await sendAuditedEmail(
+      environment,
+      recipient,
+      buildSecurityKeyChangeEmail(target, action, label, appUrl),
+      {
+        notificationType: action === 'added' ? 'security_key_added' : 'security_key_removed',
+        relatedRecordId: keyId,
+        relatedRecordType: 'security_key',
+      },
+      defaultSupportEmail,
+    )
+    if (delivery.failed.length > 0) {
+      console.warn(JSON.stringify({ event: 'security_key_notice_failed', employeeId, keyId }))
+    }
+  } catch {
+    // Account-security changes must not be rolled back because an optional notice could not be delivered.
+    console.warn(JSON.stringify({ event: 'security_key_notice_unavailable', employeeId, keyId }))
+  }
+}
+
 async function requireAdminMfa(
   request: Request,
   environment: Environment,
@@ -431,6 +556,15 @@ async function requireAdminMfa(
   }
 
   return result
+}
+
+function forwardedAssuranceHeaders(request: Request): Record<string, string> | undefined {
+  const headers: Record<string, string> = {}
+  const trustedDevice = request.headers.get('x-sygshift-trusted-device')
+  const securityKey = request.headers.get('x-sygshift-security-key')
+  if (trustedDevice) headers['x-sygshift-trusted-device'] = trustedDevice
+  if (securityKey) headers['x-sygshift-security-key'] = securityKey
+  return Object.keys(headers).length > 0 ? headers : undefined
 }
 
 async function requireAuthenticatedSession(request: Request, environment: Environment): Promise<{
@@ -460,9 +594,7 @@ async function requireAuthenticatedSession(request: Request, environment: Enviro
     'get_session_context',
     {},
     token,
-    request.headers.get('x-sygshift-trusted-device')
-      ? { 'x-sygshift-trusted-device': request.headers.get('x-sygshift-trusted-device')! }
-      : undefined,
+    forwardedAssuranceHeaders(request),
   )
   const context = Array.isArray(payload) ? payload[0] : payload
 
@@ -505,9 +637,7 @@ async function requireVerifiedOperationsSession(
     'get_session_context',
     {},
     authorization.slice('Bearer '.length),
-    request.headers.get('x-sygshift-trusted-device')
-      ? { 'x-sygshift-trusted-device': request.headers.get('x-sygshift-trusted-device')! }
-      : undefined,
+    forwardedAssuranceHeaders(request),
   )
   const context = Array.isArray(payload) ? payload[0] : payload
 
@@ -554,16 +684,63 @@ function generateTemporaryPassword(): string {
   return characters.join('')
 }
 
-function accessTokenAssuranceLevel(token: string): string | null {
+function accessTokenClaims(token: string): AccessTokenClaims | null {
   try {
     const payload = token.split('.')[1]
     if (!payload) return null
     const normalized = payload.replaceAll('-', '+').replaceAll('_', '/').padEnd(Math.ceil(payload.length / 4) * 4, '=')
-    const decoded = JSON.parse(atob(normalized)) as { aal?: unknown }
-    return typeof decoded.aal === 'string' ? decoded.aal : null
+    const decoded = JSON.parse(atob(normalized)) as AccessTokenClaims
+    return decoded && typeof decoded === 'object' ? decoded : null
   } catch {
     return null
   }
+}
+
+function accessTokenAssuranceLevel(token: string): string | null {
+  const aal = accessTokenClaims(token)?.aal
+  return typeof aal === 'string' ? aal : null
+}
+
+function requireRawAal2(token: string): AccessTokenClaims {
+  const claims = accessTokenClaims(token)
+  if (!claims || claims.aal !== 'aal2') {
+    throw new ApiError('aal2_required', 403, 'Verify your authenticator code before managing security keys.')
+  }
+  return claims
+}
+
+function encodeBase64Url(bytes: Uint8Array): string {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '')
+}
+
+function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
+  const normalized = value.replaceAll('-', '+').replaceAll('_', '/').padEnd(Math.ceil(value.length / 4) * 4, '=')
+  const binary = atob(normalized)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes
+}
+
+function generateOpaqueToken(size = 48): string {
+  const bytes = new Uint8Array(size)
+  crypto.getRandomValues(bytes)
+  return encodeBase64Url(bytes)
+}
+
+function expectedWebAuthnOrigins(request: Request): string[] {
+  const current = new URL(request.url)
+  if (isLocalDevelopment(current.hostname)) return [current.origin]
+  if (current.hostname === 'app.sygilant.us') return ['https://app.sygilant.us']
+  throw new ApiError('security_key_origin_not_allowed', 403, 'Security keys are available only at the official SygShift address.')
+}
+
+function webAuthnRpId(request: Request): string {
+  const hostname = new URL(request.url).hostname
+  if (hostname === 'app.sygilant.us') return 'sygilant.us'
+  if (isLocalDevelopment(hostname)) return hostname
+  throw new ApiError('security_key_origin_not_allowed', 403, 'Security keys are not available from this site address.')
 }
 
 function generateRecoveryCode(): string {
@@ -1026,6 +1203,333 @@ async function handleAccountMfaRecoveryApi(request: Request, environment: Enviro
   return errorJson('not_found', requestId, 404)
 }
 
+function securityKeySummary(record: SecurityKeyCredentialRecord): Record<string, unknown> {
+  return {
+    backedUp: record.backedUp,
+    createdAt: record.createdAt,
+    credentialId: record.credentialId,
+    deviceType: record.deviceType,
+    id: record.id,
+    label: record.label,
+    lastUsedAt: record.lastUsedAt,
+    transports: record.transports,
+  }
+}
+
+function securityKeyPilotEligible(environment: Environment, username: string): boolean {
+  return isSecurityKeyPilotEligible(
+    environment.SYGSHIFT_SECURITY_KEYS_ENABLED,
+    environment.SYGSHIFT_SECURITY_KEY_PILOT_USERNAMES,
+    username,
+  )
+}
+
+function requireSecurityKeyPilot(environment: Environment, username: string): void {
+  if (!securityKeyPilotEligible(environment, username)) {
+    throw new ApiError('security_key_pilot_unavailable', 403, 'Security-key access is not enabled for this account.')
+  }
+}
+
+function asSecurityKeyResponse(value: unknown, field: string): RegistrationResponseJSON | AuthenticationResponseJSON {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ApiError('invalid_security_key_response', 422, `The ${field} security-key response was invalid.`)
+  }
+  const candidate = value as { id?: unknown; response?: unknown; type?: unknown }
+  if (typeof candidate.id !== 'string' || candidate.type !== 'public-key' || !candidate.response || typeof candidate.response !== 'object') {
+    throw new ApiError('invalid_security_key_response', 422, `The ${field} security-key response was invalid.`)
+  }
+  return value as RegistrationResponseJSON | AuthenticationResponseJSON
+}
+
+async function listSecurityKeyCredentials(
+  config: { serviceRoleKey: string; url: string },
+  employeeId: string,
+): Promise<SecurityKeyCredentialRecord[]> {
+  const records = await callRpc<SecurityKeyCredentialRecord[] | null>(
+    config,
+    'service_list_webauthn_credentials',
+    { target_employee_id: employeeId },
+    config.serviceRoleKey,
+  )
+  return Array.isArray(records) ? records : []
+}
+
+async function handleAccountSecurityKeysApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  const session = await requireAuthenticatedSession(request, environment)
+  const url = new URL(request.url)
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  const featureEnabled = securityKeyFeatureEnabled(environment.SYGSHIFT_SECURITY_KEYS_ENABLED)
+  const pilotEligible = securityKeyPilotEligible(environment, session.context.username)
+  const credentials = pilotEligible
+    ? await listSecurityKeyCredentials(serviceConfig, session.context.employee_id)
+    : []
+  const registrationOptionsPath = '/api/v1/account/security-keys/registration/options'
+  const registrationVerifyPath = '/api/v1/account/security-keys/registration/verify'
+  const authenticationOptionsPath = '/api/v1/account/security-keys/authentication/options'
+  const authenticationVerifyPath = '/api/v1/account/security-keys/authentication/verify'
+
+  if (url.pathname === '/api/v1/account/security-keys') {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    return json({ featureEnabled, keys: credentials.map(securityKeySummary), pilotEligible, requestId })
+  }
+
+  if (url.pathname === registrationOptionsPath) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireSecurityKeyPilot(environment, session.context.username)
+    requireRawAal2(session.token)
+    await requireMaintenanceWriteAccess(serviceConfig, 'user_accounts')
+    if (credentials.length >= 5) throw new ApiError('security_key_limit_reached', 409, 'A maximum of five active security keys is allowed.')
+    const body = await readJsonBody(request)
+    const label = typeof body.label === 'string' ? body.label.trim() : ''
+    if (!label || label.length > 60) throw new ApiError('security_key_label_required', 422, 'Enter a key name no longer than 60 characters.')
+    const rpID = webAuthnRpId(request)
+    const userID = new TextEncoder().encode(session.context.employee_id)
+    const options = await generateRegistrationOptions({
+      attestationType: 'none',
+      authenticatorSelection: {
+        authenticatorAttachment: 'cross-platform',
+        residentKey: 'discouraged',
+        userVerification: 'required',
+      },
+      excludeCredentials: credentials.map((credential) => ({
+        id: credential.credentialId,
+        transports: credential.transports,
+      })),
+      preferredAuthenticatorType: 'securityKey',
+      rpID,
+      rpName: 'SygShift',
+      supportedAlgorithmIDs: [-7, -257],
+      timeout: 90_000,
+      userDisplayName: session.context.display_name,
+      userID,
+      userName: session.context.username,
+    })
+    const challengeRecord = await callRpc<{ id: string; expiresAt: string }>(
+      serviceConfig,
+      'service_store_webauthn_challenge',
+      {
+        target_challenge: options.challenge,
+        target_employee_id: session.context.employee_id,
+        target_purpose: 'registration',
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ challengeId: challengeRecord.id, expiresAt: challengeRecord.expiresAt, label, options, requestId })
+  }
+
+  if (url.pathname === registrationVerifyPath) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireSecurityKeyPilot(environment, session.context.username)
+    requireRawAal2(session.token)
+    await requireMaintenanceWriteAccess(serviceConfig, 'user_accounts')
+    const body = await readWebAuthnBody(request)
+    const challengeId = typeof body.challengeId === 'string' ? body.challengeId : ''
+    const label = typeof body.label === 'string' ? body.label.trim() : ''
+    if (!/^[0-9a-f-]{36}$/i.test(challengeId) || !label || label.length > 60) {
+      throw new ApiError('invalid_security_key_request', 422, 'The security-key registration request was invalid.')
+    }
+    const response = asSecurityKeyResponse(body.response, 'registration') as RegistrationResponseJSON
+    const challenge = await callRpc<SecurityKeyChallengeRecord>(
+      serviceConfig,
+      'service_consume_webauthn_challenge',
+      {
+        target_challenge_id: challengeId,
+        target_employee_id: session.context.employee_id,
+        target_purpose: 'registration',
+      },
+      session.config.serviceRoleKey,
+    )
+    let verification
+    try {
+      verification = await verifyRegistrationResponse({
+        expectedChallenge: challenge.challenge,
+        expectedOrigin: expectedWebAuthnOrigins(request),
+        expectedRPID: webAuthnRpId(request),
+        requireUserPresence: true,
+        requireUserVerification: true,
+        response,
+        supportedAlgorithmIDs: [-7, -257],
+      })
+    } catch {
+      throw new ApiError('security_key_verification_failed', 422, 'The security key could not be verified. Start again and touch the key when prompted.')
+    }
+    if (!verification.verified || !verification.registrationInfo) {
+      throw new ApiError('security_key_verification_failed', 422, 'The security key could not be verified.')
+    }
+    const info = verification.registrationInfo
+    await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_store_webauthn_credential',
+      {
+        target_backed_up: info.credentialBackedUp,
+        target_counter: info.credential.counter,
+        target_credential_id: info.credential.id,
+        target_device_type: info.credentialDeviceType,
+        target_employee_id: session.context.employee_id,
+        target_label: label,
+        target_public_key: encodeBase64Url(info.credential.publicKey),
+        target_request_id: requestId,
+        target_transports: response.response.transports ?? info.credential.transports ?? [],
+        target_webauthn_user_id: encodeBase64Url(new TextEncoder().encode(session.context.employee_id)),
+      },
+      session.config.serviceRoleKey,
+    )
+    const storedCredentials = await listSecurityKeyCredentials(serviceConfig, session.context.employee_id)
+    const stored = storedCredentials.find((credential) => credential.credentialId === info.credential.id)
+    if (!stored) throw new ApiError('security_key_store_failed', 500, 'The security key was verified but could not be loaded. Try again.')
+    await sendSecurityKeyChangeNotice(environment, session.context.employee_id, 'added', stored.label, stored.id)
+    return json({ key: securityKeySummary(stored), requestId, verified: true })
+  }
+
+  if (url.pathname === authenticationOptionsPath) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireSecurityKeyPilot(environment, session.context.username)
+    if (credentials.length === 0) throw new ApiError('security_key_not_registered', 404, 'No security key is registered for this account.')
+    const options = await generateAuthenticationOptions({
+      allowCredentials: credentials.map((credential) => ({
+        id: credential.credentialId,
+        transports: credential.transports,
+      })),
+      rpID: webAuthnRpId(request),
+      timeout: 90_000,
+      userVerification: 'required',
+    })
+    const challengeRecord = await callRpc<{ id: string; expiresAt: string }>(
+      serviceConfig,
+      'service_store_webauthn_challenge',
+      {
+        target_challenge: options.challenge,
+        target_employee_id: session.context.employee_id,
+        target_purpose: 'authentication',
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ challengeId: challengeRecord.id, expiresAt: challengeRecord.expiresAt, options, requestId })
+  }
+
+  if (url.pathname === authenticationVerifyPath) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireSecurityKeyPilot(environment, session.context.username)
+    const body = await readWebAuthnBody(request)
+    const challengeId = typeof body.challengeId === 'string' ? body.challengeId : ''
+    if (!/^[0-9a-f-]{36}$/i.test(challengeId)) throw new ApiError('invalid_security_key_request', 422, 'The security-key request was invalid.')
+    const response = asSecurityKeyResponse(body.response, 'authentication') as AuthenticationResponseJSON
+    const credentialRecord = credentials.find((credential) => credential.credentialId === response.id)
+    if (!credentialRecord) throw new ApiError('security_key_not_registered', 404, 'That security key is not registered for this account.')
+    const challenge = await callRpc<SecurityKeyChallengeRecord>(
+      serviceConfig,
+      'service_consume_webauthn_challenge',
+      {
+        target_challenge_id: challengeId,
+        target_employee_id: session.context.employee_id,
+        target_purpose: 'authentication',
+      },
+      session.config.serviceRoleKey,
+    )
+    const storedCredential: WebAuthnCredential = {
+      counter: Number(credentialRecord.counter),
+      id: credentialRecord.credentialId,
+      publicKey: decodeBase64Url(credentialRecord.publicKey),
+      transports: credentialRecord.transports,
+    }
+    let verification
+    try {
+      verification = await verifyAuthenticationResponse({
+        credential: storedCredential,
+        expectedChallenge: challenge.challenge,
+        expectedOrigin: expectedWebAuthnOrigins(request),
+        expectedRPID: webAuthnRpId(request),
+        requireUserVerification: true,
+        response,
+      })
+    } catch {
+      throw new ApiError('security_key_verification_failed', 422, 'The security key could not be verified. Start again and touch the key when prompted.')
+    }
+    if (!verification.verified || !verification.authenticationInfo.userVerified) {
+      throw new ApiError('security_key_verification_failed', 422, 'The security key could not be verified.')
+    }
+    await callRpc(
+      serviceConfig,
+      'service_update_webauthn_counter',
+      {
+        target_counter: verification.authenticationInfo.newCounter,
+        target_credential_id: credentialRecord.credentialId,
+        target_employee_id: session.context.employee_id,
+      },
+      session.config.serviceRoleKey,
+    )
+    const claims = accessTokenClaims(session.token)
+    const authSessionId = claims?.session_id
+    const jwtExpiresAt = typeof claims?.exp === 'number' ? claims.exp * 1000 : 0
+    if (!authSessionId || !/^[0-9a-f-]{36}$/i.test(authSessionId) || jwtExpiresAt <= Date.now()) {
+      throw new ApiError('security_key_session_unavailable', 401, 'Sign in again before using the security key.')
+    }
+    const rawToken = generateOpaqueToken()
+    const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
+    await callRpc(
+      serviceConfig,
+      'service_issue_security_key_session',
+      {
+        target_auth_session_id: authSessionId,
+        target_employee_id: session.context.employee_id,
+        target_expires_at: expiresAt,
+        target_request_id: requestId,
+        target_token_hash: await sha256Hex(rawToken),
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ expiresAt, key: securityKeySummary(credentialRecord), requestId, securityKeyToken: rawToken, verified: true })
+  }
+
+  const keyId = url.pathname.match(/^\/api\/v1\/account\/security-keys\/([0-9a-f-]{36})$/i)?.[1]
+  if (keyId) {
+    requireSecurityKeyPilot(environment, session.context.username)
+    requireRawAal2(session.token)
+    await requireMaintenanceWriteAccess(serviceConfig, 'user_accounts')
+    if (request.method === 'PATCH') {
+      const body = await readJsonBody(request)
+      const label = typeof body.label === 'string' ? body.label.trim() : ''
+      if (!label || label.length > 60) throw new ApiError('security_key_label_required', 422, 'Enter a key name no longer than 60 characters.')
+      await callRpc(
+        serviceConfig,
+        'service_rename_webauthn_credential',
+        {
+          target_credential_record_id: keyId,
+          target_employee_id: session.context.employee_id,
+          target_label: label,
+          target_request_id: requestId,
+        },
+        session.config.serviceRoleKey,
+      )
+      const renamed = (await listSecurityKeyCredentials(serviceConfig, session.context.employee_id))
+        .find((credential) => credential.id === keyId)
+      if (!renamed) throw new ApiError('security_key_not_found', 404, 'The security key was not found.')
+      return json({ key: securityKeySummary(renamed), requestId })
+    }
+    if (request.method !== 'DELETE') return errorJson('method_not_allowed', requestId, 405)
+    const key = credentials.find((credential) => credential.id === keyId)
+    if (!key) throw new ApiError('security_key_not_found', 404, 'The security key was not found.')
+    const result = await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_revoke_webauthn_credential',
+      {
+        target_credential_record_id: keyId,
+        target_employee_id: session.context.employee_id,
+        target_request_id: requestId,
+      },
+      session.config.serviceRoleKey,
+    )
+    await sendSecurityKeyChangeNotice(environment, session.context.employee_id, 'removed', key.label, key.id)
+    return json({ ...result, requestId })
+  }
+
+  return errorJson('not_found', requestId, 404)
+}
+
 function verifiedImageType(bytes: Uint8Array, contentType: string): 'image/jpeg' | 'image/png' | null {
   if (
     contentType === 'image/png'
@@ -1227,12 +1731,14 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
     throw error
   }
 
-  await requireMaintenanceWriteAccess(
-    { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
-    'user_accounts',
-  )
+  if (request.method !== 'GET') {
+    await requireMaintenanceWriteAccess(
+      { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
+      'user_accounts',
+    )
+  }
 
-  const body = await readJsonBody(request)
+  const body = request.method === 'GET' ? {} : await readJsonBody(request)
   let usersByEmail: Map<string, AuthUser> | null = null
   const getUsersByEmail = async () => {
     if (!usersByEmail) {
@@ -1241,6 +1747,35 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       )
     }
     return usersByEmail
+  }
+
+  const adminSecurityKeysMatch = /^\/api\/v1\/admin\/users\/([0-9a-f-]{36})\/security-keys(?:\/([0-9a-f-]{36}))?$/i.exec(url.pathname)
+  if (adminSecurityKeysMatch) {
+    const employeeId = adminSecurityKeysMatch[1]
+    const keyId = adminSecurityKeysMatch[2]
+    const serviceConfig = { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url }
+    if (!keyId) {
+      if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+      const keys = await listSecurityKeyCredentials(serviceConfig, employeeId)
+      return json({ keys: keys.map(securityKeySummary), requestId })
+    }
+    if (request.method !== 'DELETE') return errorJson('method_not_allowed', requestId, 405)
+    const key = (await listSecurityKeyCredentials(serviceConfig, employeeId))
+      .find((credential) => credential.id === keyId)
+    if (!key) throw new ApiError('security_key_not_found', 404, 'The security key was not found.')
+    const result = await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_admin_revoke_webauthn_credential',
+      {
+        target_actor_employee_id: admin.context.employee_id,
+        target_credential_record_id: keyId,
+        target_employee_id: employeeId,
+        target_request_id: requestId,
+      },
+      admin.config.serviceRoleKey,
+    )
+    await sendSecurityKeyChangeNotice(environment, employeeId, 'removed', key.label, key.id)
+    return json({ ...result, requestId })
   }
 
   if (url.pathname === '/api/v1/admin/users/provision-missing') {
@@ -1472,7 +2007,11 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       admin.config.serviceRoleKey,
     )
 
-    const resetRecord = await callRpc<{ trustedDevicesRevoked?: number }>(
+    const resetRecord = await callRpc<{
+      securityKeysRevoked?: number
+      securityKeySessionsRevoked?: number
+      trustedDevicesRevoked?: number
+    }>(
       { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url },
       'service_record_employee_mfa_reset',
       {
@@ -1484,12 +2023,23 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       },
       admin.config.serviceRoleKey,
     )
+    if ((resetRecord.securityKeysRevoked ?? 0) > 0) {
+      await sendSecurityKeyChangeNotice(
+        environment,
+        target.employeeId,
+        'removed',
+        `${resetRecord.securityKeysRevoked} security key${resetRecord.securityKeysRevoked === 1 ? '' : 's'} during an MFA reset`,
+        target.employeeId,
+      )
+    }
 
     return json({
       displayName: target.displayName,
       factorsRemoved: factors.length,
       recoveryCodesRevoked,
       requestId,
+      securityKeysRevoked: resetRecord.securityKeysRevoked ?? 0,
+      securityKeySessionsRevoked: resetRecord.securityKeySessionsRevoked ?? 0,
       trustedDevicesRevoked: resetRecord.trustedDevicesRevoked ?? 0,
       username: target.username,
     })
@@ -1673,9 +2223,7 @@ async function handleAttendanceReportApi(request: Request, environment: Environm
   if (!note) return errorJson('attendance_note_required', requestId, 400, 'A short note is required.')
   if (note.length > 2000) return errorJson('attendance_note_too_long', requestId, 400, 'The note is too long.')
 
-  const additionalHeaders = request.headers.get('x-sygshift-trusted-device')
-    ? { 'x-sygshift-trusted-device': request.headers.get('x-sygshift-trusted-device')! }
-    : undefined
+  const additionalHeaders = forwardedAssuranceHeaders(request)
 
   const report = await callRpc<AttendanceReportPayload>(
     { publishableKey: session.config.publishableKey, url: session.config.url },
@@ -1996,6 +2544,19 @@ export default {
           response = error instanceof ApiError
             ? errorJson(error.code, requestId, error.status, error.message)
             : errorJson('account_request_failed', requestId, 500, 'Your account request could not be completed.')
+        }
+      }
+    } else if (url.pathname.startsWith('/api/v1/account/security-keys')) {
+      try {
+        response = await handleAccountSecurityKeysApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('security_key_request_failed', requestId, 500, 'The security-key request could not be completed.')
         }
       }
     } else if (url.pathname.startsWith('/api/v1/account/mfa-recovery')) {

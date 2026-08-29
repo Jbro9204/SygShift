@@ -233,11 +233,11 @@ describe('button layout guardrails', () => {
     expect(scheduleSelfViewPermissionMigration).toContain('viewer_assignment.employee_id = viewer_employee_id')
   })
 
-  it('keeps trusted-device MFA headers attached without dropping Supabase auth headers', () => {
+  it('keeps protected-session MFA headers attached without dropping Supabase auth headers', () => {
     expect(supabaseClient).toContain('export function attachTrustedDeviceHeader')
     expect(supabaseClient).toContain('new Headers(input instanceof Request ? input.headers : undefined)')
     expect(supabaseClient).toContain('new Headers(init?.headers).forEach((value, key) => {')
-    expect(supabaseClient).toContain("headers.set('x-sygshift-trusted-device', trustedToken)")
+    expect(supabaseClient).toContain('appendProtectedSessionHeaders(headers)')
   })
 
   it('keeps recently deleted user retention compact and clearly labeled', () => {

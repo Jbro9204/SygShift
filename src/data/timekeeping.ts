@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
-import { getTrustedDeviceToken } from '../lib/trustedDeviceToken'
+import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 
 const timeEventKindSchema = z.enum(['clock_in', 'break_start', 'break_end', 'clock_out'])
 const timeEventSourceSchema = z.enum(['web', 'mobile_web', 'supervisor', 'import', 'system'])
@@ -796,14 +796,10 @@ async function authenticatedApiHeaders(): Promise<Headers> {
   const { data, error } = await getSupabaseClient().auth.getSession()
   if (error || !data.session?.access_token) throw new Error('Your secure session is not available.')
 
-  const headers = new Headers()
-  headers.set('authorization', `Bearer ${data.session.access_token}`)
-  headers.set('content-type', 'application/json')
-
-  const trustedDeviceToken = getTrustedDeviceToken()
-  if (trustedDeviceToken) headers.set('x-sygshift-trusted-device', trustedDeviceToken)
-
-  return headers
+  return appendProtectedSessionHeaders({
+    authorization: `Bearer ${data.session.access_token}`,
+    'content-type': 'application/json',
+  })
 }
 
 async function parseAttendanceReportResponse(response: Response): Promise<AttendanceReportResult> {
