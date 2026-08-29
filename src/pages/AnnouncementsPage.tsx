@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BellRing, CalendarClock, DatabaseZap, Eye, Megaphone, Plus, Search, Send, ShieldAlert, XCircle } from 'lucide-react'
+import { BellRing, CalendarClock, CircleStop, DatabaseZap, Eye, Megaphone, Plus, Search, Send, ShieldAlert, Trash2, XCircle } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import {
   ANNOUNCEMENT_BANNER_ROLE_OPTIONS,
   cancelAnnouncementWorkItem,
+  changeAnnouncementBannerLifecycle,
   emptyFields,
   getAnnouncementBannerManager,
   getAnnouncementHistory,
@@ -36,6 +37,13 @@ type WorkspaceTab = 'overview' | 'banners' | 'history'
 type WorkStatus = 'all' | 'draft' | 'scheduled' | 'failed'
 
 const titleCase = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+const bannerStatusClass = (status: AnnouncementBanner['lifecycleStatus']) => status === 'active'
+  ? 'status-badge status-badge--active'
+  : status === 'scheduled'
+    ? 'status-badge status-badge--leave'
+    : status === 'expired' || status === 'canceled'
+      ? 'status-badge status-badge--separated'
+      : 'status-badge'
 const toLocalInput = (value?: string | null) => {
   if (!value) return ''
   const date = new Date(value)
@@ -113,11 +121,69 @@ function BannerModal({ banner, onClose }: { banner?: AnnouncementBanner, onClose
   const [roles, setRoles] = useState<AppRole[]>(banner?.audienceRoles ?? [])
   const [expiresAt, setExpiresAt] = useState(toLocalInput(banner?.expiresAt))
   const mutation = useMutation({ mutationFn: (input: AnnouncementBannerMutationInput) => saveAnnouncementBanner(input), onSuccess: async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ['announcement-banner-manager'] }), queryClient.invalidateQueries({ queryKey: ['communications-workspace'] }), queryClient.invalidateQueries({ queryKey: ['active-announcement-banners'] })]); onClose() } })
-  return <ModalDialog busy={mutation.isPending} className="communications-modal" onClose={onClose} title={banner ? 'Edit banner alert' : 'New banner alert'}><form className="communications-form-grid" onSubmit={(event) => { event.preventDefault(); mutation.mutate({ active: true, audience, audienceRoles: roles, bannerId: banner?.id, expiresAt: toIso(expiresAt), message, title, tone }) }}><label><span>Title</span><input onChange={(event) => setTitle(event.target.value)} required value={title} /></label><label><span>Tone</span><select onChange={(event) => setTone(event.target.value as AnnouncementBanner['tone'])} value={tone}><option value="info">Information</option><option value="success">Success</option><option value="warning">Warning</option><option value="urgent">Urgent</option></select></label><label className="span-2"><span>Message</span><textarea onChange={(event) => setMessage(event.target.value)} required value={message} /></label><label><span>Audience</span><select onChange={(event) => setAudience(event.target.value as AnnouncementBannerAudience)} value={audience}><option value="all">Everyone</option><option value="supervisors">Supervisors and admins</option><option value="roles">Selected roles</option></select></label><label><span>Expires (optional)</span><input onChange={(event) => setExpiresAt(event.target.value)} type="datetime-local" value={expiresAt} /></label>{audience === 'roles' ? <fieldset className="communications-choice-panel span-2"><legend>Roles</legend><div className="communications-inline-choices">{ANNOUNCEMENT_BANNER_ROLE_OPTIONS.map(({ role, label }) => <label className="communications-check" key={role}><input checked={roles.includes(role)} onChange={() => setRoles((current) => current.includes(role) ? current.filter((entry) => entry !== role) : [...current, role])} type="checkbox" />{label}</label>)}</div></fieldset> : null}{mutation.isError ? <div className="inline-alert span-2" role="alert">{mutation.error.message}</div> : null}<div className="communications-modal__actions span-2"><button className="secondary-button" onClick={onClose} type="button">Cancel</button><button className="primary-action" type="submit">Save banner</button></div></form></ModalDialog>
+  return <ModalDialog busy={mutation.isPending} busyLabel="Saving banner alert…" className="communications-modal communications-modal--banner" description="Set the message, audience, urgency, and expiration in one controlled alert." onClose={onClose} title={banner ? 'Edit banner alert' : 'New banner alert'}>
+    <form className="communications-banner-editor" onSubmit={(event) => {
+      event.preventDefault()
+      mutation.mutate({ active: true, audience, audienceRoles: roles, bannerId: banner?.id, expiresAt: toIso(expiresAt), message, title, tone })
+    }}>
+      <section className="communications-banner-editor__section">
+        <div className="communications-banner-editor__heading"><p className="eyebrow">Alert content</p><h3>What employees will see</h3><p>Use a short title and a clear, action-focused message.</p></div>
+        <div className="communications-form-grid communications-form-grid--banner">
+          <label className="span-2"><span>Title</span><input maxLength={120} onChange={(event) => setTitle(event.target.value)} placeholder="Example: Schedule published" required value={title} /></label>
+          <label className="span-2"><span>Message</span><textarea maxLength={420} onChange={(event) => setMessage(event.target.value)} placeholder="Write the complete notice employees need to read." required rows={5} value={message} /></label>
+          <label><span>Tone</span><select onChange={(event) => setTone(event.target.value as AnnouncementBanner['tone'])} value={tone}><option value="info">Information</option><option value="success">Success</option><option value="warning">Warning</option><option value="urgent">Urgent</option></select><small>Controls the alert color and emphasis.</small></label>
+          <label><span>Expires (optional)</span><input onChange={(event) => setExpiresAt(event.target.value)} type="datetime-local" value={expiresAt} /><small>The alert is removed automatically at this time.</small></label>
+        </div>
+      </section>
+      <section className="communications-banner-editor__section">
+        <div className="communications-banner-editor__heading"><p className="eyebrow">Visibility</p><h3>Choose the audience</h3><p>Only the selected employees will receive this alert.</p></div>
+        <div className="communications-form-grid communications-form-grid--banner">
+          <label className="span-2"><span>Audience</span><select onChange={(event) => setAudience(event.target.value as AnnouncementBannerAudience)} value={audience}><option value="all">Everyone</option><option value="supervisors">Supervisors and admins</option><option value="roles">Selected roles</option></select></label>
+          {audience === 'roles' ? <fieldset className="communications-choice-panel span-2"><legend>Selected roles</legend><div className="communications-inline-choices">{ANNOUNCEMENT_BANNER_ROLE_OPTIONS.map(({ role, label }) => <label className="communications-check" key={role}><input checked={roles.includes(role)} onChange={() => setRoles((current) => current.includes(role) ? current.filter((entry) => entry !== role) : [...current, role])} type="checkbox" />{label}</label>)}</div></fieldset> : null}
+        </div>
+      </section>
+      {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+      <div className="communications-modal__actions communications-banner-editor__actions"><button className="secondary-button" onClick={onClose} type="button">Cancel</button><button className="primary-action" type="submit">Save banner</button></div>
+    </form>
+  </ModalDialog>
+}
+
+function BannerLifecycleModal({ banner, action, onClose }: { banner: AnnouncementBanner, action: 'cancel' | 'delete', onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const mutation = useMutation({
+    mutationFn: () => changeAnnouncementBannerLifecycle(banner.id, action),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['announcement-banner-manager'] }),
+        queryClient.invalidateQueries({ queryKey: ['communications-workspace'] }),
+        queryClient.invalidateQueries({ queryKey: ['active-announcement-banners'] }),
+        queryClient.invalidateQueries({ queryKey: ['notification-center'] }),
+      ])
+      onClose()
+    },
+  })
+  const isDelete = action === 'delete'
+  return <ModalDialog busy={mutation.isPending} busyLabel={isDelete ? 'Removing alert…' : 'Canceling alert…'} className="communications-modal communications-modal--confirm" description={isDelete ? 'The alert will disappear from the manager while its audit history remains protected.' : 'Employees will stop seeing this alert immediately.'} onClose={onClose} title={isDelete ? 'Delete banner alert?' : 'Cancel banner alert?'}>
+    <div className="communications-confirm-card"><span className={isDelete ? 'communications-confirm-card__icon communications-confirm-card__icon--danger' : 'communications-confirm-card__icon'}>{isDelete ? <Trash2 size={22} /> : <CircleStop size={22} />}</span><div><strong>{banner.title}</strong><p>{banner.message}</p></div></div>
+    {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+    <div className="communications-modal__actions"><button className="secondary-button" onClick={onClose} type="button">Keep alert</button><button className={isDelete ? 'danger-button' : 'primary-action'} onClick={() => mutation.mutate()} type="button">{isDelete ? 'Delete alert' : 'Cancel alert'}</button></div>
+  </ModalDialog>
 }
 
 function HistoryDetails({ item, onClose }: { item: AnnouncementHistoryItem, onClose: () => void }) {
   return <ModalDialog className="communications-modal communications-modal--details" onClose={onClose} title="Announcement details"><div className="communications-detail-grid"><article><span>Title</span><strong>{item.title}</strong></article><article><span>Published</span><strong>{formatOperationalDateTime(item.publishedAt, { includeTimeZoneName: true })}</strong></article><article><span>Recipients</span><strong>{item.recipientCount}</strong></article><article><span>Acknowledged</span><strong>{item.acknowledgedCount}</strong></article></div><div className="communications-message-copy">{item.body}</div><div className="communications-modal__actions"><button className="secondary-button" onClick={onClose} type="button">Close</button></div></ModalDialog>
+}
+
+function BannerAlertRow({ banner, archived = false, onEdit, onLifecycle }: { banner: AnnouncementBanner, archived?: boolean, onEdit: (banner: AnnouncementBanner) => void, onLifecycle: (banner: AnnouncementBanner, action: 'cancel' | 'delete') => void }) {
+  return <article className="communications-list__row communications-list__row--banner">
+    <div className="communications-banner-row__message"><strong>{banner.title}</strong><span>{banner.message}</span></div>
+    <span className={bannerStatusClass(banner.lifecycleStatus)}>{titleCase(banner.lifecycleStatus)}</span>
+    <div className="communications-banner-row__timing"><span>{banner.lifecycleStatus === 'scheduled' ? 'Starts' : 'Expires'}</span><strong>{banner.lifecycleStatus === 'scheduled' ? formatOperationalDateTime(banner.startsAt) : banner.expiresAt ? formatOperationalDateTime(banner.expiresAt) : 'No expiration'}</strong></div>
+    <div className="communications-banner-row__actions">
+      {!archived ? <><button className="secondary-button" onClick={() => onEdit(banner)} type="button">Edit</button><button className="secondary-button communications-cancel-button" onClick={() => onLifecycle(banner, 'cancel')} type="button"><CircleStop size={17} />Cancel</button></> : null}
+      <button aria-label={`Delete ${banner.title}`} className="icon-button communications-delete-button" onClick={() => onLifecycle(banner, 'delete')} title="Delete alert" type="button"><Trash2 size={18} /></button>
+    </div>
+  </article>
 }
 
 export function AnnouncementsPage() {
@@ -125,6 +191,8 @@ export function AnnouncementsPage() {
   const [tab, setTab] = useState<WorkspaceTab>('overview')
   const [composerItem, setComposerItem] = useState<AnnouncementWorkItem | 'new' | null>(null)
   const [bannerItem, setBannerItem] = useState<AnnouncementBanner | 'new' | null>(null)
+  const [bannerLifecycle, setBannerLifecycle] = useState<{ banner: AnnouncementBanner, action: 'cancel' | 'delete' } | null>(null)
+  const [showArchivedBanners, setShowArchivedBanners] = useState(false)
   const [historyItem, setHistoryItem] = useState<AnnouncementHistoryItem | null>(null)
   const [status, setStatus] = useState<WorkStatus>('all'); const [workSearch, setWorkSearch] = useState(''); const [workPage, setWorkPage] = useState(1); const [workPageSize, setWorkPageSize] = useState<5 | 10 | 20>(5)
   const [historySearch, setHistorySearch] = useState(''); const [historyPage, setHistoryPage] = useState(1); const [historyPageSize, setHistoryPageSize] = useState<5 | 10 | 20>(10)
@@ -146,10 +214,19 @@ export function AnnouncementsPage() {
       <section className="communications-summary"><article><span>Active messages</span><strong>{workspace.overview.active.length}</strong><small>Currently visible</small></article><article><span>Drafts & scheduled</span><strong>{workspace.summary.draftsScheduled}</strong><small>Work in progress</small></article><article className={workspace.summary.awaitingAcknowledgment ? 'communications-summary--attention' : ''}><span>Awaiting acknowledgment</span><strong>{workspace.summary.awaitingAcknowledgment}</strong><small>Employee receipts pending</small></article></section>
       <nav className="communications-tabs" aria-label="Announcement views"><button className={tab === 'overview' ? 'is-active' : ''} onClick={() => setTab('overview')} type="button">Overview</button><button className={tab === 'banners' ? 'is-active' : ''} onClick={() => setTab('banners')} type="button">Banner Alerts</button><button className={tab === 'history' ? 'is-active' : ''} onClick={() => setTab('history')} type="button">History & Acknowledgments</button></nav>
       {tab === 'overview' ? <div className="communications-overview-grid"><section className="operations-panel communications-panel"><div className="section-heading"><div><p className="eyebrow">Working Items</p><h2>Drafts and scheduled messages</h2><p>Five items at a time by default. Increase only when needed.</p></div></div><div className="communications-filters communications-filters--compact"><label className="communications-search"><span>Search</span><div><Search size={18} /><input onChange={(event) => updateFilter(() => setWorkSearch(event.target.value), 'work')} placeholder="Template or status" value={workSearch} /></div></label><label><span>Status</span><select onChange={(event) => updateFilter(() => setStatus(event.target.value as WorkStatus), 'work')} value={status}><option value="all">All</option><option value="draft">Draft</option><option value="scheduled">Scheduled</option><option value="failed">Failed</option></select></label></div>{workQuery.isError ? <div className="inline-alert">{workQuery.error.message}</div> : workQuery.data?.items.length ? <div className="communications-list">{workQuery.data.items.map((item) => <article className="communications-list__row communications-list__row--work" key={item.id}><div><strong>{item.templateName}</strong><span>Updated {formatOperationalDateTime(item.updatedAt)}</span></div><span className={statusClass(item.status)}>{titleCase(item.status)}</span><div><span>Audience</span><strong>{titleCase(item.audienceMode)}</strong></div><button className="secondary-button" onClick={() => setComposerItem(item)} type="button">Open</button>{item.status !== 'canceled' ? <button aria-label={`Cancel ${item.templateName}`} className="icon-button" disabled={cancelMutation.isPending} onClick={() => cancelMutation.mutate(item.id)} type="button"><XCircle size={18} /></button> : null}</article>)}</div> : <p className="empty-note">No work items match these filters.</p>}<Pagination page={workQuery.data?.page.number ?? workPage} pageSize={workPageSize} total={workQuery.data?.page.total ?? 0} totalPages={workQuery.data?.page.totalPages ?? 1} onPage={setWorkPage} onPageSize={setWorkPageSize} /></section><aside className="communications-overview-side"><MiniList title="Active now" items={workspace.overview.active.slice(0, 3).map((entry) => ({ id: entry.id, primary: entry.title, secondary: entry.expiresAt ? `Until ${formatOperationalDateTime(entry.expiresAt)}` : 'No expiration' }))} /><MiniList title="Recently published" items={workspace.overview.recent.slice(0, 3).map((entry) => ({ id: entry.id, primary: entry.title, secondary: formatOperationalDateTime(entry.publishedAt) }))} /></aside></div> : null}
-      {tab === 'banners' ? <section className="operations-panel communications-panel"><div className="section-heading"><div><p className="eyebrow">Workspace Alerts</p><h2>Banner alerts</h2><p>Short, time-limited notices shown inside SygShift.</p></div>{workspace.permissions.canManageBanners ? <button className="primary-action" onClick={() => setBannerItem('new')} type="button"><Plus size={18} />New banner</button> : null}</div>{bannersQuery.isError ? <div className="inline-alert">{bannersQuery.error.message}</div> : <div className="communications-list">{(bannersQuery.data?.banners ?? []).slice(0, 10).map((banner) => <article className="communications-list__row" key={banner.id}><div><strong>{banner.title}</strong><span>{banner.message}</span></div><span className={banner.active ? 'status-badge status-badge--active' : 'status-badge'}>{banner.active ? 'Active' : 'Inactive'}</span><div><span>Expires</span><strong>{banner.expiresAt ? formatOperationalDateTime(banner.expiresAt) : 'No expiration'}</strong></div><button className="secondary-button" onClick={() => setBannerItem(banner)} type="button">Edit</button></article>)}</div>} {(bannersQuery.data?.banners.length ?? 0) > 10 ? <p className="compact-list-note">Showing the 10 most recent banners. Use History for older communication records.</p> : null}</section> : null}
+      {tab === 'banners' ? <div className="communications-banner-workspace">
+        <section className="operations-panel communications-panel">
+          <div className="section-heading"><div><p className="eyebrow">Workspace Alerts</p><h2>Current & scheduled alerts</h2><p>Only alerts that are visible now or scheduled for later appear here.</p></div>{workspace.permissions.canManageBanners ? <button className="primary-action" onClick={() => setBannerItem('new')} type="button"><Plus size={18} />New banner</button> : null}</div>
+          {bannersQuery.isError ? <div className="inline-alert">{bannersQuery.error.message}</div> : bannersQuery.data?.banners.length ? <div className="communications-list">{bannersQuery.data.banners.map((banner) => <BannerAlertRow banner={banner} key={banner.id} onEdit={setBannerItem} onLifecycle={(target, action) => setBannerLifecycle({ banner: target, action })} />)}</div> : <div className="communications-empty-state"><BellRing size={24} /><strong>No current banner alerts</strong><span>Create one when employees need a short, visible notice.</span></div>}
+        </section>
+        <section className="operations-panel communications-panel communications-panel--archive">
+          <div className="section-heading"><div><p className="eyebrow">Alert Archive</p><h2>Past & canceled alerts</h2><p>Expired and canceled notices stay available for review without appearing to employees.</p></div></div>
+          {bannersQuery.data?.archivedBanners.length ? <><div className="communications-list">{bannersQuery.data.archivedBanners.slice(0, showArchivedBanners ? 10 : 5).map((banner) => <BannerAlertRow archived banner={banner} key={banner.id} onEdit={setBannerItem} onLifecycle={(target, action) => setBannerLifecycle({ banner: target, action })} />)}</div>{bannersQuery.data.archivedBanners.length > 5 ? <div className="communications-compact-toggle"><span>Showing {showArchivedBanners ? Math.min(10, bannersQuery.data.archivedBanners.length) : 5} of {bannersQuery.data.archivedBanners.length}</span><button className="secondary-button" onClick={() => setShowArchivedBanners((current) => !current)} type="button">{showArchivedBanners ? 'Show fewer' : 'View more'}</button></div> : null}</> : <p className="empty-note">No past or canceled banner alerts.</p>}
+        </section>
+      </div> : null}
       {tab === 'history' ? <section className="operations-panel communications-panel"><div className="section-heading"><div><p className="eyebrow">Audit History</p><h2>Published communications</h2><p>Recipient and acknowledgment totals stay grouped by announcement.</p></div></div><div className="communications-filters communications-filters--compact"><label className="communications-search"><span>Search history</span><div><Search size={18} /><input onChange={(event) => updateFilter(() => setHistorySearch(event.target.value), 'history')} placeholder="Title or message" value={historySearch} /></div></label></div>{historyQuery.isError ? <div className="inline-alert">{historyQuery.error.message}</div> : historyQuery.data?.items.length ? <div className="communications-list">{historyQuery.data.items.map((item) => <article className="communications-list__row" key={item.id}><div><strong>{item.title}</strong><span>{formatOperationalDateTime(item.publishedAt, { includeTimeZoneName: true })}</span></div><div><span>Recipients</span><strong>{item.recipientCount}</strong></div><div><span>Acknowledged</span><strong>{item.acknowledgedCount} / {item.recipientCount}</strong></div><button className="secondary-button" onClick={() => setHistoryItem(item)} type="button">View details</button></article>)}</div> : <p className="empty-note">No published announcements match this search.</p>}<Pagination page={historyQuery.data?.page.number ?? historyPage} pageSize={historyPageSize} total={historyQuery.data?.page.total ?? 0} totalPages={historyQuery.data?.page.totalPages ?? 1} onPage={setHistoryPage} onPageSize={setHistoryPageSize} /></section> : null}
     </> : null}
-    {composerItem && workspace ? <ComposerModal item={composerItem === 'new' ? undefined : composerItem} onClose={() => setComposerItem(null)} workspace={workspace} /> : null}{bannerItem ? <BannerModal banner={bannerItem === 'new' ? undefined : bannerItem} onClose={() => setBannerItem(null)} /> : null}{historyItem ? <HistoryDetails item={historyItem} onClose={() => setHistoryItem(null)} /> : null}
+    {composerItem && workspace ? <ComposerModal item={composerItem === 'new' ? undefined : composerItem} onClose={() => setComposerItem(null)} workspace={workspace} /> : null}{bannerItem ? <BannerModal banner={bannerItem === 'new' ? undefined : bannerItem} onClose={() => setBannerItem(null)} /> : null}{bannerLifecycle ? <BannerLifecycleModal action={bannerLifecycle.action} banner={bannerLifecycle.banner} onClose={() => setBannerLifecycle(null)} /> : null}{historyItem ? <HistoryDetails item={historyItem} onClose={() => setHistoryItem(null)} /> : null}
   </div>
 }
 

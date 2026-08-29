@@ -256,6 +256,232 @@
   width: min(1040px, calc(100vw - 32px));
 }
 
+.communications-modal--banner {
+  width: min(880px, calc(100vw - 32px));
+}
+
+.communications-modal--confirm {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.communications-banner-editor {
+  display: grid;
+  gap: 18px;
+  padding: 22px 24px 0;
+}
+
+.communications-banner-editor__section {
+  background: #fbf8f1;
+  border: 1px solid var(--line, #ded7ca);
+  border-radius: 13px;
+  display: grid;
+  gap: 17px;
+  padding: 18px;
+}
+
+.communications-banner-editor__heading {
+  display: grid;
+  gap: 4px;
+}
+
+.communications-banner-editor__heading .eyebrow,
+.communications-banner-editor__heading h3,
+.communications-banner-editor__heading p {
+  margin: 0;
+}
+
+.communications-banner-editor__heading h3 {
+  color: var(--ink);
+  font-size: 1.1rem;
+  letter-spacing: -.015em;
+}
+
+.communications-banner-editor__heading > p:last-child {
+  color: var(--muted, #6f685f);
+  font-size: .9rem;
+  line-height: 1.5;
+}
+
+.communications-form-grid--banner {
+  margin-top: 0;
+}
+
+.communications-form-grid--banner label {
+  align-content: start;
+}
+
+.communications-form-grid--banner label > span,
+.communications-form-grid--banner legend {
+  color: #423b31;
+}
+
+.communications-form-grid--banner input,
+.communications-form-grid--banner select,
+.communications-form-grid--banner textarea {
+  background: #fff;
+  border: 1px solid #cfc5b5;
+  border-radius: 10px;
+  color: var(--ink);
+  font: inherit;
+  font-size: .96rem;
+  min-height: 46px;
+  padding: 11px 13px;
+}
+
+.communications-form-grid--banner textarea {
+  line-height: 1.5;
+  min-height: 126px;
+}
+
+.communications-form-grid--banner input:focus,
+.communications-form-grid--banner select:focus,
+.communications-form-grid--banner textarea:focus {
+  border-color: #b27a19;
+  box-shadow: 0 0 0 3px rgb(194 137 35 / 14%);
+  outline: none;
+}
+
+.communications-form-grid--banner small {
+  color: var(--muted, #6f685f);
+  font-size: .79rem;
+  line-height: 1.4;
+}
+
+.communications-banner-editor__actions {
+  margin: 0 -24px;
+}
+
+.communications-confirm-card {
+  align-items: flex-start;
+  background: #fbf8f1;
+  border: 1px solid var(--line, #ded7ca);
+  border-radius: 13px;
+  display: flex;
+  gap: 14px;
+  margin: 22px 24px 0;
+  padding: 17px;
+}
+
+.communications-confirm-card__icon {
+  align-items: center;
+  background: #f5e8ca;
+  border-radius: 10px;
+  color: #93600d;
+  display: inline-flex;
+  flex: 0 0 42px;
+  height: 42px;
+  justify-content: center;
+}
+
+.communications-confirm-card__icon--danger {
+  background: #f8e1dd;
+  color: #a73f35;
+}
+
+.communications-confirm-card > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.communications-confirm-card strong {
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.communications-confirm-card p {
+  color: var(--muted, #6f685f);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.communications-banner-workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.communications-list__row--banner {
+  grid-template-columns: minmax(260px, 1.6fr) minmax(105px, .4fr) minmax(170px, .65fr) auto;
+}
+
+.communications-banner-row__message span {
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.communications-banner-row__timing > span {
+  font-size: .75rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.communications-banner-row__timing > strong {
+  font-size: .9rem;
+  white-space: normal;
+}
+
+.communications-banner-row__actions {
+  align-items: center;
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 8px !important;
+  justify-content: flex-end;
+}
+
+.communications-banner-row__actions .secondary-button {
+  min-height: 42px;
+  min-width: 0;
+  padding-inline: 13px;
+}
+
+.communications-cancel-button {
+  align-items: center;
+  display: inline-flex;
+  gap: 7px;
+}
+
+.communications-delete-button {
+  color: #a54036;
+  min-height: 42px;
+  min-width: 42px;
+}
+
+.communications-delete-button:hover:not(:disabled) {
+  background: #fff0ed;
+  border-color: #d58e84;
+}
+
+.communications-empty-state {
+  align-items: center;
+  color: var(--muted, #6f685f);
+  display: grid;
+  gap: 7px;
+  justify-items: center;
+  min-height: 180px;
+  padding: 30px 20px;
+  text-align: center;
+}
+
+.communications-empty-state strong {
+  color: var(--ink);
+  font-size: 1.05rem;
+}
+
+.communications-panel--archive {
+  border-top-color: #b7b3aa;
+}
+
+.communications-compact-toggle {
+  align-items: center;
+  color: var(--muted, #6f685f);
+  display: flex;
+  font-size: .86rem;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px 20px;
+}
+
 .communications-stepper {
   border-bottom: 1px solid var(--line, #e4dccf);
   display: grid;
@@ -440,6 +666,20 @@
     grid-template-columns: 1fr;
   }
 
+  .communications-list__row--banner {
+    grid-template-columns: 1fr auto;
+  }
+
+  .communications-banner-row__message,
+  .communications-banner-row__timing,
+  .communications-banner-row__actions {
+    grid-column: 1 / -1;
+  }
+
+  .communications-banner-row__actions {
+    justify-content: flex-start;
+  }
+
   .communications-list__row .secondary-button {
     width: 100%;
   }
@@ -466,6 +706,33 @@
 
   .communications-form-grid .span-2 {
     grid-column: auto;
+  }
+
+  .communications-banner-editor {
+    padding: 16px 16px 0;
+  }
+
+  .communications-banner-editor__section {
+    padding: 15px;
+  }
+
+  .communications-banner-editor__actions {
+    margin: 0 -16px;
+  }
+
+  .communications-confirm-card {
+    margin: 16px 16px 0;
+  }
+
+  .communications-banner-row__actions .secondary-button,
+  .communications-banner-row__actions .icon-button,
+  .communications-compact-toggle > button {
+    width: 100%;
+  }
+
+  .communications-compact-toggle {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .communications-stepper {

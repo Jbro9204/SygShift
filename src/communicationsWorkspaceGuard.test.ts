@@ -42,4 +42,21 @@ describe('Communication workspace guardrails', () => {
     expect(worker).toContain('service_publish_due_announcement_work_items')
     expect(worker).toContain('service_get_announcement_email_recipients')
   })
+
+  it('keeps banner-alert expiration authoritative and lifecycle changes auditable', () => {
+    const announcements = read('src/pages/AnnouncementsPage.tsx')
+    const data = read('src/data/announcements.ts')
+    const migration = read('supabase/migrations/20260829150000_banner_alert_lifecycle_controls.sql')
+
+    expect(migration).toContain("when banner.expires_at is not null and banner.expires_at <= clock_timestamp() then 'expired'")
+    expect(migration).toContain('candidate.expires_at is null or candidate.expires_at > clock_timestamp()')
+    expect(migration).toContain('public.change_announcement_banner_lifecycle')
+    expect(migration).toContain("clean_action not in ('cancel', 'delete')")
+    expect(migration).toContain('for each row execute function private.write_audit_event()')
+    expect(data).toContain("z.enum(['active', 'scheduled', 'expired', 'canceled', 'inactive', 'deleted'])")
+    expect(announcements).toContain('Past & canceled alerts')
+    expect(announcements).toContain("slice(0, showArchivedBanners ? 10 : 5)")
+    expect(announcements).toContain('Cancel banner alert?')
+    expect(announcements).toContain('Delete banner alert?')
+  })
 })

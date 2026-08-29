@@ -4,6 +4,7 @@ import type { AppRole } from './session'
 
 const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'])
 const announcementBannerAudienceSchema = z.enum(['all', 'supervisors', 'roles'])
+const announcementBannerLifecycleSchema = z.enum(['active', 'scheduled', 'expired', 'canceled', 'inactive', 'deleted'])
 
 const fieldSchema = z.object({
   key: z.string(),
@@ -51,8 +52,10 @@ const announcementBannerSchema = z.object({
   audience: announcementBannerAudienceSchema.optional().default('all'),
   audienceRoles: z.array(appRoleSchema).nullable().optional().transform((roles) => roles ?? []),
   active: z.boolean(),
+  lifecycleStatus: announcementBannerLifecycleSchema,
   startsAt: z.string(),
   expiresAt: z.string().nullable(),
+  canceledAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -72,6 +75,7 @@ const announcementBannerManagerSchema = z.object({
   activeBanner: announcementBannerSchema.nullable().optional().default(null),
   activeBanners: z.array(announcementBannerSchema).optional().default([]),
   banners: z.array(announcementBannerSchema),
+  archivedBanners: z.array(announcementBannerSchema).optional().default([]),
 })
 
 const previewSchema = z.object({
@@ -426,6 +430,18 @@ export async function saveAnnouncementBanner(input: AnnouncementBannerMutationIn
     target_tone: input.tone,
   })
   if (error) throw new Error(error.message || 'Announcement banner could not be saved.')
+  return announcementBannerManagerSchema.parse(data)
+}
+
+export async function changeAnnouncementBannerLifecycle(
+  bannerId: string,
+  action: 'cancel' | 'delete',
+): Promise<AnnouncementBannerManager> {
+  const { data, error } = await getSupabaseClient().rpc('change_announcement_banner_lifecycle', {
+    target_action: action,
+    target_banner_id: bannerId,
+  })
+  if (error) throw new Error(error.message || 'Announcement banner could not be updated.')
   return announcementBannerManagerSchema.parse(data)
 }
 
