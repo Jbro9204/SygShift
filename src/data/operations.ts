@@ -10,17 +10,27 @@ const notificationCenterSchema = z.object({
     delivered: z.number().int().nonnegative(),
     failed: z.number().int().nonnegative(),
   }),
-  recent: z.array(z.object({
+  page: z.object({
+    number: z.number().int().positive(),
+    size: z.number().int().min(5).max(20),
+    total: z.number().int().nonnegative(),
+    totalPages: z.number().int().positive(),
+  }),
+  batches: z.array(z.object({
     id: z.string().uuid(),
     messageType: z.string(),
     aggregateType: z.string(),
     aggregateId: z.string().uuid().nullable(),
+    subject: z.string(),
+    status: z.enum(['queued', 'delivered', 'failed']),
+    recipientCount: z.number().int().nonnegative(),
     attemptCount: z.number().int().nonnegative(),
     availableAt: z.string(),
     createdAt: z.string(),
     deliveredAt: z.string().nullable(),
     failedAt: z.string().nullable(),
     lastError: z.string().nullable(),
+    channels: z.array(z.string()),
   })),
 })
 
@@ -84,14 +94,46 @@ const notificationProcessSchema = z.object({
   requestedBy: z.string(),
 })
 
+const retryNotificationSchema = z.object({
+  retried: z.number().int().nonnegative(),
+})
+
 export type NotificationCenter = z.infer<typeof notificationCenterSchema>
 export type OperationsReport = z.infer<typeof operationsReportSchema>
 export type NotificationProcessResult = z.infer<typeof notificationProcessSchema>
 
-export async function getNotificationCenter(): Promise<NotificationCenter> {
-  const { data, error } = await getSupabaseClient().rpc('get_notification_center')
+export async function getNotificationCenter(input: {
+  status?: 'all' | 'queued' | 'delivered' | 'failed'
+  search?: string
+  dateFrom?: string | null
+  dateThrough?: string | null
+  page?: number
+  pageSize?: 5 | 10 | 20
+} = {}): Promise<NotificationCenter> {
+  const { data, error } = await getSupabaseClient().rpc('get_notification_center', {
+    target_date_from: input.dateFrom || null,
+    target_date_through: input.dateThrough || null,
+    target_page: input.page ?? 1,
+    target_page_size: input.pageSize ?? 10,
+    target_search: input.search?.trim() || null,
+    target_status: input.status ?? 'all',
+  })
   if (error) throw new Error(error.message || 'Notification center could not be loaded.')
   return notificationCenterSchema.parse(data)
+}
+
+export async function retryNotificationJob(outboxId: string): Promise<{ retried: number }> {
+  const { data, error } = await getSupabaseClient().rpc('retry_notification_job', {
+    target_outbox_id: outboxId,
+  })
+  if (error) throw new Error(error.message || 'The notification job could not be retried.')
+  return retryNotificationSchema.parse(data)
+}
+
+export async function retryAllFailedNotifications(): Promise<{ retried: number }> {
+  const { data, error } = await getSupabaseClient().rpc('retry_all_failed_notifications')
+  if (error) throw new Error(error.message || 'Failed notification jobs could not be retried.')
+  return retryNotificationSchema.parse(data)
 }
 
 export async function getOperationsReport(): Promise<OperationsReport> {

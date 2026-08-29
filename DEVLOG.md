@@ -955,3 +955,14 @@ pnpm exec wrangler deploy --keep-vars
 - Reused the established Time-Off Requests queue, history, cancellation, permission, MFA, and audit boundaries.
 - Added migration `20260828180000_home_time_off_request_workflow.sql` and full workflow regression coverage.
 - Full validation passed: 95 test files, 485 tests, lint, type checking, and production build.
+
+## 08/29/2026 — Announcements and Notifications Workspaces
+
+- Rebuilt Announcements around Overview, Banner Alerts, and History & Acknowledgments.
+- Added staged message creation, audience targeting, recipient-count previews, drafts, scheduling, controlled publication, expiration, and immutable recipient snapshots.
+- Rebuilt Notifications as a grouped delivery center with bounded filters, focused detail, queued processing, and audited retries.
+- Enforced compact lists throughout: 5-item work queues, 10-item history, selectable 5/10/20 pagination, and 5-result site searches.
+- Added scheduled publication to the Worker and service-only delivery from the published recipient snapshot.
+- Applied production migration `20260829120000_communications_workspaces.sql`.
+- Full validation passed: 98 test files, 493 tests, lint, type checking, production build, database verification, deployment, and live route checks.
+- Production Cloudflare version: `94fecbf4-5a09-49ad-b062-16a4af578018`.

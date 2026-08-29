@@ -84,6 +84,112 @@ const previewSchema = z.object({
   recipientCount: z.number().int().nonnegative(),
 })
 
+const communicationPageSchema = z.object({
+  number: z.number().int().positive(),
+  size: z.number().int().min(5).max(20),
+  total: z.number().int().nonnegative(),
+  totalPages: z.number().int().positive(),
+})
+
+const communicationWorkspaceSchema = z.object({
+  permissions: z.object({
+    canSend: z.boolean(),
+    canManageAcknowledgments: z.boolean(),
+    canManageBanners: z.boolean(),
+    hasMfa: z.boolean(),
+  }),
+  summary: z.object({
+    activeBanners: z.number().int().nonnegative(),
+    draftsScheduled: z.number().int().nonnegative(),
+    awaitingAcknowledgment: z.number().int().nonnegative(),
+  }),
+  templates: z.array(templateSchema),
+  roles: z.array(appRoleSchema),
+  posts: z.array(z.object({
+    id: z.string().uuid(),
+    label: z.string(),
+    siteName: z.string(),
+    postName: z.string(),
+    requiresArmed: z.boolean(),
+  })),
+  overview: z.object({
+    active: z.array(z.object({
+      id: z.string().uuid(),
+      title: z.string(),
+      publishedAt: z.string(),
+      expiresAt: z.string().nullable(),
+      kind: z.string(),
+    })),
+    drafts: z.array(z.object({
+      id: z.string().uuid(),
+      templateKey: z.string(),
+      status: z.enum(['draft', 'scheduled', 'published', 'canceled', 'failed']),
+      scheduledFor: z.string().nullable(),
+      updatedAt: z.string(),
+      lastError: z.string().nullable(),
+    })),
+    recent: z.array(z.object({
+      id: z.string().uuid(),
+      title: z.string(),
+      publishedAt: z.string(),
+      kind: z.string(),
+    })),
+  }),
+})
+
+const announcementWorkItemSchema = z.object({
+  id: z.string().uuid(),
+  templateKey: z.string(),
+  templateName: z.string(),
+  templateFields: z.record(z.string(), z.unknown()),
+  status: z.enum(['draft', 'scheduled', 'published', 'canceled', 'failed']),
+  scheduledFor: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  acknowledgmentRequired: z.boolean(),
+  acknowledgmentDueAt: z.string().nullable(),
+  audienceMode: z.enum(['everyone', 'roles', 'sites', 'qualified', 'shift_eligible']),
+  audienceRoles: z.array(appRoleSchema),
+  audiencePostIds: z.array(z.string().uuid()),
+  deliveryChannels: z.array(z.enum(['email', 'employee_home', 'workspace_alert'])),
+  publishedAnnouncementId: z.string().uuid().nullable(),
+  lastError: z.string().nullable(),
+  updatedAt: z.string(),
+  createdBy: z.string(),
+})
+
+const announcementWorkItemsSchema = z.object({
+  page: communicationPageSchema,
+  items: z.array(announcementWorkItemSchema),
+})
+
+const announcementHistoryItemSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  body: z.string(),
+  kind: z.string(),
+  publishedAt: z.string(),
+  expiresAt: z.string().nullable(),
+  deliveryChannels: z.array(z.enum(['email', 'employee_home', 'workspace_alert'])),
+  audienceMode: z.string(),
+  recipientCount: z.number().int().nonnegative(),
+  acknowledgedCount: z.number().int().nonnegative(),
+  awaitingCount: z.number().int().nonnegative(),
+  createdBy: z.string(),
+})
+
+const announcementHistorySchema = z.object({
+  page: communicationPageSchema,
+  items: z.array(announcementHistoryItemSchema),
+})
+
+const savedWorkItemSchema = z.object({
+  id: z.string().uuid(),
+  status: z.string(),
+  scheduledFor: z.string().nullable(),
+  recipientCount: z.number().int().nonnegative(),
+  updatedAt: z.string(),
+})
+
 export type AnnouncementField = z.infer<typeof fieldSchema>
 export type AnnouncementTemplate = z.infer<typeof templateSchema>
 export type AnnouncementComposer = z.infer<typeof composerSchema>
@@ -92,6 +198,28 @@ export type RecentAnnouncement = z.infer<typeof recentAnnouncementSchema>
 export type AnnouncementBanner = z.infer<typeof announcementBannerSchema>
 export type AnnouncementBannerAudience = z.infer<typeof announcementBannerAudienceSchema>
 export type AnnouncementBannerManager = z.infer<typeof announcementBannerManagerSchema>
+export type CommunicationWorkspace = z.infer<typeof communicationWorkspaceSchema>
+export type AnnouncementWorkItem = z.infer<typeof announcementWorkItemSchema>
+export type AnnouncementWorkItems = z.infer<typeof announcementWorkItemsSchema>
+export type AnnouncementHistoryItem = z.infer<typeof announcementHistoryItemSchema>
+export type AnnouncementHistory = z.infer<typeof announcementHistorySchema>
+export type AnnouncementAudienceMode = AnnouncementWorkItem['audienceMode']
+export type AnnouncementDeliveryChannel = AnnouncementWorkItem['deliveryChannels'][number]
+
+export interface AnnouncementWorkItemInput {
+  id?: string | null
+  templateKey: string
+  fields: Record<string, string>
+  status: 'draft' | 'scheduled'
+  scheduledFor?: string | null
+  expiresAt?: string | null
+  acknowledgmentRequired: boolean
+  acknowledgmentDueAt?: string | null
+  audienceMode: AnnouncementAudienceMode
+  audienceRoles: AppRole[]
+  audiencePostIds: string[]
+  deliveryChannels: AnnouncementDeliveryChannel[]
+}
 
 export interface AnnouncementBannerMutationInput {
   bannerId?: string | null
@@ -125,6 +253,95 @@ export async function getAnnouncementComposer(): Promise<AnnouncementComposer> {
     templates: composer.templates.filter((template) => template.key !== 'welcome_to_sygshift'),
     recentAnnouncements: composer.recentAnnouncements.filter((announcement) => announcement.templateKey !== 'welcome_to_sygshift'),
   }
+}
+
+export async function getCommunicationWorkspace(): Promise<CommunicationWorkspace> {
+  const { data, error } = await getSupabaseClient().rpc('get_communications_workspace')
+  if (error) throw new Error(error.message || 'The announcements workspace could not be loaded.')
+  const parsed = communicationWorkspaceSchema.parse(data)
+  return {
+    ...parsed,
+    templates: parsed.templates.filter((template) => template.key !== 'welcome_to_sygshift'),
+  }
+}
+
+export async function getAnnouncementWorkItems(input: {
+  page: number
+  pageSize: number
+  search?: string
+  status?: string
+}): Promise<AnnouncementWorkItems> {
+  const { data, error } = await getSupabaseClient().rpc('get_announcement_work_items', {
+    target_page: input.page,
+    target_page_size: input.pageSize,
+    target_search: input.search?.trim() || null,
+    target_status: input.status && input.status !== 'all' ? input.status : null,
+  })
+  if (error) throw new Error(error.message || 'Draft and scheduled announcements could not be loaded.')
+  return announcementWorkItemsSchema.parse(data)
+}
+
+export async function getAnnouncementHistory(input: {
+  page: number
+  pageSize: number
+  search?: string
+}): Promise<AnnouncementHistory> {
+  const { data, error } = await getSupabaseClient().rpc('get_announcement_history', {
+    target_page: input.page,
+    target_page_size: input.pageSize,
+    target_search: input.search?.trim() || null,
+  })
+  if (error) throw new Error(error.message || 'Announcement history could not be loaded.')
+  return announcementHistorySchema.parse(data)
+}
+
+export async function previewAnnouncementWorkItem(input: Pick<AnnouncementWorkItemInput,
+  'templateKey' | 'fields' | 'audienceMode' | 'audienceRoles' | 'audiencePostIds'
+>): Promise<AnnouncementPreview> {
+  const { data, error } = await getSupabaseClient().rpc('preview_announcement_work_item', {
+    target_audience_mode: input.audienceMode,
+    target_audience_post_ids: input.audiencePostIds,
+    target_audience_roles: input.audienceRoles,
+    target_fields: input.fields,
+    target_template_key: input.templateKey,
+  })
+  if (error) throw new Error(error.message || 'This announcement could not be previewed.')
+  return previewSchema.parse(data)
+}
+
+export async function saveAnnouncementWorkItem(input: AnnouncementWorkItemInput) {
+  const { data, error } = await getSupabaseClient().rpc('save_announcement_work_item', {
+    target_acknowledgment_due_at: input.acknowledgmentRequired ? input.acknowledgmentDueAt || null : null,
+    target_acknowledgment_required: input.acknowledgmentRequired,
+    target_audience_mode: input.audienceMode,
+    target_audience_post_ids: input.audiencePostIds,
+    target_audience_roles: input.audienceRoles,
+    target_delivery_channels: input.deliveryChannels,
+    target_expires_at: input.expiresAt || null,
+    target_fields: input.fields,
+    target_scheduled_for: input.status === 'scheduled' ? input.scheduledFor || null : null,
+    target_status: input.status,
+    target_template_key: input.templateKey,
+    target_work_item_id: input.id || null,
+  })
+  if (error) throw new Error(error.message || 'The announcement work item could not be saved.')
+  return savedWorkItemSchema.parse(data)
+}
+
+export async function publishAnnouncementWorkItem(workItemId: string) {
+  const { data, error } = await getSupabaseClient().rpc('publish_announcement_work_item', {
+    target_work_item_id: workItemId,
+  })
+  if (error) throw new Error(error.message || 'The announcement could not be published.')
+  return z.object({ id: z.string().uuid(), recipientCount: z.number().int().nonnegative() }).passthrough().parse(data)
+}
+
+export async function cancelAnnouncementWorkItem(workItemId: string) {
+  const { data, error } = await getSupabaseClient().rpc('cancel_announcement_work_item', {
+    target_work_item_id: workItemId,
+  })
+  if (error) throw new Error(error.message || 'The announcement work item could not be canceled.')
+  return z.object({ id: z.string().uuid(), status: z.literal('canceled') }).parse(data)
 }
 
 export async function previewAnnouncementTemplate(templateKey: string, fields: Record<string, string>): Promise<AnnouncementPreview> {

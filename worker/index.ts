@@ -1811,6 +1811,14 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
     for (const job of jobs) {
       try {
         let recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
+        if (job.messageType === 'announcement_published' && job.aggregateId) {
+          recipients = await callRpc<string[]>(
+            { serviceRoleKey: config.serviceRoleKey, url: config.url },
+            'service_get_announcement_email_recipients',
+            { target_announcement_id: job.aggregateId },
+            config.serviceRoleKey,
+          )
+        }
         if (respectEmployeePreferences && recipients.length > 0) {
           recipients = await callRpc<string[]>(
             { serviceRoleKey: config.serviceRoleKey, url: config.url },
@@ -2060,8 +2068,14 @@ export default {
         { target_full_reconciliation: fullReconciliation },
         config.serviceRoleKey,
       )
+      const scheduledAnnouncements = await callRpc<Record<string, unknown>>(
+        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        'service_publish_due_announcement_work_items',
+        { target_limit: 25 },
+        config.serviceRoleKey,
+      )
       const notifications = await processNotificationJobs(environment, 25)
-      console.info(JSON.stringify({ alertLifecycle, automation, cron: controller.cron, fullReconciliation, jobRunId, notifications, scheduledTime: controller.scheduledTime }))
+      console.info(JSON.stringify({ alertLifecycle, automation, cron: controller.cron, fullReconciliation, jobRunId, notifications, scheduledAnnouncements, scheduledTime: controller.scheduledTime }))
     })())
   },
 }
