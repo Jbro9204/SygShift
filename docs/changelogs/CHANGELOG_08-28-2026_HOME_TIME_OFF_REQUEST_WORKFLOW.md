@@ -65,3 +65,10 @@ Every signed-in employee with an active employee record can now submit planned t
 - Database and Worker production rollout were completed in dependency order.
 - Production health and application smoke checks passed after deployment.
 
+## Production release
+
+- Production URL: `https://app.sygilant.us`
+- Cloudflare Worker version: `39ad9b02-1dd7-4e51-b231-81c091913977`
+- Source and rollback commit: `b1425cd`
+- Supabase migration: `20260828180000_home_time_off_request_workflow.sql`
+- Public health and readiness endpoints returned healthy after deployment.
