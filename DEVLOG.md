@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 08/28/2026
 
+### Compact operational exception queue
+
+- Replaced the unbounded Operational Time Exceptions list with a compact queue that shows 10 records initially.
+- Added progressive **Show next 10** controls, an exact **Showing X of Y** count, and a **Show first 10** collapse action so a large queue never takes over the page at once.
+- Reduced row height without shrinking or truncating the employee, exception, location, date, or time information.
+- Reset the queue to the first 10 whenever the operations date range changes and added full-width mobile controls.
+- Added a regression guard that prevents the unbounded exception rendering from returning.
+- Confirmed all 96 test files and 487 tests, linting, type checking, and the production build pass.
+- Deployed Cloudflare Worker version `a29553a8-3ebd-4ce6-9891-8110499eb265`; public health and readiness checks passed.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-28-2026_COMPACT_OPERATIONAL_EXCEPTION_QUEUE.md`.
+
 ### Prominent Home call-off action
 
 - Replaced the weak low-contrast call-off link in the Home time-status strip with a dedicated high-contrast urgent-action control.
