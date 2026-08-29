@@ -914,3 +914,12 @@ Deploy with:
 ```powershell
 pnpm exec wrangler deploy --keep-vars
 ```
+## 08/28/2026 — Home Time-Off Request Workflow
+
+- Added a universal Home time-off request action for every authenticated user with an active employee record.
+- Kept planned leave separate from urgent sick/call-off reporting.
+- Added server-enforced Salary, Hourly, and Flex leave-type eligibility.
+- Added affected-shift and estimated-hours review, immutable submission snapshots, audited reviewer decisions, and employee decision notifications.
+- Reused the established Time-Off Requests queue, history, cancellation, permission, MFA, and audit boundaries.
+- Added migration `20260828180000_home_time_off_request_workflow.sql` and full workflow regression coverage.
+- Full validation passed: 95 test files, 485 tests, lint, type checking, and production build.

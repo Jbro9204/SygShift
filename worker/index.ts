@@ -1873,6 +1873,14 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
 
   await deliverJobs(timekeepingJobs)
 
+  const timeOffJobs = await callRpc<NotificationJob[]>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_claim_time_off_notification_batch',
+    { target_limit: limit },
+    config.serviceRoleKey,
+  )
+  await deliverJobs(timeOffJobs, true)
+
   const generalJobs = await callRpc<NotificationJob[]>(
     { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_claim_notification_batch',

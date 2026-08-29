@@ -79,6 +79,6 @@ export function canAccessRoute(
   session: Pick<SessionContext, 'permissions'> | null | undefined,
 ): boolean {
   const policy = routeAccessPolicies[pathname]
-  if (pathname === '/account' || pathname === '/account-security') return Boolean(policy)
+  if (pathname === '/account' || pathname === '/account-security' || pathname === '/requests') return Boolean(policy)
   return policy ? hasAnyEffectivePermission(session, policy.anyOf) : false
 }

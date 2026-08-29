@@ -1,6 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { format } from 'date-fns'
 import {
   CalendarOff,
   ClipboardCheck,
@@ -11,32 +10,28 @@ import {
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { TimeOffRequestModal, TimeOffReviewDialog } from '../components/TimeOffRequestModal'
 import {
   decideShiftRequest,
-  decideTimeOff,
   employeeName,
   getRequestCenter,
   publishCallOffOpening,
   reportCallOff,
   requestShiftLocation,
   requestShiftTitle,
-  submitTimeOff,
   withdrawTimeOff,
   type CallOffReport,
   type RequestShift,
   type ShiftWorkRequest,
-  type TimeOffInput,
   type TimeOffRequest,
   type UpcomingAssignment,
 } from '../data/requests'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { formatDualTimeRange, operationalToday } from '../lib/time'
+import { formatDualTimeRange } from '../lib/time'
 
 type RequestAction =
-  | { kind: 'submit-time-off'; input: TimeOffInput }
   | { kind: 'withdraw-time-off'; requestId: string }
   | { kind: 'report-call-off'; shiftId: string; reason: string }
-  | { kind: 'decide-time-off'; requestId: string; decision: 'approved' | 'declined'; note: string | null }
   | { kind: 'decide-shift'; requestId: string; decision: 'approved' | 'declined'; note: string | null }
   | { kind: 'publish-call-off'; callOffId: string; title: string; body: string }
 
@@ -45,16 +40,14 @@ function useRequestAction() {
   return useMutation({
     mutationFn: async (action: RequestAction) => {
       switch (action.kind) {
-        case 'submit-time-off': return submitTimeOff(action.input)
         case 'withdraw-time-off': return withdrawTimeOff(action.requestId)
         case 'report-call-off': return reportCallOff(action.shiftId, action.reason)
-        case 'decide-time-off': return decideTimeOff(action.requestId, action.decision, action.note)
         case 'decide-shift': return decideShiftRequest(action.requestId, action.decision, action.note)
         case 'publish-call-off': return publishCallOffOpening(action.callOffId, action.title, action.body)
       }
     },
     onMutate: async (action) => {
-      if (action.kind !== 'decide-time-off' && action.kind !== 'decide-shift') return undefined
+      if (action.kind !== 'decide-shift') return undefined
 
       await queryClient.cancelQueries({ queryKey: ['request-center'] })
       const previous = queryClient.getQueryData<Awaited<ReturnType<typeof getRequestCenter>>>(['request-center'])
@@ -62,12 +55,8 @@ function useRequestAction() {
       if (previous) {
         queryClient.setQueryData<Awaited<ReturnType<typeof getRequestCenter>>>(['request-center'], {
           ...previous,
-          timeOff: action.kind === 'decide-time-off'
-            ? previous.timeOff.filter((request) => request.id !== action.requestId)
-            : previous.timeOff,
-          shiftRequests: action.kind === 'decide-shift'
-            ? previous.shiftRequests.filter((request) => request.id !== action.requestId)
-            : previous.shiftRequests,
+          timeOff: previous.timeOff,
+          shiftRequests: previous.shiftRequests.filter((request) => request.id !== action.requestId),
         })
       }
 
@@ -115,82 +104,6 @@ function formatRequestDateRange(request: Pick<TimeOffRequest, 'starts_on' | 'end
   const start = formatRequestDate(request.starts_on)
   const end = formatRequestDate(request.ends_on)
   return start === end ? start : `${start} – ${end}`
-}
-
-function GuardTimeOffForm({ mutation }: { mutation: ReturnType<typeof useRequestAction> }) {
-  const [partial, setPartial] = useState(false)
-  const minimumDate = format(operationalToday(), 'yyyy-MM-dd')
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const formElement = event.currentTarget
-    const form = new FormData(formElement)
-    const startsOn = String(form.get('startsOn'))
-    const endsOn = partial ? startsOn : String(form.get('endsOn'))
-    mutation.mutate({
-      kind: 'submit-time-off',
-      input: {
-        startsOn,
-        endsOn,
-        partialStart: partial ? String(form.get('partialStart')) : null,
-        partialEnd: partial ? String(form.get('partialEnd')) : null,
-        reason: String(form.get('reason')).trim() || null,
-      },
-    }, {
-      onSuccess: () => {
-        formElement.reset()
-        setPartial(false)
-      },
-    })
-  }
-
-  return (
-    <section className="request-form-card" aria-labelledby="time-off-form-title">
-      <div className="request-card-heading">
-        <CalendarOff aria-hidden="true" size={24} />
-        <div>
-          <h2 id="time-off-form-title">Request time off</h2>
-          <p>Submit full days or part of one day for supervisor review.</p>
-        </div>
-      </div>
-      <form className="request-form" onSubmit={submit}>
-        <div className="form-grid">
-          <label>
-            <span>Start date</span>
-            <input min={minimumDate} name="startsOn" required type="date" />
-          </label>
-          {!partial ? (
-            <label>
-              <span>End date</span>
-              <input min={minimumDate} name="endsOn" required type="date" />
-            </label>
-          ) : (
-            <>
-              <label>
-                <span>Start time</span>
-                <input name="partialStart" required type="time" />
-              </label>
-              <label>
-                <span>End time</span>
-                <input name="partialEnd" required type="time" />
-              </label>
-            </>
-          )}
-        </div>
-        <label className="check-field">
-          <input checked={partial} onChange={(event) => setPartial(event.target.checked)} type="checkbox" />
-          <span>This is part of one day</span>
-        </label>
-        <label className="field-stack">
-          <span>Reason or note <small>Optional</small></span>
-          <textarea maxLength={2000} name="reason" rows={3} />
-        </label>
-        <button className="primary-action" disabled={mutation.isPending} type="submit">
-          {mutation.isPending ? 'Saving…' : 'Submit time-off request'}
-        </button>
-      </form>
-    </section>
-  )
 }
 
 interface PendingCallOff {
@@ -362,7 +275,6 @@ function GuardHistory({
 }
 
 type DecisionDialogState = {
-  category: 'time-off' | 'shift'
   decision: 'approved' | 'declined'
   id: string
   label: string
@@ -382,12 +294,9 @@ function DecisionDialog({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const note = String(new FormData(event.currentTarget).get('note')).trim() || null
-    const action: RequestAction = state.category === 'time-off'
-      ? { kind: 'decide-time-off', requestId: state.id, decision: state.decision, note }
-      : { kind: 'decide-shift', requestId: state.id, decision: state.decision, note }
-    mutation.mutate(action, {
+    mutation.mutate({ kind: 'decide-shift', requestId: state.id, decision: state.decision, note }, {
       onSuccess: () => {
-        onDecided(`${state.category === 'time-off' ? 'Time-off request' : 'Shift request'} ${state.decision}.`)
+        onDecided(`Shift request ${state.decision}.`)
         onClose()
       },
     })
@@ -481,12 +390,14 @@ function SupervisorQueue({
   shiftRequests,
   callOffs,
   onDecision,
+  onReviewTimeOff,
   onAnnouncement,
 }: {
   timeOff: TimeOffRequest[]
   shiftRequests: ShiftWorkRequest[]
   callOffs: CallOffReport[]
   onDecision: (state: DecisionDialogState) => void
+  onReviewTimeOff: (requestId: string) => void
   onAnnouncement: (report: CallOffReport) => void
 }) {
   const total = timeOff.length + shiftRequests.length + callOffs.length
@@ -534,8 +445,7 @@ function SupervisorQueue({
                     <p>{request.reason || 'No note provided'}</p>
                   </div>
                   <div className="approval-actions">
-                    <button className="secondary-button" onClick={() => onDecision({ category: 'time-off', decision: 'declined', id: request.id, label: 'time off' })} type="button">Decline</button>
-                    <button className="primary-action" onClick={() => onDecision({ category: 'time-off', decision: 'approved', id: request.id, label: 'time off' })} type="button">Approve</button>
+                    <button className="primary-action" onClick={() => onReviewTimeOff(request.id)} type="button">Review request</button>
                   </div>
                 </article>
               ))}
@@ -552,8 +462,8 @@ function SupervisorQueue({
                     <p>{formatShiftDate(request.shift)} · {requestShiftLocation(request.shift)}</p>
                   </div>
                   <div className="approval-actions">
-                    <button className="secondary-button" onClick={() => onDecision({ category: 'shift', decision: 'declined', id: request.id, label: 'shift request' })} type="button">Decline</button>
-                    <button className="primary-action" onClick={() => onDecision({ category: 'shift', decision: 'approved', id: request.id, label: 'shift request' })} type="button">Approve & assign</button>
+                    <button className="secondary-button" onClick={() => onDecision({ decision: 'declined', id: request.id, label: 'shift request' })} type="button">Decline</button>
+                    <button className="primary-action" onClick={() => onDecision({ decision: 'approved', id: request.id, label: 'shift request' })} type="button">Approve & assign</button>
                   </div>
                 </article>
               ))}
@@ -568,6 +478,8 @@ function SupervisorQueue({
 export function RequestsPage() {
   const [pendingCallOff, setPendingCallOff] = useState<PendingCallOff | null>(null)
   const [decision, setDecision] = useState<DecisionDialogState | null>(null)
+  const [timeOffOpen, setTimeOffOpen] = useState(false)
+  const [timeOffReviewId, setTimeOffReviewId] = useState<string | null>(null)
   const [announcement, setAnnouncement] = useState<CallOffReport | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const requestQuery = useQuery({
@@ -622,13 +534,23 @@ export function RequestsPage() {
               callOffs={requestQuery.data.callOffs}
               onAnnouncement={setAnnouncement}
               onDecision={setDecision}
+              onReviewTimeOff={setTimeOffReviewId}
               shiftRequests={requestQuery.data.shiftRequests}
               timeOff={requestQuery.data.timeOff}
             />
           ) : (
             <>
               <div className="guard-request-grid">
-                <GuardTimeOffForm mutation={mutation} />
+                <section className="request-form-card request-form-card--launcher" aria-labelledby="time-off-launcher-title">
+                  <div className="request-card-heading">
+                    <CalendarOff aria-hidden="true" size={24} />
+                    <div>
+                      <h2 id="time-off-launcher-title">Request Time Off</h2>
+                      <p>Choose planned dates, review affected shifts, and send one clear request for approval.</p>
+                    </div>
+                  </div>
+                  <button className="primary-action" onClick={() => setTimeOffOpen(true)} type="button">Start a time-off request</button>
+                </section>
                 <GuardCallOffForm assignments={guardAssignments} onConfirm={setPendingCallOff} />
               </div>
               <GuardHistory
@@ -643,6 +565,20 @@ export function RequestsPage() {
       )}
 
       {pendingCallOff ? <CallOffConfirmation mutation={mutation} onClose={() => setPendingCallOff(null)} pending={pendingCallOff} /> : null}
+      {timeOffOpen ? (
+        <TimeOffRequestModal
+          onClose={() => setTimeOffOpen(false)}
+          onSubmitted={() => setActionMessage('Time-off request submitted for review.')}
+          requestHistoryPath="/requests"
+        />
+      ) : null}
+      {timeOffReviewId ? (
+        <TimeOffReviewDialog
+          onClose={() => setTimeOffReviewId(null)}
+          onDecided={setActionMessage}
+          requestId={timeOffReviewId}
+        />
+      ) : null}
       {decision ? (
         <DecisionDialog
           mutation={mutation}

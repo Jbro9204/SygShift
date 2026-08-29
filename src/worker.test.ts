@@ -562,6 +562,9 @@ describe('Cloudflare Worker boundary', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify([]), {
         headers: { 'content-type': 'application/json' },
       }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
       .mockResolvedValueOnce(new Response(JSON.stringify([{
         id: '20000000-0000-4000-8000-000000000001',
         recipients: ['jbrown@example.com'],
@@ -644,6 +647,9 @@ describe('Cloudflare Worker boundary', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify([]), {
         headers: { 'content-type': 'application/json' },
       }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
     const emailSend = vi.fn()
     vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
@@ -700,6 +706,9 @@ describe('Cloudflare Worker boundary', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify([]), {
         headers: { 'content-type': 'application/json' },
       }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
     const emailSend = vi.fn()
     let scheduledWork: Promise<unknown> | undefined
     vi.stubGlobal('fetch', fetchMock)
@@ -715,11 +724,12 @@ describe('Cloudflare Worker boundary', () => {
 
     expect(scheduledWork).toBeDefined()
     await scheduledWork
-    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(fetchMock).toHaveBeenCalledTimes(5)
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/rpc/service_run_timekeeping_automation')
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/rpc/service_reconcile_operational_alert_lifecycle')
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/rpc/service_claim_timekeeping_notification_batch')
-    expect(String(fetchMock.mock.calls[3]?.[0])).toContain('/rpc/service_claim_notification_batch')
+    expect(String(fetchMock.mock.calls[3]?.[0])).toContain('/rpc/service_claim_time_off_notification_batch')
+    expect(String(fetchMock.mock.calls[4]?.[0])).toContain('/rpc/service_claim_notification_batch')
     const automationBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { target_job_run_id: string }
     const lifecycleBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as { target_full_reconciliation: boolean }
     expect(automationBody.target_job_run_id).toMatch(/^[a-f0-9-]{36}$/)

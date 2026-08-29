@@ -3003,6 +3003,579 @@ a.home-metric-card:focus-visible {
   }
 }
 
+/* Planned time-off workflow */
+.home-planned-time-off {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 18px;
+  border: 1px solid #ded5c7;
+  border-left: 4px solid #b87816;
+  border-radius: 12px;
+  background: #fffdf8;
+  box-shadow: 0 6px 18px rgb(52 42 28 / 6%);
+}
+
+.home-planned-time-off > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.home-planned-time-off svg {
+  flex: 0 0 auto;
+  color: #9a6518;
+}
+
+.home-planned-time-off span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.home-planned-time-off strong {
+  color: #201d18;
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.home-planned-time-off small {
+  color: #70675b;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.home-planned-time-off > .secondary-button {
+  flex: 0 0 auto;
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.modal-dialog--time-off-request,
+.modal-dialog--time-off-review {
+  width: min(980px, calc(100vw - 40px));
+  max-width: 980px;
+  max-height: min(900px, calc(100dvh - 40px));
+  overflow-x: hidden;
+}
+
+.time-off-request-form,
+.time-off-review-form {
+  display: grid;
+  gap: 20px;
+  padding: 22px 24px 24px;
+}
+
+.time-off-modal-loading {
+  padding: 34px 24px;
+  color: #70675b;
+  text-align: center;
+}
+
+.time-off-purpose-note {
+  margin: 18px 24px 0;
+  padding: 13px 15px;
+  border: 1px solid #ddd1bf;
+  border-left: 3px solid #bd7c18;
+  border-radius: 9px;
+  background: #fffaf1;
+  color: #5f5448;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.time-off-employee-summary,
+.time-off-review-summary,
+.time-off-success__summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.time-off-employee-summary > div,
+.time-off-review-summary > div,
+.time-off-success__summary > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid #e0d7ca;
+  border-radius: 10px;
+  background: #faf7f1;
+}
+
+.time-off-employee-summary span,
+.time-off-review-summary span,
+.time-off-success__summary dt {
+  color: #775a2d;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.time-off-employee-summary strong,
+.time-off-review-summary strong,
+.time-off-success__summary dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #211d17;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.time-off-review-summary small {
+  color: #756c60;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.time-off-type-fieldset,
+.time-off-decision-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.time-off-type-fieldset legend,
+.time-off-decision-fieldset legend {
+  margin-bottom: 10px;
+  color: #332b20;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.time-off-type-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.time-off-type-card {
+  display: flex;
+  min-width: 0;
+  min-height: 94px;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 15px;
+  border: 1px solid #dcd2c3;
+  border-radius: 11px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.time-off-type-card:hover,
+.time-off-type-card:focus-within,
+.time-off-type-card--selected {
+  border-color: #bd7c18;
+  background: #fff8e9;
+  box-shadow: inset 0 0 0 1px #bd7c18;
+}
+
+.time-off-type-card input {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: #a96b12;
+}
+
+.time-off-type-card span {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.time-off-type-card strong {
+  color: #211d17;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.time-off-type-card small {
+  color: #70675b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.time-off-date-section,
+.time-off-impact-section,
+.time-off-review-detail,
+.time-off-decision-fieldset {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #dfd5c6;
+  border-radius: 12px;
+  background: #fffdf9;
+}
+
+.time-off-section-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.time-off-section-heading > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.time-off-section-heading svg {
+  flex: 0 0 auto;
+  color: #986516;
+}
+
+.time-off-section-heading h3 {
+  margin: 0;
+  color: #211d17;
+  font-size: 17px;
+  line-height: 1.3;
+}
+
+.time-off-partial-toggle {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  color: #4e4436;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.time-off-partial-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: #a96b12;
+}
+
+.time-off-date-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.time-off-date-grid label {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.time-off-date-grid label > span {
+  color: #4d4439;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.time-off-date-grid input {
+  width: 100%;
+  min-width: 0;
+  height: 46px;
+  padding: 0 12px;
+  border: 1px solid #cfc4b4;
+  border-radius: 9px;
+  background: #fff;
+  color: #211d17;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.time-off-estimate {
+  color: #6e6253;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.time-off-estimate strong {
+  color: #2b251e;
+}
+
+.time-off-shift-list {
+  display: grid;
+  gap: 9px;
+}
+
+.time-off-shift {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(180px, 0.8fr) auto;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 14px;
+  border: 1px solid #e2d9cc;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.time-off-shift > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.time-off-shift strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #2c261f;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.time-off-shift span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #746a5e;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.time-off-shift__hours {
+  justify-self: end;
+  padding: 5px 9px;
+  border: 1px solid #dcc69f;
+  border-radius: 999px;
+  background: #fbf0da;
+  color: #6f4811 !important;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.time-off-empty-shifts {
+  margin: 0;
+  padding: 15px;
+  border: 1px dashed #d5c9b8;
+  border-radius: 9px;
+  color: #70675b;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.time-off-approval-note {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px 16px;
+  border: 1px solid #e5c98e;
+  border-radius: 10px;
+  background: #fff7e6;
+}
+
+.time-off-approval-note svg {
+  flex: 0 0 auto;
+  color: #986516;
+}
+
+.time-off-approval-note strong {
+  color: #493215;
+}
+
+.time-off-approval-note p {
+  margin: 3px 0 0;
+  color: #68543a;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.time-off-success {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 22px 24px 14px;
+  padding: 18px;
+  border: 1px solid #b9ddcf;
+  border-radius: 12px;
+  background: #edf8f3;
+}
+
+.time-off-success > svg {
+  flex: 0 0 auto;
+  color: #267257;
+}
+
+.time-off-success h3 {
+  margin: 0 0 4px;
+  color: #174f3c;
+  font-size: 19px;
+}
+
+.time-off-success p {
+  margin: 0;
+  color: #416b5c;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.time-off-success__summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 24px 18px;
+}
+
+.time-off-review-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.time-off-review-detail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.time-off-review-detail h3 {
+  margin: 0 0 7px;
+  color: #3d3327;
+  font-size: 13px;
+}
+
+.time-off-review-detail p {
+  margin: 0;
+  color: #6b6155;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.time-off-decision-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.time-off-decision-options label {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  border: 1px solid #d7ccbd;
+  border-radius: 9px;
+  background: #fff;
+  color: #332c24;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.time-off-decision-options label.selected,
+.time-off-decision-options label:focus-within {
+  border-color: #bd7c18;
+  background: #fff7e7;
+  box-shadow: inset 0 0 0 1px #bd7c18;
+}
+
+.time-off-decision-options input {
+  width: 18px;
+  height: 18px;
+  accent-color: #a96b12;
+}
+
+.request-form-card--launcher {
+  align-content: space-between;
+}
+
+@media (max-width: 800px) {
+  .modal-dialog--time-off-request,
+  .modal-dialog--time-off-review {
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+  }
+
+  .time-off-request-form,
+  .time-off-review-form {
+    gap: 16px;
+    padding: 18px 16px 20px;
+  }
+
+  .time-off-type-grid,
+  .time-off-date-grid,
+  .time-off-review-summary,
+  .time-off-success__summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .time-off-shift {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .time-off-shift__hours {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
+@media (max-width: 540px) {
+  .home-planned-time-off,
+  .time-off-section-heading,
+  .time-off-review-detail {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .home-planned-time-off > .secondary-button {
+    width: 100%;
+  }
+
+  .time-off-employee-summary,
+  .time-off-type-grid,
+  .time-off-date-grid,
+  .time-off-review-summary,
+  .time-off-success__summary,
+  .time-off-review-detail,
+  .time-off-decision-options,
+  .time-off-shift {
+    grid-template-columns: 1fr;
+  }
+
+  .time-off-section-heading {
+    display: grid;
+  }
+
+  .time-off-estimate {
+    text-align: left;
+  }
+
+  .time-off-partial-toggle {
+    justify-self: start;
+  }
+
+  .time-off-success {
+    margin: 18px 16px 12px;
+  }
+
+  .time-off-purpose-note {
+    margin: 16px 16px 0;
+  }
+
+  .time-off-success__summary {
+    margin: 0 16px 16px;
+  }
+
+  .modal-dialog--time-off-request .modal-actions,
+  .modal-dialog--time-off-review .modal-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .modal-dialog--time-off-request .modal-actions > *,
+  .modal-dialog--time-off-review .modal-actions > * {
+    width: 100%;
+  }
+}
+
 .visually-hidden {
   position: absolute !important;
   width: 1px !important;

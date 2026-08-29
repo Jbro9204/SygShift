@@ -36,7 +36,7 @@ describe('employee overview and time correction guardrails', () => {
   })
 
   it('keeps employee request and shift-pool routes reachable from the landing card', () => {
-    expect(overviewSource).toContain('Request time off')
+    expect(overviewSource).toContain('Request Time Off')
     expect(overviewSource).toContain('Available opportunity')
     expect(overviewSource).toContain('to="/requests"')
     expect(overviewSource).toContain('to="/events"')

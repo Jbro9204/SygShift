@@ -16,9 +16,10 @@ import {
   UsersRound,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useRef, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { canAccessRoute } from '../app/accessPolicy'
+import { TimeOffRequestModal } from '../components/TimeOffRequestModal'
 import { getActiveAnnouncementBanners } from '../data/announcements'
 import { getSessionContext, type SessionContext } from '../data/auth'
 import { getOpenOpportunities, opportunityLocation, opportunityTitle } from '../data/opportunities'
@@ -141,6 +142,7 @@ function nextShiftForDashboard(dashboard: TimekeepingDashboard | undefined): Tim
 export function OverviewPage() {
   const queryClient = useQueryClient()
   const punchLocked = useRef(false)
+  const [timeOffOpen, setTimeOffOpen] = useState(false)
   const sessionQuery = useQuery({
     enabled: isSupabaseConfigured,
     queryFn: getSessionContext,
@@ -246,13 +248,23 @@ export function OverviewPage() {
           onPunch={quickPunch}
           pending={punchMutation.isPending || timekeepingQuery.isPending}
           punchAllowed={punchAllowed}
-          requestsAllowed={requestsAllowed}
           scheduleAllowed={scheduleAllowed}
           showPersonalLinks={operationsHome}
           state={timeState}
           timeAction={timeAction}
         />
       ) : null}
+
+      <section className="home-planned-time-off" aria-labelledby="home-time-off-title">
+        <div>
+          <CalendarDays aria-hidden="true" size={22} />
+          <span>
+            <strong id="home-time-off-title">Planning time away?</strong>
+            <small>Request future vacation, sick time, or unpaid time off for review.</small>
+          </span>
+        </div>
+        <button className="secondary-button" onClick={() => setTimeOffOpen(true)} type="button">Request Time Off</button>
+      </section>
 
       {operationsHome ? (
         <OperationsHome
@@ -295,6 +307,13 @@ export function OverviewPage() {
           workspaces={availableWorkspaces.filter((item) => item.path !== '/schedule')}
         />
       )}
+      {timeOffOpen ? (
+        <TimeOffRequestModal
+          onClose={() => setTimeOffOpen(false)}
+          onSubmitted={() => void requestsQuery.refetch()}
+          requestHistoryPath="/requests"
+        />
+      ) : null}
     </div>
   )
 }
@@ -316,14 +335,13 @@ function HomeGreeting({ mode, session }: { mode: 'employee' | 'operations'; sess
   )
 }
 
-function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punchAllowed, requestsAllowed, scheduleAllowed, showPersonalLinks, state, timeAction }: {
+function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punchAllowed, scheduleAllowed, showPersonalLinks, state, timeAction }: {
   activeShift: TimekeepingShift | null
   dashboard: TimekeepingDashboard | undefined
   error: string | null
   onPunch: (kind: TimeEventKind | null) => void
   pending: boolean
   punchAllowed: boolean
-  requestsAllowed: boolean
   scheduleAllowed: boolean
   showPersonalLinks: boolean
   state: ReturnType<typeof activeTimeState>
@@ -363,7 +381,6 @@ function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punc
           <button className="secondary-button" disabled={pending} onClick={() => onPunch('break_start')} type="button"><Coffee aria-hidden="true" size={18} />Start break</button>
         ) : null}
         {scheduleAllowed ? <Link className="secondary-button" to="/schedule"><CalendarDays aria-hidden="true" size={18} />Schedule</Link> : null}
-        {showPersonalLinks && requestsAllowed ? <Link className="secondary-button" to="/requests"><ClipboardCheck aria-hidden="true" size={18} />Request time off</Link> : null}
         {showPersonalLinks ? <Link className="danger-button" to="/time/my-time?report=call-off"><ShieldAlert aria-hidden="true" size={18} />Report sick / call-off</Link> : null}
       </div>
     </section>
@@ -392,7 +409,6 @@ function EmployeeHome({ announcementArchivePath, announcements, announcementsErr
       <section className="home-quick-actions" aria-labelledby="home-quick-actions-title">
         <div><p className="eyebrow">Quick actions</p><h2 id="home-quick-actions-title">What do you need to do?</h2></div>
         <div className="home-quick-actions__buttons">
-          {requestsAllowed ? <Link className="home-quick-action" to="/requests"><CalendarDays aria-hidden="true" size={20} /><span><strong>Request time off</strong><small>Choose dates and track approval.</small></span><ArrowRight aria-hidden="true" size={17} /></Link> : null}
           <Link className="home-quick-action home-quick-action--danger" to="/time/my-time?report=call-off"><ShieldAlert aria-hidden="true" size={20} /><span><strong>Report sick / call-off</strong><small>Notify Dispatch and request coverage.</small></span><ArrowRight aria-hidden="true" size={17} /></Link>
         </div>
       </section>

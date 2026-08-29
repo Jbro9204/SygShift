@@ -271,6 +271,130 @@ export interface TimeOffInput {
   reason: string | null
 }
 
+export const timeOffRequestKinds = ['paid_vacation', 'sick_time', 'unpaid_time_off'] as const
+export type TimeOffRequestKind = (typeof timeOffRequestKinds)[number]
+
+const affectedTimeOffShiftSchema = z.object({
+  shiftId: z.string().uuid(),
+  assignmentId: z.string().uuid(),
+  workday: z.string(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  timeZone: z.string(),
+  siteCode: z.string().nullable(),
+  siteName: z.string().nullable(),
+  postName: z.string().nullable(),
+  eventName: z.string().nullable(),
+  location: z.string(),
+  estimatedMinutes: z.number().int().nonnegative(),
+})
+
+const timeOffEmployeeContextSchema = z.object({
+  id: z.string().uuid(),
+  employeeNumber: z.string().nullable(),
+  name: z.string(),
+  employmentType: z.enum(['hourly', 'salary', 'flex']),
+  status: z.literal('active'),
+})
+
+const recentTimeOffRequestSchema = z.object({
+  id: z.string().uuid(),
+  requestType: z.enum(timeOffRequestKinds).nullable(),
+  startsOn: z.string(),
+  endsOn: z.string(),
+  status: requestStatusSchema,
+  createdAt: z.string(),
+})
+
+const timeOffRequestContextSchema = z.object({
+  employee: timeOffEmployeeContextSchema,
+  allowedTypes: z.array(z.enum(timeOffRequestKinds)),
+  affectedShifts: z.array(affectedTimeOffShiftSchema),
+  recentRequests: z.array(recentTimeOffRequestSchema),
+})
+
+const timeOffReviewContextSchema = z.object({
+  id: z.string().uuid(),
+  employee: z.object({
+    id: z.string().uuid(),
+    employeeNumber: z.string().nullable(),
+    name: z.string(),
+  }),
+  requestType: z.enum(timeOffRequestKinds).nullable(),
+  employmentType: z.enum(['hourly', 'salary', 'flex']).nullable(),
+  payTreatment: z.enum(['salary_paid_leave', 'sick_policy', 'unpaid']).nullable(),
+  startsOn: z.string(),
+  endsOn: z.string(),
+  partialStart: z.string().nullable(),
+  partialEnd: z.string().nullable(),
+  returnOn: z.string().nullable(),
+  requestedMinutes: z.number().int().nonnegative().nullable(),
+  reason: z.string().nullable(),
+  status: requestStatusSchema,
+  createdAt: z.string(),
+  affectedShifts: z.array(affectedTimeOffShiftSchema),
+  decisionNote: z.string().nullable(),
+  decisionSnapshot: z.unknown().nullable(),
+})
+
+export type AffectedTimeOffShift = z.infer<typeof affectedTimeOffShiftSchema>
+export type TimeOffRequestContext = z.infer<typeof timeOffRequestContextSchema>
+export type TimeOffReviewContext = z.infer<typeof timeOffReviewContextSchema>
+
+export interface TimeOffRequestV2Input {
+  requestType: TimeOffRequestKind
+  startsOn: string
+  endsOn: string
+  partialStart: string | null
+  partialEnd: string | null
+  returnOn: string | null
+  reason: string | null
+}
+
+export async function getTimeOffRequestContext(startsOn?: string, endsOn?: string): Promise<TimeOffRequestContext> {
+  const { data, error } = await getSupabaseClient().rpc('get_time_off_request_context', {
+    request_starts_on: startsOn || null,
+    request_ends_on: endsOn || null,
+  })
+  if (error) throw new Error(error.message || 'Time-off request details could not be loaded.')
+  return timeOffRequestContextSchema.parse(data)
+}
+
+export async function submitTimeOffRequestV2(input: TimeOffRequestV2Input): Promise<string> {
+  const { data, error } = await getSupabaseClient().rpc('submit_time_off_request_v2', {
+    request_kind: input.requestType,
+    request_starts_on: input.startsOn,
+    request_ends_on: input.endsOn,
+    request_partial_start: input.partialStart,
+    request_partial_end: input.partialEnd,
+    request_return_on: input.returnOn,
+    request_reason: input.reason,
+  })
+  if (error) throw new Error(error.message || 'The time-off request could not be submitted.')
+  return z.string().uuid().parse(data)
+}
+
+export async function getTimeOffReviewContext(requestId: string): Promise<TimeOffReviewContext> {
+  const { data, error } = await getSupabaseClient().rpc('get_time_off_review_context', {
+    target_request_id: requestId,
+  })
+  if (error) throw new Error(error.message || 'The time-off request could not be opened for review.')
+  return timeOffReviewContextSchema.parse(data)
+}
+
+export async function decideTimeOffRequestV2(
+  requestId: string,
+  decision: 'approved' | 'declined',
+  note: string,
+): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('decide_time_off_request_v2', {
+    target_request_id: requestId,
+    target_decision: decision,
+    target_note: note,
+  })
+  if (error) throw new Error(error.message || 'The time-off decision could not be saved.')
+}
+
 export async function submitTimeOff(input: TimeOffInput): Promise<string> {
   const { data, error } = await getSupabaseClient().rpc('submit_time_off_request', {
     request_starts_on: input.startsOn,

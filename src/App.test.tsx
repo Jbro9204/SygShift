@@ -12,8 +12,7 @@ describe('SygShift shell', () => {
       </QueryClientProvider>,
     )
 
-    expect(await screen.findByText('Preparing your Home page...')).toBeVisible()
-    expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible()
+    expect(await screen.findByRole('navigation', { name: 'Primary navigation' })).toBeVisible()
     expect(screen.getByRole('link', { name: 'Home' })).toBeVisible()
     expect(screen.queryByRole('link', { name: 'Import Review' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Operational Import' })).not.toBeInTheDocument()

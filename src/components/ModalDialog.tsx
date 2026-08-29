@@ -16,10 +16,12 @@ export function ModalDialog({ busy = false, busyLabel = 'Saving changes...', chi
 
   useEffect(() => {
     const dialog = dialogRef.current
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     if (!dialog) return
     dialog.showModal()
     return () => {
       if (dialog.open) dialog.close()
+      if (previouslyFocused?.isConnected) previouslyFocused.focus()
     }
   }, [])
 
