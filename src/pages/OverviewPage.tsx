@@ -381,7 +381,12 @@ function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punc
           <button className="secondary-button" disabled={pending} onClick={() => onPunch('break_start')} type="button"><Coffee aria-hidden="true" size={18} />Start break</button>
         ) : null}
         {scheduleAllowed ? <Link className="secondary-button" to="/schedule"><CalendarDays aria-hidden="true" size={18} />Schedule</Link> : null}
-        {showPersonalLinks ? <Link className="danger-button" to="/time/my-time?report=call-off"><ShieldAlert aria-hidden="true" size={18} />Report sick / call-off</Link> : null}
+        {showPersonalLinks ? (
+          <Link className="home-call-off-button" to="/time/my-time?report=call-off">
+            <span className="home-call-off-button__icon"><ShieldAlert aria-hidden="true" size={20} /></span>
+            <span className="home-call-off-button__copy"><strong>Report Sick / Call-Off</strong><small>Urgent coverage help</small></span>
+          </Link>
+        ) : null}
       </div>
     </section>
   )

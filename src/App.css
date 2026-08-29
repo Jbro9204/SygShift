@@ -145,6 +145,65 @@
   white-space: nowrap;
 }
 
+.home-time-strip__actions .home-call-off-button {
+  align-items: center;
+  background: linear-gradient(135deg, #ad3b30 0%, #85271f 100%);
+  border: 1px solid #742019;
+  border-radius: 11px;
+  box-shadow: 0 4px 0 #641b16, 0 8px 18px rgb(111 31 24 / 18%);
+  color: #fff;
+  display: inline-flex;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 15px 9px 10px;
+  text-decoration: none;
+  transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.home-call-off-button__icon {
+  align-items: center;
+  background: rgb(255 255 255 / 15%);
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 8px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.home-call-off-button__copy {
+  display: grid;
+  gap: 1px;
+  line-height: 1.15;
+  text-align: left;
+}
+
+.home-call-off-button__copy strong {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.home-call-off-button__copy small {
+  color: rgb(255 255 255 / 82%);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.home-time-strip__actions .home-call-off-button:hover,
+.home-time-strip__actions .home-call-off-button:focus-visible {
+  background: linear-gradient(135deg, #bd4438 0%, #932f26 100%);
+  box-shadow: 0 4px 0 #641b16, 0 10px 22px rgb(111 31 24 / 25%);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.home-time-strip__actions .home-call-off-button:active {
+  box-shadow: 0 2px 0 #641b16, 0 5px 12px rgb(111 31 24 / 20%);
+  transform: translateY(2px);
+}
+
 .home-quick-actions {
   display: grid;
   gap: 16px;

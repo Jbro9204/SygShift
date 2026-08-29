@@ -25,6 +25,13 @@ deployment status, or major workflow assumptions change.
 
 ## 08/28/2026
 
+### Prominent Home call-off action
+
+- Replaced the weak low-contrast call-off link in the Home time-status strip with a dedicated high-contrast urgent-action control.
+- Added an icon tile, explicit urgency context, and complete hover, focus, pressed, desktop, and mobile states while preserving the existing call-off route and permissions.
+- Confirmed all 95 test files and 485 tests, linting, type checking, and the production build pass.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-28-2026_HOME_CALL_OFF_ACTION_VISIBILITY.md`.
+
 ### Permission-aware navigation and workflow controls
 
 - Removed dead-end controls that were visible even when the signed-in employee could not open the destination workflow.
