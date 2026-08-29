@@ -77,71 +77,111 @@ Required outcomes:
 
 ### SygShift HR & Finance Suite
 
-- Priority: High
-- Target window: Begin immediately after the dedicated Payroll workspace foundation
-- Status: Approved / queued
-- Added: 08/28/2026
+- Priority: **Urgent**
+- Target window: Staged enterprise program; approximately 24–28 controlled runs
+- Status: Approved / not started
+- Added: 08/29/2026
+- Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
-Expand SygShift into a secure, permission-controlled HR and Finance workspace built on the existing permanent employee record. This is a major product initiative and must be delivered as complete, auditable workflows rather than disconnected document-upload screens.
+Build a complete, secure, permission-controlled HRIS/HCM suite inside **HR & Finance**. Deliver it as focused, production-ready modules built on SygShift's existing permanent employee identity—not as disconnected document screens, duplicate directories, mock enterprise pages, or unfinished shells.
 
-Required navigation and experience:
+Existing foundation: the dedicated Payroll workspace and HR & Finance navigation foundation were completed 08/28/2026. Preserve them during this program and integrate them only through the controlled stages below.
 
-- Add an **HR & Finance** sidebar group that is visible only when the signed-in user has an applicable effective permission.
-- Give the group two focused destinations initially: **HR Center** and **Payroll**.
-- Keep the main sidebar compact; use clear subnavigation inside HR Center rather than placing every HR function in the sidebar.
-- Keep Time & Attendance responsible for punches, employee time review, exceptions, and corrections; keep Payroll responsible for reviewed payable time and official handoff.
-- Use focused pages, compact summaries, search, filters, and open-on-demand detail instead of long all-record pages.
+Program controls:
 
-Required HR Center capabilities:
+- [ ] Treat security as the first stage and a release gate for every later stage.
+- [ ] Preserve Schedule, Availability, Time & Attendance, Licensing, User Accounts, Roles & Permissions, and Payroll as the authoritative systems for their existing domains.
+- [ ] Preserve the current Payroll workspace until Stage 10 reconciliation and controlled integration are complete.
+- [ ] Keep every database change additive, reversible, backed up, and protected by tested rollback procedures.
+- [ ] Complete each run end to end: functional UI, server authorization, persistence, audit history, tests, production validation, Git backup, and a dated changelog.
+- [ ] Use compact queues, pagination, search, filters, saved views, and open-on-demand detail; never introduce uncontrolled long-scroll record lists.
+- [ ] Use MM/DD/YYYY dates and civilian time with military time throughout applicable production workflows.
 
-- HR overview and work queue for new hires, expiring documents, missing acknowledgments, pending actions, upcoming separations, and items requiring attention.
-- Secure employee files for employment agreements, tax/payroll forms, identification and authorization documents, policies, acknowledgments, performance records, disciplinary records, restricted medical records, and HR correspondence.
-- Company document and policy library with assignment by employee, role, or group; versioning; required review or acknowledgment; due dates; reminders; and completion status.
-- Onboarding and offboarding checklists covering documents, account access, licensing handoff, training, equipment/uniforms, status changes, and account shutdown.
-- Employee-action workflows for factual incidents, coaching, recognition, written warnings, corrective actions, follow-up dates, and restricted HR review.
-- Effective-dated employment and leave history, including sick time, vacation/PTO, leave of absence, employment-status changes, and Hourly, Salary, or Flex classification.
-- HR reports for headcount, turnover, missing or expiring documents, onboarding status, attendance/accountability trends, and payroll readiness.
+#### Stage 1 — Discovery and HR Security Foundation (2–3 runs)
 
-Required document controls:
+- [ ] Inventory current schemas, routes, services, storage, permissions, background jobs, notifications, audits, tests, and production integrations.
+- [ ] Create an authoritative source-of-truth and data-boundary map for every employee and HR domain.
+- [ ] Classify HR data and define separately protected vaults for general HR, financial, identity, medical, disciplinary, and other restricted records.
+- [ ] Define deny-by-default module, row, field, action, and document authorization enforced by the server.
+- [ ] Define recent-MFA requirements, break-glass recovery, session controls, append-only audits, backup/restore, feature flags, maintenance controls, and rollback.
+- [ ] Validate the security foundation before any new protected HR records enter production.
 
-- Store employee documents privately; never expose permanent public file URLs.
-- Use short-lived authenticated access for previews and downloads.
-- Separate permissions for viewing, uploading, replacing, downloading, categorizing, acknowledging, and deleting documents.
-- Support confidentiality levels so general employee files, financial records, identity records, medical records, and disciplinary records can have different access boundaries.
-- Record append-only audit history for uploads, views, downloads, replacements, acknowledgments, access changes, and deletions.
-- Preserve document versions, retention rules, legal/audit holds where required, backups, and recovery.
-- Enforce allowed file types and size limits and add malware scanning before a document becomes available.
-- Do not send sensitive employee documents as normal email attachments.
+#### Stage 2 — Core HR Data Architecture (2–3 runs)
 
-Required identity and integration boundaries:
+- [ ] Establish immutable person, worker, employment, and assignment identifiers without creating duplicate employee identities.
+- [ ] Add effective-dated employment, manager, department, position, status, classification, and compensation history.
+- [ ] Backfill existing active and historical employees with reconciliation reports and duplicate prevention.
+- [ ] Preserve separated-employee, payroll, licensing, schedule, time, and audit history through migrations and rollback tests.
 
-- Extend the existing employee record and permanent employee number; do not create a second HR directory or duplicate employee identity.
-- Link the same employee identity to User Accounts, Directory, Schedule, Time & Attendance, Payroll, Licensing, Availability, Training, Accountability, and HR records.
-- Keep legal names authoritative in HR and payroll while preserving preferred-name use in approved employee-facing scheduling contexts.
-- Preserve current Licensing Center ownership of credentials and shift eligibility while allowing authorized HR workflows to reference status without duplicating credential records.
-- Preserve full history when an employee separates; active views should exclude separated employees by default while authorized users can retrieve historical records.
+#### Stage 3 — People & HR Workspace (2 runs)
 
-Required access and security:
+- [ ] Build a compact HR overview and priority work queue.
+- [ ] Build a paginated People list with search, filters, saved views, and active employees by default.
+- [ ] Build the permission-controlled authoritative Employee File.
+- [ ] Build a permission-safe Company Directory and migrate current Directory responsibilities without creating a second editing workflow.
+- [ ] Use connected summaries and deep links so each domain remains authoritative instead of duplicating data.
 
-- Create functional, server-enforced permissions for each HR and Finance capability; sidebar visibility alone is not authorization.
-- Require MFA for sensitive employee-document, employment-status, disciplinary, payroll, and access actions.
-- Support role permissions and audited individual grants or denies without broadening existing employee access.
-- Employees may access only their own approved self-service documents and acknowledgments unless another permission explicitly authorizes more.
-- Keep highly restricted medical, identity, disciplinary, and financial records out of general Supervisor or Scheduler visibility.
-- Include loading, empty, success, validation, access-denied, service-error, and recovery states for every workflow.
+#### Stage 4 — Secure Document Platform (3–4 runs)
 
-Planned delivery sequence:
+- [ ] Implement private document vault storage with server-enforced vault and confidentiality permissions.
+- [ ] Support file picker, drag-and-drop upload, progress, validation, and clear recovery states.
+- [ ] Validate file signatures, MIME types, extensions, size limits, and active content.
+- [ ] Add malware scanning and quarantine before a document can be previewed or downloaded.
+- [ ] Support authorized in-browser preview for safe file formats.
+- [ ] Support authorized downloads through short-lived, non-public access.
+- [ ] Preserve immutable versions, replacements, archive/restore, retention rules, legal holds, backups, and recovery.
+- [ ] Add document requests, acknowledgments, signatures, access records, and append-only document audits.
 
-1. Dedicated Payroll workspace and HR & Finance navigation foundation. **Completed 08/28/2026.**
-2. HR Center foundation, private document storage, permission model, audit model, and secure employee-file profiles.
-3. Company documents, policy assignment, acknowledgments, reminders, and employee self-service.
-4. Onboarding and offboarding workflows.
-5. Employee actions, restricted HR review, leave, and effective-dated employment history.
-6. HR reporting, automation, retention administration, and controlled integrations.
+#### Stage 5 — HR Automation & Action Center (2–3 runs)
+
+- [ ] Implement versioned workflows, approval paths, human tasks, reminders, escalations, and due dates.
+- [ ] Make delivery transactional and reliable with idempotency and concurrency protection.
+- [ ] Add retry, failure, dead-letter, pause, resume, cancel, and audited manual-override controls.
+- [ ] Connect approved HR work to the Action Center and notification system without flooding users.
+
+#### Stage 6 — Recruiting & Onboarding (3 runs)
+
+- [ ] Implement requisitions, applicants, candidate stages, interviews, scorecards, offers, and disposition history.
+- [ ] Convert an approved candidate into the permanent employee identity without re-entering or duplicating data.
+- [ ] Implement preboarding and onboarding templates, assigned tasks, dependencies, readiness, reminders, and escalation.
+- [ ] Integrate onboarding with User Accounts, Licensing, Training, equipment, documents, and site-access readiness.
+
+#### Stage 7 — Leave, Benefits & Compensation (3–4 runs)
+
+- [ ] Implement time-off and protected-leave foundations using approved eligibility, accrual, and policy rules only.
+- [ ] Connect approved leave to Schedule, Time & Attendance, and Payroll only after authorized approval.
+- [ ] Implement benefits plans, eligibility, enrollment, elections, and effective-dated history foundations.
+- [ ] Implement effective-dated compensation history, approvals, recent-MFA requirements, and restricted access.
+- [ ] Never invent balances, policy entitlements, benefit promises, or compensation decisions.
+
+#### Stage 8 — Talent, Learning, Cases, Safety & Assets (3–4 runs)
+
+- [ ] Implement goals, reviews, performance history, development plans, and restricted visibility.
+- [ ] Implement learning and training workflows connected to the existing Licensing Center where appropriate.
+- [ ] Implement restricted HR case management with factual records, attachments, follow-ups, and audits.
+- [ ] Implement safety and workers' compensation workflows with appropriate restricted-data boundaries.
+- [ ] Implement equipment and asset issuance, acknowledgment, transfer, return, and offboarding reconciliation.
+
+#### Stage 9 — Offboarding, Self-Service & Reporting (2–3 runs)
+
+- [ ] Implement separation and rehire workflows with explicit human approvals and preserved history.
+- [ ] Coordinate account access, Schedule, Payroll, Licensing, documents, training, and equipment during offboarding.
+- [ ] Implement employee and manager self-service limited to effective permissions and approved records.
+- [ ] Implement permission-aware reports, custom report building, scheduled reports, and asynchronous exports for large jobs.
+
+#### Stage 10 — Payroll Integration & Enterprise Hardening (2–3 runs)
+
+- [ ] Define and approve a versioned HR-to-Payroll integration contract.
+- [ ] Keep Payroll authoritative and require controlled approval for every payroll-impacting HR change.
+- [ ] Run parallel reconciliation and locked-snapshot comparisons before any cutover.
+- [ ] Complete cross-module security, permission, audit, accessibility, mobile, performance, backup, and recovery tests.
+- [ ] Perform controlled production integration with a tested rollback and final reconciliation.
+- [ ] Preserve future Sygilant hub readiness through stable identifiers, versioned APIs/events, and webhooks without making this release dependent on that future application.
 
 Completion standard:
 
-- Do not mark this initiative complete until storage security, server authorization, document lifecycle, audit history, retention, employee self-service, administrative workflows, tests, backup/recovery validation, production deployment, and rollback procedures are all verified.
+- [ ] Do not mark the program or a stage complete because pages or buttons exist. The authorized workflow, secure storage, server enforcement, persistence, document lifecycle, audit history, automation behavior, tests, backup/recovery validation, production deployment, and rollback must all be verified.
+- [ ] Keep adverse, sensitive, financial, employment-status, leave, discipline, compensation, and official payroll decisions under documented human approval; automation may prepare and route work but must not make those decisions silently.
 
 ## Workforce Organization & Scheduling
 
