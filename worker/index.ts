@@ -40,6 +40,11 @@ type Environment = Partial<Env> & {
   SYGSHIFT_HR_LEAVE_ENABLED?: string
   SYGSHIFT_HR_BENEFITS_ENABLED?: string
   SYGSHIFT_HR_COMPENSATION_ENABLED?: string
+  SYGSHIFT_HR_TALENT_ENABLED?: string
+  SYGSHIFT_HR_LEARNING_ENABLED?: string
+  SYGSHIFT_HR_CASES_ENABLED?: string
+  SYGSHIFT_HR_SAFETY_ENABLED?: string
+  SYGSHIFT_HR_ASSETS_ENABLED?: string
 }
 
 interface SessionContext {
@@ -887,6 +892,27 @@ function hrBenefitsEnabled(environment: Environment): boolean {
 
 function hrCompensationEnabled(environment: Environment): boolean {
   return environment.SYGSHIFT_HR_COMPENSATION_ENABLED?.trim().toLowerCase() === 'true'
+}
+
+type HrStage8Module = 'talent' | 'learning' | 'cases' | 'safety' | 'assets'
+
+const hrStage8Permissions: Record<HrStage8Module, string> = {
+  talent: 'hr.talent.view',
+  learning: 'hr.learning.view',
+  cases: 'hr.cases.view',
+  safety: 'hr.safety.view',
+  assets: 'hr.assets.view',
+}
+
+function hrStage8Enabled(environment: Environment, module: HrStage8Module): boolean {
+  const value = {
+    talent: environment.SYGSHIFT_HR_TALENT_ENABLED,
+    learning: environment.SYGSHIFT_HR_LEARNING_ENABLED,
+    cases: environment.SYGSHIFT_HR_CASES_ENABLED,
+    safety: environment.SYGSHIFT_HR_SAFETY_ENABLED,
+    assets: environment.SYGSHIFT_HR_ASSETS_ENABLED,
+  }[module]
+  return value?.trim().toLowerCase() === 'true'
 }
 
 function requireSessionPermission(context: SessionContext, permission: string): void {
@@ -2051,6 +2077,51 @@ async function handleHrCompensationApi(
       target_actor_id: session.context.employee_id,
       target_mfa_method: mfa.method,
       target_mfa_verified_at: mfa.verifiedAt,
+      target_offset: offset,
+      target_page_size: pageSize,
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
+function disabledHrStage8Workspace(module: HrStage8Module, requestId: string): Record<string, unknown> {
+  return {
+    enabled: false,
+    module,
+    pageSize: 10,
+    offset: 0,
+    counts: { primary: 0, secondary: 0, tertiary: 0 },
+    items: [],
+    requestId,
+  }
+}
+
+async function handleHrStage8Api(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url)
+  const match = url.pathname.match(/^\/api\/v1\/hr\/(talent|learning|cases|safety|assets)\/workspace$/)
+  if (!match) return errorJson('not_found', requestId, 404)
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  const module = match[1] as HrStage8Module
+  const session = await requireVerifiedOperationsSession(request, environment, `hr_${module}_mfa_required`)
+  requireSessionPermission(session.context, hrStage8Permissions[module])
+  if (!hrStage8Enabled(environment, module)) return json(disabledHrStage8Workspace(module, requestId))
+  const mfa = module === 'cases' || module === 'safety'
+    ? await requireRecentDocumentMfa(request, session)
+    : null
+  const { offset, pageSize } = boundedWorkspacePage(url)
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_hr_stage8_workspace',
+    {
+      target_actor_id: session.context.employee_id,
+      target_mfa_method: mfa?.method ?? null,
+      target_mfa_verified_at: mfa?.verifiedAt ?? null,
+      target_module: module,
       target_offset: offset,
       target_page_size: pageSize,
     },
@@ -4175,6 +4246,19 @@ export default {
           response = error instanceof ApiError
             ? errorJson(error.code, requestId, error.status, error.message)
             : errorJson('hr_compensation_request_failed', requestId, 500, 'The Compensation request could not be completed.')
+        }
+      }
+    } else if (/^\/api\/v1\/hr\/(talent|learning|cases|safety|assets)(?:\/|$)/.test(url.pathname)) {
+      try {
+        response = await handleHrStage8Api(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('hr_stage8_request_failed', requestId, 500, 'The HR workspace request could not be completed.')
         }
       }
     } else if (url.pathname.startsWith('/api/v1/hr/onboarding')) {

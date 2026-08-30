@@ -57,6 +57,8 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/hr/leave': { anyOf: ['hr.leave.view'] },
   '/hr/benefits': { anyOf: ['hr.benefits.view'] },
   '/hr/compensation': { anyOf: ['hr.compensation.view'] },
+  '/hr/talent-learning': { anyOf: ['hr.talent.view', 'hr.learning.view'] },
+  '/hr/cases-compliance': { anyOf: ['hr.cases.view', 'hr.safety.view', 'hr.assets.view'] },
   '/my-documents': { anyOf: [] },
   '/hr/identity-readiness': { anyOf: ['hr.people.manage'] },
   '/people': { anyOf: ['directory.view', 'directory.edit_basic', 'availability.manage'] },

@@ -162,6 +162,8 @@ select:focus-visible,
 .hr-automation-summary article.is-alert { border-top-color: #a94436; }
 .hr-automation-summary span { color: var(--muted, #6d665c); font-weight: 750; }
 .hr-automation-summary strong { font-size: 1.8rem; }
+.hr-stage8-tabs { margin: 0 0 18px; max-width: 760px; }
+.hr-stage8-tabs button { align-items: center; display: inline-flex; gap: 8px; justify-content: center; }
 .hr-automation-worklist { overflow: hidden; padding: 0; }
 .hr-automation-worklist .section-heading { align-items: end; padding: 22px 24px 16px; }
 .compact-page-size { align-items: center; display: flex; gap: 8px; font-weight: 750; }

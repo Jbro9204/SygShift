@@ -174,13 +174,15 @@ Stage 6 is deployed dormant. Recruiting and onboarding have independent database
 
 Stage 7 is deployed dormant. Leave Administration, Benefits Administration, and Compensation have independent database and Worker release gates, all 11 permissions remain unassigned, and no policy, balance, entitlement, benefit plan, enrollment, compensation record, proposal, or approval was created during deployment. Operational time-off remains authoritative. Protected leave information is isolated behind separate permissions, downstream leave effects require explicit authorization, and compensation access requires recent MFA with database-enforced proposer/approver separation. Activation requires approved source data, named access owners, an isolated canary, recovery evidence, and post-activation validation.
 
-#### Stage 8 — Talent, Learning, Cases, Safety & Assets (3–4 runs)
+#### Stage 8 — Talent, Learning, Cases, Safety & Assets (completed 08/30/2026)
 
-- [ ] Implement goals, reviews, performance history, development plans, and restricted visibility.
-- [ ] Implement learning and training workflows connected to the existing Licensing Center where appropriate.
-- [ ] Implement restricted HR case management with factual records, attachments, follow-ups, and audits.
-- [ ] Implement safety and workers' compensation workflows with appropriate restricted-data boundaries.
-- [ ] Implement equipment and asset issuance, acknowledgment, transfer, return, and offboarding reconciliation.
+- [x] Implement goals, reviews, performance history, development plans, and restricted visibility.
+- [x] Implement learning and training workflows connected to the existing Licensing Center where appropriate.
+- [x] Implement restricted HR case management with factual records, attachments, follow-ups, and audits.
+- [x] Implement safety and workers' compensation workflows with appropriate restricted-data boundaries.
+- [x] Implement equipment and asset issuance, acknowledgment, transfer, return, and offboarding reconciliation.
+
+Stage 8 is deployed dormant. Talent, Learning, Employee Cases, Safety, and Assets have independent database and Worker release gates, all 15 permissions remain unassigned, and no goal, review, course assignment, HR case, safety case, workers' compensation record, asset, assignment, acknowledgment, or financial review was created during deployment. Employee Cases and Safety require recent MFA in addition to exact permissions. The compact workspaces use bounded 5/10/20 worklists and connect to the existing document, Licensing Center, onboarding, and offboarding authorities without duplicating those records. Activation requires approved operating policies, named access owners, permission assignment, recovery evidence, an isolated canary, and post-activation validation.
 
 #### Stage 9 — Offboarding, Self-Service & Reporting (2–3 runs)
 

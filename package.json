@@ -28,6 +28,7 @@
     "check:hris-automation": "node tools/validate-hris-stage5-automation.mjs",
     "check:hris-recruiting-onboarding": "node tools/validate-hris-stage6-recruiting-onboarding.mjs",
     "check:hris-leave-benefits-compensation": "node tools/validate-hris-stage7-leave-benefits-compensation.mjs",
+    "check:hris-talent-learning-cases-safety-assets": "node tools/validate-hris-stage8-talent-learning-cases-safety-assets.mjs",
     "verify:access:preserved": "node tools/verify-production-access-preservation.mjs outputs/access-control/production-access-baseline-08-21-2026-before-enforcement.json outputs/access-control/production-access-baseline-08-21-2026.json",
     "preview": "pnpm build && vite preview",
     "deploy": "pnpm build && wrangler deploy",

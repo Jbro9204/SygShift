@@ -19,6 +19,8 @@ import {
   Timer,
   Umbrella,
   HeartHandshake,
+  GraduationCap,
+  ShieldAlert,
   UserCog,
   UserRoundCheck,
   UsersRound,
@@ -110,6 +112,18 @@ export const navigationGroups: NavigationGroup[] = [
         path: '/hr/compensation',
         icon: BadgeDollarSign,
         permissions: ['hr.compensation.view'],
+      },
+      {
+        label: 'Talent & Learning',
+        path: '/hr/talent-learning',
+        icon: GraduationCap,
+        permissions: ['hr.talent.view', 'hr.learning.view'],
+      },
+      {
+        label: 'Cases, Safety & Assets',
+        path: '/hr/cases-compliance',
+        icon: ShieldAlert,
+        permissions: ['hr.cases.view', 'hr.safety.view', 'hr.assets.view'],
       },
       {
         label: 'Time-Off Requests',

@@ -70,3 +70,6 @@
 - Configure restrictive Cloudflare security headers and rate limits.
 - Run dependency, secret, static-analysis, accessibility, and end-to-end checks before release.
 - Test restoration from database backup before launch and on a recurring schedule.
+# HRIS Stage 8 security boundary
+
+Talent, Learning, Employee Cases, Safety, and Assets use deny-by-default permissions and independent database and Worker release gates. No Stage 8 permission is assigned by the foundation migration. Private tables have row-level security enabled, browser roles are revoked, and service access is rechecked against the actor's exact effective permission. Employee Cases and Safety require recent MFA at both the Worker and database layers. Restricted case, medical, performance, and financial-review data must never be inferred, exposed through general Directory access, or used for an automated adverse decision. Stage 8 events and asset acknowledgments are append-only.

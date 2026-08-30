@@ -90,3 +90,6 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Upcoming maintenance notices are dismissible. Active maintenance remains persistent until the protected window ends.
 - Completed maintenance uses employee-safe language, automatically dismisses after 15 seconds, and stores dismissal per maintenance event so it does not reappear during navigation or a later session.
 - Feature access continues to be enforced at the server and database boundaries; the service indicator is informational and never substitutes for authorization or health enforcement.
+# HRIS Stage 8 protected workspaces
+
+Talent, Learning, Employee Cases, Safety, and Assets are private HR domains with independent release gates. Their browser routes use the existing SygShift application shell, but protected data is read through authenticated Worker endpoints rather than direct browser access to private tables. Each endpoint requires its exact effective permission; Employee Cases and Safety additionally require recent MFA. Attachments remain in the Secure Document Platform, Licensing remains authoritative for credentials, and existing employee identities remain authoritative across every Stage 8 relationship. Compact worklists are bounded to 5, 10, or 20 records per page.
