@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "release": {
-    "featureFlag": "hris_documents_enabled",
+    "featureFlag": "SYGSHIFT_DOCUMENT_PIPELINE_ENABLED",
     "defaultEnabled": false,
     "requiresSecurityEvidence": true,
     "requiresRecoveryEvidence": true
@@ -18,7 +18,7 @@
     "directBrowserObjectAccessAllowed": false,
     "objectKeyContainsEmployeeData": false,
     "maximumFileSizeBytes": 26214400,
-    "signedAccessLifetimeSeconds": 300
+    "signedAccessLifetimeSeconds": 60
   },
   "validation": {
     "trustedBrowserMimeType": false,

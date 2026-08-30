@@ -23,6 +23,19 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/30/2026
+
+### HRIS Stage 4 secure document pipeline — dormant Run 2 controls
+
+- Added exact server-side validation for supported HR document formats, including extension/MIME/signature agreement, a 25 MB limit, active-PDF rejection, and macro/embedded/external Office content rejection.
+- Added quarantine-only upload operations, append-only scanner evidence, an authenticated scanner callback, and explicit clean/rejected/error states.
+- Added recent authenticator or security-key verification, permission-scoped one-time document access, hashed 60-second single-use tokens, and access-time revalidation of document version, clean scan state, active account, and vault permission.
+- Added operating and rollback runbooks, the `check:hris-document-pipeline` release validator, and focused pipeline regression tests.
+- Applied forward-only production migration `20260830120000_hris_stage4_secure_document_pipeline.sql` and verified 78 employees, 68 accounts, zero document/version/upload/access records, zero document permission assignments, and a disabled document release gate.
+- Kept the Worker feature switch unconfigured and added no employee-facing document controls; the new platform remains dormant until scanner integration, UI authorization tests, recovery evidence, permission assignments, and controlled canary activation are complete.
+- Confirmed 110 test files / 551 tests, type checking, zero-warning linting, both production builds, and both Stage 4 validators pass.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-30-2026_HRIS_STAGE_4_SECURE_DOCUMENT_PIPELINE.md`.
+
 ## 08/29/2026
 
 ### HRIS Stage 2 Controlled Backfill Plane — protected Run 3 controls

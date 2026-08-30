@@ -9,6 +9,7 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from '@simplewebauthn/server'
+import { strFromU8, unzipSync } from 'fflate'
 import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
@@ -31,6 +32,8 @@ type Environment = Partial<Env> & {
   SUPABASE_SERVICE_ROLE_KEY?: string
   SYGSHIFT_SECURITY_KEYS_ENABLED?: string
   SYGSHIFT_SECURITY_KEY_PILOT_USERNAMES?: string
+  SYGSHIFT_DOCUMENT_PIPELINE_ENABLED?: string
+  SYGSHIFT_DOCUMENT_SCANNER_SECRET?: string
 }
 
 interface SessionContext {
@@ -97,8 +100,47 @@ interface SecurityKeyChallengeRecord {
 
 interface AccessTokenClaims {
   aal?: string
+  amr?: Array<{ method?: string, timestamp?: number }>
   exp?: number
   session_id?: string
+}
+
+interface HrDocumentUploadMetadata {
+  accessClassification: 'confidential' | 'restricted' | 'highly_restricted'
+  category: string
+  declaredMimeType: string
+  description: string
+  documentId: string | null
+  employeeId: string
+  idempotencyKey: string
+  originalFilename: string
+  replacementReason: string | null
+  title: string
+  vaultCode: string
+}
+
+interface HrDocumentUploadOperation {
+  bucket: string
+  documentId: string
+  objectKey: string
+  operationId: string
+  state: string
+  versionId: string
+}
+
+interface HrDocumentAccessGrant {
+  expiresAt: string
+  grantId: string
+}
+
+interface HrDocumentAccessObject {
+  action: 'preview' | 'view' | 'download'
+  bucket: string
+  documentId: string
+  filename: string
+  mimeType: string
+  objectKey: string
+  versionId: string
 }
 
 interface NotificationJob {
@@ -162,6 +204,9 @@ interface MaintenanceStatusPayload {
 
 const maxJsonBodyBytes = 4096
 const maxWebAuthnBodyBytes = 64 * 1024
+const maxHrDocumentBytes = 25 * 1024 * 1024
+const maxHrDocumentMetadataBytes = 16 * 1024
+const recentDocumentMfaSeconds = 15 * 60
 const defaultAppUrl = 'https://app.sygilant.us'
 const defaultSupportEmail = 'jbrown@guardianshipsecurity.net'
 const dispatchAlertEmail = 'dispatch@guardianshipsecurity.net'
@@ -759,6 +804,635 @@ function normalizeRecoveryCode(value: string): string {
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function sha256BytesHex(value: Uint8Array): Promise<string> {
+  const copy = new Uint8Array(value)
+  const digest = await crypto.subtle.digest('SHA-256', copy.buffer)
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function hrDocumentPipelineEnabled(environment: Environment): boolean {
+  return environment.SYGSHIFT_DOCUMENT_PIPELINE_ENABLED?.trim().toLowerCase() === 'true'
+}
+
+function requireHrDocumentPipeline(environment: Environment): void {
+  if (!hrDocumentPipelineEnabled(environment)) {
+    throw new ApiError('hr_document_pipeline_unavailable', 503, 'The secure HR document workspace has not been released.')
+  }
+}
+
+function normalizedMimeType(value: string): string {
+  return value.split(';', 1)[0]?.trim().toLowerCase() ?? ''
+}
+
+function fileExtension(filename: string): string {
+  const lastSegment = filename.trim().split(/[\\/]/).at(-1) ?? ''
+  const separator = lastSegment.lastIndexOf('.')
+  return separator > 0 ? lastSegment.slice(separator + 1).toLowerCase() : ''
+}
+
+export function sanitizeHrDocumentFilename(filename: string): string {
+  const lastSegment = filename.normalize('NFKC').trim().split(/[\\/]/).at(-1) ?? ''
+  const cleaned = [...lastSegment]
+    .filter((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127)
+    .join('')
+    .replace(/[^A-Za-z0-9._ -]/g, '_')
+    .replace(/\s+/g, ' ')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^\.+|\.+$/g, '')
+    .trim()
+  if (!cleaned || cleaned.length > 180) {
+    throw new ApiError('invalid_document_filename', 400, 'Use a valid file name no longer than 180 characters.')
+  }
+  return cleaned
+}
+
+function u16(bytes: Uint8Array, offset: number): number {
+  return bytes[offset] | (bytes[offset + 1] << 8)
+}
+
+function u32(bytes: Uint8Array, offset: number): number {
+  return (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0
+}
+
+function hasSignature(bytes: Uint8Array, signature: number[], offset = 0): boolean {
+  return signature.every((value, index) => bytes[offset + index] === value)
+}
+
+function inspectOfficeZip(bytes: Uint8Array): { entryNames: string[], detectedMimeType: string } {
+  let eocd = -1
+  const minimum = Math.max(0, bytes.length - 65_557)
+  for (let index = bytes.length - 22; index >= minimum; index -= 1) {
+    if (u32(bytes, index) === 0x06054b50) {
+      eocd = index
+      break
+    }
+  }
+  if (eocd < 0) throw new ApiError('invalid_office_document', 400, 'The Office file is malformed or encrypted.')
+
+  const entryCount = u16(bytes, eocd + 10)
+  const centralDirectoryOffset = u32(bytes, eocd + 16)
+  if (entryCount < 1 || entryCount > 500 || centralDirectoryOffset >= bytes.length) {
+    throw new ApiError('unsafe_office_document', 400, 'The Office file contains an unsafe archive structure.')
+  }
+
+  const names: string[] = []
+  let totalUncompressed = 0
+  let offset = centralDirectoryOffset
+  for (let entry = 0; entry < entryCount; entry += 1) {
+    if (offset + 46 > bytes.length || u32(bytes, offset) !== 0x02014b50) {
+      throw new ApiError('invalid_office_document', 400, 'The Office file directory is malformed.')
+    }
+    const flags = u16(bytes, offset + 8)
+    const uncompressedSize = u32(bytes, offset + 24)
+    const filenameLength = u16(bytes, offset + 28)
+    const extraLength = u16(bytes, offset + 30)
+    const commentLength = u16(bytes, offset + 32)
+    if ((flags & 0x0001) !== 0 || uncompressedSize > 50 * 1024 * 1024) {
+      throw new ApiError('unsafe_office_document', 400, 'Encrypted or oversized Office content is not allowed.')
+    }
+    totalUncompressed += uncompressedSize
+    if (totalUncompressed > 100 * 1024 * 1024) {
+      throw new ApiError('unsafe_office_document', 400, 'The Office file expands beyond the safe processing limit.')
+    }
+    const nameStart = offset + 46
+    const nameEnd = nameStart + filenameLength
+    if (nameEnd > bytes.length) throw new ApiError('invalid_office_document', 400, 'The Office file directory is malformed.')
+    names.push(strFromU8(bytes.subarray(nameStart, nameEnd)).replaceAll('\\', '/').toLowerCase())
+    offset = nameEnd + extraLength + commentLength
+  }
+
+  const disallowedPath = names.find((name) => (
+    name.endsWith('/vbaproject.bin')
+    || name.includes('/activex/')
+    || name.includes('/embeddings/')
+    || name.includes('/oleobject')
+    || name.includes('/externallinks/')
+    || name.includes('/customui/')
+  ))
+  if (disallowedPath) throw new ApiError('active_content_not_allowed', 400, 'Macro, embedded, or external Office content is not allowed.')
+
+  let archive: Record<string, Uint8Array>
+  try {
+    archive = unzipSync(bytes)
+  } catch {
+    throw new ApiError('invalid_office_document', 400, 'The Office file could not be safely opened.')
+  }
+  for (const [name, contents] of Object.entries(archive)) {
+    if (!name.toLowerCase().endsWith('.rels')) continue
+    const relationshipXml = strFromU8(contents).toLowerCase()
+    if (/targetmode\s*=\s*["']external["']/.test(relationshipXml)) {
+      throw new ApiError('external_content_not_allowed', 400, 'Office documents with external relationships are not allowed.')
+    }
+  }
+
+  const isDocx = names.includes('word/document.xml')
+  const isXlsx = names.includes('xl/workbook.xml')
+  if (isDocx === isXlsx) throw new ApiError('invalid_office_document', 400, 'The Office file type could not be verified.')
+  return {
+    detectedMimeType: isDocx
+      ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    entryNames: names,
+  }
+}
+
+export function validateHrDocumentFile(
+  bytes: Uint8Array,
+  originalFilename: string,
+  declaredMimeType: string,
+): { detectedMimeType: string, extension: string, sanitizedFilename: string } {
+  if (bytes.byteLength < 1 || bytes.byteLength > maxHrDocumentBytes) {
+    throw new ApiError('invalid_document_size', 413, 'Documents must be between 1 byte and 25 MB.')
+  }
+  const sanitizedFilename = sanitizeHrDocumentFilename(originalFilename)
+  const extension = fileExtension(sanitizedFilename)
+  const declared = normalizedMimeType(declaredMimeType)
+  const allowedByExtension: Record<string, string> = {
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    jpeg: 'image/jpeg',
+    jpg: 'image/jpeg',
+    pdf: 'application/pdf',
+    png: 'image/png',
+    txt: 'text/plain',
+    webp: 'image/webp',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  }
+  const expected = allowedByExtension[extension]
+  if (!expected) throw new ApiError('document_type_not_allowed', 400, 'This document type is not allowed.')
+
+  let detectedMimeType = ''
+  if (hasSignature(bytes, [0x25, 0x50, 0x44, 0x46, 0x2d])) {
+    detectedMimeType = 'application/pdf'
+    const pdfText = strFromU8(bytes.subarray(0, Math.min(bytes.length, 5 * 1024 * 1024)), true)
+    if (/\/(javascript|js|launch|embeddedfile|openaction|aa|richmedia)\b/i.test(pdfText)) {
+      throw new ApiError('active_content_not_allowed', 400, 'PDF files with scripts, launch actions, or embedded content are not allowed.')
+    }
+  } else if (hasSignature(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
+    detectedMimeType = 'image/png'
+  } else if (hasSignature(bytes, [0xff, 0xd8, 0xff])) {
+    detectedMimeType = 'image/jpeg'
+  } else if (
+    hasSignature(bytes, [0x52, 0x49, 0x46, 0x46])
+    && hasSignature(bytes, [0x57, 0x45, 0x42, 0x50], 8)
+  ) {
+    detectedMimeType = 'image/webp'
+  } else if (hasSignature(bytes, [0x50, 0x4b, 0x03, 0x04])) {
+    detectedMimeType = inspectOfficeZip(bytes).detectedMimeType
+  } else if (extension === 'txt') {
+    let text: string
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    } catch {
+      throw new ApiError('invalid_text_document', 400, 'Text documents must use UTF-8 encoding.')
+    }
+    const hasBinaryControlData = [...text].some((character) => {
+      const code = character.charCodeAt(0)
+      return code === 0 || (code < 32 && code !== 9 && code !== 10 && code !== 13)
+    })
+    if (hasBinaryControlData) {
+      throw new ApiError('invalid_text_document', 400, 'Text documents cannot contain binary control data.')
+    }
+    detectedMimeType = 'text/plain'
+  }
+
+  if (!detectedMimeType || detectedMimeType !== expected || declared !== expected) {
+    throw new ApiError('document_type_mismatch', 400, 'The file name, declared type, and verified content do not match.')
+  }
+  return { detectedMimeType, extension, sanitizedFilename }
+}
+
+export function recentAuthenticatorMfa(
+  claims: AccessTokenClaims | null,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): string | null {
+  if (claims?.aal !== 'aal2' || !Array.isArray(claims.amr)) return null
+  const verified = claims.amr
+    .filter((entry) => ['totp', 'authenticator'].includes(entry.method?.toLowerCase() ?? ''))
+    .map((entry) => entry.timestamp)
+    .filter((timestamp): timestamp is number => Number.isFinite(timestamp))
+    .sort((left, right) => right - left)[0]
+  if (!verified || verified < nowSeconds - recentDocumentMfaSeconds || verified > nowSeconds + 60) return null
+  return new Date(verified * 1000).toISOString()
+}
+
+function validUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function requiredText(value: unknown, field: string, maximumLength: number): string {
+  if (typeof value !== 'string' || !value.trim() || value.trim().length > maximumLength) {
+    throw new ApiError('invalid_document_metadata', 422, `${field} is required and must be no longer than ${maximumLength} characters.`)
+  }
+  return value.trim()
+}
+
+function optionalText(value: unknown, field: string, maximumLength: number): string | null {
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value !== 'string' || value.trim().length > maximumLength) {
+    throw new ApiError('invalid_document_metadata', 422, `${field} must be no longer than ${maximumLength} characters.`)
+  }
+  return value.trim() || null
+}
+
+function parseHrDocumentMetadata(request: Request): HrDocumentUploadMetadata {
+  const encoded = request.headers.get('x-sygshift-document-metadata')?.trim() ?? ''
+  if (!encoded || encoded.length > Math.ceil(maxHrDocumentMetadataBytes * 4 / 3) + 16) {
+    throw new ApiError('invalid_document_metadata', 422, 'Secure document metadata is required.')
+  }
+
+  let raw: Uint8Array
+  let payload: unknown
+  try {
+    raw = decodeBase64Url(encoded)
+    if (raw.byteLength > maxHrDocumentMetadataBytes) throw new Error('metadata too large')
+    payload = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw))
+  } catch {
+    throw new ApiError('invalid_document_metadata', 422, 'Secure document metadata is invalid.')
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new ApiError('invalid_document_metadata', 422, 'Secure document metadata must be a JSON object.')
+  }
+  const data = payload as Record<string, unknown>
+  const employeeId = requiredText(data.employeeId, 'Employee', 36)
+  const idempotencyKey = requiredText(data.idempotencyKey, 'Upload request ID', 36)
+  const documentId = optionalText(data.documentId, 'Document ID', 36)
+  if (!validUuid(employeeId) || !validUuid(idempotencyKey) || (documentId !== null && !validUuid(documentId))) {
+    throw new ApiError('invalid_document_metadata', 422, 'Employee, document, or upload request identifiers are invalid.')
+  }
+  const vaultCode = requiredText(data.vaultCode, 'Document vault', 40)
+  if (!['hr-general', 'hr-financial', 'hr-identity', 'hr-medical', 'hr-disciplinary', 'hr-legal-safety'].includes(vaultCode)) {
+    throw new ApiError('invalid_document_metadata', 422, 'Choose a valid protected document vault.')
+  }
+  const accessClassification = requiredText(data.accessClassification, 'Access classification', 30)
+  if (!['confidential', 'restricted', 'highly_restricted'].includes(accessClassification)) {
+    throw new ApiError('invalid_document_metadata', 422, 'Choose a valid access classification.')
+  }
+
+  return {
+    accessClassification: accessClassification as HrDocumentUploadMetadata['accessClassification'],
+    category: requiredText(data.category, 'Category', 100),
+    declaredMimeType: normalizedMimeType(requiredText(data.declaredMimeType, 'File type', 160)),
+    description: optionalText(data.description, 'Description', 2000) ?? '',
+    documentId,
+    employeeId,
+    idempotencyKey,
+    originalFilename: requiredText(data.originalFilename, 'File name', 255),
+    replacementReason: optionalText(data.replacementReason, 'Replacement reason', 1000),
+    title: requiredText(data.title, 'Title', 200),
+    vaultCode,
+  }
+}
+
+async function readHrDocumentBody(request: Request): Promise<Uint8Array> {
+  if (!request.body) throw new ApiError('document_file_required', 422, 'Choose a document to upload.')
+  const length = request.headers.get('content-length')
+  if (length && (!Number.isFinite(Number(length)) || Number(length) < 1 || Number(length) > maxHrDocumentBytes)) {
+    throw new ApiError('invalid_document_size', 413, 'Documents must be between 1 byte and 25 MB.')
+  }
+  const buffer = await request.arrayBuffer()
+  if (buffer.byteLength < 1 || buffer.byteLength > maxHrDocumentBytes) {
+    throw new ApiError('invalid_document_size', 413, 'Documents must be between 1 byte and 25 MB.')
+  }
+  return new Uint8Array(buffer)
+}
+
+function privateStorageObjectUrl(config: { url: string }, bucket: string, path: string): string {
+  const safeBucket = encodeURIComponent(bucket)
+  const safePath = path.split('/').map(encodeURIComponent).join('/')
+  return `${config.url}/storage/v1/object/${safeBucket}/${safePath}`
+}
+
+async function fetchPrivateStorageObject(
+  config: { serviceRoleKey: string, url: string },
+  bucket: string,
+  objectKey: string,
+): Promise<Response> {
+  return fetch(privateStorageObjectUrl(config, bucket, objectKey), {
+    headers: {
+      apikey: config.serviceRoleKey,
+      authorization: `Bearer ${config.serviceRoleKey}`,
+    },
+  })
+}
+
+async function deletePrivateStorageObject(
+  config: { serviceRoleKey: string, url: string },
+  bucket: string,
+  objectKey: string,
+): Promise<void> {
+  const response = await fetch(privateStorageObjectUrl(config, bucket, objectKey), {
+    headers: {
+      apikey: config.serviceRoleKey,
+      authorization: `Bearer ${config.serviceRoleKey}`,
+    },
+    method: 'DELETE',
+  })
+  if (!response.ok && response.status !== 404) throw new Error('Quarantined storage cleanup failed.')
+}
+
+async function storeQuarantinedDocument(
+  config: { serviceRoleKey: string, url: string },
+  operation: HrDocumentUploadOperation,
+  bytes: Uint8Array,
+  mimeType: string,
+  checksum: string,
+): Promise<void> {
+  const objectUrl = privateStorageObjectUrl(config, operation.bucket, operation.objectKey)
+  const uploadBody = bytes.buffer instanceof ArrayBuffer
+    ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+    : new Uint8Array(bytes).buffer
+  const uploaded = await fetch(objectUrl, {
+    body: uploadBody,
+    headers: {
+      apikey: config.serviceRoleKey,
+      authorization: `Bearer ${config.serviceRoleKey}`,
+      'content-type': mimeType,
+      'x-upsert': 'false',
+    },
+    method: 'POST',
+  })
+  if (uploaded.ok) return
+
+  // An idempotent retry may arrive after the object was stored but before its state advanced.
+  const existing = await fetchPrivateStorageObject(config, operation.bucket, operation.objectKey)
+  if (!existing.ok) throw new Error(`Quarantine storage rejected the upload (${uploaded.status}).`)
+  const existingBytes = new Uint8Array(await existing.arrayBuffer())
+  if (existingBytes.byteLength !== bytes.byteLength || await sha256BytesHex(existingBytes) !== checksum) {
+    throw new Error('The idempotent upload key is already associated with different content.')
+  }
+}
+
+async function constantTimeSecretMatches(provided: string, expected: string): Promise<boolean> {
+  if (!provided || !expected) return false
+  const [providedHash, expectedHash] = await Promise.all([sha256Hex(provided), sha256Hex(expected)])
+  let difference = 0
+  for (let index = 0; index < expectedHash.length; index += 1) {
+    difference |= expectedHash.charCodeAt(index) ^ providedHash.charCodeAt(index)
+  }
+  return difference === 0
+}
+
+async function requireDocumentScanner(request: Request, environment: Environment): Promise<void> {
+  const expected = environment.SYGSHIFT_DOCUMENT_SCANNER_SECRET?.trim() ?? ''
+  const provided = request.headers.get('x-sygshift-document-scanner-secret')?.trim() ?? ''
+  if (expected.length < 32) throw new ApiError('document_scanner_not_configured', 503, 'The protected document scanner is not configured.')
+  if (!await constantTimeSecretMatches(provided, expected)) {
+    throw new ApiError('document_scanner_authentication_failed', 401, 'Scanner authentication failed.')
+  }
+}
+
+async function requireRecentDocumentMfa(
+  request: Request,
+  session: Awaited<ReturnType<typeof requireAuthenticatedSession>>,
+): Promise<{ method: 'authenticator' | 'security_key', verifiedAt: string }> {
+  const claims = accessTokenClaims(session.token)
+  const authenticatorVerifiedAt = recentAuthenticatorMfa(claims)
+  if (authenticatorVerifiedAt) return { method: 'authenticator', verifiedAt: authenticatorVerifiedAt }
+
+  const securityKeyToken = request.headers.get('x-sygshift-security-key')?.trim() ?? ''
+  const authSessionId = claims?.session_id
+  if (!securityKeyToken || !authSessionId || !validUuid(authSessionId)) {
+    throw new ApiError('recent_document_mfa_required', 403, 'Verify with your authenticator or security key before accessing protected HR documents.')
+  }
+  const verification = await callRpc<{ method?: string, verifiedAt?: string }>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_verify_security_key_document_mfa',
+    {
+      target_actor_id: session.context.employee_id,
+      target_auth_session_id: authSessionId,
+      target_token_hash: await sha256Hex(securityKeyToken),
+    },
+    session.config.serviceRoleKey,
+  )
+  if (verification.method !== 'security_key' || !verification.verifiedAt) {
+    throw new ApiError('recent_document_mfa_required', 403, 'Verify with your security key before accessing protected HR documents.')
+  }
+  return { method: 'security_key', verifiedAt: verification.verifiedAt }
+}
+
+async function handleHrDocumentUpload(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  if (request.method !== 'PUT') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  const session = await requireAuthenticatedSession(request, environment)
+  await requireRecentDocumentMfa(request, session)
+  const metadata = parseHrDocumentMetadata(request)
+  const bodyMimeType = normalizedMimeType(request.headers.get('content-type') ?? '')
+  if (bodyMimeType !== metadata.declaredMimeType) {
+    throw new ApiError('document_type_mismatch', 400, 'The upload content type does not match the document metadata.')
+  }
+  const bytes = await readHrDocumentBody(request)
+  const validated = validateHrDocumentFile(bytes, metadata.originalFilename, metadata.declaredMimeType)
+  const checksum = await sha256BytesHex(bytes)
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  const operation = await callRpc<HrDocumentUploadOperation>(
+    serviceConfig,
+    'service_begin_hr_document_upload',
+    {
+      target_access_classification: metadata.accessClassification,
+      target_actor_id: session.context.employee_id,
+      target_category: metadata.category,
+      target_declared_mime_type: metadata.declaredMimeType,
+      target_description: metadata.description,
+      target_detected_mime_type: validated.detectedMimeType,
+      target_document_id: metadata.documentId,
+      target_employee_id: metadata.employeeId,
+      target_extension: validated.extension,
+      target_idempotency_key: metadata.idempotencyKey,
+      target_original_filename: metadata.originalFilename,
+      target_replacement_reason: metadata.replacementReason,
+      target_request_id: requestId,
+      target_sanitized_filename: validated.sanitizedFilename,
+      target_sha256_checksum: checksum,
+      target_size_bytes: bytes.byteLength,
+      target_title: metadata.title,
+      target_vault_code: metadata.vaultCode,
+    },
+    session.config.serviceRoleKey,
+  )
+
+  if (operation.state !== 'quarantined') {
+    return json({
+      documentId: operation.documentId,
+      operationId: operation.operationId,
+      requestId,
+      scanState: operation.state,
+      versionId: operation.versionId,
+    }, 202)
+  }
+
+  try {
+    await storeQuarantinedDocument(serviceConfig, operation, bytes, validated.detectedMimeType, checksum)
+    await callRpc(
+      serviceConfig,
+      'service_mark_hr_document_upload_stored',
+      { target_operation_id: operation.operationId, target_request_id: requestId },
+      session.config.serviceRoleKey,
+    )
+  } catch (error) {
+    await deletePrivateStorageObject(serviceConfig, operation.bucket, operation.objectKey).catch(() => undefined)
+    await callRpc(
+      serviceConfig,
+      'service_fail_hr_document_upload',
+      {
+        target_failure_code: 'quarantine_storage_failed',
+        target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Quarantine storage failed.',
+        target_operation_id: operation.operationId,
+        target_state: 'scan_error',
+      },
+      session.config.serviceRoleKey,
+    ).catch(() => undefined)
+    throw new ApiError('document_quarantine_failed', 502, 'The document could not be placed in protected quarantine.')
+  }
+
+  return json({
+    documentId: operation.documentId,
+    operationId: operation.operationId,
+    requestId,
+    scanState: 'scan_pending',
+    versionId: operation.versionId,
+  }, 202)
+}
+
+async function handleHrDocumentScanCallback(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+  operationId: string,
+): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  await requireDocumentScanner(request, environment)
+  if (!validUuid(operationId)) throw new ApiError('invalid_upload_operation', 422, 'The upload operation is invalid.')
+  const config = configuredSupabase(environment)
+  if (!config) throw new ApiError('server_not_configured', 503, 'The secure data connection is unavailable.')
+  const body = await readJsonBody(request)
+  const state = requiredText(body.state, 'Scan result', 20)
+  if (!['clean', 'rejected', 'scan_error'].includes(state)) {
+    throw new ApiError('invalid_scan_result', 422, 'The scanner result is invalid.')
+  }
+  const scannerName = requiredText(body.scannerName, 'Scanner name', 120)
+  const scannerVersion = requiredText(body.scannerVersion, 'Scanner version', 120)
+  const signatureReference = optionalText(body.signatureReference, 'Signature reference', 255)
+  const evidenceSha256 = optionalText(body.evidenceSha256, 'Scanner evidence checksum', 64)
+  if (state === 'clean' && (!evidenceSha256 || !/^[a-f0-9]{64}$/.test(evidenceSha256))) {
+    throw new ApiError('scanner_evidence_required', 422, 'Clean scan results require SHA-256 evidence.')
+  }
+  const result = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_record_hr_document_scan_result',
+    {
+      target_details: optionalText(body.details, 'Scanner details', 2000),
+      target_evidence_sha256: evidenceSha256,
+      target_operation_id: operationId,
+      target_scanner_name: scannerName,
+      target_scanner_version: scannerVersion,
+      target_signature_reference: signatureReference,
+      target_state: state,
+    },
+    config.serviceRoleKey,
+  )
+  return json({ ...result, requestId })
+}
+
+async function handleHrDocumentAccessGrant(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+  documentId: string,
+): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  if (!validUuid(documentId)) throw new ApiError('invalid_document_id', 422, 'The document identifier is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  const mfa = await requireRecentDocumentMfa(request, session)
+  const body = await readJsonBody(request)
+  const action = requiredText(body.action, 'Document action', 20)
+  if (!['preview', 'view', 'download'].includes(action)) {
+    throw new ApiError('invalid_document_action', 422, 'Choose preview, view, or download.')
+  }
+  const reason = requiredText(body.reason, 'Access reason', 1000)
+  const rawToken = generateOpaqueToken()
+  const grant = await callRpc<HrDocumentAccessGrant>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_issue_hr_document_access_grant',
+    {
+      target_action: action,
+      target_actor_id: session.context.employee_id,
+      target_document_id: documentId,
+      target_mfa_method: mfa.method,
+      target_mfa_verified_at: mfa.verifiedAt,
+      target_reason: reason,
+      target_request_id: requestId,
+      target_token_hash: await sha256Hex(rawToken),
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({
+    accessPath: `/api/v1/hr/documents/access/${rawToken}`,
+    expiresAt: grant.expiresAt,
+    requestId,
+  }, 201)
+}
+
+async function handleHrDocumentAccess(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+  rawToken: string,
+): Promise<Response> {
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  if (!/^[A-Za-z0-9_-]{40,100}$/.test(rawToken)) {
+    throw new ApiError('invalid_document_access_token', 401, 'The document access link is invalid or expired.')
+  }
+  const session = await requireAuthenticatedSession(request, environment)
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  const target = await callRpc<HrDocumentAccessObject>(
+    serviceConfig,
+    'service_consume_hr_document_access_grant',
+    {
+      target_actor_id: session.context.employee_id,
+      target_request_id: requestId,
+      target_token_hash: await sha256Hex(rawToken),
+    },
+    session.config.serviceRoleKey,
+  )
+  const stored = await fetchPrivateStorageObject(serviceConfig, target.bucket, target.objectKey)
+  if (!stored.ok || !stored.body) {
+    throw new ApiError('document_storage_unavailable', 502, 'The protected document could not be loaded.')
+  }
+  const filename = sanitizeHrDocumentFilename(target.filename).replaceAll('"', '_')
+  const disposition = target.action === 'download' ? 'attachment' : 'inline'
+  const headers = new Headers()
+  headers.set('cache-control', 'private, no-store, max-age=0')
+  headers.set('content-disposition', `${disposition}; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`)
+  headers.set('content-security-policy', "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:")
+  headers.set('content-type', target.mimeType)
+  headers.set('pragma', 'no-cache')
+  return new Response(stored.body, { headers, status: 200 })
+}
+
+async function handleHrDocumentsApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url)
+  if (url.pathname === '/api/v1/hr/documents/uploads') {
+    return handleHrDocumentUpload(request, environment, requestId)
+  }
+  const scanOperationId = url.pathname.match(/^\/api\/v1\/hr\/documents\/scans\/([0-9a-f-]{36})$/i)?.[1]
+  if (scanOperationId) return handleHrDocumentScanCallback(request, environment, requestId, scanOperationId)
+  const accessToken = url.pathname.match(/^\/api\/v1\/hr\/documents\/access\/([A-Za-z0-9_-]{40,100})$/)?.[1]
+  if (accessToken) return handleHrDocumentAccess(request, environment, requestId, accessToken)
+  const accessDocumentId = url.pathname.match(/^\/api\/v1\/hr\/documents\/([0-9a-f-]{36})\/access$/i)?.[1]
+  if (accessDocumentId) return handleHrDocumentAccessGrant(request, environment, requestId, accessDocumentId)
+  return errorJson('not_found', requestId, 404)
 }
 
 async function listAuthUsers(config: NonNullable<ReturnType<typeof configuredSupabase>>): Promise<AuthUser[]> {
@@ -2590,6 +3264,19 @@ export default {
         response = error instanceof ApiError
           ? errorJson(error.code, requestId, error.status, error.message)
           : errorJson('attendance_report_failed', requestId, 500, 'The attendance report request failed.')
+      }
+    } else if (url.pathname.startsWith('/api/v1/hr/documents')) {
+      try {
+        response = await handleHrDocumentsApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('hr_document_request_failed', requestId, 500, 'The protected document request could not be completed.')
+        }
       }
     } else if (url.pathname.startsWith('/api/')) {
       response = json({ error: 'not_found', requestId }, 404)
