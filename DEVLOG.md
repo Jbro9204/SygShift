@@ -1061,3 +1061,15 @@ pnpm exec wrangler deploy --keep-vars
 - Preserved all 78 source employees and existing access, schedule, timekeeping, payroll, licensing, and audit relationships without creating protected HR identities.
 - Applied migration `20260830013000_hris_stage2_identity_readiness_workspace.sql` and deployed Cloudflare version `9a31c43f-c457-40e0-9316-5a2a349cc3d1`.
 - Full validation passed: 107 test files / 534 tests, type checking, zero-warning lint, production build, HRIS validators, live database checks, and Worker deployment.
+
+## 08/30/2026 — HRIS Stage 5 Automation and Action Center
+
+- Added a dormant, private HR workflow engine with immutable versions, instances, human tasks, reminders, escalations, due dates, append-only events, schedules, jobs, retries, and dead letters.
+- Added bounded, idempotent Worker processing with concurrency leases and notification-outbox handoff.
+- Connected eligible HR tasks to the existing Action Center and added a compact administrative workspace with server-side 5/10/20 pagination.
+- Added separate HR automation view, manage, operate, and override permissions without assigning them to any current role or employee.
+- Applied three additive production migrations and verified all nine new private tables have row-level security enabled.
+- Preserved employee, account, role-membership, role-permission, and employee-override counts exactly.
+- Kept the database and Worker release gates disabled; production contains zero workflow definitions, jobs, and tasks.
+- Full validation passed: Stage 5 contract checks, type checking, zero-warning lint, 113 test files / 565 tests, production build, Cloudflare dry run, database verification, deployment, and live HTTP checks.
+- Production Cloudflare version: `f7baf887-f7e1-4cd7-83bc-918094fef097`.

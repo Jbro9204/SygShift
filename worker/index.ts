@@ -34,6 +34,7 @@ type Environment = Partial<Env> & {
   SYGSHIFT_SECURITY_KEY_PILOT_USERNAMES?: string
   SYGSHIFT_DOCUMENT_PIPELINE_ENABLED?: string
   SYGSHIFT_DOCUMENT_SCANNER_SECRET?: string
+  SYGSHIFT_HR_AUTOMATION_ENABLED?: string
 }
 
 interface SessionContext {
@@ -835,6 +836,22 @@ function hrDocumentPipelineEnabled(environment: Environment): boolean {
 function requireHrDocumentPipeline(environment: Environment): void {
   if (!hrDocumentPipelineEnabled(environment)) {
     throw new ApiError('hr_document_pipeline_unavailable', 503, 'The secure HR document workspace has not been released.')
+  }
+}
+
+function hrAutomationEnabled(environment: Environment): boolean {
+  return environment.SYGSHIFT_HR_AUTOMATION_ENABLED?.trim().toLowerCase() === 'true'
+}
+
+function requireHrAutomationRelease(environment: Environment): void {
+  if (!hrAutomationEnabled(environment)) {
+    throw new ApiError('hr_automation_unavailable', 503, 'The HR automation workspace has not been released.')
+  }
+}
+
+function requireSessionPermission(context: SessionContext, permission: string): void {
+  if (context.permissions?.includes(permission) !== true) {
+    throw new ApiError('permission_required', 403, 'The required permission is missing.')
   }
 }
 
@@ -1663,6 +1680,99 @@ async function handleCompleteHrDocumentAssignment(request: Request, environment:
     session.config.serviceRoleKey,
   )
   return json({ ...payload, requestId })
+}
+
+function disabledHrAutomationWorkspace(requestId: string): Record<string, unknown> {
+  return {
+    enabled: false,
+    pageSize: 10,
+    offset: 0,
+    definitions: [],
+    instances: [],
+    tasks: [],
+    deadLetters: [],
+    counts: { definitions: 0, activeInstances: 0, openTasks: 0, deadLetters: 0 },
+    requestId,
+  }
+}
+
+async function handleHrAutomationApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url)
+
+  if (url.pathname === '/api/v1/hr/automation/mine') {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    const session = await requireAuthenticatedSession(request, environment)
+    requireSessionPermission(session.context, 'actions.self.view')
+    if (!hrAutomationEnabled(environment)) return json({ enabled: false, total: 0, tasks: [], requestId })
+    const payload = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_get_my_hr_automation_tasks',
+      { target_actor_id: session.context.employee_id },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...payload, requestId })
+  }
+
+  if (url.pathname === '/api/v1/hr/automation/workspace') {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    const session = await requireVerifiedOperationsSession(request, environment, 'hr_automation_mfa_required')
+    requireSessionPermission(session.context, 'hr.automation.view')
+    if (!hrAutomationEnabled(environment)) return json(disabledHrAutomationWorkspace(requestId))
+    const requestedPageSize = Number.parseInt(url.searchParams.get('pageSize') ?? '10', 10)
+    const requestedOffset = Number.parseInt(url.searchParams.get('offset') ?? '0', 10)
+    const pageSize = [5, 10, 20].includes(requestedPageSize) ? requestedPageSize : 10
+    const offset = Number.isFinite(requestedOffset) ? Math.max(0, Math.min(requestedOffset, 10_000)) : 0
+    const payload = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_get_hr_automation_workspace',
+      { target_actor_id: session.context.employee_id, target_offset: offset, target_page_size: pageSize },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...payload, requestId })
+  }
+
+  const viewedTaskId = url.pathname.match(/^\/api\/v1\/hr\/automation\/tasks\/([0-9a-f-]{36})\/viewed$/i)?.[1]
+  if (viewedTaskId) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireHrAutomationRelease(environment)
+    if (!validUuid(viewedTaskId)) throw new ApiError('invalid_automation_task', 422, 'The automation task is invalid.')
+    const session = await requireAuthenticatedSession(request, environment)
+    requireSessionPermission(session.context, 'actions.self.view')
+    const payload = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_mark_hr_workflow_task_viewed',
+      { target_actor_id: session.context.employee_id, target_task_id: viewedTaskId },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...payload, requestId })
+  }
+
+  const completeTaskId = url.pathname.match(/^\/api\/v1\/hr\/automation\/tasks\/([0-9a-f-]{36})\/complete$/i)?.[1]
+  if (completeTaskId) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireHrAutomationRelease(environment)
+    if (!validUuid(completeTaskId)) throw new ApiError('invalid_automation_task', 422, 'The automation task is invalid.')
+    const session = await requireAuthenticatedSession(request, environment)
+    requireSessionPermission(session.context, 'actions.self.view')
+    const body = await readJsonBody(request)
+    const payload = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_complete_hr_workflow_task',
+      {
+        target_actor_id: session.context.employee_id,
+        target_note: requiredText(body.note, 'Completion note', 2000),
+        target_task_id: completeTaskId,
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...payload, requestId })
+  }
+
+  return errorJson('not_found', requestId, 404)
 }
 
 async function handleHrDocumentsApi(
@@ -3280,6 +3390,122 @@ async function handleNotificationProcessApi(request: Request, environment: Envir
   })
 }
 
+interface HrAutomationJob {
+  id: string
+  instanceId: string
+  stepKey: string
+  jobType: 'human_task' | 'notification' | 'delay' | 'condition' | 'complete'
+  payload: Record<string, unknown>
+  attemptCount: number
+  maxAttempts: number
+  leasedUntil: string
+}
+
+function asHrAutomationJobs(value: unknown): HrAutomationJob[] {
+  if (!Array.isArray(value)) throw new Error('The automation queue returned an invalid batch.')
+  return value.map((item) => {
+    if (!item || typeof item !== 'object') throw new Error('The automation queue returned an invalid job.')
+    const job = item as Record<string, unknown>
+    const jobType = job.jobType
+    if (
+      typeof job.id !== 'string'
+      || typeof job.instanceId !== 'string'
+      || typeof job.stepKey !== 'string'
+      || !['human_task', 'notification', 'delay', 'condition', 'complete'].includes(String(jobType))
+      || !job.payload
+      || typeof job.payload !== 'object'
+      || Array.isArray(job.payload)
+      || typeof job.attemptCount !== 'number'
+      || typeof job.maxAttempts !== 'number'
+      || typeof job.leasedUntil !== 'string'
+    ) throw new Error('The automation queue returned an invalid job.')
+    return job as unknown as HrAutomationJob
+  })
+}
+
+function hrAutomationCompletionResult(job: HrAutomationJob): Record<string, unknown> {
+  if (job.jobType !== 'condition') return {}
+  if (typeof job.payload.conditionMatched !== 'boolean') {
+    throw new Error('A condition step requires an explicit conditionMatched boolean.')
+  }
+  return { conditionMatched: job.payload.conditionMatched }
+}
+
+async function processHrAutomationJobs(environment: Environment, limit = 10): Promise<{
+  claimed: number
+  completed: string[]
+  enabled: boolean
+  failed: Array<{ id: string, error: string }>
+  scheduled: number
+  escalated: number
+}> {
+  if (!hrAutomationEnabled(environment)) {
+    return { claimed: 0, completed: [], enabled: false, failed: [], scheduled: 0, escalated: 0 }
+  }
+  const config = configuredSupabase(environment)
+  if (!config) throw new ApiError('server_not_configured', 503, 'The protected data service is not configured.')
+  const batchLimit = Math.max(1, Math.min(limit, 10))
+  const targetNow = new Date().toISOString()
+  const [scheduled, escalated] = await Promise.all([
+    callRpc<number>(
+      { serviceRoleKey: config.serviceRoleKey, url: config.url },
+      'service_enqueue_due_hr_automation',
+      { target_now: targetNow },
+      config.serviceRoleKey,
+    ),
+    callRpc<number>(
+      { serviceRoleKey: config.serviceRoleKey, url: config.url },
+      'service_enqueue_hr_task_escalations',
+      { target_now: targetNow },
+      config.serviceRoleKey,
+    ),
+  ])
+  const jobs = asHrAutomationJobs(await callRpc<unknown>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_claim_hr_automation_jobs',
+    { target_lease_seconds: 120, target_limit: batchLimit, target_worker_id: crypto.randomUUID() },
+    config.serviceRoleKey,
+  ))
+  const completed: string[] = []
+  const failed: Array<{ id: string, error: string }> = []
+  for (const job of jobs) {
+    try {
+      await callRpc<unknown>(
+        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        'service_complete_hr_automation_job',
+        { target_job_id: job.id, target_result: hrAutomationCompletionResult(job) },
+        config.serviceRoleKey,
+      )
+      completed.push(job.id)
+    } catch (error) {
+      const message = (error instanceof Error ? error.message : 'The automation job failed.').slice(0, 500)
+      failed.push({ id: job.id, error: message })
+      try {
+        await callRpc<unknown>(
+          { serviceRoleKey: config.serviceRoleKey, url: config.url },
+          'service_fail_hr_automation_job',
+          { target_error_code: 'worker_execution_failed', target_error_message: message, target_job_id: job.id },
+          config.serviceRoleKey,
+        )
+      } catch (failureRecordingError) {
+        console.error(JSON.stringify({
+          error: failureRecordingError instanceof Error ? failureRecordingError.message : 'Failure recording failed.',
+          event: 'hr_automation_failure_recording_failed',
+          jobId: job.id,
+        }))
+      }
+    }
+  }
+  return {
+    claimed: jobs.length,
+    completed,
+    enabled: true,
+    failed,
+    scheduled: Number.isFinite(scheduled) ? scheduled : 0,
+    escalated: Number.isFinite(escalated) ? escalated : 0,
+  }
+}
+
 async function processNotificationJobs(environment: Environment, limit = 10): Promise<{
   delivered: string[]
   failed: Array<{ id: string, error: string }>
@@ -3536,6 +3762,19 @@ export default {
           ? errorJson(error.code, requestId, error.status, error.message)
           : errorJson('attendance_report_failed', requestId, 500, 'The attendance report request failed.')
       }
+    } else if (url.pathname.startsWith('/api/v1/hr/automation')) {
+      try {
+        response = await handleHrAutomationApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('hr_automation_request_failed', requestId, 500, 'The HR automation request could not be completed.')
+        }
+      }
     } else if (url.pathname.startsWith('/api/v1/hr/documents')) {
       try {
         response = await handleHrDocumentsApi(request, environment, requestId)
@@ -3593,8 +3832,9 @@ export default {
         { target_limit: 25 },
         config.serviceRoleKey,
       )
+      const hrAutomation = await processHrAutomationJobs(environment, 10)
       const notifications = await processNotificationJobs(environment, 25)
-      console.info(JSON.stringify({ alertLifecycle, automation, cron: controller.cron, fullReconciliation, jobRunId, notifications, scheduledAnnouncements, scheduledTime: controller.scheduledTime }))
+      console.info(JSON.stringify({ alertLifecycle, automation, cron: controller.cron, fullReconciliation, hrAutomation, jobRunId, notifications, scheduledAnnouncements, scheduledTime: controller.scheduledTime }))
     })())
   },
 }

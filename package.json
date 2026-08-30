@@ -25,6 +25,7 @@
     "check:hris-document-pipeline": "node tools/validate-hris-stage4-document-pipeline.mjs",
     "check:hris-document-workspace": "node tools/validate-hris-stage4-document-workspace.mjs",
     "check:hris-document-workflows": "node tools/validate-hris-stage4-document-workflows.mjs",
+    "check:hris-automation": "node tools/validate-hris-stage5-automation.mjs",
     "verify:access:preserved": "node tools/verify-production-access-preservation.mjs outputs/access-control/production-access-baseline-08-21-2026-before-enforcement.json outputs/access-control/production-access-baseline-08-21-2026.json",
     "preview": "pnpm build && vite preview",
     "deploy": "pnpm build && wrangler deploy",

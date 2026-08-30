@@ -10,6 +10,7 @@ import {
   FileCheck2,
   Megaphone,
   Plus,
+  Workflow,
 } from 'lucide-react'
 import { getSessionContext } from '../data/auth'
 import {
@@ -25,6 +26,12 @@ import {
 } from '../data/actionCenter'
 import { getScheduleBuilderOptions, scheduleEmployeeName } from '../data/schedule'
 import { getSites } from '../data/workforce'
+import {
+  completeHrAutomationTask,
+  getMyHrAutomationTasks,
+  markHrAutomationTaskViewed,
+  type HrAutomationTask,
+} from '../data/hrAutomation'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -52,6 +59,33 @@ function downloadText(content: string, name: string) {
 
 function ActionStatus({ status }: { status: string }) {
   return <span className={`action-status action-status--${status}`}>{status.replaceAll('_', ' ')}</span>
+}
+
+function HrAutomationActions({
+  busyId,
+  onOpen,
+  tasks,
+}: {
+  busyId: string | null
+  onOpen: (task: HrAutomationTask) => void
+  tasks: HrAutomationTask[]
+}) {
+  if (!tasks.length) return null
+  return (
+    <section className="panel action-section hr-action-section">
+      <div className="section-heading"><div><p className="eyebrow">HR actions</p><h2>Items requiring your response</h2><p>Open an item to review its instructions and record completion.</p></div></div>
+      <div className="hr-action-list">
+        {tasks.map((task) => (
+          <button className="hr-action-item" disabled={busyId === task.id} key={task.id} onClick={() => onOpen(task)} type="button">
+            <span className="action-item__icon"><Workflow aria-hidden="true" size={21} /></span>
+            <span className="hr-action-item__copy"><strong>{task.title}</strong><small>{task.instructions ?? 'Open this action to review the required next step.'}</small></span>
+            <span className={`action-status action-status--${task.status}`}>{task.status}</span>
+            <span className="hr-action-item__due">Due {formatDate(task.dueAt)}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 function TrainingMaterial({ item }: { item: TrainingAction }) {
@@ -226,8 +260,12 @@ function TrainingEditor({ onClose, onPublished }: { onClose: () => void; onPubli
 export function ActionCenterPage() {
   const queryClient = useQueryClient()
   const [trainingOpen, setTrainingOpen] = useState(false)
+  const [selectedHrTask, setSelectedHrTask] = useState<HrAutomationTask | null>(null)
+  const [hrCompletionNote, setHrCompletionNote] = useState('')
+  const [hrTaskError, setHrTaskError] = useState<string | null>(null)
   const sessionQuery = useQuery({ queryKey: ['session-context'], queryFn: getSessionContext, enabled: isSupabaseConfigured })
   const actionQuery = useQuery({ queryKey: ['employee-action-center'], queryFn: getEmployeeActionCenter, enabled: isSupabaseConfigured && sessionQuery.isSuccess })
+  const hrTasksQuery = useQuery({ queryKey: ['hr-automation-actions'], queryFn: getMyHrAutomationTasks, enabled: isSupabaseConfigured && sessionQuery.isSuccess })
   const canManage = Boolean(sessionQuery.data?.permissions.includes('training.manage'))
   const canReport = Boolean(sessionQuery.data?.permissions.some((permission) => ['training.export', 'schedule.acknowledgments.manage', 'announcements.acknowledgments.manage'].includes(permission)))
   const reportQuery = useQuery({ queryKey: ['employee-action-report'], queryFn: getEmployeeActionComplianceReport, enabled: isSupabaseConfigured && canReport })
@@ -240,20 +278,68 @@ export function ActionCenterPage() {
     onSettled: () => setBusyId(null),
   })
 
+  const hrTaskMutation = useMutation({
+    mutationFn: ({ taskId, note }: { taskId: string; note: string }) => completeHrAutomationTask(taskId, note),
+    onMutate: ({ taskId }) => {
+      setBusyId(taskId)
+      setHrTaskError(null)
+    },
+    onSuccess: async () => {
+      setSelectedHrTask(null)
+      setHrCompletionNote('')
+      await queryClient.invalidateQueries({ queryKey: ['hr-automation-actions'] })
+    },
+    onError: (error: Error) => setHrTaskError(error.message),
+    onSettled: () => setBusyId(null),
+  })
+
+  async function openHrTask(task: HrAutomationTask) {
+    setSelectedHrTask(task)
+    setHrCompletionNote('')
+    setHrTaskError(null)
+    if (task.status === 'open') {
+      try {
+        await markHrAutomationTaskViewed(task.id)
+        await queryClient.invalidateQueries({ queryKey: ['hr-automation-actions'] })
+      } catch (error) {
+        setHrTaskError(error instanceof Error ? error.message : 'The HR action could not be opened.')
+      }
+    }
+  }
+
   const summary = useMemo(() => actionQuery.data?.summary, [actionQuery.data])
 
   if (!isSupabaseConfigured) return <DataStatePanel icon={AlertTriangle} title="Action Center needs the secure connection" tone="setup"><p>Connect Supabase to load employee actions.</p></DataStatePanel>
-  if (sessionQuery.isPending || actionQuery.isPending) return <DataStatePanel icon={FileCheck2} title="Loading Action Center"><p>Checking required employee actions.</p></DataStatePanel>
-  if (sessionQuery.isError || actionQuery.isError) return <DataStatePanel icon={AlertTriangle} title="Action Center unavailable" tone="error"><p>{sessionQuery.error?.message ?? actionQuery.error?.message}</p></DataStatePanel>
+  if (sessionQuery.isPending || actionQuery.isPending || hrTasksQuery.isPending) return <DataStatePanel icon={FileCheck2} title="Loading Action Center"><p>Checking required employee actions.</p></DataStatePanel>
+  if (sessionQuery.isError || actionQuery.isError || hrTasksQuery.isError) return <DataStatePanel icon={AlertTriangle} title="Action Center unavailable" tone="error"><p>{sessionQuery.error?.message ?? actionQuery.error?.message ?? hrTasksQuery.error?.message}</p></DataStatePanel>
 
   return (
     <div className="page page--action-center">
       <section className="page-intro workforce-intro"><div><p className="eyebrow">Employee actions</p><h1>Action Center</h1><p className="page-summary">Review required announcements, assigned training, and published schedule updates in one clear workspace.</p></div>{canManage ? <button className="primary-action" onClick={() => setTrainingOpen(true)} type="button"><Plus aria-hidden="true" size={18} />Publish training</button> : null}</section>
       <section className="action-summary" aria-label="Pending actions"><article><Megaphone aria-hidden="true" size={20} /><span>Announcements</span><strong>{summary?.announcementCount ?? 0}</strong></article><article><BookOpenCheck aria-hidden="true" size={20} /><span>Training</span><strong>{summary?.trainingCount ?? 0}</strong></article><article><CalendarCheck2 aria-hidden="true" size={20} /><span>Schedules</span><strong>{summary?.scheduleCount ?? 0}</strong></article></section>
       {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+      <HrAutomationActions busyId={busyId} onOpen={openHrTask} tasks={hrTasksQuery.data?.tasks ?? []} />
       <EmployeeActions data={actionQuery.data!} busyId={busyId} onOpen={(type, id) => mutation.mutate({ type, id, viewed: true })} onComplete={(type, id, attestation) => mutation.mutate({ type, id, attestation })} />
       {canReport ? <section className="panel action-report"><div className="section-heading"><div><p className="eyebrow">Compliance</p><h2>Completion reporting</h2></div><button className="secondary-button" disabled={!reportQuery.data} onClick={() => reportQuery.data && downloadText(trainingComplianceCsv(reportQuery.data), `sygshift-training-completion-${new Date().toISOString().slice(0, 10)}.csv`)} type="button"><Download aria-hidden="true" size={17} />Export training</button></div><div className="action-report-grid"><article><span>Announcement records</span><strong>{reportQuery.data?.announcements.length ?? 0}</strong></article><article><span>Training records</span><strong>{reportQuery.data?.training.length ?? 0}</strong></article><article><span>Schedule records</span><strong>{reportQuery.data?.schedules.length ?? 0}</strong></article></div></section> : null}
       {trainingOpen ? <TrainingEditor onClose={() => setTrainingOpen(false)} onPublished={async () => { setTrainingOpen(false); await Promise.all([queryClient.invalidateQueries({ queryKey: ['training-catalog'] }), queryClient.invalidateQueries({ queryKey: ['employee-action-center'] }), queryClient.invalidateQueries({ queryKey: ['employee-action-report'] })]) }} /> : null}
+      {selectedHrTask ? (
+        <ModalDialog busy={hrTaskMutation.isPending} busyLabel="Completing HR action…" className="modal-dialog--hr-action" description="Review the instructions and record a clear completion note. The original workflow and audit history are preserved." onClose={() => { setSelectedHrTask(null); setHrCompletionNote(''); setHrTaskError(null) }} title={selectedHrTask.title}>
+          <form className="hr-action-completion" onSubmit={(event) => {
+            event.preventDefault()
+            const note = hrCompletionNote.trim()
+            if (!note) {
+              setHrTaskError('A completion note is required.')
+              return
+            }
+            hrTaskMutation.mutate({ taskId: selectedHrTask.id, note })
+          }}>
+            <section className="hr-action-instructions"><p className="eyebrow">Required action</p><p>{selectedHrTask.instructions ?? 'Complete the requested HR action, then document what was completed.'}</p><small>Due {formatDateTime(selectedHrTask.dueAt)} · Status {selectedHrTask.status}</small></section>
+            <label className="form-field"><span>Completion note</span><textarea autoFocus onChange={(event) => setHrCompletionNote(event.target.value)} placeholder="Describe what was completed and include any relevant follow-up." required rows={5} value={hrCompletionNote} /></label>
+            {hrTaskError ? <div className="inline-alert" role="alert">{hrTaskError}</div> : null}
+            <div className="modal-actions"><button className="secondary-button" onClick={() => { setSelectedHrTask(null); setHrCompletionNote(''); setHrTaskError(null) }} type="button">Cancel</button><button className="primary-action" type="submit"><CheckCircle2 aria-hidden="true" size={17} />Complete action</button></div>
+          </form>
+        </ModalDialog>
+      ) : null}
     </div>
   )
 }

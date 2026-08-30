@@ -1,0 +1,34 @@
+{
+  "release": {
+    "databaseGateDefault": false,
+    "workerFlagDefault": false,
+    "requiresBothGates": true,
+    "navigationVisible": false
+  },
+  "processing": {
+    "maximumBatchSize": 10,
+    "leaseSeconds": 120,
+    "maximumAttempts": 5,
+    "deadLetterOnExhaustion": true
+  },
+  "workspace": {
+    "defaultPageSize": 10,
+    "allowedPageSizes": [5, 10, 20],
+    "maximumPageSize": 20
+  },
+  "security": {
+    "storageSchema": "private",
+    "databaseAccessRole": "service_role",
+    "requiresMfaForAdministrativeWorkspace": true,
+    "immutablePublishedVersions": true,
+    "appendOnlyEvents": true,
+    "preserveExistingAccessAssignments": true,
+    "assignNewPermissionsDuringMigration": false
+  },
+  "permissions": [
+    "hr.automation.view",
+    "hr.automation.manage",
+    "hr.automation.operate",
+    "hr.automation.override"
+  ]
+}

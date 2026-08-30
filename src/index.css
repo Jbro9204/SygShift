@@ -148,10 +148,53 @@ select:focus-visible,
 .training-audience legend { font-weight: 800; padding: 0 6px; }
 .modal-dialog--training { width: min(1040px, calc(100vw - 32px)); }
 
+.page--hr-automation { max-width: 1400px; }
+.hr-automation-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
+.hr-automation-summary article { align-items: center; background: var(--surface, #fff); border: 1px solid var(--line, #ded6c7); border-top: 3px solid #c98b23; border-radius: 12px; display: grid; grid-template-columns: auto 1fr auto; gap: 10px; min-height: 88px; padding: 18px 20px; }
+.hr-automation-summary article.is-alert { border-top-color: #a94436; }
+.hr-automation-summary span { color: var(--muted, #6d665c); font-weight: 750; }
+.hr-automation-summary strong { font-size: 1.8rem; }
+.hr-automation-worklist { overflow: hidden; padding: 0; }
+.hr-automation-worklist .section-heading { align-items: end; padding: 22px 24px 16px; }
+.compact-page-size { align-items: center; display: flex; gap: 8px; font-weight: 750; }
+.compact-page-size select { min-height: 42px; width: 76px; }
+.hr-automation-list { display: grid; }
+.hr-automation-list article { align-items: center; border-top: 1px solid var(--line, #e5ded2); display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr) auto; min-height: 76px; padding: 16px 24px; }
+.hr-automation-list article > div { display: grid; gap: 5px; }
+.hr-automation-list article > div:last-child { justify-items: end; }
+.hr-automation-list span:not(.action-status), .hr-automation-list small { color: var(--muted, #6d665c); }
+.compact-empty { align-items: center; border-top: 1px solid var(--line, #e5ded2); color: #176546; display: flex; gap: 12px; justify-content: center; min-height: 116px; padding: 24px; }
+.compact-pagination { align-items: center; border-top: 1px solid var(--line, #e5ded2); display: flex; gap: 12px; justify-content: flex-end; padding: 14px 24px; }
+.compact-pagination > span { color: var(--muted, #6d665c); font-size: .88rem; }
+
+.hr-action-section { border-top: 3px solid #c98b23; }
+.hr-action-list { display: grid; }
+.hr-action-item { align-items: center; background: #fff; border: 0; border-top: 1px solid var(--line, #e5ded2); color: inherit; cursor: pointer; display: grid; gap: 14px; grid-template-columns: auto minmax(0, 1fr) auto auto; min-height: 78px; padding: 16px 24px; text-align: left; width: 100%; }
+.hr-action-item:hover { background: #fcf8f0; }
+.hr-action-item:focus-visible { outline: 3px solid #d39d40; outline-offset: -4px; }
+.hr-action-item:disabled { cursor: wait; opacity: .65; }
+.hr-action-item__copy { display: grid; gap: 5px; min-width: 0; }
+.hr-action-item__copy small { color: var(--muted, #6d665c); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hr-action-item__due { color: var(--muted, #6d665c); font-size: .84rem; white-space: nowrap; }
+.modal-dialog--hr-action { width: min(760px, calc(100vw - 32px)); }
+.hr-action-instructions { background: #faf7f1; border-left: 3px solid #c98b23; margin: 0 24px; padding: 14px 16px; white-space: pre-wrap; }
+.hr-action-completion { display: grid; gap: 14px; padding: 20px 24px 24px; }
+.hr-action-completion textarea { min-height: 112px; resize: vertical; }
+
 @media (max-width: 800px) {
   .action-summary, .action-report-grid { grid-template-columns: 1fr; }
   .action-item { grid-template-columns: auto minmax(0, 1fr); }
   .action-item > .primary-action { grid-column: 1 / -1; width: 100%; }
   .training-editor { grid-template-columns: 1fr; }
   .training-editor .form-field--wide, .training-editor .modal-actions { grid-column: auto; }
+  .hr-automation-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hr-action-item { grid-template-columns: auto minmax(0, 1fr); }
+  .hr-action-item .action-status, .hr-action-item__due { grid-column: 2; justify-self: start; }
+}
+
+@media (max-width: 520px) {
+  .hr-automation-summary { grid-template-columns: 1fr; }
+  .hr-automation-list article { grid-template-columns: 1fr; }
+  .hr-automation-list article > div:last-child { justify-items: start; }
+  .compact-pagination { justify-content: space-between; padding-inline: 16px; }
 }

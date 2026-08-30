@@ -31,6 +31,7 @@
     "SYGSHIFT_BLOCKED_EMAIL_DOMAINS": "guardianshipsecurity.net",
     "SYGSHIFT_SECURITY_KEYS_ENABLED": "true",
     "SYGSHIFT_SECURITY_KEY_PILOT_USERNAMES": "jbrown",
+    "SYGSHIFT_HR_AUTOMATION_ENABLED": "false",
     "SUPABASE_URL": "https://eqkdfrbwtioiqtjsyglg.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_-uU9fD3XIeZ58r815-fl_Q_g4IIRPQ5",
     "VITE_SUPABASE_URL": "https://eqkdfrbwtioiqtjsyglg.supabase.co",

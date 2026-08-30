@@ -11,6 +11,7 @@ import {
   AvailabilityPageRoute,
   EventsPageRoute,
   HrisIdentityReadinessPageRoute,
+  HrisAutomationPageRoute,
   HrisDocumentsPageRoute,
   HrisDocumentWorkflowsPageRoute,
   HrisPeopleWorkspacePageRoute,
@@ -220,6 +221,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <HrisDocumentWorkflowsPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr/automation',
+        element: (
+          <RouteSuspense>
+            <HrisAutomationPageRoute />
           </RouteSuspense>
         ),
       },

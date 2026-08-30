@@ -79,7 +79,7 @@ Required outcomes:
 
 - Priority: **Urgent**
 - Target window: Staged enterprise program; approximately 24–28 controlled runs
-- Status: Stage 1 completed 08/29/2026 / Stage 2 protected control plane completed 08/29/2026 / Stage 3 People & HR Workspace completed 08/29/2026 / Stage 4 Secure Document Platform completed across four controlled runs on 08/30/2026; production identity backfill and document delivery remain gated pending their separate release evidence
+- Status: Stage 1 completed 08/29/2026 / Stage 2 protected control plane completed 08/29/2026 / Stage 3 People & HR Workspace completed 08/29/2026 / Stage 4 Secure Document Platform completed across four controlled runs on 08/30/2026 / Stage 5 HR Automation & Action Center completed dormant on 08/30/2026; production identity backfill, document delivery, and workflow activation remain separately gated
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
@@ -146,12 +146,14 @@ Run 4 added service-only document request and assignment workflows, exact immuta
 
 Run 2 installed the dormant server pipeline for exact file-signature validation, quarantine-only storage, append-only scan evidence, recent authenticator or security-key verification, and permission-scoped one-time document access. Every access token is hashed, expires within 60 seconds, is single-use, and rechecks the current document version, clean scan state, active account, and effective vault permission when consumed. The browser upload/preview/download experience, scanner service activation, document permission assignments, operational recovery drill, and release-gate enablement remain deferred. Production still contains zero document records, versions, upload operations, access grants, and document permission assignments.
 
-#### Stage 5 — HR Automation & Action Center (2–3 runs)
+#### Stage 5 — HR Automation & Action Center (completed 08/30/2026)
 
-- [ ] Implement versioned workflows, approval paths, human tasks, reminders, escalations, and due dates.
-- [ ] Make delivery transactional and reliable with idempotency and concurrency protection.
-- [ ] Add retry, failure, dead-letter, pause, resume, cancel, and audited manual-override controls.
-- [ ] Connect approved HR work to the Action Center and notification system without flooding users.
+- [x] Implement versioned workflows, approval paths, human tasks, reminders, escalations, and due dates.
+- [x] Make delivery transactional and reliable with idempotency and concurrency protection.
+- [x] Add retry, failure, dead-letter, pause, resume, cancel, and audited manual-override controls.
+- [x] Connect approved HR work to the Action Center and notification system without flooding users.
+
+Stage 5 installed a private, service-only workflow engine; immutable versions; human tasks; bounded, idempotent jobs; retry and dead-letter controls; scheduled work; notification-outbox handoff; and compact Action Center and administrative worklists. The database and Worker release gates are both disabled, the administrative route is absent from navigation, and no new permission is assigned to any current role or employee. Production contains no workflow definitions, jobs, or tasks. Activation is a separate controlled release requiring approved workflow content, minimum permission assignment, canary validation, reliability and recovery evidence, and both release controls.
 
 #### Stage 6 — Recruiting & Onboarding (3 runs)
 

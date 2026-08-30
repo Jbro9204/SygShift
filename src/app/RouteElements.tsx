@@ -122,6 +122,9 @@ export const HrisDocumentsPageRoute = lazy(() =>
 export const HrisDocumentWorkflowsPageRoute = lazy(() =>
   import('../pages/HrisDocumentWorkflowsPage').then((module) => ({ default: module.HrisDocumentWorkflowsPage })),
 )
+export const HrisAutomationPageRoute = lazy(() =>
+  import('../pages/HrisAutomationPage').then((module) => ({ default: module.HrisAutomationPage })),
+)
 export const MyDocumentsPageRoute = lazy(() =>
   import('../pages/MyDocumentsPage').then((module) => ({ default: module.MyDocumentsPage })),
 )

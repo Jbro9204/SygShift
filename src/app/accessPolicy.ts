@@ -51,6 +51,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/hr/people/:employeeId': { anyOf: ['hr.people.view', 'hr.people.manage'] },
   '/hr/documents': { anyOf: ['hr.documents.view', 'hr.documents.manage'] },
   '/hr/documents/workflows': { anyOf: ['hr.documents.view', 'hr.documents.manage'] },
+  '/hr/automation': { anyOf: ['hr.automation.view'] },
   '/my-documents': { anyOf: [] },
   '/hr/identity-readiness': { anyOf: ['hr.people.manage'] },
   '/people': { anyOf: ['directory.view', 'directory.edit_basic', 'availability.manage'] },
