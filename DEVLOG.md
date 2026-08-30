@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 08/29/2026
 
+### HRIS Stage 2 Reconciliation Proposal — Run 2 of 3
+
+- Added a deterministic, service-only proposal layer that maps each existing `public.employees.id` to planned private HR person and worker identifiers without copying names, contact details, or authentication data.
+- Added explicit blockers for identifier collisions, mismatched existing identifiers, mismatched source systems, and mismatched worker references; no ambiguity can be silently promoted into protected HR history.
+- Added aggregate-only reconciliation reporting, a release assertion, and browser-role revocations while retaining service-role inspection for controlled administration.
+- Applied only migration `20260829233000_hris_stage2_reconciliation_proposal.sql` through an isolated forward-only workspace; no migration repair or historical replay was performed.
+- Production reconciliation evaluated 78 employee records: 78 deterministic proposals, zero identity blockers, 78 missing-hire-date warnings, and nine missing-separation-date warnings.
+- Kept protected backfill, HR features, role mapping, and browser access disabled. No HR person or worker rows were created and no live employee, access, payroll, licensing, schedule, timekeeping, or audit history was changed.
+- Added the `check:hris-reconciliation` validator, focused regression tests, architecture documentation, and an operating procedure for the final controlled backfill run.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-29-2026_HRIS_STAGE_2_RECONCILIATION.md`.
+
 ### HRIS Stage 2 Core Data Architecture — Run 1 of 3
 
 - Extended the existing permanent `public.employees` identity with private one-to-one HR person and worker identifiers; no second directory or duplicate name/contact/authentication data was created.

@@ -79,7 +79,7 @@ Required outcomes:
 
 - Priority: **Urgent**
 - Target window: Staged enterprise program; approximately 24–28 controlled runs
-- Status: Stage 1 completed 08/29/2026 / Stage 2 Run 1 of 3 completed 08/29/2026
+- Status: Stage 1 completed 08/29/2026 / Stage 2 Run 2 of 3 completed 08/29/2026
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
@@ -115,7 +115,7 @@ Stage 1 closed the protected-data release gate by default and added a machine-va
 - [ ] Backfill existing active and historical employees with reconciliation reports and duplicate prevention.
 - [ ] Preserve separated-employee, payroll, licensing, schedule, time, and audit history through migrations and rollback tests.
 
-Run 1 installed the dormant private schema, service-only reconciliation controls, deny-by-default permission definitions, no-delete/close-only history protections, and access-preservation assertions. It did not change current employee records, role assignments, individual permission overrides, or runtime behavior. Runs 2 and 3 remain gated for reconciliation, recovery evidence, controlled backfill, authorization testing, and cross-module preservation.
+Run 1 installed the dormant private schema, deny-by-default permission definitions, no-delete/close-only history protections, and access-preservation assertions. Run 2 installed a deterministic, service-only reconciliation proposal and validated all 78 source employee records without creating HR identity rows. Production reported zero identity blockers; all 78 records require hire-date review and nine separated records also require separation-date review before any effective-dated backfill. Current employee records, roles, permissions, overrides, payroll, licensing, schedule, timekeeping, and runtime behavior remain unchanged. Run 3 remains gated for recovery evidence, authorized date resolution, controlled backfill, authorization tests, and cross-module preservation.
 
 #### Stage 3 — People & HR Workspace (2 runs)
 
