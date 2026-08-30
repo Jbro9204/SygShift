@@ -143,6 +143,15 @@ interface HrDocumentAccessObject {
   versionId: string
 }
 
+interface HrDocumentWorkspacePayload {
+  actor?: { canManageAny?: boolean }
+  documents?: unknown[]
+  employees?: unknown[]
+  pagination?: Record<string, unknown>
+  releaseState?: string
+  vaults?: unknown[]
+}
+
 interface NotificationJob {
   id: string
   messageType?: string
@@ -1299,6 +1308,44 @@ async function handleHrDocumentUpload(
   }, 202)
 }
 
+async function handleHrDocumentWorkspace(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  const session = await requireAuthenticatedSession(request, environment)
+  await requireRecentDocumentMfa(request, session)
+  const url = new URL(request.url)
+  const search = url.searchParams.get('search')?.trim() ?? ''
+  if (search.length > 120) throw new ApiError('invalid_document_search', 422, 'Document search is limited to 120 characters.')
+  const employeeId = url.searchParams.get('employeeId')?.trim() ?? ''
+  if (employeeId && !validUuid(employeeId)) throw new ApiError('invalid_employee_id', 422, 'The employee filter is invalid.')
+  const vaultCode = url.searchParams.get('vaultCode')?.trim() ?? ''
+  if (vaultCode && !/^hr-[a-z-]{2,80}$/.test(vaultCode)) throw new ApiError('invalid_document_vault', 422, 'The document vault filter is invalid.')
+  const pageValue = Number.parseInt(url.searchParams.get('page') ?? '1', 10)
+  const page = Number.isInteger(pageValue) && pageValue > 0 ? pageValue : 1
+  const pageSizeValue = Number.parseInt(url.searchParams.get('pageSize') ?? '10', 10)
+  const pageSize = [5, 10, 20].includes(pageSizeValue) ? pageSizeValue : 10
+  const includeArchived = url.searchParams.get('includeArchived') === 'true'
+  const payload = await callRpc<HrDocumentWorkspacePayload>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_hr_document_workspace',
+    {
+      target_actor_id: session.context.employee_id,
+      target_employee_id: employeeId || null,
+      target_include_archived: includeArchived,
+      target_page: page,
+      target_page_size: pageSize,
+      target_search: search || null,
+      target_vault_code: vaultCode || null,
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
 async function handleHrDocumentScanCallback(
   request: Request,
   environment: Environment,
@@ -1423,6 +1470,9 @@ async function handleHrDocumentsApi(
   requestId: string,
 ): Promise<Response> {
   const url = new URL(request.url)
+  if (url.pathname === '/api/v1/hr/documents/workspace') {
+    return handleHrDocumentWorkspace(request, environment, requestId)
+  }
   if (url.pathname === '/api/v1/hr/documents/uploads') {
     return handleHrDocumentUpload(request, environment, requestId)
   }

@@ -10,6 +10,7 @@ import {
   AvailabilityPageRoute,
   EventsPageRoute,
   HrisIdentityReadinessPageRoute,
+  HrisDocumentsPageRoute,
   HrisPeopleWorkspacePageRoute,
   HrisEmployeeFilePageRoute,
   LoginPageRoute,
@@ -201,6 +202,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <HrisEmployeeFilePageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr/documents',
+        element: (
+          <RouteSuspense>
+            <HrisDocumentsPageRoute />
           </RouteSuspense>
         ),
       },

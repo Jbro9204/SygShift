@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   ListChecks,
   FileBarChart,
+  Files,
   LayoutDashboard,
   MapPinned,
   Megaphone,
@@ -70,6 +71,12 @@ export const navigationGroups: NavigationGroup[] = [
         path: '/hr',
         icon: UsersRound,
         permissions: ['hr.people.view', 'hr.people.manage'],
+      },
+      {
+        label: 'HR Documents',
+        path: '/hr/documents',
+        icon: Files,
+        permissions: ['hr.documents.view', 'hr.documents.manage'],
       },
       {
         label: 'Time-Off Requests',

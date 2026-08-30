@@ -116,6 +116,9 @@ export const HrisPeopleWorkspacePageRoute = lazy(() =>
 export const HrisEmployeeFilePageRoute = lazy(() =>
   import('../pages/HrisEmployeeFilePage').then((module) => ({ default: module.HrisEmployeeFilePage })),
 )
+export const HrisDocumentsPageRoute = lazy(() =>
+  import('../pages/HrisDocumentsPage').then((module) => ({ default: module.HrisDocumentsPage })),
+)
 
 function RouteFallback() {
   return (

@@ -79,7 +79,7 @@ Required outcomes:
 
 - Priority: **Urgent**
 - Target window: Staged enterprise program; approximately 24–28 controlled runs
-- Status: Stage 1 completed 08/29/2026 / Stage 2 protected control plane completed 08/29/2026 / Stage 3 People & HR Workspace completed 08/29/2026 / Stage 4 Run 1 secure document foundation and Run 2 dormant quarantine/access pipeline completed 08/30/2026; production identity backfill and document delivery remain gated pending their separate release evidence
+- Status: Stage 1 completed 08/29/2026 / Stage 2 protected control plane completed 08/29/2026 / Stage 3 People & HR Workspace completed 08/29/2026 / Stage 4 Run 1 secure document foundation, Run 2 dormant quarantine/access pipeline, and Run 3 gated document workspace completed 08/30/2026; production identity backfill and document delivery remain gated pending their separate release evidence
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
@@ -132,11 +132,11 @@ Stage 3 added the protected `/hr`, `/hr/people`, and `/hr/people/:employeeId` wo
 #### Stage 4 — Secure Document Platform (3–4 runs)
 
 - [x] Implement the dormant private document-vault foundation with six separately protected vaults, deny-by-default permission definitions, private storage, a disabled release gate, and no production role or employee assignments. (Run 1 completed 08/30/2026; uploads and document delivery remain unavailable.)
-- [ ] Support file picker, drag-and-drop upload, progress, validation, and clear recovery states.
+- [x] Support file picker, drag-and-drop upload, progress, validation, and clear recovery states.
 - [x] Validate file signatures, MIME types, extensions, size limits, and active content at the server upload boundary. (Run 2 completed 08/30/2026; the browser upload experience remains deferred.)
 - [x] Add the dormant malware-scanning and quarantine release boundary required before a document can be previewed or downloaded. (Run 2 completed 08/30/2026; no scanner integration or production upload is enabled.)
-- [ ] Support authorized in-browser preview for safe file formats.
-- [ ] Support authorized downloads through short-lived, non-public access.
+- [x] Support authorized in-browser preview for safe file formats.
+- [x] Support authorized downloads through short-lived, non-public access.
 - [x] Install the dormant immutable document/version, append-only scan/access evidence, archive/restore metadata, retention-policy, legal-hold, and rollback foundation. (Run 1 completed 08/30/2026; operational backup/restore and access-minting drills remain release blockers for later runs.)
 - [ ] Add document requests, acknowledgments, signatures, access records, and append-only document audits.
 
