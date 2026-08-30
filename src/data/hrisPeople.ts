@@ -1,0 +1,153 @@
+import { z } from 'zod'
+import { getSupabaseClient } from '../lib/supabase'
+
+const statusSchema = z.enum(['onboarding', 'active', 'leave', 'inactive', 'separated'])
+
+const peopleItemSchema = z.object({
+  employeeId: z.string().uuid(),
+  legalName: z.string(),
+  employeeNumber: z.string().nullable(),
+  username: z.string(),
+  jobTitle: z.string().nullable(),
+  status: statusSchema,
+  employmentType: z.string(),
+  primaryRole: z.string(),
+  hiredOn: z.string().nullable(),
+  separatedOn: z.string().nullable(),
+  accountStatus: z.enum(['active', 'pending', 'disabled', 'not_created']),
+  lastSignInAt: z.string().nullable(),
+  readinessSignals: z.array(z.string()),
+})
+
+const savedViewSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  search: z.string().nullable(),
+  status: z.string(),
+  employmentType: z.string(),
+  role: z.string(),
+  sort: z.string(),
+  direction: z.enum(['asc', 'desc']),
+  pageSize: z.number(),
+})
+
+const peopleWorkspaceSchema = z.object({
+  generatedAt: z.string(),
+  canManage: z.boolean(),
+  page: z.number(),
+  pageSize: z.number(),
+  totalCount: z.number(),
+  totalPages: z.number(),
+  summary: z.object({
+    active: z.number(),
+    onboarding: z.number(),
+    leave: z.number(),
+    separated: z.number(),
+    attention: z.number(),
+  }),
+  items: z.array(peopleItemSchema),
+  priorityQueue: z.array(z.object({ employeeId: z.string().uuid(), legalName: z.string(), reason: z.string() })),
+  savedViews: z.array(savedViewSchema),
+  options: z.object({ statuses: z.array(z.string()), employmentTypes: z.array(z.string()), roles: z.array(z.string()) }),
+})
+
+const employeeFileSchema = z.object({
+  employeeId: z.string().uuid(),
+  legalName: z.string(),
+  firstName: z.string(),
+  middleName: z.string().nullable(),
+  lastName: z.string(),
+  employeeNumber: z.string().nullable(),
+  username: z.string(),
+  jobTitle: z.string().nullable(),
+  status: statusSchema,
+  employmentType: z.string(),
+  primaryRole: z.string(),
+  hiredOn: z.string().nullable(),
+  separatedOn: z.string().nullable(),
+  account: z.object({
+    status: z.enum(['active', 'pending', 'disabled', 'not_created']),
+    invitedAt: z.string().nullable(),
+    activatedAt: z.string().nullable(),
+    disabledAt: z.string().nullable(),
+    lastSignInAt: z.string().nullable(),
+  }),
+  contacts: z.object({
+    personalEmail: z.string().nullable(),
+    companyEmail: z.string().nullable(),
+    mobilePhone: z.string().nullable(),
+    emergencyContactName: z.string().nullable(),
+    emergencyContactPhone: z.string().nullable(),
+    addressLine1: z.string().nullable(),
+    addressLine2: z.string().nullable(),
+    city: z.string().nullable(),
+    region: z.string().nullable(),
+    postalCode: z.string().nullable(),
+  }).nullable(),
+  canViewRestricted: z.boolean(),
+  readinessSignals: z.array(z.string()),
+  connectedRecords: z.object({
+    activeCredentials: z.number(),
+    expiredCredentials: z.number(),
+    upcomingAvailability: z.number(),
+    pendingTimeOff: z.number(),
+  }),
+})
+
+export type HrisPeopleItem = z.infer<typeof peopleItemSchema>
+export type HrisPeopleSavedView = z.infer<typeof savedViewSchema>
+export type HrisPeopleWorkspace = z.infer<typeof peopleWorkspaceSchema>
+export type HrisEmployeeFile = z.infer<typeof employeeFileSchema>
+
+export type HrisPeopleQuery = {
+  search?: string
+  status?: string
+  employmentType?: string
+  role?: string
+  sort?: string
+  direction?: 'asc' | 'desc'
+  page?: number
+  pageSize?: number
+}
+
+export async function getHrisPeopleWorkspace(query: HrisPeopleQuery = {}): Promise<HrisPeopleWorkspace> {
+  const { data, error } = await getSupabaseClient().rpc('get_hr_people_workspace', {
+    target_search: query.search?.trim() || null,
+    target_status: query.status ?? 'active',
+    target_employment_type: query.employmentType ?? 'all',
+    target_role: query.role ?? 'all',
+    target_sort: query.sort ?? 'legal_name',
+    target_direction: query.direction ?? 'asc',
+    target_page: query.page ?? 1,
+    target_page_size: query.pageSize ?? 15,
+  })
+  if (error) throw new Error(error.message || 'People and HR could not be loaded.')
+  return peopleWorkspaceSchema.parse(data)
+}
+
+export async function getHrisEmployeeFile(employeeId: string): Promise<HrisEmployeeFile> {
+  const { data, error } = await getSupabaseClient().rpc('get_hr_people_record', { target_employee_id: employeeId })
+  if (error) throw new Error(error.message || 'The employee file could not be loaded.')
+  return employeeFileSchema.parse(data)
+}
+
+export async function saveHrisPeopleView(name: string, query: HrisPeopleQuery): Promise<string> {
+  const { data, error } = await getSupabaseClient().rpc('save_hr_people_view', {
+    target_name: name.trim(),
+    target_search: query.search?.trim() || '',
+    target_status: query.status ?? 'active',
+    target_employment_type: query.employmentType ?? 'all',
+    target_role: query.role ?? 'all',
+    target_sort: query.sort ?? 'legal_name',
+    target_direction: query.direction ?? 'asc',
+    target_page_size: query.pageSize ?? 15,
+  })
+  if (error) throw new Error(error.message || 'The saved view could not be stored.')
+  return z.string().uuid().parse(data)
+}
+
+export async function deleteHrisPeopleView(id: string): Promise<boolean> {
+  const { data, error } = await getSupabaseClient().rpc('delete_hr_people_view', { target_id: id })
+  if (error) throw new Error(error.message || 'The saved view could not be deleted.')
+  return z.boolean().parse(data)
+}

@@ -10,6 +10,8 @@ import {
   AvailabilityPageRoute,
   EventsPageRoute,
   HrisIdentityReadinessPageRoute,
+  HrisPeopleWorkspacePageRoute,
+  HrisEmployeeFilePageRoute,
   LoginPageRoute,
   LicensingCenterPageRoute,
   NotificationsPageRoute,
@@ -175,6 +177,30 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <TimePayrollPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr',
+        element: (
+          <RouteSuspense>
+            <HrisPeopleWorkspacePageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr/people',
+        element: (
+          <RouteSuspense>
+            <HrisPeopleWorkspacePageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr/people/:employeeId',
+        element: (
+          <RouteSuspense>
+            <HrisEmployeeFilePageRoute />
           </RouteSuspense>
         ),
       },

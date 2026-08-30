@@ -110,6 +110,12 @@ export const SystemOperationsPageRoute = lazy(() =>
 export const HrisIdentityReadinessPageRoute = lazy(() =>
   import('../pages/HrisIdentityReadinessPage').then((module) => ({ default: module.HrisIdentityReadinessPage })),
 )
+export const HrisPeopleWorkspacePageRoute = lazy(() =>
+  import('../pages/HrisPeopleWorkspacePage').then((module) => ({ default: module.HrisPeopleWorkspacePage })),
+)
+export const HrisEmployeeFilePageRoute = lazy(() =>
+  import('../pages/HrisEmployeeFilePage').then((module) => ({ default: module.HrisEmployeeFilePage })),
+)
 
 function RouteFallback() {
   return (

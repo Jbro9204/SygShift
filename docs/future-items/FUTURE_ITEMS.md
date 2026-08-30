@@ -79,7 +79,7 @@ Required outcomes:
 
 - Priority: **Urgent**
 - Target window: Staged enterprise program; approximately 24–28 controlled runs
-- Status: Stage 1 completed 08/29/2026 / Stage 2 protected control plane completed 08/29/2026; production identity backfill remains gated pending authoritative effective dates and isolated recovery evidence
+- Status: Stage 1 completed 08/29/2026 / Stage 2 protected control plane completed 08/29/2026 / Stage 3 People & HR Workspace completed 08/29/2026; production identity backfill remains gated pending authoritative effective dates and isolated recovery evidence
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
@@ -119,13 +119,15 @@ Stage 1 closed the protected-data release gate by default and added a machine-va
 
 Run 1 installed the dormant private schema, deny-by-default permission definitions, no-delete/close-only history protections, and access-preservation assertions. Run 2 installed a deterministic, service-only reconciliation proposal and validated all 78 source employee records without creating HR identity rows. Run 3 installed the protected execution controls but intentionally performed no identity write. The protected Employment Data Readiness workspace now records authoritative date evidence without exposing any browser backfill action. Production reported zero identity blockers; all 78 records require hire-date review and nine separated records also require separation-date review before an effective-dated canary can be authorized. Current employee records, roles, permissions, overrides, payroll, licensing, schedule, timekeeping, and runtime behavior remain unchanged. The production backfill remains gated for authoritative date resolution, isolated recovery evidence, a controlled canary, authorization tests, and cross-module preservation verification.
 
-#### Stage 3 — People & HR Workspace (2 runs)
+#### Stage 3 — People & HR Workspace (completed 08/29/2026)
 
-- [ ] Build a compact HR overview and priority work queue.
-- [ ] Build a paginated People list with search, filters, saved views, and active employees by default.
-- [ ] Build the permission-controlled authoritative Employee File.
-- [ ] Build a permission-safe Company Directory and migrate current Directory responsibilities without creating a second editing workflow.
-- [ ] Use connected summaries and deep links so each domain remains authoritative instead of duplicating data.
+- [x] Build a compact HR overview and priority work queue.
+- [x] Build a paginated People list with search, filters, saved views, and active employees by default.
+- [x] Build the permission-controlled authoritative Employee File.
+- [x] Preserve the existing permission-safe operational Directory as the single Directory editing workflow instead of creating a second employee editor.
+- [x] Use connected summaries and permission-filtered deep links so each domain remains authoritative instead of duplicating data.
+
+Stage 3 added the protected `/hr`, `/hr/people`, and `/hr/people/:employeeId` workspaces. The People list uses legal names, server-side search and filtering, bounded pagination, private saved views, and active employees by default. Restricted contact information requires the separate `hr.people.restricted` permission. The Employee File is read-only and links only to specialized workspaces the current user can actually access. Existing Directory, Schedule, Time & Attendance, Licensing, User Accounts, Roles & Permissions, and Payroll workflows remain authoritative and unchanged. No identity backfill, production role assignment, individual permission override, or employee record mutation was performed.
 
 #### Stage 4 — Secure Document Platform (3–4 runs)
 

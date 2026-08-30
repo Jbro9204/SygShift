@@ -66,6 +66,12 @@ export const navigationGroups: NavigationGroup[] = [
     label: 'HR & Finance',
     items: [
       {
+        label: 'People & HR',
+        path: '/hr',
+        icon: UsersRound,
+        permissions: ['hr.people.view', 'hr.people.manage'],
+      },
+      {
         label: 'Time-Off Requests',
         path: '/requests',
         icon: ClipboardCheck,

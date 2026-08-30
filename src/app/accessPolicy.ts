@@ -46,6 +46,9 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/payroll/employees': { anyOf: ['time.view', 'time.manage', 'time.export_payroll'] },
   '/payroll/export': { anyOf: ['time.export_payroll'] },
   '/payroll/rules': { anyOf: ['time.manage', 'time.export_payroll'] },
+  '/hr': { anyOf: ['hr.people.view', 'hr.people.manage'] },
+  '/hr/people': { anyOf: ['hr.people.view', 'hr.people.manage'] },
+  '/hr/people/:employeeId': { anyOf: ['hr.people.view', 'hr.people.manage'] },
   '/hr/identity-readiness': { anyOf: ['hr.people.manage'] },
   '/people': { anyOf: ['directory.view', 'directory.edit_basic', 'availability.manage'] },
   '/licensing': { anyOf: ['licensing.view', 'licensing.manage', 'licensing.configure', 'licensing.communicate', 'directory.edit_credentials'] },
@@ -80,7 +83,11 @@ export function canAccessRoute(
   pathname: string,
   session: Pick<SessionContext, 'permissions'> | null | undefined,
 ): boolean {
-  const policyKey = pathname.startsWith('/reports/') ? '/reports/:reportKey' : pathname
+  const policyKey = pathname.startsWith('/reports/')
+    ? '/reports/:reportKey'
+    : pathname.startsWith('/hr/people/')
+      ? '/hr/people/:employeeId'
+      : pathname
   const policy = routeAccessPolicies[policyKey]
   if (pathname === '/account' || pathname === '/account-security' || pathname === '/requests') return Boolean(policy)
   return policy ? hasAnyEffectivePermission(session, policy.anyOf) : false

@@ -20,6 +20,7 @@
     "check:hris-reconciliation": "node tools/validate-hris-stage2-reconciliation.mjs",
     "check:hris-backfill-controls": "node tools/validate-hris-stage2-backfill-controls.mjs",
     "check:hris-readiness": "node tools/validate-hris-stage2-readiness-workspace.mjs",
+    "check:hris-people": "node tools/validate-hris-stage3-people-workspace.mjs",
     "verify:access:preserved": "node tools/verify-production-access-preservation.mjs outputs/access-control/production-access-baseline-08-21-2026-before-enforcement.json outputs/access-control/production-access-baseline-08-21-2026.json",
     "preview": "pnpm build && vite preview",
     "deploy": "pnpm build && wrangler deploy",
