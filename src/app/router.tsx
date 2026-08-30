@@ -14,6 +14,9 @@ import {
   HrisAutomationPageRoute,
   HrisRecruitingPageRoute,
   HrisOnboardingPageRoute,
+  HrisLeavePageRoute,
+  HrisBenefitsPageRoute,
+  HrisCompensationPageRoute,
   HrisDocumentsPageRoute,
   HrisDocumentWorkflowsPageRoute,
   HrisPeopleWorkspacePageRoute,
@@ -247,6 +250,30 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <HrisOnboardingPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr/leave',
+        element: (
+          <RouteSuspense>
+            <HrisLeavePageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr/benefits',
+        element: (
+          <RouteSuspense>
+            <HrisBenefitsPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr/compensation',
+        element: (
+          <RouteSuspense>
+            <HrisCompensationPageRoute />
           </RouteSuspense>
         ),
       },

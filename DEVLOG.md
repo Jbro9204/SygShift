@@ -1084,3 +1084,17 @@ pnpm exec wrangler deploy --keep-vars
 - Kept the database and Worker release gates disabled; production contains zero workflow definitions, jobs, and tasks.
 - Full validation passed: Stage 5 contract checks, type checking, zero-warning lint, 113 test files / 565 tests, production build, Cloudflare dry run, database verification, deployment, and live HTTP checks.
 - Production Cloudflare version: `f7baf887-f7e1-4cd7-83bc-918094fef097`.
+
+## 08/30/2026 — HRIS Stage 7 Leave, Benefits, and Compensation Foundation
+
+- Added independently protected Leave Administration, Benefits Administration, and Compensation workspaces.
+- Kept operational time-off requests authoritative and linked protected leave cases without duplicating employee requests.
+- Added explicit downstream authorization records so a leave decision cannot silently change Schedule, Time & Attendance, or Payroll.
+- Added separately protected medical and leave records connected to the private HR document vault.
+- Added effective-dated benefits and compensation foundations with append-only event history.
+- Required exact permissions for every workspace, recent MFA for Compensation, and database-enforced separation between compensation proposers and approvers.
+- Added compact 5/10/20 worklists, private row-level security, service-only data access, and independent database and Worker release gates.
+- Applied production migration `20260831040000_hris_stage7_leave_benefits_compensation_foundation.sql` with preservation assertions.
+- Left all three release gates disabled and created no policies, balances, plans, enrollments, grades, bands, compensation records, proposals, or approvals.
+- Assigned no Stage 7 permissions and changed no existing role or employee access.
+- Full validation passed: Stage 7 contract checks, type checking, zero-warning lint, 114 test files / 571 tests, and production build.

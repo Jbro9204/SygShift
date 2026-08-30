@@ -17,6 +17,8 @@ import {
   Megaphone,
   ShieldCheck,
   Timer,
+  Umbrella,
+  HeartHandshake,
   UserCog,
   UserRoundCheck,
   UsersRound,
@@ -90,6 +92,24 @@ export const navigationGroups: NavigationGroup[] = [
         path: '/hr/onboarding',
         icon: UserRoundCheck,
         permissions: ['hr.onboarding.view'],
+      },
+      {
+        label: 'Leave Administration',
+        path: '/hr/leave',
+        icon: Umbrella,
+        permissions: ['hr.leave.view'],
+      },
+      {
+        label: 'Benefits',
+        path: '/hr/benefits',
+        icon: HeartHandshake,
+        permissions: ['hr.benefits.view'],
+      },
+      {
+        label: 'Compensation',
+        path: '/hr/compensation',
+        icon: BadgeDollarSign,
+        permissions: ['hr.compensation.view'],
       },
       {
         label: 'Time-Off Requests',

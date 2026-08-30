@@ -37,6 +37,9 @@ type Environment = Partial<Env> & {
   SYGSHIFT_HR_AUTOMATION_ENABLED?: string
   SYGSHIFT_HR_RECRUITING_ENABLED?: string
   SYGSHIFT_HR_ONBOARDING_ENABLED?: string
+  SYGSHIFT_HR_LEAVE_ENABLED?: string
+  SYGSHIFT_HR_BENEFITS_ENABLED?: string
+  SYGSHIFT_HR_COMPENSATION_ENABLED?: string
 }
 
 interface SessionContext {
@@ -605,6 +608,7 @@ async function requireAdminMfa(
 ): Promise<{
   config: NonNullable<ReturnType<typeof configuredSupabase>>
   context: SessionContext
+  token: string
 }> {
   const result = await requireVerifiedOperationsSession(request, environment, 'admin_mfa_required')
   const hasRequiredPermission = result.context.permissions?.includes(requiredPermission) === true
@@ -679,6 +683,7 @@ async function requireVerifiedOperationsSession(
 ): Promise<{
   config: NonNullable<ReturnType<typeof configuredSupabase>>
   context: SessionContext
+  token: string
 }> {
   const config = configuredSupabase(environment)
   if (!config) {
@@ -696,11 +701,12 @@ async function requireVerifiedOperationsSession(
     })
   }
 
+  const token = authorization.slice('Bearer '.length)
   const payload = await callRpc<SessionContext[] | SessionContext>(
     { publishableKey: config.publishableKey, url: config.url },
     'get_session_context',
     {},
-    authorization.slice('Bearer '.length),
+    token,
     forwardedAssuranceHeaders(request),
   )
   const context = Array.isArray(payload) ? payload[0] : payload
@@ -712,7 +718,7 @@ async function requireVerifiedOperationsSession(
     })
   }
 
-  return { config, context }
+  return { config, context, token }
 }
 
 function randomFrom(values: string): string {
@@ -869,6 +875,18 @@ function requireHrOnboardingRelease(environment: Environment): void {
   if (!hrOnboardingEnabled(environment)) {
     throw new ApiError('hr_onboarding_unavailable', 503, 'The Onboarding workspace has not been released.')
   }
+}
+
+function hrLeaveEnabled(environment: Environment): boolean {
+  return environment.SYGSHIFT_HR_LEAVE_ENABLED?.trim().toLowerCase() === 'true'
+}
+
+function hrBenefitsEnabled(environment: Environment): boolean {
+  return environment.SYGSHIFT_HR_BENEFITS_ENABLED?.trim().toLowerCase() === 'true'
+}
+
+function hrCompensationEnabled(environment: Environment): boolean {
+  return environment.SYGSHIFT_HR_COMPENSATION_ENABLED?.trim().toLowerCase() === 'true'
 }
 
 function requireSessionPermission(context: SessionContext, permission: string): void {
@@ -1933,6 +1951,112 @@ async function handleHrOnboardingApi(
   }
 
   return errorJson('not_found', requestId, 404)
+}
+
+function disabledHrLeaveWorkspace(requestId: string): Record<string, unknown> {
+  return {
+    enabled: false,
+    pageSize: 10,
+    offset: 0,
+    counts: { openCases: 0, approvedCases: 0, activePolicies: 0 },
+    items: [],
+    policies: [],
+    requestId,
+  }
+}
+
+function disabledHrBenefitsWorkspace(requestId: string): Record<string, unknown> {
+  return {
+    enabled: false,
+    pageSize: 10,
+    offset: 0,
+    counts: { activePlans: 0, openWindows: 0, pendingEnrollments: 0 },
+    items: [],
+    windows: [],
+    requestId,
+  }
+}
+
+function disabledHrCompensationWorkspace(requestId: string): Record<string, unknown> {
+  return {
+    enabled: false,
+    pageSize: 10,
+    offset: 0,
+    counts: { activeComponents: 0, pendingProposals: 0, activeRecords: 0 },
+    items: [],
+    components: [],
+    requestId,
+  }
+}
+
+async function handleHrLeaveApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url)
+  const session = await requireVerifiedOperationsSession(request, environment, 'hr_leave_mfa_required')
+  if (url.pathname !== '/api/v1/hr/leave/workspace') return errorJson('not_found', requestId, 404)
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  requireSessionPermission(session.context, 'hr.leave.view')
+  if (!hrLeaveEnabled(environment)) return json(disabledHrLeaveWorkspace(requestId))
+  const { offset, pageSize } = boundedWorkspacePage(url)
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_hr_leave_workspace',
+    { target_actor_id: session.context.employee_id, target_offset: offset, target_page_size: pageSize },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
+async function handleHrBenefitsApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url)
+  const session = await requireVerifiedOperationsSession(request, environment, 'hr_benefits_mfa_required')
+  if (url.pathname !== '/api/v1/hr/benefits/workspace') return errorJson('not_found', requestId, 404)
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  requireSessionPermission(session.context, 'hr.benefits.view')
+  if (!hrBenefitsEnabled(environment)) return json(disabledHrBenefitsWorkspace(requestId))
+  const { offset, pageSize } = boundedWorkspacePage(url)
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_hr_benefits_workspace',
+    { target_actor_id: session.context.employee_id, target_offset: offset, target_page_size: pageSize },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
+async function handleHrCompensationApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url)
+  const session = await requireVerifiedOperationsSession(request, environment, 'hr_compensation_mfa_required')
+  if (url.pathname !== '/api/v1/hr/compensation/workspace') return errorJson('not_found', requestId, 404)
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  requireSessionPermission(session.context, 'hr.compensation.view')
+  if (!hrCompensationEnabled(environment)) return json(disabledHrCompensationWorkspace(requestId))
+  const mfa = await requireRecentDocumentMfa(request, session)
+  const { offset, pageSize } = boundedWorkspacePage(url)
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_hr_compensation_workspace',
+    {
+      target_actor_id: session.context.employee_id,
+      target_mfa_method: mfa.method,
+      target_mfa_verified_at: mfa.verifiedAt,
+      target_offset: offset,
+      target_page_size: pageSize,
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
 }
 
 async function handleHrAutomationApi(
@@ -4012,6 +4136,45 @@ export default {
           response = error instanceof ApiError
             ? errorJson(error.code, requestId, error.status, error.message)
             : errorJson('hr_recruiting_request_failed', requestId, 500, 'The Recruiting request could not be completed.')
+        }
+      }
+    } else if (url.pathname.startsWith('/api/v1/hr/leave')) {
+      try {
+        response = await handleHrLeaveApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('hr_leave_request_failed', requestId, 500, 'The Leave Administration request could not be completed.')
+        }
+      }
+    } else if (url.pathname.startsWith('/api/v1/hr/benefits')) {
+      try {
+        response = await handleHrBenefitsApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('hr_benefits_request_failed', requestId, 500, 'The Benefits request could not be completed.')
+        }
+      }
+    } else if (url.pathname.startsWith('/api/v1/hr/compensation')) {
+      try {
+        response = await handleHrCompensationApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('hr_compensation_request_failed', requestId, 500, 'The Compensation request could not be completed.')
         }
       }
     } else if (url.pathname.startsWith('/api/v1/hr/onboarding')) {

@@ -164,13 +164,15 @@ Stage 5 installed a private, service-only workflow engine; immutable versions; h
 
 Stage 6 is deployed dormant. Recruiting and onboarding have independent database and Worker release gates, all six permissions remain unassigned, and no candidate, employee, onboarding case, or task was created during deployment. Activation requires a separate controlled release with approved permissions, canary data, duplicate review, recovery evidence, and post-activation validation.
 
-#### Stage 7 — Leave, Benefits & Compensation (3–4 runs)
+#### Stage 7 — Leave, Benefits & Compensation (completed 08/30/2026)
 
-- [ ] Implement time-off and protected-leave foundations using approved eligibility, accrual, and policy rules only.
-- [ ] Connect approved leave to Schedule, Time & Attendance, and Payroll only after authorized approval.
-- [ ] Implement benefits plans, eligibility, enrollment, elections, and effective-dated history foundations.
-- [ ] Implement effective-dated compensation history, approvals, recent-MFA requirements, and restricted access.
-- [ ] Never invent balances, policy entitlements, benefit promises, or compensation decisions.
+- [x] Implement time-off and protected-leave foundations using approved eligibility, accrual, and policy rules only.
+- [x] Connect approved leave to Schedule, Time & Attendance, and Payroll only after authorized approval.
+- [x] Implement benefits plans, eligibility, enrollment, elections, and effective-dated history foundations.
+- [x] Implement effective-dated compensation history, approvals, recent-MFA requirements, and restricted access.
+- [x] Never invent balances, policy entitlements, benefit promises, or compensation decisions.
+
+Stage 7 is deployed dormant. Leave Administration, Benefits Administration, and Compensation have independent database and Worker release gates, all 11 permissions remain unassigned, and no policy, balance, entitlement, benefit plan, enrollment, compensation record, proposal, or approval was created during deployment. Operational time-off remains authoritative. Protected leave information is isolated behind separate permissions, downstream leave effects require explicit authorization, and compensation access requires recent MFA with database-enforced proposer/approver separation. Activation requires approved source data, named access owners, an isolated canary, recovery evidence, and post-activation validation.
 
 #### Stage 8 — Talent, Learning, Cases, Safety & Assets (3–4 runs)
 
