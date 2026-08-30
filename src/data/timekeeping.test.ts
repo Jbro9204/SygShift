@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CLOCK_IN_EARLY_WINDOW_MINUTES,
   activeTimeState,
   applyRecordedTimeEventToDashboard,
   dedupeTimeMaintenanceShiftOptions,
   getClockableShiftChoices,
+  nextUpcomingClockInShift,
   nextTimeEventKinds,
   parsePayrollExportBatch,
   parsePayrollExportDetail,
@@ -108,13 +110,60 @@ describe('timekeeping validation', () => {
         startsAt: '2026-08-20T14:00:00.000Z',
         endsAt: '2026-08-20T22:00:00.000Z',
       },
-    ], '2026-07-30T13:00:00.000Z')
+    ], '2026-07-30T13:55:00.000Z')
 
     expect(choices.shifts).toHaveLength(1)
     expect(choices.shifts[0]?.shiftId).toBe(baseShift.shiftId)
     expect(choices.duplicateCount).toBe(1)
     expect(choices.outsideWindowCount).toBe(1)
     expect(choices.hiddenCount).toBe(2)
+  })
+
+  it('opens assigned shifts exactly five minutes before start and not earlier', () => {
+    const shift: TimekeepingShift = {
+      assignmentId: '73000000-0000-4000-8000-000000000111',
+      shiftId: '73000000-0000-4000-8000-000000000211',
+      status: 'assigned',
+      startsAt: '2026-08-30T14:00:00.000Z',
+      endsAt: '2026-08-30T22:00:00.000Z',
+      timeZone: 'America/Denver',
+      requiresArmed: false,
+      isOvertime: false,
+      postName: 'Unarmed coverage',
+      siteName: 'Market',
+      siteCode: 'MARKET',
+      eventName: null,
+      locationName: 'Market',
+      workType: 'post',
+    }
+
+    expect(CLOCK_IN_EARLY_WINDOW_MINUTES).toBe(5)
+    expect(getClockableShiftChoices([shift], '2026-08-30T13:54:59.000Z').shifts).toHaveLength(0)
+    expect(nextUpcomingClockInShift([shift], '2026-08-30T13:54:59.000Z')?.shiftId).toBe(shift.shiftId)
+    expect(getClockableShiftChoices([shift], '2026-08-30T13:55:00.000Z').shifts).toHaveLength(1)
+    expect(getClockableShiftChoices([shift], '2026-08-30T22:00:01.000Z').shifts).toHaveLength(0)
+  })
+
+  it('keeps an overnight assignment clockable through its scheduled end', () => {
+    const overnightShift: TimekeepingShift = {
+      assignmentId: '73000000-0000-4000-8000-000000000112',
+      shiftId: '73000000-0000-4000-8000-000000000212',
+      status: 'assigned',
+      startsAt: '2026-08-31T05:00:00.000Z',
+      endsAt: '2026-08-31T13:00:00.000Z',
+      timeZone: 'America/Denver',
+      requiresArmed: true,
+      isOvertime: false,
+      postName: 'Armed coverage',
+      siteName: 'PERA Denver',
+      siteCode: 'PERA',
+      eventName: null,
+      locationName: 'PERA Denver',
+      workType: 'post',
+    }
+
+    expect(getClockableShiftChoices([overnightShift], '2026-08-31T12:59:59.000Z').shifts).toHaveLength(1)
+    expect(getClockableShiftChoices([overnightShift], '2026-08-31T13:00:01.000Z').shifts).toHaveLength(0)
   })
 
   it('deduplicates time maintenance location options while preserving distinct posts', () => {

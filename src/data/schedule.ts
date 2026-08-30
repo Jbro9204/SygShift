@@ -12,7 +12,7 @@ const assignedEmployeeSchema = z.object({
 })
 
 const assignmentOverrideSchema = z.object({
-  kind: z.enum(['availability', 'armed_credential']),
+  kind: z.enum(['availability', 'armed_credential', 'scheduled_overtime']),
   note: z.string(),
   createdAt: z.string().nullable().optional(),
 })
@@ -162,6 +162,18 @@ const scheduleNotificationResultSchema = z.object({
   revision: z.number().int().positive(),
 })
 
+const scheduledOvertimePreviewSchema = z.object({
+  employeeId: z.string().uuid(),
+  shiftId: z.string().uuid(),
+  weekStartsOn: z.string(),
+  weekEndsOn: z.string(),
+  currentMinutes: z.number().int().nonnegative(),
+  proposedMinutes: z.number().int().nonnegative(),
+  resultingMinutes: z.number().int().nonnegative(),
+  overtimeMinutes: z.number().int().nonnegative(),
+  requiresOverride: z.boolean(),
+})
+
 const copyScheduleWeekResultSchema = z.object({
   schedule: scheduleSchema,
   copiedCount: z.number().int().nonnegative(),
@@ -181,6 +193,7 @@ export type ResolveReviewShiftResult = z.infer<typeof resolveReviewShiftResultSc
 export type StaffingSuggestion = z.infer<typeof staffingSuggestionSchema>
 export type ScheduleNotificationResult = z.infer<typeof scheduleNotificationResultSchema>
 export type CopyScheduleWeekResult = z.infer<typeof copyScheduleWeekResultSchema>
+export type ScheduledOvertimePreview = z.infer<typeof scheduledOvertimePreviewSchema>
 
 const employeeNameCollator = new Intl.Collator('en-US', {
   numeric: true,
@@ -297,6 +310,7 @@ export interface AddDraftShiftAssignmentInput {
   employeeId: string
   availabilityOverrideNote?: string | null
   credentialOverrideNote?: string | null
+  overtimeOverrideNote?: string | null
 }
 
 export interface UpdateDraftShiftInput {
@@ -311,6 +325,7 @@ export interface UpdateDraftShiftInput {
   employeeId?: string | null
   availabilityOverrideNote?: string | null
   credentialOverrideNote?: string | null
+  overtimeOverrideNote?: string | null
   workType?: 'post' | 'training'
 }
 
@@ -440,7 +455,7 @@ export async function ensureScheduleDraft(weekStartsOn: string): Promise<WeeklyS
 }
 
 export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Promise<WeeklySchedule> {
-  const { data, error } = await getSupabaseClient().rpc('scheduler_update_typed_draft_shift', {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_update_typed_draft_shift_v2', {
     target_shift_id: input.shiftId,
     shift_operational_date: input.shiftDate,
     shift_start_time: input.startTime,
@@ -452,6 +467,7 @@ export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Pr
     target_employee_id: input.employeeId || null,
     target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
     target_credential_override_note: input.credentialOverrideNote?.trim() || null,
+    target_overtime_override_note: input.overtimeOverrideNote?.trim() || null,
     target_work_type: input.workType ?? 'post',
   })
 
@@ -464,11 +480,12 @@ export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Pr
 }
 
 export async function addScheduleDraftShiftAssignment(input: AddDraftShiftAssignmentInput): Promise<WeeklySchedule> {
-  const { data, error } = await getSupabaseClient().rpc('scheduler_add_draft_shift_assignment', {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_add_draft_shift_assignment_v2', {
     target_shift_id: input.shiftId,
     target_employee_id: input.employeeId,
     target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
     target_credential_override_note: input.credentialOverrideNote?.trim() || null,
+    target_overtime_override_note: input.overtimeOverrideNote?.trim() || null,
   })
 
   if (error) throw new Error(error.message || 'The guard could not be added to this shift.')
@@ -480,6 +497,38 @@ export async function addScheduleDraftShiftAssignment(input: AddDraftShiftAssign
       assignments: shift.assignments.filter((assignment) => assignment.status !== 'canceled'),
     })),
   }
+}
+
+export async function getScheduledOvertimePreview(
+  shiftId: string,
+  employeeId: string,
+): Promise<ScheduledOvertimePreview> {
+  const { data, error } = await getSupabaseClient().rpc('get_scheduled_overtime_preview', {
+    target_shift_id: shiftId,
+    target_employee_id: employeeId,
+  })
+
+  if (error) throw new Error(error.message || 'Scheduled overtime could not be calculated.')
+  return scheduledOvertimePreviewSchema.parse(data)
+}
+
+export async function getScheduledOvertimeUpdatePreview(
+  shiftId: string,
+  employeeId: string,
+  shiftDate: string,
+  startTime: string,
+  endTime: string,
+): Promise<ScheduledOvertimePreview> {
+  const { data, error } = await getSupabaseClient().rpc('get_scheduled_overtime_update_preview', {
+    target_shift_id: shiftId,
+    target_employee_id: employeeId,
+    shift_operational_date: shiftDate,
+    shift_start_time: startTime,
+    shift_end_time: endTime,
+  })
+
+  if (error) throw new Error(error.message || 'Scheduled overtime could not be calculated for this change.')
+  return scheduledOvertimePreviewSchema.parse(data)
 }
 
 export async function removeScheduleDraftShift(input: RemoveDraftShiftInput): Promise<WeeklySchedule> {

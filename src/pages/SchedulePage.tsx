@@ -21,6 +21,8 @@ import {
   createSupervisorCoveragePlan,
   getImportedSchedulePreview,
   getScheduleBuilderOptions,
+  getScheduledOvertimePreview,
+  getScheduledOvertimeUpdatePreview,
   getScheduleStaffingSuggestions,
   getWeeklySchedule,
   publishEmployeeScheduleSlice,
@@ -235,7 +237,7 @@ function credentialOverrideComplete(required: boolean, note: string, confirmedKn
 
 function assignmentOverrideByKind(
   assignment: ScheduleShift['assignments'][number],
-  kind: 'availability' | 'armed_credential',
+  kind: 'availability' | 'armed_credential' | 'scheduled_overtime',
 ) {
   return assignment.overrides?.find((override) => override.kind === kind) ?? null
 }
@@ -826,6 +828,7 @@ function EditShiftDialog({
     employeeId?: string | null
     availabilityOverrideNote?: string | null
     credentialOverrideNote?: string | null
+    overtimeOverrideNote?: string | null
     workType?: 'post' | 'training'
   }>>
   onClose: () => void
@@ -846,6 +849,7 @@ function EditShiftDialog({
   const [workType, setWorkType] = useState<'post' | 'training'>(shift.work_type ?? 'post')
   const [overrideNote, setOverrideNote] = useState('')
   const [credentialOverrideNote, setCredentialOverrideNote] = useState('')
+  const [overtimeOverrideNote, setOvertimeOverrideNote] = useState('')
   const [credentialConfirmedKnown, setCredentialConfirmedKnown] = useState(false)
   const [credentialConfirmedResponsibility, setCredentialConfirmedResponsibility] = useState(false)
   const availabilityConflict = findAvailabilityConflict(availabilityRecords, selectedEmployeeId, shiftDate, startTime, endTime)
@@ -857,6 +861,21 @@ function EditShiftDialog({
     credentialConfirmedKnown,
     credentialConfirmedResponsibility,
   )
+  const overtimePreviewQuery = useQuery({
+    queryKey: ['scheduled-overtime-update-preview', shift.id, selectedEmployeeId, shiftDate, startTime, endTime],
+    queryFn: () => getScheduledOvertimeUpdatePreview(
+      shift.id,
+      selectedEmployeeId,
+      shiftDate,
+      startTime,
+      endTime,
+    ),
+    enabled: Boolean(selectedEmployeeId && shiftDate && startTime && endTime),
+    staleTime: 0,
+  })
+  const overtimePreview = overtimePreviewQuery.data
+  const overtimeOverrideRequired = Boolean(overtimePreview?.requiresOverride)
+  const overtimeOverrideReady = !overtimeOverrideRequired || Boolean(overtimeOverrideNote.trim())
   const hasUnsavedChanges = selectedEmployeeId !== assignedEmployeeId
     || shiftDate !== shiftOperationalDate(shift)
     || startTime !== shiftLocalTimeValue(shift, shift.starts_at)
@@ -868,6 +887,7 @@ function EditShiftDialog({
     || workType !== (shift.work_type ?? 'post')
     || overrideNote.trim().length > 0
     || credentialOverrideNote.trim().length > 0
+    || overtimeOverrideNote.trim().length > 0
     || credentialConfirmedKnown
     || credentialConfirmedResponsibility
 
@@ -894,6 +914,7 @@ function EditShiftDialog({
       employeeId: String(form.get('employeeId') ?? '') || null,
       availabilityOverrideNote: availabilityConflict ? overrideNote : null,
       credentialOverrideNote: credentialOverrideRequired ? credentialOverrideNote : null,
+      overtimeOverrideNote: overtimeOverrideRequired ? overtimeOverrideNote : null,
       workType,
     }, {
       onSuccess: onClose,
@@ -931,6 +952,7 @@ function EditShiftDialog({
               onChange={(event) => {
                 setSelectedEmployeeId(event.target.value)
                 setCredentialOverrideNote('')
+                setOvertimeOverrideNote('')
                 setCredentialConfirmedKnown(false)
                 setCredentialConfirmedResponsibility(false)
               }}
@@ -980,6 +1002,37 @@ function EditShiftDialog({
             onNoteChange={setCredentialOverrideNote}
           />
         ) : null}
+        {overtimePreviewQuery.isPending && selectedEmployeeId ? (
+          <p className="form-note">Calculating this employee's Sunday–Saturday scheduled hours...</p>
+        ) : null}
+        {overtimePreviewQuery.isError ? (
+          <p className="form-feedback form-feedback--error" role="alert">
+            {overtimePreviewQuery.error instanceof Error ? overtimePreviewQuery.error.message : 'Scheduled overtime could not be calculated.'}
+          </p>
+        ) : null}
+        {overtimePreview?.requiresOverride ? (
+          <div className="availability-override-card availability-override-card--overtime">
+            <AlertCircle aria-hidden="true" size={18} />
+            <div>
+              <strong>Scheduled overtime approval required</strong>
+              <p>
+                This employee has {(overtimePreview.currentMinutes / 60).toFixed(2)} other scheduled hours for {format(new Date(`${overtimePreview.weekStartsOn}T12:00:00`), 'MM/dd/yyyy')}–{format(new Date(`${overtimePreview.weekEndsOn}T12:00:00`), 'MM/dd/yyyy')}.
+                This edited shift adds {(overtimePreview.proposedMinutes / 60).toFixed(2)} hours, resulting in {(overtimePreview.resultingMinutes / 60).toFixed(2)} total hours and {(overtimePreview.overtimeMinutes / 60).toFixed(2)} overtime hours.
+              </p>
+              <label>
+                Approval note
+                <textarea
+                  maxLength={2000}
+                  onChange={(event) => setOvertimeOverrideNote(event.target.value)}
+                  placeholder="Approved scheduled overtime; include the authorizing leader or operational reason."
+                  required
+                  rows={2}
+                  value={overtimeOverrideNote}
+                />
+              </label>
+            </div>
+          </div>
+        ) : null}
         <div className="schedule-builder__checks schedule-edit-form__checks">
           <label className="check-field"><input checked={isOpen} name="isOpen" onChange={(event) => setIsOpen(event.target.checked)} type="checkbox" /> Show as open if coverage is still needed</label>
           <label className="check-field"><input checked={isOvertime} name="isOvertime" onChange={(event) => setIsOvertime(event.target.checked)} type="checkbox" /> Mark as overtime</label>
@@ -1008,7 +1061,7 @@ function EditShiftDialog({
             Remove from draft
           </button>
           <button className="secondary-button" onClick={requestClose} type="button">Cancel</button>
-          <button className="primary-action" disabled={mutation.isPending || Boolean(availabilityConflict && !overrideNote.trim()) || !credentialOverrideReady} type="submit">
+          <button className="primary-action" disabled={mutation.isPending || Boolean(availabilityConflict && !overrideNote.trim()) || !credentialOverrideReady || overtimePreviewQuery.isPending || overtimePreviewQuery.isError || !overtimeOverrideReady} type="submit">
             {mutation.isPending ? 'Saving...' : 'Save draft shift'}
           </button>
         </div>
@@ -1231,7 +1284,7 @@ function SchedulerShiftModal({
   employees: ScheduleBuilderEmployee[]
   isDraft: boolean
   isSaving: boolean
-  onAssignEmployee: (employeeId: string, availabilityOverrideNote?: string | null, credentialOverrideNote?: string | null) => void
+  onAssignEmployee: (employeeId: string, availabilityOverrideNote?: string | null, credentialOverrideNote?: string | null, overtimeOverrideNote?: string | null) => void
   onClose: () => void
   onEdit: () => void
   onRequestRemove: () => void
@@ -1249,6 +1302,7 @@ function SchedulerShiftModal({
   const [manualEmployeeSearch, setManualEmployeeSearch] = useState('')
   const [overrideNote, setOverrideNote] = useState('')
   const [credentialOverrideNote, setCredentialOverrideNote] = useState('')
+  const [overtimeOverrideNote, setOvertimeOverrideNote] = useState('')
   const [credentialConfirmedKnown, setCredentialConfirmedKnown] = useState(false)
   const [credentialConfirmedResponsibility, setCredentialConfirmedResponsibility] = useState(false)
   const visibleManualEmployees = useMemo(
@@ -1270,6 +1324,15 @@ function SchedulerShiftModal({
     credentialConfirmedKnown,
     credentialConfirmedResponsibility,
   )
+  const overtimePreviewQuery = useQuery({
+    queryKey: ['scheduled-overtime-preview', shift.id, manualEmployeeId],
+    queryFn: () => getScheduledOvertimePreview(shift.id, manualEmployeeId),
+    enabled: Boolean(manualEmployeeId && openSlots > 0),
+    staleTime: 0,
+  })
+  const overtimePreview = overtimePreviewQuery.data
+  const overtimeOverrideRequired = Boolean(overtimePreview?.requiresOverride)
+  const overtimeOverrideReady = !overtimeOverrideRequired || Boolean(overtimeOverrideNote.trim())
 
   function submitAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1278,11 +1341,12 @@ function SchedulerShiftModal({
       manualEmployeeId,
       manualConflict ? overrideNote : null,
       credentialOverrideRequired ? credentialOverrideNote : null,
+      overtimeOverrideRequired ? overtimeOverrideNote : null,
     )
   }
 
   function requestClose() {
-    if ((!manualEmployeeId && !overrideNote.trim() && !credentialOverrideNote.trim()) || window.confirm('Close without adding this guard?')) {
+    if ((!manualEmployeeId && !overrideNote.trim() && !credentialOverrideNote.trim() && !overtimeOverrideNote.trim()) || window.confirm('Close without adding this guard?')) {
       onClose()
     }
   }
@@ -1335,6 +1399,7 @@ function SchedulerShiftModal({
               {shift.assignments.map((assignment) => {
                 const credentialOverride = assignmentOverrideByKind(assignment, 'armed_credential')
                 const availabilityOverride = assignmentOverrideByKind(assignment, 'availability')
+                const overtimeOverride = assignmentOverrideByKind(assignment, 'scheduled_overtime')
 
                 return (
                   <article className="scheduler-assigned-card" key={assignment.id}>
@@ -1342,7 +1407,7 @@ function SchedulerShiftModal({
                       <strong>{assignmentName(assignment)}</strong>
                       <span>{[assignment.employee.employee_number, assignment.status].filter(Boolean).join(' · ')}</span>
                     </div>
-                    {credentialOverride || availabilityOverride ? (
+                    {credentialOverride || availabilityOverride || overtimeOverride ? (
                       <div className="scheduler-assigned-card__overrides" aria-label="Saved assignment overrides">
                         {credentialOverride ? (
                           <small title={credentialOverride.note}>
@@ -1352,6 +1417,11 @@ function SchedulerShiftModal({
                         {availabilityOverride ? (
                           <small title={availabilityOverride.note}>
                             Availability override saved{availabilityOverride.createdAt ? ` ${availabilityOverride.createdAt}` : ''}
+                          </small>
+                        ) : null}
+                        {overtimeOverride ? (
+                          <small title={overtimeOverride.note}>
+                            Scheduled overtime approved{overtimeOverride.createdAt ? ` ${overtimeOverride.createdAt}` : ''}
                           </small>
                         ) : null}
                       </div>
@@ -1390,7 +1460,15 @@ function SchedulerShiftModal({
                   <button
                     className="secondary-button secondary-button--small"
                     disabled={isSaving || openSlots === 0}
-                    onClick={() => onAssignEmployee(candidate.employeeId)}
+                    onClick={() => {
+                      setManualEmployeeId(candidate.employeeId)
+                      setManualEmployeeSearch('')
+                      setOverrideNote('')
+                      setCredentialOverrideNote('')
+                      setOvertimeOverrideNote('')
+                      setCredentialConfirmedKnown(false)
+                      setCredentialConfirmedResponsibility(false)
+                    }}
                     type="button"
                   >
                     Add
@@ -1427,7 +1505,9 @@ function SchedulerShiftModal({
               name="employeeId"
               onChange={(event) => {
                 setManualEmployeeId(event.target.value)
+                setOverrideNote('')
                 setCredentialOverrideNote('')
+                setOvertimeOverrideNote('')
                 setCredentialConfirmedKnown(false)
                 setCredentialConfirmedResponsibility(false)
               }}
@@ -1476,7 +1556,36 @@ function SchedulerShiftModal({
               onNoteChange={setCredentialOverrideNote}
             />
           ) : null}
-          <button className="primary-action" disabled={isSaving || employees.length === 0 || openSlots === 0 || !manualEmployeeId || Boolean(manualConflict && !overrideNote.trim()) || !credentialOverrideReady} type="submit">
+          {overtimePreviewQuery.isPending && manualEmployeeId ? (
+            <p className="form-note">Calculating this employee's Sunday–Saturday scheduled hours...</p>
+          ) : null}
+          {overtimePreviewQuery.isError ? (
+            <p className="scheduler-save-error" role="alert">{overtimePreviewQuery.error instanceof Error ? overtimePreviewQuery.error.message : 'Scheduled overtime could not be calculated.'}</p>
+          ) : null}
+          {overtimePreview?.requiresOverride ? (
+            <div className="availability-override-card availability-override-card--compact availability-override-card--overtime">
+              <AlertCircle aria-hidden="true" size={17} />
+              <div>
+                <strong>Scheduled overtime approval required</strong>
+                <p>
+                  This employee currently has {(overtimePreview.currentMinutes / 60).toFixed(2)} scheduled hours for {format(new Date(`${overtimePreview.weekStartsOn}T12:00:00`), 'MM/dd/yyyy')}–{format(new Date(`${overtimePreview.weekEndsOn}T12:00:00`), 'MM/dd/yyyy')}.
+                  This shift adds {(overtimePreview.proposedMinutes / 60).toFixed(2)} hours, resulting in {(overtimePreview.resultingMinutes / 60).toFixed(2)} total hours and {(overtimePreview.overtimeMinutes / 60).toFixed(2)} overtime hours.
+                </p>
+                <label>
+                  Approval note
+                  <textarea
+                    maxLength={2000}
+                    onChange={(event) => setOvertimeOverrideNote(event.target.value)}
+                    placeholder="Approved scheduled overtime; include the authorizing leader or operational reason."
+                    required
+                    rows={2}
+                    value={overtimeOverrideNote}
+                  />
+                </label>
+              </div>
+            </div>
+          ) : null}
+          <button className="primary-action" disabled={isSaving || employees.length === 0 || openSlots === 0 || !manualEmployeeId || Boolean(manualConflict && !overrideNote.trim()) || !credentialOverrideReady || overtimePreviewQuery.isPending || overtimePreviewQuery.isError || !overtimeOverrideReady} type="submit">
             {isSaving ? 'Adding guard...' : isDraft ? 'Add guard' : 'Open draft & add guard'}
           </button>
           {saveError ? (
@@ -2863,6 +2972,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     employeeId: string,
     availabilityOverrideNote?: string | null,
     credentialOverrideNote?: string | null,
+    overtimeOverrideNote?: string | null,
   ) {
     setBuilderMessage(null)
     addDraftShiftAssignmentMutation.reset()
@@ -2872,6 +2982,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         employeeId,
         availabilityOverrideNote,
         credentialOverrideNote,
+        overtimeOverrideNote,
       })
       return
     }
@@ -2890,6 +3001,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           employeeId,
           availabilityOverrideNote,
           credentialOverrideNote,
+          overtimeOverrideNote,
         })
       },
     })
@@ -4112,7 +4224,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   employees={builderOptionsQuery.data?.employees ?? []}
                   isDraft={scheduleQuery.data.status === 'draft'}
                   isSaving={addDraftShiftAssignmentMutation.isPending || ensureDraftMutation.isPending}
-                  onAssignEmployee={(employeeId, availabilityOverrideNote, credentialOverrideNote) => assignPlannerEmployee(selectedPlannerShift, employeeId, availabilityOverrideNote, credentialOverrideNote)}
+                  onAssignEmployee={(employeeId, availabilityOverrideNote, credentialOverrideNote, overtimeOverrideNote) => assignPlannerEmployee(selectedPlannerShift, employeeId, availabilityOverrideNote, credentialOverrideNote, overtimeOverrideNote)}
                   onClose={() => setSelectedPlannerShiftId(null)}
                   onEdit={() => editShift(selectedPlannerShift)}
                   onRequestRemove={() => requestShiftRemoval(selectedPlannerShift)}

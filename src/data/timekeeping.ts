@@ -782,8 +782,8 @@ export interface PayrollEmployeeSummary {
   notes: string[]
 }
 
-const CLOCK_IN_WINDOW_BEFORE_MS = 12 * 60 * 60 * 1000
-const CLOCK_IN_WINDOW_AFTER_MS = 6 * 60 * 60 * 1000
+export const CLOCK_IN_EARLY_WINDOW_MINUTES = 5
+const CLOCK_IN_WINDOW_BEFORE_MS = CLOCK_IN_EARLY_WINDOW_MINUTES * 60 * 1000
 
 export interface ClockableShiftChoices {
   shifts: TimekeepingShift[]
@@ -817,7 +817,7 @@ async function parseAttendanceReportResponse(response: Response): Promise<Attend
 
 export const verifiedTimekeepingBaseline = {
   operationalTimeZone: 'America/Denver',
-  punchWindow: 'Assigned shifts open for clock-in 12 hours before start and remain available until 6 hours after end.',
+  punchWindow: 'Assigned shifts open for clock-in five minutes before start and remain available through the scheduled end.',
   guarantees: [
     'Official punch time comes from the secure server.',
     'Device time is stored only as supporting audit evidence.',
@@ -903,7 +903,18 @@ function isInsideClockInWindow(shift: TimekeepingShift, serverTimestamp: string)
   const startTime = new Date(shift.startsAt).getTime()
   const endTime = new Date(shift.endsAt).getTime()
   if (!Number.isFinite(serverTime) || !Number.isFinite(startTime) || !Number.isFinite(endTime)) return true
-  return startTime <= serverTime + CLOCK_IN_WINDOW_BEFORE_MS && endTime >= serverTime - CLOCK_IN_WINDOW_AFTER_MS
+  return startTime <= serverTime + CLOCK_IN_WINDOW_BEFORE_MS && endTime >= serverTime
+}
+
+export function nextUpcomingClockInShift(
+  shifts: TimekeepingShift[],
+  serverTimestamp: string,
+): TimekeepingShift | null {
+  const serverTime = new Date(serverTimestamp).getTime()
+  if (!Number.isFinite(serverTime)) return null
+  return [...shifts]
+    .filter((shift) => new Date(shift.startsAt).getTime() > serverTime + CLOCK_IN_WINDOW_BEFORE_MS)
+    .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())[0] ?? null
 }
 
 export function getClockableShiftChoices(

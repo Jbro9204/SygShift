@@ -105,7 +105,7 @@ function overviewTimeAction(dashboard: TimekeepingDashboard | undefined): {
   if (state === 'working') return { kind: 'clock_out', label: 'Clock out', requiresTimePage: false }
   if (state === 'on_break') return { kind: 'break_end', label: 'End break', requiresTimePage: false }
   const choices = getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp)
-  if (choices.shifts.length > 1) return { kind: null, label: 'Choose shift', requiresTimePage: true }
+  if (choices.shifts.length !== 1) return { kind: null, label: choices.shifts.length ? 'Choose shift' : 'View next shift', requiresTimePage: true }
   return { kind: 'clock_in', label: 'Clock in', requiresTimePage: false }
 }
 

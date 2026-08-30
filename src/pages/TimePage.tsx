@@ -27,6 +27,7 @@ import {
   createPayrollExportBatch,
   correctTimeRecordWorkType,
   getClockableShiftChoices,
+  nextUpcomingClockInShift,
   getOwnTimekeepingReview,
   getPayrollExportHistory,
   getTeamAttendanceSummary,
@@ -877,6 +878,7 @@ export function TimeMaintenanceWorkbench({
                 <label>
                   <span>Workday</span>
                   <input
+                    disabled={Boolean(addShiftId)}
                     onChange={(event) => {
                       setAddOperationalDate(event.target.value)
                       setAddShiftId(null)
@@ -889,7 +891,11 @@ export function TimeMaintenanceWorkbench({
                     type="date"
                     value={addOperationalDate}
                   />
-                  <small>For an overnight shift, use the date the shift starts.</small>
+                  <small>
+                    {addShiftId
+                      ? 'Locked to the selected scheduled shift so overnight work and Site/Post billing stay on the correct workday.'
+                      : 'For an overnight shift, use the date the shift starts.'}
+                  </small>
                 </label>
                 <label>
                   <span>Site/Post</span>
@@ -1333,10 +1339,12 @@ function VerifiedTimekeepingSetup() {
 
 function ShiftPicker({
   choices,
+  nextShift,
   selectedShiftId,
   onSelect,
 }: {
   choices: ClockableShiftChoices
+  nextShift: TimekeepingShift | null
   selectedShiftId: string | null
   onSelect: (shiftId: string | null) => void
 }) {
@@ -1347,7 +1355,14 @@ function ShiftPicker({
         <CalendarClock aria-hidden="true" size={25} />
         <div>
           <strong>No assigned shift is available for clock-in right now.</strong>
-          <p>An unscheduled clock-in can still be recorded for supervisor review.</p>
+          {nextShift ? (
+            <p>
+              Your next shift is {shiftTitle(nextShift)} at {formatTime(nextShift.startsAt, nextShift.timeZone)}.
+              Clock-in opens five minutes before the scheduled start.
+            </p>
+          ) : (
+            <p>Clock-in requires an active, published assignment. Contact a supervisor if your schedule is missing.</p>
+          )}
           {choices.hiddenCount > 0 ? (
             <p>{choices.hiddenCount} future or duplicate schedule {choices.hiddenCount === 1 ? 'entry is' : 'entries are'} hidden from this clock-in list.</p>
           ) : null}
@@ -1381,13 +1396,6 @@ function ShiftPicker({
           {shift.isOvertime ? <b>OT</b> : null}
         </label>
       ))}
-      <label className={selectedShiftId === null ? 'time-shift-option time-shift-option--selected' : 'time-shift-option'}>
-        <input checked={selectedShiftId === null} name="time-shift" onChange={() => onSelect(null)} type="radio" />
-        <span>
-          <strong>Unscheduled time</strong>
-          <small>Use only when a supervisor expects you to work outside a listed shift.</small>
-        </span>
-      </label>
     </fieldset>
   )
 }
@@ -1414,6 +1422,10 @@ function PunchControls({
     () => getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp),
     [dashboard.eligibleShifts, dashboard.serverTimestamp],
   )
+  const nextClockInShift = useMemo(
+    () => nextUpcomingClockInShift(dashboard.eligibleShifts, dashboard.serverTimestamp),
+    [dashboard.eligibleShifts, dashboard.serverTimestamp],
+  )
 
   useEffect(() => {
     if (state !== 'off_clock') return
@@ -1436,7 +1448,12 @@ function PunchControls({
       </div>
 
       {state === 'off_clock' ? (
-        <ShiftPicker choices={clockableChoices} onSelect={setSelectedShiftId} selectedShiftId={selectedShiftId} />
+        <ShiftPicker
+          choices={clockableChoices}
+          nextShift={nextClockInShift}
+          onSelect={setSelectedShiftId}
+          selectedShiftId={selectedShiftId}
+        />
       ) : currentShift ? (
         <div className="active-shift-card">
           <Clock3 aria-hidden="true" size={23} />
@@ -1459,7 +1476,7 @@ function PunchControls({
         {actions.map((kind) => (
           <button
             className={kind === 'clock_in' || kind === 'clock_out' ? 'primary-action' : 'secondary-button'}
-            disabled={pending || !canPunch}
+            disabled={pending || !canPunch || (kind === 'clock_in' && !selectedShiftId)}
             key={kind}
             onClick={() => onPunch(kind, kind === 'clock_in' ? selectedShiftId : undefined)}
             type="button"

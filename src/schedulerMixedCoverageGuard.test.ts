@@ -12,6 +12,10 @@ const migration = readFileSync(
 const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
 const scheduleData = readFileSync(join(root, 'src', 'data', 'schedule.ts'), 'utf8')
 const appStyles = readFileSync(join(root, 'src', 'App.css'), 'utf8')
+const overtimeGuardrailMigration = readFileSync(
+  join(root, 'supabase', 'migrations', '20260831051000_schedule_overtime_guardrail.sql'),
+  'utf8',
+)
 
 describe('scheduler mixed coverage and additive assignment', () => {
   it('creates distinct armed and unarmed positions under one coverage plan', () => {
@@ -36,12 +40,18 @@ describe('scheduler mixed coverage and additive assignment', () => {
       migration.indexOf('create or replace function public.scheduler_add_draft_shift_assignment'),
       migration.indexOf('create or replace function public.scheduler_create_coverage_plan'),
     )
+    const guardedWrapper = overtimeGuardrailMigration.slice(
+      overtimeGuardrailMigration.indexOf('create or replace function public.scheduler_add_draft_shift_assignment_v2'),
+      overtimeGuardrailMigration.indexOf('create or replace function public.scheduler_add_draft_shift_assignment('),
+    )
 
     expect(additiveFunction).toContain('insert into public.shift_assignments')
     expect(additiveFunction).toContain('private.active_shift_assignment_count(target_shift.id) >= target_shift.headcount_required')
     expect(additiveFunction).not.toContain('delete from public.shift_assignments')
     expect(additiveFunction).not.toContain("set status = 'canceled'")
     expect(additiveFunction).not.toContain('update public.shift_assignments')
+    expect(guardedWrapper).toContain('public.scheduler_add_draft_shift_assignment_core(')
+    expect(guardedWrapper).toContain("'scheduled_overtime'")
   })
 
   it('exposes total and armed-position controls with a clear mix summary', () => {
@@ -56,8 +66,9 @@ describe('scheduler mixed coverage and additive assignment', () => {
 
   it('uses the new database contracts from the data layer', () => {
     expect(scheduleData).toContain("getSupabaseClient().rpc('scheduler_create_coverage_plan'")
-    expect(scheduleData).toContain("getSupabaseClient().rpc('scheduler_add_draft_shift_assignment'")
+    expect(scheduleData).toContain("getSupabaseClient().rpc('scheduler_add_draft_shift_assignment_v2'")
     expect(scheduleData).toContain('target_armed_headcount: input.armedHeadcount')
     expect(scheduleData).toContain("target_assignment_requires_armed: input.assignmentRequirement === 'armed'")
+    expect(scheduleData).toContain('target_overtime_override_note: input.overtimeOverrideNote?.trim() || null')
   })
 })
