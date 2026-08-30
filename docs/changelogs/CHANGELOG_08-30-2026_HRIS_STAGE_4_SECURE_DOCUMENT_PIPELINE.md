@@ -40,6 +40,11 @@ Installed the protected server pipeline that future HR document workflows will u
 
 ## Production verification
 
+- Release commit: `1cdba1c` (`Build dormant HR document security pipeline`).
+- Cloudflare Worker version: `8a03d031-18bd-457f-9a98-b169049ff3df`.
+- Primary application health: `200 OK` at `https://app.sygilant.us/api/v1/health`.
+- Primary application readiness: `200 OK` with assets, Supabase URL, publishable key, and service-role key ready.
+- Dormant upload-boundary probe: `503 Service Unavailable` with `hr_document_pipeline_unavailable`, confirming that the unreleased pipeline cannot accept uploads.
 - Supabase migration ledger: `20260830120000` recorded as applied.
 - Existing employees: **78**.
 - Existing employee accounts: **68**.

@@ -34,6 +34,7 @@ deployment status, or major workflow assumptions change.
 - Applied forward-only production migration `20260830120000_hris_stage4_secure_document_pipeline.sql` and verified 78 employees, 68 accounts, zero document/version/upload/access records, zero document permission assignments, and a disabled document release gate.
 - Kept the Worker feature switch unconfigured and added no employee-facing document controls; the new platform remains dormant until scanner integration, UI authorization tests, recovery evidence, permission assignments, and controlled canary activation are complete.
 - Confirmed 110 test files / 551 tests, type checking, zero-warning linting, both production builds, and both Stage 4 validators pass.
+- Deployed release commit `1cdba1c` as Cloudflare Worker version `8a03d031-18bd-457f-9a98-b169049ff3df`; production health and readiness returned `200`, and an upload-boundary probe returned the expected disabled-gate `503` response.
 - Full release details are recorded in `docs/changelogs/CHANGELOG_08-30-2026_HRIS_STAGE_4_SECURE_DOCUMENT_PIPELINE.md`.
 
 ## 08/29/2026
