@@ -23,6 +23,21 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/29/2026
+
+### HRIS Stage 2 Core Data Architecture — Run 1 of 3
+
+- Extended the existing permanent `public.employees` identity with private one-to-one HR person and worker identifiers; no second directory or duplicate name/contact/authentication data was created.
+- Added dormant private Core HR structures for legal entities, organization units, locations, job profiles, positions, employment, assignments, manager history, employment changes, and compensation history.
+- Enforced row-level security, no direct browser access, append-only audits, no-delete reference/history controls, close-only effective records, overlap prevention, self-manager prevention, and required closing actor/reason metadata.
+- Registered six deny-by-default HR permission definitions but assigned none of them to current roles or employees.
+- Kept the Stage 1 protected-data gate, Stage 2 feature, protected backfill, role mapping, and browser access disabled.
+- Added the `check:hris-core` contract validator and Stage 2 architecture regression tests.
+- Applied only migration `20260829230000_hris_core_data_architecture.sql` through an isolated migration workspace after the normal command detected legacy remote-history drift; no migration repair or replay was performed.
+- The migration transaction verified that employee count, employee role memberships, role permission assignments, and individual permission overrides remained unchanged before commit.
+- Confirmed 104 test files / 518 tests, type checking, zero-warning linting, the production build, and focused HRIS contract validation pass.
+- Full architectural and rollback details are recorded in `docs/changelogs/CHANGELOG_08-29-2026_HRIS_STAGE_2_CORE_ARCHITECTURE.md`.
+
 ## 08/28/2026
 
 ### Reports workspace redesign

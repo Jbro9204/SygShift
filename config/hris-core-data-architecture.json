@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "approvedOn": "08/29/2026",
+  "stage": "2",
+  "run": "1-of-3",
+  "releaseState": {
+    "featureEnabled": false,
+    "protectedProductionBackfillAllowed": false,
+    "roleMappingAllowed": false,
+    "browserDirectAccessAllowed": false
+  },
+  "identity": {
+    "authoritativeEmployeeTable": "public.employees",
+    "employeePrimaryKey": "id",
+    "employeeNumberIsPrimaryKey": false,
+    "personTable": "private.hr_person_identifiers",
+    "workerTable": "private.hr_worker_identifiers",
+    "onePersonPerEmployee": true,
+    "oneWorkerPerPerson": true,
+    "duplicatesLegalNames": false,
+    "duplicatesContactDetails": false,
+    "duplicatesAuthenticationIdentity": false
+  },
+  "effectiveDatedRecords": [
+    "private.hr_employment_relationships",
+    "private.hr_assignments",
+    "private.hr_manager_relationships",
+    "private.hr_compensation_changes"
+  ],
+  "referenceRecords": [
+    "private.hr_legal_entities",
+    "private.hr_organization_units",
+    "private.hr_work_locations",
+    "private.hr_job_profiles",
+    "private.hr_positions"
+  ],
+  "historyControls": {
+    "deletesAllowed": false,
+    "effectiveRecordsCloseOnly": true,
+    "auditTrigger": "private.write_audit_event",
+    "overlapPrevention": true,
+    "separatedEmployeesPreserved": true
+  },
+  "permissions": [
+    "hr.people.view",
+    "hr.people.manage",
+    "hr.people.restricted",
+    "hr.total_rewards.view",
+    "hr.total_rewards.manage",
+    "hr.total_rewards.restricted"
+  ],
+  "accessPreservation": {
+    "assignPermissionsToExistingRoles": false,
+    "changeEmployeeRoleMemberships": false,
+    "changeEmployeeOverrides": false,
+    "migrationAssertsUnchangedCounts": true
+  },
+  "reconciliation": {
+    "reportFunction": "private.hris_core_reconciliation_report",
+    "integrityFunction": "private.assert_hris_core_integrity",
+    "automaticPromotionAllowed": false,
+    "unresolvedMappingsRequireReview": true,
+    "backfillRun": "future-stage-2-run"
+  }
+}

@@ -79,7 +79,7 @@ Required outcomes:
 
 - Priority: **Urgent**
 - Target window: Staged enterprise program; approximately 24–28 controlled runs
-- Status: Stage 1 completed 08/29/2026 / Stage 2 not started
+- Status: Stage 1 completed 08/29/2026 / Stage 2 Run 1 of 3 completed 08/29/2026
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
@@ -110,10 +110,12 @@ Stage 1 closed the protected-data release gate by default and added a machine-va
 
 #### Stage 2 — Core HR Data Architecture (2–3 runs)
 
-- [ ] Establish immutable person, worker, employment, and assignment identifiers without creating duplicate employee identities.
-- [ ] Add effective-dated employment, manager, department, position, status, classification, and compensation history.
+- [x] Establish the feature-off immutable person, worker, employment, and assignment identifier architecture without creating duplicate employee identities. (Run 1 completed 08/29/2026; protected employee mappings remain intentionally empty.)
+- [x] Add the private effective-dated employment, manager, department, position, status, classification, and compensation data contract. (Run 1 completed 08/29/2026; no protected records have been backfilled.)
 - [ ] Backfill existing active and historical employees with reconciliation reports and duplicate prevention.
 - [ ] Preserve separated-employee, payroll, licensing, schedule, time, and audit history through migrations and rollback tests.
+
+Run 1 installed the dormant private schema, service-only reconciliation controls, deny-by-default permission definitions, no-delete/close-only history protections, and access-preservation assertions. It did not change current employee records, role assignments, individual permission overrides, or runtime behavior. Runs 2 and 3 remain gated for reconciliation, recovery evidence, controlled backfill, authorization testing, and cross-module preservation.
 
 #### Stage 3 — People & HR Workspace (2 runs)
 
