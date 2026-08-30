@@ -79,7 +79,7 @@ Required outcomes:
 
 - Priority: **Urgent**
 - Target window: Staged enterprise program; approximately 24–28 controlled runs
-- Status: Stages 1–9 completed through 08/30/2026; protected production activation, identity backfill, document delivery, and Stage 10 payroll integration remain separately gated
+- Status: Stages 1–9 and the dormant Stage 10 payroll-integration control plane completed through 08/30/2026; protected module activation, identity backfill, document delivery, and any external payroll cutover remain separately gated
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
@@ -90,12 +90,12 @@ Existing foundation: the dedicated Payroll workspace and HR & Finance navigation
 Program controls:
 
 - [x] Treat security as the first stage and a release gate for every later stage.
-- [ ] Preserve Schedule, Availability, Time & Attendance, Licensing, User Accounts, Roles & Permissions, and Payroll as the authoritative systems for their existing domains.
-- [ ] Preserve the current Payroll workspace until Stage 10 reconciliation and controlled integration are complete.
+- [x] Preserve Schedule, Availability, Time & Attendance, Licensing, User Accounts, Roles & Permissions, and Payroll as the authoritative systems for their existing domains.
+- [x] Preserve the current Payroll workspace while Stage 10 reconciliation and controlled-integration controls are established.
 - [ ] Keep every database change additive, reversible, backed up, and protected by tested rollback procedures.
 - [ ] Complete each run end to end: functional UI, server authorization, persistence, audit history, tests, production validation, Git backup, and a dated changelog.
-- [ ] Use compact queues, pagination, search, filters, saved views, and open-on-demand detail; never introduce uncontrolled long-scroll record lists.
-- [ ] Use MM/DD/YYYY dates and civilian time with military time throughout applicable production workflows.
+- [x] Use compact queues, pagination, search, filters, saved views, and open-on-demand detail; never introduce uncontrolled long-scroll record lists.
+- [x] Use MM/DD/YYYY dates and civilian time with military time throughout applicable production workflows.
 
 #### Stage 1 — Discovery and HR Security Foundation (completed 08/29/2026)
 
@@ -193,14 +193,16 @@ Stage 8 is deployed dormant. Talent, Learning, Employee Cases, Safety, and Asset
 
 Stage 9 is deployed dormant. Offboarding & Rehire, HR Self-Service, and HR Reporting have independent database and Worker release gates, all nine permissions remain unassigned, and no lifecycle case, self-service request, report definition, scheduled report, export run, or downstream handoff was created during deployment. Separation and rehire decisions require explicit approval and preserve history; downstream account, Schedule, Payroll, Licensing, document, training, and asset work is coordinated through auditable tasks instead of silently mutating authoritative systems. Self-service is scoped to the signed-in employee or effective manager permissions. Reporting is permission-aware and supports bounded asynchronous run records without exposing unrestricted employee data. Offboarding and Reporting require recent MFA. Activation requires approved operating policies, named access owners, permission assignment, recovery evidence, an isolated canary, and post-activation validation.
 
-#### Stage 10 — Payroll Integration & Enterprise Hardening (2–3 runs)
+#### Stage 10 — Payroll Integration & Enterprise Hardening (control plane completed 08/30/2026; external cutover gated)
 
-- [ ] Define and approve a versioned HR-to-Payroll integration contract.
-- [ ] Keep Payroll authoritative and require controlled approval for every payroll-impacting HR change.
-- [ ] Run parallel reconciliation and locked-snapshot comparisons before any cutover.
-- [ ] Complete cross-module security, permission, audit, accessibility, mobile, performance, backup, and recovery tests.
-- [ ] Perform controlled production integration with a tested rollback and final reconciliation.
-- [ ] Preserve future Sygilant hub readiness through stable identifiers, versioned APIs/events, and webhooks without making this release dependent on that future application.
+- [x] Define a versioned HR-to-Payroll integration contract and independent approval path. The installed contract remains a draft until authorized business approval.
+- [x] Keep SygShift Payroll authoritative and require controlled approval for every payroll-impacting HR change.
+- [x] Install parallel-reconciliation and locked-snapshot comparison controls that must pass before any cutover. No external-target reconciliation has been run because no target has been approved.
+- [x] Install cross-module verification, immutable audit, release-gate, rollback-plan, and recovery-evidence controls. Target-specific accessibility, mobile, performance, backup, and recovery evidence remains a cutover prerequisite.
+- [ ] Perform a controlled external payroll integration with an approved target, isolated canary, tested rollback, and final reconciliation.
+- [x] Preserve future Sygilant hub readiness through stable identifiers, versioned contracts/events, and disabled HTTPS-only webhooks without making this release dependent on that future application.
+
+Stage 10's dormant production control plane is complete. SygShift Payroll remains the sole payroll authority. Integration, webhooks, and enterprise cutover each have independent database and Worker gates and all remain disabled. Six exact permissions were added without assignment to any current role or employee. Payroll-impacting proposals require a documented reason, recent MFA, and independent maker-checker approval; reconciliation is anchored to immutable locked payroll export batches and rows. Versioned event envelopes, secret-binding-only webhook definitions, rollback plans, rollback executions, and enterprise verification runs are present but cannot publish, call a destination, or start cutover while the release gates are closed. No proposal, approval, reconciliation run, webhook subscription, rollback execution, external handoff, payroll-row mutation, or user-access change was created during deployment. External integration remains intentionally pending until a target, owners, contract approval, recovery evidence, canary, and final reconciliation are authorized.
 
 Completion standard:
 

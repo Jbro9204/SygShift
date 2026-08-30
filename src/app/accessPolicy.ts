@@ -62,6 +62,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/hr/offboarding': { anyOf: ['hr.offboarding.view'] },
   '/hr/self-service': { anyOf: ['hr.self_service.view'] },
   '/hr/reporting': { anyOf: ['hr.reporting.view'] },
+  '/hr/payroll-integration': { anyOf: ['hr.payroll_integration.view'] },
   '/my-documents': { anyOf: [] },
   '/hr/identity-readiness': { anyOf: ['hr.people.manage'] },
   '/people': { anyOf: ['directory.view', 'directory.edit_basic', 'availability.manage'] },

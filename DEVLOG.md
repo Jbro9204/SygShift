@@ -1120,3 +1120,13 @@ pnpm exec wrangler deploy --keep-vars
 - Preserved existing employee, account, role-assignment, schedule, and time-event records.
 - Full validation passed: Stage 9 contract checks, type checking, zero-warning lint, 117 test files / 589 tests, Worker and client production builds, production database verification, and live health/readiness checks.
 - Deployed Cloudflare Worker version `ed79e5e6-1f9d-4ab6-a148-92b93d3e81db`.
+
+## 08/30/2026 — HRIS Stage 10 Payroll Integration Hardening
+
+- Added a dormant, protected HR-to-Payroll integration control plane while keeping SygShift Payroll authoritative.
+- Added versioned contracts, payroll-impacting proposals, maker-checker approvals, locked-snapshot reconciliation, immutable events, disabled HTTPS-only webhooks, rollback evidence, and enterprise verification runs.
+- Added six exact permissions without assigning them to any current role or employee.
+- Kept integration, webhook delivery, and enterprise cutover disabled in both the database and Worker configuration.
+- Applied production migration `20260831200000_hris_stage10_payroll_integration_hardening.sql` with preservation assertions for access, schedules, punches, and payroll records.
+- Full validation passed: Stage 10 contract checks, type checking, zero-warning lint, 118 test files / 597 tests, and production builds.
+- Deployed Cloudflare Worker version `850b1311-73c3-4007-a512-c6688ac201b8`; the live login surface returned `200` and the unauthenticated Stage 10 API returned the expected `401`.

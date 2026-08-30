@@ -145,6 +145,12 @@ export const navigationGroups: NavigationGroup[] = [
         permissions: ['hr.reporting.view'],
       },
       {
+        label: 'Payroll Integration',
+        path: '/hr/payroll-integration',
+        icon: ShieldCheck,
+        permissions: ['hr.payroll_integration.view'],
+      },
+      {
         label: 'Time-Off Requests',
         path: '/requests',
         icon: ClipboardCheck,

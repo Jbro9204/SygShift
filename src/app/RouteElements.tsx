@@ -155,6 +155,9 @@ export const HrisSelfServicePageRoute = lazy(() =>
 export const HrisReportingPageRoute = lazy(() =>
   import('../pages/HrisStage9Page').then((module) => ({ default: module.HrisReportingPage })),
 )
+export const HrisPayrollIntegrationPageRoute = lazy(() =>
+  import('../pages/HrisPayrollIntegrationPage').then((module) => ({ default: module.HrisPayrollIntegrationPage })),
+)
 export const MyDocumentsPageRoute = lazy(() =>
   import('../pages/MyDocumentsPage').then((module) => ({ default: module.MyDocumentsPage })),
 )

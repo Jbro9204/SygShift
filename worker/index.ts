@@ -48,6 +48,9 @@ type Environment = Partial<Env> & {
   SYGSHIFT_HR_OFFBOARDING_ENABLED?: string
   SYGSHIFT_HR_SELF_SERVICE_ENABLED?: string
   SYGSHIFT_HR_REPORTING_ENABLED?: string
+  SYGSHIFT_HR_PAYROLL_INTEGRATION_ENABLED?: string
+  SYGSHIFT_HR_PAYROLL_WEBHOOKS_ENABLED?: string
+  SYGSHIFT_HR_ENTERPRISE_CUTOVER_ENABLED?: string
 }
 
 interface SessionContext {
@@ -933,6 +936,10 @@ function hrStage9Enabled(environment: Environment, module: HrStage9Module): bool
     reporting: environment.SYGSHIFT_HR_REPORTING_ENABLED,
   }[module]
   return value?.trim().toLowerCase() === 'true'
+}
+
+function hrStage10IntegrationEnabled(environment: Environment): boolean {
+  return environment.SYGSHIFT_HR_PAYROLL_INTEGRATION_ENABLED?.trim().toLowerCase() === 'true'
 }
 
 function requireSessionPermission(context: SessionContext, permission: string): void {
@@ -2187,6 +2194,59 @@ async function handleHrStage9Api(
       target_mfa_method: mfa?.method ?? null,
       target_mfa_verified_at: mfa?.verifiedAt ?? null,
       target_module: module,
+      target_offset: offset,
+      target_page_size: pageSize,
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
+function disabledHrStage10Workspace(requestId: string): Record<string, unknown> {
+  return {
+    enabled: false,
+    authority: 'SygShift Payroll remains authoritative.',
+    contract: null,
+    gates: {
+      integration: { enabled: false, updatedAt: null },
+      webhooks: { enabled: false, updatedAt: null },
+      cutover: { enabled: false, updatedAt: null },
+    },
+    counts: {
+      pendingProposals: 0,
+      pendingApprovals: 0,
+      reconciliationRuns: 0,
+      differences: 0,
+    },
+    items: [],
+    pageSize: 10,
+    offset: 0,
+    requestId,
+  }
+}
+
+async function handleHrStage10Api(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url)
+  if (url.pathname !== '/api/v1/hr/payroll-integration/workspace') return errorJson('not_found', requestId, 404)
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+
+  const session = await requireVerifiedOperationsSession(request, environment, 'hr_payroll_integration_mfa_required')
+  requireSessionPermission(session.context, 'hr.payroll_integration.view')
+  if (!hrStage10IntegrationEnabled(environment)) return json(disabledHrStage10Workspace(requestId))
+
+  const mfa = await requireRecentDocumentMfa(request, session)
+  const { offset, pageSize } = boundedWorkspacePage(url)
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_hr_stage10_workspace',
+    {
+      target_actor_id: session.context.employee_id,
+      target_mfa_method: mfa.method,
+      target_mfa_verified_at: mfa.verifiedAt,
       target_offset: offset,
       target_page_size: pageSize,
     },
@@ -4324,6 +4384,19 @@ export default {
           response = error instanceof ApiError
             ? errorJson(error.code, requestId, error.status, error.message)
             : errorJson('hr_stage8_request_failed', requestId, 500, 'The HR workspace request could not be completed.')
+        }
+      }
+    } else if (url.pathname.startsWith('/api/v1/hr/payroll-integration')) {
+      try {
+        response = await handleHrStage10Api(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('hr_stage10_request_failed', requestId, 500, 'The payroll integration workspace could not be loaded.')
         }
       }
     } else if (/^\/api\/v1\/hr\/(offboarding|self-service|reporting)(?:\/|$)/.test(url.pathname)) {

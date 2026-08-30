@@ -22,6 +22,7 @@ import {
   HrisOffboardingPageRoute,
   HrisSelfServicePageRoute,
   HrisReportingPageRoute,
+  HrisPayrollIntegrationPageRoute,
   HrisDocumentsPageRoute,
   HrisDocumentWorkflowsPageRoute,
   HrisPeopleWorkspacePageRoute,
@@ -319,6 +320,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <HrisReportingPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr/payroll-integration',
+        element: (
+          <RouteSuspense>
+            <HrisPayrollIntegrationPageRoute />
           </RouteSuspense>
         ),
       },
