@@ -1098,3 +1098,4 @@ pnpm exec wrangler deploy --keep-vars
 - Left all three release gates disabled and created no policies, balances, plans, enrollments, grades, bands, compensation records, proposals, or approvals.
 - Assigned no Stage 7 permissions and changed no existing role or employee access.
 - Full validation passed: Stage 7 contract checks, type checking, zero-warning lint, 114 test files / 571 tests, and production build.
+- Deployed Cloudflare Worker version `47a38110-9c5f-4833-9420-d2ac77bc993a`; the live login surface returned `200` and all three unauthenticated Stage 7 API probes returned the expected `401`.

@@ -31,6 +31,7 @@
 
 ### Release Records
 
+- Production Cloudflare version: `47a38110-9c5f-4833-9420-d2ac77bc993a`.
 - Architecture: `docs/architecture/HRIS_STAGE_7_LEAVE_BENEFITS_COMPENSATION.md`
 - Operations runbook: `docs/operations/HRIS_STAGE_7_LEAVE_BENEFITS_COMPENSATION_RUNBOOK.md`
 - Future roadmap: Stage 7 marked complete; Stage 8 is the next HRIS stage.
