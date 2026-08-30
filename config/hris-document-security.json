@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "featureFlag": "hris_documents_enabled",
+    "defaultEnabled": false,
+    "requiresSecurityEvidence": true,
+    "requiresRecoveryEvidence": true
+  },
+  "authorization": {
+    "activeEmployeeAccountRequired": true,
+    "recentMfaRequiredBeforeDocumentAccessRelease": true,
+    "recentMfaMaximumAgeSeconds": 900,
+    "trustedDeviceAloneSatisfiesRecentMfa": false
+  },
+  "storage": {
+    "provider": "supabase-storage",
+    "publicObjectsAllowed": false,
+    "directBrowserObjectAccessAllowed": false,
+    "objectKeyContainsEmployeeData": false,
+    "maximumFileSizeBytes": 26214400,
+    "signedAccessLifetimeSeconds": 300
+  },
+  "validation": {
+    "trustedBrowserMimeType": false,
+    "trustedBrowserFileName": false,
+    "requireFileSignatureMatch": true,
+    "rejectExtensionMimeMismatch": true,
+    "rejectActiveContent": true,
+    "rejectHtml": true,
+    "rejectSvg": true,
+    "rejectMacroEnabledOffice": true,
+    "checksumAlgorithm": "sha256",
+    "allowedExtensions": ["pdf", "png", "jpg", "jpeg", "webp", "txt", "docx", "xlsx"]
+  },
+  "malware": {
+    "quarantineByDefault": true,
+    "scanRequiredBeforeAccess": true,
+    "previewBeforeCleanScanAllowed": false,
+    "downloadBeforeCleanScanAllowed": false,
+    "releaseRequiresScannerEvidence": true
+  },
+  "history": {
+    "versionsImmutable": true,
+    "hardDeleteFromBrowserAllowed": false,
+    "archiveInsteadOfDelete": true,
+    "legalHoldPreventsDisposition": true,
+    "auditPreview": true,
+    "auditDownload": true
+  },
+  "vaults": [
+    "hr-general",
+    "hr-financial",
+    "hr-identity",
+    "hr-medical",
+    "hr-disciplinary",
+    "hr-legal-safety"
+  ]
+}

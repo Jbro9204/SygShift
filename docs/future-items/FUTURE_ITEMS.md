@@ -79,7 +79,7 @@ Required outcomes:
 
 - Priority: **Urgent**
 - Target window: Staged enterprise program; approximately 24–28 controlled runs
-- Status: Stage 1 completed 08/29/2026 / Stage 2 protected control plane completed 08/29/2026 / Stage 3 People & HR Workspace completed 08/29/2026; production identity backfill remains gated pending authoritative effective dates and isolated recovery evidence
+- Status: Stage 1 completed 08/29/2026 / Stage 2 protected control plane completed 08/29/2026 / Stage 3 People & HR Workspace completed 08/29/2026 / Stage 4 Run 1 secure document foundation completed 08/30/2026; production identity backfill and document delivery remain gated pending their separate release evidence
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
@@ -131,14 +131,16 @@ Stage 3 added the protected `/hr`, `/hr/people`, and `/hr/people/:employeeId` wo
 
 #### Stage 4 — Secure Document Platform (3–4 runs)
 
-- [ ] Implement private document vault storage with server-enforced vault and confidentiality permissions.
+- [x] Implement the dormant private document-vault foundation with six separately protected vaults, deny-by-default permission definitions, private storage, a disabled release gate, and no production role or employee assignments. (Run 1 completed 08/30/2026; uploads and document delivery remain unavailable.)
 - [ ] Support file picker, drag-and-drop upload, progress, validation, and clear recovery states.
 - [ ] Validate file signatures, MIME types, extensions, size limits, and active content.
 - [ ] Add malware scanning and quarantine before a document can be previewed or downloaded.
 - [ ] Support authorized in-browser preview for safe file formats.
 - [ ] Support authorized downloads through short-lived, non-public access.
-- [ ] Preserve immutable versions, replacements, archive/restore, retention rules, legal holds, backups, and recovery.
+- [x] Install the dormant immutable document/version, append-only scan/access evidence, archive/restore metadata, retention-policy, legal-hold, and rollback foundation. (Run 1 completed 08/30/2026; operational backup/restore and access-minting drills remain release blockers for later runs.)
 - [ ] Add document requests, acknowledgments, signatures, access records, and append-only document audits.
+
+Run 1 created no employee document, version, uploaded object, role assignment, or individual permission override. All six storage buckets are private, have explicit file-size and MIME allowlists, and have no authenticated-client storage policy. The release gate is disabled. A later run must prove real quarantine scanning, recent AAL2 verification no older than 15 minutes, permission-scoped short-lived delivery, access auditing, and recovery before any upload, preview, or download control is exposed.
 
 #### Stage 5 — HR Automation & Action Center (2–3 runs)
 
