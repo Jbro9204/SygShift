@@ -31,7 +31,9 @@
     "check:hris-talent-learning-cases-safety-assets": "node tools/validate-hris-stage8-talent-learning-cases-safety-assets.mjs",
     "check:hris-offboarding-self-service-reporting": "node tools/validate-hris-stage9-offboarding-self-service-reporting.mjs",
     "check:hris-payroll-integration": "node tools/validate-hris-stage10-payroll-integration-hardening.mjs",
+    "check:hris-admin-baseline": "node tools/validate-hris-admin-permission-baseline.mjs",
     "verify:access:preserved": "node tools/verify-production-access-preservation.mjs outputs/access-control/production-access-baseline-08-21-2026-before-enforcement.json outputs/access-control/production-access-baseline-08-21-2026.json",
+    "verify:access:admin-baseline": "node tools/verify-production-admin-permission-baseline.mjs outputs/access-control/production-access-baseline-08-30-2026-before-admin-baseline.json outputs/access-control/production-access-baseline-08-30-2026.json",
     "preview": "pnpm build && vite preview",
     "deploy": "pnpm build && wrangler deploy",
     "bootstrap:admin": "node tools/bootstrap-admin.mjs"

@@ -25,6 +25,15 @@ deployment status, or major workflow assumptions change.
 
 ## 08/30/2026
 
+### Protected Admin complete-permission baseline
+
+- Established the protected Admin role as the complete administrative baseline for the active permission catalog: 135 of 135 permissions after adding 69 previously missing HRIS permissions.
+- Confirmed both active Admin accounts inherited the baseline through their existing role without changing any employee identity, username, primary role, extra role membership, individual grant, or individual denial.
+- Preserved every non-Admin role exactly as configured and kept all dormant HRIS release gates disabled; the access update did not activate unreleased modules.
+- Added transactional production assertions, protected-role enforcement, a reviewed repair function, dedicated validation, and independent before/after production verification.
+- Applied and recorded production migration `20260831210000`; confirmed 119 test files / 603 tests, type checking, linting, and production builds pass.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-30-2026_HRIS_ADMIN_PERMISSION_BASELINE.md`.
+
 ### HRIS Stage 8 talent, learning, cases, safety, and assets — dormant foundation
 
 - Added private, row-level-secured foundations for talent and performance, learning and training, restricted Employee Cases, Safety and workers' compensation, and asset custody and reconciliation.

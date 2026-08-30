@@ -204,6 +204,15 @@ Stage 9 is deployed dormant. Offboarding & Rehire, HR Self-Service, and HR Repor
 
 Stage 10's dormant production control plane is complete. SygShift Payroll remains the sole payroll authority. Integration, webhooks, and enterprise cutover each have independent database and Worker gates and all remain disabled. Six exact permissions were added without assignment to any current role or employee. Payroll-impacting proposals require a documented reason, recent MFA, and independent maker-checker approval; reconciliation is anchored to immutable locked payroll export batches and rows. Versioned event envelopes, secret-binding-only webhook definitions, rollback plans, rollback executions, and enterprise verification runs are present but cannot publish, call a destination, or start cutover while the release gates are closed. No proposal, approval, reconciliation run, webhook subscription, rollback execution, external handoff, payroll-row mutation, or user-access change was created during deployment. External integration remains intentionally pending until a target, owners, contract approval, recovery evidence, canary, and final reconciliation are authorized.
 
+#### Cross-stage Admin access baseline (completed 08/30/2026)
+
+- [x] Establish the protected Admin role as the complete administrative baseline for every active permission in the catalog.
+- [x] Preserve all non-Admin roles, employee identities, role memberships, and individual permission overrides while applying the baseline.
+- [x] Keep every dormant HRIS release gate closed so complete Admin authorization does not activate unreleased modules.
+- [x] Protect the baseline from partial removal and independently verify the production access matrix after deployment.
+
+Production verification confirmed Admin at 135 of 135 active permissions, with 69 permissions added to the role and both active Admin accounts inheriting the result. Every non-Admin access assignment remained unchanged. Future permission-catalog additions continue to require a reviewed activation step rather than receiving an automatic background grant.
+
 Completion standard:
 
 - [ ] Do not mark the program or a stage complete because pages or buttons exist. The authorized workflow, secure storage, server enforcement, persistence, document lifecycle, audit history, automation behavior, tests, backup/recovery validation, production deployment, and rollback must all be verified.
