@@ -1,7 +1,9 @@
 # SygShift Change Log — HRIS Stage 10 Payroll Integration Hardening
 
-**Date:** 08/30/2026  
-**Area:** HR & Finance / Payroll Integration  
+**Date:** 08/30/2026
+
+**Area:** HR & Finance / Payroll Integration
+
 **Release state:** Dormant control plane; external integration and cutover disabled
 
 ## Completed
