@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "approvedOn": "08/29/2026",
+  "stage": "2",
+  "run": "3-of-3-control-plane",
+  "releaseState": {
+    "featureEnabled": false,
+    "productionBackfillGateEnabled": false,
+    "canaryExecuted": false,
+    "fullBackfillExecuted": false,
+    "roleMappingAllowed": false,
+    "browserDirectAccessAllowed": false
+  },
+  "effectiveDates": {
+    "authoritativeSourceRequired": true,
+    "verifiedHireDateRequired": true,
+    "verifiedSeparationDateRequiredForSeparatedEmployees": true,
+    "guessingAllowed": false,
+    "appendOnlyAuthorizationHistory": true
+  },
+  "recovery": {
+    "isolatedRestoreEvidenceRequired": true,
+    "evidenceExpires": true,
+    "productionEvidencePresent": false
+  },
+  "authorization": {
+    "permission": "hr.people.manage",
+    "mfaRequired": true,
+    "serviceExecutorOnly": true,
+    "authorizationMinutes": 15,
+    "maximumCanaryEmployees": 3,
+    "singleUse": true,
+    "staleSnapshotRejected": true
+  },
+  "preservationDomains": [
+    "employees",
+    "employeeRoleMemberships",
+    "rolePermissions",
+    "employeePermissionOverrides",
+    "employeeAccounts",
+    "employeeCredentials",
+    "schedules",
+    "shifts",
+    "shiftAssignments",
+    "timeEvents",
+    "timeOffRequests",
+    "payrollExportBatches",
+    "payrollExportRows"
+  ],
+  "currentBlockers": [
+    "authoritative_effective_dates_incomplete",
+    "isolated_recovery_evidence_missing",
+    "production_backfill_gate_closed"
+  ]
+}

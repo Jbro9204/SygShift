@@ -79,7 +79,7 @@ Required outcomes:
 
 - Priority: **Urgent**
 - Target window: Staged enterprise program; approximately 24–28 controlled runs
-- Status: Stage 1 completed 08/29/2026 / Stage 2 Run 2 of 3 completed 08/29/2026
+- Status: Stage 1 completed 08/29/2026 / Stage 2 protected control plane completed 08/29/2026; production identity backfill remains gated pending authoritative effective dates and isolated recovery evidence
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
@@ -112,10 +112,11 @@ Stage 1 closed the protected-data release gate by default and added a machine-va
 
 - [x] Establish the feature-off immutable person, worker, employment, and assignment identifier architecture without creating duplicate employee identities. (Run 1 completed 08/29/2026; protected employee mappings remain intentionally empty.)
 - [x] Add the private effective-dated employment, manager, department, position, status, classification, and compensation data contract. (Run 1 completed 08/29/2026; no protected records have been backfilled.)
+- [x] Install the disabled-by-default controlled-backfill plane with recent-MFA authorization, recovery-evidence requirements, a three-person canary limit, single-use expiring approvals, stale-snapshot rejection, service-only execution, preservation assertions, and append-only audit evidence. (Run 3 control plane completed 08/29/2026; no employee mappings were executed.)
 - [ ] Backfill existing active and historical employees with reconciliation reports and duplicate prevention.
 - [ ] Preserve separated-employee, payroll, licensing, schedule, time, and audit history through migrations and rollback tests.
 
-Run 1 installed the dormant private schema, deny-by-default permission definitions, no-delete/close-only history protections, and access-preservation assertions. Run 2 installed a deterministic, service-only reconciliation proposal and validated all 78 source employee records without creating HR identity rows. Production reported zero identity blockers; all 78 records require hire-date review and nine separated records also require separation-date review before any effective-dated backfill. Current employee records, roles, permissions, overrides, payroll, licensing, schedule, timekeeping, and runtime behavior remain unchanged. Run 3 remains gated for recovery evidence, authorized date resolution, controlled backfill, authorization tests, and cross-module preservation.
+Run 1 installed the dormant private schema, deny-by-default permission definitions, no-delete/close-only history protections, and access-preservation assertions. Run 2 installed a deterministic, service-only reconciliation proposal and validated all 78 source employee records without creating HR identity rows. Run 3 installed the protected execution controls but intentionally performed no identity write. Production reported zero identity blockers; all 78 records require hire-date review and nine separated records also require separation-date review before an effective-dated canary can be authorized. Current employee records, roles, permissions, overrides, payroll, licensing, schedule, timekeeping, and runtime behavior remain unchanged. The production backfill remains gated for authoritative date resolution, isolated recovery evidence, a controlled canary, authorization tests, and cross-module preservation verification.
 
 #### Stage 3 — People & HR Workspace (2 runs)
 

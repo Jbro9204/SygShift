@@ -25,6 +25,16 @@ deployment status, or major workflow assumptions change.
 
 ## 08/29/2026
 
+### HRIS Stage 2 Controlled Backfill Plane — protected Run 3 controls
+
+- Added a disabled-by-default database control plane for a future employee-identity canary; this release did not backfill any employee or enable an HR browser feature.
+- Required authoritative hire and separation dates, current isolated-recovery evidence, recent MFA, `hr.people.manage`, a fresh preservation snapshot, a single-use 15-minute authorization, and service-only execution.
+- Capped canary authorization at three employees and rejected stale approvals whenever protected employee, account, access, licensing, schedule, time, time-off, or payroll counts change.
+- Added append-only authorization and execution evidence, cross-module before/after preservation assertions, a closed-gate installation assertion, validation tooling, focused tests, architecture documentation, and a controlled operating procedure.
+- Applied forward-only production migration `20260830005500_hris_stage2_controlled_backfill.sql`; verified the production gate is disabled with zero effective-date authorizations, recovery-evidence records, backfill authorizations, or executions.
+- Kept production execution blocked because authoritative dates and isolated recovery evidence have not been supplied; no dates were inferred or invented.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-29-2026_HRIS_STAGE_2_CONTROLLED_BACKFILL.md`.
+
 ### HRIS Stage 2 Reconciliation Proposal — Run 2 of 3
 
 - Added a deterministic, service-only proposal layer that maps each existing `public.employees.id` to planned private HR person and worker identifiers without copying names, contact details, or authentication data.
