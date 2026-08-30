@@ -152,6 +152,13 @@ interface HrDocumentWorkspacePayload {
   vaults?: unknown[]
 }
 
+interface HrDocumentWorkflowPayload {
+  assignments?: unknown[]
+  pagination?: Record<string, unknown>
+  releaseState?: string
+  requests?: unknown[]
+}
+
 interface NotificationJob {
   id: string
   messageType?: string
@@ -1464,6 +1471,200 @@ async function handleHrDocumentAccess(
   return new Response(stored.body, { headers, status: 200 })
 }
 
+function optionalIsoDate(value: unknown, field: string): string | null {
+  if (value === null || value === undefined || value === '') return null
+  const text = requiredText(value, field, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new ApiError('invalid_document_date', 422, `${field} must be a valid date.`)
+  return text
+}
+
+async function handleHrDocumentWorkflowWorkspace(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  const session = await requireAuthenticatedSession(request, environment)
+  await requireRecentDocumentMfa(request, session)
+  const url = new URL(request.url)
+  const status = url.searchParams.get('status')?.trim() || null
+  const allowedStatuses = ['requested', 'submitted', 'accepted', 'rejected', 'cancelled', 'pending', 'completed', 'declined']
+  if (status && !allowedStatuses.includes(status)) throw new ApiError('invalid_document_workflow_status', 422, 'The workflow status filter is invalid.')
+  const pageValue = Number.parseInt(url.searchParams.get('page') ?? '1', 10)
+  const page = Number.isInteger(pageValue) && pageValue > 0 ? pageValue : 1
+  const pageSizeValue = Number.parseInt(url.searchParams.get('pageSize') ?? '10', 10)
+  const pageSize = [5, 10, 20].includes(pageSizeValue) ? pageSizeValue : 10
+  const payload = await callRpc<HrDocumentWorkflowPayload>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_hr_document_workflow_workspace',
+    { target_actor_id: session.context.employee_id, target_page: page, target_page_size: pageSize, target_status: status },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
+async function handleMyHrDocumentWorkspace(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  const session = await requireAuthenticatedSession(request, environment)
+  await requireRecentDocumentMfa(request, session)
+  const payload = await callRpc<HrDocumentWorkflowPayload>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_my_hr_document_workspace',
+    { target_actor_id: session.context.employee_id },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
+async function handleCreateHrDocumentRequest(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  const session = await requireAuthenticatedSession(request, environment)
+  await requireRecentDocumentMfa(request, session)
+  const body = await readJsonBody(request)
+  const employeeId = requiredText(body.employeeId, 'Employee', 36)
+  if (!validUuid(employeeId)) throw new ApiError('invalid_employee_id', 422, 'The employee is invalid.')
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_create_hr_document_request',
+    {
+      target_actor_id: session.context.employee_id,
+      target_category: requiredText(body.category, 'Category', 100),
+      target_due_date: optionalIsoDate(body.dueDate, 'Due date'),
+      target_employee_id: employeeId,
+      target_instructions: requiredText(body.instructions, 'Employee instructions', 2000),
+      target_request_id: requestId,
+      target_title: requiredText(body.title, 'Request title', 160),
+      target_vault_code: requiredText(body.vaultCode, 'Document vault', 100),
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId }, 201)
+}
+
+async function handleReviewHrDocumentRequest(request: Request, environment: Environment, requestId: string, workflowId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  if (!validUuid(workflowId)) throw new ApiError('invalid_document_request', 422, 'The document request is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  await requireRecentDocumentMfa(request, session)
+  const body = await readJsonBody(request)
+  const action = requiredText(body.action, 'Review action', 20)
+  if (!['accepted', 'rejected', 'cancelled'].includes(action)) throw new ApiError('invalid_document_request_action', 422, 'Choose accept, reject, or cancel.')
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_review_hr_document_request',
+    { target_action: action, target_actor_id: session.context.employee_id, target_correlation_id: requestId, target_note: requiredText(body.note, 'Audit note', 2000), target_request_id: workflowId },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
+async function handleCreateHrDocumentAssignment(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  const session = await requireAuthenticatedSession(request, environment)
+  await requireRecentDocumentMfa(request, session)
+  const body = await readJsonBody(request)
+  const employeeId = requiredText(body.employeeId, 'Employee', 36)
+  const documentId = requiredText(body.documentId, 'Document', 36)
+  if (!validUuid(employeeId) || !validUuid(documentId)) throw new ApiError('invalid_document_assignment', 422, 'Choose a valid employee and document.')
+  const requirementType = requiredText(body.requirementType, 'Required action', 40)
+  if (!['acknowledgment', 'electronic_signature'].includes(requirementType)) throw new ApiError('invalid_document_requirement', 422, 'Choose acknowledgment or electronic signature.')
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_create_hr_document_assignment',
+    {
+      target_actor_id: session.context.employee_id,
+      target_document_id: documentId,
+      target_due_date: optionalIsoDate(body.dueDate, 'Due date'),
+      target_employee_id: employeeId,
+      target_request_id: requestId,
+      target_requirement_type: requirementType,
+      target_statement: requiredText(body.statement, 'Completion statement', 2000),
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId }, 201)
+}
+
+async function handleCancelHrDocumentAssignment(request: Request, environment: Environment, requestId: string, assignmentId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  if (!validUuid(assignmentId)) throw new ApiError('invalid_document_assignment', 422, 'The document assignment is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  await requireRecentDocumentMfa(request, session)
+  const body = await readJsonBody(request)
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_cancel_hr_document_assignment',
+    { target_actor_id: session.context.employee_id, target_assignment_id: assignmentId, target_reason: requiredText(body.reason, 'Cancellation reason', 2000), target_request_id: requestId },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
+async function handleMyHrDocumentAccessGrant(request: Request, environment: Environment, requestId: string, assignmentId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  if (!validUuid(assignmentId)) throw new ApiError('invalid_document_assignment', 422, 'The document assignment is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  const mfa = await requireRecentDocumentMfa(request, session)
+  const body = await readJsonBody(request)
+  const action = requiredText(body.action, 'Document action', 20)
+  if (!['preview', 'view', 'download'].includes(action)) throw new ApiError('invalid_document_action', 422, 'Choose preview, view, or download.')
+  const rawToken = generateOpaqueToken()
+  const grant = await callRpc<HrDocumentAccessGrant>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_issue_my_hr_document_access_grant',
+    {
+      target_action: action,
+      target_actor_id: session.context.employee_id,
+      target_assignment_id: assignmentId,
+      target_mfa_method: mfa.method,
+      target_mfa_verified_at: mfa.verifiedAt,
+      target_reason: requiredText(body.reason, 'Access reason', 1000),
+      target_request_id: requestId,
+      target_token_hash: await sha256Hex(rawToken),
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({ accessPath: `/api/v1/hr/documents/access/${rawToken}`, expiresAt: grant.expiresAt, requestId }, 201)
+}
+
+async function handleCompleteHrDocumentAssignment(request: Request, environment: Environment, requestId: string, assignmentId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  if (!validUuid(assignmentId)) throw new ApiError('invalid_document_assignment', 422, 'The document assignment is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  const mfa = await requireRecentDocumentMfa(request, session)
+  const body = await readJsonBody(request)
+  const action = requiredText(body.action, 'Completion action', 20)
+  if (!['acknowledge', 'sign'].includes(action)) throw new ApiError('invalid_document_completion', 422, 'Choose acknowledge or sign.')
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_complete_hr_document_assignment',
+    {
+      target_action: action,
+      target_actor_id: session.context.employee_id,
+      target_assignment_id: assignmentId,
+      target_confirmed: body.confirmed === true,
+      target_legal_name: requiredText(body.legalName, 'Legal name', 200),
+      target_mfa_method: mfa.method,
+      target_mfa_verified_at: mfa.verifiedAt,
+      target_request_id: requestId,
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
 async function handleHrDocumentsApi(
   request: Request,
   environment: Environment,
@@ -1472,6 +1673,18 @@ async function handleHrDocumentsApi(
   const url = new URL(request.url)
   if (url.pathname === '/api/v1/hr/documents/workspace') {
     return handleHrDocumentWorkspace(request, environment, requestId)
+  }
+  if (url.pathname === '/api/v1/hr/documents/workflows') {
+    return handleHrDocumentWorkflowWorkspace(request, environment, requestId)
+  }
+  if (url.pathname === '/api/v1/hr/documents/mine') {
+    return handleMyHrDocumentWorkspace(request, environment, requestId)
+  }
+  if (url.pathname === '/api/v1/hr/documents/requests') {
+    return handleCreateHrDocumentRequest(request, environment, requestId)
+  }
+  if (url.pathname === '/api/v1/hr/documents/assignments') {
+    return handleCreateHrDocumentAssignment(request, environment, requestId)
   }
   if (url.pathname === '/api/v1/hr/documents/uploads') {
     return handleHrDocumentUpload(request, environment, requestId)
@@ -1482,6 +1695,14 @@ async function handleHrDocumentsApi(
   if (accessToken) return handleHrDocumentAccess(request, environment, requestId, accessToken)
   const accessDocumentId = url.pathname.match(/^\/api\/v1\/hr\/documents\/([0-9a-f-]{36})\/access$/i)?.[1]
   if (accessDocumentId) return handleHrDocumentAccessGrant(request, environment, requestId, accessDocumentId)
+  const requestWorkflowId = url.pathname.match(/^\/api\/v1\/hr\/documents\/requests\/([0-9a-f-]{36})\/review$/i)?.[1]
+  if (requestWorkflowId) return handleReviewHrDocumentRequest(request, environment, requestId, requestWorkflowId)
+  const cancelAssignmentId = url.pathname.match(/^\/api\/v1\/hr\/documents\/assignments\/([0-9a-f-]{36})\/cancel$/i)?.[1]
+  if (cancelAssignmentId) return handleCancelHrDocumentAssignment(request, environment, requestId, cancelAssignmentId)
+  const assignmentAccessId = url.pathname.match(/^\/api\/v1\/hr\/documents\/assignments\/([0-9a-f-]{36})\/access$/i)?.[1]
+  if (assignmentAccessId) return handleMyHrDocumentAccessGrant(request, environment, requestId, assignmentAccessId)
+  const completeAssignmentId = url.pathname.match(/^\/api\/v1\/hr\/documents\/assignments\/([0-9a-f-]{36})\/complete$/i)?.[1]
+  if (completeAssignmentId) return handleCompleteHrDocumentAssignment(request, environment, requestId, completeAssignmentId)
   return errorJson('not_found', requestId, 404)
 }
 

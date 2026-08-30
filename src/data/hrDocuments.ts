@@ -107,7 +107,7 @@ export interface HrDocumentUploadInput {
   vaultCode: string
 }
 
-async function documentApiHeaders(contentType?: string): Promise<Headers> {
+export async function documentApiHeaders(contentType?: string): Promise<Headers> {
   const { data, error } = await getSupabaseClient().auth.getSession()
   if (error || !data.session?.access_token) throw new Error('Your secure session is not available.')
   const headers = new Headers({ authorization: `Bearer ${data.session.access_token}` })
@@ -115,7 +115,7 @@ async function documentApiHeaders(contentType?: string): Promise<Headers> {
   return appendProtectedSessionHeaders(headers)
 }
 
-async function parseApiError(response: Response, fallback: string): Promise<Error> {
+export async function parseApiError(response: Response, fallback: string): Promise<Error> {
   const payload = await response.json().catch(() => null) as { detail?: unknown } | null
   return new Error(typeof payload?.detail === 'string' ? payload.detail : fallback)
 }

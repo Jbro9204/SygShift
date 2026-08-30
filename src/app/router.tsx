@@ -4,6 +4,7 @@ import { RouteErrorPage } from '../pages/RouteErrorPage'
 import {
   AccountSecurityPageRoute,
   MyAccountPageRoute,
+  MyDocumentsPageRoute,
   ActionCenterPageRoute,
   AccessControlPageRoute,
   AnnouncementsPageRoute,
@@ -11,6 +12,7 @@ import {
   EventsPageRoute,
   HrisIdentityReadinessPageRoute,
   HrisDocumentsPageRoute,
+  HrisDocumentWorkflowsPageRoute,
   HrisPeopleWorkspacePageRoute,
   HrisEmployeeFilePageRoute,
   LoginPageRoute,
@@ -210,6 +212,22 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <HrisDocumentsPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr/documents/workflows',
+        element: (
+          <RouteSuspense>
+            <HrisDocumentWorkflowsPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'my-documents',
+        element: (
+          <RouteSuspense>
+            <MyDocumentsPageRoute />
           </RouteSuspense>
         ),
       },

@@ -2,6 +2,265 @@
   min-height: 100vh;
 }
 
+/* HR document workflows remain release-gated; these styles keep both manager and
+   employee workspaces compact, readable, and consistent when the gate opens. */
+.hr-document-workflows-page,
+.my-documents-page {
+  display: grid;
+  gap: 1rem;
+  max-width: 1380px;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+.hr-workflow-commandbar,
+.hr-workflow-filters,
+.hr-workflow-list,
+.my-documents-panel {
+  border: 1px solid var(--border-color, #ded5c7);
+  border-radius: 16px;
+  background: var(--surface-color, #fffdf9);
+  box-shadow: 0 8px 22px rgb(45 36 23 / 7%);
+}
+
+.hr-workflow-commandbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.hr-workflow-commandbar h2,
+.hr-workflow-list h3,
+.my-documents-panel h2 {
+  margin: 0;
+}
+
+.hr-workflow-commandbar p,
+.hr-workflow-list header p,
+.my-documents-panel header p {
+  margin: 0.35rem 0 0;
+  color: var(--muted-text, #70685d);
+}
+
+.hr-workflow-commandbar__actions,
+.my-document-row__actions,
+.hr-workflow-modal footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.hr-workflow-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(120px, 180px);
+  gap: 0.9rem;
+  padding: 1rem 1.25rem;
+}
+
+.hr-workflow-filters label,
+.hr-workflow-modal label {
+  display: grid;
+  gap: 0.42rem;
+  color: var(--strong-text, #231f1a);
+  font-weight: 700;
+}
+
+.hr-workflow-filters select,
+.hr-workflow-modal input,
+.hr-workflow-modal select,
+.hr-workflow-modal textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.hr-workflow-grid,
+.my-documents-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.hr-workflow-list,
+.my-documents-panel {
+  overflow: hidden;
+}
+
+.hr-workflow-list > header,
+.my-documents-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--border-color, #ded5c7);
+}
+
+.hr-workflow-row,
+.my-document-row,
+.my-document-request {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--border-color, #e8e0d5);
+}
+
+.hr-workflow-row:last-child,
+.my-document-row:last-child,
+.my-document-request:last-child {
+  border-bottom: 0;
+}
+
+.hr-workflow-row > div,
+.my-document-row > div:first-child,
+.my-document-request > div:first-child {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.hr-workflow-row span,
+.my-document-row span,
+.my-document-request span,
+.hr-workflow-row small {
+  color: var(--muted-text, #70685d);
+}
+
+.hr-workflow-status,
+.hr-workflow-row__done,
+.my-document-complete {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  gap: 0.3rem;
+  border-radius: 999px;
+  padding: 0.35rem 0.62rem;
+  background: #f3eee5;
+  color: #5f5548;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.hr-workflow-status--completed,
+.hr-workflow-status--accepted,
+.my-document-complete {
+  background: #e5f3eb;
+  color: #17633f;
+}
+
+.hr-workflow-status--rejected,
+.hr-workflow-status--cancelled,
+.hr-workflow-status--declined {
+  background: #f7e6e3;
+  color: #8d342b;
+}
+
+.hr-workflow-list__empty,
+.my-documents-empty {
+  margin: 0;
+  padding: 2rem 1.15rem;
+  color: var(--muted-text, #70685d);
+  text-align: center;
+}
+
+.hr-workflow-modal {
+  display: grid;
+  gap: 1rem;
+  width: min(760px, calc(100vw - 2rem));
+  padding: 1.35rem;
+}
+
+.hr-workflow-modal header h2,
+.hr-workflow-modal header p {
+  margin: 0.25rem 0 0;
+}
+
+.hr-workflow-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.hr-workflow-form-grid__wide,
+.hr-workflow-request-copy,
+.hr-workflow-confirm,
+.hr-workflow-evidence-note {
+  grid-column: 1 / -1;
+}
+
+.hr-workflow-request-copy,
+.hr-workflow-evidence-note {
+  border: 1px solid #e4d6bf;
+  border-radius: 12px;
+  background: #fbf6ec;
+  padding: 0.9rem;
+}
+
+.hr-workflow-confirm {
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: flex-start;
+  gap: 0.65rem !important;
+}
+
+.hr-workflow-confirm input {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-top: 0.15rem;
+}
+
+.my-documents-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-radius: 18px;
+  background: #201c16;
+  color: #fff;
+  padding: 1.35rem 1.5rem;
+}
+
+.my-documents-hero h1,
+.my-documents-hero p {
+  margin: 0.25rem 0 0;
+}
+
+.my-document-row,
+.my-document-request {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.my-document-row__actions {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 860px) {
+  .hr-workflow-commandbar,
+  .my-documents-hero {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .hr-workflow-grid,
+  .my-documents-grid,
+  .hr-workflow-form-grid,
+  .hr-workflow-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .hr-workflow-row,
+  .my-document-row,
+  .my-document-request {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+}
+
 /* HR Documents workspace */
 .hr-documents-page {
   display: grid;
