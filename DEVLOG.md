@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 08/30/2026
 
+### HRIS Stage 4 document workflows — dormant Run 4 completion
+
+- Completed the Secure Document Platform lifecycle with service-only document requests, assignment review, exact immutable-version employee access, acknowledgments, signatures, and append-only request, assignment, completion, and access evidence.
+- Added separate compact manager and employee workspaces with bounded 5/10/20-item pagination, focused dialogs, legal-name boundaries, and no unbounded document lists.
+- Required clean scan state, active assignment, recent authenticator or security-key verification, and exact assigned document version before employee preview, download, acknowledgment, or signature.
+- Preserved original files and versions; completion evidence is independent and immutable, and no workflow mutates or replaces a source document.
+- Applied forward-only production migration `20260830200000_hris_stage4_document_workflows.sql`; the post-apply dry run reported the database fully up to date and the migration ledger recorded the new version.
+- Kept the database release gate disabled, left `SYGSHIFT_DOCUMENT_PIPELINE_ENABLED` unconfigured, and assigned no document permissions or employee documents. Manager and employee workflow boundaries return the expected closed-gate `503` response.
+- Confirmed **112 test files / 562 tests**, type checking, zero-warning linting, all ten HRIS validators, both production builds, and Git whitespace validation pass.
+- Deployed implementation commit `2ef6dd3` as Cloudflare Worker version `a2f3c1b9-64de-404e-a5b9-359dd092afe0`; live health and readiness returned `200`.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-30-2026_HRIS_STAGE_4_DOCUMENT_WORKFLOWS.md`.
+
 ### HRIS Stage 4 secure document pipeline — dormant Run 2 controls
 
 - Added exact server-side validation for supported HR document formats, including extension/MIME/signature agreement, a 25 MB limit, active-PDF rejection, and macro/embedded/external Office content rejection.

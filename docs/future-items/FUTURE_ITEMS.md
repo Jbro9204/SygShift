@@ -79,7 +79,7 @@ Required outcomes:
 
 - Priority: **Urgent**
 - Target window: Staged enterprise program; approximately 24–28 controlled runs
-- Status: Stage 1 completed 08/29/2026 / Stage 2 protected control plane completed 08/29/2026 / Stage 3 People & HR Workspace completed 08/29/2026 / Stage 4 Run 1 secure document foundation, Run 2 dormant quarantine/access pipeline, and Run 3 gated document workspace completed 08/30/2026; production identity backfill and document delivery remain gated pending their separate release evidence
+- Status: Stage 1 completed 08/29/2026 / Stage 2 protected control plane completed 08/29/2026 / Stage 3 People & HR Workspace completed 08/29/2026 / Stage 4 Secure Document Platform completed across four controlled runs on 08/30/2026; production identity backfill and document delivery remain gated pending their separate release evidence
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
@@ -138,9 +138,11 @@ Stage 3 added the protected `/hr`, `/hr/people`, and `/hr/people/:employeeId` wo
 - [x] Support authorized in-browser preview for safe file formats.
 - [x] Support authorized downloads through short-lived, non-public access.
 - [x] Install the dormant immutable document/version, append-only scan/access evidence, archive/restore metadata, retention-policy, legal-hold, and rollback foundation. (Run 1 completed 08/30/2026; operational backup/restore and access-minting drills remain release blockers for later runs.)
-- [ ] Add document requests, acknowledgments, signatures, access records, and append-only document audits.
+- [x] Add document requests, acknowledgments, signatures, access records, and append-only document audits. (Run 4 completed 08/30/2026; the workflow is deployed dormant and remains unavailable until a separate controlled activation.)
 
 Run 1 created no employee document, version, uploaded object, role assignment, or individual permission override. All six storage buckets are private, have explicit file-size and MIME allowlists, and have no authenticated-client storage policy.
+
+Run 4 added service-only document request and assignment workflows, exact immutable-version employee access, acknowledgment and signature evidence, and append-only lifecycle audits. Manager and employee workspaces are compact and independently authorized. The database release gate remains disabled, the Worker feature switch remains unconfigured, and no document permission or assignment was granted in production. Stage 4 is structurally complete but intentionally dormant; activation remains a separate controlled release requiring scanner configuration, recovery evidence, permission assignment, and canary validation.
 
 Run 2 installed the dormant server pipeline for exact file-signature validation, quarantine-only storage, append-only scan evidence, recent authenticator or security-key verification, and permission-scoped one-time document access. Every access token is hashed, expires within 60 seconds, is single-use, and rechecks the current document version, clean scan state, active account, and effective vault permission when consumed. The browser upload/preview/download experience, scanner service activation, document permission assignments, operational recovery drill, and release-gate enablement remain deferred. Production still contains zero document records, versions, upload operations, access grants, and document permission assignments.
 
