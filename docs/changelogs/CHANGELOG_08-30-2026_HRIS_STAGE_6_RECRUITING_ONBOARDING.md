@@ -33,6 +33,9 @@
 
 ### Release Records
 
+- Implementation commit: `b265c19`
+- Cloudflare Worker version: `d33a4d9a-cfbf-4576-aaab-f5f2891feba7`
+- Production health, readiness, SPA routing, and unauthenticated API-boundary probes passed after deployment.
 - Architecture: `docs/architecture/HRIS_STAGE_6_RECRUITING_ONBOARDING.md`
 - Operations runbook: `docs/operations/HRIS_STAGE_6_RECRUITING_ONBOARDING_RUNBOOK.md`
 - Future roadmap: Stage 6 marked complete; Stage 7 remains the next HRIS stage.

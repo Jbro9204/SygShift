@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 08/30/2026
 
+### HRIS Stage 6 recruiting and onboarding — dormant foundation
+
+- Added protected recruiting records for requisitions, applicants, applications, interviews, scorecards, offers, dispositions, and append-only recruiting history.
+- Added duplicate-aware candidate conversion with two-person approval; conversion creates one onboarding-state employee record without creating login access or assigning permissions.
+- Added reusable onboarding templates, task dependencies, cases, reminders, readiness evidence, and links to the existing User Accounts, Licensing, Training, equipment, document, and site-access systems.
+- Added compact Recruiting and Onboarding workspaces, permission-controlled routes, service-only APIs, private row-level-secured tables, architecture documentation, and an activation/emergency-stop runbook.
+- Applied and reconciled forward-only production migrations `20260831010000`, `20260831020000`, and `20260831030000`; verified 19 of 19 Stage 6 tables have RLS, all six permissions exist with zero role assignments, and both release gates remain disabled.
+- Confirmed 113 test files / 565 tests, type checking, zero-warning linting, production build, Stage 6 validation, Cloudflare dry run, and post-deploy live boundary probes pass.
+- Deployed implementation commit `b265c19` as Cloudflare Worker version `d33a4d9a-cfbf-4576-aaab-f5f2891feba7`; production health and readiness returned `200` and unauthenticated Recruiting and Onboarding APIs returned `401`.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-30-2026_HRIS_STAGE_6_RECRUITING_ONBOARDING.md`.
+
 ### HRIS Stage 4 document workflows — dormant Run 4 completion
 
 - Completed the Secure Document Platform lifecycle with service-only document requests, assignment review, exact immutable-version employee access, acknowledgments, signatures, and append-only request, assignment, completion, and access evidence.
