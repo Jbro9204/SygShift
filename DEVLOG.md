@@ -25,6 +25,16 @@ deployment status, or major workflow assumptions change.
 
 ## 08/30/2026
 
+### HRIS Stage 8 talent, learning, cases, safety, and assets — dormant foundation
+
+- Added private, row-level-secured foundations for talent and performance, learning and training, restricted Employee Cases, Safety and workers' compensation, and asset custody and reconciliation.
+- Added compact permission-aware workspaces with bounded 5/10/20 worklists, exact server-side permissions, service-only database access, independent release gates, and recent MFA for Employee Cases and Safety.
+- Applied and recorded forward-only production migration `20260831120000`; verified all five gates remain disabled, all 15 permissions remain unassigned, no individual override exists, and all five Stage 8 workspaces contain zero business records.
+- Preserved existing employees and access assignments; no current user received a new route, permission, role, or navigation item.
+- Confirmed 116 test files / 583 tests, type checking, zero-warning linting, Stage 8 validation, access inventory, access preservation, production builds, and Git whitespace validation pass.
+- Deployed implementation commit `8a34f42` as Cloudflare Worker version `6ad77790-b974-4271-b8bb-31bdaaee2e85`; both production domains returned healthy and ready, login returned `200`, and unauthenticated Stage 8 APIs returned `401`.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-30-2026_HRIS_STAGE_8_TALENT_LEARNING_CASES_SAFETY_ASSETS.md`.
+
 ### HRIS Stage 6 recruiting and onboarding — dormant foundation
 
 - Added protected recruiting records for requisitions, applicants, applications, interviews, scorecards, offers, dispositions, and append-only recruiting history.

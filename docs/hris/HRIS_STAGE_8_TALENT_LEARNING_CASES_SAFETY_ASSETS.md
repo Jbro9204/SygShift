@@ -73,5 +73,4 @@ Disable the Worker flag and database gate for the affected module. Do not delete
 - `pnpm lint`
 - `pnpm test`
 - `pnpm build`
-- `pnpm build:worker`
-
+- `pnpm build` produces and validates both the Worker and client production bundles.
