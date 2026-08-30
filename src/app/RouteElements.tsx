@@ -125,6 +125,12 @@ export const HrisDocumentWorkflowsPageRoute = lazy(() =>
 export const HrisAutomationPageRoute = lazy(() =>
   import('../pages/HrisAutomationPage').then((module) => ({ default: module.HrisAutomationPage })),
 )
+export const HrisRecruitingPageRoute = lazy(() =>
+  import('../pages/HrisRecruitingPage').then((module) => ({ default: module.HrisRecruitingPage })),
+)
+export const HrisOnboardingPageRoute = lazy(() =>
+  import('../pages/HrisOnboardingPage').then((module) => ({ default: module.HrisOnboardingPage })),
+)
 export const MyDocumentsPageRoute = lazy(() =>
   import('../pages/MyDocumentsPage').then((module) => ({ default: module.MyDocumentsPage })),
 )

@@ -155,12 +155,14 @@ Run 2 installed the dormant server pipeline for exact file-signature validation,
 
 Stage 5 installed a private, service-only workflow engine; immutable versions; human tasks; bounded, idempotent jobs; retry and dead-letter controls; scheduled work; notification-outbox handoff; and compact Action Center and administrative worklists. The database and Worker release gates are both disabled, the administrative route is absent from navigation, and no new permission is assigned to any current role or employee. Production contains no workflow definitions, jobs, or tasks. Activation is a separate controlled release requiring approved workflow content, minimum permission assignment, canary validation, reliability and recovery evidence, and both release controls.
 
-#### Stage 6 — Recruiting & Onboarding (3 runs)
+#### Stage 6 — Recruiting & Onboarding (completed 08/30/2026)
 
-- [ ] Implement requisitions, applicants, candidate stages, interviews, scorecards, offers, and disposition history.
-- [ ] Convert an approved candidate into the permanent employee identity without re-entering or duplicating data.
-- [ ] Implement preboarding and onboarding templates, assigned tasks, dependencies, readiness, reminders, and escalation.
-- [ ] Integrate onboarding with User Accounts, Licensing, Training, equipment, documents, and site-access readiness.
+- [x] Implement requisitions, applicants, candidate stages, interviews, scorecards, offers, and disposition history.
+- [x] Convert an approved candidate into the permanent employee identity without re-entering or duplicating data.
+- [x] Implement preboarding and onboarding templates, assigned tasks, dependencies, readiness, reminders, and escalation.
+- [x] Integrate onboarding with User Accounts, Licensing, Training, equipment, documents, and site-access readiness.
+
+Stage 6 is deployed dormant. Recruiting and onboarding have independent database and Worker release gates, all six permissions remain unassigned, and no candidate, employee, onboarding case, or task was created during deployment. Activation requires a separate controlled release with approved permissions, canary data, duplicate review, recovery evidence, and post-activation validation.
 
 #### Stage 7 — Leave, Benefits & Compensation (3–4 runs)
 

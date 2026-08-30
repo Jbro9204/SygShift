@@ -32,6 +32,8 @@
     "SYGSHIFT_SECURITY_KEYS_ENABLED": "true",
     "SYGSHIFT_SECURITY_KEY_PILOT_USERNAMES": "jbrown",
     "SYGSHIFT_HR_AUTOMATION_ENABLED": "false",
+    "SYGSHIFT_HR_RECRUITING_ENABLED": "false",
+    "SYGSHIFT_HR_ONBOARDING_ENABLED": "false",
     "SUPABASE_URL": "https://eqkdfrbwtioiqtjsyglg.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_-uU9fD3XIeZ58r815-fl_Q_g4IIRPQ5",
     "VITE_SUPABASE_URL": "https://eqkdfrbwtioiqtjsyglg.supabase.co",

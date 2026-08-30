@@ -35,6 +35,8 @@ type Environment = Partial<Env> & {
   SYGSHIFT_DOCUMENT_PIPELINE_ENABLED?: string
   SYGSHIFT_DOCUMENT_SCANNER_SECRET?: string
   SYGSHIFT_HR_AUTOMATION_ENABLED?: string
+  SYGSHIFT_HR_RECRUITING_ENABLED?: string
+  SYGSHIFT_HR_ONBOARDING_ENABLED?: string
 }
 
 interface SessionContext {
@@ -846,6 +848,26 @@ function hrAutomationEnabled(environment: Environment): boolean {
 function requireHrAutomationRelease(environment: Environment): void {
   if (!hrAutomationEnabled(environment)) {
     throw new ApiError('hr_automation_unavailable', 503, 'The HR automation workspace has not been released.')
+  }
+}
+
+function hrRecruitingEnabled(environment: Environment): boolean {
+  return environment.SYGSHIFT_HR_RECRUITING_ENABLED?.trim().toLowerCase() === 'true'
+}
+
+function requireHrRecruitingRelease(environment: Environment): void {
+  if (!hrRecruitingEnabled(environment)) {
+    throw new ApiError('hr_recruiting_unavailable', 503, 'The Recruiting workspace has not been released.')
+  }
+}
+
+function hrOnboardingEnabled(environment: Environment): boolean {
+  return environment.SYGSHIFT_HR_ONBOARDING_ENABLED?.trim().toLowerCase() === 'true'
+}
+
+function requireHrOnboardingRelease(environment: Environment): void {
+  if (!hrOnboardingEnabled(environment)) {
+    throw new ApiError('hr_onboarding_unavailable', 503, 'The Onboarding workspace has not been released.')
   }
 }
 
@@ -1694,6 +1716,223 @@ function disabledHrAutomationWorkspace(requestId: string): Record<string, unknow
     counts: { definitions: 0, activeInstances: 0, openTasks: 0, deadLetters: 0 },
     requestId,
   }
+}
+
+function boundedWorkspacePage(url: URL): { offset: number; pageSize: 5 | 10 | 20 } {
+  const requestedPageSize = Number.parseInt(url.searchParams.get('pageSize') ?? '10', 10)
+  const requestedOffset = Number.parseInt(url.searchParams.get('offset') ?? '0', 10)
+  return {
+    pageSize: ([5, 10, 20].includes(requestedPageSize) ? requestedPageSize : 10) as 5 | 10 | 20,
+    offset: Number.isFinite(requestedOffset) ? Math.max(0, Math.min(requestedOffset, 10_000)) : 0,
+  }
+}
+
+function requireAnySessionPermission(context: SessionContext, permissions: readonly string[]): void {
+  if (!permissions.some((permission) => context.permissions?.includes(permission) === true)) {
+    throw new ApiError('permission_required', 403, 'The required permission is missing.')
+  }
+}
+
+function disabledRecruitingWorkspace(requestId: string): Record<string, unknown> {
+  return {
+    enabled: false,
+    pageSize: 10,
+    offset: 0,
+    requisitions: [],
+    applications: [],
+    counts: { openRequisitions: 0, activeCandidates: 0, pendingInterviews: 0, pendingOffers: 0 },
+    requestId,
+  }
+}
+
+async function handleHrRecruitingApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url)
+  const session = await requireVerifiedOperationsSession(request, environment, 'hr_recruiting_mfa_required')
+
+  if (url.pathname === '/api/v1/hr/recruiting/workspace') {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    requireSessionPermission(session.context, 'hr.recruiting.view')
+    if (!hrRecruitingEnabled(environment)) return json(disabledRecruitingWorkspace(requestId))
+    const { offset, pageSize } = boundedWorkspacePage(url)
+    const payload = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_get_hr_recruiting_workspace',
+      { target_actor_id: session.context.employee_id, target_offset: offset, target_page_size: pageSize },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...payload, requestId })
+  }
+
+  if (url.pathname === '/api/v1/hr/recruiting/actions') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireHrRecruitingRelease(environment)
+    requireAnySessionPermission(session.context, ['hr.recruiting.manage', 'hr.recruiting.approve'])
+    const body = await readJsonBody(request)
+    const action = requiredText(body.action, 'Recruiting action', 80)
+    const allowedActions = new Set([
+      'create_requisition', 'submit_requisition', 'approve_requisition', 'create_application',
+      'move_application', 'schedule_interview', 'assign_interview_panelist', 'submit_scorecard',
+      'prepare_offer', 'submit_offer', 'approve_offer', 'mark_offer_sent', 'record_offer_decision',
+      'dispose_application',
+    ])
+    if (!allowedActions.has(action)) throw new ApiError('invalid_recruiting_action', 422, 'Choose a supported recruiting action.')
+    const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
+      ? body.payload as Record<string, unknown>
+      : {}
+    const result = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_hr_recruiting_action',
+      {
+        target_action: action,
+        target_actor_id: session.context.employee_id,
+        target_payload: payload,
+        target_reason: requiredText(body.reason, 'Audit reason', 1000),
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId })
+  }
+
+  if (url.pathname === '/api/v1/hr/recruiting/conversions') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireHrRecruitingRelease(environment)
+    requireSessionPermission(session.context, 'hr.recruiting.manage')
+    const body = await readJsonBody(request)
+    const applicationId = requiredText(body.applicationId, 'Application', 36)
+    if (!validUuid(applicationId)) throw new ApiError('invalid_application', 422, 'The application is invalid.')
+    const role = requiredText(body.role, 'Role', 40)
+    const employmentType = requiredText(body.employmentType, 'Employment type', 20)
+    if (!['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'].includes(role)) {
+      throw new ApiError('invalid_employee_role', 422, 'Choose a supported employee role.')
+    }
+    if (!['hourly', 'salary', 'flex'].includes(employmentType)) {
+      throw new ApiError('invalid_employment_type', 422, 'Choose hourly, salary, or flex employment.')
+    }
+    const result = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_request_candidate_conversion',
+      {
+        target_actor_id: session.context.employee_id,
+        target_application_id: applicationId,
+        target_employment_type: employmentType,
+        target_job_title: requiredText(body.jobTitle, 'Job title', 160),
+        target_reason: requiredText(body.reason, 'Audit reason', 1000),
+        target_role: role,
+        target_start_date: requiredText(body.startDate, 'Start date', 10),
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId })
+  }
+
+  const conversionRequestId = url.pathname.match(/^\/api\/v1\/hr\/recruiting\/conversions\/([0-9a-f-]{36})\/review$/i)?.[1]
+  if (conversionRequestId) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireHrRecruitingRelease(environment)
+    requireSessionPermission(session.context, 'hr.recruiting.approve')
+    if (!validUuid(conversionRequestId)) throw new ApiError('invalid_conversion_request', 422, 'The conversion request is invalid.')
+    const body = await readJsonBody(request)
+    const decision = requiredText(body.decision, 'Decision', 20)
+    if (!['approve', 'reject', 'cancel'].includes(decision)) throw new ApiError('invalid_conversion_decision', 422, 'Choose approve, reject, or cancel.')
+    const result = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_review_candidate_conversion',
+      {
+        target_actor_id: session.context.employee_id,
+        target_decision: decision,
+        target_reason: requiredText(body.reason, 'Audit reason', 1000),
+        target_request_id: conversionRequestId,
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId })
+  }
+
+  return errorJson('not_found', requestId, 404)
+}
+
+function disabledOnboardingWorkspace(requestId: string): Record<string, unknown> {
+  return {
+    enabled: false,
+    pageSize: 10,
+    offset: 0,
+    cases: [],
+    templates: [],
+    counts: { activeCases: 0, readyCases: 0, overdueTasks: 0 },
+    requestId,
+  }
+}
+
+async function handleHrOnboardingApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url)
+  const session = await requireVerifiedOperationsSession(request, environment, 'hr_onboarding_mfa_required')
+
+  if (url.pathname === '/api/v1/hr/onboarding/workspace') {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    requireSessionPermission(session.context, 'hr.onboarding.view')
+    if (!hrOnboardingEnabled(environment)) return json(disabledOnboardingWorkspace(requestId))
+    const { offset, pageSize } = boundedWorkspacePage(url)
+    const payload = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_get_hr_onboarding_workspace',
+      { target_actor_id: session.context.employee_id, target_offset: offset, target_page_size: pageSize },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...payload, requestId })
+  }
+
+  const caseId = url.pathname.match(/^\/api\/v1\/hr\/onboarding\/cases\/([0-9a-f-]{36})$/i)?.[1]
+  if (caseId) {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    requireSessionPermission(session.context, 'hr.onboarding.view')
+    requireHrOnboardingRelease(environment)
+    if (!validUuid(caseId)) throw new ApiError('invalid_onboarding_case', 422, 'The onboarding case is invalid.')
+    const payload = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_get_hr_onboarding_case',
+      { target_actor_id: session.context.employee_id, target_case_id: caseId },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...payload, requestId })
+  }
+
+  if (url.pathname === '/api/v1/hr/onboarding/actions') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireHrOnboardingRelease(environment)
+    requireAnySessionPermission(session.context, ['hr.onboarding.manage', 'hr.onboarding.approve'])
+    const body = await readJsonBody(request)
+    const action = requiredText(body.action, 'Onboarding action', 80)
+    const allowedActions = new Set([
+      'create_template', 'add_template_step', 'add_step_dependency', 'activate_template',
+      'launch_case', 'start_task', 'complete_task', 'waive_task', 'finalize_case', 'cancel_case',
+    ])
+    if (!allowedActions.has(action)) throw new ApiError('invalid_onboarding_action', 422, 'Choose a supported onboarding action.')
+    const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
+      ? body.payload as Record<string, unknown>
+      : {}
+    const result = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_hr_onboarding_action',
+      {
+        target_action: action,
+        target_actor_id: session.context.employee_id,
+        target_payload: payload,
+        target_reason: requiredText(body.reason, 'Audit reason', 1000),
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId })
+  }
+
+  return errorJson('not_found', requestId, 404)
 }
 
 async function handleHrAutomationApi(
@@ -3761,6 +4000,32 @@ export default {
         response = error instanceof ApiError
           ? errorJson(error.code, requestId, error.status, error.message)
           : errorJson('attendance_report_failed', requestId, 500, 'The attendance report request failed.')
+      }
+    } else if (url.pathname.startsWith('/api/v1/hr/recruiting')) {
+      try {
+        response = await handleHrRecruitingApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('hr_recruiting_request_failed', requestId, 500, 'The Recruiting request could not be completed.')
+        }
+      }
+    } else if (url.pathname.startsWith('/api/v1/hr/onboarding')) {
+      try {
+        response = await handleHrOnboardingApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('hr_onboarding_request_failed', requestId, 500, 'The Onboarding request could not be completed.')
+        }
       }
     } else if (url.pathname.startsWith('/api/v1/hr/automation')) {
       try {

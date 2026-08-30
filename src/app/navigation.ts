@@ -1,6 +1,7 @@
 import {
   BadgeCheck,
   BadgeDollarSign,
+  BriefcaseBusiness,
   Bell,
   Building2,
   CalendarCheck2,
@@ -77,6 +78,18 @@ export const navigationGroups: NavigationGroup[] = [
         path: '/hr/documents',
         icon: Files,
         permissions: ['hr.documents.view', 'hr.documents.manage'],
+      },
+      {
+        label: 'Recruiting',
+        path: '/hr/recruiting',
+        icon: BriefcaseBusiness,
+        permissions: ['hr.recruiting.view'],
+      },
+      {
+        label: 'Onboarding',
+        path: '/hr/onboarding',
+        icon: UserRoundCheck,
+        permissions: ['hr.onboarding.view'],
       },
       {
         label: 'Time-Off Requests',
