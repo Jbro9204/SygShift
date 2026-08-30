@@ -9,6 +9,7 @@ import {
   AnnouncementsPageRoute,
   AvailabilityPageRoute,
   EventsPageRoute,
+  HrisIdentityReadinessPageRoute,
   LoginPageRoute,
   LicensingCenterPageRoute,
   NotificationsPageRoute,
@@ -174,6 +175,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <TimePayrollPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr/identity-readiness',
+        element: (
+          <RouteSuspense>
+            <HrisIdentityReadinessPageRoute />
           </RouteSuspense>
         ),
       },

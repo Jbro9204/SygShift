@@ -1026,3 +1026,12 @@ pnpm exec wrangler deploy --keep-vars
 - Added a machine-readable foundation contract, validator, and regression tests.
 - Kept the protected HR production-data gate closed until later stages supply their required authorization, quarantine, backup/restore, production-verification, and rollback evidence.
 - No production database, employee data, role assignments, or deployed runtime behavior changed in this stage.
+
+## 08/29/2026 — HRIS Stage 2 Employment Data Readiness
+
+- Added a protected HR & Finance workspace for authoritative hire- and separation-date verification before any HR identity backfill.
+- Enforced active identity, recent MFA, `hr.people.manage`, bounded server-side results, immutable evidence, future-date rejection, and closed-gate visibility.
+- Kept all identity execution controls unavailable from the browser and left the production backfill gate closed.
+- Preserved all 78 source employees and existing access, schedule, timekeeping, payroll, licensing, and audit relationships without creating protected HR identities.
+- Applied migration `20260830013000_hris_stage2_identity_readiness_workspace.sql` and deployed Cloudflare version `9a31c43f-c457-40e0-9316-5a2a349cc3d1`.
+- Full validation passed: 107 test files / 534 tests, type checking, zero-warning lint, production build, HRIS validators, live database checks, and Worker deployment.

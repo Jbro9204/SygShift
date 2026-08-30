@@ -107,6 +107,9 @@ export const UserAdminPageRoute = lazy(() =>
 export const SystemOperationsPageRoute = lazy(() =>
   import('../pages/SystemOperationsPage').then((module) => ({ default: module.SystemOperationsPage })),
 )
+export const HrisIdentityReadinessPageRoute = lazy(() =>
+  import('../pages/HrisIdentityReadinessPage').then((module) => ({ default: module.HrisIdentityReadinessPage })),
+)
 
 function RouteFallback() {
   return (
