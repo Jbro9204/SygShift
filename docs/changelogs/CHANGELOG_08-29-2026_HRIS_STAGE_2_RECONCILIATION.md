@@ -1,9 +1,12 @@
 # SygShift Change Log — HRIS Stage 2 Reconciliation Proposal
 
-**Date:** 08/29/2026  
-**Program:** Enterprise HRIS/HCM  
-**Stage:** Stage 2 — Core HR Data Architecture  
-**Run:** 2 of 3  
+**Date:** 08/29/2026
+
+**Program:** Enterprise HRIS/HCM
+
+**Stage:** Stage 2 — Core HR Data Architecture
+
+**Run:** 2 of 3
 **Production migration:** `20260829233000_hris_stage2_reconciliation_proposal.sql`
 
 ## Outcome
