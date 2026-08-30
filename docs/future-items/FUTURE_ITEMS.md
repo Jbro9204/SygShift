@@ -79,7 +79,7 @@ Required outcomes:
 
 - Priority: **Urgent**
 - Target window: Staged enterprise program; approximately 24–28 controlled runs
-- Status: Stage 1 completed 08/29/2026 / Stage 2 protected control plane completed 08/29/2026 / Stage 3 People & HR Workspace completed 08/29/2026 / Stage 4 Secure Document Platform completed across four controlled runs on 08/30/2026 / Stage 5 HR Automation & Action Center completed dormant on 08/30/2026; production identity backfill, document delivery, and workflow activation remain separately gated
+- Status: Stages 1–9 completed through 08/30/2026; protected production activation, identity backfill, document delivery, and Stage 10 payroll integration remain separately gated
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
@@ -184,12 +184,14 @@ Stage 7 is deployed dormant. Leave Administration, Benefits Administration, and 
 
 Stage 8 is deployed dormant. Talent, Learning, Employee Cases, Safety, and Assets have independent database and Worker release gates, all 15 permissions remain unassigned, and no goal, review, course assignment, HR case, safety case, workers' compensation record, asset, assignment, acknowledgment, or financial review was created during deployment. Employee Cases and Safety require recent MFA in addition to exact permissions. The compact workspaces use bounded 5/10/20 worklists and connect to the existing document, Licensing Center, onboarding, and offboarding authorities without duplicating those records. Activation requires approved operating policies, named access owners, permission assignment, recovery evidence, an isolated canary, and post-activation validation.
 
-#### Stage 9 — Offboarding, Self-Service & Reporting (2–3 runs)
+#### Stage 9 — Offboarding, Self-Service & Reporting (completed 08/30/2026)
 
-- [ ] Implement separation and rehire workflows with explicit human approvals and preserved history.
-- [ ] Coordinate account access, Schedule, Payroll, Licensing, documents, training, and equipment during offboarding.
-- [ ] Implement employee and manager self-service limited to effective permissions and approved records.
-- [ ] Implement permission-aware reports, custom report building, scheduled reports, and asynchronous exports for large jobs.
+- [x] Implement separation and rehire workflows with explicit human approvals and preserved history.
+- [x] Coordinate account access, Schedule, Payroll, Licensing, documents, training, and equipment during offboarding.
+- [x] Implement employee and manager self-service limited to effective permissions and approved records.
+- [x] Implement permission-aware reports, custom report building, scheduled reports, and asynchronous exports for large jobs.
+
+Stage 9 is deployed dormant. Offboarding & Rehire, HR Self-Service, and HR Reporting have independent database and Worker release gates, all nine permissions remain unassigned, and no lifecycle case, self-service request, report definition, scheduled report, export run, or downstream handoff was created during deployment. Separation and rehire decisions require explicit approval and preserve history; downstream account, Schedule, Payroll, Licensing, document, training, and asset work is coordinated through auditable tasks instead of silently mutating authoritative systems. Self-service is scoped to the signed-in employee or effective manager permissions. Reporting is permission-aware and supports bounded asynchronous run records without exposing unrestricted employee data. Offboarding and Reporting require recent MFA. Activation requires approved operating policies, named access owners, permission assignment, recovery evidence, an isolated canary, and post-activation validation.
 
 #### Stage 10 — Payroll Integration & Enterprise Hardening (2–3 runs)
 

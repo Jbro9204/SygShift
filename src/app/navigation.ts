@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   MapPinned,
   Megaphone,
+  Repeat2,
   ShieldCheck,
   Timer,
   Umbrella,
@@ -124,6 +125,24 @@ export const navigationGroups: NavigationGroup[] = [
         path: '/hr/cases-compliance',
         icon: ShieldAlert,
         permissions: ['hr.cases.view', 'hr.safety.view', 'hr.assets.view'],
+      },
+      {
+        label: 'Employee Lifecycle',
+        path: '/hr/offboarding',
+        icon: Repeat2,
+        permissions: ['hr.offboarding.view'],
+      },
+      {
+        label: 'HR Self-Service',
+        path: '/hr/self-service',
+        icon: UserCog,
+        permissions: ['hr.self_service.view'],
+      },
+      {
+        label: 'HR Reporting',
+        path: '/hr/reporting',
+        icon: FileBarChart,
+        permissions: ['hr.reporting.view'],
       },
       {
         label: 'Time-Off Requests',

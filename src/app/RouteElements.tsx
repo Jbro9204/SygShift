@@ -146,6 +146,15 @@ export const HrisTalentLearningPageRoute = lazy(() =>
 export const HrisCasesCompliancePageRoute = lazy(() =>
   import('../pages/HrisStage8Page').then((module) => ({ default: module.HrisCasesCompliancePage })),
 )
+export const HrisOffboardingPageRoute = lazy(() =>
+  import('../pages/HrisStage9Page').then((module) => ({ default: module.HrisOffboardingPage })),
+)
+export const HrisSelfServicePageRoute = lazy(() =>
+  import('../pages/HrisStage9Page').then((module) => ({ default: module.HrisSelfServicePage })),
+)
+export const HrisReportingPageRoute = lazy(() =>
+  import('../pages/HrisStage9Page').then((module) => ({ default: module.HrisReportingPage })),
+)
 export const MyDocumentsPageRoute = lazy(() =>
   import('../pages/MyDocumentsPage').then((module) => ({ default: module.MyDocumentsPage })),
 )

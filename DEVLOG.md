@@ -1109,3 +1109,14 @@ pnpm exec wrangler deploy --keep-vars
 - Assigned no Stage 7 permissions and changed no existing role or employee access.
 - Full validation passed: Stage 7 contract checks, type checking, zero-warning lint, 114 test files / 571 tests, and production build.
 - Deployed Cloudflare Worker version `47a38110-9c5f-4833-9420-d2ac77bc993a`; the live login surface returned `200` and all three unauthenticated Stage 7 API probes returned the expected `401`.
+
+## 08/30/2026 — HRIS Stage 9 Offboarding, Self-Service, and Reporting
+
+- Added protected separation and rehire cases, explicit approvals, preserved history, and auditable handoffs to User Accounts, Schedule, Payroll, Licensing, documents, training, and assets.
+- Added permission-scoped employee and manager HR self-service foundations.
+- Added permission-aware report definitions, schedules, asynchronous export runs, and append-only report history.
+- Added nine exact permissions without assigning them to any current role or employee.
+- Applied production migration `20260831160000_hris_stage9_offboarding_self_service_reporting_foundation.sql`; all three database and Worker release gates remain disabled and all Stage 9 workspaces remain empty.
+- Preserved existing employee, account, role-assignment, schedule, and time-event records.
+- Full validation passed: Stage 9 contract checks, type checking, zero-warning lint, 117 test files / 589 tests, Worker and client production builds, production database verification, and live health/readiness checks.
+- Deployed Cloudflare Worker version `ed79e5e6-1f9d-4ab6-a148-92b93d3e81db`.

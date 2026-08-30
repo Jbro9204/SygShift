@@ -19,6 +19,9 @@ import {
   HrisCompensationPageRoute,
   HrisTalentLearningPageRoute,
   HrisCasesCompliancePageRoute,
+  HrisOffboardingPageRoute,
+  HrisSelfServicePageRoute,
+  HrisReportingPageRoute,
   HrisDocumentsPageRoute,
   HrisDocumentWorkflowsPageRoute,
   HrisPeopleWorkspacePageRoute,
@@ -292,6 +295,30 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <HrisCasesCompliancePageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr/offboarding',
+        element: (
+          <RouteSuspense>
+            <HrisOffboardingPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr/self-service',
+        element: (
+          <RouteSuspense>
+            <HrisSelfServicePageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'hr/reporting',
+        element: (
+          <RouteSuspense>
+            <HrisReportingPageRoute />
           </RouteSuspense>
         ),
       },
