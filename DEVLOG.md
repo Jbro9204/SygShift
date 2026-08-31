@@ -1178,3 +1178,9 @@ pnpm exec wrangler deploy --keep-vars
 - Added regression tests covering active and non-active employee statuses.
 - Full validation passed: type checking, zero-warning lint, 122 test files / 615 tests, Worker build, and client production build.
 - Deployed Cloudflare Worker version `9dee6d0a-6313-479e-90cc-f7d9b8ba925f`; production login, health, and readiness checks returned `200` and readiness was confirmed.
+
+## 08/31/2026 — Sidebar Collapse Tab Placement
+
+- Lowered the compact gold collapse/expand tab to the seam beneath the SygShift logo.
+- Prevented the control from covering the brand mark in the collapsed sidebar.
+- Preserved desktop keyboard access, saved collapse state, and the existing mobile navigation behavior.

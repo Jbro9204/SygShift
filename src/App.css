@@ -7256,7 +7256,7 @@ a.home-metric-card:focus-visible {
   align-items: center;
   justify-content: space-between;
   padding: 24px 24px 18px;
-  overflow: hidden;
+  overflow: visible;
   border-bottom: 1px solid rgb(255 255 255 / 9%);
 }
 
@@ -7287,7 +7287,7 @@ a.home-metric-card:focus-visible {
   position: absolute;
   z-index: 2;
   right: 0;
-  bottom: 12px;
+  bottom: -14px;
   display: inline-flex;
   width: 32px;
   height: 36px;

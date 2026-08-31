@@ -53,7 +53,8 @@ describe('time navigation polish guardrails', () => {
     expect(appShell).toContain("title={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}")
 
     expect(appShell).toMatch(/<div className="sidebar-brand">[\s\S]*?className="sidebar-collapse"[\s\S]*?<\/div>/)
-    expect(appCss).toMatch(/\.sidebar-collapse\s*\{\s*position: absolute;[\s\S]*?right: 0;[\s\S]*?width: 32px;[\s\S]*?height: 36px;/)
+    expect(appCss).toMatch(/\.sidebar-brand\s*\{[\s\S]*?overflow: visible;/)
+    expect(appCss).toMatch(/\.sidebar-collapse\s*\{\s*position: absolute;[\s\S]*?right: 0;[\s\S]*?bottom: -14px;[\s\S]*?width: 32px;[\s\S]*?height: 36px;/)
     expect(appCss).toMatch(/\.sidebar-collapse\s*\{[\s\S]*?border-radius: 8px 0 0 8px;/)
 
     const mobileRules = appCss.slice(appCss.indexOf('@media (max-width: 900px)'))
