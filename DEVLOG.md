@@ -25,6 +25,15 @@ deployment status, or major workflow assumptions change.
 
 ## 08/31/2026
 
+### Comprehensive Employee File
+
+- Expanded the Employee File into a single secure index across identity, employment, documents, onboarding, leave, benefits, compensation status, talent, learning, employee relations, safety, assets, offboarding, and employee requests.
+- Kept every fact in its authoritative module and routed authorized users to the owning workspace for changes, preventing duplicate employee records and competing editors.
+- Added server-enforced permission and release-gate checks for every connected section; unreleased or unauthorized modules expose neither data nor counts.
+- Kept compensation amounts out of the general Employee File and preserved anonymous-access denial at the database boundary.
+- Applied and verified production migration `20260831234500`; confirmed 123 test files / 620 tests, type checking, linting, and production builds pass.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_08-31-2026_COMPREHENSIVE_EMPLOYEE_FILE.md`.
+
 ### Sidebar collapse tab refinement
 
 - Moved the desktop collapse control back inside the sidebar brand area so it no longer protrudes into the workspace.

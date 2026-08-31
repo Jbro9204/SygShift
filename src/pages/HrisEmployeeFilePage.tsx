@@ -4,9 +4,12 @@ import {
   ArrowLeft,
   BadgeCheck,
   CalendarCheck2,
+  ChevronDown,
   ClipboardCheck,
+  FileStack,
   KeyRound,
   Mail,
+  MoveUpRight,
   ShieldCheck,
   UserRound,
 } from 'lucide-react'
@@ -41,6 +44,10 @@ function display(value: string | null): string {
   return value?.trim() || 'Not recorded'
 }
 
+function countLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
 export function HrisEmployeeFilePage() {
   const { employeeId = '' } = useParams()
   const sessionQuery = useQuery({
@@ -59,6 +66,119 @@ export function HrisEmployeeFilePage() {
     { icon: ClipboardCheck, label: 'Time-Off Requests', path: '/requests' },
     { icon: KeyRound, label: 'User Accounts', path: '/users' },
   ].filter((workspace) => canAccessRoute(workspace.path, sessionQuery.data))
+  const employeeFileGroups = record ? [
+    {
+      description: 'Required records and the work still needed to make this employee ready.',
+      label: 'Record readiness',
+      modules: [
+        {
+          detail: record.connectedRecords.documents ? `${countLabel(record.connectedRecords.documents.expiring, 'expiring document')} within 60 days` : '',
+          label: 'Documents',
+          path: '/hr/documents',
+          status: record.connectedRecords.documents ? countLabel(record.connectedRecords.documents.total, 'current document') : '',
+          visible: record.moduleAccess.documents,
+        },
+        {
+          detail: record.connectedRecords.onboarding ? `${countLabel(record.connectedRecords.onboarding.openTasks, 'open task')} · ${countLabel(record.connectedRecords.onboarding.blockedTasks, 'blocked task')}` : '',
+          label: 'Onboarding',
+          path: '/hr/onboarding',
+          status: record.connectedRecords.onboarding?.status ? titleCase(record.connectedRecords.onboarding.status) : 'No active case',
+          visible: record.moduleAccess.onboarding,
+        },
+      ],
+    },
+    {
+      description: 'Approved leave, benefit participation, and compensation-record readiness.',
+      label: 'Employment programs',
+      modules: [
+        {
+          detail: record.connectedRecords.leave ? countLabel(record.connectedRecords.leave.upcoming, 'upcoming leave') : '',
+          label: 'Leave',
+          path: '/hr/leave',
+          status: record.connectedRecords.leave ? countLabel(record.connectedRecords.leave.open, 'open case') : '',
+          visible: record.moduleAccess.leave,
+        },
+        {
+          detail: record.connectedRecords.benefits ? countLabel(record.connectedRecords.benefits.pending, 'pending enrollment') : '',
+          label: 'Benefits',
+          path: '/hr/benefits',
+          status: record.connectedRecords.benefits ? countLabel(record.connectedRecords.benefits.active, 'active enrollment') : '',
+          visible: record.moduleAccess.benefits,
+        },
+        {
+          detail: 'Pay values remain restricted to the compensation workspace.',
+          label: 'Compensation',
+          path: '/hr/compensation',
+          status: record.connectedRecords.compensation ? countLabel(record.connectedRecords.compensation.activeRecords, 'active record') : '',
+          visible: record.moduleAccess.compensation,
+        },
+      ],
+    },
+    {
+      description: 'Development, training, employee relations, safety, and company property.',
+      label: 'Growth & compliance',
+      modules: [
+        {
+          detail: record.connectedRecords.talent ? `${countLabel(record.connectedRecords.talent.pendingReviews, 'pending review')} · ${countLabel(record.connectedRecords.talent.activePlans, 'active plan')}` : '',
+          label: 'Talent',
+          path: '/hr/talent-learning',
+          status: record.connectedRecords.talent ? countLabel(record.connectedRecords.talent.openGoals, 'open goal') : '',
+          visible: record.moduleAccess.talent,
+        },
+        {
+          detail: record.connectedRecords.learning ? countLabel(record.connectedRecords.learning.overdue, 'overdue assignment') : '',
+          label: 'Learning',
+          path: '/hr/talent-learning',
+          status: record.connectedRecords.learning ? countLabel(record.connectedRecords.learning.assigned, 'active assignment') : '',
+          visible: record.moduleAccess.learning,
+        },
+        {
+          detail: record.connectedRecords.employeeCases ? countLabel(record.connectedRecords.employeeCases.highPriority, 'high-priority case') : '',
+          label: 'Employee relations',
+          path: '/hr/cases-compliance',
+          status: record.connectedRecords.employeeCases ? countLabel(record.connectedRecords.employeeCases.open, 'open case') : '',
+          visible: record.moduleAccess.cases,
+        },
+        {
+          detail: 'Incident details remain in the protected case workspace.',
+          label: 'Safety',
+          path: '/hr/cases-compliance',
+          status: record.connectedRecords.safety ? countLabel(record.connectedRecords.safety.open, 'open case') : '',
+          visible: record.moduleAccess.safety,
+        },
+        {
+          detail: 'Issue, return, and transfer work stays in Assets.',
+          label: 'Assigned assets',
+          path: '/hr/cases-compliance',
+          status: record.connectedRecords.assets ? countLabel(record.connectedRecords.assets.assigned, 'assigned item') : '',
+          visible: record.moduleAccess.assets,
+        },
+      ],
+    },
+    {
+      description: 'Lifecycle changes and employee-submitted HR service requests.',
+      label: 'Lifecycle & service',
+      modules: [
+        {
+          detail: 'Separation and lifecycle actions remain fully audited.',
+          label: 'Offboarding',
+          path: '/hr/offboarding',
+          status: record.connectedRecords.lifecycle ? countLabel(record.connectedRecords.lifecycle.open, 'open case') : '',
+          visible: record.moduleAccess.offboarding,
+        },
+        {
+          detail: 'Requests remain owned by the Employee Service workspace.',
+          label: 'Employee requests',
+          path: '/hr/self-service',
+          status: record.connectedRecords.selfService ? countLabel(record.connectedRecords.selfService.pending, 'pending request') : '',
+          visible: record.moduleAccess.selfService,
+        },
+      ],
+    },
+  ].map((group) => ({
+    ...group,
+    modules: group.modules.filter((module) => module.visible && canAccessRoute(module.path, sessionQuery.data)),
+  })).filter((group) => group.modules.length > 0) : []
 
   return (
     <main className="hr-file-page">
@@ -105,6 +225,36 @@ export function HrisEmployeeFilePage() {
               <dl><div><dt>Personal email</dt><dd>{display(record.contacts.personalEmail)}</dd></div><div><dt>Company email</dt><dd>{display(record.contacts.companyEmail)}</dd></div><div><dt>Mobile phone</dt><dd>{display(record.contacts.mobilePhone)}</dd></div><div><dt>Emergency contact</dt><dd>{display(record.contacts.emergencyContactName)}</dd></div><div><dt>Emergency phone</dt><dd>{display(record.contacts.emergencyContactPhone)}</dd></div><div><dt>Address</dt><dd>{[record.contacts.addressLine1, record.contacts.addressLine2, record.contacts.city, record.contacts.region, record.contacts.postalCode].filter(Boolean).join(', ') || 'Not recorded'}</dd></div></dl>
             </section>
           ) : <section className="hr-file-restricted"><ShieldCheck aria-hidden="true" /><div><strong>Restricted contact details are protected.</strong><p>This account does not have the separate HR restricted-data permission.</p></div></section>}
+
+          {employeeFileGroups.length > 0 ? (
+            <section className="hr-file-sections" aria-labelledby="employee-file-sections-heading">
+              <div className="hr-file-sections__heading">
+                <div><p className="eyebrow">Employee record</p><h2 id="employee-file-sections-heading">Connected HR file</h2></div>
+                <p>Live summaries from each protected HR workspace. No information is copied or maintained twice.</p>
+              </div>
+              <div className="hr-file-section-list">
+                {employeeFileGroups.map((group, index) => (
+                  <details className="hr-file-section" key={group.label} open={index === 0}>
+                    <summary>
+                      <span className="hr-file-section__icon"><FileStack aria-hidden="true" /></span>
+                      <span><strong>{group.label}</strong><small>{group.description}</small></span>
+                      <span className="hr-file-section__count">{group.modules.length}</span>
+                      <ChevronDown aria-hidden="true" className="hr-file-section__chevron" />
+                    </summary>
+                    <div className="hr-file-module-grid">
+                      {group.modules.map((module) => (
+                        <Link className="hr-file-module" key={`${group.label}-${module.label}`} to={module.path}>
+                          <span><strong>{module.label}</strong><small>{module.detail}</small></span>
+                          <span className="hr-file-module__status">{module.status}</span>
+                          <MoveUpRight aria-hidden="true" />
+                        </Link>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <section className="hr-file-links">
             <div><p className="eyebrow">Connected workspaces</p><h2>Continue working this employee</h2><p>Use the existing specialized workspace for operational changes. Employee File remains a review surface.</p></div>

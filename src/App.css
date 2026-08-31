@@ -2892,6 +2892,179 @@
   padding: 22px 24px;
 }
 
+.hr-file-sections {
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #ddd3c4;
+  border-radius: 13px;
+  box-shadow: 0 8px 24px rgb(36 29 20 / 6%);
+}
+
+.hr-file-sections__heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 24px;
+  border-bottom: 1px solid #e7dfd3;
+}
+
+.hr-file-sections__heading > p {
+  max-width: 540px;
+  margin: 0;
+  color: #6d665c;
+  font-size: 13px;
+  line-height: 1.55;
+  text-align: right;
+}
+
+.hr-file-section-list {
+  display: grid;
+}
+
+.hr-file-section {
+  border-bottom: 1px solid #e7dfd3;
+}
+
+.hr-file-section:last-child {
+  border-bottom: 0;
+}
+
+.hr-file-section > summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  min-height: 76px;
+  align-items: center;
+  gap: 13px;
+  padding: 12px 24px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.hr-file-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.hr-file-section > summary:hover,
+.hr-file-section > summary:focus-visible {
+  background: #fffaf0;
+}
+
+.hr-file-section__icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  color: #8a590d;
+  background: #f9eccc;
+  border-radius: 9px;
+}
+
+.hr-file-section__icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.hr-file-section > summary strong,
+.hr-file-section > summary small {
+  display: block;
+}
+
+.hr-file-section > summary strong {
+  color: #211d18;
+  font-size: 15px;
+}
+
+.hr-file-section > summary small {
+  margin-top: 3px;
+  color: #756d63;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hr-file-section__count {
+  display: grid;
+  min-width: 30px;
+  height: 30px;
+  place-items: center;
+  color: #6a4307;
+  font-size: 12px;
+  font-weight: 950;
+  background: #fff4dc;
+  border: 1px solid #e5c589;
+  border-radius: 999px;
+}
+
+.hr-file-section__chevron {
+  color: #766b5c;
+  transition: transform 160ms ease;
+}
+
+.hr-file-section[open] .hr-file-section__chevron {
+  transform: rotate(180deg);
+}
+
+.hr-file-module-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 24px 20px 75px;
+}
+
+.hr-file-module {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  min-width: 0;
+  min-height: 74px;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 15px;
+  color: #28221b;
+  text-decoration: none;
+  background: #faf8f4;
+  border: 1px solid #e2d8c9;
+  border-radius: 10px;
+}
+
+.hr-file-module:hover,
+.hr-file-module:focus-visible {
+  color: #593904;
+  background: #fff7e6;
+  border-color: #c58b30;
+}
+
+.hr-file-module > span:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.hr-file-module strong {
+  font-size: 13px;
+}
+
+.hr-file-module small {
+  overflow: hidden;
+  color: #766d62;
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hr-file-module__status {
+  color: #4f463c;
+  font-size: 11px;
+  font-weight: 900;
+  text-align: right;
+}
+
+.hr-file-module > svg {
+  width: 16px;
+  height: 16px;
+  color: #9a6819;
+}
+
 .hr-file-links {
   display: grid;
   grid-template-columns: minmax(260px, .8fr) minmax(0, 1.5fr);
@@ -2981,6 +3154,20 @@
     min-width: 0;
   }
 
+  .hr-file-sections__heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .hr-file-sections__heading > p {
+    max-width: none;
+    text-align: left;
+  }
+
+  .hr-file-module-grid {
+    grid-template-columns: 1fr;
+  }
+
   .hr-people-row {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
@@ -3015,6 +3202,31 @@
   .hr-file-counts,
   .hr-file-links nav {
     grid-template-columns: 1fr;
+  }
+
+  .hr-file-sections__heading,
+  .hr-file-section > summary {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .hr-file-module-grid {
+    padding: 0 16px 16px;
+  }
+
+  .hr-file-module {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .hr-file-module__status {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    text-align: left;
+  }
+
+  .hr-file-module > svg {
+    grid-column: 2;
+    grid-row: 1;
   }
 
   .hr-people-summary article {
