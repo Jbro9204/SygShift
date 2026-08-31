@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "approvedOn": "08/29/2026",
   "stage": "2",
   "run": "3-of-3-control-plane",
@@ -31,6 +31,13 @@
     "maximumCanaryEmployees": 3,
     "singleUse": true,
     "staleSnapshotRejected": true
+  },
+  "releaseSequencing": {
+    "verifiedCanaryRequiredBeforeFull": true,
+    "gateClosesAfterEveryExecution": true,
+    "newAuthorizationRequiredAfterCanary": true,
+    "verificationEvidenceDigestRequired": true,
+    "verificationServiceOnly": true
   },
   "preservationDomains": [
     "employees",
