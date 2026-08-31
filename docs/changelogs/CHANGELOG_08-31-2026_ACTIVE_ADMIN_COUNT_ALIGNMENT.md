@@ -27,4 +27,5 @@ The User Accounts summary now reports active employees whose primary role is Adm
 - Type checking passed.
 - Linting passed without warnings.
 - Full validation passed: type checking, zero-warning lint, 122 test files / 615 tests, Worker build, and client production build.
-- Live release checks are recorded in the repository development log.
+- Deployed Cloudflare Worker version `9dee6d0a-6313-479e-90cc-f7d9b8ba925f`.
+- Production `/login`, `/api/v1/health`, and `/api/v1/ready` checks returned HTTP `200`; readiness confirmed assets, Supabase connectivity, and server credentials are configured.
