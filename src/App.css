@@ -7248,6 +7248,7 @@ a.home-metric-card:focus-visible {
 }
 
 .sidebar-brand {
+  position: relative;
   display: flex;
   height: 154px;
   min-height: 154px;
@@ -7285,19 +7286,18 @@ a.home-metric-card:focus-visible {
 .sidebar-collapse {
   position: absolute;
   z-index: 2;
-  top: 118px;
-  right: -22px;
+  right: 0;
+  bottom: 12px;
   display: inline-flex;
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
+  width: 32px;
+  height: 36px;
+  flex: 0 0 32px;
   color: #171612;
   background: linear-gradient(180deg, #f1cf83, #d9a640);
   border: 1px solid #a97921;
-  border-radius: 50%;
-  box-shadow:
-    0 7px 18px rgb(18 16 12 / 28%),
-    0 0 0 4px rgb(248 245 237 / 88%);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  box-shadow: 0 4px 11px rgb(18 16 12 / 24%);
   cursor: pointer;
   transition:
     color 150ms ease,
@@ -7312,19 +7312,17 @@ a.home-metric-card:focus-visible {
   color: #0f0e0c;
   background: linear-gradient(180deg, #f7dfa5, #e2b553);
   border-color: #d5a445;
-  box-shadow:
-    0 9px 22px rgb(18 16 12 / 34%),
-    0 0 0 4px #fff8e8;
-  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgb(18 16 12 / 30%);
+  transform: translateX(-2px);
 }
 
 .sidebar-collapse:focus-visible {
-  outline: 3px solid #ffffff;
-  outline-offset: 3px;
+  outline: 2px solid #ffffff;
+  outline-offset: -4px;
 }
 
 .sidebar-collapse:active {
-  transform: translateY(0);
+  transform: translateX(0);
 }
 
 .sidebar-navigation {

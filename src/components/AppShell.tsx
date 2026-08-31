@@ -536,17 +536,16 @@ export function AppShell() {
           >
             <X aria-hidden="true" size={24} />
           </button>
+          <button
+            aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            className="sidebar-collapse"
+            onClick={toggleSidebarCollapsed}
+            title={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+            type="button"
+          >
+            {sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={18} /> : <ChevronsLeft aria-hidden="true" size={18} />}
+          </button>
         </div>
-
-        <button
-          aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
-          className="sidebar-collapse"
-          onClick={toggleSidebarCollapsed}
-          title={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
-          type="button"
-        >
-          {sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={21} /> : <ChevronsLeft aria-hidden="true" size={21} />}
-        </button>
 
         <nav aria-label="Primary navigation" className="sidebar-navigation">
           <div className="sidebar-primary-actions">

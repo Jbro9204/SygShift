@@ -25,6 +25,12 @@ deployment status, or major workflow assumptions change.
 
 ## 08/31/2026
 
+### Sidebar collapse tab refinement
+
+- Moved the desktop collapse control back inside the sidebar brand area so it no longer protrudes into the workspace.
+- Reduced the control to a compact gold rectangular tab that peeks inward from the sidebar edge.
+- Preserved its accessible name, tooltip, keyboard focus, saved collapse state, and mobile exclusion.
+
 ### Sidebar collapse control and active-backlog cleanup
 
 - Rebuilt the desktop sidebar collapse/expand control as a visible 44-by-44-pixel SygShift control attached to the sidebar edge, with consistent hover, active, tooltip, and keyboard-focus behavior.
