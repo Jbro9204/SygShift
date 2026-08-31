@@ -1,6 +1,6 @@
 # SygShift Change Log — Enterprise Breach Protection Future Program
 
-**Date:** 08/31/2026  
+**Date:** 08/31/2026
 **Area:** Security planning and controlled future work
 
 ## Added
