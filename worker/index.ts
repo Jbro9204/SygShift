@@ -3472,8 +3472,19 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
     const serviceConfig = { serviceRoleKey: admin.config.serviceRoleKey, url: admin.config.url }
     if (!keyId) {
       if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+      const target = await callRpc<AuthTarget>(
+        serviceConfig,
+        'service_get_employee_auth_target',
+        { target_employee_id: employeeId },
+        serviceConfig.serviceRoleKey,
+      )
       const keys = await listSecurityKeyCredentials(serviceConfig, employeeId)
-      return json({ keys: keys.map(securityKeySummary), requestId })
+      return json({
+        displayName: target.displayName,
+        employeeId: target.employeeId,
+        keys: keys.map(securityKeySummary),
+        requestId,
+      })
     }
     if (request.method !== 'DELETE') return errorJson('method_not_allowed', requestId, 405)
     const key = (await listSecurityKeyCredentials(serviceConfig, employeeId))

@@ -343,7 +343,11 @@ export async function getEmployeeSecurityKeys(employeeId: string): Promise<Secur
     headers: await authHeaders(),
     method: 'GET',
   })
-  return adminSecurityKeysResponseSchema.parse(await parseApiResponse(response)).keys
+  const parsed = adminSecurityKeysResponseSchema.safeParse(await parseApiResponse(response))
+  if (!parsed.success) {
+    throw new Error('Registered security keys could not be loaded. Refresh and try again.')
+  }
+  return parsed.data.keys
 }
 
 export async function revokeEmployeeSecurityKey(employeeId: string, keyId: string): Promise<{

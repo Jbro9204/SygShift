@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest'
 const root = process.cwd()
 const worker = readFileSync(join(root, 'worker', 'index.ts'), 'utf8')
 const migration = readFileSync(join(root, 'supabase', 'migrations', '20260829163000_security_key_mfa.sql'), 'utf8')
+const accessControlMigration = readFileSync(join(root, 'supabase', 'migrations', '20260727203000_access_control_center.sql'), 'utf8')
+const mfaRequirementMigration = readFileSync(join(root, 'supabase', 'migrations', '20260823200000_mfa_aware_onboarding_email_targets.sql'), 'utf8')
 const accountPage = readFileSync(join(root, 'src', 'pages', 'MyAccountPage.tsx'), 'utf8')
 
 describe('FIDO2 security-key guardrails', () => {
@@ -41,5 +43,18 @@ describe('FIDO2 security-key guardrails', () => {
     expect(migration).toContain('sessions_revoked_count')
     expect(migration).toContain("'securityKeysRevoked', keys_revoked_count")
     expect(migration).toContain("'securityKeySessionsRevoked', sessions_revoked_count")
+  })
+
+  it('returns the complete employee security-key contract to the administrator workspace', () => {
+    expect(worker).toContain("'service_get_employee_auth_target'")
+    expect(worker).toContain('displayName: target.displayName')
+    expect(worker).toContain('employeeId: target.employeeId')
+    expect(worker).toContain('keys: keys.map(securityKeySummary)')
+  })
+
+  it('does not require MFA from the Guard base role after a demotion', () => {
+    expect(accessControlMigration).toContain("('system_guard', 'Guard', 'Baseline access for guards.', 'guard', true, true, false, true)")
+    expect(mfaRequirementMigration).toContain('where base_role.base_app_role = employee.role')
+    expect(mfaRequirementMigration).toContain('and base_role.mfa_required')
   })
 })
