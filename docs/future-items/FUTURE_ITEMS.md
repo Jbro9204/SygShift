@@ -145,6 +145,25 @@ Remaining pilot validation:
 
 ## HR, Finance & Employee Lifecycle
 
+### Employee File Start and Hire Date Management
+
+- Priority: **Urgent**
+- Target window: 09/01/2026 focused HR usability work
+- Status: Approved / queued; no production change made
+- Added: 08/31/2026
+
+Make the official employment start or hire date directly maintainable from the employee's authoritative HR file instead of requiring routine HR work to pass through Employment Data Readiness.
+
+Required outcomes:
+
+- Place the effective-dated start or hire date in the employee file's Employment area.
+- Keep Employment Data Readiness as a reconciliation and exception-cleanup workspace rather than the primary employee editor.
+- Enforce exact HR permissions, recent authentication where required, server-side validation, and append-only audit history.
+- Require an authoritative source reference and reason for corrections while preserving prior values and effective-dated history.
+- Support legitimate future start dates for onboarding employees without allowing unsupported or contradictory employment dates.
+- Keep onboarding, User Accounts, payroll, timekeeping, scheduling, licensing, and HR identity mapping synchronized through the existing permanent employee identity without duplicate records.
+- Verify add, correction, cancel, permission-denied, audit, refresh, rollback, and production behavior before activation.
+
 ### SygShift HR & Finance Suite
 
 - Priority: **Urgent**
@@ -290,6 +309,23 @@ Completion standard:
 - [ ] Keep adverse, sensitive, financial, employment-status, leave, discipline, compensation, and official payroll decisions under documented human approval; automation may prepare and route work but must not make those decisions silently.
 
 ## Workforce Organization & Scheduling
+
+### Patrol Workflow and Operations System
+
+- Priority: **Urgent**
+- Target window: Begin 09/01/2026
+- Status: Approved for workflow review and staged implementation planning; no production change made
+- Added: 08/31/2026
+
+Review and build the Patrol workflow as a complete operational system rather than a collection of disconnected schedule labels or imported spreadsheet rows.
+
+Required outcomes:
+
+- Confirm the real Patrol operating workflow, responsible roles, sites, routes, posts, recurring requirements, exceptions, and completion evidence before changing production behavior.
+- Preserve Schedule, Time & Attendance, Sites & Posts, employee qualifications, payroll, and audit history as the authoritative connected systems.
+- Make Patrol assignments, changes, completion, and review easy to understand on desktop and mobile without long-scroll lists or duplicate records.
+- Enforce permissions and qualification rules on the server while preserving documented authorized overrides.
+- Deliver the work in reversible stages with production validation, rollback evidence, Git backup, and dated changelogs.
 
 ### Supervisor Assignment and Scoped Workforce Visibility
 
