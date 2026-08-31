@@ -23,6 +23,15 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 08/31/2026
+
+### Enterprise breach-protection program added to the active queue
+
+- Added an Urgent, eight-stage security-hardening program covering credential containment, Cloudflare perimeter protection, identity and session controls, database authorization, restricted-data handling, detection, secure releases, incident response, recovery, and governance.
+- Kept the ordinary employee login experience unchanged as an explicit constraint while preserving privileged-role MFA and the Jordan-only FIDO2 pilot.
+- This update changed planning documentation only; no production security setting or application behavior was changed.
+- Full planning details are recorded in `docs/changelogs/CHANGELOG_08-31-2026_ENTERPRISE_BREACH_PROTECTION_FUTURE_ITEM.md`.
+
 ## 08/30/2026
 
 ### Protected Admin complete-permission baseline

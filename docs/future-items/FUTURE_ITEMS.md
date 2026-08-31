@@ -15,6 +15,87 @@ Keep this repository copy synchronized with:
 
 ## Security, Identity & Account Protection
 
+### Enterprise Breach Protection Program
+
+- Priority: **Urgent**
+- Target window: Staged security-hardening program beginning with immediate credential containment
+- Status: Approved / queued; no employee login-flow changes authorized
+- Added: 08/31/2026
+
+Build a defense-in-depth security program that materially reduces the likelihood and impact of account takeover, credential theft, unauthorized data access, malicious administration, and data exfiltration without requiring ordinary employees to purchase hardware keys, enroll in a new MFA method, or change their normal login routine. Preserve the current privileged-role MFA boundary and the optional Jordan-only hardware-key pilot.
+
+#### Stage 1 — Immediate Credential Containment
+
+- [ ] Rotate every Supabase access token, database password, service-role credential, provider credential, and other production secret that has ever been exposed outside an approved protected secret store.
+- [ ] Update Cloudflare Worker secrets atomically, verify the replacement credentials, and revoke the former credentials immediately after the verified cutover.
+- [ ] Scan Git history, release artifacts, Cloudflare configuration and logs, CI configuration, local environment files, and operational documentation for accidental secret exposure.
+- [ ] Enable and verify GitHub secret scanning and push protection where the repository plan supports them.
+- [ ] Maintain a protected credential inventory with the owner, purpose, storage location, last rotation date, and next required rotation date; never record the credential value.
+
+#### Stage 2 — Cloudflare Edge and Perimeter Protection
+
+- [ ] Enable reviewed Cloudflare managed WAF and OWASP protections without blocking legitimate SygShift traffic.
+- [ ] Add targeted rate limits for login, password recovery, MFA, email delivery, exports, sensitive reads, and high-impact write operations.
+- [ ] Add bot and credential-stuffing defenses, using managed or conditional Turnstile only for suspicious traffic so normal employees are not burdened.
+- [ ] Verify TLS, HSTS, Content Security Policy, CORS, CSRF and origin protections, no-cache controls for sensitive responses, payload limits, and strict content-type validation.
+- [ ] Apply stronger path-specific protections to administrative, financial, export, document, and account-security APIs.
+
+#### Stage 3 — Identity, Session, and Account-Takeover Controls
+
+- [ ] Harden session storage and cookies using secure, HttpOnly, SameSite, rotation, idle-timeout, and absolute-lifetime controls where the current architecture supports them.
+- [ ] Revoke active sessions after password reset, MFA reset, protected-role downgrade, separation, account disablement, suspicious activity, and administrator-forced sign-out.
+- [ ] Provide permission-controlled session and device inventory with clear revocation tools and append-only audit evidence.
+- [ ] Detect meaningful risk signals such as unusual IP or ASN changes, impossible travel, repeated failures, new-device anomalies, and abnormal privileged activity without relying on fixed-IP restrictions for remote personnel.
+- [ ] Keep the normal employee login flow unchanged; retain privileged-role MFA and optional FIDO2 security keys as stronger controls rather than universal employee requirements.
+
+#### Stage 4 — Server, Database, and Authorization Hardening
+
+- [ ] Complete a deny-by-default review of row-level security, grants, functions, views, storage policies, Worker endpoints, and object-level authorization for every active module.
+- [ ] Keep all service credentials server-only and ensure no privileged secret or protected connection value can reach browser code, logs, screenshots, or downloadable artifacts.
+- [ ] Enforce server-side schema validation, parameterized database operations, object ownership checks, and exact effective permissions on every protected read and write.
+- [ ] Review all security-definer functions for fixed search paths, safe ownership, narrow execution grants, and audited privileged behavior.
+- [ ] Maintain automated allow-and-deny tests for every role, protected Admin recovery, extra role membership, individual grant, individual denial, disabled account, and unauthenticated access.
+- [ ] Require recent authentication for high-risk security, financial, bulk-export, restricted-document, and mass-account actions; apply export caps, rate limits, and complete audit trails.
+
+#### Stage 5 — Data, Document, and Privacy Protection
+
+- [ ] Classify SygShift data as Public, Internal, Confidential, or Restricted and apply handling, access, retention, backup, and audit requirements to each class.
+- [ ] Keep Social Security numbers, banking data, tax data, and PHI out of ordinary employee profiles, free-text fields, logs, exports, and general SygShift storage; retain Payroll Vault and approved Microsoft storage as the authoritative homes unless a separately approved restricted vault is activated.
+- [ ] Isolate salary and compensation access behind named HR and Finance authority instead of generic operational or administrative visibility.
+- [ ] Keep document storage private with random object names, immutable version history, short-lived signed access, quarantine, file-signature and MIME validation, size limits, malware scanning, download auditing, and explicit legal-hold and retention controls.
+- [ ] Add redaction and data-loss-prevention checks for logs, exports, notifications, support diagnostics, and user-entered notes.
+
+#### Stage 6 — Detection, Monitoring, and Security Operations
+
+- [ ] Centralize tamper-resistant security and audit events for authentication failures, impossible travel, disabled-account access, role and permission changes, MFA and FIDO actions, bulk reads, downloads, payroll exports, restricted-file access, authorization denials, WAF events, and privileged secret use.
+- [ ] Define severity levels, alert destinations, responsible responders, acknowledgment targets, and response runbooks without exposing protected diagnostic details to ordinary users.
+- [ ] Make the administrator System Operations workspace show a sanitized, actionable cause for service or security degradation while employees continue to see only the established green, yellow, or red service state.
+- [ ] Establish searchable operational retention and longer-term protected archive retention based on an approved security and legal policy.
+
+#### Stage 7 — Secure Development and Release Protection
+
+- [ ] Protect the main branch with reviewed changes and required security validation before production release.
+- [ ] Run secret scanning, static analysis, dependency and supply-chain scanning, lockfile-integrity checks, and software-bill-of-materials generation in the release pipeline.
+- [ ] Require negative authorization, RLS, upload, export, session, recovery, and privileged-action tests for security-sensitive changes.
+- [ ] Preserve canary deployment, maintenance communication, version-aware refresh, rollback, and audited migration procedures; never perform an untracked production write.
+- [ ] Schedule quarterly access and architecture reviews and an independent penetration test before activating highly restricted HR, document, compensation, or payroll-vault capabilities.
+
+#### Stage 8 — Incident Response, Recovery, and Governance
+
+- [ ] Create and rehearse response runbooks for stolen credentials, account takeover, malicious administration, data exfiltration, exposed secrets, ransomware, compromised uploads, and database corruption.
+- [ ] Provide tested emergency controls to revoke all sessions, disable an affected account or feature, rotate secrets, enter feature-specific read-only maintenance, and preserve forensic evidence.
+- [ ] Define encrypted backup and point-in-time-recovery coverage, independent restore verification, quarterly recovery drills, and approved recovery-time and recovery-point objectives.
+- [ ] Formalize joiner, mover, and leaver controls; quarterly access certification; vendor-security review; and administrator endpoint requirements including encryption, patching, antimalware, and prohibition of shared accounts.
+
+Program completion criteria:
+
+- [ ] Every exposed data object and protected operation has tested allow-and-deny authorization coverage.
+- [ ] No production secret exists in Git, browser-delivered code, public logs, screenshots, or ordinary documentation.
+- [ ] Every privileged change and restricted download is attributable and auditable.
+- [ ] Revoked sessions and credentials are proven unusable within the approved response target.
+- [ ] Backup restoration and incident-response exercises pass with recorded evidence.
+- [ ] The implementation is reviewed against NIST Cybersecurity Framework 2.0, CISA Secure by Design principles, and an OWASP ASVS Level 2 target before the program is closed.
+
 ### Hardware Security Key Pilot Validation
 
 - Priority: High
