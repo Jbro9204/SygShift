@@ -5,6 +5,8 @@ import {
   applyRecordedTimeEventToDashboard,
   dedupeTimeMaintenanceShiftOptions,
   getClockableShiftChoices,
+  clockInWindowOpensAt,
+  minutesUntilClockInOpens,
   nextUpcomingClockInShift,
   nextTimeEventKinds,
   parsePayrollExportBatch,
@@ -138,6 +140,9 @@ describe('timekeeping validation', () => {
     }
 
     expect(CLOCK_IN_EARLY_WINDOW_MINUTES).toBe(5)
+    expect(clockInWindowOpensAt(shift)).toBe('2026-08-30T13:55:00.000Z')
+    expect(minutesUntilClockInOpens(shift, '2026-08-30T13:14:01.000Z')).toBe(41)
+    expect(minutesUntilClockInOpens(shift, '2026-08-30T13:55:00.000Z')).toBe(0)
     expect(getClockableShiftChoices([shift], '2026-08-30T13:54:59.000Z').shifts).toHaveLength(0)
     expect(nextUpcomingClockInShift([shift], '2026-08-30T13:54:59.000Z')?.shiftId).toBe(shift.shiftId)
     expect(getClockableShiftChoices([shift], '2026-08-30T13:55:00.000Z').shifts).toHaveLength(1)

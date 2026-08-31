@@ -28,6 +28,7 @@ import { getRequestCenter, type RequestCenter } from '../data/requests'
 import { getWeeklySchedule } from '../data/schedule'
 import {
   activeTimeState,
+  clockInWindowOpensAt,
   getClockableShiftChoices,
   getTimekeepingDashboard,
   recordTimeEvent,
@@ -347,6 +348,13 @@ function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punc
   state: ReturnType<typeof activeTimeState>
   timeAction: ReturnType<typeof overviewTimeAction>
 }) {
+  const clockableChoices = dashboard
+    ? getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp)
+    : null
+  const upcomingShift = dashboard && state === 'off_clock' && clockableChoices?.shifts.length === 0
+    ? nextShiftForDashboard(dashboard)
+    : null
+  const clockInOpensAt = upcomingShift ? clockInWindowOpensAt(upcomingShift) : null
   const statusLabel = error
     ? 'Time action needs attention'
     : pending
@@ -355,7 +363,9 @@ function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punc
         ? 'You are working'
         : state === 'on_break'
           ? 'You are on break'
-          : 'You are off the clock'
+          : clockInOpensAt
+            ? `Clock-in opens at ${formatDualTime(clockInOpensAt, { timeZone: upcomingShift?.timeZone })}`
+            : 'You are off the clock'
   const lastEventTime = dashboard?.lastEvent
     ? formatOperationalDateTime(dashboard.lastEvent.effectiveAt ?? dashboard.lastEvent.recordedAt, { includeTimeZoneName: true })
     : null
@@ -366,7 +376,11 @@ function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punc
         <Timer aria-hidden="true" size={22} />
         <div>
           <strong>{statusLabel}</strong>
-          <span>{error ?? (activeShift ? `${shiftLocation(activeShift)} · ${lastEventTime ?? 'Time recorded'}` : 'Ready for your next scheduled shift.')}</span>
+          <span>{error ?? (activeShift
+            ? `${shiftLocation(activeShift)} · ${lastEventTime ?? 'Time recorded'}`
+            : upcomingShift
+              ? `Your shift begins at ${formatDualTime(upcomingShift.startsAt, { timeZone: upcomingShift.timeZone })} at ${shiftLocation(upcomingShift)}. This status updates automatically.`
+              : 'Ready for your next scheduled shift.')}</span>
         </div>
       </div>
       <div className="home-time-strip__actions" role="group" aria-label="Time clock actions">

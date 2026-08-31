@@ -24,9 +24,11 @@ import { ModalDialog } from '../components/ModalDialog'
 import { canAccessRoute } from '../app/accessPolicy'
 import {
   activeTimeState,
+  clockInWindowOpensAt,
   createPayrollExportBatch,
   correctTimeRecordWorkType,
   getClockableShiftChoices,
+  minutesUntilClockInOpens,
   nextUpcomingClockInShift,
   getOwnTimekeepingReview,
   getPayrollExportHistory,
@@ -1340,15 +1342,20 @@ function VerifiedTimekeepingSetup() {
 function ShiftPicker({
   choices,
   nextShift,
+  serverTimestamp,
   selectedShiftId,
   onSelect,
 }: {
   choices: ClockableShiftChoices
   nextShift: TimekeepingShift | null
+  serverTimestamp: string
   selectedShiftId: string | null
   onSelect: (shiftId: string | null) => void
 }) {
   const shifts = choices.shifts
+  const minutesUntilOpen = nextShift
+    ? minutesUntilClockInOpens(nextShift, serverTimestamp)
+    : 0
   if (shifts.length === 0) {
     return (
       <div className="time-shift-empty">
@@ -1358,7 +1365,9 @@ function ShiftPicker({
           {nextShift ? (
             <p>
               Your next shift is {shiftTitle(nextShift)} at {formatTime(nextShift.startsAt, nextShift.timeZone)}.
-              Clock-in opens five minutes before the scheduled start.
+              {' '}Clock-in opens at {formatTime(clockInWindowOpensAt(nextShift), nextShift.timeZone)}
+              {' '}({minutesUntilOpen} {minutesUntilOpen === 1 ? 'minute' : 'minutes'} from the official server time).
+              {' '}This page updates automatically.
             </p>
           ) : (
             <p>Clock-in requires an active, published assignment. Contact a supervisor if your schedule is missing.</p>
@@ -1452,6 +1461,7 @@ function PunchControls({
           choices={clockableChoices}
           nextShift={nextClockInShift}
           onSelect={setSelectedShiftId}
+          serverTimestamp={dashboard.serverTimestamp}
           selectedShiftId={selectedShiftId}
         />
       ) : currentShift ? (

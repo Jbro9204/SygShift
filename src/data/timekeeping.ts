@@ -785,6 +785,22 @@ export interface PayrollEmployeeSummary {
 export const CLOCK_IN_EARLY_WINDOW_MINUTES = 5
 const CLOCK_IN_WINDOW_BEFORE_MS = CLOCK_IN_EARLY_WINDOW_MINUTES * 60 * 1000
 
+export function clockInWindowOpensAt(shift: Pick<TimekeepingShift, 'startsAt'>): string {
+  const startTime = new Date(shift.startsAt).getTime()
+  if (!Number.isFinite(startTime)) return shift.startsAt
+  return new Date(startTime - CLOCK_IN_WINDOW_BEFORE_MS).toISOString()
+}
+
+export function minutesUntilClockInOpens(
+  shift: Pick<TimekeepingShift, 'startsAt'>,
+  serverTimestamp: string,
+): number {
+  const opensAt = new Date(clockInWindowOpensAt(shift)).getTime()
+  const serverTime = new Date(serverTimestamp).getTime()
+  if (!Number.isFinite(opensAt) || !Number.isFinite(serverTime)) return 0
+  return Math.max(0, Math.ceil((opensAt - serverTime) / 60_000))
+}
+
 export interface ClockableShiftChoices {
   shifts: TimekeepingShift[]
   hiddenCount: number
