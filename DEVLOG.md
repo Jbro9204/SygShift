@@ -1155,3 +1155,10 @@ pnpm exec wrangler deploy --keep-vars
 - Applied production migration `20260831200000_hris_stage10_payroll_integration_hardening.sql` with preservation assertions for access, schedules, punches, and payroll records.
 - Full validation passed: Stage 10 contract checks, type checking, zero-warning lint, 118 test files / 597 tests, and production builds.
 - Deployed Cloudflare Worker version `850b1311-73c3-4007-a512-c6688ac201b8`; the live login surface returned `200` and the unauthenticated Stage 10 API returned the expected `401`.
+## 08/31/2026 — Active Admin Count Alignment
+
+- Corrected the User Accounts Admin summary so it counts only active employees whose current primary role is Admin.
+- Aligned the summary with the active account list and Role Library without changing any employee, role, permission, membership, grant, or denial.
+- Preserved inactive and separated Admin-role records for audit history while removing them from the current-access headline.
+- Added regression tests covering active and non-active employee statuses.
+- Full validation passed: type checking, zero-warning lint, 122 test files / 615 tests, Worker build, and client production build.

@@ -49,6 +49,7 @@ import type { SecurityKeySummary } from '../data/securityKeys'
 import { getSessionContext } from '../data/auth'
 import { preferredEmployeeDeliveryEmail } from '../lib/emailRecipients'
 import { formatOperationalDateTime } from '../lib/time'
+import { summarizeUserAccounts } from '../lib/userAccountMetrics'
 
 const roleLabels: Record<AppRole, string> = {
   admin: 'Admin',
@@ -904,12 +905,7 @@ export function UserAdminPage() {
     },
   })
 
-  const metrics = useMemo(() => ({
-    active: users.filter((user) => user.status === 'active').length,
-    admins: users.filter((user) => user.role === 'admin').length,
-    missingLogins: users.filter((user) => user.status === 'active' && user.accountStatus === 'not_created').length,
-    total: users.length,
-  }), [users])
+  const metrics = useMemo(() => summarizeUserAccounts(users), [users])
 
   const filteredUsers = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -972,7 +968,7 @@ export function UserAdminPage() {
             <article><span>Total people</span><strong>{metrics.total}</strong><small>Employee records</small></article>
             <article><span>Active</span><strong>{metrics.active}</strong><small>Eligible for access</small></article>
             <article className={metrics.missingLogins ? 'is-attention' : ''}><span>Need accounts</span><strong>{metrics.missingLogins}</strong><small>Active without login</small></article>
-            <article><span>Admins</span><strong>{metrics.admins}</strong><small>Highest access</small></article>
+            <article><span>Active admins</span><strong>{metrics.activeAdmins}</strong><small>Current primary Admin role</small></article>
           </section>
 
           <section className="user-admin-controls" aria-label="User account filters and actions">
