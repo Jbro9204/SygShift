@@ -25,6 +25,13 @@ deployment status, or major workflow assumptions change.
 
 ## 08/31/2026
 
+### Duo authentication feasibility added to the active queue
+
+- Added a separate High-priority feasibility and controlled-pilot item for evaluating Cisco Duo against the current Supabase Auth, Cloudflare Worker, PostgreSQL, authenticator MFA, remembered-device, recovery, and FIDO2 architecture.
+- Required an explicit compatibility, security, privacy, licensing, outage, recovery, support, and rollback review before any production login change or user enrollment is authorized.
+- This update changed planning documentation only; the existing SygShift login and MFA experience remains unchanged.
+- Full planning details are recorded in `docs/changelogs/CHANGELOG_08-31-2026_DUO_AUTHENTICATION_FEASIBILITY_FUTURE_ITEM.md`.
+
 ### Enterprise breach-protection program added to the active queue
 
 - Added an Urgent, eight-stage security-hardening program covering credential containment, Cloudflare perimeter protection, identity and session controls, database authorization, restricted-data handling, detection, secure releases, incident response, recovery, and governance.

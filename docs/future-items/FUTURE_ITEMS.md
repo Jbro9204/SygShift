@@ -96,6 +96,37 @@ Program completion criteria:
 - [ ] Backup restoration and incident-response exercises pass with recorded evidence.
 - [ ] The implementation is reviewed against NIST Cybersecurity Framework 2.0, CISA Secure by Design principles, and an OWASP ASVS Level 2 target before the program is closed.
 
+### Duo Authentication Feasibility and Controlled Pilot
+
+- Priority: **High**
+- Target window: Security architecture review after immediate credential-containment work; pilot only after compatibility approval
+- Status: Approved for feasibility research / no production login change authorized
+- Added: 08/31/2026
+
+Evaluate whether Cisco Duo can be integrated safely with SygShift's current Supabase Auth, Cloudflare Worker, and PostgreSQL architecture. The database is not assumed to be the identity provider, and the review must prevent duplicate identities, split authorization decisions, weakened MFA, or a second uncontrolled account directory. Existing login, authenticator MFA, remembered-device, recovery, and FIDO2 behavior must remain unchanged until a documented design and controlled pilot are approved.
+
+Required feasibility work:
+
+- [ ] Confirm the currently supported Duo integration method for the SygShift architecture, including Duo Universal Prompt and any supported OIDC, SAML, or identity-gateway option.
+- [ ] Confirm whether Supabase Auth can remain the authoritative user and session system or whether a safe server-side Cloudflare integration is required; do not create parallel employee identities.
+- [ ] Map the complete login lifecycle for ordinary employees, protected roles, first-time setup, password reset, remembered devices, MFA recovery, role promotion and demotion, separation, login disablement, administrator recovery, and the Jordan-only FIDO2 pilot.
+- [ ] Define the exact relationship between Duo verification, Supabase assurance levels, existing authenticator MFA, recent-authentication requirements, remembered-device policy, and FIDO2 so no path can downgrade another security control.
+- [ ] Evaluate the available Duo methods and licensing before promising functionality, including push, passcodes, hardware tokens, supported recovery methods, trusted-device policy, and any optional device-posture controls.
+- [ ] Require server-side validation, protected secrets, signed state and nonce checks, anti-replay protection, exact production redirect origins, secure session binding, revocation, rate limiting, and complete authentication audit evidence.
+- [ ] Review the employee identifiers, phone or device information, authentication metadata, retention, privacy obligations, vendor terms, administrative access, and breach-notification responsibilities associated with Duo.
+- [ ] Document licensing cost, per-user or per-feature limits, administrator workload, enrollment support, recovery operations, vendor outage behavior, and the effect on employees using mobile and desktop devices.
+- [ ] Design a clear fallback and emergency-access path that does not lock out the company, bypass required controls, or depend on an unrecorded manual database change.
+- [ ] Build any prototype only in an isolated or feature-gated environment and restrict the first production pilot to an explicitly approved account, preferably Jordan Brown, before considering broader use.
+- [ ] Test successful and denied authentication, cancellation, timeout, offline and vendor-outage behavior, replay attempts, account disablement, role downgrade, session revocation, recovery, fallback, and rollback.
+- [ ] Deliver a written **Adopt**, **Defer**, or **Reject** recommendation covering the final architecture, cost, affected roles, employee experience, security impact, migration plan, support plan, and rollback procedure.
+
+Completion criteria:
+
+- [ ] The integration has a reviewed identity and session architecture with one authoritative SygShift employee identity per person.
+- [ ] Existing Supabase authorization, permissions, privileged-role MFA, FIDO2, account recovery, and audit controls are proven not to be weakened.
+- [ ] Cost, privacy, support, outage, fallback, and rollback implications are accepted before any production enrollment.
+- [ ] A limited pilot passes the approved security and usability test matrix before any wider rollout is considered.
+
 ### Hardware Security Key Pilot Validation
 
 - Priority: High
