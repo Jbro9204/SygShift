@@ -131,59 +131,17 @@ Completion criteria:
 
 - Priority: High
 - Target window: Jordan-only controlled production pilot
-- Status: Deployed / awaiting physical-key enrollment and device validation
+- Status: Deployed / enrolled / active Jordan-only pilot validation
 - Added: 08/29/2026
 
-The full FIDO2/WebAuthn implementation, production database controls, administrator recovery tools, audit trail, security notices, feature flag, and `jbrown`-only allowlist are deployed. Complete the final human hardware ceremony and supported-device checks before considering any broader rollout.
+The full FIDO2/WebAuthn implementation, production database controls, administrator recovery tools, audit trail, security notices, feature flag, and `jbrown`-only allowlist are deployed. Jordan Brown's physical key was enrolled by 08/31/2026. Complete the remaining supported-device and recovery checks before considering any broader rollout.
 
 Remaining pilot validation:
 
-- Enroll Jordan Brown's physical key from **My Account > Security** after completing authenticator MFA.
 - Verify successful key sign-in in current Chrome and Edge on `https://app.sygilant.us`.
 - Verify cancellation and absent-key flows leave **Use authenticator instead** available.
 - Verify key removal, administrator revocation, and MFA reset using the physical pilot credential.
 - Keep the authenticator factor enrolled throughout the pilot and do not expand the allowlist until the pilot evidence is recorded.
-
-## Navigation & Workspace Usability
-
-### Canonical My Time and Review Queue Navigation
-
-- Priority: High
-- Target window: Next focused usability release
-- Status: Approved / queued
-- Added: 08/28/2026
-
-Audit the Time & Attendance routes and navigation because the employee-facing destination reached from **My Time** currently appears to duplicate the **Review Queue** experience. Create one clear path for employee self-service and one clearly identified path for authorized team review without maintaining duplicate-looking pages or ambiguous buttons.
-
-Required outcomes:
-
-- Keep **My Time** focused on the signed-in employee's own punches, breaks, pay periods, correction requests, and request status.
-- Keep **Review Queue** focused on authorized Supervisor, Scheduler, Dispatcher, Admin, Payroll, or other specifically permitted review work.
-- Consolidate duplicate routes or shared content into one canonical implementation where appropriate instead of maintaining visually identical copies.
-- Give each destination a distinct page title, description, breadcrumb/back behavior, empty state, and primary actions.
-- Ensure employee users cannot see team records merely because a route or button is visible; enforce the difference on the server and through effective permissions.
-- Remove or rename redundant links so a user can predict where each action will take them.
-- Preserve direct links, back navigation, pending form state, mobile behavior, and current correction-request history.
-- Add navigation, permission, and route tests for employee self-service and authorized team-review users.
-
-### Accessible Sidebar Collapse Control
-
-- Priority: High
-- Target window: Next focused usability release
-- Status: Approved / queued
-- Added: 08/28/2026
-
-Replace the nearly invisible sidebar-collapse control with a clear, accessible navigation control that is easy to find and use without disrupting the premium SygShift layout.
-
-Required outcomes:
-
-- Provide a clearly visible control attached to the sidebar edge with an approximately 44-by-44-pixel interaction target.
-- Use the established SygShift color, border, icon, hover, active, and keyboard-focus styles; do not use a tiny white sliver or an unrelated button treatment.
-- Provide accessible labels and tooltips that change between **Collapse navigation** and **Expand navigation**.
-- Keep the control visible at supported desktop resolutions without covering page content or becoming clipped.
-- Use the existing mobile navigation pattern rather than forcing the desktop collapse control onto narrow screens.
-- Preserve the user's navigation preference where appropriate without causing a page reset, route change, or loss of unsaved work.
-- Test expanded and collapsed states, keyboard use, zoom, high-contrast visibility, supported viewport sizes, and mobile navigation.
 
 ## HR, Finance & Employee Lifecycle
 

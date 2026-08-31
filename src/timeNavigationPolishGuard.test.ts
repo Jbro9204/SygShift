@@ -47,4 +47,15 @@ describe('time navigation polish guardrails', () => {
       expect(pageSource).not.toContain('<span>Time Command Center</span>')
     })
   })
+
+  it('keeps the desktop sidebar control visible, accessible, and separate from mobile navigation', () => {
+    expect(appShell).toContain("aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}")
+    expect(appShell).toContain("title={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}")
+
+    expect(appCss).toMatch(/\.sidebar-collapse\s*\{\s*position: absolute;[\s\S]*?width: 44px;[\s\S]*?height: 44px;/)
+    expect(appCss).toMatch(/\.sidebar-collapse\s*\{[\s\S]*?right: -22px;/)
+
+    const mobileRules = appCss.slice(appCss.indexOf('@media (max-width: 900px)'))
+    expect(mobileRules).toMatch(/\.sidebar-collapse\s*\{\s*display: none;/)
+  })
 })

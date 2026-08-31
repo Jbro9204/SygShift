@@ -25,6 +25,15 @@ deployment status, or major workflow assumptions change.
 
 ## 08/31/2026
 
+### Sidebar collapse control and active-backlog cleanup
+
+- Rebuilt the desktop sidebar collapse/expand control as a visible 44-by-44-pixel SygShift control attached to the sidebar edge, with consistent hover, active, tooltip, and keyboard-focus behavior.
+- Preserved desktop collapse preference and the existing mobile navigation pattern without resetting routes or page state.
+- Removed the completed My Time/Review Queue navigation and sidebar-collapse tasks from the active future-items list.
+- Updated the FIDO2 pilot record to show Jordan Brown's physical-key enrollment while keeping only the remaining validation work active.
+- Added a source regression test covering control placement, accessibility, and mobile exclusion.
+- Full details are recorded in `docs/changelogs/CHANGELOG_08-31-2026_SIDEBAR_COLLAPSE_AND_BACKLOG_CLEANUP.md`.
+
 ### Duo authentication feasibility added to the active queue
 
 - Added a separate High-priority feasibility and controlled-pilot item for evaluating Cisco Duo against the current Supabase Auth, Cloudflare Worker, PostgreSQL, authenticator MFA, remembered-device, recovery, and FIDO2 architecture.

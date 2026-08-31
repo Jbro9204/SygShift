@@ -529,15 +529,6 @@ export function AppShell() {
         <div className="sidebar-brand">
           <img src="/brand/sygshift-logo.png" alt="SygShift" />
           <button
-            aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
-            className="sidebar-collapse"
-            onClick={toggleSidebarCollapsed}
-            title={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
-            type="button"
-          >
-            {sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={19} /> : <ChevronsLeft aria-hidden="true" size={19} />}
-          </button>
-          <button
             aria-label="Close navigation"
             className="sidebar-close"
             onClick={() => setNavigationOpen(false)}
@@ -546,6 +537,16 @@ export function AppShell() {
             <X aria-hidden="true" size={24} />
           </button>
         </div>
+
+        <button
+          aria-label={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+          className="sidebar-collapse"
+          onClick={toggleSidebarCollapsed}
+          title={sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'}
+          type="button"
+        >
+          {sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={21} /> : <ChevronsLeft aria-hidden="true" size={21} />}
+        </button>
 
         <nav aria-label="Primary navigation" className="sidebar-navigation">
           <div className="sidebar-primary-actions">
