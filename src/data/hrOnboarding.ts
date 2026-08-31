@@ -39,11 +39,15 @@ const onboardingCaseSchema = z.object({
   case: z.object({
     id: z.string().uuid(), employeeId: z.string().uuid(), employeeNumber: z.string(), employeeName: z.string(),
     status: z.string(), targetStartDate: z.string(), templateId: z.string().uuid(), templateVersion: z.number().int().positive(),
+    workState: z.enum(['CO', 'CA', 'AZ']), employmentType: z.enum(['hourly', 'salary', 'flex']),
+    jobFamily: z.enum(['guard', 'administration', 'operations', 'other']), positionTitle: z.string(),
+    requiresGuardLicense: z.boolean(), requiresArmedCredentials: z.boolean(),
+    welcomeEmailStatus: z.enum(['not_sent', 'sent', 'failed']), accountSetupStatus: z.enum(['not_sent', 'sent', 'failed']),
   }),
   tasks: z.array(z.object({
     id: z.string().uuid(), stepCode: z.string(), title: z.string(), taskType: z.string(), responsibleGroup: z.string(),
     required: z.boolean(), dueAt: nullableText, status: z.string(), sourceStatus: z.record(z.string(), z.unknown()),
-    evidence: z.record(z.string(), z.unknown()), resolutionReason: nullableText,
+    evidence: z.record(z.string(), z.unknown()), sourceRequirement: z.record(z.string(), z.unknown()), resolutionReason: nullableText,
   })),
   events: z.array(z.object({ action: z.string(), actorId: z.string().uuid(), reason: z.string(), occurredAt: z.string(), details: z.record(z.string(), z.unknown()) })),
   requestId: z.string().optional(),
@@ -56,6 +60,28 @@ const onboardingActionResultSchema = z.object({
   caseStatus: z.string().nullable().optional(),
   requestId: z.string().optional(),
 }).passthrough()
+
+const onboardingWelcomeResultSchema = z.object({
+  caseId: z.string().uuid(),
+  delivery: z.object({ welcome: z.string(), accountSetup: z.string() }),
+  requestId: z.string().optional(),
+})
+
+export interface HrOnboardingPrehireInput {
+  firstName: string
+  middleName?: string
+  lastName: string
+  personalEmail: string
+  mobilePhone?: string
+  positionTitle: string
+  workState: 'CO' | 'CA' | 'AZ'
+  role: 'guard' | 'supervisor' | 'admin' | 'dispatcher' | 'scheduler' | 'recruiting_licensing'
+  employmentType: 'hourly' | 'salary' | 'flex'
+  jobFamily: 'guard' | 'administration' | 'operations' | 'other'
+  startDate: string
+  requiresGuardLicense: boolean
+  requiresArmedCredentials: boolean
+}
 
 export type HrOnboardingWorkspace = z.infer<typeof onboardingWorkspaceSchema>
 export type HrOnboardingCase = z.infer<typeof onboardingCaseSchema>
@@ -91,4 +117,22 @@ export async function runHrOnboardingAction(action: HrOnboardingAction, payload:
   })
   if (!response.ok) throw await parseApiError(response, 'The onboarding action could not be completed.')
   return onboardingActionResultSchema.parse(await response.json())
+}
+
+export async function createHrOnboardingPrehire(payload: HrOnboardingPrehireInput, reason: string) {
+  const response = await onboardingApi('/api/v1/hr/onboarding/prehires', {
+    method: 'POST',
+    body: JSON.stringify({ payload, reason }),
+  })
+  if (!response.ok) throw await parseApiError(response, 'The pre-hire record could not be created.')
+  return onboardingActionResultSchema.parse(await response.json())
+}
+
+export async function sendHrOnboardingWelcomePackage(caseId: string, reason: string) {
+  const response = await onboardingApi(`/api/v1/hr/onboarding/cases/${caseId}/welcome-package`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
+  if (!response.ok) throw await parseApiError(response, 'The welcome package could not be sent.')
+  return onboardingWelcomeResultSchema.parse(await response.json())
 }

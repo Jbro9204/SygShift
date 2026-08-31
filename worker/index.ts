@@ -71,13 +71,17 @@ interface AuthTarget {
   displayName: string
   role: 'guard' | 'dispatcher' | 'scheduler' | 'recruiting_licensing' | 'supervisor' | 'admin'
   employmentType: 'hourly' | 'salary' | 'flex'
-  status: 'active' | 'leave' | 'inactive' | 'separated'
+  status: 'active' | 'onboarding' | 'leave' | 'inactive' | 'separated'
   existingAuthUserId: string | null
 }
 
 interface LoginEmailTarget extends AuthTarget {
   contactEmail: string | null
   requiresMfa: boolean
+  startDate?: string | null
+  positionTitle?: string | null
+  welcomeEmailStatus?: 'not_sent' | 'sent' | 'failed'
+  accountSetupStatus?: 'not_sent' | 'sent' | 'failed'
 }
 
 interface AuthUser {
@@ -1946,6 +1950,27 @@ async function handleHrOnboardingApi(
   const url = new URL(request.url)
   const session = await requireVerifiedOperationsSession(request, environment, 'hr_onboarding_mfa_required')
 
+  if (url.pathname === '/api/v1/hr/onboarding/prehires') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireHrOnboardingRelease(environment)
+    requireSessionPermission(session.context, 'hr.onboarding.manage')
+    const body = await readJsonBody(request)
+    const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
+      ? body.payload as Record<string, unknown>
+      : {}
+    const result = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_hr_onboarding_create_prehire',
+      {
+        target_actor_id: session.context.employee_id,
+        target_payload: payload,
+        target_reason: requiredText(body.reason, 'Audit reason', 1000),
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId }, 201)
+  }
+
   if (url.pathname === '/api/v1/hr/onboarding/workspace') {
     if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
     requireSessionPermission(session.context, 'hr.onboarding.view')
@@ -1973,6 +1998,51 @@ async function handleHrOnboardingApi(
       session.config.serviceRoleKey,
     )
     return json({ ...payload, requestId })
+  }
+
+  const welcomeCaseId = url.pathname.match(/^\/api\/v1\/hr\/onboarding\/cases\/([0-9a-f-]{36})\/welcome-package$/i)?.[1]
+  if (welcomeCaseId) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireHrOnboardingRelease(environment)
+    requireSessionPermission(session.context, 'hr.onboarding.manage')
+    const body = await readJsonBody(request)
+    const reason = requiredText(body.reason, 'Audit reason', 1000)
+    const target = await callRpc<LoginEmailTarget>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_get_hr_onboarding_welcome_target',
+      { target_actor_id: session.context.employee_id, target_case_id: welcomeCaseId },
+      session.config.serviceRoleKey,
+    )
+    requireApprovedEmployeeEmail(environment, target)
+
+    const delivery = { welcome: target.welcomeEmailStatus ?? 'not_sent', accountSetup: target.accountSetupStatus ?? 'not_sent' }
+    if (delivery.welcome !== 'sent') {
+      try {
+        await sendWelcomeEmail(environment, target)
+        await recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, 'welcome', 'sent', null, reason)
+        delivery.welcome = 'sent'
+      } catch (error) {
+        await recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, 'welcome', 'failed', error instanceof Error ? error.message : 'Email delivery failed.', reason)
+        throw error
+      }
+    }
+
+    if (delivery.accountSetup !== 'sent') {
+      try {
+        const usersByEmail = new Map<string, AuthUser>()
+        for (const user of await listAuthUsers(session.config)) {
+          if (user.email) usersByEmail.set(user.email.toLowerCase(), user)
+        }
+        const result = await provisionOne(session.config, target, generateTemporaryPassword(), usersByEmail)
+        await sendLoginInstructions(environment, target, result.password)
+        await recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, 'account_setup', 'sent', null, reason)
+        delivery.accountSetup = 'sent'
+      } catch (error) {
+        await recordOnboardingDelivery(session.config, session.context.employee_id, welcomeCaseId, 'account_setup', 'failed', error instanceof Error ? error.message : 'Account setup failed.', reason)
+        throw error
+      }
+    }
+    return json({ caseId: welcomeCaseId, delivery, requestId })
   }
 
   if (url.pathname === '/api/v1/hr/onboarding/actions') {
@@ -2636,12 +2706,19 @@ export function buildWelcomeEmail(target: LoginEmailTarget, appUrl: string, supp
   const safeFirstName = escapeHtml(firstName)
   const safeUrl = escapeHtml(normalizedAppUrl)
   const safeSupportEmail = escapeHtml(supportEmail)
+  const position = target.positionTitle?.trim() || target.jobTitle?.trim() || 'your new position'
+  const startDate = target.startDate
+    ? new Intl.DateTimeFormat('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${target.startDate}T12:00:00Z`))
+    : null
+  const safePosition = escapeHtml(position)
+  const safeStartDate = startDate ? escapeHtml(startDate) : null
 
   return {
     subject: 'Welcome to SygShift',
     text: [
       `Hello ${firstName},`,
-      'Welcome to SygShift, Guardianship Security’s scheduling and timekeeping system.',
+      `Welcome to Guardianship Security. We are pleased to welcome you as ${position}${startDate ? `, starting ${startDate}` : ''}.`,
+      'SygShift is Guardianship Security’s scheduling and timekeeping system.',
       'SygShift gives you one secure place for:',
       '- Viewing your work schedule.',
       '- Clocking in, clocking out, and recording unpaid breaks.',
@@ -2659,7 +2736,8 @@ export function buildWelcomeEmail(target: LoginEmailTarget, appUrl: string, supp
     ].join('\n\n'),
     html: `
       <p>Hello ${safeFirstName},</p>
-      <p>Welcome to <strong>SygShift</strong>, Guardianship Security’s scheduling and timekeeping system.</p>
+      <p>Welcome to <strong>Guardianship Security</strong>. We are pleased to welcome you as <strong>${safePosition}</strong>${safeStartDate ? `, starting <strong>${safeStartDate}</strong>` : ''}.</p>
+      <p><strong>SygShift</strong> is our secure scheduling and timekeeping system.</p>
       <p>SygShift gives you one secure place for:</p>
       <ul>
         <li>Viewing your work schedule.</li>
@@ -2740,6 +2818,30 @@ async function sendWelcomeEmail(
   }
   if (result.failed.length > 0) throw new ApiError('email_delivery_failed', 502, result.failed[0].error)
   return result
+}
+
+async function recordOnboardingDelivery(
+  config: NonNullable<ReturnType<typeof configuredSupabase>>,
+  actorId: string,
+  caseId: string,
+  deliveryKind: 'welcome' | 'account_setup',
+  status: 'sent' | 'failed',
+  error: string | null,
+  reason: string,
+) {
+  return callRpc(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_hr_onboarding_record_delivery',
+    {
+      target_actor_id: actorId,
+      target_case_id: caseId,
+      target_kind: deliveryKind,
+      target_error: error,
+      target_reason: reason,
+      target_status: status,
+    },
+    config.serviceRoleKey,
+  )
 }
 
 async function handleAccountMfaRecoveryApi(request: Request, environment: Environment, requestId: string): Promise<Response> {

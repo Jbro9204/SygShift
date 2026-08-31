@@ -19,9 +19,10 @@ const onboardingPage = read('src/pages/HrisOnboardingPage.tsx')
 const recruiting = read('supabase/migrations/20260831010000_hris_stage6_recruiting_foundation.sql')
 const conversion = read('supabase/migrations/20260831020000_hris_stage6_candidate_conversion.sql')
 const onboarding = read('supabase/migrations/20260831030000_hris_stage6_onboarding_foundation.sql')
+const onboardingProvisioning = read('supabase/migrations/20260831230000_hris_onboarding_account_provisioning.sql')
 
 requireText(wrangler, '"SYGSHIFT_HR_RECRUITING_ENABLED": "false"', 'Recruiting release flag must default off.')
-requireText(wrangler, '"SYGSHIFT_HR_ONBOARDING_ENABLED": "false"', 'Onboarding release flag must default off.')
+requireText(wrangler, '"SYGSHIFT_HR_ONBOARDING_ENABLED": "true"', 'Onboarding release flag must be enabled for the approved production release.')
 requireText(worker, "requireVerifiedOperationsSession(request, environment, 'hr_recruiting_mfa_required')", 'Recruiting must require a verified MFA session.')
 requireText(worker, "requireVerifiedOperationsSession(request, environment, 'hr_onboarding_mfa_required')", 'Onboarding must require a verified MFA session.')
 for (const permission of ['hr.recruiting.view', 'hr.recruiting.manage', 'hr.recruiting.approve']) {
@@ -62,9 +63,11 @@ for (const relation of ['hr_onboarding_templates', 'hr_onboarding_template_steps
   requireText(onboarding, `private.${relation}`, `Onboarding relation ${relation} is missing.`)
 }
 
-for (const path of ['/api/v1/hr/recruiting/workspace', '/api/v1/hr/recruiting/actions', '/api/v1/hr/recruiting/conversions', '/api/v1/hr/onboarding/workspace', '/api/v1/hr/onboarding/actions']) {
+for (const path of ['/api/v1/hr/recruiting/workspace', '/api/v1/hr/recruiting/actions', '/api/v1/hr/recruiting/conversions', '/api/v1/hr/onboarding/workspace', '/api/v1/hr/onboarding/prehires', '/api/v1/hr/onboarding/actions']) {
   requireText(worker, path, `Protected Worker route ${path} is missing.`)
 }
+requireText(worker, '\\/api\\/v1\\/hr\\/onboarding\\/cases\\/', 'Protected onboarding case route is missing.')
+requireText(worker, '\\/welcome-package', 'Protected onboarding welcome-package route is missing.')
 requireText(worker, "requireAnySessionPermission(session.context, ['hr.recruiting.manage', 'hr.recruiting.approve'])", 'Recruiting mutation permissions are not enforced.')
 requireText(worker, "requireAnySessionPermission(session.context, ['hr.onboarding.manage', 'hr.onboarding.approve'])", 'Onboarding mutation permissions are not enforced.')
 
@@ -81,7 +84,12 @@ for (const page of [recruitingPage, onboardingPage]) {
   for (const size of ['<option value="5">5</option>', '<option value="10">10</option>', '<option value="20">20</option>']) {
     requireText(page, size, 'Compact 5/10/20 list controls are missing.')
   }
-  requireText(page, 'remains inactive until its controlled release is approved', 'Dormant release state is not explained safely.')
+}
+requireText(recruitingPage, 'remains inactive until its controlled release is approved', 'Dormant recruiting release state is not explained safely.')
+requireText(onboardingProvisioning, 'service_hr_onboarding_create_prehire', 'Controlled pre-hire provisioning is missing.')
+requireText(onboardingProvisioning, 'service_hr_onboarding_record_delivery', 'Onboarding delivery auditing is missing.')
+if (onboardingProvisioning.includes('private.generate_username')) {
+  throw new Error('Stage 6 validation failed: onboarding bypasses the established username-assignment trigger.')
 }
 
 console.log('Stage 6 recruiting and onboarding validation passed.')

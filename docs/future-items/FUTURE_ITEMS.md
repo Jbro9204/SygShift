@@ -79,7 +79,7 @@ Required outcomes:
 
 - Priority: **Urgent**
 - Target window: Staged enterprise program; approximately 24–28 controlled runs
-- Status: Stages 1–9 and the dormant Stage 10 payroll-integration control plane completed through 08/30/2026; protected module activation, identity backfill, document delivery, and any external payroll cutover remain separately gated
+- Status: Stages 1–9 and the dormant Stage 10 payroll-integration control plane completed through 08/30/2026. The controlled Onboarding release completed 08/31/2026; Recruiting, identity backfill, document delivery, the remaining protected modules, and any external payroll cutover remain separately gated.
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
@@ -163,7 +163,7 @@ Stage 5 installed a private, service-only workflow engine; immutable versions; h
 - [x] Implement preboarding and onboarding templates, assigned tasks, dependencies, readiness, reminders, and escalation.
 - [x] Integrate onboarding with User Accounts, Licensing, Training, equipment, documents, and site-access readiness.
 
-Stage 6 is deployed dormant. Recruiting and onboarding have independent database and Worker release gates, all six permissions remain unassigned, and no candidate, employee, onboarding case, or task was created during deployment. Activation requires a separate controlled release with approved permissions, canary data, duplicate review, recovery evidence, and post-activation validation.
+The controlled Onboarding release completed 08/31/2026. Onboarding now supports dynamic federal, state, employment-classification, job-family, guard, and armed requirements; evidence-gated checklist completion; a separate approval before activation; permanent employee and User Account linkage without duplicate data entry; and separate company-welcome and login-instruction emails. The release preserved every existing employee, account, role, role membership, and individual permission override. It created no candidate, employee, onboarding case, or task during deployment. Recruiting remains dormant behind its independent release gate and its permissions remain unassigned.
 
 #### Stage 7 — Leave, Benefits & Compensation (completed 08/30/2026)
 
