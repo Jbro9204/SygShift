@@ -81,7 +81,7 @@ export function HrisPeopleWorkspacePage() {
     direction: 'asc',
     employmentType: 'all',
     page: 1,
-    pageSize: isOverview ? 5 : 15,
+    pageSize: isOverview ? 5 : 10,
     role: 'all',
     search: '',
     sort: 'legal_name',
@@ -91,7 +91,7 @@ export function HrisPeopleWorkspacePage() {
   const [viewName, setViewName] = useState('')
 
   useEffect(() => {
-    setQuery((current) => ({ ...current, page: 1, pageSize: isOverview ? 5 : current.pageSize === 5 ? 15 : current.pageSize }))
+    setQuery((current) => ({ ...current, page: 1, pageSize: isOverview ? 5 : current.pageSize === 5 ? 10 : current.pageSize }))
   }, [isOverview])
 
   const workspaceQuery = useQuery({

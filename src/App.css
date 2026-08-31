@@ -1873,6 +1873,202 @@
   }
 }
 
+/* Shared presentation standards: consistent spacing, controls, and dialogs. */
+:root {
+  --presentation-gutter: clamp(18px, 2.25vw, 32px);
+  --presentation-panel-padding: clamp(18px, 2vw, 26px);
+  --presentation-control-height: 46px;
+  --presentation-radius: 12px;
+}
+
+.modal-dialog {
+  border-radius: 16px;
+  box-shadow: 0 28px 90px rgb(13 12 10 / 34%);
+}
+
+.modal-dialog__heading {
+  min-height: 84px;
+  padding: 22px var(--presentation-gutter);
+}
+
+.modal-dialog__heading h2 {
+  font-size: clamp(21px, 2vw, 25px);
+  line-height: 1.15;
+}
+
+.modal-dialog__heading p {
+  max-width: 76ch;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.modal-dialog__busy {
+  padding: 11px var(--presentation-gutter);
+}
+
+.modal-dialog > .request-form,
+.modal-dialog > .modal-warning,
+.modal-dialog > .modal-actions {
+  margin-right: var(--presentation-gutter);
+  margin-left: var(--presentation-gutter);
+}
+
+.modal-dialog > .request-form {
+  margin-top: 22px;
+  margin-bottom: var(--presentation-gutter);
+}
+
+.modal-dialog .modal-actions {
+  min-height: 68px;
+  align-items: center;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid #ece5da;
+}
+
+.modal-dialog .primary-action,
+.modal-dialog .secondary-button {
+  min-height: var(--presentation-control-height);
+  padding-right: 18px;
+  padding-left: 18px;
+}
+
+.modal-dialog input:not([type='checkbox']):not([type='radio']),
+.modal-dialog select {
+  min-height: var(--presentation-control-height);
+  padding-right: 13px;
+  padding-left: 13px;
+}
+
+.modal-dialog textarea {
+  min-height: 96px;
+  padding: 12px 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.modal-dialog fieldset {
+  min-width: 0;
+}
+
+.icon-button,
+.modal-close {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.hr-documents-page,
+.hris-readiness-page,
+.hr-people-page,
+.hr-file-page,
+.page--hr-automation,
+.page--hr-onboarding {
+  width: min(1440px, calc(100% - 40px));
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.hr-people-hero,
+.hr-file-hero,
+.hr-documents-hero,
+.hris-readiness-hero {
+  padding: var(--presentation-gutter);
+}
+
+.hr-people-panel__heading,
+.hr-people-workspace__heading,
+.hr-documents-panel__heading,
+.hr-file-card__heading,
+.hr-automation-worklist .section-heading {
+  padding: 20px var(--presentation-panel-padding);
+}
+
+.hr-people-row,
+.hr-people-queue > button,
+.hr-people-compact-list > button,
+.hr-automation-list article,
+.hr-onboarding-task-card,
+.hr-action-item {
+  padding-right: var(--presentation-panel-padding);
+  padding-left: var(--presentation-panel-padding);
+}
+
+.hr-people-filters,
+.hr-saved-views,
+.compact-pagination {
+  padding-right: var(--presentation-panel-padding);
+  padding-left: var(--presentation-panel-padding);
+}
+
+.hr-onboarding-form,
+.hr-onboarding-case-workspace,
+.hr-onboarding-action-form,
+.hr-action-completion {
+  padding: 22px var(--presentation-gutter) var(--presentation-gutter);
+}
+
+.hr-onboarding-case-actions,
+.hr-onboarding-delivery,
+.hr-onboarding-guide {
+  padding: 18px var(--presentation-panel-padding);
+}
+
+.hr-onboarding-form input,
+.hr-onboarding-form select,
+.hr-onboarding-action-form input,
+.hr-onboarding-action-form select,
+.hr-action-completion input,
+.hr-action-completion select {
+  min-height: var(--presentation-control-height);
+  padding-right: 13px;
+  padding-left: 13px;
+}
+
+@media (max-width: 680px) {
+  :root {
+    --presentation-gutter: 16px;
+    --presentation-panel-padding: 16px;
+  }
+
+  .modal-dialog {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    border-radius: 14px;
+  }
+
+  .modal-dialog__heading {
+    min-height: 76px;
+    gap: 14px;
+    padding: 17px 16px;
+  }
+
+  .modal-dialog > .request-form,
+  .modal-dialog > .modal-warning,
+  .modal-dialog > .modal-actions {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+
+  .modal-dialog .modal-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .modal-dialog .modal-actions > * {
+    width: 100%;
+  }
+
+  .hr-documents-page,
+  .hris-readiness-page,
+  .hr-people-page,
+  .hr-file-page,
+  .page--hr-automation,
+  .page--hr-onboarding {
+    width: calc(100% - 24px);
+  }
+}
+
 /* HRIS Stage 3: People and protected Employee File */
 .hr-people-page,
 .hr-file-page {
@@ -28749,5 +28945,141 @@ a.home-metric-card:focus-visible {
   .licensing-activity-list dl,
   .licensing-activity-list .licensing-selected-credential__actions {
     grid-column: auto;
+  }
+}
+
+/* Final presentation-readiness overrides. Keep these last so shared spacing wins. */
+.modal-dialog {
+  border-radius: 16px;
+  box-shadow: 0 28px 90px rgb(13 12 10 / 34%);
+}
+
+.modal-dialog__heading {
+  min-height: 84px;
+  padding: 22px var(--presentation-gutter);
+}
+
+.modal-dialog__heading h2 {
+  font-size: clamp(21px, 2vw, 25px);
+  line-height: 1.15;
+}
+
+.modal-dialog__heading p {
+  max-width: 76ch;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.modal-dialog__busy {
+  padding: 11px var(--presentation-gutter);
+}
+
+.modal-dialog > .request-form,
+.modal-dialog > .modal-warning,
+.modal-dialog > .modal-actions {
+  margin-right: var(--presentation-gutter);
+  margin-left: var(--presentation-gutter);
+}
+
+.modal-dialog > .request-form {
+  margin-top: 22px;
+  margin-bottom: var(--presentation-gutter);
+}
+
+.modal-dialog .modal-actions {
+  min-height: 68px;
+  align-items: center;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid #ece5da;
+}
+
+.modal-dialog input:not([type='checkbox']):not([type='radio']),
+.modal-dialog select,
+.modal-dialog .primary-action,
+.modal-dialog .secondary-button,
+.modal-dialog .danger-primary {
+  min-height: var(--presentation-control-height);
+}
+
+.modal-dialog input:not([type='checkbox']):not([type='radio']),
+.modal-dialog select {
+  padding-right: 13px;
+  padding-left: 13px;
+}
+
+.modal-dialog textarea {
+  min-height: 96px;
+  padding: 12px 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.modal-dialog .primary-action,
+.modal-dialog .secondary-button,
+.modal-dialog .danger-primary {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding-right: 18px;
+  padding-left: 18px;
+  border-radius: 8px;
+}
+
+.hr-people-hero,
+.hr-file-hero,
+.hr-documents-hero,
+.hris-readiness-hero {
+  padding: var(--presentation-gutter);
+}
+
+.hr-people-panel__heading,
+.hr-people-workspace__heading,
+.hr-documents-panel__heading,
+.hr-file-card__heading,
+.hr-automation-worklist .section-heading {
+  padding: 20px var(--presentation-panel-padding);
+}
+
+.hr-people-row,
+.hr-people-queue > button,
+.hr-people-compact-list > button,
+.hr-automation-list article,
+.hr-onboarding-task-card,
+.hr-action-item {
+  padding-right: var(--presentation-panel-padding);
+  padding-left: var(--presentation-panel-padding);
+}
+
+@media (max-width: 680px) {
+  .modal-dialog {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    border-radius: 14px;
+  }
+
+  .modal-dialog__heading {
+    min-height: 76px;
+    gap: 14px;
+    padding: 17px 16px;
+  }
+
+  .modal-dialog > .request-form,
+  .modal-dialog > .modal-warning,
+  .modal-dialog > .modal-actions {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
+
+  .modal-dialog .modal-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .modal-dialog .modal-actions > * {
+    width: 100%;
   }
 }
