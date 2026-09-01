@@ -175,6 +175,19 @@ const scheduledOvertimePreviewSchema = z.object({
   requiresOverride: z.boolean(),
 })
 
+const scheduledOvertimeCreatePreviewSchema = scheduledOvertimePreviewSchema
+  .omit({ shiftId: true })
+  .extend({
+    countedShifts: z.array(z.object({
+      shiftId: z.string().uuid(),
+      startsAt: z.string(),
+      endsAt: z.string(),
+      timeZone: z.string(),
+      location: z.string(),
+      minutes: z.number().int().nonnegative(),
+    })),
+  })
+
 const copyScheduleWeekResultSchema = z.object({
   schedule: scheduleSchema,
   copiedCount: z.number().int().nonnegative(),
@@ -195,6 +208,7 @@ export type StaffingSuggestion = z.infer<typeof staffingSuggestionSchema>
 export type ScheduleNotificationResult = z.infer<typeof scheduleNotificationResultSchema>
 export type CopyScheduleWeekResult = z.infer<typeof copyScheduleWeekResultSchema>
 export type ScheduledOvertimePreview = z.infer<typeof scheduledOvertimePreviewSchema>
+export type ScheduledOvertimeCreatePreview = z.infer<typeof scheduledOvertimeCreatePreviewSchema>
 
 const employeeNameCollator = new Intl.Collator('en-US', {
   numeric: true,
@@ -303,8 +317,20 @@ export interface CreateCoveragePlanInput {
   assignmentRequirement?: 'armed' | 'unarmed'
   availabilityOverrideNote?: string | null
   credentialOverrideNote?: string | null
+  overtimeOverrideNote?: string | null
   workType?: 'post' | 'training'
   useEmployeeTimeZone?: boolean
+}
+
+export interface ScheduledOvertimeCreatePreviewInput {
+  weekStartsOn: string
+  employeeId: string
+  postId?: string | null
+  eventTimeZone?: string | null
+  shiftDates: string[]
+  startTime: string
+  endTime: string
+  useEmployeeTimeZone: boolean
 }
 
 export interface AddDraftShiftAssignmentInput {
@@ -440,10 +466,11 @@ export async function createSupervisorCoveragePlan(input: CreateCoveragePlanInpu
     target_assignment_requires_armed: input.assignmentRequirement === 'armed',
     target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
     target_credential_override_note: input.credentialOverrideNote?.trim() || null,
+    target_overtime_override_note: input.overtimeOverrideNote?.trim() || null,
   }
   const request = input.useEmployeeTimeZone
-    ? getSupabaseClient().rpc('scheduler_create_employee_local_coverage_plan', rpcPayload)
-    : getSupabaseClient().rpc('scheduler_create_coverage_plan', rpcPayload)
+    ? getSupabaseClient().rpc('scheduler_create_employee_local_coverage_plan_v2', rpcPayload)
+    : getSupabaseClient().rpc('scheduler_create_coverage_plan_v2', rpcPayload)
   const { data, error } = await request
 
   if (error) throw new Error(error.message || 'The coverage plan could not be created.')
@@ -535,6 +562,24 @@ export async function getScheduledOvertimeUpdatePreview(
 
   if (error) throw new Error(error.message || 'Scheduled overtime could not be calculated for this change.')
   return scheduledOvertimePreviewSchema.parse(data)
+}
+
+export async function getScheduledOvertimeCreatePreview(
+  input: ScheduledOvertimeCreatePreviewInput,
+): Promise<ScheduledOvertimeCreatePreview> {
+  const { data, error } = await getSupabaseClient().rpc('get_scheduled_overtime_create_preview', {
+    target_week_starts_on: input.weekStartsOn,
+    target_employee_id: input.employeeId,
+    target_post_id: input.postId || null,
+    event_time_zone: input.eventTimeZone?.trim() || null,
+    shift_operational_dates: input.shiftDates,
+    shift_start_time: input.startTime,
+    shift_end_time: input.endTime,
+    use_employee_time_zone: input.useEmployeeTimeZone,
+  })
+
+  if (error) throw new Error(error.message || 'Scheduled overtime could not be calculated for this coverage plan.')
+  return scheduledOvertimeCreatePreviewSchema.parse(data)
 }
 
 export async function removeScheduleDraftShift(input: RemoveDraftShiftInput): Promise<WeeklySchedule> {

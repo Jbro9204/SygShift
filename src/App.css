@@ -23333,6 +23333,44 @@ a.home-metric-card:focus-visible {
   padding: 12px;
 }
 
+.overtime-counted-shifts {
+  margin: 10px 0 12px;
+  color: light-dark(#4e3a1b, #f2d89d);
+  border: 1px solid light-dark(#dfc796, #705727);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.overtime-counted-shifts > summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.overtime-counted-shifts > div {
+  display: grid;
+  max-height: 230px;
+  overflow-y: auto;
+  border-top: 1px solid light-dark(#dfc796, #705727);
+}
+
+.overtime-counted-shifts span {
+  display: grid;
+  gap: 2px;
+  padding: 9px 12px;
+}
+
+.overtime-counted-shifts span + span {
+  border-top: 1px solid light-dark(#ead9b8, #59451f);
+}
+
+.overtime-counted-shifts small {
+  color: light-dark(#694d22, #d8c18e);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .credential-editor {
   display: grid;
   gap: 12px;

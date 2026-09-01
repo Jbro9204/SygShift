@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSupervisorOpenShift, getScheduleBuilderOptions, removeScheduleDraftShift, resolveScheduleReviewShift, updateScheduleDraftShift } from './schedule'
+import { createSupervisorCoveragePlan, createSupervisorOpenShift, getScheduledOvertimeCreatePreview, getScheduleBuilderOptions, removeScheduleDraftShift, resolveScheduleReviewShift, updateScheduleDraftShift } from './schedule'
 
 const rpc = vi.fn()
 
@@ -269,6 +269,101 @@ describe('schedule builder data contract', () => {
       target_employee_id: '70000000-0000-4000-8000-000000000001',
       target_credential_override_note: 'License verified outside SygShift; upload pending.',
     }))
+  })
+
+  it('sends a separate overtime approval note through the atomic coverage workflow', async () => {
+    rpc.mockResolvedValueOnce({
+      data: {
+        schedule_id: '30000000-0000-4000-8000-000000000001',
+        schedule_revision: 2,
+        shift_ids: ['40000000-0000-4000-8000-000000000001'],
+        armed_shift_id: null,
+        unarmed_shift_id: '40000000-0000-4000-8000-000000000001',
+        assignment_id: '80000000-0000-4000-8000-000000000001',
+        event_id: null,
+        announcement_id: null,
+        starts_at: '2026-09-01T14:00:00.000Z',
+        ends_at: '2026-09-01T22:00:00.000Z',
+        time_zone: 'America/Denver',
+        headcount: 1,
+        armed_headcount: 0,
+        unarmed_headcount: 1,
+      },
+      error: null,
+    })
+
+    await createSupervisorCoveragePlan({
+      weekStartsOn: '2026-08-30',
+      mode: 'post',
+      postId: '10000000-0000-4000-8000-000000000001',
+      shiftDate: '2026-09-01',
+      startTime: '08:00',
+      endTime: '16:00',
+      headcount: 1,
+      armedHeadcount: 0,
+      employeeId: '70000000-0000-4000-8000-000000000001',
+      assignmentRequirement: 'unarmed',
+      isOvertime: false,
+      notes: 'Patrol route',
+      publishAnnouncement: false,
+      overtimeOverrideNote: '  Matt approved patrol overtime.  ',
+      useEmployeeTimeZone: true,
+    })
+
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_employee_local_coverage_plan_v2', expect.objectContaining({
+      target_employee_id: '70000000-0000-4000-8000-000000000001',
+      target_notes: 'Patrol route',
+      target_overtime_override_note: 'Matt approved patrol overtime.',
+    }))
+  })
+
+  it('loads the exact active shifts counted by the new-coverage overtime preview', async () => {
+    rpc.mockResolvedValueOnce({
+      data: {
+        employeeId: '70000000-0000-4000-8000-000000000001',
+        weekStartsOn: '2026-08-30',
+        weekEndsOn: '2026-09-05',
+        currentMinutes: 2400,
+        proposedMinutes: 480,
+        resultingMinutes: 2880,
+        overtimeMinutes: 480,
+        requiresOverride: true,
+        countedShifts: [{
+          shiftId: '40000000-0000-4000-8000-000000000001',
+          startsAt: '2026-08-30T14:00:00.000Z',
+          endsAt: '2026-08-30T22:00:00.000Z',
+          timeZone: 'America/Denver',
+          location: 'Patrol / Day route',
+          minutes: 480,
+        }],
+      },
+      error: null,
+    })
+
+    await expect(getScheduledOvertimeCreatePreview({
+      weekStartsOn: '2026-08-30',
+      employeeId: '70000000-0000-4000-8000-000000000001',
+      postId: '10000000-0000-4000-8000-000000000001',
+      shiftDates: ['2026-09-01'],
+      startTime: '08:00',
+      endTime: '16:00',
+      useEmployeeTimeZone: true,
+    })).resolves.toMatchObject({
+      currentMinutes: 2400,
+      resultingMinutes: 2880,
+      countedShifts: [{ location: 'Patrol / Day route' }],
+    })
+
+    expect(rpc).toHaveBeenCalledWith('get_scheduled_overtime_create_preview', {
+      target_week_starts_on: '2026-08-30',
+      target_employee_id: '70000000-0000-4000-8000-000000000001',
+      target_post_id: '10000000-0000-4000-8000-000000000001',
+      event_time_zone: null,
+      shift_operational_dates: ['2026-09-01'],
+      shift_start_time: '08:00',
+      shift_end_time: '16:00',
+      use_employee_time_zone: true,
+    })
   })
 
   it('updates draft shift assignments through the unambiguous scheduler RPC', async () => {

@@ -1323,3 +1323,12 @@ pnpm exec wrangler deploy --keep-vars
 - No migration or production-data change was required.
 - Deployed Cloudflare Worker version `ed12f19f-9d55-40ed-9f3e-5d54b8bb5f0b`; production app, login, theme bootstrap, compiled stylesheet, health, and readiness returned HTTP 200 and readiness reported ready.
 - Live explicit light and dark login renders resolved to the correct surface colors with zero horizontal overflow and zero console errors.
+
+## 09/01/2026 — Scheduler Overtime Override Repair
+
+- Corrected the new-coverage overtime warning so schedulers can see existing, added, resulting, and overtime hours plus the exact active shifts included in the calculation.
+- Added the missing required approval-note field and preserved the existing audited override authority.
+- Excluded canceled shifts and canceled assignments from overtime calculations.
+- Made new coverage creation and assignment atomic, including employee-local-time coverage.
+- Full validation passed: type checking, zero-warning lint, 137 test files / 671 tests, production migration, Worker and client production builds, deployed-asset inspection, and live health/readiness checks.
+- Applied production migration `20260901233000_scheduler_new_coverage_overtime_override.sql` and deployed Cloudflare Worker version `d7c72a80-c078-4977-b9ac-a7720be6b0b4`.

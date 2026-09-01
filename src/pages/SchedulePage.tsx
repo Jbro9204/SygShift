@@ -21,6 +21,7 @@ import {
   createSupervisorCoveragePlan,
   getImportedSchedulePreview,
   getScheduleBuilderOptions,
+  getScheduledOvertimeCreatePreview,
   getScheduledOvertimePreview,
   getScheduledOvertimeUpdatePreview,
   getScheduleStaffingSuggestions,
@@ -37,6 +38,7 @@ import {
   updateScheduleDraftShift,
   type ImportedScheduleShift,
   type ScheduleBuilderEmployee,
+  type ScheduledOvertimeCreatePreview,
   type ScheduleShift,
   type StaffingSuggestion,
   type WeeklySchedule,
@@ -44,7 +46,7 @@ import {
 import { processNotificationBatch } from '../data/operations'
 import { parseImportedScheduleNote, sourceReferenceLabel } from '../data/sourceNotes'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { formatDualClockTime, operationalToday } from '../lib/time'
+import { formatDualClockTime, formatDualTime, operationalToday } from '../lib/time'
 import { continentalUsTimeZoneLabel, personalDisplayTimeZone } from '../lib/usTimeZones'
 import { scheduleTeamViewPermissions } from '../app/accessPolicy'
 
@@ -72,6 +74,7 @@ interface OpenShiftFormState {
   credentialOverrideNote: string
   credentialOverrideConfirmedKnown: boolean
   credentialOverrideConfirmedResponsibility: boolean
+  overtimeOverrideNote: string
   workType: 'post' | 'training'
 }
 
@@ -127,8 +130,20 @@ function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
     credentialOverrideNote: '',
     credentialOverrideConfirmedKnown: false,
     credentialOverrideConfirmedResponsibility: false,
+    overtimeOverrideNote: '',
     workType: 'post',
   }
+}
+
+function overtimeCountedShiftLabel(shift: ScheduledOvertimeCreatePreview['countedShifts'][number]): string {
+  const date = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: shift.timeZone,
+    year: 'numeric',
+  }).format(new Date(shift.startsAt))
+  const time = `${formatDualTime(shift.startsAt, { timeZone: shift.timeZone })}–${formatDualTime(shift.endsAt, { timeZone: shift.timeZone })}`
+  return `${date} · ${time} · ${(shift.minutes / 60).toFixed(2)} hrs`
 }
 
 const weekdayOptions = [
@@ -2218,6 +2233,44 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     openShiftForm.credentialOverrideConfirmedKnown,
     openShiftForm.credentialOverrideConfirmedResponsibility,
   )
+  const openShiftOvertimePreviewQuery = useQuery({
+    queryKey: [
+      'scheduled-overtime-create-preview',
+      weekKey,
+      openShiftForm.employeeId,
+      openShiftForm.mode,
+      openShiftForm.postId,
+      openShiftForm.eventTimeZone,
+      openShiftDateKeys.join('|'),
+      openShiftForm.startTime,
+      openShiftForm.endTime,
+      useEmployeeLocalTime,
+    ],
+    queryFn: () => getScheduledOvertimeCreatePreview({
+      weekStartsOn: weekKey,
+      employeeId: openShiftForm.employeeId,
+      postId: openShiftForm.mode === 'post' ? openShiftForm.postId : null,
+      eventTimeZone: openShiftForm.mode === 'event' ? openShiftForm.eventTimeZone : null,
+      shiftDates: openShiftDateKeys,
+      startTime: openShiftForm.startTime,
+      endTime: openShiftForm.endTime,
+      useEmployeeTimeZone: useEmployeeLocalTime,
+    }),
+    enabled: isSupabaseConfigured
+      && canEditScheduler
+      && builderOpen
+      && Boolean(openShiftForm.employeeId)
+      && openShiftDateKeys.length > 0
+      && Boolean(openShiftForm.startTime)
+      && Boolean(openShiftForm.endTime)
+      && (openShiftForm.mode === 'event' || Boolean(openShiftForm.postId)),
+    retry: false,
+  })
+  const openShiftOvertimePreviewPending = Boolean(openShiftForm.employeeId)
+    && (openShiftOvertimePreviewQuery.isPending || openShiftOvertimePreviewQuery.isFetching)
+  const openShiftOvertimePreviewFailed = Boolean(openShiftForm.employeeId) && openShiftOvertimePreviewQuery.isError
+  const openShiftOvertimeOverrideRequired = Boolean(openShiftOvertimePreviewQuery.data?.requiresOverride)
+  const openShiftOvertimeOverrideReady = !openShiftOvertimeOverrideRequired || Boolean(openShiftForm.overtimeOverrideNote.trim())
 
   function syncOpenScheduleWindows(updatedSchedule: WeeklySchedule | null | undefined) {
     if (!updatedSchedule) return
@@ -2289,6 +2342,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           notes: openShiftForm.notes,
           availabilityOverrideNote: openShiftAvailabilityConflict ? openShiftForm.availabilityOverrideNote : null,
           credentialOverrideNote: openShiftCredentialOverrideRequired ? openShiftForm.credentialOverrideNote : null,
+          overtimeOverrideNote: openShiftOvertimeOverrideRequired ? openShiftForm.overtimeOverrideNote : null,
           publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
           workType: openShiftForm.workType,
           useEmployeeTimeZone: useEmployeeLocalTime,
@@ -2896,6 +2950,21 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     setBuilderMessage(null)
     setOpenShiftForm((current) => {
       const next = { ...current, ...update }
+      const overtimeInputsChanged = [
+        'mode',
+        'postId',
+        'eventTimeZone',
+        'shiftDate',
+        'startTime',
+        'endTime',
+        'employeeId',
+        'repeatEnabled',
+        'repeatThroughDate',
+        'repeatWeekdays',
+      ].some((key) => key in update)
+      if (overtimeInputsChanged && !('overtimeOverrideNote' in update)) {
+        next.overtimeOverrideNote = ''
+      }
       if (update.shiftDate) {
         const selectedDay = dateKeyToLocalDate(update.shiftDate).getDay()
         next.repeatThroughDate = next.repeatThroughDate < update.shiftDate ? update.shiftDate : next.repeatThroughDate
@@ -3539,6 +3608,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                     credentialOverrideNote: '',
                     credentialOverrideConfirmedKnown: false,
                     credentialOverrideConfirmedResponsibility: false,
+                    overtimeOverrideNote: '',
                   })}
                   value={openShiftForm.employeeId}
                 >
@@ -3676,6 +3746,53 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               />
             ) : null}
 
+            {openShiftOvertimePreviewPending ? (
+              <p className="form-note">Calculating this employee's Sunday–Saturday scheduled hours...</p>
+            ) : null}
+            {openShiftOvertimePreviewFailed ? (
+              <p className="form-feedback form-feedback--error" role="alert">
+                {openShiftOvertimePreviewQuery.error instanceof Error
+                  ? openShiftOvertimePreviewQuery.error.message
+                  : 'Scheduled overtime could not be calculated for this coverage plan.'}
+              </p>
+            ) : null}
+            {openShiftOvertimePreviewQuery.data?.requiresOverride && openShiftEmployee ? (
+              <div className="availability-override-card availability-override-card--overtime">
+                <AlertCircle aria-hidden="true" size={18} />
+                <div>
+                  <strong>Scheduled overtime approval required</strong>
+                  <p>
+                    {builderEmployeeName(openShiftEmployee)} has {(openShiftOvertimePreviewQuery.data.currentMinutes / 60).toFixed(2)} scheduled hours for {format(new Date(`${openShiftOvertimePreviewQuery.data.weekStartsOn}T12:00:00`), 'MM/dd/yyyy')}–{format(new Date(`${openShiftOvertimePreviewQuery.data.weekEndsOn}T12:00:00`), 'MM/dd/yyyy')}.
+                    {' '}This coverage adds {(openShiftOvertimePreviewQuery.data.proposedMinutes / 60).toFixed(2)} hours, resulting in {(openShiftOvertimePreviewQuery.data.resultingMinutes / 60).toFixed(2)} total hours and {(openShiftOvertimePreviewQuery.data.overtimeMinutes / 60).toFixed(2)} overtime hours.
+                  </p>
+                  {openShiftOvertimePreviewQuery.data.countedShifts.length ? (
+                    <details className="overtime-counted-shifts">
+                      <summary>View the {openShiftOvertimePreviewQuery.data.countedShifts.length} existing shift{openShiftOvertimePreviewQuery.data.countedShifts.length === 1 ? '' : 's'} being counted</summary>
+                      <div>
+                        {openShiftOvertimePreviewQuery.data.countedShifts.map((shift) => (
+                          <span key={shift.shiftId}>
+                            <strong>{shift.location}</strong>
+                            <small>{overtimeCountedShiftLabel(shift)}</small>
+                          </span>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
+                  <label>
+                    Approval note
+                    <textarea
+                      maxLength={2000}
+                      onChange={(event) => updateOpenShiftForm({ overtimeOverrideNote: event.target.value })}
+                      placeholder="Example: Matt approved the scheduled overtime for patrol coverage."
+                      required
+                      rows={2}
+                      value={openShiftForm.overtimeOverrideNote}
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : null}
+
             <label className="field-stack">
               Notes for supervisors
               <textarea
@@ -3725,7 +3842,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               </button>
               <button
                 className="primary-action"
-                disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending || openShiftDateKeys.length === 0 || Boolean(openShiftAvailabilityConflict && !openShiftForm.availabilityOverrideNote.trim()) || !openShiftCredentialOverrideReady}
+                disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending || openShiftOvertimePreviewPending || openShiftOvertimePreviewFailed || openShiftDateKeys.length === 0 || Boolean(openShiftAvailabilityConflict && !openShiftForm.availabilityOverrideNote.trim()) || !openShiftCredentialOverrideReady || !openShiftOvertimeOverrideReady}
                 type="submit"
               >
                 {createOpenShiftMutation.isPending
