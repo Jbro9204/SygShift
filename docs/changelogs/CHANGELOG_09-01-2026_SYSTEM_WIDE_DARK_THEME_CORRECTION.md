@@ -1,7 +1,7 @@
 # System-Wide Dark Theme Correction
 
 Date: 09/01/2026
-Status: Release-ready; production deployment pending
+Status: Released to production
 
 ## Outcome
 
@@ -34,4 +34,9 @@ Dark mode now applies consistently across the entire SygShift interface rather t
 
 ## Release
 
-- Production deployment is pending.
+- Source commit `d283b72` was pushed to `origin/main` before deployment.
+- Wrangler 4.106.0 dry run passed with all existing production bindings and dormant HRIS release gates preserved.
+- Cloudflare Worker version `ed12f19f-9d55-40ed-9f3e-5d54b8bb5f0b` is active on the custom domain and Worker fallback domain; startup time was 27 ms.
+- The app, login, theme bootstrap, compiled stylesheet, health, and readiness endpoints returned HTTP 200; readiness reported `ready: true`.
+- The live stylesheet contains explicit light and dark scheme registration, compiled theme pairs, and the corrected shared component rules.
+- Live light and dark login rendering was verified at 1440 pixels with the requested computed color scheme, zero horizontal overflow, and zero browser console errors.

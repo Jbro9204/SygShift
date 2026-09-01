@@ -1320,4 +1320,6 @@ pnpm exec wrangler deploy --keep-vars
 - Preserved the exact existing light presentation and added an explicit compiled light-scheme boundary.
 - Added source contract protection plus desktop/mobile rendered checks for dark surfaces, light preservation, contrast, modals, controls, semantic states, and horizontal containment.
 - Full validation passed: type checking, zero-warning lint, 136 test files / 666 tests, production builds, and all 42 desktop/mobile Playwright checks.
-- No migration or production-data change was required. Production deployment is pending.
+- No migration or production-data change was required.
+- Deployed Cloudflare Worker version `ed12f19f-9d55-40ed-9f3e-5d54b8bb5f0b`; production app, login, theme bootstrap, compiled stylesheet, health, and readiness returned HTTP 200 and readiness reported ready.
+- Live explicit light and dark login renders resolved to the correct surface colors with zero horizontal overflow and zero console errors.
