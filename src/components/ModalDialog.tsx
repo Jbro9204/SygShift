@@ -7,11 +7,12 @@ interface ModalDialogProps {
   children: ReactNode
   className?: string
   description?: string
+  dismissible?: boolean
   onClose: () => void
   title: string
 }
 
-export function ModalDialog({ busy = false, busyLabel = 'Saving changes...', children, className, description, onClose, title }: ModalDialogProps) {
+export function ModalDialog({ busy = false, busyLabel = 'Saving changes...', children, className, description, dismissible = true, onClose, title }: ModalDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const titleId = useId()
   const descriptionId = useId()
@@ -35,7 +36,7 @@ export function ModalDialog({ busy = false, busyLabel = 'Saving changes...', chi
       className={['modal-dialog', className].filter(Boolean).join(' ')}
       onCancel={(event) => {
         event.preventDefault()
-        if (busy) return
+        if (busy || !dismissible) return
         onClose()
       }}
       ref={dialogRef}
@@ -45,9 +46,11 @@ export function ModalDialog({ busy = false, busyLabel = 'Saving changes...', chi
           <h2 id={titleId}>{title}</h2>
           {description ? <p id={descriptionId}>{description}</p> : null}
         </div>
-        <button aria-label="Close dialog" className="modal-close" disabled={busy} onClick={onClose} type="button">
-          <X aria-hidden="true" size={22} />
-        </button>
+        {dismissible ? (
+          <button aria-label="Close dialog" className="modal-close" disabled={busy} onClick={onClose} type="button">
+            <X aria-hidden="true" size={22} />
+          </button>
+        ) : null}
       </div>
       {busy ? (
         <div className="modal-dialog__busy" role="status">

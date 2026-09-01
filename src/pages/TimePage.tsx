@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { EarlyClockInWarningDialog } from '../components/EarlyClockInWarningDialog'
 import { canAccessRoute } from '../app/accessPolicy'
 import {
   activeTimeState,
@@ -1421,6 +1422,7 @@ function PunchControls({
   onPunch: (kind: TimeEventKind, shiftId?: string | null) => void
 }) {
   const state = activeTimeState(dashboard.lastEvent)
+  const [earlyClockInWarningOpen, setEarlyClockInWarningOpen] = useState(false)
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(
     dashboard.eligibleShifts.length === 1 ? dashboard.eligibleShifts[0]?.shiftId ?? null : null,
   )
@@ -1435,6 +1437,9 @@ function PunchControls({
     () => nextUpcomingClockInShift(dashboard.eligibleShifts, dashboard.serverTimestamp),
     [dashboard.eligibleShifts, dashboard.serverTimestamp],
   )
+  const earlyClockInAttemptAvailable = state === 'off_clock'
+    && clockableChoices.shifts.length === 0
+    && nextClockInShift !== null
 
   useEffect(() => {
     if (state !== 'off_clock') return
@@ -1486,9 +1491,15 @@ function PunchControls({
         {actions.map((kind) => (
           <button
             className={kind === 'clock_in' || kind === 'clock_out' ? 'primary-action' : 'secondary-button'}
-            disabled={pending || !canPunch || (kind === 'clock_in' && !selectedShiftId)}
+            disabled={pending || !canPunch || (kind === 'clock_in' && !selectedShiftId && !earlyClockInAttemptAvailable)}
             key={kind}
-            onClick={() => onPunch(kind, kind === 'clock_in' ? selectedShiftId : undefined)}
+            onClick={() => {
+              if (kind === 'clock_in' && !selectedShiftId && earlyClockInAttemptAvailable) {
+                setEarlyClockInWarningOpen(true)
+                return
+              }
+              onPunch(kind, kind === 'clock_in' ? selectedShiftId : undefined)
+            }}
             type="button"
           >
             {kind === 'break_start' || kind === 'break_end' ? <Coffee aria-hidden="true" size={18} /> : <Timer aria-hidden="true" size={18} />}
@@ -1501,6 +1512,15 @@ function PunchControls({
           ? 'Official time is recorded by the secure server. This panel updates as soon as the punch is saved.'
           : 'Your account can view time, but time clock punches are not enabled.'}
       </small>
+      {earlyClockInWarningOpen && nextClockInShift ? (
+        <EarlyClockInWarningDialog
+          locationName={shiftLocation(nextClockInShift)}
+          onAcknowledge={() => setEarlyClockInWarningOpen(false)}
+          serverTimestamp={dashboard.serverTimestamp}
+          shiftStartsAt={nextClockInShift.startsAt}
+          timeZone={nextClockInShift.timeZone}
+        />
+      ) : null}
     </section>
   )
 }

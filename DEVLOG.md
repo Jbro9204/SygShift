@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Forced early clock-in acknowledgment
+
+- Replaced the passive early clock-in guidance with a prominent red blocking dialog on both Home and My Time.
+- Kept Clock In visible before the allowed window so an early attempt produces clear guidance instead of a disabled control or navigation detour.
+- The dialog states the exact hours/minutes until the scheduled shift begins, shows the scheduled time and location, and can be closed only with **I understand**; there is no close button and Escape is ignored.
+- Preserved the server-enforced five-minute clock-in window and all existing punch, schedule, workday, and payroll behavior.
+- Added shared modal support for explicitly non-dismissible acknowledgment workflows without changing the default behavior of any existing dialog.
+- Full validation passed: type checking, zero-warning lint, 127 test files / 634 tests, Worker build, and client production build.
+- Deployed Cloudflare Worker version `a783fbe6-65ef-4234-aa08-43e9cddd2518`; the production login loaded with no browser console errors.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_FORCED_EARLY_CLOCK_IN_ACKNOWLEDGMENT.md`.
+
 ### Salaried missing-clock alert exclusion
 
 - Excluded salaried employees from missing-clock-in operational exceptions and alerts at the database boundary because salaried staff do not use the shift punch workflow.

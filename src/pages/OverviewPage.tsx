@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { canAccessRoute } from '../app/accessPolicy'
+import { EarlyClockInWarningDialog } from '../components/EarlyClockInWarningDialog'
 import { TimeOffRequestModal } from '../components/TimeOffRequestModal'
 import { getActiveAnnouncementBanners } from '../data/announcements'
 import { getSessionContext, type SessionContext } from '../data/auth'
@@ -348,6 +349,7 @@ function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punc
   state: ReturnType<typeof activeTimeState>
   timeAction: ReturnType<typeof overviewTimeAction>
 }) {
+  const [earlyClockInWarningOpen, setEarlyClockInWarningOpen] = useState(false)
   const clockableChoices = dashboard
     ? getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp)
     : null
@@ -355,6 +357,12 @@ function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punc
     ? nextShiftForDashboard(dashboard)
     : null
   const clockInOpensAt = upcomingShift ? clockInWindowOpensAt(upcomingShift) : null
+  const earlyClockInAttemptAvailable = Boolean(
+    punchAllowed
+    && state === 'off_clock'
+    && upcomingShift
+    && clockableChoices?.shifts.length === 0,
+  )
   const statusLabel = error
     ? 'Time action needs attention'
     : pending
@@ -384,7 +392,11 @@ function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punc
         </div>
       </div>
       <div className="home-time-strip__actions" role="group" aria-label="Time clock actions">
-        {timeAction.requiresTimePage ? (
+        {earlyClockInAttemptAvailable && upcomingShift && dashboard ? (
+          <button className="primary-action" disabled={pending} onClick={() => setEarlyClockInWarningOpen(true)} type="button">
+            <Timer aria-hidden="true" size={18} />Clock in
+          </button>
+        ) : timeAction.requiresTimePage ? (
           <Link className="primary-action" to="/time/my-time"><Timer aria-hidden="true" size={18} />{timeAction.label}</Link>
         ) : punchAllowed ? (
           <button className={timeAction.kind === 'clock_out' ? 'danger-button' : 'primary-action'} disabled={pending} onClick={() => onPunch(timeAction.kind)} type="button">
@@ -402,6 +414,15 @@ function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punc
           </Link>
         ) : null}
       </div>
+      {earlyClockInWarningOpen && upcomingShift && dashboard ? (
+        <EarlyClockInWarningDialog
+          locationName={shiftLocation(upcomingShift)}
+          onAcknowledge={() => setEarlyClockInWarningOpen(false)}
+          serverTimestamp={dashboard.serverTimestamp}
+          shiftStartsAt={upcomingShift.startsAt}
+          timeZone={upcomingShift.timeZone}
+        />
+      ) : null}
     </section>
   )
 }

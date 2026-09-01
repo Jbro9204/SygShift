@@ -16866,6 +16866,82 @@ a.home-metric-card:focus-visible {
   width: min(820px, calc(100vw - 32px));
 }
 
+.modal-dialog--early-clock-in {
+  width: min(620px, calc(100vw - 32px));
+  border: 3px solid #b42318;
+  box-shadow: 0 24px 70px rgb(95 22 16 / 32%);
+}
+
+.modal-dialog--early-clock-in > .modal-dialog__heading {
+  background: #b42318;
+  border-bottom-color: #8f1c13;
+  color: #fff;
+}
+
+.modal-dialog--early-clock-in > .modal-dialog__heading h2,
+.modal-dialog--early-clock-in > .modal-dialog__heading p {
+  color: #fff;
+}
+
+.early-clock-in-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  margin: 24px;
+  padding: 22px;
+  border: 2px solid #d92d20;
+  border-radius: 14px;
+  background: #fff1f0;
+  color: #7a271a;
+}
+
+.early-clock-in-warning > svg {
+  flex: 0 0 auto;
+  color: #b42318;
+}
+
+.early-clock-in-warning strong {
+  display: block;
+  color: #7a271a;
+  font-size: clamp(1.25rem, 3vw, 1.65rem);
+  line-height: 1.2;
+}
+
+.early-clock-in-warning p {
+  margin: 10px 0 0;
+  color: #7a271a;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.early-clock-in-warning__actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 24px 24px;
+}
+
+.early-clock-in-warning__actions .danger-button {
+  min-width: 170px;
+  min-height: 48px;
+  font-weight: 800;
+}
+
+@media (max-width: 600px) {
+  .early-clock-in-warning {
+    flex-direction: column;
+    margin: 16px;
+    padding: 18px;
+  }
+
+  .early-clock-in-warning__actions {
+    padding: 0 16px 16px;
+  }
+
+  .early-clock-in-warning__actions .danger-button {
+    width: 100%;
+  }
+}
+
 .modal-dialog--call-off {
   width: min(900px, calc(100vw - 32px));
 }

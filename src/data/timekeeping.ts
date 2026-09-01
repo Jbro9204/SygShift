@@ -801,6 +801,20 @@ export function minutesUntilClockInOpens(
   return Math.max(0, Math.ceil((opensAt - serverTime) / 60_000))
 }
 
+export function formatClockInWaitDuration(shiftStartsAt: string, serverTimestamp: string): string {
+  const startsAt = new Date(shiftStartsAt).getTime()
+  const serverTime = new Date(serverTimestamp).getTime()
+  if (!Number.isFinite(startsAt) || !Number.isFinite(serverTime)) return 'a little while'
+
+  const totalMinutes = Math.max(1, Math.ceil((startsAt - serverTime) / 60_000))
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  const parts: string[] = []
+  if (hours) parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`)
+  if (minutes) parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`)
+  return parts.join(' ')
+}
+
 export interface ClockableShiftChoices {
   shifts: TimekeepingShift[]
   hiddenCount: number
