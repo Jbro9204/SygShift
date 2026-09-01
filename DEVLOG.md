@@ -34,6 +34,7 @@ deployment status, or major workflow assumptions change.
 - Split audited employee password recovery into the exact `admin.users.password_reset` permission so operational support does not confer MFA or login-security administration.
 - Applied production migration `20260901120000_operations_manager_role.sql` through an isolated one-migration workspace after a dry run proved no historical migration replay.
 - Full validation passed: type checking, zero-warning lint, 124 test files / 624 tests, Worker build, and client production build.
+- Deployed Cloudflare Worker version `eed799e3-b840-4b66-ab7b-d662e9895ceb`; production login, health, and readiness returned `200`.
 - Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_OPERATIONS_MANAGER_ROLE.md`.
 
 ## 08/31/2026

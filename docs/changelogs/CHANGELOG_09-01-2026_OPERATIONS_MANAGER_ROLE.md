@@ -38,4 +38,5 @@ SygShift now has a protected, MFA-required **Operations Manager** access role fo
 - Linting passed without warnings.
 - All 124 test files and 624 tests passed.
 - Worker and client production builds passed.
-
+- Deployed Cloudflare Worker version `eed799e3-b840-4b66-ab7b-d662e9895ceb`.
+- Production `/login`, `/api/v1/health`, and `/api/v1/ready` returned HTTP `200`; readiness confirmed assets, Supabase connectivity, and protected server configuration.
