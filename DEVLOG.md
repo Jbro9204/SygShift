@@ -25,6 +25,16 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Salaried missing-clock alert exclusion
+
+- Excluded salaried employees from missing-clock-in operational exceptions and alerts at the database boundary because salaried staff do not use the shift punch workflow.
+- Automatically resolved existing salaried missing-clock exceptions and cleared their live alerts while preserving the original exceptions and append-only action history.
+- Added immediate reconciliation when an employee is reclassified to salary, plus a second database guard against direct missing-clock alert insertion.
+- Preserved all schedules, assignments, punches, payroll records, employee records, and non-missing-clock alert types.
+- Applied production migration `20260901170000_salary_missing_clock_alert_exclusion.sql` through an isolated one-migration workspace after dry-run verification.
+- Full validation passed: type checking, zero-warning lint, 126 test files / 630 tests, Worker build, client production build, and production login/health/readiness checks.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_SALARY_MISSING_CLOCK_ALERT_EXCLUSION.md`.
+
 ### Human Resources role
 
 - Added a protected, MFA-required Human Resources access role covering the ordinary employee lifecycle without granting Admin, Finance, payroll, compensation, or security authority.
