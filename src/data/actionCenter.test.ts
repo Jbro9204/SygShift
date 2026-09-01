@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   completeEmployeeAction,
   getEmployeeActionCenter,
+  getEmployeeActionHistory,
   publishTrainingVersion,
   trainingComplianceCsv,
 } from './actionCenter'
@@ -90,6 +91,61 @@ describe('employee action-center data contracts', () => {
       target_action_id: actionCenter.training[0].id,
       target_action_type: 'training',
       target_attestation: 'I completed and reviewed this training.',
+    })
+  })
+
+  it('loads compact immutable history with explicit scope and filters', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        canViewTeam: true,
+        items: [{
+          actionType: 'training',
+          assignedAt: '2026-08-10T12:00:00Z',
+          contextLabel: 'Training version 3',
+          description: 'Annual review',
+          dueAt: '2026-08-15T12:00:00Z',
+          employeeId: '60000000-0000-4000-8000-000000000001',
+          employeeName: 'Jordan Brown',
+          id: '60000000-0000-4000-8000-000000000002',
+          metadata: { version: 3 },
+          resolutionNote: 'I completed and reviewed this training.',
+          resolutionSource: 'employee',
+          resolvedAt: '2026-08-12T14:00:00Z',
+          resolvedById: '60000000-0000-4000-8000-000000000001',
+          resolvedByName: 'Jordan Brown',
+          status: 'completed',
+          title: 'Annual Safety',
+          viewedAt: '2026-08-11T13:00:00Z',
+        }],
+        page: { number: 2, size: 10, total: 14, totalPages: 2 },
+        scope: 'team',
+        serverTimestamp: '2026-08-12T15:00:00Z',
+      },
+      error: null,
+    })
+
+    const result = await getEmployeeActionHistory({
+      actionType: 'training',
+      fromDate: '2026-08-01',
+      page: 2,
+      pageSize: 10,
+      scope: 'team',
+      search: 'Jordan',
+      status: 'completed',
+      throughDate: '2026-08-31',
+    })
+
+    expect(result.items[0].resolutionSource).toBe('employee')
+    expect(result.page).toEqual({ number: 2, size: 10, total: 14, totalPages: 2 })
+    expect(rpc).toHaveBeenCalledWith('get_employee_action_history', {
+      target_action_type: 'training',
+      target_from_date: '2026-08-01',
+      target_page: 2,
+      target_page_size: 10,
+      target_scope: 'team',
+      target_search: 'Jordan',
+      target_status: 'completed',
+      target_through_date: '2026-08-31',
     })
   })
 
