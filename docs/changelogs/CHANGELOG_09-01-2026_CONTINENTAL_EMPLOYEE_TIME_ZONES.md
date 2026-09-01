@@ -1,6 +1,6 @@
 # Continental U.S. Employee Schedule Time Zones
 
-Date: 09/01/2026  
+Date: 09/01/2026
 Status: Released to production
 
 ## Outcome
