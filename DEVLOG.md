@@ -25,6 +25,16 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Human Resources role
+
+- Added a protected, MFA-required Human Resources access role covering the ordinary employee lifecycle without granting Admin, Finance, payroll, compensation, or security authority.
+- Included HR People, recruiting, onboarding, ordinary documents, leave, benefits, talent, learning, employee cases, non-medical safety, assets, offboarding, self-service, HR automation, reporting, licensing, communications, and limited account recovery.
+- Excluded SSN/PHI vaults, identity/medical/financial documents, protected leave, compensation, total rewards, payroll integration/export/reassignment, security administration, roles/permissions, maintenance, schedule editing, and time correction.
+- Preserved every existing role membership, individual override, role definition, and unrelated role permission bundle; assigned the new role to no employee and enabled no dormant HR release gate.
+- Applied production migration `20260901150000_human_resources_role.sql` through an isolated one-migration workspace after dry-run verification.
+- Full validation passed: type checking, zero-warning lint, 125 test files / 627 tests, Worker build, and client production build.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_HUMAN_RESOURCES_ROLE.md`.
+
 ### Operations Manager role
 
 - Added a protected, MFA-required Operations Manager access role for companywide operational leadership between Supervisor and Admin.
