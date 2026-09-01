@@ -1,7 +1,7 @@
 # Global Theme and Header Refinement
 
 Date: 09/01/2026
-Status: Release validation complete; production deployment pending
+Status: Released to production
 
 ## Outcome
 
@@ -46,4 +46,10 @@ SygShift now has one coordinated global appearance release: a complete dark them
 
 ## Release
 
-- Git commit, Cloudflare Worker version, production health, and readiness verification will be recorded after deployment.
+- Source commit `e521e54` was pushed to `origin/main` before deployment.
+- Wrangler 4.106.0 dry run passed with the existing production bindings and dormant HRIS release gates preserved.
+- Cloudflare Worker version `b06bf981-bd42-4148-99d2-49be0968c254` is active on the primary custom domain and Worker fallback domain.
+- Worker startup time was 32 ms.
+- The primary app, login, theme bootstrap, health, and readiness endpoints returned HTTP 200.
+- Readiness reported `ready: true` and confirmed the asset binding and all required Supabase configuration.
+- The live page loads the same-origin theme bootstrap before the React module. The live script contains both appearance controls and the unified profile control, omits the removed Mountain utility sentence, and the live stylesheet contains the dark tokens, profile controls, clock treatment, and responsive rules.

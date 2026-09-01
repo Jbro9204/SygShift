@@ -1302,3 +1302,12 @@ pnpm exec wrangler deploy --keep-vars
 - Lowered the compact gold collapse/expand tab to the seam beneath the SygShift logo.
 - Prevented the control from covering the brand mark in the collapsed sidebar.
 - Preserved desktop keyboard access, saved collapse state, and the existing mobile navigation behavior.
+
+## 09/01/2026 — Global Theme and Header Refinement
+
+- Combined the approved full-site dark appearance and authenticated utility-bar refinement into one shared-shell release.
+- Added flash-free OS-aware light/dark initialization, persistent explicit selection, dark login/security surfaces, and coordinated dark tokens for shared cards, forms, tables, modals, alerts, and statuses.
+- Replaced the separate account controls with one photo/initials profile link and compact appearance/sign-out controls while preserving the existing account, clock, alert, session, and logout behavior.
+- Removed the redundant Mountain-default sentence from the utility bar; the clock strip retains the explicit Mountain operational-default badge.
+- Full validation passed: type checking, zero-warning lint, 135 test files / 663 tests, production builds, Wrangler dry run, and all 38 desktop/mobile Playwright checks.
+- Deployed Cloudflare Worker version `b06bf981-bd42-4148-99d2-49be0968c254`; production app, login, theme bootstrap, health, and readiness returned HTTP 200 and readiness reported ready.
