@@ -52,4 +52,6 @@ SygShift now has one coordinated global appearance release: a complete dark them
 - Worker startup time was 32 ms.
 - The primary app, login, theme bootstrap, health, and readiness endpoints returned HTTP 200.
 - Readiness reported `ready: true` and confirmed the asset binding and all required Supabase configuration.
+- Live production login rendering was verified in both explicit light and dark modes at 1440 pixels. Both applied the requested theme before interaction, produced zero browser console errors, and passed automated accessibility analysis with zero violations.
+- An unauthenticated production request to `/users` redirected safely to `/login`.
 - The live page loads the same-origin theme bootstrap before the React module. The live script contains both appearance controls and the unified profile control, omits the removed Mountain utility sentence, and the live stylesheet contains the dark tokens, profile controls, clock treatment, and responsive rules.
