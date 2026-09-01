@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 const root = process.cwd()
 const migration = readFileSync(join(root, 'supabase', 'migrations', '20260901210000_employee_file_employment_date_maintenance.sql'), 'utf8')
 const employeeFile = readFileSync(join(root, 'src', 'pages', 'HrisEmployeeFilePage.tsx'), 'utf8')
+const employmentDateEditor = readFileSync(join(root, 'src', 'components', 'EmploymentDateEditorDialog.tsx'), 'utf8')
 const data = readFileSync(join(root, 'src', 'data', 'hrisPeople.ts'), 'utf8')
 
 describe('Employee File employment-date maintenance guardrails', () => {
@@ -34,8 +35,9 @@ describe('Employee File employment-date maintenance guardrails', () => {
   it('provides a compact, auditable Employee File editing experience', () => {
     expect(employeeFile).toContain('Start / hire date')
     expect(employeeFile).toContain('Separation / termination date')
-    expect(employeeFile).toContain('Evidence and explanation are required')
-    expect(employeeFile).toContain('Existing schedules, punches, time cards, and payroll records will not be rewritten.')
+    expect(employeeFile).toContain('EmploymentDateEditorDialog')
+    expect(employmentDateEditor).toContain('Evidence and explanation are required')
+    expect(employmentDateEditor).toContain('Existing schedules, punches, time cards, and payroll records will not be rewritten.')
     expect(data).toContain('target_limit: 5')
     expect(data).toContain('update_hr_employee_employment_dates')
   })

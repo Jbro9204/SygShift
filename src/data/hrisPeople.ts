@@ -153,6 +153,13 @@ export type HrisEmployeeFile = z.infer<typeof employeeFileSchema>
 export type HrisEmploymentDateHistory = z.infer<typeof employmentDateHistorySchema>
 export type HrisEmploymentDateSource = z.infer<typeof employmentDateHistoryItemSchema>['sourceType']
 
+export const hrisEmploymentDateSourceLabels: Record<HrisEmploymentDateSource, string> = {
+  employee_file: 'Employee file',
+  hr_export: 'Verified HR export',
+  verified_hr_record: 'Verified HR record',
+  verified_manual: 'Verified manual record',
+}
+
 export type HrisEmploymentDateUpdateInput = {
   employeeId: string
   hiredOn: string

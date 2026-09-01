@@ -1,31 +1,10 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, DatabaseBackup, FileCheck2, Search, ShieldCheck, UserRoundCheck } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
-import { ModalDialog } from '../components/ModalDialog'
-import {
-  authorizeHrisEffectiveDates,
-  getHrisIdentityReadiness,
-  type HrisDateSourceType,
-  type HrisIdentityReadinessItem,
-} from '../data/hrisIdentityReadiness'
+import { EmploymentDateEditorDialog } from '../components/EmploymentDateEditorDialog'
+import { getHrisIdentityReadiness, type HrisIdentityReadinessItem } from '../data/hrisIdentityReadiness'
 import { formatOperationalDateTime } from '../lib/time'
-
-type DateFormState = {
-  employee: HrisIdentityReadinessItem
-  hiredOn: string
-  separatedOn: string
-  sourceType: HrisDateSourceType
-  sourceReference: string
-  reason: string
-}
-
-const sourceTypeLabels: Record<HrisDateSourceType, string> = {
-  employee_file: 'Verified employee file',
-  hr_export: 'Authorized HR export',
-  verified_hr_record: 'Verified HR record',
-  verified_manual: 'Verified manual review',
-}
 
 const mappingLabels: Record<HrisIdentityReadinessItem['mappingState'], string> = {
   already_mapped: 'Already mapped',
@@ -53,39 +32,18 @@ function blockerLabel(code: string): string {
   return code.replaceAll('_', ' ')
 }
 
-function emptyDateForm(employee: HrisIdentityReadinessItem): DateFormState {
-  return {
-    employee,
-    hiredOn: employee.effectiveHiredOn ?? '',
-    reason: '',
-    separatedOn: employee.effectiveSeparatedOn ?? '',
-    sourceReference: '',
-    sourceType: 'verified_hr_record',
-  }
-}
-
 export function HrisIdentityReadinessPage() {
-  const queryClient = useQueryClient()
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
-  const [dateForm, setDateForm] = useState<DateFormState | null>(null)
+  const [selectedEmployee, setSelectedEmployee] = useState<HrisIdentityReadinessItem | null>(null)
   const [resultMessage, setResultMessage] = useState<string | null>(null)
 
   const workspaceQuery = useQuery({
     queryFn: () => getHrisIdentityReadiness({ page, pageSize, search, status }),
     queryKey: ['hris-identity-readiness', page, pageSize, search, status],
-  })
-
-  const authorizeMutation = useMutation({
-    mutationFn: authorizeHrisEffectiveDates,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['hris-identity-readiness'] })
-      setDateForm(null)
-      setResultMessage('Verified employment dates were recorded with an audit trail. No employee identity records were changed.')
-    },
   })
 
   useEffect(() => {
@@ -96,19 +54,6 @@ export function HrisIdentityReadinessPage() {
     event.preventDefault()
     setPage(1)
     setSearch(searchInput.trim())
-  }
-
-  function submitDates(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!dateForm) return
-    authorizeMutation.mutate({
-      employeeId: dateForm.employee.employeeId,
-      hiredOn: dateForm.hiredOn,
-      reason: dateForm.reason,
-      separatedOn: dateForm.separatedOn || null,
-      sourceReference: dateForm.sourceReference,
-      sourceType: dateForm.sourceType,
-    })
   }
 
   const workspace = workspaceQuery.data
@@ -161,7 +106,7 @@ export function HrisIdentityReadinessPage() {
 
           <section className="hris-readiness-workspace">
             <div className="hris-readiness-workspace__heading">
-              <div><p className="eyebrow">Controlled reconciliation</p><h2>Verify employment dates</h2><p>Search legal names or employee numbers. Preferred names, emails, phone numbers, and login details are intentionally excluded.</p></div>
+              <div><p className="eyebrow">Controlled reconciliation</p><h2>Maintain employment dates</h2><p>Search legal names or employee numbers. Date corrections update the same permanent, audited record used by the Employee File.</p></div>
               <span>{workspace.totalCount} matching</span>
             </div>
 
@@ -189,7 +134,7 @@ export function HrisIdentityReadinessPage() {
                     {employee.warningCodes.map((code) => <span className="signal" key={code}>{warningLabel(code)}</span>)}
                     {employee.blockerCodes.length === 0 && employee.warningCodes.length === 0 ? <span className="signal signal--ready">Record ready</span> : null}
                   </div>
-                  <button className="secondary-button" onClick={() => { authorizeMutation.reset(); setDateForm(emptyDateForm(employee)) }} type="button">Record verified dates</button>
+                  <button className="secondary-button" onClick={() => { setResultMessage(null); setSelectedEmployee(employee) }} type="button">Edit employment dates</button>
                 </article>
               ))}
             </div>
@@ -209,21 +154,19 @@ export function HrisIdentityReadinessPage() {
         </>
       ) : null}
 
-      {dateForm ? (
-        <ModalDialog busy={authorizeMutation.isPending} busyLabel="Recording verified dates…" className="hris-readiness-modal" description="Record only dates supported by an authorized HR source. This evidence does not alter the employee account or create an HR identity." onClose={() => { authorizeMutation.reset(); setDateForm(null) }} title={`Verify employment dates · ${dateForm.employee.legalName}`}>
-          <form onSubmit={submitDates}>
-            <div className="hris-readiness-modal__notice"><ShieldCheck aria-hidden="true" /><p><strong>Audit-controlled evidence</strong><span>Source reference and reason are required. Existing permanent dates cannot be overwritten here.</span></p></div>
-            <div className="hris-readiness-modal__dates">
-              <label>Verified hire date<input disabled={dateForm.employee.hireDateLocked} onChange={(event) => setDateForm({ ...dateForm, hiredOn: event.target.value })} required type="date" value={dateForm.hiredOn} /><small>{dateForm.employee.hireDateLocked ? 'Locked to the permanent employee record.' : 'Required for every employee. Future dates are rejected by the protected server control.'}</small></label>
-              <label>Verified separation date<input disabled={dateForm.employee.separationDateLocked} min={dateForm.hiredOn || undefined} onChange={(event) => setDateForm({ ...dateForm, separatedOn: event.target.value })} required={dateForm.employee.status === 'separated'} type="date" value={dateForm.separatedOn} /><small>{dateForm.employee.status === 'separated' ? 'Required because this employee is separated.' : 'Leave blank unless a verified separation exists.'}</small></label>
-            </div>
-            <label>Evidence type<select onChange={(event) => setDateForm({ ...dateForm, sourceType: event.target.value as HrisDateSourceType })} value={dateForm.sourceType}>{Object.entries(sourceTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <label>Source reference<input onChange={(event) => setDateForm({ ...dateForm, sourceReference: event.target.value })} placeholder="Example: HR employee file reviewed 08/29/2026" required value={dateForm.sourceReference} /></label>
-            <label>Audit reason<textarea onChange={(event) => setDateForm({ ...dateForm, reason: event.target.value })} placeholder="Explain who verified the dates and why this source is authoritative." required rows={4} value={dateForm.reason} /></label>
-            {authorizeMutation.isError ? <div className="error-message" role="alert">{authorizeMutation.error instanceof Error ? authorizeMutation.error.message : 'The verified dates could not be recorded.'}</div> : null}
-            <div className="modal-actions"><button className="secondary-button" disabled={authorizeMutation.isPending} onClick={() => setDateForm(null)} type="button">Cancel</button><button className="primary-action" disabled={authorizeMutation.isPending} type="submit">Record verified dates</button></div>
-          </form>
-        </ModalDialog>
+      {selectedEmployee ? (
+        <EmploymentDateEditorDialog
+          employee={{
+            employeeId: selectedEmployee.employeeId,
+            hiredOn: selectedEmployee.permanentHiredOn ?? selectedEmployee.effectiveHiredOn,
+            legalName: selectedEmployee.legalName,
+            separatedOn: selectedEmployee.permanentSeparatedOn ?? selectedEmployee.effectiveSeparatedOn,
+            status: selectedEmployee.status,
+          }}
+          onClose={() => setSelectedEmployee(null)}
+          onSaved={() => setResultMessage('Employment dates and audit history were updated successfully.')}
+          sourceType="verified_hr_record"
+        />
       ) : null}
     </main>
   )

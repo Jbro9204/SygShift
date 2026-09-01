@@ -8,6 +8,7 @@ const root = process.cwd()
 const migration = readFileSync(join(root, 'supabase', 'migrations', '20260831234500_hris_comprehensive_employee_file.sql'), 'utf8')
 const employmentDatesMigration = readFileSync(join(root, 'supabase', 'migrations', '20260901210000_employee_file_employment_date_maintenance.sql'), 'utf8')
 const employeeFile = readFileSync(join(root, 'src', 'pages', 'HrisEmployeeFilePage.tsx'), 'utf8')
+const employmentDateEditor = readFileSync(join(root, 'src', 'components', 'EmploymentDateEditorDialog.tsx'), 'utf8')
 const data = readFileSync(join(root, 'src', 'data', 'hrisPeople.ts'), 'utf8')
 
 describe('comprehensive Employee File guardrails', () => {
@@ -35,7 +36,8 @@ describe('comprehensive Employee File guardrails', () => {
     expect(employeeFile).toContain('No information is copied or maintained twice.')
     expect(employeeFile).toContain('module.visible && canAccessRoute(module.path, sessionQuery.data)')
     expect(employeeFile).toContain('Employment dates are maintained here; other changes open the specialized workspace that owns the record.')
-    expect(employeeFile).toContain('updateHrisEmploymentDates')
+    expect(employeeFile).toContain('EmploymentDateEditorDialog')
+    expect(employmentDateEditor).toContain('updateHrisEmploymentDates')
     expect(employmentDatesMigration).toContain('private.hr_stage2_effective_date_authorizations')
     expect(employmentDatesMigration).not.toMatch(/create table .*employment.*date/i)
   })

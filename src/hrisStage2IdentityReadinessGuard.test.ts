@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 const root = process.cwd()
 const page = readFileSync(join(root, 'src', 'pages', 'HrisIdentityReadinessPage.tsx'), 'utf8')
+const employmentDateEditor = readFileSync(join(root, 'src', 'components', 'EmploymentDateEditorDialog.tsx'), 'utf8')
 const data = readFileSync(join(root, 'src', 'data', 'hrisIdentityReadiness.ts'), 'utf8')
 const navigation = readFileSync(join(root, 'src', 'app', 'navigation.ts'), 'utf8')
 const accessPolicy = readFileSync(join(root, 'src', 'app', 'accessPolicy.ts'), 'utf8')
@@ -52,12 +53,15 @@ describe('HRIS Stage 2 employment-data readiness guardrails', () => {
     expect(readinessMigration).not.toContain('auth_user_id')
   })
 
-  it('records authoritative date evidence without modifying employee or identity records', () => {
+  it('preserves the evidence-only readiness control while routing routine corrections through the shared permanent editor', () => {
     expect(data).toContain("rpc('authorize_hris_stage2_effective_dates'")
-    expect(page).toContain('Source reference')
-    expect(page).toContain('Audit reason')
-    expect(page).toContain('required value={dateForm.sourceReference}')
-    expect(page).toContain('required rows={4} value={dateForm.reason}')
+    expect(page).toContain('EmploymentDateEditorDialog')
+    expect(page).toContain('Edit employment dates')
+    expect(page).not.toContain('Existing permanent dates cannot be overwritten here.')
+    expect(page).not.toContain('disabled={dateForm.employee.hireDateLocked}')
+    expect(employmentDateEditor).toContain('Source reference')
+    expect(employmentDateEditor).toContain('Reason for update')
+    expect(employmentDateEditor).toContain('updateHrisEmploymentDates')
     expect(controlMigration).toContain('The supplied hire date conflicts with the permanent employee record.')
     expect(controlMigration).toContain('The supplied separation date conflicts with the permanent employee record.')
     expect(readinessMigration).not.toMatch(/insert\s+into\s+private\.hr_(person|worker)_identifiers/i)

@@ -5,7 +5,7 @@ Status: Released to production
 
 ## Outcome
 
-Authorized HR users can now add or correct both the **Start / hire date** and **Separation / termination date** directly in the employee's protected Employee File. Employment Data Readiness remains a reconciliation workspace instead of the routine editor.
+Authorized HR users can now add or correct both the **Start / hire date** and **Separation / termination date** directly in the employee's protected Employee File. A follow-up compatibility correction on 09/01/2026 also connected Employment Data Readiness to the same shared editor so HR does not encounter a second, locked workflow.
 
 ## Employee File experience
 

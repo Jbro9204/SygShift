@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Unified editable employment-date workflow
+
+- Removed the obsolete locked employment-date modal from Employment Data Readiness after HR reported that existing dates could not be clicked or corrected.
+- Added one shared employment-date editor used by both Employment Data Readiness and the authoritative Employee File.
+- Existing start/hire and separation/termination dates are editable from either entry point by MFA-verified users with `hr.people.manage`; every save still requires evidence and a written reason.
+- Both entry points now use the same protected database transaction, permanent employee record, and append-only date evidence chain. No duplicate date record or alternate save path was introduced.
+- Preserved schedules, punches, active clock sessions, time cards, payroll history, access records, and HR identity backfill controls.
+- Added regression guards that reject a return of the legacy disabled inputs or the obsolete “permanent dates cannot be overwritten” notice.
+- Full validation passed: type checking, zero-warning lint, 130 test files / 644 tests, Worker build, and client production build.
+- Deployed Cloudflare Worker version `7f7d93c5-6cf7-4797-ade9-1cc2e1d925b5`; production app, login, health, readiness, shared editor, Employee File, and Employment Data Readiness assets returned `200`.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_UNIFIED_EDITABLE_EMPLOYMENT_DATES.md`.
+
 ### Employee File employment-date maintenance
 
 - Made start/hire and separation/termination dates directly maintainable from the protected Employee File Employment card.
