@@ -127,22 +127,6 @@ Completion criteria:
 - [ ] Cost, privacy, support, outage, fallback, and rollback implications are accepted before any production enrollment.
 - [ ] A limited pilot passes the approved security and usability test matrix before any wider rollout is considered.
 
-### Hardware Security Key Pilot Validation
-
-- Priority: High
-- Target window: Jordan-only controlled production pilot
-- Status: Deployed / enrolled / active Jordan-only pilot validation
-- Added: 08/29/2026
-
-The full FIDO2/WebAuthn implementation, production database controls, administrator recovery tools, audit trail, security notices, feature flag, and `jbrown`-only allowlist are deployed. Jordan Brown's physical key was enrolled by 08/31/2026. Complete the remaining supported-device and recovery checks before considering any broader rollout.
-
-Remaining pilot validation:
-
-- Verify successful key sign-in in current Chrome and Edge on `https://app.sygilant.us`.
-- Verify cancellation and absent-key flows leave **Use authenticator instead** available.
-- Verify key removal, administrator revocation, and MFA reset using the physical pilot credential.
-- Keep the authenticator factor enrolled throughout the pilot and do not expand the allowlist until the pilot evidence is recorded.
-
 ## HR, Finance & Employee Lifecycle
 
 ### Employee File Start and Hire Date Management
