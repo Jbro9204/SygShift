@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { documentApiHeaders, parseApiError } from './hrDocuments'
+import { documentApiRequest, parseApiError } from './hrDocuments'
 
 const nullableText = z.string().nullable()
 const requestStatusSchema = z.enum(['requested', 'submitted', 'accepted', 'rejected', 'cancelled'])
@@ -35,7 +35,7 @@ export type HrDocumentWorkflowWorkspace = z.infer<typeof managerWorkspaceSchema>
 export type MyHrDocumentWorkspace = z.infer<typeof myWorkspaceSchema>
 
 async function api(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(path, { cache: 'no-store', ...init, headers: await documentApiHeaders(init?.body ? 'application/json' : undefined) })
+  return documentApiRequest(path, init)
 }
 
 export async function getHrDocumentWorkflowWorkspace(filters: { page?: number; pageSize?: 5 | 10 | 20; status?: string } = {}) {

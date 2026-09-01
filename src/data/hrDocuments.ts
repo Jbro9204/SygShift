@@ -1,4 +1,9 @@
 import { z } from 'zod'
+import {
+  fetchWithIdentityVerification,
+  isIdentityVerificationRequiredCode,
+  requestIdentityVerification,
+} from '../lib/identityVerificationCoordinator'
 import { getSupabaseClient } from '../lib/supabase'
 import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 
@@ -115,9 +120,30 @@ export async function documentApiHeaders(contentType?: string): Promise<Headers>
   return appendProtectedSessionHeaders(headers)
 }
 
+export async function documentApiRequest(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetchWithIdentityVerification(async () => fetch(path, {
+    cache: 'no-store',
+    ...init,
+    headers: await documentApiHeaders(init.body ? 'application/json' : undefined),
+  }))
+}
+
+export class ProtectedApiError extends Error {
+  code: string | null
+
+  constructor(message: string, code: string | null = null) {
+    super(message)
+    this.name = 'ProtectedApiError'
+    this.code = code
+  }
+}
+
 export async function parseApiError(response: Response, fallback: string): Promise<Error> {
-  const payload = await response.json().catch(() => null) as { detail?: unknown } | null
-  return new Error(typeof payload?.detail === 'string' ? payload.detail : fallback)
+  const payload = await response.json().catch(() => null) as { detail?: unknown; error?: unknown } | null
+  return new ProtectedApiError(
+    typeof payload?.detail === 'string' ? payload.detail : fallback,
+    typeof payload?.error === 'string' ? payload.error : null,
+  )
 }
 
 export async function getHrDocumentWorkspace(filters: HrDocumentWorkspaceFilters = {}): Promise<HrDocumentWorkspace> {
@@ -128,10 +154,7 @@ export async function getHrDocumentWorkspace(filters: HrDocumentWorkspaceFilters
   if (filters.pageSize) query.set('pageSize', String(filters.pageSize))
   if (filters.search?.trim()) query.set('search', filters.search.trim())
   if (filters.vaultCode) query.set('vaultCode', filters.vaultCode)
-  const response = await fetch(`/api/v1/hr/documents/workspace?${query.toString()}`, {
-    cache: 'no-store',
-    headers: await documentApiHeaders(),
-  })
+  const response = await documentApiRequest(`/api/v1/hr/documents/workspace?${query.toString()}`)
   if (!response.ok) throw await parseApiError(response, 'The protected document workspace could not be loaded.')
   return workspaceSchema.parse(await response.json())
 }
@@ -147,45 +170,61 @@ export async function uploadHrDocument(
   input: HrDocumentUploadInput,
   onProgress: (percent: number) => void,
 ): Promise<z.infer<typeof uploadResultSchema>> {
-  const headers = await documentApiHeaders(input.file.type)
-  headers.set('x-sygshift-document-metadata', encodeMetadata({
-    accessClassification: input.accessClassification,
-    category: input.category.trim(),
-    declaredMimeType: input.file.type,
-    description: input.description.trim(),
-    documentId: input.documentId ?? null,
-    employeeId: input.employeeId,
-    idempotencyKey: input.idempotencyKey,
-    originalFilename: input.file.name,
-    replacementReason: input.replacementReason?.trim() || null,
-    title: input.title.trim(),
-    vaultCode: input.vaultCode,
-  }))
+  async function attemptUpload(): Promise<z.infer<typeof uploadResultSchema>> {
+    const headers = await documentApiHeaders(input.file.type)
+    headers.set('x-sygshift-document-metadata', encodeMetadata({
+      accessClassification: input.accessClassification,
+      category: input.category.trim(),
+      declaredMimeType: input.file.type,
+      description: input.description.trim(),
+      documentId: input.documentId ?? null,
+      employeeId: input.employeeId,
+      idempotencyKey: input.idempotencyKey,
+      originalFilename: input.file.name,
+      replacementReason: input.replacementReason?.trim() || null,
+      title: input.title.trim(),
+      vaultCode: input.vaultCode,
+    }))
 
-  return new Promise((resolve, reject) => {
-    const request = new XMLHttpRequest()
-    request.open('PUT', '/api/v1/hr/documents/uploads')
-    headers.forEach((value, key) => request.setRequestHeader(key, value))
-    request.upload.addEventListener('progress', (event) => {
-      if (event.lengthComputable) onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)))
+    return new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest()
+      request.open('PUT', '/api/v1/hr/documents/uploads')
+      headers.forEach((value, key) => request.setRequestHeader(key, value))
+      request.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)))
+      })
+      request.addEventListener('load', () => {
+        let payload: unknown = null
+        try { payload = request.responseText ? JSON.parse(request.responseText) : null } catch { /* handled below */ }
+        if (request.status >= 200 && request.status < 300) {
+          onProgress(100)
+          try { resolve(uploadResultSchema.parse(payload)) } catch { reject(new Error('The upload completed but its confirmation was invalid.')) }
+          return
+        }
+        const detail = payload && typeof payload === 'object' && 'detail' in payload
+          ? (payload as { detail?: unknown }).detail
+          : null
+        const code = payload && typeof payload === 'object' && 'error' in payload && typeof (payload as { error?: unknown }).error === 'string'
+          ? (payload as { error: string }).error
+          : null
+        reject(new ProtectedApiError(
+          typeof detail === 'string' ? detail : 'The protected document could not be uploaded.',
+          code,
+        ))
+      })
+      request.addEventListener('error', () => reject(new Error('The upload connection was interrupted. You can retry safely.')))
+      request.addEventListener('abort', () => reject(new Error('The upload was canceled. No document was released.')))
+      request.send(input.file)
     })
-    request.addEventListener('load', () => {
-      let payload: unknown = null
-      try { payload = request.responseText ? JSON.parse(request.responseText) : null } catch { /* handled below */ }
-      if (request.status >= 200 && request.status < 300) {
-        onProgress(100)
-        try { resolve(uploadResultSchema.parse(payload)) } catch { reject(new Error('The upload completed but its confirmation was invalid.')) }
-        return
-      }
-      const detail = payload && typeof payload === 'object' && 'detail' in payload
-        ? (payload as { detail?: unknown }).detail
-        : null
-      reject(new Error(typeof detail === 'string' ? detail : 'The protected document could not be uploaded.'))
-    })
-    request.addEventListener('error', () => reject(new Error('The upload connection was interrupted. You can retry safely.')))
-    request.addEventListener('abort', () => reject(new Error('The upload was canceled. No document was released.')))
-    request.send(input.file)
-  })
+  }
+
+  try {
+    return await attemptUpload()
+  } catch (error) {
+    if (!(error instanceof ProtectedApiError) || !isIdentityVerificationRequiredCode(error.code)) throw error
+    await requestIdentityVerification()
+    return attemptUpload()
+  }
 }
 
 export async function getHrDocumentBlob(
@@ -193,17 +232,13 @@ export async function getHrDocumentBlob(
   action: 'preview' | 'download',
   reason: string,
 ): Promise<{ blob: Blob; filename: string }> {
-  const grantResponse = await fetch(`/api/v1/hr/documents/${documentId}/access`, {
+  const grantResponse = await documentApiRequest(`/api/v1/hr/documents/${documentId}/access`, {
     body: JSON.stringify({ action, reason: reason.trim() }),
-    headers: await documentApiHeaders('application/json'),
     method: 'POST',
   })
   if (!grantResponse.ok) throw await parseApiError(grantResponse, 'Protected document access could not be granted.')
   const grant = accessGrantSchema.parse(await grantResponse.json())
-  const response = await fetch(grant.accessPath, {
-    cache: 'no-store',
-    headers: await documentApiHeaders(),
-  })
+  const response = await documentApiRequest(grant.accessPath)
   if (!response.ok) throw await parseApiError(response, 'The protected document could not be loaded.')
   const disposition = response.headers.get('content-disposition') ?? ''
   const encodedFilename = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]

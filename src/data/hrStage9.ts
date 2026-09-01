@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { documentApiHeaders, parseApiError } from './hrDocuments'
+import { documentApiRequest, parseApiError } from './hrDocuments'
 
 export const hrStage9ModuleSchema = z.enum(['offboarding', 'self_service', 'reporting'])
 const pageSizeSchema = z.union([z.literal(5), z.literal(10), z.literal(20)])
@@ -44,10 +44,7 @@ export async function getHrStage9Workspace(
     pageSize: String(pageSize),
     offset: String(Math.max(0, offset)),
   })
-  const response = await fetch(`/api/v1/hr/${modulePaths[module]}/workspace?${parameters}`, {
-    cache: 'no-store',
-    headers: await documentApiHeaders(),
-  })
+  const response = await documentApiRequest(`/api/v1/hr/${modulePaths[module]}/workspace?${parameters}`)
   if (!response.ok) throw await parseApiError(response, `${module.replace('_', ' ')} workspace could not be loaded.`)
   return hrStage9WorkspaceSchema.parse(await response.json())
 }

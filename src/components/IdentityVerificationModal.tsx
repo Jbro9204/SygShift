@@ -7,11 +7,12 @@ import { ModalDialog } from './ModalDialog'
 type VerificationMethod = 'authenticator' | 'security_key'
 
 interface IdentityVerificationModalProps {
+  context?: 'general' | 'licensing'
   onCancel: () => void
   onVerified: (method: VerificationMethod) => Promise<void> | void
 }
 
-export function IdentityVerificationModal({ onCancel, onVerified }: IdentityVerificationModalProps) {
+export function IdentityVerificationModal({ context = 'general', onCancel, onVerified }: IdentityVerificationModalProps) {
   const [factors, setFactors] = useState<MfaFactorSummary[]>([])
   const [securityKeys, setSecurityKeys] = useState<SecurityKeySummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -85,13 +86,16 @@ export function IdentityVerificationModal({ onCancel, onVerified }: IdentityVeri
 
   const busy = busyMethod !== null
   const hasMethod = securityKeys.length > 0 || Boolean(verifiedAuthenticator)
+  const isLicensing = context === 'licensing'
 
   return (
     <ModalDialog
       busy={busy}
       busyLabel={busyMethod === 'security_key' ? 'Waiting for your security key…' : 'Verifying your authenticator code…'}
       className="identity-verification-modal"
-      description="Licensing documents contain protected employee information. Confirm your identity to continue; the pending document action will resume automatically."
+      description={isLicensing
+        ? 'Licensing documents contain protected employee information. Confirm your identity to continue; the pending document action will resume automatically.'
+        : 'This area contains protected SygShift information. Confirm your identity to continue; the action that brought you here will resume automatically.'}
       dismissible={!busy}
       onClose={onCancel}
       title="Verify your identity"
@@ -99,7 +103,12 @@ export function IdentityVerificationModal({ onCancel, onVerified }: IdentityVeri
       <div className="identity-verification-modal__content">
         <div className="identity-verification-modal__notice">
           <ShieldCheck aria-hidden="true" size={22} />
-          <div><strong>Protected document checkpoint</strong><span>Verification remains valid for 15 minutes. Your selected file and licensing information will remain in place.</span></div>
+          <div>
+            <strong>{isLicensing ? 'Protected document checkpoint' : 'Protected access checkpoint'}</strong>
+            <span>{isLicensing
+              ? 'Verification remains valid for 15 minutes. Your selected file and licensing information will remain in place.'
+              : 'Verification remains valid for 15 minutes. Your current page and entered information will remain in place.'}</span>
+          </div>
         </div>
 
         {loading ? <div className="identity-verification-modal__loading" role="status"><LoaderCircle aria-hidden="true" size={20} />Loading verification methods…</div> : null}
@@ -129,7 +138,7 @@ export function IdentityVerificationModal({ onCancel, onVerified }: IdentityVeri
         {errorMessage ? <div className="inline-alert" role="alert">{errorMessage}</div> : null}
 
         <div className="modal-actions">
-          <button className="secondary-button" disabled={busy} onClick={onCancel} type="button">Cancel</button>
+          <button className="secondary-button" disabled={busy} onClick={onCancel} type="button">{isLicensing ? 'Cancel' : 'Not now'}</button>
         </div>
       </div>
     </ModalDialog>

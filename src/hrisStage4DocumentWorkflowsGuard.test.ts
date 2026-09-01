@@ -8,6 +8,7 @@ const worker = readFileSync('worker/index.ts', 'utf8')
 const managerPage = readFileSync('src/pages/HrisDocumentWorkflowsPage.tsx', 'utf8')
 const employeePage = readFileSync('src/pages/MyDocumentsPage.tsx', 'utf8')
 const data = readFileSync('src/data/hrDocumentWorkflows.ts', 'utf8')
+const protectedTransport = readFileSync('src/data/hrDocuments.ts', 'utf8')
 const navigation = readFileSync('src/app/navigation.ts', 'utf8')
 
 describe('HRIS Stage 4 protected document workflows', () => {
@@ -41,7 +42,9 @@ describe('HRIS Stage 4 protected document workflows', () => {
   it('keeps protected documents out of browser storage APIs', () => {
     expect(data).not.toContain('storage.from(')
     expect(data).not.toContain('createSignedUrl')
-    expect(data).toContain("cache: 'no-store'")
+    expect(data).toContain('documentApiRequest')
+    expect(protectedTransport).toContain("cache: 'no-store'")
+    expect(protectedTransport).toContain('fetchWithIdentityVerification')
     expect(data).toContain('/api/v1/hr/documents/assignments/${assignmentId}/access')
     expect(data).toContain('/api/v1/hr/documents/assignments/${id}/complete')
   })

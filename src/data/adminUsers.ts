@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { fetchWithIdentityVerification } from '../lib/identityVerificationCoordinator'
 import { getSupabaseClient } from '../lib/supabase'
 import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 import { employeeLegalDisplayName } from '../lib/employeeName'
@@ -261,6 +262,14 @@ async function authHeaders(): Promise<Headers> {
   })
 }
 
+async function adminApiRequest(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetchWithIdentityVerification(async () => fetch(path, {
+    ...init,
+    cache: 'no-store',
+    headers: await authHeaders(),
+  }))
+}
+
 async function parseApiResponse(response: Response): Promise<unknown> {
   const payload = await response.json().catch(() => null)
   if (!response.ok) {
@@ -337,9 +346,8 @@ export async function revokeEmployeeTrustedDevices(employeeId: string): Promise<
 export type EmployeeMfaResetResult = z.infer<typeof mfaResetResponseSchema>
 
 export async function resetEmployeeMfa(employeeId: string): Promise<EmployeeMfaResetResult> {
-  const response = await fetch(`/api/v1/admin/users/${employeeId}/mfa-reset`, {
+  const response = await adminApiRequest(`/api/v1/admin/users/${employeeId}/mfa-reset`, {
     body: JSON.stringify({}),
-    headers: await authHeaders(),
     method: 'POST',
   })
   const payload = await parseApiResponse(response)
@@ -347,8 +355,7 @@ export async function resetEmployeeMfa(employeeId: string): Promise<EmployeeMfaR
 }
 
 export async function getEmployeeSecurityKeys(employeeId: string): Promise<SecurityKeySummary[]> {
-  const response = await fetch(`/api/v1/admin/users/${employeeId}/security-keys`, {
-    headers: await authHeaders(),
+  const response = await adminApiRequest(`/api/v1/admin/users/${employeeId}/security-keys`, {
     method: 'GET',
   })
   const parsed = adminSecurityKeysResponseSchema.safeParse(await parseApiResponse(response))
@@ -362,8 +369,7 @@ export async function revokeEmployeeSecurityKey(employeeId: string, keyId: strin
   removed: boolean
   securityKeySessionsRevoked: number
 }> {
-  const response = await fetch(`/api/v1/admin/users/${employeeId}/security-keys/${encodeURIComponent(keyId)}`, {
-    headers: await authHeaders(),
+  const response = await adminApiRequest(`/api/v1/admin/users/${employeeId}/security-keys/${encodeURIComponent(keyId)}`, {
     method: 'DELETE',
   })
   const result = adminSecurityKeyRemovalResponseSchema.parse(await parseApiResponse(response))
@@ -374,9 +380,8 @@ export async function revokeEmployeeSecurityKey(employeeId: string, keyId: strin
 }
 
 export async function sendEmployeePasswordReset(employeeId: string): Promise<EmployeePasswordResetResult> {
-  const response = await fetch(`/api/v1/admin/users/${employeeId}/password-reset`, {
+  const response = await adminApiRequest(`/api/v1/admin/users/${employeeId}/password-reset`, {
     body: JSON.stringify({}),
-    headers: await authHeaders(),
     method: 'POST',
   })
   return passwordResetResponseSchema.parse(await parseApiResponse(response))
@@ -413,9 +418,8 @@ export async function getRecentlyDeletedEmployees(): Promise<RecentlyDeletedReco
 }
 
 export async function provisionEmployeeAccount(employeeId: string, temporaryPassword?: string): Promise<ProvisioningCredential> {
-  const response = await fetch(`/api/v1/admin/users/${employeeId}/account`, {
+  const response = await adminApiRequest(`/api/v1/admin/users/${employeeId}/account`, {
     body: JSON.stringify({ temporaryPassword: cleanOptional(temporaryPassword) }),
-    headers: await authHeaders(),
     method: 'POST',
   })
   const payload = await parseApiResponse(response)
@@ -436,9 +440,8 @@ export async function provisionMissingAccounts(): Promise<{
   provisioned: ProvisioningCredential[]
   failures: Array<{ displayName: string; username: string; error: string }>
 }> {
-  const response = await fetch('/api/v1/admin/users/provision-missing', {
+  const response = await adminApiRequest('/api/v1/admin/users/provision-missing', {
     body: JSON.stringify({}),
-    headers: await authHeaders(),
     method: 'POST',
   })
   const payload = provisioningResponseSchema.parse(await parseApiResponse(response))
@@ -449,9 +452,8 @@ export async function provisionMissingAccounts(): Promise<{
 }
 
 export async function sendEmployeeLoginEmail(employeeId: string, temporaryPassword?: string): Promise<LoginEmailResult> {
-  const response = await fetch(`/api/v1/admin/users/${employeeId}/login-email`, {
+  const response = await adminApiRequest(`/api/v1/admin/users/${employeeId}/login-email`, {
     body: JSON.stringify({ temporaryPassword: cleanOptional(temporaryPassword) }),
-    headers: await authHeaders(),
     method: 'POST',
   })
   const payload = await response.json().catch(() => null)
@@ -467,9 +469,8 @@ export async function sendEmployeeLoginEmail(employeeId: string, temporaryPasswo
 }
 
 export async function sendEmployeeWelcomeEmail(employeeId: string): Promise<WelcomeEmailResult> {
-  const response = await fetch(`/api/v1/admin/users/${employeeId}/welcome-email`, {
+  const response = await adminApiRequest(`/api/v1/admin/users/${employeeId}/welcome-email`, {
     body: JSON.stringify({}),
-    headers: await authHeaders(),
     method: 'POST',
   })
   const payload = await response.json().catch(() => null)
@@ -485,9 +486,8 @@ export async function sendEmployeeWelcomeEmail(employeeId: string): Promise<Welc
 }
 
 export async function sendAllEmployeeLoginEmails(): Promise<LoginEmailResult> {
-  const response = await fetch('/api/v1/admin/users/login-emails', {
+  const response = await adminApiRequest('/api/v1/admin/users/login-emails', {
     body: JSON.stringify({}),
-    headers: await authHeaders(),
     method: 'POST',
   })
   const payload = await response.json().catch(() => null)

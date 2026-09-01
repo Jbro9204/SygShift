@@ -6,7 +6,7 @@ import {
 } from './hrAutomation'
 
 vi.mock('./hrDocuments', () => ({
-  documentApiHeaders: vi.fn(async () => ({ Authorization: 'Bearer test-token', 'Content-Type': 'application/json' })),
+  documentApiRequest: vi.fn((path: string, init?: RequestInit) => fetch(path, { cache: 'no-store', ...init })),
   parseApiError: vi.fn(async (_response: Response, fallback: string) => new Error(fallback)),
 }))
 

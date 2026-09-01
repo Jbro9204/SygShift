@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { fetchWithIdentityVerification } from '../lib/identityVerificationCoordinator'
+import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 import { getSupabaseClient } from '../lib/supabase'
 
 const notificationCenterSchema = z.object({
@@ -143,15 +145,16 @@ export async function getOperationsReport(): Promise<OperationsReport> {
 }
 
 export async function processNotificationBatch(): Promise<NotificationProcessResult> {
-  const { data: sessionData, error: sessionError } = await getSupabaseClient().auth.getSession()
-  const token = sessionData.session?.access_token
-  if (sessionError || !token) {
-    throw new Error('Sign in with an MFA-verified operations account before sending queued emails.')
-  }
-
-  const response = await fetch('/api/v1/admin/notifications/process', {
-    headers: { authorization: `Bearer ${token}` },
-    method: 'POST',
+  const response = await fetchWithIdentityVerification(async () => {
+    const { data: sessionData, error: sessionError } = await getSupabaseClient().auth.getSession()
+    const token = sessionData.session?.access_token
+    if (sessionError || !token) {
+      throw new Error('Sign in with an MFA-verified operations account before sending queued emails.')
+    }
+    return fetch('/api/v1/admin/notifications/process', {
+      headers: appendProtectedSessionHeaders({ authorization: `Bearer ${token}` }),
+      method: 'POST',
+    })
   })
   const payload = await response.json().catch(() => null) as unknown
   if (!response.ok) {

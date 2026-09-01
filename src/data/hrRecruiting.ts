@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { documentApiHeaders, parseApiError } from './hrDocuments'
+import { documentApiRequest, parseApiError } from './hrDocuments'
 
 const recruitingWorkspaceSchema = z.object({
   enabled: z.boolean(),
@@ -59,11 +59,7 @@ export type HrRecruitingAction =
   | 'record_offer_decision' | 'dispose_application'
 
 async function recruitingApi(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(path, {
-    cache: 'no-store',
-    ...init,
-    headers: await documentApiHeaders(init?.body ? 'application/json' : undefined),
-  })
+  return documentApiRequest(path, init)
 }
 
 export async function getHrRecruitingWorkspace(pageSize: 5 | 10 | 20 = 10, offset = 0) {

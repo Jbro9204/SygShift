@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### System-wide identity verification triggers
+
+- Replaced protected-access MFA dead ends with one shared application-level identity checkpoint that opens automatically on explicit server `*_mfa_required` responses and retries the blocked action once after successful verification.
+- Extended the verified FIDO-first/authenticator-fallback workflow across all Worker-backed HR modules, protected User Administration actions, notification processing, and attendance reporting while preserving the existing context-aware Licensing workflow.
+- Coordinated concurrent protected requests behind one modal, rebuilt session/assurance headers for every retry, preserved entered state, and retained the existing 15-minute recent-verification boundary.
+- Kept authentication and permission failures blocked, excluded raw `aal2_required` security-key management actions from automatic FIDO authorization, and made cancellation fail closed.
+- Added a visible **Verify and retry** recovery action to the Employee File Compensation card for a dismissed or unsuccessful checkpoint.
+- No database migration or production record change was required.
+- Full validation passed: type checking, zero-warning lint, 142 test files / 693 tests, Worker/client builds, and all 52 responsive light/dark browser checks.
+- Production release pending; full details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_SYSTEM_WIDE_IDENTITY_VERIFICATION_TRIGGERS.md`.
+
 ### Identity verification and FIDO workflow repair
 
 - Replaced protected Licensing document MFA dead ends with one forced identity-verification modal that supports a registered FIDO2 key and authenticator fallback.

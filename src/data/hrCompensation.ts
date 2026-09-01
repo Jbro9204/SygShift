@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { documentApiHeaders, parseApiError } from './hrDocuments'
+import { documentApiRequest, parseApiError } from './hrDocuments'
 
 const payFrequencySchema = z.enum(['hourly', 'weekly', 'biweekly', 'semimonthly', 'monthly', 'annual'])
 
@@ -70,8 +70,7 @@ export type HrPayRateDecisionInput = {
 }
 
 async function compensationRequest(path: string, init: RequestInit = {}): Promise<Response> {
-  const headers = await documentApiHeaders(init.body ? 'application/json' : undefined)
-  return fetch(path, { ...init, cache: 'no-store', headers })
+  return documentApiRequest(path, init)
 }
 
 export async function getHrEmployeeCompensation(employeeId: string): Promise<HrEmployeeCompensation> {

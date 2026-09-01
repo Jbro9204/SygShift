@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { fetchWithIdentityVerification } from '../lib/identityVerificationCoordinator'
 import { getSupabaseClient } from '../lib/supabase'
 import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 
@@ -1345,17 +1346,16 @@ export async function reportAttendanceIssue(input: {
   operationalDate?: string | null
   shiftId?: string | null
 }): Promise<AttendanceReportResult> {
-  const headers = await authenticatedApiHeaders()
-  const response = await fetch('/api/v1/time/attendance/report', {
+  const response = await fetchWithIdentityVerification(async () => fetch('/api/v1/time/attendance/report', {
     body: JSON.stringify({
       eventType: input.eventType,
       note: input.note,
       operationalDate: input.operationalDate ?? null,
       shiftId: input.shiftId ?? null,
     }),
-    headers,
+    headers: await authenticatedApiHeaders(),
     method: 'POST',
-  })
+  }))
   return parseAttendanceReportResponse(response)
 }
 

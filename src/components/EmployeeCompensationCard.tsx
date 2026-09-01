@@ -63,7 +63,7 @@ export function EmployeeCompensationCard({ employeeId, employeeName }: Props) {
       </div>
 
       {query.isPending ? <div className="hr-file-compensation__state" role="status"><Clock3 aria-hidden="true" />Loading protected compensation…</div> : null}
-      {query.isError ? <div className="hr-file-compensation__state hr-file-compensation__state--error" role="alert"><ShieldCheck aria-hidden="true" /><span><strong>Protected compensation could not be opened.</strong><small>{query.error instanceof Error ? query.error.message : 'Verify with MFA and try again.'}</small></span></div> : null}
+      {query.isError ? <div className="hr-file-compensation__state hr-file-compensation__state--error" role="alert"><ShieldCheck aria-hidden="true" /><span><strong>Protected compensation could not be opened.</strong><small>{query.error instanceof Error ? query.error.message : 'Verify with MFA and try again.'}</small></span><button className="secondary-button" onClick={() => void query.refetch()} type="button"><ShieldCheck aria-hidden="true" size={16} />Verify and retry</button></div> : null}
 
       {record ? (
         <>

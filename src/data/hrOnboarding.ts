@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { documentApiHeaders, parseApiError } from './hrDocuments'
+import { documentApiRequest, parseApiError } from './hrDocuments'
 
 const nullableText = z.string().nullable()
 
@@ -90,11 +90,7 @@ export type HrOnboardingAction =
   | 'launch_case' | 'start_task' | 'complete_task' | 'waive_task' | 'finalize_case' | 'cancel_case'
 
 async function onboardingApi(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(path, {
-    cache: 'no-store',
-    ...init,
-    headers: await documentApiHeaders(init?.body ? 'application/json' : undefined),
-  })
+  return documentApiRequest(path, init)
 }
 
 export async function getHrOnboardingWorkspace(pageSize: 5 | 10 | 20 = 10, offset = 0) {

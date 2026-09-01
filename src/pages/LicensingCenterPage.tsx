@@ -429,6 +429,7 @@ function CredentialDocumentAccessModal({
       </ModalDialog>
       {verificationOpen ? (
         <IdentityVerificationModal
+          context="licensing"
           onCancel={() => setVerificationOpen(false)}
           onVerified={() => {
             setVerificationOpen(false)
@@ -503,6 +504,7 @@ function CredentialDocumentsModal({ credential, onClose }: { credential: Licensi
       <ModalDialog className="modal-dialog--wide licensing-documents-modal" description={`${credentialDisplayName(credential)} · Protected documents remain private and every access is audited.`} onClose={onClose} title="Credential documents"><CredentialDocumentList credentialId={credential.credentialId} onVerificationRequired={requireVerification} /></ModalDialog>
       {verificationOpen ? (
         <IdentityVerificationModal
+          context="licensing"
           onCancel={() => setVerificationOpen(false)}
           onVerified={async () => {
             setVerificationOpen(false)
@@ -698,6 +700,7 @@ function CredentialEditModal({
       </ModalDialog>
       {verificationOpen ? (
         <IdentityVerificationModal
+          context="licensing"
           onCancel={() => setVerificationOpen(false)}
           onVerified={async () => {
             setVerificationOpen(false)

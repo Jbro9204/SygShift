@@ -3234,6 +3234,15 @@
   display: block;
 }
 
+.hr-file-compensation__state span {
+  flex: 1;
+  min-width: 0;
+}
+
+.hr-file-compensation__state .secondary-button {
+  flex: 0 0 auto;
+}
+
 .hr-file-compensation__state small {
   margin-top: 3px;
   color: inherit;

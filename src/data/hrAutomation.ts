@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { documentApiHeaders, parseApiError } from './hrDocuments'
+import { documentApiRequest, parseApiError } from './hrDocuments'
 
 const nullableText = z.string().nullable()
 
@@ -88,11 +88,7 @@ export type HrAutomationTask = z.infer<typeof automationTaskSchema>
 export type HrAutomationWorkspace = z.infer<typeof automationWorkspaceSchema>
 
 async function automationApi(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(path, {
-    cache: 'no-store',
-    ...init,
-    headers: await documentApiHeaders(init?.body ? 'application/json' : undefined),
-  })
+  return documentApiRequest(path, init)
 }
 
 export async function getMyHrAutomationTasks() {

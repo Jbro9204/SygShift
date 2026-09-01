@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { documentApiHeaders, parseApiError } from './hrDocuments'
+import { documentApiRequest, parseApiError } from './hrDocuments'
 
 const pageSizeSchema = z.union([z.literal(5), z.literal(10), z.literal(20)])
 const gateSchema = z.object({
@@ -52,10 +52,7 @@ export async function getHrStage10Workspace(
     pageSize: String(pageSize),
     offset: String(Math.max(0, offset)),
   })
-  const response = await fetch(`/api/v1/hr/payroll-integration/workspace?${parameters}`, {
-    cache: 'no-store',
-    headers: await documentApiHeaders(),
-  })
+  const response = await documentApiRequest(`/api/v1/hr/payroll-integration/workspace?${parameters}`)
   if (!response.ok) throw await parseApiError(response, 'Payroll integration controls could not be loaded.')
   return hrStage10WorkspaceSchema.parse(await response.json())
 }
