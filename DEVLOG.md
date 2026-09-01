@@ -25,6 +25,20 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Employee File employment-date maintenance
+
+- Made start/hire and separation/termination dates directly maintainable from the protected Employee File Employment card.
+- Required MFA-verified `hr.people.manage`, server validation, a verified evidence source, source reference, and a written reason for every change.
+- Updated the permanent employee dates and appended a superseding record to the existing HR effective-date evidence chain in one transaction; no duplicate date-history table was created.
+- Added a compact five-entry employment-date history with actor, evidence source, reason, timestamp, and current-evidence status.
+- Allowed future start dates only for onboarding employees, required a termination date for separated employees, rejected impossible date order, and kept future separation planning in Offboarding.
+- Preserved schedules, punches, active clock sessions, time cards, payroll history, employee access, and all other employee-file modules.
+- Applied production migration `20260901210000_employee_file_employment_date_maintenance.sql` through an isolated one-migration workspace. The first syntax-validation attempt rolled back fully before any commit; the corrected migration then applied successfully and post-apply verification reported the database up to date.
+- Full validation passed: type checking, zero-warning lint, 130 test files / 644 tests, Worker build, client production build, migration preservation assertions, and live application health/readiness checks.
+- Deployed Cloudflare Worker version `742d6601-5182-4123-804e-c816ace33591`; production app, login, health, and readiness returned `200`.
+- Removed the completed Employee File start/hire date item from the active future queue.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_EMPLOYEE_FILE_EMPLOYMENT_DATE_MAINTENANCE.md`.
+
 ### Continental U.S. employee schedule time zones
 
 - Added employee profile time zones for Eastern, Central, Mountain, and Pacific operations.

@@ -2828,6 +2828,36 @@
   color: #a36b11;
 }
 
+.hr-file-card__heading > div {
+  min-width: 0;
+}
+
+.hr-file-card__edit {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-left: auto;
+  padding: 0 12px;
+  color: #533609;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+  background: #fff6e3;
+  border: 1px solid #dbb66d;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.hr-file-card__edit:hover,
+.hr-file-card__edit:focus-visible {
+  color: #201607;
+  background: #f7e2b4;
+  border-color: #b87813;
+}
+
 .hr-file-card dl,
 .hr-file-contacts dl {
   display: grid;
@@ -2862,6 +2892,152 @@
   font-size: 14px;
   font-weight: 800;
   line-height: 1.45;
+}
+
+.hr-file-employment-saved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  color: #215f49;
+  font-size: 12px;
+  font-weight: 850;
+  background: #eaf6f0;
+  border: 1px solid #b9ddcb;
+  border-radius: 8px;
+}
+
+.hr-file-employment-history {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid #e3d9c9;
+  border-radius: 9px;
+}
+
+.hr-file-employment-history > summary {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: #554b3e;
+  font-size: 12px;
+  font-weight: 900;
+  background: #faf7f0;
+  cursor: pointer;
+}
+
+.hr-file-employment-history > summary span {
+  display: grid;
+  min-width: 24px;
+  height: 24px;
+  margin-left: auto;
+  place-items: center;
+  color: #6b450a;
+  background: #f4e3bd;
+  border-radius: 999px;
+}
+
+.hr-file-employment-history > div {
+  display: grid;
+}
+
+.hr-file-employment-history article {
+  display: grid;
+  gap: 3px;
+  padding: 11px 12px;
+  border-top: 1px solid #ece5da;
+}
+
+.hr-file-employment-history article strong {
+  color: #26211b;
+  font-size: 12px;
+}
+
+.hr-file-employment-history article span,
+.hr-file-employment-history article small {
+  color: #71685d;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.hr-file-employment-history article em {
+  width: max-content;
+  margin-top: 3px;
+  padding: 3px 7px;
+  color: #24634c;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  background: #eaf5ef;
+  border-radius: 999px;
+}
+
+.hr-employment-dates-modal form {
+  display: grid;
+  gap: 17px;
+}
+
+.hr-employment-dates-modal label {
+  display: grid;
+  gap: 7px;
+  color: #302a23;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.hr-employment-dates-modal input,
+.hr-employment-dates-modal select,
+.hr-employment-dates-modal textarea {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 12px;
+  color: #211d18;
+  font: inherit;
+  font-weight: 700;
+  background: #fff;
+  border: 1px solid #cfc4b3;
+  border-radius: 9px;
+}
+
+.hr-employment-dates-modal textarea {
+  min-height: 104px;
+  resize: vertical;
+}
+
+.hr-employment-dates-modal small {
+  color: #746c61;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.hr-employment-dates-modal__notice {
+  display: flex;
+  gap: 12px;
+  padding: 14px 15px;
+  color: #62430f;
+  background: #fff7e8;
+  border: 1px solid #e4c489;
+  border-radius: 10px;
+}
+
+.hr-employment-dates-modal__notice > svg {
+  flex: 0 0 auto;
+}
+
+.hr-employment-dates-modal__notice p {
+  margin: 4px 0 0;
+  color: #6f624f;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hr-employment-dates-modal__dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .hr-file-counts {
@@ -3200,8 +3376,18 @@
   .hr-file-card dl,
   .hr-file-contacts dl,
   .hr-file-counts,
-  .hr-file-links nav {
+  .hr-file-links nav,
+  .hr-employment-dates-modal__dates {
     grid-template-columns: 1fr;
+  }
+
+  .hr-file-card__heading {
+    flex-wrap: wrap;
+  }
+
+  .hr-file-card__edit {
+    width: 100%;
+    margin-left: 0;
   }
 
   .hr-file-sections__heading,

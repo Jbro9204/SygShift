@@ -55,6 +55,9 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Auth-user creation and password resets run through the Worker because they require the service-role key. That key is never available to browser code.
 - Disabled accounts and separated employees are blocked at the database authorization boundary even if an Auth session exists.
 - The workbook people import promotes only clear person records automatically; ambiguous source rows remain held for review.
+- The protected Employee File is the authoritative index for one permanent employee identity. Start/hire and separation/termination dates are maintained directly in its Employment section by MFA-verified users with `hr.people.manage`.
+- Employment-date changes update `public.employees` and append a superseding record to the existing HR effective-date evidence chain in the same transaction. Source reference, reason, actor, prior value, replacement value, and time remain auditable.
+- Employment-date correction never rewrites schedules, punches, time cards, payroll rows, licenses, accounts, or other historical records. Future separation planning remains owned by Offboarding; other employee details remain owned by their connected specialized workspace.
 
 ## Change discipline
 

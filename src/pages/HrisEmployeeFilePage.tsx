@@ -1,23 +1,34 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import type { FormEvent } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowLeft,
   BadgeCheck,
   CalendarCheck2,
+  CalendarClock,
   ChevronDown,
   ClipboardCheck,
   FileStack,
+  History,
   KeyRound,
   Mail,
   MoveUpRight,
+  PencilLine,
   ShieldCheck,
   UserRound,
 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { canAccessRoute } from '../app/accessPolicy'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { ModalDialog } from '../components/ModalDialog'
 import { getSessionContext } from '../data/auth'
-import { getHrisEmployeeFile } from '../data/hrisPeople'
+import {
+  getHrisEmployeeFile,
+  getHrisEmploymentDateHistory,
+  updateHrisEmploymentDates,
+} from '../data/hrisPeople'
+import type { HrisEmploymentDateSource } from '../data/hrisPeople'
 import { formatOperationalDateTime } from '../lib/time'
 
 const labels: Record<string, string> = {
@@ -28,6 +39,21 @@ const readinessLabels: Record<string, string> = {
   employee_number_missing: 'Employee number needed',
   hire_date_missing: 'Verified hire date needed',
   separation_date_missing: 'Verified separation date needed',
+}
+
+const sourceTypeLabels: Record<HrisEmploymentDateSource, string> = {
+  employee_file: 'Employee file',
+  hr_export: 'Verified HR export',
+  verified_hr_record: 'Verified HR record',
+  verified_manual: 'Verified manual record',
+}
+
+type EmploymentDateForm = {
+  hiredOn: string
+  separatedOn: string
+  sourceType: HrisEmploymentDateSource
+  sourceReference: string
+  reason: string
 }
 
 function titleCase(value: string): string {
@@ -50,6 +76,9 @@ function countLabel(count: number, singular: string, plural = `${singular}s`): s
 
 export function HrisEmployeeFilePage() {
   const { employeeId = '' } = useParams()
+  const queryClient = useQueryClient()
+  const [employmentDateForm, setEmploymentDateForm] = useState<EmploymentDateForm | null>(null)
+  const [employmentDateSaved, setEmploymentDateSaved] = useState(false)
   const sessionQuery = useQuery({
     queryFn: getSessionContext,
     queryKey: ['session-context'],
@@ -59,7 +88,57 @@ export function HrisEmployeeFilePage() {
     queryFn: () => getHrisEmployeeFile(employeeId),
     queryKey: ['hris-employee-file', employeeId],
   })
+  const employmentDateHistoryQuery = useQuery({
+    enabled: Boolean(employeeId),
+    queryFn: () => getHrisEmploymentDateHistory(employeeId),
+    queryKey: ['hris-employment-date-history', employeeId],
+  })
+  const employmentDateMutation = useMutation({
+    mutationFn: updateHrisEmploymentDates,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['hris-employee-file', employeeId] }),
+        queryClient.invalidateQueries({ queryKey: ['hris-employment-date-history', employeeId] }),
+        queryClient.invalidateQueries({ queryKey: ['hris-people'] }),
+        queryClient.invalidateQueries({ queryKey: ['hris-identity-readiness'] }),
+      ])
+      setEmploymentDateForm(null)
+      setEmploymentDateSaved(true)
+    },
+  })
   const record = recordQuery.data
+
+  function openEmploymentDateEditor() {
+    if (!record) return
+    employmentDateMutation.reset()
+    setEmploymentDateSaved(false)
+    setEmploymentDateForm({
+      hiredOn: record.hiredOn ?? '',
+      reason: '',
+      separatedOn: record.separatedOn ?? '',
+      sourceReference: '',
+      sourceType: 'employee_file',
+    })
+  }
+
+  function closeEmploymentDateEditor() {
+    if (employmentDateMutation.isPending) return
+    employmentDateMutation.reset()
+    setEmploymentDateForm(null)
+  }
+
+  function submitEmploymentDates(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!record || !employmentDateForm) return
+    employmentDateMutation.mutate({
+      employeeId: record.employeeId,
+      hiredOn: employmentDateForm.hiredOn,
+      reason: employmentDateForm.reason,
+      separatedOn: employmentDateForm.separatedOn || null,
+      sourceReference: employmentDateForm.sourceReference,
+      sourceType: employmentDateForm.sourceType,
+    })
+  }
   const connectedWorkspaces = [
     { icon: BadgeCheck, label: 'Licensing Center', path: '/licensing' },
     { icon: CalendarCheck2, label: 'Availability', path: '/availability' },
@@ -203,9 +282,16 @@ export function HrisEmployeeFilePage() {
               <dl><div><dt>Legal first name</dt><dd>{record.firstName}</dd></div><div><dt>Legal middle name</dt><dd>{display(record.middleName)}</dd></div><div><dt>Legal last name</dt><dd>{record.lastName}</dd></div><div><dt>Employee number</dt><dd>{display(record.employeeNumber)}</dd></div></dl>
             </article>
 
-            <article className="hr-file-card">
-              <div className="hr-file-card__heading"><ClipboardCheck aria-hidden="true" /><div><p className="eyebrow">Employment</p><h2>Current relationship</h2></div></div>
-              <dl><div><dt>Employment type</dt><dd>{titleCase(record.employmentType)}</dd></div><div><dt>Primary role</dt><dd>{titleCase(record.primaryRole)}</dd></div><div><dt>Job title</dt><dd>{display(record.jobTitle)}</dd></div><div><dt>Hire date</dt><dd>{formatDate(record.hiredOn)}</dd></div>{record.status === 'separated' ? <div><dt>Separation date</dt><dd>{formatDate(record.separatedOn)}</dd></div> : null}</dl>
+            <article className="hr-file-card hr-file-employment-card">
+              <div className="hr-file-card__heading"><ClipboardCheck aria-hidden="true" /><div><p className="eyebrow">Employment</p><h2>Current relationship</h2></div>{employmentDateHistoryQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={openEmploymentDateEditor} type="button"><PencilLine aria-hidden="true" size={16} />Edit dates</button> : null}</div>
+              <dl><div><dt>Employment type</dt><dd>{titleCase(record.employmentType)}</dd></div><div><dt>Primary role</dt><dd>{titleCase(record.primaryRole)}</dd></div><div><dt>Job title</dt><dd>{display(record.jobTitle)}</dd></div><div><dt>Start / hire date</dt><dd>{formatDate(record.hiredOn)}</dd></div><div><dt>Separation / termination date</dt><dd>{formatDate(record.separatedOn)}</dd></div></dl>
+              {employmentDateSaved ? <div className="hr-file-employment-saved" role="status"><CalendarCheck2 aria-hidden="true" size={17} />Employment dates and audit history updated.</div> : null}
+              {employmentDateHistoryQuery.data?.items.length ? (
+                <details className="hr-file-employment-history">
+                  <summary><History aria-hidden="true" size={16} />Date history <span>{employmentDateHistoryQuery.data.items.length}</span></summary>
+                  <div>{employmentDateHistoryQuery.data.items.map((item) => <article key={item.id}><strong>{formatDate(item.hiredOn)} – {formatDate(item.separatedOn)}</strong><span>{sourceTypeLabels[item.sourceType]} · {formatOperationalDateTime(item.authorizedAt)}</span><small>{item.reason}</small>{item.current ? <em>Current evidence</em> : null}</article>)}</div>
+                </details>
+              ) : null}
             </article>
 
             <article className="hr-file-card">
@@ -257,7 +343,7 @@ export function HrisEmployeeFilePage() {
           ) : null}
 
           <section className="hr-file-links">
-            <div><p className="eyebrow">Connected workspaces</p><h2>Continue working this employee</h2><p>Use the existing specialized workspace for operational changes. Employee File remains a review surface.</p></div>
+            <div><p className="eyebrow">Connected workspaces</p><h2>Continue working this employee</h2><p>The Employee File is the authoritative index. Employment dates are maintained here; other changes open the specialized workspace that owns the record.</p></div>
             <nav aria-label="Employee connected workspaces">
               {connectedWorkspaces.map((workspace) => {
                 const Icon = workspace.icon
@@ -265,6 +351,23 @@ export function HrisEmployeeFilePage() {
               })}
             </nav>
           </section>
+
+          {employmentDateForm ? (
+            <ModalDialog busy={employmentDateMutation.isPending} busyLabel="Updating employment dates…" className="hr-employment-dates-modal" description="Update the permanent employment record and append a new audit entry. Existing schedules, punches, time cards, and payroll records will not be rewritten." onClose={closeEmploymentDateEditor} title={`Employment dates · ${record.legalName}`}>
+              <form onSubmit={submitEmploymentDates}>
+                <div className="hr-employment-dates-modal__notice"><ShieldCheck aria-hidden="true" /><div><strong>Evidence and explanation are required</strong><p>Use the verified source dates. A separated employee must have a termination date, and it cannot be earlier than the hire date.</p></div></div>
+                <div className="hr-employment-dates-modal__dates">
+                  <label>Start / hire date<input onChange={(event) => setEmploymentDateForm({ ...employmentDateForm, hiredOn: event.target.value })} required type="date" value={employmentDateForm.hiredOn} /><small>A future start date is allowed only while the employee is onboarding.</small></label>
+                  <label>Separation / termination date<input min={employmentDateForm.hiredOn || undefined} onChange={(event) => setEmploymentDateForm({ ...employmentDateForm, separatedOn: event.target.value })} required={record.status === 'separated'} type="date" value={employmentDateForm.separatedOn} /><small>{record.status === 'separated' ? 'Required because this employee is separated.' : 'Leave blank unless an actual separation is documented.'}</small></label>
+                </div>
+                <label>Evidence source<select onChange={(event) => setEmploymentDateForm({ ...employmentDateForm, sourceType: event.target.value as HrisEmploymentDateSource })} value={employmentDateForm.sourceType}>{Object.entries(sourceTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                <label>Source reference<input onChange={(event) => setEmploymentDateForm({ ...employmentDateForm, sourceReference: event.target.value })} placeholder="Example: signed offer letter dated 09/01/2026" required value={employmentDateForm.sourceReference} /></label>
+                <label>Reason for update<textarea onChange={(event) => setEmploymentDateForm({ ...employmentDateForm, reason: event.target.value })} placeholder="Explain why these dates are being added or corrected." required rows={4} value={employmentDateForm.reason} /></label>
+                {employmentDateMutation.isError ? <div className="error-message" role="alert">{employmentDateMutation.error instanceof Error ? employmentDateMutation.error.message : 'Employment dates could not be updated.'}</div> : null}
+                <div className="modal-actions"><button className="secondary-button" disabled={employmentDateMutation.isPending} onClick={closeEmploymentDateEditor} type="button">Cancel</button><button className="primary-action" disabled={employmentDateMutation.isPending} type="submit"><CalendarClock aria-hidden="true" size={17} />Save employment dates</button></div>
+              </form>
+            </ModalDialog>
+          ) : null}
         </>
       ) : null}
     </main>

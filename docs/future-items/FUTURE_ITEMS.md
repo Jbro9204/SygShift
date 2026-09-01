@@ -129,25 +129,6 @@ Completion criteria:
 
 ## HR, Finance & Employee Lifecycle
 
-### Employee File Start and Hire Date Management
-
-- Priority: **Urgent**
-- Target window: 09/01/2026 focused HR usability work
-- Status: Approved / queued; no production change made
-- Added: 08/31/2026
-
-Make the official employment start or hire date directly maintainable from the employee's authoritative HR file instead of requiring routine HR work to pass through Employment Data Readiness.
-
-Required outcomes:
-
-- Place the effective-dated start or hire date in the employee file's Employment area.
-- Keep Employment Data Readiness as a reconciliation and exception-cleanup workspace rather than the primary employee editor.
-- Enforce exact HR permissions, recent authentication where required, server-side validation, and append-only audit history.
-- Require an authoritative source reference and reason for corrections while preserving prior values and effective-dated history.
-- Support legitimate future start dates for onboarding employees without allowing unsupported or contradictory employment dates.
-- Keep onboarding, User Accounts, payroll, timekeeping, scheduling, licensing, and HR identity mapping synchronized through the existing permanent employee identity without duplicate records.
-- Verify add, correction, cancel, permission-denied, audit, refresh, rollback, and production behavior before activation.
-
 ### SygShift HR & Finance Suite
 
 - Priority: **Urgent**

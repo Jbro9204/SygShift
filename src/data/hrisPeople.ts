@@ -120,10 +120,47 @@ const employeeFileSchema = z.object({
   }),
 })
 
+const employmentDateHistoryItemSchema = z.object({
+  id: z.string().uuid(),
+  hiredOn: z.string(),
+  separatedOn: z.string().nullable(),
+  sourceType: z.enum(['hr_export', 'employee_file', 'verified_hr_record', 'verified_manual']),
+  sourceReference: z.string(),
+  reason: z.string(),
+  sourceStatus: z.string(),
+  authorizedBy: z.string(),
+  authorizedAt: z.string(),
+  current: z.boolean(),
+})
+
+const employmentDateHistorySchema = z.object({
+  canManage: z.boolean(),
+  items: z.array(employmentDateHistoryItemSchema),
+})
+
+const employmentDateUpdateResultSchema = z.object({
+  employeeId: z.string().uuid(),
+  hiredOn: z.string(),
+  separatedOn: z.string().nullable(),
+  changeId: z.string().uuid(),
+  updatedAt: z.string(),
+})
+
 export type HrisPeopleItem = z.infer<typeof peopleItemSchema>
 export type HrisPeopleSavedView = z.infer<typeof savedViewSchema>
 export type HrisPeopleWorkspace = z.infer<typeof peopleWorkspaceSchema>
 export type HrisEmployeeFile = z.infer<typeof employeeFileSchema>
+export type HrisEmploymentDateHistory = z.infer<typeof employmentDateHistorySchema>
+export type HrisEmploymentDateSource = z.infer<typeof employmentDateHistoryItemSchema>['sourceType']
+
+export type HrisEmploymentDateUpdateInput = {
+  employeeId: string
+  hiredOn: string
+  separatedOn: string | null
+  sourceType: HrisEmploymentDateSource
+  sourceReference: string
+  reason: string
+}
 
 export type HrisPeopleQuery = {
   search?: string
@@ -155,6 +192,28 @@ export async function getHrisEmployeeFile(employeeId: string): Promise<HrisEmplo
   const { data, error } = await getSupabaseClient().rpc('get_hr_people_record', { target_employee_id: employeeId })
   if (error) throw new Error(error.message || 'The employee file could not be loaded.')
   return employeeFileSchema.parse(data)
+}
+
+export async function getHrisEmploymentDateHistory(employeeId: string): Promise<HrisEmploymentDateHistory> {
+  const { data, error } = await getSupabaseClient().rpc('get_hr_employee_employment_date_history', {
+    target_employee_id: employeeId,
+    target_limit: 5,
+  })
+  if (error) throw new Error(error.message || 'Employment date history could not be loaded.')
+  return employmentDateHistorySchema.parse(data)
+}
+
+export async function updateHrisEmploymentDates(input: HrisEmploymentDateUpdateInput) {
+  const { data, error } = await getSupabaseClient().rpc('update_hr_employee_employment_dates', {
+    target_employee_id: input.employeeId,
+    target_hired_on: input.hiredOn,
+    target_reason: input.reason.trim(),
+    target_separated_on: input.separatedOn || null,
+    target_source_reference: input.sourceReference.trim(),
+    target_source_type: input.sourceType,
+  })
+  if (error) throw new Error(error.message || 'Employment dates could not be updated.')
+  return employmentDateUpdateResultSchema.parse(data)
 }
 
 export async function saveHrisPeopleView(name: string, query: HrisPeopleQuery): Promise<string> {

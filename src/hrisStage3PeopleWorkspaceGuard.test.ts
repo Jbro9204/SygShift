@@ -36,14 +36,14 @@ describe('HRIS Stage 3 People and HR guardrails', () => {
     expect(workspace).not.toContain('<option value={50}>50</option>')
   })
 
-  it('keeps the Employee File read-only and links to established operational workspaces', () => {
-    expect(employeeFile).toContain('Employee File remains a review surface.')
+  it('keeps the Employee File connected to established authoritative workspaces', () => {
+    expect(employeeFile).toContain('other changes open the specialized workspace that owns the record.')
     expect(employeeFile).toContain("path: '/licensing'")
     expect(employeeFile).toContain("path: '/availability'")
     expect(employeeFile).toContain("path: '/requests'")
     expect(employeeFile).toContain("path: '/users'")
     expect(employeeFile).toContain('canAccessRoute(workspace.path, sessionQuery.data)')
-    expect(employeeFile).not.toMatch(/useMutation|<input|<textarea/)
+    expect(employeeFile).toContain('No information is copied or maintained twice.')
   })
 
   it('preserves permanent employee, identity, role, and permission records', () => {
