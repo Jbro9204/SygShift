@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useIsMutating, useQuery } from '@tanstack/react-query'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, BellRing, ChevronDown, ChevronsLeft, ChevronsRight, FileClock, Home, LogOut, Megaphone, Menu, ShieldCheck, UserCircle, X } from 'lucide-react'
+import { ArrowLeft, BellRing, ChevronDown, ChevronsLeft, ChevronsRight, FileClock, Home, LogOut, Megaphone, Menu, Moon, ShieldCheck, Sun, X } from 'lucide-react'
 import { homeNavigationItem, navigationGroups } from '../app/navigation'
 import {
   INTERNAL_NAVIGATION_STORAGE_KEY,
@@ -26,7 +26,8 @@ import { lastCompletedPayrollWeek } from '../lib/time'
 import { MaintenanceNotice, MaintenanceUnavailablePanel } from './MaintenanceNotice'
 import { getMaintenanceStatus, maintenanceFeatureForPath } from '../data/maintenance'
 import { deriveSystemServiceStatus, getSystemReadiness } from '../data/systemStatus'
-import { getMyAccount, getMyAccountPhoto } from '../data/myAccount'
+import { getMyAccount, getMyAccountPhoto, type MyAccount } from '../data/myAccount'
+import { applyTheme, getCurrentTheme, type SygShiftTheme } from '../lib/theme'
 import { SystemStatusIndicator } from './SystemStatusIndicator'
 import { OperationalTimeHeader } from './OperationalTimeHeader'
 
@@ -35,6 +36,21 @@ const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000
 const WORKSPACE_ALERT_ROTATE_MS = 9_000
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sygshift.sidebar.collapsed'
 const SIDEBAR_GROUP_STORAGE_KEY = 'sygshift.sidebar.open-group'
+
+function titleCase(value: string): string {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function accountInitials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'SY'
+}
 
 type WorkspaceAlertEntry = {
   id: string
@@ -119,7 +135,9 @@ export function AppShell() {
   const [authMessage, setAuthMessage] = useState<string | null>(null)
   const [logoutWarningRemaining, setLogoutWarningRemaining] = useState<number | null>(null)
   const [accountPhotoUrl, setAccountPhotoUrl] = useState<string | null>(null)
+  const [accountSummary, setAccountSummary] = useState<MyAccount | null>(null)
   const [accountRefreshVersion, setAccountRefreshVersion] = useState(0)
+  const [theme, setTheme] = useState<SygShiftTheme>(getCurrentTheme)
   const activeMutationCount = useIsMutating()
   const internalHistoryRef = useRef<InternalNavigationEntry[]>(parseInternalHistory(window.sessionStorage.getItem(INTERNAL_NAVIGATION_STORAGE_KEY)))
   const previousScrollRef = useRef(0)
@@ -275,6 +293,10 @@ export function AppShell() {
     return () => window.removeEventListener('scroll', captureScroll)
   }, [])
 
+  useEffect(() => {
+    applyTheme(theme, false)
+  }, [theme])
+
   function handleInternalBack() {
     const currentHref = internalHref(location.pathname, location.search, location.hash)
     const result = previousInternalLocation(internalHistoryRef.current, currentHref)
@@ -385,11 +407,13 @@ export function AppShell() {
     let objectUrl: string | null = null
 
     setAccountPhotoUrl(null)
+    setAccountSummary(null)
     if (!sessionContext?.employeeId) return () => { active = false }
 
     void (async () => {
       try {
         const account = await getMyAccount()
+        if (active) setAccountSummary(account)
         if (!account.profile.hasPhoto) return
         objectUrl = URL.createObjectURL(await getMyAccountPhoto())
         if (active) setAccountPhotoUrl(objectUrl)
@@ -608,19 +632,63 @@ export function AppShell() {
         <OperationalTimeHeader
           accountControls={sessionContext ? (
             <div className="user-menu">
-              <span className="user-menu__avatar" aria-hidden="true">
-                {accountPhotoUrl ? <img alt="" src={accountPhotoUrl} /> : <UserCircle size={22} />}
-              </span>
-              <div>
-                <strong>{sessionContext.displayName}</strong>
-                <span>@{sessionContext.username}</span>
+              <div aria-label="Appearance" className="theme-switcher" role="group">
+                <button
+                  aria-label="Use light mode"
+                  aria-pressed={theme === 'light'}
+                  className="theme-switcher__button"
+                  onClick={() => {
+                    applyTheme('light')
+                    setTheme('light')
+                  }}
+                  title="Light mode"
+                  type="button"
+                >
+                  <span><Sun aria-hidden="true" size={17} /></span>
+                </button>
+                <button
+                  aria-label="Use dark mode"
+                  aria-pressed={theme === 'dark'}
+                  className="theme-switcher__button"
+                  onClick={() => {
+                    applyTheme('dark')
+                    setTheme('dark')
+                  }}
+                  title="Dark mode"
+                  type="button"
+                >
+                  <span><Moon aria-hidden="true" size={17} /></span>
+                </button>
               </div>
-              <Link className="secondary-button secondary-button--small" to="/account">
-                My Account
+              <span aria-hidden="true" className="user-menu__divider" />
+              <Link
+                aria-label={`Open My Account for ${accountSummary?.employment.legalName ?? sessionContext.displayName}`}
+                className="user-profile-control"
+                to="/account"
+              >
+                <span className="user-menu__avatar">
+                  {accountPhotoUrl ? (
+                    <img
+                      alt={`Profile photo for ${accountSummary?.employment.legalName ?? sessionContext.displayName}`}
+                      src={accountPhotoUrl}
+                    />
+                  ) : (
+                    <span aria-hidden="true">{accountInitials(accountSummary?.employment.legalName ?? sessionContext.displayName)}</span>
+                  )}
+                </span>
+                <span className="user-profile-control__copy">
+                  <strong>{accountSummary?.employment.legalName ?? sessionContext.displayName}</strong>
+                  <span>{titleCase(accountSummary?.employment.primaryRole ?? '') || 'Employee'} · @{sessionContext.username}</span>
+                </span>
               </Link>
-              <button className="secondary-button secondary-button--small" onClick={handleSignOut} type="button">
-                <LogOut aria-hidden="true" size={17} />
-                Sign out
+              <button
+                aria-label="Sign Out"
+                className="user-menu__icon-button"
+                onClick={handleSignOut}
+                title="Sign Out"
+                type="button"
+              >
+                <span><LogOut aria-hidden="true" size={17} /></span>
               </button>
             </div>
           ) : (

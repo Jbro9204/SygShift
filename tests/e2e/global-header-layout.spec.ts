@@ -32,12 +32,18 @@ async function installHeaderFixture(page: import('@playwright/test').Page, colla
         <aside class="sidebar${sidebarCollapsed ? ' sidebar--collapsed' : ''}"><div class="sidebar-brand"><img alt="SygShift" src="/brand/sygshift-logo.png" /></div></aside>
         <div class="workspace">
           <header class="topbar">
-            <div class="topbar-date"><span>Monday, 09/01/2026</span><strong>Mountain Time is the operational default</strong></div>
+            <div class="topbar-date"><span>Monday, 09/01/2026</span></div>
             <div class="user-menu">
-              <span class="user-menu__avatar" aria-hidden="true">JB</span>
-              <div><strong>Jordan Brown</strong><span>@jbrown</span></div>
-              <a class="secondary-button secondary-button--small" href="#account">My Account</a>
-              <button class="secondary-button secondary-button--small" type="button">Sign out</button>
+              <div aria-label="Appearance" class="theme-switcher" role="group">
+                <button aria-label="Use light mode" aria-pressed="true" class="theme-switcher__button" type="button"><span>☀</span></button>
+                <button aria-label="Use dark mode" aria-pressed="false" class="theme-switcher__button" type="button"><span>☾</span></button>
+              </div>
+              <span aria-hidden="true" class="user-menu__divider"></span>
+              <a aria-label="Open My Account for Jordan Brown" class="user-profile-control" href="#account">
+                <span class="user-menu__avatar"><span aria-hidden="true">JB</span></span>
+                <span class="user-profile-control__copy"><strong>Jordan Brown</strong><span>Admin · @jbrown</span></span>
+              </a>
+              <button aria-label="Sign Out" class="user-menu__icon-button" type="button"><span>↪</span></button>
             </div>
           </header>
           <section aria-label="United States operational time zones" class="operational-time-zone-strip"><div class="operational-time-zone-grid">${clocks}</div></section>
@@ -80,8 +86,10 @@ for (const width of widths) {
     const viewportWidth = page.viewportSize()!.width
     const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
     expect(documentWidth).toBeLessThanOrEqual(viewportWidth)
-    await expect(page.getByRole('link', { name: 'My Account' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Use light mode' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Use dark mode' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Open My Account for Jordan Brown' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Sign Out' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Review alert' })).toBeVisible()
 
     await page.screenshot({ path: testInfo.outputPath(`global-header-${width}.png`), fullPage: true })
@@ -113,4 +121,26 @@ test('the layered global header has no detectable accessibility violations', asy
   await installHeaderFixture(page, false)
   const accessibility = await new AxeBuilder({ page }).analyze()
   expect(accessibility.violations).toEqual([])
+})
+
+test('light and dark selections expose state without relying on color', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/')
+  await installHeaderFixture(page, false)
+
+  const light = page.getByRole('button', { name: 'Use light mode' })
+  const dark = page.getByRole('button', { name: 'Use dark mode' })
+  await expect(light).toHaveAttribute('aria-pressed', 'true')
+  await expect(dark).toHaveAttribute('aria-pressed', 'false')
+
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = 'dark'
+    document.documentElement.style.colorScheme = 'dark'
+  })
+  const canvasColor = await page.locator('html').evaluate((element) => getComputedStyle(element).backgroundColor)
+  expect(canvasColor).toBe('rgb(13, 16, 19)')
+
+  const accessibility = await new AxeBuilder({ page }).analyze()
+  expect(accessibility.violations).toEqual([])
+  await page.screenshot({ path: testInfo.outputPath('global-header-dark.png'), fullPage: true })
 })

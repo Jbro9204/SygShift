@@ -9,6 +9,9 @@ const shell = readFileSync(join(root, 'src', 'components', 'AppShell.tsx'), 'utf
 const header = readFileSync(join(root, 'src', 'components', 'OperationalTimeHeader.tsx'), 'utf8')
 const time = readFileSync(join(root, 'src', 'lib', 'time.ts'), 'utf8')
 const css = readFileSync(join(root, 'src', 'App.css'), 'utf8')
+const themeCss = readFileSync(join(root, 'src', 'theme.css'), 'utf8')
+const index = readFileSync(join(root, 'index.html'), 'utf8')
+const themeBootstrap = readFileSync(join(root, 'public', 'theme-init.js'), 'utf8')
 
 describe('global operational time header guardrails', () => {
   it('extends the single authenticated shell and preserves its account and alert systems', () => {
@@ -16,8 +19,10 @@ describe('global operational time header guardrails', () => {
     expect(shell).toContain('serverTimestamp={maintenanceStatusQuery.data?.serverTime}')
     expect(shell).toContain('WorkspaceAlertStrip entries={workspaceAlerts}')
     expect(shell).toContain('WORKSPACE_ALERT_ROTATE_MS')
-    expect(shell).toContain('My Account')
-    expect(shell).toContain('Sign out')
+    expect(shell).toContain('Open My Account for')
+    expect(shell).toContain('aria-label="Sign Out"')
+    expect(shell).toContain('aria-label="Use light mode"')
+    expect(shell).toContain('aria-label="Use dark mode"')
     expect(shell.match(/<OperationalTimeHeader/g)).toHaveLength(1)
   })
 
@@ -32,8 +37,18 @@ describe('global operational time header guardrails', () => {
     expect(header.match(/window\.setInterval/g)).toHaveLength(1)
     expect(header).toContain('window.clearInterval(interval)')
     expect(header).toContain('United States operational time zones')
+    expect(header).not.toContain('Mountain Time is the operational default')
     expect(header).not.toContain('aria-live')
     expect(header).not.toMatch(/\b(EST|EDT|CST|CDT|MST|MDT|PST|PDT)\b/)
+  })
+
+  it('initializes the saved or operating-system theme before React paints', () => {
+    expect(index).toContain('<script src="/theme-init.js"></script>')
+    expect(themeBootstrap).toContain("prefers-color-scheme: dark")
+    expect(themeBootstrap).toContain("document.documentElement.dataset.theme = theme")
+    expect(themeCss).toContain("html[data-theme='dark']")
+    expect(themeCss).toContain('.user-profile-control')
+    expect(themeCss).toContain('.theme-switcher__button')
   })
 
   it('caches formatters and keeps compact clock formatting separate from operational records', () => {

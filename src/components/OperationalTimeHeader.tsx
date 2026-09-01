@@ -79,7 +79,6 @@ export function OperationalTimeHeader({
       <header className="topbar">
         <div className="topbar-date">
           <span>{formatOperationalDate(now)}</span>
-          <strong>Mountain Time is the operational default</strong>
         </div>
         {accountControls}
       </header>

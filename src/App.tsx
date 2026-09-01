@@ -2,6 +2,7 @@ import { RouterProvider } from 'react-router-dom'
 import { router } from './app/router'
 import { ReleaseUpdateNotice } from './components/ReleaseUpdateNotice'
 import './App.css'
+import './theme.css'
 
 function App() {
   return (

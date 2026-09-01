@@ -22,7 +22,7 @@ describe('OperationalTimeHeader', () => {
     expect(screen.getByLabelText(/Central time: 1:45 PM \(13:45\), CDT/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Mountain time: 12:45 PM, MDT/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Pacific time: 11:45 AM, PDT/)).toBeInTheDocument()
-    expect(screen.getByText('Mountain Time is the operational default')).toBeInTheDocument()
+    expect(screen.queryByText('Mountain Time is the operational default')).not.toBeInTheDocument()
     expect(screen.getByText('Operational default')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'My Account' })).toBeInTheDocument()
     expect(vi.getTimerCount()).toBe(1)
