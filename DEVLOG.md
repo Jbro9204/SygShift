@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Action Center active/history separation
+
+- Added clear **Needs Attention**, **In Progress**, and **History** views to the Action Center. Completed records now leave the active queue while remaining permanently traceable.
+- Added a protected, read-only history query over the authoritative announcement acknowledgment, training assignment, schedule acknowledgment, and HR workflow task records; no duplicate history store was created.
+- Added search, action/outcome/date filters, 5/10/20 pagination with 10 rows by default, compact light/dark layouts, and a read-only detail modal with original context, employee, timestamps, resolver, resolution source/note, and applicable site/post information.
+- Self history requires `actions.self.view`. Authorized team history requires current MFA and remains independently restricted by each source's management permission.
+- Migration preservation checks confirmed zero action-record or access-control mutations. Production retained 693 schedule acknowledgment records and the existing role assignment/override counts.
+- Full validation passed: type checking, zero-warning lint, 146 test files / 707 tests, both production builds, and 62 responsive light/dark browser checks.
+- Applied and reconciled forward migration `20260902080000_action_center_history.sql`, pushed implementation commit `57a2d78`, and deployed Cloudflare Worker version `9dd4d714-f1df-4f8f-bcdf-cb16f80c7f3c`.
+- Primary and fallback login, health, and readiness returned `200`; live authenticated smoke tests confirmed 10-row paginated history and active-only queue states.
+- Full details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_ACTION_CENTER_HISTORY.md`.
+
 ### Mandatory authenticated cursors and restored Human Resources Employee role
 
 - Added one centralized six-state premium-gold cursor system for authenticated fine-pointer sessions: default, action, text, busy, move, and blocked. Signed-in desktop users cannot opt out; public login, touch/coarse devices, and forced-colors accessibility environments retain appropriate native cursors.
