@@ -15,10 +15,16 @@ const navigation = read('src/app/navigation.ts')
 const page = read('src/pages/HrisStage7Page.tsx')
 const data = read('src/data/hrStage7.ts')
 const migration = read('supabase/migrations/20260831040000_hris_stage7_leave_benefits_compensation_foundation.sql')
+const compensationRelease = read('supabase/migrations/20260902010000_employee_file_editing_and_pay_rates.sql')
 
-for (const moduleName of ['LEAVE', 'BENEFITS', 'COMPENSATION']) {
+for (const moduleName of ['LEAVE', 'BENEFITS']) {
   requireText(wrangler, `"SYGSHIFT_HR_${moduleName}_ENABLED": "false"`, `${moduleName.toLowerCase()} release flag must default off.`)
 }
+requireText(wrangler, '"SYGSHIFT_HR_COMPENSATION_ENABLED": "true"', 'The approved protected compensation release flag must be enabled.')
+requireText(compensationRelease, 'update private.hr_compensation_release_gate', 'The protected compensation database gate is not released.')
+requireText(compensationRelease, 'release_key =', 'The compensation release is missing its non-employee release attribution.')
+requireText(compensationRelease, 'service_propose_hr_employee_pay_rate', 'Pay-rate proposal workflow is missing.')
+requireText(compensationRelease, 'service_review_hr_employee_pay_rate', 'Pay-rate review workflow is missing.')
 
 for (const permission of [
   'hr.leave.view', 'hr.leave.manage', 'hr.leave.approve', 'hr.leave.protected.view', 'hr.leave.protected.manage',

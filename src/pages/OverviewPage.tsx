@@ -404,7 +404,7 @@ function TimeStatusStrip({ activeShift, dashboard, displayTimeZone, error, onPun
         ) : timeAction.requiresTimePage ? (
           <Link className="primary-action" to="/time/my-time"><Timer aria-hidden="true" size={18} />{timeAction.label}</Link>
         ) : punchAllowed ? (
-          <button className={timeAction.kind === 'clock_out' ? 'danger-button' : 'primary-action'} disabled={pending} onClick={() => onPunch(timeAction.kind)} type="button">
+          <button className={timeAction.kind === 'clock_out' ? 'danger-button urgent-action-button urgent-action-button--compact' : 'primary-action'} disabled={pending} onClick={() => onPunch(timeAction.kind)} type="button">
             <Timer aria-hidden="true" size={18} />{pending ? 'Saving...' : timeAction.label}
           </button>
         ) : null}
@@ -413,7 +413,7 @@ function TimeStatusStrip({ activeShift, dashboard, displayTimeZone, error, onPun
         ) : null}
         {scheduleAllowed ? <Link className="secondary-button" to="/schedule"><CalendarDays aria-hidden="true" size={18} />Schedule</Link> : null}
         {showPersonalLinks ? (
-          <Link className="home-call-off-button" to="/time/my-time?report=call-off">
+          <Link className="home-call-off-button urgent-action-button" to="/time/my-time?report=call-off">
             <span className="home-call-off-button__icon"><ShieldAlert aria-hidden="true" size={20} /></span>
             <span className="home-call-off-button__copy"><strong>Report Sick / Call-Off</strong><small>Urgent coverage help</small></span>
           </Link>
@@ -455,7 +455,7 @@ function EmployeeHome({ announcementArchivePath, announcements, announcementsErr
       <section className="home-quick-actions" aria-labelledby="home-quick-actions-title">
         <div><p className="eyebrow">Quick actions</p><h2 id="home-quick-actions-title">What do you need to do?</h2></div>
         <div className="home-quick-actions__buttons">
-          <Link className="home-quick-action home-quick-action--danger" to="/time/my-time?report=call-off"><ShieldAlert aria-hidden="true" size={20} /><span><strong>Report sick / call-off</strong><small>Notify Dispatch and request coverage.</small></span><ArrowRight aria-hidden="true" size={17} /></Link>
+          <Link className="home-quick-action home-quick-action--danger urgent-action-button" to="/time/my-time?report=call-off"><ShieldAlert aria-hidden="true" size={20} /><span><strong>Report sick / call-off</strong><small>Notify Dispatch and request coverage.</small></span><ArrowRight aria-hidden="true" size={17} /></Link>
         </div>
       </section>
 

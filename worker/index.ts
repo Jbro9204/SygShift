@@ -1326,7 +1326,7 @@ async function requireRecentDocumentMfa(
   const securityKeyToken = request.headers.get('x-sygshift-security-key')?.trim() ?? ''
   const authSessionId = claims?.session_id
   if (!securityKeyToken || !authSessionId || !validUuid(authSessionId)) {
-    throw new ApiError('recent_document_mfa_required', 403, 'Verify with your authenticator or security key before accessing protected HR documents.')
+    throw new ApiError('recent_document_mfa_required', 403, 'Verify with your authenticator or security key before accessing protected HR information.')
   }
   const verification = await callRpc<{ method?: string, verifiedAt?: string }>(
     { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
@@ -1339,7 +1339,7 @@ async function requireRecentDocumentMfa(
     session.config.serviceRoleKey,
   )
   if (verification.method !== 'security_key' || !verification.verifiedAt) {
-    throw new ApiError('recent_document_mfa_required', 403, 'Verify with your security key before accessing protected HR documents.')
+    throw new ApiError('recent_document_mfa_required', 403, 'Verify with your security key before accessing protected HR information.')
   }
   return { method: 'security_key', verifiedAt: verification.verifiedAt }
 }
@@ -2163,25 +2163,120 @@ async function handleHrCompensationApi(
 ): Promise<Response> {
   const url = new URL(request.url)
   const session = await requireVerifiedOperationsSession(request, environment, 'hr_compensation_mfa_required')
-  if (url.pathname !== '/api/v1/hr/compensation/workspace') return errorJson('not_found', requestId, 404)
-  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
-  requireSessionPermission(session.context, 'hr.compensation.view')
-  if (!hrCompensationEnabled(environment)) return json(disabledHrCompensationWorkspace(requestId))
+  const employeeMatch = /^\/api\/v1\/hr\/compensation\/employees\/([0-9a-f-]{36})$/i.exec(url.pathname)
+  const proposalMatch = /^\/api\/v1\/hr\/compensation\/employees\/([0-9a-f-]{36})\/pay-rate-proposals$/i.exec(url.pathname)
+  const decisionMatch = /^\/api\/v1\/hr\/compensation\/pay-rate-proposals\/([0-9a-f-]{36})\/decision$/i.exec(url.pathname)
+
+  if (url.pathname === '/api/v1/hr/compensation/workspace') {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    requireSessionPermission(session.context, 'hr.compensation.view')
+    if (!hrCompensationEnabled(environment)) return json(disabledHrCompensationWorkspace(requestId))
+    const mfa = await requireRecentDocumentMfa(request, session)
+    const { offset, pageSize } = boundedWorkspacePage(url)
+    const payload = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_get_hr_compensation_workspace',
+      {
+        target_actor_id: session.context.employee_id,
+        target_mfa_method: mfa.method,
+        target_mfa_verified_at: mfa.verifiedAt,
+        target_offset: offset,
+        target_page_size: pageSize,
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...payload, requestId })
+  }
+
+  if (!hrCompensationEnabled(environment)) {
+    throw new ApiError('hr_compensation_unavailable', 503, 'Protected compensation has not been released.')
+  }
   const mfa = await requireRecentDocumentMfa(request, session)
-  const { offset, pageSize } = boundedWorkspacePage(url)
-  const payload = await callRpc<Record<string, unknown>>(
-    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
-    'service_get_hr_compensation_workspace',
-    {
-      target_actor_id: session.context.employee_id,
-      target_mfa_method: mfa.method,
-      target_mfa_verified_at: mfa.verifiedAt,
-      target_offset: offset,
-      target_page_size: pageSize,
-    },
-    session.config.serviceRoleKey,
-  )
-  return json({ ...payload, requestId })
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+
+  if (employeeMatch) {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    const employeeId = employeeMatch[1]
+    if (!validUuid(employeeId)) throw new ApiError('invalid_employee_id', 422, 'The employee is invalid.')
+    requireSessionPermission(session.context, 'hr.compensation.view')
+    const payload = await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_get_hr_employee_compensation',
+      {
+        target_actor_id: session.context.employee_id,
+        target_employee_id: employeeId,
+        target_limit: 10,
+        target_mfa_method: mfa.method,
+        target_mfa_verified_at: mfa.verifiedAt,
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...payload, requestId })
+  }
+
+  if (proposalMatch) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const employeeId = proposalMatch[1]
+    if (!validUuid(employeeId)) throw new ApiError('invalid_employee_id', 422, 'The employee is invalid.')
+    requireSessionPermission(session.context, 'hr.compensation.manage')
+    const body = await readJsonBody(request)
+    const amountCents = typeof body.amountCents === 'number' ? body.amountCents : Number.NaN
+    if (!Number.isSafeInteger(amountCents) || amountCents < 0 || amountCents > 100_000_000_000) {
+      throw new ApiError('invalid_pay_rate', 422, 'Enter a valid pay rate.')
+    }
+    const payFrequency = requiredText(body.payFrequency, 'Pay frequency', 20).toLowerCase()
+    if (!['hourly', 'weekly', 'biweekly', 'semimonthly', 'monthly', 'annual'].includes(payFrequency)) {
+      throw new ApiError('invalid_pay_frequency', 422, 'Choose a supported pay frequency.')
+    }
+    const effectiveFrom = optionalIsoDate(body.effectiveFrom, 'Effective date')
+    if (!effectiveFrom) throw new ApiError('invalid_effective_date', 422, 'An effective date is required.')
+    const reason = requiredText(body.reason, 'Reason', 1000)
+    const payload = await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_propose_hr_employee_pay_rate',
+      {
+        target_actor_id: session.context.employee_id,
+        target_amount_cents: amountCents,
+        target_effective_from: effectiveFrom,
+        target_employee_id: employeeId,
+        target_mfa_method: mfa.method,
+        target_mfa_verified_at: mfa.verifiedAt,
+        target_pay_frequency: payFrequency,
+        target_reason: reason,
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...payload, requestId }, 201)
+  }
+
+  if (decisionMatch) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const proposalId = decisionMatch[1]
+    if (!validUuid(proposalId)) throw new ApiError('invalid_pay_rate_proposal', 422, 'The pay-rate proposal is invalid.')
+    requireSessionPermission(session.context, 'hr.compensation.approve')
+    const body = await readJsonBody(request)
+    const decision = requiredText(body.decision, 'Decision', 20).toLowerCase()
+    if (!['approved', 'rejected'].includes(decision)) {
+      throw new ApiError('invalid_pay_rate_decision', 422, 'Choose Approve or Reject.')
+    }
+    const reason = requiredText(body.reason, 'Review reason', 1000)
+    const payload = await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_review_hr_employee_pay_rate',
+      {
+        target_actor_id: session.context.employee_id,
+        target_decision: decision,
+        target_mfa_method: mfa.method,
+        target_mfa_verified_at: mfa.verifiedAt,
+        target_proposal_id: proposalId,
+        target_reason: reason,
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...payload, requestId })
+  }
+
+  return errorJson('not_found', requestId, 404)
 }
 
 function disabledHrStage8Workspace(module: HrStage8Module, requestId: string): Record<string, unknown> {

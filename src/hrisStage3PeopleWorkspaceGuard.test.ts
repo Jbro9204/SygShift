@@ -37,7 +37,10 @@ describe('HRIS Stage 3 People and HR guardrails', () => {
   })
 
   it('keeps the Employee File connected to established authoritative workspaces', () => {
-    expect(employeeFile).toContain('other changes open the specialized workspace that owns the record.')
+    expect(employeeFile).toContain('Specialized records remain in their connected workspace so information is never maintained twice.')
+    expect(employeeFile).toContain('EmployeeIdentityEditorDialog')
+    expect(employeeFile).toContain('EmployeeEmploymentEditorDialog')
+    expect(employeeFile).toContain('EmployeeContactEditorDialog')
     expect(employeeFile).toContain("path: '/licensing'")
     expect(employeeFile).toContain("path: '/availability'")
     expect(employeeFile).toContain("path: '/requests'")

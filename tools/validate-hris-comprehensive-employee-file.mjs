@@ -3,7 +3,9 @@ import process from 'node:process'
 
 const files = {
   data: new URL('../src/data/hrisPeople.ts', import.meta.url),
+  editors: new URL('../src/components/EmployeeFileEditors.tsx', import.meta.url),
   employeeFile: new URL('../src/pages/HrisEmployeeFilePage.tsx', import.meta.url),
+  editingMigration: new URL('../supabase/migrations/20260902010000_employee_file_editing_and_pay_rates.sql', import.meta.url),
   migration: new URL('../supabase/migrations/20260831234500_hris_comprehensive_employee_file.sql', import.meta.url),
 }
 
@@ -13,7 +15,7 @@ const contents = Object.fromEntries(
 
 const failures = []
 const requireValue = (condition, message) => { if (!condition) failures.push(message) }
-const { data, employeeFile, migration } = contents
+const { data, editors, editingMigration, employeeFile, migration } = contents
 
 const modules = [
   ['documents', 'hr.documents'],
@@ -49,8 +51,13 @@ requireValue(employeeFile.includes('No information is copied or maintained twice
 requireValue(employeeFile.includes('module.visible && canAccessRoute(module.path, sessionQuery.data)'), 'Employee File must enforce both server module access and client route access.')
 requireValue(employeeFile.includes('Pay values remain restricted to the compensation workspace.'), 'Compensation privacy disclosure is missing.')
 requireValue(employeeFile.includes("label: 'Employee relations'"), 'Employee relations records are missing from Employee File.')
-requireValue(employeeFile.includes('Employee File remains a review surface.'), 'Employee File must remain a read-only review surface.')
-requireValue(!/useMutation|<input|<textarea/.test(employeeFile), 'Employee File must not become a duplicate editor.')
+requireValue(employeeFile.includes('The Employee File owns core identity, employment, contact, emergency-contact, and protected pay-rate maintenance.'), 'Employee File ownership disclosure is missing.')
+requireValue(editors.includes('updateHrisEmployeeIdentity'), 'Audited legal-identity editing is missing.')
+requireValue(editors.includes('updateHrisEmployeeEmploymentProfile'), 'Audited employment-profile editing is missing.')
+requireValue(editors.includes('updateHrisEmployeeContactDetails'), 'Restricted contact and emergency-contact editing is missing.')
+requireValue(editingMigration.includes('private.require_hr_people_editor'), 'Employee File editors do not share the protected permission boundary.')
+requireValue(editingMigration.includes("public.has_effective_permission('hr.people.restricted')"), 'Restricted contact editing does not enforce the separate permission.')
+requireValue(editingMigration.includes('insert into private.audit_events'), 'Employee File edits are not audited.')
 
 if (failures.length > 0) {
   console.error('Comprehensive Employee File validation failed:')
@@ -58,4 +65,4 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
-console.info('Comprehensive Employee File validated: protected module access, release gates, compensation privacy, single-source records, and read-only navigation are enforced.')
+console.info('Comprehensive Employee File validated: protected module access, compensation privacy, audited core editing, and single-source records are enforced.')

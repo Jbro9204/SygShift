@@ -146,12 +146,32 @@ const employmentDateUpdateResultSchema = z.object({
   updatedAt: z.string(),
 })
 
+const employeeProfileEditorContextSchema = z.object({
+  employeeId: z.string().uuid(),
+  workClassification: z.enum(['full_time', 'part_time', 'flex']).nullable(),
+  canManageProfile: z.boolean(),
+  canManageRestricted: z.boolean(),
+  canViewCompensation: z.boolean(),
+  canManageCompensation: z.boolean(),
+  canApproveCompensation: z.boolean(),
+  restrictedContactExtension: z.object({
+    emergencyContactRelationship: z.string().nullable(),
+    emergencyContactEmail: z.string().nullable(),
+  }).nullable(),
+})
+
+const employeeProfileUpdateResultSchema = z.object({
+  employeeId: z.string().uuid(),
+  updatedAt: z.string(),
+})
+
 export type HrisPeopleItem = z.infer<typeof peopleItemSchema>
 export type HrisPeopleSavedView = z.infer<typeof savedViewSchema>
 export type HrisPeopleWorkspace = z.infer<typeof peopleWorkspaceSchema>
 export type HrisEmployeeFile = z.infer<typeof employeeFileSchema>
 export type HrisEmploymentDateHistory = z.infer<typeof employmentDateHistorySchema>
 export type HrisEmploymentDateSource = z.infer<typeof employmentDateHistoryItemSchema>['sourceType']
+export type HrisEmployeeProfileEditorContext = z.infer<typeof employeeProfileEditorContextSchema>
 
 export const hrisEmploymentDateSourceLabels: Record<HrisEmploymentDateSource, string> = {
   employee_file: 'Employee file',
@@ -180,6 +200,40 @@ export type HrisPeopleQuery = {
   pageSize?: number
 }
 
+export type HrisEmployeeIdentityUpdateInput = {
+  employeeId: string
+  firstName: string
+  middleName: string
+  lastName: string
+  employeeNumber: string
+  reason: string
+}
+
+export type HrisEmployeeEmploymentUpdateInput = {
+  employeeId: string
+  employmentType: 'hourly' | 'salary'
+  jobTitle: string
+  workClassification: 'full_time' | 'part_time' | 'flex'
+  reason: string
+}
+
+export type HrisEmployeeContactUpdateInput = {
+  employeeId: string
+  personalEmail: string
+  companyEmail: string
+  mobilePhone: string
+  addressLine1: string
+  addressLine2: string
+  city: string
+  region: string
+  postalCode: string
+  emergencyContactName: string
+  emergencyContactRelationship: string
+  emergencyContactPhone: string
+  emergencyContactEmail: string
+  reason: string
+}
+
 export async function getHrisPeopleWorkspace(query: HrisPeopleQuery = {}): Promise<HrisPeopleWorkspace> {
   const { data, error } = await getSupabaseClient().rpc('get_hr_people_workspace', {
     target_search: query.search?.trim() || null,
@@ -199,6 +253,58 @@ export async function getHrisEmployeeFile(employeeId: string): Promise<HrisEmplo
   const { data, error } = await getSupabaseClient().rpc('get_hr_people_record', { target_employee_id: employeeId })
   if (error) throw new Error(error.message || 'The employee file could not be loaded.')
   return employeeFileSchema.parse(data)
+}
+
+export async function getHrisEmployeeProfileEditorContext(employeeId: string): Promise<HrisEmployeeProfileEditorContext> {
+  const { data, error } = await getSupabaseClient().rpc('get_hr_employee_profile_editor_context', { target_employee_id: employeeId })
+  if (error) throw new Error(error.message || 'Employee editing controls could not be loaded.')
+  return employeeProfileEditorContextSchema.parse(data)
+}
+
+export async function updateHrisEmployeeIdentity(input: HrisEmployeeIdentityUpdateInput) {
+  const { data, error } = await getSupabaseClient().rpc('update_hr_employee_identity', {
+    target_employee_id: input.employeeId,
+    target_employee_number: input.employeeNumber,
+    target_first_name: input.firstName,
+    target_last_name: input.lastName,
+    target_middle_name: input.middleName,
+    target_reason: input.reason,
+  })
+  if (error) throw new Error(error.message || 'The legal employee record could not be updated.')
+  return employeeProfileUpdateResultSchema.parse(data)
+}
+
+export async function updateHrisEmployeeEmploymentProfile(input: HrisEmployeeEmploymentUpdateInput) {
+  const { data, error } = await getSupabaseClient().rpc('update_hr_employee_employment_profile', {
+    target_employee_id: input.employeeId,
+    target_employment_type: input.employmentType,
+    target_job_title: input.jobTitle,
+    target_reason: input.reason,
+    target_work_classification: input.workClassification,
+  })
+  if (error) throw new Error(error.message || 'The employment profile could not be updated.')
+  return employeeProfileUpdateResultSchema.parse(data)
+}
+
+export async function updateHrisEmployeeContactDetails(input: HrisEmployeeContactUpdateInput) {
+  const { data, error } = await getSupabaseClient().rpc('update_hr_employee_contact_details', {
+    target_address_line_1: input.addressLine1,
+    target_address_line_2: input.addressLine2,
+    target_city: input.city,
+    target_company_email: input.companyEmail,
+    target_emergency_contact_email: input.emergencyContactEmail,
+    target_emergency_contact_name: input.emergencyContactName,
+    target_emergency_contact_phone: input.emergencyContactPhone,
+    target_emergency_contact_relationship: input.emergencyContactRelationship,
+    target_employee_id: input.employeeId,
+    target_mobile_phone: input.mobilePhone,
+    target_personal_email: input.personalEmail,
+    target_postal_code: input.postalCode,
+    target_reason: input.reason,
+    target_region: input.region,
+  })
+  if (error) throw new Error(error.message || 'Contact and emergency details could not be updated.')
+  return employeeProfileUpdateResultSchema.parse(data)
 }
 
 export async function getHrisEmploymentDateHistory(employeeId: string): Promise<HrisEmploymentDateHistory> {

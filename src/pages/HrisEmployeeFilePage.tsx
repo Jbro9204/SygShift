@@ -19,9 +19,20 @@ import {
 import { Link, useParams } from 'react-router-dom'
 import { canAccessRoute } from '../app/accessPolicy'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { EmployeeCompensationCard } from '../components/EmployeeCompensationCard'
+import {
+  EmployeeContactEditorDialog,
+  EmployeeEmploymentEditorDialog,
+  EmployeeIdentityEditorDialog,
+} from '../components/EmployeeFileEditors'
 import { EmploymentDateEditorDialog } from '../components/EmploymentDateEditorDialog'
 import { getSessionContext } from '../data/auth'
-import { getHrisEmployeeFile, getHrisEmploymentDateHistory, hrisEmploymentDateSourceLabels } from '../data/hrisPeople'
+import {
+  getHrisEmployeeFile,
+  getHrisEmployeeProfileEditorContext,
+  getHrisEmploymentDateHistory,
+  hrisEmploymentDateSourceLabels,
+} from '../data/hrisPeople'
 import { formatOperationalDateTime } from '../lib/time'
 
 const labels: Record<string, string> = {
@@ -54,6 +65,7 @@ function countLabel(count: number, singular: string, plural = `${singular}s`): s
 
 export function HrisEmployeeFilePage() {
   const { employeeId = '' } = useParams()
+  const [profileEditor, setProfileEditor] = useState<'identity' | 'employment' | 'contacts' | null>(null)
   const [employmentDateEditorOpen, setEmploymentDateEditorOpen] = useState(false)
   const [employmentDateSaved, setEmploymentDateSaved] = useState(false)
   const sessionQuery = useQuery({
@@ -70,7 +82,13 @@ export function HrisEmployeeFilePage() {
     queryFn: () => getHrisEmploymentDateHistory(employeeId),
     queryKey: ['hris-employment-date-history', employeeId],
   })
+  const editorContextQuery = useQuery({
+    enabled: Boolean(employeeId),
+    queryFn: () => getHrisEmployeeProfileEditorContext(employeeId),
+    queryKey: ['hris-employee-profile-editor', employeeId],
+  })
   const record = recordQuery.data
+  const editorContext = editorContextQuery.data
 
   function openEmploymentDateEditor() {
     if (!record) return
@@ -216,13 +234,13 @@ export function HrisEmployeeFilePage() {
 
           <section className="hr-file-grid">
             <article className="hr-file-card">
-              <div className="hr-file-card__heading"><UserRound aria-hidden="true" /><div><p className="eyebrow">Identity</p><h2>Legal employee record</h2></div></div>
+              <div className="hr-file-card__heading"><UserRound aria-hidden="true" /><div><p className="eyebrow">Identity</p><h2>Legal employee record</h2></div>{editorContext?.canManageProfile ? <button className="hr-file-card__edit" onClick={() => setProfileEditor('identity')} type="button"><PencilLine aria-hidden="true" size={16} />Edit identity</button> : null}</div>
               <dl><div><dt>Legal first name</dt><dd>{record.firstName}</dd></div><div><dt>Legal middle name</dt><dd>{display(record.middleName)}</dd></div><div><dt>Legal last name</dt><dd>{record.lastName}</dd></div><div><dt>Employee number</dt><dd>{display(record.employeeNumber)}</dd></div></dl>
             </article>
 
             <article className="hr-file-card hr-file-employment-card">
-              <div className="hr-file-card__heading"><ClipboardCheck aria-hidden="true" /><div><p className="eyebrow">Employment</p><h2>Current relationship</h2></div>{employmentDateHistoryQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={openEmploymentDateEditor} type="button"><PencilLine aria-hidden="true" size={16} />Edit dates</button> : null}</div>
-              <dl><div><dt>Employment type</dt><dd>{titleCase(record.employmentType)}</dd></div><div><dt>Primary role</dt><dd>{titleCase(record.primaryRole)}</dd></div><div><dt>Job title</dt><dd>{display(record.jobTitle)}</dd></div><div><dt>Start / hire date</dt><dd>{formatDate(record.hiredOn)}</dd></div><div><dt>Separation / termination date</dt><dd>{formatDate(record.separatedOn)}</dd></div></dl>
+              <div className="hr-file-card__heading"><ClipboardCheck aria-hidden="true" /><div><p className="eyebrow">Employment</p><h2>Current relationship</h2></div><div className="hr-file-card__actions">{editorContext?.canManageProfile ? <button className="hr-file-card__edit" onClick={() => setProfileEditor('employment')} type="button"><PencilLine aria-hidden="true" size={16} />Edit employment</button> : null}{employmentDateHistoryQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={openEmploymentDateEditor} type="button"><CalendarCheck2 aria-hidden="true" size={16} />Edit dates</button> : null}</div></div>
+              <dl><div><dt>Work classification</dt><dd>{editorContext?.workClassification ? titleCase(editorContext.workClassification) : 'Not recorded'}</dd></div><div><dt>Pay &amp; timekeeping type</dt><dd>{titleCase(record.employmentType)}</dd></div><div><dt>Primary role</dt><dd>{titleCase(record.primaryRole)}</dd></div><div><dt>Job title</dt><dd>{display(record.jobTitle)}</dd></div><div><dt>Start / hire date</dt><dd>{formatDate(record.hiredOn)}</dd></div><div><dt>Separation / termination date</dt><dd>{formatDate(record.separatedOn)}</dd></div></dl>
               {employmentDateSaved ? <div className="hr-file-employment-saved" role="status"><CalendarCheck2 aria-hidden="true" size={17} />Employment dates and audit history updated.</div> : null}
               {employmentDateHistoryQuery.data?.items.length ? (
                 <details className="hr-file-employment-history">
@@ -245,10 +263,12 @@ export function HrisEmployeeFilePage() {
 
           {record.canViewRestricted && record.contacts ? (
             <section className="hr-file-card hr-file-contacts">
-              <div className="hr-file-card__heading"><Mail aria-hidden="true" /><div><p className="eyebrow">Restricted contact record</p><h2>Contact &amp; emergency details</h2></div></div>
-              <dl><div><dt>Personal email</dt><dd>{display(record.contacts.personalEmail)}</dd></div><div><dt>Company email</dt><dd>{display(record.contacts.companyEmail)}</dd></div><div><dt>Mobile phone</dt><dd>{display(record.contacts.mobilePhone)}</dd></div><div><dt>Emergency contact</dt><dd>{display(record.contacts.emergencyContactName)}</dd></div><div><dt>Emergency phone</dt><dd>{display(record.contacts.emergencyContactPhone)}</dd></div><div><dt>Address</dt><dd>{[record.contacts.addressLine1, record.contacts.addressLine2, record.contacts.city, record.contacts.region, record.contacts.postalCode].filter(Boolean).join(', ') || 'Not recorded'}</dd></div></dl>
+              <div className="hr-file-card__heading"><Mail aria-hidden="true" /><div><p className="eyebrow">Restricted contact record</p><h2>Contact &amp; emergency details</h2></div>{editorContext?.canManageRestricted ? <button className="hr-file-card__edit" onClick={() => setProfileEditor('contacts')} type="button"><PencilLine aria-hidden="true" size={16} />Edit contacts</button> : null}</div>
+              <dl><div><dt>Personal email</dt><dd>{display(record.contacts.personalEmail)}</dd></div><div><dt>Company email</dt><dd>{display(record.contacts.companyEmail)}</dd></div><div><dt>Mobile phone</dt><dd>{display(record.contacts.mobilePhone)}</dd></div><div><dt>Address</dt><dd>{[record.contacts.addressLine1, record.contacts.addressLine2, record.contacts.city, record.contacts.region, record.contacts.postalCode].filter(Boolean).join(', ') || 'Not recorded'}</dd></div><div><dt>Emergency contact</dt><dd>{display(record.contacts.emergencyContactName)}</dd></div><div><dt>Relationship</dt><dd>{display(editorContext?.restrictedContactExtension?.emergencyContactRelationship ?? null)}</dd></div><div><dt>Emergency phone</dt><dd>{display(record.contacts.emergencyContactPhone)}</dd></div><div><dt>Emergency email</dt><dd>{display(editorContext?.restrictedContactExtension?.emergencyContactEmail ?? null)}</dd></div></dl>
             </section>
           ) : <section className="hr-file-restricted"><ShieldCheck aria-hidden="true" /><div><strong>Restricted contact details are protected.</strong><p>This account does not have the separate HR restricted-data permission.</p></div></section>}
+
+          {editorContext?.canViewCompensation ? <EmployeeCompensationCard employeeId={record.employeeId} employeeName={record.legalName} /> : null}
 
           {employeeFileGroups.length > 0 ? (
             <section className="hr-file-sections" aria-labelledby="employee-file-sections-heading">
@@ -281,7 +301,7 @@ export function HrisEmployeeFilePage() {
           ) : null}
 
           <section className="hr-file-links">
-            <div><p className="eyebrow">Connected workspaces</p><h2>Continue working this employee</h2><p>The Employee File is the authoritative index. Employment dates are maintained here; other changes open the specialized workspace that owns the record.</p></div>
+            <div><p className="eyebrow">Connected workspaces</p><h2>Continue working this employee</h2><p>The Employee File owns core identity, employment, contact, emergency-contact, and protected pay-rate maintenance. Specialized records remain in their connected workspace so information is never maintained twice.</p></div>
             <nav aria-label="Employee connected workspaces">
               {connectedWorkspaces.map((workspace) => {
                 const Icon = workspace.icon
@@ -291,6 +311,9 @@ export function HrisEmployeeFilePage() {
           </section>
 
           {employmentDateEditorOpen ? <EmploymentDateEditorDialog employee={record} onClose={() => setEmploymentDateEditorOpen(false)} onSaved={() => setEmploymentDateSaved(true)} /> : null}
+          {profileEditor === 'identity' ? <EmployeeIdentityEditorDialog employee={record} onClose={() => setProfileEditor(null)} /> : null}
+          {profileEditor === 'employment' && editorContext ? <EmployeeEmploymentEditorDialog context={editorContext} employee={record} onClose={() => setProfileEditor(null)} /> : null}
+          {profileEditor === 'contacts' && editorContext ? <EmployeeContactEditorDialog context={editorContext} employee={record} onClose={() => setProfileEditor(null)} /> : null}
         </>
       ) : null}
     </main>

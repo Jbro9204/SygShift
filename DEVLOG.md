@@ -25,6 +25,20 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Full Employee File editing, protected pay rates, and urgent red actions
+
+- Replaced the former mostly read-only Employee File presentation with audited editors for legal identity, employee number, job title, Hourly/Salary timekeeping treatment, Full Time/Part Time/Flex classification, personal/company contact details, home address, and emergency-contact name, relationship, phone, and email.
+- Kept start/hire and separation/termination dates in the established audited date editor and kept role, login, permissions, onboarding, leave, and offboarding data in their existing authoritative modules so the release did not create duplicate employee records.
+- Required verified MFA, exact HR permissions, a written reason, server validation, and append-only audit evidence for every Employee File mutation; restricted contact information additionally requires `hr.people.restricted`.
+- Released base pay only to exact compensation permissions through verified Worker operations sessions and recent MFA. Added effective-dated Hourly, Weekly, Biweekly, Semimonthly, Monthly, and Annual rates with independent maker-checker approval; Human Resources and Operations Manager roles did not receive compensation access.
+- Added compensation permissions to the existing system Admin role, preserving the established requirement that Admin has the full permission catalog. No pay amount, work classification, contact, or emergency-contact value was inferred or backfilled.
+- Restyled Clock Out and both Report Sick / Call-Off entry points with a shared rounded, raised red treatment, white content, strong focus state, hover lift, and pressed state in light and dark modes.
+- Applied production migration `20260902010000_employee_file_editing_and_pay_rates.sql`. Its first attempt rolled back before commit after a preservation assertion referenced the obsolete `private.payroll_batches` name; the corrected migration used `private.payroll_export_batches`, applied successfully, and the remote migration check reports up to date.
+- Preservation assertions verified employees, contacts, accounts, roles, individual permission overrides, schedules, time events, payroll export batches, compensation records/proposals/events, and non-Admin permissions were unchanged.
+- Full validation passed: type checking, zero-warning lint, 138 test files / 676 tests, Worker/client builds, targeted Employee File, Stage 7 compensation, and Admin validators, plus 44 rendered desktop/mobile browser tests with accessibility and overflow checks.
+- Deployed Cloudflare Worker version `ca7d270d-cea9-449d-bef2-0e86bb1679f1`; primary and Worker fallback health/readiness endpoints returned `200`, the production login rendered successfully, and an unauthenticated compensation request returned `401`.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_EMPLOYEE_FILE_EDITING_PAY_RATES_AND_URGENT_ACTIONS.md`.
+
 ### Guard Licensing Status report
 
 - Added a dedicated report under Reports for current, expiring, expired, not licensed, pending-review, and restricted guard-license states.
