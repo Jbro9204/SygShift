@@ -46,6 +46,15 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Existing shifts, punches, payroll assignments, and historical records are not rebased when an employee time zone is added or changed. A profile-zone correction changes presentation and future employee-specific entry only.
 - Payroll batching remains governed by its separately versioned `America/Denver` boundary and is not changed by employee display zones.
 
+## Global operational time header
+
+- The authenticated application uses one shared `AppShell` header across every permission-controlled workspace. The shell owns the account controls, four-zone display, maintenance notices, and the existing rotating alert lane.
+- Eastern, Central, Mountain, and Pacific clocks are derived from one synchronized instant and explicit IANA zones. The display timer is anchored to the existing maintenance-status server timestamp and refreshed through that existing query; it does not make a network request every second.
+- Clock formatters are cached, daylight/standard abbreviations come from `Intl.DateTimeFormat`, and every zone computes its own calendar date. Mountain remains visibly identified as the operational default.
+- Header clocks are informational. Server timestamps and protected database functions remain authoritative for punches, payroll, patrol hits, audit events, and all other secured records.
+- The existing workspace alert component remains the only global alert lane. It retains its permission filtering, rotation, count, severity, and workflow links while flowing beneath the clocks with responsive wrapping.
+- Desktop layouts retain a four-column clock row after the persistent sidebar width is applied. Tablet and mobile layouts use a two-by-two grid without hiding a zone or introducing horizontal scrolling.
+
 ## Identity and access control
 
 - The employee directory is the source of truth for names, roles, employment type, status, contact details, and permanent usernames.

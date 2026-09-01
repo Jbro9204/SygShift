@@ -1,5 +1,96 @@
 export const OPERATIONAL_TIME_ZONE = 'America/Denver'
 
+export type TimeZoneClockDisplay = {
+  abbreviation: string
+  accessibleDate: string
+  date: string
+  digitalTime: string
+  hour24: number
+  minute: number
+  second: number
+}
+
+type TimeZoneClockFormatters = {
+  accessibleDate: Intl.DateTimeFormat
+  date: Intl.DateTimeFormat
+  parts: Intl.DateTimeFormat
+  timeZoneName: Intl.DateTimeFormat
+}
+
+const timeZoneClockFormatterCache = new Map<string, TimeZoneClockFormatters>()
+
+function getTimeZoneClockFormatters(timeZone: string): TimeZoneClockFormatters {
+  const cached = timeZoneClockFormatterCache.get(timeZone)
+  if (cached) return cached
+
+  const formatters = {
+    accessibleDate: new Intl.DateTimeFormat('en-US', {
+      day: 'numeric',
+      month: 'long',
+      timeZone,
+      weekday: 'long',
+      year: 'numeric',
+    }),
+    date: new Intl.DateTimeFormat('en-US', {
+      day: '2-digit',
+      month: '2-digit',
+      timeZone,
+      weekday: 'short',
+      year: 'numeric',
+    }),
+    parts: new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      hourCycle: 'h23',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZone,
+    }),
+    timeZoneName: new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'short',
+    }),
+  }
+  timeZoneClockFormatterCache.set(timeZone, formatters)
+  return formatters
+}
+
+function numericTimePart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): number {
+  return Number(parts.find((part) => part.type === type)?.value ?? 0)
+}
+
+export function formatTimeZoneClock(value: Date | string, timeZone: string): TimeZoneClockDisplay {
+  const dateValue = typeof value === 'string' ? new Date(value) : value
+  const formatters = getTimeZoneClockFormatters(timeZone)
+  const parts = formatters.parts.formatToParts(dateValue)
+  const hour24 = numericTimePart(parts, 'hour')
+  const minute = numericTimePart(parts, 'minute')
+  const second = numericTimePart(parts, 'second')
+  const civilianHour = hour24 % 12 || 12
+  const civilian = `${civilianHour}:${String(minute).padStart(2, '0')} ${hour24 >= 12 ? 'PM' : 'AM'}`
+  const military = `${String(hour24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+  const showMilitary = hour24 === 0 || hour24 >= 13
+  const abbreviation = formatters.timeZoneName
+    .formatToParts(dateValue)
+    .find((part) => part.type === 'timeZoneName')?.value ?? timeZone
+
+  return {
+    abbreviation,
+    accessibleDate: formatters.accessibleDate.format(dateValue),
+    date: formatters.date.format(dateValue),
+    digitalTime: showMilitary ? `${civilian} (${military})` : civilian,
+    hour24,
+    minute,
+    second,
+  }
+}
+
+export function formatCompactDualTime(
+  value: Date | string,
+  timeZone = OPERATIONAL_TIME_ZONE,
+): string {
+  return formatTimeZoneClock(value, timeZone).digitalTime
+}
+
 export function operationalToday(now = new Date()): Date {
   const parts = new Intl.DateTimeFormat('en-US', {
     day: 'numeric',

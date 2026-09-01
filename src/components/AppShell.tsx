@@ -22,12 +22,13 @@ import {
 } from '../data/auth'
 import { shouldShowPayrollExportReminder } from '../lib/payrollReminder'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
-import { formatOperationalDate, formatOperationalTime, lastCompletedPayrollWeek } from '../lib/time'
+import { lastCompletedPayrollWeek } from '../lib/time'
 import { MaintenanceNotice, MaintenanceUnavailablePanel } from './MaintenanceNotice'
 import { getMaintenanceStatus, maintenanceFeatureForPath } from '../data/maintenance'
 import { deriveSystemServiceStatus, getSystemReadiness } from '../data/systemStatus'
 import { getMyAccount, getMyAccountPhoto } from '../data/myAccount'
 import { SystemStatusIndicator } from './SystemStatusIndicator'
+import { OperationalTimeHeader } from './OperationalTimeHeader'
 
 const INACTIVITY_WARNING_MS = 25 * 60 * 1000
 const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000
@@ -604,13 +605,8 @@ export function AppShell() {
       </aside>
 
       <div className="workspace">
-        <header className="topbar">
-          <div className="topbar-date">
-            <span>{formatOperationalDate()}</span>
-            <strong>{formatOperationalTime()}</strong>
-          </div>
-
-          {sessionContext ? (
+        <OperationalTimeHeader
+          accountControls={sessionContext ? (
             <div className="user-menu">
               <span className="user-menu__avatar" aria-hidden="true">
                 {accountPhotoUrl ? <img alt="" src={accountPhotoUrl} /> : <UserCircle size={22} />}
@@ -633,7 +629,8 @@ export function AppShell() {
               Mountain Time
             </div>
           )}
-        </header>
+          serverTimestamp={maintenanceStatusQuery.data?.serverTime}
+        />
 
         {authMessage ? (
           <div className="shell-alert" role="alert">

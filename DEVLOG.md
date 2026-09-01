@@ -25,6 +25,19 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Global operational time header
+
+- Extended the single authenticated `AppShell` header with Eastern, Central, Mountain, and Pacific analog/digital clocks; no second header or alert system was created.
+- Anchored the one-second display timer to the existing maintenance-status server timestamp, with automatic 30-second resynchronization through the shell's existing query. Browser time remains display-only and cannot authorize or record punches, payroll, patrol, or other secured events.
+- Added cached IANA-zone formatters with dynamic daylight/standard abbreviations and zone-specific calendar dates.
+- Added compact digital formatting that shows parenthetical 24-hour time only during `00:xx` and `13:xx–23:xx`, without changing established time formatting elsewhere in the application.
+- Kept Mountain visibly identified as the operational default and preserved employee identity, My Account, Sign Out, sidebar, session, MFA, maintenance, update, and service-status behavior.
+- Repositioned the existing rotating alert strip beneath the clocks with inset spacing, rounded containment, immediate text wrapping, and unchanged count, severity, permission, destination, and rotation behavior.
+- Verified 1920, 1440, 1280, 1024 expanded, 1024 collapsed, 768, 390, and 320 pixel layouts with no horizontal overflow or clipped clock text. Reduced motion hides the decorative second hand while retaining digital information.
+- Full validation passed: type checking, zero-warning lint, 132 test files / 653 tests, Worker/client builds, 32 full browser tests, focused responsive screenshots, and automated accessibility analysis.
+- Deployed Cloudflare Worker version `f786e0dd-6337-48ab-9bdf-5bd0ffffafdf`; production app, login, health, readiness, main script, and stylesheet returned `200`, and the live bundle contains the four-zone header and responsive alert treatment.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_GLOBAL_OPERATIONAL_TIME_HEADER.md`.
+
 ### Unified editable employment-date workflow
 
 - Removed the obsolete locked employment-date modal from Employment Data Readiness after HR reported that existing dates could not be clicked or corrected.

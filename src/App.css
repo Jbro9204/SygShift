@@ -8163,8 +8163,133 @@ a.home-metric-card:focus-visible {
 
 .topbar-date strong {
   color: var(--ink);
-  font-size: 16px;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.operational-time-zone-strip {
+  margin: 12px clamp(24px, 4vw, 54px) 0;
+  padding: 10px 12px;
+  background: rgb(255 255 255 / 88%);
+  border: 1px solid #ddd6c8;
+  border-radius: 14px;
+  box-shadow: 0 8px 22px rgb(44 35 20 / 7%);
+}
+
+.operational-time-zone-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 8px;
+}
+
+.operational-clock {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  justify-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  color: #282620;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  text-align: center;
+}
+
+.operational-clock--default {
+  background: #fff5df;
+  border-color: #e4c681;
+}
+
+.operational-clock__face {
+  width: clamp(44px, 4.2vw, 56px);
+  height: clamp(44px, 4.2vw, 56px);
+  margin-bottom: 3px;
+  overflow: visible;
+}
+
+.operational-clock__dial {
+  fill: #fffefb;
+  stroke: #b6aa96;
+  stroke-width: 1.5;
+}
+
+.operational-clock--default .operational-clock__dial {
+  fill: #fffaf0;
+  stroke: #bd8730;
+}
+
+.operational-clock__marker,
+.operational-clock__hand {
+  transform-origin: 32px 32px;
+  stroke-linecap: round;
+}
+
+.operational-clock__marker {
+  stroke: #777064;
+  stroke-width: 1.2;
+}
+
+.operational-clock__hand--hour {
+  stroke: #2a2823;
+  stroke-width: 3.5;
+}
+
+.operational-clock__hand--minute {
+  stroke: #3d3932;
+  stroke-width: 2.4;
+}
+
+.operational-clock__hand--second {
+  stroke: #bd7a13;
+  stroke-width: 1.25;
+}
+
+.operational-clock__pin {
+  fill: #c48a2e;
+  stroke: #fffdf8;
+  stroke-width: 1;
+}
+
+.operational-clock__digital {
+  color: #181713;
+  font-size: clamp(12px, 1.2vw, 15px);
   font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.operational-clock__zone {
+  color: #5b5245;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.operational-clock small {
+  color: #766f64;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.operational-clock em {
+  margin-top: 3px;
+  padding: 2px 7px;
+  color: #735018;
+  background: #f3dfb5;
+  border-radius: 999px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  line-height: 1.4;
+  text-transform: uppercase;
 }
 
 .topbar-label {
@@ -8320,15 +8445,14 @@ a.home-metric-card:focus-visible {
 }
 
 .workspace-alert-strip {
-  position: sticky;
+  position: relative;
   z-index: 18;
-  top: 76px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 14px;
-  margin: 0;
-  padding: 13px clamp(24px, 4vw, 54px);
+  margin: 14px clamp(24px, 4vw, 54px) 0;
+  padding: 13px 16px;
   color: #fff8e8;
   background:
     linear-gradient(
@@ -8342,8 +8466,21 @@ a.home-metric-card:focus-visible {
       rgb(255 255 255 / 5%) 0 2px,
       transparent 2px 8px
     );
-  border-bottom: 1px solid rgb(226 178 84 / 42%);
-  box-shadow: 0 16px 34px rgb(48 32 8 / 16%);
+  border: 1px solid rgb(226 178 84 / 42%);
+  border-radius: 13px;
+  box-shadow: 0 10px 26px rgb(48 32 8 / 13%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .operational-clock__hand--second {
+    visibility: hidden;
+  }
+}
+
+@media (max-width: 900px) {
+  .operational-time-zone-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .workspace-alert-strip__icon {
@@ -8386,7 +8523,7 @@ a.home-metric-card:focus-visible {
 
 .workspace-alert-strip__ticker {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   color: #fffaf0;
   font-size: clamp(15px, 1.5vw, 18px);
   font-weight: 900;
@@ -8394,8 +8531,8 @@ a.home-metric-card:focus-visible {
 }
 
 .workspace-alert-strip__ticker span {
-  display: inline-block;
-  white-space: nowrap;
+  display: block;
+  white-space: normal;
 }
 
 .workspace-alert-strip__position {
@@ -8433,29 +8570,6 @@ a.home-metric-card:focus-visible {
 .workspace-alert-strip__action:hover,
 .workspace-alert-strip__action:focus-visible {
   background: linear-gradient(180deg, #f7dc9c, #e0b051);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .workspace-alert-strip__ticker span {
-    animation: workspace-alert-drift 18s linear infinite;
-  }
-
-  .workspace-alert-strip:hover .workspace-alert-strip__ticker span,
-  .workspace-alert-strip:focus-within .workspace-alert-strip__ticker span {
-    animation-play-state: paused;
-  }
-}
-
-@keyframes workspace-alert-drift {
-  0%,
-  18% {
-    transform: translateX(0);
-  }
-
-  82%,
-  100% {
-    transform: translateX(min(0px, calc(100% - 100vw + 420px)));
-  }
 }
 
 .payroll-export-reminder {
@@ -15422,13 +15536,37 @@ a.home-metric-card:focus-visible {
 
 @media (max-width: 680px) {
   .topbar {
-    min-height: 72px;
-    padding-right: 16px;
+    display: grid;
+    min-height: 0;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 16px;
   }
 
-  .topbar-date span,
+  .topbar-date {
+    padding-left: 58px;
+  }
+
   .topbar-label {
     display: none;
+  }
+
+  .user-menu {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .operational-time-zone-strip {
+    margin: 10px 16px 0;
+    padding: 8px;
+  }
+
+  .operational-clock {
+    padding: 8px 4px;
+  }
+
+  .operational-clock__digital {
+    font-size: 13px;
   }
 
   .payroll-export-reminder {
@@ -15438,9 +15576,9 @@ a.home-metric-card:focus-visible {
   }
 
   .workspace-alert-strip {
-    top: 72px;
     grid-template-columns: auto minmax(0, 1fr);
     gap: 10px;
+    margin: 12px 16px 0;
     padding: 12px 16px;
   }
 
@@ -16447,9 +16585,21 @@ a.home-metric-card:focus-visible {
     gap: 8px;
   }
 
-  .user-menu > div,
-  .user-menu .secondary-button--small:first-of-type {
+  .user-menu > div {
     display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .user-menu {
+    gap: 6px;
+    justify-content: space-between;
+  }
+
+  .user-menu .secondary-button--small {
+    min-height: 36px;
+    padding: 7px 9px;
+    font-size: 13px;
   }
 }
 
