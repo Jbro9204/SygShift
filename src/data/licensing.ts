@@ -177,6 +177,21 @@ export interface LicensingCommunicationInput {
   templateCode?: string | null
 }
 
+export interface LicensingStatusExportAuditInput {
+  credentialTypeId?: string | null
+  employeeScope: 'guards' | 'all'
+  employmentStatus: EmployeeStatus | 'all'
+  licenseStatus: 'all' | 'current' | 'expiring' | 'expired' | 'not_licensed' | 'pending' | 'restricted'
+  search?: string | null
+}
+
+const licensingStatusExportAuditSchema = z.object({
+  authorizedAt: z.string(),
+  exportId: z.string().uuid(),
+})
+
+export type LicensingStatusExportAudit = z.infer<typeof licensingStatusExportAuditSchema>
+
 function cleanOptional(value: string | null | undefined): string | null {
   const clean = value?.trim()
   return clean ? clean : null
@@ -230,6 +245,18 @@ export async function getLicensingCenter(): Promise<LicensingCenter> {
   const center = licensingCenterSchema.parse(centerResult.data)
   const removedEmployeeIds = z.array(z.string().uuid()).parse(removedResult.data)
   return filteredLicensingCenter(center, removedEmployeeIds)
+}
+
+export async function authorizeLicensingStatusExport(input: LicensingStatusExportAuditInput): Promise<LicensingStatusExportAudit> {
+  const { data, error } = await getSupabaseClient().rpc('authorize_licensing_status_report_export', {
+    target_credential_type_id: input.credentialTypeId ?? null,
+    target_employee_scope: input.employeeScope,
+    target_employment_status: input.employmentStatus,
+    target_license_status: input.licenseStatus,
+    target_search: cleanOptional(input.search),
+  })
+  if (error) throw new Error(error.message || 'The licensing report export could not be authorized.')
+  return licensingStatusExportAuditSchema.parse(data)
 }
 
 export async function upsertLicensingEmployee(input: LicensingEmployeeInput): Promise<LicensingCenter> {

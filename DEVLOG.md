@@ -25,6 +25,19 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Guard Licensing Status report
+
+- Added a dedicated report under Reports for current, expiring, expired, not licensed, pending-review, and restricted guard-license states.
+- Kept Licensing Center authoritative and used legal names only; no duplicate license record or alternate editor was created.
+- Added active-guard defaults, status totals, focused filters, ten-row pagination, employee detail, and a direct route back to Licensing Center.
+- Added a professional two-sheet Excel workbook with an employee summary and complete credential detail, frozen/filterable headers, status colors, and report-scope metadata.
+- Excluded emails, phone numbers, notes, document contents, SSN, PHI, payroll, compensation, banking, and tax information from the workbook.
+- Enforced `licensing.view`, verified MFA, and `reports.export` at the database boundary and added a private append-only export audit event.
+- Applied production migration `20260901230000_licensing_status_report_export.sql`; preservation checks confirmed no employee, credential, role membership, or individual override changed.
+- Full validation passed: type checking, zero-warning lint, 134 test files / 659 tests, Worker/client builds, 34 browser tests, and rendered workbook inspection.
+- Application deployment and live health verification are pending.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_GUARD_LICENSING_STATUS_REPORT.md`.
+
 ### Global operational time header
 
 - Extended the single authenticated `AppShell` header with Eastern, Central, Mountain, and Pacific analog/digital clocks; no second header or alert system was created.

@@ -8,7 +8,7 @@ const root = process.cwd()
 const read = (path: string) => readFileSync(resolve(root, path), 'utf8')
 
 describe('Reports workspace guardrails', () => {
-  it('publishes exactly the approved eight-report library with focused source links', () => {
+  it('preserves the approved eight operational reports alongside dedicated protected reports', () => {
     expect(operationalReportDefinitions).toHaveLength(8)
     expect(new Set(operationalReportDefinitions.map((report) => report.key)).size).toBe(8)
     for (const report of operationalReportDefinitions) {
@@ -22,6 +22,8 @@ describe('Reports workspace guardrails', () => {
     expect(canAccessRoute('/reports', { permissions: ['time.reports.view'] })).toBe(true)
     expect(canAccessRoute('/reports/timekeepingExceptions', { permissions: ['time.reports.view'] })).toBe(true)
     expect(canAccessRoute('/reports', { permissions: ['time.view'] })).toBe(false)
+    expect(canAccessRoute('/reports', { permissions: ['reports.view'] })).toBe(true)
+    expect(canAccessRoute('/reports/licensingStatus', { permissions: ['reports.view'] })).toBe(true)
     expect(canAccessRoute('/reports/timekeepingExceptions', { permissions: ['time.view'] })).toBe(false)
   })
 

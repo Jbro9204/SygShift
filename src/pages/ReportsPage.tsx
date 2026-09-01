@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, DatabaseZap, FileBarChart, Search
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { getSessionContext } from '../data/auth'
 import { getOperationsReport } from '../data/operations'
 import { getTimekeepingOperationsReportPage } from '../data/timeOperations'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -12,6 +13,7 @@ import {
   operationalReportDefinitions,
   type OperationalReportDefinition,
 } from '../reports/reportDefinitions'
+import { LicensingStatusReportWorkspace } from '../reports/LicensingStatusReportWorkspace'
 
 const pageSizes = [10, 25, 50] as const
 const rangeStorageKey = 'sygshift-reports-range'
@@ -100,12 +102,14 @@ function RangeControls({ from, onChange, through }: { from: string; onChange: (f
   </div>
 }
 
-function ReportLibrary({ from, through }: { from: string; through: string }) {
+function ReportLibrary({ from, permissions, through }: { from: string; permissions: string[]; through: string }) {
+  const canViewTimeReports = permissions.includes('time.reports.view')
+  const canViewLicensingReport = permissions.includes('licensing.view')
   const reportQuery = useQuery({ queryKey: ['operations-report'], queryFn: getOperationsReport, enabled: isSupabaseConfigured })
   const attentionQuery = useQuery({
     queryKey: ['reports-attention-preview', from, through],
     queryFn: () => getTimekeepingOperationsReportPage({ reportKey: 'timekeepingExceptions', fromDate: from, throughDate: through, scope: 'active', sort: 'priority', page: 1, pageSize: 10 }),
-    enabled: isSupabaseConfigured && through >= from,
+    enabled: isSupabaseConfigured && through >= from && canViewTimeReports,
   })
 
   if (!isSupabaseConfigured) return <DataStatePanel icon={DatabaseZap} title="Reports need the secure connection" tone="setup"><p>Reports become available after the protected data connection is restored.</p></DataStatePanel>
@@ -122,13 +126,13 @@ function ReportLibrary({ from, through }: { from: string; through: string }) {
       <article><span>Active employees</span><strong>{number(report.people.active)}</strong><small>{number(report.people.hourly)} hourly · {number(report.people.salary)} salary</small></article>
     </section>
 
-    <section className="operations-panel reports-attention" aria-labelledby="reports-attention-title">
+    {canViewTimeReports ? <section className="operations-panel reports-attention" aria-labelledby="reports-attention-title">
       <div className="reports-section-heading"><div><p className="eyebrow">Attention preview</p><h2 id="reports-attention-title">Items needing review</h2><p>The five highest-priority timekeeping items in the selected range.</p></div><Link className="secondary-button" to={`/reports/timekeepingExceptions?from=${from}&through=${through}&scope=active&sort=priority`}>Open full report</Link></div>
       {attentionQuery.isPending ? <div className="report-empty">Loading attention items…</div> : null}
       {attentionQuery.isError ? <div className="shell-alert" role="alert">{attentionQuery.error.message}</div> : null}
       {!attentionQuery.isPending && !attentionQuery.isError && attentionRows.length === 0 ? <div className="report-empty">No unresolved timekeeping items are in this range.</div> : null}
       {attentionRows.length ? <div className="reports-attention-list">{attentionRows.map((row, index) => <article key={rowKey(row, index)}><div><strong>{valueFor(row.employeeName)}</strong><span>{valueFor(row.exceptionCode)} · {valueFor(row.sitePost)}</span></div><span>{valueFor(row.scheduledStartAt ?? row.detectedAt)}</span></article>)}</div> : null}
-    </section>
+    </section> : null}
 
     <section className="operations-panel reports-snapshot" aria-labelledby="reports-snapshot-title">
       <div className="reports-section-heading"><div><p className="eyebrow">Operational snapshot</p><h2 id="reports-snapshot-title">Current activity</h2></div><Link className="secondary-button" to="/payroll">Open Payroll</Link></div>
@@ -142,7 +146,11 @@ function ReportLibrary({ from, through }: { from: string; through: string }) {
 
     <section className="reports-catalog" aria-labelledby="reports-catalog-title">
       <div className="reports-section-heading"><div><p className="eyebrow">Report library</p><h2 id="reports-catalog-title">Choose one report</h2><p>Each report opens in a focused, paginated workspace.</p></div></div>
-      <div className="reports-report-grid">{operationalReportDefinitions.map((definition) => <article className="reports-report-card" key={definition.key}><div><h3>{definition.title}</h3><p>{definition.description}</p></div><Link className="secondary-button" to={`/reports/${definition.key}?from=${from}&through=${through}&scope=active&sort=priority`}>Open report</Link></article>)}</div>
+      <div className="reports-report-grid">
+        {canViewLicensingReport ? <article className="reports-report-card reports-report-card--licensing"><div><p className="eyebrow">Licensing &amp; Credentials</p><h3>Guard Licensing Status</h3><p>See who is currently licensed, expiring, expired, pending review, restricted, or missing a required license, then download the complete Excel workbook.</p></div><Link className="secondary-button" to="/reports/licensingStatus">Open report</Link></article> : null}
+        {canViewTimeReports ? operationalReportDefinitions.map((definition) => <article className="reports-report-card" key={definition.key}><div><h3>{definition.title}</h3><p>{definition.description}</p></div><Link className="secondary-button" to={`/reports/${definition.key}?from=${from}&through=${through}&scope=active&sort=priority`}>Open report</Link></article>) : null}
+      </div>
+      {!canViewLicensingReport && !canViewTimeReports ? <div className="report-empty">No report library items are available with your current permissions.</div> : null}
     </section>
   </>
 }
@@ -211,6 +219,15 @@ export function ReportsPage() {
   const from = searchParams.get('from') ?? initialRange.from
   const through = searchParams.get('through') ?? initialRange.through
   const definition = getOperationalReportDefinition(reportKey)
+  const isLicensingStatusReport = reportKey === 'licensingStatus'
+  const sessionQuery = useQuery({
+    enabled: isSupabaseConfigured,
+    queryFn: getSessionContext,
+    queryKey: ['session-context'],
+  })
+  const permissions = sessionQuery.data?.permissions ?? []
+  const canViewLicensingStatusReport = permissions.includes('licensing.view')
+  const canExportLicensingStatusReport = permissions.includes('reports.export')
 
   useEffect(() => {
     if (searchParams.has('from') && searchParams.has('through')) return
@@ -231,8 +248,12 @@ export function ReportsPage() {
 
   return <div className="page page--reports">
     {!reportKey ? <section className="page-intro reports-page-intro"><div><p className="eyebrow">Operations</p><h1>Reports</h1><p className="page-summary">Choose a focused operational report without loading every record into one screen.</p></div><RangeControls from={from} onChange={changeRange} through={through} /></section> : null}
-    {reportKey && !definition ? <DataStatePanel icon={ShieldAlert} title="Report not found" tone="error"><p>This report is not part of the approved report library.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
-    {!reportKey ? <ReportLibrary from={from} through={through} /> : null}
+    {reportKey && !definition && !isLicensingStatusReport ? <DataStatePanel icon={ShieldAlert} title="Report not found" tone="error"><p>This report is not part of the approved report library.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
+    {!reportKey ? <ReportLibrary from={from} permissions={permissions} through={through} /> : null}
     {definition ? <ReportWorkspace definition={definition} from={from} onRangeChange={changeRange} through={through} /> : null}
+    {isLicensingStatusReport && sessionQuery.isPending ? <DataStatePanel icon={FileBarChart} title="Verifying report access"><p>Checking your current Reports and Licensing permissions.</p></DataStatePanel> : null}
+    {isLicensingStatusReport && sessionQuery.isError ? <DataStatePanel icon={ShieldAlert} title="Report access unavailable" tone="error"><p>{sessionQuery.error.message}</p></DataStatePanel> : null}
+    {isLicensingStatusReport && sessionQuery.isSuccess && !canViewLicensingStatusReport ? <DataStatePanel icon={ShieldAlert} title="Licensing report access required" tone="error"><p>This report contains protected licensing information and requires Licensing access with verified MFA.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
+    {isLicensingStatusReport && canViewLicensingStatusReport ? <LicensingStatusReportWorkspace canExport={canExportLicensingStatusReport} /> : null}
   </div>
 }
