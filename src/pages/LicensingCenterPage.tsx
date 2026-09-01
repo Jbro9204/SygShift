@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { IdentityVerificationModal } from '../components/IdentityVerificationModal'
 import { ModalDialog } from '../components/ModalDialog'
 import { getSessionContext } from '../data/auth'
 import {
@@ -30,6 +31,7 @@ import {
   getLicensingCredentialDocuments,
   getLicensingCenter,
   getLicensingDocumentBlob,
+  isLicensingIdentityVerificationRequired,
   recordLicensingCommunication,
   upsertLicensingCredential,
   upsertLicensingEmployee,
@@ -376,6 +378,7 @@ function CredentialDocumentAccessModal({
   const [reason, setReason] = useState('')
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewType, setPreviewType] = useState('')
+  const [verificationOpen, setVerificationOpen] = useState(false)
   const accessMutation = useMutation({
     mutationFn: () => getLicensingDocumentBlob(document.id, action, reason),
     onSuccess: ({ blob, filename }) => {
@@ -392,12 +395,16 @@ function CredentialDocumentAccessModal({
       setPreviewType(blob.type)
       setPreviewUrl(URL.createObjectURL(blob))
     },
+    onError: (error) => {
+      if (isLicensingIdentityVerificationRequired(error)) setVerificationOpen(true)
+    },
   })
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl) }, [previewUrl])
 
   return (
-    <ModalDialog
+    <>
+      <ModalDialog
       busy={accessMutation.isPending}
       busyLabel={`Preparing protected ${action}…`}
       className="licensing-document-access-modal"
@@ -415,15 +422,26 @@ function CredentialDocumentAccessModal({
         <form className="licensing-document-access-form" onSubmit={(event) => { event.preventDefault(); if (reason.trim().length >= 8) accessMutation.mutate() }}>
           <div className="licensing-document-access-summary"><FileText aria-hidden="true" size={24} /><div><strong>{document.filename}</strong><span>{formatFileSize(document.byteSize)} · Protected credential evidence</span></div></div>
           <label>Business reason<textarea autoFocus maxLength={500} minLength={8} onChange={(event) => setReason(event.target.value)} placeholder="Explain why you need to view or download this document." required rows={3} value={reason} /></label>
-          {accessMutation.isError ? <div className="inline-alert" role="alert">{accessMutation.error instanceof Error ? accessMutation.error.message : 'Document access could not be completed.'}</div> : null}
+          {accessMutation.isError && !isLicensingIdentityVerificationRequired(accessMutation.error) ? <div className="inline-alert" role="alert">{accessMutation.error instanceof Error ? accessMutation.error.message : 'Document access could not be completed.'}</div> : null}
           <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Cancel</button><button className="primary-action" disabled={reason.trim().length < 8 || accessMutation.isPending} type="submit">{action === 'preview' ? <Eye aria-hidden="true" size={17} /> : <Download aria-hidden="true" size={17} />}{action === 'preview' ? 'Open protected preview' : 'Download protected file'}</button></div>
         </form>
       )}
-    </ModalDialog>
+      </ModalDialog>
+      {verificationOpen ? (
+        <IdentityVerificationModal
+          onCancel={() => setVerificationOpen(false)}
+          onVerified={() => {
+            setVerificationOpen(false)
+            accessMutation.reset()
+            accessMutation.mutate()
+          }}
+        />
+      ) : null}
+    </>
   )
 }
 
-function CredentialDocumentList({ credentialId }: { credentialId: string }) {
+function CredentialDocumentList({ credentialId, onVerificationRequired }: { credentialId: string; onVerificationRequired: () => void }) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<5 | 10 | 20>(5)
   const [accessTarget, setAccessTarget] = useState<{ action: 'preview' | 'download'; document: LicensingCredentialDocument } | null>(null)
@@ -437,8 +455,14 @@ function CredentialDocumentList({ credentialId }: { credentialId: string }) {
     if (workspace && page > Math.max(workspace.pagination.totalPages, 1)) setPage(Math.max(workspace.pagination.totalPages, 1))
   }, [page, workspace])
 
+  useEffect(() => {
+    if (isLicensingIdentityVerificationRequired(documentsQuery.error)) onVerificationRequired()
+  }, [documentsQuery.error, onVerificationRequired])
+
   if (documentsQuery.isPending) return <div className="licensing-document-state" role="status">Loading protected documents…</div>
-  if (documentsQuery.isError) return <div className="inline-alert" role="alert">{documentsQuery.error instanceof Error ? documentsQuery.error.message : 'Credential documents could not be loaded.'}</div>
+  if (documentsQuery.isError) return isLicensingIdentityVerificationRequired(documentsQuery.error)
+    ? <div className="licensing-document-state" role="status">Identity verification is required to load protected documents.</div>
+    : <div className="inline-alert" role="alert">{documentsQuery.error instanceof Error ? documentsQuery.error.message : 'Credential documents could not be loaded.'}</div>
   if (!workspace) return null
 
   return (
@@ -470,8 +494,24 @@ function CredentialDocumentList({ credentialId }: { credentialId: string }) {
 }
 
 function CredentialDocumentsModal({ credential, onClose }: { credential: LicensingCredential; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [verificationOpen, setVerificationOpen] = useState(false)
+  const requireVerification = useCallback(() => setVerificationOpen(true), [])
   if (!credential.credentialId) return null
-  return <ModalDialog className="modal-dialog--wide licensing-documents-modal" description={`${credentialDisplayName(credential)} · Protected documents remain private and every access is audited.`} onClose={onClose} title="Credential documents"><CredentialDocumentList credentialId={credential.credentialId} /></ModalDialog>
+  return (
+    <>
+      <ModalDialog className="modal-dialog--wide licensing-documents-modal" description={`${credentialDisplayName(credential)} · Protected documents remain private and every access is audited.`} onClose={onClose} title="Credential documents"><CredentialDocumentList credentialId={credential.credentialId} onVerificationRequired={requireVerification} /></ModalDialog>
+      {verificationOpen ? (
+        <IdentityVerificationModal
+          onCancel={() => setVerificationOpen(false)}
+          onVerified={async () => {
+            setVerificationOpen(false)
+            await queryClient.invalidateQueries({ queryKey: ['licensing-credential-documents', credential.credentialId] })
+          }}
+        />
+      ) : null}
+    </>
+  )
 }
 
 function CredentialEditModal({
@@ -497,8 +537,10 @@ function CredentialEditModal({
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadRequestId, setUploadRequestId] = useState(() => crypto.randomUUID())
+  const [verificationOpen, setVerificationOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const selectedType = credentialTypes.find((type) => type.id === credential.credentialTypeId)
+  const requireVerification = useCallback(() => setVerificationOpen(true), [])
 
   const credentialMutation = useMutation({
     mutationFn: upsertLicensingCredential,
@@ -522,6 +564,10 @@ function CredentialEditModal({
       ])
     },
     onError: (error) => {
+      if (isLicensingIdentityVerificationRequired(error)) {
+        setVerificationOpen(true)
+        return
+      }
       if ((error as Error & { code?: string }).code === 'licensing_document_storage_failed') {
         setUploadRequestId(crypto.randomUUID())
       }
@@ -565,7 +611,8 @@ function CredentialEditModal({
   }
 
   return (
-    <ModalDialog
+    <>
+      <ModalDialog
       busy={credentialMutation.isPending || documentMutation.isPending}
       busyLabel={documentMutation.isPending ? 'Uploading credential document...' : 'Saving credential...'}
       className="modal-dialog--wide"
@@ -645,10 +692,25 @@ function CredentialEditModal({
         {!currentCredentialId ? <p className="form-note">Save the credential first, then attach documents.</p> : null}
         {documentMutation.isPending ? <div aria-label={`Upload ${uploadProgress}% complete`} className="licensing-document-progress"><span style={{ width: `${uploadProgress}%` }} /></div> : null}
         {documentMutation.isSuccess ? <div className="form-feedback form-feedback--success" role="status">Document uploaded securely. It is ready to view or download below.</div> : null}
-        {documentMutation.isError ? <div className="inline-alert" role="alert">{documentMutation.error instanceof Error ? documentMutation.error.message : 'The licensing document could not be uploaded.'}</div> : null}
-        {currentCredentialId ? <CredentialDocumentList credentialId={currentCredentialId} /> : null}
+        {documentMutation.isError && !isLicensingIdentityVerificationRequired(documentMutation.error) ? <div className="inline-alert" role="alert">{documentMutation.error instanceof Error ? documentMutation.error.message : 'The licensing document could not be uploaded.'}</div> : null}
+        {currentCredentialId ? <CredentialDocumentList credentialId={currentCredentialId} onVerificationRequired={requireVerification} /> : null}
       </section>
-    </ModalDialog>
+      </ModalDialog>
+      {verificationOpen ? (
+        <IdentityVerificationModal
+          onCancel={() => setVerificationOpen(false)}
+          onVerified={async () => {
+            setVerificationOpen(false)
+            await queryClient.invalidateQueries({ queryKey: ['licensing-credential-documents', currentCredentialId] })
+            if (selectedFile && currentCredentialId && isLicensingIdentityVerificationRequired(documentMutation.error)) {
+              documentMutation.reset()
+              setUploadProgress(0)
+              documentMutation.mutate({ credentialId: currentCredentialId, file: selectedFile, idempotencyKey: uploadRequestId })
+            }
+          }}
+        />
+      ) : null}
+    </>
   )
 }
 

@@ -54,4 +54,4 @@ SygShift now supports a physical FIDO2/WebAuthn security key as an optional phis
 
 ## Controlled activation
 
-The software release is complete, but the pilot remains intentionally limited. Jordan Brown must perform the physical key ceremony in **My Account > Security** and validate current Chrome and Edge behavior. The authenticator factor must remain enrolled, and the pilot allowlist must not expand until cancellation, fallback, removal, administrator revocation, and MFA-reset behavior have been confirmed with the physical key.
+Jordan Brown completed the physical-key registration, and the production credential remained active when rechecked on 09/01/2026. The pilot remains intentionally limited to `jbrown`. The authenticator factor remains enrolled as the fallback, and the allowlist must not expand until cancellation, fallback, removal, administrator revocation, and MFA-reset behavior have been confirmed with the physical key.

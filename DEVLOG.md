@@ -25,6 +25,16 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Identity verification and FIDO workflow repair
+
+- Replaced protected Licensing document MFA dead ends with one forced identity-verification modal that supports a registered FIDO2 key and authenticator fallback.
+- Preserved selected uploads and written access reasons, then automatically resumed list, upload, preview, or download after successful verification.
+- Made account-security key discovery explicit and recoverable so a temporary lookup failure cannot silently hide a registered key or sign the employee out.
+- Confirmed Jordan's existing production FIDO credential remains active; no re-enrollment or credential mutation was performed.
+- Preserved password-first login, exact Licensing permissions, the 15-minute recent-MFA boundary, authenticator fallback, session-bound FIDO assurance, document audit evidence, and raw-authenticator verification before key-management changes.
+- Full validation passed: type checking, zero-warning lint, 140 test files / 685 tests, Worker/client builds, and responsive light/dark identity-dialog and Licensing-document browser checks.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_IDENTITY_VERIFICATION_AND_FIDO_WORKFLOW_REPAIR.md`.
+
 ### Secure Licensing Center document workflow
 
 - Repaired the credential/license upload failure caused by the old browser-to-Storage RLS boundary by routing upload, list, preview, and download through one authenticated Worker workflow.

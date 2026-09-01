@@ -48,7 +48,7 @@ vi.mock('../data/mfa', () => ({
 
 vi.mock('../data/securityKeys', () => ({
   authenticateWithSecurityKey: vi.fn(),
-  listSecurityKeys: vi.fn(),
+  getSecurityKeyDirectory: vi.fn(),
 }))
 
 function sessionContext(overrides: Partial<Awaited<ReturnType<typeof authMock.getSessionContext>>> = {}) {
@@ -81,7 +81,12 @@ describe('AccountSecurityPage', () => {
     supabaseMock.client.rpc.mockResolvedValue({ data: true, error: null })
     vi.mocked(mfaData.listMfaFactors).mockResolvedValue([])
     vi.mocked(mfaData.getAuthenticatorLevel).mockResolvedValue({ currentLevel: 'aal2', nextLevel: 'aal2' })
-    vi.mocked(securityKeyData.listSecurityKeys).mockResolvedValue([])
+    vi.mocked(securityKeyData.getSecurityKeyDirectory).mockResolvedValue({
+      featureEnabled: true,
+      keys: [],
+      pilotEligible: true,
+      requestId: 'request-1',
+    })
   })
 
   it('submits the actual password field values even when browser autofill bypasses React change state', async () => {
@@ -209,15 +214,20 @@ describe('AccountSecurityPage', () => {
     vi.mocked(mfaData.getAuthenticatorLevel)
       .mockResolvedValueOnce({ currentLevel: 'aal1', nextLevel: 'aal2' })
       .mockResolvedValue({ currentLevel: 'aal2', nextLevel: 'aal2' })
-    vi.mocked(securityKeyData.listSecurityKeys).mockResolvedValue([{
-      id: 'key-1',
-      credentialId: 'credential-key-1',
-      label: 'Jordan office key',
-      deviceType: 'singleDevice',
-      backedUp: false,
-      createdAt: '2026-08-29T12:00:00.000Z',
-      lastUsedAt: null,
-    }])
+    vi.mocked(securityKeyData.getSecurityKeyDirectory).mockResolvedValue({
+      featureEnabled: true,
+      pilotEligible: true,
+      requestId: 'request-1',
+      keys: [{
+        id: 'key-1',
+        credentialId: 'credential-key-1',
+        label: 'Jordan office key',
+        deviceType: 'singleDevice',
+        backedUp: false,
+        createdAt: '2026-08-29T12:00:00.000Z',
+        lastUsedAt: null,
+      }],
+    })
     vi.mocked(securityKeyData.authenticateWithSecurityKey).mockResolvedValue()
 
     render(
@@ -232,5 +242,65 @@ describe('AccountSecurityPage', () => {
 
     await waitFor(() => expect(securityKeyData.authenticateWithSecurityKey).toHaveBeenCalledTimes(1))
     expect(supabaseMock.client.rpc).not.toHaveBeenCalledWith('mark_mfa_enrolled')
+  })
+
+  it('keeps authenticator fallback available when security-key discovery fails', async () => {
+    authMock.getSessionContext.mockReset()
+    authMock.getSessionContext.mockResolvedValue(sessionContext({ hasMfa: false, mfaRequired: true }))
+    vi.mocked(mfaData.listMfaFactors).mockResolvedValue([{
+      factorType: 'totp',
+      friendlyName: 'SygShift',
+      id: 'factor-1',
+      phone: null,
+      status: 'verified',
+    }])
+    vi.mocked(securityKeyData.getSecurityKeyDirectory).mockRejectedValue(new Error('temporary lookup failure'))
+
+    render(
+      <MemoryRouter>
+        <AccountSecurityPage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('button', { name: 'Retry key check' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Verify authenticator' })).toBeInTheDocument()
+    expect(supabaseMock.client.auth.signOut).not.toHaveBeenCalled()
+  })
+
+  it('requires a fresh authenticator instead of a security key before key-management changes', async () => {
+    authMock.getSessionContext.mockReset()
+    authMock.getSessionContext.mockResolvedValue(sessionContext({ hasMfa: true, mfaRequired: true }))
+    vi.mocked(mfaData.getAuthenticatorLevel).mockResolvedValue({ currentLevel: 'aal1', nextLevel: 'aal2' })
+    vi.mocked(mfaData.listMfaFactors).mockResolvedValue([{
+      factorType: 'totp',
+      friendlyName: 'SygShift',
+      id: 'factor-1',
+      phone: null,
+      status: 'verified',
+    }])
+    vi.mocked(securityKeyData.getSecurityKeyDirectory).mockResolvedValue({
+      featureEnabled: true,
+      keys: [{
+        backedUp: false,
+        createdAt: '2026-08-29T12:00:00.000Z',
+        credentialId: 'credential-key-1',
+        deviceType: 'singleDevice',
+        id: 'key-1',
+        label: 'Jordan office key',
+        lastUsedAt: null,
+      }],
+      pilotEligible: true,
+      requestId: 'request-1',
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/account-security?mode=security-key-management']}>
+        <AccountSecurityPage />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'Verify before changing security keys.' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Verify authenticator' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Use security key' })).not.toBeInTheDocument()
   })
 })

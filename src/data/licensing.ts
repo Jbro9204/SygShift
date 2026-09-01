@@ -349,9 +349,26 @@ async function licensingApiHeaders(contentType?: string): Promise<Headers> {
   return appendProtectedSessionHeaders(headers)
 }
 
-async function licensingApiError(response: Response, fallback: string): Promise<Error> {
-  const payload = await response.json().catch(() => null) as { detail?: unknown } | null
-  return new Error(typeof payload?.detail === 'string' ? payload.detail : fallback)
+export class LicensingApiError extends Error {
+  code: string | null
+
+  constructor(message: string, code: string | null = null) {
+    super(message)
+    this.name = 'LicensingApiError'
+    this.code = code
+  }
+}
+
+export function isLicensingIdentityVerificationRequired(error: unknown): boolean {
+  return error instanceof LicensingApiError && error.code === 'recent_document_mfa_required'
+}
+
+async function licensingApiError(response: Response, fallback: string): Promise<LicensingApiError> {
+  const payload = await response.json().catch(() => null) as { detail?: unknown; error?: unknown } | null
+  return new LicensingApiError(
+    typeof payload?.detail === 'string' ? payload.detail : fallback,
+    typeof payload?.error === 'string' ? payload.error : null,
+  )
 }
 
 function encodeLicensingDocumentMetadata(value: Record<string, unknown>): string {
@@ -419,10 +436,13 @@ export async function uploadCredentialDocument(
       const detail = payload && typeof payload === 'object' && 'detail' in payload
         ? (payload as { detail?: unknown }).detail
         : null
-      const failure = new Error(typeof detail === 'string' ? detail : 'The licensing document could not be uploaded.') as Error & { code?: string }
-      if (payload && typeof payload === 'object' && 'error' in payload && typeof (payload as { error?: unknown }).error === 'string') {
-        failure.code = (payload as { error: string }).error
-      }
+      const code = payload && typeof payload === 'object' && 'error' in payload && typeof (payload as { error?: unknown }).error === 'string'
+        ? (payload as { error: string }).error
+        : null
+      const failure = new LicensingApiError(
+        typeof detail === 'string' ? detail : 'The licensing document could not be uploaded.',
+        code,
+      )
       reject(failure)
     })
     request.addEventListener('error', () => reject(new Error('The upload connection was interrupted. You can retry safely.')))

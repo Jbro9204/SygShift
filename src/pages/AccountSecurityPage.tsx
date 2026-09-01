@@ -25,7 +25,7 @@ import {
 import { generateMfaRecoveryCodes, recoverMfaWithCode } from '../data/mfaRecovery'
 import {
   authenticateWithSecurityKey,
-  listSecurityKeys,
+  getSecurityKeyDirectory,
   type SecurityKeySummary,
 } from '../data/securityKeys'
 import {
@@ -114,6 +114,7 @@ export function AccountSecurityPage() {
   const [context, setContext] = useState<SessionContext | null>(null)
   const [factors, setFactors] = useState<MfaFactorSummary[]>([])
   const [securityKeys, setSecurityKeys] = useState<SecurityKeySummary[]>([])
+  const [securityKeyLoadError, setSecurityKeyLoadError] = useState<string | null>(null)
   const [enrollment, setEnrollment] = useState<MfaEnrollment | null>(null)
   const [phoneEnrollment, setPhoneEnrollment] = useState<MfaPhoneEnrollment | null>(null)
   const [selectedMfaMethod, setSelectedMfaMethod] = useState<MfaMethod | null>(null)
@@ -191,18 +192,23 @@ export function AccountSecurityPage() {
 
       try {
         const nextContext = await getSessionContext()
-        if (!active) return
-        setContext(nextContext)
-
-        const [nextFactors, level, nextSecurityKeys] = await Promise.all([
+        const [nextFactors, level] = await Promise.all([
           listMfaFactors(),
           getAuthenticatorLevel(),
-          listSecurityKeys(),
         ])
+        let nextSecurityKeys: SecurityKeySummary[] = []
+        let nextSecurityKeyLoadError: string | null = null
+        try {
+          nextSecurityKeys = (await getSecurityKeyDirectory()).keys
+        } catch {
+          nextSecurityKeyLoadError = 'Your registered security key could not be checked. Retry the key check or use your authenticator.'
+        }
         if (active) {
+          setContext(nextContext)
           setFactors(nextFactors)
           setRawAuthenticatorLevel(level.currentLevel)
           setSecurityKeys(nextSecurityKeys)
+          setSecurityKeyLoadError(nextSecurityKeyLoadError)
         }
       } catch {
         await signOut()
@@ -223,14 +229,15 @@ export function AccountSecurityPage() {
     const nextContext = await getSessionContext()
     setContext(nextContext)
 
-    const [nextFactors, level, nextSecurityKeys] = await Promise.all([
+    const [nextFactors, level] = await Promise.all([
       listMfaFactors(),
       getAuthenticatorLevel(),
-      listSecurityKeys(),
     ])
+    const nextSecurityKeys = (await getSecurityKeyDirectory()).keys
     setFactors(nextFactors)
     setRawAuthenticatorLevel(level.currentLevel)
     setSecurityKeys(nextSecurityKeys)
+    setSecurityKeyLoadError(null)
 
     notifySessionContextChanged()
     return nextContext
@@ -246,6 +253,18 @@ export function AccountSecurityPage() {
       setTrustedDevices(await getCurrentTrustedDevices())
     } catch {
       setTrustedDevices([])
+    }
+  }
+
+  async function retrySecurityKeyLookup(): Promise<void> {
+    setBusyAction('security-key-lookup')
+    setSecurityKeyLoadError(null)
+    try {
+      setSecurityKeys((await getSecurityKeyDirectory()).keys)
+    } catch {
+      setSecurityKeyLoadError('Your registered security key still could not be checked. Use your authenticator for this session and contact an administrator if the key remains unavailable.')
+    } finally {
+      setBusyAction(null)
     }
   }
 
@@ -666,10 +685,12 @@ export function AccountSecurityPage() {
         <div className="security-card__heading">
           <div>
             <p className="eyebrow">Account security</p>
-            <h1 id="security-title">{isPasswordRecovery ? 'Reset your SygShift password.' : 'Finish securing your SygShift account.'}</h1>
+            <h1 id="security-title">{isPasswordRecovery ? 'Reset your SygShift password.' : isSecurityKeyManagement ? 'Verify before changing security keys.' : 'Finish securing your SygShift account.'}</h1>
             <p>
               {isPasswordRecovery
                 ? 'Choose a new private password for your account. The recovery link can be used only once.'
+                : isSecurityKeyManagement
+                  ? 'For your protection, security-key registration and removal require a fresh authenticator verification. A key cannot authorize changes to itself.'
                 : 'This checkpoint keeps protected schedules, employee records, and administrative tools behind verified access before the workspace opens.'}
             </p>
           </div>
@@ -717,7 +738,9 @@ export function AccountSecurityPage() {
                         ? SMS_MFA_ENABLED
                           ? 'Verify by authenticator app or text message before saving the new password.'
                           : 'Verify with an authenticator app before saving the new password.'
-                        : SMS_MFA_ENABLED
+                        : !isSecurityKeyManagement && verifiedSecurityKeys.length > 0
+                          ? 'Verify with your security key or authenticator app before protected tools open.'
+                          : SMS_MFA_ENABLED
                           ? 'Verify by authenticator app or text message before protected tools open.'
                           : 'Verify with an authenticator app before protected tools open.'
                       : 'MFA verification is complete for this session.'
@@ -824,14 +847,26 @@ export function AccountSecurityPage() {
 
         {context && needsMfa ? (
           <section className="security-panel">
-            <h2>{verifiedFactors.length > 0 ? 'Verify your account' : SMS_MFA_ENABLED ? 'Choose your MFA method' : 'Set up an authenticator app'}</h2>
+            <h2>{isSecurityKeyManagement ? 'Verify with your authenticator' : verifiedFactors.length > 0 ? 'Verify your account' : SMS_MFA_ENABLED ? 'Choose your MFA method' : 'Set up an authenticator app'}</h2>
             <p>
-              {verifiedSecurityKeys.length > 0
+              {isSecurityKeyManagement
+                ? 'Enter a current authenticator code. This prevents a stolen or unattended security key from changing the account’s registered keys.'
+                : verifiedSecurityKeys.length > 0
                 ? 'Use a registered security key, or continue with your authenticator app. Your password and normal account protections remain in place.'
                 : SMS_MFA_ENABLED
                 ? 'You can use either an authenticator app or a text message code. Set up one method now; add the other later if you want a backup.'
                 : 'Use an authenticator app such as Microsoft Authenticator, Google Authenticator, 1Password, Authy, or Apple Passwords.'}
             </p>
+
+            {!isSecurityKeyManagement && securityKeyLoadError ? (
+              <div className="auth-notice auth-notice--warning" role="alert">
+                <Usb aria-hidden="true" size={21} />
+                <span>{securityKeyLoadError}</span>
+                <button className="secondary-button" disabled={busyAction !== null} onClick={() => void retrySecurityKeyLookup()} type="button">
+                  {busyAction === 'security-key-lookup' ? 'Checking key…' : 'Retry key check'}
+                </button>
+              </div>
+            ) : null}
 
             {verifiedSecurityKeys.length > 0 ? (
               <div className="security-key-checkpoint" aria-label="Registered security keys">

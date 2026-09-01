@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 const root = process.cwd()
 const data = readFileSync(join(root, 'src', 'data', 'licensing.ts'), 'utf8')
 const page = readFileSync(join(root, 'src', 'pages', 'LicensingCenterPage.tsx'), 'utf8')
+const verificationModal = readFileSync(join(root, 'src', 'components', 'IdentityVerificationModal.tsx'), 'utf8')
 const styles = readFileSync(join(root, 'src', 'App.css'), 'utf8')
 const worker = readFileSync(join(root, 'worker', 'index.ts'), 'utf8')
 const migration = readFileSync(
@@ -50,5 +51,15 @@ describe('secure licensing document workflow', () => {
     expect(page).toContain('<CredentialDocumentsModal')
     expect(styles).toContain('.licensing-document-list')
     expect(styles).toContain('.licensing-document-preview iframe')
+  })
+
+  it('forces a usable identity checkpoint and resumes the protected action after verification', () => {
+    expect(data).toContain("error.code === 'recent_document_mfa_required'")
+    expect(page).toContain('<IdentityVerificationModal')
+    expect(page).toContain('accessMutation.mutate()')
+    expect(page).toContain('documentMutation.mutate({ credentialId: currentCredentialId')
+    expect(verificationModal).toContain('Verify with security key')
+    expect(verificationModal).toContain('Verify authenticator')
+    expect(verificationModal).toContain('Verification remains valid for 15 minutes')
   })
 })
