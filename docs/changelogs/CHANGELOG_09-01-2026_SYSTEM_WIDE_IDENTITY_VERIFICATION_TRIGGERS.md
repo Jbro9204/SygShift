@@ -2,7 +2,7 @@
 
 **Date:** 09/01/2026  
 **Area:** Protected HR / Administration / Operations / Time & Attendance  
-**Status:** Validated and ready for production release
+**Status:** Production release complete
 
 ## Outcome
 
@@ -40,5 +40,9 @@ The trigger covers the full Worker-backed HR suite, including Employee File comp
 
 ## Production rollout
 
-- Production release pending.
-
+- Pushed validated commit `f3552b6` to `main`.
+- Deployed Cloudflare Worker version `7ba88d1a-a665-4334-b979-e7bbc5c2e8c6` with the existing production variables preserved.
+- Primary and fallback login, health, and readiness checks returned HTTP `200`.
+- The live application bundle contains the shared protected-access checkpoint, automatic action-resume copy, and FIDO verification action.
+- Unauthenticated Employee File Compensation and User Administration Security Keys route checks returned HTTP `401`, confirming the server boundary remains enforced.
+- No database migration, record mutation, or permission change was part of this release.

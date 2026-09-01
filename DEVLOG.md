@@ -34,7 +34,8 @@ deployment status, or major workflow assumptions change.
 - Added a visible **Verify and retry** recovery action to the Employee File Compensation card for a dismissed or unsuccessful checkpoint.
 - No database migration or production record change was required.
 - Full validation passed: type checking, zero-warning lint, 142 test files / 693 tests, Worker/client builds, and all 52 responsive light/dark browser checks.
-- Production release pending; full details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_SYSTEM_WIDE_IDENTITY_VERIFICATION_TRIGGERS.md`.
+- Deployed Cloudflare Worker version `7ba88d1a-a665-4334-b979-e7bbc5c2e8c6`; primary and fallback login/health/readiness returned `200`, live bundle checks passed, and unauthenticated Compensation and Admin Security Keys routes returned `401`.
+- Full details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_SYSTEM_WIDE_IDENTITY_VERIFICATION_TRIGGERS.md`.
 
 ### Identity verification and FIDO workflow repair
 
