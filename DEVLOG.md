@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Human Resources Manager and role-category controls
+
+- Upgraded the existing protected `human_resources` role in place to **Human Resources Manager**, preserving its role ID and existing one-employee assignment.
+- Granted every current active HR & Finance permission plus supporting employee-lifecycle, licensing, communications, reporting, payroll-preparation, and time-management access; roles/security administration, maintenance/backend controls, destructive deletion, account-security administration, sites, patrol, and schedule management remain excluded.
+- Production verification confirmed 110 intended permissions, 110 enabled, zero missing, and zero extra; the migration also verified that assignments, individual overrides, every other role, every other permission bundle, and the permission catalog were unchanged.
+- Added category-level **Select all** and **Clear all** to Create Role and existing-role editing. Actions use the complete category even during a filtered search and preserve selections in unrelated categories.
+- Full validation passed: type checking, zero-warning lint, 143 test files / 695 tests, access-control inventory, HR Admin baseline, Worker/client builds, and responsive desktop/mobile browser checks.
+- Applied forward migration `20260902050000_human_resources_manager_complete_authority.sql`, reconciled only that exact migration marker, and deployed Cloudflare Worker version `ffbd5c87-b5e0-4f40-9758-c5a8710a25fc`.
+- Primary and fallback login, health, and readiness returned `200`; the live Roles & Permissions asset contains the category controls.
+- Full details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_HUMAN_RESOURCES_MANAGER_AND_ROLE_CATEGORY_CONTROLS.md`.
+
 ### System-wide identity verification triggers
 
 - Replaced protected-access MFA dead ends with one shared application-level identity checkpoint that opens automatically on explicit server `*_mfa_required` responses and retries the blocked action once after successful verification.
