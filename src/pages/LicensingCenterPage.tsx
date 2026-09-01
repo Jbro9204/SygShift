@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -6,7 +6,10 @@ import {
   BellRing,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
+  Download,
+  Eye,
   FileText,
   FolderOpen,
   Mail,
@@ -24,7 +27,9 @@ import { getSessionContext } from '../data/auth'
 import {
   formatEligibility,
   formatRole,
+  getLicensingCredentialDocuments,
   getLicensingCenter,
+  getLicensingDocumentBlob,
   recordLicensingCommunication,
   upsertLicensingCredential,
   upsertLicensingEmployee,
@@ -34,6 +39,7 @@ import {
   type CredentialType,
   type LicensingCenter,
   type LicensingCredential,
+  type LicensingCredentialDocument,
   type LicensingEmployee,
   type RenewalStatus,
 } from '../data/licensing'
@@ -116,6 +122,13 @@ function formatTimestamp(value: string | null): string {
 
 function normalized(value: unknown): string {
   return String(value ?? '').toLocaleLowerCase()
+}
+
+function formatFileSize(value: number | null): string {
+  if (value === null) return 'Size not recorded'
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function legalEmployeeName(employee: LicensingEmployee): string {
@@ -351,6 +364,116 @@ function EmployeeFormModal({
   )
 }
 
+function CredentialDocumentAccessModal({
+  action,
+  document,
+  onClose,
+}: {
+  action: 'preview' | 'download'
+  document: LicensingCredentialDocument
+  onClose: () => void
+}) {
+  const [reason, setReason] = useState('')
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewType, setPreviewType] = useState('')
+  const accessMutation = useMutation({
+    mutationFn: () => getLicensingDocumentBlob(document.id, action, reason),
+    onSuccess: ({ blob, filename }) => {
+      if (action === 'download') {
+        const url = URL.createObjectURL(blob)
+        const anchor = window.document.createElement('a')
+        anchor.href = url
+        anchor.download = filename
+        anchor.click()
+        window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+        onClose()
+        return
+      }
+      setPreviewType(blob.type)
+      setPreviewUrl(URL.createObjectURL(blob))
+    },
+  })
+
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl) }, [previewUrl])
+
+  return (
+    <ModalDialog
+      busy={accessMutation.isPending}
+      busyLabel={`Preparing protected ${action}…`}
+      className="licensing-document-access-modal"
+      description={`${document.filename} · Access is recorded in the licensing audit history.`}
+      onClose={onClose}
+      title={action === 'preview' ? 'View licensing document' : 'Download licensing document'}
+    >
+      {previewUrl ? (
+        <div className="licensing-document-preview">
+          {previewType === 'application/pdf' ? <iframe sandbox="" src={previewUrl} title={`Preview of ${document.filename}`} /> : null}
+          {previewType.startsWith('image/') ? <img alt={`Preview of ${document.filename}`} src={previewUrl} /> : null}
+          <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Close preview</button></div>
+        </div>
+      ) : (
+        <form className="licensing-document-access-form" onSubmit={(event) => { event.preventDefault(); if (reason.trim().length >= 8) accessMutation.mutate() }}>
+          <div className="licensing-document-access-summary"><FileText aria-hidden="true" size={24} /><div><strong>{document.filename}</strong><span>{formatFileSize(document.byteSize)} · Protected credential evidence</span></div></div>
+          <label>Business reason<textarea autoFocus maxLength={500} minLength={8} onChange={(event) => setReason(event.target.value)} placeholder="Explain why you need to view or download this document." required rows={3} value={reason} /></label>
+          {accessMutation.isError ? <div className="inline-alert" role="alert">{accessMutation.error instanceof Error ? accessMutation.error.message : 'Document access could not be completed.'}</div> : null}
+          <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Cancel</button><button className="primary-action" disabled={reason.trim().length < 8 || accessMutation.isPending} type="submit">{action === 'preview' ? <Eye aria-hidden="true" size={17} /> : <Download aria-hidden="true" size={17} />}{action === 'preview' ? 'Open protected preview' : 'Download protected file'}</button></div>
+        </form>
+      )}
+    </ModalDialog>
+  )
+}
+
+function CredentialDocumentList({ credentialId }: { credentialId: string }) {
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<5 | 10 | 20>(5)
+  const [accessTarget, setAccessTarget] = useState<{ action: 'preview' | 'download'; document: LicensingCredentialDocument } | null>(null)
+  const documentsQuery = useQuery({
+    queryFn: () => getLicensingCredentialDocuments(credentialId, page, pageSize),
+    queryKey: ['licensing-credential-documents', credentialId, page, pageSize],
+  })
+  const workspace = documentsQuery.data
+
+  useEffect(() => {
+    if (workspace && page > Math.max(workspace.pagination.totalPages, 1)) setPage(Math.max(workspace.pagination.totalPages, 1))
+  }, [page, workspace])
+
+  if (documentsQuery.isPending) return <div className="licensing-document-state" role="status">Loading protected documents…</div>
+  if (documentsQuery.isError) return <div className="inline-alert" role="alert">{documentsQuery.error instanceof Error ? documentsQuery.error.message : 'Credential documents could not be loaded.'}</div>
+  if (!workspace) return null
+
+  return (
+    <div className="licensing-document-workspace">
+      {workspace.documents.length ? (
+        <div className="licensing-document-list">
+          {workspace.documents.map((document) => (
+            <article key={document.id}>
+              <span className="licensing-document-list__icon"><FileText aria-hidden="true" size={19} /></span>
+              <div><strong title={document.filename}>{document.filename}</strong><span>{formatFileSize(document.byteSize)} · Uploaded {formatTimestamp(document.uploadedAt)}</span></div>
+              <div className="licensing-document-list__actions">
+                <button className="secondary-button secondary-button--small" onClick={() => setAccessTarget({ action: 'preview', document })} type="button"><Eye aria-hidden="true" size={15} />View</button>
+                <button className="secondary-button secondary-button--small" onClick={() => setAccessTarget({ action: 'download', document })} type="button"><Download aria-hidden="true" size={15} />Download</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : <div className="licensing-document-empty"><FileText aria-hidden="true" size={22} /><span>No documents have been uploaded for this credential.</span></div>}
+      <div className="licensing-document-pagination">
+        <span>{workspace.pagination.totalCount} document{workspace.pagination.totalCount === 1 ? '' : 's'}</span>
+        <label>Rows<select onChange={(event) => { setPageSize(Number(event.target.value) as 5 | 10 | 20); setPage(1) }} value={pageSize}><option value={5}>5</option><option value={10}>10</option><option value={20}>20</option></select></label>
+        <button className="secondary-button secondary-button--small" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} type="button"><ChevronLeft aria-hidden="true" size={15} />Previous</button>
+        <span>Page {workspace.pagination.totalCount === 0 ? 0 : page} of {workspace.pagination.totalPages}</span>
+        <button className="secondary-button secondary-button--small" disabled={page >= workspace.pagination.totalPages} onClick={() => setPage((value) => value + 1)} type="button">Next<ChevronRight aria-hidden="true" size={15} /></button>
+      </div>
+      {accessTarget ? <CredentialDocumentAccessModal action={accessTarget.action} document={accessTarget.document} onClose={() => setAccessTarget(null)} /> : null}
+    </div>
+  )
+}
+
+function CredentialDocumentsModal({ credential, onClose }: { credential: LicensingCredential; onClose: () => void }) {
+  if (!credential.credentialId) return null
+  return <ModalDialog className="modal-dialog--wide licensing-documents-modal" description={`${credentialDisplayName(credential)} · Protected documents remain private and every access is audited.`} onClose={onClose} title="Credential documents"><CredentialDocumentList credentialId={credential.credentialId} /></ModalDialog>
+}
+
 function CredentialEditModal({
   credential,
   credentialTypes,
@@ -372,6 +495,9 @@ function CredentialEditModal({
   )
   const [currentCredentialId, setCurrentCredentialId] = useState(credential.credentialId)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadRequestId, setUploadRequestId] = useState(() => crypto.randomUUID())
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const selectedType = credentialTypes.find((type) => type.id === credential.credentialTypeId)
 
   const credentialMutation = useMutation({
@@ -384,10 +510,21 @@ function CredentialEditModal({
     },
   })
   const documentMutation = useMutation({
-    mutationFn: uploadCredentialDocument,
+    mutationFn: (input: { credentialId: string; file: File; idempotencyKey: string }) => uploadCredentialDocument(input, setUploadProgress),
     onSuccess: async () => {
       setSelectedFile(null)
-      await queryClient.invalidateQueries({ queryKey: ['licensing-center'], refetchType: 'active' })
+      setUploadProgress(100)
+      setUploadRequestId(crypto.randomUUID())
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['licensing-center'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['licensing-credential-documents', currentCredentialId] }),
+      ])
+    },
+    onError: (error) => {
+      if ((error as Error & { code?: string }).code === 'licensing_document_storage_failed') {
+        setUploadRequestId(crypto.randomUUID())
+      }
     },
   })
 
@@ -412,11 +549,19 @@ function CredentialEditModal({
 
   function uploadDocument() {
     if (!selectedFile || !currentCredentialId) return
+    setUploadProgress(0)
     documentMutation.mutate({
       credentialId: currentCredentialId,
-      employeeId: employee.employeeId,
       file: selectedFile,
+      idempotencyKey: uploadRequestId,
     })
+  }
+
+  function chooseDocument(file: File | null) {
+    documentMutation.reset()
+    setSelectedFile(file)
+    setUploadProgress(0)
+    setUploadRequestId(crypto.randomUUID())
   }
 
   return (
@@ -478,26 +623,30 @@ function CredentialEditModal({
       </form>
 
       <section className="licensing-document-panel">
-        <div>
-          <strong>Credential documents</strong>
-          <span>{credential.documentCount} active document{credential.documentCount === 1 ? '' : 's'} on file</span>
+        <div className="licensing-document-panel__heading">
+          <div><strong>Credential documents</strong><span>PDF, PNG, JPEG, or WebP · 25 MB maximum · secure viewing and downloading</span></div>
+          <div className="licensing-document-upload-controls">
+            <label className="file-picker">
+              <Upload aria-hidden="true" size={17} />
+              <span>{selectedFile ? selectedFile.name : 'Choose document'}</span>
+              <input
+                accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp"
+                onChange={(event) => chooseDocument(event.target.files?.[0] ?? null)}
+                ref={fileInputRef}
+                type="file"
+              />
+            </label>
+            <button className="secondary-button" disabled={!selectedFile || !currentCredentialId || documentMutation.isPending} onClick={uploadDocument} type="button">
+              <Upload aria-hidden="true" size={17} />
+              {documentMutation.isPending ? `Uploading ${uploadProgress}%` : 'Upload document'}
+            </button>
+          </div>
         </div>
-        <label className="file-picker">
-          <Upload aria-hidden="true" size={17} />
-          <span>{selectedFile ? selectedFile.name : 'Choose document'}</span>
-          <input
-            accept=".pdf,image/*"
-            onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
-            type="file"
-          />
-        </label>
-        <button className="secondary-button" disabled={!selectedFile || !currentCredentialId || documentMutation.isPending} onClick={uploadDocument} type="button">
-          <Upload aria-hidden="true" size={17} />
-          {documentMutation.isPending ? 'Uploading...' : 'Upload document'}
-        </button>
         {!currentCredentialId ? <p className="form-note">Save the credential first, then attach documents.</p> : null}
-        {documentMutation.isSuccess ? <div className="form-feedback form-feedback--success" role="status">Document uploaded and retained in credential history.</div> : null}
-        {documentMutation.isError ? <div className="inline-alert" role="alert">{documentMutation.error.message}</div> : null}
+        {documentMutation.isPending ? <div aria-label={`Upload ${uploadProgress}% complete`} className="licensing-document-progress"><span style={{ width: `${uploadProgress}%` }} /></div> : null}
+        {documentMutation.isSuccess ? <div className="form-feedback form-feedback--success" role="status">Document uploaded securely. It is ready to view or download below.</div> : null}
+        {documentMutation.isError ? <div className="inline-alert" role="alert">{documentMutation.error instanceof Error ? documentMutation.error.message : 'The licensing document could not be uploaded.'}</div> : null}
+        {currentCredentialId ? <CredentialDocumentList credentialId={currentCredentialId} /> : null}
       </section>
     </ModalDialog>
   )
@@ -606,6 +755,7 @@ function EmployeeLicensingProfile({
 }) {
   const [editingCredentialTypeId, setEditingCredentialTypeId] = useState<string | null>(null)
   const [communicatingCredentialTypeId, setCommunicatingCredentialTypeId] = useState<string | null>(null)
+  const [viewingDocumentCredentialTypeId, setViewingDocumentCredentialTypeId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<ProfileTab>('credentials')
   const credentialChoices = useMemo(() => {
     const existingTypeIds = new Set(employee.credentials.map((credential) => credential.credentialTypeId))
@@ -624,6 +774,9 @@ function EmployeeLicensingProfile({
     : null
   const communicatingCredential = communicatingCredentialTypeId
     ? credentialChoices.find((credential) => credential.credentialTypeId === communicatingCredentialTypeId) ?? null
+    : null
+  const viewingDocumentCredential = viewingDocumentCredentialTypeId
+    ? credentialChoices.find((credential) => credential.credentialTypeId === viewingDocumentCredentialTypeId) ?? null
     : null
   const firstAction = employee.credentials.find((credential) => credential.complianceColor === 'red')
     ?? employee.credentials.find((credential) => credential.complianceColor === 'yellow')
@@ -691,12 +844,18 @@ function EmployeeLicensingProfile({
             {credential.internalNotes ? <p className="licensing-credential-note"><strong>Internal note:</strong> {credential.internalNotes}</p> : null}
             {credential.employeeNotes ? <p className="licensing-credential-note"><strong>Employee note:</strong> {credential.employeeNotes}</p> : null}
             {credential.rejectionReason ? <p className="credential-rejection-note">Rejection reason: {credential.rejectionReason}</p> : null}
-            {canEditCredentials || (canCommunicate && credential.credentialId) ? (
+            {canEditCredentials || (canCommunicate && credential.credentialId) || (credential.credentialId && credential.documentCount > 0) ? (
               <div className="licensing-selected-credential__actions">
                 {canEditCredentials ? (
                   <button className="primary-action" onClick={() => openCredentialEditor(credential.credentialTypeId)} type="button">
                     <Pencil aria-hidden="true" size={17} />
                     {credential.credentialId ? 'Manage credential' : 'Add credential'}
+                  </button>
+                ) : null}
+                {credential.credentialId && credential.documentCount > 0 ? (
+                  <button className="secondary-button" onClick={() => setViewingDocumentCredentialTypeId(credential.credentialTypeId)} type="button">
+                    <Eye aria-hidden="true" size={17} />
+                    View documents
                   </button>
                 ) : null}
                 {canCommunicate && credential.credentialId ? (
@@ -824,6 +983,7 @@ function EmployeeLicensingProfile({
                 <dl><div><dt>Documents</dt><dd>{credential.documentCount}</dd></div><div><dt>Latest upload</dt><dd>{formatTimestamp(credential.latestDocumentAt)}</dd></div><div><dt>Last notice</dt><dd>{formatTimestamp(credential.lastEmployeeNotification)}</dd></div></dl>
                 <div className="licensing-selected-credential__actions">
                   {canEditCredentials ? <button className="secondary-button secondary-button--small" onClick={() => openCredentialEditor(credential.credentialTypeId)} type="button"><Upload aria-hidden="true" size={15} /> Manage documents</button> : null}
+                  {credential.documentCount > 0 ? <button className="secondary-button secondary-button--small" onClick={() => setViewingDocumentCredentialTypeId(credential.credentialTypeId)} type="button"><Eye aria-hidden="true" size={15} /> View documents</button> : null}
                   {canCommunicate ? <button className="secondary-button secondary-button--small" onClick={() => setCommunicatingCredentialTypeId(credential.credentialTypeId)} type="button"><Mail aria-hidden="true" size={15} /> Record communication</button> : null}
                 </div>
               </article>
@@ -847,6 +1007,9 @@ function EmployeeLicensingProfile({
           employee={employee}
           onClose={() => setCommunicatingCredentialTypeId(null)}
         />
+      ) : null}
+      {viewingDocumentCredential?.credentialId ? (
+        <CredentialDocumentsModal credential={viewingDocumentCredential} onClose={() => setViewingDocumentCredentialTypeId(null)} />
       ) : null}
     </section>
   )

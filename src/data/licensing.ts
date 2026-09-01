@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
+import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 
 const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary', 'flex'])
@@ -16,6 +17,34 @@ const renewalStatusSchema = z.enum([
 ])
 const complianceColorSchema = z.enum(['green', 'yellow', 'red', 'gray'])
 const workEligibilitySchema = z.enum(['eligible', 'eligible_with_warning', 'restricted', 'ineligible', 'pending_review'])
+
+const licensingCredentialDocumentSchema = z.object({
+  id: z.string().uuid(),
+  filename: z.string(),
+  contentType: z.string().nullable(),
+  byteSize: z.number().int().nonnegative().nullable(),
+  uploadedAt: z.string(),
+})
+
+const licensingCredentialDocumentsSchema = z.object({
+  credentialId: z.string().uuid(),
+  credentialName: z.string().nullable(),
+  canUpload: z.boolean(),
+  documents: z.array(licensingCredentialDocumentSchema),
+  pagination: z.object({
+    page: z.number().int().positive(),
+    pageSize: z.union([z.literal(5), z.literal(10), z.literal(20)]),
+    totalCount: z.number().int().nonnegative(),
+    totalPages: z.number().int().nonnegative(),
+  }),
+})
+
+const licensingDocumentUploadResultSchema = z.object({
+  documentId: z.string().uuid(),
+  requestId: z.string().uuid(),
+  state: z.literal('stored'),
+  uploadedAt: z.string().optional(),
+})
 
 const credentialTypeSchema = z.object({
   id: z.string().uuid(),
@@ -132,6 +161,8 @@ export type CredentialStatus = z.infer<typeof credentialStatusSchema>
 export type RenewalStatus = z.infer<typeof renewalStatusSchema>
 export type ComplianceColor = z.infer<typeof complianceColorSchema>
 export type WorkEligibility = z.infer<typeof workEligibilitySchema>
+export type LicensingCredentialDocument = z.infer<typeof licensingCredentialDocumentSchema>
+export type LicensingCredentialDocuments = z.infer<typeof licensingCredentialDocumentsSchema>
 export type CredentialType = z.infer<typeof credentialTypeSchema>
 export type LicensingCredential = z.infer<typeof licensingCredentialSchema>
 export type LicensingRecord = z.infer<typeof licensingRecordSchema>
@@ -310,31 +341,114 @@ export async function recordLicensingCommunication(input: LicensingCommunication
   return licensingCenterSchema.parse(data)
 }
 
-export async function uploadCredentialDocument(input: {
-  credentialId: string
-  employeeId: string
-  file: File
-}): Promise<LicensingCenter> {
-  const extension = input.file.name.includes('.') ? input.file.name.split('.').pop() : 'document'
-  const safeExtension = extension?.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'document'
-  const path = `${input.employeeId}/${input.credentialId}/${crypto.randomUUID()}.${safeExtension}`
+async function licensingApiHeaders(contentType?: string): Promise<Headers> {
+  const { data, error } = await getSupabaseClient().auth.getSession()
+  if (error || !data.session?.access_token) throw new Error('Your secure licensing session is not available.')
+  const headers = new Headers({ authorization: `Bearer ${data.session.access_token}` })
+  if (contentType) headers.set('content-type', contentType)
+  return appendProtectedSessionHeaders(headers)
+}
 
-  const client = getSupabaseClient()
-  const upload = await client.storage.from('credential-documents').upload(path, input.file, {
-    cacheControl: '3600',
-    upsert: false,
-  })
-  if (upload.error) throw new Error(upload.error.message || 'Credential document could not be uploaded.')
+async function licensingApiError(response: Response, fallback: string): Promise<Error> {
+  const payload = await response.json().catch(() => null) as { detail?: unknown } | null
+  return new Error(typeof payload?.detail === 'string' ? payload.detail : fallback)
+}
 
-  const { data, error } = await client.rpc('record_licensing_credential_document', {
-    target_byte_size: input.file.size,
-    target_content_type: input.file.type || null,
-    target_credential_id: input.credentialId,
-    target_original_filename: input.file.name,
-    target_storage_path: upload.data.path,
+function encodeLicensingDocumentMetadata(value: Record<string, unknown>): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(value))
+  let binary = ''
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte) })
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
+}
+
+function licensingDocumentMimeType(file: File): string {
+  const declared = file.type.trim().toLowerCase().split(';')[0]
+  if (['application/pdf', 'image/png', 'image/jpeg', 'image/webp'].includes(declared)) return declared
+  const extension = file.name.trim().toLowerCase().split('.').at(-1) ?? ''
+  return {
+    jpeg: 'image/jpeg',
+    jpg: 'image/jpeg',
+    pdf: 'application/pdf',
+    png: 'image/png',
+    webp: 'image/webp',
+  }[extension] ?? declared
+}
+
+export async function getLicensingCredentialDocuments(
+  credentialId: string,
+  page = 1,
+  pageSize: 5 | 10 | 20 = 5,
+): Promise<LicensingCredentialDocuments> {
+  const search = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  const response = await fetch(`/api/v1/licensing/credentials/${encodeURIComponent(credentialId)}/documents?${search}`, {
+    cache: 'no-store',
+    headers: await licensingApiHeaders(),
   })
-  if (error) throw new Error(error.message || 'Credential document upload could not be recorded.')
-  return licensingCenterSchema.parse(data)
+  if (!response.ok) throw await licensingApiError(response, 'Credential documents could not be loaded.')
+  return licensingCredentialDocumentsSchema.parse(await response.json())
+}
+
+export async function uploadCredentialDocument(
+  input: { credentialId: string; file: File; idempotencyKey: string },
+  onProgress: (percent: number) => void,
+): Promise<z.infer<typeof licensingDocumentUploadResultSchema>> {
+  const declaredMimeType = licensingDocumentMimeType(input.file)
+  const headers = await licensingApiHeaders(declaredMimeType)
+  headers.set('x-sygshift-licensing-document-metadata', encodeLicensingDocumentMetadata({
+    credentialId: input.credentialId,
+    declaredMimeType,
+    idempotencyKey: input.idempotencyKey,
+    originalFilename: input.file.name,
+  }))
+
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    request.open('PUT', `/api/v1/licensing/credentials/${encodeURIComponent(input.credentialId)}/documents`)
+    headers.forEach((value, key) => request.setRequestHeader(key, value))
+    request.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)))
+    })
+    request.addEventListener('load', () => {
+      let payload: unknown = null
+      try { payload = request.responseText ? JSON.parse(request.responseText) : null } catch { /* handled below */ }
+      if (request.status >= 200 && request.status < 300) {
+        onProgress(100)
+        try { resolve(licensingDocumentUploadResultSchema.parse(payload)) } catch { reject(new Error('The document was stored but its confirmation was invalid.')) }
+        return
+      }
+      const detail = payload && typeof payload === 'object' && 'detail' in payload
+        ? (payload as { detail?: unknown }).detail
+        : null
+      const failure = new Error(typeof detail === 'string' ? detail : 'The licensing document could not be uploaded.') as Error & { code?: string }
+      if (payload && typeof payload === 'object' && 'error' in payload && typeof (payload as { error?: unknown }).error === 'string') {
+        failure.code = (payload as { error: string }).error
+      }
+      reject(failure)
+    })
+    request.addEventListener('error', () => reject(new Error('The upload connection was interrupted. You can retry safely.')))
+    request.addEventListener('abort', () => reject(new Error('The upload was canceled. No incomplete document was released.')))
+    request.send(input.file)
+  })
+}
+
+export async function getLicensingDocumentBlob(
+  documentId: string,
+  action: 'preview' | 'download',
+  reason: string,
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(`/api/v1/licensing/documents/${encodeURIComponent(documentId)}/content`, {
+    body: JSON.stringify({ action, reason: reason.trim() }),
+    cache: 'no-store',
+    headers: await licensingApiHeaders('application/json'),
+    method: 'POST',
+  })
+  if (!response.ok) throw await licensingApiError(response, 'The protected licensing document could not be loaded.')
+  const disposition = response.headers.get('content-disposition') ?? ''
+  const encodedFilename = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  return {
+    blob: await response.blob(),
+    filename: encodedFilename ? decodeURIComponent(encodedFilename) : 'SygShift-licensing-document',
+  }
 }
 
 export function employeeDisplayName(employee: Pick<LicensingEmployee, 'displayName'>): string {

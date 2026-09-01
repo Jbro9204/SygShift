@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Secure Licensing Center document workflow
+
+- Repaired the credential/license upload failure caused by the old browser-to-Storage RLS boundary by routing upload, list, preview, and download through one authenticated Worker workflow.
+- Kept credential files private, removed direct authenticated Storage access, and exposed no storage paths or public URLs to the browser.
+- Required exact Licensing or credential-editing permission plus recent authenticator or FIDO2 security-key verification; file access additionally requires a written reason and creates an append-only audit event.
+- Added signature/MIME/extension validation, active-PDF rejection, 25 MB limits, SHA-256 checksums, idempotent upload requests, and hidden failed-upload states.
+- Added compact five-row document lists with 5/10/20 pagination, responsive light/dark styling, upload progress, in-browser PDF/image preview, and download controls in the credential editor and employee licensing profile.
+- Applied and recorded production migration `20260902030000_secure_licensing_document_workflow.sql`; its preservation assertions passed and post-apply verification confirmed five secure functions, no direct browser Storage policy, no browser service-RPC grants, and no existing licensing document/object to alter.
+- Full validation passed: type checking, zero-warning lint, 139 test files / 680 tests, Worker/client builds, and all 48 desktop/mobile browser checks.
+- Deployed Cloudflare Worker version `137f2bbb-03f8-4e41-9d9e-4734fce4d57a`; primary and fallback health/readiness returned `200`, protected licensing routes returned `401` without authentication, and the live bundle contains the new document workspace.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_SECURE_LICENSING_DOCUMENT_WORKFLOW.md`.
+
 ### Full Employee File editing, protected pay rates, and urgent red actions
 
 - Replaced the former mostly read-only Employee File presentation with audited editors for legal identity, employee number, job title, Hourly/Salary timekeeping treatment, Full Time/Part Time/Flex classification, personal/company contact details, home address, and emergency-contact name, relationship, phone, and email.
