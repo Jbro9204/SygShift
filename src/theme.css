@@ -137,6 +137,10 @@
   font-weight: 700;
 }
 
+html[data-theme='light'] {
+  color-scheme: light;
+}
+
 html[data-theme='dark'] {
   color-scheme: dark;
   color: #f4f0e8;
@@ -264,61 +268,6 @@ html[data-theme='dark'] .operational-clock em {
   background: #5b4319;
 }
 
-/* Reusable application surfaces. These selectors cover the established naming
-   system without changing component structure or page behavior. */
-html[data-theme='dark'] .workspace :where(
-  .panel,
-  .metric,
-  .module-foundation,
-  [class*='-card'],
-  [class*='-panel'],
-  [class*='-workspace'],
-  [class*='-workbench'],
-  [class*='-toolbar'],
-  [class*='-filters'],
-  [class*='-directory'],
-  [class*='-inventory'],
-  [class*='-history'],
-  [class*='-details'],
-  [class*='-tabs'],
-  [class*='-list'],
-  [class*='-section']
-) {
-  color: var(--ink);
-  border-color: var(--line);
-}
-
-html[data-theme='dark'] .workspace :where(
-  .panel,
-  .metric,
-  .module-foundation,
-  [class*='-card'],
-  [class*='-panel'],
-  [class*='-workbench'],
-  [class*='-toolbar'],
-  [class*='-filters'],
-  [class*='-directory'],
-  [class*='-inventory'],
-  [class*='-history'],
-  [class*='-tabs']
-) {
-  background-color: var(--paper);
-}
-
-html[data-theme='dark'] .workspace :where(
-  [class*='-row'],
-  [class*='-item'],
-  [class*='-option'],
-  [class*='-tile'],
-  [class*='-person'],
-  [class*='-shift'],
-  [class*='-day'],
-  [class*='-field'],
-  [class*='-note']
-) {
-  border-color: var(--line);
-}
-
 html[data-theme='dark'] .workspace :where(
   input:not([type='checkbox']):not([type='radio']),
   select,
@@ -351,24 +300,6 @@ html[data-theme='dark'] .workspace :where(thead, th) {
   background-color: #11151a;
 }
 
-html[data-theme='dark'] .workspace :where(tbody tr, [class*='-row']) {
-  background-color: #171b1f;
-}
-
-html[data-theme='dark'] .workspace :where(tbody tr:hover, [class*='-row']:hover) {
-  background-color: #1d2227;
-}
-
-html[data-theme='dark'] .workspace :where(h1, h2, h3, h4, h5, h6, strong, dt, legend) {
-  color: #f5f1e8;
-}
-
-html[data-theme='dark'] .workspace .page :where(p, small, dd, label),
-html[data-theme='dark'] .workspace :where(.page-summary, [class*='__copy'] > span) {
-  color: #b9b2a7;
-  border-color: var(--line);
-}
-
 html[data-theme='dark'] .workspace :where(.secondary-button, .icon-button, .time-button--secondary) {
   color: #eee8dc;
   background: #191e22;
@@ -388,7 +319,7 @@ html[data-theme='dark'] .workspace .primary-action {
   border-color: #b47d25;
 }
 
-html[data-theme='dark'] .workspace :where(.eyebrow, a:not(.primary-action):not(.navigation-link):not(.secondary-button)) {
+html[data-theme='dark'] .workspace .eyebrow {
   color: #ddb35e;
 }
 

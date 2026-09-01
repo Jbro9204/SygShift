@@ -1311,3 +1311,13 @@ pnpm exec wrangler deploy --keep-vars
 - Removed the redundant Mountain-default sentence from the utility bar; the clock strip retains the explicit Mountain operational-default badge.
 - Full validation passed: type checking, zero-warning lint, 135 test files / 663 tests, production builds, Wrangler dry run, and all 38 desktop/mobile Playwright checks.
 - Deployed Cloudflare Worker version `b06bf981-bd42-4148-99d2-49be0968c254`; production app, login, theme bootstrap, health, and readiness returned HTTP 200 and readiness reported ready.
+
+## 09/01/2026 — System-Wide Dark Theme Correction
+
+- Replaced remaining light-only page and component surfaces with explicit light/dark color pairs across the full SygShift interface.
+- Corrected white cards, translucent gradients, sticky bars, controls, tables, modals, and semantic states in Communications, HR, Time, Schedule, Payroll, Licensing, Reports, User Accounts, and Roles & Permissions.
+- Removed broad class-name overrides that were flattening component-specific active, warning, success, and danger treatments.
+- Preserved the exact existing light presentation and added an explicit compiled light-scheme boundary.
+- Added source contract protection plus desktop/mobile rendered checks for dark surfaces, light preservation, contrast, modals, controls, semantic states, and horizontal containment.
+- Full validation passed: type checking, zero-warning lint, 136 test files / 666 tests, production builds, and all 42 desktop/mobile Playwright checks.
+- No migration or production-data change was required. Production deployment is pending.

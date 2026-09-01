@@ -108,7 +108,7 @@ describe('button layout guardrails', () => {
     expect(accessButtonBlock).toContain('justify-content: center')
 
     expect(blockFor('.access-control-button--primary')).toContain('linear-gradient')
-    expect(blockFor('.access-control-button--secondary')).toContain('background: #fffdfa')
+    expect(blockFor('.access-control-button--secondary')).toContain('background: light-dark(#fffdfa, #171b1f)')
     expect(blocksFor('.access-sticky-savebar').some((block) => block.includes('position: sticky'))).toBe(true)
     expect(blocksFor('.access-sticky-savebar').some((block) => block.includes('align-items: center'))).toBe(true)
   })
