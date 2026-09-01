@@ -45,6 +45,7 @@ import { processNotificationBatch } from '../data/operations'
 import { parseImportedScheduleNote, sourceReferenceLabel } from '../data/sourceNotes'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualClockTime, operationalToday } from '../lib/time'
+import { continentalUsTimeZoneLabel, personalDisplayTimeZone } from '../lib/usTimeZones'
 import { scheduleTeamViewPermissions } from '../app/accessPolicy'
 
 interface OpenShiftFormState {
@@ -444,9 +445,9 @@ function employeeScheduleMatchesSearch(shift: ScheduleShift, query: string): boo
   return searchable.includes(term)
 }
 
-function scheduleShiftLocalWindow(shift: ScheduleShift): { end: number, start: number } {
-  const start = timeToMinutes(shiftLocalTimeValue(shift, shift.starts_at)) ?? 0
-  const rawEnd = timeToMinutes(shiftLocalTimeValue(shift, shift.ends_at)) ?? 0
+function scheduleShiftLocalWindow(shift: ScheduleShift, timeZone = shift.time_zone): { end: number, start: number } {
+  const start = timeToMinutes(shiftLocalTimeValue(shift, shift.starts_at, timeZone)) ?? 0
+  const rawEnd = timeToMinutes(shiftLocalTimeValue(shift, shift.ends_at, timeZone)) ?? 0
   return {
     start,
     end: rawEnd <= start ? rawEnd + 24 * 60 : rawEnd,
@@ -472,6 +473,7 @@ function employeeAlreadyAssignedDateKeys(
   dateKeys: string[],
   startTime: string,
   endTime: string,
+  timeZone?: string,
 ): string[] {
   if (!schedule || !employeeId) return []
 
@@ -480,7 +482,7 @@ function employeeAlreadyAssignedDateKeys(
   const overlappingDateKeys = new Set<string>()
 
   for (const shift of schedule.shifts) {
-    const shiftDate = shiftOperationalDate(shift)
+    const shiftDate = shiftOperationalDate(shift, timeZone)
     if (!selectedDateKeys.has(shiftDate)) continue
 
     const hasActiveAssignment = shift.assignments.some((assignment) =>
@@ -488,7 +490,7 @@ function employeeAlreadyAssignedDateKeys(
       && ['assigned', 'confirmed', 'completed'].includes(assignment.status),
     )
     if (!hasActiveAssignment) continue
-    if (windowsOverlap(scheduleShiftLocalWindow(shift), requestedWindow)) {
+    if (windowsOverlap(scheduleShiftLocalWindow(shift, timeZone), requestedWindow)) {
       overlappingDateKeys.add(shiftDate)
     }
   }
@@ -496,12 +498,12 @@ function employeeAlreadyAssignedDateKeys(
   return dateKeys.filter((dateKey) => overlappingDateKeys.has(dateKey))
 }
 
-function shiftLocalTimeValue(shift: ScheduleShift, instant: string): string {
+function shiftLocalTimeValue(shift: ScheduleShift, instant: string, timeZone = shift.time_zone): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     hour: '2-digit',
     hour12: false,
     minute: '2-digit',
-    timeZone: shift.time_zone,
+    timeZone,
   }).formatToParts(new Date(instant))
   const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '00'
   return `${value('hour')}:${value('minute')}`
@@ -626,6 +628,7 @@ function EmployeePersonalSchedulePanel({
   setRange,
   setSearch,
   shifts,
+  timeZone,
   weekStart,
 }: {
   days: Date[]
@@ -637,13 +640,14 @@ function EmployeePersonalSchedulePanel({
   setRange: (range: EmployeeScheduleRange) => void
   setSearch: (value: string) => void
   shifts: ScheduleShift[]
+  timeZone: string
   weekStart: Date
 }) {
   const shiftDays = useMemo(() => {
     const buckets = new Map<string, ScheduleShift[]>()
     for (const day of days) buckets.set(format(day, 'yyyy-MM-dd'), [])
     for (const shift of shifts) {
-      const dayKey = shiftOperationalDate(shift)
+      const dayKey = shiftOperationalDate(shift, timeZone)
       if (buckets.has(dayKey)) {
         buckets.get(dayKey)?.push(shift)
       }
@@ -652,7 +656,7 @@ function EmployeePersonalSchedulePanel({
       bucket.sort((left, right) => left.starts_at.localeCompare(right.starts_at))
     }
     return buckets
-  }, [days, shifts])
+  }, [days, shifts, timeZone])
   const nextShift = shifts
     .filter((shift) => new Date(shift.ends_at).getTime() >= Date.now())
     .sort((left, right) => left.starts_at.localeCompare(right.starts_at))[0] ?? shifts[0] ?? null
@@ -669,7 +673,7 @@ function EmployeePersonalSchedulePanel({
           <p className="eyebrow">My schedule</p>
           <h2 id="employee-schedule-title">Your upcoming work</h2>
           <p>
-            This view only shows your assigned shifts, where to report, and the details you need to work the shift.
+            This view only shows your assigned shifts in {continentalUsTimeZoneLabel(timeZone)}, where to report, and the details you need to work the shift.
           </p>
         </div>
         <div className="employee-schedule-hero__summary" aria-label="Personal schedule summary">
@@ -681,7 +685,7 @@ function EmployeePersonalSchedulePanel({
           <article>
             <span>Shifts</span>
             <strong>{shifts.length}</strong>
-            <small>{nextShift ? `Next: ${dateKeyDisplay(shiftOperationalDate(nextShift))}` : 'No assigned shifts in range'}</small>
+            <small>{nextShift ? `Next: ${dateKeyDisplay(shiftOperationalDate(nextShift, timeZone))}` : 'No assigned shifts in range'}</small>
           </article>
         </div>
       </div>
@@ -769,7 +773,7 @@ function EmployeePersonalSchedulePanel({
                       return (
                         <article className="employee-shift-card" key={shift.id}>
                           <div className="employee-shift-card__time">
-                            <strong>{shiftTimeRange(shift)}</strong>
+                            <strong>{shiftTimeRange(shift, timeZone)}</strong>
                             {shift.is_overtime ? <span>Overtime</span> : null}
                           </div>
                           <h3>{shiftPostLabel(shift)}</h3>
@@ -2202,6 +2206,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const openShiftAssignmentRequiresArmed = openShiftArmedHeadcount > 0
     && (openShiftUnarmedHeadcount === 0 || openShiftForm.assignmentRequirement === 'armed')
   const openShiftEmployee = selectedBuilderEmployee(builderOptionsQuery.data?.employees ?? [], openShiftForm.employeeId)
+  const useEmployeeLocalTime = Boolean(openShiftEmployee && openShiftHeadcount === 1)
   const visibleOpenShiftEmployees = useMemo(
     () => filterBuilderEmployees(builderOptionsQuery.data?.employees ?? [], openShiftEmployeeSearch, openShiftForm.employeeId),
     [builderOptionsQuery.data?.employees, openShiftEmployeeSearch, openShiftForm.employeeId],
@@ -2253,6 +2258,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         requestedDates,
         openShiftForm.startTime,
         openShiftForm.endTime,
+        useEmployeeLocalTime ? openShiftEmployee?.time_zone : undefined,
       )
       const skippedDateSet = new Set(skippedAssignedDates)
       const dates = requestedDates.filter((dateKey) => !skippedDateSet.has(dateKey))
@@ -2285,6 +2291,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           credentialOverrideNote: openShiftCredentialOverrideRequired ? openShiftForm.credentialOverrideNote : null,
           publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
           workType: openShiftForm.workType,
+          useEmployeeTimeZone: useEmployeeLocalTime,
         }))
       }
       return { dates, results, skippedAssignedDates }
@@ -3545,6 +3552,11 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 {visibleOpenShiftEmployees.length === 0 ? (
                   <small>No active guards match that search.</small>
                 ) : null}
+                {useEmployeeLocalTime && openShiftEmployee ? (
+                  <small>
+                    Start and end are entered in {builderEmployeeName(openShiftEmployee)}'s {continentalUsTimeZoneLabel(openShiftEmployee.time_zone)}.
+                  </small>
+                ) : null}
               </label>
               {openShiftForm.employeeId && openShiftArmedHeadcount > 0 && openShiftUnarmedHeadcount > 0 ? (
                 <label>
@@ -3695,7 +3707,9 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
             <p className="form-note">
               {openShiftForm.mode === 'post' && selectedPost
-                ? `${selectedPost.site.name} uses ${selectedPost.site.time_zone}. The armed and unarmed position counts above control qualification requirements for this coverage plan.`
+                ? useEmployeeLocalTime && openShiftEmployee
+                  ? `This one-person assignment uses ${builderEmployeeName(openShiftEmployee)}'s ${continentalUsTimeZoneLabel(openShiftEmployee.time_zone)}. ${selectedPost.site.name} remains recorded as the work location.`
+                  : `${selectedPost.site.name} uses ${selectedPost.site.time_zone}. The armed and unarmed position counts above control qualification requirements for this coverage plan.`
                 : 'Times are saved in the site or event time zone. The armed and unarmed position counts above control qualification requirements.'}
             </p>
 
@@ -3998,6 +4012,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           setRange={setEmployeeScheduleRange}
           setSearch={setSearch}
           shifts={employeePersonalScheduleShifts}
+          timeZone={personalDisplayTimeZone(sessionQuery.data?.timeZone ?? 'America/Denver')}
           weekStart={weekStart}
         />
       ) : null}

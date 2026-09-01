@@ -35,6 +35,7 @@ describe('schedule builder data contract', () => {
             employee_number: 'SYG-1002',
             role: 'scheduler',
             employment_type: 'hourly',
+            time_zone: 'America/Denver',
             has_armed_guard_credential: false,
           },
           {
@@ -45,6 +46,7 @@ describe('schedule builder data contract', () => {
             employee_number: 'SYG-1001',
             role: 'admin',
             employment_type: 'salary',
+            time_zone: 'America/Denver',
             has_armed_guard_credential: true,
           },
         ],
@@ -73,6 +75,7 @@ describe('schedule builder data contract', () => {
           employee_number: 'SYG-1001',
           role: 'admin',
           employment_type: 'salary',
+          time_zone: 'America/Denver',
           has_armed_guard_credential: true,
         },
         {
@@ -83,6 +86,7 @@ describe('schedule builder data contract', () => {
           employee_number: 'SYG-1002',
           role: 'scheduler',
           employment_type: 'hourly',
+          time_zone: 'America/Denver',
           has_armed_guard_credential: false,
         },
       ],

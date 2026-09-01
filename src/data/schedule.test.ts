@@ -80,6 +80,7 @@ describe('schedule presentation', () => {
         employee_number: 'SYG-1002',
         role: 'scheduler',
         employment_type: 'hourly',
+        time_zone: 'America/Denver',
         has_armed_guard_credential: false,
       },
       {
@@ -90,6 +91,7 @@ describe('schedule presentation', () => {
         employee_number: 'SYG-1003',
         role: 'recruiting_licensing',
         employment_type: 'hourly',
+        time_zone: 'America/Chicago',
         has_armed_guard_credential: false,
       },
       {
@@ -100,6 +102,7 @@ describe('schedule presentation', () => {
         employee_number: 'SYG-1004',
         role: 'admin',
         employment_type: 'salary',
+        time_zone: 'America/Denver',
         has_armed_guard_credential: false,
       },
       {
@@ -110,6 +113,7 @@ describe('schedule presentation', () => {
         employee_number: 'SYG-1005',
         role: 'guard',
         employment_type: 'flex',
+        time_zone: 'America/Denver',
         has_armed_guard_credential: true,
       },
     ]

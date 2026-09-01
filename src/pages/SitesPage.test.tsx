@@ -95,6 +95,7 @@ function session(permissions: string[]): SessionContext {
     passwordChangedAt: '2026-08-01T12:00:00Z',
     permissions,
     role: 'admin',
+    timeZone: 'America/Denver',
     username: 'jbrown',
   }
 }

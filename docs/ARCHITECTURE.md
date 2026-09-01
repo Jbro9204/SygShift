@@ -9,7 +9,7 @@ SygShift is a workforce-operations application for scheduling, qualifications, e
 - React and TypeScript provide the browser application.
 - Cloudflare Workers serves the application and versioned API routes.
 - Supabase provides PostgreSQL, authentication, object storage, and managed backups.
-- Operational timestamps are stored in UTC. Colorado schedules are displayed in `America/Denver` time.
+- Operational timestamps are stored in UTC. Site coverage keeps the Site/Post operating time zone, while an employee's personal schedule is displayed in the supported continental U.S. time zone reported by the browser or, when unavailable, the employee profile.
 - The application is API-first so a future company hub can use the same authorization and business services without embedding this interface.
 
 ## Trust boundaries
@@ -36,6 +36,15 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 6. Timeclock, corrections, approval, locking, and payroll exports
 7. Announcements and delivery history
 8. Audit history and source reconciliation
+
+## Continental U.S. schedule time zones
+
+- SygShift supports `America/New_York`, `America/Chicago`, `America/Denver`, and `America/Los_Angeles` for employee schedule display and future employee-specific assignment entry.
+- The employee profile holds the operational fallback time zone. A supported browser time zone controls personal display so an employee sees the local wall-clock time they are expected to follow.
+- Server timestamps remain authoritative UTC instants. Browser time is used only to select the presentation zone; it never authorizes an early punch or supplies the recorded punch timestamp.
+- A future one-person assigned shift is entered in the selected employee's profile time zone and stored as an absolute timestamp. Open coverage, multi-person coverage, and general Site/Post operations continue to use the Site/Post time zone.
+- Existing shifts, punches, payroll assignments, and historical records are not rebased when an employee time zone is added or changed. A profile-zone correction changes presentation and future employee-specific entry only.
+- Payroll batching remains governed by its separately versioned `America/Denver` boundary and is not changed by employee display zones.
 
 ## Identity and access control
 

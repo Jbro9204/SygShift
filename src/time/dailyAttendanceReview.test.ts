@@ -49,6 +49,7 @@ const session: SessionContext = {
   username: 'reviewer',
   displayName: 'Attendance Reviewer',
   role: 'guard',
+  timeZone: 'America/Denver',
   mustChangePassword: false,
   passwordChangedAt: '2026-08-01T12:00:00.000Z',
   mfaEnrolledAt: '2026-08-01T12:00:00.000Z',

@@ -12,6 +12,7 @@ const dashboard: TimekeepingDashboard = {
     employmentType: 'flex',
     id: '73000000-0000-4000-8000-000000000001',
     role: 'guard',
+    timeZone: 'America/Chicago',
     username: 'zward',
   },
   lastEvent: {
@@ -279,6 +280,7 @@ describe('time command center model', () => {
       passwordChangedAt: null,
       permissions: ['time.self.view'],
       role: 'guard',
+      timeZone: 'America/Chicago',
       username: 'zward',
     }
 

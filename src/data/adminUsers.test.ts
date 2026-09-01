@@ -26,6 +26,7 @@ describe('admin user helpers', () => {
         displayName: 'Jordan Brown',
         employeeNumber: 'SYG-1001',
         employmentType: 'salary',
+        timeZone: 'America/Denver',
         firstName: 'Jordan',
         hiredOn: null,
         id: '73000000-0000-4000-8000-000000000001',

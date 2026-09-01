@@ -44,6 +44,7 @@ import {
   formatOperationalDateTime,
   operationalToday,
 } from '../lib/time'
+import { personalDisplayTimeZone } from '../lib/usTimeZones'
 import { canUseOwnTimeClock, canViewOwnTime } from '../time/timePermissions'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from '../time/timeQuerySync'
 import {
@@ -223,6 +224,7 @@ export function OverviewPage() {
   const timeState = activeTimeState(timekeepingQuery.data?.lastEvent ?? null)
   const activeShift = activeShiftForDashboard(timekeepingQuery.data)
   const nextShift = nextShiftForDashboard(timekeepingQuery.data)
+  const displayTimeZone = personalDisplayTimeZone(session?.timeZone ?? timekeepingQuery.data?.employee.timeZone ?? 'America/Denver')
 
   function quickPunch(kind = timeAction.kind) {
     if (!kind || !timekeepingQuery.data || !punchAllowed || punchLocked.current || punchMutation.isPending) return
@@ -241,11 +243,12 @@ export function OverviewPage() {
 
   return (
     <div className={`page home-page home-page--${homeMode}`}>
-      <HomeGreeting mode={homeMode} session={session} />
+      <HomeGreeting displayTimeZone={displayTimeZone} mode={homeMode} session={session} />
       {ownTimeAllowed ? (
         <TimeStatusStrip
           activeShift={activeShift}
           dashboard={timekeepingQuery.data}
+          displayTimeZone={displayTimeZone}
           error={punchMutation.isError ? punchMutation.error.message : null}
           onPunch={quickPunch}
           pending={punchMutation.isPending || timekeepingQuery.isPending}
@@ -293,6 +296,7 @@ export function OverviewPage() {
           announcements={boundedHomeItems((announcementsQuery.data ?? []).filter((item) => item.tone !== 'urgent'))}
           announcementArchivePath={announcementArchivePath}
           announcementsError={announcementsQuery.isError}
+          displayTimeZone={displayTimeZone}
           nextShift={nextShift}
           onRetryAnnouncements={() => void announcementsQuery.refetch()}
           onRetryOpportunities={() => void opportunitiesQuery.refetch()}
@@ -320,7 +324,7 @@ export function OverviewPage() {
   )
 }
 
-function HomeGreeting({ mode, session }: { mode: 'employee' | 'operations'; session: SessionContext }) {
+function HomeGreeting({ displayTimeZone, mode, session }: { displayTimeZone: string; mode: 'employee' | 'operations'; session: SessionContext }) {
   const now = new Date()
   return (
     <section className="home-greeting">
@@ -329,17 +333,18 @@ function HomeGreeting({ mode, session }: { mode: 'employee' | 'operations'; sess
         <h1>Good {greetingPeriod(now)}, {greetingName(session.displayName, session.username)}.</h1>
         <p>{mode === 'operations' ? 'Lead clearly, act early, and keep the team safe.' : 'Stay alert, stay prepared, and have a safe shift.'}</p>
       </div>
-      <div className="home-greeting__date" aria-label="Current Mountain Time">
-        <strong>{formatOperationalDate(now)}</strong>
-        <span>{formatDualTime(now, { includeTimeZoneName: true })}</span>
+      <div className="home-greeting__date" aria-label="Current local time">
+        <strong>{formatOperationalDate(now, displayTimeZone)}</strong>
+        <span>{formatDualTime(now, { includeTimeZoneName: true, timeZone: displayTimeZone })}</span>
       </div>
     </section>
   )
 }
 
-function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punchAllowed, scheduleAllowed, showPersonalLinks, state, timeAction }: {
+function TimeStatusStrip({ activeShift, dashboard, displayTimeZone, error, onPunch, pending, punchAllowed, scheduleAllowed, showPersonalLinks, state, timeAction }: {
   activeShift: TimekeepingShift | null
   dashboard: TimekeepingDashboard | undefined
+  displayTimeZone: string
   error: string | null
   onPunch: (kind: TimeEventKind | null) => void
   pending: boolean
@@ -372,10 +377,10 @@ function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punc
         : state === 'on_break'
           ? 'You are on break'
           : clockInOpensAt
-            ? `Clock-in opens at ${formatDualTime(clockInOpensAt, { timeZone: upcomingShift?.timeZone })}`
+            ? `Clock-in opens at ${formatDualTime(clockInOpensAt, { timeZone: displayTimeZone })}`
             : 'You are off the clock'
   const lastEventTime = dashboard?.lastEvent
-    ? formatOperationalDateTime(dashboard.lastEvent.effectiveAt ?? dashboard.lastEvent.recordedAt, { includeTimeZoneName: true })
+    ? formatOperationalDateTime(dashboard.lastEvent.effectiveAt ?? dashboard.lastEvent.recordedAt, { includeTimeZoneName: true, timeZone: displayTimeZone })
     : null
 
   return (
@@ -387,7 +392,7 @@ function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punc
           <span>{error ?? (activeShift
             ? `${shiftLocation(activeShift)} · ${lastEventTime ?? 'Time recorded'}`
             : upcomingShift
-              ? `Your shift begins at ${formatDualTime(upcomingShift.startsAt, { timeZone: upcomingShift.timeZone })} at ${shiftLocation(upcomingShift)}. This status updates automatically.`
+              ? `Your shift begins at ${formatDualTime(upcomingShift.startsAt, { includeTimeZoneName: true, timeZone: displayTimeZone })} at ${shiftLocation(upcomingShift)}. This status updates automatically.`
               : 'Ready for your next scheduled shift.')}</span>
         </div>
       </div>
@@ -420,17 +425,18 @@ function TimeStatusStrip({ activeShift, dashboard, error, onPunch, pending, punc
           onAcknowledge={() => setEarlyClockInWarningOpen(false)}
           serverTimestamp={dashboard.serverTimestamp}
           shiftStartsAt={upcomingShift.startsAt}
-          timeZone={upcomingShift.timeZone}
+          timeZone={displayTimeZone}
         />
       ) : null}
     </section>
   )
 }
 
-function EmployeeHome({ announcementArchivePath, announcements, announcementsError, nextShift, onRetryAnnouncements, onRetryOpportunities, onRetryRequests, opportunitiesError, opportunity, pendingRequests, requestsAllowed, requestsError, scheduleAllowed, session, workspaces }: {
+function EmployeeHome({ announcementArchivePath, announcements, announcementsError, displayTimeZone, nextShift, onRetryAnnouncements, onRetryOpportunities, onRetryRequests, opportunitiesError, opportunity, pendingRequests, requestsAllowed, requestsError, scheduleAllowed, session, workspaces }: {
   announcementArchivePath: string | null
   announcements: Awaited<ReturnType<typeof getActiveAnnouncementBanners>>
   announcementsError: boolean
+  displayTimeZone: string
   nextShift: TimekeepingShift | null
   onRetryAnnouncements: () => void
   onRetryOpportunities: () => void
@@ -457,7 +463,7 @@ function EmployeeHome({ announcementArchivePath, announcements, announcementsErr
         <div className="home-section__heading"><div><p className="eyebrow">Today</p><h2 id="today-heading">Your workday</h2></div></div>
         <div className="home-card-grid">
           <HomeCard icon={UserRoundCheck} title="Next shift" value={nextShift ? shiftTitle(nextShift) : 'No upcoming shift'}>
-            <p>{nextShift ? `${shiftLocation(nextShift)} · ${formatOperationalDateTime(nextShift.startsAt)} – ${formatDualTime(nextShift.endsAt, { timeZone: nextShift.timeZone })}` : 'Your next published assignment will appear here.'}</p>
+            <p>{nextShift ? `${shiftLocation(nextShift)} · ${formatOperationalDateTime(nextShift.startsAt, { includeTimeZoneName: true, timeZone: displayTimeZone })} – ${formatDualTime(nextShift.endsAt, { timeZone: displayTimeZone })}` : 'Your next published assignment will appear here.'}</p>
             {nextShift ? <span className="home-card__status"><CheckCircle2 aria-hidden="true" size={15} />Published assignment</span> : null}
             {scheduleAllowed ? <Link className="text-link" to="/schedule">Open Schedule <ArrowRight aria-hidden="true" size={16} /></Link> : null}
           </HomeCard>

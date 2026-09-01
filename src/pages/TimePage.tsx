@@ -72,6 +72,7 @@ import {
 import { getSessionContext } from '../data/auth'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTime, OPERATIONAL_TIME_ZONE, operationalToday } from '../lib/time'
+import { personalDisplayTimeZone } from '../lib/usTimeZones'
 import { TimeCommandCenterPage } from '../time/TimeCommandCenterPage'
 import { workedTimePayrollReview } from '../time/timePayroll'
 import { currentPayrollWeek } from '../time/timeRules'
@@ -1342,12 +1343,14 @@ function VerifiedTimekeepingSetup() {
 
 function ShiftPicker({
   choices,
+  displayTimeZone,
   nextShift,
   serverTimestamp,
   selectedShiftId,
   onSelect,
 }: {
   choices: ClockableShiftChoices
+  displayTimeZone: string
   nextShift: TimekeepingShift | null
   serverTimestamp: string
   selectedShiftId: string | null
@@ -1365,8 +1368,8 @@ function ShiftPicker({
           <strong>No assigned shift is available for clock-in right now.</strong>
           {nextShift ? (
             <p>
-              Your next shift is {shiftTitle(nextShift)} at {formatTime(nextShift.startsAt, nextShift.timeZone)}.
-              {' '}Clock-in opens at {formatTime(clockInWindowOpensAt(nextShift), nextShift.timeZone)}
+              Your next shift is {shiftTitle(nextShift)} at {formatTime(nextShift.startsAt, displayTimeZone)}.
+              {' '}Clock-in opens at {formatTime(clockInWindowOpensAt(nextShift), displayTimeZone)}
               {' '}({minutesUntilOpen} {minutesUntilOpen === 1 ? 'minute' : 'minutes'} from the official server time).
               {' '}This page updates automatically.
             </p>
@@ -1400,7 +1403,7 @@ function ShiftPicker({
           <span>
             <strong>{shiftTitle(shift)}</strong>
             <small>{shiftLocation(shift)}</small>
-            <em>{formatTime(shift.startsAt, shift.timeZone)} - {formatTime(shift.endsAt, shift.timeZone)}</em>
+            <em>{formatTime(shift.startsAt, displayTimeZone)} - {formatTime(shift.endsAt, displayTimeZone)}</em>
           </span>
           {shift.requiresArmed ? <b>Armed</b> : null}
           {shift.isOvertime ? <b>OT</b> : null}
@@ -1427,6 +1430,7 @@ function PunchControls({
     dashboard.eligibleShifts.length === 1 ? dashboard.eligibleShifts[0]?.shiftId ?? null : null,
   )
   const copy = stateCopy[state]
+  const displayTimeZone = personalDisplayTimeZone(dashboard.employee.timeZone)
   const currentShift = activeShift(dashboard)
   const actions = nextTimeEventKinds(state)
   const clockableChoices = useMemo(
@@ -1457,13 +1461,14 @@ function PunchControls({
         </div>
         <div className="time-server-box">
           <span>Official server time</span>
-          <strong>{formatTime(dashboard.serverTimestamp)}</strong>
+          <strong>{formatTime(dashboard.serverTimestamp, displayTimeZone)}</strong>
         </div>
       </div>
 
       {state === 'off_clock' ? (
         <ShiftPicker
           choices={clockableChoices}
+          displayTimeZone={displayTimeZone}
           nextShift={nextClockInShift}
           onSelect={setSelectedShiftId}
           serverTimestamp={dashboard.serverTimestamp}
@@ -1474,7 +1479,7 @@ function PunchControls({
           <Clock3 aria-hidden="true" size={23} />
           <div>
             <strong>{shiftTitle(currentShift)}</strong>
-            <span>{shiftLocation(currentShift)} · {formatTime(currentShift.startsAt, currentShift.timeZone)} - {formatTime(currentShift.endsAt, currentShift.timeZone)}</span>
+            <span>{shiftLocation(currentShift)} · {formatTime(currentShift.startsAt, displayTimeZone)} - {formatTime(currentShift.endsAt, displayTimeZone)}</span>
           </div>
         </div>
       ) : (
@@ -1518,7 +1523,7 @@ function PunchControls({
           onAcknowledge={() => setEarlyClockInWarningOpen(false)}
           serverTimestamp={dashboard.serverTimestamp}
           shiftStartsAt={nextClockInShift.startsAt}
-          timeZone={nextClockInShift.timeZone}
+          timeZone={displayTimeZone}
         />
       ) : null}
     </section>

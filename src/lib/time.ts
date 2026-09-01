@@ -15,15 +15,15 @@ export function operationalToday(now = new Date()): Date {
   return new Date(values.year, values.month - 1, values.day, 12)
 }
 
-export function formatOperationalDate(now = new Date()): string {
+export function formatOperationalDate(now = new Date(), timeZone = OPERATIONAL_TIME_ZONE): string {
   const weekday = new Intl.DateTimeFormat('en-US', {
-    timeZone: OPERATIONAL_TIME_ZONE,
+    timeZone,
     weekday: 'long',
   }).format(now)
   const date = new Intl.DateTimeFormat('en-US', {
     day: '2-digit',
     month: '2-digit',
-    timeZone: OPERATIONAL_TIME_ZONE,
+    timeZone,
     year: 'numeric',
   }).format(now)
   return `${weekday}, ${date}`

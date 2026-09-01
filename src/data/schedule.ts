@@ -95,6 +95,7 @@ const builderOptionsSchema = z.object({
     employee_number: z.string().nullable(),
     role: z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin']),
     employment_type: z.enum(['hourly', 'salary', 'flex']),
+    time_zone: z.string().default('America/Denver'),
     has_armed_guard_credential: z.boolean(),
   })),
 })
@@ -303,6 +304,7 @@ export interface CreateCoveragePlanInput {
   availabilityOverrideNote?: string | null
   credentialOverrideNote?: string | null
   workType?: 'post' | 'training'
+  useEmployeeTimeZone?: boolean
 }
 
 export interface AddDraftShiftAssignmentInput {
@@ -418,7 +420,7 @@ export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Pr
 }
 
 export async function createSupervisorCoveragePlan(input: CreateCoveragePlanInput): Promise<CreateCoveragePlanResult> {
-  const { data, error } = await getSupabaseClient().rpc('scheduler_create_coverage_plan', {
+  const rpcPayload = {
     target_week_starts_on: input.weekStartsOn,
     target_post_id: input.mode === 'post' ? input.postId : null,
     event_name: input.mode === 'event' ? input.eventName?.trim() : null,
@@ -438,7 +440,11 @@ export async function createSupervisorCoveragePlan(input: CreateCoveragePlanInpu
     target_assignment_requires_armed: input.assignmentRequirement === 'armed',
     target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
     target_credential_override_note: input.credentialOverrideNote?.trim() || null,
-  })
+  }
+  const request = input.useEmployeeTimeZone
+    ? getSupabaseClient().rpc('scheduler_create_employee_local_coverage_plan', rpcPayload)
+    : getSupabaseClient().rpc('scheduler_create_coverage_plan', rpcPayload)
+  const { data, error } = await request
 
   if (error) throw new Error(error.message || 'The coverage plan could not be created.')
   return createCoveragePlanResultSchema.parse(data)
@@ -700,19 +706,19 @@ export function importedScheduleRows(schedule: ImportedSchedulePreview): Importe
 }
 
 
-export function shiftOperationalDate(shift: ScheduleShift): string {
+export function shiftOperationalDate(shift: ScheduleShift, timeZone = shift.time_zone): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-    timeZone: shift.time_zone,
+    timeZone,
   }).formatToParts(new Date(shift.starts_at))
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value
   return `${part('year')}-${part('month')}-${part('day')}`
 }
 
-export function shiftTimeRange(shift: ScheduleShift): string {
-  return formatDualTimeRange(shift.starts_at, shift.ends_at, shift.time_zone)
+export function shiftTimeRange(shift: ScheduleShift, timeZone = shift.time_zone): string {
+  return formatDualTimeRange(shift.starts_at, shift.ends_at, timeZone)
 }
 
 export function assignmentName(assignment: ScheduleShift['assignments'][number]): string {

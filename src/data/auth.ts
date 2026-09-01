@@ -16,6 +16,7 @@ const sessionContextSchema = z.object({
   mfa_enrolled_at: z.string().nullable(),
   mfa_required: z.boolean(),
   has_mfa: z.boolean(),
+  time_zone: z.string().default('America/Denver'),
   permissions: z.array(z.string()).optional().default([]),
 })
 
@@ -29,6 +30,7 @@ export type SessionContext = {
   mfaEnrolledAt: string | null
   mfaRequired: boolean
   hasMfa: boolean
+  timeZone: string
   permissions: string[]
 }
 
@@ -91,6 +93,7 @@ export async function getSessionContext(): Promise<SessionContext> {
     mfaEnrolledAt: parsed.mfa_enrolled_at,
     mfaRequired: parsed.mfa_required,
     hasMfa: parsed.has_mfa,
+    timeZone: parsed.time_zone,
     permissions: parsed.permissions,
   }
 }

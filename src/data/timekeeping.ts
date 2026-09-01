@@ -15,6 +15,7 @@ const timekeepingEmployeeSchema = z.object({
   displayName: z.string(),
   role: appRoleSchema,
   employmentType: employmentTypeSchema,
+  timeZone: z.string().default('America/Denver'),
 })
 
 const timekeepingShiftSchema = z.object({

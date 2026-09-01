@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Continental U.S. employee schedule time zones
+
+- Added employee profile time zones for Eastern, Central, Mountain, and Pacific operations.
+- Personal Home, My Time, and Schedule views now use the employee's supported browser time zone, with the employee profile as the controlled fallback.
+- Future one-person assigned shifts are entered in that employee's profile time zone; open and multi-person coverage continue to use the Site/Post time zone.
+- Updated Zach Ward's employee profile fallback to Central Time without changing his existing shift, punch, workday, or payroll records. His existing 7:00 AM Mountain occurrence therefore presents as 8:00 AM Central while retaining the same absolute shift instant and clock-in window.
+- Added transactional User Accounts time-zone maintenance, database audit evidence, shift time-zone provenance, and a migration preservation guard that rejects the release if any existing shift or time-event fingerprint changes.
+- Applied production migration `20260901190000_continental_employee_time_zones.sql` through an isolated one-migration workspace after dry-run verification.
+- Full validation passed: type checking, zero-warning lint, 129 test files / 640 tests, Worker build, client production build, production migration preservation checks, and live application health/readiness checks.
+- Deployed Cloudflare Worker version `400b7dbe-cd07-4e6b-9d4e-7a7a5c8781cb`; production app, login, health, and readiness returned `200`.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_CONTINENTAL_EMPLOYEE_TIME_ZONES.md`.
+
 ### Forced early clock-in acknowledgment
 
 - Replaced the passive early clock-in guidance with a prominent red blocking dialog on both Home and My Time.

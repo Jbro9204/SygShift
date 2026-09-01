@@ -45,6 +45,7 @@ import {
   type EmployeeRemovalPreview,
   type ProvisioningCredential,
 } from '../data/adminUsers'
+import { continentalUsTimeZones } from '../lib/usTimeZones'
 import type { SecurityKeySummary } from '../data/securityKeys'
 import { getSessionContext } from '../data/auth'
 import { preferredEmployeeDeliveryEmail } from '../lib/emailRecipients'
@@ -115,6 +116,7 @@ function employeeFormPayload(
     employeeId,
     employeeNumber: optional('employeeNumber'),
     employmentType: value('employmentType') as EmploymentType,
+    timeZone: value('timeZone') as EmployeeMutationInput['timeZone'],
     firstName: value('firstName'),
     jobTitle: optional('jobTitle'),
     lastName: value('lastName'),
@@ -278,6 +280,14 @@ function EmployeeForm({
             <option disabled={!canSeparate && employee?.status !== 'separated'} value="separated">Separated</option>
           </select>
         </label>
+        <label>
+          <span>Employee time zone</span>
+          <select defaultValue={employee?.timeZone ?? 'America/Denver'} disabled={!canEditThisProfile} name="timeZone">
+            {continentalUsTimeZones.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
         <label><span>Mobile phone</span><input defaultValue={employee?.mobilePhone ?? ''} disabled={!canEditThisProfile} name="mobilePhone" /></label>
       </div>
       <div className="form-grid form-grid--two">
@@ -424,6 +434,7 @@ function ManageUserModal({
     employee.jobTitle ?? '',
     employee.role,
     employee.employmentType,
+    employee.timeZone,
     employee.status,
     employee.mobilePhone ?? '',
     employee.personalEmail ?? '',

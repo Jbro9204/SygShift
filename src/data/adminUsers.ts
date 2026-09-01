@@ -8,6 +8,7 @@ const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_li
 const employmentTypeSchema = z.enum(['hourly', 'salary', 'flex'])
 const employeeStatusSchema = z.enum(['onboarding', 'active', 'leave', 'inactive', 'separated'])
 const accountStatusSchema = z.enum(['not_created', 'active', 'disabled'])
+const employeeTimeZoneSchema = z.enum(['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles'])
 
 const credentialSchema = z.object({
   id: z.string().uuid(),
@@ -45,6 +46,7 @@ const adminUserSchema = z.object({
   displayName: z.string(),
   role: appRoleSchema,
   employmentType: employmentTypeSchema,
+  timeZone: employeeTimeZoneSchema.default('America/Denver'),
   status: employeeStatusSchema,
   photoPath: z.string().nullable(),
   hiredOn: z.string().nullable(),
@@ -183,6 +185,7 @@ export type CredentialStatus = z.infer<typeof credentialSchema>['status']
 export type EmploymentType = z.infer<typeof employmentTypeSchema>
 export type EmployeeStatus = z.infer<typeof employeeStatusSchema>
 export type AccountStatus = z.infer<typeof accountStatusSchema>
+export type EmployeeTimeZone = z.infer<typeof employeeTimeZoneSchema>
 export type AdminUser = z.infer<typeof adminUserSchema>
 export type AdminUserDirectory = z.infer<typeof adminUserDirectorySchema>
 export type ProvisioningCredential = z.infer<typeof provisioningCredentialSchema>
@@ -203,6 +206,7 @@ export interface EmployeeMutationInput {
   preferredName?: string | null
   role: AppRole
   employmentType: EmploymentType
+  timeZone?: EmployeeTimeZone
   status: EmployeeStatus
   personalEmail?: string | null
   companyEmail?: string | null
@@ -281,14 +285,18 @@ export async function getAdminUserDirectory(): Promise<AdminUserDirectory> {
 }
 
 export async function createEmployee(input: EmployeeMutationInput): Promise<AdminUser> {
-  const { data, error } = await getSupabaseClient().rpc('admin_create_employee', employeeRpcPayload(input))
+  const { data, error } = await getSupabaseClient().rpc('admin_create_employee_with_time_zone', {
+    ...employeeRpcPayload(input),
+    target_time_zone: input.timeZone ?? 'America/Denver',
+  })
   if (error) throw new Error(error.message || 'Employee could not be created.')
   return withLegalDisplayName(adminUserSchema.parse(data))
 }
 
 export async function updateEmployee(input: EmployeeMutationInput & { employeeId: string }): Promise<AdminUser> {
-  const { data, error } = await getSupabaseClient().rpc('admin_update_employee', {
+  const { data, error } = await getSupabaseClient().rpc('admin_update_employee_with_time_zone', {
     target_employee_id: input.employeeId,
+    target_time_zone: input.timeZone ?? 'America/Denver',
     ...employeeRpcPayload(input),
   })
   if (error) throw new Error(error.message || 'Employee could not be updated.')
