@@ -1,0 +1,100 @@
+/* Authenticated SygShift cursor system. Custom artwork is limited to accurate
+   fine pointers; native cursor semantics remain the accessibility fallback. */
+
+@media (hover: hover) and (pointer: fine) {
+  html[data-sygshift-cursors='active'] {
+    --sygshift-cursor-default: url('/cursors/sygshift-default.svg') 2 1, default;
+    --sygshift-cursor-link: url('/cursors/sygshift-link.svg') 10 2, pointer;
+    --sygshift-cursor-text: url('/cursors/sygshift-text.svg') 12 13, text;
+    --sygshift-cursor-busy: url('/cursors/sygshift-busy.svg') 2 1, progress;
+    --sygshift-cursor-move: url('/cursors/sygshift-move.svg') 12 13, move;
+    --sygshift-cursor-blocked: url('/cursors/sygshift-blocked.svg') 2 1, not-allowed;
+    cursor: var(--sygshift-cursor-default);
+  }
+
+  html[data-sygshift-cursors='active'] :where(*) {
+    cursor: var(--sygshift-cursor-default) !important;
+  }
+
+  html[data-sygshift-cursors='active'] :where(
+    a[href],
+    button:not(:disabled):not([aria-disabled='true']),
+    summary,
+    select:not(:disabled):not([aria-disabled='true']),
+    [role='button']:not([aria-disabled='true']),
+    [role='link']:not([aria-disabled='true']),
+    [role='menuitem']:not([aria-disabled='true']),
+    [role='tab']:not([aria-disabled='true']),
+    label[for],
+    label:has(input[type='checkbox']:not(:disabled)),
+    label:has(input[type='radio']:not(:disabled)),
+    input[type='button']:not(:disabled),
+    input[type='submit']:not(:disabled),
+    input[type='reset']:not(:disabled),
+    input[type='file']:not(:disabled),
+    input[type='checkbox']:not(:disabled),
+    input[type='radio']:not(:disabled),
+    input[type='date']:not(:disabled),
+    input[type='datetime-local']:not(:disabled),
+    input[type='month']:not(:disabled),
+    input[type='time']:not(:disabled),
+    input[type='week']:not(:disabled)
+  ) {
+    cursor: var(--sygshift-cursor-link) !important;
+  }
+
+  html[data-sygshift-cursors='active'] :where(
+    input:not([type]):not([readonly]):not(:disabled),
+    input[type='text']:not([readonly]):not(:disabled),
+    input[type='email']:not([readonly]):not(:disabled),
+    input[type='password']:not([readonly]):not(:disabled),
+    input[type='search']:not([readonly]):not(:disabled),
+    input[type='tel']:not([readonly]):not(:disabled),
+    input[type='url']:not([readonly]):not(:disabled),
+    input[type='number']:not([readonly]):not(:disabled),
+    textarea:not([readonly]):not(:disabled),
+    [contenteditable='true']:not([aria-disabled='true']),
+    [data-sygshift-text-selectable='true']:not([aria-disabled='true'])
+  ) {
+    cursor: var(--sygshift-cursor-text) !important;
+  }
+
+  html[data-sygshift-cursors='active'] :where(
+    [draggable='true']:not([aria-disabled='true']),
+    [data-sygshift-drag-handle='true']:not([aria-disabled='true']),
+    .account-photo-cropper__stage,
+    .account-photo-cropper__stage--dragging
+  ) {
+    cursor: var(--sygshift-cursor-move) !important;
+  }
+
+  html[data-sygshift-cursors='active'] :where(
+    :disabled,
+    [aria-disabled='true'],
+    [data-permission-denied='true']
+  ) {
+    cursor: var(--sygshift-cursor-blocked) !important;
+  }
+
+  html[data-sygshift-cursors='active'][data-sygshift-busy],
+  html[data-sygshift-cursors='active'][data-sygshift-busy] *,
+  html[data-sygshift-cursors='active'] [aria-busy='true'],
+  html[data-sygshift-cursors='active'] [aria-busy='true'] * {
+    cursor: var(--sygshift-cursor-busy) !important;
+  }
+
+  html[data-sygshift-cursors='active'] [data-resize-direction='horizontal'] { cursor: ew-resize !important; }
+  html[data-sygshift-cursors='active'] [data-resize-direction='vertical'] { cursor: ns-resize !important; }
+  html[data-sygshift-cursors='active'] [data-resize-direction='diagonal'] { cursor: nwse-resize !important; }
+}
+
+@media (hover: hover) and (pointer: fine) and (forced-colors: active) {
+  html[data-sygshift-cursors='active'] {
+    --sygshift-cursor-default: default;
+    --sygshift-cursor-link: pointer;
+    --sygshift-cursor-text: text;
+    --sygshift-cursor-busy: progress;
+    --sygshift-cursor-move: move;
+    --sygshift-cursor-blocked: not-allowed;
+  }
+}

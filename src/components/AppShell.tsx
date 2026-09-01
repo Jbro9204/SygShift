@@ -336,6 +336,15 @@ export function AppShell() {
   }, [activeMutationCount])
 
   useEffect(() => {
+    if (sessionContext) document.documentElement.setAttribute('data-sygshift-cursors', 'active')
+    else document.documentElement.removeAttribute('data-sygshift-cursors')
+
+    return () => {
+      document.documentElement.removeAttribute('data-sygshift-cursors')
+    }
+  }, [sessionContext])
+
+  useEffect(() => {
     let active = true
 
     if (!isSupabaseConfigured) {

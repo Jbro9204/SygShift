@@ -1,8 +1,14 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const installedBrowser = process.env.PLAYWRIGHT_CHANNEL === 'chrome'
-  ? { channel: 'chrome' as const }
+const installedBrowser = process.env.PLAYWRIGHT_CHANNEL === 'chrome' || process.env.PLAYWRIGHT_CHANNEL === 'msedge'
+  ? { channel: process.env.PLAYWRIGHT_CHANNEL }
   : {}
+const browserProjects = process.env.PLAYWRIGHT_BROWSER === 'firefox'
+  ? [{ name: 'desktop-firefox', use: { ...devices['Desktop Firefox'] } }]
+  : [
+      { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'], ...installedBrowser } },
+      { name: 'mobile-chromium', use: { ...devices['Pixel 7'], ...installedBrowser } },
+    ]
 const e2ePort = 4174
 const e2eBaseUrl = `http://127.0.0.1:${e2ePort}`
 
@@ -26,8 +32,5 @@ export default defineConfig({
     reuseExistingServer: false,
     url: e2eBaseUrl,
   },
-  projects: [
-    { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'], ...installedBrowser } },
-    { name: 'mobile-chromium', use: { ...devices['Pixel 7'], ...installedBrowser } },
-  ],
+  projects: browserProjects,
 })
