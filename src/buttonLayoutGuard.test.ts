@@ -100,6 +100,11 @@ describe('button layout guardrails', () => {
     expect(accessControlPage).toContain('access-page-save-notice')
     expect(accessControlPage).toContain('access-sticky-savebar')
     expect(accessControlPage).toContain('unsaved change')
+    expect(accessControlPage).toContain('access-permission-group__bulk')
+    expect(accessControlPage).toContain('Select all')
+    expect(accessControlPage).toContain('Clear all')
+    expect(accessControlPage.match(/onSetAll=\{setAllPermissions\}/g)).toHaveLength(2)
+    expect(accessControlPage).toContain('allPermissions.map((permission) => permission.code)')
 
     const accessButtonBlock = topLevelBlockFor('.access-control-button')
     expect(accessButtonBlock).toContain('box-sizing: border-box')
@@ -109,6 +114,8 @@ describe('button layout guardrails', () => {
 
     expect(blockFor('.access-control-button--primary')).toContain('linear-gradient')
     expect(blockFor('.access-control-button--secondary')).toContain('background: light-dark(#fffdfa, #171b1f)')
+    expect(blockFor('.access-permission-group__bulk')).toContain('grid-template-columns: minmax(0, 1fr) auto auto')
+    expect(blockFor('.access-permission-group__bulk button')).toContain('min-height: 38px')
     expect(blocksFor('.access-sticky-savebar').some((block) => block.includes('position: sticky'))).toBe(true)
     expect(blocksFor('.access-sticky-savebar').some((block) => block.includes('align-items: center'))).toBe(true)
   })

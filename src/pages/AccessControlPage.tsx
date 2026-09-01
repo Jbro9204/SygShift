@@ -26,6 +26,7 @@ import {
   type AccessRoleDefinition,
   type PermissionDefinition,
 } from '../data/accessControl'
+import { applyPermissionCategorySelection } from '../lib/permissionSelection'
 
 const roleLabels: Record<string, string> = {
   admin: 'Admin',
@@ -82,32 +83,45 @@ function permissionSetsMatch(selectedCodes: Set<string>, permissionCodes: string
 }
 
 function PermissionGroup({
+  allPermissions,
   category,
+  onSetAll,
   permissions,
   selectedCodes,
   onToggle,
   open,
   onOpenChange,
 }: {
+  allPermissions: PermissionDefinition[]
   category: string
+  onSetAll: (codes: string[], selected: boolean) => void
   permissions: PermissionDefinition[]
   selectedCodes: Set<string>
   onToggle: (code: string) => void
   open: boolean
   onOpenChange: () => void
 }) {
-  const activeCount = selectedCount(permissions, selectedCodes)
+  const activeCount = selectedCount(allPermissions, selectedCodes)
+  const allSelected = activeCount === allPermissions.length
 
   return (
     <section className={open ? 'access-permission-group access-permission-group--open' : 'access-permission-group'}>
       <button aria-expanded={open} className="access-permission-group__header" onClick={onOpenChange} type="button">
         <span>
           <strong>{category}</strong>
-          <small>{activeCount} of {permissions.length} enabled</small>
+          <small>{activeCount} of {allPermissions.length} enabled</small>
         </span>
         {open ? <Minus aria-hidden="true" size={18} /> : <Plus aria-hidden="true" size={18} />}
       </button>
       {open ? <div className="access-permission-group__body">
+        <div className="access-permission-group__bulk" aria-label={`${category} category controls`}>
+          <span>
+            <strong>Category controls</strong>
+            <small>{permissions.length === allPermissions.length ? `${allPermissions.length} permissions` : `${permissions.length} shown · ${allPermissions.length} total`}</small>
+          </span>
+          <button disabled={allSelected} onClick={() => onSetAll(allPermissions.map((permission) => permission.code), true)} type="button">Select all</button>
+          <button disabled={activeCount === 0} onClick={() => onSetAll(allPermissions.map((permission) => permission.code), false)} type="button">Clear all</button>
+        </div>
         {permissions.map((permission) => {
           const checked = selectedCodes.has(permission.code)
           return (
@@ -183,12 +197,13 @@ function CreateRoleModal({
   const queryClient = useQueryClient()
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set())
   const [permissionSearch, setPermissionSearch] = useState('')
-  const [openCategory, setOpenCategory] = useState<string | null>(null)
+  const [openCategory, setOpenCategory] = useState<string | null>(() => permissions[0]?.category ?? null)
   const visiblePermissions = useMemo(
     () => filterPermissions(permissions, permissionSearch),
     [permissionSearch, permissions],
   )
   const grouped = useMemo(() => groupedPermissions(visiblePermissions), [visiblePermissions])
+  const allGrouped = useMemo(() => groupedPermissions(permissions), [permissions])
   const mutation = useMutation({
     mutationFn: async (input: { name: string, description: string | null, mfaRequired: boolean, permissionCodes: string[] }) => {
       const createdCenter = await upsertAccessRole({
@@ -218,6 +233,10 @@ function CreateRoleModal({
     })
   }
 
+  function setAllPermissions(codes: string[], selected: boolean) {
+    setSelectedCodes((current) => applyPermissionCategorySelection(current, codes, selected))
+  }
+
   useEffect(() => {
     if (!permissionSearch.trim()) return
     const firstCategory = Object.keys(grouped)[0]
@@ -241,7 +260,7 @@ function CreateRoleModal({
       busy={mutation.isPending}
       busyLabel="Creating role..."
       className="access-modal access-modal--wide"
-      description="Create a custom access group, then choose the permission nests it should include."
+      description="Create a reusable access group, then choose individual permissions or select an entire category at once."
       onClose={onClose}
       title="Create custom role"
     >
@@ -267,7 +286,7 @@ function CreateRoleModal({
           </section>
 
           <section className="access-modal-card access-modal-card--permissions">
-            <p className="eyebrow">Permission nests</p>
+            <p className="eyebrow">Permission categories</p>
             <label className="permission-search">
               <Search aria-hidden="true" size={18} />
               <span className="visually-hidden">Search permissions</span>
@@ -284,8 +303,10 @@ function CreateRoleModal({
               <div className="permission-nest-list">
                 {Object.entries(grouped).map(([category, categoryPermissions]) => (
                   <PermissionGroup
+                    allPermissions={allGrouped[category] ?? categoryPermissions}
                     category={category}
                     key={category}
+                    onSetAll={setAllPermissions}
                     onToggle={togglePermission}
                     onOpenChange={() => setOpenCategory(openCategory === category ? null : category)}
                     open={openCategory === category}
@@ -332,6 +353,7 @@ function RolePermissionEditor({
     [permissionSearch, permissions, selectedCodes, showEnabledOnly],
   )
   const grouped = useMemo(() => groupedPermissions(visiblePermissions), [visiblePermissions])
+  const allGrouped = useMemo(() => groupedPermissions(permissions), [permissions])
   const hasUnsavedChanges = useMemo(
     () => !permissionSetsMatch(selectedCodes, role.permissionCodes),
     [role.permissionCodes, selectedCodes],
@@ -391,6 +413,11 @@ function RolePermissionEditor({
     setMessage(null)
   }
 
+  function setAllPermissions(codes: string[], selected: boolean) {
+    setSelectedCodes((current) => applyPermissionCategorySelection(current, codes, selected))
+    setMessage(null)
+  }
+
   function savePermissions() {
     if (newSensitiveCodes.length > 0) {
       setConfirmSensitive(true)
@@ -433,8 +460,10 @@ function RolePermissionEditor({
         <div className="access-permission-accordion">
           {Object.entries(grouped).map(([category, categoryPermissions]) => (
             <PermissionGroup
+              allPermissions={allGrouped[category] ?? categoryPermissions}
               category={category}
               key={category}
+              onSetAll={setAllPermissions}
               onToggle={togglePermission}
               onOpenChange={() => setOpenCategory(openCategory === category ? null : category)}
               open={openCategory === category}
