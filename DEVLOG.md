@@ -35,7 +35,7 @@ deployment status, or major workflow assumptions change.
 - Enforced `licensing.view`, verified MFA, and `reports.export` at the database boundary and added a private append-only export audit event.
 - Applied production migration `20260901230000_licensing_status_report_export.sql`; preservation checks confirmed no employee, credential, role membership, or individual override changed.
 - Full validation passed: type checking, zero-warning lint, 134 test files / 659 tests, Worker/client builds, 34 browser tests, and rendered workbook inspection.
-- Application deployment and live health verification are pending.
+- Deployed Cloudflare Worker version `604d6b83-bf35-4239-ae4f-1c1342255209`; the primary and Worker fallback health/readiness endpoints returned `200`, the release is active at 100% of traffic, and the live report bundle/style checks passed.
 - Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_GUARD_LICENSING_STATUS_REPORT.md`.
 
 ### Global operational time header

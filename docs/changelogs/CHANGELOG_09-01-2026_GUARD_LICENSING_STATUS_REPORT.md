@@ -1,7 +1,7 @@
 # Guard Licensing Status Report
 
 Date: 09/01/2026
-Status: Production database control applied; application release pending
+Status: Released to production
 
 ## Outcome
 
@@ -46,5 +46,8 @@ SygShift Reports now includes a dedicated **Guard Licensing Status** workspace. 
 
 ## Release
 
-- Cloudflare application deployment: pending.
-- Production app, login, health, readiness, and live bundle checks: pending.
+- Cloudflare Worker version `604d6b83-bf35-4239-ae4f-1c1342255209` is active at 100% of traffic.
+- Worker startup time was 35 ms.
+- The primary app, login, and protected report route returned HTTP 200; the unauthenticated report route redirected safely to login with no browser console errors.
+- Health and readiness returned HTTP 200 on the primary and Worker fallback domains. Readiness confirmed the asset binding and all required Supabase configuration.
+- The live production main script, Reports bundle, and stylesheet contain the Guard Licensing Status workspace, Excel action, compact filtering/pagination behavior, and responsive licensing styles.
