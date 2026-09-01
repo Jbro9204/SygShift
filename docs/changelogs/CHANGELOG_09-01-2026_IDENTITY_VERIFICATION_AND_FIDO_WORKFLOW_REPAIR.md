@@ -2,7 +2,7 @@
 
 **Date:** 09/01/2026  
 **Area:** Account Security / Licensing Center / Protected Documents  
-**Status:** Validated and ready for production rollout
+**Status:** Production release complete
 
 ## Outcome
 
@@ -36,9 +36,17 @@ The account-security checkpoint now completes security-key discovery before pres
 
 - Targeted identity, account-security, Licensing workflow, and FIDO guard tests passed: 4 files / 22 tests.
 - Full validation passed: type checking, zero-warning lint, 140 test files / 685 tests, and Worker/client production builds.
-- Responsive rendered checks passed for the identity dialog and Licensing document workspace in light and dark modes across desktop and mobile.
-- Production rollout and live health verification are recorded below after deployment.
+- All 52 responsive browser checks passed, including the identity dialog and Licensing document workspace in light and dark modes across desktop and mobile.
 
 ## Production rollout
 
-Pending deployment.
+- Pushed validated commit `5785eaf` to `main`.
+- Deployed Cloudflare Worker version `85034419-a055-4554-9f23-a31611f48f4c` with the existing production variables preserved.
+- Primary and fallback login, health, and readiness checks returned HTTP `200`.
+- Live Licensing and Account Security bundles contain the identity modal, FIDO action, authenticator fallback, key-lookup retry, and key-management safety explanation.
+- Unauthenticated Licensing-document and Security Keys route checks returned HTTP `401`.
+- Post-deployment database verification confirmed `jbrown` still has one active key, zero revoked keys, and no credential mutation from the release.
+
+## Pilot verification note
+
+The registered production key is intact and the corrected prompt is live. Its `last_used_at` remains empty, so final physical-key ceremony confirmation requires Jordan to use the key at the next MFA checkpoint. This is a user-presence WebAuthn action and cannot be simulated safely. Authenticator fallback remains available if the physical check is cancelled or unavailable.

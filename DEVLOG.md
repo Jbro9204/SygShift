@@ -32,7 +32,9 @@ deployment status, or major workflow assumptions change.
 - Made account-security key discovery explicit and recoverable so a temporary lookup failure cannot silently hide a registered key or sign the employee out.
 - Confirmed Jordan's existing production FIDO credential remains active; no re-enrollment or credential mutation was performed.
 - Preserved password-first login, exact Licensing permissions, the 15-minute recent-MFA boundary, authenticator fallback, session-bound FIDO assurance, document audit evidence, and raw-authenticator verification before key-management changes.
-- Full validation passed: type checking, zero-warning lint, 140 test files / 685 tests, Worker/client builds, and responsive light/dark identity-dialog and Licensing-document browser checks.
+- Full validation passed: type checking, zero-warning lint, 140 test files / 685 tests, Worker/client builds, and all 52 responsive light/dark browser checks.
+- Deployed Cloudflare Worker version `85034419-a055-4554-9f23-a31611f48f4c`; primary and fallback login/health/readiness returned `200`, live asset checks passed, and protected unauthenticated Licensing and Security Keys routes returned `401`.
+- Post-deployment verification confirmed one active and zero revoked keys for `jbrown`. The first physical key touch remains the final real ceremony check because production `last_used_at` is still empty.
 - Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_IDENTITY_VERIFICATION_AND_FIDO_WORKFLOW_REPAIR.md`.
 
 ### Secure Licensing Center document workflow
