@@ -619,7 +619,7 @@ async function sendSecurityKeyChangeNotice(
 async function requireAdminMfa(
   request: Request,
   environment: Environment,
-  requiredPermission: 'admin.users.manage' | 'admin.users.invite' = 'admin.users.manage',
+  requiredPermission: 'admin.users.manage' | 'admin.users.invite' | 'admin.users.password_reset' = 'admin.users.manage',
 ): Promise<{
   config: NonNullable<ReturnType<typeof configuredSupabase>>
   context: SessionContext
@@ -631,7 +631,9 @@ async function requireAdminMfa(
   if (!hasRequiredPermission) {
     const error = requiredPermission === 'admin.users.invite'
       ? 'new_user_invites_permission_required'
-      : 'admin_mfa_required'
+      : requiredPermission === 'admin.users.password_reset'
+        ? 'password_reset_permission_required'
+        : 'admin_mfa_required'
     throw new Response(JSON.stringify({ error }), {
       headers: { 'content-type': 'application/json; charset=utf-8' },
       status: 403,
@@ -3432,12 +3434,17 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
   const url = new URL(request.url)
   const isNewUserInviteRequest = url.pathname === '/api/v1/admin/users/login-emails'
     || /^\/api\/v1\/admin\/users\/[0-9a-f-]{36}\/(?:login-email|welcome-email)$/i.test(url.pathname)
+  const isPasswordResetRequest = /^\/api\/v1\/admin\/users\/[0-9a-f-]{36}\/password-reset$/i.test(url.pathname)
   let admin: Awaited<ReturnType<typeof requireAdminMfa>>
   try {
     admin = await requireAdminMfa(
       request,
       environment,
-      isNewUserInviteRequest ? 'admin.users.invite' : 'admin.users.manage',
+      isNewUserInviteRequest
+        ? 'admin.users.invite'
+        : isPasswordResetRequest
+          ? 'admin.users.password_reset'
+          : 'admin.users.manage',
     )
   } catch (error) {
     if (error instanceof Response) {

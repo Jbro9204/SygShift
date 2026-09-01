@@ -16,7 +16,9 @@ describe('administrator MFA reset guardrails', () => {
   it('keeps the reset endpoint behind an MFA-verified user-administration boundary', () => {
     expect(worker).toContain("const mfaResetMatch = /^\\/api\\/v1\\/admin\\/users")
     expect(worker).toContain('admin = await requireAdminMfa(')
-    expect(worker).toContain("isNewUserInviteRequest ? 'admin.users.invite' : 'admin.users.manage'")
+    expect(worker).toContain(": isPasswordResetRequest")
+    expect(worker).toContain("? 'admin.users.password_reset'")
+    expect(worker).toContain(": 'admin.users.manage'")
     expect(worker).toContain('result.context.permissions?.includes(requiredPermission)')
     expect(worker).toContain('target_actor_employee_id: admin.context.employee_id')
   })

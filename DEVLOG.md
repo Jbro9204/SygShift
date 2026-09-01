@@ -23,6 +23,19 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 09/01/2026
+
+### Operations Manager role
+
+- Added a protected, MFA-required Operations Manager access role for companywide operational leadership between Supervisor and Admin.
+- Preserved every existing employee role membership and individual permission override; no employee was assigned automatically.
+- Included scheduling, attendance, patrol, sites/posts, licensing management, communications, reports, training, basic HR visibility, and limited account recovery.
+- Excluded roles/security administration, MFA and security-key controls, maintenance/backend controls, protected HR, compensation, payroll integration, official payroll export, and locked payroll reassignment.
+- Split audited employee password recovery into the exact `admin.users.password_reset` permission so operational support does not confer MFA or login-security administration.
+- Applied production migration `20260901120000_operations_manager_role.sql` through an isolated one-migration workspace after a dry run proved no historical migration replay.
+- Full validation passed: type checking, zero-warning lint, 124 test files / 624 tests, Worker build, and client production build.
+- Full release details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_OPERATIONS_MANAGER_ROLE.md`.
+
 ## 08/31/2026
 
 ### Comprehensive Employee File

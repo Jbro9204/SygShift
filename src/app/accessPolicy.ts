@@ -75,7 +75,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/notifications': { anyOf: ['notifications.view', 'notifications.manage'] },
   '/reports': { anyOf: ['time.reports.view'] },
   '/reports/:reportKey': { anyOf: ['time.reports.view'] },
-  '/users': { anyOf: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.separate', 'admin.users.delete'] },
+  '/users': { anyOf: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.password_reset', 'admin.users.separate', 'admin.users.delete'] },
   '/access-control': { anyOf: ['admin.roles.view', 'admin.roles.manage'] },
   '/system-operations': { anyOf: ['admin.maintenance.manage'] },
 }

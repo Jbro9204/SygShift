@@ -363,7 +363,7 @@ describe('Cloudflare Worker boundary', () => {
         display_name: 'Admin User',
         role: 'admin',
         has_mfa: true,
-        permissions: ['admin.users.manage'],
+        permissions: ['admin.users.password_reset'],
       }), { headers: { 'content-type': 'application/json' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         employeeId: targetEmployeeId,
@@ -428,6 +428,34 @@ describe('Cloudflare Worker boundary', () => {
       target_delivery_email_masked: 'em******@example.com',
       target_employee_id: targetEmployeeId,
     })
+    vi.unstubAllGlobals()
+  })
+
+  it('does not let password-reset assistance change MFA or security keys', async () => {
+    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      employee_id: '10000000-0000-4000-8000-000000000001',
+      username: 'operations-manager',
+      display_name: 'Operations Manager',
+      role: 'supervisor',
+      has_mfa: true,
+      permissions: ['admin.users.password_reset'],
+    }), { headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request(`https://app.sygshift.example/api/v1/admin/users/${targetEmployeeId}/mfa-reset`, {
+        body: '{}',
+        headers: { authorization: 'Bearer operations-manager-token' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), configuredEnvironment),
+    )
+    const payload = await response.json() as { error: string }
+
+    expect(response.status).toBe(403)
+    expect(payload.error).toBe('admin_mfa_required')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     vi.unstubAllGlobals()
   })
 

@@ -301,6 +301,7 @@ function ManageUserModal({
   canEditAdminRole,
   canEditBasic,
   canManageLogin,
+  canResetPassword,
   canSendNewUserInvites,
   canSeparate,
   employee,
@@ -310,6 +311,7 @@ function ManageUserModal({
   canEditAdminRole: boolean
   canEditBasic: boolean
   canManageLogin: boolean
+  canResetPassword: boolean
   canSendNewUserInvites: boolean
   canSeparate: boolean
   employee: AdminUser
@@ -574,38 +576,38 @@ function ManageUserModal({
                       ? 'The employee has completed initial account setup.'
                       : 'The login exists and is waiting for the employee to complete initial setup.'}</p>
               </article>
-              {canManageLogin ? (
+              {canManageLogin || canResetPassword ? (
                 <article className="user-account-security-card user-account-security-card--actions">
                   <span className="account-control-kicker">Account actions</span>
                   <h4>Help the employee regain access</h4>
                   <p>Every action is immediate, permission-checked, and recorded in the audit history.</p>
                   <div className="user-account-security-button-stack">
-                    {employee.accountStatus === 'not_created' ? (
+                    {canSendNewUserInvites && employee.accountStatus === 'not_created' ? (
                       <button className="primary-action" disabled={employee.status !== 'active'} onClick={() => setActiveTab('onboarding')} type="button">
                         <KeyRound aria-hidden="true" size={18} /> Open onboarding
                       </button>
                     ) : null}
-                    {employee.accountStatus === 'active' && employee.account?.activatedAt ? (
+                    {canResetPassword && employee.accountStatus === 'active' && employee.account?.activatedAt ? (
                       <button className="primary-action" disabled={passwordResetMutation.isPending || employee.status !== 'active' || !deliveryEmail} onClick={() => { setPasswordResetMessage(null); passwordResetMutation.mutate() }} type="button">
                         <Mail aria-hidden="true" size={18} /> {passwordResetMutation.isPending ? 'Sending reset…' : 'Send password reset'}
                       </button>
                     ) : null}
-                    {employee.accountStatus === 'active' && !employee.account?.activatedAt ? (
+                    {canSendNewUserInvites && employee.accountStatus === 'active' && !employee.account?.activatedAt ? (
                       <button className="primary-action" disabled={employee.status !== 'active'} onClick={() => setActiveTab('onboarding')} type="button">
                         <Mail aria-hidden="true" size={18} /> Open login instructions
                       </button>
                     ) : null}
-                    {employee.accountStatus === 'disabled' && employee.account ? (
+                    {canManageLogin && employee.accountStatus === 'disabled' && employee.account ? (
                       <button className="primary-action" disabled={accountStateMutation.isPending} onClick={() => accountStateMutation.mutate(false)} type="button">
                         <LockKeyhole aria-hidden="true" size={18} /> {accountStateMutation.isPending ? 'Enabling…' : 'Enable login'}
                       </button>
                     ) : null}
-                    {employee.accountStatus === 'active' && employee.account && !confirmingMfaReset ? (
+                    {canManageLogin && employee.accountStatus === 'active' && employee.account && !confirmingMfaReset ? (
                       <button className="secondary-button" disabled={resetMfaMutation.isPending} onClick={() => { setMfaResetMessage(null); setConfirmingMfaReset(true) }} type="button">
                         <RotateCcw aria-hidden="true" size={18} /> Reset MFA setup
                       </button>
                     ) : null}
-                    {employee.accountStatus === 'active' && employee.account && (employee.account.trustedDeviceCount ?? 0) > 0 ? (
+                    {canManageLogin && employee.accountStatus === 'active' && employee.account && (employee.account.trustedDeviceCount ?? 0) > 0 ? (
                       <button className="secondary-button" disabled={revokeTrustedDevicesMutation.isPending} onClick={() => revokeTrustedDevicesMutation.mutate()} type="button">
                         <ShieldAlert aria-hidden="true" size={18} /> Revoke remembered devices ({employee.account.trustedDeviceCount})
                       </button>
@@ -658,7 +660,7 @@ function ManageUserModal({
                   ) : !securityKeysQuery.isPending && !securityKeysQuery.isError ? <p className="user-account-security-key-empty">No physical security keys are registered.</p> : null}
                 </article>
               ) : null}
-              {!canManageLogin ? (
+              {!canManageLogin && !canResetPassword ? (
                 <article className="user-account-security-card user-account-security-card--actions">
                   <span className="account-control-kicker">Read only</span>
                   <h4>Security actions unavailable</h4>
@@ -859,6 +861,7 @@ export function UserAdminPage() {
   const hasPermission = (permission: string) => Boolean(sessionContext?.permissions.includes(permission))
   const canEditBasic = hasPermission('admin.users.basic') || hasPermission('admin.users.manage')
   const canManageLogin = hasPermission('admin.users.manage')
+  const canResetPassword = canManageLogin || hasPermission('admin.users.password_reset')
   const canSendNewUserInvites = Boolean(sessionContext?.permissions.includes('admin.users.invite'))
   const canSeparate = hasPermission('admin.users.separate')
   const canDeleteUsers = hasPermission('admin.users.delete')
@@ -1046,7 +1049,7 @@ export function UserAdminPage() {
                     </div>
                     <div role="cell" data-label="Manage">
                       <button className="secondary-button secondary-button--small" onClick={() => setSelectedUserId(user.id)} type="button">
-                        <UserCog aria-hidden="true" size={17} /> {canEditBasic || canManageLogin || canSendNewUserInvites || canSeparate || canDeleteUsers ? 'Manage' : 'View'}
+                        <UserCog aria-hidden="true" size={17} /> {canEditBasic || canManageLogin || canResetPassword || canSendNewUserInvites || canSeparate || canDeleteUsers ? 'Manage' : 'View'}
                       </button>
                     </div>
                   </div>
@@ -1135,6 +1138,7 @@ export function UserAdminPage() {
           canEditAdminRole={canEditAdminRole}
           canEditBasic={canEditBasic}
           canManageLogin={canManageLogin}
+          canResetPassword={canResetPassword}
           canSendNewUserInvites={canSendNewUserInvites}
           canSeparate={canSeparate}
           employee={selectedUser}

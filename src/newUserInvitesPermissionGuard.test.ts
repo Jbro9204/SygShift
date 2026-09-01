@@ -32,11 +32,12 @@ describe('New User Invites permission guardrails', () => {
   })
 
   it('enforces the exact effective permission on every invitation email route', () => {
-    expect(worker).toContain("requiredPermission: 'admin.users.manage' | 'admin.users.invite'")
+    expect(worker).toContain("requiredPermission: 'admin.users.manage' | 'admin.users.invite' | 'admin.users.password_reset'")
     expect(worker).toContain("requiredPermission === 'admin.users.invite'")
     expect(worker).toContain("url.pathname === '/api/v1/admin/users/login-emails'")
     expect(worker).toContain("(?:login-email|welcome-email)")
-    expect(worker).toContain("isNewUserInviteRequest ? 'admin.users.invite' : 'admin.users.manage'")
+    expect(worker).toContain("? 'admin.users.invite'")
+    expect(worker).toContain(": isPasswordResetRequest")
     expect(worker).toContain('new_user_invites_permission_required')
   })
 })
