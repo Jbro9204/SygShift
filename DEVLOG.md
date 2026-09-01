@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 09/01/2026
 
+### Mandatory authenticated cursors and restored Human Resources Employee role
+
+- Added one centralized six-state premium-gold cursor system for authenticated fine-pointer sessions: default, action, text, busy, move, and blocked. Signed-in desktop users cannot opt out; public login, touch/coarse devices, and forced-colors accessibility environments retain appropriate native cursors.
+- Kept all assets local and 24 by 26 pixels, supplied semantic native fallbacks, preserved resize cursors, and added no JavaScript cursor follower, pointer tracking, animation loop, or dependency.
+- Restored **Human Resources Employee** as the normal protected, MFA-required HR role with the exact original 78-permission scope and moved the one prior HR assignment back to it while preserving assignment metadata.
+- Kept **Human Resources Manager** separate and unchanged with 110 enabled permissions and no current assignment. Migration assertions preserved every unrelated role, permission bundle, assignment, override, and catalog record and added private audit evidence.
+- Full validation passed: type checking, zero-warning lint, 145 test files / 702 tests, Worker/client builds, and 60 desktop/mobile browser checks. Cursor-specific checks passed in Chrome, Edge, and Firefox, including forced-colors, coarse-pointer, scaling, and zoom coverage. Safari requires physical validation outside the Windows release host and retains native fallbacks.
+- Applied and reconciled forward migration `20260902070000_human_resources_employee_role_split.sql`, pushed implementation commit `259c940`, and deployed Cloudflare Worker version `d4792c75-e14a-4579-a984-9d04984aeaa0`.
+- Primary and fallback login, health, and readiness returned `200`; all six live cursor assets returned `200` as SVG, and the deployed JavaScript/CSS contain the authenticated trigger and centralized accessibility-safe mappings.
+- Full details are recorded in `docs/changelogs/CHANGELOG_09-01-2026_AUTHENTICATED_CURSOR_SYSTEM_AND_HR_ROLE_SPLIT.md`.
+
 ### Human Resources Manager and role-category controls
 
 - Upgraded the existing protected `human_resources` role in place to **Human Resources Manager**, preserving its role ID and existing one-employee assignment.
