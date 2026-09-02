@@ -1501,3 +1501,13 @@ pnpm exec wrangler deploy --keep-vars
 - Applied production migration `20260902222001_hr_employee_termination_and_user_role_assignment.sql` after a successful linked rollback rehearsal.
 - Full validation passed: type checking, zero-warning lint, 153 test files / 741 tests, production builds, and all 92 desktop/mobile Playwright checks.
 - Deployed Cloudflare Worker version `b6718bb1-20ef-462a-bcec-80aaf79a18a8`; both production endpoints passed health/readiness and the live release assets were verified.
+
+## 09/02/2026 — Access Control Visual Refinement
+
+- Replaced long sensitive-access confirmation lists with compact, expandable category summaries and a bounded internal review area.
+- Added consistent modal cushion, a visible theme-aware scrollbar, responsive permission details, and stable confirmation actions.
+- Corrected the Role Library layout so its scrollable list and **Create role** footer stay inside the card.
+- Added explicit space before the **Rule of record** banner to prevent touching or overlap.
+- Full validation passed: type checking, zero-warning lint, 153 test files / 742 tests, production builds, and all 96 desktop/mobile Playwright checks.
+- No database, role membership, permission, employee, or authentication change was required.
+- Deployed Cloudflare Worker version `6cc7bb2b-cdcb-4bd3-8a75-a7bac648b762`; production health, readiness, and live release assets verified successfully.
