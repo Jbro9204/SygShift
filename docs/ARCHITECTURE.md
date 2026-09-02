@@ -2,7 +2,7 @@
 
 ## Purpose
 
-SygShift is a workforce-operations application for scheduling, qualifications, events, timekeeping, requests, announcements, and payroll preparation. The source workbook remains an immutable business record during migration. Imported records are accepted only after automated reconciliation reports zero unexplained differences.
+SygShift is a workforce-operations application for client relationships, scheduling, qualifications, events, timekeeping, requests, announcements, and payroll preparation. Source workbooks remain immutable business records during migration. Ambiguous source rows remain staged for deliberate review rather than becoming operational records automatically.
 
 ## Runtime
 
@@ -36,6 +36,18 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 6. Timeclock, corrections, approval, locking, and payroll exports
 7. Announcements and delivery history
 8. Audit history and source reconciliation
+9. Client Files, private client documents, and connected service reporting
+
+## Enterprise Client Files
+
+- `public.clients` is the stable client/account root. Contacts, service lifecycle, billing channels, renewal dates, and internal relationship notes belong to that record.
+- Sites and Posts remain authoritative in their existing modules. A Client File links to those records by identifier; it does not copy locations or posts.
+- Linked Site relationships automatically flow to new Patrol stops, Patrol hits, and Events. Schedule shifts are assembled through their existing Post/Site or Event relationship.
+- Client activity combines authoritative Schedule, Patrol, and client service records at read/export time. It does not duplicate source operational rows.
+- Proposals, contracts, amendments, pricing, post orders, correspondence, reports, and evidence use a private `client-documents` bucket with permission-checked Worker upload and access routes.
+- Source spreadsheets are staged in the private schema with source tab, row, checksum, and original field values. An authorized reviewer must match, promote, or exclude every row.
+- Internal and future client-visible state remain separate. `internal_only`, `eligible_to_share`, `awaiting_approval`, `published_to_client`, and `withdrawn` prepare a later Client Portal without publishing anything in this release.
+- Every list is bounded by a 5, 10, or 20-row page or a deliberate View All disclosure. Browser routes are `/clients` and `/clients/:clientId`.
 
 ## Continental U.S. schedule time zones
 

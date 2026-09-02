@@ -314,6 +314,26 @@ Completion criteria:
 
 ## Recruiting & External Integrations
 
+### Client Portal Activation
+
+- Priority: **Later expansion**
+- Target window: After Client File classification, ownership, and sharing policy are operationally validated
+- Status: Foundation ready; portal login, invitation, and publication remain intentionally disabled
+- Added: 09/02/2026
+
+Build the future client-facing portal on the stable Client File identifiers and explicit publication states introduced by the Enterprise Client Files release.
+
+Required outcomes:
+
+- [ ] Define client user identities, organization membership, invitation, recovery, MFA, session, and offboarding policy without reusing employee authority.
+- [ ] Require named internal approval before any report, Patrol record, document, image, video, schedule summary, or service record becomes client-visible.
+- [ ] Publish only the approved version and preserve later withdrawal, replacement, delivery, view, and download history.
+- [ ] Prevent internal notes, pricing, employee information, security-sensitive location details, draft records, and unrelated client data from crossing the portal boundary.
+- [ ] Add client-scoped reports, notification preferences, retention, terms, support, accessibility, mobile, rate-limit, abuse, and recovery controls.
+- [ ] Complete tenant-isolation, object-authorization, negative-permission, export, download, audit, canary, rollback, and breach-containment testing before activation.
+
+The current release provides portal-ready states only. It does not create client accounts, send client invitations, or publish content.
+
 ### Indeed Employer Integration and Recruiting Depot
 
 - Priority: Research

@@ -195,6 +195,35 @@ interface LicensingDocumentAccessObject {
   objectKey: string
 }
 
+interface ClientDocumentUploadMetadata {
+  accessClassification: 'confidential' | 'restricted' | 'highly_restricted'
+  category: 'proposal' | 'contract' | 'amendment' | 'pricing' | 'post_order' | 'insurance' | 'correspondence' | 'report' | 'photo' | 'video' | 'other'
+  clientId: string
+  declaredMimeType: string
+  description: string
+  effectiveOn: string | null
+  expiresOn: string | null
+  idempotencyKey: string
+  originalFilename: string
+  portalState: 'internal_only' | 'eligible_to_share' | 'awaiting_approval' | 'published_to_client' | 'withdrawn'
+  title: string
+}
+
+interface ClientDocumentUploadOperation {
+  bucket: string
+  documentId: string
+  objectKey: string
+  state: 'pending' | 'stored' | 'failed'
+}
+
+interface ClientDocumentAccessObject {
+  action: 'preview' | 'download'
+  bucket: string
+  filename: string
+  mimeType: string
+  objectKey: string
+}
+
 interface PatrolEvidenceUploadOperation {
   bucket: string
   evidenceId: string
@@ -1625,6 +1654,136 @@ async function handleLicensingDocumentsApi(
   }
   const accessDocumentId = url.pathname.match(/^\/api\/v1\/licensing\/documents\/([0-9a-f-]{36})\/content$/i)?.[1]
   if (accessDocumentId) return handleLicensingDocumentAccess(request, environment, requestId, accessDocumentId)
+  return errorJson('not_found', requestId, 404)
+}
+
+function parseClientDocumentMetadata(request: Request): ClientDocumentUploadMetadata {
+  const encoded = request.headers.get('x-sygshift-client-document-metadata')?.trim() ?? ''
+  if (!encoded || encoded.length > Math.ceil(maxHrDocumentMetadataBytes * 4 / 3) + 16) {
+    throw new ApiError('invalid_client_document_metadata', 422, 'Client document metadata is required.')
+  }
+  let payload: unknown
+  try {
+    const raw = decodeBase64Url(encoded)
+    if (raw.byteLength > maxHrDocumentMetadataBytes) throw new Error('metadata too large')
+    payload = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw))
+  } catch {
+    throw new ApiError('invalid_client_document_metadata', 422, 'Client document metadata is invalid.')
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new ApiError('invalid_client_document_metadata', 422, 'Client document metadata must be an object.')
+  }
+  const data = payload as Record<string, unknown>
+  const clientId = requiredText(data.clientId, 'Client', 36)
+  const idempotencyKey = requiredText(data.idempotencyKey, 'Upload request ID', 36)
+  if (!validUuid(clientId) || !validUuid(idempotencyKey)) throw new ApiError('invalid_client_document_metadata', 422, 'Client or upload request identifiers are invalid.')
+  const category = requiredText(data.category, 'Category', 40)
+  if (!['proposal', 'contract', 'amendment', 'pricing', 'post_order', 'insurance', 'correspondence', 'report', 'photo', 'video', 'other'].includes(category)) throw new ApiError('invalid_client_document_metadata', 422, 'Choose a valid client document category.')
+  const accessClassification = requiredText(data.accessClassification, 'Access classification', 30)
+  if (!['confidential', 'restricted', 'highly_restricted'].includes(accessClassification)) throw new ApiError('invalid_client_document_metadata', 422, 'Choose a valid client document access classification.')
+  const portalState = requiredText(data.portalState, 'Portal state', 30)
+  if (!['internal_only', 'eligible_to_share', 'awaiting_approval', 'published_to_client', 'withdrawn'].includes(portalState)) throw new ApiError('invalid_client_document_metadata', 422, 'Choose a valid client document portal state.')
+  const dateValue = (value: unknown, field: string): string | null => {
+    const clean = optionalText(value, field, 10)
+    if (clean && !/^\d{4}-\d{2}-\d{2}$/.test(clean)) throw new ApiError('invalid_client_document_metadata', 422, `${field} must be a valid date.`)
+    return clean
+  }
+  return {
+    accessClassification: accessClassification as ClientDocumentUploadMetadata['accessClassification'],
+    category: category as ClientDocumentUploadMetadata['category'],
+    clientId,
+    declaredMimeType: normalizedMimeType(requiredText(data.declaredMimeType, 'File type', 160)),
+    description: optionalText(data.description, 'Description', 2000) ?? '',
+    effectiveOn: dateValue(data.effectiveOn, 'Effective date'),
+    expiresOn: dateValue(data.expiresOn, 'Expiration date'),
+    idempotencyKey,
+    originalFilename: requiredText(data.originalFilename, 'File name', 255),
+    portalState: portalState as ClientDocumentUploadMetadata['portalState'],
+    title: requiredText(data.title, 'Title', 200),
+  }
+}
+
+async function handleClientDocumentUpload(request: Request, environment: Environment, requestId: string, clientId: string): Promise<Response> {
+  if (request.method !== 'PUT') return errorJson('method_not_allowed', requestId, 405)
+  if (!validUuid(clientId)) throw new ApiError('invalid_client_id', 422, 'The client identifier is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  const mfa = await requireRecentDocumentMfa(request, session)
+  requireAnySessionPermission(session.context, ['clients.documents.manage'])
+  await requireMaintenanceWriteAccess({ serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }, 'clients')
+  const metadata = parseClientDocumentMetadata(request)
+  if (metadata.clientId !== clientId) throw new ApiError('client_document_mismatch', 422, 'The client upload target does not match the document metadata.')
+  const bodyMimeType = normalizedMimeType(request.headers.get('content-type') ?? '')
+  if (bodyMimeType !== metadata.declaredMimeType) throw new ApiError('document_type_mismatch', 400, 'The upload content type does not match the document metadata.')
+  const bytes = await readHrDocumentBody(request)
+  const validated = validateHrDocumentFile(bytes, metadata.originalFilename, metadata.declaredMimeType)
+  const allowed = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+  if (!allowed.includes(validated.detectedMimeType)) throw new ApiError('client_document_type_not_allowed', 400, 'Upload a PDF, PNG, JPEG, WebP, text, Word, or Excel document.')
+  const checksum = await sha256BytesHex(bytes)
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  const operation = await callRpc<ClientDocumentUploadOperation>(serviceConfig, 'service_prepare_client_document_upload', {
+    target_access_classification: metadata.accessClassification,
+    target_actor_id: session.context.employee_id,
+    target_byte_size: bytes.byteLength,
+    target_category: metadata.category,
+    target_client_id: clientId,
+    target_content_type: validated.detectedMimeType,
+    target_description: metadata.description,
+    target_effective_on: metadata.effectiveOn,
+    target_expires_on: metadata.expiresOn,
+    target_extension: validated.extension,
+    target_mfa_method: mfa.method,
+    target_mfa_verified_at: mfa.verifiedAt,
+    target_original_filename: validated.sanitizedFilename,
+    target_portal_state: metadata.portalState,
+    target_sha256_checksum: checksum,
+    target_title: metadata.title,
+    target_upload_request_id: metadata.idempotencyKey,
+  }, session.config.serviceRoleKey)
+  if (operation.state === 'stored') return json({ documentId: operation.documentId, requestId, state: 'stored' })
+  if (operation.state !== 'pending') throw new ApiError('client_document_upload_unavailable', 409, 'This upload request cannot be retried.')
+  try {
+    await storeLicensingDocument(serviceConfig, operation, bytes, validated.detectedMimeType, checksum)
+    const completed = await callRpc<Record<string, unknown>>(serviceConfig, 'service_complete_client_document_upload', { target_actor_id: session.context.employee_id, target_document_id: operation.documentId, target_request_id: requestId }, session.config.serviceRoleKey)
+    return json({ ...completed, requestId }, 201)
+  } catch (error) {
+    await deletePrivateStorageObject(serviceConfig, operation.bucket, operation.objectKey).catch(() => undefined)
+    await callRpc(serviceConfig, 'service_fail_client_document_upload', { target_actor_id: session.context.employee_id, target_document_id: operation.documentId, target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Protected upload failed.' }, session.config.serviceRoleKey).catch(() => undefined)
+    throw new ApiError('client_document_storage_failed', 502, 'The client document could not be stored. No incomplete document was released.')
+  }
+}
+
+async function handleClientDocumentAccess(request: Request, environment: Environment, requestId: string, documentId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  if (!validUuid(documentId)) throw new ApiError('invalid_document_id', 422, 'The client document identifier is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  const mfa = await requireRecentDocumentMfa(request, session)
+  requireAnySessionPermission(session.context, ['clients.documents.view'])
+  const body = await readJsonBody(request)
+  const action = requiredText(body.action, 'Document action', 20)
+  if (!['preview', 'download'].includes(action)) throw new ApiError('invalid_document_action', 422, 'Choose Preview or Download.')
+  const reason = requiredText(body.reason, 'Access reason', 500)
+  if (reason.length < 8) throw new ApiError('document_reason_required', 422, 'Enter a short business reason for document access.')
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  const target = await callRpc<ClientDocumentAccessObject>(serviceConfig, 'service_authorize_client_document_access', { target_action: action, target_actor_id: session.context.employee_id, target_document_id: documentId, target_mfa_method: mfa.method, target_mfa_verified_at: mfa.verifiedAt, target_reason: reason, target_request_id: requestId }, session.config.serviceRoleKey)
+  const stored = await fetchPrivateStorageObject(serviceConfig, target.bucket, target.objectKey)
+  if (!stored.ok || !stored.body) throw new ApiError('client_document_storage_unavailable', 502, 'The protected client document could not be loaded.')
+  const filename = sanitizeHrDocumentFilename(target.filename).replaceAll('"', '_')
+  const headers = new Headers({
+    'cache-control': 'private, no-store, max-age=0',
+    'content-disposition': `${target.action === 'download' ? 'attachment' : 'inline'}; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    'content-security-policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:",
+    'content-type': target.mimeType,
+    pragma: 'no-cache',
+  })
+  return new Response(stored.body, { headers, status: 200 })
+}
+
+async function handleClientDocumentsApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  const pathname = new URL(request.url).pathname
+  const uploadClientId = pathname.match(/^\/api\/v1\/clients\/([0-9a-f-]{36})\/documents$/i)?.[1]
+  if (uploadClientId) return handleClientDocumentUpload(request, environment, requestId, uploadClientId)
+  const accessDocumentId = pathname.match(/^\/api\/v1\/clients\/documents\/([0-9a-f-]{36})\/content$/i)?.[1]
+  if (accessDocumentId) return handleClientDocumentAccess(request, environment, requestId, accessDocumentId)
   return errorJson('not_found', requestId, 404)
 }
 
@@ -5080,6 +5239,19 @@ export default {
           response = error instanceof ApiError
             ? errorJson(error.code, requestId, error.status, error.message)
             : errorJson('licensing_document_request_failed', requestId, 500, 'The protected licensing document request could not be completed.')
+        }
+      }
+    } else if (url.pathname.startsWith('/api/v1/clients/')) {
+      try {
+        response = await handleClientDocumentsApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('client_document_request_failed', requestId, 500, 'The protected client document request could not be completed.')
         }
       }
     } else if (url.pathname.startsWith('/api/v1/patrol/')) {

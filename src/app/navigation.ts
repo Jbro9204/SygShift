@@ -66,6 +66,7 @@ export const navigationGroups: NavigationGroup[] = [
       { label: 'Licensing Center', path: '/licensing', icon: BadgeCheck, permissions: ['licensing.view', 'licensing.manage', 'licensing.configure', 'licensing.communicate', 'directory.edit_credentials'] },
       { label: 'Availability', path: '/availability', icon: CalendarCheck2, permissions: ['availability.view', 'availability.manage'] },
       { label: 'Sites & Posts', path: '/sites', icon: Building2, permissions: ['sites.view', 'sites.manage'] },
+      { label: 'Client Files', path: '/clients', icon: BriefcaseBusiness, permissions: ['clients.view', 'clients.manage'] },
       { label: 'Patrol', path: '/patrol', icon: MapPinned, permissions: ['patrol.self.view', 'patrol.view', 'patrol.manage', 'patrol.operations.view', 'patrol.routes.manage'] },
     ],
   },
@@ -175,7 +176,7 @@ export const navigationGroups: NavigationGroup[] = [
     items: [
       { label: 'Announcements', path: '/announcements', icon: Megaphone, permissions: ['announcements.send', 'announcements.banner.manage'] },
       { label: 'Notifications', path: '/notifications', icon: Bell, permissions: ['notifications.view', 'notifications.manage'] },
-      { label: 'Reports', path: '/reports', icon: FileBarChart, permissions: ['reports.view', 'time.reports.view'] },
+      { label: 'Reports', path: '/reports', icon: FileBarChart, permissions: ['reports.view', 'time.reports.view', 'clients.activity.view'] },
     ],
   },
   {

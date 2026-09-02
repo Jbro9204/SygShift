@@ -23,6 +23,16 @@
 - Workbook source files and extracted private data are excluded from Git.
 - Logs must not contain credentials, full request bodies, private contact information, or site secrets.
 
+## Client File protection
+
+- Client Files use exact effective permissions for profile access, management, documents, contracts/pricing, activity, exports, source review, and future portal publication.
+- Proposal, contract, amendment, and pricing visibility requires the separately restricted `clients.contracts.view` permission. Ordinary operational client access does not expose those files.
+- The `client-documents` storage bucket is private. Anonymous and browser database roles have no table or object-storage access; the Worker rechecks the actor, effective permission, recent MFA or security-key verification, target client/document, file signature, MIME type, and size.
+- Preview and download require an entered business reason, create an audit event, stream from the trusted origin with `no-store`, and never expose the service-role credential or a permanent public object URL.
+- Document publication state is independent from internal availability. A file is not client-visible merely because it exists or is eligible to share.
+- Spreadsheet client source remains in private staging tables identified by a SHA-256 source checksum. Staging creates no Client File, Site link, shift relationship, Patrol relationship, or portal publication.
+- Client activity export is permission checked, audited, date-filterable, and capped at 10,000 source rows per request.
+
 ## Browser and edge controls
 
 - Production responses set a restrictive Content Security Policy and permit data connections only to the same origin and Supabase.

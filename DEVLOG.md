@@ -1440,3 +1440,14 @@ pnpm exec wrangler deploy --keep-vars
 - Applied production migration `20260902160000_supervisor_scope_and_live_time_roster.sql` after a successful rollback rehearsal and verified both protected RPC contracts under an MFA-authenticated Admin context.
 - Full validation passed: type checking, zero-warning lint, 148 test files / 718 tests, production builds, all 68 desktop/mobile Playwright checks, and focused Firefox coverage.
 - Deployed Cloudflare Worker version `0530a0ad-e53d-46ea-92aa-b8e7d301b225`.
+
+## 09/02/2026 — Enterprise Client Files
+
+- Added a full Client Files workspace with client identity, contacts, lifecycle, renewals, billing channels, authoritative Site/Post links, editable Site/geofence details, and connected Schedule/Patrol/Event/service history.
+- Added a private client-document vault with protected upload, in-browser preview, download, recent authenticator/security-key verification, contract/pricing separation, business-reason capture, and audit history.
+- Added ten exact permissions, permission-aware navigation/routes, a Reports entry, audited CSV activity export, portal-ready publication states, and compact bounded lists throughout.
+- Staged 261 nonblank rows from the supplied Sales workbook in a private checksum-controlled review queue without creating an operational Client File or changing existing Site, Schedule, Patrol, employee, Time, or Payroll records.
+- Applied production migrations `20260902180918_enterprise_client_files.sql`, `20260902185602_client_activity_export_cap.sql`, and `20260902190456_client_document_mfa_volatility.sql` after successful rollback rehearsals.
+- Production verification confirmed the schema, permissions, private bucket, source queue, and rollback-only MFA Admin workflow.
+- Full validation passed: type checking, zero-warning lint, 149 test files / 722 tests, production builds, all 72 full Playwright checks, and eight focused Client Files desktop/mobile light/dark accessibility checks.
+- Deployed Cloudflare Worker version `82e0fe7d-c0e7-4fb0-8ccb-b9d09776cd5d`.

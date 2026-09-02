@@ -39,6 +39,9 @@ export const PeoplePageRoute = lazy(() =>
 export const PatrolPageRoute = lazy(() =>
   import('../pages/PatrolPage').then((module) => ({ default: module.PatrolPage })),
 )
+export const ClientFilesPageRoute = lazy(() =>
+  import('../pages/ClientFilesPage').then((module) => ({ default: module.ClientFilesPage })),
+)
 export const RequestsPageRoute = lazy(() =>
   import('../pages/RequestsPage').then((module) => ({ default: module.RequestsPage })),
 )

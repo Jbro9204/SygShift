@@ -107,6 +107,7 @@ function ReportLibrary({ from, permissions, through }: { from: string; permissio
   const canViewTimeReports = permissions.includes('time.reports.view')
   const canViewLicensingReport = permissions.includes('licensing.view')
   const canViewPatrolReport = permissions.includes('patrol.reports.view') || permissions.includes('patrol.manage')
+  const canViewClientReport = permissions.includes('clients.activity.view') || permissions.includes('clients.manage')
   const reportQuery = useQuery({ queryKey: ['operations-report'], queryFn: getOperationsReport, enabled: isSupabaseConfigured })
   const attentionQuery = useQuery({
     queryKey: ['reports-attention-preview', from, through],
@@ -149,11 +150,12 @@ function ReportLibrary({ from, permissions, through }: { from: string; permissio
     <section className="reports-catalog" aria-labelledby="reports-catalog-title">
       <div className="reports-section-heading"><div><p className="eyebrow">Report library</p><h2 id="reports-catalog-title">Choose one report</h2><p>Each report opens in a focused, paginated workspace.</p></div></div>
       <div className="reports-report-grid">
+        {canViewClientReport ? <article className="reports-report-card reports-report-card--clients"><div><p className="eyebrow">Client operations</p><h3>Client Portfolio &amp; Activity</h3><p>Review client status, renewals, linked sites, contacts, protected documents, shifts, patrol hits, incidents, and service history from the authoritative Client File.</p></div><Link className="secondary-button" to="/clients">Open report</Link></article> : null}
         {canViewPatrolReport ? <article className="reports-report-card reports-report-card--patrol"><div><p className="eyebrow">Patrol operations</p><h3>Patrol Activity</h3><p>Review required, completed, missed, makeup, extra, incident, location, and protected-evidence activity. Export internal or client-ready reports.</p></div><Link className="secondary-button" to="/reports/patrolActivity">Open report</Link></article> : null}
         {canViewLicensingReport ? <article className="reports-report-card reports-report-card--licensing"><div><p className="eyebrow">Licensing &amp; Credentials</p><h3>Guard Licensing Status</h3><p>See who is currently licensed, expiring, expired, pending review, restricted, or missing a required license, then download the complete Excel workbook.</p></div><Link className="secondary-button" to="/reports/licensingStatus">Open report</Link></article> : null}
         {canViewTimeReports ? operationalReportDefinitions.map((definition) => <article className="reports-report-card" key={definition.key}><div><h3>{definition.title}</h3><p>{definition.description}</p></div><Link className="secondary-button" to={`/reports/${definition.key}?from=${from}&through=${through}&scope=active&sort=priority`}>Open report</Link></article>) : null}
       </div>
-      {!canViewLicensingReport && !canViewTimeReports && !canViewPatrolReport ? <div className="report-empty">No report library items are available with your current permissions.</div> : null}
+      {!canViewLicensingReport && !canViewTimeReports && !canViewPatrolReport && !canViewClientReport ? <div className="report-empty">No report library items are available with your current permissions.</div> : null}
     </section>
   </>
 }

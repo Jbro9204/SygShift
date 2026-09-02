@@ -9,6 +9,7 @@ import {
   AccessControlPageRoute,
   AnnouncementsPageRoute,
   AvailabilityPageRoute,
+  ClientFilesPageRoute,
   EventsPageRoute,
   HrisIdentityReadinessPageRoute,
   HrisAutomationPageRoute,
@@ -112,6 +113,14 @@ export const router = createBrowserRouter([
             <EventsPageRoute />
           </RouteSuspense>
         ),
+      },
+      {
+        path: 'clients',
+        element: <RouteSuspense><ClientFilesPageRoute /></RouteSuspense>,
+      },
+      {
+        path: 'clients/:clientId',
+        element: <RouteSuspense><ClientFilesPageRoute /></RouteSuspense>,
       },
       {
         path: 'time',
