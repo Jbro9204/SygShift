@@ -10,6 +10,7 @@ const migration = readFileSync(join(root, 'supabase', 'migrations', '20260902110
 const adminMfaBoundary = readFileSync(join(root, 'supabase', 'migrations', '20260902120000_patrol_admin_mfa_boundary.sql'), 'utf8')
 const makeupAndReporting = readFileSync(join(root, 'supabase', 'migrations', '20260902130000_patrol_makeup_and_complete_reporting.sql'), 'utf8')
 const evidenceBinding = readFileSync(join(root, 'supabase', 'migrations', '20260902140000_patrol_evidence_completion_binding.sql'), 'utf8')
+const routeUpdatePersistence = readFileSync(join(root, 'supabase', 'migrations', '20260902214839_patrol_route_update_persistence.sql'), 'utf8')
 const page = readFileSync(join(root, 'src', 'pages', 'PatrolPage.tsx'), 'utf8')
 const data = readFileSync(join(root, 'src', 'data', 'patrol.ts'), 'utf8')
 const report = readFileSync(join(root, 'src', 'reports', 'PatrolActivityReportWorkspace.tsx'), 'utf8')
@@ -87,6 +88,13 @@ describe('enterprise Patrol operations', () => {
     expect(makeupAndReporting).toContain('get_patrol_report_supplement')
     expect(page).toContain('Complete makeup')
     expect(reportExport).toContain('Activity Type')
+  })
+
+  it('versions existing routes without confusing the route variable with the route-version column', () => {
+    expect(routeUpdatePersistence).toContain('from public.patrol_route_versions route_version')
+    expect(routeUpdatePersistence).toContain('where route_version.route_id = resolved_route_id')
+    expect(routeUpdatePersistence).toContain("stop_payload ->> 'addressLine1'")
+    expect(routeUpdatePersistence).not.toContain('from public.patrol_route_versions where route_id = save_patrol_route.route_id')
   })
 })
 
