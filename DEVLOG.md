@@ -1430,3 +1430,13 @@ pnpm exec wrangler deploy --keep-vars
 - Added a focused forward hardening migration so Admin Patrol management follows the same recent-MFA permission boundary as every other privileged role.
 - Full validation passed: type checking, zero-warning lint, 147 test files / 715 tests, and Worker/client production builds.
 - Deployed Cloudflare Worker version `5c272129-50de-4b21-beac-b8279de4d070`; the app shell, Patrol route, health, and readiness checks returned HTTP 200 and readiness reported ready.
+
+## 09/02/2026 — Supervisor Scope, My Time Readability, and Live Clock Roster
+
+- Added an explicit, audited Assigned Supervisor relationship maintained from the Employee File without changing role or permission authority.
+- Added My Employees, All Employees, Unassigned, and By Supervisor Directory views with a 10-row default and 5/10/20 pagination.
+- Added a dedicated `/time/on-duty` roster for only currently clocked-in or on-break employees; Home and Team Attendance live-count links now open it instead of broad Time Operations.
+- Increased shared Time snapshot label readability and renamed the employee Corrections label to Needs Review.
+- Applied production migration `20260902160000_supervisor_scope_and_live_time_roster.sql` after a successful rollback rehearsal and verified both protected RPC contracts under an MFA-authenticated Admin context.
+- Full validation passed: type checking, zero-warning lint, 148 test files / 718 tests, production builds, all 68 desktop/mobile Playwright checks, and focused Firefox coverage.
+- Deployed Cloudflare Worker version `0530a0ad-e53d-46ea-92aa-b8e7d301b225`.

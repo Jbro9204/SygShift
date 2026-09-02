@@ -374,7 +374,7 @@ export function TimeTeamAttendancePage() {
       </section>
 
       <section className="time-command-grid" aria-label="Team attendance summary">
-        <TimeMetricCard detail="Employees with a live working punch." icon={Timer} label="Clocked In" tone={activeCount > 0 ? 'good' : 'neutral'} value={activeCount} />
+        <TimeMetricCard ariaLabel="Clocked In: open the current live roster" detail="Employees with a live working punch." icon={Timer} label="Clocked In" to="/time/on-duty" tone={activeCount > 0 ? 'good' : 'neutral'} value={activeCount} />
         <TimeMetricCard detail="Employees currently marked on break." icon={Clock3} label="On Break" tone={breakCount > 0 ? 'warning' : 'neutral'} value={breakCount} />
         <TimeMetricCard detail="Worked time in the selected period." icon={FileClock} label="Paid Hours" value={`${payrollHours(paidMinutes)} hr`} />
         <TimeMetricCard detail="Employee correction requests awaiting review." icon={AlertTriangle} label="Pending Reviews" tone={pendingReviewCount > 0 ? 'danger' : 'good'} value={pendingReviewCount} />

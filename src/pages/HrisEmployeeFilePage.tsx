@@ -15,6 +15,7 @@ import {
   PencilLine,
   ShieldCheck,
   UserRound,
+  UserRoundCog,
 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { canAccessRoute } from '../app/accessPolicy'
@@ -26,6 +27,7 @@ import {
   EmployeeIdentityEditorDialog,
 } from '../components/EmployeeFileEditors'
 import { EmploymentDateEditorDialog } from '../components/EmploymentDateEditorDialog'
+import { SupervisorAssignmentDialog } from '../components/SupervisorAssignmentDialog'
 import { getSessionContext } from '../data/auth'
 import {
   getHrisEmployeeFile,
@@ -33,6 +35,7 @@ import {
   getHrisEmploymentDateHistory,
   hrisEmploymentDateSourceLabels,
 } from '../data/hrisPeople'
+import { getSupervisionWorkspace } from '../data/supervision'
 import { formatOperationalDateTime } from '../lib/time'
 
 const labels: Record<string, string> = {
@@ -68,6 +71,7 @@ export function HrisEmployeeFilePage() {
   const [profileEditor, setProfileEditor] = useState<'identity' | 'employment' | 'contacts' | null>(null)
   const [employmentDateEditorOpen, setEmploymentDateEditorOpen] = useState(false)
   const [employmentDateSaved, setEmploymentDateSaved] = useState(false)
+  const [supervisorEditorOpen, setSupervisorEditorOpen] = useState(false)
   const sessionQuery = useQuery({
     queryFn: getSessionContext,
     queryKey: ['session-context'],
@@ -87,8 +91,14 @@ export function HrisEmployeeFilePage() {
     queryFn: () => getHrisEmployeeProfileEditorContext(employeeId),
     queryKey: ['hris-employee-profile-editor', employeeId],
   })
+  const supervisionQuery = useQuery({
+    enabled: Boolean(employeeId),
+    queryFn: getSupervisionWorkspace,
+    queryKey: ['supervision-workspace'],
+  })
   const record = recordQuery.data
   const editorContext = editorContextQuery.data
+  const supervisorAssignment = supervisionQuery.data?.assignments.find((assignment) => assignment.employeeId === employeeId) ?? null
 
   function openEmploymentDateEditor() {
     if (!record) return
@@ -239,8 +249,8 @@ export function HrisEmployeeFilePage() {
             </article>
 
             <article className="hr-file-card hr-file-employment-card">
-              <div className="hr-file-card__heading"><ClipboardCheck aria-hidden="true" /><div><p className="eyebrow">Employment</p><h2>Current relationship</h2></div><div className="hr-file-card__actions">{editorContext?.canManageProfile ? <button className="hr-file-card__edit" onClick={() => setProfileEditor('employment')} type="button"><PencilLine aria-hidden="true" size={16} />Edit employment</button> : null}{employmentDateHistoryQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={openEmploymentDateEditor} type="button"><CalendarCheck2 aria-hidden="true" size={16} />Edit dates</button> : null}</div></div>
-              <dl><div><dt>Work classification</dt><dd>{editorContext?.workClassification ? titleCase(editorContext.workClassification) : 'Not recorded'}</dd></div><div><dt>Pay &amp; timekeeping type</dt><dd>{titleCase(record.employmentType)}</dd></div><div><dt>Primary role</dt><dd>{titleCase(record.primaryRole)}</dd></div><div><dt>Job title</dt><dd>{display(record.jobTitle)}</dd></div><div><dt>Start / hire date</dt><dd>{formatDate(record.hiredOn)}</dd></div><div><dt>Separation / termination date</dt><dd>{formatDate(record.separatedOn)}</dd></div></dl>
+              <div className="hr-file-card__heading"><ClipboardCheck aria-hidden="true" /><div><p className="eyebrow">Employment</p><h2>Current relationship</h2></div><div className="hr-file-card__actions">{editorContext?.canManageProfile ? <button className="hr-file-card__edit" onClick={() => setProfileEditor('employment')} type="button"><PencilLine aria-hidden="true" size={16} />Edit employment</button> : null}{supervisionQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={() => setSupervisorEditorOpen(true)} type="button"><UserRoundCog aria-hidden="true" size={16} />Assign supervisor</button> : null}{employmentDateHistoryQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={openEmploymentDateEditor} type="button"><CalendarCheck2 aria-hidden="true" size={16} />Edit dates</button> : null}</div></div>
+              <dl><div><dt>Work classification</dt><dd>{editorContext?.workClassification ? titleCase(editorContext.workClassification) : 'Not recorded'}</dd></div><div><dt>Pay &amp; timekeeping type</dt><dd>{titleCase(record.employmentType)}</dd></div><div><dt>Primary role</dt><dd>{titleCase(record.primaryRole)}</dd></div><div><dt>Assigned supervisor</dt><dd>{supervisionQuery.isPending ? 'Loading…' : supervisorAssignment?.supervisorName ?? 'Unassigned'}</dd></div><div><dt>Job title</dt><dd>{display(record.jobTitle)}</dd></div><div><dt>Start / hire date</dt><dd>{formatDate(record.hiredOn)}</dd></div><div><dt>Separation / termination date</dt><dd>{formatDate(record.separatedOn)}</dd></div></dl>
               {employmentDateSaved ? <div className="hr-file-employment-saved" role="status"><CalendarCheck2 aria-hidden="true" size={17} />Employment dates and audit history updated.</div> : null}
               {employmentDateHistoryQuery.data?.items.length ? (
                 <details className="hr-file-employment-history">
@@ -314,6 +324,15 @@ export function HrisEmployeeFilePage() {
           {profileEditor === 'identity' ? <EmployeeIdentityEditorDialog employee={record} onClose={() => setProfileEditor(null)} /> : null}
           {profileEditor === 'employment' && editorContext ? <EmployeeEmploymentEditorDialog context={editorContext} employee={record} onClose={() => setProfileEditor(null)} /> : null}
           {profileEditor === 'contacts' && editorContext ? <EmployeeContactEditorDialog context={editorContext} employee={record} onClose={() => setProfileEditor(null)} /> : null}
+          {supervisorEditorOpen && supervisionQuery.data ? (
+            <SupervisorAssignmentDialog
+              assignment={supervisorAssignment}
+              employeeId={record.employeeId}
+              employeeName={record.legalName}
+              onClose={() => setSupervisorEditorOpen(false)}
+              supervisors={supervisionQuery.data.supervisors}
+            />
+          ) : null}
         </>
       ) : null}
     </main>

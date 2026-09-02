@@ -69,6 +69,9 @@ export const TimeMyTimePageRoute = lazy(() =>
 export const TimeTeamPageRoute = lazy(() =>
   import('../time/TimeTeamAttendancePage').then((module) => ({ default: module.TimeTeamAttendancePage })),
 )
+export const TimeOnDutyPageRoute = lazy(() =>
+  import('../time/TimeOnDutyPage').then((module) => ({ default: module.TimeOnDutyPage })),
+)
 export const TimeExceptionsPageRoute = lazy(() =>
   import('../time/TimeExceptionsPage').then((module) => ({ default: module.TimeExceptionsPage })),
 )

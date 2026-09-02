@@ -275,23 +275,6 @@ Completion standard:
 
 ## Workforce Organization & Scheduling
 
-### Supervisor Assignment and Scoped Workforce Visibility
-
-- Priority: Medium
-- Target window: After current access and payroll usability work
-- Status: Pinned for later
-- Added: Before 08/25/2026
-
-Add an Assigned Supervisor field to employee profiles so supervisors can default to the employees they are responsible for without changing the permissions that authorize each action.
-
-Required outcomes:
-
-- Keep permission authorization separate from employee visibility scope.
-- Preserve full-company visibility for authorized Admin users.
-- Define whether assignments can be employee-based, site/post-based, or both.
-- Provide focused views for My Employees, All Employees, Unassigned, and By Supervisor where authorized.
-- Preserve audited exception access when a supervisor needs to help outside their normal scope.
-
 ## Employee Experience & Accountability
 
 ### Mandatory Post-Login Required Actions Checkpoint
@@ -328,22 +311,6 @@ Completion criteria:
 - [ ] Authorized managers can identify outstanding and overdue requirements within their permitted scope without gaining access to unrelated employee or HR records.
 - [ ] Allow, deny, bypass, refresh, retry, multiple-action, superseded-version, time-zone, accessibility, and rollback tests pass before production activation.
 
-### My Time Snapshot Label Readability
-
-- Priority: **High**
-- Target window: Next focused My Time usability release
-- Status: Approved / queued from employee feedback; no implementation started
-- Added: 09/01/2026
-
-Increase the readability of the **Today**, **This Week**, **Pay Period**, and **Needs Review** labels in the My Time Snapshot. The current labels have been reported as too small and difficult to read.
-
-Required outcomes:
-
-- [ ] Increase the label font size and weight enough to be comfortably readable without overpowering the corresponding values.
-- [ ] Maintain strong contrast and visual hierarchy in both light and dark modes.
-- [ ] Preserve the compact snapshot layout without wrapping, clipping, crowding, or uneven card heights at supported desktop and mobile widths.
-- [ ] Verify browser zoom, responsive scaling, keyboard focus where applicable, and accessibility contrast before production release.
-- [ ] Apply the correction to the shared snapshot-card treatment so these four labels remain visually uniform rather than receiving unrelated one-off overrides.
 
 ## Recruiting & External Integrations
 

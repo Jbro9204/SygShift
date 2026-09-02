@@ -70,7 +70,7 @@ const operationsMetrics: Array<{
   icon: typeof UsersRound
   path: string
 }> = [
-  { label: 'On duty now', key: 'onDutyNow', icon: UsersRound, path: '/time/operations' },
+  { label: 'On duty now', key: 'onDutyNow', icon: UsersRound, path: '/time/on-duty' },
   { label: 'Open coverage', key: 'openShifts', icon: CalendarClock, path: '/scheduler' },
   { label: 'Pending reviews', key: 'pendingRequests', icon: ClipboardCheck, path: '/requests' },
   { label: 'Clock exceptions', key: 'clockExceptions', icon: TimerReset, path: '/time/exceptions' },

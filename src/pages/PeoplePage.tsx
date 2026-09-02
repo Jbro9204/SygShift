@@ -16,6 +16,11 @@ import {
   getEmployeeDirectory,
   type DirectoryEntry,
 } from '../data/workforce'
+import {
+  getSupervisionWorkspace,
+  recordSupervisionExceptionAccess,
+  type SupervisorAssignment,
+} from '../data/supervision'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { operationalToday } from '../lib/time'
 
@@ -41,6 +46,7 @@ const employmentLabels: Record<DirectoryEntry['employment_type'], string> = {
 }
 const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const dayNamesShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+type WorkforceScope = 'mine' | 'all' | 'unassigned' | 'supervisor'
 
 function sessionHasPermission(session: SessionContext | null | undefined, permission: string): boolean {
   return Boolean(session?.permissions.includes(permission))
@@ -128,7 +134,7 @@ function ContactSummary({ employee }: { employee: DirectoryEntry }) {
   )
 }
 
-function DirectoryProfileSnapshot({ employee }: { employee: DirectoryEntry }) {
+function DirectoryProfileSnapshot({ employee, supervisorName }: { employee: DirectoryEntry; supervisorName: string | null }) {
   const profile = employee.operational_profile
 
   return (
@@ -148,6 +154,10 @@ function DirectoryProfileSnapshot({ employee }: { employee: DirectoryEntry }) {
       <article>
         <span>Title</span>
         <strong>{employee.job_title || 'Not set'}</strong>
+      </article>
+      <article>
+        <span>Assigned supervisor</span>
+        <strong>{supervisorName || 'Unassigned'}</strong>
       </article>
       <article>
         <span>Email</span>
@@ -340,11 +350,13 @@ function DirectoryProfileModal({
   availabilityRecords,
   availabilityPending,
   onClose,
+  supervisorName,
 }: {
   employee: DirectoryEntry
   availabilityRecords: AvailabilityRecord[]
   availabilityPending: boolean
   onClose: () => void
+  supervisorName: string | null
 }) {
   const [availabilitySaving, setAvailabilitySaving] = useState(false)
 
@@ -360,7 +372,7 @@ function DirectoryProfileModal({
       <p className="directory-profile-summary">
         Employment: {employmentLabels[employee.employment_type]} · Role: {roleLabels[employee.role]}
       </p>
-      <DirectoryProfileSnapshot employee={employee} />
+      <DirectoryProfileSnapshot employee={employee} supervisorName={supervisorName} />
       <DirectoryAvailabilityManager
         employee={employee}
         onPendingChange={setAvailabilitySaving}
@@ -374,6 +386,10 @@ function DirectoryProfileModal({
 export function PeoplePage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<'all' | 'active' | 'leave'>('active')
+  const [scope, setScope] = useState<WorkforceScope | null>(null)
+  const [supervisorId, setSupervisorId] = useState('')
+  const [pageSize, setPageSize] = useState(10)
+  const [page, setPage] = useState(1)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const directoryQuery = useQuery({
     queryKey: ['employee-directory'],
@@ -386,6 +402,11 @@ export function PeoplePage() {
     enabled: isSupabaseConfigured,
   })
   const canManageProfile = canManageDirectoryProfile(sessionQuery.data)
+  const supervisionQuery = useQuery({
+    queryKey: ['supervision-workspace'],
+    queryFn: getSupervisionWorkspace,
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess,
+  })
   const todayKey = format(operationalToday(), 'yyyy-MM-dd')
   const throughKey = format(addDays(operationalToday(), 42), 'yyyy-MM-dd')
   const availabilityQuery = useQuery({
@@ -394,10 +415,20 @@ export function PeoplePage() {
     enabled: isSupabaseConfigured && canManageProfile,
   })
 
+  const effectiveScope = scope ?? supervisionQuery.data?.defaultScope ?? 'all'
+  const assignmentsByEmployee = useMemo(
+    () => new Map((supervisionQuery.data?.assignments ?? []).map((assignment) => [assignment.employeeId, assignment])),
+    [supervisionQuery.data?.assignments],
+  )
   const filteredEmployees = useMemo(() => {
     const term = search.trim().toLocaleLowerCase()
     return (directoryQuery.data ?? []).filter((employee) => {
       const matchesStatus = status === 'all' || employee.status === status
+      const assignment = assignmentsByEmployee.get(employee.id)
+      const matchesScope = effectiveScope === 'all'
+        || (effectiveScope === 'mine' && assignment?.supervisorEmployeeId === supervisionQuery.data?.viewerEmployeeId)
+        || (effectiveScope === 'unassigned' && !assignment)
+        || (effectiveScope === 'supervisor' && assignment?.supervisorEmployeeId === supervisorId)
       const searchable = [
         employeeDisplayName(employee),
         employee.username,
@@ -408,12 +439,27 @@ export function PeoplePage() {
         .filter(Boolean)
         .join(' ')
         .toLocaleLowerCase()
-      return matchesStatus && (!term || searchable.includes(term))
+      return matchesStatus && matchesScope && (!term || searchable.includes(term))
     })
-  }, [directoryQuery.data, search, status])
+  }, [assignmentsByEmployee, directoryQuery.data, effectiveScope, search, status, supervisionQuery.data?.viewerEmployeeId, supervisorId])
+  const pageCount = Math.max(1, Math.ceil(filteredEmployees.length / pageSize))
+  const safePage = Math.min(page, pageCount)
+  const visibleEmployees = filteredEmployees.slice((safePage - 1) * pageSize, safePage * pageSize)
+
+  useEffect(() => {
+    setPage(1)
+  }, [effectiveScope, pageSize, search, status, supervisorId])
   const selectedEmployee = selectedEmployeeId
     ? directoryQuery.data?.find((employee) => employee.id === selectedEmployeeId) ?? null
     : null
+  const selectedAssignment: SupervisorAssignment | null = selectedEmployee
+    ? assignmentsByEmployee.get(selectedEmployee.id) ?? null
+    : null
+
+  function openEmployee(employeeId: string) {
+    setSelectedEmployeeId(employeeId)
+    void recordSupervisionExceptionAccess(employeeId, 'directory_profile').catch(() => undefined)
+  }
 
   return (
     <div className="page page--workforce">
@@ -477,6 +523,24 @@ export function PeoplePage() {
                 <option value="all">Active + on leave</option>
               </select>
             </label>
+            <label className="select-field">
+              <span>Workforce view</span>
+              <select onChange={(event) => setScope(event.target.value as WorkforceScope)} value={effectiveScope}>
+                <option value="mine">My Employees</option>
+                <option value="all">All Employees</option>
+                <option value="unassigned">Unassigned</option>
+                <option value="supervisor">By Supervisor</option>
+              </select>
+            </label>
+            {effectiveScope === 'supervisor' ? (
+              <label className="select-field">
+                <span>Supervisor</span>
+                <select onChange={(event) => setSupervisorId(event.target.value)} value={supervisorId}>
+                  <option value="">Choose supervisor</option>
+                  {(supervisionQuery.data?.supervisors ?? []).map((supervisor) => <option key={supervisor.employeeId} value={supervisor.employeeId}>{supervisor.name}</option>)}
+                </select>
+              </label>
+            ) : null}
           </section>
 
           {filteredEmployees.length === 0 ? (
@@ -490,15 +554,17 @@ export function PeoplePage() {
                   <span role="columnheader">Employee</span>
                   <span role="columnheader">Role</span>
                   <span role="columnheader">Employment</span>
+                  <span role="columnheader">Supervisor</span>
                   <span role="columnheader">Contact</span>
                   <span role="columnheader">Status</span>
                   <span role="columnheader">Action</span>
                 </div>
-                {filteredEmployees.map((employee) => (
+                {visibleEmployees.map((employee) => (
                   <div className="directory-row" role="row" key={employee.id}>
                     <div role="cell"><EmployeeIdentity employee={employee} /></div>
                     <div role="cell"><span className="plain-value">{roleLabels[employee.role]}</span></div>
                     <div role="cell"><span className="plain-value">{employmentLabels[employee.employment_type]}</span></div>
+                    <div role="cell"><span className="plain-value">{assignmentsByEmployee.get(employee.id)?.supervisorName ?? 'Unassigned'}</span></div>
                     <div role="cell"><ContactSummary employee={employee} /></div>
                     <div role="cell">
                       <span className={`status-badge status-badge--${employee.status}`}>
@@ -507,7 +573,7 @@ export function PeoplePage() {
                     </div>
                     <div role="cell">
                       {canManageProfile ? (
-                        <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployeeId(employee.id)} type="button">
+                        <button className="secondary-button secondary-button--small" onClick={() => openEmployee(employee.id)} type="button">
                           <Pencil aria-hidden="true" size={16} />
                           Manage Profile
                         </button>
@@ -518,7 +584,7 @@ export function PeoplePage() {
               </div>
 
               <div className="directory-cards">
-                {filteredEmployees.map((employee) => (
+                {visibleEmployees.map((employee) => (
                   <article className="employee-card" key={employee.id}>
                     <div className="employee-card__heading">
                       <EmployeeIdentity employee={employee} />
@@ -529,10 +595,11 @@ export function PeoplePage() {
                     <dl>
                       <div><dt>Role</dt><dd>{roleLabels[employee.role]}</dd></div>
                       <div><dt>Employment</dt><dd>{employmentLabels[employee.employment_type]}</dd></div>
+                      <div><dt>Supervisor</dt><dd>{assignmentsByEmployee.get(employee.id)?.supervisorName ?? 'Unassigned'}</dd></div>
                       <div><dt>Contact</dt><dd><ContactSummary employee={employee} /></dd></div>
                     </dl>
                     {canManageProfile ? (
-                      <button className="secondary-button secondary-button--small" onClick={() => setSelectedEmployeeId(employee.id)} type="button">
+                      <button className="secondary-button secondary-button--small" onClick={() => openEmployee(employee.id)} type="button">
                         <Pencil aria-hidden="true" size={16} />
                         Manage Profile
                       </button>
@@ -545,14 +612,22 @@ export function PeoplePage() {
 
           <p className="results-note">
             <BadgeCheck aria-hidden="true" size={18} />
-            Showing {filteredEmployees.length} of {directoryQuery.data?.length ?? 0} active workforce records
+            Showing {filteredEmployees.length === 0 ? 0 : (safePage - 1) * pageSize + 1}-{Math.min(safePage * pageSize, filteredEmployees.length)} of {filteredEmployees.length} matching workforce records
           </p>
+          {filteredEmployees.length > 0 ? (
+            <div className="directory-pagination" aria-label="Employee directory pages">
+              <label className="select-field"><span>Rows</span><select onChange={(event) => setPageSize(Number(event.target.value))} value={pageSize}><option value={5}>5</option><option value={10}>10</option><option value={20}>20</option></select></label>
+              <span>Page {safePage} of {pageCount}</span>
+              <div><button className="secondary-button secondary-button--small" disabled={safePage === 1} onClick={() => setPage((current) => Math.max(1, current - 1))} type="button">Previous</button><button className="secondary-button secondary-button--small" disabled={safePage === pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))} type="button">Next</button></div>
+            </div>
+          ) : null}
           {selectedEmployee ? (
             <DirectoryProfileModal
               availabilityPending={availabilityQuery.isPending}
               availabilityRecords={availabilityQuery.data?.availability ?? []}
               employee={selectedEmployee}
               onClose={() => setSelectedEmployeeId(null)}
+              supervisorName={selectedAssignment?.supervisorName ?? null}
             />
           ) : null}
         </>

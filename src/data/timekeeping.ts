@@ -449,6 +449,37 @@ const teamAttendanceSummarySchema = z.object({
   rows: z.array(teamAttendanceSummaryRowSchema),
 })
 
+const liveTimeRosterRowSchema = z.object({
+  employeeId: z.string().uuid(),
+  username: z.string(),
+  employeeName: z.string(),
+  role: appRoleSchema,
+  employmentType: employmentTypeSchema,
+  status: z.enum(['working', 'on_break']),
+  clockedInAt: z.string(),
+  statusSince: z.string(),
+  elapsedMinutes: z.number().int().nonnegative(),
+  locationName: z.string(),
+  siteName: z.string().nullable(),
+  siteCode: z.string().nullable(),
+  postName: z.string().nullable(),
+  eventName: z.string().nullable(),
+  timeZone: z.string(),
+  scheduledEndsAt: z.string().nullable(),
+  assignedSupervisor: z.object({
+    employeeId: z.string().uuid(),
+    name: z.string(),
+  }).nullable(),
+})
+
+const liveTimeRosterSchema = z.object({
+  serverTimestamp: z.string(),
+  totalCount: z.number().int().nonnegative(),
+  workingCount: z.number().int().nonnegative(),
+  breakCount: z.number().int().nonnegative(),
+  rows: z.array(liveTimeRosterRowSchema),
+})
+
 const teamAttendanceTotalsSchema = z.object({
   serverTimestamp: z.string(),
   fromDate: z.string(),
@@ -749,6 +780,8 @@ export type TimeMaintenanceShiftOption = z.infer<typeof timeMaintenanceShiftOpti
 export type TimeMaintenanceLocationOption = z.infer<typeof timeMaintenanceLocationOptionSchema>
 export type TeamAttendanceSummary = z.infer<typeof teamAttendanceSummarySchema>
 export type TeamAttendanceSummaryRow = z.infer<typeof teamAttendanceSummaryRowSchema>
+export type LiveTimeRoster = z.infer<typeof liveTimeRosterSchema>
+export type LiveTimeRosterRow = z.infer<typeof liveTimeRosterRowSchema>
 export type PayrollRules = z.infer<typeof payrollRulesSchema>
 export type PayrollAssignmentCorrectionResult = z.infer<typeof payrollAssignmentCorrectionResultSchema>
 export type PayrollRecalculationResult = z.infer<typeof payrollRecalculationResultSchema>
@@ -1176,6 +1209,12 @@ export async function correctTimeRecordWorkType(input: {
   })
   if (error) throw new Error(error.message || 'The work classification could not be corrected.')
   return workTypeCorrectionResultSchema.parse(data)
+}
+
+export async function getLiveTimeRoster(): Promise<LiveTimeRoster> {
+  const { data, error } = await getSupabaseClient().rpc('get_live_time_roster')
+  if (error) throw new Error(error.message || 'The current clocked-in roster could not be loaded.')
+  return liveTimeRosterSchema.parse(data)
 }
 
 export async function getTeamAttendanceSummary(input: {

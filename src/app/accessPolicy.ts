@@ -33,6 +33,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/time/tools': { anyOf: ['time.self.view', 'time.punch', 'time.manage'] },
   '/time/my-time': { anyOf: ['time.self.view', 'time.punch', 'time.manage'] },
   '/time/team': { anyOf: ['time.view', 'time.manage'] },
+  '/time/on-duty': { anyOf: ['time.view', 'time.manage'] },
   '/time/review': { anyOf: ['time.view', 'time.manage', 'time.resolve_exceptions', 'time.export_payroll'] },
   '/time/exceptions': { anyOf: ['time.view', 'time.manage', 'time.resolve_exceptions', 'time.export_payroll'] },
   '/time/operations': { anyOf: ['time.view', 'time.manage', 'time.adjustments.review', 'accountability.view', 'accountability.manage'] },

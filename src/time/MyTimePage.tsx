@@ -289,7 +289,7 @@ export function MyTimePage() {
             <TimeMetricCard
               detail="Correction requests waiting for review."
               icon={AlertTriangle}
-              label="Corrections"
+              label="Needs Review"
               tone={totals.pendingCorrections > 0 ? 'warning' : 'good'}
               value={totals.pendingCorrections}
             />
