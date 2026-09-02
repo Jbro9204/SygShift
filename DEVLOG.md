@@ -1429,3 +1429,4 @@ pnpm exec wrangler deploy --keep-vars
 - Applied production migration `20260902110000_enterprise_patrol_operations.sql`; preservation assertions passed and production verified 2 draft routes, 11 stops, 61 requirements, a private evidence bucket, and 5 service functions.
 - Added a focused forward hardening migration so Admin Patrol management follows the same recent-MFA permission boundary as every other privileged role.
 - Full validation passed: type checking, zero-warning lint, 147 test files / 715 tests, and Worker/client production builds.
+- Deployed Cloudflare Worker version `5c272129-50de-4b21-beac-b8279de4d070`; the app shell, Patrol route, health, and readiness checks returned HTTP 200 and readiness reported ready.

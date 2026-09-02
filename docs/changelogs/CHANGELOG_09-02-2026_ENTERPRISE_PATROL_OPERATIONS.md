@@ -39,6 +39,7 @@ SygShift Patrol is now a connected operational workspace for guards and manageme
 - All 147 unit/integration test files and 715 tests passed.
 - Worker and client production builds passed.
 - Four desktop/mobile light/dark rendered checks passed with no accessibility violations or horizontal overflow.
+- Deployed Cloudflare Worker version `5c272129-50de-4b21-beac-b8279de4d070`; the production app, Patrol route, health endpoint, and readiness endpoint returned HTTP 200 with readiness reported as ready.
 
 ## Rollback
 
