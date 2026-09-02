@@ -45,14 +45,16 @@ The earlier HR document foundation could securely store and assign future record
 - The complete forward migration executed successfully against the linked production database inside a transaction and rolled back cleanly.
 - The final application gate passed: TypeScript, zero-warning lint, 151 test files / 733 tests, and both Worker and client production builds.
 - All 88 desktop/mobile Playwright checks passed, including the new Document Studio and signer experiences in light and dark modes with automated accessibility checks.
-- Production migration application, Git push, Cloudflare deployment, and live health/readiness verification are recorded below after the release completes.
+- Production verification preserved 78 employees, one access-role assignment, zero individual permission overrides, and the existing zero document/version/access-event baseline. It confirmed 25 active document permissions, 25 Admin grants, 24 HR Manager grants, all private tables under row-level security, zero browser-role routine privileges, and all seven release gates disabled.
+- Production contains zero policies, templates, envelopes, signature events, or processing jobs after installation.
+- The primary and fallback health/readiness endpoints returned HTTP 200 and ready. Anonymous requests to the management and employee signature APIs returned HTTP 401.
 
 ## Release status
 
-- Migration: rollback rehearsal passed; production application pending.
-- Git: pending final verified commit and push.
-- Cloudflare: pending final verified deployment.
-- Live health/readiness: pending final verified deployment.
+- Migration: `20260902202948_enterprise_document_studio.sql` applied and recorded after a successful rollback rehearsal.
+- Git: implementation commit `ae9f6a9` pushed to `origin/main`.
+- Cloudflare: Worker version `387f7f00-1527-4e87-bb97-e313f3901eab` deployed with the document-pipeline feature switch unset.
+- Live health/readiness: primary and fallback endpoints returned HTTP 200 and ready; the production app shell returned HTTP 200 with the new asset bundle.
 
 ## External release blocker
 

@@ -31,6 +31,8 @@ deployment status, or major workflow assumptions change.
 - Added protected management and employee interfaces, a PDF.js viewer, compact bounded worklists, homepage pending-document actions, FIDO/authenticator step-up, retry/backoff/dead-letter processing, and audit-safe downloads.
 - Kept upload, processing, signatures, advanced editing, regulated documents, external signers, and seals fail-closed. No HR document, template, envelope, signature, or role assignment was created during installation.
 - True OCR, native PDF content editing, irreversible redaction, page restructuring, and malware release remain blocked on an approved document-processing/scanner service and recovery canary; no fake controls were exposed.
+- Applied and recorded production migration `20260902202948_enterprise_document_studio.sql`; preservation verification retained 78 employees and the existing access/document baselines, confirmed all seven release gates disabled, all new private tables under row-level security, and zero browser-role access to the service routines.
+- Full validation passed: TypeScript, zero-warning lint, 151 test files / 733 tests, production builds, and all 88 desktop/mobile Playwright checks. Deployed Cloudflare Worker version `387f7f00-1527-4e87-bb97-e313f3901eab`; primary and fallback health/readiness returned HTTP 200 and ready.
 - Full details and final release evidence are recorded in `docs/changelogs/CHANGELOG_09-02-2026_ENTERPRISE_DOCUMENT_STUDIO_AND_SIGNATURES.md`.
 
 ## 09/01/2026
