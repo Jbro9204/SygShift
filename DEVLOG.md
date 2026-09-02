@@ -1416,3 +1416,16 @@ pnpm exec wrangler deploy --keep-vars
 - Made new coverage creation and assignment atomic, including employee-local-time coverage.
 - Full validation passed: type checking, zero-warning lint, 137 test files / 671 tests, production migration, Worker and client production builds, deployed-asset inspection, and live health/readiness checks.
 - Applied production migration `20260901233000_scheduler_new_coverage_overtime_override.sql` and deployed Cloudflare Worker version `d7c72a80-c078-4977-b9ac-a7720be6b0b4`.
+
+## 09/02/2026 — Enterprise Patrol Operations
+
+- Rebuilt Patrol as a connected operational workspace for guards, route managers, exception review, protected evidence, and reporting.
+- Added versioned and editable armed/unarmed routes, Schedule-linked assignments, per-day hit requirements, optional time windows/location rules, makeup work, and separately tracked extra hits.
+- Added meaningful required notes, configurable photo/video evidence, private signed resumable uploads, file-signature validation, protected audited preview/download, and configurable standard/incident video limits.
+- Added compact 5/10/20 lists and Patrol Activity CSV, Excel, and PDF exports in Reports.
+- Closed the full makeup loop with same-route assignment, a guard-facing completion action, and required/extra/makeup rows in reporting and exports.
+- Bound evidence completion to the exact actor-owned private object authorized for that evidence record.
+- Seeded the supplied MG Properties and Armed route information as editable drafts without inventing addresses or patrol times.
+- Applied production migration `20260902110000_enterprise_patrol_operations.sql`; preservation assertions passed and production verified 2 draft routes, 11 stops, 61 requirements, a private evidence bucket, and 5 service functions.
+- Added a focused forward hardening migration so Admin Patrol management follows the same recent-MFA permission boundary as every other privileged role.
+- Full validation passed: type checking, zero-warning lint, 147 test files / 715 tests, and Worker/client production builds.

@@ -69,7 +69,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/licensing': { anyOf: ['licensing.view', 'licensing.manage', 'licensing.configure', 'licensing.communicate', 'directory.edit_credentials'] },
   '/availability': { anyOf: ['availability.view', 'availability.manage'] },
   '/sites': { anyOf: ['sites.view', 'sites.manage'] },
-  '/patrol': { anyOf: ['patrol.view', 'patrol.manage'] },
+  '/patrol': { anyOf: ['patrol.self.view', 'patrol.view', 'patrol.manage', 'patrol.operations.view', 'patrol.routes.manage'] },
   '/requests': { anyOf: ['requests.view', 'requests.manage'] },
   '/announcements': { anyOf: ['announcements.send', 'announcements.banner.manage'] },
   '/notifications': { anyOf: ['notifications.view', 'notifications.manage'] },

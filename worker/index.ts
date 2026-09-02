@@ -195,6 +195,21 @@ interface LicensingDocumentAccessObject {
   objectKey: string
 }
 
+interface PatrolEvidenceUploadOperation {
+  bucket: string
+  evidenceId: string
+  objectKey: string
+}
+
+interface PatrolEvidenceAccessObject {
+  action: 'preview' | 'download'
+  bucket: string
+  filename: string
+  mimeType: string
+  objectKey: string
+  ownerEmployeeId: string
+}
+
 interface HrDocumentWorkflowPayload {
   assignments?: unknown[]
   pagination?: Record<string, unknown>
@@ -297,7 +312,7 @@ const contentSecurityPolicy = [
 const baseSecurityHeaders = {
   'cross-origin-opener-policy': 'same-origin',
   'cross-origin-resource-policy': 'same-origin',
-  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(self), payment=(), usb=()',
   'referrer-policy': 'no-referrer',
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'SAMEORIGIN',
@@ -1610,6 +1625,255 @@ async function handleLicensingDocumentsApi(
   }
   const accessDocumentId = url.pathname.match(/^\/api\/v1\/licensing\/documents\/([0-9a-f-]{36})\/content$/i)?.[1]
   if (accessDocumentId) return handleLicensingDocumentAccess(request, environment, requestId, accessDocumentId)
+  return errorJson('not_found', requestId, 404)
+}
+
+function patrolStorageResumableEndpoint(supabaseUrl: string): string {
+  const url = new URL(supabaseUrl)
+  const projectReference = url.hostname.endsWith('.supabase.co')
+    ? url.hostname.slice(0, -'.supabase.co'.length)
+    : ''
+  const origin = projectReference
+    ? `https://${projectReference}.storage.supabase.co`
+    : url.origin
+  return `${origin}/storage/v1/upload/resumable`
+}
+
+async function createPrivateSignedUpload(
+  config: { serviceRoleKey: string, url: string },
+  bucket: string,
+  objectKey: string,
+): Promise<{ token: string }> {
+  const path = objectKey.split('/').map(encodeURIComponent).join('/')
+  const response = await supabaseJson<{ token?: string, url?: string }>(
+    `${config.url}/storage/v1/object/upload/sign/${encodeURIComponent(bucket)}/${path}`,
+    {
+      body: JSON.stringify({ upsert: false }),
+      headers: {
+        apikey: config.serviceRoleKey,
+        authorization: `Bearer ${config.serviceRoleKey}`,
+        'content-type': 'application/json',
+      },
+      method: 'POST',
+    },
+  )
+  const token = response.token ?? (response.url ? new URL(response.url, config.url).searchParams.get('token') ?? '' : '')
+  if (!token) throw new Error('Storage did not issue a signed upload token.')
+  return { token }
+}
+
+export function patrolEvidenceSignatureMatches(bytes: Uint8Array, mimeType: string): boolean {
+  if (mimeType === 'image/jpeg') return hasSignature(bytes, [0xff, 0xd8, 0xff])
+  if (mimeType === 'image/png') return hasSignature(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  if (mimeType === 'image/webp') {
+    return new TextDecoder().decode(bytes.slice(0, 4)) === 'RIFF'
+      && new TextDecoder().decode(bytes.slice(8, 12)) === 'WEBP'
+  }
+  if (mimeType === 'video/webm') return hasSignature(bytes, [0x1a, 0x45, 0xdf, 0xa3])
+  if (mimeType === 'video/mp4' || mimeType === 'video/quicktime') {
+    return new TextDecoder().decode(bytes.slice(4, 8)) === 'ftyp'
+  }
+  return false
+}
+
+async function readPrivateStoragePrefix(
+  config: { serviceRoleKey: string, url: string },
+  bucket: string,
+  objectKey: string,
+): Promise<Uint8Array> {
+  const response = await fetch(privateStorageObjectUrl(config, bucket, objectKey), {
+    headers: {
+      apikey: config.serviceRoleKey,
+      authorization: `Bearer ${config.serviceRoleKey}`,
+      range: 'bytes=0-63',
+    },
+  })
+  if (!response.ok || !response.body) throw new Error('The stored evidence prefix could not be read.')
+  const reader = response.body.getReader()
+  const first = await reader.read()
+  await reader.cancel().catch(() => undefined)
+  return (first.value ?? new Uint8Array()).slice(0, 64)
+}
+
+async function handlePatrolEvidenceUploadAuthorization(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+  hitId: string,
+): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  if (!validUuid(hitId)) throw new ApiError('invalid_patrol_hit', 422, 'The patrol hit identifier is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  await requireMaintenanceWriteAccess({ serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }, 'patrol')
+  const body = await readJsonBody(request)
+  const idempotencyKey = requiredText(body.idempotencyKey, 'Upload request ID', 36)
+  if (!validUuid(idempotencyKey)) throw new ApiError('invalid_patrol_upload', 422, 'The upload request identifier is invalid.')
+  const mediaKind = requiredText(body.mediaKind, 'Media kind', 10)
+  if (mediaKind !== 'photo' && mediaKind !== 'video') throw new ApiError('invalid_patrol_media', 422, 'Choose a photo or video.')
+  const filename = sanitizeHrDocumentFilename(requiredText(body.filename, 'File name', 255))
+  const mimeType = normalizedMimeType(requiredText(body.mimeType, 'File type', 160))
+  const extension = fileExtension(filename)
+  const allowedExtensions: Record<string, string[]> = {
+    'image/jpeg': ['jpg', 'jpeg'], 'image/png': ['png'], 'image/webp': ['webp'],
+    'video/mp4': ['mp4', 'm4v'], 'video/quicktime': ['mov'], 'video/webm': ['webm'],
+  }
+  if (!allowedExtensions[mimeType]?.includes(extension)) {
+    throw new ApiError('patrol_media_type_mismatch', 400, 'The patrol evidence file name and content type do not match.')
+  }
+  const byteSize = Number(body.byteSize)
+  const durationSeconds = body.durationSeconds === null || body.durationSeconds === undefined
+    ? null
+    : Math.ceil(Number(body.durationSeconds))
+  if (!Number.isSafeInteger(byteSize) || byteSize < 1 || byteSize > 524_288_000) {
+    throw new ApiError('invalid_patrol_media_size', 413, 'Patrol evidence must be 500 MB or smaller.')
+  }
+  if (durationSeconds !== null && (!Number.isInteger(durationSeconds) || durationSeconds < 1 || durationSeconds > 3600)) {
+    throw new ApiError('invalid_patrol_video_duration', 422, 'Patrol video length could not be accepted.')
+  }
+  const operation = await callRpc<PatrolEvidenceUploadOperation>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_begin_patrol_evidence_upload',
+    {
+      target_actor_id: session.context.employee_id,
+      target_byte_size: byteSize,
+      target_duration_seconds: durationSeconds,
+      target_hit_id: hitId,
+      target_idempotency_key: idempotencyKey,
+      target_media_kind: mediaKind,
+      target_mime_type: mimeType,
+      target_original_filename: filename,
+      target_request_id: requestId,
+    },
+    session.config.serviceRoleKey,
+  )
+  const signed = await createPrivateSignedUpload(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    operation.bucket,
+    operation.objectKey,
+  )
+  return json({
+    bucket: operation.bucket,
+    evidenceId: operation.evidenceId,
+    expiresInSeconds: 7200,
+    objectKey: operation.objectKey,
+    requestId,
+    resumableEndpoint: patrolStorageResumableEndpoint(session.config.url),
+    signedUploadToken: signed.token,
+  }, 201)
+}
+
+async function handlePatrolEvidenceUploadCompletion(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+  evidenceId: string,
+): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  if (!validUuid(evidenceId)) throw new ApiError('invalid_patrol_evidence', 422, 'The evidence identifier is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  const body = await readJsonBody(request)
+  const bucket = requiredText(body.bucket, 'Storage bucket', 100)
+  const objectKey = requiredText(body.objectKey, 'Storage object', 700)
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  const authorizedTarget = await callRpc<PatrolEvidenceUploadOperation>(
+    serviceConfig,
+    'service_get_patrol_evidence_upload_target',
+    { target_actor_id: session.context.employee_id, target_evidence_id: evidenceId },
+    session.config.serviceRoleKey,
+  )
+  if (bucket !== authorizedTarget.bucket || objectKey !== authorizedTarget.objectKey || bucket !== 'patrol-evidence' || objectKey.includes('..')) {
+    throw new ApiError('invalid_patrol_storage_target', 422, 'The evidence storage target does not match this protected upload.')
+  }
+  const stored = await fetch(privateStorageObjectUrl(session.config, bucket, objectKey), {
+    headers: {
+      apikey: session.config.serviceRoleKey,
+      authorization: `Bearer ${session.config.serviceRoleKey}`,
+    },
+    method: 'HEAD',
+  })
+  if (!stored.ok) throw new ApiError('patrol_evidence_not_stored', 409, 'The upload has not finished. Wait for it to complete and try again.')
+  const byteSize = Number(stored.headers.get('content-length'))
+  const mimeType = normalizedMimeType(stored.headers.get('content-type') ?? '')
+  if (!Number.isSafeInteger(byteSize) || byteSize < 1 || !mimeType) throw new ApiError('patrol_evidence_unverifiable', 502, 'The stored evidence could not be verified.')
+  const prefix = await readPrivateStoragePrefix(serviceConfig, bucket, objectKey)
+  if (!patrolEvidenceSignatureMatches(prefix, mimeType)) {
+    await deletePrivateStorageObject(serviceConfig, bucket, objectKey).catch(() => undefined)
+    await callRpc(
+      serviceConfig,
+      'service_fail_patrol_evidence_upload',
+      {
+        target_actor_id: session.context.employee_id,
+        target_evidence_id: evidenceId,
+        target_failure_code: 'invalid_media_signature',
+        target_request_id: requestId,
+      },
+      session.config.serviceRoleKey,
+    ).catch(() => undefined)
+    throw new ApiError('invalid_patrol_media_signature', 400, 'The uploaded file content does not match its approved photo or video type.')
+  }
+  const result = await callRpc<Record<string, unknown>>(
+    serviceConfig,
+    'service_complete_patrol_evidence_upload',
+    {
+      target_actor_id: session.context.employee_id,
+      target_evidence_id: evidenceId,
+      target_observed_byte_size: byteSize,
+      target_observed_mime_type: mimeType,
+      target_request_id: requestId,
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...result, requestId })
+}
+
+async function handlePatrolEvidenceAccess(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+  evidenceId: string,
+): Promise<Response> {
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  if (!validUuid(evidenceId)) throw new ApiError('invalid_patrol_evidence', 422, 'The evidence identifier is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  const action = new URL(request.url).searchParams.get('action') === 'download' ? 'download' : 'preview'
+  const target = await callRpc<PatrolEvidenceAccessObject>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_patrol_evidence_access',
+    {
+      target_action: action,
+      target_actor_id: session.context.employee_id,
+      target_evidence_id: evidenceId,
+      target_request_id: requestId,
+    },
+    session.config.serviceRoleKey,
+  )
+  if (target.ownerEmployeeId !== session.context.employee_id) {
+    await requireRecentDocumentMfa(request, session)
+  }
+  const stored = await fetchPrivateStorageObject(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    target.bucket,
+    target.objectKey,
+  )
+  if (!stored.ok || !stored.body) throw new ApiError('patrol_evidence_unavailable', 502, 'The protected patrol evidence could not be loaded.')
+  const filename = sanitizeHrDocumentFilename(target.filename).replaceAll('"', '_')
+  const headers = new Headers()
+  headers.set('cache-control', 'private, no-store, max-age=0')
+  headers.set('content-disposition', `${target.action === 'download' ? 'attachment' : 'inline'}; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`)
+  headers.set('content-security-policy', "sandbox; default-src 'none'; media-src 'self' blob:; img-src 'self' data: blob:")
+  headers.set('content-type', target.mimeType)
+  headers.set('pragma', 'no-cache')
+  return new Response(stored.body, { headers, status: 200 })
+}
+
+async function handlePatrolApi(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  const pathname = new URL(request.url).pathname
+  const uploadHitId = pathname.match(/^\/api\/v1\/patrol\/hits\/([0-9a-f-]{36})\/evidence\/upload-url$/i)?.[1]
+  if (uploadHitId) return handlePatrolEvidenceUploadAuthorization(request, environment, requestId, uploadHitId)
+  const completeEvidenceId = pathname.match(/^\/api\/v1\/patrol\/evidence\/([0-9a-f-]{36})\/complete$/i)?.[1]
+  if (completeEvidenceId) return handlePatrolEvidenceUploadCompletion(request, environment, requestId, completeEvidenceId)
+  const accessEvidenceId = pathname.match(/^\/api\/v1\/patrol\/evidence\/([0-9a-f-]{36})\/content$/i)?.[1]
+  if (accessEvidenceId) return handlePatrolEvidenceAccess(request, environment, requestId, accessEvidenceId)
   return errorJson('not_found', requestId, 404)
 }
 
@@ -4818,6 +5082,19 @@ export default {
             : errorJson('licensing_document_request_failed', requestId, 500, 'The protected licensing document request could not be completed.')
         }
       }
+    } else if (url.pathname.startsWith('/api/v1/patrol/')) {
+      try {
+        response = await handlePatrolApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('patrol_request_failed', requestId, 500, 'The protected Patrol request could not be completed.')
+        }
+      }
     } else if (url.pathname.startsWith('/api/v1/hr/recruiting')) {
       try {
         response = await handleHrRecruitingApi(request, environment, requestId)
@@ -4986,6 +5263,12 @@ export default {
         { target_full_reconciliation: fullReconciliation },
         config.serviceRoleKey,
       )
+      const patrol = await callRpc<Record<string, unknown>>(
+        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        'service_reconcile_patrol_obligations',
+        {},
+        config.serviceRoleKey,
+      )
       const scheduledAnnouncements = await callRpc<Record<string, unknown>>(
         { serviceRoleKey: config.serviceRoleKey, url: config.url },
         'service_publish_due_announcement_work_items',
@@ -4994,7 +5277,7 @@ export default {
       )
       const hrAutomation = await processHrAutomationJobs(environment, 10)
       const notifications = await processNotificationJobs(environment, 25)
-      console.info(JSON.stringify({ alertLifecycle, automation, cron: controller.cron, fullReconciliation, hrAutomation, jobRunId, notifications, scheduledAnnouncements, scheduledTime: controller.scheduledTime }))
+      console.info(JSON.stringify({ alertLifecycle, automation, cron: controller.cron, fullReconciliation, hrAutomation, jobRunId, notifications, patrol, scheduledAnnouncements, scheduledTime: controller.scheduledTime }))
     })())
   },
 }
