@@ -345,6 +345,23 @@ Completion criteria:
 - [ ] Authorized managers can identify outstanding and overdue requirements within their permitted scope without gaining access to unrelated employee or HR records.
 - [ ] Allow, deny, bypass, refresh, retry, multiple-action, superseded-version, time-zone, accessibility, and rollback tests pass before production activation.
 
+### My Time Snapshot Label Readability
+
+- Priority: **High**
+- Target window: Next focused My Time usability release
+- Status: Approved / queued from employee feedback; no implementation started
+- Added: 09/01/2026
+
+Increase the readability of the **Today**, **This Week**, **Pay Period**, and **Needs Review** labels in the My Time Snapshot. The current labels have been reported as too small and difficult to read.
+
+Required outcomes:
+
+- [ ] Increase the label font size and weight enough to be comfortably readable without overpowering the corresponding values.
+- [ ] Maintain strong contrast and visual hierarchy in both light and dark modes.
+- [ ] Preserve the compact snapshot layout without wrapping, clipping, crowding, or uneven card heights at supported desktop and mobile widths.
+- [ ] Verify browser zoom, responsive scaling, keyboard focus where applicable, and accessibility contrast before production release.
+- [ ] Apply the correction to the shared snapshot-card treatment so these four labels remain visually uniform rather than receiving unrelated one-off overrides.
+
 ## Recruiting & External Integrations
 
 ### Indeed Employer Integration and Recruiting Depot
