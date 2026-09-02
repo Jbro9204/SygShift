@@ -126,3 +126,12 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 # HRIS Stage 8 protected workspaces
 
 Talent, Learning, Employee Cases, Safety, and Assets are private HR domains with independent release gates. Their browser routes use the existing SygShift application shell, but protected data is read through authenticated Worker endpoints rather than direct browser access to private tables. Each endpoint requires its exact effective permission; Employee Cases and Safety additionally require recent MFA. Attachments remain in the Secure Document Platform, Licensing remains authoritative for credentials, and existing employee identities remain authoritative across every Stage 8 relationship. Compact worklists are bounded to 5, 10, or 20 records per page.
+
+## Enterprise Document Studio
+
+- Document Studio extends the existing private HR document vault. One canonical `hr_documents` record and its immutable versions may be associated with employee, client, site, post, shift, patrol, workflow, licensing, training, payroll, leave, contract, or other approved records without duplicating the binary.
+- Policy versions define consent, authentication, routing, retention, completion, and regulated-document requirements. Template versions pin one clean source PDF and store normalized field definitions independently from the source.
+- Signature envelopes pin an exact clean source version. Recipients, assigned fields, consent, recent identity evidence, signature appearance, trusted timestamps, events, final rendition, and audit certificate form one checksum-linked evidence chain.
+- The Worker is the only file-stream and finalization boundary. Browser code receives protected same-origin responses, never service credentials or permanent public storage URLs.
+- Finalization is idempotent and recoverable. Failed jobs use bounded exponential backoff, stale leases are reclaimable, five failures move the job to dead letter, and committed signature appearances are never removed during retry cleanup.
+- Upload, processing, signature execution, advanced editing, regulated documents, external signers, and organizational seals have independent release gates. The UI exposes no unsupported editor or OCR control while those gates are closed.

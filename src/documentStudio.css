@@ -1,0 +1,279 @@
+.my-documents-security {
+  align-items: center;
+  background: light-dark(#fff8e9, #201b13);
+  border: 1px solid light-dark(#e2c88d, #6c511f);
+  border-left: 4px solid #c18b2d;
+  border-radius: 12px;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 13px 16px;
+}
+
+.home-document-action {
+  align-items: center;
+  background: light-dark(#fff6df, #2a2114);
+  border: 1px solid light-dark(#e2bd6e, #8a6627);
+  border-left: 4px solid #c18b2d;
+  border-radius: 12px;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding: 13px 16px;
+}
+
+.home-document-action > div {
+  align-items: center;
+  display: flex;
+  gap: 11px;
+}
+
+.home-document-action span {
+  display: grid;
+  gap: 3px;
+}
+
+.home-document-action small {
+  color: light-dark(#6a6257, #c0b7aa);
+}
+
+.my-documents-security > div {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+}
+
+.my-documents-security span {
+  color: light-dark(#6a6257, #bdb5aa);
+  font-size: .86rem;
+}
+
+.my-documents-panel--wide {
+  margin-bottom: 16px;
+}
+
+.my-signature-row {
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+}
+
+.signature-execution-dialog {
+  width: min(1480px, calc(100vw - 28px));
+}
+
+.signature-execution {
+  display: grid;
+  gap: 0;
+  grid-template-columns: minmax(0, 1.55fr) minmax(360px, .75fr);
+  min-height: min(780px, calc(100dvh - 170px));
+}
+
+.signature-execution__document {
+  background: light-dark(#ece7df, #0e1114);
+  border-right: 1px solid light-dark(#d8d0c3, #353b41);
+  min-width: 0;
+  padding: 14px;
+}
+
+.signature-execution__panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  max-height: calc(100dvh - 170px);
+  overflow: auto;
+  padding: 18px;
+}
+
+.signature-execution__section {
+  background: light-dark(#fff, #171b1f);
+  border: 1px solid light-dark(#ded5c7, #353b41);
+  border-radius: 11px;
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+}
+
+.signature-execution__section h3,
+.signature-execution__section p {
+  margin: 0;
+}
+
+.signature-execution__section > label,
+.signature-field {
+  display: grid;
+  gap: 6px;
+  font-weight: 800;
+}
+
+.signature-field input,
+.signature-execution__section input,
+.signature-execution__section textarea {
+  width: 100%;
+}
+
+.signature-field--check,
+.signature-save {
+  align-items: flex-start;
+  display: flex !important;
+  gap: 9px;
+}
+
+.signature-field--check input,
+.signature-save input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  width: auto;
+}
+
+.signature-appearance__methods {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.signature-appearance__methods button {
+  align-items: center;
+  background: light-dark(#fff, #1c2125);
+  border: 1px solid light-dark(#d8cebe, #454b51);
+  border-radius: 8px;
+  color: inherit;
+  display: inline-flex;
+  gap: 6px;
+  justify-content: center;
+  min-height: 40px;
+  text-transform: capitalize;
+}
+
+.signature-appearance__methods button.active {
+  background: light-dark(#f2dfb8, #382c19);
+  border-color: light-dark(#c58b2b, #a1792d);
+  color: light-dark(#68440b, #efcc7b);
+}
+
+.signature-style-grid {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.signature-style-grid button {
+  background: light-dark(#fffdf9, #f7f2e8);
+  border: 1px solid light-dark(#d7cbb8, #7a6849);
+  border-radius: 8px;
+  color: #17130d;
+  font-size: 1.8rem;
+  min-height: 66px;
+  overflow: hidden;
+  padding: 7px 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signature-appearance canvas {
+  background: light-dark(#fffdf9, #fffdf9);
+  border: 1px dashed #a88852;
+  border-radius: 8px;
+  height: 150px;
+  max-width: 100%;
+  touch-action: none;
+  width: 100%;
+}
+
+.signature-saved-note {
+  background: light-dark(#f7f1e5, #211c14);
+  border-left: 3px solid #c18b2d;
+  border-radius: 7px;
+  color: light-dark(#665a48, #d3c7b5);
+  font-size: .86rem;
+  line-height: 1.45;
+  padding: 9px 11px;
+}
+
+.signature-upload {
+  align-items: center;
+  background: light-dark(#fbf7ef, #13171a);
+  border: 1px dashed light-dark(#cbb991, #70562a);
+  border-radius: 9px;
+  cursor: pointer;
+  display: flex !important;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 120px;
+  justify-content: center;
+  padding: 14px;
+  text-align: center;
+}
+
+.signature-upload input {
+  max-width: 260px;
+}
+
+.signature-execution__consent {
+  background: light-dark(#fff8e8, #241e14);
+  border: 1px solid light-dark(#dfc17e, #70531f);
+  border-radius: 11px;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.signature-execution__consent label {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+}
+
+.signature-execution__consent label > span {
+  color: light-dark(#5f574c, #c9c0b1);
+  display: grid;
+  font-size: .84rem;
+  gap: 6px;
+  line-height: 1.5;
+}
+
+.signature-execution__consent label strong {
+  color: var(--ink);
+}
+
+.signature-execution__consent small {
+  color: light-dark(#716655, #aaa092);
+  overflow-wrap: anywhere;
+}
+
+.signature-execution__alternate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 980px) {
+  .signature-execution {
+    grid-template-columns: 1fr;
+  }
+  .signature-execution__document {
+    border-bottom: 1px solid light-dark(#d8d0c3, #353b41);
+    border-right: 0;
+  }
+  .signature-execution__panel {
+    max-height: none;
+  }
+}
+
+@media (max-width: 680px) {
+  .my-documents-security,
+  .my-signature-row {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+  .my-documents-security {
+    flex-wrap: wrap;
+  }
+  .home-document-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .signature-style-grid,
+  .signature-appearance__methods {
+    grid-template-columns: 1fr;
+  }
+}

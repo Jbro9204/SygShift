@@ -5,6 +5,7 @@ import { ReleaseUpdateNotice } from './components/ReleaseUpdateNotice'
 import './App.css'
 import './theme.css'
 import './cursors.css'
+import './documentStudio.css'
 
 function App() {
   return (

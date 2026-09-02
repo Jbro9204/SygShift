@@ -83,3 +83,13 @@
 # HRIS Stage 8 security boundary
 
 Talent, Learning, Employee Cases, Safety, and Assets use deny-by-default permissions and independent database and Worker release gates. No Stage 8 permission is assigned by the foundation migration. Private tables have row-level security enabled, browser roles are revoked, and service access is rechecked against the actor's exact effective permission. Employee Cases and Safety require recent MFA at both the Worker and database layers. Restricted case, medical, performance, and financial-review data must never be inferred, exposed through general Directory access, or used for an automated adverse decision. Stage 8 events and asset acknowledgments are append-only.
+
+## Document Studio and electronic-signature boundary
+
+- Document Studio reuses the private HR document vault and its quarantine, scan, exact-version access, and audit controls. It does not create a parallel browser-accessible document store.
+- Every protected stream, template mutation, association, signature request, recipient action, and audit-certificate download is authorized at the Worker and database boundaries with exact effective permissions.
+- Signature execution is limited to the signed-in assigned employee. The preparer cannot retrieve or apply another employee's saved appearance, and a recipient cannot submit fields assigned to another signer role.
+- Elevated document policies require recent authenticator or FIDO verification. Consent text and version, authentication method/time, request ID, source version/checksum, intent, signature method, field-value checksum, final checksum, and evidence-package checksum are retained.
+- Original uploads and completed signed renditions are immutable. Finalization creates a new version, locks the document, and emits a checksum-linked audit certificate; later correction requires a new controlled version.
+- Signature images use a private bucket, random object keys, strict PNG/JPEG signature validation, one-megabyte limits, checksum verification, no-store streaming, and owner-only saved-appearance access.
+- All document and signature release gates default to disabled. HR uploads and signatures cannot be activated until the scanner canary, recovery drill, processing retry verification, and deliberate permission/release approval pass.

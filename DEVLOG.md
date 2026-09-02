@@ -23,6 +23,16 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 09/02/2026
+
+### Enterprise Document Studio and electronic signatures
+
+- Extended the dormant secure HR document platform into one shared Document Studio with versioned policies, templates, field definitions, record associations, signature envelopes, signer consent/authentication evidence, saved signatures, exact-version finalization, immutable signed PDFs, and audit certificates.
+- Added protected management and employee interfaces, a PDF.js viewer, compact bounded worklists, homepage pending-document actions, FIDO/authenticator step-up, retry/backoff/dead-letter processing, and audit-safe downloads.
+- Kept upload, processing, signatures, advanced editing, regulated documents, external signers, and seals fail-closed. No HR document, template, envelope, signature, or role assignment was created during installation.
+- True OCR, native PDF content editing, irreversible redaction, page restructuring, and malware release remain blocked on an approved document-processing/scanner service and recovery canary; no fake controls were exposed.
+- Full details and final release evidence are recorded in `docs/changelogs/CHANGELOG_09-02-2026_ENTERPRISE_DOCUMENT_STUDIO_AND_SIGNATURES.md`.
+
 ## 09/01/2026
 
 ### Action Center active/history separation

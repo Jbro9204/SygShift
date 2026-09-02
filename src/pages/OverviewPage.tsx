@@ -7,6 +7,7 @@ import {
   ClipboardCheck,
   Coffee,
   FileClock,
+  FileSignature,
   Megaphone,
   ShieldAlert,
   Timer,
@@ -30,6 +31,7 @@ import { getOpenOpportunities, opportunityLocation, opportunityTitle } from '../
 import { getOverviewMetrics, overviewMetricNote, type OverviewMetrics } from '../data/overview'
 import { getRequestCenter, type RequestCenter } from '../data/requests'
 import { getWeeklySchedule } from '../data/schedule'
+import { getMyDocumentActionCount } from '../data/documentStudio'
 import {
   activeTimeState,
   clockInWindowOpensAt,
@@ -217,6 +219,13 @@ export function OverviewPage() {
     refetchInterval: 60_000,
     retry: false,
   })
+  const documentActionQuery = useQuery({
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess,
+    queryFn: getMyDocumentActionCount,
+    queryKey: ['my-document-action-count'],
+    refetchInterval: 60_000,
+    retry: false,
+  })
   const punchMutation = useMutation({
     mutationFn: (input: { kind: TimeEventKind; shiftId?: string | null }) => recordTimeEvent(input),
     onError: earlyClockIn.handleMutationError,
@@ -286,6 +295,13 @@ export function OverviewPage() {
         </div>
         <button className="secondary-button" onClick={() => setTimeOffOpen(true)} type="button">Request Time Off</button>
       </section>
+
+      {documentActionQuery.data?.available && documentActionQuery.data.pendingCount > 0 ? (
+        <section className="home-document-action" aria-labelledby="home-document-action-title">
+          <div><FileSignature aria-hidden="true" size={22}/><span><strong id="home-document-action-title">Document action required</strong><small>{documentActionQuery.data.pendingCount} protected {documentActionQuery.data.pendingCount === 1 ? 'document is' : 'documents are'} waiting for you.</small></span></div>
+          <Link className="primary-action" to="/my-documents">Review now</Link>
+        </section>
+      ) : null}
 
       {operationsHome ? (
         <OperationsHome

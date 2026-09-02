@@ -10,6 +10,7 @@ import {
   verifyRegistrationResponse,
 } from '@simplewebauthn/server'
 import { strFromU8, unzipSync } from 'fflate'
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
@@ -244,6 +245,53 @@ interface HrDocumentWorkflowPayload {
   pagination?: Record<string, unknown>
   releaseState?: string
   requests?: unknown[]
+}
+
+interface DocumentStudioWorkspacePayload {
+  releaseState?: Record<string, boolean>
+  permissions?: Record<string, boolean>
+  summary?: Record<string, number>
+  templates?: unknown[]
+  envelopes?: unknown[]
+  policies?: unknown[]
+  processing?: unknown[]
+  pagination?: Record<string, unknown>
+}
+
+interface SignatureActionResult {
+  envelopeId: string
+  eventId?: string
+  finalizationRequired?: boolean
+  recipientId: string
+  status: string
+}
+
+interface SignatureFinalizationPayload {
+  state: 'processing' | 'completed'
+  jobId?: string
+  envelopeId: string
+  documentId?: string
+  documentTitle?: string
+  sourceVersionId?: string
+  sourceVersionNumber?: number
+  sourceBucket?: string
+  sourceObjectKey?: string
+  sourceFilename?: string
+  sourceMimeType?: string
+  sourceChecksum?: string
+  nextVersionNumber?: number
+  policy?: Record<string, unknown>
+  recipients?: Array<Record<string, unknown>>
+  events?: Array<Record<string, unknown>>
+  finalVersionId?: string
+}
+
+interface SignatureCertificateAccess {
+  bucket: string
+  objectKey: string
+  filename: string
+  mimeType: string
+  checksum: string
 }
 
 interface NotificationJob {
@@ -1328,6 +1376,29 @@ async function deletePrivateStorageObject(
     method: 'DELETE',
   })
   if (!response.ok && response.status !== 404) throw new Error('Quarantined storage cleanup failed.')
+}
+
+async function storePrivateStorageObject(
+  config: { serviceRoleKey: string, url: string },
+  bucket: string,
+  objectKey: string,
+  bytes: Uint8Array,
+  mimeType: string,
+): Promise<void> {
+  const body = bytes.buffer instanceof ArrayBuffer
+    ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+    : new Uint8Array(bytes).buffer
+  const response = await fetch(privateStorageObjectUrl(config, bucket, objectKey), {
+    body,
+    headers: {
+      apikey: config.serviceRoleKey,
+      authorization: `Bearer ${config.serviceRoleKey}`,
+      'content-type': mimeType,
+      'x-upsert': 'false',
+    },
+    method: 'POST',
+  })
+  if (!response.ok) throw new Error(`Protected storage rejected the generated file (${response.status}).`)
 }
 
 async function storeQuarantinedDocument(
@@ -2473,6 +2544,468 @@ async function handleCompleteHrDocumentAssignment(request: Request, environment:
   return json({ ...payload, requestId })
 }
 
+function boundedStudioPageSize(value: string | null): 5 | 10 | 20 {
+  const parsed = Number.parseInt(value ?? '10', 10)
+  return parsed === 5 || parsed === 20 ? parsed : 10
+}
+
+function optionalIsoTimestamp(value: unknown, field: string): string | null {
+  if (value === null || value === undefined || value === '') return null
+  const text = requiredText(value, field, 40)
+  const date = new Date(text)
+  if (Number.isNaN(date.getTime())) throw new ApiError('invalid_document_timestamp', 422, `${field} must be a valid date and time.`)
+  return date.toISOString()
+}
+
+function signatureAppearanceBytes(value: unknown): { bytes: Uint8Array, mimeType: 'image/png' | 'image/jpeg' } {
+  if (typeof value !== 'string') throw new ApiError('signature_appearance_required', 422, 'Choose or create a signature appearance.')
+  const match = value.match(/^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=]+)$/)
+  if (!match) throw new ApiError('invalid_signature_appearance', 422, 'The signature appearance must be a PNG or JPEG image.')
+  let bytes: Uint8Array
+  try {
+    const decoded = atob(match[2])
+    bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0))
+  } catch {
+    throw new ApiError('invalid_signature_appearance', 422, 'The signature appearance could not be read.')
+  }
+  if (bytes.byteLength < 50 || bytes.byteLength > 1024 * 1024) {
+    throw new ApiError('invalid_signature_appearance_size', 413, 'Signature appearances must be no larger than 1 MB.')
+  }
+  const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+  const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9
+  if ((!isPng && match[1] === 'image/png') || (!isJpeg && match[1] === 'image/jpeg')) {
+    throw new ApiError('invalid_signature_appearance', 422, 'The signature appearance file signature is invalid.')
+  }
+  return { bytes, mimeType: match[1] as 'image/png' | 'image/jpeg' }
+}
+
+function safePdfText(value: unknown, maximum = 500): string {
+  if (typeof value === 'string') return [...value].filter((character) => {
+    const code = character.charCodeAt(0)
+    return code === 9 || code === 10 || code === 13 || code >= 32
+  }).join('').slice(0, maximum)
+  if (value === null || value === undefined) return ''
+  return JSON.stringify(value).slice(0, maximum)
+}
+
+function signatureTimestamp(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString()
+}
+
+function drawWrappedAuditText(
+  page: ReturnType<PDFDocument['addPage']>,
+  font: Awaited<ReturnType<PDFDocument['embedFont']>>,
+  text: string,
+  x: number,
+  y: number,
+  maximumWidth: number,
+  size = 9,
+): number {
+  const words = text.split(/\s+/).filter(Boolean)
+  let line = ''
+  let cursorY = y
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word
+    if (font.widthOfTextAtSize(candidate, size) <= maximumWidth) {
+      line = candidate
+      continue
+    }
+    if (line) page.drawText(line, { color: rgb(0.16, 0.17, 0.18), font, size, x, y: cursorY })
+    cursorY -= size + 4
+    line = word
+  }
+  if (line) page.drawText(line, { color: rgb(0.16, 0.17, 0.18), font, size, x, y: cursorY })
+  return cursorY - size - 4
+}
+
+async function buildSignedPdf(
+  config: { serviceRoleKey: string, url: string },
+  payload: SignatureFinalizationPayload,
+  sourceBytes: Uint8Array,
+): Promise<Uint8Array> {
+  if (payload.sourceMimeType !== 'application/pdf') throw new Error('Signature finalization requires a PDF source document.')
+  const pdf = await PDFDocument.load(sourceBytes, { ignoreEncryption: false, updateMetadata: false })
+  const font = await pdf.embedFont(StandardFonts.Helvetica)
+  const recipients = Array.isArray(payload.recipients) ? payload.recipients : []
+  for (const recipient of recipients) {
+    const fields = Array.isArray(recipient.fields) ? recipient.fields as Array<Record<string, unknown>> : []
+    const signature = recipient.signature && typeof recipient.signature === 'object' ? recipient.signature as Record<string, unknown> : null
+    let signatureImage: Awaited<ReturnType<PDFDocument['embedPng']>> | Awaited<ReturnType<PDFDocument['embedJpg']>> | null = null
+    if (signature?.bucket && signature?.objectKey && signature?.checksum) {
+      const stored = await fetchPrivateStorageObject(config, String(signature.bucket), String(signature.objectKey))
+      if (!stored.ok) throw new Error('A recorded signature appearance is unavailable.')
+      const bytes = new Uint8Array(await stored.arrayBuffer())
+      if (await sha256BytesHex(bytes) !== signature.checksum) throw new Error('A recorded signature appearance failed its integrity check.')
+      const isPng = bytes[0] === 0x89 && bytes[1] === 0x50
+      signatureImage = isPng ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes)
+    }
+    for (const field of fields) {
+      const pageNumber = Number(field.pageNumber)
+      if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > pdf.getPageCount()) throw new Error('A template field references an invalid PDF page.')
+      const page = pdf.getPage(pageNumber - 1)
+      const { width: pageWidth, height: pageHeight } = page.getSize()
+      const x = Number(field.xRatio) * pageWidth
+      const width = Number(field.widthRatio) * pageWidth
+      const height = Number(field.heightRatio) * pageHeight
+      const y = pageHeight - (Number(field.yRatio) * pageHeight) - height
+      const fieldType = String(field.fieldType ?? '')
+      if (fieldType === 'signature' || fieldType === 'initials') {
+        if (signatureImage) {
+          const scale = Math.min(width / signatureImage.width, height / signatureImage.height)
+          page.drawImage(signatureImage, {
+            height: signatureImage.height * scale,
+            width: signatureImage.width * scale,
+            x: x + Math.max(0, (width - signatureImage.width * scale) / 2),
+            y: y + Math.max(0, (height - signatureImage.height * scale) / 2),
+          })
+        }
+        continue
+      }
+      const value = fieldType === 'signer_date'
+        ? signatureTimestamp(recipient.actedAt).slice(0, 10)
+        : safePdfText(field.valueText ?? field.valueJson)
+      if (!value) continue
+      const fontSize = Math.max(6, Math.min(11, height * 0.58))
+      page.drawText(value, { color: rgb(0.08, 0.09, 0.1), font, maxWidth: Math.max(1, width), size: fontSize, x: x + 2, y: y + Math.max(1, (height - fontSize) / 2) })
+    }
+  }
+  pdf.setProducer('SygShift Document Studio')
+  pdf.setModificationDate(new Date())
+  return pdf.save({ addDefaultPage: false, useObjectStreams: false })
+}
+
+async function buildSignatureAuditCertificate(
+  payload: SignatureFinalizationPayload,
+  finalChecksum: string,
+  packageChecksum: string,
+): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create()
+  const regular = await pdf.embedFont(StandardFonts.Helvetica)
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
+  const gold = rgb(0.78, 0.54, 0.18)
+  const recipients = Array.isArray(payload.recipients) ? payload.recipients : []
+  const events = Array.isArray(payload.events) ? payload.events : []
+  let page = pdf.addPage([612, 792])
+  let y = 744
+  const nextPage = () => { page = pdf.addPage([612, 792]); y = 744 }
+  const ensureSpace = (needed: number) => { if (y < 54 + needed) nextPage() }
+  page.drawText('SygShift Signature Audit Certificate', { color: gold, font: bold, size: 18, x: 48, y })
+  y -= 30
+  page.drawText(safePdfText(payload.documentTitle, 180), { color: rgb(0.08, 0.09, 0.1), font: bold, size: 13, x: 48, y })
+  y -= 24
+  y = drawWrappedAuditText(page, regular, `Envelope: ${payload.envelopeId}`, 48, y, 516)
+  y = drawWrappedAuditText(page, regular, `Source checksum: ${payload.sourceChecksum ?? ''}`, 48, y, 516)
+  y = drawWrappedAuditText(page, regular, `Final PDF checksum: ${finalChecksum}`, 48, y, 516)
+  y = drawWrappedAuditText(page, regular, `Evidence package checksum: ${packageChecksum}`, 48, y, 516)
+  y -= 10
+  page.drawText('Recipients and execution evidence', { color: gold, font: bold, size: 12, x: 48, y })
+  y -= 22
+  for (const recipient of recipients) {
+    ensureSpace(110)
+    page.drawText(safePdfText(recipient.legalName || recipient.role || 'Recipient', 180), { color: rgb(0.08, 0.09, 0.1), font: bold, size: 10, x: 48, y })
+    y -= 15
+    y = drawWrappedAuditText(page, regular, `Role: ${safePdfText(recipient.role)} · Action: ${safePdfText(recipient.requiredAction)} · Completed: ${signatureTimestamp(recipient.actedAt)}`, 60, y, 504)
+    const authentication = recipient.authentication && typeof recipient.authentication === 'object' ? recipient.authentication as Record<string, unknown> : null
+    if (authentication) y = drawWrappedAuditText(page, regular, `Authentication: ${safePdfText(authentication.method)} (${safePdfText(authentication.tier)}) · Verified: ${signatureTimestamp(authentication.verifiedAt)} · Request: ${safePdfText(authentication.requestId)}`, 60, y, 504)
+    const consent = recipient.consent && typeof recipient.consent === 'object' ? recipient.consent as Record<string, unknown> : null
+    if (consent) y = drawWrappedAuditText(page, regular, `Consent ${safePdfText(consent.version)} accepted ${signatureTimestamp(consent.acceptedAt)}: ${safePdfText(consent.text, 700)}`, 60, y, 504)
+    y -= 8
+  }
+  ensureSpace(80)
+  page.drawText('Event history', { color: gold, font: bold, size: 12, x: 48, y })
+  y -= 22
+  for (const event of events) {
+    ensureSpace(36)
+    y = drawWrappedAuditText(page, regular, `${signatureTimestamp(event.occurredAt)} · ${safePdfText(event.eventType)} · ${safePdfText(event.reason, 300)} · Request ${safePdfText(event.requestId)}`, 48, y, 516, 8)
+  }
+  pdf.setTitle(`Signature audit certificate - ${safePdfText(payload.documentTitle, 160)}`)
+  pdf.setAuthor('SygShift Document Studio')
+  pdf.setProducer('SygShift Document Studio')
+  pdf.setCreationDate(new Date())
+  return pdf.save({ addDefaultPage: false, useObjectStreams: false })
+}
+
+async function finalizeSignatureEnvelope(
+  config: { serviceRoleKey: string, url: string },
+  envelopeId: string,
+  requestId: string,
+): Promise<Record<string, unknown>> {
+  const payload = await callRpc<SignatureFinalizationPayload>(config, 'service_get_signature_finalization_payload', { target_envelope_id: envelopeId }, config.serviceRoleKey)
+  if (payload.state === 'completed') return { envelopeId, finalVersionId: payload.finalVersionId, status: 'completed' }
+  if (!payload.jobId || !payload.documentId || !payload.sourceBucket || !payload.sourceObjectKey || !payload.sourceChecksum) throw new Error('Signature finalization payload is incomplete.')
+  const source = await fetchPrivateStorageObject(config, payload.sourceBucket, payload.sourceObjectKey)
+  if (!source.ok) throw new Error('The immutable source document could not be loaded.')
+  const sourceBytes = new Uint8Array(await source.arrayBuffer())
+  if (await sha256BytesHex(sourceBytes) !== payload.sourceChecksum) throw new Error('The immutable source document failed its integrity check.')
+  const finalBytes = await buildSignedPdf(config, payload, sourceBytes)
+  const finalChecksum = await sha256BytesHex(finalBytes)
+  const packageChecksum = await sha256Hex(`${payload.sourceChecksum}:${finalChecksum}:${payload.envelopeId}`)
+  const auditBytes = await buildSignatureAuditCertificate(payload, finalChecksum, packageChecksum)
+  const auditChecksum = await sha256BytesHex(auditBytes)
+  const finalObjectKey = `${crypto.randomUUID()}/${crypto.randomUUID()}`
+  const auditObjectKey = `${crypto.randomUUID()}/${crypto.randomUUID()}`
+  const finalFilename = sanitizeHrDocumentFilename(`${payload.documentTitle ?? 'document'}-signed.pdf`)
+  const auditFilename = sanitizeHrDocumentFilename(`${payload.documentTitle ?? 'document'}-audit-certificate.pdf`)
+  let finalStored = false
+  let auditStored = false
+  try {
+    await storePrivateStorageObject(config, payload.sourceBucket, finalObjectKey, finalBytes, 'application/pdf')
+    finalStored = true
+    await storePrivateStorageObject(config, payload.sourceBucket, auditObjectKey, auditBytes, 'application/pdf')
+    auditStored = true
+    return await callRpc<Record<string, unknown>>(config, 'service_commit_signature_finalization', {
+      target_audit_bucket: payload.sourceBucket,
+      target_audit_checksum: auditChecksum,
+      target_audit_filename: auditFilename,
+      target_audit_object_key: auditObjectKey,
+      target_audit_size_bytes: auditBytes.byteLength,
+      target_envelope_id: payload.envelopeId,
+      target_final_bucket: payload.sourceBucket,
+      target_final_checksum: finalChecksum,
+      target_final_filename: finalFilename,
+      target_final_object_key: finalObjectKey,
+      target_final_size_bytes: finalBytes.byteLength,
+      target_generated_by_service: 'sygshift-worker/pdf-lib',
+      target_job_id: payload.jobId,
+      target_package_checksum: packageChecksum,
+      target_request_id: requestId,
+    }, config.serviceRoleKey)
+  } catch (error) {
+    if (finalStored) await deletePrivateStorageObject(config, payload.sourceBucket, finalObjectKey).catch(() => undefined)
+    if (auditStored) await deletePrivateStorageObject(config, payload.sourceBucket, auditObjectKey).catch(() => undefined)
+    await callRpc(config, 'service_fail_signature_finalization', {
+      target_envelope_id: payload.envelopeId,
+      target_error_code: error instanceof Error ? error.message.slice(0, 120) : 'finalization_failed',
+      target_job_id: payload.jobId,
+    }, config.serviceRoleKey).catch(() => undefined)
+    throw error
+  }
+}
+
+async function processSignatureFinalizationJobs(environment: Environment, limit = 2): Promise<{
+  completed: string[]
+  enabled: boolean
+  failed: Array<{ envelopeId: string, error: string }>
+  processed: number
+}> {
+  if (!hrDocumentPipelineEnabled(environment)) return { completed: [], enabled: false, failed: [], processed: 0 }
+  const config = configuredSupabase(environment)
+  if (!config) throw new ApiError('server_not_configured', 503, 'The protected data service is not configured.')
+  const jobs = await callRpc<Array<{ envelopeId: string }>>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_list_signature_finalization_jobs',
+    { target_limit: Math.max(1, Math.min(limit, 5)) },
+    config.serviceRoleKey,
+  )
+  if (!Array.isArray(jobs)) throw new Error('The signature finalization queue returned an invalid batch.')
+  const completed: string[] = []
+  const failed: Array<{ envelopeId: string, error: string }> = []
+  for (const job of jobs) {
+    if (!job || typeof job.envelopeId !== 'string' || !validUuid(job.envelopeId)) {
+      failed.push({ envelopeId: '', error: 'The signature finalization queue returned an invalid job.' })
+      continue
+    }
+    try {
+      await finalizeSignatureEnvelope(config, job.envelopeId, `scheduled-signature-finalization:${crypto.randomUUID()}`)
+      completed.push(job.envelopeId)
+    } catch (error) {
+      failed.push({ envelopeId: job.envelopeId, error: error instanceof Error ? error.message.slice(0, 240) : 'Signature finalization failed.' })
+    }
+  }
+  return { completed, enabled: true, failed, processed: jobs.length }
+}
+
+async function handleDocumentStudioWorkspace(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  const session = await requireAuthenticatedSession(request, environment)
+  await requireRecentDocumentMfa(request, session)
+  const url = new URL(request.url)
+  const search = url.searchParams.get('search')?.trim() ?? ''
+  if (search.length > 120) throw new ApiError('invalid_document_search', 422, 'Document search is limited to 120 characters.')
+  const status = url.searchParams.get('status')?.trim() ?? ''
+  if (status.length > 40) throw new ApiError('invalid_document_status', 422, 'The document status filter is invalid.')
+  const offset = Math.max(0, Number.parseInt(url.searchParams.get('offset') ?? '0', 10) || 0)
+  const payload = await callRpc<DocumentStudioWorkspacePayload>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_document_studio_workspace',
+    { target_actor_id: session.context.employee_id, target_offset: offset, target_page_size: boundedStudioPageSize(url.searchParams.get('pageSize')), target_search: search || null, target_status: status || null },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
+async function handleMySignatureWorkspace(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  const session = await requireAuthenticatedSession(request, environment)
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_my_signature_workspace',
+    { target_actor_id: session.context.employee_id },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
+async function handleMyDocumentActionCount(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  const session = await requireAuthenticatedSession(request, environment)
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_my_document_action_count',
+    { target_actor_id: session.context.employee_id },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
+async function handleMySignatureAdoption(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  const session = await requireAuthenticatedSession(request, environment)
+  const mfa = await requireRecentDocumentMfa(request, session)
+  const config = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  const target = await callRpc<{ bucket: string, objectKey: string, checksum: string, method: string, displayName: string }>(config, 'service_get_my_signature_adoption_access', {
+    target_actor_id: session.context.employee_id,
+    target_mfa_method: mfa.method,
+    target_mfa_verified_at: mfa.verifiedAt,
+    target_request_id: requestId,
+  }, config.serviceRoleKey)
+  const stored = await fetchPrivateStorageObject(config, target.bucket, target.objectKey)
+  if (!stored.ok) throw new ApiError('saved_signature_unavailable', 502, 'The saved signature appearance could not be loaded.')
+  const bytes = new Uint8Array(await stored.arrayBuffer())
+  if (bytes.byteLength === 0 || bytes.byteLength > 1024 * 1024 || await sha256BytesHex(bytes) !== target.checksum) {
+    throw new ApiError('saved_signature_integrity_failed', 409, 'The saved signature appearance failed its integrity check.')
+  }
+  const contentType = stored.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()
+  if (contentType !== 'image/png' && contentType !== 'image/jpeg') throw new ApiError('saved_signature_type_invalid', 409, 'The saved signature appearance has an invalid file type.')
+  return new Response(bytes, { headers: { 'cache-control':'private, no-store, max-age=0', 'content-type':contentType, pragma:'no-cache' }, status:200 })
+}
+
+async function handleMySignatureAccess(request: Request, environment: Environment, requestId: string, recipientId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  if (!validUuid(recipientId)) throw new ApiError('invalid_signature_recipient', 422, 'The assigned document action is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  const mfa = await requireRecentDocumentMfa(request, session)
+  const body = await readJsonBody(request)
+  const action = requiredText(body.action, 'Document action', 20)
+  if (!['preview','view','download'].includes(action)) throw new ApiError('invalid_document_action', 422, 'Choose preview, view, or download.')
+  const rawToken = generateOpaqueToken()
+  const grant = await callRpc<HrDocumentAccessGrant>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_issue_my_signature_document_access_grant',
+    { target_action: action, target_actor_id: session.context.employee_id, target_mfa_method: mfa.method, target_mfa_verified_at: mfa.verifiedAt, target_reason: requiredText(body.reason,'Access reason',1000), target_recipient_id: recipientId, target_request_id: requestId, target_token_hash: await sha256Hex(rawToken) },
+    session.config.serviceRoleKey,
+  )
+  return json({ accessPath: `/api/v1/hr/documents/access/${rawToken}`, expiresAt: grant.expiresAt, requestId }, 201)
+}
+
+async function handleMySignatureAction(request: Request, environment: Environment, requestId: string, recipientId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  if (!validUuid(recipientId)) throw new ApiError('invalid_signature_recipient', 422, 'The assigned document action is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  const mfa = await requireRecentDocumentMfa(request, session)
+  const body = await readJsonBody(request)
+  const action = requiredText(body.action, 'Document action', 30)
+  if (!['fill','review','acknowledge','approve','certify','initial','sign','countersign','witness','decline','request_correction'].includes(action)) throw new ApiError('invalid_signature_action', 422, 'Choose an available document action.')
+  const needsAppearance = ['initial','sign','countersign','witness'].includes(action)
+  const config = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  let appearance: { bucket: string, objectKey: string, checksum: string } | null = null
+  let actionRecorded = false
+  if (needsAppearance) {
+    const parsed = signatureAppearanceBytes(body.appearanceDataUrl)
+    const objectKey = `${session.context.employee_id}/${crypto.randomUUID()}`
+    await storePrivateStorageObject(config, 'signature-appearances', objectKey, parsed.bytes, parsed.mimeType)
+    appearance = { bucket: 'signature-appearances', objectKey, checksum: await sha256BytesHex(parsed.bytes) }
+  }
+  try {
+    const claims = accessTokenClaims(session.token)
+    const result = await callRpc<SignatureActionResult>(config, 'service_record_signature_action', {
+      target_action: action,
+      target_actor_id: session.context.employee_id,
+      target_appearance_bucket: appearance?.bucket ?? null,
+      target_appearance_checksum: appearance?.checksum ?? null,
+      target_appearance_object_key: appearance?.objectKey ?? null,
+      target_consent_shown_at: optionalIsoTimestamp(body.consentShownAt, 'Consent review time'),
+      target_consent_version: optionalText(body.consentVersion, 'Consent version', 80),
+      target_display_name: optionalText(body.displayName, 'Signature name', 200),
+      target_field_values: body.fieldValues && typeof body.fieldValues === 'object' && !Array.isArray(body.fieldValues) ? body.fieldValues : {},
+      target_mfa_method: mfa.method,
+      target_mfa_verified_at: mfa.verifiedAt,
+      target_reason: optionalText(body.reason, 'Reason', 2000),
+      target_recipient_id: recipientId,
+      target_request_id: requestId,
+      target_save_adoption: body.saveAdoption === true,
+      target_session_reference_hash: claims?.session_id ? await sha256Hex(claims.session_id) : null,
+      target_signature_method: needsAppearance ? requiredText(body.signatureMethod, 'Signature method', 20) : null,
+      target_signature_style: needsAppearance ? optionalText(body.signatureStyle, 'Signature style', 40) : null,
+    }, session.config.serviceRoleKey)
+    actionRecorded = true
+    const finalization = result.finalizationRequired ? await finalizeSignatureEnvelope(config, result.envelopeId, requestId) : null
+    return json({ ...result, finalization, requestId })
+  } catch (error) {
+    if (appearance && !actionRecorded) await deletePrivateStorageObject(config, appearance.bucket, appearance.objectKey).catch(() => undefined)
+    throw error
+  }
+}
+
+async function handleSignatureAuditCertificate(request: Request, environment: Environment, requestId: string, envelopeId: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  if (!validUuid(envelopeId)) throw new ApiError('invalid_signature_envelope', 422, 'The signature envelope is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  const mfa = await requireRecentDocumentMfa(request, session)
+  const body = await readJsonBody(request)
+  const config = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  const target = await callRpc<SignatureCertificateAccess>(config, 'service_get_signature_audit_certificate_access', {
+    target_actor_id: session.context.employee_id,
+    target_envelope_id: envelopeId,
+    target_mfa_method: mfa.method,
+    target_mfa_verified_at: mfa.verifiedAt,
+    target_reason: requiredText(body.reason, 'Access reason', 1000),
+    target_request_id: requestId,
+  }, session.config.serviceRoleKey)
+  const stored = await fetchPrivateStorageObject(config, target.bucket, target.objectKey)
+  if (!stored.ok || !stored.body) throw new ApiError('signature_certificate_unavailable', 502, 'The signature audit certificate could not be loaded.')
+  const headers = new Headers({ 'cache-control':'private, no-store, max-age=0', 'content-disposition':`attachment; filename="${sanitizeHrDocumentFilename(target.filename).replaceAll('"','_')}"`, 'content-type':'application/pdf', pragma:'no-cache' })
+  return new Response(stored.body,{ headers,status:200 })
+}
+
+async function handleDocumentStudioMutation(request: Request, environment: Environment, requestId: string, operation: string, resourceId?: string): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  const session = await requireAuthenticatedSession(request, environment)
+  const mfa = await requireRecentDocumentMfa(request, session)
+  const body = await readJsonBody(request)
+  const config = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  let rpc = ''
+  let args: Record<string, unknown> = { target_actor_id: session.context.employee_id, target_mfa_method: mfa.method, target_mfa_verified_at: mfa.verifiedAt, target_request_id: requestId }
+  if (operation === 'policy') {
+    rpc='service_create_document_policy'; args={ ...args,target_configuration:body }
+  } else if (operation === 'template') {
+    rpc='service_create_document_template'; args={ ...args,target_category:requiredText(body.category,'Category',100),target_change_reason:requiredText(body.changeReason,'Change reason',1000),target_description:optionalText(body.description,'Description',2000),target_document_id:requiredText(body.documentId,'Source document',36),target_name:requiredText(body.name,'Template name',180),target_policy_id:requiredText(body.policyId,'Document policy',36),target_template_code:requiredText(body.templateCode,'Template code',80) }
+  } else if (operation === 'template_field' && resourceId) {
+    rpc='service_add_document_template_field'; args={ target_actor_id:session.context.employee_id,target_field:body,target_mfa_method:mfa.method,target_mfa_verified_at:mfa.verifiedAt,target_template_version_id:resourceId }
+  } else if (operation === 'template_publish' && resourceId) {
+    rpc='service_publish_document_template'; args={ target_actor_id:session.context.employee_id,target_mfa_method:mfa.method,target_mfa_verified_at:mfa.verifiedAt,target_template_id:resourceId }
+  } else if (operation === 'envelope') {
+    const documentId=requiredText(body.documentId,'Document',36); const policyId=requiredText(body.policyId,'Policy',36); const idempotency=requiredText(body.idempotencyKey,'Request ID',36)
+    if(!validUuid(documentId)||!validUuid(policyId)||!validUuid(idempotency)) throw new ApiError('invalid_signature_envelope',422,'Choose a valid document, policy, and request ID.')
+    rpc='service_create_signature_envelope'; args={ ...args,target_document_id:documentId,target_expires_at:optionalIsoTimestamp(body.expiresAt,'Expiration'),target_idempotency_key:idempotency,target_message:optionalText(body.message,'Message',2000),target_policy_id:policyId,target_recipients:Array.isArray(body.recipients)?body.recipients:[],target_template_version_id:typeof body.templateVersionId==='string'&&validUuid(body.templateVersionId)?body.templateVersionId:null,target_title:requiredText(body.title,'Envelope title',180) }
+  } else if (operation === 'envelope_send' && resourceId) {
+    rpc='service_send_signature_envelope'; args={ ...args,target_envelope_id:resourceId }
+  } else if (operation === 'envelope_void' && resourceId) {
+    rpc='service_void_signature_envelope'; args={ ...args,target_envelope_id:resourceId,target_reason:requiredText(body.reason,'Void reason',2000) }
+  } else if (operation === 'link' && resourceId) {
+    const entityId=requiredText(body.entityId,'Record',36); if(!validUuid(entityId)) throw new ApiError('invalid_document_link',422,'Choose a valid record.')
+    rpc='service_link_document_record'; args={ ...args,target_document_id:resourceId,target_entity_id:entityId,target_entity_type:requiredText(body.entityType,'Record type',40),target_primary:body.primary===true,target_relationship_type:requiredText(body.relationshipType,'Relationship',40) }
+  } else throw new ApiError('document_operation_not_found',404,'The Document Studio operation was not found.')
+  const result=await callRpc<Record<string,unknown>>(config,rpc,args,session.config.serviceRoleKey)
+  return json({ ...result,requestId },201)
+}
+
 function disabledHrAutomationWorkspace(requestId: string): Record<string, unknown> {
   return {
     enabled: false,
@@ -3199,6 +3732,43 @@ async function handleHrDocumentsApi(
   requestId: string,
 ): Promise<Response> {
   const url = new URL(request.url)
+  if (url.pathname === '/api/v1/hr/documents/studio') {
+    return handleDocumentStudioWorkspace(request, environment, requestId)
+  }
+  if (url.pathname === '/api/v1/hr/documents/studio/policies') {
+    return handleDocumentStudioMutation(request, environment, requestId, 'policy')
+  }
+  if (url.pathname === '/api/v1/hr/documents/studio/templates') {
+    return handleDocumentStudioMutation(request, environment, requestId, 'template')
+  }
+  if (url.pathname === '/api/v1/hr/documents/studio/envelopes') {
+    return handleDocumentStudioMutation(request, environment, requestId, 'envelope')
+  }
+  if (url.pathname === '/api/v1/hr/documents/signatures/mine') {
+    return handleMySignatureWorkspace(request, environment, requestId)
+  }
+  if (url.pathname === '/api/v1/hr/documents/signatures/count') {
+    return handleMyDocumentActionCount(request, environment, requestId)
+  }
+  if (url.pathname === '/api/v1/hr/documents/signatures/adoption') {
+    return handleMySignatureAdoption(request, environment, requestId)
+  }
+  const templateFieldId = url.pathname.match(/^\/api\/v1\/hr\/documents\/studio\/templates\/([0-9a-f-]{36})\/fields$/i)?.[1]
+  if (templateFieldId) return handleDocumentStudioMutation(request, environment, requestId, 'template_field', templateFieldId)
+  const publishTemplateId = url.pathname.match(/^\/api\/v1\/hr\/documents\/studio\/templates\/([0-9a-f-]{36})\/publish$/i)?.[1]
+  if (publishTemplateId) return handleDocumentStudioMutation(request, environment, requestId, 'template_publish', publishTemplateId)
+  const sendEnvelopeId = url.pathname.match(/^\/api\/v1\/hr\/documents\/studio\/envelopes\/([0-9a-f-]{36})\/send$/i)?.[1]
+  if (sendEnvelopeId) return handleDocumentStudioMutation(request, environment, requestId, 'envelope_send', sendEnvelopeId)
+  const voidEnvelopeId = url.pathname.match(/^\/api\/v1\/hr\/documents\/studio\/envelopes\/([0-9a-f-]{36})\/void$/i)?.[1]
+  if (voidEnvelopeId) return handleDocumentStudioMutation(request, environment, requestId, 'envelope_void', voidEnvelopeId)
+  const documentLinkId = url.pathname.match(/^\/api\/v1\/hr\/documents\/studio\/documents\/([0-9a-f-]{36})\/links$/i)?.[1]
+  if (documentLinkId) return handleDocumentStudioMutation(request, environment, requestId, 'link', documentLinkId)
+  const signatureAccessId = url.pathname.match(/^\/api\/v1\/hr\/documents\/signatures\/([0-9a-f-]{36})\/access$/i)?.[1]
+  if (signatureAccessId) return handleMySignatureAccess(request, environment, requestId, signatureAccessId)
+  const signatureActionId = url.pathname.match(/^\/api\/v1\/hr\/documents\/signatures\/([0-9a-f-]{36})\/actions$/i)?.[1]
+  if (signatureActionId) return handleMySignatureAction(request, environment, requestId, signatureActionId)
+  const certificateEnvelopeId = url.pathname.match(/^\/api\/v1\/hr\/documents\/signatures\/([0-9a-f-]{36})\/certificate$/i)?.[1]
+  if (certificateEnvelopeId) return handleSignatureAuditCertificate(request, environment, requestId, certificateEnvelopeId)
   if (url.pathname === '/api/v1/hr/documents/workspace') {
     return handleHrDocumentWorkspace(request, environment, requestId)
   }
@@ -5448,8 +6018,9 @@ export default {
         config.serviceRoleKey,
       )
       const hrAutomation = await processHrAutomationJobs(environment, 10)
+      const signatureFinalization = await processSignatureFinalizationJobs(environment, 2)
       const notifications = await processNotificationJobs(environment, 25)
-      console.info(JSON.stringify({ alertLifecycle, automation, cron: controller.cron, fullReconciliation, hrAutomation, jobRunId, notifications, patrol, scheduledAnnouncements, scheduledTime: controller.scheduledTime }))
+      console.info(JSON.stringify({ alertLifecycle, automation, cron: controller.cron, fullReconciliation, hrAutomation, jobRunId, notifications, patrol, scheduledAnnouncements, scheduledTime: controller.scheduledTime, signatureFinalization }))
     })())
   },
 }

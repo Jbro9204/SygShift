@@ -18,7 +18,9 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { DocumentStudioDashboard } from '../components/DocumentStudioDashboard'
 import { ModalDialog } from '../components/ModalDialog'
+import { SecurePdfViewer } from '../components/SecurePdfViewer'
 import {
   getHrDocumentBlob,
   getHrDocumentWorkspace,
@@ -104,8 +106,8 @@ export function HrisDocumentsPage() {
       <header className="hr-documents-hero">
         <div>
           <p className="eyebrow">HR &amp; Finance</p>
-          <h1>HR Documents</h1>
-          <p>Upload, review, and retrieve protected employee records without exposing storage links or broad workforce data.</p>
+          <h1>Document Studio</h1>
+          <p>Create, route, sign, retain, and retrieve protected records from one controlled document system.</p>
         </div>
         <div className="hr-documents-hero__security">
           <ShieldCheck aria-hidden="true" size={24} />
@@ -116,8 +118,11 @@ export function HrisDocumentsPage() {
       <nav aria-label="People and HR sections" className="hr-people-tabs">
         <Link to="/hr">Overview</Link>
         <Link to="/hr/people">People</Link>
-        <Link className="active" to="/hr/documents">Documents</Link>
+        <Link className="active" to="/hr/documents">Document Studio</Link>
+        <Link to="/hr/documents/workflows">Requests &amp; assignments</Link>
       </nav>
+
+      <DocumentStudioDashboard documents={workspace} />
 
       {workspaceQuery.isPending ? (
         <DataStatePanel icon={Files} title="Loading protected documents">
@@ -125,7 +130,7 @@ export function HrisDocumentsPage() {
         </DataStatePanel>
       ) : null}
       {workspaceQuery.isError ? (
-        <DataStatePanel icon={AlertTriangle} tone="error" title="HR Documents unavailable">
+        <DataStatePanel icon={AlertTriangle} tone="error" title="Protected inventory unavailable">
           <p>{workspaceQuery.error instanceof Error ? workspaceQuery.error.message : 'The protected document workspace could not be loaded.'}</p>
         </DataStatePanel>
       ) : null}
@@ -324,7 +329,7 @@ function DocumentAccessModal({ action, document, onClose }: { action: AccessActi
     <ModalDialog busy={accessMutation.isPending} busyLabel={`Preparing protected ${action}…`} className="hr-document-modal hr-document-access-modal" description={`${document.employeeLegalName ?? 'Company record'} · ${document.category}`} onClose={onClose} title={`${action === 'preview' ? 'Preview' : 'Download'} ${document.title}`}>
       {preview ? (
         <div className="hr-document-preview">
-          {preview.mimeType === 'application/pdf' && preview.url ? <iframe src={preview.url} title={`Preview of ${document.title}`} /> : null}
+          {preview.mimeType === 'application/pdf' && preview.url ? <SecurePdfViewer title={document.title} url={preview.url} /> : null}
           {preview.mimeType.startsWith('image/') && preview.url ? <img alt={`Preview of ${document.title}`} src={preview.url} /> : null}
           {preview.text !== undefined ? <pre>{preview.text}</pre> : null}
           <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Close preview</button></div>
