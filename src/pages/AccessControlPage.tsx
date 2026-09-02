@@ -18,6 +18,7 @@ import {
 import { DataStatePanel } from '../components/DataStatePanel'
 import { EmployeeAccessWorkspace } from '../components/EmployeeAccessWorkspace'
 import { ModalDialog } from '../components/ModalDialog'
+import { SensitivePermissionReview } from '../components/SensitivePermissionReview'
 import {
   getAccessControlCenter,
   setAccessRolePermissions,
@@ -491,12 +492,7 @@ function RolePermissionEditor({
       {mutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{mutation.error.message}</p> : null}
       {confirmSensitive ? (
         <ModalDialog busy={mutation.isPending} busyLabel="Saving sensitive role permissions..." className="access-modal access-modal--confirmation" description="These permissions may expose protected information or administrative actions to everyone assigned to this role." onClose={() => setConfirmSensitive(false)} title="Confirm sensitive role access">
-          <div className="access-confirmation-list">
-            {newSensitiveCodes.map((code) => {
-              const permission = permissions.find((candidate) => candidate.code === code)
-              return <p key={code}><ShieldAlert aria-hidden="true" size={18} /><span><strong>{permission?.name ?? code}</strong><small>{permission?.description}</small></span></p>
-            })}
-          </div>
+          <SensitivePermissionReview permissionCodes={newSensitiveCodes} permissions={permissions} />
           <div className="modal-actions">
             <button className="access-control-button access-control-button--secondary" onClick={() => setConfirmSensitive(false)} type="button">Go back</button>
             <button className="access-control-button access-control-button--primary" disabled={mutation.isPending} onClick={() => mutation.mutate([...selectedCodes])} type="button"><ShieldCheck aria-hidden="true" size={18} />Confirm and save</button>

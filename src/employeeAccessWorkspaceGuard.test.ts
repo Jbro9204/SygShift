@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 const root = process.cwd()
 const accessControlPage = readFileSync(join(root, 'src', 'pages', 'AccessControlPage.tsx'), 'utf8')
 const workspace = readFileSync(join(root, 'src', 'components', 'EmployeeAccessWorkspace.tsx'), 'utf8')
+const sensitiveReview = readFileSync(join(root, 'src', 'components', 'SensitivePermissionReview.tsx'), 'utf8')
 const accessData = readFileSync(join(root, 'src', 'data', 'accessControl.ts'), 'utf8')
 const appCss = readFileSync(join(root, 'src', 'App.css'), 'utf8')
 const accessProfileMigration = readFileSync(
@@ -34,6 +35,18 @@ describe('employee access workspace guardrails', () => {
     expect(appCss).toContain('max-height: min(56vh, 520px)')
     expect(appCss).toContain('overflow-y: auto')
     expect(appCss).toContain('.access-employee-list::-webkit-scrollbar-thumb')
+  })
+
+  it('keeps sensitive confirmation and the role directory compact and cushioned', () => {
+    expect(workspace).toContain('<SensitivePermissionReview')
+    expect(accessControlPage).toContain('<SensitivePermissionReview')
+    expect(sensitiveReview).toContain('Grouped into {categories.length}')
+    expect(sensitiveReview).toContain('className="access-confirmation-group"')
+    expect(appCss).toContain('.access-confirmation-review {')
+    expect(appCss).toContain('max-height: min(44vh, 410px)')
+    expect(appCss).toContain('.access-role-directory {')
+    expect(appCss).toContain('grid-template-rows: auto minmax(0, 1fr) auto')
+    expect(appCss).toContain('.access-role-list::-webkit-scrollbar-thumb')
   })
 
   it('saves employee role memberships and permission additions atomically on the server', () => {

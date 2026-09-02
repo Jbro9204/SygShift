@@ -22,6 +22,7 @@ import {
   type PermissionDefinition,
 } from '../data/accessControl'
 import { ModalDialog } from './ModalDialog'
+import { SensitivePermissionReview } from './SensitivePermissionReview'
 
 const roleLabels: Record<string, string> = {
   admin: 'Admin',
@@ -423,9 +424,7 @@ export function EmployeeAccessWorkspace({
 
       {confirmSensitive ? (
         <ModalDialog busy={mutation.isPending} busyLabel="Applying protected access changes..." className="access-modal access-modal--confirmation" description="This employee will receive one or more sensitive permissions that may expose protected information or administrative actions." onClose={() => setConfirmSensitive(false)} title="Confirm sensitive access">
-          <div className="access-confirmation-list">
-            {newlyGrantedSensitive.map((code) => <p key={code}><ShieldAlert aria-hidden="true" size={18} /><span><strong>{permissionByCode.get(code)?.name ?? code}</strong><small>{permissionByCode.get(code)?.description}</small></span></p>)}
-          </div>
+          <SensitivePermissionReview permissionCodes={newlyGrantedSensitive} permissions={permissions} />
           <div className="modal-actions">
             <button className="access-control-button access-control-button--secondary" onClick={() => setConfirmSensitive(false)} type="button">Go back</button>
             <button className="access-control-button access-control-button--primary" disabled={mutation.isPending} onClick={confirmSave} type="button"><ShieldCheck aria-hidden="true" size={18} />Confirm and save</button>
