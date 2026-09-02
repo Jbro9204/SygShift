@@ -68,7 +68,7 @@ function canOpenNavigationItem(
 ): boolean {
   if (!isSupabaseConfigured) return true
   if (!sessionContext) return false
-  return canAccessRoute(item.path, sessionContext)
+  return canAccessRoute(routePathFromHref(item.path), sessionContext)
 }
 
 function routePathFromHref(href: string): string {
@@ -236,7 +236,9 @@ export function AppShell() {
     .filter((group) => group.items.length > 0)
   const homeVisible = canOpenNavigationItem(homeNavigationItem, sessionContext)
   const activeNavigationGroup = visibleNavigationGroups.find((group) => group.items.some((item) => (
-    item.path === '/' ? location.pathname === '/' : location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
+    routePathFromHref(item.path) === '/'
+      ? location.pathname === '/'
+      : location.pathname === routePathFromHref(item.path) || location.pathname.startsWith(`${routePathFromHref(item.path)}/`)
   )))?.label ?? null
 
   const activeMaintenance = maintenanceStatusQuery.data?.active[0] ?? null
@@ -616,9 +618,12 @@ export function AppShell() {
                 const Icon = item.icon
                 return (
                   <NavLink
-                    className={({ isActive }) =>
-                      isActive ? 'navigation-link navigation-link--active' : 'navigation-link'
-                    }
+                    className={({ isActive }) => {
+                      const queryMatches = item.path.includes('?')
+                        ? location.pathname === routePathFromHref(item.path) && location.search === `?${item.path.split('?')[1]}`
+                        : isActive
+                      return queryMatches ? 'navigation-link navigation-link--active' : 'navigation-link'
+                    }}
                     end={item.path === '/'}
                     key={item.path}
                     title={item.label}

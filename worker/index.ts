@@ -174,6 +174,16 @@ interface HrDocumentWorkspacePayload {
   vaults?: unknown[]
 }
 
+interface HrTemplateLibraryPayload {
+  categories?: unknown[]
+  items?: unknown[]
+  libraryVersion?: string
+  pagination?: Record<string, unknown>
+  permissions?: Record<string, boolean>
+  releaseState?: string
+  summary?: Record<string, number>
+}
+
 interface LicensingDocumentUploadMetadata {
   credentialId: string
   declaredMimeType: string
@@ -2232,6 +2242,42 @@ async function handleHrDocumentWorkspace(
   return json({ ...payload, requestId })
 }
 
+async function handleHrTemplateLibrary(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  const session = await requireAuthenticatedSession(request, environment)
+  const url = new URL(request.url)
+  const search = url.searchParams.get('search')?.trim() ?? ''
+  if (search.length > 120) throw new ApiError('invalid_template_search', 422, 'Document-library search is limited to 120 characters.')
+  const category = url.searchParams.get('category')?.trim() ?? ''
+  if (category.length > 120) throw new ApiError('invalid_template_category', 422, 'The document-library category is invalid.')
+  const audience = url.searchParams.get('audience')?.trim() ?? ''
+  if (audience && !['all_employees', 'supervisors_and_hr', 'hr_only'].includes(audience)) {
+    throw new ApiError('invalid_template_audience', 422, 'The document-library audience is invalid.')
+  }
+  const pageValue = Number.parseInt(url.searchParams.get('page') ?? '1', 10)
+  const page = Number.isInteger(pageValue) && pageValue > 0 ? pageValue : 1
+  const pageSizeValue = Number.parseInt(url.searchParams.get('pageSize') ?? '10', 10)
+  const pageSize = [5, 10, 20].includes(pageSizeValue) ? pageSizeValue : 10
+  const payload = await callRpc<HrTemplateLibraryPayload>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_hr_template_library',
+    {
+      target_actor_id: session.context.employee_id,
+      target_audience: audience || null,
+      target_category: category || null,
+      target_page: page,
+      target_page_size: pageSize,
+      target_search: search || null,
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
 async function handleHrDocumentScanCallback(
   request: Request,
   environment: Environment,
@@ -3732,6 +3778,9 @@ async function handleHrDocumentsApi(
   requestId: string,
 ): Promise<Response> {
   const url = new URL(request.url)
+  if (url.pathname === '/api/v1/hr/documents/library') {
+    return handleHrTemplateLibrary(request, environment, requestId)
+  }
   if (url.pathname === '/api/v1/hr/documents/studio') {
     return handleDocumentStudioWorkspace(request, environment, requestId)
   }

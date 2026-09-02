@@ -12,7 +12,7 @@ const reviewNavigationSource = readFileSync(join(sourceRoot, 'time', 'TimeReview
 
 describe('permission-aware route visibility guardrails', () => {
   it('uses the canonical route policy for primary and time-workspace navigation', () => {
-    expect(appShellSource).toContain('return canAccessRoute(item.path, sessionContext)')
+    expect(appShellSource).toContain('return canAccessRoute(routePathFromHref(item.path), sessionContext)')
     expect(timeWorkspaceSource).toContain("canAccessRoute('/time/review', session)")
     expect(timeWorkspaceSource).toContain("canAccessRoute('/time/team', session)")
     expect(timeWorkspaceSource).toContain("canAccessRoute('/time/operations', session)")

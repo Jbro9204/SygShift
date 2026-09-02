@@ -86,6 +86,8 @@ Talent, Learning, Employee Cases, Safety, and Assets use deny-by-default permiss
 
 ## Document Studio and electronic-signature boundary
 
+- The HR forms index releases searchable metadata separately from document binaries. Private catalog tables are inaccessible to anonymous and authenticated browser database roles; the Worker calls one service-only routine that rechecks an active employee and filters employee, supervisor, and HR audiences at the database boundary.
+- An indexed form is not downloadable merely because its metadata is searchable. File availability additionally requires an explicit canonical-document link, the existing document-pipeline release gate, a current immutable version, and a clean malware-scan state.
 - Document Studio reuses the private HR document vault and its quarantine, scan, exact-version access, and audit controls. It does not create a parallel browser-accessible document store.
 - Every protected stream, template mutation, association, signature request, recipient action, and audit-certificate download is authorized at the Worker and database boundaries with exact effective permissions.
 - Signature execution is limited to the signed-in assigned employee. The preparer cannot retrieve or apply another employee's saved appearance, and a recipient cannot submit fields assigned to another signer role.

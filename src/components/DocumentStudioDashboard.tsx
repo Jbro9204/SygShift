@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, FileCheck2, FileCog, FileSignature, FileSt
 import { Link } from 'react-router-dom'
 import { ModalDialog } from './ModalDialog'
 import { DataStatePanel } from './DataStatePanel'
+import { HrDocumentLibrary } from './HrDocumentLibrary'
 import {
   addDocumentTemplateField,
   createDocumentPolicy,
@@ -19,7 +20,7 @@ import {
 import type { HrDocumentWorkspace } from '../data/hrDocuments'
 import { formatOperationalDateTime } from '../lib/time'
 
-type StudioTab = 'overview' | 'templates' | 'signatures' | 'policies' | 'processing'
+type StudioTab = 'overview' | 'library' | 'templates' | 'signatures' | 'policies' | 'processing'
 
 function statusLabel(value: string) { return value.replaceAll('_', ' ') }
 
@@ -46,9 +47,10 @@ export function DocumentStudioDashboard({ documents }: { documents?: HrDocumentW
         <article className={data.summary.exceptions ? 'attention' : ''}><AlertTriangle/><span>Exceptions</span><strong>{data.summary.exceptions}</strong></article>
       </div>
       <div className="document-studio__tabs" role="tablist" aria-label="Document Studio sections">
-        {(['overview','templates','signatures','policies','processing'] as StudioTab[]).map((item) => <button aria-selected={tab===item} className={tab===item?'active':''} key={item} onClick={()=>setTab(item)} role="tab" type="button">{item === 'signatures' ? 'Signatures' : item[0].toUpperCase()+item.slice(1)}</button>)}
+        {(['overview','library','templates','signatures','policies','processing'] as StudioTab[]).map((item) => <button aria-selected={tab===item} className={tab===item?'active':''} key={item} onClick={()=>setTab(item)} role="tab" type="button">{item[0].toUpperCase()+item.slice(1)}</button>)}
       </div>
       {tab==='overview' ? <div className="document-studio__overview"><article><FileCheck2/><div><h3>One canonical record</h3><p>Documents keep immutable versions and link to employee, client, site, post, shift, patrol, and workflow records without copying the file.</p></div></article><article><FileSignature/><div><h3>Evidence-backed signatures</h3><p>Recipients, routing, consent, authentication, source checksum, final PDF, and audit certificate remain one protected chain.</p></div></article><article><Users/><div><h3>Employee self-service</h3><p>Assigned actions appear in <Link to="/my-documents">My Documents</Link> with secure preview, correction, decline, and completion controls.</p></div></article></div> : null}
+      {tab==='library' ? <HrDocumentLibrary mode="studio"/> : null}
       {tab==='templates' ? <StudioTemplates data={data.templates} onAddField={setFieldTarget} onCreate={()=>setModal('template')} onRefresh={refresh} permitted={data.permissions.canManageTemplates && Boolean(documents)} /> : null}
       {tab==='signatures' ? <StudioEnvelopes data={data.envelopes} onCreate={()=>setModal('envelope')} onRefresh={refresh} permitted={data.permissions.canRequestSignatures} released={data.releaseState.signatures} /> : null}
       {tab==='policies' ? <StudioPolicies data={data.policies} onCreate={()=>setModal('policy')} permitted={data.permissions.canManagePolicies} /> : null}

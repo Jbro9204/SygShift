@@ -25,6 +25,15 @@ deployment status, or major workflow assumptions change.
 
 ## 09/02/2026
 
+### Searchable Guardianship HR forms library
+
+- Indexed all 56 controlled forms from the supplied Guardianship HR Template Library v1.0 with authoritative code, title, category, record class, purpose, source filename, sensitivity, role audience, and plain-language aliases.
+- Added one shared, server-filtered catalog in employee My Documents and HR Document Studio, plus an all-employee **Document Library** navigation entry.
+- Added search, category/audience filters, expandable details, and compact 5/10/20 pagination with 10 rows by default.
+- Kept completed employee records separate and left protected file upload, preview, and download gates unchanged; entries remain **Indexed** until their canonical clean source is deliberately released.
+- The production rollback rehearsal compiled the complete migration and rolled back all 56 catalog rows and schema objects cleanly while preserving 78 employees, two role assignments, zero overrides, and the existing zero-document baseline.
+- Full release status is recorded in `docs/changelogs/CHANGELOG_09-02-2026_SEARCHABLE_HR_DOCUMENT_LIBRARY.md`.
+
 ### My Time pay-period total alignment
 
 - Repaired My Time's pay-period query order: employee views now load authoritative payroll rules first, calculate the anchored range from the trusted server timestamp, and only then request review rows.

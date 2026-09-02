@@ -62,7 +62,7 @@ describe('central access policy', () => {
   })
 
   it('keeps every navigation destination covered by the route policy', () => {
-    const navigationPaths = navigationGroups.flatMap((group) => group.items.map((item) => item.path))
+    const navigationPaths = navigationGroups.flatMap((group) => group.items.map((item) => item.path.split(/[?#]/, 1)[0]))
     expect(navigationPaths.every((path) => path in routeAccessPolicies)).toBe(true)
   })
 })

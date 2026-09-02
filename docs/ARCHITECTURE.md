@@ -129,6 +129,8 @@ Talent, Learning, Employee Cases, Safety, and Assets are private HR domains with
 
 ## Enterprise Document Studio
 
+- The searchable HR forms library is one metadata catalog shared by employee **My Documents** and HR **Document Studio**. It indexes the controlled GS-HR code, title, category, record class, purpose, plain-language aliases, audience, sensitivity, and source filename; it does not copy completed employee records or create a second document store.
+- Catalog results are filtered at the service-role database boundary to employee, supervisor, or HR scope and use bounded 5/10/20 pagination. A catalog entry becomes file-available only when it is deliberately linked to an immutable clean source in the existing protected document pipeline.
 - Document Studio extends the existing private HR document vault. One canonical `hr_documents` record and its immutable versions may be associated with employee, client, site, post, shift, patrol, workflow, licensing, training, payroll, leave, contract, or other approved records without duplicating the binary.
 - Policy versions define consent, authentication, routing, retention, completion, and regulated-document requirements. Template versions pin one clean source PDF and store normalized field definitions independently from the source.
 - Signature envelopes pin an exact clean source version. Recipients, assigned fields, consent, recent identity evidence, signature appearance, trusted timestamps, events, final rendition, and audit certificate form one checksum-linked evidence chain.
