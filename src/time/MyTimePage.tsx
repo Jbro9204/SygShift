@@ -26,6 +26,7 @@ import {
 } from '../data/timeOperations'
 import {
   getOwnTimekeepingReview,
+  getPayrollRules,
   getTimekeepingDashboard,
   payrollHours,
   reportAttendanceIssue,
@@ -75,12 +76,6 @@ export function MyTimePage() {
   const [attendanceReportNote, setAttendanceReportNote] = useState('')
   const [correctionEvent, setCorrectionEvent] = useState<TimekeepingEvent | null>(null)
   const [missingTimeRequestOpen, setMissingTimeRequestOpen] = useState(false)
-  const defaultPeriod = currentPayrollPeriod()
-  const missingTimeHistoryFromDate = format(
-    subDays(new Date(`${defaultPeriod.throughDate}T12:00:00`), 365),
-    'yyyy-MM-dd',
-  )
-
   const sessionQuery = useQuery({
     queryFn: getSessionContext,
     queryKey: ['session-context'],
@@ -95,22 +90,37 @@ export function MyTimePage() {
   })
 
   const dashboard = dashboardQuery.data
+  const rulesQuery = useQuery({
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
+    queryFn: getPayrollRules,
+    queryKey: ['my-time-payroll-rules'],
+  })
+  const payrollPeriod = currentPayrollPeriod(
+    dashboard?.serverTimestamp ? new Date(dashboard.serverTimestamp) : undefined,
+    rulesQuery.data,
+  )
+  const missingTimeHistoryFromDate = format(
+    subDays(new Date(`${payrollPeriod.throughDate}T12:00:00`), 365),
+    'yyyy-MM-dd',
+  )
   const reviewQuery = useQuery({
-    enabled: isSupabaseConfigured && ownTimeAllowed && Boolean(dashboard?.employee.id),
+    enabled: isSupabaseConfigured && ownTimeAllowed && Boolean(dashboard?.employee.id) && rulesQuery.isSuccess,
     queryFn: () => getOwnTimekeepingReview({
       employeeId: dashboard?.employee.id ?? '',
-      fromDate: defaultPeriod.fromDate,
-      throughDate: defaultPeriod.throughDate,
+      fromDate: payrollPeriod.fromDate,
+      throughDate: payrollPeriod.throughDate,
     }),
-    queryKey: ['my-time-review', dashboard?.employee.id, defaultPeriod.fromDate, defaultPeriod.throughDate],
+    queryKey: ['my-time-review', dashboard?.employee.id, payrollPeriod.fromDate, payrollPeriod.throughDate],
   })
   const missingTimeWorkspaceQuery = useQuery({
-    enabled: isSupabaseConfigured && ownTimeAllowed,
-    queryFn: () => getMissingTimeRequestWorkspace(missingTimeHistoryFromDate, defaultPeriod.throughDate),
-    queryKey: ['my-missing-time-workspace', missingTimeHistoryFromDate, defaultPeriod.throughDate],
+    enabled: isSupabaseConfigured && ownTimeAllowed && rulesQuery.isSuccess,
+    queryFn: () => getMissingTimeRequestWorkspace(missingTimeHistoryFromDate, payrollPeriod.throughDate),
+    queryKey: ['my-missing-time-workspace', missingTimeHistoryFromDate, payrollPeriod.throughDate],
   })
 
-  const reviewPeriod = reviewQuery.data?.payrollRules ? currentPayrollPeriod(undefined, reviewQuery.data.payrollRules) : defaultPeriod
+  const reviewPeriod = reviewQuery.data
+    ? { fromDate: reviewQuery.data.fromDate, throughDate: reviewQuery.data.throughDate }
+    : payrollPeriod
   const rows = useMemo(() => reviewQuery.data?.rows ?? [], [reviewQuery.data?.rows])
   const todayRows = useMemo(
     () => dashboard ? rows.filter((row) => row.operationalDate === dashboard.operationalDate) : [],
@@ -197,7 +207,7 @@ export function MyTimePage() {
     )
   }
 
-  if (sessionQuery.isPending || (ownTimeAllowed && dashboardQuery.isPending)) {
+  if (sessionQuery.isPending || (ownTimeAllowed && (dashboardQuery.isPending || rulesQuery.isPending))) {
     return (
       <main className="page page--sygshift-time">
         <DataStatePanel icon={Timer} title="Loading My Time">
@@ -222,11 +232,11 @@ export function MyTimePage() {
     )
   }
 
-  if (dashboardQuery.isError || !dashboard) {
+  if (dashboardQuery.isError || rulesQuery.isError || !dashboard) {
     return (
       <main className="page page--sygshift-time">
         <DataStatePanel icon={ShieldAlert} title="My Time unavailable" tone="error">
-          <p>{dashboardQuery.error?.message ?? 'Your time dashboard could not be loaded.'}</p>
+          <p>{dashboardQuery.error?.message ?? rulesQuery.error?.message ?? 'Your time dashboard could not be loaded.'}</p>
         </DataStatePanel>
       </main>
     )
@@ -282,7 +292,7 @@ export function MyTimePage() {
             summary={`${formatUsDateKey(reviewPeriod.fromDate)} - ${formatUsDateKey(reviewPeriod.throughDate)}`}
             title="Your Hours"
           />
-          <div className="time-command-grid my-time-summary-card__metrics" aria-busy={reviewQuery.isPending}>
+          <div className="time-command-grid my-time-summary-card__metrics" aria-busy={rulesQuery.isPending || reviewQuery.isPending}>
             <TimeMetricCard detail="Paid time recorded today." icon={Clock3} label="Today" value={`${payrollHours(totals.today)} hrs`} />
             <TimeMetricCard detail="Paid time for the current week." icon={CalendarDays} label="This Week" value={`${payrollHours(totals.week)} hrs`} />
             <TimeMetricCard detail="Paid time in the current pay period." icon={FileClock} label="Pay Period" value={`${payrollHours(totals.payPeriod)} hrs`} />

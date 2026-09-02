@@ -56,12 +56,15 @@ export function TimeCommandCenterPage() {
     refetchInterval: 15_000,
   })
   const rulesQuery = useQuery({
-    enabled: isSupabaseConfigured && canViewTeamTime(sessionQuery.data),
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     queryKey: ['time-command-rules'],
     queryFn: getPayrollRules,
   })
   const fallbackPeriod = currentPayrollPeriod()
-  const activePeriod = currentPayrollPeriod(undefined, rulesQuery.data)
+  const activePeriod = currentPayrollPeriod(
+    dashboardQuery.data?.serverTimestamp ? new Date(dashboardQuery.data.serverTimestamp) : undefined,
+    rulesQuery.data,
+  )
   const fromDate = activePeriod.fromDate || fallbackPeriod.fromDate
   const throughDate = activePeriod.throughDate || fallbackPeriod.throughDate
   const teamAllowed = canViewTeamTime(sessionQuery.data)
@@ -73,7 +76,7 @@ export function TimeCommandCenterPage() {
   const accountabilityAllowed = canAccessRoute('/time/accountability', sessionQuery.data)
 
   const reviewQuery = useQuery({
-    enabled: isSupabaseConfigured && Boolean(dashboardQuery.data),
+    enabled: isSupabaseConfigured && Boolean(dashboardQuery.data) && rulesQuery.isSuccess,
     queryKey: ['time-command-review', teamAllowed ? 'team' : 'self', dashboardQuery.data?.employee.id, fromDate, throughDate],
     queryFn: () => {
       if (teamAllowed) return getTimekeepingReview({ fromDate, throughDate })
@@ -85,13 +88,13 @@ export function TimeCommandCenterPage() {
     },
   })
   const attendanceSummaryQuery = useQuery({
-    enabled: isSupabaseConfigured && teamAllowed,
+    enabled: isSupabaseConfigured && teamAllowed && rulesQuery.isSuccess,
     queryKey: ['time-command-attendance-summary', fromDate, throughDate],
     queryFn: () => getTeamAttendanceSummary({ fromDate, throughDate }),
     refetchInterval: 30_000,
   })
   const operationsWorkspaceQuery = useQuery({
-    enabled: isSupabaseConfigured && teamAllowed,
+    enabled: isSupabaseConfigured && teamAllowed && rulesQuery.isSuccess,
     queryKey: ['time-command-operations-workspace', fromDate, throughDate],
     queryFn: () => getTimekeepingOperationsWorkspace(fromDate, throughDate),
     refetchInterval: 30_000,
@@ -117,7 +120,7 @@ export function TimeCommandCenterPage() {
     )
   }
 
-  if (sessionQuery.isPending || (ownTimeAllowed && dashboardQuery.isPending)) {
+  if (sessionQuery.isPending || (ownTimeAllowed && (dashboardQuery.isPending || rulesQuery.isPending))) {
     return (
       <main className="page page--sygshift-time">
         <DataStatePanel icon={Timer} title="Loading SygShift Time">
