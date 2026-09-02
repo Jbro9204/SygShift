@@ -25,6 +25,15 @@ deployment status, or major workflow assumptions change.
 
 ## 09/02/2026
 
+### My Time pay-period total alignment
+
+- Repaired My Time's pay-period query order: employee views now load authoritative payroll rules first, calculate the anchored range from the trusted server timestamp, and only then request review rows.
+- The displayed period now comes from the returned review boundaries, so a card can no longer be labeled with one date range while totaling another. Time Command Center employee totals use the same rule-first boundary.
+- Read-only production diagnosis confirmed the report: the correct 08/23–09/05 range contains 2,406 paid minutes (40.10 hours), while the incorrect 08/30–09/12 fallback contained 1,206 minutes (20.10 hours). No production records were changed.
+- Full validation passed: TypeScript, zero-warning lint, 152 test files / 737 tests, both production builds, and all 88 desktop/mobile Playwright checks.
+- Pushed implementation commit `f33b19f` and deployed Cloudflare Worker version `f42d7e80-a378-44fc-ac57-acdad654064a`; primary and fallback login, health, readiness, and deployed asset checks passed.
+- Full details are recorded in `docs/changelogs/CHANGELOG_09-02-2026_MY_TIME_PAY_PERIOD_TOTAL_ALIGNMENT.md`.
+
 ### Patrol route edit and address persistence repair
 
 - Repaired the existing-route branch of `save_patrol_route`, which rejected every route edit with PostgreSQL `42702` because the local `route_id` variable conflicted with the route-version column.
