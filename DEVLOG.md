@@ -32,6 +32,8 @@ deployment status, or major workflow assumptions change.
 - Added search, category/audience filters, expandable details, and compact 5/10/20 pagination with 10 rows by default.
 - Kept completed employee records separate and left protected file upload, preview, and download gates unchanged; entries remain **Indexed** until their canonical clean source is deliberately released.
 - The production rollback rehearsal compiled the complete migration and rolled back all 56 catalog rows and schema objects cleanly while preserving 78 employees, two role assignments, zero overrides, and the existing zero-document baseline.
+- Applied and recorded migration `20260902232050_searchable_hr_template_library.sql`, pushed implementation commit `7834464`, and deployed Cloudflare Worker version `915f4548-ab9e-40ab-94af-b755d466c542`.
+- Full validation passed: TypeScript, zero-warning lint, 154 test files / 746 tests, production builds, and all 100 desktop/mobile browser checks. Primary and fallback health/readiness returned HTTP 200 and the anonymous library endpoint returned the expected HTTP 401.
 - Full release status is recorded in `docs/changelogs/CHANGELOG_09-02-2026_SEARCHABLE_HR_DOCUMENT_LIBRARY.md`.
 
 ### My Time pay-period total alignment

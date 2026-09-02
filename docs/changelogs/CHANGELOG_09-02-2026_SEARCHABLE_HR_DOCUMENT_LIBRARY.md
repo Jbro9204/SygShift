@@ -42,8 +42,9 @@ SygShift now has one searchable index for the complete Guardianship HR Template 
 ## Release status
 
 - Database migration: applied and recorded.
-- Git: pending release commit in this run.
-- Cloudflare: pending deployment in this run.
+- Git implementation commit: `7834464` pushed to `origin/main`.
+- Cloudflare Worker version: `915f4548-ab9e-40ab-94af-b755d466c542` deployed.
+- Primary and fallback app, login, health, and readiness endpoints returned HTTP 200; the anonymous library endpoint returned the expected HTTP 401, and the live bundles contain the library navigation and search experience.
 
 ## Remaining controlled step
 
