@@ -3012,6 +3012,98 @@
   border-color: #b87813;
 }
 
+.hr-file-card__edit--danger {
+  color: light-dark(#8f261f, #ffd3ce);
+  background: light-dark(#fff2ef, #4a201d);
+  border-color: light-dark(#dca7a1, #a94a42);
+}
+
+.hr-file-card__edit--danger:hover,
+.hr-file-card__edit--danger:focus-visible {
+  color: light-dark(#64140f, #fff);
+  background: light-dark(#ffe4df, #612621);
+  border-color: light-dark(#bd5148, #d66b62);
+}
+
+.hr-file-termination-saved {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 14px;
+  padding: 12px 14px;
+  color: light-dark(#74231d, #ffd3ce);
+  background: light-dark(#fff2ef, #4a201d);
+  border: 1px solid light-dark(#dda7a1, #a94a42);
+  border-radius: 10px;
+}
+
+.hr-file-termination-saved > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.hr-file-termination-saved > span {
+  display: grid;
+  gap: 3px;
+  line-height: 1.4;
+}
+
+.hr-termination-modal {
+  width: min(700px, calc(100vw - 24px));
+}
+
+.hr-termination-modal form {
+  display: grid;
+  gap: 16px;
+}
+
+.hr-termination-modal form > label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.hr-termination-modal form > label small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.hr-termination-modal form > label input,
+.hr-termination-modal form > label textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.hr-termination-modal__warning {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 13px;
+  padding: 16px;
+  color: light-dark(#74231d, #ffd3ce);
+  background: light-dark(#fff2ef, #4a201d);
+  border: 1px solid light-dark(#dca7a1, #a94a42);
+  border-radius: 12px;
+}
+
+.hr-termination-modal__warning > svg {
+  margin-top: 2px;
+}
+
+.hr-termination-modal__warning strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 16px;
+}
+
+.hr-termination-modal__warning p {
+  margin: 0;
+  line-height: 1.5;
+}
+
 .hr-file-card dl,
 .hr-file-contacts dl {
   display: grid;
@@ -25180,6 +25272,96 @@ button.patrol-overview-row:focus-visible {
 .user-admin-form input[type="email"],
 .user-admin-form input[name="mobilePhone"] {
   font-size: 15px;
+}
+
+.user-admin-access-roles {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 2px 0 0;
+  padding: 16px;
+  background: light-dark(#fbf8f2, #1d2227);
+  border: 1px solid light-dark(#e1d4bf, #33383d);
+  border-radius: 12px;
+}
+
+.user-admin-access-roles legend {
+  padding: 0 7px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.user-admin-access-roles > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.user-admin-access-roles__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+
+.user-admin-access-role {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 62px;
+  padding: 11px 12px;
+  background: light-dark(#fff, #171b1f);
+  border: 1px solid light-dark(#ded4c5, #41474d);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.user-admin-access-role.is-selected {
+  background: light-dark(#fff4d9, #342817);
+  border-color: light-dark(#c58a29, #a77a27);
+  box-shadow: inset 3px 0 0 light-dark(#b97915, #e0b65a);
+}
+
+.user-admin-access-role input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: light-dark(#b97915, #e0b65a);
+}
+
+.user-admin-access-role > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.user-admin-access-role strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.user-admin-access-role small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.user-admin-access-roles:disabled .user-admin-access-role {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+@media (max-width: 720px) {
+  .user-admin-access-roles__grid {
+    grid-template-columns: 1fr;
+    max-height: 300px;
+  }
 }
 
 .credential-management-panel {

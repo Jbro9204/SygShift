@@ -48,6 +48,10 @@ import {
 import { continentalUsTimeZones } from '../lib/usTimeZones'
 import type { SecurityKeySummary } from '../data/securityKeys'
 import { getSessionContext } from '../data/auth'
+import {
+  getAccessControlCenter,
+  type AccessRoleDefinition,
+} from '../data/accessControl'
 import { preferredEmployeeDeliveryEmail } from '../lib/emailRecipients'
 import { formatOperationalDateTime } from '../lib/time'
 import { summarizeUserAccounts } from '../lib/userAccountMetrics'
@@ -76,6 +80,7 @@ const employmentLabels: Record<EmploymentType, string> = {
 }
 
 const EMPTY_USERS: AdminUser[] = []
+const EMPTY_ACCESS_ROLES: AccessRoleDefinition[] = []
 
 type AccountActivityFilter = 'all' | 'pending_setup' | 'activated' | 'signed_in' | 'never_signed_in'
 
@@ -111,7 +116,11 @@ function employeeFormPayload(
   const data = new FormData(form)
   const value = (key: string) => String(data.get(key) ?? '').trim()
   const optional = (key: string) => value(key) || null
+  const accessRoleIds = data.has('manageAccessRoles')
+    ? data.getAll('accessRoleId').map((roleId) => String(roleId))
+    : undefined
   return {
+    accessRoleIds,
     companyEmail: optional('companyEmail'),
     employeeId,
     employeeNumber: optional('employeeNumber'),
@@ -198,6 +207,9 @@ function AccountActivityPanel({ user }: { user: AdminUser }) {
 }
 
 function EmployeeForm({
+  accessRoles,
+  accessRolesReady,
+  assignedAccessRoleIds = [],
   canEditAdminRole,
   canEditBasic,
   canSeparate,
@@ -209,6 +221,9 @@ function EmployeeForm({
   pending,
   showActions = true,
 }: {
+  accessRoles: AccessRoleDefinition[]
+  accessRolesReady: boolean
+  assignedAccessRoleIds?: string[]
   canEditAdminRole: boolean
   canEditBasic: boolean
   canSeparate: boolean
@@ -220,6 +235,8 @@ function EmployeeForm({
   pending: boolean
   showActions?: boolean
 }) {
+  const [primaryRole, setPrimaryRole] = useState<AppRole>(employee?.role ?? 'guard')
+  const [selectedAccessRoleIds, setSelectedAccessRoleIds] = useState(() => new Set(assignedAccessRoleIds))
   const canEditThisProfile = canEditBasic
     && (canEditAdminRole || employee?.role !== 'admin')
     && (canSeparate || employee?.status !== 'separated')
@@ -228,6 +245,34 @@ function EmployeeForm({
     event.preventDefault()
     if (!canEditThisProfile) return
     onSubmit(employeeFormPayload(event.currentTarget, employee?.id, employee?.preferredName))
+  }
+
+  const primaryRoleOptions = accessRoles
+    .filter((role): role is AccessRoleDefinition & { baseAppRole: AppRole } => role.systemRole && role.baseAppRole !== null)
+    .sort((left, right) => left.name.localeCompare(right.name))
+  const additionalRoles = accessRoles
+    .filter((role) => !(role.systemRole && role.baseAppRole === primaryRole))
+    .sort((left, right) => left.name.localeCompare(right.name))
+
+  function changePrimaryRole(nextRole: AppRole) {
+    setPrimaryRole(nextRole)
+    const inheritedRole = accessRoles.find((role) => role.systemRole && role.baseAppRole === nextRole)
+    if (inheritedRole) {
+      setSelectedAccessRoleIds((current) => {
+        const next = new Set(current)
+        next.delete(inheritedRole.id)
+        return next
+      })
+    }
+  }
+
+  function toggleAccessRole(roleId: string) {
+    setSelectedAccessRoleIds((current) => {
+      const next = new Set(current)
+      if (next.has(roleId)) next.delete(roleId)
+      else next.add(roleId)
+      return next
+    })
   }
 
   return (
@@ -253,13 +298,10 @@ function EmployeeForm({
       <div className="form-grid form-grid--three">
         <label>
           <span>Role</span>
-          <select defaultValue={employee?.role ?? 'guard'} disabled={!canEditThisProfile} name="role">
-            <option value="guard">Guard</option>
-            <option value="dispatcher">Dispatcher</option>
-            <option value="scheduler">Scheduler</option>
-            <option value="recruiting_licensing">Recruiting & Licensing</option>
-            <option value="supervisor">Supervisor</option>
-            <option disabled={!canEditAdminRole} value="admin">Admin</option>
+          <select disabled={!canEditThisProfile} name="role" onChange={(event) => changePrimaryRole(event.target.value as AppRole)} value={primaryRole}>
+            {(primaryRoleOptions.length ? primaryRoleOptions : Object.entries(roleLabels).map(([baseAppRole, name]) => ({ baseAppRole: baseAppRole as AppRole, name }))).map((role) => (
+              <option disabled={role.baseAppRole === 'admin' && !canEditAdminRole} key={role.baseAppRole} value={role.baseAppRole}>{role.name}</option>
+            ))}
           </select>
         </label>
         <label>
@@ -294,6 +336,23 @@ function EmployeeForm({
         <label><span>Personal email</span><input defaultValue={employee?.personalEmail ?? ''} disabled={!canEditThisProfile} name="personalEmail" type="email" /></label>
         <label><span>Company email</span><input defaultValue={employee?.companyEmail ?? ''} disabled={!canEditThisProfile} name="companyEmail" type="email" /></label>
       </div>
+      {canEditAdminRole ? (
+        <fieldset className="user-admin-access-roles" disabled={!canEditThisProfile || !accessRolesReady}>
+          <legend>Additional access roles</legend>
+          <p>The primary role above is inherited automatically. Select any other active role this employee should also receive.</p>
+          {accessRolesReady ? <input name="manageAccessRoles" type="hidden" value="true" /> : null}
+          {accessRolesReady ? (
+            <div className="user-admin-access-roles__grid">
+              {additionalRoles.map((role) => (
+                <label className={selectedAccessRoleIds.has(role.id) ? 'user-admin-access-role is-selected' : 'user-admin-access-role'} key={role.id}>
+                  <input checked={selectedAccessRoleIds.has(role.id)} name="accessRoleId" onChange={() => toggleAccessRole(role.id)} type="checkbox" value={role.id} />
+                  <span><strong>{role.name}</strong><small>{role.systemRole ? 'Built-in role' : 'Specialized role'}{role.mfaRequired ? ' · MFA required' : ''}</small></span>
+                </label>
+              ))}
+            </div>
+          ) : <div className="form-note">The complete role library could not be loaded. Profile changes will preserve existing role memberships.</div>}
+        </fieldset>
+      ) : null}
       {showActions ? (
         <div className="modal-actions">
           <button className="secondary-button" onClick={onCancel} type="button">Cancel</button>
@@ -307,6 +366,9 @@ function EmployeeForm({
 }
 
 function ManageUserModal({
+  accessRoles,
+  accessRolesReady,
+  assignedAccessRoleIds,
   canDeleteUsers,
   canEditAdminRole,
   canEditBasic,
@@ -317,6 +379,9 @@ function ManageUserModal({
   employee,
   onClose,
 }: {
+  accessRoles: AccessRoleDefinition[]
+  accessRolesReady: boolean
+  assignedAccessRoleIds: string[]
   canDeleteUsers: boolean
   canEditAdminRole: boolean
   canEditBasic: boolean
@@ -341,6 +406,9 @@ function ManageUserModal({
   const [confirmingMfaReset, setConfirmingMfaReset] = useState(false)
   const [removingEmployee, setRemovingEmployee] = useState(false)
   const deliveryEmail = preferredEmployeeDeliveryEmail(employee.personalEmail, employee.companyEmail)
+  const assignedRoleNames = assignedAccessRoleIds
+    .map((roleId) => accessRoles.find((role) => role.id === roleId)?.name)
+    .filter((name): name is string => Boolean(name))
 
   const securityKeysQuery = useQuery({
     enabled: activeTab === 'security' && canManageLogin && employee.accountStatus === 'active',
@@ -357,6 +425,7 @@ function ManageUserModal({
         replaceDirectoryUser(current, updatedEmployee),
       )
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
+      await queryClient.invalidateQueries({ queryKey: ['access-control-center'], refetchType: 'active' })
     },
   })
   const accountStateMutation = useMutation({
@@ -439,6 +508,7 @@ function ManageUserModal({
     employee.mobilePhone ?? '',
     employee.personalEmail ?? '',
     employee.companyEmail ?? '',
+    assignedAccessRoleIds.join(','),
   ].join('|')
   const profileFormId = `employee-profile-${employee.id}`
   const canEditThisProfile = canEditBasic
@@ -491,7 +561,8 @@ function ManageUserModal({
           </div>
           <div>
             <span>Role</span>
-            <strong>{roleLabels[employee.role]}</strong>
+            <strong>{assignedRoleNames.length ? assignedRoleNames.join(', ') : roleLabels[employee.role]}</strong>
+            {assignedRoleNames.length ? <small>Primary {roleLabels[employee.role]}</small> : null}
           </div>
           <div>
             <span>Account</span>
@@ -515,6 +586,9 @@ function ManageUserModal({
               <p>Update legal identity, contact information, role, and employment status.</p>
             </div>
             <EmployeeForm
+              accessRoles={accessRoles}
+              accessRolesReady={accessRolesReady}
+              assignedAccessRoleIds={assignedAccessRoleIds}
               canEditAdminRole={canEditAdminRole}
               canEditBasic={canEditBasic}
               canSeparate={canSeparate}
@@ -849,7 +923,7 @@ function EmployeeRemovalModal({
 export function UserAdminPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [role, setRole] = useState<'all' | AppRole>('all')
+  const [role, setRole] = useState('all')
   const [status, setStatus] = useState<'all' | EmployeeStatus>('active')
   const [account, setAccount] = useState<'all' | 'not_created' | 'active' | 'disabled'>('all')
   const [activity, setActivity] = useState<AccountActivityFilter>('all')
@@ -878,6 +952,18 @@ export function UserAdminPage() {
   const canDeleteUsers = hasPermission('admin.users.delete')
   const canEditAdminRole = hasPermission('admin.roles.manage')
 
+  const accessControlQuery = useQuery({
+    enabled: canEditAdminRole,
+    queryFn: getAccessControlCenter,
+    queryKey: ['access-control-center'],
+  })
+  const accessRoles = accessControlQuery.data?.roles ?? EMPTY_ACCESS_ROLES
+  const accessRolesReady = accessControlQuery.isSuccess
+  const accessUsersById = useMemo(
+    () => new Map((accessControlQuery.data?.users ?? []).map((user) => [user.id, user])),
+    [accessControlQuery.data?.users],
+  )
+
   const recentlyDeletedQuery = useQuery({
     enabled: Boolean(canDeleteUsers),
     queryFn: getRecentlyDeletedEmployees,
@@ -891,7 +977,10 @@ export function UserAdminPage() {
         replaceDirectoryUser(current, createdEmployee),
       )
       setCreating(false)
-      await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' }),
+        queryClient.invalidateQueries({ queryKey: ['access-control-center'], refetchType: 'active' }),
+      ])
     },
   })
 
@@ -933,7 +1022,17 @@ export function UserAdminPage() {
         user.companyEmail,
         user.mobilePhone,
       ].filter(Boolean).join(' ').toLowerCase()
-      return (role === 'all' || user.role === role)
+      const accessUser = accessUsersById.get(user.id)
+      const selectedRoleDefinition = role.startsWith('role:')
+        ? accessRoles.find((accessRole) => accessRole.id === role.slice(5))
+        : undefined
+      const roleMatches = role === 'all'
+        || (role.startsWith('base:') && user.role === role.slice(5))
+        || Boolean(selectedRoleDefinition && (
+          (selectedRoleDefinition.systemRole && selectedRoleDefinition.baseAppRole === user.role)
+          || accessUser?.assignedRoleIds.includes(selectedRoleDefinition.id)
+        ))
+      return roleMatches
         && (status === 'all' || user.status === status)
         && (account === 'all' || user.accountStatus === account)
         && (activity === 'all'
@@ -943,8 +1042,23 @@ export function UserAdminPage() {
           || (activity === 'never_signed_in' && user.accountStatus === 'active' && !user.account?.lastSignInAt))
         && (!term || searchable.includes(term))
     })
-  }, [account, activity, role, search, status, users])
+  }, [accessRoles, accessUsersById, account, activity, role, search, status, users])
   const selectedUser = selectedUserId ? users.find((user) => user.id === selectedUserId) ?? null : null
+  const selectedAccessUser = selectedUserId ? accessUsersById.get(selectedUserId) : undefined
+
+  const roleFilterOptions = accessRoles.length
+    ? accessRoles.map((accessRole) => ({
+      label: accessRole.name,
+      value: `role:${accessRole.id}`,
+    }))
+    : Object.entries(roleLabels).map(([baseRole, label]) => ({ label, value: `base:${baseRole}` }))
+
+  function displayedRoles(user: AdminUser): string {
+    const assignedNames = accessUsersById.get(user.id)?.assignedRoleIds
+      .map((roleId) => accessRoles.find((accessRole) => accessRole.id === roleId)?.name)
+      .filter((name): name is string => Boolean(name)) ?? []
+    return assignedNames.length ? assignedNames.join(', ') : roleLabels[user.role]
+  }
 
   return (
     <div className="page page--user-admin">
@@ -992,7 +1106,7 @@ export function UserAdminPage() {
                 <span className="visually-hidden">Search users</span>
                 <input onChange={(event) => setSearch(event.target.value)} placeholder="Search name, username, email, or phone" type="search" value={search} />
               </label>
-              <label className="select-field"><span>Role</span><select onChange={(event) => setRole(event.target.value as typeof role)} value={role}><option value="all">All roles</option><option value="guard">Guards</option><option value="dispatcher">Dispatchers</option><option value="scheduler">Schedulers</option><option value="recruiting_licensing">Recruiting & Licensing</option><option value="supervisor">Supervisors</option><option value="admin">Admins</option></select></label>
+              <label className="select-field"><span>Role</span><select onChange={(event) => setRole(event.target.value)} value={role}><option value="all">All roles</option>{roleFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               <label className="select-field"><span>Employment</span><select onChange={(event) => setStatus(event.target.value as typeof status)} value={status}><option value="active">Active</option><option value="leave">On leave</option><option value="inactive">Inactive</option><option value="separated">Separated</option><option value="all">All statuses</option></select></label>
               <label className="select-field"><span>Login</span><select onChange={(event) => setAccount(event.target.value as typeof account)} value={account}><option value="all">All logins</option><option value="not_created">No login</option><option value="active">Active login</option><option value="disabled">Disabled</option></select></label>
               <label className="select-field"><span>Activity</span><select onChange={(event) => setActivity(event.target.value as AccountActivityFilter)} value={activity}><option value="all">All activity</option><option value="pending_setup">Pending setup</option><option value="activated">Activated</option><option value="signed_in">Has signed in</option><option value="never_signed_in">Never signed in</option></select></label>
@@ -1047,8 +1161,8 @@ export function UserAdminPage() {
                       <small>{user.companyEmail || user.personalEmail || user.mobilePhone || 'No contact on file'}</small>
                     </div>
                     <div role="cell" className="user-admin-role-employment" data-label="Role & Employment">
-                      <span className="plain-value">{roleLabels[user.role]}</span>
-                      <small>{employmentLabels[user.employmentType]} · {statusLabels[user.status]}</small>
+                      <span className="plain-value">{displayedRoles(user)}</span>
+                      <small>Primary {roleLabels[user.role]} · {employmentLabels[user.employmentType]} · {statusLabels[user.status]}</small>
                     </div>
                     <div role="cell" className="user-admin-login-state" data-label="Login">
                       <AccountStatusBadge user={user} />
@@ -1120,6 +1234,8 @@ export function UserAdminPage() {
           title="Add employee"
         >
           <EmployeeForm
+            accessRoles={accessRoles}
+            accessRolesReady={accessRolesReady}
             canEditAdminRole={canEditAdminRole}
             canEditBasic={canEditBasic}
             canSeparate={canSeparate}
@@ -1145,6 +1261,9 @@ export function UserAdminPage() {
 
       {selectedUser ? (
         <ManageUserModal
+          accessRoles={accessRoles}
+          accessRolesReady={accessRolesReady}
+          assignedAccessRoleIds={selectedAccessUser?.assignedRoleIds ?? []}
           canDeleteUsers={Boolean(canDeleteUsers)}
           canEditAdminRole={canEditAdminRole}
           canEditBasic={canEditBasic}

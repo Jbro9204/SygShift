@@ -151,6 +151,7 @@ const employeeProfileEditorContextSchema = z.object({
   workClassification: z.enum(['full_time', 'part_time', 'flex']).nullable(),
   canManageProfile: z.boolean(),
   canManageRestricted: z.boolean(),
+  canTerminate: z.boolean(),
   canViewCompensation: z.boolean(),
   canManageCompensation: z.boolean(),
   canApproveCompensation: z.boolean(),
@@ -165,6 +166,17 @@ const employeeProfileUpdateResultSchema = z.object({
   updatedAt: z.string(),
 })
 
+const employeeTerminationResultSchema = z.object({
+  employeeId: z.string().uuid(),
+  legalName: z.string(),
+  username: z.string(),
+  terminatedOn: z.string(),
+  status: z.literal('separated'),
+  accessDisabledAt: z.string(),
+  futureAssignmentsReleased: z.number().int().nonnegative(),
+  pendingShiftRequestsCanceled: z.number().int().nonnegative(),
+})
+
 export type HrisPeopleItem = z.infer<typeof peopleItemSchema>
 export type HrisPeopleSavedView = z.infer<typeof savedViewSchema>
 export type HrisPeopleWorkspace = z.infer<typeof peopleWorkspaceSchema>
@@ -172,6 +184,7 @@ export type HrisEmployeeFile = z.infer<typeof employeeFileSchema>
 export type HrisEmploymentDateHistory = z.infer<typeof employmentDateHistorySchema>
 export type HrisEmploymentDateSource = z.infer<typeof employmentDateHistoryItemSchema>['sourceType']
 export type HrisEmployeeProfileEditorContext = z.infer<typeof employeeProfileEditorContextSchema>
+export type HrisEmployeeTerminationResult = z.infer<typeof employeeTerminationResultSchema>
 
 export const hrisEmploymentDateSourceLabels: Record<HrisEmploymentDateSource, string> = {
   employee_file: 'Employee file',
@@ -187,6 +200,13 @@ export type HrisEmploymentDateUpdateInput = {
   sourceType: HrisEmploymentDateSource
   sourceReference: string
   reason: string
+}
+
+export type HrisEmployeeTerminationInput = {
+  employeeId: string
+  terminatedOn: string
+  reason: string
+  confirmationUsername: string
 }
 
 export type HrisPeopleQuery = {
@@ -327,6 +347,17 @@ export async function updateHrisEmploymentDates(input: HrisEmploymentDateUpdateI
   })
   if (error) throw new Error(error.message || 'Employment dates could not be updated.')
   return employmentDateUpdateResultSchema.parse(data)
+}
+
+export async function terminateHrisEmployee(input: HrisEmployeeTerminationInput): Promise<HrisEmployeeTerminationResult> {
+  const { data, error } = await getSupabaseClient().rpc('terminate_hr_employee', {
+    target_confirmation_username: input.confirmationUsername.trim(),
+    target_employee_id: input.employeeId,
+    target_reason: input.reason.trim(),
+    target_terminated_on: input.terminatedOn,
+  })
+  if (error) throw new Error(error.message || 'The employee could not be terminated.')
+  return employeeTerminationResultSchema.parse(data)
 }
 
 export async function saveHrisPeopleView(name: string, query: HrisPeopleQuery): Promise<string> {

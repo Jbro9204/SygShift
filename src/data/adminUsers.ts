@@ -212,6 +212,7 @@ export interface EmployeeMutationInput {
   personalEmail?: string | null
   companyEmail?: string | null
   mobilePhone?: string | null
+  accessRoleIds?: string[]
 }
 
 export interface EmployeeCredentialMutationInput {
@@ -294,20 +295,32 @@ export async function getAdminUserDirectory(): Promise<AdminUserDirectory> {
 }
 
 export async function createEmployee(input: EmployeeMutationInput): Promise<AdminUser> {
-  const { data, error } = await getSupabaseClient().rpc('admin_create_employee_with_time_zone', {
+  const payload = {
     ...employeeRpcPayload(input),
     target_time_zone: input.timeZone ?? 'America/Denver',
-  })
+  }
+  const { data, error } = input.accessRoleIds
+    ? await getSupabaseClient().rpc('admin_create_employee_with_time_zone_and_access_roles', {
+      ...payload,
+      target_access_role_ids: input.accessRoleIds,
+    })
+    : await getSupabaseClient().rpc('admin_create_employee_with_time_zone', payload)
   if (error) throw new Error(error.message || 'Employee could not be created.')
   return withLegalDisplayName(adminUserSchema.parse(data))
 }
 
 export async function updateEmployee(input: EmployeeMutationInput & { employeeId: string }): Promise<AdminUser> {
-  const { data, error } = await getSupabaseClient().rpc('admin_update_employee_with_time_zone', {
+  const payload = {
     target_employee_id: input.employeeId,
     target_time_zone: input.timeZone ?? 'America/Denver',
     ...employeeRpcPayload(input),
-  })
+  }
+  const { data, error } = input.accessRoleIds
+    ? await getSupabaseClient().rpc('admin_update_employee_with_time_zone_and_access_roles', {
+      ...payload,
+      target_access_role_ids: input.accessRoleIds,
+    })
+    : await getSupabaseClient().rpc('admin_update_employee_with_time_zone', payload)
   if (error) throw new Error(error.message || 'Employee could not be updated.')
   return withLegalDisplayName(adminUserSchema.parse(data))
 }

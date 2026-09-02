@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   UserRound,
   UserRoundCog,
+  UserRoundX,
 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { canAccessRoute } from '../app/accessPolicy'
@@ -27,6 +28,7 @@ import {
   EmployeeIdentityEditorDialog,
 } from '../components/EmployeeFileEditors'
 import { EmploymentDateEditorDialog } from '../components/EmploymentDateEditorDialog'
+import { EmployeeTerminationDialog } from '../components/EmployeeTerminationDialog'
 import { SupervisorAssignmentDialog } from '../components/SupervisorAssignmentDialog'
 import { getSessionContext } from '../data/auth'
 import {
@@ -34,6 +36,7 @@ import {
   getHrisEmployeeProfileEditorContext,
   getHrisEmploymentDateHistory,
   hrisEmploymentDateSourceLabels,
+  type HrisEmployeeTerminationResult,
 } from '../data/hrisPeople'
 import { getSupervisionWorkspace } from '../data/supervision'
 import { formatOperationalDateTime } from '../lib/time'
@@ -71,6 +74,8 @@ export function HrisEmployeeFilePage() {
   const [profileEditor, setProfileEditor] = useState<'identity' | 'employment' | 'contacts' | null>(null)
   const [employmentDateEditorOpen, setEmploymentDateEditorOpen] = useState(false)
   const [employmentDateSaved, setEmploymentDateSaved] = useState(false)
+  const [terminationOpen, setTerminationOpen] = useState(false)
+  const [terminationResult, setTerminationResult] = useState<HrisEmployeeTerminationResult | null>(null)
   const [supervisorEditorOpen, setSupervisorEditorOpen] = useState(false)
   const sessionQuery = useQuery({
     queryFn: getSessionContext,
@@ -249,9 +254,10 @@ export function HrisEmployeeFilePage() {
             </article>
 
             <article className="hr-file-card hr-file-employment-card">
-              <div className="hr-file-card__heading"><ClipboardCheck aria-hidden="true" /><div><p className="eyebrow">Employment</p><h2>Current relationship</h2></div><div className="hr-file-card__actions">{editorContext?.canManageProfile ? <button className="hr-file-card__edit" onClick={() => setProfileEditor('employment')} type="button"><PencilLine aria-hidden="true" size={16} />Edit employment</button> : null}{supervisionQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={() => setSupervisorEditorOpen(true)} type="button"><UserRoundCog aria-hidden="true" size={16} />Assign supervisor</button> : null}{employmentDateHistoryQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={openEmploymentDateEditor} type="button"><CalendarCheck2 aria-hidden="true" size={16} />Edit dates</button> : null}</div></div>
+              <div className="hr-file-card__heading"><ClipboardCheck aria-hidden="true" /><div><p className="eyebrow">Employment</p><h2>Current relationship</h2></div><div className="hr-file-card__actions">{editorContext?.canManageProfile ? <button className="hr-file-card__edit" onClick={() => setProfileEditor('employment')} type="button"><PencilLine aria-hidden="true" size={16} />Edit employment</button> : null}{supervisionQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={() => setSupervisorEditorOpen(true)} type="button"><UserRoundCog aria-hidden="true" size={16} />Assign supervisor</button> : null}{employmentDateHistoryQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={openEmploymentDateEditor} type="button"><CalendarCheck2 aria-hidden="true" size={16} />Edit dates</button> : null}{editorContext?.canTerminate && record.status !== 'separated' && sessionQuery.data?.employeeId !== record.employeeId ? <button className="hr-file-card__edit hr-file-card__edit--danger" onClick={() => { setTerminationResult(null); setTerminationOpen(true) }} type="button"><UserRoundX aria-hidden="true" size={16} />Terminate employment</button> : null}</div></div>
               <dl><div><dt>Work classification</dt><dd>{editorContext?.workClassification ? titleCase(editorContext.workClassification) : 'Not recorded'}</dd></div><div><dt>Pay &amp; timekeeping type</dt><dd>{titleCase(record.employmentType)}</dd></div><div><dt>Primary role</dt><dd>{titleCase(record.primaryRole)}</dd></div><div><dt>Assigned supervisor</dt><dd>{supervisionQuery.isPending ? 'Loading…' : supervisorAssignment?.supervisorName ?? 'Unassigned'}</dd></div><div><dt>Job title</dt><dd>{display(record.jobTitle)}</dd></div><div><dt>Start / hire date</dt><dd>{formatDate(record.hiredOn)}</dd></div><div><dt>Separation / termination date</dt><dd>{formatDate(record.separatedOn)}</dd></div></dl>
               {employmentDateSaved ? <div className="hr-file-employment-saved" role="status"><CalendarCheck2 aria-hidden="true" size={17} />Employment dates and audit history updated.</div> : null}
+              {terminationResult ? <div className="hr-file-termination-saved" role="status"><UserRoundX aria-hidden="true" size={17} /><span><strong>Employment terminated and access disabled.</strong>{terminationResult.futureAssignmentsReleased} future assignment{terminationResult.futureAssignmentsReleased === 1 ? '' : 's'} released; {terminationResult.pendingShiftRequestsCanceled} pending shift request{terminationResult.pendingShiftRequestsCanceled === 1 ? '' : 's'} canceled.</span></div> : null}
               {employmentDateHistoryQuery.data?.items.length ? (
                 <details className="hr-file-employment-history">
                   <summary><History aria-hidden="true" size={16} />Date history <span>{employmentDateHistoryQuery.data.items.length}</span></summary>
@@ -321,6 +327,7 @@ export function HrisEmployeeFilePage() {
           </section>
 
           {employmentDateEditorOpen ? <EmploymentDateEditorDialog employee={record} onClose={() => setEmploymentDateEditorOpen(false)} onSaved={() => setEmploymentDateSaved(true)} /> : null}
+          {terminationOpen ? <EmployeeTerminationDialog employee={record} onClose={() => setTerminationOpen(false)} onTerminated={setTerminationResult} /> : null}
           {profileEditor === 'identity' ? <EmployeeIdentityEditorDialog employee={record} onClose={() => setProfileEditor(null)} /> : null}
           {profileEditor === 'employment' && editorContext ? <EmployeeEmploymentEditorDialog context={editorContext} employee={record} onClose={() => setProfileEditor(null)} /> : null}
           {profileEditor === 'contacts' && editorContext ? <EmployeeContactEditorDialog context={editorContext} employee={record} onClose={() => setProfileEditor(null)} /> : null}
