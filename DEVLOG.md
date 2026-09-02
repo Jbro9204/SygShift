@@ -1491,3 +1491,13 @@ pnpm exec wrangler deploy --keep-vars
 - Applied production migration `20260902194500_structured_early_clock_in_restriction.sql` after an isolated linked dry run.
 - Full validation passed: type checking, zero-warning lint, 150 test files / 726 tests, production builds, and all 80 desktop/mobile Playwright checks.
 - Deployed Cloudflare Worker version `ed096da4-e91a-4940-bfe6-f6657d76e44d`; production health, readiness, login, and release assets verified successfully.
+
+## 09/02/2026 — HR Termination and Complete User Role Assignment
+
+- Added a protected **Terminate employment** workflow to the authoritative HR Employee File, using the same account-separation engine as User Accounts.
+- Added required date, reason, and exact-username confirmation while preserving historical employee, schedule, timekeeping, payroll, and account records.
+- Enforced recent MFA plus exact HR management/offboarding permissions; blocked self-termination and protected Admin targets from non-Admin HR users.
+- Replaced User Accounts' six-role assumption with the complete active Roles & Permissions library and an atomic, audited additional-role selector.
+- Applied production migration `20260902222001_hr_employee_termination_and_user_role_assignment.sql` after a successful linked rollback rehearsal.
+- Full validation passed: type checking, zero-warning lint, 153 test files / 741 tests, production builds, and all 92 desktop/mobile Playwright checks.
+- Deployed Cloudflare Worker version `b6718bb1-20ef-462a-bcec-80aaf79a18a8`; both production endpoints passed health/readiness and the live release assets were verified.
