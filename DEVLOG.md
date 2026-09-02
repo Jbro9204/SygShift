@@ -25,6 +25,15 @@ deployment status, or major workflow assumptions change.
 
 ## 09/02/2026
 
+### Patrol route edit and address persistence repair
+
+- Repaired the existing-route branch of `save_patrol_route`, which rejected every route edit with PostgreSQL `42702` because the local `route_id` variable conflicted with the route-version column.
+- Kept the versioned-route model, permissions, audit history, and public function contract intact while giving the local identifier a distinct name and qualifying the version lookup.
+- Rollback-only production saves before and after release confirmed that an existing route advances to its next version and retains street, city, state, and postal code without leaving diagnostic data behind.
+- Production remains unchanged at 2 routes, 2 versions, 11 current stops, and zero populated stop addresses; real addresses must be re-entered once now that saves work.
+- Full validation passed: TypeScript, zero-warning lint, 151 test files / 734 tests, and both production builds. Applied and recorded migration `20260902214839_patrol_route_update_persistence.sql` and deployed Worker version `a0bf6721-4fc6-458d-bf7e-61c1beda9e0f`.
+- Primary and fallback login, health, and readiness returned HTTP 200. Full details are recorded in `docs/changelogs/CHANGELOG_09-02-2026_PATROL_ROUTE_EDIT_AND_ADDRESS_PERSISTENCE.md`.
+
 ### Enterprise Document Studio and electronic signatures
 
 - Extended the dormant secure HR document platform into one shared Document Studio with versioned policies, templates, field definitions, record associations, signature envelopes, signer consent/authentication evidence, saved signatures, exact-version finalization, immutable signed PDFs, and audit certificates.
