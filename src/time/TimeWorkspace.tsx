@@ -18,9 +18,15 @@ import {
 import { getSessionContext } from '../data/auth'
 import { canAccessRoute } from '../app/accessPolicy'
 import {
+  EarlyClockInAcknowledgmentNotice,
+  EarlyClockInWarningDialog,
+} from '../components/EarlyClockInWarningDialog'
+import {
   activeTimeState,
   getClockableShiftChoices,
   getTimekeepingDashboard,
+  isEarlyClockInBlockedError,
+  nextUpcomingClockInShift,
   nextTimeEventKinds,
   recordTimeEvent,
   type TimeEventKind,
@@ -29,6 +35,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTimeRange } from '../lib/time'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from './timeQuerySync'
+import { useEarlyClockInRestriction } from './useEarlyClockInRestriction'
 import {
   canUseOwnTimeClock,
   canViewOwnTime,
@@ -55,6 +62,7 @@ export function TimeWorkspace() {
   const queryClient = useQueryClient()
   const location = useLocation()
   const punchLock = useRef(false)
+  const earlyClockIn = useEarlyClockInRestriction()
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
   const sessionQuery = useQuery({
     enabled: isSupabaseConfigured,
@@ -82,6 +90,9 @@ export function TimeWorkspace() {
     [dashboard],
   )
   const currentShift = dashboard ? activeShift(dashboard) : null
+  const nextClockInShift = dashboard
+    ? nextUpcomingClockInShift(dashboard.eligibleShifts, dashboard.serverTimestamp)
+    : null
   const nextKinds = nextTimeEventKinds(state)
   const defaultShiftId = selectedShiftId ?? choices?.shifts[0]?.shiftId ?? null
 
@@ -93,7 +104,9 @@ export function TimeWorkspace() {
 
   const punchMutation = useMutation({
     mutationFn: (input: { kind: TimeEventKind; shiftId?: string | null }) => recordTimeEvent(input),
+    onError: earlyClockIn.handleMutationError,
     onSuccess: (event) => {
+      earlyClockIn.clearForRecordedPunch()
       applyTimeEventToCachedDashboards(queryClient, event)
       setSelectedShiftId(null)
     },
@@ -115,7 +128,10 @@ export function TimeWorkspace() {
   function record(kind: TimeEventKind) {
     if (!punchAllowed || punchLock.current || punchMutation.isPending) return
     punchLock.current = true
-    punchMutation.mutate({ kind, shiftId: kind === 'clock_in' ? defaultShiftId : undefined })
+    punchMutation.mutate({
+      kind,
+      shiftId: kind === 'clock_in' ? defaultShiftId ?? nextClockInShift?.shiftId ?? null : undefined,
+    })
   }
 
   return (
@@ -174,10 +190,10 @@ export function TimeWorkspace() {
         ) : null}
       </header>
 
-      {punchMutation.isError ? (
+      {punchMutation.isError && !isEarlyClockInBlockedError(punchMutation.error) ? (
         <div className="time-workspace-clock-error" role="alert">
           <ShieldAlert aria-hidden="true" size={20} />
-          <span>{punchMutation.error.message}</span>
+          <span>{punchMutation.error instanceof Error ? punchMutation.error.message : 'The time action could not be completed.'}</span>
         </div>
       ) : punchMutation.isSuccess ? (
         <div className="sr-only" aria-live="polite"><CheckCircle2 aria-hidden="true" /> Time clock updated.</div>
@@ -187,6 +203,7 @@ export function TimeWorkspace() {
           <span>Your clock status could not be loaded. Other authorized time tools remain available.</span>
         </div>
       ) : null}
+      {earlyClockIn.acknowledged ? <EarlyClockInAcknowledgmentNotice details={earlyClockIn.acknowledged} /> : null}
 
       <nav aria-label="Time and Attendance sections" className="time-workspace-tabs">
         {tabs.map((tab) => {
@@ -209,6 +226,12 @@ export function TimeWorkspace() {
       <div className="time-workspace-content">
         <Outlet />
       </div>
+      {earlyClockIn.restriction ? (
+        <EarlyClockInWarningDialog
+          details={earlyClockIn.restriction}
+          onAcknowledge={earlyClockIn.acknowledge}
+        />
+      ) : null}
     </section>
   )
 }

@@ -48,6 +48,24 @@ const timekeepingEventSchema = z.object({
   workType: workTypeSchema.optional().default('post'),
 })
 
+const earlyClockInBlockedResponseSchema = z.object({
+  status: z.literal('blocked'),
+  code: z.literal('EARLY_CLOCK_IN_BLOCKED'),
+  trustedServerTime: z.string(),
+  scheduledShiftStart: z.string(),
+  scheduledShiftEnd: z.string().nullable(),
+  clockInEligibleAt: z.string(),
+  shiftDate: z.string(),
+  shiftDisplayName: z.string(),
+  siteCode: z.string().nullable(),
+  siteName: z.string().nullable(),
+  postName: z.string().nullable(),
+  locationName: z.string(),
+  coverageType: z.string().nullable(),
+  timeZone: z.string(),
+  clockInWindowMinutes: z.literal(5),
+})
+
 const supervisorRecordedTimeEventSchema = timekeepingEventSchema.extend({
   automaticClockOutEventId: z.string().uuid().nullable().optional(),
   automaticClockOutAt: z.string().nullable().optional(),
@@ -761,6 +779,7 @@ const attendanceReconciliationDecisionResultSchema = z.object({
 export type TimeEventKind = z.infer<typeof timeEventKindSchema>
 export type TimekeepingShift = z.infer<typeof timekeepingShiftSchema>
 export type TimekeepingEvent = z.infer<typeof timekeepingEventSchema>
+export type EarlyClockInBlockedDetails = z.infer<typeof earlyClockInBlockedResponseSchema>
 export type SupervisorRecordedTimeEvent = z.infer<typeof supervisorRecordedTimeEventSchema>
 export type TimekeepingDashboard = z.infer<typeof timekeepingDashboardSchema>
 export type TimekeepingState = 'off_clock' | 'working' | 'on_break'
@@ -837,17 +856,45 @@ export function minutesUntilClockInOpens(
 }
 
 export function formatClockInWaitDuration(shiftStartsAt: string, serverTimestamp: string): string {
-  const startsAt = new Date(shiftStartsAt).getTime()
-  const serverTime = new Date(serverTimestamp).getTime()
-  if (!Number.isFinite(startsAt) || !Number.isFinite(serverTime)) return 'a little while'
+  return formatClockInDurationUntil(shiftStartsAt, serverTimestamp)
+}
 
-  const totalMinutes = Math.max(1, Math.ceil((startsAt - serverTime) / 60_000))
+export function formatClockInDurationUntil(targetTimestamp: string, serverTimestamp: string): string {
+  const targetTime = new Date(targetTimestamp).getTime()
+  const serverTime = new Date(serverTimestamp).getTime()
+  if (!Number.isFinite(targetTime) || !Number.isFinite(serverTime)) return 'a little while'
+
+  const remainingMilliseconds = targetTime - serverTime
+  if (remainingMilliseconds > 0 && remainingMilliseconds < 60_000) return 'less than 1 minute'
+
+  const totalMinutes = Math.max(1, Math.ceil(remainingMilliseconds / 60_000))
   const hours = Math.floor(totalMinutes / 60)
   const minutes = totalMinutes % 60
   const parts: string[] = []
   if (hours) parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`)
   if (minutes) parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`)
   return parts.join(' ')
+}
+
+export class EarlyClockInBlockedError extends Error {
+  readonly code = 'EARLY_CLOCK_IN_BLOCKED'
+  readonly details: EarlyClockInBlockedDetails
+
+  constructor(details: EarlyClockInBlockedDetails) {
+    super('Clock-in is not available yet.')
+    this.name = 'EarlyClockInBlockedError'
+    this.details = details
+  }
+}
+
+export function isEarlyClockInBlockedError(error: unknown): error is EarlyClockInBlockedError {
+  return error instanceof EarlyClockInBlockedError
+}
+
+export function parseRecordTimeEventResponse(value: unknown): TimekeepingEvent {
+  const blocked = earlyClockInBlockedResponseSchema.safeParse(value)
+  if (blocked.success) throw new EarlyClockInBlockedError(blocked.data)
+  return parseTimekeepingEvent(value)
 }
 
 export interface ClockableShiftChoices {
@@ -1135,7 +1182,7 @@ export async function recordTimeEvent(input: {
     target_idempotency_key: input.idempotencyKey ?? requestKey(),
   })
   if (error) throw new Error(error.message || 'The time event could not be recorded.')
-  return parseTimekeepingEvent(data)
+  return parseRecordTimeEventResponse(data)
 }
 
 export async function requestTimeEventCorrection(input: {

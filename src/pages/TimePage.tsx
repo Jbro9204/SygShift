@@ -21,7 +21,10 @@ import {
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
-import { EarlyClockInWarningDialog } from '../components/EarlyClockInWarningDialog'
+import {
+  EarlyClockInAcknowledgmentNotice,
+  EarlyClockInWarningDialog,
+} from '../components/EarlyClockInWarningDialog'
 import { canAccessRoute } from '../app/accessPolicy'
 import {
   activeTimeState,
@@ -40,6 +43,7 @@ import {
   getTimeMaintenance,
   getTimekeepingDashboard,
   getTimekeepingReview,
+  isEarlyClockInBlockedError,
   nextTimeEventKinds,
   payrollHours,
   recordTimeEvent,
@@ -84,6 +88,7 @@ import {
   canViewOwnTime,
 } from '../time/timePermissions'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from '../time/timeQuerySync'
+import { useEarlyClockInRestriction } from '../time/useEarlyClockInRestriction'
 
 const actionLabels: Record<TimeEventKind, string> = {
   clock_in: 'Clock in',
@@ -1425,7 +1430,6 @@ function PunchControls({
   onPunch: (kind: TimeEventKind, shiftId?: string | null) => void
 }) {
   const state = activeTimeState(dashboard.lastEvent)
-  const [earlyClockInWarningOpen, setEarlyClockInWarningOpen] = useState(false)
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(
     dashboard.eligibleShifts.length === 1 ? dashboard.eligibleShifts[0]?.shiftId ?? null : null,
   )
@@ -1500,7 +1504,7 @@ function PunchControls({
             key={kind}
             onClick={() => {
               if (kind === 'clock_in' && !selectedShiftId && earlyClockInAttemptAvailable) {
-                setEarlyClockInWarningOpen(true)
+                onPunch(kind, nextClockInShift?.shiftId ?? null)
                 return
               }
               onPunch(kind, kind === 'clock_in' ? selectedShiftId : undefined)
@@ -1517,15 +1521,6 @@ function PunchControls({
           ? 'Official time is recorded by the secure server. This panel updates as soon as the punch is saved.'
           : 'Your account can view time, but time clock punches are not enabled.'}
       </small>
-      {earlyClockInWarningOpen && nextClockInShift ? (
-        <EarlyClockInWarningDialog
-          locationName={shiftLocation(nextClockInShift)}
-          onAcknowledge={() => setEarlyClockInWarningOpen(false)}
-          serverTimestamp={dashboard.serverTimestamp}
-          shiftStartsAt={nextClockInShift.startsAt}
-          timeZone={displayTimeZone}
-        />
-      ) : null}
     </section>
   )
 }
@@ -2098,6 +2093,7 @@ function SupervisorTimeReview({
 function LiveTimekeeping() {
   const queryClient = useQueryClient()
   const punchLocked = useRef(false)
+  const earlyClockIn = useEarlyClockInRestriction()
   const operationalDate = useMemo(() => formatDateKey(operationalToday()), [])
   const [maintenanceFocusRequest, setMaintenanceFocusRequest] = useState<TimeMaintenanceFocusRequest | null>(null)
   const sessionQuery = useQuery({
@@ -2115,7 +2111,9 @@ function LiveTimekeeping() {
   })
   const punchMutation = useMutation({
     mutationFn: (input: { kind: TimeEventKind; shiftId?: string | null }) => recordTimeEvent(input),
+    onError: earlyClockIn.handleMutationError,
     onSuccess: (event) => {
+      earlyClockIn.clearForRecordedPunch()
       applyTimeEventToCachedDashboards(queryClient, event)
     },
     onSettled: async () => {
@@ -2170,7 +2168,8 @@ function LiveTimekeeping() {
         </span>
       </section>
 
-      {punchMutation.isError ? <div className="inline-alert" role="alert">{punchMutation.error.message}</div> : null}
+      {punchMutation.isError && !isEarlyClockInBlockedError(punchMutation.error) ? <div className="inline-alert" role="alert">{punchMutation.error instanceof Error ? punchMutation.error.message : 'The time action could not be completed.'}</div> : null}
+      {earlyClockIn.acknowledged ? <EarlyClockInAcknowledgmentNotice details={earlyClockIn.acknowledged} /> : null}
 
       <div className="time-layout">
         <PunchControls
@@ -2218,6 +2217,12 @@ function LiveTimekeeping() {
             }}
           />
         </>
+      ) : null}
+      {earlyClockIn.restriction ? (
+        <EarlyClockInWarningDialog
+          details={earlyClockIn.restriction}
+          onAcknowledge={earlyClockIn.acknowledge}
+        />
       ) : null}
     </>
   )

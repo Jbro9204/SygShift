@@ -1451,3 +1451,13 @@ pnpm exec wrangler deploy --keep-vars
 - Production verification confirmed the schema, permissions, private bucket, source queue, and rollback-only MFA Admin workflow.
 - Full validation passed: type checking, zero-warning lint, 149 test files / 722 tests, production builds, all 72 full Playwright checks, and eight focused Client Files desktop/mobile light/dark accessibility checks.
 - Deployed Cloudflare Worker version `82e0fe7d-c0e7-4fb0-8ccb-b9d09776cd5d`.
+
+## 09/02/2026 — Production Early Clock-In Restriction
+
+- Replaced the incomplete client-side early-clock warning with one server-driven `EARLY_CLOCK_IN_BLOCKED` domain response and a mandatory premium alert dialog.
+- Wired Home, My Time, and the Time & Attendance workspace header—including responsive layouts—to the same reusable workflow.
+- Enforced the five-minute early window with trusted server time before punch insertion, allowed the exact boundary, and added deduplicated blocked-attempt audit records.
+- Added precise timing and shift context, a single required **Acknowledge & close** action, focus management, Escape/backdrop protection, and post-acknowledgment guidance.
+- Applied production migration `20260902194500_structured_early_clock_in_restriction.sql` after an isolated linked dry run.
+- Full validation passed: type checking, zero-warning lint, 150 test files / 726 tests, production builds, and all 80 desktop/mobile Playwright checks.
+- Deployed Cloudflare Worker version `ed096da4-e91a-4940-bfe6-f6657d76e44d`; production health, readiness, login, and release assets verified successfully.

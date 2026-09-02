@@ -7,12 +7,15 @@ interface ModalDialogProps {
   children: ReactNode
   className?: string
   description?: string
+  dialogRole?: 'alertdialog' | 'dialog'
   dismissible?: boolean
+  eyebrow?: string
+  headingIcon?: ReactNode
   onClose: () => void
   title: string
 }
 
-export function ModalDialog({ busy = false, busyLabel = 'Saving changes...', children, className, description, dismissible = true, onClose, title }: ModalDialogProps) {
+export function ModalDialog({ busy = false, busyLabel = 'Saving changes...', children, className, description, dialogRole = 'dialog', dismissible = true, eyebrow, headingIcon, onClose, title }: ModalDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const titleId = useId()
   const descriptionId = useId()
@@ -22,7 +25,13 @@ export function ModalDialog({ busy = false, busyLabel = 'Saving changes...', chi
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     if (!dialog) return
     dialog.showModal()
+    const focusFrame = window.requestAnimationFrame(() => {
+      dialog.scrollTop = 0
+      const initialControl = dialog.querySelector<HTMLElement>('[autofocus]')
+      initialControl?.focus({ preventScroll: true })
+    })
     return () => {
+      window.cancelAnimationFrame(focusFrame)
       if (dialog.open) dialog.close()
       if (previouslyFocused?.isConnected) previouslyFocused.focus()
     }
@@ -40,9 +49,12 @@ export function ModalDialog({ busy = false, busyLabel = 'Saving changes...', chi
         onClose()
       }}
       ref={dialogRef}
+      role={dialogRole}
     >
       <div className="modal-dialog__heading">
-        <div>
+        {headingIcon ? <span aria-hidden="true" className="modal-dialog__heading-icon">{headingIcon}</span> : null}
+        <div className="modal-dialog__heading-copy">
+          {eyebrow ? <span className="modal-dialog__eyebrow">{eyebrow}</span> : null}
           <h2 id={titleId}>{title}</h2>
           {description ? <p id={descriptionId}>{description}</p> : null}
         </div>

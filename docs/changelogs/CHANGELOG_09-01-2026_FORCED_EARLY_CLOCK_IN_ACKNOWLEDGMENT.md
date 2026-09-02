@@ -3,6 +3,8 @@
 Date: 09/01/2026  
 Status: Released to production
 
+> Superseded on 09/02/2026 by the server-driven production restriction documented in `CHANGELOG_09-02-2026_PRODUCTION_EARLY_CLOCK_IN_RESTRICTION.md`. The replacement covers every clock-in surface and does not depend on a client-side time check.
+
 ## Outcome
 
 An employee who selects **Clock In** before the approved clock-in window now receives a prominent red warning dialog on both Home and My Time. The dialog must be explicitly acknowledged before it closes.

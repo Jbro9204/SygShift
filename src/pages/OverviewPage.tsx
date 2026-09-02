@@ -19,7 +19,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { canAccessRoute } from '../app/accessPolicy'
-import { EarlyClockInWarningDialog } from '../components/EarlyClockInWarningDialog'
+import {
+  EarlyClockInAcknowledgmentNotice,
+  EarlyClockInWarningDialog,
+} from '../components/EarlyClockInWarningDialog'
 import { TimeOffRequestModal } from '../components/TimeOffRequestModal'
 import { getActiveAnnouncementBanners } from '../data/announcements'
 import { getSessionContext, type SessionContext } from '../data/auth'
@@ -32,6 +35,7 @@ import {
   clockInWindowOpensAt,
   getClockableShiftChoices,
   getTimekeepingDashboard,
+  isEarlyClockInBlockedError,
   recordTimeEvent,
   type TimeEventKind,
   type TimekeepingDashboard,
@@ -47,6 +51,7 @@ import {
 import { personalDisplayTimeZone } from '../lib/usTimeZones'
 import { canUseOwnTimeClock, canViewOwnTime } from '../time/timePermissions'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from '../time/timeQuerySync'
+import { useEarlyClockInRestriction } from '../time/useEarlyClockInRestriction'
 import {
   boundedHomeItems,
   dateKeyInTimeZone,
@@ -146,6 +151,7 @@ export function OverviewPage() {
   const queryClient = useQueryClient()
   const punchLocked = useRef(false)
   const [timeOffOpen, setTimeOffOpen] = useState(false)
+  const earlyClockIn = useEarlyClockInRestriction()
   const sessionQuery = useQuery({
     enabled: isSupabaseConfigured,
     queryFn: getSessionContext,
@@ -213,7 +219,11 @@ export function OverviewPage() {
   })
   const punchMutation = useMutation({
     mutationFn: (input: { kind: TimeEventKind; shiftId?: string | null }) => recordTimeEvent(input),
-    onSuccess: (event) => applyTimeEventToCachedDashboards(queryClient, event),
+    onError: earlyClockIn.handleMutationError,
+    onSuccess: (event) => {
+      earlyClockIn.clearForRecordedPunch()
+      applyTimeEventToCachedDashboards(queryClient, event)
+    },
     onSettled: async () => {
       punchLocked.current = false
       await refreshTimekeepingQueriesAfterPunch(queryClient)
@@ -226,11 +236,14 @@ export function OverviewPage() {
   const nextShift = nextShiftForDashboard(timekeepingQuery.data)
   const displayTimeZone = personalDisplayTimeZone(session?.timeZone ?? timekeepingQuery.data?.employee.timeZone ?? 'America/Denver')
 
-  function quickPunch(kind = timeAction.kind) {
+  function quickPunch(kind = timeAction.kind, shiftId?: string | null) {
     if (!kind || !timekeepingQuery.data || !punchAllowed || punchLocked.current || punchMutation.isPending) return
     punchLocked.current = true
     const choices = getClockableShiftChoices(timekeepingQuery.data.eligibleShifts, timekeepingQuery.data.serverTimestamp)
-    punchMutation.mutate({ kind, shiftId: kind === 'clock_in' ? choices.shifts[0]?.shiftId ?? null : undefined })
+    punchMutation.mutate({
+      kind,
+      shiftId: kind === 'clock_in' ? shiftId ?? choices.shifts[0]?.shiftId ?? null : undefined,
+    })
   }
 
   if (sessionQuery.isPending) {
@@ -249,7 +262,9 @@ export function OverviewPage() {
           activeShift={activeShift}
           dashboard={timekeepingQuery.data}
           displayTimeZone={displayTimeZone}
-          error={punchMutation.isError ? punchMutation.error.message : null}
+          error={punchMutation.isError && !isEarlyClockInBlockedError(punchMutation.error)
+            ? punchMutation.error instanceof Error ? punchMutation.error.message : 'The time action could not be completed.'
+            : null}
           onPunch={quickPunch}
           pending={punchMutation.isPending || timekeepingQuery.isPending}
           punchAllowed={punchAllowed}
@@ -259,6 +274,7 @@ export function OverviewPage() {
           timeAction={timeAction}
         />
       ) : null}
+      {earlyClockIn.acknowledged ? <EarlyClockInAcknowledgmentNotice details={earlyClockIn.acknowledged} /> : null}
 
       <section className="home-planned-time-off" aria-labelledby="home-time-off-title">
         <div>
@@ -320,6 +336,12 @@ export function OverviewPage() {
           requestHistoryPath="/requests"
         />
       ) : null}
+      {earlyClockIn.restriction ? (
+        <EarlyClockInWarningDialog
+          details={earlyClockIn.restriction}
+          onAcknowledge={earlyClockIn.acknowledge}
+        />
+      ) : null}
     </div>
   )
 }
@@ -346,7 +368,7 @@ function TimeStatusStrip({ activeShift, dashboard, displayTimeZone, error, onPun
   dashboard: TimekeepingDashboard | undefined
   displayTimeZone: string
   error: string | null
-  onPunch: (kind: TimeEventKind | null) => void
+  onPunch: (kind: TimeEventKind | null, shiftId?: string | null) => void
   pending: boolean
   punchAllowed: boolean
   scheduleAllowed: boolean
@@ -354,7 +376,6 @@ function TimeStatusStrip({ activeShift, dashboard, displayTimeZone, error, onPun
   state: ReturnType<typeof activeTimeState>
   timeAction: ReturnType<typeof overviewTimeAction>
 }) {
-  const [earlyClockInWarningOpen, setEarlyClockInWarningOpen] = useState(false)
   const clockableChoices = dashboard
     ? getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp)
     : null
@@ -398,7 +419,7 @@ function TimeStatusStrip({ activeShift, dashboard, displayTimeZone, error, onPun
       </div>
       <div className="home-time-strip__actions" role="group" aria-label="Time clock actions">
         {earlyClockInAttemptAvailable && upcomingShift && dashboard ? (
-          <button className="primary-action" disabled={pending} onClick={() => setEarlyClockInWarningOpen(true)} type="button">
+          <button className="primary-action" disabled={pending} onClick={() => onPunch('clock_in', upcomingShift.shiftId)} type="button">
             <Timer aria-hidden="true" size={18} />Clock in
           </button>
         ) : timeAction.requiresTimePage ? (
@@ -419,15 +440,6 @@ function TimeStatusStrip({ activeShift, dashboard, displayTimeZone, error, onPun
           </Link>
         ) : null}
       </div>
-      {earlyClockInWarningOpen && upcomingShift && dashboard ? (
-        <EarlyClockInWarningDialog
-          locationName={shiftLocation(upcomingShift)}
-          onAcknowledge={() => setEarlyClockInWarningOpen(false)}
-          serverTimestamp={dashboard.serverTimestamp}
-          shiftStartsAt={upcomingShift.startsAt}
-          timeZone={displayTimeZone}
-        />
-      ) : null}
     </section>
   )
 }

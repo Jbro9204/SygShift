@@ -1,46 +1,101 @@
-import { ShieldAlert } from 'lucide-react'
-import { formatClockInWaitDuration } from '../data/timekeeping'
-import { formatDualTime } from '../lib/time'
+import { ClockAlert, ShieldCheck } from 'lucide-react'
+import {
+  formatClockInDurationUntil,
+  formatClockInWaitDuration,
+  type EarlyClockInBlockedDetails,
+} from '../data/timekeeping'
+import { formatDualTime, formatOperationalDate } from '../lib/time'
 import { ModalDialog } from './ModalDialog'
 
 export function EarlyClockInWarningDialog({
-  locationName,
+  details,
   onAcknowledge,
-  serverTimestamp,
-  shiftStartsAt,
-  timeZone,
 }: {
-  locationName: string
+  details: EarlyClockInBlockedDetails
   onAcknowledge: () => void
-  serverTimestamp: string
-  shiftStartsAt: string
-  timeZone: string
 }) {
-  const waitDuration = formatClockInWaitDuration(shiftStartsAt, serverTimestamp)
+  const shiftDuration = formatClockInWaitDuration(details.scheduledShiftStart, details.trustedServerTime)
+  const eligibilityDuration = formatClockInDurationUntil(details.clockInEligibleAt, details.trustedServerTime)
+  const currentTime = formatDualTime(details.trustedServerTime, { timeZone: details.timeZone })
+  const eligibleTime = formatDualTime(details.clockInEligibleAt, { timeZone: details.timeZone })
+  const shiftStartTime = formatDualTime(details.scheduledShiftStart, { timeZone: details.timeZone })
+  const shiftEndTime = details.scheduledShiftEnd
+    ? formatDualTime(details.scheduledShiftEnd, { timeZone: details.timeZone })
+    : null
+  const siteLine = [details.siteCode, details.siteName].filter(Boolean).join(' · ')
 
   return (
     <ModalDialog
       className="modal-dialog--early-clock-in"
-      description="Clock-in is not available yet. Review the scheduled start time before continuing."
+      description={`Your scheduled shift starts in ${shiftDuration}.`}
+      dialogRole="alertdialog"
       dismissible={false}
+      eyebrow="CLOCK-IN UNAVAILABLE"
+      headingIcon={<ClockAlert size={24} />}
       onClose={onAcknowledge}
-      title="Too early to clock in"
+      title="Your shift hasn’t started yet"
     >
-      <div className="early-clock-in-warning" role="alert">
-        <ShieldAlert aria-hidden="true" size={42} />
-        <div>
-          <strong>Your shift does not start for {waitDuration}.</strong>
-          <p>
-            Your shift begins at {formatDualTime(shiftStartsAt, { timeZone })} at {locationName}.
-            Clock-in becomes available five minutes before the scheduled start.
-          </p>
+      <div
+        aria-label="Early clock-in restriction details"
+        className="early-clock-in-restriction"
+        tabIndex={0}
+      >
+        <section className="early-clock-in-availability" aria-labelledby="clock-in-window-title">
+          <div>
+            <span id="clock-in-window-title">Your clock-in window opens at</span>
+            <strong>{eligibleTime}</strong>
+          </div>
+          <span className="early-clock-in-availability__pill">In {eligibilityDuration}</span>
+          <p>You may clock in up to 5 minutes early. Please return at or after {eligibleTime}.</p>
+        </section>
+
+        <ol aria-label="Clock-in timing" className="early-clock-in-timeline">
+          <li>
+            <span>Current server time</span>
+            <strong>{currentTime}</strong>
+          </li>
+          <li>
+            <span>Clock-in opens</span>
+            <strong>{eligibleTime}</strong>
+          </li>
+          <li>
+            <span>Shift starts</span>
+            <strong>{shiftStartTime}</strong>
+          </li>
+        </ol>
+
+        <section className="early-clock-in-shift" aria-labelledby="scheduled-shift-title">
+          <span className="early-clock-in-shift__eyebrow" id="scheduled-shift-title">SCHEDULED SHIFT</span>
+          <strong>{details.shiftDisplayName}</strong>
+          <p>{[siteLine || details.locationName, details.coverageType].filter(Boolean).join(' · ')}</p>
+          <p>{formatOperationalDate(new Date(details.scheduledShiftStart), details.timeZone)}</p>
+          <p>{shiftStartTime}{shiftEndTime ? ` – ${shiftEndTime}` : ''}</p>
+        </section>
+
+        <p className="early-clock-in-server-note">Timing is based on trusted SygShift server time.</p>
+
+        <div className="early-clock-in-footer-note">
+          <ShieldCheck aria-hidden="true" size={21} />
+          <strong>Acknowledging this notice will not clock you in.</strong>
         </div>
       </div>
-      <div className="early-clock-in-warning__actions">
-        <button autoFocus className="danger-button" onClick={onAcknowledge} type="button">
-          I understand
+      <div className="early-clock-in-restriction__actions">
+        <button autoFocus className="primary-action" onClick={onAcknowledge} type="button">
+          Acknowledge &amp; close
         </button>
       </div>
     </ModalDialog>
+  )
+}
+
+export function EarlyClockInAcknowledgmentNotice({ details }: { details: EarlyClockInBlockedDetails }) {
+  return (
+    <div className="early-clock-in-acknowledged" role="status">
+      <ShieldCheck aria-hidden="true" size={20} />
+      <span>
+        <strong>Notice acknowledged</strong>
+        You can try clocking in again at {formatDualTime(details.clockInEligibleAt, { timeZone: details.timeZone })}.
+      </span>
+    </div>
   )
 }
