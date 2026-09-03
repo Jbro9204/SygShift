@@ -5,6 +5,8 @@ const widths = [1920, 1440, 1280, 1024, 768, 390, 320] as const
 
 async function installHeaderFixture(page: import('@playwright/test').Page, collapsed: boolean) {
   await page.locator('#root').evaluate((root, sidebarCollapsed) => {
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
     const clocks = [
       ['Eastern', 'EDT'],
       ['Central', 'CDT'],
@@ -27,7 +29,7 @@ async function installHeaderFixture(page: import('@playwright/test').Page, colla
         </span>
       </article>`).join('')
 
-    root.innerHTML = `
+    fixtureRoot.innerHTML = `
       <div class="app-shell${sidebarCollapsed ? ' app-shell--sidebar-collapsed' : ''}">
         <button class="mobile-menu-button" type="button" aria-label="Open navigation">☰</button>
         <aside class="sidebar${sidebarCollapsed ? ' sidebar--collapsed' : ''}"><div class="sidebar-brand"><img alt="SygShift" src="/brand/sygshift-logo.png" /></div></aside>
@@ -82,6 +84,12 @@ for (const width of widths) {
 
     const clippedDigitalTimes = await page.locator('.operational-clock__digital').evaluateAll((elements) => elements.filter((element) => element.scrollWidth > element.clientWidth + 1).length)
     expect(clippedDigitalTimes).toBe(0)
+    const clockTextSize = await page.locator('.operational-clock__digital').first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+    const zoneTextSize = await page.locator('.operational-clock__zone').first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+    const clockFaceSize = await page.locator('.operational-clock__face').first().evaluate((element) => element.getBoundingClientRect().width)
+    expect(clockTextSize).toBeGreaterThanOrEqual(12)
+    expect(zoneTextSize).toBeGreaterThanOrEqual(11)
+    expect(clockFaceSize).toBeGreaterThanOrEqual(32)
     const alertCopyClipped = await page.locator('.workspace-alert-strip__ticker').evaluate((element) => element.scrollWidth > element.clientWidth + 1)
     expect(alertCopyClipped).toBe(false)
     const viewportWidth = page.viewportSize()!.width
