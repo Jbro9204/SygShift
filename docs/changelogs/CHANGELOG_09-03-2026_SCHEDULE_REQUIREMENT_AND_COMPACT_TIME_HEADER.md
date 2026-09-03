@@ -61,6 +61,19 @@ Employee-facing schedule and time surfaces now show the requirement of the speci
 - Deployed-asset inspection confirmed the requirement-aware Armed/Unarmed helper, the compact operational-clock details, the **System time** label, and the responsive two-column clock layout.
 - Authenticated production inspection confirmed four visible clocks, one highlighted **System time** label, requirement-aware **Unarmed coverage** schedule cards, and no page-level horizontal overflow.
 
+## Follow-up legibility refinement
+
+- Increased the full-width clock faces from 30 to 34 pixels and the constrained-width faces from 28 to 32 pixels.
+- Increased the primary digital time from 10–11 pixels to 12 pixels, the zone label from 10 to 11 pixels, and the **System time** badge from 8 to 9 pixels.
+- Slightly widened each clock card and its internal spacing while retaining the 72-pixel wide-desktop header, the constrained four-clock row, and the tablet/phone two-by-two layout.
+- Added regression minimums for the time, zone, and clock-face sizes while retaining long-afternoon-time clipping, accessibility, reduced-motion, ordering, and horizontal-containment checks.
+- The focused header suite passed all 22 desktop/mobile checks at 1920, 1440, 1280, 1024, 768, 390, and 320 pixels. The combined branch passed `pnpm check` with TypeScript, zero-warning lint, 163 test files / 784 tests, and both production builds.
+- The aggregate Playwright run passed 107 of 108 checks; its sole unrelated Access Control fixture race passed immediately on isolated retry. The header suite was rerun after integrating the concurrent Client Directory release and passed 22 of 22.
+- Implementation commit `e10e913` was pushed to `origin/main`, and the combined branch tip was deployed as Cloudflare Worker version `60526ed7-b5d9-4e6c-b2e1-27f64574077e`.
+- Primary and fallback health/readiness returned HTTP 200 and ready. The live stylesheet contains the 12-pixel time, 11-pixel zone, and 34-pixel face rules.
+- Authenticated live measurement confirmed four clocks, no clipped digital times, and no page-level horizontal overflow.
+- No database migration or production-record change was required.
+
 ## Remaining scope
 
 - The separate **Employee-Local Shift Time Presentation** Future item remains open. This release changes the compact global clock presentation and corrects requirement labels; it does not change employee-local schedule conversion, clock eligibility, stored timestamps, or payroll ownership.

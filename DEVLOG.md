@@ -36,6 +36,9 @@ deployment status, or major workflow assumptions change.
 - Full validation passed: TypeScript, zero-warning application lint, 163 test files / 783 tests, both production builds, and 108 desktop/mobile Playwright checks.
 - Pushed implementation commit `f4ec99f` and deployed Cloudflare Worker version `5c6aa879-d39a-41cd-85f4-353b6796516d`; primary and fallback health/readiness returned HTTP 200 and ready.
 - Authenticated production verification confirmed four visible clocks, the highlighted **System time** label, requirement-aware **Unarmed coverage** schedule cards, and no horizontal overflow.
+- Follow-up legibility refinement increased the clock faces to 32–34 pixels, primary time text to 12 pixels, zone text to 11 pixels, and the **System time** badge to 9 pixels while preserving the compact header and all responsive four-zone layouts.
+- Rebased the refinement over the concurrent Client Directory completion, passed the combined `pnpm check` gate with 163 files / 784 tests and all 22 clock-layout browser checks, and pushed commit `e10e913`.
+- Deployed the combined branch tip as Cloudflare Worker version `60526ed7-b5d9-4e6c-b2e1-27f64574077e`; primary and fallback health/readiness returned HTTP 200 and ready. Authenticated production measurements confirmed four clocks, the intended 12/11/34-pixel desktop sizing, zero clipped times, and no horizontal overflow.
 - Release validation and production deployment evidence are recorded in `docs/changelogs/CHANGELOG_09-03-2026_SCHEDULE_REQUIREMENT_AND_COMPACT_TIME_HEADER.md`.
 
 ### Client Directory completion
