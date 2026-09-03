@@ -52,6 +52,9 @@ deployment status, or major workflow assumptions change.
 - A second controlled legibility increment raised the wide clock faces from 34 to 36 pixels, constrained faces from 32 to 34 pixels, desktop time text from 12 to 13 pixels, mobile time text to 12.5 pixels, zone text from 11 to 12 pixels, and the **System time** badge from 9 to 10 pixels.
 - Rebased over the concurrent Scheduler Dispatch-overlap acknowledgement without losing either release, passed the combined `pnpm check` gate with 163 files / 785 tests and all 22 clock-layout browser checks, and pushed commit `3c50a88`.
 - Deployed Cloudflare Worker version `dccced08-4911-4f72-a041-382dc9b0e2d5`; primary and fallback health/readiness returned HTTP 200 and ready. Authenticated production measurement confirmed four clocks, 13/12/36-pixel desktop sizing, a 10-pixel system badge, zero clipped times, and no horizontal overflow.
+- The final gradual legibility increment raised wide clock faces from 36 to 38 pixels, constrained faces from 34 to 36 pixels, phone faces to 35 pixels, desktop time text from 13 to 14 pixels, phone time text from 12.5 to 13 pixels, zone text from 12 to 12.5 pixels, and the **System time** badge from 10 to 10.5 pixels.
+- Preserved all four zones and the compact responsive structure; `pnpm check` passed with 163 files / 785 tests and all 22 clock-layout browser checks passed from 1920 through 320 pixels. Pushed implementation commit `4d62085`.
+- Deployed Cloudflare Worker version `c69124f0-cda9-4d83-94c5-7e42c1267d27`; primary and fallback health/readiness returned HTTP 200 and ready. Authenticated production measurement confirmed four clocks, 14/12.5/38-pixel desktop sizing, a 10.5-pixel system badge, zero clipped times, and no horizontal overflow.
 - Release validation and production deployment evidence are recorded in `docs/changelogs/CHANGELOG_09-03-2026_SCHEDULE_REQUIREMENT_AND_COMPACT_TIME_HEADER.md`.
 
 ### Client Directory completion
