@@ -11,9 +11,9 @@ const page = readFileSync('src/pages/HrisStage7Page.tsx', 'utf8')
 const employeeFileRelease = readFileSync('supabase/migrations/20260902010000_employee_file_editing_and_pay_rates.sql', 'utf8')
 
 describe('HRIS Stage 7 leave, benefits, and compensation foundation', () => {
-  it('keeps leave and benefits dormant while releasing only approved compensation', () => {
-    expect(wrangler).toContain('"SYGSHIFT_HR_LEAVE_ENABLED": "false"')
-    expect(wrangler).toContain('"SYGSHIFT_HR_BENEFITS_ENABLED": "false"')
+  it('releases leave and benefits through the approved operational boundary', () => {
+    expect(wrangler).toContain('"SYGSHIFT_HR_LEAVE_ENABLED": "true"')
+    expect(wrangler).toContain('"SYGSHIFT_HR_BENEFITS_ENABLED": "true"')
     expect(wrangler).toContain('"SYGSHIFT_HR_COMPENSATION_ENABLED": "true"')
     expect(migration).toContain('enabled boolean not null default false')
     expect(employeeFileRelease).toContain('update private.hr_compensation_release_gate')

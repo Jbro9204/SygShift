@@ -10,9 +10,9 @@ const navigation = readFileSync('src/app/navigation.ts', 'utf8')
 const page = readFileSync('src/pages/HrisStage8Page.tsx', 'utf8')
 
 describe('HRIS Stage 8 talent, learning, cases, safety, and assets foundation', () => {
-  it('keeps every production release gate dormant', () => {
+  it('releases every workspace through the approved operational boundary', () => {
     for (const moduleName of ['TALENT', 'LEARNING', 'CASES', 'SAFETY', 'ASSETS']) {
-      expect(wrangler).toContain(`"SYGSHIFT_HR_${moduleName}_ENABLED": "false"`)
+      expect(wrangler).toContain(`"SYGSHIFT_HR_${moduleName}_ENABLED": "true"`)
     }
     expect(migration).toContain('enabled boolean not null default false')
   })

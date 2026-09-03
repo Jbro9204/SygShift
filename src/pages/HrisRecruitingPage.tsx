@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, BriefcaseBusiness, CheckCircle2, RefreshCw, UserRoundSearch } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { HrRecruitingActions } from '../components/HrRecruitingActions'
 import { getHrRecruitingWorkspace } from '../data/hrRecruiting'
 import { isSupabaseConfigured } from '../lib/supabase'
 
@@ -41,7 +42,7 @@ export function HrisRecruitingPage() {
     <div className="page page--hr-automation">
       <section className="page-intro workforce-intro">
         <div><p className="eyebrow">HR &amp; Finance</p><h1>Recruiting</h1><p className="page-summary">Manage approved hiring work from requisition through candidate conversion without re-entering employee identity data.</p></div>
-        <button className="secondary-button" onClick={() => workspaceQuery.refetch()} type="button"><RefreshCw aria-hidden="true" size={17} />Refresh</button>
+        <div className="hr-operational-heading-actions"><HrRecruitingActions workspace={workspace} onComplete={() => workspaceQuery.refetch()} /><button className="secondary-button" onClick={() => workspaceQuery.refetch()} type="button"><RefreshCw aria-hidden="true" size={17} />Refresh</button></div>
       </section>
       <section className="hr-automation-summary" aria-label="Recruiting status">
         <article><BriefcaseBusiness aria-hidden="true" size={20} /><span>Open requisitions</span><strong>{workspace.counts.openRequisitions}</strong></article>

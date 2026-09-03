@@ -25,6 +25,14 @@ deployment status, or major workflow assumptions change.
 
 ## 09/03/2026
 
+### HR Suite operational release
+
+- Released Recruiting, Leave, Benefits, Talent, Learning, Employee Cases, Safety, Assets, Offboarding & Rehire, HR Self-Service, and HR Reporting through a centralized service-only action boundary with exact permissions, audit events, recent MFA for restricted modules, and independent approval where required.
+- Repaired pre-existing Stage 6 runtime ambiguities affecting onboarding template tasks, pre-hire duplicate-email checks, and candidate conversion.
+- Applied and reconciled forward migration `20260903191657`; verified all 11 release gates enabled and all protected business-record counts unchanged at zero.
+- Preserved every employee, access role, role membership, individual override, schedule, time, payroll, licensing, and document record. General HR automation and external payroll/iSolved integration remain gated.
+- Full details are recorded in `docs/changelogs/CHANGELOG_09-03-2026_HR_SUITE_OPERATIONAL_RELEASE.md`.
+
 ### Future queue reconciliation
 
 - Reconciled Jordan's 09/02 meeting list and related evening decisions against completed production work so finished releases were not placed back into the active queue.

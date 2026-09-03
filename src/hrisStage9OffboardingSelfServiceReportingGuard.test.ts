@@ -10,9 +10,9 @@ const navigation = readFileSync('src/app/navigation.ts', 'utf8')
 const page = readFileSync('src/pages/HrisStage9Page.tsx', 'utf8')
 
 describe('HRIS Stage 9 lifecycle, self-service, and reporting foundation', () => {
-  it('keeps all production release gates dormant', () => {
+  it('releases all workspaces through the approved operational boundary', () => {
     for (const moduleName of ['OFFBOARDING', 'SELF_SERVICE', 'REPORTING']) {
-      expect(wrangler).toContain(`"SYGSHIFT_HR_${moduleName}_ENABLED": "false"`)
+      expect(wrangler).toContain(`"SYGSHIFT_HR_${moduleName}_ENABLED": "true"`)
     }
     expect(migration).toContain('enabled boolean not null default false')
   })

@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { HrOperationalActions } from '../components/HrOperationalActions'
 import { getSessionContext } from '../data/auth'
 import {
   getHrStage9Workspace,
@@ -93,6 +94,7 @@ function Stage9WorkspacePage({ module }: { module: HrStage9Module }) {
   const WorkspaceIcon = definition.icon
   const sessionQuery = useQuery({ queryKey: ['session-context'], queryFn: getSessionContext, enabled: isSupabaseConfigured })
   const hasPermission = sessionQuery.data?.permissions.includes(definition.permission) === true
+  const canManage = module === 'self_service' || sessionQuery.data?.permissions.includes(`hr.${module}.manage`) === true
   const workspaceQuery = useQuery({
     queryKey: ['hr-stage9-workspace', module, pageSize, offset],
     queryFn: () => getHrStage9Workspace(module, pageSize, offset),
@@ -113,7 +115,7 @@ function Stage9WorkspacePage({ module }: { module: HrStage9Module }) {
       {workspaceQuery.isError ? <DataStatePanel icon={AlertTriangle} title={`${definition.title} unavailable`} tone="error"><p>{workspaceQuery.error.message}</p></DataStatePanel> : null}
       {workspaceQuery.data && !workspaceQuery.data.enabled ? <DataStatePanel icon={CheckCircle2} title={`${definition.title} is safely staged`}><p>{definition.staged}</p><p>No current roles, permissions, employee records, schedules, or time records were changed.</p></DataStatePanel> : null}
       {workspaceQuery.data?.enabled ? <>
-        <section className="page-section-heading"><div><p className="eyebrow">Protected workspace</p><h2>{definition.title}</h2><p>{definition.summary}</p></div><button className="secondary-button" onClick={() => workspaceQuery.refetch()} type="button"><RefreshCw aria-hidden="true" size={17} />Refresh</button></section>
+        <section className="page-section-heading"><div><p className="eyebrow">Protected workspace</p><h2>{definition.title}</h2><p>{definition.summary}</p></div><div className="hr-operational-heading-actions">{canManage ? <HrOperationalActions module={module} items={workspaceQuery.data.items} onComplete={() => workspaceQuery.refetch()} /> : null}<button className="secondary-button" onClick={() => workspaceQuery.refetch()} type="button"><RefreshCw aria-hidden="true" size={17} />Refresh</button></div></section>
         <section aria-label={`${definition.title} status`} className="hr-automation-summary hr-automation-summary--three">
           {definition.metrics.map((metric, index) => <article key={metric}><WorkspaceIcon aria-hidden="true" size={20} /><span>{metric}</span><strong>{index === 0 ? workspaceQuery.data.counts.primary : index === 1 ? workspaceQuery.data.counts.secondary : workspaceQuery.data.counts.tertiary}</strong></article>)}
         </section>

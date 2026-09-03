@@ -10,14 +10,15 @@ const provisioning = readFileSync('supabase/migrations/20260831230000_hris_onboa
 const release = readFileSync('supabase/migrations/20260831233000_hris_onboarding_production_release.sql', 'utf8')
 
 describe('HR onboarding production release', () => {
-  it('keeps onboarding and the separately approved compensation surface enabled', () => {
-    expect(wrangler).toContain('"SYGSHIFT_HR_ONBOARDING_ENABLED": "true"')
-    expect(wrangler).toContain('"SYGSHIFT_HR_COMPENSATION_ENABLED": "true"')
+  it('keeps the in-system HR suite enabled while external integration cutovers remain closed', () => {
     for (const gate of [
-      'SYGSHIFT_HR_RECRUITING_ENABLED', 'SYGSHIFT_HR_LEAVE_ENABLED', 'SYGSHIFT_HR_BENEFITS_ENABLED',
-      'SYGSHIFT_HR_TALENT_ENABLED', 'SYGSHIFT_HR_LEARNING_ENABLED',
-      'SYGSHIFT_HR_CASES_ENABLED', 'SYGSHIFT_HR_SAFETY_ENABLED', 'SYGSHIFT_HR_ASSETS_ENABLED', 'SYGSHIFT_HR_OFFBOARDING_ENABLED',
+      'SYGSHIFT_HR_RECRUITING_ENABLED', 'SYGSHIFT_HR_ONBOARDING_ENABLED',
+      'SYGSHIFT_HR_LEAVE_ENABLED', 'SYGSHIFT_HR_BENEFITS_ENABLED', 'SYGSHIFT_HR_COMPENSATION_ENABLED',
+      'SYGSHIFT_HR_TALENT_ENABLED', 'SYGSHIFT_HR_LEARNING_ENABLED', 'SYGSHIFT_HR_CASES_ENABLED',
+      'SYGSHIFT_HR_SAFETY_ENABLED', 'SYGSHIFT_HR_ASSETS_ENABLED', 'SYGSHIFT_HR_OFFBOARDING_ENABLED',
       'SYGSHIFT_HR_SELF_SERVICE_ENABLED', 'SYGSHIFT_HR_REPORTING_ENABLED',
+    ]) expect(wrangler).toContain(`"${gate}": "true"`)
+    for (const gate of [
       'SYGSHIFT_HR_PAYROLL_INTEGRATION_ENABLED', 'SYGSHIFT_HR_PAYROLL_WEBHOOKS_ENABLED',
       'SYGSHIFT_HR_ENTERPRISE_CUTOVER_ENABLED',
     ]) expect(wrangler).toContain(`"${gate}": "false"`)

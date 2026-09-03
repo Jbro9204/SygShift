@@ -3998,6 +3998,79 @@ function disabledHrStage8Workspace(module: HrStage8Module, requestId: string): R
   }
 }
 
+const hrOperationalActionPermissions: Record<string, string> = {
+  'leave.create_case': 'hr.leave.manage',
+  'leave.decide_case': 'hr.leave.approve',
+  'benefits.create_plan': 'hr.benefits.manage',
+  'benefits.activate_plan': 'hr.benefits.approve',
+  'talent.create_goal': 'hr.talent.manage',
+  'talent.update_goal': 'hr.talent.manage',
+  'learning.create_item': 'hr.learning.manage',
+  'learning.assign_item': 'hr.learning.manage',
+  'cases.create_case': 'hr.cases.manage',
+  'cases.add_note': 'hr.cases.manage',
+  'cases.close_case': 'hr.cases.manage',
+  'safety.create_case': 'hr.safety.manage',
+  'assets.create_asset': 'hr.assets.manage',
+  'assets.assign_asset': 'hr.assets.manage',
+  'offboarding.create_case': 'hr.offboarding.manage',
+  'offboarding.review_case': 'hr.offboarding.approve',
+  'self_service.submit_request': 'hr.self_service.view',
+  'self_service.review_request': 'hr.self_service.manage',
+  'reporting.create_definition': 'hr.reporting.manage',
+}
+
+async function handleHrOperationalAction(request: Request, environment: Environment, requestId: string): Promise<Response> {
+  const session = await requireVerifiedOperationsSession(request, environment, 'hr_operation_mfa_required')
+  if (request.method === 'GET') {
+    const module = requiredText(new URL(request.url).searchParams.get('module'), 'HR module', 40).toLowerCase()
+    requireSessionPermission(session.context, 'hr.people.view')
+    const result = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_get_hr_operational_options',
+      { target_actor_id: session.context.employee_id, target_module: module },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId })
+  }
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  const body = await readJsonBody(request)
+  const module = requiredText(body.module, 'HR module', 40).toLowerCase()
+  const action = requiredText(body.action, 'HR action', 80).toLowerCase()
+  const permission = hrOperationalActionPermissions[`${module}.${action}`]
+  if (!permission) throw new ApiError('unsupported_hr_action', 422, 'That HR action is not supported.')
+  requireSessionPermission(session.context, permission)
+
+  const enabled = module === 'leave' ? hrLeaveEnabled(environment)
+    : module === 'benefits' ? hrBenefitsEnabled(environment)
+      : module === 'talent' || module === 'learning' || module === 'cases' || module === 'safety' || module === 'assets'
+        ? hrStage8Enabled(environment, module as HrStage8Module)
+        : module === 'offboarding' || module === 'self_service' || module === 'reporting'
+          ? hrStage9Enabled(environment, module as HrStage9Module)
+          : false
+  if (!enabled) throw new ApiError('hr_module_unavailable', 503, 'This HR workspace has not been released.')
+
+  const needsRecentMfa = module === 'cases' || module === 'safety' || module === 'offboarding' || module === 'reporting'
+  const mfa = needsRecentMfa ? await requireRecentDocumentMfa(request, session) : null
+  const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload) ? body.payload : {}
+  const reason = requiredText(body.reason, 'Business reason', 4000)
+  const result = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_hr_operational_action',
+    {
+      target_action: action,
+      target_actor_id: session.context.employee_id,
+      target_mfa_method: mfa?.method ?? null,
+      target_mfa_verified_at: mfa?.verifiedAt ?? null,
+      target_module: module,
+      target_payload: payload,
+      target_reason: reason,
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...result, requestId }, 201)
+}
+
 async function handleHrStage8Api(
   request: Request,
   environment: Environment,
@@ -6364,6 +6437,19 @@ export default {
           response = error instanceof ApiError
             ? errorJson(error.code, requestId, error.status, error.message)
             : errorJson('patrol_request_failed', requestId, 500, 'The protected Patrol request could not be completed.')
+        }
+      }
+    } else if (url.pathname === '/api/v1/hr/operations/actions' || url.pathname === '/api/v1/hr/operations/options') {
+      try {
+        response = await handleHrOperationalAction(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('hr_operational_action_failed', requestId, 500, 'The HR action could not be completed.')
         }
       }
     } else if (url.pathname.startsWith('/api/v1/hr/recruiting')) {

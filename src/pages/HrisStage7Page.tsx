@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, BadgeDollarSign, CheckCircle2, HeartHandshake, RefreshCw, Umbrella } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { HrOperationalActions } from '../components/HrOperationalActions'
+import { getSessionContext } from '../data/auth'
 import {
   getHrBenefitsWorkspace,
   getHrCompensationWorkspace,
@@ -63,6 +65,7 @@ function Stage7WorkspacePage({ kind }: { kind: WorkspaceKind }) {
   const [pageSize, setPageSize] = useState<PageSize>(10)
   const [offset, setOffset] = useState(0)
   const details = workspaceDetails[kind]
+  const sessionQuery = useQuery({ queryKey: ['session-context'], queryFn: getSessionContext, enabled: isSupabaseConfigured })
   const query = useQuery<Stage7Workspace>({
     queryKey: [`hr-${kind}-workspace`, pageSize, offset],
     queryFn: () => kind === 'leave'
@@ -91,7 +94,10 @@ function Stage7WorkspacePage({ kind }: { kind: WorkspaceKind }) {
     <div className="page page--hr-automation">
       <section className="page-intro workforce-intro">
         <div><p className="eyebrow">HR &amp; Finance</p><h1>{details.title}</h1><p className="page-summary">{details.summary}</p></div>
-        <button className="secondary-button" onClick={() => query.refetch()} type="button"><RefreshCw aria-hidden="true" size={17} />Refresh</button>
+        <div className="hr-operational-heading-actions">
+          {kind !== 'compensation' && sessionQuery.data?.permissions.includes(`hr.${kind}.manage`) ? <HrOperationalActions module={kind} items={workspace.items.map((item) => ({ id: item.id, title: 'employeeName' in item ? item.employeeName : item.name, status: item.status }))} onComplete={() => query.refetch()} /> : null}
+          <button className="secondary-button" onClick={() => query.refetch()} type="button"><RefreshCw aria-hidden="true" size={17} />Refresh</button>
+        </div>
       </section>
       {kind === 'leave' ? <LeaveWorkspace workspace={workspace as HrLeaveWorkspace} /> : null}
       {kind === 'benefits' ? <BenefitsWorkspace workspace={workspace as HrBenefitsWorkspace} /> : null}

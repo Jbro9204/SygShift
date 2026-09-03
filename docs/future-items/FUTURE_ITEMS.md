@@ -149,7 +149,7 @@ Completion criteria:
 
 - Priority: **Urgent**
 - Target window: Staged enterprise program; approximately 24–28 controlled runs
-- Status: Stages 1–9 and the dormant Stage 10 payroll-integration control plane completed through 08/30/2026. The controlled Onboarding release completed 08/31/2026; Recruiting, identity backfill, document delivery, the remaining protected modules, and any external payroll cutover remain separately gated.
+- Status: Core in-system HR Suite operational release completed 09/03/2026. Recruiting, Onboarding, Leave, Benefits, Compensation, Talent, Learning, Employee Cases, Safety, Assets, Offboarding, Self-Service, Reporting, employee files, and Document Studio are available through their exact permission boundaries. Historical identity backfill, HR automation, advanced document capabilities, and any external payroll cutover remain separately gated.
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
 
@@ -236,7 +236,7 @@ Run 2 installed the original fail-closed server boundary for exact file-signatur
 - [x] Add retry, failure, dead-letter, pause, resume, cancel, and audited manual-override controls.
 - [x] Connect approved HR work to the Action Center and notification system without flooding users.
 
-Stage 5 installed a private, service-only workflow engine; immutable versions; human tasks; bounded, idempotent jobs; retry and dead-letter controls; scheduled work; notification-outbox handoff; and compact Action Center and administrative worklists. The database and Worker release gates are both disabled, the administrative route is absent from navigation, and no new permission is assigned to any current role or employee. Production contains no workflow definitions, jobs, or tasks. Activation is a separate controlled release requiring approved workflow content, minimum permission assignment, canary validation, reliability and recovery evidence, and both release controls.
+Stage 5 installed a private, service-only workflow engine; immutable versions; human tasks; bounded, idempotent jobs; retry and dead-letter controls; scheduled work; notification-outbox handoff; and compact Action Center and administrative worklists. Its general-purpose automation gate remains disabled because approved workflow content and a dedicated operational canary have not yet been supplied. The operational HR modules released on 09/03/2026 use direct, audited service actions and do not silently activate the general automation engine.
 
 #### Stage 6 — Recruiting & Onboarding (completed 08/30/2026)
 
@@ -245,7 +245,7 @@ Stage 5 installed a private, service-only workflow engine; immutable versions; h
 - [x] Implement preboarding and onboarding templates, assigned tasks, dependencies, readiness, reminders, and escalation.
 - [x] Integrate onboarding with User Accounts, Licensing, Training, equipment, documents, and site-access readiness.
 
-The controlled Onboarding release completed 08/31/2026. Onboarding now supports dynamic federal, state, employment-classification, job-family, guard, and armed requirements; evidence-gated checklist completion; a separate approval before activation; permanent employee and User Account linkage without duplicate data entry; and separate company-welcome and login-instruction emails. The release preserved every existing employee, account, role, role membership, and individual permission override. It created no candidate, employee, onboarding case, or task during deployment. Recruiting remains dormant behind its independent release gate and its permissions remain unassigned.
+The controlled Onboarding release completed 08/31/2026. Recruiting joined it in the operational HR Suite release on 09/03/2026 with protected requisition, applicant, stage, interview, offer, disposition, and candidate-conversion foundations plus audited management actions. The release also repaired latent onboarding template-version and pre-hire email query ambiguities and the candidate-conversion applicant lookup. No candidate, employee, onboarding case, task, or access assignment was created during deployment.
 
 #### Stage 7 — Leave, Benefits & Compensation (completed 08/30/2026)
 
@@ -255,7 +255,7 @@ The controlled Onboarding release completed 08/31/2026. Onboarding now supports 
 - [x] Implement effective-dated compensation history, approvals, recent-MFA requirements, and restricted access.
 - [x] Never invent balances, policy entitlements, benefit promises, or compensation decisions.
 
-Stage 7's Leave Administration and Benefits Administration foundations remain dormant behind independent database and Worker gates. The protected Compensation pay-rate workflow was released on 09/01/2026 for compensation-authorized system administrators only. Viewing pay requires exact permission and recent MFA; adding or changing a rate creates a proposal that must be approved by a different compensation-authorized administrator. The release created no employee pay record or proposal, inferred no amount, and granted no compensation access to Human Resources or Operations roles. Operational time-off remains authoritative, and future Leave or Benefits activation still requires approved source data, named owners, an isolated canary, recovery evidence, and post-activation validation.
+Leave Administration and Benefits Administration joined Compensation in the operational HR Suite release on 09/03/2026. Authorized HR staff can open and independently decide leave cases and create and independently activate benefit plans through the audited service boundary. Operational time-off remains authoritative; no leave entitlement, balance, benefit promise, enrollment, pay record, or access grant was inferred or created. Compensation retains its separate recent-MFA and maker-checker controls.
 
 #### Stage 8 — Talent, Learning, Cases, Safety & Assets (completed 08/30/2026)
 
@@ -265,7 +265,7 @@ Stage 7's Leave Administration and Benefits Administration foundations remain do
 - [x] Implement safety and workers' compensation workflows with appropriate restricted-data boundaries.
 - [x] Implement equipment and asset issuance, acknowledgment, transfer, return, and offboarding reconciliation.
 
-Stage 8 is deployed dormant. Talent, Learning, Employee Cases, Safety, and Assets have independent database and Worker release gates, all 15 permissions remain unassigned, and no goal, review, course assignment, HR case, safety case, workers' compensation record, asset, assignment, acknowledgment, or financial review was created during deployment. Employee Cases and Safety require recent MFA in addition to exact permissions. The compact workspaces use bounded 5/10/20 worklists and connect to the existing document, Licensing Center, onboarding, and offboarding authorities without duplicating those records. Activation requires approved operating policies, named access owners, permission assignment, recovery evidence, an isolated canary, and post-activation validation.
+Talent, Learning, Employee Cases, Safety, and Assets became operational on 09/03/2026 through one centralized, service-only action boundary. Their compact workspaces now provide permission-appropriate create and management actions while retaining bounded 5/10/20 worklists and their existing connections to Document Studio, Licensing, Onboarding, and Offboarding. Employee Cases and Safety continue to require recent MFA. Activation created no business record and changed no employee or access assignment.
 
 #### Stage 9 — Offboarding, Self-Service & Reporting (completed 08/30/2026)
 
@@ -274,7 +274,7 @@ Stage 8 is deployed dormant. Talent, Learning, Employee Cases, Safety, and Asset
 - [x] Implement employee and manager self-service limited to effective permissions and approved records.
 - [x] Implement permission-aware reports, custom report building, scheduled reports, and asynchronous exports for large jobs.
 
-Stage 9 is deployed dormant. Offboarding & Rehire, HR Self-Service, and HR Reporting have independent database and Worker release gates, all nine permissions remain unassigned, and no lifecycle case, self-service request, report definition, scheduled report, export run, or downstream handoff was created during deployment. Separation and rehire decisions require explicit approval and preserve history; downstream account, Schedule, Payroll, Licensing, document, training, and asset work is coordinated through auditable tasks instead of silently mutating authoritative systems. Self-service is scoped to the signed-in employee or effective manager permissions. Reporting is permission-aware and supports bounded asynchronous run records without exposing unrestricted employee data. Offboarding and Reporting require recent MFA. Activation requires approved operating policies, named access owners, permission assignment, recovery evidence, an isolated canary, and post-activation validation.
+Offboarding & Rehire, HR Self-Service, and HR Reporting became operational on 09/03/2026 through exact permissions and audited actions. Separation and rehire decisions retain independent approval and preserved history; self-service remains scoped to the signed-in employee or effective manager authority; and governed report definitions remain permission filtered. Offboarding and Reporting continue to require recent MFA. The release created no lifecycle case, request, report, schedule, payroll, licensing, document, training, asset, or access mutation.
 
 #### Stage 10 — Payroll Integration & Enterprise Hardening (control plane completed 08/30/2026; external cutover gated)
 

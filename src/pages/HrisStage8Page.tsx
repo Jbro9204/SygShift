@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { HrOperationalActions } from '../components/HrOperationalActions'
 import { getSessionContext } from '../data/auth'
 import {
   getHrStage8Workspace,
@@ -104,6 +105,7 @@ function Stage8WorkspacePage({ title, summary, modules }: {
   const allowedModules = useMemo(() => modules.filter((module) => (
     sessionQuery.data?.permissions.includes(workspaceDefinitions[module].permission)
   )), [modules, sessionQuery.data?.permissions])
+  const canManageSelected = sessionQuery.data?.permissions.includes(`hr.${selectedModule}.manage`) === true
 
   useEffect(() => {
     if (allowedModules.length && !allowedModules.includes(selectedModule)) setSelectedModule(allowedModules[0])
@@ -144,7 +146,7 @@ function Stage8WorkspacePage({ title, summary, modules }: {
       {workspaceQuery.isError ? <DataStatePanel icon={AlertTriangle} title={`${definition.title} unavailable`} tone="error"><p>{workspaceQuery.error.message}</p></DataStatePanel> : null}
       {workspaceQuery.data && !workspaceQuery.data.enabled ? <DataStatePanel icon={CheckCircle2} title={`${definition.title} is safely staged`}><p>{definition.staged}</p><p>No current roles, permissions, or employee records were changed.</p></DataStatePanel> : null}
       {workspaceQuery.data?.enabled ? <>
-        <section className="page-section-heading"><div><p className="eyebrow">Protected workspace</p><h2>{definition.title}</h2><p>{definition.summary}</p></div><button className="secondary-button" onClick={() => workspaceQuery.refetch()} type="button"><RefreshCw aria-hidden="true" size={17} />Refresh</button></section>
+        <section className="page-section-heading"><div><p className="eyebrow">Protected workspace</p><h2>{definition.title}</h2><p>{definition.summary}</p></div><div className="hr-operational-heading-actions">{canManageSelected ? <HrOperationalActions module={selectedModule} items={workspaceQuery.data.items} onComplete={() => workspaceQuery.refetch()} /> : null}<button className="secondary-button" onClick={() => workspaceQuery.refetch()} type="button"><RefreshCw aria-hidden="true" size={17} />Refresh</button></div></section>
         <section aria-label={`${definition.title} status`} className="hr-automation-summary hr-automation-summary--three">
           {definition.metrics.map((metric, index) => <article key={metric}><WorkspaceIcon aria-hidden="true" size={20} /><span>{metric}</span><strong>{index === 0 ? workspaceQuery.data.counts.primary : index === 1 ? workspaceQuery.data.counts.secondary : workspaceQuery.data.counts.tertiary}</strong></article>)}
         </section>
