@@ -31,11 +31,15 @@ The clock transaction itself was not changed or disabled; the failure was in the
 
 - Targeted regression validation passed: 5 files / 34 tests.
 - Full validation passed: TypeScript, zero-warning lint, 156 test files / 754 tests, and both Worker and client production builds.
+- Six desktop/mobile shell and protected-route Playwright checks passed.
+- The live login and repaired JavaScript assets returned HTTP 200; the deployed shared timekeeping asset contains the new safe RPC contract.
 
 ## Release status
 
 - Database migration: applied and reconciled in production.
-- Git, Cloudflare deployment, and final health/readiness verification: recorded at release completion.
+- Git: implementation commit `fbadf53` pushed to `origin/main`.
+- Cloudflare: Worker version `949aa361-be36-435d-be42-5431674002bd` deployed.
+- Production health returned `ok`; readiness returned `ready: true`.
 
 ## Rollback
 

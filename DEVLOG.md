@@ -1540,3 +1540,4 @@ pnpm exec wrangler deploy --keep-vars
 - Preserved the protected `get_payroll_rules()` authorization boundary and all existing clock, time-event, payroll, employee, role, and permission records.
 - Production AAL1 verification returned the correct 08/23/2026–09/05/2026 period and eight own-time rows totaling 2,406 minutes for the reported employee.
 - Full validation passed: TypeScript, zero-warning lint, 156 test files / 754 tests, and production Worker/client builds.
+- Deployed Cloudflare Worker version `949aa361-be36-435d-be42-5431674002bd`; production login, repaired assets, health, and readiness verified successfully.
