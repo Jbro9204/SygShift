@@ -6,6 +6,8 @@ export interface RouteAccessPolicy {
   anyOf: readonly PermissionCode[]
 }
 
+export const documentStudioAccessPermission = 'documents.workspace.view' as const
+
 export const scheduleTeamViewPermissions = [
   'schedule.view',
   'scheduler.view',
@@ -50,8 +52,8 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/hr': { anyOf: ['hr.people.view', 'hr.people.manage'] },
   '/hr/people': { anyOf: ['hr.people.view', 'hr.people.manage'] },
   '/hr/people/:employeeId': { anyOf: ['hr.people.view', 'hr.people.manage'] },
-  '/hr/documents': { anyOf: ['hr.documents.view', 'hr.documents.manage'] },
-  '/hr/documents/workflows': { anyOf: ['hr.documents.view', 'hr.documents.manage'] },
+  '/hr/documents': { anyOf: [documentStudioAccessPermission] },
+  '/hr/documents/workflows': { anyOf: [documentStudioAccessPermission] },
   '/hr/automation': { anyOf: ['hr.automation.view'] },
   '/hr/recruiting': { anyOf: ['hr.recruiting.view'] },
   '/hr/onboarding': { anyOf: ['hr.onboarding.view'] },

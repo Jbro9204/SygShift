@@ -1185,6 +1185,12 @@ function requireSessionPermission(context: SessionContext, permission: string): 
   }
 }
 
+const DOCUMENT_STUDIO_ACCESS_PERMISSION = 'documents.workspace.view'
+
+function requireDocumentStudioAccess(context: SessionContext): void {
+  requireSessionPermission(context, DOCUMENT_STUDIO_ACCESS_PERMISSION)
+}
+
 function normalizedMimeType(value: string): string {
   return value.split(';', 1)[0]?.trim().toLowerCase() ?? ''
 }
@@ -2441,6 +2447,7 @@ async function handleHrDocumentUpload(
   if (request.method !== 'PUT') return errorJson('method_not_allowed', requestId, 405)
   requireHrDocumentPipeline(environment)
   const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
   await requireRecentDocumentMfa(request, session)
   const metadata = parseHrDocumentMetadata(request)
   const bodyMimeType = normalizedMimeType(request.headers.get('content-type') ?? '')
@@ -2548,6 +2555,7 @@ async function handleHrDocumentWorkspace(
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   requireHrDocumentPipeline(environment)
   const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
   await requireRecentDocumentMfa(request, session)
   const url = new URL(request.url)
   const search = url.searchParams.get('search')?.trim() ?? ''
@@ -2607,6 +2615,7 @@ async function handleHrTemplateLibrary(
 ): Promise<Response> {
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
   const url = new URL(request.url)
   const search = url.searchParams.get('search')?.trim() ?? ''
   if (search.length > 120) throw new ApiError('invalid_template_search', 422, 'Document-library search is limited to 120 characters.')
@@ -2686,6 +2695,7 @@ async function handleHrDocumentAccessGrant(
   requireHrDocumentPipeline(environment)
   if (!validUuid(documentId)) throw new ApiError('invalid_document_id', 422, 'The document identifier is invalid.')
   const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
   const mfa = await requireRecentDocumentMfa(request, session)
   const body = await readJsonBody(request)
   const action = requiredText(body.action, 'Document action', 20)
@@ -2830,6 +2840,7 @@ async function handleHrDocumentWorkflowWorkspace(
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   requireHrDocumentPipeline(environment)
   const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
   await requireRecentDocumentMfa(request, session)
   const url = new URL(request.url)
   const status = url.searchParams.get('status')?.trim() || null
@@ -2870,6 +2881,7 @@ async function handleCreateHrDocumentRequest(request: Request, environment: Envi
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
   requireHrDocumentPipeline(environment)
   const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
   await requireRecentDocumentMfa(request, session)
   const body = await readJsonBody(request)
   const employeeId = requiredText(body.employeeId, 'Employee', 36)
@@ -2897,6 +2909,7 @@ async function handleReviewHrDocumentRequest(request: Request, environment: Envi
   requireHrDocumentPipeline(environment)
   if (!validUuid(workflowId)) throw new ApiError('invalid_document_request', 422, 'The document request is invalid.')
   const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
   await requireRecentDocumentMfa(request, session)
   const body = await readJsonBody(request)
   const action = requiredText(body.action, 'Review action', 20)
@@ -2914,6 +2927,7 @@ async function handleCreateHrDocumentAssignment(request: Request, environment: E
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
   requireHrDocumentPipeline(environment)
   const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
   await requireRecentDocumentMfa(request, session)
   const body = await readJsonBody(request)
   const employeeId = requiredText(body.employeeId, 'Employee', 36)
@@ -2943,6 +2957,7 @@ async function handleCancelHrDocumentAssignment(request: Request, environment: E
   requireHrDocumentPipeline(environment)
   if (!validUuid(assignmentId)) throw new ApiError('invalid_document_assignment', 422, 'The document assignment is invalid.')
   const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
   await requireRecentDocumentMfa(request, session)
   const body = await readJsonBody(request)
   const payload = await callRpc<Record<string, unknown>>(
@@ -3285,6 +3300,7 @@ async function processSignatureFinalizationJobs(environment: Environment, limit 
 async function handleDocumentStudioWorkspace(request: Request, environment: Environment, requestId: string): Promise<Response> {
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
   await requireRecentDocumentMfa(request, session)
   const url = new URL(request.url)
   const search = url.searchParams.get('search')?.trim() ?? ''
@@ -3442,6 +3458,7 @@ async function handleSignatureAuditCertificate(request: Request, environment: En
 async function handleDocumentStudioMutation(request: Request, environment: Environment, requestId: string, operation: string, resourceId?: string): Promise<Response> {
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
   const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
   const mfa = await requireRecentDocumentMfa(request, session)
   const body = await readJsonBody(request)
   const config = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }

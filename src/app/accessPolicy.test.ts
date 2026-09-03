@@ -38,6 +38,13 @@ describe('central access policy', () => {
     expect(canAccessRoute('/account', session([]))).toBe(true)
   })
 
+  it('separates the HR Document Studio from employee My Documents', () => {
+    expect(canAccessRoute('/hr/documents', session(['documents.workspace.view']))).toBe(true)
+    expect(canAccessRoute('/hr/documents/workflows', session(['documents.workspace.view']))).toBe(true)
+    expect(canAccessRoute('/hr/documents', session(['hr.documents.view', 'hr.documents.manage']))).toBe(false)
+    expect(canAccessRoute('/my-documents', session([]))).toBe(true)
+  })
+
   it('allows the Accountability Tracker only with an effective accountability permission', () => {
     expect(canAccessRoute('/time/accountability', session(['accountability.view']))).toBe(true)
     expect(canAccessRoute('/time/accountability', session(['accountability.manage']))).toBe(true)

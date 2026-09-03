@@ -9,6 +9,7 @@ const library = readFileSync('src/components/HrDocumentLibrary.tsx', 'utf8')
 const employeePage = readFileSync('src/pages/MyDocumentsPage.tsx', 'utf8')
 const studio = readFileSync('src/components/DocumentStudioDashboard.tsx', 'utf8')
 const navigation = readFileSync('src/app/navigation.ts', 'utf8')
+const accessBoundary = readFileSync('supabase/migrations/20260903020750_restrict_document_studio_to_hr.sql', 'utf8')
 
 describe('searchable HR document library', () => {
   it('reconciles the complete controlled v1.0 index without changing protected records', () => {
@@ -32,7 +33,7 @@ describe('searchable HR document library', () => {
     expect(handler).not.toContain('requireHrDocumentPipeline')
   })
 
-  it('enforces role-aware results at the database boundary', () => {
+  it('keeps the catalog private and adds an exact Document Studio database boundary', () => {
     expect(migration).toContain('private.document_studio_require_actor(target_actor_id)')
     expect(migration).toContain("item.audience_scope = 'all_employees'")
     expect(migration).toContain("item.audience_scope = 'supervisors_and_hr' and can_see_supervisor")
@@ -40,17 +41,22 @@ describe('searchable HR document library', () => {
     expect(migration).toContain('using gin(search_vector)')
     expect(migration).toContain('revoke all on private.hr_template_library_items from public, anon, authenticated')
     expect(migration).toContain('grant execute on function public.service_get_hr_template_library')
+    expect(accessBoundary).toContain("private.document_studio_require_permission(\n    target_actor_id,\n    'documents.workspace.view'")
+    expect(accessBoundary).toContain('private.hr_template_library_catalog')
+    expect(accessBoundary).toContain('from public, anon, authenticated, service_role')
   })
 
-  it('provides compact discovery in employee and HR workspaces', () => {
+  it('provides compact discovery only inside the HR Document Studio', () => {
     expect(library).toContain("useState<HrDocumentLibraryFilters>({ page: 1, pageSize: 10 })")
     expect(library).toContain('<option value={5}>5</option>')
     expect(library).toContain('<option value={10}>10</option>')
     expect(library).toContain('<option value={20}>20</option>')
     expect(library).toContain('Search by form name, code, purpose, or everyday terms')
     expect(library).toContain('PTO, emergency contact, injury, complaint, or payroll correction')
-    expect(employeePage).toContain('<HrDocumentLibrary/>')
+    expect(employeePage).not.toContain('HrDocumentLibrary')
+    expect(employeePage).not.toContain('Forms library')
     expect(studio).toContain('<HrDocumentLibrary mode="studio"/>')
-    expect(navigation).toContain("label: 'Document Library', path: '/my-documents?view=library'")
+    expect(navigation).toContain("label: 'My Documents', path: '/my-documents'")
+    expect(navigation).not.toContain("label: 'Document Library'")
   })
 })

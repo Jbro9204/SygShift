@@ -104,6 +104,7 @@ export function HrisEmployeeFilePage() {
   const record = recordQuery.data
   const editorContext = editorContextQuery.data
   const supervisorAssignment = supervisionQuery.data?.assignments.find((assignment) => assignment.employeeId === employeeId) ?? null
+  const canOpenDocumentStudio = canAccessRoute('/hr/documents', sessionQuery.data)
 
   function openEmploymentDateEditor() {
     if (!record) return
@@ -126,7 +127,7 @@ export function HrisEmployeeFilePage() {
           label: 'Documents',
           path: '/hr/documents',
           status: record.connectedRecords.documents ? countLabel(record.connectedRecords.documents.total, 'current document') : '',
-          visible: record.moduleAccess.documents,
+          visible: record.moduleAccess.documents && canOpenDocumentStudio,
         },
         {
           detail: record.connectedRecords.onboarding ? `${countLabel(record.connectedRecords.onboarding.openTasks, 'open task')} · ${countLabel(record.connectedRecords.onboarding.blockedTasks, 'blocked task')}` : '',

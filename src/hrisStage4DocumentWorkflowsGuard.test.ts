@@ -18,7 +18,7 @@ describe('HRIS Stage 4 protected document workflows', () => {
     expect(migration).not.toContain('insert into public.access_role_permissions')
     expect(migration).not.toContain('insert into public.employee_permission_overrides')
     expect(navigation).not.toContain("path: '/hr/documents/workflows'")
-    expect(navigation).not.toContain("path: '/my-documents'")
+    expect(navigation).toContain("label: 'My Documents', path: '/my-documents'")
   })
 
   it('binds assignments and evidence to an exact immutable clean version', () => {

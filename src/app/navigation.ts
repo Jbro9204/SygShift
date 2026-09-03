@@ -28,7 +28,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
-import { scheduleRoutePermissions } from './accessPolicy'
+import { documentStudioAccessPermission, scheduleRoutePermissions } from './accessPolicy'
 export interface NavigationItem {
   label: string
   path: string
@@ -64,7 +64,7 @@ export const navigationGroups: NavigationGroup[] = [
     items: [
       { label: 'Directory', path: '/people', icon: UsersRound, permissions: ['directory.view', 'directory.edit_basic', 'availability.manage'] },
       { label: 'Licensing Center', path: '/licensing', icon: BadgeCheck, permissions: ['licensing.view', 'licensing.manage', 'licensing.configure', 'licensing.communicate', 'directory.edit_credentials'] },
-      { label: 'Document Library', path: '/my-documents?view=library', icon: Files, permissions: [] },
+      { label: 'My Documents', path: '/my-documents', icon: Files, permissions: [] },
       { label: 'Availability', path: '/availability', icon: CalendarCheck2, permissions: ['availability.view', 'availability.manage'] },
       { label: 'Sites & Posts', path: '/sites', icon: Building2, permissions: ['sites.view', 'sites.manage'] },
       { label: 'Client Files', path: '/clients', icon: BriefcaseBusiness, permissions: ['clients.view', 'clients.manage'] },
@@ -84,7 +84,7 @@ export const navigationGroups: NavigationGroup[] = [
         label: 'Document Studio',
         path: '/hr/documents',
         icon: Files,
-        permissions: ['hr.documents.view', 'hr.documents.manage'],
+        permissions: [documentStudioAccessPermission],
       },
       {
         label: 'Recruiting',
