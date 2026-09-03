@@ -66,6 +66,9 @@ describe('Scheduled overtime workbook', () => {
   it('creates separate forecast, shift, and capacity sheets with the safety note', async () => {
     const sheets = buildScheduledOvertimeForecastWorkbookSheets(forecast, '2026-09-03T15:05:00Z')
     expect(sheets.map((sheet) => sheet.name)).toEqual(['Overtime Forecast', 'Shift Detail', 'Armed Flex Capacity'])
+    expect(sheets[0].mergedCells).toContain('B8:K8')
+    expect(sheets[1].mergedCells).toContain('B3:J3')
+    expect(sheets[2].mergedCells).toContain('B4:G4')
     expect(sheets[0].rows.flat()).toContain('Matt approved')
     expect(sheets[1].rows.flat()).toContain("B'Nai · Armed coverage")
     expect(sheets[2].rows.flat()).toContain('This is a credential-and-capacity planning aid, not an availability confirmation.')

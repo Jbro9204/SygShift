@@ -90,7 +90,7 @@ export function buildScheduledOvertimeForecastWorkbookSheets(
       headerRows: [9],
       integerColumns: [8],
       metadataRows: [1, 2, 3, 4, 5, 6, 7],
-      mergedCells: ['A1:K1'],
+      mergedCells: ['A1:K1', 'B2:K2', 'B3:K3', 'B4:K4', 'B5:K5', 'B6:K6', 'B7:K7', 'B8:K8'],
       name: 'Overtime Forecast',
       rows: summaryRows,
       titleRows: [0],
@@ -103,7 +103,7 @@ export function buildScheduledOvertimeForecastWorkbookSheets(
       freezeRows: 5,
       headerRows: [4],
       metadataRows: [1, 2],
-      mergedCells: ['A1:J1'],
+      mergedCells: ['A1:J1', 'B2:J2', 'B3:J3'],
       name: 'Shift Detail',
       rows: [
         ['SygShift Scheduled Overtime — Shift Detail'],
@@ -123,7 +123,7 @@ export function buildScheduledOvertimeForecastWorkbookSheets(
       freezeRows: 6,
       headerRows: [5],
       metadataRows: [1, 2, 3],
-      mergedCells: ['A1:G1'],
+      mergedCells: ['A1:G1', 'B2:G2', 'B3:G3', 'B4:G4'],
       name: 'Armed Flex Capacity',
       rows: [
         ['SygShift Armed Flex Capacity Candidates'],
