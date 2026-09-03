@@ -25,6 +25,16 @@ deployment status, or major workflow assumptions change.
 
 ## 09/02/2026
 
+### Document Studio Human Resources access boundary
+
+- Restricted the complete Document Studio to the exact `documents.workspace.view` permission, assigned by default only to Admin, Human Resources Manager, and Human Resources Employee. Other roles require an explicit grant.
+- Replaced the employee-facing Document Library entry with a separate **My Documents** workspace containing only the signed-in employee's assigned forms, signature actions, requested uploads, previews, downloads, and completed records.
+- Enforced the boundary in navigation, both management routes, employee-file/onboarding deep links, every management Worker handler, service-only database functions, the template catalog wrapper, and HR employee-file document summaries.
+- Preserved self-service document endpoints and all existing employee, access, document, workflow, and signature records. Migration `20260903020750` verified record counts and permission fingerprints before commit.
+- Full validation passed: TypeScript, zero-warning lint, 157 test files / 760 tests, both production builds, 23/23 focused access guards, and 12/12 responsive light/dark browser checks with accessibility validation.
+- Pushed implementation commit `2f5b143` and test commit `ba190d9`, applied and reconciled the migration, and deployed Cloudflare Worker version `5ce97fd2-b8d7-4e21-b530-187b78b5fbac`. Primary and fallback application, health, and readiness checks returned HTTP 200; anonymous Studio API access returned HTTP 401.
+- Full details are recorded in `docs/changelogs/CHANGELOG_09-02-2026_DOCUMENT_STUDIO_HR_ACCESS_BOUNDARY.md`.
+
 ### User Account role assignment cleanup
 
 - Replaced the duplicated **Role** plus scrolling **Additional access roles** presentation with a clearly labeled **Workforce role** and a compact **Department & management access** control.
