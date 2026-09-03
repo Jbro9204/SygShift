@@ -19,6 +19,7 @@ import {
   importedScheduleRows,
   employeeScheduleRows,
   createSupervisorCoveragePlan,
+  getConcurrentDispatchOverlapPreview,
   getImportedSchedulePreview,
   getScheduleBuilderOptions,
   getScheduledOvertimeCreatePreview,
@@ -1311,7 +1312,7 @@ function SchedulerShiftModal({
   employees: ScheduleBuilderEmployee[]
   isDraft: boolean
   isSaving: boolean
-  onAssignEmployee: (employeeId: string, availabilityOverrideNote?: string | null, credentialOverrideNote?: string | null, overtimeOverrideNote?: string | null) => void
+  onAssignEmployee: (employeeId: string, availabilityOverrideNote?: string | null, credentialOverrideNote?: string | null, overtimeOverrideNote?: string | null, dispatchOverlapAcknowledged?: boolean) => void
   onClose: () => void
   onEdit: () => void
   onRequestRemove: () => void
@@ -1330,6 +1331,7 @@ function SchedulerShiftModal({
   const [overrideNote, setOverrideNote] = useState('')
   const [credentialOverrideNote, setCredentialOverrideNote] = useState('')
   const [overtimeOverrideNote, setOvertimeOverrideNote] = useState('')
+  const [dispatchOverlapAcknowledged, setDispatchOverlapAcknowledged] = useState(false)
   const [credentialConfirmedKnown, setCredentialConfirmedKnown] = useState(false)
   const [credentialConfirmedResponsibility, setCredentialConfirmedResponsibility] = useState(false)
   const visibleManualEmployees = useMemo(
@@ -1360,6 +1362,14 @@ function SchedulerShiftModal({
   const overtimePreview = overtimePreviewQuery.data
   const overtimeOverrideRequired = Boolean(overtimePreview?.requiresOverride)
   const overtimeOverrideReady = !overtimeOverrideRequired || Boolean(overtimeOverrideNote.trim())
+  const dispatchOverlapPreviewQuery = useQuery({
+    queryKey: ['concurrent-dispatch-overlap-preview', shift.id, manualEmployeeId],
+    queryFn: () => getConcurrentDispatchOverlapPreview(shift.id, manualEmployeeId),
+    enabled: Boolean(manualEmployeeId && openSlots > 0),
+    staleTime: 0,
+  })
+  const dispatchOverlapPreview = dispatchOverlapPreviewQuery.data
+  const dispatchOverlapReady = !dispatchOverlapPreview?.requiresAcknowledgement || dispatchOverlapAcknowledged
 
   function submitAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1369,6 +1379,7 @@ function SchedulerShiftModal({
       manualConflict ? overrideNote : null,
       credentialOverrideRequired ? credentialOverrideNote : null,
       overtimeOverrideRequired ? overtimeOverrideNote : null,
+      dispatchOverlapPreview?.requiresAcknowledgement ? dispatchOverlapAcknowledged : false,
     )
   }
 
@@ -1493,6 +1504,7 @@ function SchedulerShiftModal({
                       setOverrideNote('')
                       setCredentialOverrideNote('')
                       setOvertimeOverrideNote('')
+                      setDispatchOverlapAcknowledged(false)
                       setCredentialConfirmedKnown(false)
                       setCredentialConfirmedResponsibility(false)
                     }}
@@ -1535,6 +1547,7 @@ function SchedulerShiftModal({
                 setOverrideNote('')
                 setCredentialOverrideNote('')
                 setOvertimeOverrideNote('')
+                setDispatchOverlapAcknowledged(false)
                 setCredentialConfirmedKnown(false)
                 setCredentialConfirmedResponsibility(false)
               }}
@@ -1612,7 +1625,33 @@ function SchedulerShiftModal({
               </div>
             </div>
           ) : null}
-          <button className="primary-action" disabled={isSaving || employees.length === 0 || openSlots === 0 || !manualEmployeeId || Boolean(manualConflict && !overrideNote.trim()) || !credentialOverrideReady || overtimePreviewQuery.isPending || overtimePreviewQuery.isError || !overtimeOverrideReady} type="submit">
+          {dispatchOverlapPreviewQuery.isPending && manualEmployeeId ? (
+            <p className="form-note">Checking for concurrent Dispatch phone duty...</p>
+          ) : null}
+          {dispatchOverlapPreviewQuery.isError ? (
+            <p className="scheduler-save-error" role="alert">{dispatchOverlapPreviewQuery.error instanceof Error ? dispatchOverlapPreviewQuery.error.message : 'Concurrent Dispatch duty could not be checked.'}</p>
+          ) : null}
+          {dispatchOverlapPreview?.requiresAcknowledgement ? (
+            <div className="availability-override-card availability-override-card--compact">
+              <ShieldAlert aria-hidden="true" size={17} />
+              <div>
+                <strong>Concurrent Dispatch duty acknowledgement</strong>
+                <p>
+                  This employee is already assigned to {dispatchOverlapPreview.overlappingLocation} on {dispatchOverlapPreview.overlappingDate} from {dispatchOverlapPreview.overlappingStartsAt} to {dispatchOverlapPreview.overlappingEndsAt}. SygShift will permit this only because one responsibility is Dispatch phone duty and the other is one standard site/post shift.
+                </p>
+                <label className="check-field">
+                  <input
+                    checked={dispatchOverlapAcknowledged}
+                    onChange={(event) => setDispatchOverlapAcknowledged(event.target.checked)}
+                    required
+                    type="checkbox"
+                  />
+                  <span>I acknowledge this concurrent Dispatch responsibility. It will not create duplicate scheduled hours, overtime, punches, or missing-clock alerts.</span>
+                </label>
+              </div>
+            </div>
+          ) : null}
+          <button className="primary-action" disabled={isSaving || employees.length === 0 || openSlots === 0 || !manualEmployeeId || Boolean(manualConflict && !overrideNote.trim()) || !credentialOverrideReady || overtimePreviewQuery.isPending || overtimePreviewQuery.isError || !overtimeOverrideReady || dispatchOverlapPreviewQuery.isPending || dispatchOverlapPreviewQuery.isError || !dispatchOverlapReady} type="submit">
             {isSaving ? 'Adding guard...' : isDraft ? 'Add guard' : 'Open draft & add guard'}
           </button>
           {saveError ? (
@@ -3058,6 +3097,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     availabilityOverrideNote?: string | null,
     credentialOverrideNote?: string | null,
     overtimeOverrideNote?: string | null,
+    dispatchOverlapAcknowledged?: boolean,
   ) {
     setBuilderMessage(null)
     addDraftShiftAssignmentMutation.reset()
@@ -3068,6 +3108,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         availabilityOverrideNote,
         credentialOverrideNote,
         overtimeOverrideNote,
+        dispatchOverlapAcknowledged,
       })
       return
     }
@@ -3087,6 +3128,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           availabilityOverrideNote,
           credentialOverrideNote,
           overtimeOverrideNote,
+          dispatchOverlapAcknowledged,
         })
       },
     })
@@ -4366,7 +4408,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   employees={builderOptionsQuery.data?.employees ?? []}
                   isDraft={scheduleQuery.data.status === 'draft'}
                   isSaving={addDraftShiftAssignmentMutation.isPending || ensureDraftMutation.isPending}
-                  onAssignEmployee={(employeeId, availabilityOverrideNote, credentialOverrideNote, overtimeOverrideNote) => assignPlannerEmployee(selectedPlannerShift, employeeId, availabilityOverrideNote, credentialOverrideNote, overtimeOverrideNote)}
+                  onAssignEmployee={(employeeId, availabilityOverrideNote, credentialOverrideNote, overtimeOverrideNote, dispatchOverlapAcknowledged) => assignPlannerEmployee(selectedPlannerShift, employeeId, availabilityOverrideNote, credentialOverrideNote, overtimeOverrideNote, dispatchOverlapAcknowledged)}
                   onClose={() => setSelectedPlannerShiftId(null)}
                   onEdit={() => editShift(selectedPlannerShift)}
                   onRequestRemove={() => requestShiftRemoval(selectedPlannerShift)}

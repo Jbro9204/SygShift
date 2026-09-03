@@ -72,7 +72,7 @@ describe('scheduler mixed coverage and additive assignment', () => {
 
   it('uses the new database contracts from the data layer', () => {
     expect(scheduleData).toContain("getSupabaseClient().rpc('scheduler_create_coverage_plan_v2'")
-    expect(scheduleData).toContain("getSupabaseClient().rpc('scheduler_add_draft_shift_assignment_v2'")
+    expect(scheduleData).toContain("getSupabaseClient().rpc('scheduler_add_draft_shift_assignment_v3'")
     expect(scheduleData).toContain('target_armed_headcount: input.armedHeadcount')
     expect(scheduleData).toContain("target_assignment_requires_armed: input.assignmentRequirement === 'armed'")
     expect(scheduleData).toContain('target_overtime_override_note: input.overtimeOverrideNote?.trim() || null')

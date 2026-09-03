@@ -32,8 +32,8 @@ describe('scheduler behavior guardrails', () => {
     expect(schedulePage).toContain('Guard added to the open position. Everyone already assigned remains on the draft.')
     expect(schedulePage).toContain('Add guard to open position')
 
-    const directDraftSave = /addDraftShiftAssignmentMutation\.mutate\(\{\s*shiftId: shift\.id,\s*employeeId,\s*availabilityOverrideNote,\s*credentialOverrideNote,\s*overtimeOverrideNote,\s*\}\)/
-    const openedDraftSave = /addDraftShiftAssignmentMutation\.mutate\(\{\s*shiftId: copiedShift\.id,\s*employeeId,\s*availabilityOverrideNote,\s*credentialOverrideNote,\s*overtimeOverrideNote,\s*\}\)/
+    const directDraftSave = /addDraftShiftAssignmentMutation\.mutate\(\{\s*shiftId: shift\.id,\s*employeeId,\s*availabilityOverrideNote,\s*credentialOverrideNote,\s*overtimeOverrideNote,\s*dispatchOverlapAcknowledged,\s*\}\)/
+    const openedDraftSave = /addDraftShiftAssignmentMutation\.mutate\(\{\s*shiftId: copiedShift\.id,\s*employeeId,\s*availabilityOverrideNote,\s*credentialOverrideNote,\s*overtimeOverrideNote,\s*dispatchOverlapAcknowledged,\s*\}\)/
 
     expect(schedulePage).toMatch(directDraftSave)
     expect(schedulePage).toMatch(openedDraftSave)

@@ -181,6 +181,21 @@ const scheduledOvertimePreviewSchema = z.object({
   requiresOverride: z.boolean(),
 })
 
+const concurrentDispatchOverlapPreviewSchema = z.object({
+  requiresAcknowledgement: z.boolean(),
+  employeeId: z.string().uuid(),
+  targetShiftId: z.string().uuid(),
+  targetAssignmentType: z.enum(['standard', 'dispatch_phone_duty']),
+  targetLocation: z.string(),
+  overlappingShiftId: z.string().uuid().nullable(),
+  overlappingAssignmentType: z.enum(['standard', 'dispatch_phone_duty']).nullable(),
+  overlappingLocation: z.string().nullable(),
+  overlappingDate: z.string().nullable(),
+  overlappingStartsAt: z.string().nullable(),
+  overlappingEndsAt: z.string().nullable(),
+  overlappingTimeZone: z.string().nullable(),
+})
+
 const scheduledOvertimeCreatePreviewSchema = scheduledOvertimePreviewSchema
   .omit({ shiftId: true })
   .extend({
@@ -215,6 +230,7 @@ export type ScheduleNotificationResult = z.infer<typeof scheduleNotificationResu
 export type CopyScheduleWeekResult = z.infer<typeof copyScheduleWeekResultSchema>
 export type ScheduledOvertimePreview = z.infer<typeof scheduledOvertimePreviewSchema>
 export type ScheduledOvertimeCreatePreview = z.infer<typeof scheduledOvertimeCreatePreviewSchema>
+export type ConcurrentDispatchOverlapPreview = z.infer<typeof concurrentDispatchOverlapPreviewSchema>
 
 const employeeNameCollator = new Intl.Collator('en-US', {
   numeric: true,
@@ -345,6 +361,7 @@ export interface AddDraftShiftAssignmentInput {
   availabilityOverrideNote?: string | null
   credentialOverrideNote?: string | null
   overtimeOverrideNote?: string | null
+  dispatchOverlapAcknowledged?: boolean
 }
 
 export interface UpdateDraftShiftInput {
@@ -523,12 +540,13 @@ export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Pr
 }
 
 export async function addScheduleDraftShiftAssignment(input: AddDraftShiftAssignmentInput): Promise<WeeklySchedule> {
-  const { data, error } = await getSupabaseClient().rpc('scheduler_add_draft_shift_assignment_v2', {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_add_draft_shift_assignment_v3', {
     target_shift_id: input.shiftId,
     target_employee_id: input.employeeId,
     target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
     target_credential_override_note: input.credentialOverrideNote?.trim() || null,
     target_overtime_override_note: input.overtimeOverrideNote?.trim() || null,
+    target_dispatch_overlap_acknowledged: input.dispatchOverlapAcknowledged ?? false,
   })
 
   if (error) throw new Error(error.message || 'The guard could not be added to this shift.')
@@ -540,6 +558,19 @@ export async function addScheduleDraftShiftAssignment(input: AddDraftShiftAssign
       assignments: shift.assignments.filter((assignment) => assignment.status !== 'canceled'),
     })),
   }
+}
+
+export async function getConcurrentDispatchOverlapPreview(
+  shiftId: string,
+  employeeId: string,
+): Promise<ConcurrentDispatchOverlapPreview> {
+  const { data, error } = await getSupabaseClient().rpc('get_concurrent_dispatch_overlap_preview', {
+    target_shift_id: shiftId,
+    target_employee_id: employeeId,
+  })
+
+  if (error) throw new Error(error.message || 'Concurrent Dispatch duty could not be checked.')
+  return concurrentDispatchOverlapPreviewSchema.parse(data)
 }
 
 export async function getScheduledOvertimePreview(

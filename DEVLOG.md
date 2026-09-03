@@ -25,6 +25,15 @@ deployment status, or major workflow assumptions change.
 
 ## 09/03/2026
 
+### Scheduler Dispatch-overlap acknowledgement
+
+- Confirmed the production Scheduler role already owns the protected permissions required to schedule concurrent Dispatch phone duty.
+- Added a required, server-authoritative acknowledgement displaying the overlapping Site/Post assignment before the Scheduler can save the permitted Dispatch-plus-one-site combination.
+- Kept ordinary overlapping shifts blocked and preserved Dispatch exclusions from scheduled hours, overtime, punches, and missing-clock alerts.
+- Added protected audit evidence for the acknowledging Scheduler, employee, both shifts, location/time context, timestamp, and zero payable minutes.
+- Full validation passed: TypeScript, zero-warning application lint, 163 test files / 785 tests, both production builds, and a rollback-only MFA Scheduler database test for blocked-without-acknowledgement and accepted-with-acknowledgement behavior.
+- Full release evidence is recorded in `docs/changelogs/CHANGELOG_09-03-2026_SCHEDULER_DISPATCH_OVERLAP_ACKNOWLEDGEMENT.md`.
+
 ### Schedule requirement labels and compact operational time header
 
 - Repaired the employee-facing mixed-coverage display so each shift uses its own armed/unarmed requirement instead of inheriting a generic armed label from the shared Post name.

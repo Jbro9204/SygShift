@@ -11,6 +11,10 @@ const migration = readFileSync(
 )
 const scheduleData = readFileSync(join(root, 'src', 'data', 'schedule.ts'), 'utf8')
 const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
+const acknowledgementMigration = readFileSync(
+  join(root, 'supabase', 'migrations', '20260903202000_scheduler_dispatch_overlap_acknowledgement.sql'),
+  'utf8',
+)
 
 describe('concurrent Dispatch phone-duty boundary', () => {
   it('models Dispatch as an explicit duty and permits only Dispatch plus standard Post Time', () => {
@@ -37,5 +41,16 @@ describe('concurrent Dispatch phone-duty boundary', () => {
   it('preserves the protected employee, schedule, assignment, and time-event history', () => {
     expect(migration).toContain('concurrent_dispatch_release_baseline')
     expect(migration).toContain("Concurrent Dispatch release altered protected employee, shift, assignment, or time-event history.")
+  })
+
+  it('requires an audited Scheduler acknowledgement without weakening ordinary overlap protection', () => {
+    expect(acknowledgementMigration).toContain('private.can_manage_schedule_drafts()')
+    expect(acknowledgementMigration).toContain('target_dispatch_overlap_acknowledged boolean default false')
+    expect(acknowledgementMigration).toContain('ACKNOWLEDGE_CONCURRENT_DISPATCH_PHONE_DUTY')
+    expect(acknowledgementMigration).toContain("target_assignment_type = 'dispatch_phone_duty'")
+    expect(acknowledgementMigration).toContain("target_assignment_type = 'standard'")
+    expect(acknowledgementMigration).not.toContain("target_assignment_type = 'training'")
+    expect(schedulePage).toContain('Concurrent Dispatch duty acknowledgement')
+    expect(schedulePage).toContain('I acknowledge this concurrent Dispatch responsibility.')
   })
 })
