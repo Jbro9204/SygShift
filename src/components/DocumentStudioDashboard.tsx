@@ -37,7 +37,7 @@ export function DocumentStudioDashboard({ documents }: { documents?: HrDocumentW
   return (
     <section className="document-studio">
       <div className={`document-studio__release ${data.releaseState.documentPipeline && data.releaseState.workspace ? 'ready' : 'held'}`}>
-        {data.releaseState.documentPipeline && data.releaseState.workspace ? <ShieldCheck size={22}/> : <ShieldAlert size={22}/>}<div><strong>{data.releaseState.documentPipeline && data.releaseState.workspace ? 'Protected workspace released' : 'Security release held'}</strong><span>{data.releaseState.documentPipeline && data.releaseState.workspace ? 'Quarantine, scan, version, access, and audit controls are active.' : 'The system is installed, but document uploads remain closed until the scanner canary and recovery drill pass.'}</span></div>
+        {data.releaseState.documentPipeline && data.releaseState.workspace ? <ShieldCheck size={22}/> : <ShieldAlert size={22}/>}<div><strong>{data.releaseState.documentPipeline && data.releaseState.workspace ? 'Protected workspace operational' : 'Security release held'}</strong><span>{data.releaseState.documentPipeline && data.releaseState.workspace ? 'Private quarantine, malware scanning, version control, access logging, and recovery checks are active.' : 'The system is installed, but document uploads remain closed until the scanner canary and recovery drill pass.'}</span></div>
       </div>
       <div className="document-studio__metrics">
         <article><FileStack/><span>Documents</span><strong>{data.summary.documents}</strong></article>

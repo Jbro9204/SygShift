@@ -9,6 +9,7 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from '@simplewebauthn/server'
+import { Container } from '@cloudflare/containers'
 import { strFromU8, unzipSync } from 'fflate'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import type {
@@ -30,6 +31,8 @@ interface WorkerExecutionContext {
 
 type Environment = Partial<Env> & {
   ASSETS: Fetcher
+  DOCUMENT_SCANNER?: DurableObjectNamespace<DocumentScannerContainer>
+  DOCUMENT_SCAN_QUEUE?: Queue<DocumentScanQueueMessage>
   SUPABASE_SERVICE_ROLE_KEY?: string
   SYGSHIFT_SECURITY_KEYS_ENABLED?: string
   SYGSHIFT_SECURITY_KEY_PILOT_USERNAMES?: string
@@ -52,6 +55,106 @@ type Environment = Partial<Env> & {
   SYGSHIFT_HR_PAYROLL_INTEGRATION_ENABLED?: string
   SYGSHIFT_HR_PAYROLL_WEBHOOKS_ENABLED?: string
   SYGSHIFT_HR_ENTERPRISE_CUTOVER_ENABLED?: string
+}
+
+interface DocumentScanQueueMessage {
+  operationId: string
+  requestId: string
+}
+
+interface DocumentScanOperation {
+  attemptCount?: number
+  bucket?: string
+  documentId?: string
+  expectedChecksum?: string
+  expectedSizeBytes?: number
+  mimeType?: string
+  objectKey?: string
+  operationId: string
+  state: string
+  terminal?: boolean
+  versionId?: string
+}
+
+interface DocumentMalwareScanResult {
+  details: string
+  scannerName: 'ClamAV'
+  scannerVersion: string
+  signatureReference: string
+  state: 'clean' | 'rejected'
+}
+
+export class DocumentScannerContainer extends Container<Environment> {
+  defaultPort = 3310
+  requiredPorts = [3310]
+  sleepAfter = '30m'
+  enableInternet = false
+  envVars = { CLAMAV_NO_FRESHCLAMD: 'true' }
+
+  private scannerRuntime(): ContainerRuntime {
+    if (!this.ctx.container) throw new Error('The document scanner container is unavailable.')
+    return this.ctx.container
+  }
+
+  async scanDocument(content: ReadableStream<Uint8Array>): Promise<DocumentMalwareScanResult> {
+    await this.startAndWaitForPorts({
+      cancellationOptions: {
+        instanceGetTimeoutMS: 120_000,
+        portReadyTimeoutMS: 120_000,
+        waitInterval: 1_000,
+      },
+    })
+
+    const versionProcess = await this.scannerRuntime().exec(['clamdscan', '--version'], {
+      stderr: 'combined',
+      stdout: 'pipe',
+    })
+    const versionOutput = await versionProcess.output()
+    const scannerVersion = new TextDecoder().decode(versionOutput.stdout).trim().slice(0, 120)
+    if (versionOutput.exitCode !== 0 || !scannerVersion) {
+      throw new Error('The malware scanner version could not be verified.')
+    }
+
+    const scanProcess = await this.scannerRuntime().exec(
+      ['clamdscan', '--stream', '--stdout', '--no-summary'],
+      { stdin: content, stderr: 'combined', stdout: 'pipe' },
+    )
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      const scanOutput = await Promise.race([
+        scanProcess.output(),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => {
+            scanProcess.kill(9)
+            reject(new Error('The malware scan exceeded the 120-second safety limit.'))
+          }, 120_000)
+        }),
+      ])
+      const details = new TextDecoder().decode(scanOutput.stdout).trim().slice(0, 2_000)
+      if (scanOutput.exitCode === 0 && /:\s+OK\s*$/im.test(details)) {
+        return {
+          details: 'ClamAV completed the malware scan and found no known threat.',
+          scannerName: 'ClamAV',
+          scannerVersion,
+          signatureReference: 'clamav-database-from-pinned-image',
+          state: 'clean',
+        }
+      }
+      if (scanOutput.exitCode === 1 && /\bFOUND\s*$/im.test(details)) {
+        const signature = details.match(/:\s*([^:\r\n]+)\s+FOUND\s*$/im)?.[1]?.trim() ?? 'known-malware-signature'
+        return {
+          details: `ClamAV rejected the file after detecting ${signature}.`.slice(0, 2_000),
+          scannerName: 'ClamAV',
+          scannerVersion,
+          signatureReference: signature.slice(0, 255),
+          state: 'rejected',
+        }
+      }
+      throw new Error(`The malware scanner returned an operational error (${scanOutput.exitCode}).`)
+    } finally {
+      if (timeout) clearTimeout(timeout)
+    }
+  }
 }
 
 interface SessionContext {
@@ -133,7 +236,7 @@ interface HrDocumentUploadMetadata {
   declaredMimeType: string
   description: string
   documentId: string | null
-  employeeId: string
+  employeeId: string | null
   idempotencyKey: string
   originalFilename: string
   replacementReason: string | null
@@ -1311,10 +1414,10 @@ function parseHrDocumentMetadata(request: Request): HrDocumentUploadMetadata {
     throw new ApiError('invalid_document_metadata', 422, 'Secure document metadata must be a JSON object.')
   }
   const data = payload as Record<string, unknown>
-  const employeeId = requiredText(data.employeeId, 'Employee', 36)
+  const employeeId = optionalText(data.employeeId, 'Employee', 36)
   const idempotencyKey = requiredText(data.idempotencyKey, 'Upload request ID', 36)
   const documentId = optionalText(data.documentId, 'Document ID', 36)
-  if (!validUuid(employeeId) || !validUuid(idempotencyKey) || (documentId !== null && !validUuid(documentId))) {
+  if ((employeeId !== null && !validUuid(employeeId)) || !validUuid(idempotencyKey) || (documentId !== null && !validUuid(documentId))) {
     throw new ApiError('invalid_document_metadata', 422, 'Employee, document, or upload request identifiers are invalid.')
   }
   const vaultCode = requiredText(data.vaultCode, 'Document vault', 40)
@@ -1460,6 +1563,215 @@ async function requireDocumentScanner(request: Request, environment: Environment
   if (!await constantTimeSecretMatches(provided, expected)) {
     throw new ApiError('document_scanner_authentication_failed', 401, 'Scanner authentication failed.')
   }
+}
+
+function requireDocumentScannerBindings(environment: Environment): {
+  queue: Queue<DocumentScanQueueMessage>
+  scanner: DurableObjectNamespace<DocumentScannerContainer>
+} {
+  if (!environment.DOCUMENT_SCANNER || !environment.DOCUMENT_SCAN_QUEUE) {
+    throw new ApiError('document_scanner_not_configured', 503, 'The protected document scanner is not configured.')
+  }
+  return { queue: environment.DOCUMENT_SCAN_QUEUE, scanner: environment.DOCUMENT_SCANNER }
+}
+
+function readableBytes(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  const copy = new Uint8Array(bytes.byteLength)
+  copy.set(bytes)
+  return new Blob([copy.buffer]).stream()
+}
+
+async function scanDocumentBytes(
+  environment: Environment,
+  bytes: Uint8Array,
+): Promise<DocumentMalwareScanResult> {
+  const { scanner } = requireDocumentScannerBindings(environment)
+  return scanner.getByName('primary').scanDocument(readableBytes(bytes))
+}
+
+async function enqueueDocumentScan(
+  environment: Environment,
+  operationId: string,
+  requestId: string,
+): Promise<void> {
+  if (!validUuid(operationId)) throw new Error('The scan operation identifier is invalid.')
+  const { queue } = requireDocumentScannerBindings(environment)
+  await queue.send({ operationId, requestId }, { contentType: 'json' })
+}
+
+async function recordDocumentScanResult(
+  config: { serviceRoleKey: string, url: string },
+  operationId: string,
+  result: DocumentMalwareScanResult,
+  evidenceSha256: string,
+): Promise<void> {
+  await callRpc(
+    config,
+    'service_record_hr_document_scan_result',
+    {
+      target_details: result.details,
+      target_evidence_sha256: evidenceSha256,
+      target_operation_id: operationId,
+      target_scanner_name: result.scannerName,
+      target_scanner_version: result.scannerVersion,
+      target_signature_reference: result.signatureReference,
+      target_state: result.state,
+    },
+    config.serviceRoleKey,
+  )
+}
+
+async function processDocumentScanMessage(
+  environment: Environment,
+  message: DocumentScanQueueMessage,
+): Promise<void> {
+  if (!validUuid(message.operationId)) throw new Error('The queued scan operation is invalid.')
+  const config = configuredSupabase(environment)
+  if (!config) throw new Error('The secure data connection is unavailable.')
+  const operation = await callRpc<DocumentScanOperation>(
+    config,
+    'service_claim_hr_document_scan',
+    { target_operation_id: message.operationId, target_request_id: message.requestId },
+    config.serviceRoleKey,
+  )
+  if (operation.terminal) return
+  if (
+    !operation.bucket
+    || !operation.objectKey
+    || !operation.expectedChecksum
+    || !/^[a-f0-9]{64}$/.test(operation.expectedChecksum)
+    || !Number.isSafeInteger(operation.expectedSizeBytes)
+  ) {
+    throw new Error('The scan operation is missing protected storage evidence.')
+  }
+
+  const stored = await fetchPrivateStorageObject(config, operation.bucket, operation.objectKey)
+  if (!stored.ok) throw new Error(`The quarantined document could not be loaded (${stored.status}).`)
+  const bytes = new Uint8Array(await stored.arrayBuffer())
+  const observedChecksum = await sha256BytesHex(bytes)
+  if (bytes.byteLength !== operation.expectedSizeBytes || observedChecksum !== operation.expectedChecksum) {
+    const integrityFailure: DocumentMalwareScanResult = {
+      details: 'The quarantined object did not match its immutable upload size or checksum and was rejected.',
+      scannerName: 'ClamAV',
+      scannerVersion: 'integrity-boundary',
+      signatureReference: 'sha256-or-size-mismatch',
+      state: 'rejected',
+    }
+    await recordDocumentScanResult(config, operation.operationId, integrityFailure, observedChecksum)
+    await deletePrivateStorageObject(config, operation.bucket, operation.objectKey)
+    return
+  }
+
+  const result = await scanDocumentBytes(environment, bytes)
+  await recordDocumentScanResult(config, operation.operationId, result, observedChecksum)
+  if (result.state === 'rejected') {
+    await deletePrivateStorageObject(config, operation.bucket, operation.objectKey)
+  }
+}
+
+async function handleDocumentPipelineCanary(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  await requireDocumentScanner(request, environment)
+  requireDocumentScannerBindings(environment)
+  const config = configuredSupabase(environment)
+  if (!config) throw new ApiError('server_not_configured', 503, 'The secure data connection is unavailable.')
+
+  const canaryRunId = crypto.randomUUID()
+  const cleanBytes = new TextEncoder().encode(`SygShift protected document release canary ${canaryRunId}`)
+  const eicarText = [
+    'X5O!P%@AP[4\\PZX54(P^)7CC)7}$',
+    'EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*',
+  ].join('')
+  const rejectionBytes = new TextEncoder().encode(eicarText)
+  const cleanResult = await scanDocumentBytes(environment, cleanBytes)
+  const rejectionResult = await scanDocumentBytes(environment, rejectionBytes)
+  if (cleanResult.state !== 'clean' || rejectionResult.state !== 'rejected') {
+    throw new ApiError('document_scanner_canary_failed', 503, 'The malware scanner did not pass its clean and rejection checks.')
+  }
+
+  const recoveryBytes = new TextEncoder().encode(`SygShift private storage recovery canary ${canaryRunId}`)
+  const recoveryChecksum = await sha256BytesHex(recoveryBytes)
+  const primaryKey = `_release-canary/${canaryRunId}/primary.txt`
+  const restoredKey = `_release-canary/${canaryRunId}/restored.txt`
+  let recoveryPassed = false
+  try {
+    await storePrivateStorageObject(config, 'hr-general', primaryKey, recoveryBytes, 'text/plain')
+    const primary = await fetchPrivateStorageObject(config, 'hr-general', primaryKey)
+    if (!primary.ok || await sha256BytesHex(new Uint8Array(await primary.arrayBuffer())) !== recoveryChecksum) {
+      throw new Error('The primary canary object could not be verified.')
+    }
+    await deletePrivateStorageObject(config, 'hr-general', primaryKey)
+    await storePrivateStorageObject(config, 'hr-general', restoredKey, recoveryBytes, 'text/plain')
+    const restored = await fetchPrivateStorageObject(config, 'hr-general', restoredKey)
+    if (!restored.ok || await sha256BytesHex(new Uint8Array(await restored.arrayBuffer())) !== recoveryChecksum) {
+      throw new Error('The restored canary object could not be verified.')
+    }
+    recoveryPassed = true
+  } finally {
+    await Promise.all([
+      deletePrivateStorageObject(config, 'hr-general', primaryKey).catch(() => undefined),
+      deletePrivateStorageObject(config, 'hr-general', restoredKey).catch(() => undefined),
+    ])
+  }
+  if (!recoveryPassed) throw new ApiError('document_recovery_canary_failed', 503, 'The private storage recovery drill failed.')
+
+  const cleanChecksum = await sha256BytesHex(cleanBytes)
+  const rejectionChecksum = await sha256BytesHex(rejectionBytes)
+  const evidence = [
+    {
+      details: { container: 'cloudflare', outcome: cleanResult.state },
+      evidenceSha256: cleanChecksum,
+      evidenceType: 'scanner_clean',
+      scannerName: cleanResult.scannerName,
+      scannerVersion: cleanResult.scannerVersion,
+    },
+    {
+      details: { container: 'cloudflare', outcome: rejectionResult.state },
+      evidenceSha256: rejectionChecksum,
+      evidenceType: 'scanner_reject',
+      scannerName: rejectionResult.scannerName,
+      scannerVersion: rejectionResult.scannerVersion,
+    },
+    {
+      details: { bucket: 'hr-general', restored: true },
+      evidenceSha256: recoveryChecksum,
+      evidenceType: 'storage_recovery',
+      scannerName: null,
+      scannerVersion: null,
+    },
+  ]
+  for (const item of evidence) {
+    await callRpc(
+      config,
+      'service_record_document_pipeline_release_evidence',
+      {
+        target_canary_run_id: canaryRunId,
+        target_details: item.details,
+        target_evidence_sha256: item.evidenceSha256,
+        target_evidence_type: item.evidenceType,
+        target_scanner_name: item.scannerName,
+        target_scanner_version: item.scannerVersion,
+      },
+      config.serviceRoleKey,
+    )
+  }
+
+  return json({
+    canaryRunId,
+    checks: {
+      cleanFile: 'passed',
+      malwareRejection: 'passed',
+      privateStorageRecovery: 'passed',
+    },
+    requestId,
+    scanner: cleanResult.scannerName,
+    scannerVersion: cleanResult.scannerVersion,
+    status: 'passed',
+  })
 }
 
 async function requireRecentDocumentMfa(
@@ -2162,6 +2474,9 @@ async function handleHrDocumentUpload(
   )
 
   if (operation.state !== 'quarantined') {
+    if (operation.state === 'scan_pending' || operation.state === 'scan_error') {
+      await enqueueDocumentScan(environment, operation.operationId, requestId)
+    }
     return json({
       documentId: operation.documentId,
       operationId: operation.operationId,
@@ -2193,6 +2508,23 @@ async function handleHrDocumentUpload(
       session.config.serviceRoleKey,
     ).catch(() => undefined)
     throw new ApiError('document_quarantine_failed', 502, 'The document could not be placed in protected quarantine.')
+  }
+
+  try {
+    await enqueueDocumentScan(environment, operation.operationId, requestId)
+  } catch (error) {
+    await callRpc(
+      serviceConfig,
+      'service_fail_hr_document_upload',
+      {
+        target_failure_code: 'scan_dispatch_failed',
+        target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Malware scan dispatch failed.',
+        target_operation_id: operation.operationId,
+        target_state: 'scan_error',
+      },
+      session.config.serviceRoleKey,
+    ).catch(() => undefined)
+    throw new ApiError('document_scan_dispatch_failed', 503, 'The upload is safely quarantined, but its malware scan could not be started. Retry the upload request.')
   }
 
   return json({
@@ -2239,6 +2571,28 @@ async function handleHrDocumentWorkspace(
     },
     session.config.serviceRoleKey,
   )
+  payload.documents = Array.isArray(payload.documents)
+    ? payload.documents.map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return item
+        const document = item as Record<string, unknown>
+        const version = document.version && typeof document.version === 'object' && !Array.isArray(document.version)
+          ? document.version as Record<string, unknown>
+          : null
+        const browserReadable = version?.scanState === 'clean' && [
+          'application/pdf',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'image/jpeg',
+          'image/png',
+          'image/webp',
+          'text/plain',
+        ].includes(typeof version.mimeType === 'string' ? version.mimeType : '')
+        return {
+          ...document,
+          canPreview: Boolean(document.canDownload) && browserReadable,
+        }
+      })
+    : payload.documents
   return json({ ...payload, requestId })
 }
 
@@ -2391,9 +2745,70 @@ async function handleHrDocumentAccess(
   headers.set('cache-control', 'private, no-store, max-age=0')
   headers.set('content-disposition', `${disposition}; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`)
   headers.set('content-security-policy', "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:")
+  if (target.action === 'preview' && [
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ].includes(target.mimeType)) {
+    const bytes = new Uint8Array(await stored.arrayBuffer())
+    const html = renderOfficeDocumentPreview(bytes, target.mimeType, filename)
+    headers.set('content-type', 'text/html; charset=utf-8')
+    return new Response(html, { headers, status: 200 })
+  }
   headers.set('content-type', target.mimeType)
   headers.set('pragma', 'no-cache')
   return new Response(stored.body, { headers, status: 200 })
+}
+
+function decodeOfficeXmlText(value: string): string {
+  return value
+    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&#([0-9]+);/g, (_, code: string) => String.fromCodePoint(Number.parseInt(code, 10)))
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&apos;', "'")
+    .replaceAll('&amp;', '&')
+}
+
+function escapePreviewHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function renderOfficeDocumentPreview(bytes: Uint8Array, mimeType: string, filename: string): string {
+  const isWord = mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  let archive: Record<string, Uint8Array>
+  try {
+    archive = unzipSync(bytes, {
+      filter: (entry) => isWord
+        ? entry.name.toLowerCase() === 'word/document.xml'
+        : entry.name.toLowerCase() === 'xl/sharedstrings.xml' || /^xl\/worksheets\/sheet\d+\.xml$/i.test(entry.name),
+    })
+  } catch {
+    throw new ApiError('document_preview_unavailable', 422, 'This Office document could not be prepared for a safe browser preview. Download the original file instead.')
+  }
+
+  const textParts: string[] = []
+  for (const [name, content] of Object.entries(archive).sort(([left], [right]) => left.localeCompare(right))) {
+    const xml = strFromU8(content)
+    if (!isWord && /\/worksheets\//i.test(name)) textParts.push(`\n${name.split('/').at(-1)?.replace('.xml', '') ?? 'Worksheet'}\n`)
+    for (const match of xml.matchAll(/<(?:w:t|t)(?:\s[^>]*)?>([\s\S]*?)<\/(?:w:t|t)>/gi)) {
+      textParts.push(decodeOfficeXmlText(match[1] ?? ''))
+      if (isWord) textParts.push(' ')
+    }
+    if (isWord) {
+      const paragraphCount = (xml.match(/<\/w:p>/gi) ?? []).length
+      if (paragraphCount > 0) textParts.push('\n')
+    }
+  }
+  const readable = textParts.join('').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+  const safeFilename = escapePreviewHtml(filename)
+  const safeText = escapePreviewHtml(readable || 'This document does not contain browser-readable text. Download the original file to view it in its native application.')
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeFilename}</title><style>body{margin:0;background:#f7f3eb;color:#171a1d;font:16px/1.55 ui-sans-serif,system-ui,sans-serif}main{max-width:900px;margin:32px auto;padding:32px;background:#fff;border:1px solid #d8cfbf;border-radius:14px;box-shadow:0 12px 32px #00000014}h1{margin:0 0 20px;font-size:22px}pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:15px/1.6 ui-sans-serif,system-ui,sans-serif}</style></head><body><main><h1>${safeFilename}</h1><pre>${safeText}</pre></main></body></html>`
 }
 
 function optionalIsoDate(value: unknown, field: string): string | null {
@@ -5729,6 +6144,34 @@ function readiness(environment: Environment, requestId: string): Response {
   }, ready ? 200 : 503)
 }
 
+async function handleDocumentScanQueue(
+  batch: MessageBatch<DocumentScanQueueMessage>,
+  environment: Environment,
+): Promise<void> {
+  const config = configuredSupabase(environment)
+  for (const message of batch.messages) {
+    try {
+      await processDocumentScanMessage(environment, message.body)
+      message.ack()
+    } catch (error) {
+      if (config && validUuid(message.body?.operationId ?? '')) {
+        await callRpc(
+          config,
+          'service_fail_hr_document_upload',
+          {
+            target_failure_code: 'malware_scan_scan_error',
+            target_failure_detail: error instanceof Error ? error.message.slice(0, 1_000) : 'The malware scan failed.',
+            target_operation_id: message.body.operationId,
+            target_state: 'scan_error',
+          },
+          config.serviceRoleKey,
+        ).catch(() => undefined)
+      }
+      message.retry({ delaySeconds: Math.min(300, 15 * Math.max(1, message.attempts)) })
+    }
+  }
+}
+
 export function secureResponse(request: Request, response: Response, requestId: string): Response {
   const headers = new Headers(response.headers)
   const url = new URL(request.url)
@@ -5755,6 +6198,9 @@ export function secureResponse(request: Request, response: Response, requestId: 
 }
 
 export default {
+  async queue(batch: MessageBatch<DocumentScanQueueMessage>, environment: Environment): Promise<void> {
+    await handleDocumentScanQueue(batch, environment)
+  },
   async fetch(request: Request, environment: Environment): Promise<Response> {
     const url = new URL(request.url)
     const requestId = crypto.randomUUID()
@@ -5785,6 +6231,14 @@ export default {
         if (request.method === 'HEAD') {
           response = new Response(null, { headers: response.headers, status: response.status })
         }
+      }
+    } else if (url.pathname === '/api/v1/internal/document-pipeline/canary') {
+      try {
+        response = await handleDocumentPipelineCanary(request, environment, requestId)
+      } catch (error) {
+        response = error instanceof ApiError
+          ? errorJson(error.code, requestId, error.status, error.message)
+          : errorJson('document_pipeline_canary_failed', requestId, 503, 'The protected document release canary failed.')
       }
     } else if (
       url.pathname === '/api/v1/account/photo'

@@ -19,6 +19,55 @@
   "triggers": {
     "crons": ["* * * * *"]
   },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "DOCUMENT_SCANNER",
+        "class_name": "DocumentScannerContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-document-scanner-container",
+      "new_sqlite_classes": ["DocumentScannerContainer"]
+    }
+  ],
+  "containers": [
+    {
+      "name": "sygshift-document-scanner",
+      "class_name": "DocumentScannerContainer",
+      "image": "docker.io/clamav/clamav:1.5.4",
+      "instance_type": "standard-1",
+      "max_instances": 1,
+      "constraints": {
+        "regions": ["ENAM", "WNAM"]
+      },
+      "ssh": {
+        "enabled": false
+      }
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "DOCUMENT_SCAN_QUEUE",
+        "queue": "sygshift-document-scans"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "sygshift-document-scans",
+        "max_batch_size": 1,
+        "max_batch_timeout": 10,
+        "max_retries": 5,
+        "dead_letter_queue": "sygshift-document-scans-dlq",
+        "max_concurrency": 1,
+        "retry_delay": 30,
+        "visibility_timeout_ms": 180000
+      }
+    ]
+  },
   "send_email": [
     {
       "name": "EMAIL"
@@ -31,6 +80,7 @@
     "SYGSHIFT_BLOCKED_EMAIL_DOMAINS": "guardianshipsecurity.net",
     "SYGSHIFT_SECURITY_KEYS_ENABLED": "true",
     "SYGSHIFT_SECURITY_KEY_PILOT_USERNAMES": "jbrown",
+    "SYGSHIFT_DOCUMENT_PIPELINE_ENABLED": "true",
     "SYGSHIFT_HR_AUTOMATION_ENABLED": "false",
     "SYGSHIFT_HR_RECRUITING_ENABLED": "false",
     "SYGSHIFT_HR_ONBOARDING_ENABLED": "true",

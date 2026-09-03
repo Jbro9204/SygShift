@@ -25,6 +25,14 @@ deployment status, or major workflow assumptions change.
 
 ## 09/02/2026
 
+### Protected Document Studio production activation
+
+- Added an isolated Cloudflare Container running pinned ClamAV 1.5.4, a one-file Cloudflare Queue consumer, bounded retry/dead-letter handling, checksum verification, and automatic deletion of rejected quarantined objects.
+- Added an append-only production release-evidence ledger. Core document gates can activate only after the same canary run proves a clean file, known-malware rejection, and private-storage write/read/delete/restore verification.
+- Enabled company/shared HR records, automatic inventory refresh while scans are pending, and safe browser-readable previews for clean Word and Excel files while retaining the exact original for authorized download.
+- Core activation covers the protected workspace, processing, and internal employee signature routing. OCR, native PDF editing/redaction/page operations, regulated-document automation, external signers, and organizational seals remain fail-closed because those separate capabilities are not implemented.
+- Pre-release validation passed TypeScript, zero-warning lint, 155 test files / 750 tests, production builds, and Wrangler container/queue configuration validation. Production canary, migration, deploy version, health/readiness, and live workflow evidence are recorded in `docs/changelogs/CHANGELOG_09-02-2026_DOCUMENT_STUDIO_PRODUCTION_ACTIVATION.md`.
+
 ### Searchable Guardianship HR forms library
 
 - Indexed all 56 controlled forms from the supplied Guardianship HR Template Library v1.0 with authoritative code, title, category, record class, purpose, source filename, sensitivity, role audience, and plain-language aliases.

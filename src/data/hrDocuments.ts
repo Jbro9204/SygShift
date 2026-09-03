@@ -104,7 +104,7 @@ export interface HrDocumentUploadInput {
   category: string
   description: string
   documentId?: string | null
-  employeeId: string
+  employeeId: string | null
   file: File
   idempotencyKey: string
   replacementReason?: string | null

@@ -82,6 +82,9 @@ export function HrisDocumentsPage() {
   const workspaceQuery = useQuery({
     queryFn: () => getHrDocumentWorkspace(filters),
     queryKey: ['hr-documents', filters],
+    refetchInterval: (query) => query.state.data?.documents.some((document) => (
+      document.version?.scanState === 'quarantined' || document.version?.scanState === 'scan_pending'
+    )) ? 2_000 : false,
   })
   const workspace = workspaceQuery.data
 
@@ -210,7 +213,7 @@ export function HrisDocumentsPage() {
 
 function DocumentUploadModal({ onClose, onUploaded, workspace }: { onClose: () => void; onUploaded: () => void; workspace: HrDocumentWorkspace }) {
   const manageableVaults = workspace.vaults.filter((vault) => vault.canManage)
-  const [employeeId, setEmployeeId] = useState('')
+  const [employeeId, setEmployeeId] = useState('company')
   const [vaultCode, setVaultCode] = useState(manageableVaults[0]?.code ?? '')
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState('Employment document')
@@ -255,7 +258,7 @@ function DocumentUploadModal({ onClose, onUploaded, workspace }: { onClose: () =
       accessClassification: selectedVault.classification,
       category,
       description,
-      employeeId,
+      employeeId: employeeId === 'company' ? null : employeeId,
       file,
       idempotencyKey,
       title,
@@ -273,10 +276,10 @@ function DocumentUploadModal({ onClose, onUploaded, workspace }: { onClose: () =
   const formReady = Boolean(file && employeeId && title.trim() && category.trim() && !fileError)
 
   return (
-    <ModalDialog busy={uploadMutation.isPending} busyLabel={`Uploading protected document… ${progress}%`} className="hr-document-modal" description="Select the employee and authorized vault, then upload one supported file." onClose={onClose} title="Upload HR document">
+    <ModalDialog busy={uploadMutation.isPending} busyLabel={`Uploading protected document… ${progress}%`} className="hr-document-modal" description="Choose an employee or company record, select an authorized vault, then upload one supported file." onClose={onClose} title="Upload HR document">
       <form className="hr-document-upload-form" onSubmit={submit}>
         <div className="hr-document-upload-form__fields">
-          <label>Employee<select onChange={(event) => setEmployeeId(event.target.value)} required value={employeeId}><option value="">Choose an employee</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select></label>
+          <label>Record owner<select onChange={(event) => setEmployeeId(event.target.value)} required value={employeeId}><option value="company">Company / shared document</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select></label>
           <label>Document vault<select onChange={(event) => { setVaultCode(event.target.value); chooseFile(null) }} required value={vaultCode}>{manageableVaults.map((vault) => <option key={vault.code} value={vault.code}>{vault.name}</option>)}</select></label>
           <label>Document title<input maxLength={160} onChange={(event) => setTitle(event.target.value)} required value={title} /></label>
           <label>Category<input maxLength={100} onChange={(event) => setCategory(event.target.value)} required value={category} /></label>
