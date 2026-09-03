@@ -49,6 +49,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualClockTime, formatDualTime, operationalToday } from '../lib/time'
 import { continentalUsTimeZoneLabel, personalDisplayTimeZone } from '../lib/usTimeZones'
 import { scheduleTeamViewPermissions } from '../app/accessPolicy'
+import { scheduledOvertimePreviewBlocksSave } from '../scheduleDraftEdit'
 
 interface OpenShiftFormState {
   mode: 'post' | 'event'
@@ -893,8 +894,9 @@ function EditShiftDialog({
     staleTime: 0,
   })
   const overtimePreview = overtimePreviewQuery.data
-  const overtimeOverrideRequired = Boolean(overtimePreview?.requiresOverride)
+  const overtimeOverrideRequired = Boolean(selectedEmployeeId && overtimePreview?.requiresOverride)
   const overtimeOverrideReady = !overtimeOverrideRequired || Boolean(overtimeOverrideNote.trim())
+  const overtimePreviewBlocksSave = scheduledOvertimePreviewBlocksSave(selectedEmployeeId, overtimePreviewQuery)
   const hasUnsavedChanges = selectedEmployeeId !== assignedEmployeeId
     || shiftDate !== shiftOperationalDate(shift)
     || startTime !== shiftLocalTimeValue(shift, shift.starts_at)
@@ -1024,12 +1026,12 @@ function EditShiftDialog({
         {overtimePreviewQuery.isPending && selectedEmployeeId ? (
           <p className="form-note">Calculating this employee's Sunday–Saturday scheduled hours...</p>
         ) : null}
-        {overtimePreviewQuery.isError ? (
+        {overtimePreviewQuery.isError && selectedEmployeeId ? (
           <p className="form-feedback form-feedback--error" role="alert">
             {overtimePreviewQuery.error instanceof Error ? overtimePreviewQuery.error.message : 'Scheduled overtime could not be calculated.'}
           </p>
         ) : null}
-        {overtimePreview?.requiresOverride ? (
+        {overtimePreview?.requiresOverride && selectedEmployeeId ? (
           <div className="availability-override-card availability-override-card--overtime">
             <AlertCircle aria-hidden="true" size={18} />
             <div>
@@ -1080,7 +1082,7 @@ function EditShiftDialog({
             Remove from draft
           </button>
           <button className="secondary-button" onClick={requestClose} type="button">Cancel</button>
-          <button className="primary-action" disabled={mutation.isPending || Boolean(availabilityConflict && !overrideNote.trim()) || !credentialOverrideReady || overtimePreviewQuery.isPending || overtimePreviewQuery.isError || !overtimeOverrideReady} type="submit">
+          <button className="primary-action" disabled={mutation.isPending || Boolean(availabilityConflict && !overrideNote.trim()) || !credentialOverrideReady || overtimePreviewBlocksSave || !overtimeOverrideReady} type="submit">
             {mutation.isPending ? 'Saving...' : 'Save draft shift'}
           </button>
         </div>
