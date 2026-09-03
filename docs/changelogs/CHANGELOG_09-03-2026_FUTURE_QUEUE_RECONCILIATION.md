@@ -24,6 +24,18 @@ Reconciled the approved work captured in Jordan's 09/02/2026 meeting list and re
 
 Each program now records its priority, target window, current status, added date, required work, and completion boundary where applicable.
 
+## Execution instructions added
+
+Every active Future initiative now includes a standardized **Execution instructions** block. The instructions state:
+
+- what information, owner, or management decision is required before work starts;
+- the safe implementation sequence and authoritative records that must be preserved;
+- the canary, permission, recovery, and rollback controls required for production work;
+- the operational or human validation required in addition to automated tests; and
+- the evidence required before the initiative can be removed from the active queue.
+
+This applies to all 16 active initiatives, including the previously existing security, Duo, HR suite, employee-local time, required-action, Client Portal, and Indeed items—not only the programs added during the 09/03 reconciliation.
+
 ## Reconciled without duplication
 
 The following work was not returned to the active queue because it is already completed and retained in dated changelogs and `DEVLOG.md`:

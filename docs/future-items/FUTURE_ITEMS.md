@@ -22,6 +22,14 @@ Keep this repository copy synchronized with:
 - Status: Approved / queued; no employee login-flow changes authorized
 - Added: 08/31/2026
 
+#### Execution instructions
+
+1. Begin with a read-only inventory of current secrets, identity paths, permissions, storage, logs, edge controls, backups, and response ownership; do not rotate or disable anything during discovery.
+2. Complete stages in order. Before each production stage, document the owner, affected systems, exact change, employee impact, canary group, monitoring, rollback command or procedure, and acceptance evidence.
+3. Make security changes through reviewed repository migrations/configuration and protected secret stores. Never paste production credentials into chat, Git, screenshots, logs, changelogs, or the Future list.
+4. Test both allowed and denied behavior, normal employee login continuity, privileged access, revocation, recovery, and rollback before expanding a canary.
+5. Close the program only after the completion criteria below have recorded evidence and an independent security review; remove the item only after the dated changelog and DEVLOG are updated.
+
 Build a defense-in-depth security program that materially reduces the likelihood and impact of account takeover, credential theft, unauthorized data access, malicious administration, and data exfiltration without requiring ordinary employees to purchase hardware keys, enroll in a new MFA method, or change their normal login routine. Preserve the current privileged-role MFA boundary and the optional Jordan-only hardware-key pilot.
 
 #### Stage 1 — Immediate Credential Containment
@@ -98,10 +106,18 @@ Program completion criteria:
 
 ### Duo Authentication Feasibility and Controlled Pilot
 
-- Priority: **High**
+- Priority: **Low**
 - Target window: Security architecture review after immediate credential-containment work; pilot only after compatibility approval
 - Status: Approved for feasibility research / no production login change authorized
 - Added: 08/31/2026
+
+#### Execution instructions
+
+1. Assign a technical owner and obtain current Duo product, licensing, privacy, and integration documentation before designing a production path.
+2. Map the existing Supabase/Auth, Worker, MFA, FIDO, recovery, session, and role lifecycle first; the proposal must name one authoritative identity and show where Duo participates without duplicating it.
+3. Produce a written architecture, threat review, cost/support assessment, outage behavior, fallback, and rollback plan before writing integration code.
+4. If approved, build behind an independent feature gate and test only with an explicitly named canary account; do not change the ordinary employee login flow during feasibility work.
+5. End with an Adopt, Defer, or Reject decision and retain the evidence even if Duo is not adopted.
 
 Evaluate whether Cisco Duo can be integrated safely with SygShift's current Supabase Auth, Cloudflare Worker, and PostgreSQL architecture. The database is not assumed to be the identity provider, and the review must prevent duplicate identities, split authorization decisions, weakened MFA, or a second uncontrolled account directory. Existing login, authenticator MFA, remembered-device, recovery, and FIDO2 behavior must remain unchanged until a documented design and controlled pilot are approved.
 
@@ -136,6 +152,14 @@ Completion criteria:
 - Status: Stages 1–9 and the dormant Stage 10 payroll-integration control plane completed through 08/30/2026. The controlled Onboarding release completed 08/31/2026; Recruiting, identity backfill, document delivery, the remaining protected modules, and any external payroll cutover remain separately gated.
 - Added: 08/29/2026
 - Source: Approved complete enterprise HRIS/HCM specification reviewed 08/29/2026
+
+#### Execution instructions
+
+1. Treat the stage checklist as the required order of work and start each remaining stage by confirming its business owner, authoritative source, data classification, permissions, and release gate.
+2. Reuse the permanent employee identity and authoritative Schedule, Time, Payroll, Licensing, User Accounts, and Document systems; never create a parallel employee file or silently copy records.
+3. Use additive forward migrations, exact server authorization, recent MFA where specified, bounded interfaces, immutable audits, isolated canaries, and documented rollback/recovery evidence.
+4. Do not populate, infer, or activate protected HR data from placeholders. Backfills and external integrations require reconciled source files and explicit approval.
+5. A stage may be marked complete only when its authorized end-to-end workflow—not merely its schema or page—passes persistence, permission, accessibility, recovery, and production verification.
 
 Build a complete, secure, permission-controlled HRIS/HCM suite inside **HR & Finance**. Deliver it as focused, production-ready modules built on SygShift's existing permanent employee identity—not as disconnected document screens, duplicate directories, mock enterprise pages, or unfinished shells.
 
@@ -284,6 +308,14 @@ Completion standard:
 - Status: Core employee files, compensation, onboarding, Document Studio, and signatures are operational; remaining HR modules and advanced document capabilities are queued or gated
 - Added: 09/02/2026
 
+#### Execution instructions
+
+1. HR must first identify the approved source documents, operating policies, record owners, required recipients, retention rules, and which workflows require acknowledgment, approval, or legal signature.
+2. Release one bounded workflow at a time. Configure its exact role permissions, recent-authentication rule, document handling, escalation path, canary users, and rollback before enabling it.
+3. Upload only approved source versions, preserve immutable originals, and link each resulting record to the canonical employee, client, site, or company record instead of creating duplicate files.
+4. Keep OCR, editing, redaction, external signing, regulated automation, and seals disabled until the named processor, legal terms, security review, recovery drill, and end-to-end tests are complete.
+5. Have an authorized HR user perform the real workflow in production after deployment and record the result before calling the capability operational.
+
 Finish the remaining HR operating workflows without replacing the permanent employee record, duplicating documents, weakening the current HR access boundary, or presenting dormant back-end foundations as released functionality.
 
 Required work:
@@ -310,6 +342,14 @@ Completion criteria:
 - Target window: After Michelle and Jordan approve the official hierarchy; before additional broad role assignments
 - Status: Management decision and permission review required; current roles remain authoritative until approved changes are released
 - Added: 09/02/2026
+
+#### Execution instructions
+
+1. Hold a decision session with Michelle and Jordan to approve the organization chart, role names, reporting relationships, and which responsibilities belong to a role versus a specific person.
+2. Build the written matrix by permission category and action—view, create, edit, approve, assign, export/download, deactivate, and administer—before changing production assignments.
+3. Compare the approved matrix with current primary roles, additive roles, individual grants, and denials; flag Michael and every other exceptional account for explicit review rather than using it as a template.
+4. Apply changes additively with before/after access snapshots, protected Admin safeguards, allow-and-deny tests, a small canary, and immediate rollback capability.
+5. Obtain sign-off on the effective-access report, then update role documentation and employee assignments separately so a role-design change never silently reclassifies an employee.
 
 Formalize the company hierarchy and replace informal or person-specific access assumptions with a written, tested permissions matrix.
 
@@ -338,6 +378,14 @@ Completion criteria:
 - Status: Partially complete; the dedicated live clock roster is complete, while data reconciliation and schedule-change refresh remain open
 - Added: 09/02/2026
 
+#### Execution instructions
+
+1. Management must name the headcount-audit owner and approve the exact definitions of Active, onboarding, floating/Flex, placeholder, test, separated, and inactive records.
+2. Generate a read-only reconciliation report first. Review every proposed deactivation or reclassification with the owner; never bulk-delete employee, account, schedule, time, payroll, or audit history.
+3. Repair attendance refresh against the current published schedule using idempotent server-side reconciliation, with the original alert retained as auditable evidence when it is resolved or superseded.
+4. Test assignment removal, reassignment, schedule correction, revision publication, overnight shifts, salary exclusions, and concurrent supplemental Dispatch duty before release.
+5. Compare Directory, HR, User Accounts, scheduling, and reporting totals after the canary and obtain the owner's approval before closing the reconciliation.
+
 Produce one reliable active-workforce population and ensure schedule corrections immediately flow into attendance signals without deleting valid history.
 
 Required work:
@@ -364,6 +412,14 @@ Completion criteria:
 - Status: Enterprise Client Files foundation complete; authoritative source import and operational association cleanup remain open
 - Added: 09/02/2026
 
+#### Execution instructions
+
+1. Obtain authoritative TrackTik and sales exports, identify the source owner and extraction date, and preserve the untouched originals in protected storage.
+2. Stage and normalize source rows without creating clients automatically. Match by stable identifiers and verified business facts, then route duplicates, conflicts, former clients, and incomplete addresses for human review.
+3. Promote a small approved canary first and verify contacts, sites, posts, service types, statuses, documents, activity, and permissions before processing the remaining accepted rows.
+4. Clean addresses and confirm site ownership before geocoding or geofencing. Do not infer an address, client relationship, coordinate, or service type from route names alone.
+5. Run association and negative-access reports after import so every operational record resolves to the intended client/site and no employee can see unrelated locations or records.
+
 Populate the Client Files system with verified source data and make the client record the controlled relationship point for sites, services, operational records, documents, and future portal publication.
 
 Required work:
@@ -388,6 +444,14 @@ Completion criteria:
 - Target window: Controlled field pilot before Patrol is treated as fully production-ready
 - Status: Patrol workflow and reporting foundation complete; real route data, field acceptance, and sustained media validation remain open
 - Added: 09/02/2026
+
+#### Execution instructions
+
+1. Management must enter and verify real route addresses, hit counts, evidence requirements, instructions, and any optional time windows; keep the route in draft until reviewed.
+2. Create a bounded field-test route for Joseph with representative required hits, an extra hit, notes, a photo, a normal video, and a longer incident-style video.
+3. Test the complete guard workflow on the phones and network conditions actually used in the field, including upload interruption, retry, preview, completion, and correction.
+4. Test the management workflow separately: edit/version a route, assign it through Schedule, monitor progress, review evidence, correct exceptions, and export internal and client-ready reports.
+5. Record Joseph's feedback and the media/permission results, resolve or explicitly accept each finding, and obtain operational sign-off before broad activation.
 
 Finish the operational rollout of Patrol with real addresses, route ownership, field feedback, and evidence that mobile reporting and larger media behave reliably under actual guard conditions.
 
@@ -415,6 +479,14 @@ Completion criteria:
 - Status: Research inputs and management decisions required
 - Added: 09/02/2026
 
+#### Execution instructions
+
+1. Obtain Zach's complete TrackTik notes and current exports, then create a feature/data inventory with an owner and disposition for every entry.
+2. Classify each capability as Replicate, Improve, Replace, or Exclude and document the operational reason, dependency, security boundary, and acceptance test.
+3. Build the migration map from TrackTik identifiers to canonical SygShift/Sygilant client, site, employee, route, report, document, and media identifiers before importing data.
+4. Rehearse migration and rollback with non-production copies, reconcile row/file counts and checksums, then operate an approved parallel-use window with named support coverage.
+5. Retire TrackTik only after management signs the acceptance report and confirms the replacement, historical access, exports, media, dispatch decision, recovery, and contingency plan.
+
 Create a documented replacement and migration program before discontinuing TrackTik.
 
 Required work:
@@ -434,6 +506,14 @@ Required work:
 - Target window: Side-by-side integration first; Sygilant-hosted consolidation only after independent readiness and rollback approval
 - Status: Approved direction; no change to SygShift's current production login or authorization boundary is authorized yet
 - Added: 09/02/2026
+
+#### Execution instructions
+
+1. Inventory both platforms' identity, session, MFA/FIDO, recovery, user, role, permission, audit, URL, and deployment models before selecting the shared-identity design.
+2. Approve one authoritative identity provider and a versioned mapping contract; never export or copy password hashes, MFA seeds, FIDO secrets, recovery codes, or session tokens.
+3. Implement and validate Sygilant independently first, using its own server authorization even when authentication is shared. Create test identities and an isolated canary before linking a real employee.
+4. Run side by side with feature flags, monitoring, revocation propagation, outage/fallback behavior, and reversible routing while direct SygShift login remains available.
+5. Remove direct SygShift login only after management approves the consolidation acceptance report and verified entry, deep-link, logout, recovery, authorization, audit, support, and rollback behavior.
 
 Allow SygShift and Sygilant to operate side by side with one secure employee identity and familiar login experience, then later make SygShift an authenticated Sygilant module without copying password material, weakening MFA, or coupling the platforms before Sygilant is ready.
 
@@ -460,6 +540,14 @@ Completion criteria:
 - Status: Product definition required
 - Added: 09/02/2026
 
+#### Execution instructions
+
+1. Jordan and Zach must approve the users, stages, required fields, calculations, documents, approvals, reporting, and handoff rules before implementation begins.
+2. Model one canonical prospect-to-client lifecycle with stable identifiers, explicit stage transitions, ownership, duplicate detection, versioned proposals/contracts, and audit history.
+3. Define the boundary with Sygilant so an accepted sale creates or links one client relationship through a reviewed handoff rather than copying the entire record set.
+4. Prototype with non-production data, test calculation and document outputs against known examples, and require human approval before sending, signing, or activating anything externally.
+5. Release by canary with permission, confidentiality, failure/retry, rollback, export, and reconciliation evidence.
+
 Build SigSales as the controlled sales, lead, bid/proposal, and contract-management platform and hand accepted business into the canonical Sygilant client relationship without duplicate client records.
 
 Required work:
@@ -477,6 +565,14 @@ Required work:
 - Status: Requires Jordan and Zach review plus qualified legal guidance where appropriate
 - Added: 09/02/2026
 
+#### Execution instructions
+
+1. List the exact names, logos, goods/services, markets, jurisdictions, owners, domains, and current first-use evidence to be reviewed.
+2. Search relevant federal, state, common-law, domain, business-name, and marketplace sources and record dated results for identical and confusingly similar marks.
+3. Have qualified trademark counsel evaluate material conflicts and filing classes before relying on internal research or making a registration claim.
+4. Record the Adopt, Modify, Hold, or Retire decision for each name, along with filing owner, deadlines, specimens, and maintenance responsibilities.
+5. Keep domain control, corporate-name registration, and trademark rights documented as separate assets and decisions.
+
 Research potential conflicts and registration strategy for **SygShift**, **Sygilant**, and **SigSales** while treating domain ownership and trademark rights as separate matters.
 
 Required work:
@@ -493,6 +589,14 @@ Required work:
 - Target window: Next focused Schedule and Time & Attendance refinement
 - Status: Approved / queued for discussion and verification; no implementation started
 - Added: 09/03/2026
+
+#### Execution instructions
+
+1. Confirm each employee's saved IANA time zone and each Site/Post operational time zone before changing presentation logic; browser detection is advisory only.
+2. Map every employee-facing and manager-facing schedule/time surface and define which zone is shown, which label accompanies it, and which authoritative instant governs clock eligibility.
+3. Implement conversion in one centralized time utility without rewriting stored shifts, punches, workdays, payroll ownership, or historical audit timestamps.
+4. Canary with employees in Eastern, Central, Mountain, and Pacific zones and test daylight-saving changes, overnight work, early clock-in, notifications, corrections, and active sessions.
+5. Release only after Zach's existing shift remains unchanged as an absolute instant and affected employees confirm they see and can follow the intended local schedule.
 
 Keep trusted server time and UTC timestamps authoritative for clock eligibility, audit evidence, schedule storage, payroll ownership, and security decisions while presenting each employee's shifts in the employee's actual local time zone.
 
@@ -522,6 +626,14 @@ Completion criteria:
 - Target window: Next focused employee-accountability release
 - Status: Approved / queued; discussion complete, no implementation started
 - Added: 09/01/2026
+
+#### Execution instructions
+
+1. Inventory every current confirmation, acknowledgment, attestation, signature, training, schedule, policy, and document requirement and identify its authoritative record/version and owner.
+2. Define the trigger, priority, due date, permitted responses, emergency bypass, supersession rule, and audit evidence for each action type before adding it to the checkpoint.
+3. Build one server-authoritative queue and release action types incrementally; do not create separate blocking modals or client-only completion flags for individual modules.
+4. Test mandatory behavior without blocking clock, call-off, or emergency access, and verify refresh, direct routes, multiple devices, stale versions, retry, and sign-out cannot create a bypass or duplicate completion.
+5. Canary with a small employee/manager group and close only after employees can complete actions clearly and managers can verify immutable history without seeing unrelated protected records.
 
 Create one non-bypassable **Required Actions Checkpoint** after password and required identity verification. When an employee has a current item that requires confirmation, acknowledgment, attestation, signature, or another recorded response, the checkpoint must guide the employee through every required item before opening the ordinary SygShift workspace.
 
@@ -560,6 +672,14 @@ Completion criteria:
 - Status: Foundation ready; portal login, invitation, and publication remain intentionally disabled
 - Added: 09/02/2026
 
+#### Execution instructions
+
+1. Approve the client identity, organization membership, invitation, recovery, MFA, support, terms, retention, and offboarding policies before enabling any portal account.
+2. Classify every potentially publishable record and create an explicit internal approval state; internal, draft, rejected, superseded, confidential, and unapproved material must default to non-publishable.
+3. Build tenant-scoped server authorization and storage access from canonical client/site relationships, then prove denial for cross-client IDs, guessed URLs, exports, downloads, and stale memberships.
+4. Begin with one named client canary containing approved sample reports/documents/media and validate notification, accessibility, mobile, audit, withdrawal, replacement, and support behavior.
+5. Expand only after internal owners and the client confirm the acceptance checklist; preserve an immediate portal-disable control that does not delete published history or audit evidence.
+
 Build the future client-facing portal on the stable Client File identifiers and explicit publication states introduced by the Enterprise Client Files release.
 
 Required outcomes:
@@ -579,6 +699,14 @@ The current release provides portal-ready states only. It does not create client
 - Target window: Later expansion
 - Status: Pinned for later
 - Added: Before 08/25/2026
+
+#### Execution instructions
+
+1. Assign a recruiting owner and document the current applicant-to-employee workflow, required data, retention, consent, communications, licensing handoff, and failure points.
+2. Confirm current Indeed Employer API availability, authorization model, commercial terms, rate limits, permitted data use, and webhook/export capabilities from official sources.
+3. Compare direct API, approved CSV intake, controlled email parsing, and manual entry against security, reliability, cost, support, and duplicate-prevention requirements.
+4. Prototype only after selecting an approach, using non-production applicants and a versioned mapping into the dormant Recruiting foundation and permanent employee conversion path.
+5. Release only with legal/privacy approval, exact permissions, source attribution, reconciliation, audit, retry, deletion/retention handling, canary evidence, and rollback.
 
 Research whether Indeed Employer can connect to SygShift/Sygilant and support a dedicated Recruiting Depot for applicants, recruiting stages, licensing progress, and onboarding handoff.
 

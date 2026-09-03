@@ -30,6 +30,7 @@ deployment status, or major workflow assumptions change.
 - Reconciled Jordan's 09/02 meeting list and related evening decisions against completed production work so finished releases were not placed back into the active queue.
 - Added grouped future programs for remaining HR operations and advanced document capabilities, role governance, workforce reconciliation, client import and visibility, Patrol field validation, TrackTik migration, Sygilant shared identity and convergence, SigSales, and trademark research.
 - Preserved the existing security, Duo, HR suite, employee-local time, mandatory required-actions, Client Portal, and Indeed items without duplication.
+- Added a consistent execution-instructions block to all 16 active initiatives covering prerequisites, named decisions and source inputs, safe implementation order, canary and rollback expectations, operational validation, and closure evidence.
 - Made no production, database, permission, employee, scheduling, timekeeping, document, or client-data change.
 - Full details are recorded in `docs/changelogs/CHANGELOG_09-03-2026_FUTURE_QUEUE_RECONCILIATION.md`.
 
