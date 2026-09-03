@@ -35,6 +35,8 @@ deployment status, or major workflow assumptions change.
 - Live validation for 09/06–09/12 found four projected-overtime employees, including two with armed coverage, totaling 45 projected overtime hours on published revision 3.
 - Full validation passed with 162 test files / 777 tests, zero-warning lint, TypeScript, and both production builds.
 - Pushed implementation commit `d989764` and workbook-presentation refinement `71e40c5`, then deployed Cloudflare Worker version `1421a6b9-18fd-4430-9353-61a7e126132e`. Authenticated production verification confirmed the report, shift-detail modal, and audited Excel download; primary and fallback health/readiness checks returned HTTP 200.
+- Rebuilt the report header and controls after visual review: Back is now compact navigation, the title/export action share a balanced two-column header, filters align on one desktop grid, and the selected week/revision and calculation note use separate compact status rows. Responsive layouts were rendered at 1440px, 1024px, and 390px plus dark mode; all four checks passed without overflow or accessibility violations.
+- Pushed presentation commit `6320175` and deployed Cloudflare Worker version `1b2fbf0c-b6a3-440a-a687-827def14c5d3`; primary and fallback API health/readiness and the report route returned HTTP 200, and the live stylesheet contains the new report layout system.
 - Full details are recorded in `docs/changelogs/CHANGELOG_09-03-2026_SCHEDULED_OVERTIME_FORECAST.md`.
 
 

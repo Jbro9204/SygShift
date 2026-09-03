@@ -1,13 +1,15 @@
 # Scheduled Overtime Forecast Report
 
 **Released:** 09/03/2026  
-**Implementation commits:** `d989764`, `71e40c5`
+**Implementation commits:** `d989764`, `71e40c5`, `6320175`
 **Database migration:** `20260903154821_scheduled_overtime_forecast_report.sql`
-**Cloudflare Worker:** `1421a6b9-18fd-4430-9353-61a7e126132e`
+**Cloudflare Worker:** `1b2fbf0c-b6a3-440a-a687-827def14c5d3`
 
 ## Outcome
 
 SygShift Reports now includes a dedicated **Scheduled Overtime Forecast** for the Sunday-through-Saturday schedule week. It identifies employees assigned above 40 scheduled hours before the week begins and provides the assignment detail management needs to review or redistribute coverage.
+
+The report presentation was refined into a compact two-part workspace: a balanced title/export header and an aligned filter panel with the selected week and schedule revision on their own status row. The large Back button, detached controls, uneven field layout, and excess whitespace were removed without changing report behavior.
 
 ## Report behavior
 
@@ -37,6 +39,7 @@ SygShift Reports now includes a dedicated **Scheduled Overtime Forecast** for th
 - Six focused report and workbook tests passed.
 - Authenticated production verification confirmed the report, shift-detail modal, schedule revision, and audited Excel download.
 - The final workbook presentation pass merged metadata values across each worksheet so report scope and calculation notes remain readable without narrow-column wrapping.
+- Four focused browser checks passed at 1440px, 1024px, 390px, and dark mode with no horizontal overflow or automated accessibility violations.
 - Primary and fallback application, health, readiness, and report-route checks returned HTTP 200.
 - Supabase security and performance advisors reported no new finding tied to this report. Existing informational project notices remain unchanged.
 
