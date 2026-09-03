@@ -89,7 +89,7 @@ export class DocumentScannerContainer extends Container<Environment> {
   requiredPorts = [3310]
   sleepAfter = '30m'
   enableInternet = false
-  envVars = { CLAMAV_NO_FRESHCLAMD: 'true' }
+  envVars = { CLAMAV_NO_FRESHCLAMD: 'true', CLAMD_STARTUP_TIMEOUT: '300' }
 
   private scannerRuntime(): ContainerRuntime {
     if (!this.ctx.container) throw new Error('The document scanner container is unavailable.')
@@ -97,26 +97,19 @@ export class DocumentScannerContainer extends Container<Environment> {
   }
 
   async scanDocument(content: ReadableStream<Uint8Array>): Promise<DocumentMalwareScanResult> {
-    await this.startAndWaitForPorts({
-      cancellationOptions: {
-        instanceGetTimeoutMS: 120_000,
-        portReadyTimeoutMS: 120_000,
-        waitInterval: 1_000,
-      },
-    })
-
-    const versionProcess = await this.scannerRuntime().exec(['clamdscan', '--version'], {
-      stderr: 'combined',
-      stdout: 'pipe',
-    })
-    const versionOutput = await versionProcess.output()
-    const scannerVersion = new TextDecoder().decode(versionOutput.stdout).trim().slice(0, 120)
-    if (versionOutput.exitCode !== 0 || !scannerVersion) {
-      throw new Error('The malware scanner version could not be verified.')
+    const runtime = this.scannerRuntime()
+    if (!runtime.running) {
+      runtime.start({ enableInternet: false, env: this.envVars })
     }
+    // Attach the package lifecycle after the raw protocol-safe start so the
+    // normal activity monitor and 30-minute sleep policy still apply.
+    await this.start()
 
-    const scanProcess = await this.scannerRuntime().exec(
-      ['clamdscan', '--stream', '--stdout', '--no-summary'],
+    // The generic Container port probe speaks HTTP and cannot validate clamd's
+    // native TCP protocol. Have clamdscan wait for the local daemon and submit
+    // the provided bytes through its private stream protocol in one operation.
+    const scanProcess = await runtime.exec(
+      ['clamdscan', '--wait', '--ping=300:1', '--stream', '--stdout', '--no-summary', '-'],
       { stdin: content, stderr: 'combined', stdout: 'pipe' },
     )
     let timeout: ReturnType<typeof setTimeout> | undefined
@@ -126,11 +119,20 @@ export class DocumentScannerContainer extends Container<Environment> {
         new Promise<never>((_, reject) => {
           timeout = setTimeout(() => {
             scanProcess.kill(9)
-            reject(new Error('The malware scan exceeded the 120-second safety limit.'))
-          }, 120_000)
+            reject(new Error('The malware scan exceeded the 360-second startup and scan safety limit.'))
+          }, 360_000)
         }),
       ])
       const details = new TextDecoder().decode(scanOutput.stdout).trim().slice(0, 2_000)
+      const versionProcess = await runtime.exec(['clamdscan', '--version'], {
+        stderr: 'combined',
+        stdout: 'pipe',
+      })
+      const versionOutput = await versionProcess.output()
+      const scannerVersion = new TextDecoder().decode(versionOutput.stdout).trim().slice(0, 120)
+      if (versionOutput.exitCode !== 0 || !scannerVersion) {
+        throw new Error('The malware scanner version could not be verified.')
+      }
       if (scanOutput.exitCode === 0 && /:\s+OK\s*$/im.test(details)) {
         return {
           details: 'ClamAV completed the malware scan and found no known threat.',
@@ -150,7 +152,9 @@ export class DocumentScannerContainer extends Container<Environment> {
           state: 'rejected',
         }
       }
-      throw new Error(`The malware scanner returned an operational error (${scanOutput.exitCode}).`)
+      throw new Error(
+        `The malware scanner returned an operational error (${scanOutput.exitCode}): ${details || 'no diagnostic output'}`,
+      )
     } finally {
       if (timeout) clearTimeout(timeout)
     }
@@ -6236,6 +6240,11 @@ export default {
       try {
         response = await handleDocumentPipelineCanary(request, environment, requestId)
       } catch (error) {
+        console.error(JSON.stringify({
+          event: 'document_pipeline_canary_failed',
+          message: error instanceof Error ? error.message : 'Unknown canary failure',
+          requestId,
+        }))
         response = error instanceof ApiError
           ? errorJson(error.code, requestId, error.status, error.message)
           : errorJson('document_pipeline_canary_failed', requestId, 503, 'The protected document release canary failed.')

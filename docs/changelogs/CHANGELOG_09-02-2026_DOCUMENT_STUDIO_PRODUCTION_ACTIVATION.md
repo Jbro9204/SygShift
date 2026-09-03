@@ -9,7 +9,7 @@ This release does not pretend unfinished capabilities are operational. OCR, nati
 ## Security and reliability controls
 
 - Added a dedicated Cloudflare Queue with one-file batches, bounded concurrency, five retries, and a dead-letter queue.
-- Added an isolated Cloudflare Container using the exact `clamav/clamav:1.5.4` image tag, the ClamAV-recommended 4 GiB container class, no SSH, no outbound internet, one maximum instance, and a 120-second per-scan kill boundary.
+- Added an isolated Cloudflare Container using the exact `clamav/clamav:1.5.4` image tag, the ClamAV-recommended 4 GiB container class, no SSH, no outbound internet, one maximum instance, and a 360-second cold-start-plus-scan kill boundary.
 - A document remains private and quarantined until its stored size and SHA-256 checksum match the immutable upload record and ClamAV returns clean.
 - Malware or integrity failures are recorded through the existing append-only scan ledger; rejected stored objects are deleted. Operational scan failures remain quarantined and retry safely.
 - Added append-only release evidence for clean-file detection, known-malware rejection, and private-storage recovery. The activation migration refuses to unlock the workspace unless all three checks passed in one current canary run.
@@ -38,13 +38,19 @@ This release does not pretend unfinished capabilities are operational. OCR, nati
 - Production client and Worker builds passed.
 - Wrangler dry-run recognized the Durable Object, queue producer/consumer, and ClamAV container configuration.
 - Targeted release-guard tests verify queue dispatch, dead-letter configuration, pinned scanner image, fail-closed evidence requirements, company/shared records, pending-scan polling, and Office preview support.
+- Document Studio responsive layout and signature execution passed eight desktop/mobile light/dark Playwright checks.
+- Anonymous requests to the live Document Studio and document workspace endpoints returned the required HTTP 401 response.
 
 ## Deployment record
 
-- Migration `20260903001850_document_pipeline_scanner_release_evidence.sql`: staged for production.
-- Scanner canary: staged for production.
-- Migration `20260903001851_document_studio_controlled_activation.sql`: staged and intentionally depends on current canary evidence.
-- Cloudflare deployment and health/readiness: staged for production.
+- Migration `20260903001850_document_pipeline_scanner_release_evidence.sql`: applied and reconciled in production.
+- Scanner/recovery canary `361b9d1e-b63a-41f7-bf21-2319ddd5837a`: passed clean-file detection, EICAR rejection, and private-storage recovery using `ClamAV 1.5.4/28108`.
+- Post-deployment lifecycle canary `69fdc03a-2e27-43b9-a9de-a5b0a23d0063`: passed the same three controls after the protocol-safe scanner startup was attached to the 30-minute container sleep lifecycle.
+- Migration `20260903001851_document_studio_controlled_activation.sql`: applied and reconciled in production after the canary passed.
+- Production gates enabled: HR document pipeline, Document Studio workspace, processing, and internal signatures.
+- Intentionally closed gates: advanced editing, regulated-document automation, external signers, and organizational seals; no UI claims those unfinished capabilities are available.
+- Current Cloudflare version: `933343fe-3975-485c-bf3e-94c50aec835f` (code deployment `d6f02dd6-f624-49a1-b683-15f8b203caef` plus final scanner-secret version).
+- Primary and fallback health/readiness endpoints returned HTTP 200 and ready after activation.
 
 ## Rollback
 

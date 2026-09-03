@@ -35,6 +35,8 @@ describe('protected document production release', () => {
     expect(activationMigration).toContain("evidence.evidence_type = 'scanner_reject'")
     expect(activationMigration).toContain("evidence.evidence_type = 'storage_recovery'")
     expect(activationMigration).toContain("where gate in ('workspace','processing','signatures')")
+    expect(activationMigration).toContain("lower(employee.username) = 'jbrown'")
+    expect(activationMigration).not.toContain('account.username')
   })
 
   it('supports company-owned records and automatically refreshes pending scans', () => {

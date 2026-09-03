@@ -30,6 +30,11 @@ interface ContainerExecProcess {
 }
 
 interface ContainerRuntime {
+  readonly running: boolean
+  start(options?: {
+    enableInternet?: boolean
+    env?: Record<string, string>
+  }): void
   exec(
     command: string[],
     options?: {

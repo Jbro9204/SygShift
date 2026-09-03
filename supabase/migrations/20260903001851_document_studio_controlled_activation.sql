@@ -9,7 +9,7 @@ begin
   select account.employee_id into release_actor_id
   from private.employee_accounts account
   join public.employees employee on employee.id = account.employee_id
-  where lower(account.username) = 'jbrown'
+  where lower(employee.username) = 'jbrown'
     and account.disabled_at is null
     and employee.status in ('active','leave')
   limit 1;
@@ -124,6 +124,7 @@ begin
     true,
     true,
     true,
+    false,
     false,
     false,
     false,
