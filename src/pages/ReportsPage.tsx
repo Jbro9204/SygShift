@@ -15,6 +15,7 @@ import {
 } from '../reports/reportDefinitions'
 import { LicensingStatusReportWorkspace } from '../reports/LicensingStatusReportWorkspace'
 import { PatrolActivityReportWorkspace } from '../reports/PatrolActivityReportWorkspace'
+import { ScheduledOvertimeForecastWorkspace } from '../reports/ScheduledOvertimeForecastWorkspace'
 
 const pageSizes = [10, 25, 50] as const
 const rangeStorageKey = 'sygshift-reports-range'
@@ -150,6 +151,7 @@ function ReportLibrary({ from, permissions, through }: { from: string; permissio
     <section className="reports-catalog" aria-labelledby="reports-catalog-title">
       <div className="reports-section-heading"><div><p className="eyebrow">Report library</p><h2 id="reports-catalog-title">Choose one report</h2><p>Each report opens in a focused, paginated workspace.</p></div></div>
       <div className="reports-report-grid">
+        {canViewTimeReports ? <article className="reports-report-card reports-report-card--overtime"><div><p className="eyebrow">Workforce planning</p><h3>Scheduled Overtime Forecast</h3><p>See who is scheduled above 40 hours next week, which armed or unarmed assignments create the total, and which armed Flex employees may have capacity. Export the complete Excel workbook.</p></div><Link className="primary-action" to="/reports/scheduledOvertimeForecast">Open forecast</Link></article> : null}
         {canViewClientReport ? <article className="reports-report-card reports-report-card--clients"><div><p className="eyebrow">Client operations</p><h3>Client Portfolio &amp; Activity</h3><p>Review client status, renewals, linked sites, contacts, protected documents, shifts, patrol hits, incidents, and service history from the authoritative Client File.</p></div><Link className="secondary-button" to="/clients">Open report</Link></article> : null}
         {canViewPatrolReport ? <article className="reports-report-card reports-report-card--patrol"><div><p className="eyebrow">Patrol operations</p><h3>Patrol Activity</h3><p>Review required, completed, missed, makeup, extra, incident, location, and protected-evidence activity. Export internal or client-ready reports.</p></div><Link className="secondary-button" to="/reports/patrolActivity">Open report</Link></article> : null}
         {canViewLicensingReport ? <article className="reports-report-card reports-report-card--licensing"><div><p className="eyebrow">Licensing &amp; Credentials</p><h3>Guard Licensing Status</h3><p>See who is currently licensed, expiring, expired, pending review, restricted, or missing a required license, then download the complete Excel workbook.</p></div><Link className="secondary-button" to="/reports/licensingStatus">Open report</Link></article> : null}
@@ -226,6 +228,7 @@ export function ReportsPage() {
   const definition = getOperationalReportDefinition(reportKey)
   const isLicensingStatusReport = reportKey === 'licensingStatus'
   const isPatrolActivityReport = reportKey === 'patrolActivity'
+  const isScheduledOvertimeForecast = reportKey === 'scheduledOvertimeForecast'
   const sessionQuery = useQuery({
     enabled: isSupabaseConfigured,
     queryFn: getSessionContext,
@@ -235,6 +238,8 @@ export function ReportsPage() {
   const canViewLicensingStatusReport = permissions.includes('licensing.view')
   const canExportLicensingStatusReport = permissions.includes('reports.export')
   const canViewPatrolActivityReport = permissions.includes('patrol.reports.view') || permissions.includes('patrol.manage')
+  const canViewScheduledOvertimeForecast = permissions.includes('time.reports.view')
+  const canExportScheduledOvertimeForecast = permissions.includes('reports.export')
 
   useEffect(() => {
     if (searchParams.has('from') && searchParams.has('through')) return
@@ -255,7 +260,7 @@ export function ReportsPage() {
 
   return <div className="page page--reports">
     {!reportKey ? <section className="page-intro reports-page-intro"><div><p className="eyebrow">Operations</p><h1>Reports</h1><p className="page-summary">Choose a focused operational report without loading every record into one screen.</p></div><RangeControls from={from} onChange={changeRange} through={through} /></section> : null}
-    {reportKey && !definition && !isLicensingStatusReport && !isPatrolActivityReport ? <DataStatePanel icon={ShieldAlert} title="Report not found" tone="error"><p>This report is not part of the approved report library.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
+    {reportKey && !definition && !isLicensingStatusReport && !isPatrolActivityReport && !isScheduledOvertimeForecast ? <DataStatePanel icon={ShieldAlert} title="Report not found" tone="error"><p>This report is not part of the approved report library.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
     {!reportKey ? <ReportLibrary from={from} permissions={permissions} through={through} /> : null}
     {definition ? <ReportWorkspace definition={definition} from={from} onRangeChange={changeRange} through={through} /> : null}
     {isLicensingStatusReport && sessionQuery.isPending ? <DataStatePanel icon={FileBarChart} title="Verifying report access"><p>Checking your current Reports and Licensing permissions.</p></DataStatePanel> : null}
@@ -265,5 +270,9 @@ export function ReportsPage() {
     {isPatrolActivityReport && sessionQuery.isPending ? <DataStatePanel icon={FileBarChart} title="Verifying Patrol report access"><p>Checking your current Patrol reporting permissions.</p></DataStatePanel> : null}
     {isPatrolActivityReport && sessionQuery.isSuccess && !canViewPatrolActivityReport ? <DataStatePanel icon={ShieldAlert} title="Patrol report access required" tone="error"><p>This report requires protected Patrol reporting access.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
     {isPatrolActivityReport && canViewPatrolActivityReport ? <PatrolActivityReportWorkspace /> : null}
+    {isScheduledOvertimeForecast && sessionQuery.isPending ? <DataStatePanel icon={FileBarChart} title="Verifying scheduled overtime access"><p>Checking your current Time reporting permission.</p></DataStatePanel> : null}
+    {isScheduledOvertimeForecast && sessionQuery.isError ? <DataStatePanel icon={ShieldAlert} title="Report access unavailable" tone="error"><p>{sessionQuery.error.message}</p></DataStatePanel> : null}
+    {isScheduledOvertimeForecast && sessionQuery.isSuccess && !canViewScheduledOvertimeForecast ? <DataStatePanel icon={ShieldAlert} title="Scheduled overtime report access required" tone="error"><p>This report requires protected Time reporting access with verified MFA.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
+    {isScheduledOvertimeForecast && canViewScheduledOvertimeForecast ? <ScheduledOvertimeForecastWorkspace canExport={canExportScheduledOvertimeForecast} /> : null}
   </div>
 }

@@ -25,6 +25,18 @@ deployment status, or major workflow assumptions change.
 
 ## 09/03/2026
 
+### Scheduled Overtime Forecast report
+
+- Added a dedicated Sunday-through-Saturday planning report that identifies employees assigned above 40 hours before the week starts, separates armed and unarmed coverage, and shows every contributing Site/Post shift and approval note.
+- Uses the latest draft schedule when present and otherwise the current published revision. Supplemental Dispatch phone duty is excluded so concurrent phone coverage does not duplicate scheduled hours.
+- Added an armed Flex capacity planning section with explicit availability-review language plus an audited three-sheet Excel export for management review.
+- Protected report access with verified MFA plus `time.reports.view`; export additionally requires `reports.export`. Anonymous and PUBLIC function execution are revoked.
+- Preserved all employees, schedules, shifts, assignments, punches, and payroll records. Migration `20260903154821` was applied and reconciled after rollback compilation and live read-only validation.
+- Live validation for 09/06–09/12 found four projected-overtime employees, including two with armed coverage, totaling 45 projected overtime hours on published revision 3.
+- Full validation passed with 162 test files / 777 tests, zero-warning lint, TypeScript, and both production builds.
+- Full details are recorded in `docs/changelogs/CHANGELOG_09-03-2026_SCHEDULED_OVERTIME_FORECAST.md`.
+
+
 ### Concurrent Dispatch phone-duty assignment
 
 - Classified the existing **Dispatch Phone Coverage** schedule source as an explicit supplemental duty and now permit it to overlap one normal Site/Post responsibility for the same employee.
