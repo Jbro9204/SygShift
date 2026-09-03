@@ -279,6 +279,35 @@ Completion standard:
 
 ## Workforce Organization & Scheduling
 
+### Concurrent Dispatch Phone-Duty Assignment
+
+- Priority: **Urgent**
+- Target window: Next Schedule correction release
+- Status: Approved / queued for implementation; final payroll treatment must be confirmed before release
+- Added: 09/03/2026
+
+Allow an authorized scheduler to place an employee—such as a Supervisor—on an approved Dispatch phone-duty list during the same time that the employee is working a physical Site/Post shift. This is a narrow concurrent-duty rule, not a general schedule-overlap bypass.
+
+Required workflow:
+
+- [ ] Model Dispatch phone duty as an explicit assignment type so the system can distinguish remote call coverage from a second physical Site/Post shift.
+- [ ] Permit an overlap only when one assignment is approved Dispatch phone duty and the other is a compatible Site/Post or operational assignment.
+- [ ] Continue blocking two conflicting physical Site/Post shifts, two incompatible duties, and unauthorized manual overlap attempts.
+- [ ] Require an authorized scheduler or manager to assign the concurrent duty and preserve who assigned it, the covered period, the phone/list responsibility, and any approval note.
+- [ ] Show both responsibilities clearly on the employee schedule, management schedule, Dispatch coverage view, and required schedule acknowledgment without duplicating the employee or hiding either duty.
+- [ ] Keep Dispatch coverage headcount separate from Site/Post coverage so each operational responsibility is measured correctly.
+- [ ] Do not double-count the same elapsed minutes in worked-hours, overtime, pay-period totals, payroll exports, attendance alerts, or missing-clock alerts merely because the employee held two concurrent responsibilities.
+- [ ] Confirm before implementation whether Dispatch phone duty is included in the employee's existing pay for those hours or requires a separately approved premium/stipend; never infer additional compensation.
+- [ ] Ensure clock-in, break, clock-out, call-off, replacement coverage, and schedule-change notifications resolve both linked responsibilities without creating duplicate punches or contradictory alerts.
+- [ ] Add allow-and-deny tests covering Supervisor and other approved employees, partial and full overlaps, overnight duty, time-zone differences, overtime warnings, cancellation, replacement, and attempts to overlap two physical shifts.
+
+Completion criteria:
+
+- [ ] A Supervisor working a Site/Post can also appear on the Dispatch phone list for the approved overlapping period.
+- [ ] The Site/Post remains covered, Dispatch phone coverage remains visible, and the employee's elapsed worked time is counted once.
+- [ ] Ordinary scheduling conflicts remain blocked and the exception cannot be used without the exact authorized assignment type and permission.
+- [ ] Existing published shifts, punches, payroll records, and audit history remain unchanged through release and rollback verification.
+
 ### Employee-Local Shift Time Presentation
 
 - Priority: **High**
