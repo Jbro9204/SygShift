@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { completedPayrollPeriod, currentPayrollPeriod, currentPayrollWeek, shiftPayrollPeriod } from './timeRules'
+import { completedPayrollPeriod, currentPayrollPeriod, currentPayrollWeek, payrollPeriodFromBoundary, shiftPayrollPeriod } from './timeRules'
 
 const biweeklyRules = {
   payDateAnchor: '2026-07-31',
@@ -46,6 +46,19 @@ describe('payroll period rules', () => {
     expect(currentPayrollWeek(new Date('2026-08-23T16:00:00.000Z'), biweeklyRules)).toMatchObject({
       fromDate: '2026-08-23',
       throughDate: '2026-08-29',
+    })
+  })
+
+  it('uses the server-resolved employee-safe boundary without recalculating its dates', () => {
+    expect(payrollPeriodFromBoundary({
+      fromDate: '2026-08-23',
+      throughDate: '2026-09-05',
+      serverTimestamp: '2026-09-03T01:30:00.000Z',
+    })).toEqual({
+      daysRemaining: 3,
+      fromDate: '2026-08-23',
+      status: 'open',
+      throughDate: '2026-09-05',
     })
   })
 })

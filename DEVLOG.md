@@ -1532,3 +1532,11 @@ pnpm exec wrangler deploy --keep-vars
 - Full validation passed: type checking, zero-warning lint, 153 test files / 742 tests, production builds, and all 96 desktop/mobile Playwright checks.
 - No database, role membership, permission, employee, or authentication change was required.
 - Deployed Cloudflare Worker version `6cc7bb2b-cdcb-4bd3-8a75-a7bac648b762`; production health, readiness, and live release assets verified successfully.
+
+## 09/02/2026 — Time Self-Service Access Repair
+
+- Restored My Time and Time Command Center totals for ordinary employees after the pay-period alignment release incorrectly called an operations-only, MFA-protected payroll-rule function.
+- Added a narrow active-employee payroll-period context endpoint that returns only the server-resolved current range and non-sensitive calendar labels.
+- Preserved the protected `get_payroll_rules()` authorization boundary and all existing clock, time-event, payroll, employee, role, and permission records.
+- Production AAL1 verification returned the correct 08/23/2026–09/05/2026 period and eight own-time rows totaling 2,406 minutes for the reported employee.
+- Full validation passed: TypeScript, zero-warning lint, 156 test files / 754 tests, and production Worker/client builds.

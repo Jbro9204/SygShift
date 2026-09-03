@@ -23,7 +23,7 @@ import {
   getTeamAttendanceSummary,
   getOwnTimekeepingReview,
   getPayrollExportHistory,
-  getPayrollRules,
+  getPayrollPeriodContext,
   getTimekeepingDashboard,
   getTimekeepingReview,
   payrollHours,
@@ -32,7 +32,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { buildTimeCommandCenterModel, canViewTeamTime } from './timeCommandCenter'
 import { canViewOwnTime } from './timePermissions'
-import { currentPayrollPeriod, formatUsDateKey } from './timeRules'
+import { currentPayrollPeriod, formatUsDateKey, payrollPeriodFromBoundary } from './timeRules'
 import {
   TimeAlertCard,
   TimeEmptyState,
@@ -55,16 +55,13 @@ export function TimeCommandCenterPage() {
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     refetchInterval: 15_000,
   })
-  const rulesQuery = useQuery({
+  const periodQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
-    queryKey: ['time-command-rules'],
-    queryFn: getPayrollRules,
+    queryKey: ['time-command-payroll-period'],
+    queryFn: getPayrollPeriodContext,
   })
   const fallbackPeriod = currentPayrollPeriod()
-  const activePeriod = currentPayrollPeriod(
-    dashboardQuery.data?.serverTimestamp ? new Date(dashboardQuery.data.serverTimestamp) : undefined,
-    rulesQuery.data,
-  )
+  const activePeriod = periodQuery.data ? payrollPeriodFromBoundary(periodQuery.data) : fallbackPeriod
   const fromDate = activePeriod.fromDate || fallbackPeriod.fromDate
   const throughDate = activePeriod.throughDate || fallbackPeriod.throughDate
   const teamAllowed = canViewTeamTime(sessionQuery.data)
@@ -76,7 +73,7 @@ export function TimeCommandCenterPage() {
   const accountabilityAllowed = canAccessRoute('/time/accountability', sessionQuery.data)
 
   const reviewQuery = useQuery({
-    enabled: isSupabaseConfigured && Boolean(dashboardQuery.data) && rulesQuery.isSuccess,
+    enabled: isSupabaseConfigured && Boolean(dashboardQuery.data) && periodQuery.isSuccess,
     queryKey: ['time-command-review', teamAllowed ? 'team' : 'self', dashboardQuery.data?.employee.id, fromDate, throughDate],
     queryFn: () => {
       if (teamAllowed) return getTimekeepingReview({ fromDate, throughDate })
@@ -88,13 +85,13 @@ export function TimeCommandCenterPage() {
     },
   })
   const attendanceSummaryQuery = useQuery({
-    enabled: isSupabaseConfigured && teamAllowed && rulesQuery.isSuccess,
+    enabled: isSupabaseConfigured && teamAllowed && periodQuery.isSuccess,
     queryKey: ['time-command-attendance-summary', fromDate, throughDate],
     queryFn: () => getTeamAttendanceSummary({ fromDate, throughDate }),
     refetchInterval: 30_000,
   })
   const operationsWorkspaceQuery = useQuery({
-    enabled: isSupabaseConfigured && teamAllowed && rulesQuery.isSuccess,
+    enabled: isSupabaseConfigured && teamAllowed && periodQuery.isSuccess,
     queryKey: ['time-command-operations-workspace', fromDate, throughDate],
     queryFn: () => getTimekeepingOperationsWorkspace(fromDate, throughDate),
     refetchInterval: 30_000,
@@ -120,7 +117,7 @@ export function TimeCommandCenterPage() {
     )
   }
 
-  if (sessionQuery.isPending || (ownTimeAllowed && (dashboardQuery.isPending || rulesQuery.isPending))) {
+  if (sessionQuery.isPending || (ownTimeAllowed && (dashboardQuery.isPending || periodQuery.isPending))) {
     return (
       <main className="page page--sygshift-time">
         <DataStatePanel icon={Timer} title="Loading SygShift Time">
@@ -166,12 +163,12 @@ export function TimeCommandCenterPage() {
     dashboard,
     exportHistory: exportHistoryQuery.data,
     operationsWorkspace: operationsWorkspaceQuery.data,
-    payrollRules: rulesQuery.data,
+    payrollPeriod: activePeriod,
     review: reviewQuery.data,
     session: sessionQuery.data,
   })
   const loadingMetrics = reviewQuery.isPending || (teamAllowed && (attendanceSummaryQuery.isPending || operationsWorkspaceQuery.isPending))
-  const partialError = reviewQuery.isError || attendanceSummaryQuery.isError || operationsWorkspaceQuery.isError || rulesQuery.isError || exportHistoryQuery.isError
+  const partialError = reviewQuery.isError || attendanceSummaryQuery.isError || operationsWorkspaceQuery.isError || periodQuery.isError || exportHistoryQuery.isError
   const employeeView = model.roleMode === 'employee' || model.roleMode === 'salary'
 
   return (
@@ -199,7 +196,7 @@ export function TimeCommandCenterPage() {
           <div>
             <p className="eyebrow">Current Pay Period</p>
             <h2>{formatUsDateKey(model.period.fromDate)} – {formatUsDateKey(model.period.throughDate)}</h2>
-            <p>{model.period.daysRemaining} day{model.period.daysRemaining === 1 ? '' : 's'} remaining. Payroll rules use {rulesQuery.data?.weekStartsOnLabel ?? 'Sunday'} through Saturday.</p>
+            <p>{model.period.daysRemaining} day{model.period.daysRemaining === 1 ? '' : 's'} remaining. Payroll rules use {periodQuery.data?.weekStartsOnLabel ?? 'Sunday'} through Saturday.</p>
           </div>
           <TimeStatusBadge tone={model.period.status === 'exported' ? 'good' : 'neutral'}>{model.period.status}</TimeStatusBadge>
         </article>

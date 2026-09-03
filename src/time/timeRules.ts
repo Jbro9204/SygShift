@@ -27,6 +27,12 @@ export interface TimePeriod {
   throughDate: string
 }
 
+export interface PayrollPeriodBoundary {
+  fromDate: string
+  serverTimestamp: string
+  throughDate: string
+}
+
 type PeriodRuleInput = Pick<PayrollRules, 'payDateAnchor' | 'payFrequency' | 'weekStartsOn'>
 type WeekRuleInput = Pick<PayrollRules, 'weekStartsOn'>
 
@@ -104,6 +110,20 @@ export function currentPayrollPeriod(now = new Date(), rules?: Partial<PeriodRul
   const dayOffset = (today.getDay() - weekStartsOn + 7) % 7
   const weekStart = addDays(today, -dayOffset)
   return periodFromStart(weekStart, periodLengthDays(rules), 'open', now)
+}
+
+export function payrollPeriodFromBoundary(boundary: PayrollPeriodBoundary): TimePeriod {
+  const now = new Date(boundary.serverTimestamp)
+  const today = operationalToday(now)
+  const throughDate = parseDateKey(boundary.throughDate)
+  const daysRemaining = Math.max(0, Math.ceil((throughDate.getTime() - today.getTime()) / 86_400_000))
+
+  return {
+    daysRemaining,
+    fromDate: boundary.fromDate,
+    status: 'open',
+    throughDate: boundary.throughDate,
+  }
 }
 
 export function currentPayrollWeek(now = new Date(), rules?: Partial<WeekRuleInput>): TimePeriod {

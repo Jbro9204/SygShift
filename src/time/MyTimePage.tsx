@@ -26,7 +26,7 @@ import {
 } from '../data/timeOperations'
 import {
   getOwnTimekeepingReview,
-  getPayrollRules,
+  getPayrollPeriodContext,
   getTimekeepingDashboard,
   payrollHours,
   reportAttendanceIssue,
@@ -43,7 +43,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTimeRange, formatOperationalDateTime } from '../lib/time'
 import { canViewOwnTime } from './timePermissions'
 import { isActiveInProgressTimeRow } from './timePayroll'
-import { currentPayrollPeriod, formatUsDateKey } from './timeRules'
+import { currentPayrollPeriod, formatUsDateKey, payrollPeriodFromBoundary } from './timeRules'
 import {
   TimeAlertCard,
   TimeButton,
@@ -90,21 +90,20 @@ export function MyTimePage() {
   })
 
   const dashboard = dashboardQuery.data
-  const rulesQuery = useQuery({
+  const periodQuery = useQuery({
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
-    queryFn: getPayrollRules,
-    queryKey: ['my-time-payroll-rules'],
+    queryFn: getPayrollPeriodContext,
+    queryKey: ['my-time-payroll-period'],
   })
-  const payrollPeriod = currentPayrollPeriod(
-    dashboard?.serverTimestamp ? new Date(dashboard.serverTimestamp) : undefined,
-    rulesQuery.data,
-  )
+  const payrollPeriod = periodQuery.data
+    ? payrollPeriodFromBoundary(periodQuery.data)
+    : currentPayrollPeriod(dashboard?.serverTimestamp ? new Date(dashboard.serverTimestamp) : undefined)
   const missingTimeHistoryFromDate = format(
     subDays(new Date(`${payrollPeriod.throughDate}T12:00:00`), 365),
     'yyyy-MM-dd',
   )
   const reviewQuery = useQuery({
-    enabled: isSupabaseConfigured && ownTimeAllowed && Boolean(dashboard?.employee.id) && rulesQuery.isSuccess,
+    enabled: isSupabaseConfigured && ownTimeAllowed && Boolean(dashboard?.employee.id) && periodQuery.isSuccess,
     queryFn: () => getOwnTimekeepingReview({
       employeeId: dashboard?.employee.id ?? '',
       fromDate: payrollPeriod.fromDate,
@@ -113,7 +112,7 @@ export function MyTimePage() {
     queryKey: ['my-time-review', dashboard?.employee.id, payrollPeriod.fromDate, payrollPeriod.throughDate],
   })
   const missingTimeWorkspaceQuery = useQuery({
-    enabled: isSupabaseConfigured && ownTimeAllowed && rulesQuery.isSuccess,
+    enabled: isSupabaseConfigured && ownTimeAllowed && periodQuery.isSuccess,
     queryFn: () => getMissingTimeRequestWorkspace(missingTimeHistoryFromDate, payrollPeriod.throughDate),
     queryKey: ['my-missing-time-workspace', missingTimeHistoryFromDate, payrollPeriod.throughDate],
   })
@@ -207,7 +206,7 @@ export function MyTimePage() {
     )
   }
 
-  if (sessionQuery.isPending || (ownTimeAllowed && (dashboardQuery.isPending || rulesQuery.isPending))) {
+  if (sessionQuery.isPending || (ownTimeAllowed && (dashboardQuery.isPending || periodQuery.isPending))) {
     return (
       <main className="page page--sygshift-time">
         <DataStatePanel icon={Timer} title="Loading My Time">
@@ -232,11 +231,11 @@ export function MyTimePage() {
     )
   }
 
-  if (dashboardQuery.isError || rulesQuery.isError || !dashboard) {
+  if (dashboardQuery.isError || periodQuery.isError || !dashboard) {
     return (
       <main className="page page--sygshift-time">
         <DataStatePanel icon={ShieldAlert} title="My Time unavailable" tone="error">
-          <p>{dashboardQuery.error?.message ?? rulesQuery.error?.message ?? 'Your time dashboard could not be loaded.'}</p>
+          <p>{dashboardQuery.error?.message ?? periodQuery.error?.message ?? 'Your time dashboard could not be loaded.'}</p>
         </DataStatePanel>
       </main>
     )
@@ -292,7 +291,7 @@ export function MyTimePage() {
             summary={`${formatUsDateKey(reviewPeriod.fromDate)} - ${formatUsDateKey(reviewPeriod.throughDate)}`}
             title="Your Hours"
           />
-          <div className="time-command-grid my-time-summary-card__metrics" aria-busy={rulesQuery.isPending || reviewQuery.isPending}>
+          <div className="time-command-grid my-time-summary-card__metrics" aria-busy={periodQuery.isPending || reviewQuery.isPending}>
             <TimeMetricCard detail="Paid time recorded today." icon={Clock3} label="Today" value={`${payrollHours(totals.today)} hrs`} />
             <TimeMetricCard detail="Paid time for the current week." icon={CalendarDays} label="This Week" value={`${payrollHours(totals.week)} hrs`} />
             <TimeMetricCard detail="Paid time in the current pay period." icon={FileClock} label="Pay Period" value={`${payrollHours(totals.payPeriod)} hrs`} />

@@ -12,6 +12,7 @@ import {
   parsePayrollExportBatch,
   parsePayrollExportDetail,
   parsePayrollExportHistory,
+  parsePayrollPeriodContext,
   parseTeamAttendanceSummary,
   parseTimeMaintenance,
   parseTimekeepingDashboard,
@@ -27,6 +28,22 @@ import {
 } from './timekeeping'
 
 describe('timekeeping validation', () => {
+  it('accepts the employee-safe payroll-period context', () => {
+    expect(parsePayrollPeriodContext({
+      serverTimestamp: '2026-09-03T01:30:00.000Z',
+      fromDate: '2026-08-23',
+      throughDate: '2026-09-05',
+      timeZone: 'America/Denver',
+      weekStartsOn: 0,
+      weekStartsOnLabel: 'Sunday',
+      payFrequency: 'biweekly',
+      payrollConfigurationVersion: 2,
+    })).toMatchObject({
+      fromDate: '2026-08-23',
+      throughDate: '2026-09-05',
+    })
+  })
+
   it('accepts the protected dashboard contract', () => {
     const dashboard = parseTimekeepingDashboard({
       serverTimestamp: '2026-07-04T15:00:00.000Z',

@@ -81,11 +81,12 @@ export function buildTimeCommandCenterModel(input: {
   dashboard: TimekeepingDashboard
   exportHistory?: PayrollExportBatch[]
   payrollRules?: PayrollRules
+  payrollPeriod?: TimePeriod
   operationsWorkspace?: TimeOperationsWorkspace
   review?: TimekeepingReview
   session?: SessionContext | null
 }): TimeCommandCenterModel {
-  const period = currentPayrollPeriod(undefined, input.payrollRules)
+  const period = input.payrollPeriod ?? currentPayrollPeriod(undefined, input.payrollRules)
   const rows = input.review?.rows ?? []
   const workedReview = workedTimePayrollReview(input.review)
   const latestExport = input.exportHistory?.find((batch) => batch.fromDate === period.fromDate && batch.throughDate === period.throughDate)

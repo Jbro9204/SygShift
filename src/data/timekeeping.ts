@@ -190,6 +190,17 @@ const payrollRulesSchema = z.object({
   overtimePolicyVersion: z.string().optional().default('colorado-daily-weekly-v1'),
 })
 
+const payrollPeriodContextSchema = z.object({
+  serverTimestamp: z.string(),
+  fromDate: z.string(),
+  throughDate: z.string(),
+  timeZone: z.string(),
+  weekStartsOn: z.number().int().min(0).max(6),
+  weekStartsOnLabel: z.string(),
+  payFrequency: z.enum(['weekly', 'biweekly', 'semimonthly', 'monthly']),
+  payrollConfigurationVersion: z.number().int().positive(),
+})
+
 const payrollAssignmentCandidateSchema = z.object({
   shiftId: z.string().uuid(),
   startsAt: z.string(),
@@ -802,6 +813,7 @@ export type TeamAttendanceSummaryRow = z.infer<typeof teamAttendanceSummaryRowSc
 export type LiveTimeRoster = z.infer<typeof liveTimeRosterSchema>
 export type LiveTimeRosterRow = z.infer<typeof liveTimeRosterRowSchema>
 export type PayrollRules = z.infer<typeof payrollRulesSchema>
+export type PayrollPeriodContext = z.infer<typeof payrollPeriodContextSchema>
 export type PayrollAssignmentCorrectionResult = z.infer<typeof payrollAssignmentCorrectionResultSchema>
 export type PayrollRecalculationResult = z.infer<typeof payrollRecalculationResultSchema>
 export type PayrollAccountabilityEvent = z.infer<typeof payrollAccountabilityEventSchema>
@@ -969,6 +981,10 @@ export function parseTeamAttendanceSummary(value: unknown): TeamAttendanceSummar
 
 export function parsePayrollRules(value: unknown): PayrollRules {
   return payrollRulesSchema.parse(value)
+}
+
+export function parsePayrollPeriodContext(value: unknown): PayrollPeriodContext {
+  return payrollPeriodContextSchema.parse(value)
 }
 
 export function parsePayrollExportBatch(value: unknown): PayrollExportBatch {
@@ -1342,6 +1358,12 @@ export async function getPayrollRules(): Promise<PayrollRules> {
   const { data, error } = await getSupabaseClient().rpc('get_payroll_rules')
   if (error) throw new Error(error.message || 'Payroll rules could not be loaded. MFA is required.')
   return parsePayrollRules(data)
+}
+
+export async function getPayrollPeriodContext(): Promise<PayrollPeriodContext> {
+  const { data, error } = await getSupabaseClient().rpc('get_payroll_period_context')
+  if (error) throw new Error(error.message || 'The current payroll period could not be loaded.')
+  return parsePayrollPeriodContext(data)
 }
 
 export async function correctPayrollBatchAssignment(input: {
