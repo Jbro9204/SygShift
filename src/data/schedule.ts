@@ -54,6 +54,7 @@ const shiftSchema = z.object({
   requires_armed: z.boolean(),
   is_open: z.boolean(),
   is_overtime: z.boolean(),
+  assignment_type: z.enum(['standard', 'dispatch_phone_duty']).optional(),
   work_type: z.enum(['post', 'training']).optional(),
   notes: z.string().nullable(),
   post: postSchema.nullable(),
@@ -132,6 +133,11 @@ const createCoveragePlanResultSchema = z.object({
 const shiftWorkTypeMapSchema = z.array(z.object({
   shiftId: z.string().uuid(),
   workType: z.enum(['post', 'training']),
+}))
+
+const shiftAssignmentTypeMapSchema = z.array(z.object({
+  shiftId: z.string().uuid(),
+  assignmentType: z.enum(['standard', 'dispatch_phone_duty']),
 }))
 
 const resolveReviewShiftResultSchema = z.object({
@@ -377,9 +383,10 @@ export interface EmployeeScheduleRow {
 }
 
 export async function getWeeklySchedule(weekStartsOn: string): Promise<WeeklySchedule | null> {
-  const [scheduleResult, workTypeResult] = await Promise.all([
+  const [scheduleResult, workTypeResult, assignmentTypeResult] = await Promise.all([
     getSupabaseClient().rpc('get_weekly_schedule_payload', { target_week_starts_on: weekStartsOn }),
     getSupabaseClient().rpc('get_shift_work_type_map', { target_week_starts_on: weekStartsOn }),
+    getSupabaseClient().rpc('get_shift_assignment_type_map', { target_week_starts_on: weekStartsOn }),
   ])
   const { data, error } = scheduleResult
 
@@ -389,11 +396,14 @@ export async function getWeeklySchedule(weekStartsOn: string): Promise<WeeklySch
   const schedule = scheduleSchema.parse(data)
   const workTypes = workTypeResult.error ? [] : shiftWorkTypeMapSchema.parse(workTypeResult.data ?? [])
   const workTypeByShift = new Map(workTypes.map((item) => [item.shiftId, item.workType]))
+  const assignmentTypes = assignmentTypeResult.error ? [] : shiftAssignmentTypeMapSchema.parse(assignmentTypeResult.data ?? [])
+  const assignmentTypeByShift = new Map(assignmentTypes.map((item) => [item.shiftId, item.assignmentType]))
   return {
     ...schedule,
     shifts: schedule.shifts.map((shift) => ({
       ...shift,
       work_type: workTypeByShift.get(shift.id) ?? shift.work_type,
+      assignment_type: assignmentTypeByShift.get(shift.id) ?? shift.assignment_type,
       assignments: shift.assignments.filter((assignment) => assignment.status !== 'canceled'),
     })),
   }

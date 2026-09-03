@@ -591,6 +591,7 @@ function ShiftCard({
     >
       <div className="shift-card__heading">
         <strong>{shiftTimeRange(shift)}</strong>
+        {shift.assignment_type === 'dispatch_phone_duty' ? <span className="shift-tag shift-tag--dispatch">Dispatch phone duty</span> : null}
         {shift.is_overtime ? <span className="shift-tag shift-tag--overtime">OT</span> : null}
       </div>
       <span className="shift-card__title">{title}</span>
@@ -1795,6 +1796,7 @@ function EmployeeWeekDialog({
                           </div>
                         </dl>
                         <div className="employee-week-shift__chips">
+                          {shift.assignment_type === 'dispatch_phone_duty' ? <span className="shift-tag shift-tag--dispatch">Dispatch phone duty</span> : null}
                           {shift.requires_armed ? <span className="shift-tag shift-tag--armed">Armed</span> : <span className="shift-tag">Unarmed</span>}
                           {shift.is_overtime ? <span className="shift-tag shift-tag--overtime">OT</span> : null}
                           {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review needed</span> : null}
@@ -3970,6 +3972,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                           ? shift.assignments.map((assignment) => <span key={assignment.id}>{assignmentName(assignment)}</span>)
                           : <span>No one assigned</span>}
                         <div>
+                          {shift.assignment_type === 'dispatch_phone_duty' ? <span className="shift-tag shift-tag--dispatch">Dispatch phone duty</span> : null}
                           {shift.requires_armed ? <span className="shift-tag shift-tag--armed">Armed</span> : <span className="shift-tag">Unarmed</span>}
                           {openSlots ? <span className="shift-tag shift-tag--open">{openSlots} open</span> : <span className="shift-tag shift-tag--covered">Covered</span>}
                           {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review</span> : null}

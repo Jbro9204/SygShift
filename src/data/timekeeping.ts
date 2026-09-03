@@ -28,6 +28,7 @@ const timekeepingShiftSchema = z.object({
   timeZone: z.string(),
   requiresArmed: z.boolean(),
   isOvertime: z.boolean(),
+  assignmentType: z.enum(['standard', 'dispatch_phone_duty']).optional(),
   postName: z.string().nullable(),
   siteName: z.string().nullable(),
   siteCode: z.string().nullable(),

@@ -13904,6 +13904,12 @@ a.home-metric-card:focus-visible {
   border-color: light-dark(#dec18a, #806026);
 }
 
+.shift-tag--dispatch {
+  color: light-dark(#5b3b08, #ffe09b);
+  background: light-dark(#f7e7bd, #3b2d12);
+  border-color: light-dark(#d8ad54, #a67a27);
+}
+
 .shift-tag--open {
   color: light-dark(#804626, #ffc5bd);
   background: light-dark(#f7e9df, #342817);
