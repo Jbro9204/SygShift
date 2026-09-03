@@ -28,7 +28,9 @@ Released the remaining in-system HR workspaces from read-only staged foundations
 - Supabase schema lint was run; the three HR release defects identified by the analyzer were repaired in this migration. Unrelated and dormant-module findings were not hidden or broadened into this release.
 - Production release gates were verified enabled for all 11 newly released modules.
 - Post-migration counts confirmed zero new protected HR business records.
-- TypeScript, zero-warning application lint, focused release guards, the full automated suite, and the production build were run before deployment.
+- TypeScript, zero-warning application lint, focused release guards, 163 test files / 783 tests, and both production builds passed.
+- Commit `4b2703b` was pushed and deployed from an isolated clean worktree as Cloudflare version `0ff2cc0a-1876-4d1d-a735-9fd1f582420d`.
+- Primary and fallback health/readiness checks returned HTTP 200. Authenticated production QA confirmed the operational Talent workspace, protected employee-option loading, and the complete action dialog without submitting a business record.
 
 ## Remaining separately controlled work
 
