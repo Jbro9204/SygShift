@@ -279,6 +279,33 @@ Completion standard:
 
 ## Workforce Organization & Scheduling
 
+### Employee-Local Shift Time Presentation
+
+- Priority: **High**
+- Target window: Next focused Schedule and Time & Attendance refinement
+- Status: Approved / queued for discussion and verification; no implementation started
+- Added: 09/03/2026
+
+Keep trusted server time and UTC timestamps authoritative for clock eligibility, audit evidence, schedule storage, payroll ownership, and security decisions while presenting each employee's shifts in the employee's actual local time zone.
+
+Required workflow:
+
+- [ ] Use the employee's saved IANA time zone as the authoritative presentation zone for that employee's schedule, Home, My Time, clock controls, reminders, required-action prompts, and employee-facing notifications.
+- [ ] Read the browser or operating-system time zone to detect a likely mismatch, but never trust a manually incorrect device clock or silently rewrite the employee profile, schedule, punch, or payroll record from browser time alone.
+- [ ] When the device zone and saved employee zone differ, display a clear non-blocking explanation and provide an authorized correction path instead of showing the shift in Mountain Time or guessing which zone is correct.
+- [ ] Show a concise zone abbreviation or local-time label beside shift times whenever ambiguity is possible. Management views must make the employee-local zone and the operational Site/Post zone understandable without duplicating the shift.
+- [ ] Compare server timestamps as absolute instants for early clock-in and late-clock rules so an 8:00 AM Central shift opens at the same real moment for the employee regardless of the system's Mountain operational default.
+- [ ] Preserve the existing Mountain operational payroll policy and historical timestamps; this refinement must not rewrite published shifts, punches, active clock sessions, payroll assignments, or audit history.
+- [ ] Handle Eastern, Central, Mountain, and Pacific zones plus daylight-saving transitions using IANA zones rather than fixed EST/CST/MST/PST offsets.
+- [ ] Verify schedule display, early clock-in, clock-in/out, overnight shifts, notifications, required actions, manager views, and payroll attribution across all four supported zones and around daylight-saving boundaries.
+
+Completion criteria:
+
+- [ ] An employee scheduled for 8:00 AM in their saved local zone consistently sees 8:00 AM and becomes eligible to clock in at the correct server-confirmed instant.
+- [ ] A device-zone mismatch cannot silently move a shift, permit an early punch, block an on-time punch, or alter payroll ownership.
+- [ ] Authorized managers can identify which time zone they are viewing without requiring employees to be scheduled in Mountain Time.
+- [ ] Existing schedule, timekeeping, payroll, notification, and audit records remain unchanged through release and rollback verification.
+
 ## Employee Experience & Accountability
 
 ### Mandatory Post-Login Required Actions Checkpoint
