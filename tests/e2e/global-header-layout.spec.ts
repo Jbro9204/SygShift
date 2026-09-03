@@ -87,9 +87,9 @@ for (const width of widths) {
     const clockTextSize = await page.locator('.operational-clock__digital').first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
     const zoneTextSize = await page.locator('.operational-clock__zone').first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
     const clockFaceSize = await page.locator('.operational-clock__face').first().evaluate((element) => element.getBoundingClientRect().width)
-    expect(clockTextSize).toBeGreaterThanOrEqual(12)
-    expect(zoneTextSize).toBeGreaterThanOrEqual(11)
-    expect(clockFaceSize).toBeGreaterThanOrEqual(32)
+    expect(clockTextSize).toBeGreaterThanOrEqual(width <= 680 ? 12.5 : 13)
+    expect(zoneTextSize).toBeGreaterThanOrEqual(12)
+    expect(clockFaceSize).toBeGreaterThanOrEqual(34)
     const alertCopyClipped = await page.locator('.workspace-alert-strip__ticker').evaluate((element) => element.scrollWidth > element.clientWidth + 1)
     expect(alertCopyClipped).toBe(false)
     const viewportWidth = page.viewportSize()!.width

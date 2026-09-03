@@ -9856,7 +9856,7 @@ a.home-metric-card:focus-visible {
 
 .operational-time-zone-grid {
   display: grid;
-  min-width: 568px;
+  min-width: 600px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: center;
   gap: 4px;
@@ -9865,10 +9865,10 @@ a.home-metric-card:focus-visible {
 .operational-clock {
   position: relative;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  width: min(100%, 140px);
+  grid-template-columns: 36px minmax(0, 1fr);
+  width: min(100%, 148px);
   min-width: 0;
-  min-height: 58px;
+  min-height: 60px;
   align-items: center;
   justify-self: center;
   gap: 6px;
@@ -9885,8 +9885,8 @@ a.home-metric-card:focus-visible {
 }
 
 .operational-clock__face {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   overflow: visible;
 }
 
@@ -9943,7 +9943,7 @@ a.home-metric-card:focus-visible {
 
 .operational-clock__digital {
   color: light-dark(#181713, #f5f1e8);
-  font-size: 12px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
   font-weight: 900;
   letter-spacing: -0.02em;
@@ -9953,7 +9953,7 @@ a.home-metric-card:focus-visible {
 
 .operational-clock__zone {
   color: light-dark(#5b5245, #b9b2a7);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 850;
   line-height: 1.25;
   white-space: nowrap;
@@ -9965,7 +9965,7 @@ a.home-metric-card:focus-visible {
   color: light-dark(#735018, #e0b65a);
   background: light-dark(#f3dfb5, #342817);
   border-radius: 999px;
-  font-size: 9px;
+  font-size: 10px;
   font-style: normal;
   font-weight: 900;
   letter-spacing: 0.05em;
@@ -10175,20 +10175,20 @@ a.home-metric-card:focus-visible {
   }
 
   .operational-time-zone-grid {
-    min-width: 536px;
+    min-width: 568px;
   }
 
   .operational-clock {
-    grid-template-columns: 32px minmax(0, 1fr);
-    width: min(100%, 132px);
+    grid-template-columns: 34px minmax(0, 1fr);
+    width: min(100%, 140px);
     gap: 5px;
     padding-right: 2px;
     padding-left: 2px;
   }
 
   .operational-clock__face {
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
   }
 }
 
@@ -17261,7 +17261,7 @@ a.home-metric-card:focus-visible {
   }
 
   .operational-clock {
-    min-height: 54px;
+    min-height: 56px;
   }
 
   .payroll-export-reminder {
@@ -17344,13 +17344,14 @@ a.home-metric-card:focus-visible {
 
   .operational-clock {
     width: 100%;
-    min-height: 54px;
+    min-height: 56px;
     justify-self: stretch;
-    padding: 4px 6px;
+    gap: 4px;
+    padding: 4px;
   }
 
   .operational-clock__digital {
-    font-size: 12px;
+    font-size: 12.5px;
   }
 
   .payroll-export-reminder {
