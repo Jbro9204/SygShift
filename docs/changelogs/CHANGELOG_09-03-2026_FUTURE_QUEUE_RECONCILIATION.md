@@ -1,7 +1,9 @@
 # Future Queue Reconciliation
 
-**Date:** 09/03/2026  
-**Type:** Documentation and planning control  
+**Date:** 09/03/2026
+
+**Type:** Documentation and planning control
+
 **Production behavior changed:** No
 
 ## Summary
