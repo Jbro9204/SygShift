@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { CalendarDays } from 'lucide-react'
 import { formatOperationalDate, formatTimeZoneClock } from '../lib/time'
 
 const OPERATIONAL_TIME_ZONES = [
@@ -75,31 +76,30 @@ export function OperationalTimeHeader({
   }, [])
 
   return (
-    <>
-      <header className="topbar">
-        <div className="topbar-date">
-          <span>{formatOperationalDate(now)}</span>
-        </div>
-        {accountControls}
-      </header>
-
+    <header className="topbar">
+      <div className="topbar-date">
+        <CalendarDays aria-hidden="true" size={19} strokeWidth={1.9} />
+        <span>{formatOperationalDate(now)}</span>
+      </div>
       <section aria-label="United States operational time zones" className="operational-time-zone-strip">
         <div className="operational-time-zone-grid">
           {OPERATIONAL_TIME_ZONES.map((zone) => {
             const display = formatTimeZoneClock(now, zone.timeZone)
-            const accessibleLabel = `${zone.name} time: ${display.digitalTime}, ${display.abbreviation}, ${display.accessibleDate}${zone.operationalDefault ? ', SygShift operational default' : ''}`
+            const accessibleLabel = `${zone.name} time: ${display.digitalTime}, ${display.abbreviation}, ${display.accessibleDate}${zone.operationalDefault ? ', SygShift system time' : ''}`
             return (
               <article aria-label={accessibleLabel} className={zone.operationalDefault ? 'operational-clock operational-clock--default' : 'operational-clock'} key={zone.timeZone}>
                 <AnalogClock hour24={display.hour24} minute={display.minute} second={display.second} />
-                <strong className="operational-clock__digital">{display.digitalTime}</strong>
-                <span className="operational-clock__zone">{zone.name} · {display.abbreviation}</span>
-                <small>{display.date}</small>
-                {zone.operationalDefault ? <em>Operational default</em> : null}
+                <span className="operational-clock__details">
+                  <strong className="operational-clock__digital">{display.digitalTime}</strong>
+                  <span className="operational-clock__zone">{zone.name} · {display.abbreviation}</span>
+                  {zone.operationalDefault ? <em>System time</em> : null}
+                </span>
               </article>
             )
           })}
         </div>
       </section>
-    </>
+      {accountControls}
+    </header>
   )
 }

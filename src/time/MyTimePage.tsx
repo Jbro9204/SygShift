@@ -40,6 +40,7 @@ import {
   type TimekeepingShift,
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { formatDualTimeRange, formatOperationalDateTime } from '../lib/time'
 import { canViewOwnTime } from './timePermissions'
 import { isActiveInProgressTimeRow } from './timePayroll'
@@ -476,7 +477,7 @@ function AttendanceReportModal({
               <option value="">No specific shift / date only</option>
               {shifts.map((shift) => (
                 <option key={shift.assignmentId} value={shift.shiftId}>
-                  {formatUsDateKey(shift.startsAt.slice(0, 10))} - {shiftTitle(shift)} - {shiftLocation(shift)} - {formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}
+                  {formatUsDateKey(shift.startsAt.slice(0, 10))} - {shiftTitle(shift)} - {shiftRequirementLabel(shift.requiresArmed)} - {shiftLocation(shift)} - {formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}
                 </option>
               ))}
             </select>
@@ -1104,7 +1105,7 @@ function shiftLocation(shift: TimekeepingShift): string {
 }
 
 function shiftTitle(shift: TimekeepingShift): string {
-  return shift.postName ?? shift.eventName ?? shift.locationName ?? 'Assigned shift'
+  return shiftDisplayTitle(shift)
 }
 
 function sumPaidMinutes(rows: TimekeepingReviewRow[]): number {

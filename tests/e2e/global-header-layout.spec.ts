@@ -20,10 +20,11 @@ async function installHeaderFixture(page: import('@playwright/test').Page, colla
           <line class="operational-clock__hand operational-clock__hand--second" x1="32" x2="32" y1="36" y2="10"></line>
           <circle class="operational-clock__pin" cx="32" cy="32" r="2.5"></circle>
         </svg>
-        <strong class="operational-clock__digital">11:59 PM (23:59)</strong>
-        <span class="operational-clock__zone">${name} · ${abbreviation}</span>
-        <small>Mon, 09/01/2026</small>
-        ${name === 'Mountain' ? '<em>Operational default</em>' : ''}
+        <span class="operational-clock__details">
+          <strong class="operational-clock__digital">11:59 PM (23:59)</strong>
+          <span class="operational-clock__zone">${name} · ${abbreviation}</span>
+          ${name === 'Mountain' ? '<em>System time</em>' : ''}
+        </span>
       </article>`).join('')
 
     root.innerHTML = `
@@ -33,6 +34,7 @@ async function installHeaderFixture(page: import('@playwright/test').Page, colla
         <div class="workspace">
           <header class="topbar">
             <div class="topbar-date"><span>Monday, 09/01/2026</span></div>
+            <section aria-label="United States operational time zones" class="operational-time-zone-strip"><div class="operational-time-zone-grid">${clocks}</div></section>
             <div class="user-menu">
               <div aria-label="Appearance" class="theme-switcher" role="group">
                 <button aria-label="Use light mode" aria-pressed="true" class="theme-switcher__button" type="button"><span>☀</span></button>
@@ -46,7 +48,6 @@ async function installHeaderFixture(page: import('@playwright/test').Page, colla
               <button aria-label="Sign Out" class="user-menu__icon-button" type="button"><span>↪</span></button>
             </div>
           </header>
-          <section aria-label="United States operational time zones" class="operational-time-zone-strip"><div class="operational-time-zone-grid">${clocks}</div></section>
           <section aria-label="Workspace alerts" class="workspace-alert-strip workspace-alert-strip--urgent">
             <div class="workspace-alert-strip__icon">!</div>
             <div class="workspace-alert-strip__copy"><strong>Operational alert</strong><div class="workspace-alert-strip__ticker"><span>This alert remains fully readable beneath the clocks and wraps cleanly when space is limited.</span></div></div>
@@ -76,7 +77,7 @@ for (const width of widths) {
     const alertTop = await page.locator('.workspace-alert-strip').evaluate((element) => element.getBoundingClientRect().top)
     const alertBottom = await page.locator('.workspace-alert-strip').evaluate((element) => element.getBoundingClientRect().bottom)
     const contentTop = await page.locator('#main-content').evaluate((element) => element.getBoundingClientRect().top)
-    expect(alertTop - clockBottom).toBeGreaterThanOrEqual(10)
+    expect(alertTop - clockBottom).toBeGreaterThanOrEqual(width <= 680 ? 12 : 14)
     expect(contentTop).toBeGreaterThanOrEqual(alertBottom)
 
     const clippedDigitalTimes = await page.locator('.operational-clock__digital').evaluateAll((elements) => elements.filter((element) => element.scrollWidth > element.clientWidth + 1).length)
@@ -115,7 +116,7 @@ test('reduced motion removes the second hand without hiding clock information', 
   await expect(page.locator('.operational-clock__digital').first()).toBeVisible()
 })
 
-test('the layered global header has no detectable accessibility violations', async ({ page }) => {
+test('the integrated global header has no detectable accessibility violations', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 900 })
   await page.goto('/')
   await installHeaderFixture(page, false)

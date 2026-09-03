@@ -26,6 +26,7 @@ import {
   EarlyClockInWarningDialog,
 } from '../components/EarlyClockInWarningDialog'
 import { canAccessRoute } from '../app/accessPolicy'
+import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import {
   activeTimeState,
   clockInWindowOpensAt,
@@ -226,7 +227,7 @@ function shortDigest(digest: string): string {
 }
 
 function shiftTitle(shift: TimekeepingShift): string {
-  return shift.postName ?? shift.eventName ?? shift.locationName ?? 'Assigned shift'
+  return shiftDisplayTitle(shift)
 }
 
 function shiftLocation(shift: TimekeepingShift): string {
@@ -1410,7 +1411,7 @@ function ShiftPicker({
             <small>{shiftLocation(shift)}</small>
             <em>{formatTime(shift.startsAt, displayTimeZone)} - {formatTime(shift.endsAt, displayTimeZone)}</em>
           </span>
-          {shift.requiresArmed ? <b>Armed</b> : null}
+          <b>{shiftRequirementLabel(shift.requiresArmed)}</b>
           {shift.isOvertime ? <b>OT</b> : null}
         </label>
       ))}

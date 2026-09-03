@@ -60,12 +60,12 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 
 ## Global operational time header
 
-- The authenticated application uses one shared `AppShell` header across every permission-controlled workspace. The shell owns the account controls, four-zone display, maintenance notices, and the existing rotating alert lane.
+- The authenticated application uses one shared `AppShell` header across every permission-controlled workspace. The shell owns one compact integrated date, four-zone, and account bar plus maintenance notices and the existing rotating alert lane.
 - Eastern, Central, Mountain, and Pacific clocks are derived from one synchronized instant and explicit IANA zones. The display timer is anchored to the existing maintenance-status server timestamp and refreshed through that existing query; it does not make a network request every second.
-- Clock formatters are cached, daylight/standard abbreviations come from `Intl.DateTimeFormat`, and every zone computes its own calendar date. Mountain remains visibly identified as the operational default.
+- Clock formatters are cached, daylight/standard abbreviations come from `Intl.DateTimeFormat`, and every zone computes its own calendar date for its accessible label. Mountain remains visibly identified as **SygShift system time**.
 - Header clocks are informational. Server timestamps and protected database functions remain authoritative for punches, payroll, patrol hits, audit events, and all other secured records.
 - The existing workspace alert component remains the only global alert lane. It retains its permission filtering, rotation, count, severity, and workflow links while flowing beneath the clocks with responsive wrapping.
-- Desktop layouts retain a four-column clock row after the persistent sidebar width is applied. Tablet and mobile layouts use a two-by-two grid without hiding a zone or introducing horizontal scrolling.
+- Wide desktop uses one 72-pixel integrated bar. Constrained desktop keeps all four clocks on a compact second row, while tablet and mobile use a two-by-two grid without hiding a zone or introducing horizontal scrolling.
 
 ## Identity and access control
 

@@ -33,6 +33,7 @@ import {
   type TimekeepingShift,
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { formatDualTimeRange } from '../lib/time'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from './timeQuerySync'
 import { useEarlyClockInRestriction } from './useEarlyClockInRestriction'
@@ -50,7 +51,7 @@ const actionLabels: Record<TimeEventKind, string> = {
 }
 
 function shiftLabel(shift: TimekeepingShift): string {
-  return [shift.siteName, shift.postName ?? shift.eventName].filter(Boolean).join(' · ') || 'Assigned shift'
+  return [shift.siteName, shiftDisplayTitle(shift, ''), shiftRequirementLabel(shift.requiresArmed)].filter(Boolean).join(' · ')
 }
 
 function activeShift(dashboard: Awaited<ReturnType<typeof getTimekeepingDashboard>>): TimekeepingShift | null {

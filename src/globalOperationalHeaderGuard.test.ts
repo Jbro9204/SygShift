@@ -37,7 +37,8 @@ describe('global operational time header guardrails', () => {
     expect(header.match(/window\.setInterval/g)).toHaveLength(1)
     expect(header).toContain('window.clearInterval(interval)')
     expect(header).toContain('United States operational time zones')
-    expect(header).not.toContain('Mountain Time is the operational default')
+    expect(header).toContain('SygShift system time')
+    expect(header).toContain('<CalendarDays')
     expect(header).not.toContain('aria-live')
     expect(header).not.toMatch(/\b(EST|EDT|CST|CDT|MST|MDT|PST|PDT)\b/)
   })
@@ -58,9 +59,14 @@ describe('global operational time header guardrails', () => {
     expect(time).toContain('formatDualTime(')
   })
 
-  it('keeps four columns at desktop, two-by-two on narrow screens, and places an inset alert below', () => {
+  it('keeps four compact clocks in the integrated top bar and places an inset alert below', () => {
+    expect(header).toContain('<section aria-label="United States operational time zones"')
+    expect(header.indexOf('className="topbar"')).toBeLessThan(header.indexOf('operational-time-zone-strip'))
     expect(css).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))')
+    expect(css).toContain('grid-template-columns: 30px minmax(0, 1fr)')
+    expect(css).toContain('overflow-x: auto')
     expect(css).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
+    expect(css).toContain('overflow-x: visible')
     expect(css).toContain('.workspace-alert-strip {')
     expect(css).toContain('margin: 14px clamp(24px, 4vw, 54px) 0')
     expect(css).toContain('@media (prefers-reduced-motion: reduce)')

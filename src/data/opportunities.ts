@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { shiftDisplayTitle } from '../lib/shiftDisplay'
 import { getSupabaseClient } from '../lib/supabase'
 
 const requestSchema = z.object({
@@ -94,11 +95,19 @@ export function opportunityLocation(opportunity: Opportunity): string {
 }
 
 export function opportunityTitle(opportunity: Opportunity): string {
-  return opportunity.event?.name ?? opportunity.post?.name ?? 'Open shift'
+  return shiftDisplayTitle({
+    eventName: opportunity.event?.name,
+    postName: opportunity.post?.name,
+    requiresArmed: opportunity.requires_armed,
+  }, 'Open shift')
 }
 
 export function opportunityCoverageLabel(opportunity: Opportunity): string {
-  return opportunity.post?.name ?? opportunity.event?.name ?? 'Open coverage'
+  return shiftDisplayTitle({
+    eventName: opportunity.event?.name,
+    postName: opportunity.post?.name,
+    requiresArmed: opportunity.requires_armed,
+  }, 'Open coverage')
 }
 
 export function opportunityDescription(opportunity: Opportunity): string | null {

@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 09/03/2026
 
+### Schedule requirement labels and compact operational time header
+
+- Repaired the employee-facing mixed-coverage display so each shift uses its own armed/unarmed requirement instead of inheriting a generic armed label from the shared Post name.
+- Centralized requirement-aware shift titles and explicit Armed/Unarmed labels across Schedule, Home, Action Center, open opportunities, My Time, and Time & Attendance without changing assignments, qualifications, or schedule authority.
+- Rebuilt the existing four-zone header into one compact integrated date, clocks, and account bar. Eastern, Central, Mountain, and Pacific remain visible; Mountain is highlighted as **System time**.
+- Preserved the synchronized server-time anchor and the existing civilian/24-hour teaching format, including values such as `1:00 PM (13:00)`.
+- Added responsive four-clock and two-by-two layouts with no hidden zone, clipped afternoon time, or page-level horizontal overflow.
+- No database migration, production record, permission, schedule assignment, punch, or payroll change is required.
+- Full validation passed: TypeScript, zero-warning application lint, 163 test files / 783 tests, both production builds, and 108 desktop/mobile Playwright checks.
+- Release validation and production deployment evidence are recorded in `docs/changelogs/CHANGELOG_09-03-2026_SCHEDULE_REQUIREMENT_AND_COMPACT_TIME_HEADER.md`.
+
 ### HR Suite operational release
 
 - Released Recruiting, Leave, Benefits, Talent, Learning, Employee Cases, Safety, Assets, Offboarding & Rehire, HR Self-Service, and HR Reporting through a centralized service-only action boundary with exact permissions, audit events, recent MFA for restricted modules, and independent approval where required.

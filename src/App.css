@@ -9813,11 +9813,12 @@ a.home-metric-card:focus-visible {
   position: sticky;
   z-index: 20;
   top: 0;
-  display: flex;
-  min-height: 76px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  min-height: 72px;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px clamp(24px, 4vw, 54px);
+  gap: clamp(6px, 0.7vw, 10px);
+  padding: 7px clamp(10px, 1vw, 16px);
   background: light-dark(rgb(255 255 255 / 94%), rgb(16 20 25 / 94%));
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(14px);
@@ -9825,47 +9826,57 @@ a.home-metric-card:focus-visible {
 
 .topbar-date {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  color: var(--muted);
-  font-size: 15px;
+  min-height: 46px;
+  align-items: center;
+  gap: 9px;
+  padding-right: clamp(7px, 0.8vw, 11px);
+  color: var(--ink);
+  border-right: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
-.topbar-date strong {
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 750;
-  line-height: 1.35;
+.topbar-date > svg {
+  flex: 0 0 auto;
+  color: var(--muted);
 }
 
 .operational-time-zone-strip {
-  margin: 12px clamp(24px, 4vw, 54px) 0;
-  padding: 10px 12px;
-  background: light-dark(rgb(255 255 255 / 88%), rgb(16 20 25 / 88%));
-  border: 1px solid light-dark(#ddd6c8, #33383d);
-  border-radius: 14px;
-  box-shadow: 0 8px 22px rgb(44 35 20 / 7%);
+  min-width: 0;
+  overflow-x: auto;
+  padding-right: clamp(7px, 0.8vw, 11px);
+  border-right: 1px solid var(--line);
+  scrollbar-width: none;
+}
+
+.operational-time-zone-strip::-webkit-scrollbar {
+  display: none;
 }
 
 .operational-time-zone-grid {
   display: grid;
+  min-width: 512px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-items: stretch;
-  gap: 8px;
+  align-items: center;
+  gap: 4px;
 }
 
 .operational-clock {
   position: relative;
   display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  width: min(100%, 125px);
   min-width: 0;
-  align-content: start;
-  justify-items: center;
-  gap: 2px;
-  padding: 8px 6px;
+  min-height: 54px;
+  align-items: center;
+  justify-self: center;
+  gap: 4px;
+  padding: 5px 2px;
   color: light-dark(#282620, #f5f1e8);
   border: 1px solid transparent;
-  border-radius: 11px;
-  text-align: center;
+  border-radius: 9px;
+  text-align: left;
 }
 
 .operational-clock--default {
@@ -9874,9 +9885,8 @@ a.home-metric-card:focus-visible {
 }
 
 .operational-clock__face {
-  width: clamp(44px, 4.2vw, 56px);
-  height: clamp(44px, 4.2vw, 56px);
-  margin-bottom: 3px;
+  width: 30px;
+  height: 30px;
   overflow: visible;
 }
 
@@ -9923,42 +9933,43 @@ a.home-metric-card:focus-visible {
   stroke-width: 1;
 }
 
+.operational-clock__details {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  justify-items: start;
+  gap: 1px;
+}
+
 .operational-clock__digital {
   color: light-dark(#181713, #f5f1e8);
-  font-size: clamp(12px, 1.2vw, 15px);
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
   font-weight: 900;
-  line-height: 1.35;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
 .operational-clock__zone {
   color: light-dark(#5b5245, #b9b2a7);
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 850;
-  line-height: 1.35;
-  white-space: nowrap;
-}
-
-.operational-clock small {
-  color: light-dark(#766f64, #b9b2a7);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.35;
+  line-height: 1.25;
   white-space: nowrap;
 }
 
 .operational-clock em {
-  margin-top: 3px;
-  padding: 2px 7px;
+  margin-top: 1px;
+  padding: 1px 5px;
   color: light-dark(#735018, #e0b65a);
   background: light-dark(#f3dfb5, #342817);
   border-radius: 999px;
-  font-size: 9px;
+  font-size: 8px;
   font-style: normal;
   font-weight: 900;
   letter-spacing: 0.05em;
-  line-height: 1.4;
+  line-height: 1.35;
   text-transform: uppercase;
 }
 
@@ -10147,9 +10158,37 @@ a.home-metric-card:focus-visible {
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1280px) {
+  .topbar {
+    gap: 8px;
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .topbar .user-profile-control__copy {
+    display: none;
+  }
+
+  .topbar-date,
+  .operational-time-zone-strip {
+    padding-right: 8px;
+  }
+
   .operational-time-zone-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    min-width: 488px;
+  }
+
+  .operational-clock {
+    grid-template-columns: 28px minmax(0, 1fr);
+    width: min(100%, 119px);
+    gap: 4px;
+    padding-right: 2px;
+    padding-left: 2px;
+  }
+
+  .operational-clock__face {
+    width: 28px;
+    height: 28px;
   }
 }
 
@@ -17026,6 +17065,42 @@ a.home-metric-card:focus-visible {
 }
 
 @media (max-width: 1120px) {
+  .topbar {
+    grid-template-columns: minmax(0, 1fr) max-content;
+    min-height: 0;
+    gap: 6px 8px;
+    padding: 7px 16px 8px;
+  }
+
+  .topbar-date {
+    min-height: 42px;
+    padding: 0;
+    border-right: 0;
+  }
+
+  .topbar .user-menu {
+    grid-column: 2;
+    justify-content: flex-end;
+  }
+
+  .operational-time-zone-strip {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    width: 100%;
+    overflow-x: visible;
+    padding: 6px 0 0;
+    border-top: 1px solid var(--line);
+    border-right: 0;
+  }
+
+  .operational-time-zone-grid {
+    min-width: 0;
+  }
+
+  .payroll-export-reminder {
+    top: 124px;
+  }
+
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -17172,11 +17247,25 @@ a.home-metric-card:focus-visible {
   }
 
   .topbar {
-    padding-left: 78px;
+    padding: 7px 10px 8px 78px;
+  }
+
+  .operational-time-zone-strip {
+    width: calc(100% + 68px);
+    margin-left: -68px;
+  }
+
+  .operational-time-zone-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 6px;
+  }
+
+  .operational-clock {
+    min-height: 48px;
   }
 
   .payroll-export-reminder {
-    top: 76px;
+    top: 166px;
     grid-template-columns: auto minmax(0, 1fr);
   }
 
@@ -17213,14 +17302,17 @@ a.home-metric-card:focus-visible {
 @media (max-width: 680px) {
   .topbar {
     display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
     min-height: 0;
-    align-items: stretch;
-    gap: 10px;
-    padding: 12px 16px;
+    align-items: center;
+    gap: 6px 8px;
+    padding: 7px 10px 8px 70px;
   }
 
   .topbar-date {
-    padding-left: 58px;
+    min-height: 42px;
+    padding: 0;
+    border-right: 0;
   }
 
   .topbar-label {
@@ -17228,21 +17320,37 @@ a.home-metric-card:focus-visible {
   }
 
   .user-menu {
-    width: 100%;
+    width: auto;
+    grid-column: 2;
     justify-content: flex-end;
   }
 
   .operational-time-zone-strip {
-    margin: 10px 16px 0;
-    padding: 8px;
+    grid-row: 2;
+    grid-column: 1 / -1;
+    width: calc(100% + 60px);
+    margin-left: -60px;
+    overflow-x: visible;
+    padding: 6px 0 0;
+    border-top: 1px solid var(--line);
+    border-right: 0;
+  }
+
+  .operational-time-zone-grid {
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 6px;
   }
 
   .operational-clock {
-    padding: 8px 4px;
+    width: 100%;
+    min-height: 48px;
+    justify-self: stretch;
+    padding: 4px 6px;
   }
 
   .operational-clock__digital {
-    font-size: 13px;
+    font-size: 11px;
   }
 
   .payroll-export-reminder {

@@ -64,6 +64,12 @@ describe('scheduler mixed coverage and additive assignment', () => {
     expect(appStyles).toContain('.schedule-builder-coverage-mix')
   })
 
+  it('renders each mixed position from the shift-level armed requirement', () => {
+    expect(schedulePage).toContain('const title = shiftPostLabel(shift)')
+    expect(schedulePage).toContain('const postOrEvent = shiftPostLabel(shift)')
+    expect(schedulePage).toContain('shiftRequirementLabel(shift.requires_armed)')
+  })
+
   it('uses the new database contracts from the data layer', () => {
     expect(scheduleData).toContain("getSupabaseClient().rpc('scheduler_create_coverage_plan_v2'")
     expect(scheduleData).toContain("getSupabaseClient().rpc('scheduler_add_draft_shift_assignment_v2'")

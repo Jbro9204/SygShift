@@ -50,6 +50,7 @@ import {
   formatOperationalDateTime,
   operationalToday,
 } from '../lib/time'
+import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { personalDisplayTimeZone } from '../lib/usTimeZones'
 import { canUseOwnTimeClock, canViewOwnTime } from '../time/timePermissions'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from '../time/timeQuerySync'
@@ -123,8 +124,8 @@ function shiftLocation(shift: Pick<TimekeepingShift, 'siteCode' | 'siteName' | '
   return [shift.siteCode, shift.siteName ?? shift.locationName].filter(Boolean).join(' · ') || 'Location pending'
 }
 
-function shiftTitle(shift: Pick<TimekeepingShift, 'postName' | 'eventName' | 'locationName'>): string {
-  return shift.postName ?? shift.eventName ?? shift.locationName ?? 'Assigned shift'
+function shiftTitle(shift: Pick<TimekeepingShift, 'postName' | 'eventName' | 'locationName' | 'requiresArmed'>): string {
+  return shiftDisplayTitle(shift)
 }
 
 function pendingRequestCount(center: RequestCenter | undefined): number {
@@ -492,7 +493,7 @@ function EmployeeHome({ announcementArchivePath, announcements, announcementsErr
         <div className="home-card-grid">
           <HomeCard icon={UserRoundCheck} title="Next shift" value={nextShift ? shiftTitle(nextShift) : 'No upcoming shift'}>
             <p>{nextShift ? `${shiftLocation(nextShift)} · ${formatOperationalDateTime(nextShift.startsAt, { includeTimeZoneName: true, timeZone: displayTimeZone })} – ${formatDualTime(nextShift.endsAt, { timeZone: displayTimeZone })}` : 'Your next published assignment will appear here.'}</p>
-            {nextShift ? <span className="home-card__status"><CheckCircle2 aria-hidden="true" size={15} />Published assignment</span> : null}
+            {nextShift ? <span className="home-card__status"><CheckCircle2 aria-hidden="true" size={15} />Published {shiftRequirementLabel(nextShift.requiresArmed).toLocaleLowerCase()} assignment</span> : null}
             {scheduleAllowed ? <Link className="text-link" to="/schedule">Open Schedule <ArrowRight aria-hidden="true" size={16} /></Link> : null}
           </HomeCard>
           <HomeCard icon={ClipboardCheck} title="My requests" value={pendingRequests ? `${pendingRequests} pending` : 'No pending requests'}>
@@ -501,7 +502,7 @@ function EmployeeHome({ announcementArchivePath, announcements, announcementsErr
           </HomeCard>
           {opportunity ? <HomeCard icon={CalendarClock} title="Available opportunity" value={opportunityTitle(opportunity)}>
             <p>{`${opportunityLocation(opportunity)} · ${formatOperationalDateTime(opportunity.starts_at)} – ${formatDualTime(opportunity.ends_at, { timeZone: opportunity.time_zone })}`}</p>
-            <span className="home-card__status">{opportunity.requires_armed ? 'Armed shift' : opportunity.event ? 'Event' : 'Open shift'}</span>
+            <span className="home-card__status">{shiftRequirementLabel(opportunity.requires_armed)} shift</span>
             <Link className="text-link" to="/events">View shift <ArrowRight aria-hidden="true" size={16} /></Link>
           </HomeCard> : opportunitiesError ? <HomeCard icon={CalendarClock} title="Available opportunity" value="Could not load opportunities"><ModuleRetry label="Shift Pool data is temporarily unavailable." onRetry={onRetryOpportunities} /></HomeCard> : null}
           <HomeCard className="home-card--announcements" icon={Megaphone} title="Announcements" value={announcements.length ? `${announcements.length} current` : 'No current announcements'}>
@@ -587,7 +588,7 @@ function OperationsHome({ announcementArchivePath, announcements, announcementsE
           {scheduleError ? <ModuleRetry label="Today's coverage could not be loaded." onRetry={onRetrySchedule} /> : <>
             <div className="home-coverage-meter" aria-label={`${coverage.assigned} of ${coverage.required} required assignments covered`}><span style={{ width: `${coverage.required ? Math.min(100, (coverage.assigned / coverage.required) * 100) : 100}%` }} /></div>
             <div className="home-coverage-summary"><div><span>Required</span><strong>{coverage.required}</strong></div><div><span>Assigned</span><strong>{coverage.assigned}</strong></div><div><span>Open</span><strong>{coverage.open}</strong></div></div>
-            {coverageGaps.length ? <div className="home-gap-list">{coverageGaps.map((shift) => <div key={shift.id}><span><strong>{shift.post?.site.name ?? shift.event?.site?.name ?? shift.event?.location_name ?? 'Coverage location'}</strong><small>{shift.post?.name ?? shift.event?.name ?? 'Shift'} · {formatDualTime(shift.starts_at, { timeZone: shift.time_zone })}</small></span><Link to={coverageActionPath}>{canAccessRoute('/scheduler', session) ? 'Fill' : 'Review'}</Link></div>)}</div> : <div className="home-empty-state"><CheckCircle2 aria-hidden="true" size={22} /><span>No immediate coverage gaps.</span></div>}
+            {coverageGaps.length ? <div className="home-gap-list">{coverageGaps.map((shift) => <div key={shift.id}><span><strong>{shift.post?.site.name ?? shift.event?.site?.name ?? shift.event?.location_name ?? 'Coverage location'}</strong><small>{shiftDisplayTitle({ eventName: shift.event?.name, postName: shift.post?.name, requiresArmed: shift.requires_armed }, 'Shift')} · {formatDualTime(shift.starts_at, { timeZone: shift.time_zone })}</small></span><Link to={coverageActionPath}>{canAccessRoute('/scheduler', session) ? 'Fill' : 'Review'}</Link></div>)}</div> : <div className="home-empty-state"><CheckCircle2 aria-hidden="true" size={22} /><span>No immediate coverage gaps.</span></div>}
           </>}
         </article>
       </section>

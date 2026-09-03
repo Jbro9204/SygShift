@@ -45,6 +45,7 @@ import {
 } from '../data/schedule'
 import { processNotificationBatch } from '../data/operations'
 import { parseImportedScheduleNote, sourceReferenceLabel } from '../data/sourceNotes'
+import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualClockTime, formatDualTime, operationalToday } from '../lib/time'
 import { continentalUsTimeZoneLabel, personalDisplayTimeZone } from '../lib/usTimeZones'
@@ -403,9 +404,11 @@ function shiftSiteLabel(shift: ScheduleShift): string {
 }
 
 function shiftPostLabel(shift: ScheduleShift): string {
-  return shift.post?.name
-    ?? shift.event?.name
-    ?? 'Shift'
+  return shiftDisplayTitle({
+    eventName: shift.event?.name,
+    postName: shift.post?.name,
+    requiresArmed: shift.requires_armed,
+  }, 'Shift')
 }
 
 function employeeOwnsShift(shift: ScheduleShift, employeeId: string | null | undefined): boolean {
@@ -561,7 +564,7 @@ function ShiftCard({
   compact?: boolean
   selected?: boolean
 }) {
-  const title = shift.post?.name ?? shift.event?.name ?? 'Shift'
+  const title = shiftPostLabel(shift)
   const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? null
   const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
   const source = parseImportedScheduleNote(shift.notes)
@@ -606,7 +609,9 @@ function ShiftCard({
       <div className="shift-card__footer">
         {shift.work_type === 'training' ? <span className="shift-tag shift-tag--training">Paid training</span> : null}
         {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review needed</span> : null}
-        {shift.requires_armed ? <span className="shift-tag shift-tag--armed">Armed</span> : null}
+        <span className={shift.requires_armed ? 'shift-tag shift-tag--armed' : 'shift-tag'}>
+          {shiftRequirementLabel(shift.requires_armed)}
+        </span>
         {openSlots > 0 ? (
           <span className="shift-tag shift-tag--open">
             {`${openSlots} open`}
@@ -1145,7 +1150,7 @@ function ReviewResolutionDialog({
       title="Resolve schedule assignment"
     >
       <div className="confirmation-summary">
-        <strong>{shift.post?.name ?? shift.event?.name ?? 'Shift'}</strong>
+        <strong>{shiftPostLabel(shift)}</strong>
         <span>{shiftTimeRange(shift)}</span>
         {source.assignee ? <span>Original assignee: {source.assignee}</span> : null}
         {source.context ? <span>Schedule context: {source.context}</span> : null}
@@ -1235,7 +1240,7 @@ function RemoveShiftDialog({
 }) {
   const [note, setNote] = useState('')
   const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? 'Selected location'
-  const block = shift.post?.name ?? shift.event?.name ?? 'Schedule block'
+  const block = shiftPostLabel(shift)
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1317,7 +1322,7 @@ function SchedulerShiftModal({
 }) {
   const source = parseImportedScheduleNote(shift.notes)
   const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
-  const title = shift.post?.name ?? shift.event?.name ?? 'Shift'
+  const title = shiftPostLabel(shift)
   const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? 'Unassigned location'
   const sourceReference = sourceReferenceLabel(source)
   const [manualEmployeeId, setManualEmployeeId] = useState('')
@@ -1758,7 +1763,7 @@ function EmployeeWeekDialog({
                   {dayShifts.length ? dayShifts.map((shift) => {
                     const source = parseImportedScheduleNote(shift.notes)
                     const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? 'Location not set'
-                    const postOrEvent = shift.post?.name ?? shift.event?.name ?? 'Shift'
+                    const postOrEvent = shiftPostLabel(shift)
                     const assignedNames = shift.assignments.map(assignmentName)
                     const openCount = Math.max(shift.headcount_required - shift.assignments.length, 0)
 
@@ -2764,8 +2769,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           shift,
           suggestion,
           title: shift.post?.site.name
-            ? `${shift.post.site.name} / ${shift.post?.name ?? 'Shift'}`
-            : shift.event?.name ?? shift.event?.location_name ?? 'Shift',
+            ? `${shift.post.site.name} / ${shiftPostLabel(shift)}`
+            : shiftPostLabel(shift),
         }
       })
       .filter((item) => item.openSlots > 0)
@@ -3918,7 +3923,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           <section className="shift-editor-prep" aria-live="polite">
             <div className="confirmation-summary">
               <strong>{shiftEditor.originalShift.post?.site.name ?? shiftEditor.originalShift.event?.name ?? 'Selected shift'}</strong>
-              <span>{shiftEditor.originalShift.post?.name ?? shiftEditor.originalShift.event?.location_name ?? 'Schedule block'}</span>
+              <span>{shiftPostLabel(shiftEditor.originalShift)}</span>
               <span>{format(new Date(`${shiftOperationalDate(shiftEditor.originalShift)}T12:00:00`), 'EEEE, MM/dd/yyyy')} · {shiftTimeRange(shiftEditor.originalShift)}</span>
             </div>
             {shiftEditor.status === 'preparing' ? (
@@ -3965,7 +3970,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                       <div>
                         <strong>{shiftTimeRange(shift)}</strong>
                         <span>{shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? 'Location not set'}</span>
-                        <small>{shift.post?.name ?? shift.event?.name ?? 'Shift'}</small>
+                        <small>{shiftPostLabel(shift)}</small>
                       </div>
                       <div className="scheduler-day-modal__meta">
                         {shift.assignments.length

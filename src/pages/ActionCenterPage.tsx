@@ -44,6 +44,7 @@ import {
 } from '../data/hrAutomation'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { alignPostNameWithShiftRequirement, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { isSupabaseConfigured } from '../lib/supabase'
 
 function formatDate(value: string | null | undefined): string {
@@ -213,7 +214,7 @@ function EmployeeActions({ data, busyId, emptyCopy, onOpen, onComplete, showEmpt
                     {item.shifts.map((shift) => (
                       <div key={shift.shiftId}>
                         <strong>{formatDateTime(shift.startsAt)} – {formatDateTime(shift.endsAt)}</strong>
-                        <span>{shift.siteName ?? shift.eventName ?? 'Assigned location'}{shift.postName ? ` · ${shift.postName}` : ''}</span>
+                        <span>{shift.siteName ?? shift.eventName ?? 'Assigned location'}{shift.postName ? ` · ${alignPostNameWithShiftRequirement(shift.postName, shift.requiresArmed)}` : ''} · {shiftRequirementLabel(shift.requiresArmed)}</span>
                       </div>
                     ))}
                   </div>
@@ -251,7 +252,9 @@ function scheduleHistoryLocations(item: EmployeeActionHistoryItem): string[] {
     const record = shift as Record<string, unknown>
     const site = typeof record.siteName === 'string' ? record.siteName : typeof record.eventName === 'string' ? record.eventName : 'Assigned location'
     const post = typeof record.postName === 'string' ? record.postName : null
-    return [post ? `${site} · ${post}` : site]
+    const requiresArmed = typeof record.requiresArmed === 'boolean' ? record.requiresArmed : null
+    const displayPost = post && requiresArmed !== null ? alignPostNameWithShiftRequirement(post, requiresArmed) : post
+    return [displayPost ? `${site} · ${displayPost}` : site]
   })
   return [...new Set(locations)]
 }

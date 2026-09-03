@@ -2,13 +2,13 @@
    default; dark mode is activated before first paint by public/theme-init.js. */
 
 .topbar {
-  min-height: 60px;
-  padding-block: 8px;
+  min-height: 72px;
+  padding-block: 7px;
 }
 
 .topbar-date {
   color: var(--ink);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
 }
@@ -27,9 +27,9 @@
 .theme-switcher__button,
 .user-menu__icon-button {
   display: inline-grid;
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
   padding: 0;
   place-items: center;
   color: var(--muted);
@@ -41,8 +41,8 @@
 .theme-switcher__button > span,
 .user-menu__icon-button > span {
   display: grid;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   margin: 0;
   place-items: center;
   color: inherit;
@@ -80,8 +80,8 @@
   min-width: 0;
   min-height: 44px;
   align-items: center;
-  gap: 10px;
-  padding: 3px 8px 3px 4px;
+  gap: 8px;
+  padding: 2px 6px 2px 3px;
   color: var(--ink);
   border: 1px solid transparent;
   border-radius: 12px;
@@ -95,8 +95,8 @@
 }
 
 .user-menu .user-menu__avatar {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   margin: 0;
   color: #4d330a;
   font-size: 12px;
@@ -119,7 +119,7 @@
 
 .user-profile-control__copy strong,
 .user-profile-control__copy > span {
-  max-width: 250px;
+  max-width: 220px;
   overflow: hidden;
   margin: 0;
   text-overflow: ellipsis;
@@ -213,9 +213,9 @@ html[data-theme='dark'] .user-profile-control:focus-visible {
 }
 
 html[data-theme='dark'] .operational-time-zone-strip {
-  background: rgb(18 22 26 / 93%);
-  border-color: #343a3f;
-  box-shadow: 0 12px 28px rgb(0 0 0 / 24%);
+  background: transparent;
+  border-color: #30343a;
+  box-shadow: none;
 }
 
 html[data-theme='dark'] .operational-clock {
@@ -496,16 +496,18 @@ html[data-theme='dark'] .auth-notice--success {
 
 @media (max-width: 680px) {
   .topbar {
-    display: flex;
-    min-height: 60px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    min-height: 0;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px 8px 70px;
+    gap: 6px 8px;
+    padding: 7px 10px 8px 70px;
   }
 
   .topbar-date {
-    flex: 1;
+    min-height: 42px;
     padding-left: 0;
+    border-right: 0;
     font-size: 12px;
   }
 
