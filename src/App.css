@@ -28263,7 +28263,6 @@ button.patrol-overview-row:focus-visible {
   gap: 16px;
 }
 
-.licensing-document-preview iframe,
 .licensing-document-preview img {
   width: 100%;
   height: min(68vh, 760px);
@@ -28897,7 +28896,6 @@ button.patrol-overview-row:focus-visible {
     margin-right: 0;
   }
 
-  .licensing-document-preview iframe,
   .licensing-document-preview img {
     height: min(56vh, 580px);
   }
@@ -32993,7 +32991,8 @@ button.patrol-overview-row:focus-visible {
 .client-form select,
 .client-form textarea { min-width: 0; width: 100%; }
 .client-checks { display: flex; flex-wrap: wrap; gap: 16px; }
-.client-document-preview iframe { border: 1px solid light-dark(#ddd5c8, #343a40); border-radius: 10px; height: min(65vh, 760px); width: 100%; }
+.client-document-access-modal { width: min(980px, calc(100vw - 32px)); }
+.client-document-preview { display: grid; gap: 16px; }
 .client-document-preview img { margin: 0 auto; max-height: 65vh; max-width: 100%; object-fit: contain; }
 
 @media (max-width: 980px) {

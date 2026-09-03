@@ -24,6 +24,7 @@ import {
 import { DataStatePanel } from '../components/DataStatePanel'
 import { IdentityVerificationModal } from '../components/IdentityVerificationModal'
 import { ModalDialog } from '../components/ModalDialog'
+import { SecurePdfViewer } from '../components/SecurePdfViewer'
 import { getSessionContext } from '../data/auth'
 import {
   formatEligibility,
@@ -414,7 +415,7 @@ function CredentialDocumentAccessModal({
     >
       {previewUrl ? (
         <div className="licensing-document-preview">
-          {previewType === 'application/pdf' ? <iframe sandbox="" src={previewUrl} title={`Preview of ${document.filename}`} /> : null}
+          {previewType === 'application/pdf' ? <SecurePdfViewer title={document.filename} url={previewUrl} /> : null}
           {previewType.startsWith('image/') ? <img alt={`Preview of ${document.filename}`} src={previewUrl} /> : null}
           <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Close preview</button></div>
         </div>

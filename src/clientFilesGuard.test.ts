@@ -29,6 +29,13 @@ describe('enterprise Client Files release guard', () => {
     expect(worker).toContain("requireAnySessionPermission(session.context, ['clients.documents.view'])")
   })
 
+  it('renders protected PDFs in the shared in-app viewer instead of a browser-blocked frame', () => {
+    const page = read('src/pages/ClientFilesPage.tsx')
+    expect(page).toContain("import { SecurePdfViewer } from '../components/SecurePdfViewer'")
+    expect(page).toContain('<SecurePdfViewer title={document.title} url={preview.url} />')
+    expect(page).not.toContain('<iframe')
+  })
+
   it('provides compact navigation, reporting, and controlled source review', () => {
     expect(read('src/app/navigation.ts')).toContain("label: 'Client Files'")
     expect(read('src/app/accessPolicy.ts')).toContain("'/clients/:clientId'")

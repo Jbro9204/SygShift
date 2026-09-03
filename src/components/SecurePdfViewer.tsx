@@ -98,7 +98,10 @@ export function SecurePdfViewer({ title, url, page: controlledPage, onPageChange
       </div>
       {matches.length ? <div className="secure-pdf-viewer__matches"><span>{matches.length} matching pages</span>{matches.slice(0, 10).map((match) => <button className={match === page ? 'active' : ''} key={match} onClick={() => goToPage(match)} type="button">{match}</button>)}</div> : null}
       {error ? <p className="form-error" role="alert">{error}</p> : null}
-      <div className="secure-pdf-viewer__canvas" ref={containerRef}><canvas aria-label={`${title}, page ${page}`} ref={canvasRef} /></div>
+      <div className="secure-pdf-viewer__canvas" ref={containerRef}>
+        {!document && !error ? <p className="secure-pdf-viewer__status" role="status">Opening protected PDF…</p> : null}
+        <canvas aria-label={`${title}, page ${page}`} hidden={!document} ref={canvasRef} />
+      </div>
     </section>
   )
 }

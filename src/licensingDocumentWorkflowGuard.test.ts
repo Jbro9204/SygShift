@@ -49,8 +49,11 @@ describe('secure licensing document workflow', () => {
     expect(page).toContain('setPageSize(Number(event.target.value) as 5 | 10 | 20)')
     expect(page).toContain('<option value={5}>5</option>')
     expect(page).toContain('<CredentialDocumentsModal')
+    expect(page).toContain("import { SecurePdfViewer } from '../components/SecurePdfViewer'")
+    expect(page).toContain('<SecurePdfViewer title={document.filename} url={previewUrl} />')
+    expect(page).not.toContain('<iframe')
     expect(styles).toContain('.licensing-document-list')
-    expect(styles).toContain('.licensing-document-preview iframe')
+    expect(styles).toContain('.licensing-document-preview img')
   })
 
   it('forces a usable identity checkpoint and resumes the protected action after verification', () => {
