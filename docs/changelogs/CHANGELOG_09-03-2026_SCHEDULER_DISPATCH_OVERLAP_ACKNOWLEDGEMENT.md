@@ -21,4 +21,6 @@
 - Production preview returned the correct current Dispatch and Site/Post overlap context.
 - A rollback-only, MFA-authenticated Scheduler test proved the server blocks the same assignment without acknowledgement and accepts it with acknowledgement.
 - Public and anonymous execution remain revoked; only authenticated callers can reach the RPC, which independently enforces active employee, MFA, and schedule-management permission checks.
-
+- Pushed implementation commit `c50c179` and deployed Cloudflare Worker version `141259f7-cdf4-45ee-87d6-9f6fb3e7cee4`.
+- Primary and fallback health/readiness endpoints returned HTTP 200 and ready; deployed assets contain the acknowledgement UI and versioned server calls.
+- Authenticated production QA confirmed the Scheduler workspace loads the current draft and continues to identify Dispatch phone duty separately from ordinary Site/Post shifts.

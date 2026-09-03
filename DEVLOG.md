@@ -32,6 +32,7 @@ deployment status, or major workflow assumptions change.
 - Kept ordinary overlapping shifts blocked and preserved Dispatch exclusions from scheduled hours, overtime, punches, and missing-clock alerts.
 - Added protected audit evidence for the acknowledging Scheduler, employee, both shifts, location/time context, timestamp, and zero payable minutes.
 - Full validation passed: TypeScript, zero-warning application lint, 163 test files / 785 tests, both production builds, and a rollback-only MFA Scheduler database test for blocked-without-acknowledgement and accepted-with-acknowledgement behavior.
+- Pushed implementation commit `c50c179` and deployed Cloudflare Worker version `141259f7-cdf4-45ee-87d6-9f6fb3e7cee4`; primary and fallback health/readiness returned HTTP 200 and ready, and authenticated production Scheduler QA passed.
 - Full release evidence is recorded in `docs/changelogs/CHANGELOG_09-03-2026_SCHEDULER_DISPATCH_OVERLAP_ACKNOWLEDGEMENT.md`.
 
 ### Schedule requirement labels and compact operational time header
