@@ -23,6 +23,16 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 09/03/2026
+
+### Scheduler Leave Unassigned repair
+
+- Restored the ability to save a draft shift as **Leave open / unassigned**. A disabled scheduled-overtime preview had been reported as pending by the query client and was incorrectly disabling the save action even though no employee required validation.
+- Scoped overtime preview pending/error enforcement to actual employee assignments and cleared stale overtime error/approval presentation when the assignment is removed.
+- Preserved the existing server-side draft update, assignment removal, overlap, overtime, credential, availability, publication, and audit controls.
+- Added focused regression coverage; full validation passed with 158 test files / 763 tests and both production builds.
+- Pushed implementation commit `bf4e570` and deployed Cloudflare Worker version `e4d89663-837b-415b-8a5d-e41fa4995b98`. Primary and fallback application, health, and readiness checks returned HTTP 200.
+
 ## 09/02/2026
 
 ### Document Studio Human Resources access boundary
