@@ -36,30 +36,31 @@ test('HR termination confirmation remains contained and unmistakable', async ({ 
   await page.screenshot({ path: testInfo.outputPath('hr-termination-dialog.png'), fullPage: true })
 })
 
-test('User Accounts complete role library stays compact and scrollable', async ({ page }, testInfo) => {
+test('User Accounts separates workforce behavior from specialized access without duplicate role lists', async ({ page }, testInfo) => {
   await page.goto('/')
 
   await page.locator('#root').evaluate((root) => {
-    const roles = ['Admin', 'Dispatcher', 'Guard', 'Recruiting & Licensing', 'Scheduler', 'Supervisor', 'Human Resources Employee', 'Human Resources Manager', 'Operations Manager']
     root.innerHTML = `
       <main style="width:min(760px,calc(100% - 24px));margin:24px auto">
         <h1>User Accounts role assignment</h1>
         <form class="request-form user-admin-form">
+          <label><span>Workforce role</span><select><option>Supervisor</option></select><small>Controls Schedule, Time &amp; Attendance, and operational routing.</small></label>
           <fieldset class="user-admin-access-roles">
-            <legend>Additional access roles</legend>
-            <p>The primary role is inherited automatically. Select any other active role this employee should also receive.</p>
-            <div class="user-admin-access-roles__grid">
-              ${roles.map((role, index) => `<label class="user-admin-access-role${index === 7 ? ' is-selected' : ''}"><input ${index === 7 ? 'checked' : ''} type="checkbox" /><span><strong>${role}</strong><small>${index > 5 ? 'Specialized role' : 'Built-in role'}${index === 0 || index > 5 ? ' · MFA required' : ''}</small></span></label>`).join('')}
+            <legend>Department &amp; management access</legend>
+            <p>Add a specialized access package only when this employee needs a protected department or management workspace.</p>
+            <div class="user-admin-access-roles__assigned">
+              <div class="user-admin-access-role is-selected"><span><strong>Human Resources Manager</strong><small>Specialized access · MFA required</small></span><button class="secondary-button secondary-button--small" type="button">Remove</button></div>
             </div>
+            <div class="user-admin-access-roles__add"><label><span>Add specialized access</span><select aria-label="Add specialized access"><option>Choose a role</option><option>Human Resources Employee · MFA required</option><option>Operations Manager · MFA required</option></select></label><button class="secondary-button" type="button">Add access</button></div>
           </fieldset>
         </form>
       </main>`
   })
 
-  const roleGrid = page.locator('.user-admin-access-roles__grid')
-  await expect(roleGrid.getByText('Human Resources Manager')).toBeVisible()
-  await expect(roleGrid.getByText('Operations Manager')).toBeVisible()
-  expect(await roleGrid.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+  await expect(page.getByText('Human Resources Manager')).toBeVisible()
+  await expect(page.getByLabel('Add specialized access')).not.toContainText('Admin')
+  await expect(page.getByLabel('Add specialized access')).not.toContainText('Supervisor')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
-  await page.screenshot({ path: testInfo.outputPath('user-accounts-role-library.png'), fullPage: true })
+  await page.screenshot({ path: testInfo.outputPath('user-accounts-role-assignment.png'), fullPage: true })
 })

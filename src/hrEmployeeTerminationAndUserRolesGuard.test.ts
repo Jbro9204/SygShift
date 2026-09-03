@@ -33,7 +33,10 @@ describe('HR termination and complete User Accounts role controls', () => {
 
   it('loads the central role library and atomically saves selected memberships', () => {
     expect(userAccounts).toContain('getAccessControlCenter')
-    expect(userAccounts).toContain('Additional access roles')
+    expect(userAccounts).toContain('Department &amp; management access')
+    expect(userAccounts).toContain('Add specialized access')
+    expect(userAccounts).toContain('.filter((role) => !role.systemRole)')
+    expect(userAccounts).not.toContain('Additional access roles')
     expect(userAccounts).toContain('accessRoleId')
     expect(userAccounts).toContain('roleFilterOptions')
     expect(adminUsers).toContain('admin_create_employee_with_time_zone_and_access_roles')

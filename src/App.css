@@ -25484,40 +25484,28 @@ button.patrol-overview-row:focus-visible {
   line-height: 1.45;
 }
 
-.user-admin-access-roles__grid {
+.user-admin-access-roles__assigned {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px;
-  max-height: 260px;
-  overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-gutter: stable;
 }
 
 .user-admin-access-role {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  display: flex;
   gap: 10px;
   align-items: center;
+  justify-content: space-between;
   min-height: 62px;
   padding: 11px 12px;
   background: light-dark(#fff, #171b1f);
   border: 1px solid light-dark(#ded4c5, #41474d);
   border-radius: 10px;
-  cursor: pointer;
 }
 
 .user-admin-access-role.is-selected {
   background: light-dark(#fff4d9, #342817);
   border-color: light-dark(#c58a29, #a77a27);
   box-shadow: inset 3px 0 0 light-dark(#b97915, #e0b65a);
-}
-
-.user-admin-access-role input {
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  accent-color: light-dark(#b97915, #e0b65a);
 }
 
 .user-admin-access-role > span {
@@ -25537,15 +25525,39 @@ button.patrol-overview-row:focus-visible {
   line-height: 1.35;
 }
 
-.user-admin-access-roles:disabled .user-admin-access-role {
-  cursor: not-allowed;
-  opacity: 0.68;
+.user-admin-access-roles__empty {
+  margin: 0;
+  padding: 12px 14px;
+  background: light-dark(#fff, #171b1f);
+  border: 1px dashed light-dark(#d7c9b2, #42484e);
+  border-radius: 10px;
+  color: var(--muted);
+}
+
+.user-admin-access-roles__add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.user-admin-access-roles__add label {
+  display: grid;
+  gap: 6px;
+}
+
+.user-admin-access-roles__add .secondary-button {
+  min-width: 128px;
 }
 
 @media (max-width: 720px) {
-  .user-admin-access-roles__grid {
+  .user-admin-access-roles__assigned,
+  .user-admin-access-roles__add {
     grid-template-columns: 1fr;
-    max-height: 300px;
+  }
+
+  .user-admin-access-roles__add .secondary-button {
+    width: 100%;
   }
 }
 

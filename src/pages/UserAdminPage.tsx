@@ -237,6 +237,7 @@ function EmployeeForm({
 }) {
   const [primaryRole, setPrimaryRole] = useState<AppRole>(employee?.role ?? 'guard')
   const [selectedAccessRoleIds, setSelectedAccessRoleIds] = useState(() => new Set(assignedAccessRoleIds))
+  const [roleToAdd, setRoleToAdd] = useState('')
   const canEditThisProfile = canEditBasic
     && (canEditAdminRole || employee?.role !== 'admin')
     && (canSeparate || employee?.status !== 'separated')
@@ -250,9 +251,11 @@ function EmployeeForm({
   const primaryRoleOptions = accessRoles
     .filter((role): role is AccessRoleDefinition & { baseAppRole: AppRole } => role.systemRole && role.baseAppRole !== null)
     .sort((left, right) => left.name.localeCompare(right.name))
-  const additionalRoles = accessRoles
-    .filter((role) => !(role.systemRole && role.baseAppRole === primaryRole))
+  const specializedRoles = accessRoles
+    .filter((role) => !role.systemRole)
     .sort((left, right) => left.name.localeCompare(right.name))
+  const selectedSpecializedRoles = specializedRoles.filter((role) => selectedAccessRoleIds.has(role.id))
+  const availableSpecializedRoles = specializedRoles.filter((role) => !selectedAccessRoleIds.has(role.id))
 
   function changePrimaryRole(nextRole: AppRole) {
     setPrimaryRole(nextRole)
@@ -273,6 +276,13 @@ function EmployeeForm({
       else next.add(roleId)
       return next
     })
+    onDirty?.()
+  }
+
+  function addSpecializedRole() {
+    if (!roleToAdd) return
+    toggleAccessRole(roleToAdd)
+    setRoleToAdd('')
   }
 
   return (
@@ -297,12 +307,13 @@ function EmployeeForm({
       </div>
       <div className="form-grid form-grid--three">
         <label>
-          <span>Role</span>
+          <span>Workforce role</span>
           <select disabled={!canEditThisProfile} name="role" onChange={(event) => changePrimaryRole(event.target.value as AppRole)} value={primaryRole}>
             {(primaryRoleOptions.length ? primaryRoleOptions : Object.entries(roleLabels).map(([baseAppRole, name]) => ({ baseAppRole: baseAppRole as AppRole, name }))).map((role) => (
               <option disabled={role.baseAppRole === 'admin' && !canEditAdminRole} key={role.baseAppRole} value={role.baseAppRole}>{role.name}</option>
             ))}
           </select>
+          <small>Controls Schedule, Time &amp; Attendance, and operational routing.</small>
         </label>
         <label>
           <span>Employment</span>
@@ -338,18 +349,33 @@ function EmployeeForm({
       </div>
       {canEditAdminRole ? (
         <fieldset className="user-admin-access-roles" disabled={!canEditThisProfile || !accessRolesReady}>
-          <legend>Additional access roles</legend>
-          <p>The primary role above is inherited automatically. Select any other active role this employee should also receive.</p>
+          <legend>Department &amp; management access</legend>
+          <p>Add a specialized access package only when this employee needs a protected department or management workspace.</p>
           {accessRolesReady ? <input name="manageAccessRoles" type="hidden" value="true" /> : null}
           {accessRolesReady ? (
-            <div className="user-admin-access-roles__grid">
-              {additionalRoles.map((role) => (
-                <label className={selectedAccessRoleIds.has(role.id) ? 'user-admin-access-role is-selected' : 'user-admin-access-role'} key={role.id}>
-                  <input checked={selectedAccessRoleIds.has(role.id)} name="accessRoleId" onChange={() => toggleAccessRole(role.id)} type="checkbox" value={role.id} />
-                  <span><strong>{role.name}</strong><small>{role.systemRole ? 'Built-in role' : 'Specialized role'}{role.mfaRequired ? ' · MFA required' : ''}</small></span>
+            <>
+              {[...selectedAccessRoleIds].map((roleId) => <input key={roleId} name="accessRoleId" type="hidden" value={roleId} />)}
+              {selectedSpecializedRoles.length ? (
+                <div className="user-admin-access-roles__assigned">
+                  {selectedSpecializedRoles.map((role) => (
+                    <div className="user-admin-access-role is-selected" key={role.id}>
+                      <span><strong>{role.name}</strong><small>Specialized access{role.mfaRequired ? ' · MFA required' : ''}</small></span>
+                      <button aria-label={`Remove ${role.name}`} className="secondary-button secondary-button--small" onClick={() => toggleAccessRole(role.id)} type="button">Remove</button>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="user-admin-access-roles__empty">No specialized access assigned.</p>}
+              <div className="user-admin-access-roles__add">
+                <label>
+                  <span>Add specialized access</span>
+                  <select aria-label="Add specialized access" onChange={(event) => setRoleToAdd(event.target.value)} value={roleToAdd}>
+                    <option value="">Choose a role</option>
+                    {availableSpecializedRoles.map((role) => <option key={role.id} value={role.id}>{role.name}{role.mfaRequired ? ' · MFA required' : ''}</option>)}
+                  </select>
                 </label>
-              ))}
-            </div>
+                <button className="secondary-button" disabled={!roleToAdd} onClick={addSpecializedRole} type="button">Add access</button>
+              </div>
+            </>
           ) : <div className="form-note">The complete role library could not be loaded. Profile changes will preserve existing role memberships.</div>}
         </fieldset>
       ) : null}
@@ -560,9 +586,8 @@ function ManageUserModal({
             <strong>@{employee.username}</strong>
           </div>
           <div>
-            <span>Role</span>
+            <span>Access</span>
             <strong>{assignedRoleNames.length ? assignedRoleNames.join(', ') : roleLabels[employee.role]}</strong>
-            {assignedRoleNames.length ? <small>Primary {roleLabels[employee.role]}</small> : null}
           </div>
           <div>
             <span>Account</span>
@@ -1147,7 +1172,7 @@ export function UserAdminPage() {
               <div className="user-admin-table" role="table" aria-label="User accounts and login access">
                 <div className="user-admin-row user-admin-row--header" role="row">
                   <span role="columnheader">Employee</span>
-                  <span role="columnheader">Role &amp; Employment</span>
+                  <span role="columnheader">Access &amp; Employment</span>
                   <span role="columnheader">Login</span>
                   <span role="columnheader">Last Activity</span>
                   <span role="columnheader">Manage</span>
@@ -1160,9 +1185,9 @@ export function UserAdminPage() {
                       {user.jobTitle ? <small>{user.jobTitle}</small> : null}
                       <small>{user.companyEmail || user.personalEmail || user.mobilePhone || 'No contact on file'}</small>
                     </div>
-                    <div role="cell" className="user-admin-role-employment" data-label="Role & Employment">
+                    <div role="cell" className="user-admin-role-employment" data-label="Access & Employment">
                       <span className="plain-value">{displayedRoles(user)}</span>
-                      <small>Primary {roleLabels[user.role]} · {employmentLabels[user.employmentType]} · {statusLabels[user.status]}</small>
+                      <small>{employmentLabels[user.employmentType]} · {statusLabels[user.status]}</small>
                     </div>
                     <div role="cell" className="user-admin-login-state" data-label="Login">
                       <AccountStatusBadge user={user} />

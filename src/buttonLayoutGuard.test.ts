@@ -263,7 +263,7 @@ describe('button layout guardrails', () => {
 
   it('keeps User Accounts filters, actions, records, and account workspace organized', () => {
     expect(userAdminPage).toContain('className="user-admin-toolbar"')
-    expect(userAdminPage).toContain('<span role="columnheader">Role &amp; Employment</span>')
+    expect(userAdminPage).toContain('<span role="columnheader">Access &amp; Employment</span>')
     expect(userAdminPage).toContain('<span role="columnheader">Last Activity</span>')
     expect(userAdminPage).toContain('<AccountActivityPanel user={employee} />')
     expect(userAdminPage).toContain('className="user-admin-summary"')
