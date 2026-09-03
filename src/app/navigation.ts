@@ -67,7 +67,7 @@ export const navigationGroups: NavigationGroup[] = [
       { label: 'My Documents', path: '/my-documents', icon: Files, permissions: [] },
       { label: 'Availability', path: '/availability', icon: CalendarCheck2, permissions: ['availability.view', 'availability.manage'] },
       { label: 'Sites & Posts', path: '/sites', icon: Building2, permissions: ['sites.view', 'sites.manage'] },
-      { label: 'Client Files', path: '/clients', icon: BriefcaseBusiness, permissions: ['clients.view', 'clients.manage'] },
+      { label: 'Client Directory', path: '/clients', icon: BriefcaseBusiness, permissions: ['clients.view', 'clients.manage'] },
       { label: 'Patrol', path: '/patrol', icon: MapPinned, permissions: ['patrol.self.view', 'patrol.view', 'patrol.manage', 'patrol.operations.view', 'patrol.routes.manage'] },
     ],
   },

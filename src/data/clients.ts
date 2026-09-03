@@ -48,6 +48,11 @@ export type ClientStatus = z.infer<typeof clientStatusSchema>
 export type ClientSite = z.infer<typeof siteSchema>
 const importQueueSchema = z.object({ rows: z.array(z.object({ id: z.string().uuid(), batchId: z.string().uuid(), sourceTab: z.string(), sourceRow: z.number().int(), sourcePayload: z.record(z.string(), z.unknown()), suggestedStatus: z.string().nullable(), reviewState: z.literal('needs_review') })), pagination: paginationSchema })
 export type ClientImportQueue = z.infer<typeof importQueueSchema>
+const clientSourceRecordsSchema = z.object({ rows: z.array(z.object({
+  id: z.string().uuid(), sourceTab: z.string(), sourceRow: z.number().int(), sourcePayload: z.record(z.string(), z.unknown()),
+  reviewState: z.enum(['matched', 'promoted']), reviewedAt: z.string().nullable(), reviewNote: z.string().nullable(),
+})) })
+export type ClientSourceRecord = z.infer<typeof clientSourceRecordsSchema>['rows'][number]
 
 export async function getClientsWorkspace(search = '', status = 'all', page = 1, pageSize: 5 | 10 | 20 = 10): Promise<ClientWorkspace> {
   const { data, error } = await getSupabaseClient().rpc('get_clients_workspace', { target_page: page, target_page_size: pageSize, target_search: search || null, target_status: status })
@@ -100,9 +105,15 @@ export async function getClientImportQueue(page = 1, pageSize: 5 | 10 | 20 = 10)
   return importQueueSchema.parse(data)
 }
 
-export async function resolveClientImportRow(rowId: string, action: 'match' | 'ignore', clientId: string | null, note: string): Promise<void> {
-  const { error } = await getSupabaseClient().rpc('resolve_client_import_row', { target_action: action, target_client: null, target_client_id: clientId, target_note: note, target_row_id: rowId })
+export async function resolveClientImportRow(rowId: string, action: 'match' | 'promote' | 'ignore', clientId: string | null, note: string, client: Record<string, unknown> | null = null): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('resolve_client_import_row', { target_action: action, target_client: client, target_client_id: clientId, target_note: note, target_row_id: rowId })
   if (error) throw new Error(error.message || 'The source row could not be resolved.')
+}
+
+export async function getClientImportSourceRecords(clientId: string): Promise<ClientSourceRecord[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_client_import_source_records', { target_client_id: clientId })
+  if (error) throw new Error(error.message || 'The retained client source records could not be loaded.')
+  return clientSourceRecordsSchema.parse(data).rows
 }
 
 export async function exportClientActivity(clientId: string): Promise<void> {

@@ -38,6 +38,14 @@ deployment status, or major workflow assumptions change.
 - Authenticated production verification confirmed four visible clocks, the highlighted **System time** label, requirement-aware **Unarmed coverage** schedule cards, and no horizontal overflow.
 - Release validation and production deployment evidence are recorded in `docs/changelogs/CHANGELOG_09-03-2026_SCHEDULE_REQUIREMENT_AND_COMPACT_TIME_HEADER.md`.
 
+### Client Directory completion
+
+- Repaired the staged-source dead end by exposing the existing secure create-from-source path alongside searchable matching and explicit exclusion.
+- Renamed the workspace to Client Directory while preserving canonical Client Files and added authorized, immutable Michelle source provenance inside each file.
+- Added concurrency-safe client numbering and automatic import-batch lifecycle updates.
+- Reconciled Michelle's staged sales list into canonical status categories without turning spreadsheet section headings into clients or guessing operational relationships.
+- Full release evidence is recorded in `docs/changelogs/CHANGELOG_09-03-2026_CLIENT_DIRECTORY_COMPLETION.md`.
+
 ### HR Suite operational release
 
 - Released Recruiting, Leave, Benefits, Talent, Learning, Employee Cases, Safety, Assets, Offboarding & Rehire, HR Self-Service, and HR Reporting through a centralized service-only action boundary with exact permissions, audit events, recent MFA for restricted modules, and independent approval where required.

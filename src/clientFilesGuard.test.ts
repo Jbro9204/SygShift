@@ -6,6 +6,7 @@ const root = process.cwd()
 const read = (path: string) => readFileSync(join(root, path), 'utf8')
 const migration = read('supabase/migrations/20260902180918_enterprise_client_files.sql')
 const exportHardening = read('supabase/migrations/20260902185602_client_activity_export_cap.sql')
+const directoryCompletion = read('supabase/migrations/20260903194919_client_directory_completion.sql')
 
 describe('enterprise Client Files release guard', () => {
   it('makes the client the stable root without duplicating authoritative operational records', () => {
@@ -37,14 +38,25 @@ describe('enterprise Client Files release guard', () => {
   })
 
   it('provides compact navigation, reporting, and controlled source review', () => {
-    expect(read('src/app/navigation.ts')).toContain("label: 'Client Files'")
+    expect(read('src/app/navigation.ts')).toContain("label: 'Client Directory'")
     expect(read('src/app/accessPolicy.ts')).toContain("'/clients/:clientId'")
     expect(read('src/pages/ClientFilesPage.tsx')).toContain('Rows')
     expect(read('src/pages/ClientFilesPage.tsx')).toContain('View all ${data.contacts.length} contacts')
-    expect(read('src/pages/ClientFilesPage.tsx')).toContain('Review staged client source')
+    expect(read('src/pages/ClientFilesPage.tsx')).toContain('Complete the Client Directory')
     expect(read('src/pages/ReportsPage.tsx')).toContain('Client Portfolio &amp; Activity')
     expect(migration).toContain('create table private.client_import_rows')
     expect(exportHardening).toContain('limit 10000')
+  })
+
+  it('can create a canonical file from staged source and retain source provenance', () => {
+    const page = read('src/pages/ClientFilesPage.tsx')
+    expect(page).toContain('Create Client File')
+    expect(page).toContain('Match existing')
+    expect(page).toContain('Exclude non-client row')
+    expect(page).toContain('Michelle’s source records')
+    expect(directoryCompletion).toContain('public.get_client_import_source_records')
+    expect(directoryCompletion).toContain("target_action = 'promote'")
+    expect(directoryCompletion).toContain("set status = case")
   })
 
   it('preserves protected production counts in the migration', () => {
