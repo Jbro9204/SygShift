@@ -277,6 +277,214 @@ Completion standard:
 - [ ] Do not mark the program or a stage complete because pages or buttons exist. The authorized workflow, secure storage, server enforcement, persistence, document lifecycle, audit history, automation behavior, tests, backup/recovery validation, production deployment, and rollback must all be verified.
 - [ ] Keep adverse, sensitive, financial, employment-status, leave, discipline, compensation, and official payroll decisions under documented human approval; automation may prepare and route work but must not make those decisions silently.
 
+### HR Operational Release and Document Studio Expansion
+
+- Priority: **High**
+- Target window: Controlled HR releases after owners, policies, and release evidence are approved
+- Status: Core employee files, compensation, onboarding, Document Studio, and signatures are operational; remaining HR modules and advanced document capabilities are queued or gated
+- Added: 09/02/2026
+
+Finish the remaining HR operating workflows without replacing the permanent employee record, duplicating documents, weakening the current HR access boundary, or presenting dormant back-end foundations as released functionality.
+
+Required work:
+
+- [ ] Upload, verify, approve, and link each source file represented in the indexed Guardianship HR Template Library so **Indexed** entries become controlled, usable document versions.
+- [ ] Convert approved operational material into governed checklists, fillable forms, site rules, guided prompts, and required reporting workflows with named owners and version history.
+- [ ] Release the corrective-action workflow from authorized supervisors to HR, including factual records, evidence, follow-up, receipt acknowledgment that does not imply agreement, employee response, restricted visibility, and audit history.
+- [ ] Activate the remaining protected HR modules only after each module has approved operating policy, permission ownership, recent-MFA rules, canary validation, recovery evidence, and production verification.
+- [ ] Review the protected-document reauthentication window so continuously active authorized HR work is usable while inactivity, session expiration, and especially sensitive actions still require strong reauthentication.
+- [ ] Keep compensation rate changes under the existing restricted maker-checker control and obtain the required second qualified approver before activation or amendment.
+- [ ] Preserve employment classification separately from pay basis: full-time, part-time, Flex, temporary, or another approved classification must not be conflated with hourly, salary, or another approved compensation basis.
+- [ ] Add OCR, native PDF form/content editing, irreversible redaction, page restructuring, regulated-document automation, external signers, and organizational seals only as separately reviewed capabilities with immutable originals, exact permissions, audit evidence, recovery controls, and legal approval.
+- [ ] Keep Social Security numbers, banking information, tax records, and PHI outside the general HR workspace and follow the approved Payroll Vault and Microsoft storage boundary unless a separate restricted-vault release is authorized.
+
+Completion criteria:
+
+- [ ] Every released HR workflow has complete UI, persistence, server authorization, audit, document behavior, allow-and-deny tests, recovery evidence, and production validation.
+- [ ] Authorized HR employees can complete their work without gaining compensation, security-administration, payroll-vault, or unrelated employee access.
+- [ ] Advanced document features remain visibly unavailable—not simulated—until their independent release gates pass.
+
+### Organizational Hierarchy and Permission Governance
+
+- Priority: **High**
+- Target window: After Michelle and Jordan approve the official hierarchy; before additional broad role assignments
+- Status: Management decision and permission review required; current roles remain authoritative until approved changes are released
+- Added: 09/02/2026
+
+Formalize the company hierarchy and replace informal or person-specific access assumptions with a written, tested permissions matrix.
+
+Required work:
+
+- [ ] Confirm the official hierarchy and rank names with Michelle and Jordan, including Owner/Chief, Operations Manager, Lieutenant if retained, Supervisor, Human Resources Manager, Human Resources Employee, Scheduler, Dispatcher, Recruiting & Licensing, Guard, and Patrol Officer.
+- [ ] Create the approved **Chief/Owner** role for Michelle with business-wide operational authority while excluding unnecessary technical system-administration powers.
+- [ ] Define for every role what it may view, create, approve, edit, download/export, assign, deactivate, and administer.
+- [ ] Review and reduce Scheduler permissions so future schedulers do not automatically inherit Michael's exceptional individual access.
+- [ ] Separate supervisory accountability authority from scheduling authority and keep confidential HR records, corrective actions, compensation, and protected documents limited to named authorized roles.
+- [ ] Reconcile primary role, additional access roles, and individual additions or denials so each mechanism has a clear purpose and the effective-access view never appears duplicated or contradictory.
+- [ ] Validate Admin safety protections, Human Resources versus Human Resources Manager boundaries, Operations Manager scope, role promotion/demotion, and access removal with allow-and-deny tests.
+
+Completion criteria:
+
+- [ ] The approved hierarchy and permissions matrix are written, versioned, and understandable without inspecting code or individual accounts.
+- [ ] No broad role receives protected access merely because one current employee has an exceptional assignment.
+- [ ] Production effective access matches the approved matrix and preserves explicitly reviewed individual exceptions.
+
+## Workforce Data Integrity & Attendance
+
+### Workforce Record Reconciliation and Attendance Refresh
+
+- Priority: **High**
+- Target window: Focused workforce data-quality and attendance reliability release
+- Status: Partially complete; the dedicated live clock roster is complete, while data reconciliation and schedule-change refresh remain open
+- Added: 09/02/2026
+
+Produce one reliable active-workforce population and ensure schedule corrections immediately flow into attendance signals without deleting valid history.
+
+Required work:
+
+- [ ] Assign the final management owner of the active-employee headcount audit.
+- [ ] Identify and deactivate or formally classify test accounts, placeholder records, separated employees, abandoned partial onboarding records, and non-active floating records; do not hard-delete audit or payroll history.
+- [ ] Define one authoritative active-employee count and document which statuses and classifications are included or excluded.
+- [ ] Make attendance alerts re-evaluate the current published schedule after assignments, removals, corrections, and revision publication.
+- [ ] Recalculate or close stale attendance alerts when the authoritative schedule no longer supports them, while preserving an audit trail of the original signal and its resolution.
+- [x] Route **On Duty Now** and **Clocked In** to the dedicated, automatically refreshed roster of employees with open clock sessions. Completed 09/02/2026.
+
+Completion criteria:
+
+- [ ] Directory, HR, User Accounts, scheduling, and reporting agree on the active population under the approved definition.
+- [ ] A schedule correction cannot leave an unsupported missing-clock or attendance alert active.
+- [ ] No cleanup changes valid employee, time, payroll, licensing, or audit history.
+
+## Client, Patrol & Operational Migration
+
+### Client Data Import, Association, and Visibility Hardening
+
+- Priority: **High**
+- Target window: Before broad Patrol rollout and before any Client Portal activation
+- Status: Enterprise Client Files foundation complete; authoritative source import and operational association cleanup remain open
+- Added: 09/02/2026
+
+Populate the Client Files system with verified source data and make the client record the controlled relationship point for sites, services, operational records, documents, and future portal publication.
+
+Required work:
+
+- [ ] Import and reconcile the complete TrackTik client/site list and applicable sales records without duplicating the client records already created from the initial sales workbook.
+- [ ] Verify legal client name, property/site name, physical and billing addresses, primary and operational contacts, phones, emails, client status, and service types for every imported record.
+- [ ] Distinguish Active, Inactive, Former, Prospect, and Occasional/Event-only clients and support Static, Patrol, Event Security, Executive Protection, and Mixed services.
+- [ ] Support static and patrol services under one client while keeping each Site/Post, shift, patrol hit, report, image, video, invoice, contract, proposal, post order, and document tied to the correct canonical client relationship.
+- [ ] Clean and validate Site/Post addresses before activating geofencing; never infer coordinates from incomplete or ambiguous source data.
+- [ ] Correct unrelated route/site associations and restrict site visibility by assignment, operational need, and effective permission instead of exposing every site to every patrol employee.
+- [ ] Support an authorized employee serving as a static officer, patrol officer, or both without duplicating the employee or client record.
+
+Completion criteria:
+
+- [ ] Import reconciliation accounts for every accepted, rejected, merged, and unresolved source row.
+- [ ] All client-linked operational records resolve to the correct client and site without duplicate storage.
+- [ ] Negative-permission tests prove employees and future clients cannot access unrelated sites, records, documents, or media.
+
+### Patrol Field Pilot, Media Validation, and Route Completion
+
+- Priority: **High**
+- Target window: Controlled field pilot before Patrol is treated as fully production-ready
+- Status: Patrol workflow and reporting foundation complete; real route data, field acceptance, and sustained media validation remain open
+- Added: 09/02/2026
+
+Finish the operational rollout of Patrol with real addresses, route ownership, field feedback, and evidence that mobile reporting and larger media behave reliably under actual guard conditions.
+
+Required work:
+
+- [ ] Add and verify the remaining route addresses, site instructions, and editable hit requirements using the permanent Patrol management workflow.
+- [ ] Keep optional hit time windows available for later management use without inventing times for routes that are currently count-based.
+- [ ] Let management select whether a hit requires a photo, video, both, or neither, while guards retain optional notes and permitted supplemental media.
+- [ ] Send Joseph the end-of-shift report and Patrol workflow for field testing and record feedback on mobile usability, clarity, missing information, reporting sufficiency, and photo/video behavior.
+- [ ] Personally complete the management and guard workflows before broad release, including adding an extra hit, changing an existing route, building a route, saving addresses, completing hits, and exporting reports.
+- [ ] Prove that at least three-to-ten-minute incident videos and supported photographs can be uploaded, stored, scanned, viewed, downloaded, retained, and associated with the correct client, site, employee, route, shift, and patrol activity.
+- [ ] Verify media authorization prevents unrelated employees, managers outside scope, and future client users from viewing or downloading records they do not own.
+- [ ] Confirm static and Patrol reporting can coexist under one client without duplicating records or crossing access boundaries.
+
+Completion criteria:
+
+- [ ] Joseph's field findings are resolved or explicitly accepted by the named operational owner.
+- [ ] Mobile, offline/retry, media, report/export, permission, audit, recovery, and rollback tests pass using production-equivalent data sizes.
+- [ ] Patrol is not labeled fully production-ready until the field pilot and media evidence are recorded.
+
+### TrackTik Replacement and Controlled Migration
+
+- Priority: **High**
+- Target window: After feature and data inventories; before TrackTik retirement
+- Status: Research inputs and management decisions required
+- Added: 09/02/2026
+
+Create a documented replacement and migration program before discontinuing TrackTik.
+
+Required work:
+
+- [ ] Obtain and review Zach's TrackTik research notes and classify each function as Replicate, Improve, Replace with another workflow, or Intentionally exclude.
+- [ ] Inventory migration requirements for clients, sites, addresses, contacts, post orders, routes, reports, media, and applicable employee/licensing records.
+- [ ] Decide whether the existing dispatch log is retained, replaced, or retired and identify its final management owner during transition.
+- [ ] Define source cleanup, identity matching, duplicate prevention, transformation, reconciliation, exception handling, audit, and rollback procedures.
+- [ ] Establish acceptance criteria and a controlled parallel-use period where required so operational coverage is never dependent on an unverified replacement.
+- [ ] Do not discontinue TrackTik until the replacement workflows, migrated data, reports, media, permissions, and recovery plan are tested and formally accepted.
+
+## Platform Strategy & Business Systems
+
+### Sygilant Convergence and Shared Identity
+
+- Priority: **Strategic / High**
+- Target window: Side-by-side integration first; Sygilant-hosted consolidation only after independent readiness and rollback approval
+- Status: Approved direction; no change to SygShift's current production login or authorization boundary is authorized yet
+- Added: 09/02/2026
+
+Allow SygShift and Sygilant to operate side by side with one secure employee identity and familiar login experience, then later make SygShift an authenticated Sygilant module without copying password material, weakening MFA, or coupling the platforms before Sygilant is ready.
+
+Required work:
+
+- [ ] Define one authoritative identity provider and stable person/account identifiers; never synchronize password hashes, recovery secrets, authenticator seeds, FIDO credentials, or remembered-device tokens between independent stores.
+- [ ] Reuse SygShift's proven authentication, account-recovery, MFA/FIDO, session, audit, and security patterns in Sygilant through a reviewed shared-identity architecture rather than a visual imitation or duplicate account directory.
+- [ ] Keep authentication shared but authorization independent: platform, role, permission, client, site, record, and publication checks must remain server-enforced within each application's boundary.
+- [ ] Introduce the integration side by side with feature flags, versioned contracts/events, isolated canaries, session-revocation behavior, monitoring, rollback, and no required change to the current SygShift production login.
+- [ ] Give Sygilant the same repository discipline for Future Items, dated changelogs, DEVLOG updates, production verification, backups, and removal of completed queue items.
+- [ ] When Sygilant is ready, launch SygShift only from an authenticated Sygilant workspace and retire direct SygShift login only after account mapping, deep links, MFA, recovery, logout, outage, and rollback tests pass.
+- [ ] Preserve stable URLs or controlled redirects, audit attribution, least privilege, and emergency access during the final consolidation.
+
+Completion criteria:
+
+- [ ] The same authorized person can use both platforms through one approved identity lifecycle without maintaining two passwords or creating duplicate employee records.
+- [ ] Compromise or excessive authority in one platform does not silently grant access to the other.
+- [ ] Direct SygShift login is not removed until Sygilant provides verified replacement entry, recovery, support, monitoring, and rollback paths.
+
+### SigSales Platform and Controlled Client Handoff
+
+- Priority: **Later expansion**
+- Target window: After Jordan and Zach approve the sales workflow and the Sygilant client contract is stable
+- Status: Product definition required
+- Added: 09/02/2026
+
+Build SigSales as the controlled sales, lead, bid/proposal, and contract-management platform and hand accepted business into the canonical Sygilant client relationship without duplicate client records.
+
+Required work:
+
+- [ ] Finalize the SigSales layout and workflow with Jordan and Zach.
+- [ ] Define the governed lifecycle from Prospect through Outreach, Opportunity, Proposal/Bid, Contract review, Signature, Client onboarding, and Active service.
+- [ ] Connect completed sales and contract records to the correct Sygilant client account using stable identifiers and reviewed handoff states.
+- [ ] Automate calculations, document preparation, and distribution only where review, approval, version, signature, and publication controls remain intact.
+- [ ] Define permissions, confidentiality, audit, retention, rejection, duplicate prevention, failure recovery, and rollback before production data is introduced.
+
+### Product Name and Trademark Review
+
+- Priority: **Business decision / Research**
+- Target window: Before additional public-brand investment or registration decisions
+- Status: Requires Jordan and Zach review plus qualified legal guidance where appropriate
+- Added: 09/02/2026
+
+Research potential conflicts and registration strategy for **SygShift**, **Sygilant**, and **SigSales** while treating domain ownership and trademark rights as separate matters.
+
+Required work:
+
+- [ ] Perform documented clearance research for the proposed names, relevant classes, jurisdictions, confusingly similar marks, and current use.
+- [ ] Decide which names remain approved for use and which should proceed to formal registration review.
+- [ ] Record findings, owners, deadlines, and counsel recommendations without representing internal research as legal clearance.
+
 ## Workforce Organization & Scheduling
 
 ### Employee-Local Shift Time Presentation

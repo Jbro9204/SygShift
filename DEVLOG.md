@@ -25,6 +25,14 @@ deployment status, or major workflow assumptions change.
 
 ## 09/03/2026
 
+### Future queue reconciliation
+
+- Reconciled Jordan's 09/02 meeting list and related evening decisions against completed production work so finished releases were not placed back into the active queue.
+- Added grouped future programs for remaining HR operations and advanced document capabilities, role governance, workforce reconciliation, client import and visibility, Patrol field validation, TrackTik migration, Sygilant shared identity and convergence, SigSales, and trademark research.
+- Preserved the existing security, Duo, HR suite, employee-local time, mandatory required-actions, Client Portal, and Indeed items without duplication.
+- Made no production, database, permission, employee, scheduling, timekeeping, document, or client-data change.
+- Full details are recorded in `docs/changelogs/CHANGELOG_09-03-2026_FUTURE_QUEUE_RECONCILIATION.md`.
+
 ### Scheduled Overtime Forecast report
 
 - Added a dedicated Sunday-through-Saturday planning report that identifies employees assigned above 40 hours before the week starts, separates armed and unarmed coverage, and shows every contributing Site/Post shift and approval note.
