@@ -34,6 +34,7 @@ deployment status, or major workflow assumptions change.
 - Preserved all employees, schedules, shifts, assignments, punches, and payroll records. Migration `20260903154821` was applied and reconciled after rollback compilation and live read-only validation.
 - Live validation for 09/06–09/12 found four projected-overtime employees, including two with armed coverage, totaling 45 projected overtime hours on published revision 3.
 - Full validation passed with 162 test files / 777 tests, zero-warning lint, TypeScript, and both production builds.
+- Pushed implementation commit `d989764` and deployed Cloudflare Worker version `ff284ac6-6e70-49d0-b199-d3667baab32a`. Authenticated production verification confirmed the report, shift-detail modal, and audited Excel download; primary and fallback health/readiness checks returned HTTP 200.
 - Full details are recorded in `docs/changelogs/CHANGELOG_09-03-2026_SCHEDULED_OVERTIME_FORECAST.md`.
 
 

@@ -1,7 +1,9 @@
 # Scheduled Overtime Forecast Report
 
 **Released:** 09/03/2026  
+**Implementation commit:** `d989764`  
 **Database migration:** `20260903154821_scheduled_overtime_forecast_report.sql`
+**Cloudflare Worker:** `ff284ac6-6e70-49d0-b199-d3667baab32a`
 
 ## Outcome
 
@@ -33,9 +35,10 @@ SygShift Reports now includes a dedicated **Scheduled Overtime Forecast** for th
 - Production grants verified: anonymous and PUBLIC execution denied; authenticated execution allowed subject to internal MFA and permission checks.
 - Full repository validation passed: TypeScript, zero-warning lint, 162 test files / 777 tests, and both production builds.
 - Six focused report and workbook tests passed.
+- Authenticated production verification confirmed the report, shift-detail modal, schedule revision, and audited Excel download.
+- Primary and fallback application, health, readiness, and report-route checks returned HTTP 200.
 - Supabase security and performance advisors reported no new finding tied to this report. Existing informational project notices remain unchanged.
 
 ## Scope preserved
 
 This release does not change assignments, approve overtime, infer employee availability, calculate final worked/payroll overtime, or change Dispatch overlap behavior. Scheduling decisions remain controlled by authorized management in Schedule.
-
