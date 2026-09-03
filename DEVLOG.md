@@ -25,6 +25,16 @@ deployment status, or major workflow assumptions change.
 
 ## 09/03/2026
 
+### Concurrent Dispatch phone-duty assignment
+
+- Classified the existing **Dispatch Phone Coverage** schedule source as an explicit supplemental duty and now permit it to overlap one normal Site/Post responsibility for the same employee.
+- Kept ordinary physical-shift overlaps blocked. Dispatch with Dispatch and Dispatch with Training also remain blocked.
+- Excluded the supplemental Dispatch duty from clock eligibility, new time-event creation, missing-clock exceptions, attendance alerts, and scheduled-overtime minutes so the same elapsed time is not counted twice.
+- Added auditable assignment evidence and visible **Dispatch phone duty** labels throughout the Schedule views. No new pay premium, stipend, or compensation rule was inferred.
+- Preserved all existing employees, shifts, assignments, punches, and historical Dispatch-linked time events. Migration `20260903132400` was applied and reconciled; direct database checks confirmed Dispatch + Post is allowed while Post + Post remains blocked.
+- Full validation passed with 159 test files / 767 tests, zero-warning lint, TypeScript, and both production builds. Pushed commit `376a093` and deployed Cloudflare Worker version `8d0b8974-8f05-4985-b448-3ac830f315be`; primary and fallback health/readiness checks returned HTTP 200.
+- Full details are recorded in `docs/changelogs/CHANGELOG_09-03-2026_CONCURRENT_DISPATCH_PHONE_DUTY.md`.
+
 ### Scheduler Leave Unassigned repair
 
 - Restored the ability to save a draft shift as **Leave open / unassigned**. A disabled scheduled-overtime preview had been reported as pending by the query client and was incorrectly disabling the save action even though no employee required validation.
