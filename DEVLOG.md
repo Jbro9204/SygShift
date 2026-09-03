@@ -34,6 +34,8 @@ deployment status, or major workflow assumptions change.
 - Added responsive four-clock and two-by-two layouts with no hidden zone, clipped afternoon time, or page-level horizontal overflow.
 - No database migration, production record, permission, schedule assignment, punch, or payroll change is required.
 - Full validation passed: TypeScript, zero-warning application lint, 163 test files / 783 tests, both production builds, and 108 desktop/mobile Playwright checks.
+- Pushed implementation commit `f4ec99f` and deployed Cloudflare Worker version `5c6aa879-d39a-41cd-85f4-353b6796516d`; primary and fallback health/readiness returned HTTP 200 and ready.
+- Authenticated production verification confirmed four visible clocks, the highlighted **System time** label, requirement-aware **Unarmed coverage** schedule cards, and no horizontal overflow.
 - Release validation and production deployment evidence are recorded in `docs/changelogs/CHANGELOG_09-03-2026_SCHEDULE_REQUIREMENT_AND_COMPACT_TIME_HEADER.md`.
 
 ### HR Suite operational release

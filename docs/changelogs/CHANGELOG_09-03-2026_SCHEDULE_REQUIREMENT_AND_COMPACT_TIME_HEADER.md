@@ -55,9 +55,11 @@ Employee-facing schedule and time surfaces now show the requirement of the speci
 
 ## Git and deployment status
 
-- Commit and push: pending final release gate.
-- Cloudflare deployment: pending final release gate.
-- Live health/readiness and authenticated workflow verification: pending deployment.
+- Implementation commit `f4ec99f` was pushed to `origin/main`.
+- Cloudflare Worker version `5c6aa879-d39a-41cd-85f4-353b6796516d` was deployed successfully to the primary custom domain and Worker fallback.
+- Primary and fallback health/readiness checks returned HTTP 200, and both readiness responses reported ready.
+- Deployed-asset inspection confirmed the requirement-aware Armed/Unarmed helper, the compact operational-clock details, the **System time** label, and the responsive two-column clock layout.
+- Authenticated production inspection confirmed four visible clocks, one highlighted **System time** label, requirement-aware **Unarmed coverage** schedule cards, and no page-level horizontal overflow.
 
 ## Remaining scope
 
