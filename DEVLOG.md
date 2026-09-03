@@ -25,6 +25,16 @@ deployment status, or major workflow assumptions change.
 
 ## 09/02/2026
 
+### User Account role assignment cleanup
+
+- Replaced the duplicated **Role** plus scrolling **Additional access roles** presentation with a clearly labeled **Workforce role** and a compact **Department & management access** control.
+- Built-in roles no longer repeat in the specialized selector. Assigned packages appear once as removable cards and remaining specialized roles use one bounded add-role dropdown.
+- Removed the redundant **Primary Supervisor** line from employee summaries and directory rows when a named package such as Human Resources Manager is already displayed.
+- Preserved the underlying workforce-routing and effective-permission model, every existing assignment identifier, audited atomic saves, and MFA-sensitive access controls; no database or employee record was changed by the release.
+- Full validation passed: TypeScript, zero-warning lint, 156 test files / 755 tests, both production builds, and 4/4 focused desktop/mobile accessible browser checks.
+- Pushed implementation commit `d15753f` and deployed Cloudflare Worker version `2f81d99f-f42e-4dd2-b8c0-7ede951d2d44`; primary and fallback app, health, and readiness endpoints returned HTTP 200 and the production User Accounts bundle contains the new experience without the legacy labels.
+- Full details are recorded in `docs/changelogs/CHANGELOG_09-02-2026_USER_ACCOUNT_ROLE_ASSIGNMENT_CLEANUP.md`.
+
 ### Protected PDF preview repair
 
 - Replaced the final iframe-based protected PDF previews in Licensing Center and Client Files with the shared PDF.js canvas viewer already used by Document Studio and employee signature documents.
