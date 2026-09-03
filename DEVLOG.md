@@ -25,6 +25,15 @@ deployment status, or major workflow assumptions change.
 
 ## 09/02/2026
 
+### Protected PDF preview repair
+
+- Replaced the final iframe-based protected PDF previews in Licensing Center and Client Files with the shared PDF.js canvas viewer already used by Document Studio and employee signature documents.
+- Fixed Chrome's blocked-page failure without weakening the application content-security policy or changing private storage, permission, recent MFA/FIDO, business-reason, no-store, download, or audit controls.
+- Added an explicit protected-PDF loading state, widened the Client Files preview modal, and added guards that fail if iframe previews return.
+- Full validation passed: TypeScript, zero-warning lint, 156 test files / 755 tests, both production builds, and 20/20 focused desktop/mobile light/dark browser checks.
+- Pushed implementation commit `fe9e99e` and deployed Cloudflare Worker version `0e57e4a9-ff51-4c06-bcb3-16c49fc501ad`; primary and fallback app, health, and readiness endpoints returned HTTP 200 and the production bundles contain the shared viewer with no iframe token.
+- Full details are recorded in `docs/changelogs/CHANGELOG_09-02-2026_PROTECTED_PDF_PREVIEW_REPAIR.md`.
+
 ### Protected Document Studio production activation
 
 - Added an isolated Cloudflare Container running pinned ClamAV 1.5.4, a one-file Cloudflare Queue consumer, bounded retry/dead-letter handling, checksum verification, and automatic deletion of rejected quarantined objects.
