@@ -130,15 +130,20 @@ export function ScheduledOvertimeForecastWorkspace({ canExport }: { canExport: b
 
   return <>
     <section className="operations-panel reports-workspace-heading reports-overtime-heading">
-      <Link className="secondary-button reports-back" to="/reports"><ArrowLeft aria-hidden="true" size={18} />Back to report library</Link>
-      <div><p className="eyebrow">Workforce planning</p><h1>Scheduled Overtime Forecast</h1><p>See who is scheduled above 40 hours before the week begins, what assignments create the total, and where armed Flex capacity may exist.</p></div>
+      <div className="reports-overtime-heading__main">
+        <Link className="reports-overtime-back-link" to="/reports"><ArrowLeft aria-hidden="true" size={17} />Back to report library</Link>
+        <div className="reports-overtime-heading__copy"><p className="eyebrow">Workforce planning</p><h1>Scheduled Overtime Forecast</h1><p>See who is scheduled above 40 hours before the week begins, what assignments create the total, and where armed Flex capacity may exist.</p></div>
+      </div>
       {canExport ? <button className="primary-action" disabled={exportMutation.isPending || !forecast.schedule} onClick={() => exportMutation.mutate()} type="button"><Download aria-hidden="true" size={18} />{exportMutation.isPending ? 'Preparing workbook...' : 'Download Excel report'}</button> : null}
     </section>
 
     <section className="operations-panel reports-workspace-controls reports-overtime-controls" aria-label="Scheduled overtime forecast controls">
-      <div className="reports-overtime-week"><label><span>Schedule week</span><input onChange={(event) => updateParameters({ week: sundayFor(event.target.value) })} type="date" value={weekStartsOn} /></label><p>{dateLabel(forecast.weekStartsOn)} through {dateLabel(forecast.weekEndsOn)} · {sourceLabel}</p></div>
-      <label className="reports-search"><span>Search</span><span className="reports-search-input"><Search aria-hidden="true" size={19} /><input onChange={(event) => updateParameters({ search: event.target.value || null })} placeholder="Employee, ID, title, site, or approval note" type="search" value={search} /></span></label>
-      <label><span>Coverage</span><select onChange={(event) => updateParameters({ coverage: event.target.value === 'armed' ? 'armed' : null })} value={coverage}><option value="all">All projected overtime</option><option value="armed">Includes armed coverage</option></select></label>
+      <div className="reports-overtime-filter-grid">
+        <label className="reports-overtime-week"><span>Schedule week</span><input onChange={(event) => updateParameters({ week: sundayFor(event.target.value) })} type="date" value={weekStartsOn} /></label>
+        <label className="reports-search"><span>Search</span><span className="reports-search-input"><Search aria-hidden="true" size={19} /><input onChange={(event) => updateParameters({ search: event.target.value || null })} placeholder="Employee, ID, title, site, or approval note" type="search" value={search} /></span></label>
+        <label><span>Coverage</span><select onChange={(event) => updateParameters({ coverage: event.target.value === 'armed' ? 'armed' : null })} value={coverage}><option value="all">All projected overtime</option><option value="armed">Includes armed coverage</option></select></label>
+      </div>
+      <div className="reports-overtime-schedule-context" aria-label="Selected schedule revision"><CalendarDays aria-hidden="true" size={19} /><div><strong>{dateLabel(forecast.weekStartsOn)} through {dateLabel(forecast.weekEndsOn)}</strong><span>{sourceLabel}</span></div></div>
       <div className="reports-export-note"><ShieldAlert aria-hidden="true" size={18} /><span>Forecast uses assigned standard shifts. Supplemental Dispatch phone duty is excluded, and actual payroll overtime can change with worked time and corrections.</span></div>
       {!canExport ? <div className="reports-export-note"><ShieldAlert aria-hidden="true" size={18} /><span>You can view this report. Downloading requires the protected Report Export permission.</span></div> : null}
       {exportMutation.isSuccess ? <div className="form-feedback form-feedback--success" role="status">Downloaded {exportMutation.data.fileName}.</div> : null}
