@@ -43,7 +43,11 @@ deployment status, or major workflow assumptions change.
 - Repaired the staged-source dead end by exposing the existing secure create-from-source path alongside searchable matching and explicit exclusion.
 - Renamed the workspace to Client Directory while preserving canonical Client Files and added authorized, immutable Michelle source provenance inside each file.
 - Added concurrency-safe client numbering and automatic import-batch lifecycle updates.
-- Reconciled Michelle's staged sales list into canonical status categories without turning spreadsheet section headings into clients or guessing operational relationships.
+- Reconciled all 261 rows from Michelle's staged sales list into 219 canonical Client Files and 118 usable contacts: 219 promoted, 17 exact-name matches, 25 headings/blank rows excluded, and 0 pending.
+- Released 12 active, 145 prospect, 56 former, and 6 do-not-renew files with 0 exact normalized duplicates or orphaned contacts; no Site, Post, Schedule, or Patrol relationship was guessed.
+- Passed TypeScript, zero-warning application lint, 163 test files / 784 tests, and both production builds. Applied production migration `20260903194919_client_directory_completion.sql` and synchronized the next client number to `CLI-1219`.
+- Pushed commit `72ed321` and deployed Cloudflare Worker version `3a9eef20-8cdb-475b-af43-35e3dbca7fa7`; primary and fallback health/readiness returned HTTP 200 and ready.
+- Authenticated production QA confirmed the complete Directory, status totals, a real imported client/contact, and retained Michelle source evidence.
 - Full release evidence is recorded in `docs/changelogs/CHANGELOG_09-03-2026_CLIENT_DIRECTORY_COMPLETION.md`.
 
 ### HR Suite operational release
