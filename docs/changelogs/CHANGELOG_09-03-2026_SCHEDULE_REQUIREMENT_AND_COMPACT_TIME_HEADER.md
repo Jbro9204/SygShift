@@ -74,6 +74,19 @@ Employee-facing schedule and time surfaces now show the requirement of the speci
 - Authenticated live measurement confirmed four clocks, no clipped digital times, and no page-level horizontal overflow.
 - No database migration or production-record change was required.
 
+## Second incremental legibility refinement
+
+- Increased the full-width clock faces from 34 to 36 pixels and constrained-width faces from 32 to 34 pixels.
+- Increased the primary digital time from 12 to 13 pixels on desktop and to 12.5 pixels on phones, the zone label from 11 to 12 pixels, and the **System time** badge from 9 to 10 pixels.
+- Slightly widened the clock cards again while tightening only the phone card padding enough to protect the longest teaching-format time at 320 pixels.
+- Preserved the same 72-pixel wide-desktop header, four-zone order, highlighted Mountain system time, constrained four-clock row, tablet/phone two-by-two layout, and synchronized time behavior.
+- Focused component checks passed 7 of 7. The header browser suite passed all 22 desktop/mobile checks across 1920, 1440, 1280, 1024, 768, 390, and 320 pixels, including the longest `11:59 PM (23:59)` display.
+- The combined branch passed `pnpm check` with TypeScript, zero-warning lint, 163 test files / 785 tests, and both production builds after incorporating the concurrent Scheduler Dispatch-overlap acknowledgement release.
+- Implementation commit `3c50a88` was pushed to `origin/main` and deployed as Cloudflare Worker version `dccced08-4911-4f72-a041-382dc9b0e2d5`.
+- Primary and fallback health/readiness returned HTTP 200 and ready. The live stylesheet contains the 13-pixel desktop time, 12.5-pixel phone time, 12-pixel zone, and 36-pixel face rules.
+- Authenticated live measurement confirmed four clocks, the intended 13/12/36-pixel desktop sizing and 10-pixel system badge, zero clipped times, and no page-level horizontal overflow.
+- No database migration or production-record change was required.
+
 ## Remaining scope
 
 - The separate **Employee-Local Shift Time Presentation** Future item remains open. This release changes the compact global clock presentation and corrects requirement labels; it does not change employee-local schedule conversion, clock eligibility, stored timestamps, or payroll ownership.
