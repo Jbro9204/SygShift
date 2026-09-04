@@ -100,6 +100,15 @@ Employee-facing schedule and time surfaces now show the requirement of the speci
 - Authenticated live measurement confirmed four clocks, the intended 14/12.5/38-pixel desktop sizing and 10.5-pixel system badge, zero clipped times, and no page-level horizontal overflow.
 - No database migration or production-record change was required.
 
+## West-to-east clock order (09/04/2026)
+
+- Reordered the four existing clocks to match the U.S. map: Pacific, Mountain, Central, Eastern.
+- Kept Mountain highlighted as **System time** and preserved all dynamic time-zone abbreviations, synchronized time behavior, civilian/24-hour teaching format, sizes, styling, and responsive behavior.
+- No CSS, database, employee record, schedule, assignment, punch, payroll, permission, or stored-time change was made.
+- Focused component checks passed 7 of 7, the responsive header suite passed all 22 desktop/mobile checks from 1920 through 320 pixels, and the full `pnpm check` gate passed with 163 test files / 785 tests and both production builds.
+- Implementation commit `fcc2616` was deployed as Cloudflare Worker version `d9b31d71-afb4-40d5-b354-1c9adf6f6f03`.
+- Primary and fallback health/readiness checks returned HTTP 200 and ready. Deployed-asset inspection confirmed Pacific, Mountain, Central, Eastern in that order.
+
 ## Remaining scope
 
 - The separate **Employee-Local Shift Time Presentation** Future item remains open. This release changes the compact global clock presentation and corrects requirement labels; it does not change employee-local schedule conversion, clock eligibility, stored timestamps, or payroll ownership.

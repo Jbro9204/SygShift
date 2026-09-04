@@ -25,6 +25,14 @@ deployment status, or major workflow assumptions change.
 
 ## 09/04/2026
 
+### West-to-east operational clock order
+
+- Reordered the existing operational clocks to follow the U.S. map from west to east: Pacific, Mountain, Central, Eastern.
+- Preserved the dynamic daylight/standard abbreviations, synchronized civilian/24-hour display, clock sizing, responsive layout, and highlighted Mountain **System time** treatment without changing CSS.
+- Focused component checks passed 7 of 7, the responsive header suite passed 22 of 22 from 1920 through 320 pixels, and the full `pnpm check` gate passed with 163 test files / 785 tests.
+- Pushed implementation commit `fcc2616` and deployed Cloudflare Worker version `d9b31d71-afb4-40d5-b354-1c9adf6f6f03`; primary and fallback health/readiness returned HTTP 200 and ready, and deployed-asset inspection confirmed the requested order.
+- No database migration or production-record change was required.
+
 ### Employee-local early clock-in warning
 
 - Updated the required early clock-in alert dialog to show the employee/device time zone prominently for current time, clock-in eligibility, shift date, and scheduled start/end.
