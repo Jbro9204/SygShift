@@ -25,6 +25,16 @@ deployment status, or major workflow assumptions change.
 
 ## 09/04/2026
 
+### HR pagination redesign
+
+- Replaced the duplicated `compact-pagination panel` pattern that caused 290-pixel empty pagination slabs across the operational HR platform.
+- Added one shared HR pagination component for Recruiting, Onboarding, Leave, Benefits, Compensation, Talent, Learning, Employee Cases, Safety, Assets, Offboarding, Self-Service, Reporting, Automation, and Payroll Integration.
+- Empty first pages no longer display disabled navigation or **Items 0–0**; populated pages use a compact desktop footer and responsive phone layout, while an empty later page retains a safe Previous path.
+- Preserved page sizes, query offsets, protected APIs, permissions, MFA, approval rules, and all HR records. No database migration was required.
+- Full validation passed with 166 test files / 797 tests, both production builds, and 112 desktop/mobile Playwright checks.
+- Pushed implementation commit `2036f33` and deployed Cloudflare Worker version `6f95614b-ae44-4020-ad5e-d32109245022`; primary and fallback health/readiness returned HTTP 200 and ready, and live assets contain the new component and responsive styling.
+- Full evidence is recorded in `docs/changelogs/CHANGELOG_09-04-2026_HR_PAGINATION_REDESIGN.md`.
+
 ### Reported cross-workspace interface cleanup
 
 - Completed the assistant's 24-image review across Schedule, Time Review, Action Center, Directory, Client Directory, Sites & Posts, HR employee records, Document Studio, Payroll, Patrol, and Administration.
