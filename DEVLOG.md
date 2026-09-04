@@ -25,6 +25,17 @@ deployment status, or major workflow assumptions change.
 
 ## 09/04/2026
 
+### Reported cross-workspace interface cleanup
+
+- Completed the assistant's 24-image review across Schedule, Time Review, Action Center, Directory, Client Directory, Sites & Posts, HR employee records, Document Studio, Payroll, Patrol, and Administration.
+- Repaired narrow Dispatch phone-duty cards, standardized the affected modal gutters and responsive actions, balanced Review Queue and Action Center summaries, improved Directory/search/role/pagination presentation, and made Payroll period selection persistent and accessible.
+- Added a direct protected `/patrol/operations` route and URL-backed Patrol tabs, eliminating the Page Not Found result without weakening Patrol permissions.
+- Consolidated the Administration sidebar into one **Users & Roles** landing page while preserving separate User Accounts and Roles & Permissions authorization boundaries.
+- No database migration or production-record change was required.
+- Full validation passed: TypeScript, zero-warning application lint, 164 test files / 792 tests, both production builds, and all 110 desktop/mobile Playwright checks.
+- Pushed implementation commit `4fde2dc` and deployed Cloudflare Worker version `0233b737-e319-49d1-b13b-6fc927cc2d69`; primary and fallback health/readiness returned HTTP 200 and ready, direct Patrol/Administration routes returned HTTP 200, and deployed assets contained the new route and layout rules.
+- Full release evidence is recorded in `docs/changelogs/CHANGELOG_09-04-2026_REPORTED_INTERFACE_CLEANUP.md`.
+
 ### West-to-east operational clock order
 
 - Reordered the existing operational clocks to follow the U.S. map from west to east: Pacific, Mountain, Central, Eastern.
