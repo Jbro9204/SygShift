@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { HrPagination } from '../components/HrPagination'
 import { ModalDialog } from '../components/ModalDialog'
 import { getSessionContext } from '../data/auth'
 import {
@@ -238,12 +239,7 @@ export function HrisOnboardingPage() {
         </article>
       </section>
 
-      <div className="compact-pagination panel">
-        <button className="secondary-button secondary-button--small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))} type="button">Previous</button>
-        <label className="compact-page-size"><span>Show</span><select onChange={(event) => { setPageSize(Number(event.target.value) as PageSize); setOffset(0) }} value={pageSize}><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></label>
-        <span>Items {workspace.cases.length ? offset + 1 : 0}–{offset + workspace.cases.length}</span>
-        <button className="secondary-button secondary-button--small" disabled={workspace.cases.length < pageSize} onClick={() => setOffset(offset + pageSize)} type="button">Next</button>
-      </div>
+      <HrPagination itemCount={workspace.cases.length} label="Onboarding cases" offset={offset} onOffsetChange={setOffset} onPageSizeChange={setPageSize} pageSize={pageSize} />
 
       {showCreate ? (
         <ModalDialog busy={busy} busyLabel="Creating employee and checklist..." className="modal-dialog--hr-onboarding" description="Create the pre-hire identity and generate only the onboarding requirements that apply." onClose={() => setShowCreate(false)} title="Create onboarding record">

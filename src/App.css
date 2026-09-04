@@ -5104,6 +5104,119 @@
   }
 }
 
+/* 09/04/2026 HR-wide pagination replacement */
+.hr-pagination {
+  display: flex;
+  min-height: 76px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: light-dark(#fffdf9, #171b1f);
+  border: 1px solid light-dark(#ddd5c8, #3b4146);
+  border-radius: 12px;
+  box-shadow: 0 7px 18px rgb(69 52 24 / 7%);
+}
+
+.hr-pagination__summary {
+  display: grid;
+  gap: 3px;
+  min-width: 120px;
+}
+
+.hr-pagination__summary span {
+  color: light-dark(#71695d, #b9b2a7);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hr-pagination__summary strong {
+  color: light-dark(#25211b, #f5f1e8);
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hr-pagination__controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.hr-pagination__controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 4px;
+  color: light-dark(#514a40, #f5f1e8);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.hr-pagination__controls select {
+  width: 68px;
+  min-height: 44px;
+  padding: 8px 10px;
+  color: light-dark(#25211b, #f5f1e8);
+  background: light-dark(#fff, #111518);
+  border: 1px solid light-dark(#cfc5b5, #4b5055);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.hr-pagination__controls .secondary-button {
+  min-width: 112px;
+  min-height: 44px;
+}
+
+.hr-pagination__controls .secondary-button:disabled {
+  color: light-dark(#8d877d, #858b90);
+  background: light-dark(#f4f1eb, #20252a);
+  border-color: light-dark(#ded8ce, #373d42);
+  box-shadow: none;
+  opacity: 0.72;
+}
+
+.hr-automation-worklist > .hr-pagination {
+  margin: 0;
+  border-width: 1px 0 0;
+  border-radius: 0 0 12px 12px;
+  box-shadow: none;
+}
+
+@media (max-width: 720px) {
+  .hr-pagination {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .hr-pagination__summary {
+    min-width: 0;
+  }
+
+  .hr-pagination__controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .hr-pagination__controls label {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    margin-right: 0;
+  }
+
+  .hr-pagination__controls .secondary-button {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 /* Enterprise Document Studio and signature execution */
 .document-studio { display: grid; gap: 16px; margin-bottom: 22px; }
 .document-studio__release { align-items: center; background: light-dark(#fff8e9, #221d14); border: 1px solid light-dark(#e2c88d, #74571f); border-left: 4px solid #c18b2d; border-radius: 12px; color: light-dark(#644612, #f1d28d); display: flex; gap: 12px; min-height: 68px; padding: 13px 16px; }

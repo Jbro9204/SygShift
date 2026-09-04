@@ -10,6 +10,7 @@ const navigation = readFileSync('src/app/navigation.ts', 'utf8')
 const policy = readFileSync('src/app/accessPolicy.ts', 'utf8')
 const router = readFileSync('src/app/router.tsx', 'utf8')
 const page = readFileSync('src/pages/HrisPayrollIntegrationPage.tsx', 'utf8')
+const pagination = readFileSync('src/components/HrPagination.tsx', 'utf8')
 
 describe('HRIS Stage 10 payroll integration hardening', () => {
   it('keeps integration, webhooks, and cutover dormant', () => {
@@ -81,8 +82,9 @@ describe('HRIS Stage 10 payroll integration hardening', () => {
     expect(policy).toContain("'/hr/payroll-integration': { anyOf: ['hr.payroll_integration.view'] }")
     expect(router).toContain("path: 'hr/payroll-integration'")
     expect(navigation).toContain("path: '/hr/payroll-integration'")
+    expect(page).toContain('<HrPagination')
     for (const size of ['<option value="5">5</option>', '<option value="10">10</option>', '<option value="20">20</option>']) {
-      expect(page).toContain(size)
+      expect(pagination).toContain(size)
     }
     expect(page).toContain('is safely staged')
   })

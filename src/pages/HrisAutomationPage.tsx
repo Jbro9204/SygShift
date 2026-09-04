@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ListChecks, RefreshCw, Workflow } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { HrPagination } from '../components/HrPagination'
 import { getHrAutomationWorkspace } from '../data/hrAutomation'
 import { isSupabaseConfigured } from '../lib/supabase'
 
@@ -48,12 +49,9 @@ export function HrisAutomationPage() {
         <article className={workspace.counts.deadLetters ? 'is-alert' : ''}><AlertTriangle aria-hidden="true" size={20} /><span>Needs intervention</span><strong>{workspace.counts.deadLetters}</strong></article>
       </section>
       <section className="panel hr-automation-worklist">
-        <div className="section-heading">
-          <div><p className="eyebrow">Current work</p><h2>Employee actions</h2><p>Only the selected number of items is shown.</p></div>
-          <label className="compact-page-size"><span>Show</span><select onChange={(event) => { setPageSize(Number(event.target.value) as 5 | 10 | 20); setOffset(0) }} value={pageSize}><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></label>
-        </div>
+        <div className="section-heading"><div><p className="eyebrow">Current work</p><h2>Employee actions</h2><p>Review assigned employee actions and failed workflow tasks.</p></div></div>
         {workspace.tasks.length ? <div className="hr-automation-list">{workspace.tasks.map((task) => <article key={task.id}><div><strong>{task.title}</strong><span>{task.assignedName ?? task.requiredPermission ?? 'Unassigned'}</span></div><div><span className={`action-status action-status--${task.status}`}>{task.status}</span><small>Due {formatDateTime(task.dueAt)}</small></div></article>)}</div> : <div className="compact-empty"><CheckCircle2 aria-hidden="true" size={24} /><span>No employee actions need attention.</span></div>}
-        <div className="compact-pagination"><button className="secondary-button secondary-button--small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))} type="button">Previous</button><span>Items {workspace.tasks.length ? offset + 1 : 0}–{offset + workspace.tasks.length}</span><button className="secondary-button secondary-button--small" disabled={workspace.tasks.length < pageSize} onClick={() => setOffset(offset + pageSize)} type="button">Next</button></div>
+        <HrPagination itemCount={workspace.tasks.length} label="Employee actions" offset={offset} onOffsetChange={setOffset} onPageSizeChange={setPageSize} pageSize={pageSize} />
       </section>
     </div>
   )

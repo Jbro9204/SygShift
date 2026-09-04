@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, BriefcaseBusiness, CheckCircle2, RefreshCw, UserRoundSearch } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { HrPagination } from '../components/HrPagination'
 import { HrRecruitingActions } from '../components/HrRecruitingActions'
 import { getHrRecruitingWorkspace } from '../data/hrRecruiting'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -60,7 +61,7 @@ export function HrisRecruitingPage() {
           {workspace.applications.length ? <div className="hr-automation-list">{workspace.applications.map((item) => <article key={item.id}><div><strong>{item.candidateName}</strong><span>{item.requisitionTitle} · {item.stage}</span></div><div><span className="action-status">{item.status}</span><small>Moved {formatDateTime(item.stageChangedAt)}</small></div></article>)}</div> : <div className="compact-empty"><UserRoundSearch aria-hidden="true" size={24} /><span>No candidates are in this view.</span></div>}
         </article>
       </section>
-      <div className="compact-pagination panel"><button className="secondary-button secondary-button--small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))} type="button">Previous</button><label className="compact-page-size"><span>Show</span><select onChange={(event) => { setPageSize(Number(event.target.value) as PageSize); setOffset(0) }} value={pageSize}><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></label><span>Items {shownCount ? offset + 1 : 0}–{offset + shownCount}</span><button className="secondary-button secondary-button--small" disabled={shownCount < pageSize} onClick={() => setOffset(offset + pageSize)} type="button">Next</button></div>
+      <HrPagination itemCount={shownCount} label="Recruiting records" offset={offset} onOffsetChange={setOffset} onPageSizeChange={setPageSize} pageSize={pageSize} />
     </div>
   )
 }

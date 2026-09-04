@@ -8,6 +8,7 @@ const worker = readFileSync('worker/index.ts', 'utf8')
 const wrangler = readFileSync('wrangler.jsonc', 'utf8')
 const navigation = readFileSync('src/app/navigation.ts', 'utf8')
 const page = readFileSync('src/pages/HrisStage7Page.tsx', 'utf8')
+const pagination = readFileSync('src/components/HrPagination.tsx', 'utf8')
 const employeeFileRelease = readFileSync('supabase/migrations/20260902010000_employee_file_editing_and_pay_rates.sql', 'utf8')
 
 describe('HRIS Stage 7 leave, benefits, and compensation foundation', () => {
@@ -53,9 +54,10 @@ describe('HRIS Stage 7 leave, benefits, and compensation foundation', () => {
   })
 
   it('uses compact lists and a safe staged state', () => {
-    expect(page).toContain('<option value="5">5</option>')
-    expect(page).toContain('<option value="10">10</option>')
-    expect(page).toContain('<option value="20">20</option>')
+    expect(page).toContain('<HrPagination')
+    expect(pagination).toContain('<option value="5">5</option>')
+    expect(pagination).toContain('<option value="10">10</option>')
+    expect(pagination).toContain('<option value="20">20</option>')
     expect(page).toContain('is safely staged')
   })
 })

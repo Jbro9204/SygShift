@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, RefreshCw, ShieldCheck } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { HrPagination } from '../components/HrPagination'
 import { getSessionContext } from '../data/auth'
 import {
   getHrStage10Workspace,
@@ -64,12 +65,7 @@ export function HrisPayrollIntegrationPage() {
           <div className="section-heading"><div><p className="eyebrow">Change proposals</p><h2>Current governed work</h2></div></div>
           {workspace.items.length ? <div className="hr-automation-list">{workspace.items.map((item) => <article key={item.id}><div><strong>{item.title}</strong><span>{item.subtitle}{item.detail ? ` · ${item.detail}` : ''}</span></div><div><span className="action-status">{item.status}</span>{formatDate(item.dateLabel) ? <small>{formatDate(item.dateLabel)}</small> : null}</div></article>)}</div> : <div className="compact-empty"><ShieldCheck aria-hidden="true" size={24} /><span>No payroll-impacting HR changes are awaiting review.</span></div>}
         </section>
-        <div className="compact-pagination panel">
-          <button className="secondary-button secondary-button--small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))} type="button">Previous</button>
-          <label className="compact-page-size"><span>Show</span><select onChange={(event) => { setPageSize(Number(event.target.value) as HrStage10PageSize); setOffset(0) }} value={pageSize}><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></label>
-          <span>Items {workspace.items.length ? offset + 1 : 0}–{offset + workspace.items.length}</span>
-          <button className="secondary-button secondary-button--small" disabled={workspace.items.length < pageSize} onClick={() => setOffset(offset + pageSize)} type="button">Next</button>
-        </div>
+        <HrPagination itemCount={workspace.items.length} label="Payroll integration records" offset={offset} onOffsetChange={setOffset} onPageSizeChange={setPageSize} pageSize={pageSize} />
       </> : null}
     </div>
   )

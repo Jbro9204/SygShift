@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, BadgeDollarSign, CheckCircle2, HeartHandshake, RefreshCw, Umbrella } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { HrPagination } from '../components/HrPagination'
 import { HrOperationalActions } from '../components/HrOperationalActions'
 import { getSessionContext } from '../data/auth'
 import {
@@ -42,23 +43,6 @@ const workspaceDetails = {
 function formatDate(value: string | null): string {
   if (!value) return 'Open-ended'
   return new Intl.DateTimeFormat('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${value.slice(0, 10)}T12:00:00Z`))
-}
-
-function Pagination({ itemCount, offset, pageSize, setOffset, setPageSize }: {
-  itemCount: number
-  offset: number
-  pageSize: PageSize
-  setOffset: (value: number) => void
-  setPageSize: (value: PageSize) => void
-}) {
-  return (
-    <div className="compact-pagination panel">
-      <button className="secondary-button secondary-button--small" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))} type="button">Previous</button>
-      <label className="compact-page-size"><span>Show</span><select onChange={(event) => { setPageSize(Number(event.target.value) as PageSize); setOffset(0) }} value={pageSize}><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></label>
-      <span>Items {itemCount ? offset + 1 : 0}–{offset + itemCount}</span>
-      <button className="secondary-button secondary-button--small" disabled={itemCount < pageSize} onClick={() => setOffset(offset + pageSize)} type="button">Next</button>
-    </div>
-  )
 }
 
 function Stage7WorkspacePage({ kind }: { kind: WorkspaceKind }) {
@@ -102,7 +86,7 @@ function Stage7WorkspacePage({ kind }: { kind: WorkspaceKind }) {
       {kind === 'leave' ? <LeaveWorkspace workspace={workspace as HrLeaveWorkspace} /> : null}
       {kind === 'benefits' ? <BenefitsWorkspace workspace={workspace as HrBenefitsWorkspace} /> : null}
       {kind === 'compensation' ? <CompensationWorkspace workspace={workspace as HrCompensationWorkspace} /> : null}
-      <Pagination itemCount={workspace.items.length} offset={offset} pageSize={pageSize} setOffset={setOffset} setPageSize={setPageSize} />
+      <HrPagination itemCount={workspace.items.length} label={`${details.title} records`} offset={offset} onOffsetChange={setOffset} onPageSizeChange={setPageSize} pageSize={pageSize} />
     </div>
   )
 }

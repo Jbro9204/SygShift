@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
+import { HrPagination } from '../components/HrPagination'
 import { HrOperationalActions } from '../components/HrOperationalActions'
 import { getSessionContext } from '../data/auth'
 import {
@@ -70,23 +71,6 @@ function formatDate(value: string | null): string | null {
   }).format(new Date(`${value.slice(0, 10)}T12:00:00Z`))
 }
 
-function Pagination({ itemCount, offset, pageSize, onOffset, onPageSize }: {
-  itemCount: number
-  offset: number
-  pageSize: HrStage9PageSize
-  onOffset: (value: number) => void
-  onPageSize: (value: HrStage9PageSize) => void
-}) {
-  return (
-    <div className="compact-pagination panel">
-      <button className="secondary-button secondary-button--small" disabled={offset === 0} onClick={() => onOffset(Math.max(0, offset - pageSize))} type="button">Previous</button>
-      <label className="compact-page-size"><span>Show</span><select onChange={(event) => onPageSize(Number(event.target.value) as HrStage9PageSize)} value={pageSize}><option value="5">5</option><option value="10">10</option><option value="20">20</option></select></label>
-      <span>Items {itemCount ? offset + 1 : 0}–{offset + itemCount}</span>
-      <button className="secondary-button secondary-button--small" disabled={itemCount < pageSize} onClick={() => onOffset(offset + pageSize)} type="button">Next</button>
-    </div>
-  )
-}
-
 function Stage9WorkspacePage({ module }: { module: HrStage9Module }) {
   const [pageSize, setPageSize] = useState<HrStage9PageSize>(10)
   const [offset, setOffset] = useState(0)
@@ -123,7 +107,7 @@ function Stage9WorkspacePage({ module }: { module: HrStage9Module }) {
           <div className="section-heading"><div><p className="eyebrow">Current work</p><h2>{definition.title} worklist</h2></div></div>
           {workspaceQuery.data.items.length ? <div className="hr-automation-list">{workspaceQuery.data.items.map((item) => <article key={item.id}><div><strong>{item.title}</strong><span>{item.subtitle}{item.detail ? ` · ${item.detail}` : ''}</span></div><div><span className="action-status">{item.status}</span>{formatDate(item.dateLabel) ? <small>{formatDate(item.dateLabel)}</small> : null}</div></article>)}</div> : <div className="compact-empty"><WorkspaceIcon aria-hidden="true" size={24} /><span>{definition.empty}</span></div>}
         </section>
-        <Pagination itemCount={workspaceQuery.data.items.length} offset={offset} pageSize={pageSize} onOffset={setOffset} onPageSize={(value) => { setPageSize(value); setOffset(0) }} />
+        <HrPagination itemCount={workspaceQuery.data.items.length} label={`${definition.title} records`} offset={offset} onOffsetChange={setOffset} onPageSizeChange={setPageSize} pageSize={pageSize} />
       </> : null}
     </div>
   )
