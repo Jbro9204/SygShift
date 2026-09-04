@@ -64,6 +64,7 @@ const earlyClockInBlockedResponseSchema = z.object({
   locationName: z.string(),
   coverageType: z.string().nullable(),
   timeZone: z.string(),
+  employeeTimeZone: z.string().optional(),
   clockInWindowMinutes: z.literal(5),
 })
 

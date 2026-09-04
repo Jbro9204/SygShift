@@ -5,6 +5,10 @@ import {
   type EarlyClockInBlockedDetails,
 } from '../data/timekeeping'
 import { formatDualTime, formatOperationalDate } from '../lib/time'
+import {
+  continentalUsTimeZoneLabel,
+  personalDisplayTimeZone,
+} from '../lib/usTimeZones'
 import { ModalDialog } from './ModalDialog'
 
 export function EarlyClockInWarningDialog({
@@ -16,12 +20,18 @@ export function EarlyClockInWarningDialog({
 }) {
   const shiftDuration = formatClockInWaitDuration(details.scheduledShiftStart, details.trustedServerTime)
   const eligibilityDuration = formatClockInDurationUntil(details.clockInEligibleAt, details.trustedServerTime)
-  const currentTime = formatDualTime(details.trustedServerTime, { timeZone: details.timeZone })
-  const eligibleTime = formatDualTime(details.clockInEligibleAt, { timeZone: details.timeZone })
-  const shiftStartTime = formatDualTime(details.scheduledShiftStart, { timeZone: details.timeZone })
+  const employeeTimeZone = personalDisplayTimeZone(details.employeeTimeZone ?? details.timeZone)
+  const employeeTimeZoneLabel = continentalUsTimeZoneLabel(employeeTimeZone)
+  const currentTime = formatDualTime(details.trustedServerTime, { includeTimeZoneName: true, timeZone: employeeTimeZone })
+  const eligibleTime = formatDualTime(details.clockInEligibleAt, { includeTimeZoneName: true, timeZone: employeeTimeZone })
+  const shiftStartTime = formatDualTime(details.scheduledShiftStart, { includeTimeZoneName: true, timeZone: employeeTimeZone })
   const shiftEndTime = details.scheduledShiftEnd
-    ? formatDualTime(details.scheduledShiftEnd, { timeZone: details.timeZone })
+    ? formatDualTime(details.scheduledShiftEnd, { includeTimeZoneName: true, timeZone: employeeTimeZone })
     : null
+  const systemTime = formatDualTime(details.trustedServerTime, {
+    includeTimeZoneName: true,
+    timeZone: 'America/Denver',
+  })
   const siteLine = [details.siteCode, details.siteName].filter(Boolean).join(' · ')
 
   return (
@@ -51,7 +61,7 @@ export function EarlyClockInWarningDialog({
 
         <ol aria-label="Clock-in timing" className="early-clock-in-timeline">
           <li>
-            <span>Current server time</span>
+            <span>Your current time · {employeeTimeZoneLabel}</span>
             <strong>{currentTime}</strong>
           </li>
           <li>
@@ -68,11 +78,13 @@ export function EarlyClockInWarningDialog({
           <span className="early-clock-in-shift__eyebrow" id="scheduled-shift-title">SCHEDULED SHIFT</span>
           <strong>{details.shiftDisplayName}</strong>
           <p>{[siteLine || details.locationName, details.coverageType].filter(Boolean).join(' · ')}</p>
-          <p>{formatOperationalDate(new Date(details.scheduledShiftStart), details.timeZone)}</p>
+          <p>{formatOperationalDate(new Date(details.scheduledShiftStart), employeeTimeZone)}</p>
           <p>{shiftStartTime}{shiftEndTime ? ` – ${shiftEndTime}` : ''}</p>
         </section>
 
-        <p className="early-clock-in-server-note">Timing is based on trusted SygShift server time.</p>
+        <p className="early-clock-in-server-note">
+          Your schedule is shown in {employeeTimeZoneLabel}. SygShift verified this attempt at {systemTime} using trusted server time.
+        </p>
 
         <div className="early-clock-in-footer-note">
           <ShieldCheck aria-hidden="true" size={21} />
@@ -94,7 +106,10 @@ export function EarlyClockInAcknowledgmentNotice({ details }: { details: EarlyCl
       <ShieldCheck aria-hidden="true" size={20} />
       <span>
         <strong>Notice acknowledged</strong>
-        You can try clocking in again at {formatDualTime(details.clockInEligibleAt, { timeZone: details.timeZone })}.
+        You can try clocking in again at {formatDualTime(details.clockInEligibleAt, {
+          includeTimeZoneName: true,
+          timeZone: personalDisplayTimeZone(details.employeeTimeZone ?? details.timeZone),
+        })}.
       </span>
     </div>
   )

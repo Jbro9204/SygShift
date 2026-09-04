@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EarlyClockInBlockedDetails } from '../data/timekeeping'
 import { EarlyClockInWarningDialog } from './EarlyClockInWarningDialog'
 
@@ -18,13 +18,24 @@ const details: EarlyClockInBlockedDetails = {
   locationName: 'MG Properties',
   coverageType: 'Unarmed coverage',
   timeZone: 'America/Denver',
+  employeeTimeZone: 'America/Chicago',
   clockInWindowMinutes: 5,
 }
 
 describe('EarlyClockInWarningDialog', () => {
   beforeEach(() => {
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      calendar: 'gregory',
+      locale: 'en-US',
+      numberingSystem: 'latn',
+      timeZone: 'America/Chicago',
+    })
     HTMLDialogElement.prototype.showModal = vi.fn(function showModal(this: HTMLDialogElement) { this.open = true })
     HTMLDialogElement.prototype.close = vi.fn(function close(this: HTMLDialogElement) { this.open = false })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('renders trusted timing and scheduled-shift details in the required alert dialog', () => {
@@ -32,11 +43,14 @@ describe('EarlyClockInWarningDialog', () => {
 
     expect(screen.getByRole('alertdialog', { name: 'Your shift hasn’t started yet' })).toBeInTheDocument()
     expect(screen.getByText('Your scheduled shift starts in 18 minutes.')).toBeInTheDocument()
-    expect(screen.getAllByText('5:55 PM (17:55)').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('Your current time · Central Time')).toBeInTheDocument()
+    expect(screen.getAllByText('6:55 PM (18:55) CDT').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('In 13 minutes')).toBeInTheDocument()
     expect(screen.getByText('MG Properties Patrol–Unarmed')).toBeInTheDocument()
     expect(screen.getByText('MPP · MG Properties · Unarmed coverage')).toBeInTheDocument()
-    expect(screen.getByText('Timing is based on trusted SygShift server time.')).toBeInTheDocument()
+    expect(screen.getByText(/Your schedule is shown in Central Time/)).toHaveTextContent(
+      'SygShift verified this attempt at 5:42 PM (17:42) MDT using trusted server time.',
+    )
     expect(screen.getByText('Acknowledging this notice will not clock you in.')).toBeInTheDocument()
   })
 

@@ -17,7 +17,7 @@ const home = readFileSync(join(root, 'src', 'pages', 'OverviewPage.tsx'), 'utf8'
 const myTime = readFileSync(join(root, 'src', 'pages', 'TimePage.tsx'), 'utf8')
 const workspace = readFileSync(join(root, 'src', 'time', 'TimeWorkspace.tsx'), 'utf8')
 const serverGuard = readFileSync(
-  join(root, 'supabase', 'migrations', '20260902194500_structured_early_clock_in_restriction.sql'),
+  join(root, 'supabase', 'migrations', '20260904122352_employee_local_early_clock_in_display.sql'),
   'utf8',
 )
 
@@ -36,6 +36,7 @@ const blockedResponse = {
   locationName: 'MG Properties',
   coverageType: 'Unarmed coverage',
   timeZone: 'America/Denver',
+  employeeTimeZone: 'America/Chicago',
   clockInWindowMinutes: 5,
 } as const
 
@@ -82,6 +83,7 @@ describe('production early clock-in restriction', () => {
     expect(serverGuard).toContain('if server_now < clock_in_eligible_at then')
     expect(serverGuard).toContain("'code', 'EARLY_CLOCK_IN_BLOCKED'")
     expect(serverGuard).toContain("'trustedServerTime', server_now")
+    expect(serverGuard).toContain("'employeeTimeZone', employee_time_zone")
     expect(serverGuard.indexOf("'code', 'EARLY_CLOCK_IN_BLOCKED'")).toBeLessThan(serverGuard.indexOf('insert into public.time_events'))
     expect(serverGuard).toContain("audit.occurred_at >= server_now - interval '30 seconds'")
   })
