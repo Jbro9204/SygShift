@@ -3,10 +3,10 @@ import { CalendarDays } from 'lucide-react'
 import { formatOperationalDate, formatTimeZoneClock } from '../lib/time'
 
 const OPERATIONAL_TIME_ZONES = [
-  { name: 'Eastern', operationalDefault: false, timeZone: 'America/New_York' },
-  { name: 'Central', operationalDefault: false, timeZone: 'America/Chicago' },
-  { name: 'Mountain', timeZone: 'America/Denver', operationalDefault: true },
   { name: 'Pacific', operationalDefault: false, timeZone: 'America/Los_Angeles' },
+  { name: 'Mountain', timeZone: 'America/Denver', operationalDefault: true },
+  { name: 'Central', operationalDefault: false, timeZone: 'America/Chicago' },
+  { name: 'Eastern', operationalDefault: false, timeZone: 'America/New_York' },
 ] as const
 
 type ClockAnchor = {

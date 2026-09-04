@@ -8,10 +8,10 @@ async function installHeaderFixture(page: import('@playwright/test').Page, colla
     const fixtureRoot = root.cloneNode(false) as HTMLElement
     root.replaceWith(fixtureRoot)
     const clocks = [
-      ['Eastern', 'EDT'],
-      ['Central', 'CDT'],
-      ['Mountain', 'MDT'],
       ['Pacific', 'PDT'],
+      ['Mountain', 'MDT'],
+      ['Central', 'CDT'],
+      ['Eastern', 'EDT'],
     ].map(([name, abbreviation]) => `
       <article aria-label="${name} time" class="operational-clock${name === 'Mountain' ? ' operational-clock--default' : ''}">
         <svg aria-hidden="true" class="operational-clock__face" viewBox="0 0 64 64">
@@ -71,6 +71,12 @@ for (const width of widths) {
     const clocks = page.locator('.operational-clock')
     await expect(clocks).toHaveCount(4)
     for (const clock of await clocks.all()) await expect(clock).toBeVisible()
+    await expect(page.locator('.operational-clock__zone')).toHaveText([
+      'Pacific · PDT',
+      'Mountain · MDT',
+      'Central · CDT',
+      'Eastern · EDT',
+    ])
 
     const gridColumns = await page.locator('.operational-time-zone-grid').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
     expect(gridColumns).toBe(width <= 900 ? 2 : 4)

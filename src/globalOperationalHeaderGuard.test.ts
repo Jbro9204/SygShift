@@ -26,14 +26,14 @@ describe('global operational time header guardrails', () => {
     expect(shell.match(/<OperationalTimeHeader/g)).toHaveLength(1)
   })
 
-  it('uses one cleaned-up timer and explicit IANA zones in the required order', () => {
+  it('uses one cleaned-up timer and explicit IANA zones in west-to-east order', () => {
     const eastern = header.indexOf('America/New_York')
     const central = header.indexOf('America/Chicago')
     const mountain = header.indexOf('America/Denver')
     const pacific = header.indexOf('America/Los_Angeles')
-    expect(eastern).toBeLessThan(central)
-    expect(central).toBeLessThan(mountain)
-    expect(mountain).toBeLessThan(pacific)
+    expect(pacific).toBeLessThan(mountain)
+    expect(mountain).toBeLessThan(central)
+    expect(central).toBeLessThan(eastern)
     expect(header.match(/window\.setInterval/g)).toHaveLength(1)
     expect(header).toContain('window.clearInterval(interval)')
     expect(header).toContain('United States operational time zones')
