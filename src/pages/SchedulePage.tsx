@@ -593,7 +593,7 @@ function ShiftCard({
       tabIndex={canEdit ? 0 : undefined}
       title={canEdit ? 'Edit this schedule block' : undefined}
     >
-      <div className="shift-card__heading">
+      <div className={shift.assignment_type === 'dispatch_phone_duty' ? 'shift-card__heading shift-card__heading--dispatch' : 'shift-card__heading'}>
         <strong>{shiftTimeRange(shift)}</strong>
         {shift.assignment_type === 'dispatch_phone_duty' ? <span className="shift-tag shift-tag--dispatch">Dispatch phone duty</span> : null}
         {shift.is_overtime ? <span className="shift-tag shift-tag--overtime">OT</span> : null}

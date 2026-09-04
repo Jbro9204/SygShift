@@ -12,6 +12,9 @@ export const ActionCenterPageRoute = lazy(() =>
 export const AccessControlPageRoute = lazy(() =>
   import('../pages/AccessControlPage').then((module) => ({ default: module.AccessControlPage })),
 )
+export const AdministrationAccessPageRoute = lazy(() =>
+  import('../pages/AdministrationAccessPage').then((module) => ({ default: module.AdministrationAccessPage })),
+)
 export const AnnouncementsPageRoute = lazy(() =>
   import('../pages/AnnouncementsPage').then((module) => ({ default: module.AnnouncementsPage })),
 )

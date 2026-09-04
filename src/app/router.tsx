@@ -7,6 +7,7 @@ import {
   MyDocumentsPageRoute,
   ActionCenterPageRoute,
   AccessControlPageRoute,
+  AdministrationAccessPageRoute,
   AnnouncementsPageRoute,
   AvailabilityPageRoute,
   ClientFilesPageRoute,
@@ -411,6 +412,22 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <PatrolPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'patrol/:patrolTab',
+        element: (
+          <RouteSuspense>
+            <PatrolPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'administration/access',
+        element: (
+          <RouteSuspense>
+            <AdministrationAccessPageRoute />
           </RouteSuspense>
         ),
       },

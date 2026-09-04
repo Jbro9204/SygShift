@@ -51,6 +51,20 @@ describe('central access policy', () => {
     expect(canAccessRoute('/time/accountability', session(['time.manage']))).toBe(false)
   })
 
+  it('routes each Patrol workspace tab through the protected Patrol policy', () => {
+    expect(canAccessRoute('/patrol/operations', session(['patrol.operations.view']))).toBe(true)
+    expect(canAccessRoute('/patrol/routes', session(['patrol.routes.manage']))).toBe(true)
+    expect(canAccessRoute('/patrol/operations', session([]))).toBe(false)
+  })
+
+  it('consolidates user and role administration without combining their permissions', () => {
+    expect(canAccessRoute('/administration/access', session(['admin.users.view']))).toBe(true)
+    expect(canAccessRoute('/administration/access', session(['admin.roles.view']))).toBe(true)
+    expect(canAccessRoute('/administration/access', session([]))).toBe(false)
+    expect(canAccessRoute('/access-control', session(['admin.users.view']))).toBe(false)
+    expect(canAccessRoute('/users', session(['admin.roles.view']))).toBe(false)
+  })
+
   it('keeps time workspace links aligned with their exact destination permissions', () => {
     const accountabilityOnly = session(['accountability.view'])
     expect(canAccessRoute('/time/accountability', accountabilityOnly)).toBe(true)

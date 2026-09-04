@@ -184,16 +184,10 @@ export const navigationGroups: NavigationGroup[] = [
     label: 'Administration',
     items: [
       {
-        label: 'User Accounts',
-        path: '/users',
+        label: 'Users & Roles',
+        path: '/administration/access',
         icon: UserCog,
-        permissions: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.password_reset', 'admin.users.separate', 'admin.users.delete'],
-      },
-      {
-        label: 'Roles & Permissions',
-        path: '/access-control',
-        icon: ShieldCheck,
-        permissions: ['admin.roles.view', 'admin.roles.manage'],
+        permissions: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.password_reset', 'admin.users.separate', 'admin.users.delete', 'admin.roles.view', 'admin.roles.manage'],
       },
       {
         label: 'System Operations',

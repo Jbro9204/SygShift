@@ -75,6 +75,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/clients': { anyOf: ['clients.view', 'clients.manage'] },
   '/clients/:clientId': { anyOf: ['clients.view', 'clients.manage'] },
   '/patrol': { anyOf: ['patrol.self.view', 'patrol.view', 'patrol.manage', 'patrol.operations.view', 'patrol.routes.manage'] },
+  '/patrol/:patrolTab': { anyOf: ['patrol.self.view', 'patrol.view', 'patrol.manage', 'patrol.operations.view', 'patrol.routes.manage'] },
   '/requests': { anyOf: ['requests.view', 'requests.manage'] },
   '/announcements': { anyOf: ['announcements.send', 'announcements.banner.manage'] },
   '/notifications': { anyOf: ['notifications.view', 'notifications.manage'] },
@@ -82,6 +83,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/reports/:reportKey': { anyOf: ['reports.view', 'time.reports.view', 'clients.activity.view'] },
   '/users': { anyOf: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.password_reset', 'admin.users.separate', 'admin.users.delete'] },
   '/access-control': { anyOf: ['admin.roles.view', 'admin.roles.manage'] },
+  '/administration/access': { anyOf: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.password_reset', 'admin.users.separate', 'admin.users.delete', 'admin.roles.view', 'admin.roles.manage'] },
   '/system-operations': { anyOf: ['admin.maintenance.manage'] },
 }
 
@@ -103,7 +105,9 @@ export function canAccessRoute(
   pathname: string,
   session: Pick<SessionContext, 'permissions'> | null | undefined,
 ): boolean {
-  const policyKey = pathname.startsWith('/reports/')
+  const policyKey = pathname.startsWith('/patrol/')
+    ? '/patrol/:patrolTab'
+    : pathname.startsWith('/reports/')
     ? '/reports/:reportKey'
     : pathname.startsWith('/clients/')
       ? '/clients/:clientId'

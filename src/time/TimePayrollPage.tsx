@@ -234,6 +234,8 @@ function PeriodControls({
   const selectedPeriod = { fromDate, throughDate }
   const lastCompleted = completedPayrollPeriod(undefined, periodRules)
   const activePeriod = currentPayrollPeriod(undefined, periodRules)
+  const currentSelected = fromDate === activePeriod.fromDate && throughDate === activePeriod.throughDate
+  const completedSelected = fromDate === lastCompleted.fromDate && throughDate === lastCompleted.throughDate
 
   return (
     <section className="time-card payroll-period-controls" aria-label="Payroll export date range">
@@ -270,8 +272,8 @@ function PeriodControls({
         </label>
       </div>
       <div className="payroll-period-controls__actions">
-        <TimeButton onClick={() => onChange(lastCompleted)} variant="primary">Last completed pay period</TimeButton>
-        <TimeButton onClick={() => onChange(activePeriod)} variant="secondary">Current open period</TimeButton>
+        <TimeButton aria-pressed={completedSelected} onClick={() => onChange(lastCompleted)} variant={completedSelected ? 'primary' : 'secondary'}>Last completed pay period</TimeButton>
+        <TimeButton aria-pressed={currentSelected} onClick={() => onChange(activePeriod)} variant={currentSelected ? 'primary' : 'secondary'}>Current open period</TimeButton>
         <TimeButton onClick={() => onChange(shiftPayrollPeriod(selectedPeriod, -1, periodRules))} variant="secondary">Previous period</TimeButton>
         <TimeButton onClick={() => onChange(shiftPayrollPeriod(selectedPeriod, 1, periodRules))} variant="secondary">Next period</TimeButton>
       </div>

@@ -5,7 +5,7 @@ import {
   DatabaseZap, Download, FileBarChart, MapPin, MapPinned, Plus, Route as RouteIcon, Search,
   Shield, ShieldAlert, UploadCloud, Video,
 } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import {
@@ -245,7 +245,9 @@ function Pagination({ page, pageSize, setPage, total }: { page: number, pageSize
 
 export function PatrolPage() {
   const queryClient = useQueryClient()
-  const [tab, setTab] = useState<PatrolTab>('overview')
+  const navigate = useNavigate()
+  const { patrolTab } = useParams<{ patrolTab?: string }>()
+  const requestedTab: PatrolTab = patrolTab === 'my-patrol' || patrolTab === 'operations' || patrolTab === 'routes' ? patrolTab : 'overview'
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<(typeof pageSizes)[number]>(10)
@@ -275,6 +277,10 @@ export function PatrolPage() {
   })
 
   const workspace = workspaceQuery.data
+  const tab: PatrolTab = (requestedTab === 'operations' && !workspace?.actor.canViewOperations)
+    || (requestedTab === 'routes' && !workspace?.actor.canManageRoutes)
+    ? 'overview'
+    : requestedTab
   const term = search.trim().toLowerCase()
   const filteredAssignments = useMemo(() => (workspace?.assignments ?? []).filter((assignment) => !term || `${assignment.routeName} ${assignment.employeeName} ${assignment.serviceDate}`.toLowerCase().includes(term)), [term, workspace?.assignments])
   const ownAssignments = filteredAssignments.filter((assignment) => assignment.employeeId === workspace?.actor.employeeId)
@@ -299,7 +305,11 @@ export function PatrolPage() {
   const missed = allObligations.filter((item) => item.status === 'missed').length
   const activeAssignments = workspace.assignments.filter((assignment) => assignment.status === 'active').length
 
-  const changeTab = (next: PatrolTab) => { setTab(next); setPage(1); setSearch('') }
+  const changeTab = (next: PatrolTab) => {
+    setPage(1)
+    setSearch('')
+    navigate(next === 'overview' ? '/patrol' : `/patrol/${next}`, { replace: true })
+  }
   return <div className="page page--patrol patrol-workspace">
     <section className="page-intro patrol-intro">
       <div><p className="eyebrow">Operations</p><h1>Patrol Command Center</h1><p className="page-summary">Run assigned patrols, document every hit, manage versioned routes, and report from one protected workspace.</p></div>

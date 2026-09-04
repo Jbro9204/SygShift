@@ -346,6 +346,7 @@ export function TimeExceptionsPage() {
   const safePendingPage = Math.min(pendingPage, pendingPageCount)
   const visiblePendingCorrections = matchedPendingCorrections.slice((safePendingPage - 1) * pageSize, safePendingPage * pageSize)
   const activePeriod = rulesQuery.data ? currentPayrollPeriod(undefined, rulesForPeriod(rulesQuery.data)) : currentPayrollPeriod()
+  const completedPeriod = completedPayrollPeriod(undefined, rulesForPeriod(rulesQuery.data))
   const previousPeriod = shiftPayrollPeriod({ fromDate }, -1, rulesForPeriod(rulesQuery.data))
   const totalPending = focusedPendingCorrections.length
   const totalExceptions = focusedEmployeeId
@@ -500,13 +501,13 @@ export function TimeExceptionsPage() {
           </label>
         </div>
         <div className="payroll-period-controls__actions">
-          <TimeButton onClick={() => setPeriod(completedPayrollPeriod(undefined, rulesForPeriod(rulesQuery.data)))} variant="primary">Last completed pay period</TimeButton>
-          <TimeButton onClick={() => setPeriod(activePeriod)} variant="secondary">Current open period</TimeButton>
+          <TimeButton aria-pressed={fromDate === completedPeriod.fromDate && throughDate === completedPeriod.throughDate} onClick={() => setPeriod(completedPeriod)} variant={fromDate === completedPeriod.fromDate && throughDate === completedPeriod.throughDate ? 'primary' : 'secondary'}>Last completed pay period</TimeButton>
+          <TimeButton aria-pressed={fromDate === activePeriod.fromDate && throughDate === activePeriod.throughDate} onClick={() => setPeriod(activePeriod)} variant={fromDate === activePeriod.fromDate && throughDate === activePeriod.throughDate ? 'primary' : 'secondary'}>Current open period</TimeButton>
           <TimeButton onClick={() => setPeriod(previousPeriod)} variant="secondary">Previous period</TimeButton>
         </div>
       </section>
 
-      <section className="time-command-grid" aria-label="Exception summary">
+      <section className="time-command-grid time-command-grid--exception-summary" aria-label="Exception summary">
         <TimeMetricCard detail="Worked rows currently blocking payroll readiness." icon={AlertTriangle} label="Blocked Rows" tone={totalExceptions > 0 ? 'danger' : 'good'} value={totalExceptions} />
         <TimeMetricCard detail="Employee correction requests waiting for action." icon={FileClock} label="Pending Requests" tone={totalPending > 0 ? 'warning' : 'good'} value={totalPending} />
         <TimeMetricCard detail="Unscheduled rows need Site/Post correction or a manual label." icon={ShieldAlert} label="Unscheduled" tone={countException(focusedRows, 'unscheduled') > 0 ? 'warning' : 'good'} value={countException(focusedRows, 'unscheduled')} />

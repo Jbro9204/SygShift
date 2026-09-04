@@ -33539,3 +33539,269 @@ button.patrol-overview-row:focus-visible {
   .client-detail-grid { grid-template-columns: 1fr; }
   .client-detail-grid--wide { grid-column: auto; }
 }
+
+/* 09/04/2026 cross-workspace interface cleanup */
+.shift-card__heading--dispatch {
+  display: grid;
+  justify-items: start;
+}
+
+.shift-card__heading--dispatch > strong {
+  width: 100%;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.shift-card__heading--dispatch .shift-tag--dispatch {
+  max-width: 100%;
+  min-height: 0;
+  line-height: 1.25;
+  text-align: left;
+  white-space: normal;
+}
+
+.modal-dialog > .client-form,
+.hr-file-editor-modal > form,
+.hr-employment-dates-modal > form,
+.modal-dialog > .supervisor-assignment-form,
+.document-studio-modal > .document-studio-form {
+  margin: 22px var(--presentation-gutter) var(--presentation-gutter);
+}
+
+.modal-dialog > .client-form .modal-actions,
+.hr-file-editor-modal > form .modal-actions,
+.hr-employment-dates-modal > form .modal-actions,
+.modal-dialog > .supervisor-assignment-form .modal-actions,
+.document-studio-modal > .document-studio-form .modal-actions {
+  margin-top: 4px;
+}
+
+.schedule-builder--modal .schedule-builder__form {
+  padding: 22px var(--presentation-gutter) var(--presentation-gutter);
+}
+
+.schedule-builder--modal .form-grid,
+.schedule-builder--modal .schedule-builder__form > label {
+  row-gap: 18px;
+}
+
+.time-command-grid--exception-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.time-workflow-form .time-request-summary {
+  padding: 16px;
+}
+
+.action-report {
+  min-height: 0;
+  padding: var(--presentation-panel-padding);
+}
+
+.action-report .section-heading {
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.action-report-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.action-report-grid article {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  background: light-dark(#fbfaf6, #171b1f);
+  border: 1px solid light-dark(#e3dccf, #33383d);
+  border-radius: 10px;
+}
+
+.action-report-grid article strong {
+  font-size: 24px;
+}
+
+.modal-dialog--directory-profile > .directory-profile-summary,
+.directory-profile-snapshot,
+.modal-dialog--directory-profile .directory-availability-panel {
+  margin-right: var(--presentation-gutter);
+  margin-left: var(--presentation-gutter);
+}
+
+.directory-profile-snapshot {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+.directory-profile-snapshot strong {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.site-manager-summary,
+.site-manager-actions,
+.site-danger-zone,
+.modal-dialog--site-manager > .inline-alert,
+.modal-dialog--site-manager > .modal-actions {
+  margin-right: var(--presentation-gutter);
+  margin-left: var(--presentation-gutter);
+}
+
+.client-filters .search-field {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 13px;
+  background: light-dark(#fff, #171b1f);
+  border: 1px solid light-dark(#cec3b3, #4b5055);
+  border-radius: 9px;
+}
+
+.client-filters .search-field input {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.client-filters .search-field:focus-within {
+  border-color: #b67b21;
+  box-shadow: 0 0 0 3px rgb(197 139 45 / 14%);
+}
+
+.payroll-readiness-card__body .time-button,
+.payroll-exception-list__item-actions .time-button--primary {
+  color: #1f1709;
+}
+
+.payroll-readiness-card__body .time-button {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.payroll-exception-list__items > article {
+  gap: 18px;
+  padding: 15px 16px;
+}
+
+.payroll-period-controls__actions .time-button[aria-pressed='true'] {
+  box-shadow: inset 0 -3px 0 rgb(102 67 16 / 36%), 0 0 0 2px light-dark(#fff, #171b1f), 0 0 0 4px #b88735;
+}
+
+.access-role-list {
+  padding-right: 7px;
+  scrollbar-width: thin;
+}
+
+.access-role-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.access-role-list .role-tile {
+  min-height: 88px;
+}
+
+.hr-people-pagination button,
+.hr-documents-pagination button,
+.hris-readiness-workspace .communications-pagination button,
+.page--sygshift-time .payroll-pagination .time-button {
+  min-width: 112px;
+  min-height: 44px;
+}
+
+.administration-access-page {
+  display: grid;
+  gap: 18px;
+}
+
+.administration-access-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.administration-access-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 132px;
+  padding: 22px;
+  color: var(--ink);
+  text-decoration: none;
+  background: light-dark(#fffdf9, #171b1f);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.administration-access-card:hover,
+.administration-access-card:focus-visible {
+  border-color: #b88735;
+  box-shadow: 0 14px 30px rgb(91 63 17 / 14%);
+  outline: 3px solid rgb(184 135 49 / 20%);
+}
+
+.administration-access-card > svg:first-child {
+  width: 46px;
+  height: 46px;
+  padding: 11px;
+  color: light-dark(#805817, #f1c76d);
+  background: light-dark(#f3e5c6, #3b2f1c);
+  border-radius: 12px;
+}
+
+.administration-access-card span {
+  display: grid;
+  gap: 6px;
+}
+
+.administration-access-card strong {
+  font-size: 20px;
+}
+
+.administration-access-card small {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+@media (max-width: 1100px) {
+  .time-command-grid--exception-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .modal-dialog > .client-form,
+  .hr-file-editor-modal > form,
+  .hr-employment-dates-modal > form,
+  .modal-dialog > .supervisor-assignment-form,
+  .document-studio-modal > .document-studio-form {
+    margin: 18px 16px 16px;
+  }
+
+  .time-command-grid--exception-summary,
+  .action-report-grid,
+  .administration-access-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-report .section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .action-report .section-heading .secondary-button,
+  .site-manager-actions > *,
+  .site-danger-zone > button {
+    width: 100%;
+  }
+}
