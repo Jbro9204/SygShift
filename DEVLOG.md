@@ -23,6 +23,18 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 09/04/2026
+
+### Employee-local early clock-in warning
+
+- Updated the required early clock-in alert dialog to show the employee/device time zone prominently for current time, clock-in eligibility, shift date, and scheduled start/end.
+- Kept Mountain SygShift server time visible only as a secondary verification reference; eligibility remains enforced against trusted database server time and cannot be bypassed by changing a device clock.
+- Added the employee's configured continental-US time zone to the structured database rejection as the safe fallback when a browser does not report a supported Eastern, Central, Mountain, or Pacific zone.
+- Preserved the existing five-minute clock-in window, non-dismissible acknowledgment, audit history, shift assignments, punches, and payroll behavior.
+- Full validation passed: TypeScript, zero-warning application lint, 163 test files / 785 tests, and both production builds.
+- Applied and verified migration `20260904122352_employee_local_early_clock_in_display.sql`, pushed implementation commit `5f4767c`, and deployed Cloudflare Worker version `a2b8dbb7-e970-4873-9b7f-9c62c23bb847`; primary and fallback URLs returned HTTP 200.
+- Full release evidence is recorded in `docs/changelogs/CHANGELOG_09-04-2026_EMPLOYEE_LOCAL_EARLY_CLOCK_IN.md`.
+
 ## 09/03/2026
 
 ### Scheduler Dispatch-overlap acknowledgement
