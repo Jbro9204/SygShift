@@ -42,6 +42,8 @@ Deployment is not complete until:
 6. `https://app.sygilant.us/api/v1/health` and `/api/v1/ready` return healthy responses.
 7. The changelog records what changed, what was tested, migration/deployment status, and any remaining limitation.
 
+Browser tests intentionally rebuild `dist` with blank browser connection settings. **Always run a fresh production `pnpm build` after the last browser test and immediately before `wrangler deploy`**, or use `pnpm deploy`, which rebuilds first. Never deploy the artifacts left by Playwright. Verify the live HTML references the production entry bundle and that an authenticated workspace loads after release.
+
 ## Timekeeping preservation gate for every release
 
 - Run the actual-component `tests/e2e/time-clock-workflow.spec.ts` checks even when the intended change is outside Timekeeping. A static markup fixture alone does not verify clock actions or the Early Clock-In popup.
