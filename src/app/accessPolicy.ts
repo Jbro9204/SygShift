@@ -78,7 +78,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/patrol/:patrolTab': { anyOf: ['patrol.self.view', 'patrol.view', 'patrol.manage', 'patrol.operations.view', 'patrol.routes.manage'] },
   '/requests': { anyOf: ['requests.view', 'requests.manage'] },
   '/announcements': { anyOf: ['announcements.send', 'announcements.banner.manage'] },
-  '/notifications': { anyOf: ['notifications.view', 'notifications.manage'] },
+  '/notifications': { anyOf: [] },
   '/reports': { anyOf: ['reports.view', 'time.reports.view', 'clients.activity.view'] },
   '/reports/:reportKey': { anyOf: ['reports.view', 'time.reports.view', 'clients.activity.view'] },
   '/users': { anyOf: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.password_reset', 'admin.users.separate', 'admin.users.delete'] },
@@ -116,6 +116,6 @@ export function canAccessRoute(
       ? '/hr/people/:employeeId'
       : pathname
   const policy = routeAccessPolicies[policyKey]
-  if (pathname === '/account' || pathname === '/account-security' || pathname === '/requests' || pathname === '/my-documents' || pathname === '/support') return Boolean(policy)
+  if (pathname === '/account' || pathname === '/account-security' || pathname === '/requests' || pathname === '/my-documents' || pathname === '/support' || pathname === '/notifications') return Boolean(policy)
   return policy ? hasAnyEffectivePermission(session, policy.anyOf) : false
 }

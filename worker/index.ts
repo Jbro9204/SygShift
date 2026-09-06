@@ -6246,6 +6246,42 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
     }
   }
 
+  const employeeNotificationJobs = await callRpc<NotificationJob[]>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_claim_employee_notification_batch',
+    { target_limit: limit },
+    config.serviceRoleKey,
+  )
+  for (const job of employeeNotificationJobs) {
+    try {
+      const recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
+      if (recipients.length === 0) throw new Error('No approved employee email is available for this notification.')
+      const delivery = await sendAuditedEmail(environment, recipients, job.message, {
+        notificationType: job.messageType ?? 'direct_employee_notification',
+        relatedRecordId: job.aggregateId ?? null,
+        relatedRecordType: 'employee_notification',
+      })
+      if (delivery.failed.length > 0) throw new Error(delivery.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
+      if (delivery.sent.length === 0) throw new Error('The notification email was suppressed by the active recipient safeguards.')
+      await callRpc<unknown>(
+        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        'service_mark_employee_notification_result',
+        { delivered: true, delivery_error: null, target_delivery_id: job.id },
+        config.serviceRoleKey,
+      )
+      delivered.push(job.id)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Notification email delivery failed.'
+      await callRpc<unknown>(
+        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        'service_mark_employee_notification_result',
+        { delivered: false, delivery_error: message, target_delivery_id: job.id },
+        config.serviceRoleKey,
+      )
+      failed.push({ id: job.id, error: message })
+    }
+  }
+
   return {
     delivered,
     failed,

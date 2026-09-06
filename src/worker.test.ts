@@ -225,6 +225,9 @@ describe('Cloudflare Worker boundary', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify([]), {
         headers: { 'content-type': 'application/json' },
       }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
     const send = vi.fn().mockResolvedValue({ messageId: 'welcome-message' })
     vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
@@ -619,6 +622,9 @@ describe('Cloudflare Worker boundary', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify([]), {
         headers: { 'content-type': 'application/json' },
       }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
     const emailSend = vi.fn().mockResolvedValue({ messageId: 'test-message' })
     vi.stubGlobal('fetch', withClearMaintenanceStatus(fetchMock))
 
@@ -676,6 +682,9 @@ describe('Cloudflare Worker boundary', () => {
         headers: { 'content-type': 'application/json' },
       }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
         headers: { 'content-type': 'application/json' },
       }))
       .mockResolvedValueOnce(new Response(JSON.stringify([]), {
@@ -761,6 +770,9 @@ describe('Cloudflare Worker boundary', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify([]), {
         headers: { 'content-type': 'application/json' },
       }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
+        headers: { 'content-type': 'application/json' },
+      }))
     const emailSend = vi.fn()
     let scheduledWork: Promise<unknown> | undefined
     vi.stubGlobal('fetch', fetchMock)
@@ -776,7 +788,7 @@ describe('Cloudflare Worker boundary', () => {
 
     expect(scheduledWork).toBeDefined()
     await scheduledWork
-    expect(fetchMock).toHaveBeenCalledTimes(8)
+    expect(fetchMock).toHaveBeenCalledTimes(9)
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/rpc/service_run_timekeeping_automation')
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/rpc/service_reconcile_operational_alert_lifecycle')
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/rpc/service_reconcile_patrol_obligations')
@@ -785,6 +797,7 @@ describe('Cloudflare Worker boundary', () => {
     expect(String(fetchMock.mock.calls[5]?.[0])).toContain('/rpc/service_claim_time_off_notification_batch')
     expect(String(fetchMock.mock.calls[6]?.[0])).toContain('/rpc/service_claim_notification_batch')
     expect(String(fetchMock.mock.calls[7]?.[0])).toContain('/rpc/service_claim_support_ticket_notification_batch')
+    expect(String(fetchMock.mock.calls[8]?.[0])).toContain('/rpc/service_claim_employee_notification_batch')
     const automationBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { target_job_run_id: string }
     const lifecycleBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as { target_full_reconciliation: boolean }
     expect(automationBody.target_job_run_id).toMatch(/^[a-f0-9-]{36}$/)

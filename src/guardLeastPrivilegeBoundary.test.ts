@@ -65,13 +65,13 @@ describe('Guard least-privilege boundary', () => {
       '/sites',
       '/patrol',
       '/announcements',
-      '/notifications',
       '/reports',
       '/users',
       '/access-control',
     ]) {
       expect(canAccessRoute(route, guardSession), route).toBe(false)
     }
+    expect(canAccessRoute('/notifications', guardSession)).toBe(true)
   })
 
   it('removes team-time and accountability creation from the system Guard role', () => {

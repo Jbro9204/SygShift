@@ -31,6 +31,7 @@ import { applyTheme, getCurrentTheme, type SygShiftTheme } from '../lib/theme'
 import { SystemStatusIndicator } from './SystemStatusIndicator'
 import { SupportHelpButton } from './SupportHelpButton'
 import { OperationalTimeHeader } from './OperationalTimeHeader'
+import { HeaderNotificationButton } from './HeaderNotificationButton'
 
 const INACTIVITY_WARNING_MS = 25 * 60 * 1000
 const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000
@@ -676,6 +677,8 @@ export function AppShell() {
                   <span><Moon aria-hidden="true" size={17} /></span>
                 </button>
               </div>
+              <span aria-hidden="true" className="user-menu__divider" />
+              <HeaderNotificationButton enabled={Boolean(sessionContext)} />
               <span aria-hidden="true" className="user-menu__divider" />
               <Link
                 aria-label={`Open My Account for ${accountSummary?.employment.legalName ?? sessionContext.displayName}`}

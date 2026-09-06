@@ -125,6 +125,15 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Tickets, messages, events, and notification records deny direct browser table access. Authenticated security-definer functions provide the only application boundary.
 - Binary attachments are release-gated until the support workflow can reuse the existing private, malware-scanned document pipeline.
 
+## Employee notification center
+
+- Every authenticated employee has a personal notification inbox. Inbox functions derive the recipient from the authenticated employee and never accept a recipient identity from browser input.
+- Support Ticket lifecycle notifications are mirrored into the personal inbox through an idempotent database trigger. New producers can use the same private notification creation boundary without opening table access to browser roles.
+- Read state and acknowledgment are distinct. Required messages remain actionable until explicitly acknowledged and cannot be dismissed beforehand.
+- Authorized senders select active employees, roles, or both. The database expands and deduplicates recipients; only Admin may choose the company-wide audience.
+- Recipient lookup and sending require the exact `notifications.manage` effective permission plus MFA. Employee inbox access itself remains available to every signed-in employee.
+- Direct notification email uses a separate delivery queue claimed only by the service worker. In-app delivery is immediate; email delivery is queued, retried, audited, and never misrepresented as complete before provider success.
+
 ## System status and release communication
 
 - The application shell shows every signed-in user one compact service state: Online, Attention Needed, or Service Disruption.

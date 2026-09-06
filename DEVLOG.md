@@ -1719,3 +1719,13 @@ pnpm exec wrangler deploy --keep-vars
 - Applied production migration `20260906125806_support_ticket_system.sql` from an isolated release history; no historical migration was replayed.
 - Full validation passed: type checking, zero-warning lint, 167 test files / 801 tests, production builds, and all 112 desktop/mobile Playwright checks.
 - Deployed Cloudflare Worker version `3769215d-8bf0-4226-950a-3ef84d2ce1c7`; production health, readiness, support-route, live-asset, and database-boundary checks all passed.
+
+## 09/06/2026 — Employee Notification Center and Ticket Layout Guardrail
+
+- Added a personal notification inbox and top-bar unread/urgent bell for every authenticated employee, with read, acknowledgment, related-action, filtering, and dismissal workflows.
+- Added MFA-protected direct messaging to active employees and roles, Admin-only company-wide delivery, review-before-send, optional required acknowledgment, and optional transactional email.
+- Mirrored Support Ticket lifecycle updates into the unified inbox and retained administrative delivery operations as a separate protected view.
+- Corrected Support Tickets search/status fields, removed the oversized empty-panel stretch, and added compact 58-pixel pagination.
+- Slightly tightened clock spacing and increased the date size while preserving all four time zones, Mountain system-time highlighting, clock order, and the dual 12/24-hour display.
+- Applied production migrations `20260906133034_employee_notification_center.sql` and `20260906140000_employee_notification_composer_title_fix.sql` after isolated single-migration previews. Production schema lint confirmed the repaired composer function is valid.
+- Full validation passed: type checking, zero-warning lint, 168 test files / 805 tests, production builds, and all 116 desktop/mobile Playwright checks.

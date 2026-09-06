@@ -55,6 +55,15 @@
 - Ticket email jobs expose only the minimum recipient and message envelope to the service worker. User-authored content is supplied as plain text to the branded renderer.
 - Direct ticket attachments are disabled in the initial release. Future attachments must use private object storage, signature and size validation, malware scanning, audited access, and expiring delivery through the existing document-security boundary.
 
+## Employee notification protection
+
+- Personal notification, campaign, and delivery tables enforce row-level security and revoke direct anonymous and authenticated table access. Narrow authenticated functions are the application boundary.
+- Inbox functions resolve the employee from the authenticated account and limit read, acknowledge, and dismiss operations to that employee's records.
+- Notification sending and recipient discovery require `notifications.manage` plus MFA. Company-wide sends require Admin even when another role holds notification-management permission.
+- Employee and role selections are expanded from active database records and deduplicated server-side. Browser-provided sender identities, recipient counts, timestamps, and delivery status are not trusted.
+- Required acknowledgment is persistent and audited; a required item cannot be dismissed before acknowledgment.
+- Email delivery uses plain-text message input, personal-first recipient selection, existing blocked-domain safeguards, bounded retry, and audited provider results. Direct notification content must not contain passwords, Social Security numbers, banking details, medical information, or other unnecessary restricted data.
+
 ## Hardware security keys
 
 - FIDO2/WebAuthn security keys are an optional phishing-resistant MFA factor. They never replace the account password and never create password-only access.
