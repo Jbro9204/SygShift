@@ -1819,3 +1819,12 @@ pnpm exec wrangler deploy --keep-vars
 - Applied forward migration `20260906190358` after rollback-only lifecycle, private-channel authorization, and function-lint checks. No test operational records or employee messages were committed.
 - Final release checks: 874 tests across 180 files; all 182 desktop/mobile browser checks, including 38 actual clock workflow regressions; no error-level security advisor findings.
 - See `docs/changelogs/CHANGELOG_09-06-2026_LIVE_NOTIFICATIONS_AND_SOUNDS.md` for configuration, instructions, browser limits, and final production deployment verification.
+
+## 09/06/2026 — HR System v2.1 PDF and Training Rollout
+
+- Prepared 537 canonical PDFs from the supplied HR System v2.1 package, retained the stronger GS-HR-101 version, and found no other exact duplicates.
+- Corrected inherited Word table-width defects during PDF conversion without changing the source files; all 537 final PDFs passed full-page readability and boundary QA.
+- Added the searchable protected HR library, training-module catalog, secure Preview/Download actions, assigned-employee training access, and a checksum-verified five-stage importer.
+- Applied and verified forward migration `20260906203000_hr_system_v21_library_and_training.sql` and deployed Worker `e4740b5c-7ae2-4910-b7dd-f3d56a413992` from commit `d3bead8`.
+- Full project checks passed 181 files / 879 tests; 52 desktop/mobile browser regressions passed, including the actual Time Clock workflow.
+- Health, readiness, current live assets, authenticated FIDO access, and the empty pre-import production baseline passed. The 537-file production content import is pending only the Chrome extension's local-file access permission; no partial v2.1 import occurred.
