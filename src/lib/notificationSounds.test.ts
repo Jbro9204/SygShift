@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 
 describe('sound lifecycle', () => {
   const started = vi.fn()
@@ -19,6 +21,20 @@ describe('sound lifecycle', () => {
     sound.beginLoginSound('alex'); expect(started).not.toHaveBeenCalled()
     await sound.completeLoginSound('alex'); expect(started).toHaveBeenCalledTimes(1)
     await sound.completeLoginSound('alex'); expect(started).toHaveBeenCalledTimes(1)
+  })
+  it('uses the replacement notification asset while keeping the original login sound', async () => {
+    const sound = await import('./notificationSounds')
+    await sound.enableAudio()
+    await sound.playSound('notification', true)
+    expect(fetch).toHaveBeenLastCalledWith('/sounds/SygShift_Notification_53571d7e.mp3')
+    await sound.playSound('login', true)
+    expect(fetch).toHaveBeenLastCalledWith('/sounds/SygShift_Login.mp3')
+    for (const [name, expected] of [
+      ['SygShift_Notification_53571d7e.mp3', '53571d7efae8ce122d8059b3522a237a1a59e2bff2ba6011bf49193c09c0a215'],
+      ['SygShift_Login.mp3', 'f39b512b6b8dbe498283853368513f11211e0a1a3fca38acdcea9de04caf9256'],
+    ]) {
+      expect(createHash('sha256').update(readFileSync(`public/sounds/${name}`)).digest('hex')).toBe(expected)
+    }
   })
   it('does not play on failed or mismatched sign-in', async () => {
     const sound = await import('./notificationSounds')

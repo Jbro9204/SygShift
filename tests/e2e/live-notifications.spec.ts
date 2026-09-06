@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
+import { createHash } from 'node:crypto'
 const fixture = 'http://127.0.0.1:4187/tests/fixtures/live-ui.html'
 async function setup(page: Page) {
   await page.route('**/*', (route) => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
@@ -16,6 +17,27 @@ async function setup(page: Page) {
     Reflect.set(window, 'AudioContext', AudioContextFixture)
   })
 }
+
+test('native audio decodes the replacement notification file and unchanged login file', async ({ page }) => {
+  // Use the real browser audio engine, isolated data, and local MP3s; no test messages leave the fixture.
+  await page.route('**/*', (route) => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
+  await page.getByText('Sounds & device notifications', { exact: true }).click()
+  for (const [kind, asset, hash] of [
+    ['notification', 'SygShift_Notification_53571d7e.mp3', '53571d7efae8ce122d8059b3522a237a1a59e2bff2ba6011bf49193c09c0a215'],
+    ['login', 'SygShift_Login.mp3', 'f39b512b6b8dbe498283853368513f11211e0a1a3fca38acdcea9de04caf9256'],
+  ]) {
+    const response = page.waitForResponse((item) => new URL(item.url()).pathname === `/sounds/${asset}`)
+    const button = page.getByRole('button', { name: `Test ${kind} sound`, exact: true })
+    await button.click()
+    const audio = await response
+    expect(audio.ok()).toBe(true)
+    expect(audio.headers()['content-type']).toContain('audio/mpeg')
+    expect(createHash('sha256').update(await audio.body()).digest('hex')).toBe(hash)
+    await expect(button).toBeEnabled()
+    await expect(page.getByText('Test sound played.', { exact: false })).toBeVisible()
+  }
+})
 
 test('two roles see live replies and resolved status without losing a draft', async ({ page, context }) => {
   const scope = crypto.randomUUID()

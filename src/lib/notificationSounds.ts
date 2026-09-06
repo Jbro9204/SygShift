@@ -43,7 +43,7 @@ export async function playSound(kind: 'login' | 'notification', test = false): P
   if (!test && kind === 'notification' && Date.now() - lastNotificationSound < 2500) return true
   try {
     const audio = context
-    const path = `/sounds/SygShift_${kind === 'login' ? 'Login' : 'Notification'}.mp3`
+    const path = kind === 'login' ? '/sounds/SygShift_Login.mp3' : '/sounds/SygShift_Notification_53571d7e.mp3'
     if (!buffers.has(path)) buffers.set(path, fetch(path).then((response) => {
       if (!response.ok) throw new Error('Sound unavailable')
       return response.arrayBuffer()

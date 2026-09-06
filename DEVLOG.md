@@ -1,5 +1,11 @@
 # SygShift Development Log
 
+## 09/06/2026 — Notification Sound Replacement
+
+- Replaced the in-app notification tone with the exact supplied MP3 using a content-versioned asset URL to avoid stale browser audio caches.
+- Preserved the login audio, sound preferences, mute/volume, duplicate suppression, background delivery, and all other workflows.
+- Added asset-identity and native browser decoding/playback checks. Release evidence: `docs/changelogs/CHANGELOG_09-06-2026_NOTIFICATION_SOUND_REPLACEMENT.md`.
+
 ## 09/06/2026 — Notification Composer Layout Repair
 
 - Corrected native square fields, monospace message entry, stretched checkboxes, inconsistent gutters, search-icon spacing, and long employee-title containment in the notification composer.
