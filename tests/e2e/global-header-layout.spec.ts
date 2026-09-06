@@ -96,6 +96,26 @@ for (const width of widths) {
     expect(clockTextSize).toBeGreaterThanOrEqual(width <= 680 ? 13 : 14)
     expect(zoneTextSize).toBeGreaterThanOrEqual(12.5)
     expect(clockFaceSize).toBeGreaterThanOrEqual(width <= 680 ? 35 : width <= 1280 ? 36 : 38)
+    const highlight = await page.locator('.operational-clock--default').evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const face = element.querySelector('.operational-clock__face')!.getBoundingClientRect()
+      const details = element.querySelector('.operational-clock__details')!.getBoundingClientRect()
+      const contents = [...element.querySelectorAll('.operational-clock__details > *')].map((child) => child.getBoundingClientRect())
+      return { left: face.left - box.left, right: box.right - Math.max(...contents.map((child) => child.right)),
+        top: details.top - box.top, bottom: box.bottom - details.bottom }
+    })
+    expect(highlight.left).toBeGreaterThanOrEqual(width <= 680 ? 5 : 9)
+    expect(highlight.right).toBeGreaterThanOrEqual(width <= 680 ? 4 : 8)
+    expect(highlight.top).toBeGreaterThanOrEqual(7)
+    expect(highlight.bottom).toBeGreaterThanOrEqual(7)
+    const clockBoxes = await clocks.evaluateAll((elements) => elements.map((element) => {
+      const box = element.getBoundingClientRect()
+      return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }
+    }))
+    for (let index = 1; index < clockBoxes.length; index += 1) {
+      const previous = clockBoxes[index - 1], current = clockBoxes[index]
+      if (current.top < previous.bottom) expect(current.left - previous.right).toBeGreaterThanOrEqual(1)
+    }
     const alertCopyClipped = await page.locator('.workspace-alert-strip__ticker').evaluate((element) => element.scrollWidth > element.clientWidth + 1)
     expect(alertCopyClipped).toBe(false)
     const viewportWidth = page.viewportSize()!.width
@@ -154,6 +174,7 @@ test('light and dark selections expose state without relying on color', async ({
   })
   const canvasColor = await page.locator('html').evaluate((element) => getComputedStyle(element).backgroundColor)
   expect(canvasColor).toBe('rgb(13, 16, 19)')
+
 
   const accessibility = await new AxeBuilder({ page }).analyze()
   expect(accessibility.violations).toEqual([])

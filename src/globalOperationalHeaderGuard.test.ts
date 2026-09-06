@@ -62,7 +62,8 @@ describe('global operational time header guardrails', () => {
   it('keeps four compact clocks in the integrated top bar and places an inset alert below', () => {
     expect(header).toContain('<section aria-label="United States operational time zones"')
     expect(header.indexOf('className="topbar"')).toBeLessThan(header.indexOf('operational-time-zone-strip'))
-    expect(css).toContain('grid-template-columns: repeat(4, minmax(0, 1fr))')
+    expect(css).toContain('grid-template-columns: minmax(0, 1fr) minmax(max-content, 1fr) repeat(2, minmax(0, 1fr))')
+    expect(css).toContain('.operational-clock.operational-clock--default {\n  width: max-content;\n  padding: 7px 8px;')
     expect(css).toContain('grid-template-columns: 38px minmax(0, 1fr)')
     expect(css).toContain('font-size: 14px')
     expect(css).toContain('font-size: 12.5px')

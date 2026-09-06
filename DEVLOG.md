@@ -1,5 +1,11 @@
 # SygShift Development Log
 
+## 09/06/2026 — System Clock Highlight Cushioning
+
+- Added subtle responsive padding inside the highlighted Mountain/System time clock without changing its fonts, clock face, text, order, or timing behavior.
+- Reserved sufficient width for the highlight and used the established constrained-header layout on laptop widths to prevent crowding.
+- Runtime changes are CSS-only. Verification and release evidence: `docs/changelogs/CHANGELOG_09-06-2026_SYSTEM_CLOCK_CUSHIONING.md`.
+
 ## 09/06/2026 — Notification Sound Replacement
 
 - Replaced the in-app notification tone with the exact supplied MP3 using a content-versioned asset URL to avoid stale browser audio caches.

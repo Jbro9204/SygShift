@@ -10250,7 +10250,7 @@ a.home-metric-card:focus-visible {
 .operational-time-zone-grid {
   display: grid;
   min-width: 620px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(max-content, 1fr) repeat(2, minmax(0, 1fr));
   align-items: center;
   gap: 2px;
 }
@@ -10272,7 +10272,9 @@ a.home-metric-card:focus-visible {
   text-align: left;
 }
 
-.operational-clock--default {
+.operational-clock.operational-clock--default {
+  width: max-content;
+  padding: 7px 8px;
   background: light-dark(#fff5df, #342817);
   border-color: light-dark(#e4c681, #806026);
 }
@@ -10557,22 +10559,39 @@ a.home-metric-card:focus-visible {
 
 @media (max-width: 1280px) {
   .topbar {
-    gap: 8px;
-    padding-right: 16px;
-    padding-left: 16px;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    min-height: 0;
+    gap: 6px 8px;
+    padding: 7px 16px 8px;
   }
 
   .topbar .user-profile-control__copy {
     display: none;
   }
 
-  .topbar-date,
+  .topbar-date {
+    min-height: 42px;
+    padding: 0;
+    border-right: 0;
+  }
+
+  .topbar .user-menu {
+    grid-column: 2;
+    justify-content: flex-end;
+  }
+
   .operational-time-zone-strip {
-    padding-right: 8px;
+    grid-row: 2;
+    grid-column: 1 / -1;
+    width: 100%;
+    overflow-x: visible;
+    padding: 6px 0 0;
+    border-top: 1px solid var(--line);
+    border-right: 0;
   }
 
   .operational-time-zone-grid {
-    min-width: 600px;
+    min-width: 0;
   }
 
   .operational-clock {
@@ -10586,6 +10605,10 @@ a.home-metric-card:focus-visible {
   .operational-clock__face {
     width: 36px;
     height: 36px;
+  }
+
+  .payroll-export-reminder {
+    top: 124px;
   }
 }
 
@@ -17886,6 +17909,12 @@ a.home-metric-card:focus-visible {
 
   .operational-clock__digital {
     font-size: 13px;
+  }
+
+  .operational-clock.operational-clock--default {
+    width: max-content;
+    min-width: 100%;
+    padding: 6px 4px;
   }
 
   .payroll-export-reminder {
