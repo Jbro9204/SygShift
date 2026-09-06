@@ -144,6 +144,8 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Lifecycle events queue both in-app and email notifications. The existing Worker notification processor claims, sends, audits, retries, and records delivery outcomes.
 - Tickets, messages, events, and notification records deny direct browser table access. Authenticated security-definer functions provide the only application boundary.
 - Binary attachments are release-gated until the support workflow can reuse the existing private, malware-scanned document pipeline.
+- Opening requests have a browser-generated submission key and database retry lock; lifecycle notification deduplication is by event and recipient, independent of requester/handler overlap. No-op saves do not create events, and automatic reply/status changes share one notification. Ticket delivery claims hold a bounded lease.
+- Resolved is the only completion status. Legacy Closed state normalizes without deleting closure evidence; a requester reply reopens a resolved ticket. Open-queue filters exclude completed tickets, and ticket reads synchronize the unified personal inbox.
 
 ## Employee notification center
 

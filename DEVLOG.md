@@ -1769,3 +1769,9 @@ pnpm exec wrangler deploy --keep-vars
 - Full validation passed: type checking, zero-warning lint, 171 test files / 821 tests, production builds, and all 118 desktop/mobile Playwright checks.
 - Applied production migrations `20260906154620_dispatch_primary_shift_timekeeping.sql` and `20260906160934_repair_dispatch_scheduler_composite_loads.sql`. Michael's four published Dispatch shifts are standard paid shifts, his authenticated Timekeeping dashboard exposes the current shift, and no historical punch was added or changed.
 - Deployed Cloudflare Worker version `37594341-ffdd-4b28-96eb-b992c31bc8a2`; production health, readiness, `/schedule`, and live release assets passed verification.
+## 09/06/2026 — Support Ticket Lifecycle and Interface Refinement
+
+- Removed misleading unchanged-status emails, deduplicated event recipients and opening retries, synchronized ticket/inbox reads, and added a ticket-email delivery claim lease.
+- Consolidated completion into Resolved while preserving existing statuses, original messages, closure timestamps, and event history. Open tickets now excludes resolved requests.
+- Rebuilt the intake spacing, rounded controls, current-step/lifecycle progress, conversation typography, and compact mobile pagination. Fixed premature submission when entering Review and exposed management errors.
+- Rolled-back database regressions and function lint passed; browser regression suite passed 132 checks. See the dated support refinement changelog for final migration, build, deployment, and live-verification evidence.

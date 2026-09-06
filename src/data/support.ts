@@ -13,7 +13,7 @@ const personSchema = z.object({ id: z.string().uuid(), name: z.string() })
 const ticketListSchema = z.object({
   id: z.string().uuid(), ticketNumber: z.string(), subject: z.string(),
   category: z.enum(supportCategories), subcategory: z.string(),
-  status: z.enum(['new', 'assigned', 'in_progress', 'waiting_on_employee', 'resolved', 'closed', 'reopened']),
+  status: z.enum(['new', 'assigned', 'in_progress', 'waiting_on_employee', 'resolved', 'closed', 'reopened']).transform((status) => status === 'closed' ? 'resolved' as const : status),
   priority: z.enum(['low', 'normal', 'high', 'urgent']), confidential: z.boolean(),
   submittedBy: personSchema, assignedTo: personSchema.nullable(), createdAt: z.string(), updatedAt: z.string(),
 })
@@ -46,6 +46,7 @@ function supportError(error: { message?: string } | null, fallback: string): nev
 }
 
 export async function submitSupportTicket(input: {
+  requestId: string
   category: SupportCategory
   subcategory: string
   subject: string

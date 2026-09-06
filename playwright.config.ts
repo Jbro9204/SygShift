@@ -23,7 +23,7 @@ export default defineConfig({
     baseURL: e2eBaseUrl,
     trace: 'on-first-retry',
   },
-  webServer: {
+  webServer: [{
     command: `pnpm build && node tools/e2e-static-server.mjs ${e2ePort}`,
     env: {
       VITE_SUPABASE_URL: '',
@@ -31,6 +31,10 @@ export default defineConfig({
     },
     reuseExistingServer: false,
     url: e2eBaseUrl,
-  },
+  }, {
+    command: 'pnpm exec vite --config tests/fixtures/support-vite.config.ts',
+    url: 'http://127.0.0.1:4185/tests/fixtures/support-ui.html',
+    reuseExistingServer: false,
+  }],
   projects: browserProjects,
 })
