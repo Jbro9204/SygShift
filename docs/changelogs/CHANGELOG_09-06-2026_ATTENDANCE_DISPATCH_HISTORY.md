@@ -22,10 +22,15 @@ Date: 09/06/2026
 - Linked production rehearsal, fully rolled back: report/source parity, preserved decisions, export audit, classification audit, duplicate protection through both backend APIs, standalone historical Dispatch clock-in/automatic clock-out, paired manual entry, revision-aware automation, employee-only three-period reads, unauthorized access denials. No test shift, punch, notification, or classification was retained.
 - Database function lint: zero errors or warnings for all new PL/pgSQL functions and the amended automation function.
 - New regression tests cover actual My Time selection, current-day metric isolation, report filters and all-pages exports, factual versus decision totals, historical employee inclusion, CSV safety, Excel archive contents, and protected migration boundaries.
-- Existing desktop/mobile browser suite: 118 passed.
+- Existing desktop/mobile browser suite: 118 passed. Added four passing light/dark desktop/mobile regression checks for full-width attendance filters, compact pagination, and the pay-period selector (122 browser checks total).
 - `pnpm check` passed: typecheck, zero-warning lint, 175 test files / 833 tests, and production build.
 - All three forward migrations applied successfully in one transaction. Preservation hashes/counts verified unchanged: 1,004 punches, 258 corrections, 3 payroll export batches / 13 export rows, 78 employees, 68 employee accounts, 30,882 assignments, and 7 payroll batch assignments.
-- Git push, Worker deployment, and authenticated live verification: pending release completion.
+- All three migration versions are recorded as applied in linked production history.
+- Application commits `e8fbfdd` and `1021137` pushed to `origin/main`. The second commit corrects an inherited report-grid width found during authenticated visual inspection.
+- Final Cloudflare Worker version: `67b47a52-5115-4c82-b7fd-43fc6d10b8de`. Health returned `status: ok`; readiness returned `ready: true` with all checks true.
+- Authenticated live checks: tracker shows three recorded absences and two late arrivals among six documented/corrected records; employee team totals agree. Attendance Excel and CSV exports each completed with six matching records and server audit entries. My Time loaded both prior periods, preserved current metrics, and rendered the period selector in the 390-pixel phone layout. Report filters were visually checked after the width correction; light/dark responsive regression tests passed.
+- Post-application database runtime tests passed again in a rolled-back transaction. Latest three live automation runs completed with no failures and no new missing-clock-in records.
+- Repository and Desktop release notes synchronized after final verification. No test shifts, punches, classifications, or notification queues retained.
 
 ## Operational instructions
 
