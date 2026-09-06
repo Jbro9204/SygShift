@@ -26,6 +26,13 @@ describe('HRIS Stage 4 protected document pipeline', () => {
       .toThrow('PDF files with scripts, launch actions, or embedded content are not allowed.')
   })
 
+  it('does not mistake compressed PDF stream bytes for active object directives', () => {
+    const safePdf = encoder.encode('%PDF-1.7\n1 0 obj << /Length 14 >>\nstream\nrandom/JS data\nendstream\nendobj')
+
+    expect(validateHrDocumentFile(safePdf, 'safe.pdf', 'application/pdf').detectedMimeType)
+      .toBe('application/pdf')
+  })
+
   it('rejects Office files with macros, embedded objects, or external relationships', () => {
     const macroDocument = zipSync({
       'word/document.xml': strToU8('<document/>'),

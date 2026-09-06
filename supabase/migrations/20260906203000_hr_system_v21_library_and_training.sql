@@ -91,8 +91,8 @@ as $$
 declare
   effective_permissions text[];
   library_id uuid;
-  course_id uuid;
-  version_id uuid;
+  registered_course_id uuid;
+  registered_version_id uuid;
   latest_version integer;
   normalized_learning_code text := lower(replace(target_code, '-', '_'));
 begin
@@ -150,23 +150,23 @@ begin
     insert into public.training_courses(code,title,description,active,created_by)
     values (target_code,btrim(target_title),btrim(target_purpose),true,target_actor_id)
     on conflict(code) do update set title=excluded.title,description=excluded.description,active=true,updated_at=clock_timestamp()
-    returning id into course_id;
+    returning id into registered_course_id;
 
-    select version.id into version_id from public.training_course_versions version
-    where version.course_id=course_id and version.content_digest=target_source_sha256
+    select version.id into registered_version_id from public.training_course_versions version
+    where version.course_id=registered_course_id and version.content_digest=target_source_sha256
     order by version.version_number desc limit 1;
-    if version_id is null then
+    if registered_version_id is null then
       select coalesce(max(version.version_number),0) into latest_version
-      from public.training_course_versions version where version.course_id=course_id;
+      from public.training_course_versions version where version.course_id=registered_course_id;
       insert into public.training_course_versions(
         course_id,version_number,title,description,content_type,content_url,instructions,effective_on,
         default_due_days,completion_rule,requires_acknowledgment,content_digest,published_by,source_document_id
       ) values (
-        course_id,latest_version+1,btrim(target_title),btrim(target_purpose),'document',
+        registered_course_id,latest_version+1,btrim(target_title),btrim(target_purpose),'document',
         '/api/v1/training/documents/'||target_document_id::text,
         'Open the assigned PDF, complete the material, and attest to completion in Action Center.',
         current_date,14,'employee_attestation',true,target_source_sha256,target_actor_id,target_document_id
-      ) returning id into version_id;
+      ) returning id into registered_version_id;
     end if;
   end if;
 
@@ -176,7 +176,7 @@ begin
     jsonb_build_object('libraryItemId',library_id,'code',target_code,'kind',target_document_kind)
   from private.hr_documents document where document.id=target_document_id;
 
-  return jsonb_build_object('libraryItemId',library_id,'documentId',target_document_id,'trainingCourseId',course_id,'trainingVersionId',version_id);
+  return jsonb_build_object('libraryItemId',library_id,'documentId',target_document_id,'trainingCourseId',registered_course_id,'trainingVersionId',registered_version_id);
 end
 $$;
 

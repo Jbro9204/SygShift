@@ -31,14 +31,23 @@ SygShift now has a controlled, resumable release path for the complete Guardians
 ## Database
 
 - Applied targeted forward migration `20260906203000_hr_system_v21_library_and_training.sql` to the linked production project.
+- Applied corrective forward migration `20260906234500_hr_system_training_registration_variable_resolution.sql` before the first training-module registration and reconciled both migrations in production history.
 - Verified library version `2.1`, expanded library columns, training-document linkage, and registration RPC availability.
 - The migration does not modify employee roles, permission assignments, timekeeping, payroll, schedules, or existing training assignments.
 
 ## Verification
 
-- `pnpm check`: passed TypeScript, zero-warning lint, 181 test files / 879 tests, and production builds.
+- `pnpm check`: passed TypeScript, zero-warning lint, 181 test files / 881 tests before the production import; the final post-rollout gate is recorded below.
 - PDF structural validation: 537/537 canonical PDFs readable with recorded page count, byte size, SHA-256 digest, and extracted search text.
 - Visual PDF QA identified inherited wide-table margin defects before release; the converter was corrected to fit every top-level Word table to its section's usable page width, the package was regenerated, and all 537 final PDFs passed full-page boundary QA.
 - Browser regressions: 52/52 passed across desktop and mobile, covering the actual Time Clock workflow, forced early-clock acknowledgment, Document Studio and HR Library light/dark layouts, and Action Center history.
-- Cloudflare Worker `e4740b5c-7ae2-4910-b7dd-f3d56a413992` is deployed. Primary health and readiness are green, the live entry bundle is current, the new HR/training assets return HTTP 200, and the authenticated FIDO-protected Document Studio opens correctly.
-- Final production content import remains pending because Chrome blocked the authorized local file handoff until the ChatGPT browser extension is granted **Allow access to file URLs**. No package document was partially imported; production reconciliation remains 0/537 v2.1 items and 0 linked training versions.
+- Replaced the browser-dependent bulk release with a one-time administrative rollout channel after browser control interrupted the first attempt. The channel used a random ephemeral secret, a fixed Jordan Brown audit identity, exact package-version and checksum validation, the existing private quarantine/storage pipeline, deterministic idempotency, and automatic secret deletion after every run.
+- Corrected a PDF active-content false positive caused by scanning arbitrary compressed font/image stream bytes for `/JS`; structural PDF objects remain blocked for JavaScript, launch actions, embedded files, open actions, additional actions, and rich media, while ClamAV continues to inspect the complete original binary.
+- Corrected the training registration function's ambiguous `course_id` variable/column reference before releasing any training module.
+- Production reconciliation is exact: 537 library rows, 537 unique codes, 537 unique SHA-256 checksums, zero missing protected-document links, and stage counts of 231 HR sources, 10 training-administration records, 52 training modules, 232 document guides, and 12 training forms.
+- Training reconciliation is exact at 52 courses and 52 protected document-backed versions. No employee training assignments were created automatically.
+- The one-time rollout secret was deleted immediately after the 537th registration. Normal Document Studio navigation, route, Worker, database, permission, and recent-MFA controls remain unchanged.
+- ClamAV reconciliation completed at 537 clean, zero pending, zero rejected, and zero scan-error package documents.
+- All 537 records contain searchable extracted text and remain `Draft for Company Adoption` pending management adoption.
+- Final `pnpm check` passed TypeScript, zero-warning lint, 181 test files / 883 tests, and both production builds.
+- Deployed Cloudflare Worker `3a1bcd9a-063e-4d2e-a0b1-7b1aab7e97ac`; health and readiness are green, the rollout endpoint returns 503 while its ephemeral secret is absent, and Cloudflare contains no persistent `SYGSHIFT_HR_ROLLOUT_SECRET`.

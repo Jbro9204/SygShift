@@ -12,6 +12,8 @@ const studio = readFileSync('src/components/DocumentStudioDashboard.tsx', 'utf8'
 const rollout = readFileSync('src/components/HrSystemRolloutPanel.tsx', 'utf8')
 const importer = readFileSync('src/data/hrSystemImport.ts', 'utf8')
 const packageBuilder = readFileSync('tools/hr-system-rollout/build-manifest.py', 'utf8')
+const secureRollout = readFileSync('tools/hr-system-rollout/run-secure-rollout.mjs', 'utf8')
+const wrangler = readFileSync('wrangler.jsonc', 'utf8')
 const navigation = readFileSync('src/app/navigation.ts', 'utf8')
 const accessBoundary = readFileSync('supabase/migrations/20260903020750_restrict_document_studio_to_hr.sql', 'utf8')
 
@@ -88,5 +90,15 @@ describe('searchable HR document library', () => {
     expect(packageBuilder).toContain('"audience": "hr_only"')
     expect(packageBuilder).toContain('"sensitivity": "confidential"')
     expect(packageBuilder).toContain('"vaultCode": "hr-general"')
+  })
+
+  it('keeps bulk production rollout resumable, audited, and disabled without an ephemeral secret', () => {
+    expect(worker).toContain('constantTimeSecretMatches(provided, expected)')
+    expect(worker).toContain("x-sygshift-hr-rollout-version")
+    expect(worker).toContain("'/api/v1/internal/hr-system-rollout/upload'")
+    expect(secureRollout).toContain("createHash('sha256')")
+    expect(secureRollout).toContain('deterministicUploadId')
+    expect(secureRollout).toContain('SYGSHIFT_HR_ROLLOUT_START_CODE')
+    expect(wrangler).not.toContain('SYGSHIFT_HR_ROLLOUT_SECRET')
   })
 })

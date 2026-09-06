@@ -98,6 +98,7 @@
     "SYGSHIFT_HR_PAYROLL_INTEGRATION_ENABLED": "false",
     "SYGSHIFT_HR_PAYROLL_WEBHOOKS_ENABLED": "false",
     "SYGSHIFT_HR_ENTERPRISE_CUTOVER_ENABLED": "false",
+    "SYGSHIFT_HR_ROLLOUT_ACTOR_ID": "ef59182e-b0f4-4c41-b837-492371a4a570",
     "SUPABASE_URL": "https://eqkdfrbwtioiqtjsyglg.supabase.co",
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_-uU9fD3XIeZ58r815-fl_Q_g4IIRPQ5",
     "VITE_SUPABASE_URL": "https://eqkdfrbwtioiqtjsyglg.supabase.co",

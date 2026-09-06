@@ -59,6 +59,8 @@ type Environment = Partial<Env> & {
   SYGSHIFT_HR_PAYROLL_INTEGRATION_ENABLED?: string
   SYGSHIFT_HR_PAYROLL_WEBHOOKS_ENABLED?: string
   SYGSHIFT_HR_ENTERPRISE_CUTOVER_ENABLED?: string
+  SYGSHIFT_HR_ROLLOUT_ACTOR_ID?: string
+  SYGSHIFT_HR_ROLLOUT_SECRET?: string
 }
 
 interface DocumentScanQueueMessage {
@@ -1347,7 +1349,11 @@ export function validateHrDocumentFile(
   if (hasSignature(bytes, [0x25, 0x50, 0x44, 0x46, 0x2d])) {
     detectedMimeType = 'application/pdf'
     const pdfText = strFromU8(bytes.subarray(0, Math.min(bytes.length, 5 * 1024 * 1024)), true)
-    if (/\/(javascript|js|launch|embeddedfile|openaction|aa|richmedia)\b/i.test(pdfText)) {
+    // Compressed image/font streams are arbitrary binary and may coincidentally
+    // contain strings such as "/JS". Only inspect the PDF object structure;
+    // ClamAV still scans the complete, unmodified binary after quarantine.
+    const pdfStructure = pdfText.replace(/stream\r?\n[\s\S]*?endstream/gi, 'stream\nendstream')
+    if (/\/(javascript|js|launch|embeddedfile|openaction|aa|richmedia)\b/i.test(pdfStructure)) {
       throw new ApiError('active_content_not_allowed', 400, 'PDF files with scripts, launch actions, or embedded content are not allowed.')
     }
   } else if (hasSignature(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
@@ -1585,6 +1591,22 @@ async function requireDocumentScanner(request: Request, environment: Environment
   if (!await constantTimeSecretMatches(provided, expected)) {
     throw new ApiError('document_scanner_authentication_failed', 401, 'Scanner authentication failed.')
   }
+}
+
+async function requireHrSystemRollout(request: Request, environment: Environment): Promise<string> {
+  const expected = environment.SYGSHIFT_HR_ROLLOUT_SECRET?.trim() ?? ''
+  const provided = request.headers.get('x-sygshift-hr-rollout-secret')?.trim() ?? ''
+  const actorId = environment.SYGSHIFT_HR_ROLLOUT_ACTOR_ID?.trim() ?? ''
+  if (expected.length < 32 || !validUuid(actorId)) {
+    throw new ApiError('hr_system_rollout_not_configured', 503, 'The controlled HR rollout channel is not configured.')
+  }
+  if (!await constantTimeSecretMatches(provided, expected)) {
+    throw new ApiError('hr_system_rollout_authentication_failed', 401, 'The controlled HR rollout could not be authenticated.')
+  }
+  if (request.headers.get('x-sygshift-hr-rollout-version')?.trim() !== '2.1') {
+    throw new ApiError('hr_system_rollout_version_invalid', 422, 'The controlled HR rollout version is invalid.')
+  }
+  return actorId
 }
 
 function requireDocumentScannerBindings(environment: Environment): {
@@ -2455,12 +2477,19 @@ async function handleHrDocumentUpload(
   request: Request,
   environment: Environment,
   requestId: string,
+  rolloutActorId?: string,
 ): Promise<Response> {
   if (request.method !== 'PUT') return errorJson('method_not_allowed', requestId, 405)
   requireHrDocumentPipeline(environment)
-  const session = await requireAuthenticatedSession(request, environment)
-  requireDocumentStudioAccess(session.context)
-  await requireRecentDocumentMfa(request, session)
+  const session = rolloutActorId ? null : await requireAuthenticatedSession(request, environment)
+  if (session) {
+    requireDocumentStudioAccess(session.context)
+    await requireRecentDocumentMfa(request, session)
+  }
+  const config = configuredSupabase(environment)
+  if (!config) throw new ApiError('server_not_configured', 503, 'The protected document service is unavailable.')
+  const actorId = rolloutActorId ?? session?.context.employee_id
+  if (!actorId || !validUuid(actorId)) throw new ApiError('invalid_rollout_actor', 503, 'The protected document actor is unavailable.')
   const metadata = parseHrDocumentMetadata(request)
   const bodyMimeType = normalizedMimeType(request.headers.get('content-type') ?? '')
   if (bodyMimeType !== metadata.declaredMimeType) {
@@ -2469,13 +2498,13 @@ async function handleHrDocumentUpload(
   const bytes = await readHrDocumentBody(request)
   const validated = validateHrDocumentFile(bytes, metadata.originalFilename, metadata.declaredMimeType)
   const checksum = await sha256BytesHex(bytes)
-  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  const serviceConfig = { serviceRoleKey: config.serviceRoleKey, url: config.url }
   const operation = await callRpc<HrDocumentUploadOperation>(
     serviceConfig,
     'service_begin_hr_document_upload',
     {
       target_access_classification: metadata.accessClassification,
-      target_actor_id: session.context.employee_id,
+      target_actor_id: actorId,
       target_category: metadata.category,
       target_declared_mime_type: metadata.declaredMimeType,
       target_description: metadata.description,
@@ -2493,7 +2522,7 @@ async function handleHrDocumentUpload(
       target_title: metadata.title,
       target_vault_code: metadata.vaultCode,
     },
-    session.config.serviceRoleKey,
+    config.serviceRoleKey,
   )
 
   if (operation.state !== 'quarantined') {
@@ -2515,7 +2544,7 @@ async function handleHrDocumentUpload(
       serviceConfig,
       'service_mark_hr_document_upload_stored',
       { target_operation_id: operation.operationId, target_request_id: requestId },
-      session.config.serviceRoleKey,
+      config.serviceRoleKey,
     )
   } catch (error) {
     await deletePrivateStorageObject(serviceConfig, operation.bucket, operation.objectKey).catch(() => undefined)
@@ -2528,7 +2557,7 @@ async function handleHrDocumentUpload(
         target_operation_id: operation.operationId,
         target_state: 'scan_error',
       },
-      session.config.serviceRoleKey,
+      config.serviceRoleKey,
     ).catch(() => undefined)
     throw new ApiError('document_quarantine_failed', 502, 'The document could not be placed in protected quarantine.')
   }
@@ -2545,7 +2574,7 @@ async function handleHrDocumentUpload(
         target_operation_id: operation.operationId,
         target_state: 'scan_error',
       },
-      session.config.serviceRoleKey,
+      config.serviceRoleKey,
     ).catch(() => undefined)
     throw new ApiError('document_scan_dispatch_failed', 503, 'The upload is safely quarantined, but its malware scan could not be started. Retry the upload request.')
   }
@@ -2665,12 +2694,19 @@ async function handleHrSystemRegistration(
   request: Request,
   environment: Environment,
   requestId: string,
+  rolloutActorId?: string,
 ): Promise<Response> {
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
   requireHrDocumentPipeline(environment)
-  const session = await requireAuthenticatedSession(request, environment)
-  requireDocumentStudioAccess(session.context)
-  await requireRecentDocumentMfa(request, session)
+  const session = rolloutActorId ? null : await requireAuthenticatedSession(request, environment)
+  if (session) {
+    requireDocumentStudioAccess(session.context)
+    await requireRecentDocumentMfa(request, session)
+  }
+  const config = configuredSupabase(environment)
+  if (!config) throw new ApiError('server_not_configured', 503, 'The protected document service is unavailable.')
+  const actorId = rolloutActorId ?? session?.context.employee_id
+  if (!actorId || !validUuid(actorId)) throw new ApiError('invalid_rollout_actor', 503, 'The protected document actor is unavailable.')
   const body = await readJsonBodyWithin(request, 768 * 1024)
   const documentId = requiredText(body.documentId, 'Document ID', 36)
   if (!validUuid(documentId)) throw new ApiError('invalid_document_id', 422, 'The protected document identifier is invalid.')
@@ -2681,10 +2717,10 @@ async function handleHrSystemRegistration(
     ? body.packageMetadata as Record<string, unknown>
     : {}
   const payload = await callRpc<Record<string, unknown>>(
-    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_register_hr_system_item',
     {
-      target_actor_id: session.context.employee_id,
+      target_actor_id: actorId,
       target_audience: 'hr_only',
       target_category: requiredText(body.category, 'Category', 160),
       target_code: requiredText(body.code, 'Controlled item code', 80),
@@ -2705,7 +2741,7 @@ async function handleHrSystemRegistration(
       target_source_sha256: requiredText(body.sourceSha256, 'Source checksum', 64),
       target_title: requiredText(body.title, 'Title', 200),
     },
-    session.config.serviceRoleKey,
+    config.serviceRoleKey,
   )
   return json({ ...payload, requestId })
 }
@@ -6629,6 +6665,11 @@ export default {
       try {
         response = await handleSelfServicePasswordResetApi(request, environment, requestId)
       } catch (error) {
+        console.error(JSON.stringify({
+          event: 'hr_system_rollout_failed',
+          message: error instanceof Error ? error.message : 'Unknown rollout failure',
+          requestId,
+        }))
         response = error instanceof ApiError
           ? errorJson(error.code, requestId, error.status, error.message)
           : errorJson('password_reset_unavailable', requestId, 503, 'Password recovery is temporarily unavailable.')
@@ -6645,6 +6686,17 @@ export default {
         response = error instanceof ApiError
           ? errorJson(error.code, requestId, error.status, error.message)
           : errorJson('document_pipeline_canary_failed', requestId, 503, 'The protected document release canary failed.')
+      }
+    } else if (url.pathname === '/api/v1/internal/hr-system-rollout/upload' || url.pathname === '/api/v1/internal/hr-system-rollout/register') {
+      try {
+        const actorId = await requireHrSystemRollout(request, environment)
+        response = url.pathname.endsWith('/upload')
+          ? await handleHrDocumentUpload(request, environment, requestId, actorId)
+          : await handleHrSystemRegistration(request, environment, requestId, actorId)
+      } catch (error) {
+        response = error instanceof ApiError
+          ? errorJson(error.code, requestId, error.status, error.message)
+          : errorJson('hr_system_rollout_failed', requestId, 503, 'The controlled HR rollout request failed.')
       }
     } else if (
       url.pathname === '/api/v1/account/photo'
