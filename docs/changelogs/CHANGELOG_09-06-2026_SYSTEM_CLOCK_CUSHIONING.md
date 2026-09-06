@@ -17,7 +17,11 @@ Date: 09/06/2026
 - Final header and actual-component time-clock browser run: all 60 checks passed, including 1920/1440/1280/1024/768/390/320-pixel layouts, light/dark mode, accessibility, reduced motion, clock ordering, early acknowledgment, Home clock controls, and cross-page synchronization.
 - Desktop, dark laptop, and narrow-phone screenshots were visually inspected.
 - `pnpm check` passed: TypeScript, zero-warning lint, 180 test files / 876 tests, and fresh production builds after the final browser run. Existing container sourcemap and large-bundle warnings are unchanged.
-- Live release verification: pending.
+- Released commit `be481c8` to `origin/main`; ran a fresh production `pnpm build` after browser testing and deployed with `pnpm exec wrangler deploy --keep-vars`.
+- Production Worker version: `6395f80c-ad47-4710-9f39-559d8e4c9c5d`.
+- Production health/readiness returned HTTP 200 and ready. Live HTML references the release entry and stylesheet; both assets matched the local production build byte-for-byte by SHA-256.
+- Signed-in live inspection confirmed 7-by-8-pixel highlight padding, 9-pixel left/right content clearance including the border, 8-pixel top/bottom clearance, unchanged 14-pixel digital text, all four clocks in the approved order, and no horizontal page overflow. The screenshot was visually reviewed.
+- Live QA used a separate tab and read-only measurements; no original tab, draft, record, preference, notification, or clock action was changed.
 
 ## Employee instruction
 
