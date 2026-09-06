@@ -1,0 +1,12 @@
+.live-notifications { position: fixed; right: 20px; bottom: 20px; z-index: 140; display: grid; gap: 10px; width: min(390px, calc(100vw - 32px)); pointer-events: none; }
+.live-notification { display: flex; align-items: flex-start; gap: 12px; padding: 18px; border: 1px solid var(--line); border-left: 4px solid #c79a42; border-radius: 14px; background: var(--surface, #fff); color: var(--ink); box-shadow: 0 12px 36px #0003; pointer-events: auto; animation: notification-arrive 180ms ease-out; }
+.live-notification--urgent { border-left-color: #cf594a; }
+.live-notification > svg { flex-shrink: 0; margin-top: 4px; }
+.live-notification a { display: grid; gap: 5px; flex: 1; min-width: 0; color: inherit; text-decoration: none; overflow-wrap: anywhere; }
+.live-notification small { font-size: 12px; opacity: .8; }
+.live-notification strong { font-size: 15px; line-height: 1.4; }
+.live-notification a > span { font-size: 13px; text-decoration: underline; }
+.live-notification > button { padding: 4px; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.live-notifications > button { pointer-events: auto; }
+@keyframes notification-arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .live-notification { animation: none; } }

@@ -22,6 +22,7 @@ const messageSchema = z.object({
 })
 const eventSchema = z.object({ id: z.number(), type: z.string(), detail: z.record(z.string(), z.unknown()), createdAt: z.string(), actorName: z.string() })
 const ticketDetailSchema = ticketListSchema.extend({
+  readThrough: z.string().optional(),
   description: z.string(), occurredOn: z.string().nullable(), stillHappening: z.boolean(),
   impact: z.record(z.string(), z.unknown()), relatedContext: z.record(z.string(), z.unknown()),
   sourcePath: z.string().nullable(), routePermission: z.string(), canManage: z.boolean(),
@@ -71,9 +72,14 @@ export async function getSupportWorkspace(input: { page: number; pageSize: 5 | 1
 }
 
 export async function getSupportTicket(ticketId: string) {
-  const { data, error } = await getSupabaseClient().rpc('get_support_ticket', { target_ticket_id: ticketId })
+  const { data, error } = await getSupabaseClient().rpc('read_support_ticket', { target_ticket_id: ticketId })
   if (error) supportError(error, 'This support ticket could not be loaded.')
   return ticketDetailSchema.parse(data)
+}
+
+export async function markSupportTicketRead(ticketId: string, through: string) {
+  const { error } = await getSupabaseClient().rpc('mark_support_ticket_read', { target_ticket_id: ticketId, target_through: through })
+  if (error) supportError(error, 'Ticket read state could not be updated.')
 }
 
 export async function addSupportTicketMessage(ticketId: string, body: string, internal: boolean) {

@@ -20,6 +20,7 @@ export async function getSupportWorkspace() {
   return { tickets: [{ id: requester.id, ticketNumber: 'TKT-TEST', subject: 'Help with a scheduled shift', category: 'schedule', subcategory: 'Missing shift', status, priority: 'normal', confidential: false, submittedBy: requester, assignedTo: handler, createdAt: '2026-09-06T15:00:00Z', updatedAt: '2026-09-06T16:00:00Z' }], page: { number: 1, size: 10, total: 1, totalPages: 1 }, permissions: { staffAccess: true, canManage: true, isAdmin: true }, unreadNotifications: 0 }
 }
 export async function getSupportTicketAssignees() { return [handler] }
+export async function markSupportTicketRead() { return undefined }
 export async function addSupportTicketMessage(_id: string, body: string, internal: boolean) {
   await delay()
   if (new URLSearchParams(location.search).has('error')) throw new Error('Reply could not be saved. Please try again.')

@@ -4,6 +4,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Eye, EyeOff, KeyRound, LockKeyhole, MailCheck, ShieldCheck } from 'lucide-react'
 import { getSessionContext, requestPasswordReset, signInWithUsername, signOut } from '../data/auth'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
+import { beginLoginSound, cancelLoginSound } from '../lib/notificationSounds'
 
 type LoginLocationState = {
   from?: {
@@ -68,6 +69,7 @@ export function LoginPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    beginLoginSound(username)
     setErrorMessage(null)
     setLoading(true)
 
@@ -75,6 +77,7 @@ export function LoginPage() {
       await signInWithUsername(username, password)
       navigate(returnPath, { replace: true })
     } catch (error) {
+      cancelLoginSound()
       setErrorMessage(error instanceof Error ? error.message : 'The sign-in request failed.')
     } finally {
       setLoading(false)

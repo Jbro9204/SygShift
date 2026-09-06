@@ -12,6 +12,7 @@ import {
 import { Container } from '@cloudflare/containers'
 import { strFromU8, unzipSync } from 'fflate'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { deliverPushBatch, validPushHook } from './webPush'
 import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
@@ -30,6 +31,9 @@ interface WorkerExecutionContext {
 }
 
 type Environment = Partial<Env> & {
+  SYGSHIFT_PUSH_PUBLIC_KEY?: string
+  SYGSHIFT_PUSH_PRIVATE_KEY?: string
+  SYGSHIFT_PUSH_HOOK_SECRET?: string
   ASSETS: Fetcher
   DOCUMENT_SCANNER?: DurableObjectNamespace<DocumentScannerContainer>
   DOCUMENT_SCAN_QUEUE?: Queue<DocumentScanQueueMessage>
@@ -6207,6 +6211,21 @@ async function processHrAutomationJobs(environment: Environment, limit = 10): Pr
   }
 }
 
+async function processPushJobs(environment: Environment): Promise<void> {
+  const config = configuredSupabase(environment)
+  const publicKey = environment.SYGSHIFT_PUSH_PUBLIC_KEY
+  const privateKey = environment.SYGSHIFT_PUSH_PRIVATE_KEY
+  const hookSecret = environment.SYGSHIFT_PUSH_HOOK_SECRET
+  if (!config || !publicKey || !privateKey || !hookSecret) return
+  try {
+    const processed = await deliverPushBatch({ publicKey, privateKey, hookSecret }, (name, input) =>
+      callRpc({ serviceRoleKey: config.serviceRoleKey, url: config.url }, name, input, config.serviceRoleKey))
+    if (processed) console.info(JSON.stringify({ event: 'push_batch_processed', processed }))
+  } catch {
+    console.error(JSON.stringify({ event: 'push_batch_deferred' }))
+  }
+}
+
 async function processNotificationJobs(environment: Environment, limit = 10): Promise<{
   delivered: string[]
   failed: Array<{ id: string, error: string }>
@@ -6474,7 +6493,7 @@ export default {
   async queue(batch: MessageBatch<DocumentScanQueueMessage>, environment: Environment): Promise<void> {
     await handleDocumentScanQueue(batch, environment)
   },
-  async fetch(request: Request, environment: Environment): Promise<Response> {
+  async fetch(request: Request, environment: Environment, context?: WorkerExecutionContext): Promise<Response> {
     const url = new URL(request.url)
     const requestId = crypto.randomUUID()
     let response: Response
@@ -6504,6 +6523,18 @@ export default {
         if (request.method === 'HEAD') {
           response = new Response(null, { headers: response.headers, status: response.status })
         }
+      }
+    } else if (url.pathname === '/api/v1/notifications/push/config') {
+      response = request.method === 'GET'
+        ? json({ publicKey: environment.SYGSHIFT_PUSH_PUBLIC_KEY || null, configured: Boolean(environment.SYGSHIFT_PUSH_PUBLIC_KEY && environment.SYGSHIFT_PUSH_PRIVATE_KEY && environment.SYGSHIFT_PUSH_HOOK_SECRET) })
+        : json({ error: 'method_not_allowed' }, 405)
+    } else if (url.pathname === '/api/v1/notifications/push/dispatch') {
+      if (request.method !== 'POST') response = json({ error: 'method_not_allowed' }, 405)
+      else if (!await validPushHook(request.headers.get('authorization'), environment.SYGSHIFT_PUSH_HOOK_SECRET || '')) response = json({ error: 'unauthorized' }, 401)
+      else if (!context) response = json({ error: 'dispatch_unavailable' }, 503)
+      else {
+        context.waitUntil(processPushJobs(environment))
+        response = json({ accepted: true }, 202)
       }
     } else if (url.pathname === '/api/v1/auth/password-reset/request') {
       try {
@@ -6782,6 +6813,8 @@ export default {
     environment: Environment,
     context: WorkerExecutionContext,
   ): Promise<void> {
+    // Independent from timekeeping/email: push failures cannot stop existing scheduled jobs.
+    context.waitUntil(processPushJobs(environment))
     context.waitUntil((async () => {
       const config = configuredSupabase(environment)
       if (!config) throw new Error('Scheduled timekeeping automation is missing its protected data configuration.')

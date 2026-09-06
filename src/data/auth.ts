@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 import { clearSecurityKeySession } from '../lib/securityKeySession'
+import { clearPushSession } from './pushNotifications'
+import { cancelLoginSound } from '../lib/notificationSounds'
 
 export const AUTH_EMAIL_DOMAIN = 'accounts.sygshift.invalid'
 export const USERNAME_PATTERN = /^[a-z][a-z0-9]{1,62}$/
@@ -92,6 +94,8 @@ export async function requestPasswordReset(username: string): Promise<string> {
 }
 
 export async function signOut(): Promise<void> {
+  cancelLoginSound()
+  await clearPushSession()
   try {
     const { error } = await getSupabaseClient().auth.signOut()
     if (error) throw new Error('You could not be signed out. Please try again.')

@@ -1,0 +1,11 @@
+{
+  "id": "/",
+  "name": "SygShift",
+  "short_name": "SygShift",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#10100f",
+  "theme_color": "#10100f",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

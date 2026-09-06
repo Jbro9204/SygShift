@@ -1784,3 +1784,12 @@ pnpm exec wrangler deploy --keep-vars
 - Rebuilt the intake spacing, rounded controls, current-step/lifecycle progress, conversation typography, and compact mobile pagination. Fixed premature submission when entering Review and exposed management errors.
 - Applied migration `20260906172200` with successful transactional data-preservation assertions. Final `pnpm check` passed 176 files / 841 tests; browser regression suite passed 132 checks; database regressions and function lint passed.
 - Pushed release commit `3d5534a` and deployed Worker `46676a5d-e600-40ef-be56-b862b9dc6b99`. Health/readiness, exact live assets, and production RPC/history checks passed. The signed-in visual walkthrough remains pending an active browser session; see the dated changelog for evidence and limits.
+
+## 09/06/2026 — Live Notifications and Sound
+
+- Added private recipient-channel refresh for tickets, replies, status, assignments, priorities, personal inboxes, and bell counts; added silent reconnect catch-up and bounded fallback refresh without resetting drafts.
+- Added clickable popups, cross-tab and foreground/background deduplication, the approved login/notification MP3s, and device sound controls. Login audio is gated behind completed manual authentication and security verification.
+- Added opt-in private Web Push with authenticated session ownership, encrypted delivery, a protected Vault-backed wakeup, retry leases, and a push-only service worker that does not intercept operational requests.
+- Applied forward migration `20260906190358` after rollback-only lifecycle, private-channel authorization, and function-lint checks. No test operational records or employee messages were committed.
+- Final release checks: 874 tests across 180 files; all 182 desktop/mobile browser checks, including 38 actual clock workflow regressions; no error-level security advisor findings.
+- See `docs/changelogs/CHANGELOG_09-06-2026_LIVE_NOTIFICATIONS_AND_SOUNDS.md` for configuration, instructions, browser limits, and final production deployment verification.

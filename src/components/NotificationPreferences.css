@@ -1,0 +1,14 @@
+.notification-preferences { padding: 0; overflow: hidden; }
+.notification-preferences summary { display: flex; align-items: center; gap: 10px; padding: 18px 22px; cursor: pointer; font-weight: 700; }
+.notification-preferences summary small { margin-left: auto; font-weight: 400; }
+.notification-preferences__body { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; padding: 0 24px 24px; }
+.notification-preferences__body section { min-width: 0; }
+.notification-preferences__body h2 { display: flex; align-items: center; gap: 8px; font-size: 18px; }
+.notification-preferences__body p { line-height: 1.55; font-size: 14px; }
+.notification-preferences__toggles { display: grid; gap: 14px; margin: 20px 0; }
+.notification-preferences__toggles label { display: flex; align-items: center; gap: 10px; }
+.notification-preferences__toggles input { width: 18px; height: 18px; accent-color: #bb8b30; }
+.notification-preferences__volume { display: grid; gap: 10px; max-width: 360px; margin-bottom: 18px; }
+.notification-preferences__volume input { width: 100%; accent-color: #bb8b30; }
+.notification-preferences__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+@media(max-width: 700px) { .notification-preferences__body { grid-template-columns: 1fr; } .notification-preferences summary { flex-wrap: wrap; } .notification-preferences summary small { flex-basis: 100%; margin-left: 30px; } }

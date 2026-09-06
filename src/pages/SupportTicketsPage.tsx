@@ -6,7 +6,7 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import { SupportProgress } from '../components/SupportProgress'
 import { supportLifecycle } from '../lib/supportLifecycle'
 import { SupportTicketForm } from '../components/SupportTicketForm'
-import { addSupportTicketMessage, getSupportTicket, getSupportTicketAssignees, getSupportWorkspace, updateSupportTicket, type SupportTicketPriority, type SupportTicketStatus } from '../data/support'
+import { addSupportTicketMessage, getSupportTicket, getSupportTicketAssignees, getSupportWorkspace, markSupportTicketRead, updateSupportTicket, type SupportTicketPriority, type SupportTicketStatus } from '../data/support'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 
@@ -26,8 +26,8 @@ export function SupportTicketsPage() {
   const [internal, setInternal] = useState(false)
   const selectedId = params.get('ticket')
   const queryInput = useMemo(() => ({ page, pageSize, search, status }), [page, pageSize, search, status])
-  const workspaceQuery = useQuery({ enabled: isSupabaseConfigured, queryFn: () => getSupportWorkspace(queryInput), queryKey: ['support', 'workspace', queryInput] })
-  const detailQuery = useQuery({ enabled: isSupabaseConfigured && Boolean(selectedId), queryFn: () => getSupportTicket(selectedId!), queryKey: ['support', 'ticket', selectedId] })
+  const workspaceQuery = useQuery({ enabled: isSupabaseConfigured, queryFn: () => getSupportWorkspace(queryInput), queryKey: ['support', 'workspace', queryInput], refetchInterval: 30_000, refetchOnWindowFocus: true })
+  const detailQuery = useQuery({ enabled: isSupabaseConfigured && Boolean(selectedId), queryFn: () => getSupportTicket(selectedId!), queryKey: ['support', 'ticket', selectedId], refetchInterval: 30_000, refetchOnWindowFocus: true })
   const assigneesQuery = useQuery({ enabled: Boolean(detailQuery.data?.canManage && selectedId), queryFn: () => getSupportTicketAssignees(selectedId!), queryKey: ['support', 'assignees', selectedId] })
   const refresh = async () => Promise.all([queryClient.invalidateQueries({ queryKey: ['support', 'workspace'] }), queryClient.invalidateQueries({ queryKey: ['support', 'ticket', selectedId] }), queryClient.invalidateQueries({ queryKey: ['my-notifications'] })])
   const replyMutation = useMutation({ mutationFn: (input: { ticketId: string; body: string; internal: boolean }) => addSupportTicketMessage(input.ticketId, input.body, input.internal), onSuccess: async () => { setReply(''); setInternal(false); await refresh() } })
@@ -44,8 +44,16 @@ export function SupportTicketsPage() {
     resetUpdate()
   }, [selectedId, resetReply, resetUpdate])
   useEffect(() => {
-    if (detailQuery.dataUpdatedAt) void queryClient.invalidateQueries({ queryKey: ['my-notifications'] })
-  }, [detailQuery.dataUpdatedAt, queryClient])
+    const markViewed = () => {
+      if (ticket?.readThrough && document.visibilityState === 'visible' && document.hasFocus()) {
+        void markSupportTicketRead(ticket.id, ticket.readThrough).then(() => queryClient.invalidateQueries({ queryKey: ['my-notifications'] })).catch(() => { /* Retry on the next visible refresh. */ })
+      }
+    }
+    markViewed()
+    window.addEventListener('focus', markViewed)
+    document.addEventListener('visibilitychange', markViewed)
+    return () => { window.removeEventListener('focus', markViewed); document.removeEventListener('visibilitychange', markViewed) }
+  }, [ticket?.id, ticket?.readThrough, queryClient])
 
   useEffect(() => {
     if (!selectedId && workspace?.tickets[0]) setParams({ ticket: workspace.tickets[0].id }, { replace: true })

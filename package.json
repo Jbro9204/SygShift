@@ -41,6 +41,7 @@
     "bootstrap:admin": "node tools/bootstrap-admin.mjs"
   },
   "dependencies": {
+    "@block65/webcrypto-web-push": "2.0.0",
     "@cloudflare/containers": "0.3.7",
     "@fontsource/alex-brush": "^5.3.0",
     "@fontsource/allura": "^5.3.0",

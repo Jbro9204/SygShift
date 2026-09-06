@@ -156,6 +156,15 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Recipient lookup and sending require the exact `notifications.manage` effective permission plus MFA. Employee inbox access itself remains available to every signed-in employee.
 - Direct notification email uses a separate delivery queue claimed only by the service worker. In-app delivery is immediate; email delivery is queued, retried, audited, and never misrepresented as complete before provider success.
 
+## Live updates and device push
+
+- Authenticated shells subscribe to a private `employee:<auth user id>` Broadcast channel. The row policy matches both the authenticated identity and actual message topic. Payloads are invalidation signals, never ticket descriptions or internal notes; refreshed RPCs recheck access.
+- Ticket reads used for synchronization are side-effect free. A separate visible-read RPC accepts a server-provided cutoff; acknowledgment remains explicit. Scoped cache cleanup prevents ticket/notification reuse after sign-out.
+- A 30-second fallback and focus/reconnect synchronization preserve local drafts and current navigation. Popups and sound presentation are bounded and deduplicated across tabs and the push service worker.
+- Device subscriptions and delivery leases remain private. Eligible active accounts must retain the authentication session associated with the registration. Background notifications contain generic text, not confidential ticket content.
+- A Vault-authenticated asynchronous database wakeup dispatches encrypted Web Push through the Worker. Bounded retries run independently of timekeeping and email jobs. The push service worker has no fetch interception or offline application cache.
+- Audio is a nonblocking browser enhancement: manual sign-in arms the login sound and completed security checks consume it once. Refresh and session renewal do not arm it. Device-local settings control login sound, notification sound, mute, and volume.
+
 ## System status and release communication
 
 - The application shell shows every signed-in user one compact service state: Online, Attention Needed, or Service Disruption.

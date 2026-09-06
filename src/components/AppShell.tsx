@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useIsMutating, useQuery } from '@tanstack/react-query'
+import { useIsMutating, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, BellRing, ChevronDown, ChevronsLeft, ChevronsRight, FileClock, Home, LogOut, Megaphone, Menu, Moon, ShieldCheck, Sun, X } from 'lucide-react'
 import { homeNavigationItem, navigationGroups } from '../app/navigation'
@@ -32,6 +32,8 @@ import { SystemStatusIndicator } from './SystemStatusIndicator'
 import { SupportHelpButton } from './SupportHelpButton'
 import { OperationalTimeHeader } from './OperationalTimeHeader'
 import { HeaderNotificationButton } from './HeaderNotificationButton'
+import { LiveNotifications } from './LiveNotifications'
+import { clearPushSession } from '../data/pushNotifications'
 
 const INACTIVITY_WARNING_MS = 25 * 60 * 1000
 const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000
@@ -129,6 +131,7 @@ function WorkspaceAlertStrip({ entries }: { entries: WorkspaceAlertEntry[] }) {
 }
 
 export function AppShell() {
+  const queryClient = useQueryClient()
   const [navigationOpen, setNavigationOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true')
   const [openNavigationGroup, setOpenNavigationGroup] = useState(() => window.localStorage.getItem(SIDEBAR_GROUP_STORAGE_KEY) ?? 'Operations')
@@ -392,6 +395,10 @@ export function AppShell() {
       data: { subscription },
     } = getSupabaseClient().auth.onAuthStateChange((_event, session) => {
       if (!session) {
+        for (const key of ['support', 'my-notifications', 'notification-device-session', 'notification-device-push']) {
+          queryClient.removeQueries({ queryKey: [key] })
+        }
+        void clearPushSession()
         setSessionContext(null)
         setAuthLoading(false)
         return
@@ -413,7 +420,7 @@ export function AppShell() {
       subscription.unsubscribe()
       window.removeEventListener(SESSION_CONTEXT_REFRESH_EVENT, refreshSecurityContext)
     }
-  }, [])
+  }, [queryClient])
 
   useEffect(() => {
     let active = true
@@ -735,6 +742,7 @@ export function AppShell() {
         <MaintenanceNotice active={activeMaintenance} completed={completedMaintenance} upcoming={upcomingMaintenance} />
 
         <WorkspaceAlertStrip entries={workspaceAlerts} />
+        {sessionContext && !needsSecurityCheckpoint ? <LiveNotifications key={sessionContext.employeeId} employeeId={sessionContext.employeeId} username={sessionContext.username} /> : null}
 
         <main id="main-content" tabIndex={-1}>
           {unavailableRouteWindow ? <MaintenanceUnavailablePanel window={unavailableRouteWindow} /> : <Outlet />}

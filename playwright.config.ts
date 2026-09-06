@@ -39,6 +39,10 @@ export default defineConfig({
     command: 'pnpm exec vite --config tests/fixtures/clock-vite.config.ts',
     url: 'http://127.0.0.1:4186/tests/fixtures/clock-ui.html',
     reuseExistingServer: false,
+  }, {
+    command: 'pnpm exec vite --config tests/fixtures/live-vite.config.ts',
+    url: 'http://127.0.0.1:4187/tests/fixtures/live-ui.html',
+    reuseExistingServer: false,
   }],
   projects: browserProjects,
 })
