@@ -46,6 +46,15 @@
 - Framing is same-origin only. A future company hub should mount SygShift on the same origin or add one exact reviewed hub origin; wildcard framing is prohibited.
 - Local development omits HSTS and CSP so hot reload works, while retaining the remaining response-hardening headers.
 
+## Support ticket protection
+
+- Support ticket storage uses row-level security, revoked browser table privileges, and narrowly granted authenticated functions.
+- Employees may read only tickets they submitted. Admin may read every ticket. Non-Admin handlers must hold ticket access plus the exact permission associated with the ticket category; confidential HR tickets additionally require HR authority.
+- The database derives submitter identity, timestamps, routed permission, and impact-based priority from authenticated context and validated facts.
+- Handler-only internal notes never appear in employee responses and never enter requester-facing email notifications.
+- Ticket email jobs expose only the minimum recipient and message envelope to the service worker. User-authored content is supplied as plain text to the branded renderer.
+- Direct ticket attachments are disabled in the initial release. Future attachments must use private object storage, signature and size validation, malware scanning, audited access, and expiring delivery through the existing document-security boundary.
+
 ## Hardware security keys
 
 - FIDO2/WebAuthn security keys are an optional phishing-resistant MFA factor. They never replace the account password and never create password-only access.

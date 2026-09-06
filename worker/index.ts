@@ -6210,6 +6210,42 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
   )
   await deliverJobs(generalJobs, true)
 
+  const supportJobs = await callRpc<NotificationJob[]>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_claim_support_ticket_notification_batch',
+    { target_limit: limit },
+    config.serviceRoleKey,
+  )
+  for (const job of supportJobs) {
+    try {
+      const recipients = [...new Set(job.recipients.map((recipient) => recipient.trim().toLowerCase()).filter(Boolean))]
+      if (recipients.length === 0) throw new Error('No approved employee email is available for this ticket update.')
+      const delivery = await sendAuditedEmail(environment, recipients, job.message, {
+        notificationType: job.messageType ?? 'support_ticket_update',
+        relatedRecordId: job.aggregateId ?? null,
+        relatedRecordType: 'support_ticket',
+      })
+      if (delivery.failed.length > 0) throw new Error(delivery.failed.map((item) => `${item.recipient}: ${item.error}`).join('; '))
+      if (delivery.sent.length === 0) throw new Error('The ticket email was suppressed by the active recipient safeguards.')
+      await callRpc<unknown>(
+        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        'service_mark_support_ticket_notification_result',
+        { delivered: true, delivery_error: null, target_notification_id: job.id },
+        config.serviceRoleKey,
+      )
+      delivered.push(job.id)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Ticket email delivery failed.'
+      await callRpc<unknown>(
+        { serviceRoleKey: config.serviceRoleKey, url: config.url },
+        'service_mark_support_ticket_notification_result',
+        { delivered: false, delivery_error: message, target_notification_id: job.id },
+        config.serviceRoleKey,
+      )
+      failed.push({ id: job.id, error: message })
+    }
+  }
+
   return {
     delivered,
     failed,

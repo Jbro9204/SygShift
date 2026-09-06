@@ -115,6 +115,16 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Notification records distinguish queued, attempted, delivered, and failed states. The interface must never describe a queued message as sent.
 - Employee email routing is personal-first. Database queues exclude the temporarily blocked `@guardianshipsecurity.net` domain, and the Worker independently suppresses that domain before the provider is called.
 
+## Support ticket system
+
+- Every authenticated employee can submit and revisit their own support tickets from the persistent **Need Help?** workflow. Ticket handlers receive a permission-aware Administration workspace.
+- Ticket category maps to the existing permission domain responsible for the work. Admin can access all tickets; other handlers require both a support-ticket permission and the routed operational permission.
+- Priority is derived from factual impact answers rather than accepted directly from the requester. Safety impact, work stoppage, payroll impact, affected population, and deadlines feed the server-owned classification.
+- Public messages and internal notes share one chronological conversation model, but internal notes are returned only to authorized handlers and never generate requester email.
+- Lifecycle events queue both in-app and email notifications. The existing Worker notification processor claims, sends, audits, retries, and records delivery outcomes.
+- Tickets, messages, events, and notification records deny direct browser table access. Authenticated security-definer functions provide the only application boundary.
+- Binary attachments are release-gated until the support workflow can reuse the existing private, malware-scanned document pipeline.
+
 ## System status and release communication
 
 - The application shell shows every signed-in user one compact service state: Online, Attention Needed, or Service Disruption.

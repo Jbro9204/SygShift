@@ -1709,3 +1709,12 @@ pnpm exec wrangler deploy --keep-vars
 - Production AAL1 verification returned the correct 08/23/2026–09/05/2026 period and eight own-time rows totaling 2,406 minutes for the reported employee.
 - Full validation passed: TypeScript, zero-warning lint, 156 test files / 754 tests, and production Worker/client builds.
 - Deployed Cloudflare Worker version `949aa361-be36-435d-be42-5431674002bd`; production login, repaired assets, health, and readiness verified successfully.
+
+## 09/06/2026 — Support Ticket System
+
+- Added the global **Need Help?** entry point and a thorough four-step employee issue form with operational-impact, confidentiality, related-record, and safe diagnostic context.
+- Added the permission-routed Administration ticket workspace with queues, search, pagination, detail, assignment, status and priority management, public replies, private internal notes, unread state, and lifecycle history.
+- Admin can access every ticket. Other handlers require support access plus the existing permission for the ticket's Scheduling, Timekeeping, Payroll, HR, Benefits, Training, Site, Equipment, Safety, Account, Technical, Client, or general Administration route.
+- Added protected database storage and RPC boundaries, impact-derived priority, audit events, in-app notifications, and audited system-email updates through the existing Cloudflare delivery processor.
+- Applied production migration `20260906125806_support_ticket_system.sql` from an isolated release history; no historical migration was replayed.
+- Full validation passed: type checking, zero-warning lint, 167 test files / 801 tests, production builds, and all 112 desktop/mobile Playwright checks.

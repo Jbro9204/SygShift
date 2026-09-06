@@ -29,6 +29,7 @@ import { deriveSystemServiceStatus, getSystemReadiness } from '../data/systemSta
 import { getMyAccount, getMyAccountPhoto, type MyAccount } from '../data/myAccount'
 import { applyTheme, getCurrentTheme, type SygShiftTheme } from '../lib/theme'
 import { SystemStatusIndicator } from './SystemStatusIndicator'
+import { SupportHelpButton } from './SupportHelpButton'
 import { OperationalTimeHeader } from './OperationalTimeHeader'
 
 const INACTIVITY_WARNING_MS = 25 * 60 * 1000
@@ -639,6 +640,7 @@ export function AppShell() {
           ))}
         </nav>
 
+        <SupportHelpButton />
         <SystemStatusIndicator canOpenOperations={canOpenSystemOperations} status={systemServiceStatus} />
       </aside>
 

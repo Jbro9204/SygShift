@@ -85,6 +85,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/access-control': { anyOf: ['admin.roles.view', 'admin.roles.manage'] },
   '/administration/access': { anyOf: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.password_reset', 'admin.users.separate', 'admin.users.delete', 'admin.roles.view', 'admin.roles.manage'] },
   '/system-operations': { anyOf: ['admin.maintenance.manage'] },
+  '/support': { anyOf: [] },
 }
 
 export function hasEffectivePermission(
@@ -115,6 +116,6 @@ export function canAccessRoute(
       ? '/hr/people/:employeeId'
       : pathname
   const policy = routeAccessPolicies[policyKey]
-  if (pathname === '/account' || pathname === '/account-security' || pathname === '/requests' || pathname === '/my-documents') return Boolean(policy)
+  if (pathname === '/account' || pathname === '/account-security' || pathname === '/requests' || pathname === '/my-documents' || pathname === '/support') return Boolean(policy)
   return policy ? hasAnyEffectivePermission(session, policy.anyOf) : false
 }

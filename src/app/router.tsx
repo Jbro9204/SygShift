@@ -42,6 +42,7 @@ import {
   SchedulerPageRoute,
   SitesPageRoute,
   SystemOperationsPageRoute,
+  SupportTicketsPageRoute,
   TimeExceptionsPageRoute,
   TimeExceptionsLegacyRoute,
   TimeOperationsPageRoute,
@@ -452,6 +453,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <AccessControlPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'support',
+        element: (
+          <RouteSuspense>
+            <SupportTicketsPageRoute />
           </RouteSuspense>
         ),
       },

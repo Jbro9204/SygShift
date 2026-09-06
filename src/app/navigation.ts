@@ -26,6 +26,7 @@ import {
   UserRoundCheck,
   UsersRound,
   Wrench,
+  LifeBuoy,
   type LucideIcon,
 } from 'lucide-react'
 import { documentStudioAccessPermission, scheduleRoutePermissions } from './accessPolicy'
@@ -188,6 +189,12 @@ export const navigationGroups: NavigationGroup[] = [
         path: '/administration/access',
         icon: UserCog,
         permissions: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.password_reset', 'admin.users.separate', 'admin.users.delete', 'admin.roles.view', 'admin.roles.manage'],
+      },
+      {
+        label: 'Support Tickets',
+        path: '/support',
+        icon: LifeBuoy,
+        permissions: ['support.tickets.view', 'support.tickets.manage'],
       },
       {
         label: 'System Operations',
