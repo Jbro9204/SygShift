@@ -1,5 +1,12 @@
 # SygShift Development Log
 
+## 09/06/2026 — Notification Composer Layout Repair
+
+- Corrected native square fields, monospace message entry, stretched checkboxes, inconsistent gutters, search-icon spacing, and long employee-title containment in the notification composer.
+- Kept runtime changes CSS-only and preserved all sending, permission, email, acknowledgment, ticket, sound, clock, and timekeeping logic.
+- Added real-component desktop/mobile browser coverage and a source guard. Production QA uses a separate tab without sending notifications or discarding the user's draft.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-06-2026_NOTIFICATION_COMPOSER_LAYOUT.md`.
+
 ## 09/06/2026 — Early Clock-In / Home Action Repair
 
 - Reproduced the missing-popup path: no shift ID plus a future assignment outside the 12-hour dashboard window returned plain text instead of the structured warning. Home conditionally replaced Clock in with a navigation link in the same situation.

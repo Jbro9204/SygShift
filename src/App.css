@@ -10092,9 +10092,9 @@ a.home-metric-card:focus-visible {
 .notification-dismiss:hover,
 .notification-dismiss:focus-visible { color: var(--text); background: var(--surface-soft); border-color: var(--line); }
 .notification-delivery-workspace { display: grid; gap: 1rem; }
-.notification-composer { display: grid; gap: 1rem; padding: 0; overflow: hidden; }
+.notification-center .notification-composer { display: grid; gap: 1.25rem; padding: 0; overflow: hidden; }
 .notification-composer > .section-heading { padding: 1.1rem 1.25rem; border-bottom: 1px solid var(--line); }
-.notification-audience { display: grid; gap: 0.8rem; margin: 0 1.25rem; padding: 1rem; border: 1px solid var(--line); border-radius: 0.8rem; }
+.notification-audience { display: grid; min-width: 0; gap: 1rem; margin: 0 1.25rem; padding: 1rem; border: 1px solid var(--line); border-radius: 0.8rem; }
 .notification-audience legend { padding: 0 0.4rem; font-weight: 900; }
 .notification-audience label { cursor: pointer; }
 .notification-audience__everyone,
@@ -10111,27 +10111,47 @@ a.home-metric-card:focus-visible {
 .notification-recipient-search { display: grid; gap: 0.4rem; font-weight: 800; }
 .notification-recipient-search > div { position: relative; }
 .notification-recipient-search svg { position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
-.notification-recipient-search input { width: 100%; padding-left: 2.25rem; }
-.notification-employee-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 250px; overflow-y: auto; border: 1px solid var(--line); border-radius: 0.65rem; }
+.notification-employee-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: max-content; max-height: 280px; overflow-y: auto; scrollbar-gutter: stable; border: 1px solid var(--line); border-radius: 0.65rem; }
 .notification-employee-picker label { padding: 0.65rem 0.75rem; border-bottom: 1px solid var(--line); }
-.notification-compose-fields { display: grid; gap: 0.8rem; padding: 0 1.25rem; }
+.notification-compose-fields { display: grid; min-width: 0; gap: 1.1rem; padding: 0 1.25rem; }
 .notification-compose-fields > label { display: grid; gap: 0.4rem; font-weight: 800; }
-.notification-compose-fields input,
-.notification-compose-fields textarea,
-.notification-compose-fields select { width: 100%; }
+.notification-composer :is(input:not([type="checkbox"]), textarea, select) {
+  box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px;
+  padding: 0.7rem 0.85rem; border: 1px solid var(--line); border-radius: 0.75rem;
+  color: var(--ink); background: var(--paper); font: inherit; font-size: 1rem;
+  font-weight: 400; line-height: 1.5; box-shadow: inset 0 1px 2px rgb(0 0 0 / 3%);
+}
+.notification-composer select { padding-right: 2rem; }
+.notification-composer .notification-recipient-search input { padding-left: 2.5rem; }
+.notification-composer textarea { min-height: 170px; resize: vertical; line-height: 1.65; }
+.notification-composer :is(input, textarea)::placeholder { color: var(--muted); opacity: 1; font-weight: 400; }
+.notification-composer :is(input, textarea, select):focus-visible { outline: 2px solid #bb8d32; outline-offset: 2px; }
+.notification-composer input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; flex: 0 0 18px; margin: 0.15rem 0 0; accent-color: #a97822; }
+.notification-composer :is(.notification-audience__everyone, .notification-role-grid label, .notification-employee-picker label, .notification-delivery-options label) { min-width: 0; min-height: 56px; gap: 0.75rem; padding: 0.9rem; cursor: pointer; }
+.notification-composer label > span { min-width: 0; overflow-wrap: anywhere; }
+.notification-composer :is(.notification-audience__everyone, .notification-role-grid label, .notification-employee-picker label, .notification-delivery-options label):has(input:checked) { background: light-dark(#fff3d6, #3d321e); border-color: #bb8d32; }
+.notification-composer :is(.notification-audience__everyone, .notification-role-grid label, .notification-employee-picker label, .notification-delivery-options label):focus-within { outline: 2px solid #bb8d32; outline-offset: -2px; }
+.notification-composer label:has(input:disabled) { opacity: 0.65; cursor: not-allowed; }
+.notification-composer :is(small, .form-note) { font-weight: 400; line-height: 1.5; color: var(--muted); }
+.notification-composer .form-note { margin: 0; }
+.notification-composer > .inline-alert { margin: 0 1.25rem; }
 .notification-compose-grid { display: grid; grid-template-columns: 0.65fr 1fr 1fr; gap: 0.7rem; }
-.notification-compose-grid label { display: grid; gap: 0.4rem; font-weight: 800; }
+.notification-compose-grid label { display: grid; min-width: 0; align-content: start; gap: 0.4rem; font-weight: 800; }
 .notification-delivery-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
 .notification-delivery-options label { padding: 0.8rem; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 0.65rem; }
 .notification-compose-actions { display: flex; min-height: 62px; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.65rem 1.25rem; background: var(--surface-soft); border-top: 1px solid var(--line); }
-.notification-compose-actions > span { color: var(--text-muted); font-weight: 800; }
+.notification-compose-actions > span { color: var(--muted); font-weight: 800; }
+.notification-composer :is(.notification-compose-actions, .section-heading) > button { flex: 0 0 auto; min-height: 44px; max-width: 100%; }
+.notification-composer .section-heading { flex-wrap: wrap; }
+.notification-composer .section-heading p { margin-bottom: 0; line-height: 1.5; }
 .notification-review { display: grid; gap: 1rem; padding: 0 1.25rem; }
 .notification-review dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0; }
 .notification-review dl > div,
 .notification-review article { padding: 0.8rem; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 0.65rem; }
 .notification-review dt { color: var(--text-muted); font-size: 0.72rem; font-weight: 800; text-transform: uppercase; }
 .notification-review dd { margin: 0.25rem 0 0; font-weight: 800; }
-.notification-review article p { white-space: pre-wrap; }
+.notification-review article p { white-space: pre-wrap; line-height: 1.65; font-weight: 400; }
+.notification-review :is(dd, article) { min-width: 0; overflow-wrap: anywhere; }
 .notification-compose-success { display: flex; align-items: flex-start; gap: 1rem; padding: 1.5rem; color: light-dark(#17633f, #bdebd3); }
 .communications-pagination--compact { min-height: 58px; padding: 0.5rem 0.9rem; background: var(--surface-soft); border-top: 1px solid var(--line); }
 .communications-pagination--compact select { min-height: 38px; }
@@ -10167,6 +10187,11 @@ a.home-metric-card:focus-visible {
   .notification-item__content > header,
   .notification-item__content footer,
   .notification-compose-actions { align-items: stretch; flex-direction: column; }
+  .notification-center .notification-composer { gap: 1rem; }
+  .notification-composer > .section-heading { padding: 1rem; }
+  .notification-composer .notification-audience { margin-inline: 1rem; padding: 0.85rem; }
+  .notification-composer :is(.notification-compose-fields, .notification-review) { padding-inline: 1rem; }
+  .notification-composer .notification-compose-actions { padding: 0.8rem 1rem; gap: 0.65rem; }
   .notification-filter-group { overflow-x: auto; }
   .notification-inbox-toolbar > label { justify-content: space-between; }
 }

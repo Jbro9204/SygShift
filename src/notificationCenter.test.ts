@@ -56,4 +56,12 @@ describe('employee notification center', () => {
     expect(styles).toContain('.communications-pagination--compact { min-height: 58px;')
     expect(styles).toContain('grid-template-columns: minmax(0, 1fr) 160px')
   })
+
+  it('keeps notification form controls rounded without stretching checkbox inputs', () => {
+    expect(styles).toContain('.notification-center .notification-composer { display: grid;')
+    expect(styles).toContain('.notification-composer :is(input:not([type="checkbox"]), textarea, select)')
+    expect(styles).toContain('.notification-composer input[type="checkbox"] { width: 18px;')
+    expect(styles).toContain('.notification-composer textarea { min-height: 170px; resize: vertical; line-height: 1.65; }')
+    expect(styles).not.toContain('.notification-compose-fields input,')
+  })
 })
