@@ -27,12 +27,13 @@ test("Time Maintenance fits the viewport and opens corrections in place", async 
           <label><span>Punch date</span><input type="date" value="2026-08-21" /></label>
           <label><span>Time / Mountain</span><input type="time" value="06:00" /></label>
           <div class="time-maintenance-add__site-post">
-            <label><span>Workday</span><input type="date" value="2026-08-20" /><small>For an overnight shift, use the date the shift starts.</small></label>
+            <div class="time-maintenance-workday"><label for="test-workday">Workday</label><div class="time-maintenance-workday__controls"><button class="secondary-button secondary-button--small" aria-label="Previous workday">Previous</button><input id="test-workday" type="date" value="2026-08-20" /><button class="secondary-button secondary-button--small" aria-label="Next workday">Next</button></div><small>For an overnight shift, use the date the shift starts.</small></div>
             <label><span>Site/Post</span><select><option>PERA · Denver - Armed coverage</option></select><small>Saved with this punch so a second Site/Post correction is not required.</small></label>
           </div>
           <label class="time-maintenance-add__reason">Reason<textarea>Verified missing clock-out.</textarea></label>
           <button class="primary-action">Add time event</button>
         </form>
+        <div class="inline-success time-maintenance-entry-success" role="status"><span>Clock-in saved. SygShift also added the scheduled clock-out.</span><button class="secondary-button secondary-button--small">Add next workday</button></div>
         <dialog class="modal-dialog modal-dialog--time-workflow modal-dialog--time-correction" aria-label="Correct punch for Daron Jones">
           <div class="modal-dialog__heading"><div><h2>Correct punch</h2><p>Daron Jones · Workday 08/15/2026</p></div></div>
           <form class="time-correction-editor time-correction-editor--modal">
@@ -60,6 +61,9 @@ test("Time Maintenance fits the viewport and opens corrections in place", async 
   expect(punchFormOverflow).toBeLessThanOrEqual(1);
   await expect(punchForm.getByText("Workday", { exact: true })).toBeVisible();
   await expect(punchForm.getByText("Site/Post", { exact: true })).toBeVisible();
+  await expect(punchForm.getByRole("button", { name: "Previous workday" })).toBeVisible();
+  await expect(punchForm.getByRole("button", { name: "Next workday" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add next workday" })).toBeVisible();
 
   const modal = page.getByRole("dialog", {
     name: "Correct punch for Daron Jones",

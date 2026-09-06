@@ -24027,6 +24027,34 @@ a.home-metric-card:focus-visible {
   line-height: 1.4;
 }
 
+.time-maintenance-workday {
+  display: grid;
+  gap: 7px;
+  color: light-dark(#4f483d, #f5f1e8);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.time-maintenance-workday__controls {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) auto;
+  gap: 8px;
+}
+
+.time-maintenance-workday__controls button {
+  min-height: 42px;
+}
+
+.time-maintenance-entry-success {
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 22px;
+}
+
+.time-maintenance-entry-success .secondary-button {
+  flex: 0 0 auto;
+}
+
 .time-maintenance-add__site-post .field-error {
   color: light-dark(#913f34, #ffc5bd);
   font-weight: 750;
@@ -27480,6 +27508,24 @@ button.patrol-overview-row:focus-visible {
 
   .time-maintenance-add__site-post {
     grid-template-columns: 1fr;
+  }
+
+  .time-maintenance-workday__controls {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .time-maintenance-workday__controls input {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .time-maintenance-entry-success {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .time-maintenance-entry-success .secondary-button {
+    width: 100%;
   }
 
   .time-maintenance-context,

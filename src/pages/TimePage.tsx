@@ -81,7 +81,7 @@ import { personalDisplayTimeZone } from '../lib/usTimeZones'
 import { TimeCommandCenterPage } from '../time/TimeCommandCenterPage'
 import { workedTimePayrollReview } from '../time/timePayroll'
 import { currentPayrollWeek } from '../time/timeRules'
-import { recommendedManualPunchTimestamp } from '../time/manualPunchWorkday'
+import { adjacentOperationalDate, recommendedManualPunchTimestamp } from '../time/manualPunchWorkday'
 import {
   canExportPayroll as sessionCanExportPayroll,
   canManageTime as sessionCanManageTime,
@@ -747,6 +747,23 @@ export function TimeMaintenanceWorkbench({
     setAddReason('')
   }
 
+  function chooseAddWorkday(nextWorkday: string) {
+    if (!nextWorkday) return
+    setAddOperationalDate(nextWorkday)
+    setAddDate(nextWorkday)
+    setAddShiftId(null)
+    setAddLocationPostId(null)
+    setAddManualLocation('')
+    setAddUsesManualLocation(false)
+    setAddContext(null)
+    setAddSuccessMessage(null)
+    addMutation.reset()
+  }
+
+  function moveAddWorkday(days: -1 | 1) {
+    chooseAddWorkday(adjacentOperationalDate(addOperationalDate, days))
+  }
+
   return (
     <section className="time-maintenance-workbench" aria-labelledby="time-maintenance-title" ref={workbenchRef}>
       <div className="time-maintenance-heading">
@@ -885,28 +902,25 @@ export function TimeMaintenanceWorkbench({
               <label><span>Punch date</span><input onChange={(event) => setAddDate(event.target.value)} required type="date" value={addDate} /></label>
               <label><span>Time / Mountain</span><input onChange={(event) => setAddTime(event.target.value)} required type="time" value={addTime} /></label>
               <div className="time-maintenance-add__site-post">
-                <label>
-                  <span>Workday</span>
-                  <input
-                    disabled={Boolean(addShiftId)}
-                    onChange={(event) => {
-                      setAddOperationalDate(event.target.value)
-                      setAddShiftId(null)
-                      setAddLocationPostId(null)
-                      setAddManualLocation('')
-                      setAddUsesManualLocation(false)
-                      setAddContext(null)
-                    }}
-                    required
-                    type="date"
-                    value={addOperationalDate}
-                  />
+                <div className="time-maintenance-workday">
+                  <label htmlFor="time-maintenance-workday">Workday</label>
+                  <div className="time-maintenance-workday__controls">
+                    <button aria-label="Previous workday" className="secondary-button secondary-button--small" onClick={() => moveAddWorkday(-1)} type="button">Previous</button>
+                    <input
+                      id="time-maintenance-workday"
+                      onChange={(event) => chooseAddWorkday(event.target.value)}
+                      required
+                      type="date"
+                      value={addOperationalDate}
+                    />
+                    <button aria-label="Next workday" className="secondary-button secondary-button--small" onClick={() => moveAddWorkday(1)} type="button">Next</button>
+                  </div>
                   <small>
                     {addShiftId
-                      ? 'Locked to the selected scheduled shift so overnight work and Site/Post billing stay on the correct workday.'
+                      ? 'Changing the workday clears this shift link and loads the correct day’s Site/Post choices.'
                       : 'For an overnight shift, use the date the shift starts.'}
                   </small>
-                </label>
+                </div>
                 <label>
                   <span>Site/Post</span>
                   <select
@@ -1017,7 +1031,14 @@ export function TimeMaintenanceWorkbench({
             </form>
           </div>
 
-          {addSuccessMessage ? <div className="inline-success" role="status">{addSuccessMessage}</div> : null}
+          {addSuccessMessage ? (
+            <div className="inline-success time-maintenance-entry-success" role="status">
+              <span>{addSuccessMessage}</span>
+              <button className="secondary-button secondary-button--small" onClick={() => moveAddWorkday(1)} type="button">
+                Add next workday
+              </button>
+            </div>
+          ) : null}
           {addMutation.isError ? <div className="inline-alert" role="alert">{addMutation.error.message}</div> : null}
           {selectedEvent ? (
             <ModalDialog

@@ -1741,3 +1741,10 @@ pnpm exec wrangler deploy --keep-vars
 - Added the missing signed-out **Forgot password?** workflow with username lookup, approved-personal-email delivery, a single-use recovery link, generic enumeration-safe responses, transactional rate limits, and a private append-only audit ledger.
 - Full validation passed: type checking, zero-warning lint, 169 test files / 811 tests, production builds, and all 116 desktop/mobile Playwright checks.
 - Deployed Cloudflare Worker version `01521bc0-91ab-4d9d-b9e1-26248671aab4`; production health, readiness, login recovery UI, generic reset endpoint, hashed audit evidence, Account Security return route, and the next scheduled timekeeping run all passed live verification.
+
+## 09/06/2026 — Multi-Day Supervisor Time Entry
+
+- Removed the Time Maintenance state trap that required closing and reopening an employee time card before changing workdays after a scheduled shift was selected.
+- Workday changes now clear the prior occurrence link, synchronize the default punch date, and load the correct new day’s Site/Post choices without losing the selected employee or leaving the time card.
+- Added Previous, Next, and Add next workday controls while preserving overnight workday ownership and next-calendar-day punch recommendations.
+- Added focused date, state-reset, and desktop/mobile layout regression coverage.

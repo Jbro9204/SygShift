@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TimeMaintenanceShiftOption } from '../data/timekeeping'
-import { recommendedManualPunchTimestamp } from './manualPunchWorkday'
+import { adjacentOperationalDate, recommendedManualPunchTimestamp } from './manualPunchWorkday'
 
 const overnightShift: TimeMaintenanceShiftOption = {
   assignedEmployees: [],
@@ -27,6 +27,12 @@ const overnightShift: TimeMaintenanceShiftOption = {
 }
 
 describe('manual punch workday defaults', () => {
+  it('moves between operational workdays without local-time-zone drift', () => {
+    expect(adjacentOperationalDate('2026-09-05', 1)).toBe('2026-09-06')
+    expect(adjacentOperationalDate('2026-03-01', -1)).toBe('2026-02-28')
+    expect(adjacentOperationalDate('not-a-date', 1)).toBe('not-a-date')
+  })
+
   it('uses the operational workday shift start for clock-in', () => {
     expect(recommendedManualPunchTimestamp(overnightShift, 'clock_in')).toEqual({
       date: '2026-08-09',
