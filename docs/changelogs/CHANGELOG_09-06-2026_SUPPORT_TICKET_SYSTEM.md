@@ -31,5 +31,6 @@
 - All 167 Vitest files and 801 tests passed.
 - The production Worker and client builds passed.
 - All 112 desktop and mobile Playwright checks passed.
-- Live Worker version and endpoint verification are recorded below after deployment.
-
+- Deployed Cloudflare Worker version `3769215d-8bf0-4226-950a-3ef84d2ce1c7`.
+- Production health and readiness returned HTTP 200 and readiness reported `ready`.
+- The live `/support` route returned HTTP 200, the deployed asset contained both **Need Help?** and **Support Tickets**, and the new database RPC boundary returned the expected unauthenticated denial rather than a missing-function response.

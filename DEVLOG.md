@@ -1718,3 +1718,4 @@ pnpm exec wrangler deploy --keep-vars
 - Added protected database storage and RPC boundaries, impact-derived priority, audit events, in-app notifications, and audited system-email updates through the existing Cloudflare delivery processor.
 - Applied production migration `20260906125806_support_ticket_system.sql` from an isolated release history; no historical migration was replayed.
 - Full validation passed: type checking, zero-warning lint, 167 test files / 801 tests, production builds, and all 112 desktop/mobile Playwright checks.
+- Deployed Cloudflare Worker version `3769215d-8bf0-4226-950a-3ef84d2ce1c7`; production health, readiness, support-route, live-asset, and database-boundary checks all passed.
