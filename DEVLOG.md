@@ -1748,3 +1748,5 @@ pnpm exec wrangler deploy --keep-vars
 - Workday changes now clear the prior occurrence link, synchronize the default punch date, and load the correct new day’s Site/Post choices without losing the selected employee or leaving the time card.
 - Added Previous, Next, and Add next workday controls while preserving overnight workday ownership and next-calendar-day punch recommendations.
 - Added focused date, state-reset, and desktop/mobile layout regression coverage.
+- Full validation passed: type checking, zero-warning lint, 170 test files / 815 tests, production builds, and all 116 desktop/mobile Playwright checks.
+- Deployed Cloudflare Worker version `40af714c-8d38-490a-b57d-0d7917c08c00`; production health, readiness, `/time`, and the live multi-day controls all passed verification.

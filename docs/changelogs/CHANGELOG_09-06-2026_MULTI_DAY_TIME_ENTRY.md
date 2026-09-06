@@ -18,5 +18,5 @@
 - Added regression guards proving Workday is no longer disabled by a linked shift and that stale occurrence state is cleared when the day changes.
 - Updated the rendered Time Maintenance layout scenario to cover Previous, Next, and Add next workday controls on desktop and mobile.
 - Focused unit, type, zero-warning lint, and two desktop/mobile Playwright checks passed.
-- Full release validation and production deployment are recorded below after completion.
-
+- Full release validation passed: type checking, zero-warning lint, 170 test files / 815 tests, production builds, and all 116 desktop/mobile Playwright checks.
+- Deployed Cloudflare Worker version `40af714c-8d38-490a-b57d-0d7917c08c00`; production health, readiness, `/time`, and the live multi-day controls all passed verification.
