@@ -127,7 +127,7 @@ export function TimeWorkspace() {
   ].filter((tab) => tab.visible)
 
   function record(kind: TimeEventKind) {
-    if (!punchAllowed || punchLock.current || punchMutation.isPending) return
+    if (!punchAllowed || !dashboard || dashboardQuery.isError || punchLock.current || punchMutation.isPending) return
     punchLock.current = true
     punchMutation.mutate({
       kind,
@@ -149,7 +149,7 @@ export function TimeWorkspace() {
               {state === 'working' ? <Timer aria-hidden="true" size={22} /> : state === 'on_break' ? <Coffee aria-hidden="true" size={22} /> : <Clock3 aria-hidden="true" size={22} />}
               <div>
                 <span>Clock status</span>
-                <strong>{state === 'working' ? 'Clocked in' : state === 'on_break' ? 'On break' : 'Off clock'}</strong>
+                <strong>{dashboardQuery.isError ? 'Status unavailable' : !dashboard ? 'Loading clock status...' : state === 'working' ? 'Clocked in' : state === 'on_break' ? 'On break' : 'Off clock'}</strong>
               </div>
               <TimeStatusBadge tone={state === 'working' ? 'good' : state === 'on_break' ? 'warning' : 'neutral'}>
                 {state === 'working' ? 'Working' : state === 'on_break' ? 'Break' : 'Ready'}
@@ -177,7 +177,7 @@ export function TimeWorkspace() {
             <div className="time-workspace-clock__actions">
               {nextKinds.map((kind) => (
                 <TimeButton
-                  disabled={!punchAllowed}
+                  disabled={!punchAllowed || !dashboard || dashboardQuery.isError}
                   key={kind}
                   loading={punchMutation.isPending}
                   onClick={() => record(kind)}
@@ -202,6 +202,7 @@ export function TimeWorkspace() {
         <div className="time-workspace-clock-error" role="alert">
           <AlertTriangle aria-hidden="true" size={20} />
           <span>Your clock status could not be loaded. Other authorized time tools remain available.</span>
+          <TimeButton onClick={() => void dashboardQuery.refetch()}>Retry clock status</TimeButton>
         </div>
       ) : null}
       {earlyClockIn.acknowledged ? <EarlyClockInAcknowledgmentNotice details={earlyClockIn.acknowledged} /> : null}

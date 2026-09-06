@@ -111,12 +111,12 @@ function overviewTimeAction(dashboard: TimekeepingDashboard | undefined): {
   label: string
   requiresTimePage: boolean
 } {
-  if (!dashboard) return { kind: null, label: 'Open time clock', requiresTimePage: true }
+  if (!dashboard) return { kind: 'clock_in', label: 'Clock in', requiresTimePage: false }
   const state = activeTimeState(dashboard.lastEvent)
   if (state === 'working') return { kind: 'clock_out', label: 'Clock out', requiresTimePage: false }
   if (state === 'on_break') return { kind: 'break_end', label: 'End break', requiresTimePage: false }
   const choices = getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp)
-  if (choices.shifts.length !== 1) return { kind: null, label: choices.shifts.length ? 'Choose shift' : 'View next shift', requiresTimePage: true }
+  if (choices.shifts.length > 1) return { kind: null, label: 'Choose shift', requiresTimePage: true }
   return { kind: 'clock_in', label: 'Clock in', requiresTimePage: false }
 }
 
@@ -247,7 +247,7 @@ export function OverviewPage() {
   const displayTimeZone = personalDisplayTimeZone(session?.timeZone ?? timekeepingQuery.data?.employee.timeZone ?? 'America/Denver')
 
   function quickPunch(kind = timeAction.kind, shiftId?: string | null) {
-    if (!kind || !timekeepingQuery.data || !punchAllowed || punchLocked.current || punchMutation.isPending) return
+    if (!kind || !timekeepingQuery.data || timekeepingQuery.isError || !punchAllowed || punchLocked.current || punchMutation.isPending) return
     punchLocked.current = true
     const choices = getClockableShiftChoices(timekeepingQuery.data.eligibleShifts, timekeepingQuery.data.serverTimestamp)
     punchMutation.mutate({
@@ -274,8 +274,10 @@ export function OverviewPage() {
           displayTimeZone={displayTimeZone}
           error={punchMutation.isError && !isEarlyClockInBlockedError(punchMutation.error)
             ? punchMutation.error instanceof Error ? punchMutation.error.message : 'The time action could not be completed.'
-            : null}
+            : timekeepingQuery.isError ? 'Your clock status could not be loaded. Retry before recording time.' : null}
           onPunch={quickPunch}
+          onRetry={() => void timekeepingQuery.refetch()}
+          unavailable={!timekeepingQuery.data || timekeepingQuery.isError}
           pending={punchMutation.isPending || timekeepingQuery.isPending}
           punchAllowed={punchAllowed}
           scheduleAllowed={scheduleAllowed}
@@ -380,12 +382,14 @@ function HomeGreeting({ displayTimeZone, mode, session }: { displayTimeZone: str
   )
 }
 
-function TimeStatusStrip({ activeShift, dashboard, displayTimeZone, error, onPunch, pending, punchAllowed, scheduleAllowed, showPersonalLinks, state, timeAction }: {
+function TimeStatusStrip({ activeShift, dashboard, displayTimeZone, error, onPunch, onRetry, pending, punchAllowed, scheduleAllowed, showPersonalLinks, state, timeAction, unavailable }: {
   activeShift: TimekeepingShift | null
   dashboard: TimekeepingDashboard | undefined
   displayTimeZone: string
   error: string | null
   onPunch: (kind: TimeEventKind | null, shiftId?: string | null) => void
+  onRetry: () => void
+  unavailable: boolean
   pending: boolean
   punchAllowed: boolean
   scheduleAllowed: boolean
@@ -409,7 +413,7 @@ function TimeStatusStrip({ activeShift, dashboard, displayTimeZone, error, onPun
   const statusLabel = error
     ? 'Time action needs attention'
     : pending
-      ? 'Saving your time...'
+      ? dashboard ? 'Saving your time...' : 'Loading your clock status...'
       : state === 'working'
         ? 'You are working'
         : state === 'on_break'
@@ -436,19 +440,20 @@ function TimeStatusStrip({ activeShift, dashboard, displayTimeZone, error, onPun
       </div>
       <div className="home-time-strip__actions" role="group" aria-label="Time clock actions">
         {earlyClockInAttemptAvailable && upcomingShift && dashboard ? (
-          <button className="primary-action" disabled={pending} onClick={() => onPunch('clock_in', upcomingShift.shiftId)} type="button">
+          <button className="primary-action" disabled={pending || unavailable} onClick={() => onPunch('clock_in', upcomingShift.shiftId)} type="button">
             <Timer aria-hidden="true" size={18} />Clock in
           </button>
         ) : timeAction.requiresTimePage ? (
           <Link className="primary-action" to="/time/my-time"><Timer aria-hidden="true" size={18} />{timeAction.label}</Link>
         ) : punchAllowed ? (
-          <button className={timeAction.kind === 'clock_out' ? 'danger-button urgent-action-button urgent-action-button--compact' : 'primary-action'} disabled={pending} onClick={() => onPunch(timeAction.kind)} type="button">
+          <button className={timeAction.kind === 'clock_out' ? 'danger-button urgent-action-button urgent-action-button--compact' : 'primary-action'} disabled={pending || unavailable} onClick={() => onPunch(timeAction.kind)} type="button">
             <Timer aria-hidden="true" size={18} />{pending ? 'Saving...' : timeAction.label}
           </button>
         ) : null}
         {state === 'working' && punchAllowed ? (
-          <button className="secondary-button" disabled={pending} onClick={() => onPunch('break_start')} type="button"><Coffee aria-hidden="true" size={18} />Start break</button>
+          <button className="secondary-button" disabled={pending || unavailable} onClick={() => onPunch('break_start')} type="button"><Coffee aria-hidden="true" size={18} />Start break</button>
         ) : null}
+        {unavailable && error ? <button className="secondary-button" onClick={onRetry} type="button">Retry clock status</button> : null}
         {scheduleAllowed ? <Link className="secondary-button" to="/schedule"><CalendarDays aria-hidden="true" size={18} />Schedule</Link> : null}
         {showPersonalLinks ? (
           <Link className="home-call-off-button urgent-action-button" to="/time/my-time?report=call-off">

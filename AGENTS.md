@@ -42,3 +42,9 @@ Deployment is not complete until:
 6. `https://app.sygilant.us/api/v1/health` and `/api/v1/ready` return healthy responses.
 7. The changelog records what changed, what was tested, migration/deployment status, and any remaining limitation.
 
+## Timekeeping preservation gate for every release
+
+- Run the actual-component `tests/e2e/time-clock-workflow.spec.ts` checks even when the intended change is outside Timekeeping. A static markup fixture alone does not verify clock actions or the Early Clock-In popup.
+- Preserve Home clock-in, clock-out, break/resume, multiple-shift selection, forced early acknowledgment, permission boundaries, and immediate cross-page clock synchronization.
+- For timekeeping database changes, also run the relevant rollback-only SQL lifecycle regressions. Never create committed test punches for real employees.
+- Before executing a combined migration rehearsal, inspect its complete transaction boundaries. It must have one outer BEGIN, no COMMIT, and one final ROLLBACK; do not concatenate a committing migration with a separate test transaction and describe it as rollback-only.
