@@ -546,15 +546,19 @@ function configuredSupabase(environment: Environment) {
 }
 
 async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
+  return readJsonBodyWithin(request, maxJsonBodyBytes)
+}
+
+async function readJsonBodyWithin(request: Request, maximumBytes: number): Promise<Record<string, unknown>> {
   if (!request.body) return {}
 
   const contentLength = request.headers.get('content-length')
-  if (contentLength && Number(contentLength) > maxJsonBodyBytes) {
+  if (contentLength && Number(contentLength) > maximumBytes) {
     throw new ApiError('request_body_too_large', 413, 'The request body is too large.')
   }
 
   const text = await request.text()
-  if (new TextEncoder().encode(text).length > maxJsonBodyBytes) {
+  if (new TextEncoder().encode(text).length > maximumBytes) {
     throw new ApiError('request_body_too_large', 413, 'The request body is too large.')
   }
   if (!text.trim()) return {}
@@ -2637,13 +2641,17 @@ async function handleHrTemplateLibrary(
   const page = Number.isInteger(pageValue) && pageValue > 0 ? pageValue : 1
   const pageSizeValue = Number.parseInt(url.searchParams.get('pageSize') ?? '10', 10)
   const pageSize = [5, 10, 20].includes(pageSizeValue) ? pageSizeValue : 10
+  const kind = url.searchParams.get('kind')?.trim() ?? ''
+  if (kind && !['hr_source', 'training_admin', 'training_module', 'document_guide', 'training_form'].includes(kind)) {
+    throw new ApiError('invalid_template_kind', 422, 'The document-library type is invalid.')
+  }
   const payload = await callRpc<HrTemplateLibraryPayload>(
     { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
-    'service_get_hr_template_library',
+    'service_get_hr_system_library',
     {
       target_actor_id: session.context.employee_id,
-      target_audience: audience || null,
       target_category: category || null,
+      target_kind: kind || null,
       target_page: page,
       target_page_size: pageSize,
       target_search: search || null,
@@ -2651,6 +2659,84 @@ async function handleHrTemplateLibrary(
     session.config.serviceRoleKey,
   )
   return json({ ...payload, requestId })
+}
+
+async function handleHrSystemRegistration(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
+  await requireRecentDocumentMfa(request, session)
+  const body = await readJsonBodyWithin(request, 768 * 1024)
+  const documentId = requiredText(body.documentId, 'Document ID', 36)
+  if (!validUuid(documentId)) throw new ApiError('invalid_document_id', 422, 'The protected document identifier is invalid.')
+  const relatedModules = Array.isArray(body.relatedModules)
+    ? body.relatedModules.map((item) => requiredText(item, 'Related training module', 80)).slice(0, 80)
+    : []
+  const metadata = body.packageMetadata && typeof body.packageMetadata === 'object' && !Array.isArray(body.packageMetadata)
+    ? body.packageMetadata as Record<string, unknown>
+    : {}
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_register_hr_system_item',
+    {
+      target_actor_id: session.context.employee_id,
+      target_audience: 'hr_only',
+      target_category: requiredText(body.category, 'Category', 160),
+      target_code: requiredText(body.code, 'Controlled item code', 80),
+      target_document_id: documentId,
+      target_document_kind: requiredText(body.documentKind, 'Document kind', 40),
+      target_full_text: optionalText(body.fullText, 'Searchable document text', 700_000) ?? '',
+      target_guide_code: optionalText(body.guideCode, 'Guide code', 80),
+      target_lifecycle_status: requiredText(body.lifecycleStatus, 'Lifecycle status', 40),
+      target_package_metadata: metadata,
+      target_page_count: Number(body.pageCount),
+      target_purpose: requiredText(body.purpose, 'Purpose', 4000),
+      target_record_class: requiredText(body.recordClass, 'Record class', 300),
+      target_related_modules: relatedModules,
+      target_request_id: requestId,
+      target_section: requiredText(body.section, 'Section', 240),
+      target_sensitivity: requiredText(body.sensitivity, 'Sensitivity', 30),
+      target_source_filename: requiredText(body.sourceFilename, 'Source filename', 255),
+      target_source_sha256: requiredText(body.sourceSha256, 'Source checksum', 64),
+      target_title: requiredText(body.title, 'Title', 200),
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
+async function handleAssignedTrainingDocument(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+  documentId: string,
+): Promise<Response> {
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  if (!validUuid(documentId)) throw new ApiError('invalid_document_id', 422, 'The training document identifier is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  const action = new URL(request.url).searchParams.get('action') === 'download' ? 'download' : 'preview'
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  const target = await callRpc<HrDocumentAccessObject>(serviceConfig, 'service_authorize_assigned_training_document', {
+    target_action: action,
+    target_actor_id: session.context.employee_id,
+    target_document_id: documentId,
+    target_request_id: requestId,
+  }, session.config.serviceRoleKey)
+  const stored = await fetchPrivateStorageObject(serviceConfig, target.bucket, target.objectKey)
+  if (!stored.ok || !stored.body) throw new ApiError('training_document_unavailable', 502, 'The assigned training document could not be loaded.')
+  const filename = sanitizeHrDocumentFilename(target.filename).replaceAll('"', '_')
+  const headers = new Headers()
+  headers.set('cache-control', 'private, no-store, max-age=0')
+  headers.set('content-disposition', `${action === 'download' ? 'attachment' : 'inline'}; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`)
+  headers.set('content-security-policy', "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:")
+  headers.set('content-type', target.mimeType)
+  headers.set('pragma', 'no-cache')
+  return new Response(stored.body, { headers, status: 200 })
 }
 
 async function handleHrDocumentScanCallback(
@@ -4297,6 +4383,9 @@ async function handleHrDocumentsApi(
   const url = new URL(request.url)
   if (url.pathname === '/api/v1/hr/documents/library') {
     return handleHrTemplateLibrary(request, environment, requestId)
+  }
+  if (url.pathname === '/api/v1/hr/documents/library/registration') {
+    return handleHrSystemRegistration(request, environment, requestId)
   }
   if (url.pathname === '/api/v1/hr/documents/studio') {
     return handleDocumentStudioWorkspace(request, environment, requestId)
@@ -6785,6 +6874,22 @@ export default {
           response = error instanceof ApiError
             ? errorJson(error.code, requestId, error.status, error.message)
             : errorJson('hr_automation_request_failed', requestId, 500, 'The HR automation request could not be completed.')
+        }
+      }
+    } else if (url.pathname.startsWith('/api/v1/training/documents/')) {
+      try {
+        const documentId = url.pathname.match(/^\/api\/v1\/training\/documents\/([0-9a-f-]{36})$/i)?.[1]
+        response = documentId
+          ? await handleAssignedTrainingDocument(request, environment, requestId, documentId)
+          : errorJson('not_found', requestId, 404)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('training_document_request_failed', requestId, 500, 'The assigned training material could not be opened.')
         }
       }
     } else if (url.pathname.startsWith('/api/v1/hr/documents')) {

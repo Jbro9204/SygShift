@@ -14,6 +14,7 @@ import {
 import { DataStatePanel } from '../components/DataStatePanel'
 import { HrPagination } from '../components/HrPagination'
 import { HrOperationalActions } from '../components/HrOperationalActions'
+import { HrDocumentLibrary } from '../components/HrDocumentLibrary'
 import { getSessionContext } from '../data/auth'
 import {
   getHrStage8Workspace,
@@ -134,6 +135,7 @@ function Stage8WorkspacePage({ title, summary, modules }: {
         <section aria-label={`${definition.title} status`} className="hr-automation-summary hr-automation-summary--three">
           {definition.metrics.map((metric, index) => <article key={metric}><WorkspaceIcon aria-hidden="true" size={20} /><span>{metric}</span><strong>{index === 0 ? workspaceQuery.data.counts.primary : index === 1 ? workspaceQuery.data.counts.secondary : workspaceQuery.data.counts.tertiary}</strong></article>)}
         </section>
+        {selectedModule === 'learning' ? <HrDocumentLibrary mode="training" /> : null}
         <section className="panel hr-automation-worklist">
           <div className="section-heading"><div><p className="eyebrow">Current work</p><h2>{definition.label} worklist</h2></div></div>
           {workspaceQuery.data.items.length ? <div className="hr-automation-list">{workspaceQuery.data.items.map((item) => <article key={item.id}><div><strong>{item.title}</strong><span>{item.subtitle}{item.detail ? ` · ${item.detail}` : ''}</span></div><div><span className="action-status">{item.status}</span>{formatDate(item.dateLabel) ? <small>{formatDate(item.dateLabel)}</small> : null}</div></article>)}</div> : <div className="compact-empty"><WorkspaceIcon aria-hidden="true" size={24} /><span>{definition.empty}</span></div>}

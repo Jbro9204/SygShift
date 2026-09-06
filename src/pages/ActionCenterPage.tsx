@@ -46,6 +46,7 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import { alignPostNameWithShiftRequirement, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { getAssignedTrainingDocument } from '../data/hrSystemImport'
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return 'No due date'
@@ -120,12 +121,20 @@ function HrAutomationActions({
 
 function TrainingMaterial({ item }: { item: TrainingAction }) {
   if (!item.contentUrl) return null
+  const protectedMatch = item.contentUrl.match(/^\/api\/v1\/training\/documents\/([0-9a-f-]{36})$/i)
+  if (protectedMatch) return <ProtectedTrainingMaterial documentId={protectedMatch[1]} />
   return (
     <a className="secondary-button secondary-button--small" href={item.contentUrl} rel="noreferrer" target="_blank">
       <ExternalLink aria-hidden="true" size={16} />
       Open {item.contentType.replace('_', ' ')}
     </a>
   )
+}
+
+function ProtectedTrainingMaterial({documentId}:{documentId:string}){
+  const [error,setError]=useState('')
+  const mutation=useMutation({mutationFn:()=>getAssignedTrainingDocument(documentId),onSuccess:(blob)=>{const url=URL.createObjectURL(blob);window.open(url,'_blank','noopener,noreferrer');setTimeout(()=>URL.revokeObjectURL(url),60_000)},onError:(reason)=>setError(reason instanceof Error?reason.message:'The training PDF could not be opened.')})
+  return <div className="training-material-action"><button className="secondary-button secondary-button--small" disabled={mutation.isPending} onClick={()=>{setError('');mutation.mutate()}} type="button"><ExternalLink aria-hidden="true" size={16}/>{mutation.isPending?'Opening PDF…':'Open training PDF'}</button>{error?<small className="form-error">{error}</small>:null}</div>
 }
 
 function EmployeeActions({ data, busyId, emptyCopy, onOpen, onComplete, showEmpty = true }: {

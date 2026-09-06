@@ -3,12 +3,14 @@ import { documentApiRequest, parseApiError } from './hrDocuments'
 
 const audienceSchema = z.enum(['all_employees', 'supervisors_and_hr', 'hr_only'])
 const sensitivitySchema = z.enum(['standard', 'restricted', 'highly_restricted'])
+const documentKindSchema = z.enum(['hr_source', 'training_admin', 'training_module', 'document_guide', 'training_form'])
 
 const libraryItemSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),
   title: z.string(),
   category: z.string(),
+  section: z.string(),
   recordClass: z.string(),
   purpose: z.string(),
   audience: audienceSchema,
@@ -16,6 +18,11 @@ const libraryItemSchema = z.object({
   sourceFilename: z.string(),
   sourceDocumentId: z.string().uuid().nullable(),
   availability: z.enum(['cataloged', 'available']),
+  documentKind: documentKindSchema,
+  lifecycleStatus: z.enum(['draft_for_adoption', 'adopted', 'retired']),
+  guideCode: z.string().nullable(),
+  relatedModules: z.array(z.string()),
+  pageCount: z.number().int().positive().nullable(),
 })
 
 const libraryWorkspaceSchema = z.object({
@@ -48,10 +55,12 @@ const libraryWorkspaceSchema = z.object({
 export type HrDocumentLibraryItem = z.infer<typeof libraryItemSchema>
 export type HrDocumentLibraryWorkspace = z.infer<typeof libraryWorkspaceSchema>
 export type HrDocumentLibraryAudience = z.infer<typeof audienceSchema>
+export type HrDocumentLibraryKind = z.infer<typeof documentKindSchema>
 
 export interface HrDocumentLibraryFilters {
   audience?: HrDocumentLibraryAudience
   category?: string
+  kind?: HrDocumentLibraryKind
   page?: number
   pageSize?: 5 | 10 | 20
   search?: string
@@ -63,6 +72,7 @@ export async function getHrDocumentLibrary(
   const query = new URLSearchParams()
   if (filters.audience) query.set('audience', filters.audience)
   if (filters.category) query.set('category', filters.category)
+  if (filters.kind) query.set('kind', filters.kind)
   if (filters.page) query.set('page', String(filters.page))
   if (filters.pageSize) query.set('pageSize', String(filters.pageSize))
   if (filters.search?.trim()) query.set('search', filters.search.trim())

@@ -1,5 +1,12 @@
 # SygShift Development Log
 
+## 09/06/2026 — HR System v2.1 PDF and Training Rollout
+
+- Prepared 537 canonical PDFs from the supplied HR and Training package, retaining the stronger `GS-HR-101` v2 as the sole canonical interview evaluation and excluding its older duplicate.
+- Added one protected, searchable HR/Training catalog with audited PDF preview/download, a dedicated Training Module catalog, existing Action Center assignment/completion integration, and a resumable five-stage import with per-file SHA-256 verification.
+- Applied production migration `20260906203000`; the master library remains HR/Admin-only and employees can access only training material actually assigned to them.
+- Full implementation and release evidence: `docs/changelogs/CHANGELOG_09-06-2026_HR_SYSTEM_V21_PDF_TRAINING_ROLLOUT.md`.
+
 ## 09/06/2026 — System Clock Highlight Cushioning
 
 - Added subtle responsive padding inside the highlighted Mountain/System time clock without changing its fonts, clock face, text, order, or timing behavior.

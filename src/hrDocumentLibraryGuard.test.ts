@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const migration = readFileSync('supabase/migrations/20260902232050_searchable_hr_template_library.sql', 'utf8')
+const v21Migration = readFileSync('supabase/migrations/20260906203000_hr_system_v21_library_and_training.sql', 'utf8')
 const worker = readFileSync('worker/index.ts', 'utf8')
 const library = readFileSync('src/components/HrDocumentLibrary.tsx', 'utf8')
 const employeePage = readFileSync('src/pages/MyDocumentsPage.tsx', 'utf8')
@@ -28,7 +29,7 @@ describe('searchable HR document library', () => {
     expect(migration).toContain("else 'cataloged'")
     expect(migration).not.toMatch(/update\s+private\.hr_document_release_gate\s+set\s+enabled\s*=\s*true/i)
     expect(worker).toContain("if (url.pathname === '/api/v1/hr/documents/library')")
-    const handler = worker.slice(worker.indexOf('async function handleHrTemplateLibrary'), worker.indexOf('async function handleHrDocumentScanCallback'))
+    const handler = worker.slice(worker.indexOf('async function handleHrTemplateLibrary'), worker.indexOf('async function handleHrSystemRegistration'))
     expect(handler).toContain('requireAuthenticatedSession')
     expect(handler).not.toContain('requireHrDocumentPipeline')
   })
@@ -47,16 +48,25 @@ describe('searchable HR document library', () => {
   })
 
   it('provides compact discovery only inside the HR Document Studio', () => {
-    expect(library).toContain("useState<HrDocumentLibraryFilters>({ page: 1, pageSize: 10 })")
+    expect(library).toContain("useState<HrDocumentLibraryFilters>({ page: 1, pageSize: 10")
     expect(library).toContain('<option value={5}>5</option>')
     expect(library).toContain('<option value={10}>10</option>')
     expect(library).toContain('<option value={20}>20</option>')
-    expect(library).toContain('Search by form name, code, purpose, or everyday terms')
+    expect(library).toContain('Search by document name, code, purpose, or full PDF text')
     expect(library).toContain('PTO, emergency contact, injury, complaint, or payroll correction')
     expect(employeePage).not.toContain('HrDocumentLibrary')
     expect(employeePage).not.toContain('Forms library')
     expect(studio).toContain('<HrDocumentLibrary mode="studio"/>')
     expect(navigation).toContain("label: 'My Documents', path: '/my-documents'")
     expect(navigation).not.toContain("label: 'Document Library'")
+  })
+
+  it('extends the protected index and training system without exposing vault binaries', () => {
+    expect(v21Migration).toContain("document_kind in ('hr_source','training_admin','training_module','document_guide','training_form')")
+    expect(v21Migration).toContain('source_document_id uuid references private.hr_documents')
+    expect(v21Migration).toContain('service_authorize_assigned_training_document')
+    expect(v21Migration).toContain("item.audience_scope='hr_only'")
+    expect(worker).toContain("'/api/v1/hr/documents/library/registration'")
+    expect(worker).toContain("'/api/v1/training/documents/'")
   })
 })
