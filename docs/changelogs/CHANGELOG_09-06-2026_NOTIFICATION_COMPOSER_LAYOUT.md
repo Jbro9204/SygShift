@@ -35,7 +35,11 @@ Read-only production measurements confirmed 26–27-pixel single-line fields wit
 - The next run overlapped the full build gate and produced three static-fixture failures involving a late application error view. The final browser pass ran alone with the build and application files frozen; no unrelated production workflow was changed to accommodate a fixture race.
 - Final `pnpm check`: 180 files / 875 tests passed, TypeScript passed, zero-warning lint passed, production builds passed.
 - Final complete Playwright run: **192 passed**, including all 10 new composer checks and all 38 actual time-clock workflow checks. Desktop and phone screenshots were visually reviewed.
-- Production deployment and live verification: pending below.
+- Released commit `7e152b2` to `origin/main`; deployed with `pnpm build` and `pnpm exec wrangler deploy --keep-vars`.
+- Production Worker version: `f75ca6ed-8968-435d-8b05-7b3016706c32` at `https://app.sygilant.us`.
+- Live `/api/v1/health` and `/api/v1/ready` returned HTTP 200; readiness was true. The deployed stylesheet and NotificationsPage JavaScript matched the local release byte-for-byte (SHA-256).
+- Signed-in live visual verification passed: single-line controls measured 47–48 pixels high with 12-pixel corners; the message editor uses the normal Aptos/Segoe UI application font. Delivery checkboxes measured 18 pixels wide with a 12-pixel label gap. Search text has 10 pixels of clearance after the icon. No employee-row text overflow or horizontal page overflow was detected.
+- Live screenshot inspection confirmed the corrected fields, message font, checkbox placement, aligned section gutters, and compact action footer. The existing four-clock header and Online indicator remain present. No new browser errors were recorded after the release reload; earlier tab logs contained browser messaging-channel errors predating deployment.
 - Database migrations: none. No production business records, permissions, secrets, or infrastructure settings changed.
 - Live verification uses a separate tab to preserve the user's open form and selected recipient. No notification is submitted during production QA.
 
