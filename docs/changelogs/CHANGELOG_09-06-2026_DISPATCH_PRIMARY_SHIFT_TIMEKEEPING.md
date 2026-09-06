@@ -23,4 +23,8 @@
 - A post-migration database lint caught two composite-row loads in new Scheduler helper functions before web deployment. A second forward-only migration corrected them, completed a linked rollback rehearsal, and added a regression guard.
 - Type checking, zero-warning lint, production builds, and all 171 Vitest files / 821 tests passed.
 - All 118 desktop and mobile Playwright checks passed, including the new Dispatch mode layout and the existing timekeeping, Scheduler, and responsive-layout coverage.
-- Production migration, database verification, Worker deployment, live health/readiness, and deployed-asset verification are recorded below when completed.
+- Applied production migrations `20260906154620_dispatch_primary_shift_timekeeping.sql` and `20260906160934_repair_dispatch_scheduler_composite_loads.sql`; both are recorded in migration history.
+- Production verification found Michael's four published September 6–9 Dispatch shifts stored as standard paid shifts with no physical-post overlap. Zero current/future standalone Dispatch shifts remain incorrectly classified as concurrent duty.
+- Under Michael's authenticated employee identity, the live Timekeeping RPC returned his current Dispatch assignment as an eligible standard shift. No test punch was created, and the migration preservation check left all 1,004 historical time events unchanged.
+- Both new Scheduler helpers passed production database lint and runtime execution. The edit-path test ran inside a rolled-back transaction and did not change a schedule.
+- Deployed Cloudflare Worker version `37594341-ffdd-4b28-96eb-b992c31bc8a2`; health, readiness, `/schedule`, and the deployed primary/concurrent Dispatch controls all passed live verification.

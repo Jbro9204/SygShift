@@ -1759,3 +1759,5 @@ pnpm exec wrangler deploy --keep-vars
 - Added a forward-only production data repair for current and future standalone Dispatch assignments while retaining concurrent classification where a standard physical-post shift overlaps.
 - A post-migration database lint caught and corrected two invalid composite-row loads in the new Scheduler edit/preview helpers before web deployment; the forward repair received its own regression guard and linked rollback rehearsal.
 - Full validation passed: type checking, zero-warning lint, 171 test files / 821 tests, production builds, and all 118 desktop/mobile Playwright checks.
+- Applied production migrations `20260906154620_dispatch_primary_shift_timekeeping.sql` and `20260906160934_repair_dispatch_scheduler_composite_loads.sql`. Michael's four published Dispatch shifts are standard paid shifts, his authenticated Timekeeping dashboard exposes the current shift, and no historical punch was added or changed.
+- Deployed Cloudflare Worker version `37594341-ffdd-4b28-96eb-b992c31bc8a2`; production health, readiness, `/schedule`, and live release assets passed verification.
