@@ -33,5 +33,6 @@
 ## Release
 
 - Applied and recorded migration `20260906175644_restore_early_clock_and_home_actions.sql`.
-- Web deployment and final live health/assets verification: pending at this checkpoint.
+- Pushed application commit `a93ddb3` to `origin/main` and deployed Cloudflare Worker `5e35b1f9-2814-40c1-aa9c-a7eefef8e953`.
+- Production health returned `status: ok`; readiness returned `ready: true`. The deployed Home and Time workspace JavaScript both returned HTTP 200 and exactly matched the verified local build. Function lint found no error-level issues, migration history contains the exact applied version, and the standalone rollback-only database lifecycle suite passed again after application.
 - A signed-in production browser walkthrough is unavailable because the accessible browser remains signed out. Real rendered interaction testing used isolated RPC transport; authoritative behavior was exercised directly against production functions in rollback-only tests.

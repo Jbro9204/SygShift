@@ -5,7 +5,8 @@
 - Reproduced the missing-popup path: no shift ID plus a future assignment outside the 12-hour dashboard window returned plain text instead of the structured warning. Home conditionally replaced Clock in with a navigation link in the same situation.
 - Restored next-future-assignment visibility and default early-clock resolution, retained Home clock actions, and added safe clock-status error/retry behavior without changing the five-minute guard or access permissions.
 - Applied migration `20260906175644`; rollback-only database lifecycle tests passed with zero persisted test punches/audits. The migration itself applied during verification; see the dated changelog for the transaction-boundary note.
-- `pnpm check` passed 841 tests / 176 files; the full browser suite passed 170 desktop/mobile checks, including 38 real-component timekeeping regressions. Web deployment verification pending at this checkpoint.
+- `pnpm check` passed 841 tests / 176 files; the full browser suite passed 170 desktop/mobile checks, including 38 real-component timekeeping regressions.
+- Pushed application commit `a93ddb3` and deployed Worker `5e35b1f9-2814-40c1-aa9c-a7eefef8e953`. Health/readiness and exact live Home/Time workspace assets passed; database runtime checks passed again with no persisted test punches/audits. Signed-in production browser verification remains unavailable; rendered interaction tests use isolated transport.
 
 This file is the project handoff trail. Update it whenever production behavior, database functions,
 deployment status, or major workflow assumptions change.
