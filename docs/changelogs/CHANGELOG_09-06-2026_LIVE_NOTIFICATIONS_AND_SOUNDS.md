@@ -43,7 +43,10 @@ Date: 09/06/2026
 - Migration `20260906190358` applied successfully through the exact-file procedure; only that migration-history version was marked applied. Post-migration security advisor reported no error-level issues.
 - Private-channel runtime checks confirmed the recipient's own signals are readable, other recipient rows are hidden, and an attempted other-account topic is denied.
 - The initial live-transport check identified an uninitialized managed Realtime partition window. A normal WebSocket subscription initialized it; the signal and authorization checks then passed. No managed Realtime schema object was edited. This is the documented [first-connection behavior](https://supabase.com/docs/guides/troubleshooting/realtime-warn-sending-broadcast-message).
-- Release commit, Worker version, and live endpoint verification are recorded below after deployment.
+- Release commit `6c18049` pushed to `origin/main`; deployed Worker version `1274c6a4-6795-49cf-953e-d08ded91776b`.
+- Production health and readiness returned HTTP 200 / ready. The live HTML, service worker, manifest, and both MP3s match the release build by SHA-256. Public push configuration is ready and does not expose private credentials; unauthenticated dispatch is rejected and the authenticated empty-queue dispatcher accepts the request.
+- Post-release database checks confirmed zero committed regression tickets, zero test subscriptions/deliveries, unchanged original test-ticket Resolved status, and continued successful scheduled timekeeping runs, including the 19:40 UTC run.
+- The live database-to-Worker wakeup returned HTTP 202 without timeout or error using the Vault credential and an empty delivery queue. The subsequent 19:41 UTC scheduled timekeeping run also completed normally.
 - Signed-in production walkthrough and actual device/OS notification playback require an authenticated browser and an enrolled device. No real employees receive automated test messages.
 
 ## Operational configuration
