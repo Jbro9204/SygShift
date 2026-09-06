@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck } from 'lucide-react'
-import { getSessionContext, signInWithUsername, signOut } from '../data/auth'
+import { ArrowLeft, Eye, EyeOff, KeyRound, LockKeyhole, MailCheck, ShieldCheck } from 'lucide-react'
+import { getSessionContext, requestPasswordReset, signInWithUsername, signOut } from '../data/auth'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 
 type LoginLocationState = {
@@ -23,6 +23,8 @@ export function LoginPage() {
   const [alreadySignedIn, setAlreadySignedIn] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
+  const [recoveryMode, setRecoveryMode] = useState(false)
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
 
   const returnPath = useMemo(() => {
     const state = location.state as LoginLocationState | null
@@ -79,6 +81,33 @@ export function LoginPage() {
     }
   }
 
+  async function handlePasswordReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErrorMessage(null)
+    setRecoveryMessage(null)
+    setLoading(true)
+
+    try {
+      setRecoveryMessage(await requestPasswordReset(username))
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Password recovery is temporarily unavailable.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function openPasswordRecovery() {
+    setErrorMessage(null)
+    setRecoveryMessage(null)
+    setRecoveryMode(true)
+  }
+
+  function closePasswordRecovery() {
+    setErrorMessage(null)
+    setRecoveryMessage(null)
+    setRecoveryMode(false)
+  }
+
   if (alreadySignedIn) {
     return <Navigate to={returnPath} replace />
   }
@@ -110,7 +139,18 @@ export function LoginPage() {
           </div>
         ) : null}
 
-        <form className="login-form" onSubmit={handleSubmit}>
+        <form className="login-form" onSubmit={recoveryMode ? handlePasswordReset : handleSubmit}>
+          {recoveryMode ? (
+            <div className="login-recovery__intro">
+              <p className="eyebrow">Password recovery</p>
+              <h2>Reset your password</h2>
+              <p>
+                Enter your SygShift username. If the account is active, we’ll send a secure,
+                single-use reset link to the approved personal email on file.
+              </p>
+            </div>
+          ) : null}
+
           <label className="field-label">
             <span>Username</span>
             <input
@@ -126,28 +166,33 @@ export function LoginPage() {
             />
           </label>
 
-          <div className="field-label">
-            <label htmlFor="login-password">Password</label>
-            <span className="password-input">
-              <input
-                autoComplete="current-password"
-                disabled={!isSupabaseConfigured || checkingSession || loading}
-                id="login-password"
-                onChange={(event) => setPassword(event.target.value)}
-                required
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-              />
-              <button
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                className="password-input__toggle"
-                onClick={() => setShowPassword((current) => !current)}
-                type="button"
-              >
-                {showPassword ? <EyeOff aria-hidden="true" size={19} /> : <Eye aria-hidden="true" size={19} />}
+          {!recoveryMode ? (
+            <div className="field-label">
+              <label htmlFor="login-password">Password</label>
+              <span className="password-input">
+                <input
+                  autoComplete="current-password"
+                  disabled={!isSupabaseConfigured || checkingSession || loading}
+                  id="login-password"
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                />
+                <button
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="password-input__toggle"
+                  onClick={() => setShowPassword((current) => !current)}
+                  type="button"
+                >
+                  {showPassword ? <EyeOff aria-hidden="true" size={19} /> : <Eye aria-hidden="true" size={19} />}
+                </button>
+              </span>
+              <button className="login-recovery__link" onClick={openPasswordRecovery} type="button">
+                Forgot password?
               </button>
-            </span>
-          </div>
+            </div>
+          ) : null}
 
           {errorMessage ? (
             <div className="auth-notice auth-notice--error" role="alert">
@@ -156,14 +201,33 @@ export function LoginPage() {
             </div>
           ) : null}
 
+          {recoveryMessage ? (
+            <div className="auth-notice auth-notice--success" role="status">
+              <MailCheck aria-hidden="true" size={21} />
+              <span>{recoveryMessage}</span>
+            </div>
+          ) : null}
+
           <button
             className="primary-action login-submit"
             disabled={!isSupabaseConfigured || checkingSession || loading}
             type="submit"
           >
-            <KeyRound aria-hidden="true" size={20} />
-            {loading ? 'Checking access…' : 'Sign in'}
+            {recoveryMode ? <MailCheck aria-hidden="true" size={20} /> : <KeyRound aria-hidden="true" size={20} />}
+            {loading ? (recoveryMode ? 'Sending secure link…' : 'Checking access…') : (recoveryMode ? 'Send reset link' : 'Sign in')}
           </button>
+
+          {recoveryMode ? (
+            <>
+              <button className="login-recovery__back" onClick={closePasswordRecovery} type="button">
+                <ArrowLeft aria-hidden="true" size={18} />
+                Back to sign in
+              </button>
+              <p className="login-recovery__help">
+                If no email arrives, ask an administrator to confirm the personal email on your employee record.
+              </p>
+            </>
+          ) : null}
         </form>
       </section>
     </main>

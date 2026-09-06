@@ -20,6 +20,11 @@ const sessionContextSchema = z.object({
   permissions: z.array(z.string()).optional().default([]),
 })
 
+const passwordResetRequestSchema = z.object({
+  accepted: z.literal(true),
+  message: z.string().min(1),
+})
+
 export type SessionContext = {
   employeeId: string
   username: string
@@ -66,6 +71,24 @@ export async function signInWithUsername(username: string, password: string): Pr
   if (error) {
     throw new Error('The username or password was not accepted.')
   }
+}
+
+export async function requestPasswordReset(username: string): Promise<string> {
+  const response = await fetch('/api/v1/auth/password-reset/request', {
+    body: JSON.stringify({ username: normalizeUsername(username) }),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  })
+
+  if (!response.ok) {
+    throw new Error('Password recovery is temporarily unavailable. Please try again shortly.')
+  }
+
+  const result = passwordResetRequestSchema.safeParse(await response.json())
+  if (!result.success) {
+    throw new Error('Password recovery is temporarily unavailable. Please try again shortly.')
+  }
+  return result.data.message
 }
 
 export async function signOut(): Promise<void> {

@@ -115,6 +115,18 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Notification records distinguish queued, attempted, delivered, and failed states. The interface must never describe a queued message as sent.
 - Employee email routing is personal-first. Database queues exclude the temporarily blocked `@guardianshipsecurity.net` domain, and the Worker independently suppresses that domain before the provider is called.
 
+## Login password recovery
+
+- Signed-out employees request password recovery with their SygShift username. The Worker, not the browser, resolves that username to the internal authentication alias and the approved personal delivery address.
+- The recovery boundary returns one generic accepted response for eligible, unknown, disabled, incomplete, and rate-limited accounts. Only an eligible active account receives a single-use Supabase recovery link.
+- Recovery claims are rate-limited transactionally by one-way username and request-source hashes. The private claim ledger is forced-RLS, append-only, audited, and inaccessible to browser roles.
+- Administrator-assisted recovery remains a separate MFA- and permission-protected workflow. Both workflows return through the existing Account Security password-recovery page and do not change MFA or security-key state.
+
+## Automatic timekeeping compatibility
+
+- Dispatch Phone duty remains a concurrent, non-payable responsibility and cannot create a new clock session.
+- Historical Dispatch-linked sessions created before that classification may receive exactly one system clock-out when an earlier valid clock-in or break event exists. This compatibility closure prevents one historical record from rolling back the atomic automatic timekeeping batch without weakening the current Dispatch rule.
+
 ## Support ticket system
 
 - Every authenticated employee can submit and revisit their own support tickets from the persistent **Need Help?** workflow. Ticket handlers receive a permission-aware Administration workspace.

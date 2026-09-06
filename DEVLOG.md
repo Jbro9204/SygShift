@@ -1730,3 +1730,13 @@ pnpm exec wrangler deploy --keep-vars
 - Applied production migrations `20260906133034_employee_notification_center.sql` and `20260906140000_employee_notification_composer_title_fix.sql` after isolated single-migration previews. Production schema lint confirmed the repaired composer function is valid.
 - Full validation passed: type checking, zero-warning lint, 168 test files / 805 tests, production builds, and all 116 desktop/mobile Playwright checks.
 - Deployed Cloudflare Worker version `7cddbe03-f0c6-4752-b514-b57c5234e1ea`; production health, readiness, `/notifications`, live release assets, and the database RPC boundary all passed verification.
+
+## 09/06/2026 — Timekeeping Automation and Employee Password Recovery
+
+- Traced the production automatic-clock failure to a historical Dispatch Phone session that caused the atomic scheduled routine to roll back every minute after September 3.
+- Preserved the current non-payable Dispatch Phone rule while allowing the system to close only a legitimate historical session that predates that rule.
+- Applied production migration `20260906141658_repair_timekeeping_automation_and_self_service_password_reset.sql` from an isolated history after a single-migration dry run.
+- Verified the resumed scheduled routine completed, reconciled two overdue automatic clock-outs, processed the accumulated exception work, completed normally on its following run, and left zero eligible automatic clock-out candidates.
+- Confirmed employee clock-in remained operational with 31 browser clock-ins across 18 employees during the reviewed period.
+- Added the missing signed-out **Forgot password?** workflow with username lookup, approved-personal-email delivery, a single-use recovery link, generic enumeration-safe responses, transactional rate limits, and a private append-only audit ledger.
+- Full validation passed: type checking, zero-warning lint, 169 test files / 811 tests, production builds, and all 116 desktop/mobile Playwright checks.

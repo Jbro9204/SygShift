@@ -10962,6 +10962,77 @@ a.home-metric-card:focus-visible {
   font-size: 17px;
 }
 
+.login-form .auth-notice {
+  margin: 0;
+}
+
+.login-recovery__link {
+  justify-self: end;
+  padding: 2px 0;
+  color: light-dark(#76531b, #e0b65a);
+  background: transparent;
+  border: 0;
+  font-size: 14px;
+  font-weight: 850;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.login-recovery__link:hover,
+.login-recovery__link:focus-visible {
+  color: light-dark(#4d3510, #f2d28d);
+}
+
+.login-recovery__intro {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  background: light-dark(#fbf7ed, #202428);
+  border: 1px solid light-dark(#e1d4ba, #3f464c);
+  border-radius: 11px;
+}
+
+.login-recovery__intro h2,
+.login-recovery__intro p {
+  margin: 0;
+}
+
+.login-recovery__intro h2 {
+  color: light-dark(#25231f, #f5f1e8);
+  font-size: 24px;
+}
+
+.login-recovery__intro p:not(.eyebrow),
+.login-recovery__help {
+  color: light-dark(#666159, #b9b2a7);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.login-recovery__back {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: light-dark(#443b2e, #e8dfd0);
+  background: transparent;
+  border: 1px solid light-dark(#cfc7b8, #4b5055);
+  border-radius: 9px;
+  font-weight: 850;
+}
+
+.login-recovery__back:hover,
+.login-recovery__back:focus-visible {
+  background: light-dark(#f4ead8, #2c3136);
+  border-color: light-dark(#a97423, #8f743e);
+}
+
+.login-recovery__help {
+  margin: -4px 0 0;
+  text-align: center;
+}
+
 .auth-notice {
   display: flex;
   align-items: flex-start;

@@ -192,6 +192,10 @@ interface LoginEmailTarget extends AuthTarget {
   accountSetupStatus?: 'not_sent' | 'sent' | 'failed'
 }
 
+interface SelfServicePasswordResetClaim extends Partial<LoginEmailTarget> {
+  eligible: boolean
+}
+
 interface AuthUser {
   id: string
   email?: string
@@ -4673,7 +4677,11 @@ export function buildWelcomeEmail(target: LoginEmailTarget, appUrl: string, supp
   }
 }
 
-function buildPasswordResetEmail(target: LoginEmailTarget, actionLink: string): NotificationJob['message'] {
+function buildPasswordResetEmail(
+  target: LoginEmailTarget,
+  actionLink: string,
+  requestedByEmployee = false,
+): NotificationJob['message'] {
   const firstName = greetingName(target.displayName)
   const safeFirstName = escapeHtml(firstName)
   const safeActionLink = escapeHtml(actionLink)
@@ -4681,7 +4689,9 @@ function buildPasswordResetEmail(target: LoginEmailTarget, actionLink: string): 
     subject: 'Reset your SygShift password',
     text: [
       `Hello ${firstName},`,
-      'A SygShift administrator requested a secure password reset for your account.',
+      requestedByEmployee
+        ? 'We received a request to reset the password for your SygShift account.'
+        : 'A SygShift administrator requested a secure password reset for your account.',
       `Reset your password: ${actionLink}`,
       'This single-use link expires after a short time. If you did not expect this message, contact Jordan Brown before taking action.',
       'SygShift',
@@ -4689,12 +4699,109 @@ function buildPasswordResetEmail(target: LoginEmailTarget, actionLink: string): 
     ].join('\n\n'),
     html: `
       <p>Hello ${safeFirstName},</p>
-      <p>A SygShift administrator requested a secure password reset for your account.</p>
+      <p>${requestedByEmployee
+        ? 'We received a request to reset the password for your SygShift account.'
+        : 'A SygShift administrator requested a secure password reset for your account.'}</p>
       <p><a href="${safeActionLink}">Reset your SygShift password</a></p>
       <p>This single-use link expires after a short time. If you did not expect this message, contact Jordan Brown before taking action.</p>
       <p><strong>SygShift</strong><br>Guardianship Security</p>
     `,
   }
+}
+
+const passwordResetAcceptedMessage = 'If an active SygShift account and approved personal email match that username, a password-reset link will arrive shortly.'
+
+async function handleSelfServicePasswordResetApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  if (request.method !== 'POST') {
+    return errorJson('method_not_allowed', requestId, 405)
+  }
+
+  const config = configuredSupabase(environment)
+  if (!config) {
+    throw new ApiError('password_reset_unavailable', 503, 'Password recovery is temporarily unavailable.')
+  }
+
+  const body = await readJsonBody(request)
+  const username = typeof body.username === 'string' ? body.username.trim().toLowerCase() : ''
+  const fingerprint = request.headers.get('cf-connecting-ip')?.trim() || 'unavailable'
+  const [usernameHash, fingerprintHash] = await Promise.all([
+    sha256Hex(`password-reset-username:${username}`),
+    sha256Hex(`password-reset-request:${fingerprint}`),
+  ])
+
+  try {
+    const claim = await callRpc<SelfServicePasswordResetClaim>(
+      { serviceRoleKey: config.serviceRoleKey, url: config.url },
+      'service_claim_self_service_password_reset',
+      {
+        target_request_fingerprint_hash: fingerprintHash,
+        target_request_id: requestId,
+        target_username: username,
+        target_username_hash: usernameHash,
+      },
+      config.serviceRoleKey,
+    )
+
+    if (claim.eligible) {
+      if (
+        typeof claim.employeeId !== 'string'
+        || typeof claim.existingAuthUserId !== 'string'
+        || typeof claim.authEmail !== 'string'
+        || typeof claim.contactEmail !== 'string'
+        || typeof claim.displayName !== 'string'
+        || typeof claim.username !== 'string'
+      ) {
+        throw new Error('The password-reset target was incomplete.')
+      }
+
+      const target = claim as LoginEmailTarget
+      const recipient = requireApprovedEmployeeEmail(environment, target)
+      const appUrl = (environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl).replace(/\/+$/, '')
+      const generated = await supabaseJson<{ action_link?: string }>(`${config.url}/auth/v1/admin/generate_link`, {
+        body: JSON.stringify({
+          email: target.authEmail,
+          redirect_to: `${appUrl}/account-security?mode=password-recovery`,
+          type: 'recovery',
+        }),
+        headers: {
+          apikey: config.serviceRoleKey,
+          authorization: `Bearer ${config.serviceRoleKey}`,
+          'content-type': 'application/json',
+        },
+        method: 'POST',
+      })
+      if (!generated.action_link) throw new Error('A secure password-reset link could not be generated.')
+
+      const delivery = await sendAuditedEmail(
+        environment,
+        recipient,
+        buildPasswordResetEmail(target, generated.action_link, true),
+        {
+          notificationType: 'password_reset_self_service',
+          relatedRecordId: target.employeeId,
+          relatedRecordType: 'employee',
+        },
+        defaultSupportEmail,
+      )
+      if (delivery.failed.length > 0 || delivery.suppressed.length > 0 || delivery.sent.length === 0) {
+        throw new Error('The password-reset email could not be delivered.')
+      }
+    }
+  } catch (error) {
+    // The browser receives the same response for every account state. Operational
+    // errors remain visible in Worker logs without exposing a username or email.
+    console.error(JSON.stringify({
+      event: 'self_service_password_reset_failed',
+      failureType: error instanceof ApiError ? error.code : 'password_reset_delivery_failed',
+      requestId,
+    }))
+  }
+
+  return json({ accepted: true, message: passwordResetAcceptedMessage, requestId }, 202)
 }
 
 async function sendLoginInstructions(
@@ -6397,6 +6504,14 @@ export default {
         if (request.method === 'HEAD') {
           response = new Response(null, { headers: response.headers, status: response.status })
         }
+      }
+    } else if (url.pathname === '/api/v1/auth/password-reset/request') {
+      try {
+        response = await handleSelfServicePasswordResetApi(request, environment, requestId)
+      } catch (error) {
+        response = error instanceof ApiError
+          ? errorJson(error.code, requestId, error.status, error.message)
+          : errorJson('password_reset_unavailable', requestId, 503, 'Password recovery is temporarily unavailable.')
       }
     } else if (url.pathname === '/api/v1/internal/document-pipeline/canary') {
       try {

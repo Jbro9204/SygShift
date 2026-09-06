@@ -357,6 +357,85 @@ describe('Cloudflare Worker boundary', () => {
     expect(payload.requestId).toBe(response.headers.get('x-request-id'))
   })
 
+  it('accepts an unknown self-service password-reset username without revealing account state', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ eligible: false }), {
+      headers: { 'content-type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/auth/password-reset/request', {
+        body: JSON.stringify({ username: 'unknownperson' }),
+        headers: { 'cf-connecting-ip': '192.0.2.10', 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), configuredEnvironment),
+    )
+    const payload = await response.json() as { accepted: boolean; message: string }
+
+    expect(response.status).toBe(202)
+    expect(payload.accepted).toBe(true)
+    expect(payload.message).toContain('If an active SygShift account')
+    expect(JSON.stringify(payload)).not.toContain('unknownperson')
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/rest/v1/rpc/service_claim_self_service_password_reset')
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      target_username: 'unknownperson',
+    })
+    vi.unstubAllGlobals()
+  })
+
+  it('sends an enumeration-safe self-service password-reset email to the approved personal address', async () => {
+    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
+    const targetAuthUserId = '20000000-0000-4000-8000-000000000010'
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        eligible: true,
+        employeeId: targetEmployeeId,
+        username: 'employee',
+        authEmail: 'employee@accounts.sygshift.invalid',
+        contactEmail: 'employee@example.com',
+        displayName: 'Example Employee',
+        role: 'guard',
+        employmentType: 'hourly',
+        status: 'active',
+        existingAuthUserId: targetAuthUserId,
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        action_link: 'https://example.supabase.co/auth/v1/verify?token=self-service-token&type=recovery',
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ logged: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+    const send = vi.fn().mockResolvedValue({ messageId: 'self-service-reset-message' })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/auth/password-reset/request', {
+        body: JSON.stringify({ username: 'Employee' }),
+        headers: { 'cf-connecting-ip': '192.0.2.11', 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        EMAIL: { send },
+        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+        SYGSHIFT_PUBLIC_APP_URL: 'https://app.sygilant.us',
+      }),
+    )
+    const payload = await response.json() as { accepted: boolean; message: string }
+
+    expect(response.status).toBe(202)
+    expect(payload.accepted).toBe(true)
+    expect(JSON.stringify(payload)).not.toContain('employee@example.com')
+    expect(JSON.stringify(payload)).not.toContain('employee@accounts.sygshift.invalid')
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ to: 'employee@example.com' })
+    expect(send.mock.calls[0]?.[0].html).toContain('token=self-service-token')
+    expect(send.mock.calls[0]?.[0].html).toContain('We received a request')
+    vi.unstubAllGlobals()
+  })
+
   it('sends an audited password-recovery link without exposing the employee email', async () => {
     const actorEmployeeId = '10000000-0000-4000-8000-000000000001'
     const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
