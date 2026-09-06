@@ -1774,4 +1774,5 @@ pnpm exec wrangler deploy --keep-vars
 - Removed misleading unchanged-status emails, deduplicated event recipients and opening retries, synchronized ticket/inbox reads, and added a ticket-email delivery claim lease.
 - Consolidated completion into Resolved while preserving existing statuses, original messages, closure timestamps, and event history. Open tickets now excludes resolved requests.
 - Rebuilt the intake spacing, rounded controls, current-step/lifecycle progress, conversation typography, and compact mobile pagination. Fixed premature submission when entering Review and exposed management errors.
-- Rolled-back database regressions and function lint passed; browser regression suite passed 132 checks. See the dated support refinement changelog for final migration, build, deployment, and live-verification evidence.
+- Applied migration `20260906172200` with successful transactional data-preservation assertions. Final `pnpm check` passed 176 files / 841 tests; browser regression suite passed 132 checks; database regressions and function lint passed.
+- Pushed release commit `3d5534a` and deployed Worker `46676a5d-e600-40ef-be56-b862b9dc6b99`. Health/readiness, exact live assets, and production RPC/history checks passed. The signed-in visual walkthrough remains pending an active browser session; see the dated changelog for evidence and limits.

@@ -35,6 +35,9 @@ Date: 09/06/2026
 ## Release status
 
 - Production migration applied with transactional before/after preservation assertions: 1 existing ticket, 5 messages, 9 events, and all delivery records retained. Registered only migration `20260906172200`; no older migrations replayed.
-- Git push, deployment, and live health/readiness verification: pending.
-- Live authenticated screen verification requires an active signed-in browser session; the available SygShift tab was signed out during preflight.
+- Release commit `3d5534a` pushed to `origin/main`.
+- Cloudflare Worker `46676a5d-e600-40ef-be56-b862b9dc6b99` deployed successfully. Production health reports `ok`; readiness reports `ready` with all checks true.
+- Production CSS and Support Tickets JavaScript returned HTTP 200 and exactly matched the local verified build.
+- Post-migration production RPC verification passed under an Admin context in a rolled-back transaction: resolved ticket excluded from Open tickets, all five replies and all nine original events readable, migration registered.
+- Live authenticated screen verification is the only pending check. The available browser was signed out; reloading `/support` showed the normal sign-in screen. A sign-in request was presented while work continued. Real-component browser tests cover the full changed workflow using isolated local fixtures; no production account was bypassed or used to send test messages.
 - Existing sent messages and notification/audit history are retained. Provider delivery remains an at-least-once transport: a provider-success/database-acknowledgment failure is still subject to the existing bounded retry policy.
