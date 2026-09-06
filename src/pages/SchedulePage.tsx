@@ -79,6 +79,7 @@ interface OpenShiftFormState {
   credentialOverrideConfirmedResponsibility: boolean
   overtimeOverrideNote: string
   workType: 'post' | 'training'
+  dispatchMode: 'primary_shift' | 'concurrent_duty'
 }
 
 interface SchedulerCoverageLane {
@@ -135,7 +136,18 @@ function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
     credentialOverrideConfirmedResponsibility: false,
     overtimeOverrideNote: '',
     workType: 'post',
+    dispatchMode: 'primary_shift',
   }
+}
+
+function isDispatchCoverageShift(shift: ScheduleShift): boolean {
+  return shift.assignment_type === 'dispatch_primary' || shift.assignment_type === 'dispatch_phone_duty'
+}
+
+function dispatchCoverageLabel(shift: ScheduleShift): string | null {
+  if (shift.assignment_type === 'dispatch_primary') return 'Paid dispatch shift'
+  if (shift.assignment_type === 'dispatch_phone_duty') return 'Concurrent dispatch duty'
+  return null
 }
 
 function overtimeCountedShiftLabel(shift: ScheduledOvertimeCreatePreview['countedShifts'][number]): string {
@@ -593,9 +605,9 @@ function ShiftCard({
       tabIndex={canEdit ? 0 : undefined}
       title={canEdit ? 'Edit this schedule block' : undefined}
     >
-      <div className={shift.assignment_type === 'dispatch_phone_duty' ? 'shift-card__heading shift-card__heading--dispatch' : 'shift-card__heading'}>
+      <div className={isDispatchCoverageShift(shift) ? 'shift-card__heading shift-card__heading--dispatch' : 'shift-card__heading'}>
         <strong>{shiftTimeRange(shift)}</strong>
-        {shift.assignment_type === 'dispatch_phone_duty' ? <span className="shift-tag shift-tag--dispatch">Dispatch phone duty</span> : null}
+        {dispatchCoverageLabel(shift) ? <span className="shift-tag shift-tag--dispatch">{dispatchCoverageLabel(shift)}</span> : null}
         {shift.is_overtime ? <span className="shift-tag shift-tag--overtime">OT</span> : null}
       </div>
       <span className="shift-card__title">{title}</span>
@@ -857,6 +869,7 @@ function EditShiftDialog({
     credentialOverrideNote?: string | null
     overtimeOverrideNote?: string | null
     workType?: 'post' | 'training'
+    dispatchMode?: 'primary_shift' | 'concurrent_duty'
   }>>
   onClose: () => void
   onRequestRemove: (shift: ScheduleShift) => void
@@ -874,6 +887,9 @@ function EditShiftDialog({
   const [isOpen, setIsOpen] = useState(shift.is_open)
   const [isOvertime, setIsOvertime] = useState(shift.is_overtime)
   const [workType, setWorkType] = useState<'post' | 'training'>(shift.work_type ?? 'post')
+  const [dispatchMode, setDispatchMode] = useState<'primary_shift' | 'concurrent_duty'>(
+    shift.assignment_type === 'dispatch_phone_duty' ? 'concurrent_duty' : 'primary_shift',
+  )
   const [overrideNote, setOverrideNote] = useState('')
   const [credentialOverrideNote, setCredentialOverrideNote] = useState('')
   const [overtimeOverrideNote, setOvertimeOverrideNote] = useState('')
@@ -889,13 +905,14 @@ function EditShiftDialog({
     credentialConfirmedResponsibility,
   )
   const overtimePreviewQuery = useQuery({
-    queryKey: ['scheduled-overtime-update-preview', shift.id, selectedEmployeeId, shiftDate, startTime, endTime],
+    queryKey: ['scheduled-overtime-update-preview', shift.id, selectedEmployeeId, shiftDate, startTime, endTime, dispatchMode],
     queryFn: () => getScheduledOvertimeUpdatePreview(
       shift.id,
       selectedEmployeeId,
       shiftDate,
       startTime,
       endTime,
+      isDispatchCoverageShift(shift) ? dispatchMode : 'primary_shift',
     ),
     enabled: Boolean(selectedEmployeeId && shiftDate && startTime && endTime),
     staleTime: 0,
@@ -913,6 +930,7 @@ function EditShiftDialog({
     || isOpen !== shift.is_open
     || isOvertime !== shift.is_overtime
     || workType !== (shift.work_type ?? 'post')
+    || dispatchMode !== (shift.assignment_type === 'dispatch_phone_duty' ? 'concurrent_duty' : 'primary_shift')
     || overrideNote.trim().length > 0
     || credentialOverrideNote.trim().length > 0
     || overtimeOverrideNote.trim().length > 0
@@ -944,6 +962,7 @@ function EditShiftDialog({
       credentialOverrideNote: credentialOverrideRequired ? credentialOverrideNote : null,
       overtimeOverrideNote: overtimeOverrideRequired ? overtimeOverrideNote : null,
       workType,
+      dispatchMode: isDispatchCoverageShift(shift) ? dispatchMode : undefined,
     }, {
       onSuccess: onClose,
     })
@@ -973,6 +992,19 @@ function EditShiftDialog({
               <small>Check only when this scheduled block is employee training. It will be identified in payroll reporting.</small>
             </span>
           </label>
+          {isDispatchCoverageShift(shift) ? (
+            <fieldset className="schedule-builder-dispatch-mode">
+              <legend>Dispatch timekeeping</legend>
+              <label className={dispatchMode === 'primary_shift' ? 'is-selected' : ''}>
+                <input checked={dispatchMode === 'primary_shift'} name="dispatchMode" onChange={() => setDispatchMode('primary_shift')} type="radio" />
+                <span><strong>Primary paid shift</strong><small>The employee clocks in and these hours flow through timekeeping, overtime, and payroll.</small></span>
+              </label>
+              <label className={dispatchMode === 'concurrent_duty' ? 'is-selected' : ''}>
+                <input checked={dispatchMode === 'concurrent_duty'} name="dispatchMode" onChange={() => setDispatchMode('concurrent_duty')} type="radio" />
+                <span><strong>Concurrent phone duty</strong><small>Use only while the employee is already working another post. No second clock session is created.</small></span>
+              </label>
+            </fieldset>
+          ) : null}
           <label className="field-stack">
             <span>Switch / assign employee</span>
             <select
@@ -1840,7 +1872,7 @@ function EmployeeWeekDialog({
                           </div>
                         </dl>
                         <div className="employee-week-shift__chips">
-                          {shift.assignment_type === 'dispatch_phone_duty' ? <span className="shift-tag shift-tag--dispatch">Dispatch phone duty</span> : null}
+                          {dispatchCoverageLabel(shift) ? <span className="shift-tag shift-tag--dispatch">{dispatchCoverageLabel(shift)}</span> : null}
                           {shift.requires_armed ? <span className="shift-tag shift-tag--armed">Armed</span> : <span className="shift-tag">Unarmed</span>}
                           {shift.is_overtime ? <span className="shift-tag shift-tag--overtime">OT</span> : null}
                           {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review needed</span> : null}
@@ -2292,6 +2324,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       openShiftDateKeys.join('|'),
       openShiftForm.startTime,
       openShiftForm.endTime,
+      openShiftForm.dispatchMode,
       useEmployeeLocalTime,
     ],
     queryFn: () => getScheduledOvertimeCreatePreview({
@@ -2303,6 +2336,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       startTime: openShiftForm.startTime,
       endTime: openShiftForm.endTime,
       useEmployeeTimeZone: useEmployeeLocalTime,
+      dispatchMode: openShiftForm.dispatchMode,
     }),
     enabled: isSupabaseConfigured
       && canEditScheduler
@@ -2394,6 +2428,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
           workType: openShiftForm.workType,
           useEmployeeTimeZone: useEmployeeLocalTime,
+          dispatchMode: openShiftForm.dispatchMode,
         }))
       }
       return { dates, results, skippedAssignedDates }
@@ -3480,6 +3515,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 <select
                   onChange={(event) => updateOpenShiftForm({
                     mode: event.target.value as OpenShiftFormState['mode'],
+                    dispatchMode: 'primary_shift',
                     employeeId: '',
                     credentialOverrideNote: '',
                     credentialOverrideConfirmedKnown: false,
@@ -3514,6 +3550,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                       const total = Math.max(Number.parseInt(openShiftForm.headcount, 10) || 1, 1)
                       updateOpenShiftForm({
                         postId: event.target.value,
+                        dispatchMode: post?.site.supports_dispatch_phone_duty ? openShiftForm.dispatchMode : 'primary_shift',
                         armedHeadcount: post?.requires_armed ? String(total) : '0',
                         assignmentRequirement: post?.requires_armed ? 'armed' : 'unarmed',
                         credentialOverrideNote: '',
@@ -3574,6 +3611,36 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                     </select>
                   </label>
                 </>
+              ) : null}
+
+              {openShiftForm.mode === 'post' && selectedPost?.site.supports_dispatch_phone_duty ? (
+                <fieldset className="schedule-builder-dispatch-mode">
+                  <legend>Dispatch timekeeping</legend>
+                  <label className={openShiftForm.dispatchMode === 'primary_shift' ? 'is-selected' : ''}>
+                    <input
+                      checked={openShiftForm.dispatchMode === 'primary_shift'}
+                      name="dispatchMode"
+                      onChange={() => updateOpenShiftForm({ dispatchMode: 'primary_shift' })}
+                      type="radio"
+                    />
+                    <span>
+                      <strong>Primary paid shift</strong>
+                      <small>The employee clocks in. Scheduled hours, missed-punch monitoring, automatic clock-out, overtime, and payroll all apply.</small>
+                    </span>
+                  </label>
+                  <label className={openShiftForm.dispatchMode === 'concurrent_duty' ? 'is-selected' : ''}>
+                    <input
+                      checked={openShiftForm.dispatchMode === 'concurrent_duty'}
+                      name="dispatchMode"
+                      onChange={() => updateOpenShiftForm({ dispatchMode: 'concurrent_duty' })}
+                      type="radio"
+                    />
+                    <span>
+                      <strong>Concurrent phone duty</strong>
+                      <small>Use only when the employee is already working another Site/Post shift. This does not create duplicate paid hours.</small>
+                    </span>
+                  </label>
+                </fieldset>
               ) : null}
 
               <label>
@@ -4019,7 +4086,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                           ? shift.assignments.map((assignment) => <span key={assignment.id}>{assignmentName(assignment)}</span>)
                           : <span>No one assigned</span>}
                         <div>
-                          {shift.assignment_type === 'dispatch_phone_duty' ? <span className="shift-tag shift-tag--dispatch">Dispatch phone duty</span> : null}
+                          {dispatchCoverageLabel(shift) ? <span className="shift-tag shift-tag--dispatch">{dispatchCoverageLabel(shift)}</span> : null}
                           {shift.requires_armed ? <span className="shift-tag shift-tag--armed">Armed</span> : <span className="shift-tag">Unarmed</span>}
                           {openSlots ? <span className="shift-tag shift-tag--open">{openSlots} open</span> : <span className="shift-tag shift-tag--covered">Covered</span>}
                           {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review</span> : null}

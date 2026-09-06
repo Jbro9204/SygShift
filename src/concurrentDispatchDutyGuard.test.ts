@@ -33,9 +33,9 @@ describe('concurrent Dispatch phone-duty boundary', () => {
   })
 
   it('shows the duty explicitly in schedule data and management views', () => {
-    expect(scheduleData).toContain("assignment_type: z.enum(['standard', 'dispatch_phone_duty']).optional()")
+    expect(scheduleData).toContain("assignment_type: z.enum(['standard', 'dispatch_primary', 'dispatch_phone_duty']).optional()")
     expect(scheduleData).toContain("rpc('get_shift_assignment_type_map'")
-    expect(schedulePage).toContain('Dispatch phone duty')
+    expect(schedulePage).toContain('Concurrent dispatch duty')
   })
 
   it('preserves the protected employee, schedule, assignment, and time-event history', () => {

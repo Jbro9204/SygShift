@@ -54,7 +54,7 @@ const shiftSchema = z.object({
   requires_armed: z.boolean(),
   is_open: z.boolean(),
   is_overtime: z.boolean(),
-  assignment_type: z.enum(['standard', 'dispatch_phone_duty']).optional(),
+  assignment_type: z.enum(['standard', 'dispatch_primary', 'dispatch_phone_duty']).optional(),
   work_type: z.enum(['post', 'training']).optional(),
   notes: z.string().nullable(),
   post: postSchema.nullable(),
@@ -83,6 +83,7 @@ const builderPostSchema = z.object({
     code: z.string().nullable(),
     name: z.string(),
     time_zone: z.string(),
+    supports_dispatch_phone_duty: z.boolean().default(false),
   }),
 })
 
@@ -137,7 +138,7 @@ const shiftWorkTypeMapSchema = z.array(z.object({
 
 const shiftAssignmentTypeMapSchema = z.array(z.object({
   shiftId: z.string().uuid(),
-  assignmentType: z.enum(['standard', 'dispatch_phone_duty']),
+  assignmentType: z.enum(['standard', 'dispatch_primary', 'dispatch_phone_duty']),
 }))
 
 const resolveReviewShiftResultSchema = z.object({
@@ -342,6 +343,7 @@ export interface CreateCoveragePlanInput {
   overtimeOverrideNote?: string | null
   workType?: 'post' | 'training'
   useEmployeeTimeZone?: boolean
+  dispatchMode?: 'primary_shift' | 'concurrent_duty'
 }
 
 export interface ScheduledOvertimeCreatePreviewInput {
@@ -353,6 +355,7 @@ export interface ScheduledOvertimeCreatePreviewInput {
   startTime: string
   endTime: string
   useEmployeeTimeZone: boolean
+  dispatchMode?: 'primary_shift' | 'concurrent_duty'
 }
 
 export interface AddDraftShiftAssignmentInput {
@@ -378,6 +381,7 @@ export interface UpdateDraftShiftInput {
   credentialOverrideNote?: string | null
   overtimeOverrideNote?: string | null
   workType?: 'post' | 'training'
+  dispatchMode?: 'primary_shift' | 'concurrent_duty'
 }
 
 export interface RemoveDraftShiftInput {
@@ -495,9 +499,14 @@ export async function createSupervisorCoveragePlan(input: CreateCoveragePlanInpu
     target_credential_override_note: input.credentialOverrideNote?.trim() || null,
     target_overtime_override_note: input.overtimeOverrideNote?.trim() || null,
   }
+  const dispatchAwarePayload = {
+    ...rpcPayload,
+    target_dispatch_mode: input.dispatchMode ?? 'primary_shift',
+    target_dispatch_overlap_acknowledged: false,
+  }
   const request = input.useEmployeeTimeZone
-    ? getSupabaseClient().rpc('scheduler_create_employee_local_coverage_plan_v2', rpcPayload)
-    : getSupabaseClient().rpc('scheduler_create_coverage_plan_v2', rpcPayload)
+    ? getSupabaseClient().rpc('scheduler_create_employee_local_coverage_plan_v3', dispatchAwarePayload)
+    : getSupabaseClient().rpc('scheduler_create_coverage_plan_v3', dispatchAwarePayload)
   const { data, error } = await request
 
   if (error) throw new Error(error.message || 'The coverage plan could not be created.')
@@ -515,7 +524,7 @@ export async function ensureScheduleDraft(weekStartsOn: string): Promise<WeeklyS
 }
 
 export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Promise<WeeklySchedule> {
-  const { data, error } = await getSupabaseClient().rpc('scheduler_update_typed_draft_shift_v2', {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_update_typed_draft_shift_v3', {
     target_shift_id: input.shiftId,
     shift_operational_date: input.shiftDate,
     shift_start_time: input.startTime,
@@ -529,13 +538,20 @@ export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Pr
     target_credential_override_note: input.credentialOverrideNote?.trim() || null,
     target_overtime_override_note: input.overtimeOverrideNote?.trim() || null,
     target_work_type: input.workType ?? 'post',
+    target_dispatch_mode: input.dispatchMode ?? 'primary_shift',
   })
 
   if (error) throw new Error(error.message || 'The draft shift could not be updated.')
   const schedule = scheduleSchema.parse(data)
   return {
     ...schedule,
-    shifts: schedule.shifts.map((shift) => shift.id === input.shiftId ? { ...shift, work_type: input.workType ?? 'post' } : shift),
+    shifts: schedule.shifts.map((shift) => shift.id === input.shiftId ? {
+      ...shift,
+      work_type: input.workType ?? 'post',
+      assignment_type: input.dispatchMode
+        ? input.dispatchMode === 'concurrent_duty' ? 'dispatch_phone_duty' : 'dispatch_primary'
+        : shift.assignment_type,
+    } : shift),
   }
 }
 
@@ -592,13 +608,15 @@ export async function getScheduledOvertimeUpdatePreview(
   shiftDate: string,
   startTime: string,
   endTime: string,
+  dispatchMode: 'primary_shift' | 'concurrent_duty' = 'primary_shift',
 ): Promise<ScheduledOvertimePreview> {
-  const { data, error } = await getSupabaseClient().rpc('get_scheduled_overtime_update_preview', {
+  const { data, error } = await getSupabaseClient().rpc('get_scheduled_overtime_update_preview_v2', {
     target_shift_id: shiftId,
     target_employee_id: employeeId,
     shift_operational_date: shiftDate,
     shift_start_time: startTime,
     shift_end_time: endTime,
+    target_dispatch_mode: dispatchMode,
   })
 
   if (error) throw new Error(error.message || 'Scheduled overtime could not be calculated for this change.')
@@ -608,7 +626,7 @@ export async function getScheduledOvertimeUpdatePreview(
 export async function getScheduledOvertimeCreatePreview(
   input: ScheduledOvertimeCreatePreviewInput,
 ): Promise<ScheduledOvertimeCreatePreview> {
-  const { data, error } = await getSupabaseClient().rpc('get_scheduled_overtime_create_preview', {
+  const { data, error } = await getSupabaseClient().rpc('get_scheduled_overtime_create_preview_v2', {
     target_week_starts_on: input.weekStartsOn,
     target_employee_id: input.employeeId,
     target_post_id: input.postId || null,
@@ -617,6 +635,7 @@ export async function getScheduledOvertimeCreatePreview(
     shift_start_time: input.startTime,
     shift_end_time: input.endTime,
     use_employee_time_zone: input.useEmployeeTimeZone,
+    target_dispatch_mode: input.dispatchMode ?? 'primary_shift',
   })
 
   if (error) throw new Error(error.message || 'Scheduled overtime could not be calculated for this coverage plan.')

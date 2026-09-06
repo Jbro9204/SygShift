@@ -64,6 +64,7 @@ describe('schedule builder data contract', () => {
           code: 'HQ',
           name: 'Headquarters',
           time_zone: 'America/Denver',
+          supports_dispatch_phone_duty: false,
         },
       }],
       employees: [
@@ -310,10 +311,11 @@ describe('schedule builder data contract', () => {
       useEmployeeTimeZone: true,
     })
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_create_employee_local_coverage_plan_v2', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_employee_local_coverage_plan_v3', expect.objectContaining({
       target_employee_id: '70000000-0000-4000-8000-000000000001',
       target_notes: 'Patrol route',
       target_overtime_override_note: 'Matt approved patrol overtime.',
+      target_dispatch_mode: 'primary_shift',
     }))
   })
 
@@ -354,7 +356,7 @@ describe('schedule builder data contract', () => {
       countedShifts: [{ location: 'Patrol / Day route' }],
     })
 
-    expect(rpc).toHaveBeenCalledWith('get_scheduled_overtime_create_preview', {
+    expect(rpc).toHaveBeenCalledWith('get_scheduled_overtime_create_preview_v2', {
       target_week_starts_on: '2026-08-30',
       target_employee_id: '70000000-0000-4000-8000-000000000001',
       target_post_id: '10000000-0000-4000-8000-000000000001',
@@ -363,6 +365,7 @@ describe('schedule builder data contract', () => {
       shift_start_time: '08:00',
       shift_end_time: '16:00',
       use_employee_time_zone: true,
+      target_dispatch_mode: 'primary_shift',
     })
   })
 
@@ -395,7 +398,7 @@ describe('schedule builder data contract', () => {
       status: 'draft',
     })
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_update_typed_draft_shift_v2', {
+    expect(rpc).toHaveBeenCalledWith('scheduler_update_typed_draft_shift_v3', {
       target_shift_id: '40000000-0000-4000-8000-000000000001',
       shift_operational_date: '2026-07-29',
       shift_start_time: '08:00',
@@ -409,6 +412,7 @@ describe('schedule builder data contract', () => {
       target_credential_override_note: 'Pending upload',
       target_overtime_override_note: null,
       target_work_type: 'post',
+      target_dispatch_mode: 'primary_shift',
     })
   })
 

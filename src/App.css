@@ -12240,6 +12240,66 @@ a.home-metric-card:focus-visible {
   line-height: 1.4;
 }
 
+.schedule-builder-dispatch-mode {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.schedule-builder-dispatch-mode legend {
+  padding: 0 0.35rem;
+  font-weight: 800;
+}
+
+.schedule-builder-dispatch-mode label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.schedule-builder-dispatch-mode label.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.schedule-builder-dispatch-mode input {
+  flex: 0 0 auto;
+  margin-top: 0.2rem;
+}
+
+.schedule-builder-dispatch-mode span {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.schedule-builder-dispatch-mode strong,
+.schedule-builder-dispatch-mode small {
+  display: block;
+}
+
+.schedule-builder-dispatch-mode small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+@media (max-width: 720px) {
+  .schedule-builder-dispatch-mode {
+    grid-template-columns: 1fr;
+  }
+}
+
 .schedule-builder-repeat {
   display: grid;
   gap: 12px;
