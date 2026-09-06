@@ -16,6 +16,7 @@ import {
 import { LicensingStatusReportWorkspace } from '../reports/LicensingStatusReportWorkspace'
 import { PatrolActivityReportWorkspace } from '../reports/PatrolActivityReportWorkspace'
 import { ScheduledOvertimeForecastWorkspace } from '../reports/ScheduledOvertimeForecastWorkspace'
+import { AttendanceReportWorkspace } from '../reports/AttendanceReportWorkspace'
 
 const pageSizes = [10, 25, 50] as const
 const rangeStorageKey = 'sygshift-reports-range'
@@ -262,7 +263,7 @@ export function ReportsPage() {
     {!reportKey ? <section className="page-intro reports-page-intro"><div><p className="eyebrow">Operations</p><h1>Reports</h1><p className="page-summary">Choose a focused operational report without loading every record into one screen.</p></div><RangeControls from={from} onChange={changeRange} through={through} /></section> : null}
     {reportKey && !definition && !isLicensingStatusReport && !isPatrolActivityReport && !isScheduledOvertimeForecast ? <DataStatePanel icon={ShieldAlert} title="Report not found" tone="error"><p>This report is not part of the approved report library.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
     {!reportKey ? <ReportLibrary from={from} permissions={permissions} through={through} /> : null}
-    {definition ? <ReportWorkspace definition={definition} from={from} onRangeChange={changeRange} through={through} /> : null}
+    {definition?.key === 'attendanceCallOffs' ? <AttendanceReportWorkspace canExport={permissions.includes('reports.export')} from={from} through={through} onRangeChange={changeRange} /> : definition ? <ReportWorkspace definition={definition} from={from} onRangeChange={changeRange} through={through} /> : null}
     {isLicensingStatusReport && sessionQuery.isPending ? <DataStatePanel icon={FileBarChart} title="Verifying report access"><p>Checking your current Reports and Licensing permissions.</p></DataStatePanel> : null}
     {isLicensingStatusReport && sessionQuery.isError ? <DataStatePanel icon={ShieldAlert} title="Report access unavailable" tone="error"><p>{sessionQuery.error.message}</p></DataStatePanel> : null}
     {isLicensingStatusReport && sessionQuery.isSuccess && !canViewLicensingStatusReport ? <DataStatePanel icon={ShieldAlert} title="Licensing report access required" tone="error"><p>This report contains protected licensing information and requires Licensing access with verified MFA.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}

@@ -34357,3 +34357,27 @@ button.patrol-overview-row:focus-visible {
     width: 100%;
   }
 }
+/* Attendance reporting and employee history use compact, content-sized controls. */
+.my-time-period-picker { display: grid; gap: 8px; margin: 16px 0 20px; min-width: 0; }
+.my-time-period-picker > span { font-weight: 700; }
+.my-time-period-picker select { width: 100%; min-width: 0; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--paper); color: var(--ink); font: inherit; }
+.my-time-period-picker small, .accountability-person-card__states { color: var(--muted); line-height: 1.5; }
+.accountability-person-card__states { margin: 0; font-size: 13px; }
+.accountability-classification { border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.accountability-classification summary { cursor: pointer; font-weight: 700; }
+.accountability-classification form { margin-top: 16px; }
+.attendance-report-controls fieldset { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.attendance-report-controls .reports-filter-row { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); }
+.attendance-report-controls label { min-width: 0; }
+.attendance-report-controls input, .attendance-report-controls select { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font: inherit; }
+.page--reports .attendance-report-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.attendance-report-results { display: grid; gap: 16px; align-content: start; }
+.attendance-report-results .reports-result-card { display: block; }
+.attendance-report-results .reports-result-card > p { margin: 12px 0 0; overflow-wrap: anywhere; }
+.attendance-report-pagination { flex: 0 0 auto; min-height: 0; height: auto; align-self: start; padding-block: 12px; flex-wrap: wrap; }
+.attendance-report-pagination label { display: flex; align-items: center; gap: 8px; }
+.attendance-report-pagination select { width: auto; min-height: 40px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); }
+@media (max-width: 720px) {
+  .attendance-report-controls .reports-filter-row { grid-template-columns: minmax(0, 1fr); }
+  .my-time-period-picker select { font-size: 14px; }
+}

@@ -69,7 +69,7 @@ export const operationalReportDefinitions: OperationalReportDefinition[] = [
     key: 'attendanceCallOffs',
     title: 'Attendance & Call-Offs',
     shortTitle: 'Attendance & Call-Offs',
-    description: 'Review active sick reports, call-offs, replacement needs, and historical cancellations.',
+    description: 'Review recorded absences, late arrivals, other attendance occurrences, and their review decisions. Export weekly employee totals and occurrence details for Operations.',
     activeLabel: 'Active Call-Offs',
     archiveLabel: 'Canceled Archive',
     summaryFields: ['employeeName', 'sitePost', 'scheduledStartAt', 'callOffType', 'replacementNeeded'],

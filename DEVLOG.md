@@ -23,6 +23,14 @@ deployment status, or major workflow assumptions change.
   with only generic `.primary-action` / `.secondary-button` sizing; use a local action wrapper or a proven
   shared action container so mobile and narrow-card layouts cannot overlap.
 
+## 09/06/2026
+
+### 09/06/2026 attendance, historical Dispatch, and My Time history
+
+- Implemented canonical attendance reporting with full weekly exports, recorded-type totals separate from review decisions, audited type correction, and current-plus-two-prior employee payroll periods.
+- Added revision-aware Dispatch duplicate protection and missed-punch recognition while preserving original punch/payroll references.
+- Release verification/status: `docs/changelogs/CHANGELOG_09-06-2026_ATTENDANCE_DISPATCH_HISTORY.md`.
+
 ## 09/04/2026
 
 ### HR pagination redesign

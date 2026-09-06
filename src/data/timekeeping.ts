@@ -193,6 +193,7 @@ const payrollRulesSchema = z.object({
 })
 
 const payrollPeriodContextSchema = z.object({
+  availablePeriods: z.array(z.object({ offset: z.number().int().min(0).max(2), fromDate: z.string(), throughDate: z.string() })).optional().default([]),
   serverTimestamp: z.string(),
   fromDate: z.string(),
   throughDate: z.string(),

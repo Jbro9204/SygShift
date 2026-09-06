@@ -124,8 +124,16 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 
 ## Automatic timekeeping compatibility
 
-- Dispatch Phone duty remains a concurrent, non-payable responsibility and cannot create a new clock session.
+- Dispatch locations support explicit primary paid shifts (`standard`) and concurrent phone-duty blocks (`dispatch_phone_duty`). Primary Dispatch uses normal clock-in, auto-close, overtime, and payroll. Concurrent duty cannot start a duplicate paid session.
 - Historical Dispatch-linked sessions created before that classification may receive exactly one system clock-out when an earlier valid clock-in or break event exists. This compatibility closure prevents one historical record from rolling back the atomic automatic timekeeping batch without weakening the current Dispatch rule.
+- Equivalent shifts across schedule revisions are matched by week, location, and identical start/end. Missed-punch monitoring recognizes preserved punches on older revisions, while automatic clock-out stays linked to the original shift. A second revision cannot introduce a duplicate clock-in.
+
+## Attendance reporting and employee pay-period history
+
+- Accountability Tracker and Attendance & Call-Offs reporting share `private.get_attendance_events`. Linked native/legacy call-off records are deduplicated. Recorded event-type totals are separate from human review decisions; corrected records remain recorded, dismissed/voided records are excluded from type totals, and protected leave never becomes a discipline score.
+- The attendance report requires `time.reports.view` and MFA. Excel/CSV exports additionally require `reports.export`, are audited, and include all matching records, not just the visible page. Excel separates employee totals from occurrence detail.
+- Factual classification corrections require `accountability.manage`, MFA, a reason, row locking, and append-only before/after history. They preserve original notes, review decisions, punches, and payroll; they are not new call-off notifications.
+- Employee-safe payroll context returns the current and two previous contiguous pay periods from the authoritative configuration. My Time keeps Today/This Week on the current period while the selected historical period controls the timecard list. Existing server-side employee scoping remains unchanged; historical records are not pay stubs or a payroll-edit mechanism.
 
 ## Support ticket system
 

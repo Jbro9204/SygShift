@@ -27,6 +27,7 @@ export function accountabilityDisplayState(event: AccountabilityEvent): Accounta
   if (event.reviewOutcome === 'confirmed') return 'confirmed'
   if (event.reviewOutcome === 'corrected') return 'corrected'
   if (event.reviewOutcome === 'dismissed') return 'dismissed'
+  if (event.sourceTable === 'time_off_requests' && event.status === 'approved') return 'protected'
   return 'open'
 }
 
@@ -41,10 +42,22 @@ export function summarizeAccountability(events: AccountabilityEvent[]) {
     const state = accountabilityDisplayState(event)
     summary.total += 1
     summary[state] += 1
+    if (state !== 'dismissed' && state !== 'voided') {
+      if (['call_off', 'called_in_sick', 'no_call_no_show'].includes(event.eventType)) summary.absences += 1
+      else if (event.eventType === 'late_arrival') summary.lateArrivals += 1
+      else if (event.eventType === 'early_departure') summary.earlyDepartures += 1
+      else if (event.eventType === 'vacation') summary.timeOff += 1
+      else summary.other += 1
+    }
     if (isNegativeReliabilityOccurrence(event)) summary.confirmedReliabilityOccurrences += 1
     return summary
   }, {
     total: 0,
+    absences: 0,
+    lateArrivals: 0,
+    earlyDepartures: 0,
+    timeOff: 0,
+    other: 0,
     open: 0,
     confirmed: 0,
     protected: 0,
@@ -55,7 +68,7 @@ export function summarizeAccountability(events: AccountabilityEvent[]) {
   })
 }
 
-export interface AccountabilityEmployeeSummary {
+export interface AccountabilityEmployeeSummary extends ReturnType<typeof summarizeAccountability> {
   employeeId: string
   employeeName: string
   total: number
@@ -78,9 +91,12 @@ export function buildEmployeeAccountabilitySummaries(
     eventMap.set(event.employeeId, employeeEvents)
   }
 
-  return employees.map((employee) => {
+  const people = new Map(employees.map((employee) => [employee.id, { id: employee.id, name: employee.name }]))
+  for (const event of events) if (!people.has(event.employeeId)) people.set(event.employeeId, { id: event.employeeId, name: event.employeeName })
+  return [...people.values()].map((employee) => {
     const summary = summarizeAccountability(eventMap.get(employee.id) ?? [])
     return {
+      ...summary,
       employeeId: employee.id,
       employeeName: employee.name,
       total: summary.total,

@@ -19,6 +19,7 @@ import {
   createAccountabilityOccurrence,
   getAccountabilityWorkspace,
   reviewAccountabilityOccurrence,
+  reclassifyAccountabilityOccurrence,
   type AccountabilityDecision,
   type AccountabilityEvent,
   type AccountabilityEventType,
@@ -61,7 +62,7 @@ export function AccountabilityPage() {
   const [throughDate, setThroughDate] = useState(initialRange.throughDate)
   const [employeeId, setEmployeeId] = useState('all')
   const [eventType, setEventType] = useState<'all' | AccountabilityEventType>('all')
-  const [state, setState] = useState<StateFilter>('open')
+  const [state, setState] = useState<StateFilter>('all')
   const [view, setView] = useState<'occurrences' | 'team'>('occurrences')
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
@@ -93,6 +94,7 @@ export function AccountabilityPage() {
   async function refreshWorkspace() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['accountability-workspace'] }),
+      queryClient.invalidateQueries({ queryKey: ['attendance-report'] }),
       queryClient.invalidateQueries({ queryKey: ['time-payroll-accountability'] }),
       queryClient.invalidateQueries({ queryKey: ['time-command-review'] }),
       queryClient.invalidateQueries({ queryKey: ['time-command-attendance-summary'] }),
@@ -139,12 +141,13 @@ export function AccountabilityPage() {
 
       <section className="time-command-grid accountability-metrics" aria-label="Accountability summary">
         <TimeMetricCard detail="Reports waiting for human review." icon={AlertTriangle} label="Open Review" tone={summary.open > 0 ? 'warning' : 'good'} value={summary.open} />
-        <TimeMetricCard detail="Reviewed and confirmed attendance occurrences." icon={CheckCircle2} label="Confirmed" tone="neutral" value={summary.confirmed} />
+        <TimeMetricCard detail="Recorded call-offs, sick calls, and no-call/no-shows; not a discipline score." icon={CalendarClock} label="Recorded Absences" tone="neutral" value={summary.absences} />
         <TimeMetricCard detail="Excused or protected records excluded from reliability totals." icon={ShieldCheck} label="Protected / Excused" tone="good" value={summary.protected} />
         <TimeMetricCard detail={`${workspace.exceptionSummaries.reduce((total, item) => total + item.blockingCount, 0)} blocking exception(s) remain${reviewQueueAllowed ? ' in Review Queue' : ' for an authorized timekeeper'}.`} icon={FileWarning} label="Hard Time Controls" tone={workspace.exceptionSummaries.length > 0 ? 'danger' : 'good'} to={reviewQueueAllowed ? '/time/review' : undefined} value={workspace.exceptionSummaries.reduce((total, item) => total + item.unresolvedCount, 0)} />
       </section>
 
       <section className="accountability-workspace time-card">
+        <p>Recorded absences and review decisions are separate. “Corrected” does not erase an occurrence; use “Dismiss incorrect occurrence” when the event did not happen.</p>
         <TimeSectionHeader
           action={<div className="accountability-view-switch" role="group" aria-label="Accountability view"><TimeButton onClick={() => setView('occurrences')} variant={view === 'occurrences' ? 'primary' : 'secondary'}>Occurrences</TimeButton><TimeButton onClick={() => setView('team')} variant={view === 'team' ? 'primary' : 'secondary'}>Team Overview</TimeButton></div>}
           eyebrow="Review workspace"
@@ -162,7 +165,7 @@ export function AccountabilityPage() {
             <OccurrenceList events={filteredEvents} onOpen={setSelectedEventId} />
           </>
         ) : (
-          <EmployeeOverview rows={employeeSummaries} onOpen={(id) => { setEmployeeId(id); setState('all'); setView('occurrences') }} />
+          <EmployeeOverview rows={employeeSummaries} onOpen={(id) => { setEmployeeId(id); setEventType('all'); setState('all'); setView('occurrences') }} />
         )}
       </section>
 
@@ -190,7 +193,7 @@ function OccurrenceList({ events, onOpen }: { events: AccountabilityEvent[]; onO
 
 function EmployeeOverview({ rows, onOpen }: { rows: ReturnType<typeof buildEmployeeAccountabilitySummaries>; onOpen: (employeeId: string) => void }) {
   if (rows.length === 0) return <TimeEmptyState icon={UserRoundCheck} title="No employee occurrences in this range"><p>The employee overview will populate when documented events fall inside the selected dates.</p></TimeEmptyState>
-  return <div className="accountability-team-grid">{rows.map((row) => <article className="time-card accountability-person-card" key={row.employeeId}><div><strong>{row.employeeName}</strong><span>{row.total} documented occurrence{row.total === 1 ? '' : 's'}</span></div><dl><div><dt>Open</dt><dd>{row.open}</dd></div><div><dt>Confirmed</dt><dd>{row.confirmed}</dd></div><div><dt>Protected</dt><dd>{row.protected}</dd></div><div><dt>Reliability</dt><dd>{row.confirmedReliabilityOccurrences}</dd></div></dl><TimeButton onClick={() => onOpen(row.employeeId)} variant="secondary">View occurrences</TimeButton></article>)}</div>
+  return <div className="accountability-team-grid">{rows.map((row) => <article className="time-card accountability-person-card" key={row.employeeId}><div><strong>{row.employeeName}</strong><span>{row.total} documented occurrence{row.total === 1 ? '' : 's'}</span></div><dl><div><dt>Absences</dt><dd>{row.absences}</dd></div><div><dt>Late arrivals</dt><dd>{row.lateArrivals}</dd></div><div><dt>Early departures</dt><dd>{row.earlyDepartures}</dd></div><div><dt>Other / time off</dt><dd>{row.other + row.timeOff}</dd></div></dl><p className="accountability-person-card__states">{row.open} open · {row.confirmed} confirmed · {row.protected} protected · {row.corrected} corrected · {row.dismissed} dismissed · {row.voided} voided</p><small>Recorded totals include corrected records; dismissed and voided records are excluded. {row.confirmedReliabilityOccurrences} confirmed reliability occurrence(s).</small><TimeButton onClick={() => onOpen(row.employeeId)} variant="secondary">View occurrences</TimeButton></article>)}</div>
 }
 
 function HardControlSummary({ canOpenReviewQueue, rows }: { canOpenReviewQueue: boolean; rows: AccountabilityWorkspace['exceptionSummaries'] }) {
@@ -233,7 +236,7 @@ function OccurrenceReviewDialog({ event, onClose, onSaved, workspace }: { event:
     mutation.mutate({ action, eventId: event.id, reason: String(data.get('reason') ?? '') })
   }
 
-  return <ModalDialog busy={mutation.isPending} busyLabel="Saving documented decision..." className="modal-dialog--time-workflow modal-dialog--accountability" description={`${event.employeeName} · ${formatUsDateKey(event.operationalDate)} · ${event.locationName}`} onClose={onClose} title="Review accountability occurrence"><div className="accountability-review"><section className="accountability-review__summary"><div><span>Occurrence</span><strong>{accountabilityTypeLabels[event.eventType]}</strong></div><div><span>Review state</span><TimeStatusBadge tone={stateTone(state)}>{stateLabel(state)}</TimeStatusBadge></div><div><span>Source</span><strong>{sourceLabel(event.sourceTable)}</strong></div><div><span>Employee</span><strong>{event.employeeName}</strong></div></section><section className="accountability-review__note"><p className="eyebrow">Original factual note</p><p>{event.note}</p></section>{event.reconciliation ? <ReconciliationContext event={event} actualEmployee={actualEmployee} /> : <TimeAlertCard icon={CalendarClock} title="No scheduled shift context" tone="neutral"><p>This is a date-only record or an approved request that is not tied to a single shift.</p></TimeAlertCard>}{event.actionHistory.length > 0 ? <section className="accountability-history"><p className="eyebrow">Decision history</p>{event.actionHistory.map((item) => <div key={item.id}><History aria-hidden="true" size={17} /><div><strong>{stateLabel(item.action)}</strong><span>{item.reason}</span><small>{item.actorName} · {formatOperationalDateTime(item.actionAt)}</small></div></div>)}</section> : null}{event.reviewable && workspace.capabilities.canManage ? <form className="time-workflow-form accountability-decision" onSubmit={submit}><label><span>Review action</span><select onChange={(selectEvent) => setAction(selectEvent.target.value as AccountabilityDecision)} value={action}>{event.status === 'resolved' || event.status === 'voided' ? <option value="reopened">Reopen for review</option> : <><option value="confirmed">Confirm occurrence</option><option value="excused_protected">Mark excused / protected</option><option value="corrected">Mark corrected</option><option value="dismissed">Dismiss incorrect occurrence</option><option value="voided">Void record</option></>}</select></label><label><span>Required decision reason</span><textarea maxLength={2000} minLength={8} name="reason" placeholder="Document what was reviewed and why this decision is appropriate." required rows={4} /></label>{mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}<div className="time-workflow-form__actions"><TimeButton onClick={onClose} variant="secondary">Leave unresolved</TimeButton><TimeButton icon={CheckCircle2} loading={mutation.isPending} type="submit" variant="primary">Save decision</TimeButton></div></form> : <div className="time-workflow-form__actions"><TimeButton onClick={onClose} variant="secondary">Close</TimeButton>{event.sourceTable === 'call_off_reports' ? <Link className="time-button time-button--primary" to="/time/operations">Open Time Operations</Link> : event.sourceTable === 'time_off_requests' ? <Link className="time-button time-button--primary" to="/requests">Open Time-Off Requests</Link> : null}</div>}</div></ModalDialog>
+  return <ModalDialog busy={mutation.isPending} busyLabel="Saving documented decision..." className="modal-dialog--time-workflow modal-dialog--accountability" description={`${event.employeeName} · ${formatUsDateKey(event.operationalDate)} · ${event.locationName}`} onClose={onClose} title="Review accountability occurrence"><div className="accountability-review"><section className="accountability-review__summary"><div><span>Occurrence</span><strong>{accountabilityTypeLabels[event.eventType]}</strong></div><div><span>Review state</span><TimeStatusBadge tone={stateTone(state)}>{stateLabel(state)}</TimeStatusBadge></div><div><span>Source</span><strong>{sourceLabel(event.sourceTable)}</strong></div><div><span>Employee</span><strong>{event.employeeName}</strong></div></section><section className="accountability-review__note"><p className="eyebrow">Original factual note</p><p>{event.note}</p></section>{event.reviewable && workspace.capabilities.canManage && event.status !== 'voided' ? <ClassificationForm event={event} onSaved={async () => { await onSaved(); onClose() }} /> : null}{event.reconciliation ? <ReconciliationContext event={event} actualEmployee={actualEmployee} /> : <TimeAlertCard icon={CalendarClock} title="No scheduled shift context" tone="neutral"><p>This is a date-only record or an approved request that is not tied to a single shift.</p></TimeAlertCard>}{event.actionHistory.length > 0 ? <section className="accountability-history"><p className="eyebrow">Decision history</p>{event.actionHistory.map((item) => <div key={item.id}><History aria-hidden="true" size={17} /><div><strong>{stateLabel(item.action)}</strong><span>{item.reason}</span><small>{item.actorName} · {formatOperationalDateTime(item.actionAt)}</small></div></div>)}</section> : null}{event.reviewable && workspace.capabilities.canManage ? <form className="time-workflow-form accountability-decision" onSubmit={submit}><label><span>Review action</span><select onChange={(selectEvent) => setAction(selectEvent.target.value as AccountabilityDecision)} value={action}>{event.status === 'resolved' || event.status === 'voided' ? <option value="reopened">Reopen for review</option> : <><option value="confirmed">Confirm occurrence</option><option value="excused_protected">Mark excused / protected</option><option value="corrected">Mark corrected</option><option value="dismissed">Dismiss incorrect occurrence</option><option value="voided">Void record</option></>}</select></label><label><span>Required decision reason</span><textarea maxLength={2000} minLength={8} name="reason" placeholder="Document what was reviewed and why this decision is appropriate." required rows={4} /></label>{mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}<div className="time-workflow-form__actions"><TimeButton onClick={onClose} variant="secondary">Leave unresolved</TimeButton><TimeButton icon={CheckCircle2} loading={mutation.isPending} type="submit" variant="primary">Save decision</TimeButton></div></form> : <div className="time-workflow-form__actions"><TimeButton onClick={onClose} variant="secondary">Close</TimeButton>{event.sourceTable === 'call_off_reports' ? <Link className="time-button time-button--primary" to="/time/operations">Open Time Operations</Link> : event.sourceTable === 'time_off_requests' ? <Link className="time-button time-button--primary" to="/requests">Open Time-Off Requests</Link> : null}</div>}</div></ModalDialog>
 }
 
 function ReconciliationContext({ event, actualEmployee }: { event: AccountabilityEvent; actualEmployee: NonNullable<AccountabilityEvent['reconciliation']>['actualEmployees'][number] | undefined }) {
@@ -266,4 +269,18 @@ function sourceLabel(source: AccountabilityEvent['sourceTable']): string {
 
 function readableCode(value: string): string {
   return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+
+function ClassificationForm({ event, onSaved }: { event: AccountabilityEvent; onSaved: () => Promise<void> }) {
+  const [eventType, setEventType] = useState(event.eventType)
+  const [reason, setReason] = useState('')
+  const mutation = useMutation({ mutationFn: reclassifyAccountabilityOccurrence, onSuccess: onSaved })
+  return <details className="accountability-classification"><summary>Correct occurrence type</summary><form className="time-workflow-form" onSubmit={(submitEvent) => { submitEvent.preventDefault(); mutation.mutate({ eventId: event.id, eventType, reason }) }}>
+    <p>Use only to correct a documented fact. The original note and review decision are preserved. This does not send a new call-off notification or change time/payroll.</p>
+    <label><span>Correct type</span><select disabled={mutation.isPending} onChange={(input) => setEventType(input.target.value as AccountabilityEventType)} value={eventType}>{Object.entries(accountabilityTypeLabels).filter(([key]) => key !== 'vacation').map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+    <label><span>Reason for classification change</span><textarea disabled={mutation.isPending} minLength={8} maxLength={2000} required value={reason} onChange={(input) => setReason(input.target.value)} /></label>
+    {mutation.isError ? <p role="alert">{mutation.error.message}</p> : null}
+    <TimeButton disabled={eventType === event.eventType || reason.trim().length < 8} loading={mutation.isPending} type="submit" variant="secondary">Save occurrence type</TimeButton>
+  </form></details>
 }

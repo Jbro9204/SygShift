@@ -13,7 +13,7 @@ const eventTypeSchema = z.enum([
   'other',
 ])
 const reviewOutcomeSchema = z.enum(['confirmed', 'excused_protected', 'corrected', 'dismissed'])
-const actionSchema = z.enum(['created', 'confirmed', 'excused_protected', 'corrected', 'dismissed', 'voided', 'reopened'])
+const actionSchema = z.enum(['created', 'confirmed', 'excused_protected', 'corrected', 'dismissed', 'voided', 'reopened', 'reclassified'])
 const decisionSchema = z.enum(['confirmed', 'excused_protected', 'corrected', 'dismissed', 'voided', 'reopened'])
 
 const employeeSchema = z.object({
@@ -182,6 +182,25 @@ export type AccountabilityWorkspace = z.infer<typeof workspaceSchema>
 export type AccountabilityEvent = z.infer<typeof eventSchema>
 export type AccountabilityEventType = z.infer<typeof eventTypeSchema>
 export type AccountabilityDecision = z.infer<typeof decisionSchema>
+
+const attendanceReportSchema = z.object({ serverTimestamp: z.string(), fromDate: z.string(), throughDate: z.string(), events: z.array(eventSchema) })
+export type AttendanceReport = z.infer<typeof attendanceReportSchema>
+
+export async function getAttendanceReport(input: { fromDate: string; throughDate: string; export?: boolean }): Promise<AttendanceReport> {
+  const { data, error } = await getSupabaseClient().rpc('get_attendance_report', {
+    target_from_date: input.fromDate, target_through_date: input.throughDate, target_export: input.export ?? false,
+  })
+  if (error) throw new Error(error.message || 'The attendance report could not be loaded.')
+  return attendanceReportSchema.parse(data)
+}
+
+export async function reclassifyAccountabilityOccurrence(input: { eventId: string; eventType: AccountabilityEventType; reason: string }) {
+  const { data, error } = await getSupabaseClient().rpc('reclassify_attendance_accountability_event', {
+    target_event_id: input.eventId, target_event_type: input.eventType, target_reason: input.reason,
+  })
+  if (error) throw new Error(error.message || 'The occurrence type could not be updated.')
+  return data
+}
 
 export async function getAccountabilityWorkspace(input: { fromDate: string; throughDate: string }): Promise<AccountabilityWorkspace> {
   const { data, error } = await getSupabaseClient().rpc('get_accountability_workspace', {

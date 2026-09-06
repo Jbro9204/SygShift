@@ -77,6 +77,7 @@ export function MyTimePage() {
   const [attendanceReportNote, setAttendanceReportNote] = useState('')
   const [correctionEvent, setCorrectionEvent] = useState<TimekeepingEvent | null>(null)
   const [missingTimeRequestOpen, setMissingTimeRequestOpen] = useState(false)
+  const [periodOffset, setPeriodOffset] = useState(0)
   const sessionQuery = useQuery({
     queryFn: getSessionContext,
     queryKey: ['session-context'],
@@ -99,6 +100,8 @@ export function MyTimePage() {
   const payrollPeriod = periodQuery.data
     ? payrollPeriodFromBoundary(periodQuery.data)
     : currentPayrollPeriod(dashboard?.serverTimestamp ? new Date(dashboard.serverTimestamp) : undefined)
+  const availablePeriods = periodQuery.data?.availablePeriods.length ? periodQuery.data.availablePeriods : [{ offset: 0, ...payrollPeriod }]
+  const selectedPeriod = availablePeriods.find((period) => period.offset === periodOffset) ?? availablePeriods[0]
   const missingTimeHistoryFromDate = format(
     subDays(new Date(`${payrollPeriod.throughDate}T12:00:00`), 365),
     'yyyy-MM-dd',
@@ -107,9 +110,14 @@ export function MyTimePage() {
     enabled: isSupabaseConfigured && ownTimeAllowed && Boolean(dashboard?.employee.id) && periodQuery.isSuccess,
     queryFn: () => getOwnTimekeepingReview({
       employeeId: dashboard?.employee.id ?? '',
-      fromDate: payrollPeriod.fromDate,
-      throughDate: payrollPeriod.throughDate,
+      fromDate: selectedPeriod.fromDate,
+      throughDate: selectedPeriod.throughDate,
     }),
+    queryKey: ['my-time-review', dashboard?.employee.id, selectedPeriod.fromDate, selectedPeriod.throughDate],
+  })
+  const currentReviewQuery = useQuery({
+    enabled: isSupabaseConfigured && ownTimeAllowed && Boolean(dashboard?.employee.id) && periodQuery.isSuccess,
+    queryFn: () => getOwnTimekeepingReview({ employeeId: dashboard?.employee.id ?? '', fromDate: payrollPeriod.fromDate, throughDate: payrollPeriod.throughDate }),
     queryKey: ['my-time-review', dashboard?.employee.id, payrollPeriod.fromDate, payrollPeriod.throughDate],
   })
   const missingTimeWorkspaceQuery = useQuery({
@@ -120,11 +128,12 @@ export function MyTimePage() {
 
   const reviewPeriod = reviewQuery.data
     ? { fromDate: reviewQuery.data.fromDate, throughDate: reviewQuery.data.throughDate }
-    : payrollPeriod
+    : selectedPeriod
   const rows = useMemo(() => reviewQuery.data?.rows ?? [], [reviewQuery.data?.rows])
+  const currentRows = useMemo(() => currentReviewQuery.data?.rows ?? [], [currentReviewQuery.data?.rows])
   const todayRows = useMemo(
-    () => dashboard ? rows.filter((row) => row.operationalDate === dashboard.operationalDate) : [],
-    [dashboard, rows],
+    () => dashboard ? currentRows.filter((row) => row.operationalDate === dashboard.operationalDate) : [],
+    [dashboard, currentRows],
   )
   useEffect(() => {
     if (dashboard?.operationalDate && !attendanceReportDate) setAttendanceReportDate(dashboard.operationalDate)
@@ -183,14 +192,17 @@ export function MyTimePage() {
   })
 
   const totals = useMemo(() => {
-    const activeWeek = rows.find((row) => row.operationalDate === dashboard?.operationalDate)?.weekStartsOn
+    const today = dashboard?.operationalDate
+    const currentWeekDate = today ? new Date(`${today}T12:00:00Z`) : null
+    if (currentWeekDate) currentWeekDate.setUTCDate(currentWeekDate.getUTCDate() - (currentWeekDate.getUTCDay() - (periodQuery.data?.weekStartsOn ?? 0) + 7) % 7)
+    const activeWeek = currentWeekDate?.toISOString().slice(0, 10)
     return {
       payPeriod: sumPaidMinutes(rows),
       pendingCorrections: reviewQuery.data?.pendingCorrections.length ?? dashboard?.pendingCorrectionCount ?? 0,
       today: sumPaidMinutes(todayRows),
-      week: activeWeek ? sumPaidMinutes(rows.filter((row) => row.weekStartsOn === activeWeek)) : sumPaidMinutes(rows),
+      week: sumPaidMinutes(currentRows.filter((row) => row.weekStartsOn === activeWeek)),
     }
-  }, [dashboard?.operationalDate, dashboard?.pendingCorrectionCount, reviewQuery.data?.pendingCorrections.length, rows, todayRows])
+  }, [dashboard?.operationalDate, dashboard?.pendingCorrectionCount, reviewQuery.data?.pendingCorrections.length, rows, todayRows, currentRows, periodQuery.data?.weekStartsOn])
 
   if (!isSupabaseConfigured) {
     return (
@@ -246,13 +258,13 @@ export function MyTimePage() {
     <main className="page page--sygshift-time">
       <TimePageHeader
         eyebrow="My Time"
-        summary="Review your current pay period, recent punches, and correction requests. Your time clock remains available above while you work."
+        summary="Review your current or previous two pay periods, recent punches, and correction requests. Your live time clock remains available above."
         title="My Time"
       />
 
       {reviewQuery.isError ? (
         <TimeAlertCard icon={AlertTriangle} title="Pay-period details could not be loaded" tone="warning">
-          <p>Your live clock status is still shown. Advanced review details may require account access to be refreshed.</p>
+          <p>{reviewQuery.error.message} Your live clock status is unchanged. Select another period or refresh to try again.</p>
         </TimeAlertCard>
       ) : null}
 
@@ -288,14 +300,15 @@ export function MyTimePage() {
       <section className="my-time-dashboard-grid">
         <section className="time-card my-time-summary-card">
           <TimeSectionHeader
-            eyebrow="Current pay period"
+            eyebrow={periodOffset === 0 ? 'Current pay period' : 'Previous pay period'}
             summary={`${formatUsDateKey(reviewPeriod.fromDate)} - ${formatUsDateKey(reviewPeriod.throughDate)}`}
             title="Your Hours"
           />
+          <label className="my-time-period-picker"><span>Pay period</span><select aria-label="Pay period" onChange={(event) => setPeriodOffset(Number(event.target.value))} value={selectedPeriod.offset}>{availablePeriods.map((period) => <option key={period.offset} value={period.offset}>{period.offset === 0 ? 'Current period' : period.offset === 1 ? 'Previous period' : 'Two periods ago'} · {formatUsDateKey(period.fromDate)} – {formatUsDateKey(period.throughDate)}</option>)}</select><small>History is for review. Contact Timekeeping about errors; selecting a period does not change your live clock or approved payroll.</small></label>
           <div className="time-command-grid my-time-summary-card__metrics" aria-busy={periodQuery.isPending || reviewQuery.isPending}>
-            <TimeMetricCard detail="Paid time recorded today." icon={Clock3} label="Today" value={`${payrollHours(totals.today)} hrs`} />
-            <TimeMetricCard detail="Paid time for the current week." icon={CalendarDays} label="This Week" value={`${payrollHours(totals.week)} hrs`} />
-            <TimeMetricCard detail="Paid time in the current pay period." icon={FileClock} label="Pay Period" value={`${payrollHours(totals.payPeriod)} hrs`} />
+            <TimeMetricCard detail="Paid time recorded today." icon={Clock3} label="Today" value={currentReviewQuery.isPending ? 'Loading…' : currentReviewQuery.isError ? 'Unavailable' : `${payrollHours(totals.today)} hrs`} />
+            <TimeMetricCard detail="Paid time for the current week." icon={CalendarDays} label="This Week" value={currentReviewQuery.isPending ? 'Loading…' : currentReviewQuery.isError ? 'Unavailable' : `${payrollHours(totals.week)} hrs`} />
+            <TimeMetricCard detail="Paid time in the selected pay period." icon={FileClock} label="Selected Period" value={reviewQuery.isPending ? 'Loading…' : reviewQuery.isError ? 'Unavailable' : `${payrollHours(totals.payPeriod)} hrs`} />
             <TimeMetricCard
               detail="Correction requests waiting for review."
               icon={AlertTriangle}
@@ -324,13 +337,13 @@ export function MyTimePage() {
         </section>
       </section>
 
-      <MyTimeRows
+      {!reviewQuery.isError ? <MyTimeRows
         loading={reviewQuery.isPending}
         onRequestCorrection={setCorrectionEvent}
         recentEvents={dashboard.recentEvents}
         rows={rows}
         serverTimestamp={reviewQuery.data?.serverTimestamp}
-      />
+      /> : null}
 
       <section className="my-time-two-column">
         <RecentPunchesPanel dashboard={dashboard} onRequestCorrection={setCorrectionEvent} />
@@ -833,12 +846,12 @@ function MyTimeRows({
         <div>
           <p className="eyebrow">Pay-period detail</p>
           <h2>My Timecards</h2>
-          <p>These rows are the current payroll preview for your own time. Final payroll review remains controlled by approved operations users.</p>
+          <p>These are your time records for the selected pay period, not a pay stub. Contact Timekeeping about errors. Final payroll review remains controlled by authorized operations users.</p>
         </div>
       </div>
       {loading ? (
         <DataStatePanel icon={Timer} title="Loading timecards">
-          <p>Retrieving your current pay-period records.</p>
+          <p>Retrieving your selected pay-period records.</p>
         </DataStatePanel>
       ) : rows.length > 0 ? (
         <div className="my-time-history__list">
@@ -909,7 +922,7 @@ function MyTimecardRow({
             Request correction
           </button>
         ) : (
-          <small>Open Recent Punches for correction options.</small>
+          <small>Contact Timekeeping if this record needs correction.</small>
         )}
       </div>
     </article>
