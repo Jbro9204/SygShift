@@ -1757,4 +1757,5 @@ pnpm exec wrangler deploy --keep-vars
 - Added explicit primary-paid and concurrent-duty modes throughout Scheduler creation, editing, copying, overtime preview, publication, and server-side validation.
 - Preserved duplicate-session protection for genuine concurrent phone duty and preserved all historical time, payroll, schedule, audit, and access records.
 - Added a forward-only production data repair for current and future standalone Dispatch assignments while retaining concurrent classification where a standard physical-post shift overlaps.
-- Full validation passed: type checking, zero-warning lint, 171 test files / 820 tests, production builds, and all 118 desktop/mobile Playwright checks.
+- A post-migration database lint caught and corrected two invalid composite-row loads in the new Scheduler edit/preview helpers before web deployment; the forward repair received its own regression guard and linked rollback rehearsal.
+- Full validation passed: type checking, zero-warning lint, 171 test files / 821 tests, production builds, and all 118 desktop/mobile Playwright checks.

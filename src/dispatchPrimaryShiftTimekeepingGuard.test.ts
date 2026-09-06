@@ -9,6 +9,10 @@ const migration = readFileSync(
   join(root, 'supabase', 'migrations', '20260906154620_dispatch_primary_shift_timekeeping.sql'),
   'utf8',
 )
+const compositeRepairMigration = readFileSync(
+  join(root, 'supabase', 'migrations', '20260906160934_repair_dispatch_scheduler_composite_loads.sql'),
+  'utf8',
+)
 const scheduleData = readFileSync(join(root, 'src', 'data', 'schedule.ts'), 'utf8')
 const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
 
@@ -31,6 +35,13 @@ describe('primary paid Dispatch shift boundary', () => {
     expect(scheduleData).toContain("rpc('get_scheduled_overtime_create_preview_v2'")
     expect(schedulePage).toContain('Primary paid shift')
     expect(schedulePage).toContain('Concurrent phone duty')
+  })
+
+  it('loads complete shift and schedule rows in dispatch edit helpers', () => {
+    expect(compositeRepairMigration).toContain('select shift.* into target_shift')
+    expect(compositeRepairMigration).toContain('select schedule.* into target_schedule')
+    expect(compositeRepairMigration).not.toMatch(/select shift into target_shift/)
+    expect(compositeRepairMigration).not.toMatch(/select schedule into target_schedule/)
   })
 
   it('preserves the mode through schedule copies and protects time-event history', () => {

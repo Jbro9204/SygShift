@@ -20,7 +20,7 @@
 ## Verification
 
 - The production migration completed a full linked rehearsal inside a transaction that was rolled back; its preservation assertions and reclassification logic passed.
-- Type checking, zero-warning lint, production builds, and all 171 Vitest files / 820 tests passed.
+- A post-migration database lint caught two composite-row loads in new Scheduler helper functions before web deployment. A second forward-only migration corrected them, completed a linked rollback rehearsal, and added a regression guard.
+- Type checking, zero-warning lint, production builds, and all 171 Vitest files / 821 tests passed.
 - All 118 desktop and mobile Playwright checks passed, including the new Dispatch mode layout and the existing timekeeping, Scheduler, and responsive-layout coverage.
 - Production migration, database verification, Worker deployment, live health/readiness, and deployed-asset verification are recorded below when completed.
-
