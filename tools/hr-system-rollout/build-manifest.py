@@ -139,14 +139,33 @@ def main() -> None:
         series = row["series"]
         kind = {"P": "training_admin", "T": "training_module", "D": "document_guide", "F": "training_form"}[series]
         module = module_rows.get(row["code"])
+        lines = table_lines(source_path)
+        training_record_class = {
+            "P": "Training Program Administration",
+            "T": "Training Course Material",
+            "D": "Controlled Document Use Guide",
+            "F": "Training Administration Record",
+        }[series]
+        related_modules = [row["code"]] if series == "T" else []
+        if series == "D":
+            crosswalk_row = next((value for value in crosswalk.values() if value.get("d_guide") == row["code"]), None)
+            related_modules = crosswalk_row.get("related_modules", "").split("; ") if crosswalk_row else []
         items.append({
             "kind": kind,
             "code": row["code"],
             "title": row["title"],
             "category": row["category"],
+            "section": f"TRN/{Path(relative).parent.as_posix()}",
+            "recordClass": record_class(lines, training_record_class),
+            "purpose": after_label(lines, "PURPOSE", row["title"]),
+            "audience": "hr_only",
+            "sensitivity": "confidential",
+            "vaultCode": "hr-general",
             "status": "draft_for_adoption",
             "sourceRelativePath": str(source_path.relative_to(source_root)).replace("\\", "/"),
             "pdfRelativePath": str(pdf_path.relative_to(output_root)).replace("\\", "/"),
+            "relatedModules": related_modules,
+            "guideCode": row["code"] if series == "D" else None,
             "audienceDescription": module["audience"] if module else None,
             "expectedMinutes": int(module["minutes"]) if module else None,
             "passingStandard": module["passing_standard"] if module else None,

@@ -37,7 +37,11 @@ export type HrSystemCatalog = z.infer<typeof catalogSchema>
 export type HrSystemCatalogItem = z.infer<typeof itemSchema>
 
 export function parseHrSystemCatalog(value: unknown): HrSystemCatalog {
-  return catalogSchema.parse(value)
+  const parsed = catalogSchema.safeParse(value)
+  if (parsed.success) return parsed.data
+  const first = parsed.error.issues[0]
+  const location = first?.path.length ? ` at ${first.path.join('.')}` : ''
+  throw new Error(`The rollout catalog is not compatible${location}. Rebuild the validated package before importing.`)
 }
 
 export function normalizedPackagePath(value: string): string {

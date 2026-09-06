@@ -10,6 +10,8 @@ const library = readFileSync('src/components/HrDocumentLibrary.tsx', 'utf8')
 const employeePage = readFileSync('src/pages/MyDocumentsPage.tsx', 'utf8')
 const studio = readFileSync('src/components/DocumentStudioDashboard.tsx', 'utf8')
 const rollout = readFileSync('src/components/HrSystemRolloutPanel.tsx', 'utf8')
+const importer = readFileSync('src/data/hrSystemImport.ts', 'utf8')
+const packageBuilder = readFileSync('tools/hr-system-rollout/build-manifest.py', 'utf8')
 const navigation = readFileSync('src/app/navigation.ts', 'utf8')
 const accessBoundary = readFileSync('supabase/migrations/20260903020750_restrict_document_studio_to_hr.sql', 'utf8')
 
@@ -77,5 +79,14 @@ describe('searchable HR document library', () => {
     expect(rollout).toContain('160 * 1024 * 1024')
     expect(rollout).toContain('selected.length > 600')
     expect(rollout).toContain('file.size !== item.sizeBytes || await sha256(file) !== item.sha256')
+    expect(importer).toContain('The rollout catalog is not compatible')
+  })
+
+  it('classifies every training artifact for the same protected document pipeline', () => {
+    expect(packageBuilder).toContain('"section": f"TRN/{Path(relative).parent.as_posix()}"')
+    expect(packageBuilder).toContain('"recordClass": record_class(lines, training_record_class)')
+    expect(packageBuilder).toContain('"audience": "hr_only"')
+    expect(packageBuilder).toContain('"sensitivity": "confidential"')
+    expect(packageBuilder).toContain('"vaultCode": "hr-general"')
   })
 })
