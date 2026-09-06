@@ -34367,6 +34367,7 @@ button.patrol-overview-row:focus-visible {
 .accountability-classification summary { cursor: pointer; font-weight: 700; }
 .accountability-classification form { margin-top: 16px; }
 .attendance-report-controls fieldset { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.page--reports .attendance-report-controls { grid-template-columns: minmax(0, 1fr); }
 .attendance-report-controls .reports-filter-row { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); }
 .attendance-report-controls label { min-width: 0; }
 .attendance-report-controls input, .attendance-report-controls select { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font: inherit; }
