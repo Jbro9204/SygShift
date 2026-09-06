@@ -43,4 +43,5 @@
 - The production Worker and client builds passed.
 - All 116 desktop and mobile Playwright checks passed, including new Support Tickets layout checks in both themes.
 - The notification composer passes production schema lint after the forward-only employee job-title compatibility repair.
-- Cloudflare Worker version and final production endpoint verification are recorded in the release DEVLOG entry.
+- Deployed Cloudflare Worker version `7cddbe03-f0c6-4752-b514-b57c5234e1ea`.
+- Production health and readiness returned HTTP 200 with readiness `ready`; `/notifications` returned HTTP 200, the live application asset contains the new notification entry point, and the new inbox RPC returned the expected unauthenticated denial rather than a missing-function response.
