@@ -33,5 +33,7 @@
 - The Worker and client production builds passed.
 - All 116 desktop and mobile Playwright checks passed.
 - Production database migration, scheduled-job recovery, follow-up job completion, and zero remaining eligible automatic clock-out candidates were verified.
-- Production deployment and live endpoint checks are recorded below after release.
-
+- Deployed Cloudflare Worker version `01521bc0-91ab-4d9d-b9e1-26248671aab4`.
+- Production health and readiness returned HTTP 200 with readiness `ready`; `/login` and the existing `/account-security?mode=password-recovery` route returned HTTP 200.
+- The deployed Login chunk contains **Forgot password?** and the approved-personal-email instructions. A non-existent-username probe returned the generic HTTP 202 response without reflecting the username, and its audit record retained only valid SHA-256 hashes with no employee identity.
+- A scheduled run on the deployed Worker version completed with no exception, no overdue clock-out, and no new missing-clock alert.
