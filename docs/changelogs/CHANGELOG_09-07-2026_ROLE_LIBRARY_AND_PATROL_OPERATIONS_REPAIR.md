@@ -24,5 +24,6 @@ Date: 09/07/2026
 - Targeted real-component Patrol tests cover the actual page formatter, duplicate shift IDs across different employees, all five operational states, and view-only capability boundaries.
 - Fourteen desktop/mobile light/dark browser checks passed for the Role Library, Manage Employee role assignment, sensitive permission review, and Patrol layout.
 - All 38 required desktop/mobile Time Clock workflow checks passed without changes to timekeeping behavior.
-- Production deployment and live verification are recorded below after release.
-
+- Release commit `8db9e0e` was pushed to `origin/main` and deployed as Cloudflare Worker version `18e0cfd5-6db7-4fda-ae9d-51805d6bdcad`.
+- Production health and readiness returned HTTP 200 / ready. The live main JavaScript, global stylesheet, and Patrol page bundle match the tested release files byte-for-byte by SHA-256; the live Patrol bundle contains the new status filter and state labels.
+- The available browser session was signed out at `/login`, so no authenticated production data or workflow was altered for a visual walkthrough. Actual component behavior and authenticated boundaries are covered by the automated Patrol tests and existing data-layer contracts.

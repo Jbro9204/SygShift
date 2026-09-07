@@ -1893,4 +1893,5 @@ pnpm exec wrangler deploy --keep-vars
 - Fixed an invalid Patrol date/time formatter that could crash the Operations view, made schedule linking employee-specific when a shift has multiple assignees, and added truthful operational states plus status filtering.
 - Preserved Patrol capability boundaries: view-only Operations access no longer displays route-linking or makeup-assignment controls.
 - No database or operational record changed. `pnpm check` passed 189 files / 931 tests; 14 targeted desktop/mobile visual checks and all 38 required Time Clock workflow checks passed.
+- Pushed release commit `8db9e0e` and deployed Worker `18e0cfd5-6db7-4fda-ae9d-51805d6bdcad`; production health/readiness and exact live JavaScript/CSS asset hashes passed verification.
 - See `docs/changelogs/CHANGELOG_09-07-2026_ROLE_LIBRARY_AND_PATROL_OPERATIONS_REPAIR.md` for detailed scope and release evidence.
