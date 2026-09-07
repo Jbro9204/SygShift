@@ -2,7 +2,7 @@
 
 Date: 09/06/2026
 Area: Administration / User Accounts / Manage User
-Status: Release verification passed; production deployment pending
+Status: Production deployed and verified
 
 ## Outcome
 
@@ -43,4 +43,9 @@ The unified employee-role selector now presents roles as polished, readable SygS
 
 ## Deployment
 
-- Pending production release.
+- Cloudflare deployment ID: `423ad8b7-e42e-4803-922e-5f24f87ed474`.
+- Cloudflare Worker version: `7b63ab4e-4e7c-4a50-aa51-d5a97d456a00`.
+- Release source: `release/unified-employee-roles` at `183456b`.
+- Production health returned `ok`; readiness returned `ready`.
+- The live application served `UserAdminPage-B-pnz_-s.js` with the new plain-language role copy and no superseded verbose HR description.
+- The signed-in production Manage User dialog was refreshed and visually inspected without saving or changing an employee record.
