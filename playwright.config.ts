@@ -9,7 +9,8 @@ const browserProjects = process.env.PLAYWRIGHT_BROWSER === 'firefox'
       { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'], ...installedBrowser } },
       { name: 'mobile-chromium', use: { ...devices['Pixel 7'], ...installedBrowser } },
     ]
-const e2ePort = 4174
+const portOffset = Number(process.env.PLAYWRIGHT_PORT_OFFSET ?? 0)
+const e2ePort = 4174 + portOffset
 const e2eBaseUrl = `http://127.0.0.1:${e2ePort}`
 
 export default defineConfig({
@@ -33,27 +34,27 @@ export default defineConfig({
     url: e2eBaseUrl,
   }, {
     command: 'pnpm exec vite --config tests/fixtures/support-vite.config.ts',
-    url: 'http://127.0.0.1:4185/tests/fixtures/support-ui.html',
+    url: `http://127.0.0.1:${4185 + portOffset}/tests/fixtures/support-ui.html`,
     reuseExistingServer: false,
   }, {
     command: 'pnpm exec vite --config tests/fixtures/clock-vite.config.ts',
-    url: 'http://127.0.0.1:4186/tests/fixtures/clock-ui.html',
+    url: `http://127.0.0.1:${4186 + portOffset}/tests/fixtures/clock-ui.html`,
     reuseExistingServer: false,
   }, {
     command: 'pnpm exec vite --config tests/fixtures/live-vite.config.ts',
-    url: 'http://127.0.0.1:4187/tests/fixtures/live-ui.html',
+    url: `http://127.0.0.1:${4187 + portOffset}/tests/fixtures/live-ui.html`,
     reuseExistingServer: false,
   }, {
     command: 'pnpm exec vite --config tests/fixtures/notification-vite.config.ts',
-    url: 'http://127.0.0.1:4188/tests/fixtures/notification-ui.html',
+    url: `http://127.0.0.1:${4188 + portOffset}/tests/fixtures/notification-ui.html`,
     reuseExistingServer: false,
   }, {
     command: 'pnpm exec vite --config tests/fixtures/roles-vite.config.ts',
-    url: 'http://127.0.0.1:4189/tests/fixtures/roles-ui.html',
+    url: `http://127.0.0.1:${4189 + portOffset}/tests/fixtures/roles-ui.html`,
     reuseExistingServer: false,
   }, {
     command: 'pnpm exec vite --config tests/fixtures/sphere-vite.config.ts',
-    url: 'http://127.0.0.1:4190/tests/fixtures/sphere-ui.html',
+    url: `http://127.0.0.1:${4190 + portOffset}/tests/fixtures/sphere-ui.html`,
     reuseExistingServer: false,
   }],
   projects: browserProjects,

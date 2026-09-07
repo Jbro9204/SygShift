@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { createHash } from 'node:crypto'
-const fixture = 'http://127.0.0.1:4187/tests/fixtures/live-ui.html'
+const fixture = `http://127.0.0.1:${4187 + Number(process.env.PLAYWRIGHT_PORT_OFFSET ?? 0)}/tests/fixtures/live-ui.html`
 async function setup(page: Page) {
   await page.route('**/*', (route) => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
   await page.addInitScript(() => {

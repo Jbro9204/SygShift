@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-const fixture = 'http://127.0.0.1:4186/tests/fixtures/clock-ui.html'
+const fixture = `http://127.0.0.1:${4186 + Number(process.env.PLAYWRIGHT_PORT_OFFSET ?? 0)}/tests/fixtures/clock-ui.html`
 for (const surface of ['home', 'workspace']) {
   for (const scenario of ['early', 'empty']) {
     test(`${surface}: ${scenario} clock-in opens real forced acknowledgment without a punch`, async ({ page }) => {

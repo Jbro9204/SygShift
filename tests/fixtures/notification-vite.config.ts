@@ -8,5 +8,5 @@ export default defineConfig({
     { find: /.*\/data\/notifications$/, replacement: fileURLToPath(new URL('./notification-data.ts', import.meta.url)) },
     { find: /.*\/lib\/supabase$/, replacement: fileURLToPath(new URL('./notification-data.ts', import.meta.url)) },
   ] },
-  server: { host: '127.0.0.1', port: 4188, strictPort: true },
+  server: { host: '127.0.0.1', port: 4188 + Number(process.env.PLAYWRIGHT_PORT_OFFSET ?? 0), strictPort: true },
 })

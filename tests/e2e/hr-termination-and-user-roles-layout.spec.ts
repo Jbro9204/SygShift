@@ -38,7 +38,7 @@ test('HR termination confirmation remains contained and unmistakable', async ({ 
 
 for (const theme of ['light', 'dark']) {
   test(`User Accounts uses one actual searchable role list in ${theme} mode`, async ({ page }, testInfo) => {
-    await page.goto(`http://127.0.0.1:4189/tests/fixtures/roles-ui.html?theme=${theme}`)
+    await page.goto(`http://127.0.0.1:${4189 + Number(process.env.PLAYWRIGHT_PORT_OFFSET ?? 0)}/tests/fixtures/roles-ui.html?theme=${theme}`)
     await expect(page.getByRole('group', { name: 'Roles', exact: true })).toHaveCount(1)
     await expect(page.getByText('Workforce role')).toHaveCount(0)
     await expect(page.getByText('Add specialized access')).toHaveCount(0)

@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
-const fixture = 'http://127.0.0.1:4185/tests/fixtures/support-ui.html'
+const fixture = `http://127.0.0.1:${4185 + Number(process.env.PLAYWRIGHT_PORT_OFFSET ?? 0)}/tests/fixtures/support-ui.html`
 async function openFixture(page: Page, query = '') {
   await page.route('**/*', (route) => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
   await page.goto(fixture + query)

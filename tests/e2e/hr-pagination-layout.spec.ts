@@ -5,7 +5,9 @@ test('HR pagination is compact, anchored, and responsive', async ({ page }, test
   await page.goto('/')
   await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--ink').trim().length > 0)
   await page.locator('#root').evaluate((root) => {
-    root.innerHTML = `
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+    fixtureRoot.innerHTML = `
       <main class="page page--hr-automation" style="max-width:1180px;margin:24px auto">
         <section class="page-intro workforce-intro"><div><p class="eyebrow">HR &amp; Finance</p><h1>Talent Management</h1><p class="page-summary">Review goals, development plans, and performance records.</p></div></section>
         <section class="panel hr-automation-worklist">

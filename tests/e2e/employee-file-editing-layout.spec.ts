@@ -5,7 +5,9 @@ test('Employee File editors and urgent actions remain polished on desktop and mo
   await page.goto('/')
 
   await page.locator('#root').evaluate((root) => {
-    root.innerHTML = `
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+    fixtureRoot.innerHTML = `
       <main class="page hr-employee-file" aria-label="Employee File visual fixture">
         <section class="hr-file-card">
           <div class="hr-file-card__heading">

@@ -1,7 +1,7 @@
 # SygSphere Messaging
 
 Date: 09/06/2026 (production release continued 09/07/2026 UTC)
-Status: Implementation and release gates passed; production installation pending
+Status: Database installed and verified behind disabled gate; final application release pending
 
 ## Delivered scope
 
@@ -19,7 +19,8 @@ Status: Implementation and release gates passed; production installation pending
 - Authentication, password-change and MFA requirements remain authoritative. Private chats are membership-only, including for Admin. New-member confirmation explicitly warns that conversation history and files become visible.
 - No existing clock, scheduling, payroll, attendance, ticket or employee account record is rewritten. Test conversations and file metadata are enclosed in rollback-only database transactions.
 - Checkpoints: `ec6ad36` implementation plan; `dcb30f2` database foundation; `4c692d9` workspace/live integration; `e4dc139` protected attachments. Concurrent committed employee-role improvements are preserved.
-- Application fallback Worker version: `7de90337-5595-4add-b652-38ec8d5e8f51`. If isolation is needed, disable `private.sygsphere_gate.enabled` and restore the recorded application version. Retain the additive schema, message history and memberships; never delete user data as rollback.
+- Application fallback Worker version: `7b63ab4e-4e7c-4a50-aa51-d5a97d456a00`. If isolation is needed, disable `private.sygsphere_gate.enabled` and restore the recorded application version. Retain the additive schema, message history and memberships; never delete user data as rollback.
+- The separately deployed employee-role visual refinement (`183456b`) and its release documentation were incorporated before the final combined checks, preserving the latest production interface.
 
 ## Verification
 
@@ -28,13 +29,17 @@ Status: Implementation and release gates passed; production installation pending
 - SygSphere UI checks cover group creation, sending, draft reload, failed-send retry, real thread navigation, saved/search links, two-account live transport, separate badge, light/dark controls and no horizontal overflow. The two-account test uses controlled fixture transport, not messages sent to live employees.
 - Database rollback rehearsals passed for membership denial, cross-conversation reply denial, duplicate prevention, read/search/save/revision evidence, recovery gate, service-only file completion, checksum evidence, clean-only downloads and removed-member file denial.
 - Exact release/history-registration transaction also rehearsed with final rollback and existing-function preservation assertions.
-- A licensing static-markup test race was isolated from React's live root without changing production licensing code or weakening its accessibility assertions. Full suite then passed.
+- Static-markup races in licensing, role-library, employee-file and HR pagination fixtures were isolated from React's live root without changing those production workflows or weakening accessibility assertions.
+- Added optional `PLAYWRIGHT_PORT_OFFSET` isolation for all test servers and fixture URLs, preserving default ports. The final combined run uses offset 1000 after another run's localhost server became unavailable; no other task's processes were stopped.
 
 ## Database and deployment
 
 - Exact forward migrations: `20260907023825_sygsphere_messaging_foundation.sql` and `20260907025451_sygsphere_private_attachments.sql`.
 - Standard database push detected pre-existing migration-history gaps. Old migrations were not replayed. The exact SygSphere-only installer registers the two new migration versions atomically with their schema changes.
-- Production installation, release-gate enablement, Worker version, health/readiness and signed-in acceptance: pending, to be recorded after verification.
+- Both production migrations installed and recorded atomically; all existing operational function fingerprints remained unchanged. Installed-function rollback tests passed again after installation.
+- Security audit: all 10 SygSphere private tables have RLS and no anonymous/authenticated direct table privileges; no anonymous messaging RPC; browser roles cannot complete file scans; the Storage bucket is private.
+- Post-test production counts were zero conversations, zero messages and zero files, confirming no committed test chat data. The release gate remains disabled until application cutover.
+- Release-gate enablement, Worker version, health/readiness and signed-in acceptance: pending, to be recorded after verification.
 
 ## Boundaries and usage
 

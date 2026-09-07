@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-const fixture = 'http://127.0.0.1:4190/tests/fixtures/sphere-ui.html'
+const fixture = `http://127.0.0.1:${4190 + Number(process.env.PLAYWRIGHT_PORT_OFFSET ?? 0)}/tests/fixtures/sphere-ui.html`
 test('creates a group using the real rounded form and sends a message', async ({ page }) => {
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
   await page.getByRole('button', { name: 'New message', exact: true }).click()

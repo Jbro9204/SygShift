@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
-const fixture = 'http://127.0.0.1:4188/tests/fixtures/notification-ui.html'
+const fixture = `http://127.0.0.1:${4188 + Number(process.env.PLAYWRIGHT_PORT_OFFSET ?? 0)}/tests/fixtures/notification-ui.html`
 const employees = Array.from({ length: 14 }, (_, index) => ({
   id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
   name: index === 0 ? 'Alex Employee' : `Employee ${index + 1}`,

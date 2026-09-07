@@ -4,8 +4,10 @@ import { expect, test } from '@playwright/test'
 test('sensitive permission review stays compact and independently scrollable', async ({ page }, testInfo) => {
   await page.goto('/')
   await page.locator('#root').evaluate((root) => {
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
     const categories = Array.from({ length: 12 }, (_, index) => `Permission group ${index + 1}`)
-    root.innerHTML = `
+    fixtureRoot.innerHTML = `
       <dialog class="modal-dialog access-modal access-modal--confirmation" open aria-labelledby="sensitive-title">
         <h1 class="visually-hidden">Roles & Permissions</h1>
         <div class="modal-dialog__heading"><div><h2 id="sensitive-title">Confirm sensitive access</h2><p>This employee will receive protected permissions.</p></div><button class="modal-close" aria-label="Close dialog">×</button></div>
@@ -36,8 +38,10 @@ test('sensitive permission review stays compact and independently scrollable', a
 test('role library footer remains inside its card with clear banner spacing', async ({ page }, testInfo) => {
   await page.goto('/')
   await page.locator('#root').evaluate((root) => {
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
     const roles = Array.from({ length: 10 }, (_, index) => `Role ${index + 1}`)
-    root.innerHTML = `
+    fixtureRoot.innerHTML = `
       <main class="page-stack access-control-page" style="width:min(1100px,calc(100% - 24px));margin:24px auto">
         <h1 class="visually-hidden">Roles & Permissions</h1>
         <section class="access-role-mode">
