@@ -22,6 +22,7 @@ declare actor uuid:=private.current_employee_id(); cid uuid:=(input->>'conversat
 begin
   if actor is null or not exists(select 1 from private.sygsphere_gate where enabled) then raise insufficient_privilege using message='SygSphere file access is unavailable.'; end if;
   if action='access' then select * into item from private.sygsphere_files where id=(input->>'fileId')::uuid; cid:=item.conversation_id; end if;
+  perform private.sygsphere_request('conversation',jsonb_build_object('conversationId',cid));
   if cid is null or not exists(select 1 from private.sygsphere_members where conversation_id=cid and employee_id=actor and removed_at is null) then raise insufficient_privilege using message='You do not have access to these conversation files.'; end if;
   if action='authorize' then
     if exists(select 1 from private.sygsphere_conversations where id=cid and archived) then raise check_violation using message='This conversation is archived.'; end if;
@@ -67,7 +68,7 @@ begin
     if item.state='clean' then return jsonb_build_object('state','clean','id',item.id,'messageId',item.message_id); end if;
     if input->>'state' not in ('clean','rejected','error') or item.state='rejected' then raise check_violation; end if;
     if input->>'state'='clean' then
-      if input->>'checksum'<>item.checksum or coalesce(input->>'scanner','')='' then raise check_violation using message='Verified scan evidence is required.'; end if;
+      if input->>'checksum' is distinct from item.checksum or coalesce(input->>'scanner','')='' then raise check_violation using message='Verified scan evidence is required.'; end if;
       insert into private.sygsphere_messages(conversation_id,author_id,client_id,parent_id,body) values(cid,target_actor_id,fid,item.parent_id,'Shared file: '||item.filename) returning id into mid;
       update private.sygsphere_conversations set updated_at=clock_timestamp() where id=cid;
     end if;

@@ -71,7 +71,9 @@ export async function sphereUpload(file: File, fileId: string, conversationId: s
   if (file.size > 26214400 || file.size < 1) throw new Error('Choose a file between 1 byte and 25 MB.')
   const params = new URLSearchParams({ conversation: conversationId, filename: file.name })
   if (parentId) params.set('thread', parentId)
-  await sphereFileResponse(await fetch(`/api/v1/sygsphere/files/${fileId}?${params}`, { method: 'PUT', headers: await sphereFileHeaders(file.type || 'application/octet-stream'), body: file, cache: 'no-store' }))
+  const fallbackMime: Record<string, string> = { pdf: 'application/pdf', txt: 'text/plain', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+  const mimeType = file.type || fallbackMime[file.name.split('.').at(-1)?.toLowerCase() || ''] || 'application/octet-stream'
+  await sphereFileResponse(await fetch(`/api/v1/sygsphere/files/${fileId}?${params}`, { method: 'PUT', headers: await sphereFileHeaders(mimeType), body: file, cache: 'no-store' }))
 }
 export async function sphereDownload(file: SphereFile) {
   const response = await sphereFileResponse(await fetch(`/api/v1/sygsphere/files/${file.id}`, { headers: await sphereFileHeaders(), cache: 'no-store' }))

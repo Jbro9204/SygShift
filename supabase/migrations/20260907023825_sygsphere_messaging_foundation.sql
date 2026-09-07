@@ -103,8 +103,13 @@ declare
   actor uuid:=private.current_employee_id(); cid uuid:=nullif(input->>'conversationId','')::uuid;
   mid uuid:=nullif(input->>'messageId','')::uuid; target uuid; result jsonb; ids uuid[]; pair text; body_text text;
   conv private.sygsphere_conversations%rowtype; membership private.sygsphere_members%rowtype; msg private.sygsphere_messages%rowtype;
+  session_context jsonb;
 begin
   if actor is null then raise insufficient_privilege using message='An active SygShift account is required.'; end if;
+  select to_jsonb(context) into session_context from public.get_session_context() context;
+  if coalesce((session_context->>'must_change_password')::boolean,true) or ((session_context->>'mfa_required')::boolean and not (session_context->>'has_mfa')::boolean) then
+    raise insufficient_privilege using message='Complete your SygShift account security verification before opening messages.';
+  end if;
   if not exists(select 1 from private.sygsphere_gate where enabled) then raise object_not_in_prerequisite_state using message='SygSphere is temporarily unavailable. Other SygShift features remain available.'; end if;
   if octet_length(input::text)>65000 then raise check_violation using message='This request is too large.'; end if;
 

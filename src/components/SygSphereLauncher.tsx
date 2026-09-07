@@ -94,7 +94,7 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
       <span className="sphere-launcher__brand"><img src="/branding/sygsphere-logo.png" alt="SygSphere" /><small>MESSAGES</small></span>
       {unread > 0 ? <span className="sphere-badge">{unread > 99 ? '99+' : unread}</span> : null}
     </Link>
-    <Link className="sphere-mobile-launcher" to="/sygsphere" aria-label={`Open SygSphere${unread ? `, ${unread} unread conversations` : ''}`}><img src="/branding/sygsphere-emblem.png" alt="" />SygSphere{unread > 0 ? <span className="sphere-badge">{unread > 99 ? '99+' : unread}</span> : null}</Link>
+    {createPortal(<Link className="sphere-mobile-launcher" to="/sygsphere" aria-label={`Open SygSphere${unread ? `, ${unread} unread conversations` : ''}`}><img src="/branding/sygsphere-emblem.png" alt="" />SygSphere{unread > 0 ? <span className="sphere-badge">{unread > 99 ? '99+' : unread}</span> : null}</Link>, document.body)}
     {toast ? createPortal(<aside className="sphere-toast" role="status"><Link onClick={() => setToast(null)} to={toast.path}><strong>SygSphere · {toast.title}</strong><span>You have a new message. Open conversation.</span></Link><button type="button" aria-label="Dismiss message notification" onClick={() => setToast(null)}><X size={18} /></button></aside>, document.body) : null}
   </>
 }

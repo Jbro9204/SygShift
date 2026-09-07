@@ -51,6 +51,10 @@ export default defineConfig({
     command: 'pnpm exec vite --config tests/fixtures/roles-vite.config.ts',
     url: 'http://127.0.0.1:4189/tests/fixtures/roles-ui.html',
     reuseExistingServer: false,
+  }, {
+    command: 'pnpm exec vite --config tests/fixtures/sphere-vite.config.ts',
+    url: 'http://127.0.0.1:4190/tests/fixtures/sphere-ui.html',
+    reuseExistingServer: false,
   }],
   projects: browserProjects,
 })

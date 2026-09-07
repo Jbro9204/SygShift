@@ -165,6 +165,14 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - A Vault-authenticated asynchronous database wakeup dispatches encrypted Web Push through the Worker. Bounded retries run independently of timekeeping and email jobs. The push service worker has no fetch interception or offline application cache.
 - Audio is a nonblocking browser enhancement: manual sign-in arms the login sound and completed security checks consume it once. Refresh and session renewal do not arm it. Device-local settings control login sound, notification sound, mute, and volume.
 
+## SygSphere company messaging
+
+- `/sygsphere` is a lazy-loaded authenticated workspace. A branded launcher above Need Help owns its separate unread-conversation badge and message alerts; ticket/system inbox producers are unchanged.
+- Private SygSphere tables deny direct browser access. Authenticated RPCs require an active account, completed account security and current conversation membership. Owner actions are rechecked in the database; administrators do not implicitly join private chats.
+- Recipient-specific private `sygsphere:<auth user id>` Broadcast topics carry invalidation identifiers only. The client reloads authorized records, with focus/reconnect and polling fallback. Visible-message IDs drive read receipts; drafts and client identifiers are scoped by employee, conversation and thread.
+- The Worker checks membership before accepting bounded file bytes, validates content, stores private quarantine objects and uses the existing malware scanner. Service-only completion requires matching clean checksum evidence. Downloads require current membership and a clean attached, nondeleted message; no public Storage policy or signed public URL is introduced.
+- A SygSphere-only release gate provides isolation without deleting history. Voice/video, Microsoft calendar integration and SygSphere background Web Push are not part of this release.
+
 ## System status and release communication
 
 - The application shell shows every signed-in user one compact service state: Online, Attention Needed, or Service Disruption.

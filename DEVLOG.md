@@ -1,5 +1,12 @@
 # SygShift Development Log
 
+## 09/06/2026 — SygSphere Messaging
+
+- Added branded company messaging with direct/group/channel conversations, threads, independent live alerts and unread state, drafts/retry, search, saved/pinned messages and private scanned attachments.
+- Kept SygSphere authorization, cache keys, Realtime topics, styling and notification delivery separate from existing operational workflows.
+- Verified all 923 code tests and 208 desktop/mobile browser checks, including 38 actual time-clock workflow cases. Additive database and exact release/history transactions passed rollback-only rehearsals.
+- Release status, recovery version and deferred capabilities: `docs/changelogs/CHANGELOG_09-06-2026_SYGSPHERE_MESSAGING.md`.
+
 ## 09/06/2026 — Unified Employee Role Assignment
 
 - Replaced the separate Workforce Role and specialized-access controls in User Accounts > Manage User with one searchable role list.

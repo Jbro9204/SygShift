@@ -5,8 +5,14 @@ for (const colorScheme of ['light', 'dark'] as const) {
   test(`Licensing documents remain compact and readable in ${colorScheme} mode`, async ({ page }, testInfo) => {
     await page.emulateMedia({ colorScheme })
     await page.goto('/')
+    await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--ink').trim().length > 0)
 
     await page.locator('#root').evaluate((root) => {
+      // Detach React's mount before installing this static CSS fixture. Otherwise
+      // an asynchronous route error can render into it during the accessibility scan.
+      const fixture = document.createElement('div')
+      fixture.id = 'licensing-layout-fixture'
+      root.replaceWith(fixture)
       const documents = [
         ['Denver-guard-license.pdf', '1.2 MB · Uploaded 09/01/2026, 3:05 PM'],
         ['Armed-endorsement-front.png', '846 KB · Uploaded 08/28/2026, 11:24 AM'],
@@ -14,7 +20,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
         ['Renewal-confirmation.pdf', '328 KB · Uploaded 07/12/2026, 9:03 AM'],
         ['Training-certificate.pdf', '544 KB · Uploaded 06/18/2026, 2:17 PM'],
       ]
-      root.innerHTML = `
+      fixture.innerHTML = `
         <main style="max-width: 1120px; margin: 24px auto;">
           <dialog class="modal-dialog modal-dialog--wide" aria-labelledby="document-title" open>
             <div class="modal-dialog__heading">

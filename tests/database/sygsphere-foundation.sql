@@ -4,7 +4,7 @@ declare actors uuid[]; accounts uuid[]; c uuid; other_c uuid; message uuid; payl
 begin
   select array_agg(employee_id order by employee_id),array_agg(auth_user_id order by employee_id) into actors,accounts from (
     select a.employee_id,a.auth_user_id from private.employee_accounts a join public.employees e on e.id=a.employee_id
-    where e.status='active' and a.disabled_at is null order by a.employee_id limit 3)x;
+    where e.status='active' and a.disabled_at is null and not a.must_change_password order by a.employee_id limit 3)x;
   if cardinality(actors)<>3 then raise exception 'Three active fixture identities required'; end if;
   perform set_config('request.jwt.claim.sub',accounts[1]::text,true);
   perform set_config('request.jwt.claims',jsonb_build_object('sub',accounts[1],'role','authenticated','aal','aal2')::text,true);
