@@ -47,7 +47,8 @@ SygShift now has a controlled, resumable release path for the complete Guardians
 - Production reconciliation is exact: 537 library rows, 537 unique codes, 537 unique SHA-256 checksums, zero missing protected-document links, and stage counts of 231 HR sources, 10 training-administration records, 52 training modules, 232 document guides, and 12 training forms.
 - Training reconciliation is exact at 52 courses and 52 protected document-backed versions. No employee training assignments were created automatically.
 - The one-time rollout secret was deleted immediately after the 537th registration. Normal Document Studio navigation, route, Worker, database, permission, and recent-MFA controls remain unchanged.
+- Removed the completed bulk-rollout panel from the live Document Studio so HR opens directly into the operational searchable library rather than an obsolete setup workflow.
 - ClamAV reconciliation completed at 537 clean, zero pending, zero rejected, and zero scan-error package documents.
 - All 537 records contain searchable extracted text and remain `Draft for Company Adoption` pending management adoption.
 - Final `pnpm check` passed TypeScript, zero-warning lint, 181 test files / 883 tests, and both production builds.
-- Deployed Cloudflare Worker `3a1bcd9a-063e-4d2e-a0b1-7b1aab7e97ac`; health and readiness are green, the rollout endpoint returns 503 while its ephemeral secret is absent, and Cloudflare contains no persistent `SYGSHIFT_HR_ROLLOUT_SECRET`.
+- Deployed final Cloudflare Worker `998614d3-e531-4109-a4f5-6df540ef1836`; health and readiness are green, the rollout endpoint returns 503 while its ephemeral secret is absent, Cloudflare contains no persistent `SYGSHIFT_HR_ROLLOUT_SECRET`, and the completed browser rollout panel is absent from the live Document Studio.

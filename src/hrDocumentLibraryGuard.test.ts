@@ -62,6 +62,7 @@ describe('searchable HR document library', () => {
     expect(employeePage).not.toContain('HrDocumentLibrary')
     expect(employeePage).not.toContain('Forms library')
     expect(studio).toContain('<HrDocumentLibrary mode="studio"/>')
+    expect(studio).not.toContain('HrSystemRolloutPanel')
     expect(navigation).toContain("label: 'My Documents', path: '/my-documents'")
     expect(navigation).not.toContain("label: 'Document Library'")
   })
