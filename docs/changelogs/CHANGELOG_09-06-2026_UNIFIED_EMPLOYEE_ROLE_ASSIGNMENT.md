@@ -1,8 +1,8 @@
 # Unified Employee Role Assignment
 
-Date: 09/06/2026  
-Area: Administration / User Accounts  
-Status: Implementation and isolated release verification in progress
+Date: 09/06/2026
+Area: Administration / User Accounts
+Status: Isolated release verification passed; production deployment pending
 
 ## Outcome
 
@@ -32,10 +32,11 @@ User Accounts > Manage User now presents one searchable **Roles** list instead o
 - Role selection and serialization tests cover no-op/profile-only preservation, addition, removal, cancellation, operational-role replacement, department-only rejection, unavailable assignments, limited editors, and Admin transitions.
 - Actual EmployeeForm tests cover normal save, atomic access-role RPC selection, protected-server denial, loading state, failed catalog behavior, and late-arriving catalog data.
 - Rendered Playwright checks cover light and dark themes on desktop and mobile, live search/selection/confirmation, accessibility, and horizontal containment.
-- Full `pnpm check`, required Time & Attendance regression, isolated production build, deployment, and live verification remain to be recorded before this changelog is marked complete.
+- `pnpm check` passed: 183 test files and 901 tests, plus type checking, lint, and production compilation.
+- The required Time & Attendance and role-interface browser gate passed all 44 desktop/mobile checks.
 
 ## Database and deployment
 
 - Migration: None.
 - Production role/data mutations: None.
-- Deployment: Pending isolated release verification.
+- Deployment: Pending production build and Cloudflare release.
