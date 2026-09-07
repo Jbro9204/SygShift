@@ -62,6 +62,47 @@ test('fills the shell below the header without an empty page tail', async ({ pag
   expect(geometry.sphereBottom).toBe(geometry.viewportBottom)
   await page.screenshot({ path: testInfo.outputPath('sygsphere-shell.png'), fullPage: true })
 })
+test('keeps the mobile composer and Send control usable inside the full SygShift shell', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 412, height: 720 })
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
+  const input = page.getByRole('textbox', { name: 'Write a message', exact: true })
+  const send = page.getByRole('button', { name: 'Send', exact: true })
+  await input.fill('Mobile send remains reachable')
+  await expect(send).toBeVisible()
+  const geometry = await page.evaluate(() => {
+    const sphere = document.querySelector<HTMLElement>('.sphere-workspace')!
+    const composer = document.querySelector<HTMLElement>('.sphere-composer')!
+    const sendButton = composer.querySelector<HTMLElement>('button[type="submit"]')!
+    return {
+      documentOverflow: document.documentElement.scrollHeight - window.innerHeight,
+      sphereBottom: Math.round(sphere.getBoundingClientRect().bottom),
+      composerBottom: Math.round(composer.getBoundingClientRect().bottom),
+      sendBottom: Math.round(sendButton.getBoundingClientRect().bottom),
+      viewportBottom: window.innerHeight,
+    }
+  })
+  expect(geometry.documentOverflow).toBeLessThanOrEqual(1)
+  expect(geometry.composerBottom).toBeLessThanOrEqual(geometry.sphereBottom)
+  expect(geometry.sendBottom).toBeLessThanOrEqual(geometry.viewportBottom)
+  await send.click()
+  await expect(page.locator('.sphere-message__body').filter({ hasText: 'Mobile send remains reachable' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('sygsphere-mobile-shell.png'), fullPage: true })
+})
+test('keeps Send above a mobile keyboard-sized viewport while composing', async ({ page }) => {
+  await page.setViewportSize({ width: 412, height: 480 })
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
+  const input = page.getByRole('textbox', { name: 'Write a message', exact: true })
+  await input.fill('Keyboard-safe message')
+  await expect(page.locator('.operational-time-zone-strip')).toBeHidden()
+  await expect(page.locator('.workspace-alert-strip')).toBeHidden()
+  const send = page.getByRole('button', { name: 'Send', exact: true })
+  await expect(send).toBeInViewport()
+  await send.click()
+  await expect(page.locator('.sphere-message__body').filter({ hasText: 'Keyboard-safe message' })).toBeVisible()
+  await input.evaluate((element) => element.blur())
+  await expect(page.locator('.operational-time-zone-strip')).toBeVisible()
+  await expect(page.locator('.workspace-alert-strip')).toBeVisible()
+})
 test('keeps drafts over reload, retains a failed send and retries successfully', async ({ page }) => {
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
   const input = page.getByRole('textbox', { name: 'Write a message', exact: true })
