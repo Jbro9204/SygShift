@@ -1,5 +1,11 @@
 # SygShift Development Log
 
+## 09/06/2026 — Document Studio FIDO Recovery
+
+- Reproduced and corrected expired protected-document FIDO evidence returning generic HTTP 500 errors instead of triggering the existing identity-verification popup.
+- Confirmed both production workspace queries return the 537-document catalog without changing database records, permissions, or the 15-minute verification policy.
+- Added actual Worker and component recovery regressions. Release status and limitations: `docs/changelogs/CHANGELOG_09-06-2026_DOCUMENT_STUDIO_FIDO_RECOVERY.md`.
+
 ## 09/06/2026 — HR System v2.1 PDF and Training Rollout
 
 - Prepared 537 canonical PDFs from the supplied HR and Training package, retaining the stronger `GS-HR-101` v2 as the sole canonical interview evaluation and excluding its older duplicate.

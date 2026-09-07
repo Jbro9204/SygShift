@@ -499,6 +499,20 @@ class ApiError extends Error {
   }
 }
 
+class SupabaseRequestError extends Error {
+  readonly status: number
+  readonly code: string | null
+  readonly operation: string
+
+  constructor(message: string, status: number, code: string | null, operation: string) {
+    super(message)
+    this.name = 'SupabaseRequestError'
+    this.status = status
+    this.code = code
+    this.operation = operation
+  }
+}
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -634,8 +648,15 @@ async function supabaseJson<T>(url: string, init: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    const data = payload as { error?: string; error_description?: string; message?: string; msg?: string }
-    throw new Error(data.message || data.msg || data.error_description || data.error || `Supabase request failed with ${response.status}.`)
+    const data = payload as { code?: string; error?: string; error_description?: string; message?: string; msg?: string } | null
+    const pathname = new URL(url).pathname
+    const operation = pathname.startsWith('/rest/v1/rpc/') ? pathname.slice('/rest/v1/rpc/'.length) : 'supabase_request'
+    throw new SupabaseRequestError(
+      data?.message || data?.msg || data?.error_description || data?.error || `Supabase request failed with ${response.status}.`,
+      response.status,
+      typeof data?.code === 'string' ? data.code : null,
+      operation,
+    )
   }
 
   return payload as T
@@ -1840,7 +1861,16 @@ async function requireRecentDocumentMfa(
       target_token_hash: await sha256Hex(securityKeyToken),
     },
     session.config.serviceRoleKey,
-  )
+  ).catch((error: unknown) => {
+    // An application FIDO session lasts longer than its protected-document
+    // freshness window. Only this explicit factor denial requires a new check;
+    // configuration and database failures must not become repeated MFA prompts.
+    if (error instanceof SupabaseRequestError && error.status === 403 && error.code === '42501'
+      && ['A recent security-key verification is required.', 'Security-key verification failed.'].includes(error.message)) {
+      throw new ApiError('recent_document_mfa_required', 403, 'Verify with your authenticator or security key before accessing protected HR information.')
+    }
+    throw error
+  })
   if (verification.method !== 'security_key' || !verification.verifiedAt) {
     throw new ApiError('recent_document_mfa_required', 403, 'Verify with your security key before accessing protected HR information.')
   }
@@ -6952,6 +6982,15 @@ export default {
           const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
           response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
         } else {
+          if (!(error instanceof ApiError)) {
+            console.error({
+              event: 'hr_document_request_failed',
+              requestId,
+              operation: error instanceof SupabaseRequestError ? error.operation : 'document_request',
+              upstreamStatus: error instanceof SupabaseRequestError ? error.status : null,
+              upstreamCode: error instanceof SupabaseRequestError ? error.code : null,
+            })
+          }
           response = error instanceof ApiError
             ? errorJson(error.code, requestId, error.status, error.message)
             : errorJson('hr_document_request_failed', requestId, 500, 'The protected document request could not be completed.')
