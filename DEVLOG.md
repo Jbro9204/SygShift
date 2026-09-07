@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/07/2026 — Scheduled-Only Timecard Visibility Repair
+
+- Corrected Team Attendance so an employee with a published scheduled shift remains visible and searchable even when no punches or other time activity exist.
+- Production diagnosis confirmed John Holliday's active account, published September 5 assignment in the latest schedule revision, zero-punch state, and correct server response under Michael Hinz's authorized context. No production time or schedule data was changed.
+- Preserved the existing omission of employees with neither schedule nor time activity and made no changes to scheduling, payroll, permissions, or database functions.
+- `pnpm check` passed 925 tests / 187 files; all 214 desktop/mobile browser checks passed, including all 38 time-clock workflow checks.
+- Released application commit `637b808` as Cloudflare Worker `7a26fab1-b36f-490e-ac79-100c55762c6b`; health, readiness, routes, and the exact deployed Team Attendance asset passed.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-07-2026_SCHEDULED_ONLY_TIMECARD_VISIBILITY.md`.
+
 ## 09/07/2026 — SygSphere Workspace and Composer Refinement
 
 - Removed the fixed-height mismatch that left an unused page tail below SygSphere; the messaging workspace now fills the exact space remaining beneath the live application header and any shell notices, with scrolling retained inside its panes.
