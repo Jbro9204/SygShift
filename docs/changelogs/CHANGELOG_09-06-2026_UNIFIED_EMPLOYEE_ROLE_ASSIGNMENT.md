@@ -2,7 +2,7 @@
 
 Date: 09/06/2026
 Area: Administration / User Accounts
-Status: Isolated release verification passed; production deployment pending
+Status: Production deployed and verified
 
 ## Outcome
 
@@ -39,4 +39,9 @@ User Accounts > Manage User now presents one searchable **Roles** list instead o
 
 - Migration: None.
 - Production role/data mutations: None.
-- Deployment: Pending production build and Cloudflare release.
+- Cloudflare deployment ID: `14b96c8f-9260-4baa-96cd-5b8af1523fbf`.
+- Cloudflare Worker version: `7de90337-5595-4add-b652-38ec8d5e8f51`.
+- Release source: `release/unified-employee-roles` at `50d8d8c`.
+- Production health returned `ok`; readiness returned `ready`.
+- The live application loaded `UserAdminPage-B3a5mbmN.js`, containing the unified role search and review dialog. The superseded Workforce Role and Add specialized access labels are absent.
+- Unrelated SygSphere, FIDO, Worker, migration, and document-upload changes were excluded from this production release.
