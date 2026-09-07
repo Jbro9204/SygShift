@@ -1878,3 +1878,11 @@ pnpm exec wrangler deploy --keep-vars
 - Replaced the unreliable browser bulk-upload handoff with an ephemeral-secret administrative runner that preserved checksum validation, idempotency, quarantine, ClamAV, immutable storage, audit identity, and HR permissions. The secret was deleted after completion.
 - Fixed compressed-stream PDF false positives without relaxing structural active-content rejection, and repaired the training registration function's ambiguous course identifier.
 - Production now contains exactly 537 unique v2.1 catalog records with zero missing document links and exactly 52 document-backed training courses/versions. All 537 passed ClamAV, all 537 are searchable, no training assignment was created automatically, and the final gate passed 181 files / 883 tests. Deployed final Worker `998614d3-e531-4109-a4f5-6df540ef1836` with health/readiness green, the rollout channel disabled, and the completed browser setup panel removed.
+
+## 09/07/2026 — SygSphere Mobile Usability Repair
+
+- Corrected the full-shell mobile layout that allowed the SygSphere composer and Send button to extend beneath the visible phone viewport when the operational clocks and a workspace alert were present.
+- Made message history shrink and scroll independently, refined mobile composer spacing and touch targets, added safe-area handling, and temporarily compacted the clock grid and workspace alert only while the mobile composer has focus.
+- Added full-shell and keyboard-height regressions that reproduce the reported condition and perform an actual Send action; all four clocks and alerts return after composition.
+- `pnpm check` passed 187 files / 925 tests; the focused SygSphere and Time Clock matrix passed 60/60; the full desktop/mobile browser suite passed 218/218.
+- Pushed application commit `c07d1f8` and deployed Worker `4c96555f-cc91-414b-ac9c-afea845a780d`; live assets, health, readiness, and post-release scheduled Timekeeping runs passed verification.
