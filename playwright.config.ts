@@ -47,6 +47,10 @@ export default defineConfig({
     command: 'pnpm exec vite --config tests/fixtures/notification-vite.config.ts',
     url: 'http://127.0.0.1:4188/tests/fixtures/notification-ui.html',
     reuseExistingServer: false,
+  }, {
+    command: 'pnpm exec vite --config tests/fixtures/roles-vite.config.ts',
+    url: 'http://127.0.0.1:4189/tests/fixtures/roles-ui.html',
+    reuseExistingServer: false,
   }],
   projects: browserProjects,
 })

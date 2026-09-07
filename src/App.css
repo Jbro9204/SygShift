@@ -26535,9 +26535,9 @@ button.patrol-overview-row:focus-visible {
   font-size: 15px;
 }
 
-.user-admin-access-roles {
+.employee-roles {
   display: grid;
-  gap: 10px;
+  gap: 14px;
   min-width: 0;
   margin: 2px 0 0;
   padding: 16px;
@@ -26546,62 +26546,85 @@ button.patrol-overview-row:focus-visible {
   border-radius: 12px;
 }
 
-.user-admin-access-roles legend {
+.employee-roles legend {
   padding: 0 7px;
   color: var(--ink);
   font-size: 15px;
   font-weight: 900;
 }
 
-.user-admin-access-roles > p {
+.employee-roles > p {
   margin: 0;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.45;
 }
 
-.user-admin-access-roles__assigned {
+.employee-roles__list {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
+  gap: 8px;
+  max-height: 330px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 3px 8px 3px 3px;
+  border-radius: 10px;
 }
 
-.user-admin-access-role {
+.employee-roles__row {
   display: flex;
   gap: 10px;
   align-items: center;
   justify-content: space-between;
   min-height: 62px;
-  padding: 11px 12px;
+  padding: 12px 14px;
   background: light-dark(#fff, #171b1f);
   border: 1px solid light-dark(#ded4c5, #41474d);
   border-radius: 10px;
 }
 
-.user-admin-access-role.is-selected {
+.employee-roles__row.is-selected {
   background: light-dark(#fff4d9, #342817);
   border-color: light-dark(#c58a29, #a77a27);
   box-shadow: inset 3px 0 0 light-dark(#b97915, #e0b65a);
 }
 
-.user-admin-access-role > span {
+.employee-roles__row > label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.employee-roles__row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  flex: 0 0 20px;
+  margin: 2px 0 0;
+}
+
+.employee-roles__copy {
   display: grid;
   gap: 3px;
   min-width: 0;
 }
 
-.user-admin-access-role strong {
+.employee-roles__copy strong {
   color: var(--ink);
-  font-size: 13px;
+  font-size: 15px;
+  overflow-wrap: anywhere;
 }
 
-.user-admin-access-role small {
+.employee-roles__copy small {
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
-.user-admin-access-roles__empty {
+.employee-roles__empty {
   margin: 0;
   padding: 12px 14px;
   background: light-dark(#fff, #171b1f);
@@ -26610,30 +26633,106 @@ button.patrol-overview-row:focus-visible {
   color: var(--muted);
 }
 
-.user-admin-access-roles__add {
+.employee-roles__toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: end;
 }
 
-.user-admin-access-roles__add label {
+.employee-roles__search {
   display: grid;
   gap: 6px;
 }
 
-.user-admin-access-roles__add .secondary-button {
-  min-width: 128px;
+.employee-roles__search > div {
+  position: relative;
+}
+
+.employee-roles__search svg {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.employee-roles__search input {
+  width: 100%;
+  padding-left: 40px;
+}
+
+.employee-roles__toolbar > span {
+  padding-bottom: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.employee-roles__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.employee-roles__badges > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: light-dark(#755014, #efd08a);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.employee-roles__row .secondary-button {
+  flex-shrink: 0;
+}
+
+.employee-role-review {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.employee-role-review__body {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+}
+
+.employee-role-review__body h3,
+.employee-role-review__body p {
+  margin: 0;
+}
+
+.employee-role-review__body ul {
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
+
+.employee-role-review__body li {
+  padding: 3px 0;
+}
+
+.employee-role-review > .modal-actions {
+  margin: 0;
+  padding: 18px 22px;
 }
 
 @media (max-width: 720px) {
-  .user-admin-access-roles__assigned,
-  .user-admin-access-roles__add {
+  .employee-roles__toolbar {
     grid-template-columns: 1fr;
   }
 
-  .user-admin-access-roles__add .secondary-button {
-    width: 100%;
+  .employee-roles__toolbar > span {
+    padding: 0;
+  }
+
+  .employee-roles__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .employee-role-review__body {
+    padding: 18px;
   }
 }
 
