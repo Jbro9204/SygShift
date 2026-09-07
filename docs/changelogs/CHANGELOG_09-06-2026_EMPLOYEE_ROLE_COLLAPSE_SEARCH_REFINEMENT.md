@@ -2,7 +2,7 @@
 
 Date: 09/06/2026
 Area: Administration / User Accounts / Manage User
-Status: Release verification passed; production deployment pending
+Status: Released to production and verified
 
 ## Outcome
 
@@ -34,4 +34,8 @@ The employee-role library is now collapsed by default so it does not occupy the 
 
 ## Deployment
 
-- Pending production release.
+- Released from commit `1338124` on branch `release/unified-employee-roles`.
+- Cloudflare deployment ID: `0120b4f9-fa34-42de-8197-86bc221b9434`.
+- Worker version: `d3b887dc-5153-4888-9701-30d5b42e2036`.
+- Production health returned `ok` and readiness returned `ready` after deployment.
+- The live User Accounts bundle is `UserAdminPage-CE3UVJXk.js` and contains the new compact summary, `Manage roles`, and `Collapse roles` interface.
