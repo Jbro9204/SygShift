@@ -108,6 +108,7 @@ export type PatrolMakeupObligation = z.infer<typeof makeupObligationSchema>
 export type PatrolHit = z.infer<typeof hitSchema>
 export type PatrolEvidence = z.infer<typeof evidenceSchema>
 export type PatrolReport = z.infer<typeof patrolReportSchema>
+export type PatrolScheduleCandidate = z.infer<typeof scheduleCandidateSchema>
 
 export interface PatrolRouteInput {
   changeReason: string; code: string; effectiveFrom: string | null; effectiveThrough: string | null; id: string | null
@@ -304,5 +305,8 @@ export async function openPatrolEvidence(evidenceId: string, action: 'preview' |
 }
 
 export function formatPatrolDateTime(value: string, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone, timeZoneName: 'short' }).format(new Date(value))
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit', hour: 'numeric', minute: '2-digit', month: '2-digit',
+    timeZone, timeZoneName: 'short', year: 'numeric',
+  }).format(new Date(value))
 }

@@ -90,6 +90,15 @@ describe('enterprise Patrol operations', () => {
     expect(reportExport).toContain('Activity Type')
   })
 
+  it('keeps Operations status and mutation controls aligned with actual state and permissions', () => {
+    expect(page).toContain('patrolScheduleCandidateValue(candidate)')
+    expect(page).toContain('findPatrolScheduleCandidate')
+    expect(page).toContain('getPatrolOperationState')
+    expect(page).toContain('workspace.actor.canManageAssignments ?')
+    expect(page).toContain('workspace.actor.canManageExceptions ?')
+    expect(data).not.toContain("dateStyle: 'medium', timeStyle: 'short', timeZone, timeZoneName: 'short'")
+  })
+
   it('versions existing routes without confusing the route variable with the route-version column', () => {
     expect(routeUpdatePersistence).toContain('from public.patrol_route_versions route_version')
     expect(routeUpdatePersistence).toContain('where route_version.route_id = resolved_route_id')

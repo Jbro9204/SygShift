@@ -48,12 +48,38 @@ for (const theme of ['light', 'dark']) {
     await expect(page.getByRole('group', { name: 'Available roles' })).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath(`user-accounts-roles-collapsed-${theme}.png`), fullPage: true })
     await page.getByRole('button', { name: 'Manage roles' }).click()
+    const searchBox = page.getByRole('searchbox', { name: 'Search roles' })
+    const searchMetrics = await searchBox.evaluate((element) => {
+      const input = element as HTMLInputElement
+      const icon = input.parentElement?.querySelector('svg')
+      const inputBox = input.getBoundingClientRect()
+      const iconBox = icon?.getBoundingClientRect()
+      return {
+        borderRadius: Number.parseFloat(getComputedStyle(input).borderRadius),
+        iconRight: iconBox?.right ?? inputBox.left,
+        paddingLeft: Number.parseFloat(getComputedStyle(input).paddingLeft),
+        textStart: inputBox.left + Number.parseFloat(getComputedStyle(input).paddingLeft),
+      }
+    })
+    expect(searchMetrics.borderRadius).toBeGreaterThanOrEqual(10)
+    expect(searchMetrics.paddingLeft).toBeGreaterThanOrEqual(44)
+    expect(searchMetrics.textStart - searchMetrics.iconRight).toBeGreaterThanOrEqual(8)
     await expect(page.getByRole('checkbox', { name: 'Supervisor', exact: true })).toBeChecked()
     await expect(page.getByRole('checkbox', { name: 'Human Resources Manager', exact: true })).toBeChecked()
     await expect(page.getByText('Handles employee records, onboarding, HR documents, leave, and employee support.')).toBeVisible()
     await expect(page.getByText(/Protected ordinary HR employee-lifecycle authority/)).toHaveCount(0)
     const columns = await page.getByRole('group', { name: 'Available roles' }).evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
     expect(columns).toBe(testInfo.project.name.startsWith('mobile') ? 1 : 2)
+    for (const roleCard of await page.locator('.employee-roles__row').all()) {
+      const cardBox = await roleCard.boundingBox()
+      const badges = roleCard.locator('.employee-roles__badges')
+      if (await badges.count()) {
+        const badgeBox = await badges.boundingBox()
+        expect(cardBox).not.toBeNull()
+        expect(badgeBox).not.toBeNull()
+        expect(cardBox!.y + cardBox!.height - (badgeBox!.y + badgeBox!.height)).toBeGreaterThanOrEqual(14)
+      }
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
     await page.screenshot({ path: testInfo.outputPath(`user-accounts-role-library-${theme}.png`), fullPage: true })
     await page.getByRole('button', { name: 'Collapse roles' }).click()

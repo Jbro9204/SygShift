@@ -67,6 +67,19 @@ test('role library footer remains inside its card with clear banner spacing', as
   expect(bannerBox).not.toBeNull()
   expect(buttonBox!.y + buttonBox!.height).toBeLessThanOrEqual(directoryBox!.y + directoryBox!.height)
   expect(bannerBox!.y - (directoryBox!.y + directoryBox!.height)).toBeGreaterThanOrEqual(16)
+  const tiles = await page.locator('.access-role-list .role-tile').all()
+  for (let index = 0; index < tiles.length; index += 1) {
+    const tileBox = await tiles[index].boundingBox()
+    const metaBox = await tiles[index].locator('.role-tile__meta').boundingBox()
+    expect(tileBox).not.toBeNull()
+    expect(metaBox).not.toBeNull()
+    expect(tileBox!.y + tileBox!.height - (metaBox!.y + metaBox!.height)).toBeGreaterThanOrEqual(18)
+    if (index > 0) {
+      const priorBox = await tiles[index - 1].boundingBox()
+      expect(priorBox).not.toBeNull()
+      expect(tileBox!.y - (priorBox!.y + priorBox!.height)).toBeGreaterThanOrEqual(10)
+    }
+  }
   expect(await page.locator('main').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   await page.screenshot({ path: testInfo.outputPath('role-library-footer.png'), fullPage: true })

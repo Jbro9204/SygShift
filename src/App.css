@@ -7234,7 +7234,7 @@ a.home-metric-card:focus-visible {
   display: grid;
   gap: 14px;
   max-height: calc(100vh - 36px);
-  padding: 18px;
+  padding: 20px;
 }
 
 .access-role-directory {
@@ -7293,13 +7293,16 @@ a.home-metric-card:focus-visible {
 
 .access-role-list {
   max-height: min(58vh, 560px);
-  padding: 2px 10px 8px 2px;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 12px;
+  padding: 4px 12px 12px 4px;
   scrollbar-color: light-dark(#b98028, #e0b65a) light-dark(#eee6d9, #24292e);
-  scrollbar-width: auto;
+  scrollbar-width: thin;
 }
 
 .access-role-list::-webkit-scrollbar {
-  width: 12px;
+  width: 9px;
 }
 
 .access-role-list::-webkit-scrollbar-track {
@@ -7355,14 +7358,25 @@ a.home-metric-card:focus-visible {
 }
 
 .access-role-list .role-tile {
-  min-height: 96px;
-  gap: 10px;
-  padding: 14px;
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  min-height: 116px;
+  grid-template-rows: auto auto;
+  gap: 12px;
+  align-content: start;
+  padding: 15px 15px 26px;
   border-radius: 12px;
 }
 
 .access-role-list .role-tile strong {
   font-size: 16px;
+}
+
+.access-role-list .role-tile__meta {
+  align-self: end;
+  margin: auto 0 8px;
+  padding-bottom: 1px;
 }
 
 .access-role-create {
@@ -25151,7 +25165,8 @@ button.patrol-overview-row:focus-visible {
   flex: 1 1 420px;
 }
 
-.patrol-row-count {
+.patrol-row-count,
+.patrol-operation-filter {
   display: grid;
   gap: 5px;
   color: var(--muted);
@@ -25159,9 +25174,14 @@ button.patrol-overview-row:focus-visible {
   font-weight: 800;
 }
 
-.patrol-row-count select {
+.patrol-row-count select,
+.patrol-operation-filter select {
   min-width: 84px;
   min-height: 42px;
+}
+
+.patrol-operation-filter select {
+  min-width: 190px;
 }
 
 .patrol-assignment-list {
@@ -26618,7 +26638,9 @@ button.patrol-overview-row:focus-visible {
 .employee-roles__list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: max-content;
   gap: 10px;
+  align-content: start;
   max-height: 410px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -26632,9 +26654,9 @@ button.patrol-overview-row:focus-visible {
   flex-direction: column;
   gap: 9px;
   align-items: stretch;
-  justify-content: space-between;
-  min-height: 112px;
-  padding: 15px 16px 23px;
+  justify-content: flex-start;
+  min-height: 136px;
+  padding: 15px 16px 18px;
   background: light-dark(#fff, #171b1f);
   border: 1px solid light-dark(#ded4c5, #41474d);
   border-radius: 12px;
@@ -26651,7 +26673,7 @@ button.patrol-overview-row:focus-visible {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  flex: 1;
+  flex: 0 0 auto;
   min-width: 0;
   cursor: pointer;
 }
@@ -26667,6 +26689,7 @@ button.patrol-overview-row:focus-visible {
 .employee-roles__copy {
   display: grid;
   gap: 6px;
+  align-content: start;
   min-width: 0;
 }
 
@@ -26759,7 +26782,7 @@ button.patrol-overview-row:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: 2px 0 4px;
+  margin: 4px 0 0;
 }
 
 .employee-roles__badges > span {
@@ -34128,6 +34151,13 @@ button.patrol-overview-row:focus-visible {
   padding-left: 13px;
 }
 
+.modal-dialog .employee-roles__search input[type='search'] {
+  box-sizing: border-box;
+  padding-right: 16px;
+  padding-left: 50px;
+  border-radius: 12px;
+}
+
 .modal-dialog textarea {
   min-height: 96px;
   padding: 12px 14px;
@@ -34516,19 +34546,6 @@ button.patrol-overview-row:focus-visible {
 
 .payroll-period-controls__actions .time-button[aria-pressed='true'] {
   box-shadow: inset 0 -3px 0 rgb(102 67 16 / 36%), 0 0 0 2px light-dark(#fff, #171b1f), 0 0 0 4px #b88735;
-}
-
-.access-role-list {
-  padding-right: 7px;
-  scrollbar-width: thin;
-}
-
-.access-role-list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.access-role-list .role-tile {
-  min-height: 88px;
 }
 
 .hr-people-pagination button,

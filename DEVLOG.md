@@ -1886,3 +1886,11 @@ pnpm exec wrangler deploy --keep-vars
 - Added full-shell and keyboard-height regressions that reproduce the reported condition and perform an actual Send action; all four clocks and alerts return after composition.
 - `pnpm check` passed 187 files / 925 tests; the focused SygSphere and Time Clock matrix passed 60/60; the full desktop/mobile browser suite passed 218/218.
 - Pushed application commit `c07d1f8` and deployed Worker `4c96555f-cc91-414b-ac9c-afea845a780d`; live assets, health, readiness, and post-release scheduled Timekeeping runs passed verification.
+
+## 09/07/2026 — Role Library and Patrol Operations Repair
+
+- Repaired compressed Role Library and Manage Employee role cards, restored consistent scroll/card spacing, corrected the role-search icon/text overlap, and added dependable cushion below MFA badges.
+- Fixed an invalid Patrol date/time formatter that could crash the Operations view, made schedule linking employee-specific when a shift has multiple assignees, and added truthful operational states plus status filtering.
+- Preserved Patrol capability boundaries: view-only Operations access no longer displays route-linking or makeup-assignment controls.
+- No database or operational record changed. `pnpm check` passed 189 files / 931 tests; 14 targeted desktop/mobile visual checks and all 38 required Time Clock workflow checks passed.
+- See `docs/changelogs/CHANGELOG_09-07-2026_ROLE_LIBRARY_AND_PATROL_OPERATIONS_REPAIR.md` for detailed scope and release evidence.

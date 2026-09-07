@@ -15,9 +15,14 @@ import {
   type PatrolWorkspace,
 } from '../data/patrol'
 import { isSupabaseConfigured } from '../lib/supabase'
+import {
+  findPatrolScheduleCandidate, getPatrolOperationState, patrolOperationLabels, patrolOperationTones,
+  patrolScheduleCandidateValue, type PatrolOperationState,
+} from '../patrolOperations'
 
 type PatrolTab = 'overview' | 'my-patrol' | 'operations' | 'routes'
 type Outcome = 'secure' | 'attention_needed' | 'incident' | 'unable_to_access' | 'other'
+type PatrolOperationFilter = 'all' | PatrolOperationState
 
 const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const pageSizes = [5, 10, 20] as const
@@ -255,6 +260,7 @@ export function PatrolPage() {
   const [routeTarget, setRouteTarget] = useState<PatrolRoute | null | undefined>(undefined)
   const [linkRouteId, setLinkRouteId] = useState('')
   const [linkCandidate, setLinkCandidate] = useState('')
+  const [operationStatus, setOperationStatus] = useState<PatrolOperationFilter>('all')
   const [makeupAssignment, setMakeupAssignment] = useState('')
   const [makeupTarget, setMakeupTarget] = useState<string | null>(null)
   const [makeupReason, setMakeupReason] = useState('Missed patrol hit assigned for documented makeup completion.')
@@ -262,7 +268,7 @@ export function PatrolPage() {
   const workspaceQuery = useQuery({ queryKey: ['patrol-workspace'], queryFn: getPatrolWorkspace, enabled: isSupabaseConfigured })
   const linkMutation = useMutation({
     mutationFn: async () => {
-      const candidate = workspaceQuery.data?.scheduleCandidates.find((item) => item.shiftId === linkCandidate)
+      const candidate = findPatrolScheduleCandidate(workspaceQuery.data?.scheduleCandidates ?? [], linkCandidate)
       if (!candidate) throw new Error('Choose an assigned published shift.')
       return linkPatrolRouteShift(linkRouteId, candidate.shiftId, candidate.employeeId)
     },
@@ -282,9 +288,13 @@ export function PatrolPage() {
     ? 'overview'
     : requestedTab
   const term = search.trim().toLowerCase()
-  const filteredAssignments = useMemo(() => (workspace?.assignments ?? []).filter((assignment) => !term || `${assignment.routeName} ${assignment.employeeName} ${assignment.serviceDate}`.toLowerCase().includes(term)), [term, workspace?.assignments])
+  const operationNow = Date.now()
+  const filteredAssignments = useMemo(() => (workspace?.assignments ?? []).filter((assignment) => {
+    const operationState = getPatrolOperationState(assignment, operationNow)
+    return !term || `${assignment.routeName} ${assignment.employeeName} ${assignment.serviceDate} ${patrolOperationLabels[operationState]}`.toLowerCase().includes(term)
+  }), [operationNow, term, workspace?.assignments])
   const ownAssignments = filteredAssignments.filter((assignment) => assignment.employeeId === workspace?.actor.employeeId)
-  const operationsAssignments = filteredAssignments.filter((assignment) => assignment.employeeId !== workspace?.actor.employeeId || workspace?.actor.canViewOperations)
+  const operationsAssignments = filteredAssignments.filter((assignment) => operationStatus === 'all' || getPatrolOperationState(assignment, operationNow) === operationStatus)
   const filteredRoutes = (workspace?.routes ?? []).filter((route) => !term || `${route.name} ${route.code} ${route.status} ${route.stops.map((stop) => stop.locationLabel).join(' ')}`.toLowerCase().includes(term))
   const currentItems = tab === 'routes' ? filteredRoutes : tab === 'my-patrol' ? ownAssignments : operationsAssignments
   const visibleItems = currentItems.slice((page - 1) * pageSize, page * pageSize)
@@ -308,6 +318,7 @@ export function PatrolPage() {
   const changeTab = (next: PatrolTab) => {
     setPage(1)
     setSearch('')
+    setOperationStatus('all')
     navigate(next === 'overview' ? '/patrol' : `/patrol/${next}`, { replace: true })
   }
   return <div className="page page--patrol patrol-workspace">
@@ -344,6 +355,7 @@ export function PatrolPage() {
 
     {tab !== 'overview' ? <section className="workforce-toolbar patrol-toolbar" aria-label="Patrol list controls">
       <label className="search-field search-field--wide"><Search aria-hidden="true" size={19} /><span className="visually-hidden">Search Patrol</span><input onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder={tab === 'routes' ? 'Search route, stop, status, or code' : 'Search route, guard, or service date'} type="search" value={search} /></label>
+      {tab === 'operations' ? <label className="patrol-operation-filter"><span>Status</span><select onChange={(event) => { setOperationStatus(event.target.value as PatrolOperationFilter); setPage(1) }} value={operationStatus}><option value="all">All assignment statuses</option>{Object.entries(patrolOperationLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : null}
       <label className="patrol-row-count"><span>Rows</span><select onChange={(event) => { setPageSize(Number(event.target.value) as (typeof pageSizes)[number]); setPage(1) }} value={pageSize}>{pageSizes.map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
       {tab === 'routes' ? <button className="primary-action" onClick={() => setRouteTarget(null)} type="button"><Plus aria-hidden="true" size={18} />Build route</button> : null}
     </section> : null}
@@ -361,12 +373,12 @@ export function PatrolPage() {
     </section> : null}
 
     {tab === 'operations' && workspace.actor.canViewOperations ? <>
-      <section className="operations-panel patrol-link-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Schedule integration</p><h2>Connect route to published shift</h2><p>Patrol assignments reuse the employee and times already approved in Schedule.</p></div></div>
-        <form className="patrol-link-form" onSubmit={(event) => { event.preventDefault(); linkMutation.mutate() }}><label><span>Active route</span><select onChange={(event) => setLinkRouteId(event.target.value)} required value={linkRouteId}><option value="">Choose route</option>{workspace.routes.filter((route) => route.status === 'active').map((route) => <option key={route.id} value={route.id}>{route.name}</option>)}</select></label><label><span>Published assigned shift</span><select onChange={(event) => setLinkCandidate(event.target.value)} required value={linkCandidate}><option value="">Choose shift and employee</option>{workspace.scheduleCandidates.map((candidate) => <option key={`${candidate.shiftId}-${candidate.employeeId}`} value={candidate.shiftId}>{candidate.employeeName} · {candidate.siteName ?? candidate.postName ?? 'Scheduled shift'} · {formatPatrolDateTime(candidate.startsAt, candidate.timeZone)}</option>)}</select></label><button className="primary-action" disabled={linkMutation.isPending} type="submit">{linkMutation.isPending ? 'Connecting...' : 'Connect patrol'}</button></form>
+      {workspace.actor.canManageAssignments ? <section className="operations-panel patrol-link-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Schedule integration</p><h2>Connect route to published shift</h2><p>Patrol assignments reuse the employee and times already approved in Schedule.</p></div></div>
+        <form className="patrol-link-form" onSubmit={(event) => { event.preventDefault(); linkMutation.mutate() }}><label><span>Active route</span><select onChange={(event) => { setLinkRouteId(event.target.value); linkMutation.reset() }} required value={linkRouteId}><option value="">Choose route</option>{workspace.routes.filter((route) => route.status === 'active').map((route) => <option key={route.id} value={route.id}>{route.name}</option>)}</select></label><label><span>Published assigned shift</span><select onChange={(event) => { setLinkCandidate(event.target.value); linkMutation.reset() }} required value={linkCandidate}><option value="">Choose shift and employee</option>{workspace.scheduleCandidates.map((candidate) => { const value = patrolScheduleCandidateValue(candidate); return <option key={value} value={value}>{candidate.employeeName} · {candidate.siteName ?? candidate.postName ?? 'Scheduled shift'} · {formatPatrolDateTime(candidate.startsAt, candidate.timeZone)}</option> })}</select></label><button className="primary-action" disabled={linkMutation.isPending || !linkRouteId || !linkCandidate} type="submit">{linkMutation.isPending ? 'Connecting...' : 'Connect patrol'}</button></form>
         {linkMutation.isError ? <div className="inline-alert" role="alert">{linkMutation.error.message}</div> : null}{linkMutation.isSuccess ? <div className="form-feedback form-feedback--success" role="status">Patrol requirements were generated from the active route version.</div> : null}
-      </section>
-      <section className="operations-panel patrol-operations-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Live operations</p><h2>Patrol assignments</h2></div></div>{(visibleItems as PatrolAssignment[]).length === 0 ? <p className="patrol-empty-inline">No patrol assignments match the current search.</p> : (visibleItems as PatrolAssignment[]).map((assignment) => <div className="patrol-operation-row" key={assignment.id}><div><strong>{assignment.employeeName}</strong><span>{assignment.routeName} · {assignment.serviceDate}</span></div><div><strong>{assignment.obligations.filter((item) => item.status === 'completed').length}/{assignment.obligations.length}</strong><span>required hits</span></div><span className={assignment.obligations.some((item) => item.status === 'missed') ? 'patrol-status patrol-status--missed' : 'patrol-status patrol-status--active'}>{assignment.obligations.some((item) => item.status === 'missed') ? 'Needs review' : 'In progress'}</span></div>)}<Pagination page={page} pageSize={pageSize} setPage={setPage} total={operationsAssignments.length} /></section>
-      <section className="operations-panel patrol-makeup-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Exception queue</p><h2>Missed hits awaiting makeup</h2></div><span className="patrol-count">{workspace.makeupQueue.length}</span></div>{workspace.makeupQueue.slice(0, 10).map((item) => <div className="patrol-operation-row" key={item.obligationId}><div><strong>{item.locationLabel}</strong><span>{item.routeName} · {item.employeeName} · {item.serviceDate}</span></div><button className="secondary-button" onClick={() => { setMakeupTarget(item.obligationId); setMakeupAssignment('') }} type="button">Assign makeup</button></div>)}{workspace.makeupQueue.length === 0 ? <p className="patrol-empty-inline">The makeup queue is clear.</p> : null}</section>
+      </section> : null}
+      <section className="operations-panel patrol-operations-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Live operations</p><h2>Patrol assignments</h2><p>Statuses reflect the schedule window and required-hit completion—not simply the absence of a missed hit.</p></div></div>{(visibleItems as PatrolAssignment[]).length === 0 ? <p className="patrol-empty-inline">No patrol assignments match the current search and status filters.</p> : (visibleItems as PatrolAssignment[]).map((assignment) => { const operationState = getPatrolOperationState(assignment, operationNow); return <div className="patrol-operation-row" key={assignment.id}><div><strong>{assignment.employeeName}</strong><span>{assignment.routeName} · {formatPatrolDateTime(assignment.startsAt, assignment.timeZone)}</span></div><div><strong>{assignment.obligations.filter((item) => item.status === 'completed').length}/{assignment.obligations.length}</strong><span>required hits</span></div><span className={`patrol-status patrol-status--${patrolOperationTones[operationState]}`}>{patrolOperationLabels[operationState]}</span></div> })}<Pagination page={page} pageSize={pageSize} setPage={setPage} total={operationsAssignments.length} /></section>
+      <section className="operations-panel patrol-makeup-panel"><div className="patrol-section-heading"><div><p className="eyebrow">Exception queue</p><h2>Missed hits awaiting makeup</h2></div><span className="patrol-count">{workspace.makeupQueue.length}</span></div>{workspace.makeupQueue.slice(0, 10).map((item) => <div className="patrol-operation-row" key={item.obligationId}><div><strong>{item.locationLabel}</strong><span>{item.routeName} · {item.employeeName} · {item.serviceDate}</span></div>{workspace.actor.canManageExceptions ? <button className="secondary-button" onClick={() => { setMakeupTarget(item.obligationId); setMakeupAssignment('') }} type="button">Assign makeup</button> : <span className="patrol-status patrol-status--missed">Awaiting assignment</span>}</div>)}{workspace.makeupQueue.length === 0 ? <p className="patrol-empty-inline">The makeup queue is clear.</p> : null}</section>
     </> : null}
 
     {tab === 'routes' && workspace.actor.canManageRoutes ? <section className="operations-panel patrol-route-library"><div className="patrol-section-heading"><div><p className="eyebrow">Versioned configuration</p><h2>Routes & requirements</h2><p>Only the current version is editable. Prior versions remain attached to historical assignments.</p></div></div>{(visibleItems as PatrolRoute[]).map((route) => <article className="patrol-route-row" key={route.id}><div><strong>{route.name}</strong><span>{route.code} · Version {route.versionNumber} · {route.timeZone.replace('America/', '')}</span></div><span className={`patrol-status patrol-status--${route.status}`}>{statusLabel(route.status)}</span><div><strong>{route.stops.length}</strong><span>stops</span></div><div><strong>{route.stops.reduce((total, stop) => total + stop.requirements.filter((item) => item.status === 'active').reduce((sum, item) => sum + item.requiredHits, 0), 0)}</strong><span>weekly configured hits</span></div><button className="secondary-button" onClick={() => setRouteTarget(route)} type="button">Edit route</button></article>)}{visibleItems.length === 0 ? <p className="patrol-empty-inline">No routes match this search.</p> : null}<Pagination page={page} pageSize={pageSize} setPage={setPage} total={filteredRoutes.length} /></section> : null}
