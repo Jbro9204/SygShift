@@ -26554,11 +26554,65 @@ button.patrol-overview-row:focus-visible {
   letter-spacing: -0.01em;
 }
 
-.employee-roles > p {
+.employee-roles > p,
+.employee-roles__content > p {
   margin: 0;
   color: var(--muted);
   font-size: 14px;
   line-height: 1.5;
+}
+
+.employee-roles__summary {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.employee-roles__summary > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.employee-roles__summary strong {
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.employee-roles__summary span {
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.employee-roles__toggle {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.employee-roles__toggle svg {
+  transition: transform 140ms ease;
+}
+
+.employee-roles.is-expanded .employee-roles__toggle svg {
+  transform: rotate(180deg);
+}
+
+.employee-roles__content {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding-top: 16px;
+  border-top: 1px solid light-dark(#e3d8c7, #383e44);
 }
 
 .employee-roles__list {
@@ -26580,7 +26634,7 @@ button.patrol-overview-row:focus-visible {
   align-items: stretch;
   justify-content: space-between;
   min-height: 112px;
-  padding: 15px 16px;
+  padding: 15px 16px 23px;
   background: light-dark(#fff, #171b1f);
   border: 1px solid light-dark(#ded4c5, #41474d);
   border-radius: 12px;
@@ -26662,7 +26716,8 @@ button.patrol-overview-row:focus-visible {
 
 .employee-roles__search svg {
   position: absolute;
-  left: 13px;
+  z-index: 1;
+  left: 17px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--muted);
@@ -26672,8 +26727,12 @@ button.patrol-overview-row:focus-visible {
 .employee-roles__search input {
   width: 100%;
   min-height: 46px;
-  padding-left: 40px;
+  padding: 0 16px 0 50px;
+  background: light-dark(#fff, #15191d);
+  border: 1px solid light-dark(#cfc2ae, #485058);
+  border-radius: 11px;
   font-size: 15px;
+  line-height: 1.2;
 }
 
 .employee-roles__count {
@@ -26700,6 +26759,7 @@ button.patrol-overview-row:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  margin: 2px 0 4px;
 }
 
 .employee-roles__badges > span {
@@ -26771,6 +26831,15 @@ button.patrol-overview-row:focus-visible {
 
   .employee-roles__toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .employee-roles__summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .employee-roles__toggle {
+    width: 100%;
   }
 
   .employee-roles__count {
