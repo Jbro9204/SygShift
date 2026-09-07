@@ -43,6 +43,7 @@ import {
   SitesPageRoute,
   SystemOperationsPageRoute,
   SupportTicketsPageRoute,
+  SygSpherePageRoute,
   TimeExceptionsPageRoute,
   TimeExceptionsLegacyRoute,
   TimeOperationsPageRoute,
@@ -76,6 +77,7 @@ export const router = createBrowserRouter([
     element: <AppShell />,
     errorElement: <RouteErrorPage />,
     children: [
+      { path: 'sygsphere', element: <RouteSuspense><SygSpherePageRoute /></RouteSuspense> },
       {
         index: true,
         element: (

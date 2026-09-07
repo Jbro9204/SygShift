@@ -30,6 +30,7 @@ import { getMyAccount, getMyAccountPhoto, type MyAccount } from '../data/myAccou
 import { applyTheme, getCurrentTheme, type SygShiftTheme } from '../lib/theme'
 import { SystemStatusIndicator } from './SystemStatusIndicator'
 import { SupportHelpButton } from './SupportHelpButton'
+import { SygSphereLauncher } from './SygSphereLauncher'
 import { OperationalTimeHeader } from './OperationalTimeHeader'
 import { HeaderNotificationButton } from './HeaderNotificationButton'
 import { LiveNotifications } from './LiveNotifications'
@@ -395,7 +396,7 @@ export function AppShell() {
       data: { subscription },
     } = getSupabaseClient().auth.onAuthStateChange((_event, session) => {
       if (!session) {
-        for (const key of ['support', 'my-notifications', 'notification-device-session', 'notification-device-push']) {
+        for (const key of ['support', 'my-notifications', 'notification-device-session', 'notification-device-push', 'sygsphere']) {
           queryClient.removeQueries({ queryKey: [key] })
         }
         void clearPushSession()
@@ -648,6 +649,7 @@ export function AppShell() {
           ))}
         </nav>
 
+        {sessionContext && !needsSecurityCheckpoint ? <SygSphereLauncher employeeId={sessionContext.employeeId} /> : null}
         <SupportHelpButton />
         <SystemStatusIndicator canOpenOperations={canOpenSystemOperations} status={systemServiceStatus} />
       </aside>

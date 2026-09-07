@@ -1,5 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react'
 
+export const SygSpherePageRoute = lazy(() => import('../pages/SygSpherePage').then((module) => ({ default: module.SygSpherePage })))
+
 export const AccountSecurityPageRoute = lazy(() =>
   import('../pages/AccountSecurityPage').then((module) => ({ default: module.AccountSecurityPage })),
 )
