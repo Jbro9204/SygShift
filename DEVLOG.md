@@ -3,10 +3,13 @@
 ## 09/06/2026 — Unified Employee Role Assignment
 
 - Replaced the separate Workforce Role and specialized-access controls in User Accounts > Manage User with one searchable role list.
+- Refined the live role selector into readable two-column desktop cards and single-column mobile cards with larger type, consistent cushioning, concise plain-language summaries, and clear security/default badges.
+- Displayed the ordinary `Human Resources Employee` access role as `Human Resources` in this assignment interface while preserving its canonical database identity and permissions.
 - Kept the existing operational-role and additional-role storage contract so scheduling, timekeeping, MFA requirements, and effective permissions are not redefined by the interface cleanup.
 - Added a concise confirmation step for actual role changes; profile-only saves omit role memberships and preserve every existing assignment.
 - Added actual-component and rendered browser coverage for additions, removals, cancellation, catalog failure, limited editors, Admin transitions, light/dark mode, desktop/mobile containment, and accessibility.
 - No database migration or production employee-role mutation is part of this update.
+- Presentation refinement evidence: `docs/changelogs/CHANGELOG_09-06-2026_EMPLOYEE_ROLE_VISUAL_REFINEMENT.md`.
 
 ## 09/06/2026 — HR System v2.1 PDF and Training Rollout
 
