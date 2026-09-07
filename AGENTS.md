@@ -26,7 +26,7 @@ Do not work from `C:\Users\Jordan\Documents\DayZ Shirt`. The canonical repositor
 - Treat `pnpm check` as the minimum release gate. Add targeted tests for every regression fixed.
 - Do not claim completion without verifying the affected workflow at the database, application, and rendered-interface layers appropriate to the change.
 - Keep Git clean and intentional. Do not discard or overwrite unrelated work.
-- Every meaningful completed update requires a dated changelog in `docs/changelogs/` and a matching Desktop backup when that folder is available.
+- Every meaningful completed update requires a dated changelog in `docs/changelogs/` and a matching Desktop copy in `C:\Users\Jordan\Desktop\SygShift Changelogs`. This is the owner-designated Desktop destination; do not use `Desktop\Changelog` or invent another changelog folder.
 - Production dates display as `MM/DD/YYYY`. Colorado operations use `America/Denver`; authoritative timestamps are stored in UTC.
 - Do not add development-tool authorship, generated-by notices, or assistant references to product code, user-facing copy, commits, or release artifacts.
 

@@ -32,7 +32,7 @@ The operating standard is:
 | Supabase project reference | `eqkdfrbwtioiqtjsyglg` |
 | Git changelog archive | `docs/changelogs/` |
 | Active future plan | `docs/future-items/FUTURE_ITEMS.md` |
-| Desktop changelog backup | `C:\Users\Jordan\Desktop\Changelog` or the documented current Desktop changelog folder |
+| Desktop changelog copy | `C:\Users\Jordan\Desktop\SygShift Changelogs` (owner-confirmed 09/06/2026) |
 
 Never assume the shell's starting directory is the application repository. The old `DayZ Shirt` workspace is unrelated. Confirm the repository before every work session.
 
@@ -440,7 +440,7 @@ The changelog must include:
 - Cloudflare deployment and live health/readiness status.
 - Any remaining limitation or follow-up.
 
-Copy the same file to the configured Desktop changelog backup when available. Do not mark a future item complete until it is actually implemented, verified, logged, and removed from the active future list.
+Copy the same file to `C:\Users\Jordan\Desktop\SygShift Changelogs`. This is the owner-designated Desktop destination; retain the repository copy in `docs/changelogs/` and do not substitute `Desktop\Changelog` or another folder. Do not overwrite a differing existing Desktop file without reconciling its contents. Do not mark a future item complete until it is actually implemented, verified, logged, and removed from the active future list.
 
 ## 17. Incident and regression workflow
 

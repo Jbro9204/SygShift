@@ -1,5 +1,11 @@
 # SygShift Development Log
 
+## 09/06/2026 — Canonical Desktop Changelog Folder
+
+- Owner-confirmed Desktop destination: `C:\Users\Jordan\Desktop\SygShift Changelogs`.
+- Updated repository and handoff instructions; keep the versioned source in `docs/changelogs/` and the matching Desktop copy at this exact path. Do not use the older `Desktop\Changelog` destination.
+- Documentation-only correction. No application implementation or production deployment is included.
+
 ## 09/06/2026 — Document Studio FIDO Recovery
 
 - Reproduced and corrected expired protected-document FIDO evidence returning generic HTTP 500 errors instead of triggering the existing identity-verification popup.
