@@ -13,6 +13,7 @@ import { Container } from '@cloudflare/containers'
 import { strFromU8, unzipSync } from 'fflate'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { deliverPushBatch, validPushHook } from './webPush'
+import { handleSphereFiles } from './sygsphereFiles'
 import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
@@ -6973,6 +6974,24 @@ export default {
             ? errorJson(error.code, requestId, error.status, error.message)
             : errorJson('training_document_request_failed', requestId, 500, 'The assigned training material could not be opened.')
         }
+      }
+    } else if (url.pathname.startsWith('/api/v1/sygsphere/files/')) {
+      try {
+        const session = await requireAuthenticatedSession(request, environment)
+        const config = session.config
+        response = await handleSphereFiles(request, {
+          actorId: session.context.employee_id,
+          authorize: (action, input) => callRpc({ publishableKey: config.publishableKey, url: config.url }, 'sygsphere_files', { action, input }, session.token, forwardedAssuranceHeaders(request)),
+          operation: (action, input) => callRpc({ serviceRoleKey: config.serviceRoleKey, url: config.url }, 'service_sygsphere_file', { action, target_actor_id: session.context.employee_id, input }, config.serviceRoleKey),
+          validate: validateHrDocumentFile,
+          scan: (bytes) => scanDocumentBytes(environment, bytes),
+          store: (path, bytes, mime) => storePrivateStorageObject(config, 'sygsphere-files', path, bytes, mime),
+          fetch: (path) => fetchPrivateStorageObject(config, 'sygsphere-files', path),
+        })
+      } catch (error) {
+        response = error instanceof Response ? error : error instanceof ApiError
+          ? errorJson(error.code, requestId, error.status, error.message)
+          : errorJson('sygsphere_file_unavailable', requestId, 403, 'This file request could not be completed. Check your conversation access and try again.')
       }
     } else if (url.pathname.startsWith('/api/v1/hr/documents')) {
       try {
