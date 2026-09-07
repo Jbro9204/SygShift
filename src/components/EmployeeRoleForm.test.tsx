@@ -26,6 +26,9 @@ describe('actual employee role form and RPC serialization', () => {
     expect(screen.queryByText('Add specialized access')).not.toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: 'Supervisor' })).toBeChecked()
     expect(screen.getByRole('checkbox', { name: 'Human Resources Manager' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Human Resources' })).not.toBeChecked()
+    expect(screen.getByText('Handles employee records, onboarding, HR documents, leave, and employee support.')).toBeInTheDocument()
+    expect(screen.queryByText(/Protected ordinary HR employee-lifecycle authority/)).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'human' } })
     expect(input.onDirty).not.toHaveBeenCalled()
     expect(screen.getAllByRole('checkbox')).toHaveLength(2)
@@ -100,7 +103,7 @@ describe('actual employee role form and RPC serialization', () => {
     render(<EmployeeForm {...input} />)
     fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Sample' } })
     fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Employee' } })
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Human Resources Employee' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Human Resources' }))
     fireEvent.click(screen.getByRole('button', { name: 'Create employee' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm & save employee' }))
     const payload = input.onSubmit.mock.calls[0][0]

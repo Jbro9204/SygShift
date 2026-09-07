@@ -26537,56 +26537,60 @@ button.patrol-overview-row:focus-visible {
 
 .employee-roles {
   display: grid;
-  gap: 14px;
+  gap: 16px;
   min-width: 0;
-  margin: 2px 0 0;
-  padding: 16px;
+  margin: 4px 0 0;
+  padding: 20px;
   background: light-dark(#fbf8f2, #1d2227);
   border: 1px solid light-dark(#e1d4bf, #33383d);
-  border-radius: 12px;
+  border-radius: 14px;
 }
 
 .employee-roles legend {
-  padding: 0 7px;
+  padding: 0 9px;
   color: var(--ink);
-  font-size: 15px;
-  font-weight: 900;
+  font-size: 18px;
+  font-weight: 850;
+  letter-spacing: -0.01em;
 }
 
 .employee-roles > p {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .employee-roles__list {
   display: grid;
-  gap: 8px;
-  max-height: 330px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  max-height: 410px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  padding: 3px 8px 3px 3px;
-  border-radius: 10px;
+  padding: 4px 10px 4px 4px;
+  border-radius: 12px;
 }
 
 .employee-roles__row {
   display: flex;
-  gap: 10px;
-  align-items: center;
+  flex-direction: column;
+  gap: 9px;
+  align-items: stretch;
   justify-content: space-between;
-  min-height: 62px;
-  padding: 12px 14px;
+  min-height: 112px;
+  padding: 15px 16px;
   background: light-dark(#fff, #171b1f);
   border: 1px solid light-dark(#ded4c5, #41474d);
-  border-radius: 10px;
+  border-radius: 12px;
+  transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
 }
 
 .employee-roles__row.is-selected {
   background: light-dark(#fff4d9, #342817);
   border-color: light-dark(#c58a29, #a77a27);
-  box-shadow: inset 3px 0 0 light-dark(#b97915, #e0b65a);
+  box-shadow: inset 4px 0 0 light-dark(#b97915, #e0b65a), 0 4px 12px light-dark(rgb(91 61 14 / 8%), rgb(0 0 0 / 18%));
 }
 
 .employee-roles__row > label {
@@ -26599,28 +26603,32 @@ button.patrol-overview-row:focus-visible {
 }
 
 .employee-roles__row input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  min-height: 20px;
-  flex: 0 0 20px;
-  margin: 2px 0 0;
+  width: 19px;
+  height: 19px;
+  min-height: 19px;
+  flex: 0 0 19px;
+  margin: 3px 0 0;
 }
 
 .employee-roles__copy {
   display: grid;
-  gap: 3px;
+  gap: 6px;
   min-width: 0;
 }
 
 .employee-roles__copy strong {
   color: var(--ink);
-  font-size: 15px;
+  font-size: 16px;
+  font-weight: 850;
+  line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
 .employee-roles__copy small {
+  display: block;
+  min-height: 2.9em;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 13.5px;
   line-height: 1.45;
 }
 
@@ -26636,13 +26644,16 @@ button.patrol-overview-row:focus-visible {
 .employee-roles__toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 14px;
   align-items: end;
 }
 
 .employee-roles__search {
   display: grid;
-  gap: 6px;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
 }
 
 .employee-roles__search > div {
@@ -26660,32 +26671,68 @@ button.patrol-overview-row:focus-visible {
 
 .employee-roles__search input {
   width: 100%;
+  min-height: 46px;
   padding-left: 40px;
+  font-size: 15px;
 }
 
-.employee-roles__toolbar > span {
-  padding-bottom: 12px;
-  color: var(--muted);
+.employee-roles__count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  margin-bottom: 4px;
+  padding: 7px 12px;
+  color: light-dark(#6a5a43, #d6c7ad);
+  background: light-dark(#f3ece0, #242a2f);
+  border: 1px solid light-dark(#ded0ba, #41484e);
+  border-radius: 999px;
   font-size: 13px;
+  white-space: nowrap;
+}
+
+.employee-roles__count strong {
+  margin-right: 4px;
+  color: var(--ink);
+  font-size: 15px;
 }
 
 .employee-roles__badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .employee-roles__badges > span {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  padding: 4px 8px;
   color: light-dark(#755014, #efd08a);
+  background: light-dark(rgb(230 181 89 / 18%), rgb(214 162 65 / 13%));
+  border: 1px solid light-dark(rgb(185 121 21 / 27%), rgb(224 182 90 / 24%));
+  border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
+  line-height: 1.2;
 }
 
 .employee-roles__row .secondary-button {
+  align-self: flex-start;
+  min-height: 34px;
+  margin-left: 31px;
   flex-shrink: 0;
+}
+
+.employee-roles__note {
+  padding: 11px 13px;
+  color: light-dark(#65563f, #d5c9b5) !important;
+  background: light-dark(#f6f0e6, #242a2f);
+  border-left: 3px solid light-dark(#bd7e1a, #d9aa4d);
+  border-radius: 8px;
+}
+
+.employee-roles__note strong {
+  color: var(--ink);
 }
 
 .employee-role-review {
@@ -26718,17 +26765,22 @@ button.patrol-overview-row:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .employee-roles {
+    padding: 17px;
+  }
+
   .employee-roles__toolbar {
     grid-template-columns: 1fr;
   }
 
-  .employee-roles__toolbar > span {
-    padding: 0;
+  .employee-roles__count {
+    justify-self: start;
+    margin: 0;
   }
 
-  .employee-roles__row {
-    flex-direction: column;
-    align-items: stretch;
+  .employee-roles__list {
+    grid-template-columns: 1fr;
+    max-height: 430px;
   }
 
   .employee-role-review__body {
