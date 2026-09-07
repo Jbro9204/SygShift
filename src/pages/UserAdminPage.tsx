@@ -55,6 +55,8 @@ import {
 import { preferredEmployeeDeliveryEmail } from '../lib/emailRecipients'
 import { formatOperationalDateTime } from '../lib/time'
 import { summarizeUserAccounts } from '../lib/userAccountMetrics'
+import { EmployeeRolesField } from '../components/EmployeeRolesField'
+import { employeeRoleChange, employeeRoleOptions, initialEmployeeRoles, type EmployeeRoleDraft } from '../lib/employeeRoleSelection'
 
 const roleLabels: Record<AppRole, string> = {
   admin: 'Admin',
@@ -206,7 +208,7 @@ function AccountActivityPanel({ user }: { user: AdminUser }) {
   )
 }
 
-function EmployeeForm({
+export function EmployeeForm({
   accessRoles,
   accessRolesReady,
   assignedAccessRoleIds = [],
@@ -235,58 +237,38 @@ function EmployeeForm({
   pending: boolean
   showActions?: boolean
 }) {
-  const [primaryRole, setPrimaryRole] = useState<AppRole>(employee?.role ?? 'guard')
-  const [selectedAccessRoleIds, setSelectedAccessRoleIds] = useState(() => new Set(assignedAccessRoleIds))
-  const [roleToAdd, setRoleToAdd] = useState('')
-  const canEditThisProfile = canEditBasic
+  const [roleDraft, setRoleDraft] = useState<EmployeeRoleDraft | null>(null)
+  const [roleError, setRoleError] = useState<string | null>(null)
+  const [reviewPayload, setReviewPayload] = useState<EmployeeMutationInput | null>(null)
+  const options = employeeRoleOptions(accessRoles, employee?.role ?? 'guard', assignedAccessRoleIds, canEditAdminRole)
+  const initialRoles = initialEmployeeRoles(options, employee?.role ?? 'guard', canEditAdminRole ? assignedAccessRoleIds : [])
+  const selectedRoles = roleDraft ?? initialRoles
+  const roleChange = employeeRoleChange(initialRoles, selectedRoles, options, canEditAdminRole)
+  const canEditThisProfile = canEditBasic && !pending
     && (canEditAdminRole || employee?.role !== 'admin')
     && (canSeparate || employee?.status !== 'separated')
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!canEditThisProfile) return
-    onSubmit(employeeFormPayload(event.currentTarget, employee?.id, employee?.preferredName))
-  }
-
-  const primaryRoleOptions = accessRoles
-    .filter((role): role is AccessRoleDefinition & { baseAppRole: AppRole } => role.systemRole && role.baseAppRole !== null)
-    .sort((left, right) => left.name.localeCompare(right.name))
-  const specializedRoles = accessRoles
-    .filter((role) => !role.systemRole)
-    .sort((left, right) => left.name.localeCompare(right.name))
-  const selectedSpecializedRoles = specializedRoles.filter((role) => selectedAccessRoleIds.has(role.id))
-  const availableSpecializedRoles = specializedRoles.filter((role) => !selectedAccessRoleIds.has(role.id))
-
-  function changePrimaryRole(nextRole: AppRole) {
-    setPrimaryRole(nextRole)
-    const inheritedRole = accessRoles.find((role) => role.systemRole && role.baseAppRole === nextRole)
-    if (inheritedRole) {
-      setSelectedAccessRoleIds((current) => {
-        const next = new Set(current)
-        next.delete(inheritedRole.id)
-        return next
-      })
+    if (!canEditThisProfile || pending) return
+    if (roleChange.error) { setRoleError(roleChange.error); return }
+    if (roleChange.changed && canEditAdminRole && !accessRolesReady) {
+      setRoleError('The role library must reload before role changes can be saved. Your edits have not been submitted.')
+      return
     }
-  }
-
-  function toggleAccessRole(roleId: string) {
-    setSelectedAccessRoleIds((current) => {
-      const next = new Set(current)
-      if (next.has(roleId)) next.delete(roleId)
-      else next.add(roleId)
-      return next
-    })
-    onDirty?.()
-  }
-
-  function addSpecializedRole() {
-    if (!roleToAdd) return
-    toggleAccessRole(roleToAdd)
-    setRoleToAdd('')
+    const payload = employeeFormPayload(event.currentTarget, employee?.id, employee?.preferredName)
+    if (roleChange.changed) setReviewPayload(payload)
+    else onSubmit(payload)
   }
 
   return (
+    <>
     <form className="request-form user-admin-form" id={formId} onChange={onDirty} onSubmit={submit}>
+      <input name="role" type="hidden" value={selectedRoles.primaryRole ?? ''} />
+      {roleChange.accessRoleIds !== undefined && accessRolesReady ? <>
+        <input name="manageAccessRoles" type="hidden" value="true" />
+        {roleChange.accessRoleIds.map((roleId) => <input key={roleId} name="accessRoleId" type="hidden" value={roleId} />)}
+      </> : null}
       <div className="form-grid form-grid--three">
         <label><span>First name</span><input defaultValue={employee?.firstName} disabled={!canEditThisProfile} name="firstName" required /></label>
         <label><span>Middle name</span><input defaultValue={employee?.middleName ?? ''} disabled={!canEditThisProfile} name="middleName" /></label>
@@ -306,15 +288,6 @@ function EmployeeForm({
         <label><span>Job title</span><input defaultValue={employee?.jobTitle ?? ''} disabled={!canEditThisProfile} maxLength={140} name="jobTitle" placeholder="Guard, Owner, IT and Business Development Engineer..." /></label>
       </div>
       <div className="form-grid form-grid--three">
-        <label>
-          <span>Workforce role</span>
-          <select disabled={!canEditThisProfile} name="role" onChange={(event) => changePrimaryRole(event.target.value as AppRole)} value={primaryRole}>
-            {(primaryRoleOptions.length ? primaryRoleOptions : Object.entries(roleLabels).map(([baseAppRole, name]) => ({ baseAppRole: baseAppRole as AppRole, name }))).map((role) => (
-              <option disabled={role.baseAppRole === 'admin' && !canEditAdminRole} key={role.baseAppRole} value={role.baseAppRole}>{role.name}</option>
-            ))}
-          </select>
-          <small>Controls Schedule, Time &amp; Attendance, and operational routing.</small>
-        </label>
         <label>
           <span>Employment</span>
           <select defaultValue={employee?.employmentType ?? 'hourly'} disabled={!canEditThisProfile} name="employmentType">
@@ -347,38 +320,9 @@ function EmployeeForm({
         <label><span>Personal email</span><input defaultValue={employee?.personalEmail ?? ''} disabled={!canEditThisProfile} name="personalEmail" type="email" /></label>
         <label><span>Company email</span><input defaultValue={employee?.companyEmail ?? ''} disabled={!canEditThisProfile} name="companyEmail" type="email" /></label>
       </div>
-      {canEditAdminRole ? (
-        <fieldset className="user-admin-access-roles" disabled={!canEditThisProfile || !accessRolesReady}>
-          <legend>Department &amp; management access</legend>
-          <p>Add a specialized access package only when this employee needs a protected department or management workspace.</p>
-          {accessRolesReady ? <input name="manageAccessRoles" type="hidden" value="true" /> : null}
-          {accessRolesReady ? (
-            <>
-              {[...selectedAccessRoleIds].map((roleId) => <input key={roleId} name="accessRoleId" type="hidden" value={roleId} />)}
-              {selectedSpecializedRoles.length ? (
-                <div className="user-admin-access-roles__assigned">
-                  {selectedSpecializedRoles.map((role) => (
-                    <div className="user-admin-access-role is-selected" key={role.id}>
-                      <span><strong>{role.name}</strong><small>Specialized access{role.mfaRequired ? ' · MFA required' : ''}</small></span>
-                      <button aria-label={`Remove ${role.name}`} className="secondary-button secondary-button--small" onClick={() => toggleAccessRole(role.id)} type="button">Remove</button>
-                    </div>
-                  ))}
-                </div>
-              ) : <p className="user-admin-access-roles__empty">No specialized access assigned.</p>}
-              <div className="user-admin-access-roles__add">
-                <label>
-                  <span>Add specialized access</span>
-                  <select aria-label="Add specialized access" onChange={(event) => setRoleToAdd(event.target.value)} value={roleToAdd}>
-                    <option value="">Choose a role</option>
-                    {availableSpecializedRoles.map((role) => <option key={role.id} value={role.id}>{role.name}{role.mfaRequired ? ' · MFA required' : ''}</option>)}
-                  </select>
-                </label>
-                <button className="secondary-button" disabled={!roleToAdd} onClick={addSpecializedRole} type="button">Add access</button>
-              </div>
-            </>
-          ) : <div className="form-note">The complete role library could not be loaded. Profile changes will preserve existing role memberships.</div>}
-        </fieldset>
-      ) : null}
+      <EmployeeRolesField options={options} draft={selectedRoles} canManage={canEditAdminRole}
+        disabled={!canEditThisProfile || pending} unavailable={canEditAdminRole && !accessRolesReady}
+        error={roleError} onChange={(next) => { setRoleDraft(next); setRoleError(null); onDirty?.() }} />
       {showActions ? (
         <div className="modal-actions">
           <button className="secondary-button" onClick={onCancel} type="button">Cancel</button>
@@ -388,6 +332,22 @@ function EmployeeForm({
         </div>
       ) : null}
     </form>
+    {reviewPayload ? (
+      <ModalDialog className="employee-role-review" title="Review role changes" description="These changes take effect when the employee record is saved." onClose={() => setReviewPayload(null)}>
+        <div className="employee-role-review__body">
+          {roleChange.added.length ? <section aria-label="Roles to add"><h3>Add roles</h3><ul>{roleChange.added.map((role) => <li key={role.id}>{role.name}{role.mfaRequired ? ' · MFA required' : ''}</li>)}</ul></section> : null}
+          {roleChange.removed.length ? <section aria-label="Roles to remove"><h3>Remove roles</h3><ul>{roleChange.removed.map((role) => <li key={role.id}>{role.name}</li>)}</ul></section> : null}
+          <p>Scheduling default: <strong>{roleLabels[reviewPayload.role]}</strong>.</p>
+          <p>{roleChange.mfaRequired ? 'The selected roles require MFA. Existing verification rules remain in force.' : 'Existing MFA enrollment is not reset or removed by this change.'}</p>
+          <p>Individual permission exceptions and historical employee records are not changed.</p>
+        </div>
+        <div className="modal-actions">
+          <button autoFocus className="secondary-button" onClick={() => setReviewPayload(null)} type="button">Back to editing</button>
+          <button className="primary-action" disabled={pending || !canEditThisProfile || (canEditAdminRole && !accessRolesReady)} onClick={() => { setReviewPayload(null); onSubmit(reviewPayload) }} type="button">Confirm &amp; save employee</button>
+        </div>
+      </ModalDialog>
+    ) : null}
+    </>
   )
 }
 
@@ -432,9 +392,11 @@ function ManageUserModal({
   const [confirmingMfaReset, setConfirmingMfaReset] = useState(false)
   const [removingEmployee, setRemovingEmployee] = useState(false)
   const deliveryEmail = preferredEmployeeDeliveryEmail(employee.personalEmail, employee.companyEmail)
-  const assignedRoleNames = assignedAccessRoleIds
-    .map((roleId) => accessRoles.find((role) => role.id === roleId)?.name)
-    .filter((name): name is string => Boolean(name))
+  const assignedRoleNames = [...new Set([
+    accessRoles.find((role) => role.systemRole && role.baseAppRole === employee.role)?.name ?? roleLabels[employee.role],
+    ...assignedAccessRoleIds.map((roleId) => accessRoles.find((role) => role.id === roleId)?.name)
+      .filter((name): name is string => Boolean(name)),
+  ])]
 
   const securityKeysQuery = useQuery({
     enabled: activeTab === 'security' && canManageLogin && employee.accountStatus === 'active',

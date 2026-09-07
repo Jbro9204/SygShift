@@ -36,31 +36,27 @@ test('HR termination confirmation remains contained and unmistakable', async ({ 
   await page.screenshot({ path: testInfo.outputPath('hr-termination-dialog.png'), fullPage: true })
 })
 
-test('User Accounts separates workforce behavior from specialized access without duplicate role lists', async ({ page }, testInfo) => {
-  await page.goto('/')
-
-  await page.locator('#root').evaluate((root) => {
-    root.innerHTML = `
-      <main style="width:min(760px,calc(100% - 24px));margin:24px auto">
-        <h1>User Accounts role assignment</h1>
-        <form class="request-form user-admin-form">
-          <label><span>Workforce role</span><select><option>Supervisor</option></select><small>Controls Schedule, Time &amp; Attendance, and operational routing.</small></label>
-          <fieldset class="user-admin-access-roles">
-            <legend>Department &amp; management access</legend>
-            <p>Add a specialized access package only when this employee needs a protected department or management workspace.</p>
-            <div class="user-admin-access-roles__assigned">
-              <div class="user-admin-access-role is-selected"><span><strong>Human Resources Manager</strong><small>Specialized access · MFA required</small></span><button class="secondary-button secondary-button--small" type="button">Remove</button></div>
-            </div>
-            <div class="user-admin-access-roles__add"><label><span>Add specialized access</span><select aria-label="Add specialized access"><option>Choose a role</option><option>Human Resources Employee · MFA required</option><option>Operations Manager · MFA required</option></select></label><button class="secondary-button" type="button">Add access</button></div>
-          </fieldset>
-        </form>
-      </main>`
+for (const theme of ['light', 'dark']) {
+  test(`User Accounts uses one actual searchable role list in ${theme} mode`, async ({ page }, testInfo) => {
+    await page.goto(`http://127.0.0.1:4189/tests/fixtures/roles-ui.html?theme=${theme}`)
+    await expect(page.getByRole('group', { name: 'Roles', exact: true })).toHaveCount(1)
+    await expect(page.getByText('Workforce role')).toHaveCount(0)
+    await expect(page.getByText('Add specialized access')).toHaveCount(0)
+    await expect(page.getByRole('checkbox', { name: 'Supervisor', exact: true })).toBeChecked()
+    await expect(page.getByRole('checkbox', { name: 'Human Resources Manager', exact: true })).toBeChecked()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await page.getByRole('searchbox', { name: 'Find a role' }).fill('operations')
+    await expect(page.getByRole('checkbox', { name: 'Operations Manager', exact: true })).toBeVisible()
+    await page.getByRole('checkbox', { name: 'Operations Manager', exact: true }).check()
+    await page.getByRole('button', { name: 'Save employee', exact: true }).click()
+    const review = page.getByRole('dialog', { name: 'Review role changes' })
+    await expect(review).toBeVisible()
+    await expect(review).toContainText('Operations Manager · MFA required')
+    await expect(review.getByRole('button', { name: 'Confirm & save employee' })).toBeInViewport()
+    await review.getByRole('button', { name: 'Confirm & save employee' }).click()
+    await expect(page.getByLabel('Saved role result')).toContainText('ops-role')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    await page.screenshot({ path: testInfo.outputPath(`user-accounts-role-assignment-${theme}.png`), fullPage: true })
   })
-
-  await expect(page.getByText('Human Resources Manager')).toBeVisible()
-  await expect(page.getByLabel('Add specialized access')).not.toContainText('Admin')
-  await expect(page.getByLabel('Add specialized access')).not.toContainText('Supervisor')
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
-  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
-  await page.screenshot({ path: testInfo.outputPath('user-accounts-role-assignment.png'), fullPage: true })
-})
+}
