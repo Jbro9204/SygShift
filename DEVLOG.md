@@ -1,5 +1,12 @@
 # SygShift Development Log
 
+## 09/07/2026 — SygSphere Workspace and Composer Refinement
+
+- Removed the fixed-height mismatch that left an unused page tail below SygSphere; the messaging workspace now fills the exact space remaining beneath the live application header and any shell notices, with scrolling retained inside its panes.
+- Changed normal and threaded composers so Enter sends, Shift+Enter inserts a line break, empty messages remain blocked, and the existing send button and idempotent retry path remain available.
+- Installed the supplied Franklin notification tone as a separate content-versioned SygSphere asset. The SygShift system/ticket notification and login sounds remain unchanged.
+- Added exact-audio decode/hash, desktop/mobile keyboard, full-height shell, messaging, and time-clock regression coverage. Full release evidence is in `docs/changelogs/CHANGELOG_09-07-2026_SYGSPHERE_WORKSPACE_COMPOSER_SOUND.md`.
+
 ## 09/06/2026 — SygSphere Messaging
 
 - Added branded company messaging with direct/group/channel conversations, threads, independent live alerts and unread state, drafts/retry, search, saved/pinned messages and private scanned attachments.

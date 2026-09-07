@@ -39,7 +39,7 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
   const activeLocation = useRef(location)
   useEffect(() => { activeLocation.current = location }, [location])
   useEffect(() => {
-    const sound = new Audio('/sounds/SygShift_Notification_53571d7e.mp3')
+    const sound = new Audio('/sounds/SygSphere_Notification_46421aca.mp3')
     sound.preload = 'auto'; audio.current = sound
     const unlock = () => { sound.muted = true; void sound.play().then(() => { sound.pause(); sound.currentTime = 0; sound.muted = false }).catch(() => { sound.muted = false }) }
     window.addEventListener('pointerdown', unlock, { once: true }); window.addEventListener('keydown', unlock, { once: true })

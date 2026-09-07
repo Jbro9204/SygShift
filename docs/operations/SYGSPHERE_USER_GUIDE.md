@@ -14,7 +14,7 @@ Select the branded SygSphere launcher above **Need Help?**. Its badge counts con
 
 ## Send and follow up
 
-- Write a message and select **Send**, or use **Ctrl+Enter / Command+Enter**. Enter alone adds a new line.
+- Write a message and select **Send**, or press **Enter**. Use **Shift+Enter** when you want a new line without sending.
 - Unsent text is saved on that device for the signed-in account and specific conversation/thread. If device storage is unavailable, keep the page open until sending.
 - Failed sends retain the draft. **Retry send** reuses the same identifier to prevent duplicates. Sending is not reported as successful until the database acknowledges it.
 - **Reply** opens a real threaded discussion alongside the original message. On a phone the thread takes focus, with a close control to return.

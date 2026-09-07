@@ -1,5 +1,21 @@
 import { expect, test } from '@playwright/test'
+import { createHash } from 'node:crypto'
 const fixture = `http://127.0.0.1:${4190 + Number(process.env.PLAYWRIGHT_PORT_OFFSET ?? 0)}/tests/fixtures/sphere-ui.html`
+test('loads and decodes the exact SygSphere-only notification sound', async ({ page }) => {
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}&home`)
+  const asset = '/sounds/SygSphere_Notification_46421aca.mp3'
+  const result = await page.evaluate(async (path) => {
+    const response = await fetch(path)
+    const bytes = await response.arrayBuffer()
+    const context = new AudioContext()
+    await context.decodeAudioData(bytes.slice(0))
+    await context.close()
+    return { bytes: Array.from(new Uint8Array(bytes)), contentType: response.headers.get('content-type'), ok: response.ok }
+  }, asset)
+  expect(result.ok).toBe(true)
+  expect(result.contentType).toContain('audio/mpeg')
+  expect(createHash('sha256').update(Uint8Array.from(result.bytes)).digest('hex')).toBe('46421aca65b0da122e826b43664ddd79cd40513149007da365b627069a99c059')
+})
 test('creates a group using the real rounded form and sends a message', async ({ page }) => {
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
   await page.getByRole('button', { name: 'New message', exact: true }).click()
@@ -11,6 +27,40 @@ test('creates a group using the real rounded form and sends a message', async ({
   await page.getByRole('textbox', { name: 'Write a message', exact: true }).fill('Ready for tonight’s handoff.')
   await page.getByRole('button', { name: 'Send', exact: true }).click()
   await expect(page.locator('.sphere-message__body').filter({ hasText: 'Ready for tonight’s handoff.' })).toBeVisible()
+})
+test('sends with Enter and keeps Shift Enter as a new line in messages and replies', async ({ page }) => {
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
+  const message = page.getByRole('textbox', { name: 'Write a message', exact: true })
+  await message.fill('First line')
+  await message.press('Shift+Enter')
+  await message.type('Second line')
+  await expect(message).toHaveValue('First line\nSecond line')
+  await expect(page.locator('.sphere-message__body')).toHaveCount(0)
+  await message.press('Enter')
+  await expect(page.locator('.sphere-message__body').filter({ hasText: 'First line\nSecond line' })).toBeVisible()
+  await page.getByRole('button', { name: 'Reply', exact: true }).click()
+  const reply = page.getByRole('textbox', { name: 'Write a thread reply', exact: true })
+  await reply.fill('Thread reply')
+  await reply.press('Enter')
+  await expect(page.locator('.sphere-thread .sphere-message__body').filter({ hasText: 'Thread reply' })).toBeVisible()
+})
+test('fills the shell below the header without an empty page tail', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}&shell`)
+  const geometry = await page.evaluate(() => {
+    const main = document.querySelector<HTMLElement>('#main-content')!
+    const sphere = document.querySelector<HTMLElement>('.sphere-workspace')!
+    return {
+      documentOverflow: document.documentElement.scrollHeight - window.innerHeight,
+      mainBottom: Math.round(main.getBoundingClientRect().bottom),
+      sphereBottom: Math.round(sphere.getBoundingClientRect().bottom),
+      viewportBottom: window.innerHeight,
+    }
+  })
+  expect(geometry.documentOverflow).toBeLessThanOrEqual(1)
+  expect(geometry.mainBottom).toBe(geometry.viewportBottom)
+  expect(geometry.sphereBottom).toBe(geometry.viewportBottom)
+  await page.screenshot({ path: testInfo.outputPath('sygsphere-shell.png'), fullPage: true })
 })
 test('keeps drafts over reload, retains a failed send and retries successfully', async ({ page }) => {
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
