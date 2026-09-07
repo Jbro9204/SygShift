@@ -3,12 +3,14 @@ import { expect, test } from '@playwright/test'
 
 async function installSystemFixture(page: import('@playwright/test').Page, theme: 'dark' | 'light' = 'dark') {
   await page.locator('#root').evaluate((root, selectedTheme) => {
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
     document.documentElement.dataset.theme = selectedTheme
     document.documentElement.style.colorScheme = selectedTheme
     const fixtureStyle = document.createElement('style')
     fixtureStyle.textContent = '.route-error { display: none !important; }'
     document.head.append(fixtureStyle)
-    root.innerHTML = `
+    fixtureRoot.innerHTML = `
       <div class="app-shell">
         <aside class="sidebar"><div class="sidebar-brand"><img alt="SygShift" src="/brand/sygshift-logo.png" /></div></aside>
         <div class="workspace">

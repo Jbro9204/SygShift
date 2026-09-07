@@ -4,7 +4,9 @@ for (const theme of ['light', 'dark']) test(`Attendance filters, pagination, and
   await page.goto('/')
   await page.locator('html').evaluate((html, value) => { html.dataset.theme = value }, theme)
   await page.locator('#root').evaluate((root) => {
-    root.innerHTML = `<main class="page page--reports" style="max-width:1200px;margin:auto;padding:16px">
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+    fixtureRoot.innerHTML = `<main class="page page--reports" style="max-width:1200px;margin:auto;padding:16px">
       <section class="operations-panel reports-workspace-controls attendance-report-controls"><fieldset>
         <div class="reports-range"><label>From<input type="date" value="2026-08-30" /></label><label>Through<input type="date" value="2026-09-05" /></label></div>
         <div class="reports-filter-row"><label>Search attendance<input type="search" placeholder="Employee, location, or note" /></label><label>Occurrence type<select><option>All occurrence types</option></select></label><label>Review state<select><option>All review states</option></select></label></div>

@@ -3,9 +3,11 @@ import { expect, test } from '@playwright/test'
 
 async function installSurfaceFixture(page: import('@playwright/test').Page) {
   await page.locator('#root').evaluate((root) => {
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
     document.documentElement.dataset.theme = 'dark'
     document.documentElement.style.colorScheme = 'dark'
-    root.innerHTML = `
+    fixtureRoot.innerHTML = `
       <div class="app-shell">
         <aside class="sidebar"><div class="sidebar-brand"><img alt="SygShift" src="/brand/sygshift-logo.png" /></div></aside>
         <div class="workspace">

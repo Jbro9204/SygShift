@@ -19,8 +19,8 @@ Status: Database installed and verified behind disabled gate; final application 
 - Authentication, password-change and MFA requirements remain authoritative. Private chats are membership-only, including for Admin. New-member confirmation explicitly warns that conversation history and files become visible.
 - No existing clock, scheduling, payroll, attendance, ticket or employee account record is rewritten. Test conversations and file metadata are enclosed in rollback-only database transactions.
 - Checkpoints: `ec6ad36` implementation plan; `dcb30f2` database foundation; `4c692d9` workspace/live integration; `e4dc139` protected attachments. Concurrent committed employee-role improvements are preserved.
-- Application fallback Worker version: `7b63ab4e-4e7c-4a50-aa51-d5a97d456a00`. If isolation is needed, disable `private.sygsphere_gate.enabled` and restore the recorded application version. Retain the additive schema, message history and memberships; never delete user data as rollback.
-- The separately deployed employee-role visual refinement (`183456b`) and its release documentation were incorporated before the final combined checks, preserving the latest production interface.
+- Application fallback Worker version: `d3b887dc-5153-4888-9701-30d5b42e2036`. If isolation is needed, disable `private.sygsphere_gate.enabled` and restore the recorded application version. Retain the additive schema, message history and memberships; never delete user data as rollback.
+- The separately deployed employee-role visual refinement (`183456b`) and collapsed library (`1338124`), with their release documentation, were incorporated before the final combined checks, preserving the latest production interface.
 
 ## Verification
 
@@ -29,7 +29,7 @@ Status: Database installed and verified behind disabled gate; final application 
 - SygSphere UI checks cover group creation, sending, draft reload, failed-send retry, real thread navigation, saved/search links, two-account live transport, separate badge, light/dark controls and no horizontal overflow. The two-account test uses controlled fixture transport, not messages sent to live employees.
 - Database rollback rehearsals passed for membership denial, cross-conversation reply denial, duplicate prevention, read/search/save/revision evidence, recovery gate, service-only file completion, checksum evidence, clean-only downloads and removed-member file denial.
 - Exact release/history-registration transaction also rehearsed with final rollback and existing-function preservation assertions.
-- Static-markup races in licensing, role-library, employee-file and HR pagination fixtures were isolated from React's live root without changing those production workflows or weakening accessibility assertions.
+- Static-markup layout fixtures were isolated from React's live root after duplicate route-error landmarks were reproduced in multiple layout-only tests. No production workflow or accessibility assertion was weakened; actual-component clock, support and role workflows remain separate.
 - Added optional `PLAYWRIGHT_PORT_OFFSET` isolation for all test servers and fixture URLs, preserving default ports. The final combined run uses offset 1000 after another run's localhost server became unavailable; no other task's processes were stopped.
 
 ## Database and deployment

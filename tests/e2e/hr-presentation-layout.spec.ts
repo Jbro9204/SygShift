@@ -4,7 +4,9 @@ test('HR workspace and modal remain polished and contained', async ({ page }, te
   await page.goto('/')
 
   await page.locator('#root').evaluate((root) => {
-    root.innerHTML = `
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+    fixtureRoot.innerHTML = `
       <main class="hr-people-page" aria-label="HR presentation fixture">
         <section class="hr-people-hero">
           <p class="eyebrow">HR &amp; FINANCE</p>

@@ -3,7 +3,9 @@ import { expect, test } from '@playwright/test'
 test('Dispatch timekeeping modes stay clear and usable', async ({ page }) => {
   await page.goto('/')
   await page.locator('#root').evaluate((root) => {
-    root.innerHTML = `
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+    fixtureRoot.innerHTML = `
       <main style="max-width:900px;margin:24px auto;padding:0 18px">
         <form class="request-form schedule-builder__form">
           <div class="form-grid">

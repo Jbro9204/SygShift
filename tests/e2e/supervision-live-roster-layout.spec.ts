@@ -4,7 +4,9 @@ import { expect, test } from '@playwright/test'
 test('supervision controls and the live-only roster stay readable and compact', async ({ page }, testInfo) => {
   await page.goto('/')
   await page.locator('#root').evaluate((root) => {
-    root.innerHTML = `
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+    fixtureRoot.innerHTML = `
       <main class="page page--sygshift-time" aria-label="Current clocked-in employees">
         <h1>Currently Clocked In</h1>
         <section class="time-command-grid time-command-grid--live" aria-label="Current clock status summary">

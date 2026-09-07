@@ -22,7 +22,7 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: e2eBaseUrl,
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
   },
   webServer: [{
     command: `pnpm build && node tools/e2e-static-server.mjs ${e2ePort}`,

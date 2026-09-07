@@ -4,7 +4,9 @@ test('User Accounts controls remain contained and separated from the filter row'
   await page.goto('/')
 
   await page.locator('#root').evaluate((root) => {
-    root.innerHTML = `
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+    fixtureRoot.innerHTML = `
       <main style="max-width: 1372px; margin: 32px auto; padding: 0 20px;">
         <section class="user-admin-toolbar" aria-label="User account controls">
           <label><span class="sr-only">Search employees</span><input aria-label="Search employees" value="matth" /></label>

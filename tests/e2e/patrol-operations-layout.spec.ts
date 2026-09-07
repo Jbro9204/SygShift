@@ -3,9 +3,11 @@ import { expect, test } from '@playwright/test'
 
 async function installPatrolFixture(page: import('@playwright/test').Page, theme: 'light' | 'dark') {
   await page.locator('#root').evaluate((root, selectedTheme) => {
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
     document.documentElement.dataset.theme = selectedTheme
     document.documentElement.style.colorScheme = selectedTheme
-    root.innerHTML = `
+    fixtureRoot.innerHTML = `
       <main style="max-width:1372px;margin:32px auto;padding:0 20px">
         <div class="page page--patrol patrol-workspace">
           <section class="page-intro patrol-intro">

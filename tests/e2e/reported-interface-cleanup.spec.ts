@@ -4,7 +4,9 @@ test('reported schedule, modal, reporting, payroll, and administration layouts r
   await page.goto('/')
   await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--ink').trim().length > 0)
   await page.locator('#root').evaluate((root) => {
-    root.innerHTML = `
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+    fixtureRoot.innerHTML = `
       <main style="display:grid;gap:22px;max-width:1180px;margin:24px auto;padding:0 16px">
         <section aria-label="Dispatch fixture" style="width:156px">
           <article class="shift-card">

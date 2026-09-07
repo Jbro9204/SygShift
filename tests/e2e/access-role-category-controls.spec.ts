@@ -4,7 +4,9 @@ test('role permission category controls stay clear and contained', async ({ page
   await page.goto('/')
 
   await page.locator('#root').evaluate((root) => {
-    root.innerHTML = `
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+    fixtureRoot.innerHTML = `
       <main class="access-control-page">
         <section class="access-workspace-card">
           <div class="access-workspace-card__header">

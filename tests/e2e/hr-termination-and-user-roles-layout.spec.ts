@@ -5,7 +5,9 @@ test('HR termination confirmation remains contained and unmistakable', async ({ 
   await page.goto('/')
 
   await page.locator('#root').evaluate((root) => {
-    root.innerHTML = `
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+    fixtureRoot.innerHTML = `
       <dialog class="modal-dialog hr-termination-modal" open aria-labelledby="termination-title">
         <div class="modal-dialog__heading"><div><h2 id="termination-title">Terminate employment · Sample Employee</h2><p>This protected HR action immediately ends access while preserving history.</p></div></div>
         <form>

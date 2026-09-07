@@ -6,7 +6,9 @@ test("Time Maintenance fits the viewport and opens corrections in place", async 
   await page.goto("/");
 
   await page.locator("#root").evaluate((root) => {
-    root.innerHTML = `
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+    fixtureRoot.innerHTML = `
       <main style="max-width: 1280px; margin: 24px auto; padding: 0 18px;">
         <div class="time-review-table-wrap" data-testid="maintenance-wrap">
           <table class="time-review-table time-maintenance-table">
@@ -44,7 +46,7 @@ test("Time Maintenance fits the viewport and opens corrections in place", async 
           </form>
         </dialog>
       </main>`;
-    root.querySelector<HTMLDialogElement>("dialog")?.showModal();
+    fixtureRoot.querySelector<HTMLDialogElement>("dialog")?.showModal();
   });
 
   const viewport = page.viewportSize();

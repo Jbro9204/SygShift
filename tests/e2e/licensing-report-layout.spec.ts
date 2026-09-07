@@ -4,6 +4,8 @@ test('Guard Licensing Status report stays compact, readable, and contained', asy
   await page.goto('/')
 
   await page.locator('#root').evaluate((root) => {
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
     const statusCards = [
       ['Employees shown', '18', 'All license states', ''],
       ['Current', '11', 'Open filtered list', 'reports-licensing-status--green'],
@@ -14,7 +16,7 @@ test('Guard Licensing Status report stays compact, readable, and contained', asy
       ['Restricted', '0', 'Open filtered list', 'reports-licensing-status--red'],
     ]
 
-    root.innerHTML = `
+    fixtureRoot.innerHTML = `
       <main style="max-width: 1372px; margin: 32px auto; padding: 0 20px;">
         <section class="operations-panel reports-workspace-heading reports-licensing-heading">
           <button class="secondary-button reports-back" type="button">Back to report library</button>

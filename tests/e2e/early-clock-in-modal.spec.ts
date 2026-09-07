@@ -3,9 +3,11 @@ import { expect, test } from '@playwright/test'
 
 async function installModalFixture(page: import('@playwright/test').Page, theme: 'dark' | 'light') {
   await page.locator('#root').evaluate((root, selectedTheme) => {
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
     document.documentElement.dataset.theme = selectedTheme
     document.documentElement.style.colorScheme = selectedTheme
-    root.innerHTML = `
+    fixtureRoot.innerHTML = `
       <main style="min-height:100vh;padding:24px">
         <button id="clock-in-trigger" class="primary-action" type="button">Clock in</button>
         <dialog aria-describedby="early-description" aria-labelledby="early-title" class="modal-dialog modal-dialog--early-clock-in" role="alertdialog">
@@ -35,7 +37,7 @@ async function installModalFixture(page: import('@playwright/test').Page, theme:
           <div class="early-clock-in-restriction__actions"><button autofocus class="primary-action" type="button">Acknowledge &amp; close</button></div>
         </dialog>
       </main>`
-    const dialog = root.querySelector<HTMLDialogElement>('dialog')
+    const dialog = fixtureRoot.querySelector<HTMLDialogElement>('dialog')
     dialog?.showModal()
     dialog?.querySelector<HTMLElement>('[autofocus]')?.focus({ preventScroll: true })
     if (dialog) dialog.scrollTop = 0

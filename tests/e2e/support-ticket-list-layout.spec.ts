@@ -10,7 +10,9 @@ for (const theme of ['light', 'dark'] as const) {
       document.documentElement.style.colorScheme = selectedTheme
     }, theme)
     await page.locator('#root').evaluate((root) => {
-      root.innerHTML = `
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+      fixtureRoot.innerHTML = `
         <main class="page" style="max-width:880px;margin:24px auto">
           <h1 style="position:absolute;left:-10000px">Support Tickets</h1>
           <section class="support-board">

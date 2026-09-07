@@ -7,7 +7,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await page.goto('/')
 
     await page.locator('#root').evaluate((root) => {
-      root.innerHTML = `
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+      fixtureRoot.innerHTML = `
         <main style="max-width: 920px; margin: 24px auto;">
           <dialog class="modal-dialog identity-verification-modal" aria-describedby="identity-description" aria-labelledby="identity-title" open>
             <div class="modal-dialog__heading">
