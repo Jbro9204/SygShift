@@ -1,7 +1,7 @@
 # SygSphere Messaging
 
 Date: 09/06/2026 (production release continued 09/07/2026 UTC)
-Status: Database installed and verified behind disabled gate; final application release pending
+Status: Deployed to production and verified
 
 ## Delivered scope
 
@@ -25,7 +25,7 @@ Status: Database installed and verified behind disabled gate; final application 
 ## Verification
 
 - Full `pnpm check`: TypeScript, lint, 923 unit/component/Worker tests, and production build passed.
-- Full Playwright suite: 208/208 passed across desktop and mobile, including all 38 actual-component time-clock workflow checks and 12 SygSphere checks.
+- Final combined Playwright suite: 208/208 passed across desktop and mobile using isolated ports and one worker, including all 38 actual-component time-clock workflow checks and 12 SygSphere checks. Earlier concurrent-run clock loading timeouts did not recur; original strict assertions were retained.
 - SygSphere UI checks cover group creation, sending, draft reload, failed-send retry, real thread navigation, saved/search links, two-account live transport, separate badge, light/dark controls and no horizontal overflow. The two-account test uses controlled fixture transport, not messages sent to live employees.
 - Database rollback rehearsals passed for membership denial, cross-conversation reply denial, duplicate prevention, read/search/save/revision evidence, recovery gate, service-only file completion, checksum evidence, clean-only downloads and removed-member file denial.
 - Exact release/history-registration transaction also rehearsed with final rollback and existing-function preservation assertions.
@@ -38,8 +38,16 @@ Status: Database installed and verified behind disabled gate; final application 
 - Standard database push detected pre-existing migration-history gaps. Old migrations were not replayed. The exact SygSphere-only installer registers the two new migration versions atomically with their schema changes.
 - Both production migrations installed and recorded atomically; all existing operational function fingerprints remained unchanged. Installed-function rollback tests passed again after installation.
 - Security audit: all 10 SygSphere private tables have RLS and no anonymous/authenticated direct table privileges; no anonymous messaging RPC; browser roles cannot complete file scans; the Storage bucket is private.
-- Post-test production counts were zero conversations, zero messages and zero files, confirming no committed test chat data. The release gate remains disabled until application cutover.
-- Release-gate enablement, Worker version, health/readiness and signed-in acceptance: pending, to be recorded after verification.
+- Post-test production counts were zero conversations, zero messages and zero files, confirming no committed test chat data. The SygSphere-only release gate was then enabled for application cutover.
+- Application source: `8eb4318`, pushed to `origin/main` before deployment. `pnpm deploy` produced a fresh production build after the last browser test.
+- Cloudflare Worker version: `d13f1ac9-97f0-4dab-a090-308f3f63cb39`; deployment ID: `440d3f36-103f-47e5-9553-03891331d4c0`; deployment time: `2026-09-07T03:51:43Z`.
+- Health and readiness both returned HTTP 200, with `status: ok` and `ready: true`. Live HTML matched the fresh production entry `/assets/index-BoghDTI0.js`. Existing scanner container configuration was unchanged.
+- The live private-file endpoint returned HTTP 401 without authentication; the production SygSphere gate was verified enabled after cutover.
+- Signed-in production acceptance verified Home clock controls, all four clocks, the separate notification bell, SygSphere launcher and workspace, cross-role directory search, and direct/group/channel form choices. Light/dark appearance and collapsed/emblem navigation were visually checked, then the original appearance was restored. No live employee message, conversation, punch or account change was submitted for browser testing.
+
+## Existing issue observed separately
+
+- Home's Announcements panel showed `Announcements could not be loaded` both before and after this release. This pre-existing behavior is not presented as fixed or caused by SygSphere; Home clock controls and the new messaging workspace loaded successfully. No unrelated announcement-system rewrite was included.
 
 ## Boundaries and usage
 

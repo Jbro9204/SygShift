@@ -14,6 +14,8 @@ Baseline: `346d774` on `main`; `pnpm check` passed with 900 tests. Existing unco
 
 Each completed stage receives a checkpoint commit. A checkpoint is not a claim of production acceptance. Database changes are forward-only and additive; application recovery retains messages and memberships. Production is not enabled until the complete workflow passes its release gates. Recover application behavior with the recorded previous Worker version; disable the SygSphere database gate if isolation is needed. Never roll back by deleting conversations or operational data.
 
+All five stages completed and production deployed on 09/07/2026 UTC. Release evidence, application fallback version, database verification and remaining boundaries are recorded in `docs/changelogs/CHANGELOG_09-06-2026_SYGSPHERE_MESSAGING.md`.
+
 ## Behavior and boundaries
 
 - Active account holders can find and message other active account holders across roles.
