@@ -16,12 +16,16 @@ const props = () => ({
   canEditAdminRole: true, canEditBasic: true, canSeparate: true, employee: employeeRoleTestUser,
   onCancel: vi.fn(), onSubmit: vi.fn<(payload: EmployeeMutationInput) => void>(), onDirty: vi.fn(), pending: false,
 })
+const openRoles = () => fireEvent.click(screen.getByRole('button', { name: 'Manage roles' }))
 
 describe('actual employee role form and RPC serialization', () => {
   it('shows one searchable list and saves phone edits without touching memberships', async () => {
     const input = props()
     render(<EmployeeForm {...input} />)
     expect(screen.getAllByRole('group', { name: 'Roles' })).toHaveLength(1)
+    expect(screen.queryByRole('group', { name: 'Available roles' })).not.toBeInTheDocument()
+    expect(screen.getByText('2 roles assigned')).toBeInTheDocument()
+    openRoles()
     expect(screen.queryByText('Workforce role')).not.toBeInTheDocument()
     expect(screen.queryByText('Add specialized access')).not.toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: 'Supervisor' })).toBeChecked()
@@ -42,6 +46,7 @@ describe('actual employee role form and RPC serialization', () => {
   it('reviews additions and removals, supports cancel, and atomically saves the final selection', async () => {
     const input = props()
     render(<EmployeeForm {...input} />)
+    openRoles()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Human Resources Manager' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Operations Manager' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save employee' }))
@@ -60,6 +65,7 @@ describe('actual employee role form and RPC serialization', () => {
   it('blocks an empty or department-only selection instead of inventing inherited access', () => {
     const input = props()
     render(<EmployeeForm {...input} />)
+    openRoles()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Supervisor' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save employee' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Keep one scheduling role')
@@ -68,6 +74,7 @@ describe('actual employee role form and RPC serialization', () => {
   it('allows safe profile saves during catalog failure and never submits role IDs', () => {
     const input = { ...props(), accessRoles: [], accessRolesReady: false }
     render(<EmployeeForm {...input} />)
+    openRoles()
     expect(screen.getByRole('checkbox', { name: 'Supervisor' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Save employee' }))
     expect(input.onSubmit.mock.calls[0][0].accessRoleIds).toBeUndefined()
@@ -75,6 +82,7 @@ describe('actual employee role form and RPC serialization', () => {
   it('loads late-arriving role data without dirtying or losing unrelated profile edits', () => {
     const input = props()
     const view = render(<EmployeeForm {...input} accessRoles={[]} accessRolesReady={false} />)
+    openRoles()
     fireEvent.change(screen.getByLabelText('Mobile phone'), { target: { value: '555-0123' } })
     view.rerender(<EmployeeForm {...input} />)
     expect(screen.getByRole('checkbox', { name: 'Human Resources Manager' })).toBeChecked()
@@ -84,6 +92,7 @@ describe('actual employee role form and RPC serialization', () => {
   it('keeps limited editors out of Admin and specialized assignments', () => {
     const input = { ...props(), canEditAdminRole: false, accessRoles: [], accessRolesReady: false }
     render(<EmployeeForm {...input} />)
+    fireEvent.click(screen.getByRole('button', { name: 'View roles' }))
     expect(screen.getByRole('checkbox', { name: 'Admin' })).toBeDisabled()
     expect(screen.queryByRole('checkbox', { name: 'Human Resources Manager' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Guard' }))
@@ -94,6 +103,7 @@ describe('actual employee role form and RPC serialization', () => {
   it('does not permit edits or duplicate submissions while saving', () => {
     const input = { ...props(), pending: true }
     render(<EmployeeForm {...input} />)
+    openRoles()
     expect(screen.getByRole('checkbox', { name: 'Supervisor' })).toBeDisabled()
     expect(screen.getByLabelText('Mobile phone')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled()
@@ -101,6 +111,7 @@ describe('actual employee role form and RPC serialization', () => {
   it('creates employees with the same complete selection and preserves server denials', async () => {
     const input = { ...props(), employee: undefined, assignedAccessRoleIds: [] }
     render(<EmployeeForm {...input} />)
+    openRoles()
     fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Sample' } })
     fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Employee' } })
     fireEvent.click(screen.getByRole('checkbox', { name: 'Human Resources' }))
