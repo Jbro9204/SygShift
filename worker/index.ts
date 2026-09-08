@@ -14,6 +14,7 @@ import { strFromU8, unzipSync } from 'fflate'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { deliverPushBatch, validPushHook } from './webPush'
 import { handleSphereFiles } from './sygsphereFiles'
+import { handleSharedIdentityRequest } from './sharedIdentity'
 import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
@@ -62,6 +63,11 @@ type Environment = Partial<Env> & {
   SYGSHIFT_HR_ENTERPRISE_CUTOVER_ENABLED?: string
   SYGSHIFT_HR_ROLLOUT_ACTOR_ID?: string
   SYGSHIFT_HR_ROLLOUT_SECRET?: string
+  SYGSHIFT_SHARED_IDENTITY_CONSUMER_SECRET?: string
+  SYGSHIFT_SHARED_IDENTITY_ENABLED?: string
+  SYGSHIFT_SHARED_IDENTITY_INTROSPECTION_URL?: string
+  SYGSHIFT_SHARED_IDENTITY_ISSUER?: string
+  SYGSHIFT_SHARED_IDENTITY_SESSION_SECRET?: string
 }
 
 interface DocumentScanQueueMessage {
@@ -914,8 +920,10 @@ function forwardedAssuranceHeaders(request: Request): Record<string, string> | u
   const headers: Record<string, string> = {}
   const trustedDevice = request.headers.get('x-sygshift-trusted-device')
   const securityKey = request.headers.get('x-sygshift-security-key')
+  const sharedIdentity = request.headers.get('x-sygshift-shared-identity')
   if (trustedDevice) headers['x-sygshift-trusted-device'] = trustedDevice
   if (securityKey) headers['x-sygshift-security-key'] = securityKey
+  if (sharedIdentity) headers['x-sygshift-shared-identity'] = sharedIdentity
   return Object.keys(headers).length > 0 ? headers : undefined
 }
 
@@ -6574,6 +6582,7 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
 
 function readiness(environment: Environment, requestId: string): Response {
   const config = configuredSupabase(environment)
+  const sharedIdentityEnabled = environment.SYGSHIFT_SHARED_IDENTITY_ENABLED?.trim().toLowerCase() === 'true'
   const checks = {
     assetsBinding: Boolean(environment.ASSETS),
     supabasePublishableKey: Boolean(
@@ -6581,8 +6590,10 @@ function readiness(environment: Environment, requestId: string): Response {
     ),
     supabaseServiceRoleKey: Boolean(environment.SUPABASE_SERVICE_ROLE_KEY?.trim()),
     supabaseUrl: Boolean(environment.SUPABASE_URL?.trim() || environment.VITE_SUPABASE_URL?.trim()),
+    sharedIdentityConsumerSecret: !sharedIdentityEnabled || Boolean(environment.SYGSHIFT_SHARED_IDENTITY_CONSUMER_SECRET?.trim()),
+    sharedIdentitySessionSecret: !sharedIdentityEnabled || Boolean(environment.SYGSHIFT_SHARED_IDENTITY_SESSION_SECRET?.trim()),
   }
-  const ready = Boolean(config && checks.assetsBinding)
+  const ready = Boolean(config && checks.assetsBinding && checks.sharedIdentityConsumerSecret && checks.sharedIdentitySessionSecret)
 
   return json({
     checks,
@@ -6692,6 +6703,9 @@ export default {
         context.waitUntil(processPushJobs(environment))
         response = json({ accepted: true }, 202)
       }
+    } else if (url.pathname.startsWith('/api/v1/auth/shared-identity/')) {
+      response = await handleSharedIdentityRequest(request, environment, requestId)
+        ?? errorJson('not_found', requestId, 404)
     } else if (url.pathname === '/api/v1/auth/password-reset/request') {
       try {
         response = await handleSelfServicePasswordResetApi(request, environment, requestId)

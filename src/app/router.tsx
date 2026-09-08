@@ -44,6 +44,7 @@ import {
   SystemOperationsPageRoute,
   SupportTicketsPageRoute,
   SygSpherePageRoute,
+  SharedIdentityCallbackPageRoute,
   TimeExceptionsPageRoute,
   TimeExceptionsLegacyRoute,
   TimeOperationsPageRoute,
@@ -63,6 +64,11 @@ import {
 } from './RouteElements'
 
 export const router = createBrowserRouter([
+  {
+    path: '/auth/shared-identity/callback',
+    element: <RouteSuspense><SharedIdentityCallbackPageRoute /></RouteSuspense>,
+    errorElement: <RouteErrorPage />,
+  },
   {
     path: '/login',
     element: (

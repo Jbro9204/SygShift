@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 import { clearSecurityKeySession } from '../lib/securityKeySession'
+import { clearSharedIdentitySession } from '../lib/sharedIdentitySession'
 import { clearPushSession } from './pushNotifications'
 import { cancelLoginSound } from '../lib/notificationSounds'
 
@@ -101,6 +102,7 @@ export async function signOut(): Promise<void> {
     if (error) throw new Error('You could not be signed out. Please try again.')
   } finally {
     clearSecurityKeySession()
+    clearSharedIdentitySession()
   }
 }
 

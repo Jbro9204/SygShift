@@ -11,7 +11,7 @@ describe('effective-permission enforcement guard', () => {
     const router = read('src/app/router.tsx')
     const childPaths = [...router.matchAll(/\bpath:\s*'([^']+)'/g)]
       .map((match) => match[1])
-      .filter((path) => path !== '/login')
+      .filter((path) => !['/login', '/auth/shared-identity/callback'].includes(path))
       .map((path) => (path.startsWith('/') ? path : `/${path}`))
 
     expect(Object.keys(routeAccessPolicies).sort()).toEqual([...new Set(childPaths)].sort())

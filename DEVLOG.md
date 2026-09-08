@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 09/08/2026 - Sygilant To SygSphere Shared Session
+
+- Added a production shared-session receiver that opens the canonical SygSphere workspace from Sygilant without copying messages, files, permissions, or identity records.
+- Revalidates every launch against the active SygShift auth account and employee, ignores external role claims, consumes each assertion once, and binds inherited MFA to the real Supabase session.
+- Applied production migration `20260908183000` with forced RLS, service-only issuance, expiry and revocation controls, and canonical private audit events.
+- Passed 191 files / 936 code tests, all 38 desktop/mobile time-clock workflow checks, and all 60 checks in the SygSphere browser configuration before final release packaging.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-08-2026_SYGILANT_SYGSPHERE_SHARED_SESSION.md`.
+
 ## 09/07/2026 — Scheduled-Only Timecard Visibility Repair
 
 - Corrected Team Attendance so an employee with a published scheduled shift remains visible and searchable even when no punches or other time activity exist.
