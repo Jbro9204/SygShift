@@ -33,6 +33,7 @@ import {
   LicensingCenterPageRoute,
   NotificationsPageRoute,
   OverviewPageRoute,
+  PasswordRecoveryLinkPageRoute,
   PeoplePageRoute,
   PatrolPageRoute,
   ReportsPageRoute,
@@ -74,6 +75,15 @@ export const router = createBrowserRouter([
     element: (
       <RouteSuspense>
         <LoginPageRoute />
+      </RouteSuspense>
+    ),
+    errorElement: <RouteErrorPage />,
+  },
+  {
+    path: '/password-recovery',
+    element: (
+      <RouteSuspense>
+        <PasswordRecoveryLinkPageRoute />
       </RouteSuspense>
     ),
     errorElement: <RouteErrorPage />,
