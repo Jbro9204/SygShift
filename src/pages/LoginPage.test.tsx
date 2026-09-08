@@ -49,4 +49,17 @@ describe('LoginPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back to sign in' }))
     expect(screen.getByLabelText('Password')).toBeInTheDocument()
   })
+
+  it('confirms a completed password reset without exposing recovery details', () => {
+    render(
+      <MemoryRouter initialEntries={[{
+        pathname: '/login',
+        state: { message: 'Password reset complete. Sign in with your new password.' },
+      }]}>
+        <LoginPage />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('Password reset complete. Sign in with your new password.')).toBeInTheDocument()
+  })
 })

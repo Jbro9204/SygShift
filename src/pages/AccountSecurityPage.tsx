@@ -348,8 +348,6 @@ export function AccountSecurityPage() {
         await markPasswordChangedWithRetry()
       }
 
-      await getSupabaseClient().auth.refreshSession()
-      const nextContext = await refreshContext()
       setPassword('')
       setPasswordConfirmation('')
       setShowPassword(false)
@@ -357,10 +355,16 @@ export function AccountSecurityPage() {
       setCheckpointVersion((version) => version + 1)
 
       if (isPasswordRecovery) {
-        setMessage('Password reset complete. Opening your account.')
-        navigate('/account', { replace: true })
+        await signOut()
+        navigate('/login', {
+          replace: true,
+          state: { message: 'Password reset complete. Sign in with your new password.' },
+        })
         return
       }
+
+      await getSupabaseClient().auth.refreshSession()
+      const nextContext = await refreshContext()
 
       const nextNeedsMfa = nextContext.mfaRequired && !nextContext.hasMfa
       if (nextNeedsMfa) {

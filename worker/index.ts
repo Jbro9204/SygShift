@@ -5225,6 +5225,25 @@ function buildPasswordResetEmail(
   }
 }
 
+type GeneratedPasswordRecoveryLink = {
+  action_link?: string
+  hashed_token?: string
+}
+
+function buildApplicationPasswordRecoveryLink(
+  generated: GeneratedPasswordRecoveryLink,
+  appUrl: string,
+): string {
+  const tokenHash = generated.hashed_token?.trim() ?? ''
+  if (tokenHash.length < 32 || tokenHash.length > 512 || !/^[A-Za-z0-9._~-]+$/.test(tokenHash)) {
+    throw new Error('A secure password-reset link could not be generated.')
+  }
+
+  const recoveryUrl = new URL('/password-recovery', appUrl)
+  recoveryUrl.hash = new URLSearchParams({ token_hash: tokenHash }).toString()
+  return recoveryUrl.toString()
+}
+
 const passwordResetAcceptedMessage = 'If an active SygShift account and approved personal email match that username, a password-reset link will arrive shortly.'
 
 async function handleSelfServicePasswordResetApi(
@@ -5277,10 +5296,10 @@ async function handleSelfServicePasswordResetApi(
       const target = claim as LoginEmailTarget
       const recipient = requireApprovedEmployeeEmail(environment, target)
       const appUrl = (environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl).replace(/\/+$/, '')
-      const generated = await supabaseJson<{ action_link?: string }>(`${config.url}/auth/v1/admin/generate_link`, {
+      const generated = await supabaseJson<GeneratedPasswordRecoveryLink>(`${config.url}/auth/v1/admin/generate_link`, {
         body: JSON.stringify({
           email: target.authEmail,
-          redirect_to: `${appUrl}/account-security?mode=password-recovery`,
+          redirect_to: `${appUrl}/password-recovery`,
           type: 'recovery',
         }),
         headers: {
@@ -5290,12 +5309,12 @@ async function handleSelfServicePasswordResetApi(
         },
         method: 'POST',
       })
-      if (!generated.action_link) throw new Error('A secure password-reset link could not be generated.')
+      const recoveryLink = buildApplicationPasswordRecoveryLink(generated, appUrl)
 
       const delivery = await sendAuditedEmail(
         environment,
         recipient,
-        buildPasswordResetEmail(target, generated.action_link, true),
+        buildPasswordResetEmail(target, recoveryLink, true),
         {
           notificationType: 'password_reset_self_service',
           relatedRecordId: target.employeeId,
@@ -6204,10 +6223,10 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
     }
     const recipient = requireApprovedEmployeeEmail(environment, target)
     const appUrl = (environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl).replace(/\/+$/, '')
-    const generated = await supabaseJson<{ action_link?: string }>(`${admin.config.url}/auth/v1/admin/generate_link`, {
+    const generated = await supabaseJson<GeneratedPasswordRecoveryLink>(`${admin.config.url}/auth/v1/admin/generate_link`, {
       body: JSON.stringify({
         email: target.authEmail,
-        redirect_to: `${appUrl}/account-security?mode=password-recovery`,
+        redirect_to: `${appUrl}/password-recovery`,
         type: 'recovery',
       }),
       headers: {
@@ -6217,9 +6236,14 @@ async function handleAdminUsersApi(request: Request, environment: Environment, r
       },
       method: 'POST',
     })
-    if (!generated.action_link) throw new ApiError('password_reset_link_failed', 502, 'A secure password-reset link could not be generated.')
+    let recoveryLink: string
+    try {
+      recoveryLink = buildApplicationPasswordRecoveryLink(generated, appUrl)
+    } catch {
+      throw new ApiError('password_reset_link_failed', 502, 'A secure password-reset link could not be generated.')
+    }
 
-    const delivery = await sendAuditedEmail(environment, recipient, buildPasswordResetEmail(target, generated.action_link), {
+    const delivery = await sendAuditedEmail(environment, recipient, buildPasswordResetEmail(target, recoveryLink), {
       notificationType: 'password_reset',
       relatedRecordId: target.employeeId,
       relatedRecordType: 'employee',
