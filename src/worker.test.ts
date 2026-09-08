@@ -459,6 +459,7 @@ describe('Cloudflare Worker boundary', () => {
       }), { headers: { 'content-type': 'application/json' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         action_link: 'https://example.supabase.co/auth/v1/verify?token=self-service-token&type=recovery',
+        hashed_token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       }), { headers: { 'content-type': 'application/json' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ logged: true }), {
         headers: { 'content-type': 'application/json' },
@@ -487,7 +488,8 @@ describe('Cloudflare Worker boundary', () => {
     expect(JSON.stringify(payload)).not.toContain('employee@accounts.sygshift.invalid')
     expect(send).toHaveBeenCalledTimes(1)
     expect(send.mock.calls[0]?.[0]).toMatchObject({ to: 'employee@example.com' })
-    expect(send.mock.calls[0]?.[0].html).toContain('token=self-service-token')
+    expect(send.mock.calls[0]?.[0].html).toContain('https://app.sygilant.us/password-recovery#token_hash=aaaaaaaa')
+    expect(send.mock.calls[0]?.[0].html).not.toContain('example.supabase.co/auth/v1/verify')
     expect(send.mock.calls[0]?.[0].html).toContain('We received a request')
     vi.unstubAllGlobals()
   })
@@ -521,6 +523,7 @@ describe('Cloudflare Worker boundary', () => {
       }), { headers: { 'content-type': 'application/json' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         action_link: 'https://example.supabase.co/auth/v1/verify?token=single-use-token&type=recovery',
+        hashed_token: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       }), { headers: { 'content-type': 'application/json' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ logged: true }), {
         headers: { 'content-type': 'application/json' },
@@ -551,13 +554,14 @@ describe('Cloudflare Worker boundary', () => {
     expect(JSON.stringify(payload)).not.toContain('employee@example.com')
     expect(send).toHaveBeenCalledTimes(1)
     expect(send.mock.calls[0]?.[0]).toMatchObject({ to: 'employee@example.com' })
-    expect(send.mock.calls[0]?.[0].html).toContain('token=single-use-token')
+    expect(send.mock.calls[0]?.[0].html).toContain('https://app.sygilant.us/password-recovery#token_hash=bbbbbbbb')
+    expect(send.mock.calls[0]?.[0].html).not.toContain('example.supabase.co/auth/v1/verify')
 
     const generateRequest = fetchMock.mock.calls.find(([input]) => String(input).includes('/auth/v1/admin/generate_link'))
     expect(generateRequest).toBeDefined()
     expect(JSON.parse(String(generateRequest?.[1]?.body))).toEqual({
       email: 'employee@accounts.sygshift.invalid',
-      redirect_to: 'https://app.sygilant.us/account-security?mode=password-recovery',
+      redirect_to: 'https://app.sygilant.us/password-recovery',
       type: 'recovery',
     })
 

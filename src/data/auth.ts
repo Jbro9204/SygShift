@@ -94,6 +94,26 @@ export async function requestPasswordReset(username: string): Promise<string> {
   return result.data.message
 }
 
+export async function verifyPasswordRecoveryToken(tokenHash: string): Promise<void> {
+  const normalizedTokenHash = tokenHash.trim()
+  if (
+    normalizedTokenHash.length < 32
+    || normalizedTokenHash.length > 512
+    || !/^[A-Za-z0-9._~-]+$/.test(normalizedTokenHash)
+  ) {
+    throw new Error('This password-reset link is invalid or has expired.')
+  }
+
+  const { data, error } = await getSupabaseClient().auth.verifyOtp({
+    token_hash: normalizedTokenHash,
+    type: 'recovery',
+  })
+
+  if (error || !data.session) {
+    throw new Error('This password-reset link is invalid or has expired. Request a new link and try again.')
+  }
+}
+
 export async function signOut(): Promise<void> {
   cancelLoginSound()
   await clearPushSession()

@@ -8,6 +8,7 @@ import { AccountSecurityPage } from './AccountSecurityPage'
 const authMock = vi.hoisted(() => ({
   getSessionContext: vi.fn(),
   notifySessionContextChanged: vi.fn(),
+  signOut: vi.fn(),
 }))
 
 const supabaseMock = vi.hoisted(() => ({
@@ -27,6 +28,7 @@ vi.mock('../data/auth', async () => {
     ...actual,
     getSessionContext: authMock.getSessionContext,
     notifySessionContextChanged: authMock.notifySessionContextChanged,
+    signOut: authMock.signOut,
   }
 })
 
@@ -75,6 +77,7 @@ describe('AccountSecurityPage', () => {
         mustChangePassword: false,
         passwordChangedAt: '2026-07-05T21:05:00.000Z',
       }))
+    authMock.signOut.mockResolvedValue(undefined)
     supabaseMock.client.auth.refreshSession.mockResolvedValue({ data: {}, error: null })
     supabaseMock.client.auth.signOut.mockResolvedValue({ error: null })
     supabaseMock.client.auth.updateUser.mockResolvedValue({ data: {}, error: null })
@@ -134,7 +137,8 @@ describe('AccountSecurityPage', () => {
       expect(supabaseMock.client.auth.updateUser).toHaveBeenCalledWith({ password: 'StrongAdmin123!' })
     })
     expect(supabaseMock.client.rpc).not.toHaveBeenCalledWith('mark_password_changed')
-    expect(mfaData.listMfaFactors).toHaveBeenCalled()
+    expect(authMock.signOut).toHaveBeenCalledTimes(1)
+    expect(supabaseMock.client.auth.refreshSession).not.toHaveBeenCalled()
   })
 
   it('allows permanent password fields to be shown and hidden independently', async () => {

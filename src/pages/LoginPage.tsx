@@ -12,6 +12,7 @@ type LoginLocationState = {
     search?: string
     hash?: string
   }
+  message?: string
 }
 
 export function LoginPage() {
@@ -32,6 +33,7 @@ export function LoginPage() {
     const from = state?.from
     return `${from?.pathname ?? '/'}${from?.search ?? ''}${from?.hash ?? ''}`
   }, [location.state])
+  const completionMessage = (location.state as LoginLocationState | null)?.message ?? null
 
   useEffect(() => {
     let active = true
@@ -151,6 +153,13 @@ export function LoginPage() {
                 Enter your SygShift username. If the account is active, we’ll send a secure,
                 single-use reset link to the approved personal email on file.
               </p>
+            </div>
+          ) : null}
+
+          {completionMessage && !recoveryMode ? (
+            <div className="auth-notice auth-notice--success" role="status">
+              <MailCheck aria-hidden="true" size={21} />
+              <span>{completionMessage}</span>
             </div>
           ) : null}
 

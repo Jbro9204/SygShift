@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   AUTH_EMAIL_DOMAIN,
   isValidUsername,
@@ -6,6 +6,7 @@ import {
   signOut,
   usernameToAuthEmail,
   validatePassword,
+  verifyPasswordRecoveryToken,
 } from './auth'
 import {
   clearTrustedDeviceToken,
@@ -18,6 +19,7 @@ const supabaseMock = vi.hoisted(() => ({
   client: {
     auth: {
       signOut: vi.fn(),
+      verifyOtp: vi.fn(),
     },
   },
 }))
@@ -56,6 +58,32 @@ describe('signOut', () => {
 
     expect(supabaseMock.deactivateSharedIdentitySupabaseSession).toHaveBeenCalledOnce()
     expect(localStorage.getItem('sygshift:trusted-device-token:v1')).toBe('remembered-device-token')
+  })
+})
+
+describe('password recovery verification', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('establishes a recovery session from a valid one-time token hash', async () => {
+    const tokenHash = 'a'.repeat(64)
+    supabaseMock.client.auth.verifyOtp.mockResolvedValueOnce({
+      data: { session: { access_token: 'recovery-session' } },
+      error: null,
+    })
+
+    await verifyPasswordRecoveryToken(tokenHash)
+
+    expect(supabaseMock.client.auth.verifyOtp).toHaveBeenCalledWith({
+      token_hash: tokenHash,
+      type: 'recovery',
+    })
+  })
+
+  it('rejects malformed recovery tokens without calling Supabase', async () => {
+    await expect(verifyPasswordRecoveryToken('not a token')).rejects.toThrow('invalid or has expired')
+    expect(supabaseMock.client.auth.verifyOtp).not.toHaveBeenCalled()
   })
 })
 
