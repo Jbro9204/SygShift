@@ -20,14 +20,15 @@ function request(endpoint: string, key: string | null = 'test-key', recentTotp =
   if (key) headers.set('x-sygshift-security-key', key)
   return new Request(`https://app.sygshift.example/api/v1/hr/documents/${endpoint}`, { headers })
 }
-function installTransport(verification: () => Response, permitted = true) {
+function installTransport(verification: () => Response, permitted = true, workspace: Record<string, unknown> = { summary: { documents: 537 } }) {
   const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
     if (String(url).endsWith('/get_session_context')) return Response.json({
       employee_id: actorId, has_mfa: true, role: 'admin',
       permissions: permitted ? ['documents.workspace.view', 'hr.documents.view'] : [],
     })
     if (String(url).endsWith('/service_verify_security_key_document_mfa')) return verification()
-    if (String(url).endsWith('/service_get_document_studio_workspace')) return Response.json({ summary: { documents: 537 } })
+    if (String(url).endsWith('/service_get_document_studio_workspace')) return Response.json(workspace)
+    if (String(url).endsWith('/service_get_signature_policy_options')) return Response.json([{ id: '10000000-0000-4000-8000-000000000099', active: true }])
     if (String(url).endsWith('/service_get_hr_document_workspace')) return Response.json({ documents: [], pagination: { totalCount: 537 } })
     throw new Error('Unexpected request')
   })
@@ -50,6 +51,17 @@ describe.each(['studio', 'workspace'])('Document %s verification boundary', (end
     const response = await worker.fetch(request(endpoint), env)
     expect(response.status).toBe(200)
     expect(JSON.stringify(await response.json())).toContain('537')
+  })
+  if (endpoint === 'studio') it('loads active signing-policy choices for an authorized requester', async () => {
+    const fetchMock = installTransport(
+      () => Response.json({ method: 'security_key', verifiedAt: new Date().toISOString() }),
+      true,
+      { permissions: { canRequestSignatures: true }, policies: [] },
+    )
+    const response = await worker.fetch(request(endpoint), env)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ policies: [{ active: true }] })
+    expect(fetchMock).toHaveBeenCalledTimes(4)
   })
   it('accepts recent authenticator evidence without requiring FIDO', async () => {
     const fetchMock = installTransport(() => { throw new Error('FIDO should not be called') })

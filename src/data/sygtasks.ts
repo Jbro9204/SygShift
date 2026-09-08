@@ -1,0 +1,187 @@
+import { z } from 'zod'
+import { getSupabaseClient } from '../lib/supabase'
+
+export const sygTaskStatuses = ['backlog', 'ready', 'in_progress', 'blocked', 'review', 'done', 'canceled'] as const
+export const sygTaskPriorities = ['low', 'routine', 'high', 'urgent'] as const
+export const sygTaskStatusSchema = z.enum(sygTaskStatuses)
+export const sygTaskPrioritySchema = z.enum(sygTaskPriorities)
+
+const personSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  username: z.string().optional(),
+  assignedAt: z.string().optional(),
+  addedAt: z.string().optional(),
+})
+
+const labelSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  color: z.string().regex(/^#[0-9a-f]{6}$/i),
+  version: z.number().int().positive().optional(),
+})
+
+const checklistSummarySchema = z.object({ total: z.number().int().nonnegative(), completed: z.number().int().nonnegative() })
+
+export const sygTaskSchema = z.object({
+  id: z.string().uuid(),
+  boardId: z.string().uuid(),
+  boardName: z.string().optional(),
+  title: z.string(),
+  description: z.string(),
+  status: sygTaskStatusSchema,
+  priority: sygTaskPrioritySchema,
+  dueAt: z.string().nullable(),
+  sortRank: z.coerce.number(),
+  createdBy: z.string().uuid(),
+  updatedBy: z.string().uuid(),
+  version: z.number().int().positive(),
+  completedAt: z.string().nullable(),
+  archivedAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  canEdit: z.boolean(),
+  canUpdateStatus: z.boolean(),
+  watching: z.boolean(),
+  assignees: z.array(personSchema),
+  labels: z.array(labelSchema),
+  checklist: checklistSummarySchema,
+  watcherCount: z.coerce.number().int().nonnegative(),
+  commentCount: z.coerce.number().int().nonnegative(),
+  dependencyCount: z.coerce.number().int().nonnegative(),
+})
+
+export const sygTaskBoardSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  description: z.string(),
+  scope: z.enum(['personal', 'team', 'company']),
+  ownerEmployeeId: z.string().uuid(),
+  ownerName: z.string(),
+  memberRole: z.enum(['owner', 'editor', 'member', 'viewer']).nullable(),
+  version: z.number().int().positive(),
+  archivedAt: z.string().nullable(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string(),
+  openTaskCount: z.coerce.number().int().nonnegative().optional(),
+  canManageBoard: z.boolean(),
+  canCreateTask: z.boolean(),
+})
+
+const memberSchema = z.object({
+  membershipId: z.string().uuid().nullable().optional(),
+  employeeId: z.string().uuid(),
+  name: z.string(),
+  username: z.string(),
+  role: z.enum(['owner', 'editor', 'member', 'viewer']).nullable().optional(),
+  addedAt: z.string().nullable().optional(),
+})
+
+const availableMemberSchema = z.object({
+  employeeId: z.string().uuid(),
+  name: z.string(),
+  username: z.string(),
+  isMember: z.boolean(),
+  membershipId: z.string().uuid().nullable(),
+  role: z.enum(['owner', 'editor', 'member', 'viewer']).nullable(),
+})
+
+const taskDetailSchema = sygTaskSchema.extend({
+  watchers: z.array(personSchema),
+  checklistItems: z.array(z.object({
+    id: z.string().uuid(), title: z.string(), sortRank: z.coerce.number(), completedBy: z.string().uuid().nullable(),
+    completedAt: z.string().nullable(), version: z.number().int().positive(), createdAt: z.string(), updatedAt: z.string(),
+  })),
+  comments: z.array(z.object({
+    id: z.string().uuid(), authorId: z.string().uuid(), authorName: z.string(), body: z.string(), version: z.number().int().positive(),
+    editedAt: z.string().nullable(), createdAt: z.string(), updatedAt: z.string(), canEdit: z.boolean(),
+  })),
+  dependencies: z.array(z.object({ id: z.string().uuid(), taskId: z.string().uuid(), title: z.string(), status: sygTaskStatusSchema, dueAt: z.string().nullable() })),
+  activity: z.array(z.object({
+    id: z.coerce.number(), action: z.string(), entityType: z.string(), entityId: z.string().uuid(), details: z.record(z.string(), z.unknown()),
+    actorId: z.string().uuid(), actorName: z.string(), createdAt: z.string(),
+  })),
+})
+
+export const sygTasksWorkspaceSchema = z.object({
+  employeeId: z.string().uuid(),
+  permissions: z.object({ viewShared: z.boolean(), manageShared: z.boolean() }),
+  boards: z.array(sygTaskBoardSchema),
+  selectedBoard: sygTaskBoardSchema.nullable(),
+  tasks: z.array(sygTaskSchema),
+  myTasks: z.array(sygTaskSchema),
+  labels: z.array(labelSchema),
+  members: z.array(memberSchema),
+  availableMembers: z.array(availableMemberSchema).default([]),
+  taskDetail: taskDetailSchema.nullable(),
+  page: z.object({
+    size: z.union([z.literal(5), z.literal(10), z.literal(20), z.literal(50)]),
+    hasMore: z.boolean(),
+    nextCursor: z.object({ updatedAt: z.string(), taskId: z.string().uuid() }).nullable(),
+  }),
+})
+
+export type SygTask = z.infer<typeof sygTaskSchema>
+export type SygTaskBoard = z.infer<typeof sygTaskBoardSchema>
+export type SygTaskDetail = z.infer<typeof taskDetailSchema>
+export type SygTasksWorkspace = z.infer<typeof sygTasksWorkspaceSchema>
+export type SygTaskStatus = z.infer<typeof sygTaskStatusSchema>
+export type SygTaskPriority = z.infer<typeof sygTaskPrioritySchema>
+export type SygTaskMember = z.infer<typeof memberSchema>
+export type SygTaskAction =
+  | 'create_board' | 'update_board' | 'archive_board' | 'add_board_member' | 'remove_board_member'
+  | 'create_task' | 'update_task' | 'archive_task' | 'assign_task' | 'unassign_task' | 'watch_task' | 'unwatch_task'
+  | 'create_label' | 'update_label' | 'apply_label' | 'remove_label'
+  | 'add_checklist_item' | 'update_checklist_item' | 'archive_checklist_item'
+  | 'add_comment' | 'edit_comment' | 'archive_comment' | 'add_dependency' | 'remove_dependency'
+
+export interface SygTasksQuery {
+  boardId?: string | null
+  taskId?: string | null
+  cursor?: { updatedAt: string; taskId: string } | null
+  pageSize?: 5 | 10 | 20 | 50
+  includeArchived?: boolean
+}
+
+export async function getSygTasksWorkspace(input: SygTasksQuery = {}): Promise<SygTasksWorkspace> {
+  const { data, error } = await getSupabaseClient().rpc('get_sygtasks_workspace', {
+    target_board_id: input.boardId ?? null,
+    target_task_id: input.taskId ?? null,
+    target_cursor_updated_at: input.cursor?.updatedAt ?? null,
+    target_cursor_task_id: input.cursor?.taskId ?? null,
+    target_page_size: input.pageSize ?? 20,
+    target_include_archived: input.includeArchived ?? false,
+  })
+  if (error) throw new Error(error.message || 'SygTasks could not load your work.')
+  return sygTasksWorkspaceSchema.parse(data)
+}
+
+export async function mutateSygTasks(
+  action: SygTaskAction,
+  payload: Record<string, unknown>,
+  options: { expectedVersion?: number | null; clientRequestId?: string } = {},
+): Promise<Record<string, unknown>> {
+  const { data, error } = await getSupabaseClient().rpc('mutate_sygtasks', {
+    target_action: action,
+    target_payload: payload,
+    target_client_request_id: options.clientRequestId ?? crypto.randomUUID(),
+    target_expected_version: options.expectedVersion ?? null,
+  })
+  if (error) throw new Error(error.message || 'SygTasks could not save this change.')
+  return z.record(z.string(), z.unknown()).parse(data)
+}
+
+export function sygTaskPath(boardId?: string | null, taskId?: string | null) {
+  const query = new URLSearchParams()
+  if (boardId) query.set('board', boardId)
+  if (taskId) query.set('task', taskId)
+  return `/tasks${query.size ? `?${query}` : ''}`
+}
+
+export function formatSygTaskStatus(status: SygTaskStatus) {
+  return ({ backlog: 'Backlog', ready: 'Ready', in_progress: 'In progress', blocked: 'Blocked', review: 'Review', done: 'Done', canceled: 'Canceled' } as const)[status]
+}
+
+export function formatSygTaskPriority(priority: SygTaskPriority) {
+  return ({ low: 'Low', routine: 'Routine', high: 'High', urgent: 'Urgent' } as const)[priority]
+}

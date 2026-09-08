@@ -45,6 +45,7 @@ import {
   SupportTicketsPageRoute,
   SygSpherePageRoute,
   SharedIdentityCallbackPageRoute,
+  SygTasksPageRoute,
   TimeExceptionsPageRoute,
   TimeExceptionsLegacyRoute,
   TimeOperationsPageRoute,
@@ -84,6 +85,7 @@ export const router = createBrowserRouter([
     errorElement: <RouteErrorPage />,
     children: [
       { path: 'sygsphere', element: <RouteSuspense><SygSpherePageRoute /></RouteSuspense> },
+      { path: 'tasks', element: <RouteSuspense><SygTasksPageRoute /></RouteSuspense> },
       {
         index: true,
         element: (

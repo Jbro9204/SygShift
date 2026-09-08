@@ -7,6 +7,7 @@ export interface RouteAccessPolicy {
 }
 
 export const documentStudioAccessPermission = 'documents.workspace.view' as const
+export const sygilantPlatformAccessPermission = 'apps.sygilant.access' as const
 
 export const scheduleTeamViewPermissions = [
   'schedule.view',
@@ -87,6 +88,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/system-operations': { anyOf: ['admin.maintenance.manage'] },
   '/support': { anyOf: [] },
   '/sygsphere': { anyOf: [] },
+  '/tasks': { anyOf: [] },
 }
 
 export function hasEffectivePermission(
@@ -103,6 +105,12 @@ export function hasAnyEffectivePermission(
   return permissions.some((permission) => hasEffectivePermission(session, permission))
 }
 
+export function canLaunchSygilantPlatform(
+  session: Pick<SessionContext, 'permissions'> | null | undefined,
+): boolean {
+  return hasEffectivePermission(session, sygilantPlatformAccessPermission)
+}
+
 export function canAccessRoute(
   pathname: string,
   session: Pick<SessionContext, 'permissions'> | null | undefined,
@@ -117,6 +125,6 @@ export function canAccessRoute(
       ? '/hr/people/:employeeId'
       : pathname
   const policy = routeAccessPolicies[policyKey]
-  if (pathname === '/account' || pathname === '/account-security' || pathname === '/requests' || pathname === '/my-documents' || pathname === '/support' || pathname === '/notifications' || pathname === '/sygsphere') return Boolean(policy)
+  if (pathname === '/account' || pathname === '/account-security' || pathname === '/requests' || pathname === '/my-documents' || pathname === '/support' || pathname === '/notifications' || pathname === '/sygsphere' || pathname === '/tasks') return Boolean(policy)
   return policy ? hasAnyEffectivePermission(session, policy.anyOf) : false
 }

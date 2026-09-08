@@ -20,10 +20,16 @@ const composerOptionsSchema = z.object({
   canSendEveryone: z.boolean(),
 })
 const sendResultSchema = z.object({ campaignId: z.string().uuid(), recipientCount: z.number().int().positive(), emailEnabled: z.boolean() })
+const clearResultSchema = z.object({
+  markedRead: z.number().int().nonnegative(),
+  dismissed: z.number().int().nonnegative(),
+  remainingRequired: z.number().int().nonnegative(),
+})
 
 export type EmployeeNotification = z.infer<typeof notificationSchema>
 export type NotificationInbox = z.infer<typeof inboxSchema>
 export type NotificationComposerOptions = z.infer<typeof composerOptionsSchema>
+export type NotificationClearResult = z.infer<typeof clearResultSchema>
 
 function notificationError(error: { message?: string } | null, fallback: string): never { throw new Error(error?.message || fallback) }
 
@@ -54,6 +60,12 @@ export async function acknowledgeMyNotification(notificationId: string) {
 export async function dismissMyNotification(notificationId: string) {
   const { error } = await getSupabaseClient().rpc('dismiss_my_notification', { target_notification_id: notificationId })
   if (error) notificationError(error, 'The notification could not be dismissed.')
+}
+
+export async function clearMyNotifications(): Promise<NotificationClearResult> {
+  const { data, error } = await getSupabaseClient().rpc('clear_my_notifications')
+  if (error) notificationError(error, 'Your notifications could not be cleared.')
+  return clearResultSchema.parse(data)
 }
 
 export async function getNotificationComposerOptions(search = '') {

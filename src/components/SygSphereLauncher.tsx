@@ -33,8 +33,9 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
   const location = useLocation()
   const queryClient = useQueryClient()
   const inbox = useQuery({ queryKey: ['sygsphere', employeeId, 'inbox'], queryFn: sphereInbox, refetchInterval: 30000, retry: 1 })
-  const [toast, setToast] = useState<{ title: string; path: string } | null>(null)
+  const [toast, setToast] = useState<{ title: string; path: string; mentioned: boolean } | null>(null)
   const seen = useRef<Set<string> | null>(null)
+  const seenMentions = useRef<Set<string> | null>(null)
   const audio = useRef<HTMLAudioElement | null>(null)
   const activeLocation = useRef(location)
   useEffect(() => { activeLocation.current = location }, [location])
@@ -68,18 +69,35 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
   useEffect(() => {
     if (!inbox.data) return
     const data = inbox.data
-    if (!seen.current) { seen.current = new Set(data.conversations.flatMap((item) => item.latest ? [item.latest.id] : [])); return }
+    if (!seen.current || !seenMentions.current) {
+      seen.current = new Set(data.conversations.flatMap((item) => item.latest ? [item.latest.id] : []))
+      seenMentions.current = new Set(data.mentions.map((item) => item.messageId))
+      return
+    }
     let cancelled = false
+    const active = activeLocation.current
+    const activeConversation = document.visibilityState === 'visible' && active.pathname === '/sygsphere' ? new URLSearchParams(active.search).get('conversation') : null
+    const mentionedMessageIds = new Set(data.mentions.map((item) => item.messageId))
+    for (const mention of data.mentions) {
+      if (seenMentions.current.has(mention.messageId)) continue
+      seenMentions.current.add(mention.messageId)
+      if (mention.authorId === employeeId || Date.now() - Date.parse(mention.createdAt) > 30000 || activeConversation === mention.conversationId) continue
+      void claimSphereAlert(employeeId, mention.messageId).then((claimed) => {
+        if (!claimed || cancelled) return
+        setToast({ title: mention.conversationName, path: spherePath(mention.conversationId, mention.messageId, mention.parentId), mentioned: true })
+        const prefs = getSoundPreferences()
+        if (data.soundEnabled && !prefs.muted && prefs.volume > 0 && audio.current) { audio.current.volume = prefs.volume; audio.current.currentTime = 0; void audio.current.play().catch(() => undefined) }
+      })
+    }
     for (const conversation of data.conversations) {
       const message = conversation.latest
       if (!message || seen.current.has(message.id)) continue
       seen.current.add(message.id)
-      if (conversation.muted || conversation.unread === 0 || message.authorId === employeeId || Date.now() - Date.parse(message.createdAt) > 30000) continue
-      const active = activeLocation.current
-      if (document.visibilityState === 'visible' && active.pathname === '/sygsphere' && new URLSearchParams(active.search).get('conversation') === conversation.id) continue
+      if (mentionedMessageIds.has(message.id) || conversation.muted || conversation.unread === 0 || message.authorId === employeeId || Date.now() - Date.parse(message.createdAt) > 30000) continue
+      if (activeConversation === conversation.id) continue
       void claimSphereAlert(employeeId, message.id).then((claimed) => {
         if (!claimed || cancelled) return
-        setToast({ title: conversation.name, path: spherePath(conversation.id, message.id, message.parentId) })
+        setToast({ title: conversation.name, path: spherePath(conversation.id, message.id, message.parentId), mentioned: false })
         const prefs = getSoundPreferences()
         if (data.soundEnabled && !prefs.muted && prefs.volume > 0 && audio.current) { audio.current.volume = prefs.volume; audio.current.currentTime = 0; void audio.current.play().catch(() => undefined) }
       })
@@ -95,6 +113,6 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
       {unread > 0 ? <span className="sphere-badge">{unread > 99 ? '99+' : unread}</span> : null}
     </Link>
     {createPortal(<Link className="sphere-mobile-launcher" to="/sygsphere" aria-label={`Open SygSphere${unread ? `, ${unread} unread conversations` : ''}`}><img src="/branding/sygsphere-emblem.png" alt="" />SygSphere{unread > 0 ? <span className="sphere-badge">{unread > 99 ? '99+' : unread}</span> : null}</Link>, document.body)}
-    {toast ? createPortal(<aside className="sphere-toast" role="status"><Link onClick={() => setToast(null)} to={toast.path}><strong>SygSphere · {toast.title}</strong><span>You have a new message. Open conversation.</span></Link><button type="button" aria-label="Dismiss message notification" onClick={() => setToast(null)}><X size={18} /></button></aside>, document.body) : null}
+    {toast ? createPortal(<aside className={`sphere-toast ${toast.mentioned ? 'sphere-toast--mention' : ''}`} role="status"><Link onClick={() => setToast(null)} to={toast.path}><strong>SygSphere · {toast.title}</strong><span>{toast.mentioned ? 'You were mentioned. Open the message.' : 'You have a new message. Open conversation.'}</span></Link><button type="button" aria-label="Dismiss message notification" onClick={() => setToast(null)}><X size={18} /></button></aside>, document.body) : null}
   </>
 }

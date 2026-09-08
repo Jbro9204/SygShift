@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   canAccessRoute,
+  canLaunchSygilantPlatform,
   hasAnyEffectivePermission,
   hasEffectivePermission,
   routeAccessPolicies,
@@ -16,6 +17,12 @@ describe('central access policy', () => {
     expect(hasEffectivePermission(session(['schedule.view']), 'schedule.view')).toBe(true)
     expect(hasEffectivePermission(session([]), 'schedule.view')).toBe(false)
     expect(hasAnyEffectivePermission(session(['time.manage']), ['time.view', 'time.manage'])).toBe(true)
+  })
+
+  it('shows the Sygilant platform launcher only through its effective permission', () => {
+    expect(canLaunchSygilantPlatform(session(['apps.sygilant.access']))).toBe(true)
+    expect(canLaunchSygilantPlatform(session(['operations.view']))).toBe(false)
+    expect(canLaunchSygilantPlatform(null)).toBe(false)
   })
 
   it('denies unknown and unpermitted routes', () => {

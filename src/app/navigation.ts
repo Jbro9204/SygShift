@@ -10,6 +10,7 @@ import {
   CalendarPlus,
   ClipboardCheck,
   ListChecks,
+  ClipboardList,
   FileBarChart,
   Files,
   LayoutDashboard,
@@ -176,6 +177,7 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: 'Communication',
     items: [
+      { label: 'SygTasks', path: '/tasks', icon: ClipboardList, permissions: [] },
       { label: 'Announcements', path: '/announcements', icon: Megaphone, permissions: ['announcements.send', 'announcements.banner.manage'] },
       { label: 'Notifications', path: '/notifications', icon: Bell, permissions: ['notifications.view', 'notifications.manage'] },
       { label: 'Reports', path: '/reports', icon: FileBarChart, permissions: ['reports.view', 'time.reports.view', 'clients.activity.view'] },

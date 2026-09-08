@@ -3,6 +3,7 @@ import { z } from 'zod'
 const uuid = z.string().uuid()
 const accessSchema = z.object({ filename: z.string(), mimeType: z.string(), sizeBytes: z.number(), objectKey: z.string() })
 const operationSchema = z.object({ id: z.string().uuid(), state: z.enum(['pending', 'clean', 'rejected', 'error']), messageId: z.string().nullable() })
+const previewMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'text/plain'])
 type Dependencies = {
   actorId: string
   authorize: (action: string, input: Record<string, unknown>) => Promise<unknown>
@@ -36,9 +37,21 @@ export async function handleSphereFiles(request: Request, dependencies: Dependen
   if (!fileId.success) return failure('Invalid file identifier.')
   if (request.method === 'GET') {
     const target = accessSchema.parse(await dependencies.authorize('access', { fileId: fileId.data }))
+    const preview = url.searchParams.get('mode') === 'preview'
+    if (preview && (!previewMimeTypes.has(target.mimeType) || (target.mimeType === 'text/plain' && target.sizeBytes > 1048576))) {
+      return failure('This file type is available for download but cannot be previewed safely.', 415)
+    }
     const stored = await dependencies.fetch(target.objectKey)
     if (!stored.ok || !stored.body) return failure('The protected file could not be loaded. Please try again.', 502)
-    const headers = new Headers({ 'content-type': target.mimeType, 'cache-control': 'private, no-store, max-age=0', 'x-content-type-options': 'nosniff', 'content-security-policy': "sandbox; default-src 'none'", 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(target.filename)}` })
+    const headers = new Headers({
+      'content-type': target.mimeType === 'text/plain' ? 'text/plain; charset=utf-8' : target.mimeType,
+      'cache-control': 'private, no-store, max-age=0',
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': "sandbox; default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'",
+      'content-disposition': `${preview ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(target.filename)}`,
+      'cross-origin-resource-policy': 'same-origin',
+      'referrer-policy': 'no-referrer',
+    })
     return new Response(stored.body, { headers })
   }
   if (request.method !== 'PUT') return failure('Method not allowed.', 405)

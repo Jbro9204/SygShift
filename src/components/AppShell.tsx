@@ -11,7 +11,7 @@ import {
   recordInternalLocation,
   type InternalNavigationEntry,
 } from '../app/internalNavigation'
-import { canAccessRoute, hasAnyEffectivePermission } from '../app/accessPolicy'
+import { canAccessRoute, canLaunchSygilantPlatform, hasAnyEffectivePermission } from '../app/accessPolicy'
 import { getActiveAnnouncementBanners, type AnnouncementBanner } from '../data/announcements'
 import { getTimekeepingOperationsWorkspace } from '../data/timeOperations'
 import {
@@ -31,13 +31,14 @@ import { applyTheme, getCurrentTheme, type SygShiftTheme } from '../lib/theme'
 import { SystemStatusIndicator } from './SystemStatusIndicator'
 import { SupportHelpButton } from './SupportHelpButton'
 import { SygSphereLauncher } from './SygSphereLauncher'
+import { SygilantLauncher } from './SygilantLauncher'
 import { OperationalTimeHeader } from './OperationalTimeHeader'
 import { HeaderNotificationButton } from './HeaderNotificationButton'
 import { LiveNotifications } from './LiveNotifications'
 import { clearPushSession } from '../data/pushNotifications'
 
-const INACTIVITY_WARNING_MS = 25 * 60 * 1000
-const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000
+const INACTIVITY_WARNING_MS = 55 * 60 * 1000
+const INACTIVITY_LOGOUT_MS = 60 * 60 * 1000
 const WORKSPACE_ALERT_ROTATE_MS = 9_000
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sygshift.sidebar.collapsed'
 const SIDEBAR_GROUP_STORAGE_KEY = 'sygshift.sidebar.open-group'
@@ -262,6 +263,7 @@ export function AppShell() {
   const canOpenSystemOperations = Boolean(
     sessionContext && hasAnyEffectivePermission(sessionContext, ['admin.maintenance.manage']),
   )
+  const canOpenSygilant = canLaunchSygilantPlatform(sessionContext)
   const routeMaintenanceFeature = maintenanceFeatureForPath(location.pathname)
   const unavailableRouteWindow = (maintenanceStatusQuery.data?.active ?? []).find((window) => {
     if (window.accessMode !== 'unavailable') return false
@@ -649,9 +651,12 @@ export function AppShell() {
           ))}
         </nav>
 
-        {sessionContext && !needsSecurityCheckpoint ? <SygSphereLauncher employeeId={sessionContext.employeeId} /> : null}
-        <SupportHelpButton />
-        <SystemStatusIndicator canOpenOperations={canOpenSystemOperations} status={systemServiceStatus} />
+        <div className="sidebar-utilities">
+          {sessionContext && !needsSecurityCheckpoint && canOpenSygilant ? <SygilantLauncher /> : null}
+          {sessionContext && !needsSecurityCheckpoint ? <SygSphereLauncher employeeId={sessionContext.employeeId} /> : null}
+          <SupportHelpButton />
+          <SystemStatusIndicator canOpenOperations={canOpenSystemOperations} status={systemServiceStatus} />
+        </div>
       </aside>
 
       <div className="workspace">

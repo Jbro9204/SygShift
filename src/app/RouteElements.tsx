@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactNode } from 'react'
 
 export const SygSpherePageRoute = lazy(() => import('../pages/SygSpherePage').then((module) => ({ default: module.SygSpherePage })))
 export const SharedIdentityCallbackPageRoute = lazy(() => import('../pages/SharedIdentityCallbackPage').then((module) => ({ default: module.SharedIdentityCallbackPage })))
+export const SygTasksPageRoute = lazy(() => import('../pages/SygTasksPage').then((module) => ({ default: module.SygTasksPage })))
 
 export const AccountSecurityPageRoute = lazy(() =>
   import('../pages/AccountSecurityPage').then((module) => ({ default: module.AccountSecurityPage })),

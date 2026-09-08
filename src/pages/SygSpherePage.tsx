@@ -1,15 +1,24 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Bell, BellOff, Bookmark, Check, ChevronDown, Download, Hash, Info, MessageCircle, Paperclip, Plus, Search, Send, Smile, Users, X } from 'lucide-react'
+import { ALargeSmall, ArrowLeft, Bell, BellOff, Bookmark, Check, ChevronDown, Download, Eye, Hash, Info, MessageCircle, Paperclip, Plus, Search, Send, Smile, Users, X } from 'lucide-react'
 import { getSessionContext } from '../data/auth'
-import { readSphereDraft, sphereConversation, sphereCreate, sphereDirectory, sphereDownload, sphereDraftKey, sphereFiles, sphereInbox, sphereMessage, sphereMessages, spherePath, sphereRequest, sphereSearch, sphereSend, sphereUpload, writeSphereDraft, type SphereConversation, type SphereFile, type SphereMessage, type SpherePerson } from '../data/sygsphere'
+import { readSphereDraft, sphereActiveMentions, sphereCanPreview, sphereConversation, sphereCreate, sphereDirectory, sphereDownload, sphereDraftKey, sphereFiles, sphereInbox, sphereMessage, sphereMessageParts, sphereMessages, spherePath, spherePhoto, spherePreferences, spherePreview, sphereRequest, sphereSearch, sphereSend, sphereUpload, writeSphereDraft, type SphereConversation, type SphereFile, type SphereMention, type SphereMessage, type SpherePerson, type SpherePreview, type SphereTextSize } from '../data/sygsphere'
 import { ModalDialog } from '../components/ModalDialog'
 import '../styles/sygsphere.css'
 
 const reactions = ['👍', '❤️', '✅', '🎉', '👀', '🙏']
 function ErrorNotice({ error }: { error: unknown }) { return error ? <p className="sphere-error" role="alert">{error instanceof Error ? error.message : 'This request could not be completed. Please try again.'}</p> : null }
-function Avatar({ name }: { name: string }) { return <span className="sphere-avatar" aria-hidden="true">{name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span> }
+function Avatar({ name, photoPath }: { name: string; photoPath?: string | null }) {
+  const photo = useQuery({ queryKey: ['sygsphere', 'avatar', photoPath], queryFn: () => spherePhoto(photoPath!), enabled: Boolean(photoPath), staleTime: 300000, retry: 1 })
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (!photo.data) { setUrl(null); return }
+    const next = URL.createObjectURL(photo.data); setUrl(next)
+    return () => URL.revokeObjectURL(next)
+  }, [photo.data])
+  return <span className="sphere-avatar" aria-hidden="true">{url ? <img src={url} alt="" /> : name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span>
+}
 function messageTime(value: string) {
   const date = new Date(value)
   const day = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Denver', month: '2-digit', day: '2-digit', year: 'numeric' }).format(date)
@@ -17,8 +26,10 @@ function messageTime(value: string) {
   const military = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Denver', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date)
   return `${day} · ${time}${Number(military.slice(0, 2)) >= 13 ? ` (${military})` : ''} MT`
 }
-function MessageBody({ text }: { text: string }) {
-  return <div className="sphere-message__body">{text.split(/(https?:\/\/[^\s<>]+)/g).map((part, index) => /^https?:\/\//.test(part) ? <a key={index} href={part} target="_blank" rel="noopener noreferrer">{part}</a> : part)}</div>
+function MessageBody({ text, mentions, employeeId }: { text: string; mentions: SphereMention[]; employeeId: string }) {
+  return <div className="sphere-message__body">{sphereMessageParts(text, mentions).map((part, index) => part.kind === 'link'
+    ? <a key={index} href={part.text} target="_blank" rel="noopener noreferrer">{part.text}</a>
+    : part.kind === 'mention' ? <mark key={index} className={part.mention?.id === employeeId ? 'sphere-mention sphere-mention--self' : 'sphere-mention'} title={part.mention?.name}>{part.text}</mark> : part.text)}</div>
 }
 
 export function SygSpherePage() {
@@ -39,12 +50,14 @@ export function SphereWorkspace({ employeeId }: { employeeId: string }) {
   const [search, setSearch] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const inbox = useQuery({ queryKey: ['sygsphere', employeeId, 'inbox'], queryFn: sphereInbox, refetchInterval: 30000, retry: 1 })
+  const textPreference = useQuery({ queryKey: ['sygsphere', employeeId, 'text-size'], queryFn: () => spherePreferences(), staleTime: 300000 })
   const conversationId = params.get('conversation')
   const threadId = params.get('thread')
   const focusId = params.get('message')
   const conversation = inbox.data?.conversations.find((item) => item.id === conversationId)
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] })
   const preferences = useMutation({ mutationFn: (soundEnabled: boolean) => sphereRequest('presence', { soundEnabled }), onSuccess: refresh })
+  const updateTextSize = useMutation({ mutationFn: (textSize: SphereTextSize) => spherePreferences(textSize), onSuccess: (value) => queryClient.setQueryData(['sygsphere', employeeId, 'text-size'], value) })
   const openConversation = (id: string) => { setView('chats'); setDetails(false); navigate(spherePath(id)) }
   useEffect(() => {
     if (conversationId) { try { localStorage.setItem(`sygsphere.last:${employeeId}`, conversationId) } catch { /* Optional preference. */ } }
@@ -53,11 +66,12 @@ export function SphereWorkspace({ employeeId }: { employeeId: string }) {
     }
   }, [conversationId, employeeId, inbox.data, navigate, view])
   if (inbox.isError) return <section className="sphere-workspace sphere-unavailable"><img src="/branding/sygsphere-emblem.png" alt="" /><h1>SygSphere is unavailable</h1><ErrorNotice error={inbox.error} /><button type="button" onClick={() => void inbox.refetch()}>Try again</button><p>Your other SygShift tools remain available.</p></section>
-  return <section className={`sphere-workspace ${conversation && view === 'chats' ? 'sphere-workspace--conversation' : ''}`} aria-label="SygSphere messaging">
+  return <section className={`sphere-workspace ${conversation && view === 'chats' ? 'sphere-workspace--conversation' : ''}`} data-text-size={textPreference.data?.textSize ?? 'comfortable'} aria-label="SygSphere messaging">
     <header className="sphere-topbar"><div><img src="/branding/sygsphere-emblem.png" alt="" /><h1>SygSphere<span>Your team, connected.</span></h1></div><div>
+      <label className="sphere-text-size"><ALargeSmall size={19} /><span className="sr-only">Message text size</span><select aria-label="Message text size" value={textPreference.data?.textSize ?? 'comfortable'} disabled={textPreference.isPending || updateTextSize.isPending} onChange={(event) => updateTextSize.mutate(event.target.value as SphereTextSize)}><option value="comfortable">Comfortable</option><option value="large">Large</option><option value="extra_large">Extra large</option></select></label>
       <button type="button" aria-label={inbox.data?.soundEnabled ? 'Mute SygSphere sounds' : 'Enable SygSphere sounds'} title="Messaging sounds only" disabled={preferences.isPending} onClick={() => preferences.mutate(!inbox.data?.soundEnabled)}>{inbox.data?.soundEnabled ? <Bell size={19} /> : <BellOff size={19} />}</button>
       <button className="sphere-primary" type="button" onClick={() => setNewOpen(true)}><Plus size={19} /> New message</button></div></header>
-    <ErrorNotice error={preferences.error} />
+    <ErrorNotice error={preferences.error || updateTextSize.error} />
     <div className="sphere-layout">
       <nav className="sphere-conversations" aria-label="SygSphere conversations">
         <div className="sphere-tabs"><button type="button" aria-pressed={view === 'chats'} onClick={() => { setView('chats'); navigate('/sygsphere') }}><MessageCircle size={16} /> Chats</button><button type="button" aria-pressed={view === 'saved'} onClick={() => setView('saved')}><Bookmark size={16} /> Saved</button><button type="button" aria-pressed={view === 'search'} onClick={() => setView('search')}><Search size={16} /> Search</button></div>
@@ -66,7 +80,7 @@ export function SphereWorkspace({ employeeId }: { employeeId: string }) {
           {(['Favorites', 'Channels', 'Messages'] as const).map((section) => {
             const items = (inbox.data?.conversations ?? []).filter((item) => (section === 'Favorites' ? item.favorite : section === 'Channels' ? !item.favorite && item.kind === 'channel' : !item.favorite && item.kind !== 'channel') && item.name.toLowerCase().includes(filter.toLowerCase()))
             return items.length ? <section key={section}><h2>{section}</h2>{items.map((item) => <button type="button" key={item.id} className={`sphere-conversation ${conversationId === item.id ? 'is-active' : ''}`} onClick={() => openConversation(item.id)} aria-current={conversationId === item.id ? 'page' : undefined}>
-              {item.kind === 'channel' ? <span className="sphere-avatar"><Hash size={20} /></span> : <Avatar name={item.name} />}<span><strong>{item.name}</strong><small>{item.archived ? 'Archived · ' : ''}{item.latest?.body || 'Start the conversation'}</small></span>{item.unread > 0 ? <b className="sphere-badge">{item.unread > 99 ? '99+' : item.unread}</b> : item.muted ? <BellOff size={14} /> : null}
+              {item.kind === 'channel' ? <span className="sphere-avatar"><Hash size={20} /></span> : <Avatar name={item.name} photoPath={item.avatar?.photoPath} />}<span><strong>{item.name}</strong><small>{item.archived ? 'Archived · ' : ''}{item.latest?.body || 'Start the conversation'}</small></span>{item.unread > 0 ? <b className="sphere-badge">{item.unread > 99 ? '99+' : item.unread}</b> : item.muted ? <BellOff size={14} /> : null}
             </button>)}</section> : null
           })}
           {!inbox.isPending && !inbox.data?.conversations.length ? <div className="sphere-empty-small"><p>A conversation starts with hello.</p><button type="button" onClick={() => setNewOpen(true)}>Find someone to message</button></div> : null}
@@ -99,7 +113,7 @@ function NewConversation({ employeeId, onClose, onCreated }: { employeeId: strin
       {kind !== 'direct' ? <label>{kind === 'channel' ? 'Channel' : 'Group'} name<input value={name} onChange={(event) => setName(event.target.value)} maxLength={100} required placeholder="For example, Dispatch coordination" /></label> : null}
       <label>Find people<input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name or username…" /></label>
       <div className="sphere-selected">{selected.map((person) => <button type="button" key={person.id} onClick={() => setSelected(selected.filter((item) => item.id !== person.id))}>{person.name}<X size={14} /></button>)}</div>
-      <div className="sphere-people-list">{directory.data?.filter((person) => person.id !== employeeId).map((person) => <label className="sphere-person" key={person.id}><input type="checkbox" checked={selected.some((item) => item.id === person.id)} onChange={(event) => setSelected(event.target.checked ? kind === 'direct' ? [person] : [...selected, person] : selected.filter((item) => item.id !== person.id))} /><Avatar name={person.name} /><span><strong>{person.name}</strong><small>@{person.username} · {person.role?.replaceAll('_', ' ')}</small></span></label>)}{directory.isPending ? <p role="status">Finding people…</p> : directory.data?.length === 0 ? <p>No account holders match. Try another name.</p> : null}</div>
+      <div className="sphere-people-list">{directory.data?.filter((person) => person.id !== employeeId).map((person) => <label className="sphere-person" key={person.id}><input type="checkbox" checked={selected.some((item) => item.id === person.id)} onChange={(event) => setSelected(event.target.checked ? kind === 'direct' ? [person] : [...selected, person] : selected.filter((item) => item.id !== person.id))} /><Avatar name={person.name} photoPath={person.photoPath} /><span><strong>{person.name}</strong><small>@{person.username} · {person.role?.replaceAll('_', ' ')}</small></span></label>)}{directory.isPending ? <p role="status">Finding people…</p> : directory.data?.length === 0 ? <p>No account holders match. Try another name.</p> : null}</div>
       <ErrorNotice error={directory.error || create.error} /><p className="sphere-hint">Only participants can access this conversation. New participants will be able to read its history.</p>
       <footer><button type="button" onClick={onClose} disabled={create.isPending}>Cancel</button><button className="sphere-primary" type="submit" disabled={create.isPending || !selected.length || (kind !== 'direct' && !name.trim())}>Create {kind === 'channel' ? 'channel' : 'conversation'}</button></footer>
     </form>
@@ -119,6 +133,7 @@ function ConversationMessages({ employeeId, conversation, parentId = null, focus
   const items = messages.data?.pages.slice().reverse().flat() ?? []
   const newestId = items.at(-1)?.id
   const displayed = [...(root.data ? [root.data] : []), ...items, ...(focus.data ? [focus.data] : [])]
+  const author = (message: SphereMessage) => context.data?.members.find((person) => person.id === message.authorId)
   const unreadIds = displayed.filter((item) => !item.read).map((item) => item.id).slice(0, 100).sort().join(',')
   useEffect(() => { const change = () => setVisible(document.visibilityState === 'visible'); document.addEventListener('visibilitychange', change); return () => document.removeEventListener('visibilitychange', change) }, [])
   useEffect(() => {
@@ -141,11 +156,11 @@ function ConversationMessages({ employeeId, conversation, parentId = null, focus
   return <>
     <div className="sphere-message-list" ref={listRef} onScroll={() => { const node = listRef.current; if (node) setAtBottom(node.scrollHeight - node.scrollTop - node.clientHeight < 100) }}>
       {messages.hasNextPage ? <button className="sphere-load" type="button" disabled={messages.isFetchingNextPage} onClick={() => void messages.fetchNextPage()}>{messages.isFetchingNextPage ? 'Loading…' : 'Load earlier messages'}</button> : null}
-      {root.data ? <div className="sphere-thread-root"><MessageCard employeeId={employeeId} message={root.data} onThread={() => undefined} hideReply /></div> : null}
+      {root.data ? <div className="sphere-thread-root"><MessageCard employeeId={employeeId} message={root.data} author={author(root.data)} onThread={() => undefined} hideReply /></div> : null}
       <ErrorNotice error={root.error || focus.error} />
-      {focus.data && !items.some((item) => item.id === focus.data.id) && focus.data.id !== root.data?.id ? <div className="sphere-focused"><p>Linked message</p><MessageCard employeeId={employeeId} message={focus.data} onThread={onThread} hideReply={Boolean(parentId)} /></div> : null}
+      {focus.data && !items.some((item) => item.id === focus.data.id) && focus.data.id !== root.data?.id ? <div className="sphere-focused"><p>Linked message</p><MessageCard employeeId={employeeId} message={focus.data} author={author(focus.data)} onThread={onThread} hideReply={Boolean(parentId)} /></div> : null}
       {messages.isPending ? <p role="status">Loading messages…</p> : !items.length ? <div className="sphere-empty-small"><MessageCircle size={28} /><p>{parentId ? 'Be the first to reply in this thread.' : 'You’re all set. Say hello to start things off.'}</p></div> : null}
-      {items.map((message) => <MessageCard key={message.id} employeeId={employeeId} message={message} onThread={onThread} hideReply={Boolean(parentId)} focused={message.id === focusId} />)}<div ref={tailRef} />
+      {items.map((message) => <MessageCard key={message.id} employeeId={employeeId} message={message} author={author(message)} onThread={onThread} hideReply={Boolean(parentId)} focused={message.id === focusId} />)}<div ref={tailRef} />
     </div>
     {!atBottom ? <button className="sphere-jump" type="button" onClick={() => { setAtBottom(true); tailRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }}><ChevronDown size={16} /> Latest messages</button> : null}
     <div className="sphere-typing" aria-live="polite">{typing?.length ? `${typing.join(', ')} ${typing.length === 1 ? 'is' : 'are'} typing…` : ''}</div>
@@ -153,7 +168,7 @@ function ConversationMessages({ employeeId, conversation, parentId = null, focus
   </>
 }
 
-function MessageCard({ employeeId, message, onThread, hideReply = false, focused = false }: { employeeId: string; message: SphereMessage; onThread: (message: SphereMessage) => void; hideReply?: boolean; focused?: boolean }) {
+function MessageCard({ employeeId, message, author, onThread, hideReply = false, focused = false }: { employeeId: string; message: SphereMessage; author?: SpherePerson; onThread: (message: SphereMessage) => void; hideReply?: boolean; focused?: boolean }) {
   const queryClient = useQueryClient()
   const [edit, setEdit] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -161,8 +176,8 @@ function MessageCard({ employeeId, message, onThread, hideReply = false, focused
   const [notice, setNotice] = useState('')
   const mutation = useMutation({ mutationFn: ({ action, ...input }: { action: string; [key: string]: unknown }) => sphereRequest(action, { conversationId: message.conversationId, messageId: message.id, ...input }), onSuccess: async () => { setEdit(false); setDeleting(false); await queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] }) } })
   return <article className={`sphere-message ${message.authorId === employeeId ? 'sphere-message--mine' : ''} ${focused ? 'sphere-focused' : ''}`} id={`sphere-message-${message.id}`}>
-    <Avatar name={message.authorName} /><div className="sphere-message__content"><header><strong>{message.authorName}</strong><time dateTime={message.createdAt}>{messageTime(message.createdAt)}</time>{message.editedAt && !message.deleted ? <small>Edited</small> : null}{message.pinned && !message.deleted ? <small>📌 Pinned</small> : null}</header>
-      {message.deleted ? <p className="sphere-hint">This message was deleted.</p> : <><MessageBody text={message.body} />
+    <Avatar name={message.authorName} photoPath={author?.photoPath} /><div className="sphere-message__content"><header><strong>{message.authorName}</strong><time dateTime={message.createdAt}>{messageTime(message.createdAt)}</time>{message.editedAt && !message.deleted ? <small>Edited</small> : null}{message.pinned && !message.deleted ? <small>📌 Pinned</small> : null}</header>
+      {message.deleted ? <p className="sphere-hint">This message was deleted.</p> : <><MessageBody text={message.body} mentions={message.mentions} employeeId={employeeId} />
         {message.body.startsWith('Shared file: ') ? <MessageFiles employeeId={employeeId} message={message} /> : null}
         <div className="sphere-reactions">{message.reactions.map((reaction) => <button type="button" key={reaction.emoji} aria-pressed={reaction.mine} aria-label={`${reaction.emoji} reaction, ${reaction.count}`} disabled={mutation.isPending} onClick={() => mutation.mutate({ action: 'react', emoji: reaction.emoji, enabled: !reaction.mine })}>{reaction.emoji} {reaction.count}</button>)}</div>
         <div className="sphere-message-actions">{!hideReply ? <button type="button" onClick={() => onThread(message)}><MessageCircle size={14} />{message.replyCount ? `${message.replyCount} ${message.replyCount === 1 ? 'reply' : 'replies'}` : 'Reply'}{message.unreadReplies > 0 ? <span className="sphere-unread-dot" aria-label="Unread replies" /> : null}</button> : null}
@@ -173,7 +188,7 @@ function MessageCard({ employeeId, message, onThread, hideReply = false, focused
         </div></>}
       <ErrorNotice error={mutation.error} />{notice ? <small role="status">{notice}</small> : null}
     </div>
-    {edit ? <ModalDialog title="Edit message" onClose={() => setEdit(false)} className="sphere-modal" busy={mutation.isPending}><form className="sphere-form" onSubmit={(event) => { event.preventDefault(); mutation.mutate({ action: 'edit', body }) }}><label>Message<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={12000} autoFocus /></label><p className="sphere-hint">An edited label will appear. Previous versions remain in the protected history.</p><ErrorNotice error={mutation.error} /><footer><button type="button" onClick={() => setEdit(false)}>Cancel</button><button type="submit" className="sphere-primary" disabled={!body.trim() || mutation.isPending}>Save changes</button></footer></form></ModalDialog> : null}
+    {edit ? <ModalDialog title="Edit message" onClose={() => setEdit(false)} className="sphere-modal" busy={mutation.isPending}><form className="sphere-form" onSubmit={(event) => { event.preventDefault(); mutation.mutate({ action: 'edit', body, mentionIds: sphereActiveMentions(body, message.mentions).map((mention) => mention.id) }) }}><label>Message<textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={12000} autoFocus /></label><p className="sphere-hint">An edited label will appear. Removing a selected @mention also removes its notification. Previous versions remain in the protected history.</p><ErrorNotice error={mutation.error} /><footer><button type="button" onClick={() => setEdit(false)}>Cancel</button><button type="submit" className="sphere-primary" disabled={!body.trim() || mutation.isPending}>Save changes</button></footer></form></ModalDialog> : null}
     {deleting ? <ModalDialog title="Delete this message?" onClose={() => setDeleting(false)} className="sphere-modal" busy={mutation.isPending}><div className="sphere-form"><p>The conversation will show a deletion marker. This does not erase the protected revision history.</p><ErrorNotice error={mutation.error} /><footer><button type="button" onClick={() => setDeleting(false)}>Keep message</button><button className="sphere-primary" type="button" disabled={mutation.isPending} onClick={() => mutation.mutate({ action: 'delete' })}>Delete message</button></footer></div></ModalDialog> : null}
   </article>
 }
@@ -185,17 +200,19 @@ function SphereComposer({ employeeId, conversationId, parentId, members }: { emp
   const [storageAvailable, setStorageAvailable] = useState(true)
   const [mention, setMention] = useState(false)
   const [file, setFile] = useState<{ file: File; id: string } | null>(null)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const fileInput = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const lastTyping = useRef(0)
   const send = useMutation({ mutationFn: () => sphereSend({ conversationId, parentId, ...draft }), onSuccess: async () => {
-    const empty = { body: '', clientId: crypto.randomUUID() }; setDraft(empty); writeSphereDraft(key, empty)
+    const empty = { body: '', clientId: crypto.randomUUID(), mentions: [] }; setDraft(empty); writeSphereDraft(key, empty)
     await queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] }); inputRef.current?.focus()
   } })
-  const upload = useMutation({ mutationFn: async () => { if (file) await sphereUpload(file.file, file.id, conversationId, parentId) }, onSuccess: async () => { setFile(null); await queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] }) } })
-  function change(body: string) {
+  const upload = useMutation({ mutationFn: async () => { if (file) await sphereUpload(file.file, file.id, conversationId, parentId, setUploadProgress) }, onSuccess: async () => { setFile(null); setUploadProgress(0); await queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] }) } })
+  function change(body: string, mentions = draft.mentions) {
     if (send.isPending) return
-    const next = { body: body.slice(0, 12000), clientId: send.isError ? crypto.randomUUID() : draft.clientId }
+    const limited = body.slice(0, 12000)
+    const next = { body: limited, clientId: send.isError ? crypto.randomUUID() : draft.clientId, mentions: sphereActiveMentions(limited, mentions) }
     setDraft(next); setStorageAvailable(writeSphereDraft(key, next)); if (send.isError) send.reset()
     if (Date.now() - lastTyping.current > 4000) { lastTyping.current = Date.now(); void sphereRequest('typing', { conversationId, typing: Boolean(body.trim()) }).catch(() => undefined) }
   }
@@ -203,9 +220,9 @@ function SphereComposer({ employeeId, conversationId, parentId, members }: { emp
   return <form className="sphere-composer" onSubmit={submit}>
     <textarea aria-label={parentId ? 'Write a thread reply' : 'Write a message'} ref={inputRef} value={draft.body} onChange={(event) => change(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit() } }} placeholder={parentId ? 'Add your reply…' : 'Write a message…'} maxLength={12000} disabled={send.isPending} />
     <div className="sphere-composer-tools"><div><button type="button" aria-label="Attach a file" onClick={() => fileInput.current?.click()}><Paperclip size={19} /></button><button type="button" aria-label="Mention a participant" aria-expanded={mention} onClick={() => setMention(!mention)}>@</button><button type="button" aria-label="Add a smile" onClick={() => { change(`${draft.body} 🙂`); inputRef.current?.focus() }}><Smile size={19} /></button><small>Enter to send · Shift + Enter for a new line</small></div><button type="submit" className="sphere-primary" disabled={!draft.body.trim() || send.isPending}><Send size={17} />{send.isPending ? 'Sending…' : send.isError ? 'Retry send' : 'Send'}</button></div>
-    <input ref={fileInput} type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.xlsx" onChange={(event) => { const chosen = event.target.files?.[0]; if (chosen) { setFile({ file: chosen, id: crypto.randomUUID() }); upload.reset() } event.target.value = '' }} />
-    {file ? <ModalDialog title="Share a file" description="Only participants in this conversation can download it." className="sphere-modal" busy={upload.isPending} busyLabel="Uploading and checking the file before sharing…" onClose={() => setFile(null)}><div className="sphere-form"><strong>{file.file.name}</strong><p>{(file.file.size / 1048576).toFixed(2)} MB · Maximum 25 MB</p><p className="sphere-hint">PDF, images, text, DOCX and XLSX are supported. Files are checked for unsafe content and malware before anyone can download them. Your message draft stays in place.</p><ErrorNotice error={upload.error} /><footer><button type="button" disabled={upload.isPending} onClick={() => setFile(null)}>Cancel</button><button type="button" className="sphere-primary" disabled={upload.isPending || file.file.size > 26214400 || file.file.size < 1} onClick={() => upload.mutate()}>{upload.isError ? 'Retry sharing' : 'Share file'}</button></footer></div></ModalDialog> : null}
-    {mention ? <div className="sphere-mention-list">{members.filter((person) => person.active).map((person) => <button key={person.id} type="button" onClick={() => { change(`${draft.body}${draft.body.endsWith(' ') || !draft.body ? '' : ' '}@${person.name} `); setMention(false); inputRef.current?.focus() }}>{person.name}</button>)}</div> : null}
+    <input ref={fileInput} type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.xlsx" onChange={(event) => { const chosen = event.target.files?.[0]; if (chosen) { setFile({ file: chosen, id: crypto.randomUUID() }); setUploadProgress(0); upload.reset() } event.target.value = '' }} />
+    {file ? <ModalDialog title="Share a file" description="Only participants in this conversation can download it." className="sphere-modal" busy={upload.isPending} busyLabel={uploadProgress > 90 ? 'Security-checking the file before sharing…' : `Uploading securely… ${uploadProgress}%`} onClose={() => setFile(null)}><div className="sphere-form"><strong>{file.file.name}</strong><p>{(file.file.size / 1048576).toFixed(2)} MB · Maximum 100 MB</p><p className="sphere-hint">PDF, images, text, DOCX and XLSX are supported through 25 MB. JPEG, PNG and WebP images can be as large as 100 MB. Every file is checked before anyone can download it; larger files remain download-only to protect mobile devices. Your message draft stays in place.</p>{upload.isPending ? <progress aria-label="File upload and security check progress" max="100" value={uploadProgress}>{uploadProgress}%</progress> : null}<ErrorNotice error={upload.error} /><footer><button type="button" disabled={upload.isPending} onClick={() => setFile(null)}>Cancel</button><button type="button" className="sphere-primary" disabled={upload.isPending || file.file.size > 104857600 || file.file.size < 1} onClick={() => upload.mutate()}>{upload.isError ? 'Retry sharing' : 'Share file'}</button></footer></div></ModalDialog> : null}
+    {mention ? <div className="sphere-mention-list" aria-label="Conversation participants">{members.filter((person) => person.id !== employeeId && person.active && person.username).map((person) => <button key={person.id} type="button" onClick={() => { const token = `@${person.username}`; change(`${draft.body}${draft.body.endsWith(' ') || !draft.body ? '' : ' '}${token} `, [...draft.mentions, { id: person.id, name: person.name, username: person.username! }]); setMention(false); inputRef.current?.focus() }}><Avatar name={person.name} photoPath={person.photoPath} /><span><strong>{person.name}</strong><small>@{person.username}</small></span></button>)}</div> : null}
     <ErrorNotice error={send.error} />{send.isError ? <p className="sphere-hint">Your draft is safe here. Retry uses the same send identifier to prevent duplicates.</p> : null}
     {!storageAvailable ? <p className="sphere-error">Device storage is unavailable. Keep this page open until you send your draft.</p> : null}
   </form>
@@ -234,7 +251,7 @@ function SphereDetails({ employeeId, conversation, onClose }: { employeeId: stri
     <ErrorNotice error={context.error || mutation.error || pins.error} />
     {tab === 'about' ? <div className="sphere-form"><h3>{conversation.name}</h3><p>{conversation.description || 'A shared space to keep the conversation moving.'}</p><label className="sphere-check"><input type="checkbox" checked={conversation.favorite} disabled={mutation.isPending} onChange={(event) => mutation.mutate({ action: 'settings', favorite: event.target.checked })} /> Keep in Favorites</label><label className="sphere-check"><input type="checkbox" checked={conversation.muted} disabled={mutation.isPending} onChange={(event) => mutation.mutate({ action: 'settings', muted: event.target.checked })} /> Mute conversation alerts</label><p className="sphere-hint">Muted conversations still show unread messages. Only participants can read this conversation, including its shared history.</p>
       {conversation.owner && conversation.kind !== 'direct' ? <><label>Name<input value={name} onChange={(event) => setName(event.target.value)} maxLength={100} /></label><label>Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} maxLength={1000} /></label><button type="button" disabled={!name.trim() || mutation.isPending} onClick={() => mutation.mutate({ action: 'rename', name, description })}>Save details</button><button type="button" disabled={mutation.isPending} onClick={() => mutation.mutate({ action: 'archive', archived: !conversation.archived })}>{conversation.archived ? 'Reopen conversation' : 'Archive (keep history)'}</button></> : null}
-    </div> : tab === 'members' ? <><h3><Users size={18} /> {context.data?.members.length ?? 0} participants</h3>{context.data?.members.map((person) => <div className="sphere-member" key={person.id}><Avatar name={person.name} /><div><strong>{person.name}</strong><small><span className={`sphere-presence sphere-presence--${person.presence}`} />{person.active ? person.presence : 'Account inactive'}{person.owner ? ' · Owner' : ''}</small>{conversation.kind !== 'direct' && (conversation.owner || person.id === employeeId) ? <div className="sphere-member-actions">{conversation.owner && !person.owner ? <button type="button" onClick={() => setConfirmPerson({ person, operation: 'owner' })}>Make owner</button> : null}<button type="button" onClick={() => setConfirmPerson({ person, operation: 'remove' })}>{person.id === employeeId ? 'Leave' : 'Remove'}</button></div> : null}</div></div>)}
+    </div> : tab === 'members' ? <><h3><Users size={18} /> {context.data?.members.length ?? 0} participants</h3>{context.data?.members.map((person) => <div className="sphere-member" key={person.id}><Avatar name={person.name} photoPath={person.photoPath} /><div><strong>{person.name}</strong><small><span className={`sphere-presence sphere-presence--${person.presence}`} />{person.active ? person.presence : 'Account inactive'}{person.owner ? ' · Owner' : ''}</small>{conversation.kind !== 'direct' && (conversation.owner || person.id === employeeId) ? <div className="sphere-member-actions">{conversation.owner && !person.owner ? <button type="button" onClick={() => setConfirmPerson({ person, operation: 'owner' })}>Make owner</button> : null}<button type="button" onClick={() => setConfirmPerson({ person, operation: 'remove' })}>{person.id === employeeId ? 'Leave' : 'Remove'}</button></div> : null}</div></div>)}
       {conversation.owner && conversation.kind !== 'direct' ? <><button type="button" onClick={() => setAdd(!add)}><Plus size={17} /> Add people</button>{add ? <div className="sphere-form"><label>Find account holder<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search people…" /></label><ErrorNotice error={directory.error} /><div className="sphere-people-list">{directory.data?.filter((person) => !context.data?.members.some((member) => member.id === person.id)).map((person) => <button type="button" key={person.id} onClick={() => setConfirmPerson({ person, operation: 'add' })}>{person.name}</button>)}</div></div> : null}</> : null}
     </> : tab === 'files' ? <SharedFiles employeeId={employeeId} conversationId={conversation.id} /> : <>{pins.data?.map((message) => <button className="sphere-result" key={message.id} type="button" onClick={() => navigate(spherePath(conversation.id, message.id, message.parentId))}><strong>{message.authorName}</strong><span>{message.body}</span><b>Open message →</b></button>)}{!pins.data?.length ? <p>No pinned messages yet. Use a message’s More menu to pin it.</p> : null}</>}
   </div>{confirmPerson ? <ModalDialog title={`${confirmPerson.operation === 'add' ? 'Add' : confirmPerson.operation === 'owner' ? 'Make owner:' : 'Remove'} ${confirmPerson.person.name}?`} className="sphere-modal" onClose={() => setConfirmPerson(null)} busy={mutation.isPending}><div className="sphere-form"><p>{confirmPerson.operation === 'add' ? 'This person will be able to read all conversation history and shared files. Only add them if that access is appropriate.' : confirmPerson.operation === 'owner' ? 'Owners can add and remove participants, change details and archive this conversation.' : 'Their access to this conversation and its files will end. Their previous messages will remain.'}</p><ErrorNotice error={mutation.error} /><footer><button type="button" onClick={() => setConfirmPerson(null)}>Cancel</button><button type="button" className="sphere-primary" disabled={mutation.isPending} onClick={() => mutation.mutate({ action: 'members', employeeId: confirmPerson.person.id, operation: confirmPerson.operation })}>Confirm</button></footer></div></ModalDialog> : null}</aside>
@@ -242,7 +259,16 @@ function SphereDetails({ employeeId, conversation, onClose }: { employeeId: stri
 
 function FileButton({ file }: { file: SphereFile }) {
   const download = useMutation({ mutationFn: () => sphereDownload(file) })
-  return <div><button className="sphere-file" type="button" disabled={download.isPending} onClick={() => download.mutate()}><Download size={19} /><span><strong>{file.filename}</strong><small>{(file.sizeBytes / 1048576).toFixed(2)} MB · {download.isPending ? 'Downloading…' : 'Download file'}</small></span></button><ErrorNotice error={download.error} /></div>
+  const preview = useMutation<SpherePreview, Error>({ mutationFn: () => spherePreview(file) })
+  useEffect(() => () => { if (preview.data && preview.data.kind !== 'text') URL.revokeObjectURL(preview.data.url) }, [preview.data])
+  return <div className="sphere-file-row"><div className="sphere-file"><Paperclip size={19} /><span><strong>{file.filename}</strong><small>{(file.sizeBytes / 1048576).toFixed(2)} MB</small></span><div>
+    {sphereCanPreview(file) ? <button type="button" disabled={preview.isPending} onClick={() => preview.mutate()}><Eye size={17} />{preview.isPending ? 'Opening…' : 'Preview'}</button> : null}
+    <button type="button" disabled={download.isPending} onClick={() => download.mutate()}><Download size={17} />{download.isPending ? 'Downloading…' : 'Download'}</button>
+  </div></div><ErrorNotice error={download.error || preview.error} />
+  {preview.data ? <ModalDialog title={file.filename} description="Protected SygSphere preview" className="sphere-modal sphere-preview-modal" onClose={() => preview.reset()}><div className="sphere-preview">
+    {preview.data.kind === 'text' ? <pre>{preview.data.text}</pre> : preview.data.kind === 'image' ? <img src={preview.data.url} alt={`Preview of ${file.filename}`} /> : <iframe src={preview.data.url} title={`Preview of ${file.filename}`} sandbox="" />}
+    <footer><button type="button" onClick={() => preview.reset()}>Close</button><button type="button" onClick={() => download.mutate()} disabled={download.isPending}><Download size={17} />Download</button></footer>
+  </div></ModalDialog> : null}</div>
 }
 function MessageFiles({ employeeId, message }: { employeeId: string; message: SphereMessage }) {
   const files = useQuery({ queryKey: ['sygsphere', employeeId, 'message-files', message.id], queryFn: () => sphereFiles(message.conversationId, undefined, message.id) })

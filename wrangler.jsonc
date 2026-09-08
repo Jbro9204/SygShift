@@ -64,7 +64,7 @@
         "dead_letter_queue": "sygshift-document-scans-dlq",
         "max_concurrency": 1,
         "retry_delay": 30,
-        "visibility_timeout_ms": 180000
+        "visibility_timeout_ms": 480000
       }
     ]
   },
@@ -84,6 +84,7 @@
     "SYGSHIFT_SHARED_IDENTITY_ISSUER": "https://sygilant.us",
     "SYGSHIFT_SHARED_IDENTITY_INTROSPECTION_URL": "https://sygilant.us/api/apps/sygshift/introspect",
     "SYGSHIFT_DOCUMENT_PIPELINE_ENABLED": "true",
+    "SYGSHIFT_SYGSPHERE_RESUMABLE_UPLOADS_ENABLED": "true",
     "SYGSHIFT_HR_AUTOMATION_ENABLED": "false",
     "SYGSHIFT_HR_RECRUITING_ENABLED": "true",
     "SYGSHIFT_HR_ONBOARDING_ENABLED": "true",

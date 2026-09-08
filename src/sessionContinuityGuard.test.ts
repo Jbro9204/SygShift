@@ -7,9 +7,9 @@ import { describe, expect, it } from 'vitest'
 const appShell = readFileSync(join(process.cwd(), 'src', 'components', 'AppShell.tsx'), 'utf8')
 
 describe('workspace session continuity guardrails', () => {
-  it('warns at 25 minutes and signs out at 30 minutes of inactivity', () => {
-    expect(appShell).toContain('const INACTIVITY_WARNING_MS = 25 * 60 * 1000')
-    expect(appShell).toContain('const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000')
+  it('warns at 55 minutes and signs out at 60 minutes of inactivity', () => {
+    expect(appShell).toContain('const INACTIVITY_WARNING_MS = 55 * 60 * 1000')
+    expect(appShell).toContain('const INACTIVITY_LOGOUT_MS = 60 * 60 * 1000')
   })
 
   it('refreshes background-tab authentication without unmounting the active workspace', () => {

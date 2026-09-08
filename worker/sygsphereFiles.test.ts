@@ -37,6 +37,20 @@ describe('SygSphere protected files', () => {
     const response = await handleSphereFiles(new Request(`https://app.sygilant.us/api/v1/sygsphere/files/${id}`), deps)
     expect(response.headers.get('cache-control')).toContain('no-store'); expect(response.headers.get('content-disposition')).toContain('attachment'); expect(response.headers.get('content-security-policy')).toContain('sandbox'); expect(await response.text()).toBe('hello')
   })
+  it('streams an approved preview inline with restrictive browser headers', async () => {
+    const deps = dependencies(); deps.authorize.mockResolvedValue({ filename: 'note.txt', mimeType: 'text/plain', sizeBytes: 5, objectKey: `${cid}/${id}` })
+    const response = await handleSphereFiles(new Request(`https://app.sygilant.us/api/v1/sygsphere/files/${id}?mode=preview`), deps)
+    expect(response.status).toBe(200); expect(response.headers.get('content-disposition')).toContain('inline')
+    expect(response.headers.get('content-type')).toContain('charset=utf-8'); expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(response.headers.get('cross-origin-resource-policy')).toBe('same-origin'); expect(await response.text()).toBe('hello')
+  })
+  it('does not fetch an unsupported or oversized text preview', async () => {
+    const deps = dependencies(); deps.authorize.mockResolvedValue({ filename: 'report.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', sizeBytes: 5, objectKey: `${cid}/${id}` })
+    expect((await handleSphereFiles(new Request(`https://app.sygilant.us/api/v1/sygsphere/files/${id}?mode=preview`), deps)).status).toBe(415)
+    expect(deps.fetch).not.toHaveBeenCalled()
+    deps.authorize.mockResolvedValue({ filename: 'large.txt', mimeType: 'text/plain', sizeBytes: 1048577, objectKey: `${cid}/${id}` })
+    expect((await handleSphereFiles(new Request(`https://app.sygilant.us/api/v1/sygsphere/files/${id}?mode=preview`), deps)).status).toBe(415)
+  })
   it('rejects empty and oversized uploads', async () => {
     await expect(boundedSphereUpload(new Request('https://example.test', { method: 'PUT', body: '' }))).rejects.toThrow('Empty')
     await expect(boundedSphereUpload(new Request('https://example.test', { method: 'PUT', body: 'x', headers: { 'content-length': '26214401' } }))).rejects.toThrow('25 MB')

@@ -43,6 +43,7 @@ type Environment = Partial<Env> & {
   SYGSHIFT_SECURITY_KEYS_ENABLED?: string
   SYGSHIFT_SECURITY_KEY_PILOT_USERNAMES?: string
   SYGSHIFT_DOCUMENT_PIPELINE_ENABLED?: string
+  SYGSHIFT_SYGSPHERE_RESUMABLE_UPLOADS_ENABLED?: string
   SYGSHIFT_DOCUMENT_SCANNER_SECRET?: string
   SYGSHIFT_HR_AUTOMATION_ENABLED?: string
   SYGSHIFT_HR_RECRUITING_ENABLED?: string
@@ -71,6 +72,7 @@ type Environment = Partial<Env> & {
 }
 
 interface DocumentScanQueueMessage {
+  kind?: 'hr' | 'sygsphere'
   operationId: string
   requestId: string
 }
@@ -87,6 +89,24 @@ interface DocumentScanOperation {
   state: string
   terminal?: boolean
   versionId?: string
+}
+
+interface SygSphereResumableUploadOperation {
+  bucket?: string
+  conversationId?: string
+  deferred?: boolean
+  expiresAt?: string
+  filename?: string
+  lastError?: string | null
+  leaseId?: string
+  messageId?: string | null
+  mimeType?: string
+  objectKey?: string
+  parentId?: string | null
+  sizeBytes?: number
+  state?: 'prepared' | 'uploading' | 'uploaded' | 'scanning' | 'clean' | 'rejected' | 'error' | 'expired'
+  terminal?: boolean
+  uploadId?: string
 }
 
 interface DocumentMalwareScanResult {
@@ -1673,6 +1693,16 @@ async function enqueueDocumentScan(
   await queue.send({ operationId, requestId }, { contentType: 'json' })
 }
 
+async function enqueueSygSphereScan(
+  environment: Environment,
+  operationId: string,
+  requestId: string,
+): Promise<void> {
+  if (!validUuid(operationId)) throw new Error('The SygSphere scan operation identifier is invalid.')
+  const { queue } = requireDocumentScannerBindings(environment)
+  await queue.send({ kind: 'sygsphere', operationId, requestId }, { contentType: 'json' })
+}
+
 async function recordDocumentScanResult(
   config: { serviceRoleKey: string, url: string },
   operationId: string,
@@ -1740,6 +1770,108 @@ async function processDocumentScanMessage(
   await recordDocumentScanResult(config, operation.operationId, result, observedChecksum)
   if (result.state === 'rejected') {
     await deletePrivateStorageObject(config, operation.bucket, operation.objectKey)
+  }
+}
+
+type WorkerDigestStream = WritableStream<Uint8Array> & {
+  readonly bytesWritten: number | bigint
+  readonly digest: Promise<ArrayBuffer>
+}
+
+class SygSphereScanFailure extends Error {
+  readonly leaseId: string
+  readonly objectKey: string
+
+  constructor(message: string, leaseId: string, objectKey: string) {
+    super(message)
+    this.name = 'SygSphereScanFailure'
+    this.leaseId = leaseId
+    this.objectKey = objectKey
+  }
+}
+
+async function processSygSphereScanMessage(
+  environment: Environment,
+  message: DocumentScanQueueMessage,
+): Promise<'complete' | 'deferred'> {
+  if (!validUuid(message.operationId)) throw new Error('The queued SygSphere scan operation is invalid.')
+  const config = configuredSupabase(environment)
+  if (!config) throw new Error('The secure data connection is unavailable.')
+  const operation = await callRpc<SygSphereResumableUploadOperation>(
+    config,
+    'service_claim_sygsphere_resumable_scan',
+    { target_upload_id: message.operationId },
+    config.serviceRoleKey,
+  )
+  if (operation.terminal) {
+    if (operation.objectKey && ['rejected', 'error', 'expired'].includes(operation.state ?? '')) {
+      await deletePrivateStorageObject(config, sygsphereResumableBucket, operation.objectKey).catch(() => undefined)
+    }
+    return 'complete'
+  }
+  if (operation.deferred) return 'deferred'
+  if (
+    !operation.uploadId
+    || !operation.objectKey
+    || !operation.leaseId
+    || operation.bucket !== sygsphereResumableBucket
+    || !Number.isSafeInteger(operation.sizeBytes)
+  ) {
+    throw new Error('The SygSphere scan operation is missing protected storage evidence.')
+  }
+
+  try {
+    const stored = await fetchPrivateStorageObject(config, sygsphereResumableBucket, operation.objectKey)
+    if (!stored.ok || !stored.body) throw new Error(`The quarantined SygSphere file could not be loaded (${stored.status}).`)
+    const contentLength = Number(stored.headers.get('content-length'))
+    type DigestStreamCrypto = Crypto & { DigestStream?: new (algorithm: string) => WorkerDigestStream }
+    const DigestStream = (crypto as DigestStreamCrypto).DigestStream
+    if (!DigestStream) throw new Error('The streaming file-integrity service is unavailable.')
+    const digestStream = new DigestStream('SHA-256')
+    const digestWriter = digestStream.getWriter()
+    const integrityStream = new TransformStream<Uint8Array, Uint8Array>({
+      async transform(chunk, controller) {
+        await digestWriter.write(chunk)
+        controller.enqueue(chunk)
+      },
+      async flush() {
+        await digestWriter.close()
+      },
+    })
+    const { scanner } = requireDocumentScannerBindings(environment)
+    const scan = await scanner.getByName('primary').scanDocument(stored.body.pipeThrough(integrityStream))
+    const checksum = [...new Uint8Array(await digestStream.digest)]
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('')
+    const observedBytes = Number(digestStream.bytesWritten)
+    const integrityFailed = contentLength !== operation.sizeBytes || observedBytes !== operation.sizeBytes
+    const state = integrityFailed ? 'rejected' : scan.state
+    const scannerEvidence = integrityFailed
+      ? 'integrity-boundary sha256-or-size-mismatch'
+      : `${scan.scannerName} ${scan.scannerVersion}`
+    await callRpc(
+      config,
+      'service_complete_sygsphere_resumable_scan',
+      {
+        target_checksum: checksum,
+        target_error: integrityFailed ? 'The stored file size changed after upload authorization.' : null,
+        target_lease_id: operation.leaseId,
+        target_scanner: scannerEvidence,
+        target_state: state,
+        target_upload_id: operation.uploadId,
+      },
+      config.serviceRoleKey,
+    )
+    if (state !== 'clean') {
+      await deletePrivateStorageObject(config, sygsphereResumableBucket, operation.objectKey)
+    }
+    return 'complete'
+  } catch (error) {
+    throw new SygSphereScanFailure(
+      error instanceof Error ? error.message : 'The SygSphere file scan failed.',
+      operation.leaseId,
+      operation.objectKey,
+    )
   }
 }
 
@@ -2295,6 +2427,214 @@ async function createPrivateSignedUpload(
   const token = response.token ?? (response.url ? new URL(response.url, config.url).searchParams.get('token') ?? '' : '')
   if (!token) throw new Error('Storage did not issue a signed upload token.')
   return { token }
+}
+
+const maxSygSphereInlineBytes = 25 * 1024 * 1024
+const maxSygSphereResumableBytes = 100 * 1024 * 1024
+const sygsphereResumableBucket = 'sygsphere-files'
+
+function sygsphereResumableUploadsEnabled(environment: Environment): boolean {
+  return environment.SYGSHIFT_SYGSPHERE_RESUMABLE_UPLOADS_ENABLED?.trim().toLowerCase() === 'true'
+}
+
+export function validateSygSphereResumableFile(
+  prefix: Uint8Array,
+  originalFilename: string,
+  declaredMimeType: string,
+  sizeBytes: number,
+): { detectedMimeType: string, sanitizedFilename: string } {
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= maxSygSphereInlineBytes || sizeBytes > maxSygSphereResumableBytes) {
+    throw new ApiError('invalid_sygsphere_file_size', 413, 'Larger SygSphere files must be over 25 MB and no larger than 100 MB.')
+  }
+  const sanitizedFilename = sanitizeHrDocumentFilename(originalFilename)
+  const extension = fileExtension(sanitizedFilename)
+  const declared = normalizedMimeType(declaredMimeType)
+  const expectedByExtension: Record<string, string> = {
+    jpeg: 'image/jpeg',
+    jpg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+  }
+  const expected = expectedByExtension[extension]
+  if (!expected || declared !== expected) {
+    throw new ApiError('sygsphere_file_type_mismatch', 400, 'Larger uploads support matching JPEG, PNG, and WebP image files.')
+  }
+
+  let detectedMimeType = ''
+  if (hasSignature(prefix, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
+    detectedMimeType = 'image/png'
+  } else if (hasSignature(prefix, [0xff, 0xd8, 0xff])) {
+    detectedMimeType = 'image/jpeg'
+  } else if (hasSignature(prefix, [0x52, 0x49, 0x46, 0x46]) && hasSignature(prefix, [0x57, 0x45, 0x42, 0x50], 8)) {
+    detectedMimeType = 'image/webp'
+  }
+  if (!detectedMimeType || detectedMimeType !== expected) {
+    throw new ApiError('sygsphere_file_type_mismatch', 400, 'The file name, declared type, and verified content do not match.')
+  }
+  return { detectedMimeType, sanitizedFilename }
+}
+
+async function readPrivateStoragePrefixWithin(
+  config: { serviceRoleKey: string, url: string },
+  bucket: string,
+  objectKey: string,
+  maximumBytes = 5 * 1024 * 1024,
+): Promise<Uint8Array> {
+  const response = await fetch(privateStorageObjectUrl(config, bucket, objectKey), {
+    headers: {
+      apikey: config.serviceRoleKey,
+      authorization: `Bearer ${config.serviceRoleKey}`,
+      range: `bytes=0-${maximumBytes - 1}`,
+    },
+  })
+  if (!response.ok || !response.body) throw new Error('The stored SygSphere file prefix could not be read.')
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let length = 0
+  try {
+    while (length < maximumBytes) {
+      const part = await reader.read()
+      if (part.done) break
+      const remaining = maximumBytes - length
+      const chunk = part.value.byteLength > remaining ? part.value.slice(0, remaining) : part.value
+      chunks.push(chunk)
+      length += chunk.byteLength
+      if (part.value.byteLength > remaining) break
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+    reader.releaseLock()
+  }
+  const prefix = new Uint8Array(length)
+  let offset = 0
+  for (const chunk of chunks) { prefix.set(chunk, offset); offset += chunk.byteLength }
+  return prefix
+}
+
+async function rejectSygSphereResumableUpload(
+  config: { serviceRoleKey: string, url: string },
+  actorId: string,
+  uploadId: string,
+  detail: string,
+  objectKey?: string,
+): Promise<void> {
+  await callRpc(
+    config,
+    'service_reject_sygsphere_resumable_upload',
+    { target_actor_id: actorId, target_error: detail, target_upload_id: uploadId },
+    config.serviceRoleKey,
+  )
+  if (objectKey) await deletePrivateStorageObject(config, sygsphereResumableBucket, objectKey).catch(() => undefined)
+}
+
+async function handleSygSphereResumableUpload(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  if (!sygsphereResumableUploadsEnabled(environment)) {
+    throw new ApiError('sygsphere_resumable_uploads_disabled', 503, 'Larger SygSphere uploads are temporarily unavailable. Files through 25 MB are unaffected.')
+  }
+  const url = new URL(request.url)
+  const statusMatch = url.pathname.match(/^\/api\/v1\/sygsphere\/uploads\/([0-9a-f-]{36})(?:\/complete)?$/i)
+  const completing = url.pathname.endsWith('/complete')
+  const session = await requireAuthenticatedSession(request, environment)
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+
+  if (url.pathname === '/api/v1/sygsphere/uploads') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireDocumentScannerBindings(environment)
+    const body = await readJsonBodyWithin(request, 16 * 1024)
+    const conversationId = requiredText(body.conversationId, 'Conversation', 36).toLowerCase()
+    const fileId = requiredText(body.fileId, 'File', 36).toLowerCase()
+    const clientId = requiredText(body.clientId, 'Upload request', 36).toLowerCase()
+    const parentId = optionalText(body.parentId, 'Thread', 36)?.toLowerCase() ?? null
+    if (![conversationId, fileId, clientId, ...(parentId ? [parentId] : [])].every(validUuid)) {
+      throw new ApiError('invalid_sygsphere_upload', 422, 'The conversation, file, thread, or upload request identifier is invalid.')
+    }
+    const sizeBytes = Number(body.sizeBytes)
+    const filename = sanitizeHrDocumentFilename(requiredText(body.filename, 'File name', 255))
+    const mimeType = normalizedMimeType(requiredText(body.mimeType, 'File type', 160))
+    // This first pass binds the safe extension/type/size before any signed storage capability is issued.
+    const expected: Record<string, string> = { jpeg: 'image/jpeg', jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }
+    if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= maxSygSphereInlineBytes || sizeBytes > maxSygSphereResumableBytes) {
+      throw new ApiError('invalid_sygsphere_file_size', 413, 'Larger SygSphere files must be over 25 MB and no larger than 100 MB.')
+    }
+    if (expected[fileExtension(filename)] !== mimeType) {
+      throw new ApiError('sygsphere_file_type_mismatch', 400, 'Larger uploads support matching JPEG, PNG, and WebP image files.')
+    }
+    const operation = await callRpc<SygSphereResumableUploadOperation>(
+      serviceConfig,
+      'service_begin_sygsphere_resumable_upload',
+      { input: { clientId, conversationId, fileId, filename, mimeType, parentId, sizeBytes }, target_actor_id: session.context.employee_id },
+      session.config.serviceRoleKey,
+    )
+    if (!operation.uploadId || !operation.objectKey || operation.objectKey !== `${conversationId}/${fileId}`) {
+      throw new Error('The larger-file upload target is invalid.')
+    }
+    if (operation.state !== 'prepared') {
+      return json({ messageId: operation.messageId ?? null, requestId, state: operation.state, uploadId: operation.uploadId })
+    }
+    const signed = await createPrivateSignedUpload(serviceConfig, sygsphereResumableBucket, operation.objectKey)
+    return json({
+      bucket: sygsphereResumableBucket,
+      expiresAt: operation.expiresAt,
+      objectKey: operation.objectKey,
+      requestId,
+      resumableEndpoint: patrolStorageResumableEndpoint(session.config.url),
+      signedUploadToken: signed.token,
+      uploadId: operation.uploadId,
+    }, 201)
+  }
+
+  if (!statusMatch || !validUuid(statusMatch[1] ?? '')) return errorJson('not_found', requestId, 404)
+  const uploadId = statusMatch[1]!
+  if ((!completing && request.method !== 'GET') || (completing && request.method !== 'POST')) {
+    return errorJson('method_not_allowed', requestId, 405)
+  }
+  const operation = await callRpc<SygSphereResumableUploadOperation>(
+    serviceConfig,
+    'service_get_sygsphere_resumable_upload',
+    { target_actor_id: session.context.employee_id, target_upload_id: uploadId },
+    session.config.serviceRoleKey,
+  )
+  if (!completing) return json({ ...operation, requestId })
+  if (!operation.objectKey || operation.bucket !== sygsphereResumableBucket || operation.objectKey.includes('..')) {
+    throw new ApiError('invalid_sygsphere_storage_target', 422, 'The larger-file storage target is invalid.')
+  }
+  if (operation.state === 'clean') return json({ ...operation, requestId })
+  if (['rejected', 'error', 'expired'].includes(operation.state ?? '')) {
+    throw new ApiError('sygsphere_file_rejected', 422, operation.lastError || 'The larger file could not be safely shared.')
+  }
+  if (operation.state === 'prepared') {
+    const stored = await fetch(privateStorageObjectUrl(serviceConfig, sygsphereResumableBucket, operation.objectKey), {
+      headers: { apikey: serviceConfig.serviceRoleKey, authorization: `Bearer ${serviceConfig.serviceRoleKey}` },
+      method: 'HEAD',
+    })
+    if (!stored.ok) throw new ApiError('sygsphere_file_not_stored', 409, 'The upload has not finished. Wait for it to complete and try again.')
+    const sizeBytes = Number(stored.headers.get('content-length'))
+    const mimeType = normalizedMimeType(stored.headers.get('content-type') ?? '')
+    try {
+      if (sizeBytes !== operation.sizeBytes || mimeType !== operation.mimeType || !operation.filename) {
+        throw new ApiError('sygsphere_file_integrity_failed', 422, 'The stored file does not match the authorized upload.')
+      }
+      const prefix = await readPrivateStoragePrefixWithin(serviceConfig, sygsphereResumableBucket, operation.objectKey)
+      validateSygSphereResumableFile(prefix, operation.filename, mimeType, sizeBytes)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'The stored file did not pass validation.'
+      await rejectSygSphereResumableUpload(serviceConfig, session.context.employee_id, uploadId, detail, operation.objectKey)
+      if (error instanceof ApiError) throw error
+      throw new ApiError('sygsphere_file_integrity_failed', 422, detail)
+    }
+    await callRpc(
+      serviceConfig,
+      'service_mark_sygsphere_resumable_uploaded',
+      { target_actor_id: session.context.employee_id, target_mime_type: mimeType, target_size_bytes: sizeBytes, target_upload_id: uploadId },
+      serviceConfig.serviceRoleKey,
+    )
+  }
+  if (operation.state !== 'scanning') await enqueueSygSphereScan(environment, uploadId, requestId)
+  return json({ requestId, state: operation.state === 'scanning' ? 'scanning' : 'uploaded', uploadId }, 202)
 }
 
 export function patrolEvidenceSignatureMatches(bytes: Uint8Array, mimeType: string): boolean {
@@ -3483,7 +3823,15 @@ async function handleDocumentStudioWorkspace(request: Request, environment: Envi
     { target_actor_id: session.context.employee_id, target_offset: offset, target_page_size: boundedStudioPageSize(url.searchParams.get('pageSize')), target_search: search || null, target_status: status || null },
     session.config.serviceRoleKey,
   )
-  return json({ ...payload, requestId })
+  const policies = payload.permissions?.canRequestSignatures === true
+    ? await callRpc<unknown[]>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_get_signature_policy_options',
+      { target_actor_id: session.context.employee_id },
+      session.config.serviceRoleKey,
+    )
+    : payload.policies
+  return json({ ...payload, policies, requestId })
 }
 
 async function handleMySignatureWorkspace(request: Request, environment: Environment, requestId: string): Promise<Response> {
@@ -6422,7 +6770,8 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
             config.serviceRoleKey,
           )
         }
-        if (respectEmployeePreferences && recipients.length > 0) {
+        const isRequiredDocumentDelivery = job.messageType === 'document_signature_required'
+        if (respectEmployeePreferences && !isRequiredDocumentDelivery && recipients.length > 0) {
           recipients = await callRpc<string[]>(
             { serviceRoleKey: config.serviceRoleKey, url: config.url },
             'service_filter_notification_recipients',
@@ -6609,6 +6958,40 @@ async function handleDocumentScanQueue(
 ): Promise<void> {
   const config = configuredSupabase(environment)
   for (const message of batch.messages) {
+    if (message.body?.kind === 'sygsphere') {
+      try {
+        const outcome = await processSygSphereScanMessage(environment, message.body)
+        if (outcome === 'deferred') {
+          message.retry({ delaySeconds: Math.min(300, 15 * Math.max(1, message.attempts)) })
+        } else {
+          message.ack()
+        }
+      } catch (error) {
+        let terminal = false
+        let objectKey: string | undefined
+        if (config && error instanceof SygSphereScanFailure && validUuid(message.body?.operationId ?? '')) {
+          const deferred = await callRpc<SygSphereResumableUploadOperation>(
+            config,
+            'service_defer_sygsphere_resumable_scan',
+            {
+              target_error: error.message.slice(0, 1_000),
+              target_lease_id: error.leaseId,
+              target_upload_id: message.body.operationId,
+            },
+            config.serviceRoleKey,
+          ).catch(() => null)
+          terminal = deferred?.terminal === true
+          objectKey = deferred?.objectKey ?? error.objectKey
+        }
+        if (terminal) {
+          if (config && objectKey) await deletePrivateStorageObject(config, sygsphereResumableBucket, objectKey).catch(() => undefined)
+          message.ack()
+        } else {
+          message.retry({ delaySeconds: Math.min(300, 15 * Math.max(1, message.attempts)) })
+        }
+      }
+      continue
+    }
     try {
       await processDocumentScanMessage(environment, message.body)
       message.ack()
@@ -6629,6 +7012,42 @@ async function handleDocumentScanQueue(
       message.retry({ delaySeconds: Math.min(300, 15 * Math.max(1, message.attempts)) })
     }
   }
+}
+
+async function purgeExpiredSygSphereUploads(environment: Environment): Promise<{ deleted: number, failed: number }> {
+  if (!sygsphereResumableUploadsEnabled(environment)) return { deleted: 0, failed: 0 }
+  const config = configuredSupabase(environment)
+  if (!config) return { deleted: 0, failed: 0 }
+  const candidates = await callRpc<unknown>(
+    config,
+    'service_list_sygsphere_resumable_purge',
+    { target_limit: 25 },
+    config.serviceRoleKey,
+  )
+  if (!Array.isArray(candidates)) throw new Error('The SygSphere quarantine cleanup response is invalid.')
+  const deleted: string[] = []
+  let failed = 0
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') { failed += 1; continue }
+    const uploadId = String((candidate as Record<string, unknown>).uploadId ?? '')
+    const objectKey = String((candidate as Record<string, unknown>).objectKey ?? '')
+    if (!validUuid(uploadId) || !objectKey || objectKey.includes('..')) { failed += 1; continue }
+    try {
+      await deletePrivateStorageObject(config, sygsphereResumableBucket, objectKey)
+      deleted.push(uploadId)
+    } catch {
+      failed += 1
+    }
+  }
+  if (deleted.length > 0) {
+    await callRpc(
+      config,
+      'service_mark_sygsphere_resumable_purged',
+      { target_upload_ids: deleted },
+      config.serviceRoleKey,
+    )
+  }
+  return { deleted: deleted.length, failed }
 }
 
 export function secureResponse(request: Request, response: Response, requestId: string): Response {
@@ -6989,6 +7408,19 @@ export default {
             : errorJson('training_document_request_failed', requestId, 500, 'The assigned training material could not be opened.')
         }
       }
+    } else if (url.pathname === '/api/v1/sygsphere/uploads' || /^\/api\/v1\/sygsphere\/uploads\/[0-9a-f-]{36}(?:\/complete)?$/i.test(url.pathname)) {
+      try {
+        response = await handleSygSphereResumableUpload(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('sygsphere_upload_unavailable', requestId, 503, 'The larger-file upload could not be completed safely. Retry without leaving SygShift.')
+        }
+      }
     } else if (url.pathname.startsWith('/api/v1/sygsphere/files/')) {
       try {
         const session = await requireAuthenticatedSession(request, environment)
@@ -7044,6 +7476,12 @@ export default {
   ): Promise<void> {
     // Independent from timekeeping/email: push failures cannot stop existing scheduled jobs.
     context.waitUntil(processPushJobs(environment))
+    context.waitUntil(purgeExpiredSygSphereUploads(environment).catch((error) => {
+      console.error(JSON.stringify({
+        event: 'sygsphere_quarantine_cleanup_failed',
+        message: error instanceof Error ? error.message : 'Unknown cleanup failure',
+      }))
+    }))
     context.waitUntil((async () => {
       const config = configuredSupabase(environment)
       if (!config) throw new Error('Scheduled timekeeping automation is missing its protected data configuration.')
