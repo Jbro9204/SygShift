@@ -39,11 +39,15 @@ SygShift now accepts a narrowly scoped, one-time launch from Sygilant into the e
 - Passed the full SygShift quality gate with 191 files and 936 tests before final release packaging.
 - Passed 38 desktop/mobile time-clock workflow checks.
 - Passed the SygSphere browser configuration with 60 desktop/mobile checks, including 22 SygSphere scenarios and the time-clock regression set.
-- Final deployment and live production evidence is recorded in the verified release entry in `DEVLOG.md`.
+- Released commit `54b6414` as Cloudflare Worker version `a04bb509-a0df-4374-b868-e859c71c741b`.
+- Passed live health and readiness responses, method enforcement, hostile-origin denial, and missing-launch denial.
+- Confirmed an existing authenticated SygShift session loads the canonical SygSphere workspace and current production data with no application console warning or error.
 
 ## Rollback
 
 - Pre-change provider tag: `rollback/sygsphere-provider-20260908`.
+- Application commit: `54b6414`.
+- Production Worker version: `a04bb509-a0df-4374-b868-e859c71c741b`.
 - The receiver can be disabled immediately with `SYGSHIFT_SHARED_IDENTITY_ENABLED=false`.
 - Protected shared sessions can be revoked without changing employee credentials or SygSphere data.
 - The isolated implementation branch is `feat/sygsphere-sygilant-bridge` until it is promoted to `main`.

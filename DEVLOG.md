@@ -6,6 +6,7 @@
 - Revalidates every launch against the active SygShift auth account and employee, ignores external role claims, consumes each assertion once, and binds inherited MFA to the real Supabase session.
 - Applied production migration `20260908183000` with forced RLS, service-only issuance, expiry and revocation controls, and canonical private audit events.
 - Passed 191 files / 936 code tests, all 38 desktop/mobile time-clock workflow checks, and all 60 checks in the SygSphere browser configuration before final release packaging.
+- Released commit `54b6414` as Cloudflare Worker version `a04bb509-a0df-4374-b868-e859c71c741b`; health, readiness, method/origin boundaries, missing-launch denial, and the authenticated canonical SygSphere workspace passed live verification.
 - Full release evidence: `docs/changelogs/CHANGELOG_09-08-2026_SYGILANT_SYGSPHERE_SHARED_SESSION.md`.
 
 ## 09/07/2026 — Scheduled-Only Timecard Visibility Repair
