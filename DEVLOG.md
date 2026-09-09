@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/09/2026 - SygSphere Upload, PWA, and Header Refinement
+
+- Routed every supported SygSphere attachment through private quarantine and asynchronous scanning, preserving the draft and selected file on interruption and adding bounded scan retry without re-upload, safe reference IDs, and Notification Center outcomes.
+- Added the native installable SygShift experience with local PWA icons and install guidance inside the existing device-notification settings, while preserving MFA and avoiding protected offline caching.
+- Compacted and auto-grew the mobile composer, enlarged the static global date, and clarified per-device push permission and recovery states.
+- Applied exact production migration `20260911013000`, released source commit `7aa98c6` as Cloudflare Worker `0852be11-1a59-406d-8ce8-396a7429e06d`, and retained rollback tag `rollback/sygsphere-pwa-pre-release-20260909`.
+- Verification passed 226 test files / 1,132 tests, 114 responsive browser checks including the actual Time Clock workflow, the rollback-only production upload lifecycle, live signed-in SygSphere, health/readiness, exact asset identity, PWA assets, and signed-out retry denial.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-09-2026_SYGSPHERE_UPLOAD_PWA_AND_HEADER_REFINEMENT.md`.
+
 ## 09/09/2026 - SygTasks Parent-Scope Repair
 
 - Repaired the silent SygTasks membership failure that treated an employee's membership on any board as membership on the selected board; Chief Hood's active, eligible account can now be added to another authorized team or company board.
