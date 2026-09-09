@@ -33,7 +33,8 @@ tokens, MFA factors, security keys, roles, or audit records.
 ## Verification
 
 - Focused Worker boundary: 1 file / 33 tests.
-- Full release gate: 192 files / 942 tests, TypeScript, zero-warning lint, and both production builds.
+- Full release gate after integration with the finalized SygSphere and communications release: 208 files /
+  1,033 tests, TypeScript, zero-warning lint, and both production builds.
 - Mandatory time-clock preservation suite: 38 desktop/mobile checks passed.
 - Fresh production build after the browser suite: passed.
 
@@ -42,10 +43,13 @@ tokens, MFA factors, security keys, roles, or audit records.
 - Pre-change tag: `rollback/password-recovery-email-prechange-20260908`.
 - First-party recovery route tag: `rollback/password-recovery-hardened-20260908`.
 - Signed bridge release tag: `rollback/password-recovery-bridge-20260908`.
+- Final coordinated production baseline: `rollback/password-recovery-pre-activation-20260908`.
+- Final first-party route checkpoint: `rollback/password-recovery-hardened-final-20260908`.
+- Final signed bridge checkpoint: `rollback/password-recovery-bridge-final-20260908`.
 - Removing `SYGSHIFT_PASSWORD_RECOVERY_BRIDGE_SECRET` disables cross-platform signature acceptance while
   preserving direct SygShift recovery.
 
 ## Release Status
 
-Application validation is complete. Production secret installation, final build, Worker deployment, and
-live health/recovery verification are recorded here after activation.
+Application validation is complete against SygShift main `6e7ca13`. Production secret installation,
+Worker deployment, and live health/recovery verification are recorded here after activation.

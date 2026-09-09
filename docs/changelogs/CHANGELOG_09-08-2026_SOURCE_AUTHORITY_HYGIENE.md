@@ -22,11 +22,13 @@ describe the engineering workflow and runtime dependencies directly.
 - Repository trace scan excludes dependency/build output and returns no development-tool authorship or
   provider references in owned source.
 - PowerShell parsed the HR packaging script with zero syntax errors.
-- The complete SygShift release gate and production deployment verification remain required after this
-  change is rebased onto the coordinated SygShift release.
+- The complete SygShift release gate passed after this change was rebased onto the coordinated SygShift
+  release: 208 test files / 1,033 tests, TypeScript, zero-warning lint, both production builds, all 38
+  protected desktop/mobile Time Clock checks, and a fresh production build after browser testing.
 
 ## Rollback
 
 - Pre-recovery baseline: `rollback/password-recovery-email-prechange-20260908`.
 - Recovery bridge checkpoint: `rollback/password-recovery-bridge-20260908`.
+- Final coordinated source checkpoint: `rollback/password-recovery-source-hygiene-final-20260908`.
 - This source-only cleanup can be reverted independently before release without touching production data.
