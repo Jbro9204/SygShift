@@ -75,7 +75,7 @@ Representative visual evidence is stored locally in:
 
 - Source commit: `edc3f77` (`feat: redesign SygTasks work management`).
 - Cloudflare Worker version: `ee2ee67a-fc32-447d-8ca6-6d142a6264df`.
-- Cloudflare deployment ID: `8022086f-504a-41a3-983e-737500c361bd`.
+- Cloudflare deployment ID: `8dd76128-0c4f-40c1-bb39-14f1f614a6c4`.
 - Deployment time: `2026-09-09T21:52:03.788624Z`.
 - Pre-release fallback tag: `rollback/sygtasks-redesign-pre-release-20260909`, pushed to origin at the fully verified pre-redesign source baseline.
 
