@@ -91,6 +91,25 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/tasks': { anyOf: [] },
 }
 
+const authenticatedLandingRouteCandidates = [
+  '/',
+  '/schedule',
+  '/time',
+  '/actions',
+  '/patrol',
+  '/hr',
+  '/people',
+  '/licensing',
+  '/availability',
+  '/sites',
+  '/clients',
+  '/reports',
+  '/administration/access',
+  '/tasks',
+  '/my-documents',
+  '/account',
+] as const
+
 export function hasEffectivePermission(
   session: Pick<SessionContext, 'permissions'> | null | undefined,
   permission: PermissionCode,
@@ -127,4 +146,10 @@ export function canAccessRoute(
   const policy = routeAccessPolicies[policyKey]
   if (pathname === '/account' || pathname === '/account-security' || pathname === '/requests' || pathname === '/my-documents' || pathname === '/support' || pathname === '/notifications' || pathname === '/sygsphere' || pathname === '/tasks') return Boolean(policy)
   return policy ? hasAnyEffectivePermission(session, policy.anyOf) : false
+}
+
+export function resolveAuthorizedLandingRoute(
+  session: Pick<SessionContext, 'permissions'> | null | undefined,
+): string {
+  return authenticatedLandingRouteCandidates.find((pathname) => canAccessRoute(pathname, session)) ?? '/account'
 }

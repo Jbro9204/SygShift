@@ -11,7 +11,7 @@ import {
   recordInternalLocation,
   type InternalNavigationEntry,
 } from '../app/internalNavigation'
-import { canAccessRoute, canLaunchSygilantPlatform, hasAnyEffectivePermission } from '../app/accessPolicy'
+import { canAccessRoute, canLaunchSygilantPlatform, hasAnyEffectivePermission, resolveAuthorizedLandingRoute } from '../app/accessPolicy'
 import { getActiveAnnouncementBanners, type AnnouncementBanner } from '../data/announcements'
 import { getTimekeepingOperationsWorkspace } from '../data/timeOperations'
 import {
@@ -720,7 +720,7 @@ export function AppShell() {
   }
 
   if (isSupabaseConfigured && lacksRouteAccess) {
-    return <Navigate to="/" replace />
+    return <Navigate to={resolveAuthorizedLandingRoute(sessionContext)} replace />
   }
 
   return (

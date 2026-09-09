@@ -4,6 +4,7 @@ import {
   canLaunchSygilantPlatform,
   hasAnyEffectivePermission,
   hasEffectivePermission,
+  resolveAuthorizedLandingRoute,
   routeAccessPolicies,
   scheduleRoutePermissions,
   scheduleTeamViewPermissions,
@@ -28,6 +29,13 @@ describe('central access policy', () => {
   it('denies unknown and unpermitted routes', () => {
     expect(canAccessRoute('/schedule', session([]))).toBe(false)
     expect(canAccessRoute('/not-a-real-route', session(['operations.view']))).toBe(false)
+  })
+
+  it('always resolves an authorized landing route instead of redirecting a restricted user in a loop', () => {
+    expect(resolveAuthorizedLandingRoute(session(['operations.view']))).toBe('/')
+    expect(resolveAuthorizedLandingRoute(session(['schedule.view']))).toBe('/schedule')
+    expect(resolveAuthorizedLandingRoute(session(['time.self.view']))).toBe('/time')
+    expect(resolveAuthorizedLandingRoute(session([]))).toBe('/tasks')
   })
 
   it('separates personal schedule access from company-wide schedule access', () => {
