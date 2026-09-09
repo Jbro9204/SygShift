@@ -585,7 +585,11 @@ function RolePermissionEditor({
       {role.protected ? (
         <p className="access-security-note">
           <LockKeyhole aria-hidden="true" size={17} />
-          Protected Admin safety permissions cannot be removed.
+          {role.code === 'system_admin'
+            ? 'Protected Admin safety permissions cannot be removed.'
+            : role.code === 'system_dispatcher'
+              ? 'Protected Dispatcher Home, Scheduler, Reports, and Timekeeping Reports access cannot be removed.'
+              : 'This protected role keeps its approved safety controls.'}
         </p>
       ) : null}
       {mutation.isError ? <p className="form-feedback form-feedback--error" role="alert">{mutation.error.message}</p> : null}
