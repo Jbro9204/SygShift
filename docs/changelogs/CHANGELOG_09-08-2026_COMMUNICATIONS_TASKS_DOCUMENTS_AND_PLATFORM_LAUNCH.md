@@ -78,11 +78,11 @@ The three Sygilant-owned production versions `202609080001`, `20260908235644`, a
 
 ## Deployment
 
-- SygShift source commit `799f0a3e357a9ae8c0cccf117a0b8aba51a8499b` was released as Cloudflare Worker version `e0479eea-0048-4ef6-9286-9b80f6f4a3f3` on `app.sygilant.us`.
+- SygShift source commit `48e4fcb1a13477ed40f3d3a6ea4b3c3b4632e94d` (runtime implementation `799f0a3`) was released as Cloudflare Worker version `ce87a2cc-7027-43b3-a0a7-12799e5a44cb` on `app.sygilant.us`.
 - Live health and readiness returned HTTP 200. Readiness confirmed the asset binding, Supabase configuration, both inbound shared-identity secrets, both outbound Sygilant secrets, and provider/consumer key separation.
 - The custom domain served the exact release asset `index-skssZa_a.js`, and the production content-security policy permits form submission only to self and the exact `https://sygilant.us` handoff destination.
 - The live outbound launch boundary returned HTTP 401 without a SygShift session, HTTP 403 for a hostile origin, and HTTP 401 for introspection without the independent consumer authorization.
-- Worker version `e0479eea-0048-4ef6-9286-9b80f6f4a3f3` completed its minute cron successfully after deployment. `service_run_timekeeping_automation` returned `completed` with no exception, and the remaining scheduled processors completed normally.
+- Worker version `ce87a2cc-7027-43b3-a0a7-12799e5a44cb` completed its minute cron successfully after deployment. `service_run_timekeeping_automation` returned `completed` with no exception, and the remaining scheduled processors completed normally.
 - The mandatory post-release Time Clock matrix passed all 38 desktop/mobile workflows on the deployed source commit.
 - Reciprocal Sygilant runtime commit `6e05075` was released through Pages deployment `c5ca2023-a1f1-4503-af16-59f3a3dc6867`. Its custom domain remained healthy and rejected missing assertions, hostile origins, and unauthenticated sessions; subsequent documentation-only deployment `bfa25753-3e66-426a-8fc5-cfaa9be3b3cf` serves the same runtime bundle.
 - A real employee handoff remains a user-present acceptance canary because no signed-in production employee session was available to release automation, and credentials were neither requested nor extracted. Both direct-login recovery paths remain available.

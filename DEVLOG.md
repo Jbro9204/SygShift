@@ -10,7 +10,7 @@
 - Activated the one-time server-signed SygShift-to-Sygilant bridge only after the reciprocal Sygilant consumer, independent secrets, exact database migration, and fail-closed live boundary were verified.
 - Applied the seven SygShift-owned migrations individually, preserving the divergent remote-only history; all protected release details and remaining parity boundaries are recorded in `docs/changelogs/CHANGELOG_09-08-2026_COMMUNICATIONS_TASKS_DOCUMENTS_AND_PLATFORM_LAUNCH.md`.
 - Pre-release verification passed 207 test files / 1,027 tests, the 236-check desktop/mobile browser matrix, all 38 protected Time Clock workflows, access inventory, exact database rehearsals, TypeScript, lint, and production build. The production Worker identity and post-release canaries are appended to the linked changelog after deployment.
-- Released source commit `799f0a3` as Cloudflare Worker `e0479eea-0048-4ef6-9286-9b80f6f4a3f3`. Live health/readiness, exact asset identity, CSP destination, provider denials, reciprocal consumer denials, the scheduled timekeeping cron, and the repeated 38-check Time Clock matrix passed; only the signed-in employee handoff remains a user-present acceptance canary.
+- Released source commit `48e4fcb` (runtime implementation `799f0a3`) as Cloudflare Worker `ce87a2cc-7027-43b3-a0a7-12799e5a44cb` after regenerating and validating the checked-in Worker environment declarations. Live health/readiness, exact asset identity, CSP destination, provider denials, reciprocal consumer denials, the scheduled timekeeping cron, and the repeated 38-check Time Clock matrix passed; only the signed-in employee handoff remains a user-present acceptance canary.
 
 ## 09/08/2026 - Sygilant To SygSphere Shared Session
 
