@@ -1991,3 +1991,19 @@ pnpm exec wrangler deploy --keep-vars
   Sygilant all passed without another login.
 - See `docs/changelogs/CHANGELOG_09-09-2026_SHARED_PLATFORM_RECEIVER_AND_NATIVE_SYGSPHERE_BRIDGE.md`
   for implementation, security, rollback, and release evidence.
+
+## 09/09/2026 — Time Correction Workflow Repair
+
+- Unified legacy punch corrections with adjustment and missing-time requests so Team Attendance,
+  Operations, Review Queue, and employee timecards report the same pending state.
+- Preserved the selected employee and date range when opening Review Requests, corrected the pending
+  filter, and made direct manager corrections atomically resolve matching or superseded requests while
+  retaining every source punch and audit row.
+- Applied exact migration `20260910060000`, reconciled Jason's two stale current-week requests from 2
+  to 0, pushed source `bf998e1`, and deployed Worker
+  `2454efb2-82e1-4d79-8e61-8cc88f8f51e8`.
+- `pnpm check` passed 217 files / 1,081 tests; the required post-deployment Time Clock workflow passed
+  38/38 desktop/mobile checks; live health, readiness, Operations, and current-week Review Queue checks
+  passed.
+- See `docs/changelogs/CHANGELOG_09-09-2026_TIME_CORRECTION_WORKFLOW_REPAIR.md` for full implementation,
+  database, rollback, and release evidence.
