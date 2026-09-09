@@ -40,4 +40,14 @@ describe('Reports workspace guardrails', () => {
     expect(migration).toContain('limit target_page_size')
     expect(migration).toContain('offset (target_page - 1) * target_page_size')
   })
+
+  it('authorizes the report-library summary through additive effective roles', () => {
+    const migration = read('supabase/migrations/20260910090000_effective_role_operations_report_access.sql')
+
+    expect(migration).toContain("public.has_effective_permission(''reports.view'')")
+    expect(migration).toContain('Reports access with verified MFA is required')
+    expect(migration).toContain('unexpected authorization boundary; refusing to rewrite it')
+    expect(migration).toContain('execute repaired_definition')
+    expect(migration).toContain('grant execute on function public.get_operations_report() to authenticated, service_role')
+  })
 })
