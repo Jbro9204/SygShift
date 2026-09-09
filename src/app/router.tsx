@@ -1,8 +1,9 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { AppShell } from '../components/AppShell'
+import { AccountSecurityPage } from '../pages/AccountSecurityPage'
+import { PasswordRecoveryLinkPage } from '../pages/PasswordRecoveryLinkPage'
 import { RouteErrorPage } from '../pages/RouteErrorPage'
 import {
-  AccountSecurityPageRoute,
   MyAccountPageRoute,
   MyDocumentsPageRoute,
   ActionCenterPageRoute,
@@ -33,7 +34,6 @@ import {
   LicensingCenterPageRoute,
   NotificationsPageRoute,
   OverviewPageRoute,
-  PasswordRecoveryLinkPageRoute,
   PeoplePageRoute,
   PatrolPageRoute,
   ReportsPageRoute,
@@ -82,11 +82,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/password-recovery',
-    element: (
-      <RouteSuspense>
-        <PasswordRecoveryLinkPageRoute />
-      </RouteSuspense>
-    ),
+    element: <PasswordRecoveryLinkPage />,
     errorElement: <RouteErrorPage />,
   },
   {
@@ -422,11 +418,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'account-security',
-        element: (
-          <RouteSuspense>
-            <AccountSecurityPageRoute />
-          </RouteSuspense>
-        ),
+        element: <AccountSecurityPage />,
       },
       {
         path: 'patrol',

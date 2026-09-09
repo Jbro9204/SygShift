@@ -11,6 +11,8 @@ const migration = readFileSync(
 )
 const worker = readFileSync(join(root, 'worker', 'index.ts'), 'utf8')
 const loginPage = readFileSync(join(root, 'src', 'pages', 'LoginPage.tsx'), 'utf8')
+const router = readFileSync(join(root, 'src', 'app', 'router.tsx'), 'utf8')
+const routeElements = readFileSync(join(root, 'src', 'app', 'RouteElements.tsx'), 'utf8')
 
 describe('timekeeping automation and self-service password recovery guardrails', () => {
   it('closes only legitimate historical Dispatch sessions without permitting new Dispatch punches', () => {
@@ -38,5 +40,13 @@ describe('timekeeping automation and self-service password recovery guardrails',
     expect(worker).not.toContain("message: error instanceof Error ? error.message : 'Unknown password-reset failure'")
     expect(loginPage).toContain('Forgot password?')
     expect(loginPage).toContain('approved personal email on file')
+  })
+
+  it('keeps the one-time recovery callback and completion screen out of replaceable lazy chunks', () => {
+    expect(router).toContain("import { AccountSecurityPage } from '../pages/AccountSecurityPage'")
+    expect(router).toContain("import { PasswordRecoveryLinkPage } from '../pages/PasswordRecoveryLinkPage'")
+    expect(router).toContain("path: '/password-recovery'")
+    expect(routeElements).not.toContain('AccountSecurityPageRoute')
+    expect(routeElements).not.toContain('PasswordRecoveryLinkPageRoute')
   })
 })

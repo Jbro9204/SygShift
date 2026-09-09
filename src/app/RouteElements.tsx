@@ -4,9 +4,6 @@ export const SygSpherePageRoute = lazy(() => import('../pages/SygSpherePage').th
 export const SharedIdentityCallbackPageRoute = lazy(() => import('../pages/SharedIdentityCallbackPage').then((module) => ({ default: module.SharedIdentityCallbackPage })))
 export const SygTasksPageRoute = lazy(() => import('../pages/SygTasksPage').then((module) => ({ default: module.SygTasksPage })))
 
-export const AccountSecurityPageRoute = lazy(() =>
-  import('../pages/AccountSecurityPage').then((module) => ({ default: module.AccountSecurityPage })),
-)
 export const MyAccountPageRoute = lazy(() =>
   import('../pages/MyAccountPage').then((module) => ({ default: module.MyAccountPage })),
 )
@@ -30,9 +27,6 @@ export const EventsPageRoute = lazy(() =>
 )
 export const LoginPageRoute = lazy(() =>
   import('../pages/LoginPage').then((module) => ({ default: module.LoginPage })),
-)
-export const PasswordRecoveryLinkPageRoute = lazy(() =>
-  import('../pages/PasswordRecoveryLinkPage').then((module) => ({ default: module.PasswordRecoveryLinkPage })),
 )
 export const LicensingCenterPageRoute = lazy(() =>
   import('../pages/LicensingCenterPage').then((module) => ({ default: module.LicensingCenterPage })),

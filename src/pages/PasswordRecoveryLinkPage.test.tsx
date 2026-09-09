@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PasswordRecoveryLinkPage } from './PasswordRecoveryLinkPage'
 
@@ -10,6 +10,11 @@ const authMock = vi.hoisted(() => ({
 vi.mock('../data/auth', () => ({
   verifyPasswordRecoveryToken: authMock.verifyPasswordRecoveryToken,
 }))
+
+function RecoveryCheckpoint() {
+  const location = useLocation()
+  return <p>{`${location.pathname}${location.search}`}</p>
+}
 
 describe('PasswordRecoveryLinkPage', () => {
   beforeEach(() => {
@@ -25,7 +30,7 @@ describe('PasswordRecoveryLinkPage', () => {
       <MemoryRouter initialEntries={['/password-recovery']}>
         <Routes>
           <Route path="/password-recovery" element={<PasswordRecoveryLinkPage />} />
-          <Route path="/account-security" element={<p>Recovery checkpoint</p>} />
+          <Route path="/account-security" element={<RecoveryCheckpoint />} />
         </Routes>
       </MemoryRouter>,
     )
@@ -35,7 +40,7 @@ describe('PasswordRecoveryLinkPage', () => {
     })
     expect(window.location.hash).toBe('')
     expect(window.location.search).toBe('')
-    expect(await screen.findByText('Recovery checkpoint')).toBeInTheDocument()
+    expect(await screen.findByText('/account-security?mode=password-recovery')).toBeInTheDocument()
   })
 
   it('shows a safe recovery action when the token is missing or expired', async () => {
