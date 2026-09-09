@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/09/2026 - Additive Role Reports Access Repair
+
+- Confirmed Zach's active production account owns Recruiting & Licensing plus assigned Admin and Human Resources access, with verified MFA and all required Reports permissions; no employee role or security record was changed.
+- Replaced the Reports landing summary's remaining legacy single-workforce-role authorization check with the canonical effective `reports.view` boundary, so all assigned roles and direct overrides are evaluated consistently.
+- Preserved MFA enforcement: an authorized additive-role session succeeds only at verified assurance, while users without the effective permission and authorized users at AAL1 remain denied.
+- Applied production migration `20260910090000`, pushed implementation commit `f073f30` and rollback-only regression commit `81ded88`, and retained rollback tag `rollback/reports-effective-role-pre-fix-20260909`.
+- Verification passed 220 test files / 1,101 tests, TypeScript, zero-warning lint, both builds, all 38 protected Time Clock browser checks, the rollback-only database permission/MFA matrix, Zach-context report execution, and live health/readiness. No application redeploy was needed because the repaired boundary is entirely database-resident.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-09-2026_ADDITIVE_ROLE_REPORTS_ACCESS_REPAIR.md`.
+
 ## 09/09/2026 - Approved Workflow Quick Wins
 
 - Released the six approved usability and access corrections together: clearer My Time summary cards, separate Employee Lifecycle create/manage actions, secure Forgot Username recovery, additive multi-role report access, owner-only personal SygTasks boards, and the centralized secure PDF viewer in SygSphere.
