@@ -52,6 +52,7 @@
 - The Worker resolves eligible targets with its service credential and sends only to the approved personal-first employee address. Internal authentication aliases are never used as the external delivery destination.
 - Supabase generates the short-lived, single-use recovery link. Recovery returns to the existing SygShift Account Security flow and does not reset, remove, or bypass MFA and security keys.
 - Username and request-source limits are serialized in the database to prevent concurrent bypass. The audit ledger stores SHA-256 hashes instead of raw request-source addresses, uses forced row-level security, denies browser table access, and is append-only.
+- Cross-platform requests from Sygilant use a dedicated secret to create an HMAC signature over a version, timestamp, nonce, one-way source fingerprint, and normalized username. SygShift rejects stale or invalid signed requests before querying identity data. Direct SygShift recovery remains available under the same database limits.
 - Provider and target failures are logged with an opaque request ID and generic failure classification only. Username and email values are omitted from Worker error logs and every browser response.
 
 ## Support ticket protection

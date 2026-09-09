@@ -12,6 +12,15 @@
 - Pre-release verification passed 207 test files / 1,027 tests, the 236-check desktop/mobile browser matrix, all 38 protected Time Clock workflows, access inventory, exact database rehearsals, TypeScript, lint, and production build. The production Worker identity and post-release canaries are appended to the linked changelog after deployment.
 - Released source commit `48e4fcb` (runtime implementation `799f0a3`) as Cloudflare Worker `ce87a2cc-7027-43b3-a0a7-12799e5a44cb` after regenerating and validating the checked-in Worker environment declarations. Live health/readiness, exact asset identity, CSP destination, provider denials, reciprocal consumer denials, the scheduled timekeeping cron, and the repeated 38-check Time Clock matrix passed; only the signed-in employee handoff remains a user-present acceptance canary.
 
+## 09/08/2026 - Canonical Password Recovery Hardening
+
+- Replaced provider action URLs with a first-party single-use token-hash recovery route and fresh-login completion.
+- Added a timestamped HMAC bridge so Sygilant can invoke SygShift's canonical employee recovery without receiving identity, email, token, or security authority.
+- Preserved direct recovery, transactional limits, personal-first delivery, blocked-domain enforcement, MFA, security keys, trusted devices, schedules, payroll, and timekeeping.
+- Passed 192 files / 942 tests, TypeScript, zero-warning lint, both builds, and all 38 mandatory desktop/mobile time-clock checks.
+- Production activation is pending secret installation, final build, deployment, and live verification.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-08-2026_CANONICAL_PASSWORD_RECOVERY.md`.
+
 ## 09/08/2026 - Sygilant To SygSphere Shared Session
 
 - Added a production shared-session receiver that opens the canonical SygSphere workspace from Sygilant without copying messages, files, permissions, or identity records.
