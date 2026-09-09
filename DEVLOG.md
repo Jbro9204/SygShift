@@ -6,6 +6,7 @@
 - Corrected the undefined accessibility helper class that exposed search and filter labels as visible toolbar text.
 - Added SygTasks-specific source guards and a rendered light/dark desktop/phone matrix covering empty and populated states, semantic chips, dialogs, WCAG contrast, and containment.
 - Verification passed 210 test files / 1,053 tests, the fresh 250-check desktop/mobile browser matrix, and all 38 protected Time Clock workflows. Exact production identity is recorded in `docs/changelogs/CHANGELOG_09-09-2026_SYGTASKS_DARK_MODE_READABILITY.md`.
+- Released source commit `3f3835a` as Cloudflare Worker `5a3e37d6-1b3c-4038-9fc2-f6187b97793d`; live health, complete readiness, exact SygTasks assets, signed-out route protection, and the repeated 38-check Time Clock matrix passed.
 
 ## 09/08/2026 - Communications, Tasks, Documents, and Sygilant Launch
 

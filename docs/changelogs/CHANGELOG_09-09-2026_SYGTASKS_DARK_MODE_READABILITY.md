@@ -41,5 +41,8 @@ This is a presentation and accessibility repair only. It does not change SygTask
 ## Release and Rollback
 
 - Pre-change rollback tag: `rollback/sygtasks-dark-mode-pre-fix-20260909` at `0b4278eed502cd5ac9e66a8cacc8f460e2acba66`.
-- The exact source commit, Cloudflare Worker version, asset identity, and live health/readiness evidence will be appended immediately after production deployment.
-
+- Source commit `3f3835a6713b33e9f240348ebce68e250dff012f` was released as Cloudflare Worker version `5a3e37d6-1b3c-4038-9fc2-f6187b97793d` on `app.sygilant.us`.
+- Live health returned HTTP 200 with `status: ok`; readiness returned HTTP 200 with `ready: true` and all configured asset, Supabase, and shared-identity checks passing.
+- The custom domain served the exact release assets `index-D_-IGhC1.js`, `SygTasksPage-U7pvgGJj.js`, and `SygTasksPage-DtXqma7W.css`. The live CSS contains the canonical SygTasks theme token contract and the live JavaScript contains the corrected visually-hidden utility with no remaining `sr-only` reference.
+- An unauthenticated phone-width browser can request `/tasks` and is safely redirected to the normal SygShift login page with no console errors.
+- The post-deployment Time Clock matrix passed all 38 desktop/mobile workflows.
