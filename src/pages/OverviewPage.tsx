@@ -115,9 +115,14 @@ function overviewTimeAction(dashboard: TimekeepingDashboard | undefined): {
   const state = activeTimeState(dashboard.lastEvent)
   if (state === 'working') return { kind: 'clock_out', label: 'Clock out', requiresTimePage: false }
   if (state === 'on_break') return { kind: 'break_end', label: 'End break', requiresTimePage: false }
-  const choices = getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp)
+  const resumeShiftId = dashboard.lastEvent?.kind === 'clock_out' ? dashboard.lastEvent.shiftId : null
+  const choices = getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp, resumeShiftId)
   if (choices.shifts.length > 1) return { kind: null, label: 'Choose shift', requiresTimePage: true }
-  return { kind: 'clock_in', label: 'Clock in', requiresTimePage: false }
+  return {
+    kind: 'clock_in',
+    label: resumeShiftId && choices.shifts[0]?.shiftId === resumeShiftId ? 'Resume work' : 'Clock in',
+    requiresTimePage: false,
+  }
 }
 
 function shiftLocation(shift: Pick<TimekeepingShift, 'siteCode' | 'siteName' | 'locationName'>): string {
@@ -249,7 +254,8 @@ export function OverviewPage() {
   function quickPunch(kind = timeAction.kind, shiftId?: string | null) {
     if (!kind || !timekeepingQuery.data || timekeepingQuery.isError || !punchAllowed || punchLocked.current || punchMutation.isPending) return
     punchLocked.current = true
-    const choices = getClockableShiftChoices(timekeepingQuery.data.eligibleShifts, timekeepingQuery.data.serverTimestamp)
+    const resumeShiftId = timekeepingQuery.data.lastEvent?.kind === 'clock_out' ? timekeepingQuery.data.lastEvent.shiftId : null
+    const choices = getClockableShiftChoices(timekeepingQuery.data.eligibleShifts, timekeepingQuery.data.serverTimestamp, resumeShiftId)
     punchMutation.mutate({
       kind,
       shiftId: kind === 'clock_in' ? shiftId ?? choices.shifts[0]?.shiftId ?? null : undefined,
@@ -398,7 +404,11 @@ function TimeStatusStrip({ activeShift, dashboard, displayTimeZone, error, onPun
   timeAction: ReturnType<typeof overviewTimeAction>
 }) {
   const clockableChoices = dashboard
-    ? getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp)
+    ? getClockableShiftChoices(
+      dashboard.eligibleShifts,
+      dashboard.serverTimestamp,
+      dashboard.lastEvent?.kind === 'clock_out' ? dashboard.lastEvent.shiftId : null,
+    )
     : null
   const upcomingShift = dashboard && state === 'off_clock' && clockableChoices?.shifts.length === 0
     ? nextShiftForDashboard(dashboard)

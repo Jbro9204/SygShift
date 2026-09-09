@@ -188,6 +188,41 @@ describe('timekeeping validation', () => {
     expect(getClockableShiftChoices([overnightShift], '2026-08-31T13:00:01.000Z').shifts).toHaveLength(0)
   })
 
+  it('allows only the same clocked-out shift to resume during the reconciliation window', () => {
+    const completedShift: TimekeepingShift = {
+      assignmentId: '73000000-0000-4000-8000-000000000113',
+      shiftId: '73000000-0000-4000-8000-000000000213',
+      status: 'assigned',
+      startsAt: '2026-09-09T12:00:00.000Z',
+      endsAt: '2026-09-09T20:00:00.000Z',
+      timeZone: 'America/Denver',
+      requiresArmed: false,
+      isOvertime: false,
+      postName: 'Administrative',
+      siteName: 'Main Office',
+      siteCode: 'ADMIN',
+      eventName: null,
+      locationName: 'Main Office',
+      workType: 'post',
+    }
+
+    expect(getClockableShiftChoices(
+      [completedShift],
+      '2026-09-09T22:00:00.000Z',
+      completedShift.shiftId,
+    ).shifts).toHaveLength(1)
+    expect(getClockableShiftChoices(
+      [completedShift],
+      '2026-09-09T22:00:00.000Z',
+      '73000000-0000-4000-8000-000000000999',
+    ).shifts).toHaveLength(0)
+    expect(getClockableShiftChoices(
+      [completedShift],
+      '2026-09-10T02:00:01.000Z',
+      completedShift.shiftId,
+    ).shifts).toHaveLength(0)
+  })
+
   it('deduplicates time maintenance location options while preserving distinct posts', () => {
     const baseOption: TimeMaintenanceShiftOption = {
       assignedEmployees: [],

@@ -1459,9 +1459,10 @@ function PunchControls({
   const displayTimeZone = personalDisplayTimeZone(dashboard.employee.timeZone)
   const currentShift = activeShift(dashboard)
   const actions = nextTimeEventKinds(state)
+  const resumeShiftId = dashboard.lastEvent?.kind === 'clock_out' ? dashboard.lastEvent.shiftId : null
   const clockableChoices = useMemo(
-    () => getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp),
-    [dashboard.eligibleShifts, dashboard.serverTimestamp],
+    () => getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp, resumeShiftId),
+    [dashboard.eligibleShifts, dashboard.serverTimestamp, resumeShiftId],
   )
   const nextClockInShift = useMemo(
     () => nextUpcomingClockInShift(dashboard.eligibleShifts, dashboard.serverTimestamp),
@@ -1470,6 +1471,7 @@ function PunchControls({
   const earlyClockInAttemptAvailable = state === 'off_clock'
     && clockableChoices.shifts.length === 0
     && nextClockInShift !== null
+  const clockInLabel = resumeShiftId && selectedShiftId === resumeShiftId ? 'Resume work' : actionLabels.clock_in
 
   useEffect(() => {
     if (state !== 'off_clock') return
@@ -1534,7 +1536,7 @@ function PunchControls({
             type="button"
           >
             {kind === 'break_start' || kind === 'break_end' ? <Coffee aria-hidden="true" size={18} /> : <Timer aria-hidden="true" size={18} />}
-            {pending ? 'Recording...' : actionLabels[kind]}
+            {pending ? 'Recording...' : kind === 'clock_in' ? clockInLabel : actionLabels[kind]}
           </button>
         ))}
       </div>

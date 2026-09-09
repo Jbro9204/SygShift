@@ -8,10 +8,15 @@ const scenario = params.get('scenario') ?? 'early'
 const employeeId = '10000000-0000-4000-8000-000000000001'
 const shiftId = '20000000-0000-4000-8000-000000000001'
 const serverTimestamp = '2026-09-06T16:00:00Z'
-const startsAt = scenario === 'ready' || scenario === 'multiple' ? '2026-09-06T16:05:00Z' : '2026-09-07T20:00:00Z'
-const shift = { assignmentId: shiftId, shiftId, status: 'assigned', startsAt, endsAt: '2026-09-08T00:00:00Z', timeZone: 'America/Denver', requiresArmed: false, isOvertime: false, assignmentType: 'standard', postName: 'Front desk', siteName: 'Test site', siteCode: 'TEST', eventName: null, locationName: 'Test site' }
-let lastEvent: null | { id: string; kind: string; shiftId: string; recordedAt: string; source: string } = scenario === 'working' || scenario === 'break'
-  ? { id: employeeId, kind: scenario === 'break' ? 'break_start' : 'clock_in', shiftId, recordedAt: serverTimestamp, source: 'web' } : null
+const startsAt = scenario === 'resume-after-end'
+  ? '2026-09-06T08:05:00Z'
+  : scenario === 'ready' || scenario === 'multiple'
+    ? '2026-09-06T16:05:00Z'
+    : '2026-09-07T20:00:00Z'
+const endsAt = scenario === 'resume-after-end' ? '2026-09-06T14:00:00Z' : '2026-09-08T00:00:00Z'
+const shift = { assignmentId: shiftId, shiftId, status: 'assigned', startsAt, endsAt, timeZone: 'America/Denver', requiresArmed: false, isOvertime: false, assignmentType: 'standard', postName: 'Front desk', siteName: 'Test site', siteCode: 'TEST', eventName: null, locationName: 'Test site' }
+let lastEvent: null | { id: string; kind: string; shiftId: string; recordedAt: string; source: string } = ['working', 'break', 'resume-after-end'].includes(scenario)
+  ? { id: employeeId, kind: scenario === 'break' ? 'break_start' : scenario === 'resume-after-end' ? 'clock_out' : 'clock_in', shiftId, recordedAt: serverTimestamp, source: 'web' } : null
 let attempts = 0
 let punches = 0
 let dashboardCalls = 0
@@ -31,7 +36,7 @@ export function getSupabaseClient() {
         attempts++
         const displayCounts = () => { document.getElementById('clock-fixture-records')!.textContent = `${attempts} attempts · ${punches} punches` }
         displayCounts()
-        if (input?.target_kind === 'clock_in' && !['ready', 'multiple'].includes(scenario)) {
+        if (input?.target_kind === 'clock_in' && !['ready', 'multiple', 'resume-after-end'].includes(scenario)) {
           if (scenario === 'no-assignment') return { data: null, error: { message: 'No active published shift is assigned for clock-in. Open your schedule or contact your supervisor.' } }
           return { error: null, data: { status: 'blocked', code: 'EARLY_CLOCK_IN_BLOCKED', trustedServerTime: serverTimestamp, scheduledShiftStart: startsAt, scheduledShiftEnd: shift.endsAt, clockInEligibleAt: '2026-09-07T19:55:00Z', shiftDate: '2026-09-07', shiftDisplayName: 'Front desk', siteCode: 'TEST', siteName: 'Test site', postName: 'Front desk', locationName: 'Test site', coverageType: 'Unarmed coverage', timeZone: 'America/Denver', employeeTimeZone: 'America/New_York', clockInWindowMinutes: 5 } }
         }

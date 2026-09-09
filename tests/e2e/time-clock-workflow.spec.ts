@@ -24,14 +24,24 @@ for (const surface of ['home', 'workspace']) {
       await expect(dialog.getByRole('button', { name: 'Acknowledge & close' })).toBeInViewport()
     })
   }
-  test(`${surface}: real clock-in, break, resume and clock-out remain usable`, async ({ page }) => {
+  test(`${surface}: real clock-in, break, clock-out and same-shift return remain usable`, async ({ page }) => {
     await page.goto(`${fixture}?surface=${surface}&scenario=ready`)
     for (const label of ['Clock in', 'Start break', 'End break', 'Clock out']) {
       await page.getByRole('button', { name: label, exact: true }).click()
     }
     await expect(page.locator('#clock-fixture-records')).toHaveText('4 attempts · 4 punches')
-    await expect(page.getByRole('button', { name: 'Clock in', exact: true })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Resume work', exact: true })).toBeEnabled()
+    await page.getByRole('button', { name: 'Resume work', exact: true }).click()
+    await expect(page.locator('#clock-fixture-records')).toHaveText('5 attempts · 5 punches')
     await expect(page.getByRole('alertdialog')).toHaveCount(0)
+  })
+
+  test(`${surface}: an ended shift remains resumable only as the employee's prior segment`, async ({ page }) => {
+    await page.goto(`${fixture}?surface=${surface}&scenario=resume-after-end`)
+    await expect(page.getByRole('button', { name: 'Resume work', exact: true })).toBeEnabled()
+    await page.getByRole('button', { name: 'Resume work', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Clock out', exact: true })).toBeEnabled()
+    await expect(page.locator('#clock-fixture-records')).toHaveText('1 attempts · 1 punches')
   })
   test(`${surface}: dashboard failure is visible and recoverable, not a false off-clock punch`, async ({ page }) => {
     await page.goto(`${fixture}?surface=${surface}&scenario=error`)

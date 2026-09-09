@@ -5,6 +5,7 @@ const badgeSchema = z.object({ unread: z.number().int().nonnegative(), requiresA
 const notificationSchema = z.object({
   id: z.string().uuid(), title: z.string(), body: z.string(), priority: z.enum(['routine', 'important', 'urgent']),
   sourceType: z.string(), sourceId: z.string().uuid().nullable(), requiresAcknowledgement: z.boolean(),
+  actionRequired: z.boolean(), resolvedAt: z.string().nullable(),
   readAt: z.string().nullable(), acknowledgedAt: z.string().nullable(), createdAt: z.string(), expiresAt: z.string().nullable(),
   actionPath: z.string().nullable(), actionLabel: z.string().nullable(), senderName: z.string(),
 })

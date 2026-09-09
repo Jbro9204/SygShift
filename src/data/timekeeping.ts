@@ -1037,6 +1037,20 @@ function isInsideClockInWindow(shift: TimekeepingShift, serverTimestamp: string)
   return startTime <= serverTime + CLOCK_IN_WINDOW_BEFORE_MS && endTime >= serverTime
 }
 
+export const SAME_SHIFT_RESUME_WINDOW_MS = 6 * 60 * 60 * 1000
+
+function isInsideSameShiftResumeWindow(
+  shift: TimekeepingShift,
+  serverTimestamp: string,
+  resumeShiftId: string | null,
+): boolean {
+  if (!resumeShiftId || shift.shiftId !== resumeShiftId) return false
+  const serverTime = new Date(serverTimestamp).getTime()
+  const endTime = new Date(shift.endsAt).getTime()
+  if (!Number.isFinite(serverTime) || !Number.isFinite(endTime)) return false
+  return serverTime <= endTime + SAME_SHIFT_RESUME_WINDOW_MS
+}
+
 export function nextUpcomingClockInShift(
   shifts: TimekeepingShift[],
   serverTimestamp: string,
@@ -1051,8 +1065,12 @@ export function nextUpcomingClockInShift(
 export function getClockableShiftChoices(
   shifts: TimekeepingShift[],
   serverTimestamp: string,
+  resumeShiftId: string | null = null,
 ): ClockableShiftChoices {
-  const insideWindow = shifts.filter((shift) => isInsideClockInWindow(shift, serverTimestamp))
+  const insideWindow = shifts.filter((shift) => (
+    isInsideClockInWindow(shift, serverTimestamp)
+    || isInsideSameShiftResumeWindow(shift, serverTimestamp, resumeShiftId)
+  ))
   const outsideWindowCount = shifts.length - insideWindow.length
   const seen = new Set<string>()
   const deduped: TimekeepingShift[] = []

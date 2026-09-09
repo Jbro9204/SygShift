@@ -86,9 +86,10 @@ export function TimeWorkspace() {
   })
   const dashboard = dashboardQuery.data
   const state = activeTimeState(dashboard?.lastEvent ?? null)
+  const resumeShiftId = dashboard?.lastEvent?.kind === 'clock_out' ? dashboard.lastEvent.shiftId : null
   const choices = useMemo(
-    () => dashboard ? getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp) : null,
-    [dashboard],
+    () => dashboard ? getClockableShiftChoices(dashboard.eligibleShifts, dashboard.serverTimestamp, resumeShiftId) : null,
+    [dashboard, resumeShiftId],
   )
   const currentShift = dashboard ? activeShift(dashboard) : null
   const nextClockInShift = dashboard
@@ -96,6 +97,7 @@ export function TimeWorkspace() {
     : null
   const nextKinds = nextTimeEventKinds(state)
   const defaultShiftId = selectedShiftId ?? choices?.shifts[0]?.shiftId ?? null
+  const clockInLabel = resumeShiftId && defaultShiftId === resumeShiftId ? 'Resume work' : actionLabels.clock_in
 
   useEffect(() => {
     if (!choices || state !== 'off_clock') return
@@ -183,7 +185,7 @@ export function TimeWorkspace() {
                   onClick={() => record(kind)}
                   variant={kind === 'clock_out' ? 'danger' : 'primary'}
                 >
-                  {actionLabels[kind]}
+                  {kind === 'clock_in' ? clockInLabel : actionLabels[kind]}
                 </TimeButton>
               ))}
             </div>
