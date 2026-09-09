@@ -72,6 +72,56 @@ describe('SygShift to Sygilant protected platform launch', () => {
     }
   })
 
+  it('follows one same-origin upstream redirect without changing the protected request', async () => {
+    const requests: Array<{ body: BodyInit | null | undefined, url: string }> = []
+    vi.stubGlobal('fetch', vi.fn(async (input, init = {}) => {
+      const url = String(input)
+      requests.push({ body: init.body, url })
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {}
+      if (url.endsWith('/rest/v1/rpc/get_session_context')) {
+        return new Response(null, {
+          headers: { location: '/rest/v1/rpc/get_session_context?canonical=true' },
+          status: 307,
+        })
+      }
+      if (url.includes('/rest/v1/rpc/get_session_context?canonical=true')) {
+        return json({ employee_id: employeeId, has_mfa: true, permissions: ['apps.sygilant.access'], role: 'admin', username: 'jordan' })
+      }
+      if (url.includes('/auth/v1/user')) return json({ id: authUserId })
+      if (url.includes('/rest/v1/rpc/service_issue_sygilant_shared_launch')) {
+        return json({ requestId: (body.target_payload as Record<string, unknown>).requestId })
+      }
+      return json({ error: 'unhandled' }, 500)
+    }))
+
+    const response = await handleSygilantSharedIdentityRequest(launchRequest(), environment, apiRequestId)
+
+    expect(response?.status).toBe(201)
+    expect(requests.slice(0, 2)).toEqual([
+      { body: '{}', url: 'https://project.supabase.co/rest/v1/rpc/get_session_context' },
+      { body: '{}', url: 'https://project.supabase.co/rest/v1/rpc/get_session_context?canonical=true' },
+    ])
+  })
+
+  it('rejects a cross-origin upstream redirect before forwarding protected headers', async () => {
+    const upstream = vi.fn().mockResolvedValue(new Response(null, {
+      headers: { location: 'https://attacker.example/collect' },
+      status: 307,
+    }))
+    vi.stubGlobal('fetch', upstream)
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    try {
+      const response = await handleSygilantSharedIdentityRequest(launchRequest(), environment, apiRequestId)
+
+      expect(response?.status).toBe(502)
+      await expect(response?.json()).resolves.toMatchObject({ error: 'shared_identity_upstream_redirect_rejected' })
+      expect(upstream).toHaveBeenCalledTimes(1)
+    } finally {
+      errorLog.mockRestore()
+    }
+  })
+
   it('issues a short-lived signed assertion only for a permissioned MFA session', async () => {
     const rpcBodies: Record<string, unknown>[] = []
     vi.stubGlobal('fetch', vi.fn(async (input, init = {}) => {

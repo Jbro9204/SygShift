@@ -5,6 +5,7 @@ const applicationId = 'sygilant'
 const assertionPattern = /^ssli_v1\.[A-Za-z0-9_-]{20,5000}\.[a-f0-9]{64}$/i
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const assuranceLevels = new Set(['aal2', 'security_key', 'trusted_device', 'external_mfa'])
+const redirectStatuses = new Set([301, 302, 303, 307, 308])
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
@@ -372,12 +373,43 @@ async function serviceRpc<T = unknown>(name: string, body: Record<string, unknow
 }
 
 async function upstreamJson(url: string, init: RequestInit): Promise<unknown> {
-  const response = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(5_000) })
+  const response = await fetchWithProtectedRedirect(url, init)
   const payload = await response.json().catch(() => null)
   if (!response.ok) {
     throw new SharedLaunchError('shared_identity_upstream_rejected', response.status === 409 ? 409 : 502, 'The shared identity service rejected the request.')
   }
   return payload
+}
+
+async function fetchWithProtectedRedirect(url: string, init: RequestInit): Promise<Response> {
+  const firstResponse = await fetch(url, {
+    ...init,
+    redirect: 'manual',
+    signal: AbortSignal.timeout(5_000),
+  })
+  if (!redirectStatuses.has(firstResponse.status)) return firstResponse
+
+  const location = firstResponse.headers.get('location')
+  const source = new URL(url)
+  let target: URL
+  try {
+    target = new URL(location ?? '', source)
+  } catch {
+    throw new SharedLaunchError('shared_identity_upstream_redirect_rejected', 502, 'The shared identity service returned an invalid redirect.')
+  }
+  if (!location || target.protocol !== 'https:' || target.origin !== source.origin) {
+    throw new SharedLaunchError('shared_identity_upstream_redirect_rejected', 502, 'The shared identity service returned an untrusted redirect.')
+  }
+
+  const secondResponse = await fetch(target, {
+    ...init,
+    redirect: 'manual',
+    signal: AbortSignal.timeout(5_000),
+  })
+  if (redirectStatuses.has(secondResponse.status)) {
+    throw new SharedLaunchError('shared_identity_upstream_redirect_rejected', 502, 'The shared identity service returned too many redirects.')
+  }
+  return secondResponse
 }
 
 function assuranceLevel(request: Request, claims: { aal?: string }): AssertionPayload['assuranceLevel'] {
