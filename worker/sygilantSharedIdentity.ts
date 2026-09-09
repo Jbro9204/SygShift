@@ -77,11 +77,13 @@ type ConsumedIdentity = {
 
 class SharedLaunchError extends Error {
   readonly code: string
+  readonly diagnostic?: string
   readonly status: number
 
-  constructor(code: string, status: number, message: string) {
+  constructor(code: string, status: number, message: string, diagnostic?: string) {
     super(message)
     this.code = code
+    this.diagnostic = diagnostic
     this.status = status
   }
 }
@@ -106,6 +108,7 @@ export async function handleSygilantSharedIdentityRequest(
     if (failure.status >= 500) {
       console.error(JSON.stringify({
         code: failure.code,
+        ...(failure.diagnostic ? { diagnostic: failure.diagnostic } : {}),
         event: 'sygilant_shared_identity_failure',
         path,
         requestId,
@@ -450,8 +453,21 @@ async function launchStage<T>(
     return await operation()
   } catch (error) {
     if (error instanceof SharedLaunchError) throw error
-    throw new SharedLaunchError(code, 503, detail)
+    throw new SharedLaunchError(code, 503, detail, unexpectedErrorCategory(error))
   }
+}
+
+function unexpectedErrorCategory(error: unknown): string {
+  if (!(error instanceof Error)) return 'non_error_rejection'
+  const message = error.message.toLowerCase()
+  if (error.name === 'TimeoutError' || message.includes('timed out') || message.includes('timeout')) return 'request_timeout'
+  if (error.name === 'AbortError' || message.includes('abort')) return 'request_aborted'
+  if (message.includes('redirect')) return 'redirect_rejected'
+  if (message.includes('network')) return 'network_failure'
+  if (message.includes('fetch')) return 'fetch_failure'
+  if (message.includes('signal')) return 'signal_failure'
+  if (message.includes('illegal invocation') || message.includes('incorrect this')) return 'runtime_invocation_failure'
+  return error.name === 'TypeError' ? 'type_error' : 'unexpected_error'
 }
 
 function randomToken(size = 48): string {

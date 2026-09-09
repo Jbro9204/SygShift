@@ -65,6 +65,7 @@ describe('SygShift to Sygilant protected platform launch', () => {
         requestId: apiRequestId,
       })
       expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('sygilant_launch_session_context_unavailable'))
+      expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('"diagnostic":"type_error"'))
       expect(errorLog).not.toHaveBeenCalledWith(expect.stringContaining('private upstream failure'))
     } finally {
       errorLog.mockRestore()
