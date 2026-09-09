@@ -1,7 +1,7 @@
-import type { AppRole } from '../data/session'
+import { operationsHomePermission } from '../app/accessPolicy'
 import type { ScheduleShift } from '../data/schedule'
 
-export type HomeMode = 'employee' | 'operations'
+export type HomeMode = 'basic' | 'operations'
 
 export interface TodayCoverageSummary {
   assigned: number
@@ -10,8 +10,10 @@ export interface TodayCoverageSummary {
   shifts: ScheduleShift[]
 }
 
-export function homeModeForRole(role: AppRole | null | undefined): HomeMode {
-  return role === 'admin' || role === 'supervisor' ? 'operations' : 'employee'
+export function homeModeForPermissions(permissions: readonly string[] | null | undefined): HomeMode {
+  return permissions?.includes(operationsHomePermission) && permissions.includes('operations.view')
+    ? 'operations'
+    : 'basic'
 }
 
 export function greetingPeriod(date: Date, timeZone = 'America/Denver'): 'morning' | 'afternoon' | 'evening' {

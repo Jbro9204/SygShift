@@ -19,6 +19,7 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import { EmployeeAccessWorkspace } from '../components/EmployeeAccessWorkspace'
 import { ModalDialog } from '../components/ModalDialog'
 import { SensitivePermissionReview } from '../components/SensitivePermissionReview'
+import { operationsHomePermission } from '../app/accessPolicy'
 import {
   getAccessControlCenter,
   setAccessRolePermissions,
@@ -36,6 +37,74 @@ const roleLabels: Record<string, string> = {
   recruiting_licensing: 'Recruiting & Licensing',
   scheduler: 'Scheduler',
   supervisor: 'Supervisor',
+}
+
+const operationsDashboardPermission = 'operations.view'
+
+type HomeExperience = 'basic' | 'operations'
+
+function applyHomeExperienceSelection(current: Set<string>, experience: HomeExperience): Set<string> {
+  const next = new Set(current)
+  if (experience === 'operations') {
+    next.add(operationsHomePermission)
+    next.add(operationsDashboardPermission)
+  } else {
+    next.delete(operationsHomePermission)
+  }
+  return next
+}
+
+function keepHomeExperienceValid(current: Set<string>): Set<string> {
+  const next = new Set(current)
+  if (!next.has(operationsDashboardPermission)) next.delete(operationsHomePermission)
+  return next
+}
+
+function HomeExperienceSelector({
+  lockedToOperations = false,
+  onChange,
+  value,
+}: {
+  lockedToOperations?: boolean
+  onChange: (experience: HomeExperience) => void
+  value: HomeExperience
+}) {
+  return (
+    <fieldset className="access-home-experience">
+      <legend>Home experience</legend>
+      <p>Choose the landing page employees receive after they sign in.</p>
+      <div className="access-home-experience__options">
+        <label className={value === 'basic' ? 'access-home-experience__option access-home-experience__option--selected' : 'access-home-experience__option'}>
+          <input
+            checked={value === 'basic'}
+            disabled={lockedToOperations}
+            name="homeExperience"
+            onChange={() => onChange('basic')}
+            type="radio"
+            value="basic"
+          />
+          <span>
+            <strong>Basic Home</strong>
+            <small>Personal schedule, time, requests, announcements, and assigned work.</small>
+          </span>
+        </label>
+        <label className={value === 'operations' ? 'access-home-experience__option access-home-experience__option--selected' : 'access-home-experience__option'}>
+          <input
+            checked={value === 'operations'}
+            name="homeExperience"
+            onChange={() => onChange('operations')}
+            type="radio"
+            value="operations"
+          />
+          <span>
+            <strong>Operations Home</strong>
+            <small>Company coverage, staffing totals, priority queues, and management workspaces.</small>
+          </span>
+        </label>
+      </div>
+      {lockedToOperations ? <small className="access-home-experience__note">Operations Home is required for the protected Admin role.</small> : null}
+    </fieldset>
+  )
 }
 
 function permissionTone(permission: PermissionDefinition): string {
@@ -198,13 +267,20 @@ function CreateRoleModal({
   const queryClient = useQueryClient()
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set())
   const [permissionSearch, setPermissionSearch] = useState('')
-  const [openCategory, setOpenCategory] = useState<string | null>(() => permissions[0]?.category ?? null)
+  const [openCategory, setOpenCategory] = useState<string | null>(null)
+  const rolePermissions = useMemo(
+    () => permissions.filter((permission) => permission.code !== operationsHomePermission),
+    [permissions],
+  )
   const visiblePermissions = useMemo(
-    () => filterPermissions(permissions, permissionSearch),
-    [permissionSearch, permissions],
+    () => filterPermissions(rolePermissions, permissionSearch),
+    [permissionSearch, rolePermissions],
   )
   const grouped = useMemo(() => groupedPermissions(visiblePermissions), [visiblePermissions])
-  const allGrouped = useMemo(() => groupedPermissions(permissions), [permissions])
+  const allGrouped = useMemo(() => groupedPermissions(rolePermissions), [rolePermissions])
+  const homeExperience: HomeExperience = selectedCodes.has(operationsHomePermission) && selectedCodes.has(operationsDashboardPermission)
+    ? 'operations'
+    : 'basic'
   const mutation = useMutation({
     mutationFn: async (input: { name: string, description: string | null, mfaRequired: boolean, permissionCodes: string[] }) => {
       const createdCenter = await upsertAccessRole({
@@ -230,12 +306,16 @@ function CreateRoleModal({
       const next = new Set(current)
       if (next.has(code)) next.delete(code)
       else next.add(code)
-      return next
+      return keepHomeExperienceValid(next)
     })
   }
 
   function setAllPermissions(codes: string[], selected: boolean) {
-    setSelectedCodes((current) => applyPermissionCategorySelection(current, codes, selected))
+    setSelectedCodes((current) => keepHomeExperienceValid(applyPermissionCategorySelection(current, codes, selected)))
+  }
+
+  function setHomeExperience(experience: HomeExperience) {
+    setSelectedCodes((current) => applyHomeExperienceSelection(current, experience))
   }
 
   useEffect(() => {
@@ -280,6 +360,7 @@ function CreateRoleModal({
               <input defaultChecked name="mfaRequired" type="checkbox" />
               <span>Require MFA when this role is assigned</span>
             </label>
+            <HomeExperienceSelector onChange={setHomeExperience} value={homeExperience} />
             <div className="access-modal-summary">
               <strong>{selectedCodes.size}</strong>
               <span>permissions selected</span>
@@ -349,12 +430,19 @@ function RolePermissionEditor({
   const [showEnabledOnly, setShowEnabledOnly] = useState(false)
   const [openCategory, setOpenCategory] = useState<string | null>(null)
   const [confirmSensitive, setConfirmSensitive] = useState(false)
+  const rolePermissions = useMemo(
+    () => permissions.filter((permission) => permission.code !== operationsHomePermission),
+    [permissions],
+  )
   const visiblePermissions = useMemo(
-    () => filterPermissions(permissions, permissionSearch).filter((permission) => !showEnabledOnly || selectedCodes.has(permission.code)),
-    [permissionSearch, permissions, selectedCodes, showEnabledOnly],
+    () => filterPermissions(rolePermissions, permissionSearch).filter((permission) => !showEnabledOnly || selectedCodes.has(permission.code)),
+    [permissionSearch, rolePermissions, selectedCodes, showEnabledOnly],
   )
   const grouped = useMemo(() => groupedPermissions(visiblePermissions), [visiblePermissions])
-  const allGrouped = useMemo(() => groupedPermissions(permissions), [permissions])
+  const allGrouped = useMemo(() => groupedPermissions(rolePermissions), [rolePermissions])
+  const homeExperience: HomeExperience = selectedCodes.has(operationsHomePermission) && selectedCodes.has(operationsDashboardPermission)
+    ? 'operations'
+    : 'basic'
   const hasUnsavedChanges = useMemo(
     () => !permissionSetsMatch(selectedCodes, role.permissionCodes),
     [role.permissionCodes, selectedCodes],
@@ -409,13 +497,18 @@ function RolePermissionEditor({
       const next = new Set(current)
       if (next.has(code)) next.delete(code)
       else next.add(code)
-      return next
+      return keepHomeExperienceValid(next)
     })
     setMessage(null)
   }
 
   function setAllPermissions(codes: string[], selected: boolean) {
-    setSelectedCodes((current) => applyPermissionCategorySelection(current, codes, selected))
+    setSelectedCodes((current) => keepHomeExperienceValid(applyPermissionCategorySelection(current, codes, selected)))
+    setMessage(null)
+  }
+
+  function setHomeExperience(experience: HomeExperience) {
+    setSelectedCodes((current) => applyHomeExperienceSelection(current, experience))
     setMessage(null)
   }
 
@@ -445,6 +538,12 @@ function RolePermissionEditor({
           <small>{role.protected ? 'Safety permissions locked' : 'Editable role'}</small>
         </div>
       </div>
+
+      <HomeExperienceSelector
+        lockedToOperations={role.protected && role.code === 'system_admin'}
+        onChange={setHomeExperience}
+        value={homeExperience}
+      />
 
       <div className="access-permission-toolbar">
         <label className="access-search-field">

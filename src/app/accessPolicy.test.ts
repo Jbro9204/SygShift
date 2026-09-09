@@ -33,9 +33,10 @@ describe('central access policy', () => {
 
   it('always resolves an authorized landing route instead of redirecting a restricted user in a loop', () => {
     expect(resolveAuthorizedLandingRoute(session(['operations.view']))).toBe('/')
-    expect(resolveAuthorizedLandingRoute(session(['schedule.view']))).toBe('/schedule')
-    expect(resolveAuthorizedLandingRoute(session(['time.self.view']))).toBe('/time')
-    expect(resolveAuthorizedLandingRoute(session([]))).toBe('/tasks')
+    expect(resolveAuthorizedLandingRoute(session(['schedule.view']))).toBe('/')
+    expect(resolveAuthorizedLandingRoute(session(['time.self.view']))).toBe('/')
+    expect(resolveAuthorizedLandingRoute(session([]))).toBe('/')
+    expect(canAccessRoute('/', session([]))).toBe(true)
   })
 
   it('separates personal schedule access from company-wide schedule access', () => {

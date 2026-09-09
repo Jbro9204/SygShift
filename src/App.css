@@ -31279,6 +31279,108 @@ button.patrol-overview-row:focus-visible {
   font-weight: 850;
 }
 
+.access-home-experience {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 18px;
+  background: light-dark(#fffaf0, #15191d);
+  border: 1px solid light-dark(#dfcba7, #4a4132);
+  border-radius: 16px;
+}
+
+.access-modal-card .access-home-experience {
+  margin: 2px 0 0;
+}
+
+.access-home-experience legend {
+  padding: 0 7px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+.access-home-experience > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.access-home-experience__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.access-modal-card .access-home-experience__option,
+.access-home-experience__option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  min-height: 94px;
+  padding: 15px;
+  color: var(--ink);
+  background: light-dark(#fffdfa, #1a1f23);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.access-home-experience__option:hover,
+.access-home-experience__option:focus-within {
+  border-color: light-dark(#c68d2e, #8a6729);
+  box-shadow: 0 8px 20px rgba(73, 49, 14, 0.09);
+}
+
+.access-home-experience__option--selected {
+  background: light-dark(#fff2d2, #342817);
+  border-color: light-dark(#c68d2e, #a77b2a);
+  box-shadow: inset 4px 0 0 #c68d2e;
+}
+
+.access-home-experience__option:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.access-home-experience__option input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: light-dark(#bd8427, #e0b65a);
+}
+
+.access-home-experience__option span {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.access-home-experience__option strong {
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.access-home-experience__option small,
+.access-home-experience__note {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.access-home-experience__note {
+  display: block;
+  color: light-dark(#74510f, #e0b65a);
+  font-weight: 800;
+}
+
 .permission-nest-list {
   display: grid;
   gap: 12px;
@@ -32566,6 +32668,10 @@ button.patrol-overview-row:focus-visible {
 }
 
 @media (max-width: 760px) {
+  .access-home-experience__options {
+    grid-template-columns: 1fr;
+  }
+
   .access-command-center__actions,
   .role-library-panel__heading,
   .access-workspace-card__header,

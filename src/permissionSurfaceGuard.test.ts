@@ -93,7 +93,7 @@ describe('permission surface guardrails', () => {
 
   it('keeps permission search available in role editing and individual overrides', () => {
     expect(accessControlPage).toContain('permissionMatchesSearch')
-    expect(accessControlPage).toContain('filterPermissions(permissions, permissionSearch)')
+    expect(accessControlPage).toContain('filterPermissions(rolePermissions, permissionSearch)')
     expect(accessControlPage).toContain('Search permissions, categories, codes, or MFA')
     expect(accessControlPage).toContain('placeholder="Search permissions"')
     expect(employeeAccessWorkspace).toContain('permissionMatchesSearch')

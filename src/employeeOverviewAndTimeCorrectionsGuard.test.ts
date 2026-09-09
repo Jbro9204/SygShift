@@ -14,7 +14,7 @@ const cssSource = readFileSync(join(sourceRoot, 'App.css'), 'utf8')
 
 describe('employee overview and time correction guardrails', () => {
   it('keeps employee landing personal instead of exposing operations totals', () => {
-    expect(overviewSource).toContain('homeModeForRole(session.role)')
+    expect(overviewSource).toContain('homeModeForPermissions(session.permissions)')
     expect(overviewSource).toContain("homeMode === 'operations'")
     expect(overviewSource).toContain('<EmployeeHome')
     expect(overviewSource).toContain('<OperationsHome')

@@ -7,6 +7,7 @@ export interface RouteAccessPolicy {
 }
 
 export const documentStudioAccessPermission = 'documents.workspace.view' as const
+export const operationsHomePermission = 'home.operations.view' as const
 export const sygilantPlatformAccessPermission = 'apps.sygilant.access' as const
 
 export const scheduleTeamViewPermissions = [
@@ -25,7 +26,7 @@ export const scheduleRoutePermissions = [
 ] as const
 
 export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = {
-  '/': { anyOf: ['operations.view'] },
+  '/': { anyOf: [] },
   '/account': { anyOf: [] },
   '/account-security': { anyOf: [] },
   '/actions': { anyOf: ['actions.self.view'] },
@@ -77,7 +78,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/clients/:clientId': { anyOf: ['clients.view', 'clients.manage'] },
   '/patrol': { anyOf: ['patrol.self.view', 'patrol.view', 'patrol.manage', 'patrol.operations.view', 'patrol.routes.manage'] },
   '/patrol/:patrolTab': { anyOf: ['patrol.self.view', 'patrol.view', 'patrol.manage', 'patrol.operations.view', 'patrol.routes.manage'] },
-  '/requests': { anyOf: ['requests.view', 'requests.manage'] },
+  '/requests': { anyOf: [] },
   '/announcements': { anyOf: ['announcements.send', 'announcements.banner.manage'] },
   '/notifications': { anyOf: [] },
   '/reports': { anyOf: ['reports.view', 'time.reports.view', 'clients.activity.view'] },
@@ -144,8 +145,8 @@ export function canAccessRoute(
       ? '/hr/people/:employeeId'
       : pathname
   const policy = routeAccessPolicies[policyKey]
-  if (pathname === '/account' || pathname === '/account-security' || pathname === '/requests' || pathname === '/my-documents' || pathname === '/support' || pathname === '/notifications' || pathname === '/sygsphere' || pathname === '/tasks') return Boolean(policy)
-  return policy ? hasAnyEffectivePermission(session, policy.anyOf) : false
+  if (!policy || !session) return false
+  return policy.anyOf.length === 0 || hasAnyEffectivePermission(session, policy.anyOf)
 }
 
 export function resolveAuthorizedLandingRoute(

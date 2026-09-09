@@ -60,7 +60,7 @@ import {
   dateKeyInTimeZone,
   greetingName,
   greetingPeriod,
-  homeModeForRole,
+  homeModeForPermissions,
   sundayWeekStart,
   summarizeTodayCoverage,
 } from './homeModel'
@@ -161,7 +161,7 @@ export function OverviewPage() {
     queryKey: ['session-context'],
   })
   const session = sessionQuery.data
-  const homeMode = session ? homeModeForRole(session.role) : 'employee'
+  const homeMode = session ? homeModeForPermissions(session.permissions) : 'basic'
   const operationsHome = homeMode === 'operations'
   const ownTimeAllowed = canViewOwnTime(session)
   const punchAllowed = canUseOwnTimeClock(session)
@@ -365,12 +365,12 @@ export function OverviewPage() {
   )
 }
 
-function HomeGreeting({ displayTimeZone, mode, session }: { displayTimeZone: string; mode: 'employee' | 'operations'; session: SessionContext }) {
+function HomeGreeting({ displayTimeZone, mode, session }: { displayTimeZone: string; mode: 'basic' | 'operations'; session: SessionContext }) {
   const now = new Date()
   return (
     <section className="home-greeting">
       <div>
-        <p className="eyebrow">{mode === 'operations' ? 'Operations Home' : 'My Home'}</p>
+        <p className="eyebrow">{mode === 'operations' ? 'Operations Home' : 'Basic Home'}</p>
         <h1>Good {greetingPeriod(now)}, {greetingName(session.displayName, session.username)}.</h1>
         <p>{mode === 'operations' ? 'Lead clearly, act early, and keep the team safe.' : 'Stay alert, stay prepared, and have a safe shift.'}</p>
       </div>

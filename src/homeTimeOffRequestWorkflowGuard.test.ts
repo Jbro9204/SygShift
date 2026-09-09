@@ -22,7 +22,8 @@ describe('Home time-off request workflow guardrails', () => {
     expect(overview).toContain('Request Time Off')
     expect(overview).toContain('<TimeOffRequestModal')
     expect(overview).toContain('requestHistoryPath="/requests"')
-    expect(accessPolicy).toContain("pathname === '/requests'")
+    expect(accessPolicy).toContain("'/requests': { anyOf: [] }")
+    expect(accessPolicy).toContain('policy.anyOf.length === 0 || hasAnyEffectivePermission')
     expect((overview.match(/Request Time Off/g) ?? []).length).toBe(1)
   })
 

@@ -47,7 +47,7 @@ export const homeNavigationItem: NavigationItem = {
   label: 'Home',
   path: '/',
   icon: LayoutDashboard,
-  permissions: ['operations.view'],
+  permissions: [],
 }
 
 export const navigationGroups: NavigationGroup[] = [

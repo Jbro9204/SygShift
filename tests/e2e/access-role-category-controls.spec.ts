@@ -12,6 +12,20 @@ test('role permission category controls stay clear and contained', async ({ page
           <div class="access-workspace-card__header">
             <div><p class="eyebrow">Permission workspace</p><h2>Human Resources Manager</h2></div>
           </div>
+          <fieldset class="access-home-experience">
+            <legend>Home experience</legend>
+            <p>Choose the landing page employees receive after they sign in.</p>
+            <div class="access-home-experience__options">
+              <label class="access-home-experience__option">
+                <input name="homeExperience" type="radio" value="basic" />
+                <span><strong>Basic Home</strong><small>Personal schedule, time, requests, announcements, and assigned work.</small></span>
+              </label>
+              <label class="access-home-experience__option access-home-experience__option--selected">
+                <input checked name="homeExperience" type="radio" value="operations" />
+                <span><strong>Operations Home</strong><small>Company coverage, staffing totals, priority queues, and management workspaces.</small></span>
+              </label>
+            </div>
+          </fieldset>
           <div class="access-permission-accordion">
             <section class="access-permission-group access-permission-group--open">
               <button class="access-permission-group__header" type="button">
@@ -34,6 +48,9 @@ test('role permission category controls stay clear and contained', async ({ page
   })
 
   const controls = page.getByLabel('HR & Finance category controls')
+  await expect(page.getByText('Basic Home', { exact: true })).toBeVisible()
+  await expect(page.getByText('Operations Home', { exact: true })).toBeVisible()
+  await expect(page.getByRole('radio', { name: 'Operations Home' })).toBeChecked()
   await expect(controls).toBeVisible()
   await expect(controls.getByRole('button', { name: 'Select all' })).toBeVisible()
   await expect(controls.getByRole('button', { name: 'Clear all' })).toBeVisible()
@@ -54,4 +71,8 @@ test('role permission category controls stay clear and contained', async ({ page
   const documentOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   expect(documentOverflow).toBeLessThanOrEqual(1)
   await page.screenshot({ path: testInfo.outputPath('access-role-category-controls.png'), fullPage: true })
+
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
+  await expect(page.getByText('Operations Home', { exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('access-role-category-controls-dark.png'), fullPage: true })
 })

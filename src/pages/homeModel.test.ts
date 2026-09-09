@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ScheduleShift } from '../data/schedule'
-import { boundedHomeItems, greetingName, greetingPeriod, homeModeForRole, sundayWeekStart, summarizeTodayCoverage } from './homeModel'
+import { boundedHomeItems, greetingName, greetingPeriod, homeModeForPermissions, sundayWeekStart, summarizeTodayCoverage } from './homeModel'
 
 function shift(overrides: Partial<ScheduleShift> = {}): ScheduleShift {
   return {
@@ -21,13 +21,11 @@ function shift(overrides: Partial<ScheduleShift> = {}): ScheduleShift {
 }
 
 describe('Home presentation model', () => {
-  it('uses the Operations Home only for supervisors and admins', () => {
-    expect(homeModeForRole('guard')).toBe('employee')
-    expect(homeModeForRole('dispatcher')).toBe('employee')
-    expect(homeModeForRole('scheduler')).toBe('employee')
-    expect(homeModeForRole('recruiting_licensing')).toBe('employee')
-    expect(homeModeForRole('supervisor')).toBe('operations')
-    expect(homeModeForRole('admin')).toBe('operations')
+  it('uses Operations Home only when the explicit experience and dashboard permissions are both effective', () => {
+    expect(homeModeForPermissions([])).toBe('basic')
+    expect(homeModeForPermissions(['operations.view'])).toBe('basic')
+    expect(homeModeForPermissions(['home.operations.view'])).toBe('basic')
+    expect(homeModeForPermissions(['home.operations.view', 'operations.view'])).toBe('operations')
   })
 
   it('builds a concise greeting with safe fallbacks', () => {
