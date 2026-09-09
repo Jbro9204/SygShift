@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 09/09/2026 - SygTasks Communication Navigation Removal
+
+- Removed the duplicate SygTasks entry from Communication while preserving the permanent branded lower-sidebar launcher and the `/tasks` route.
+- Communication now contains only Announcements, Notifications, and Reports; no database, permission, task-data, notification, timekeeping, payroll, scheduling, HR, ticket, or SygSphere behavior changed.
+- Released source commit `0f1fa0d` as Cloudflare Worker `d10c2ef1-b32d-40bf-a96b-c3daef064e03`; both production domains are healthy/ready, `/tasks` returns HTTP 200, and the live entry/SygTasks assets match the verified build byte-for-byte.
+- Verification passed 224 test files / 1,127 tests, TypeScript, zero-warning lint, both builds, 18 focused navigation/launcher tests, and the 54-check desktop/mobile launcher and Time Clock preservation matrix.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-09-2026_SYGTASKS_COMMUNICATION_NAVIGATION_REMOVAL.md`.
+
 ## 09/09/2026 - Split-Shift Return and Request Notifications
 
 - Enabled an employee to clock out for an unpaid appointment and return to the same assigned shift as a new append-only segment, including a bounded six-hour post-shift recovery window and a clear **Resume work** action across Home and Time & Attendance.
