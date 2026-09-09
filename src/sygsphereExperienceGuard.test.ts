@@ -38,6 +38,9 @@ describe('SygSphere experience boundaries', () => {
     expect(files).toContain("'content-security-policy': \"sandbox; default-src 'none'")
     expect(files).toContain("'cross-origin-resource-policy': 'same-origin'")
     expect(data).toContain("file.mimeType === 'text/plain' && file.sizeBytes <= 1048576")
+    expect(page).toContain("import { SecurePdfViewer } from '../components/SecurePdfViewer'")
+    expect(page).toContain('<SecurePdfViewer title={file.filename} url={preview.data.url} />')
+    expect(page).not.toContain('<iframe src={preview.data.url}')
   })
 
   it('keeps inline and HR limits intact while larger images use a bounded resumable quarantine path', () => {

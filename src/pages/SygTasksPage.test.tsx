@@ -71,4 +71,21 @@ describe('SygTasksPage', () => {
     await user.click(screen.getByRole('button', { name: 'Comments (1)' }))
     expect(screen.getByText('Coverage request sent.')).toBeInTheDocument()
   })
+
+  it('keeps personal board settings owner-only without member controls', async () => {
+    const user = userEvent.setup()
+    mocks.getWorkspace.mockImplementation((input: { taskId?: string | null }) => {
+      const personal = workspace()
+      personal.selectedBoard.scope = 'personal'
+      personal.boards[0].scope = 'personal'
+      return Promise.resolve({ ...personal, taskDetail: input.taskId ? taskDetail() : null })
+    })
+    renderPage(`/tasks?board=${boardId}`)
+
+    await user.click(await screen.findByRole('button', { name: 'Board settings' }))
+    expect(screen.getByRole('heading', { name: 'Private to you' })).toBeInTheDocument()
+    expect(screen.getByText(/Only you can find, open, change, follow, or receive updates/)).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Members' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument()
+  })
 })

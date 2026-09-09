@@ -50,6 +50,21 @@ describe('LoginPage', () => {
     expect(screen.getByLabelText('Password')).toBeInTheDocument()
   })
 
+  it('opens an enumeration-safe username reminder form without asking for a username', () => {
+    render(
+      <MemoryRouter>
+        <LoginPage />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Forgot username?' }))
+
+    expect(screen.getByRole('heading', { name: 'Find your username' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Email on your employee record')).toHaveAttribute('type', 'email')
+    expect(screen.getByRole('button', { name: 'Send username reminder' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Username')).not.toBeInTheDocument()
+  })
+
   it('confirms a completed password reset without exposing recovery details', () => {
     render(
       <MemoryRouter initialEntries={[{

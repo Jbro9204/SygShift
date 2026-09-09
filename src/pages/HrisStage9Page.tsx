@@ -79,6 +79,8 @@ function Stage9WorkspacePage({ module }: { module: HrStage9Module }) {
   const sessionQuery = useQuery({ queryKey: ['session-context'], queryFn: getSessionContext, enabled: isSupabaseConfigured })
   const hasPermission = sessionQuery.data?.permissions.includes(definition.permission) === true
   const canManage = module === 'self_service' || sessionQuery.data?.permissions.includes(`hr.${module}.manage`) === true
+  const canApproveLifecycle = module === 'offboarding'
+    && sessionQuery.data?.permissions.includes('hr.offboarding.approve') === true
   const workspaceQuery = useQuery({
     queryKey: ['hr-stage9-workspace', module, pageSize, offset],
     queryFn: () => getHrStage9Workspace(module, pageSize, offset),
@@ -99,13 +101,13 @@ function Stage9WorkspacePage({ module }: { module: HrStage9Module }) {
       {workspaceQuery.isError ? <DataStatePanel icon={AlertTriangle} title={`${definition.title} unavailable`} tone="error"><p>{workspaceQuery.error.message}</p></DataStatePanel> : null}
       {workspaceQuery.data && !workspaceQuery.data.enabled ? <DataStatePanel icon={CheckCircle2} title={`${definition.title} is safely staged`}><p>{definition.staged}</p><p>No current roles, permissions, employee records, schedules, or time records were changed.</p></DataStatePanel> : null}
       {workspaceQuery.data?.enabled ? <>
-        <section className="page-section-heading"><div><p className="eyebrow">Protected workspace</p><h2>{definition.title}</h2><p>{definition.summary}</p></div><div className="hr-operational-heading-actions">{canManage ? <HrOperationalActions module={module} items={workspaceQuery.data.items} onComplete={() => workspaceQuery.refetch()} /> : null}<button className="secondary-button" onClick={() => workspaceQuery.refetch()} type="button"><RefreshCw aria-hidden="true" size={17} />Refresh</button></div></section>
+        <section className="page-section-heading"><div><p className="eyebrow">Protected workspace</p><h2>{definition.title}</h2><p>{definition.summary}</p></div><div className="hr-operational-heading-actions">{canManage ? <HrOperationalActions actionKeys={module === 'offboarding' ? ['create_case'] : undefined} module={module} items={workspaceQuery.data.items} onComplete={() => workspaceQuery.refetch()} triggerLabel={module === 'offboarding' ? 'New case' : 'New or manage'} /> : null}<button className="secondary-button" onClick={() => workspaceQuery.refetch()} type="button"><RefreshCw aria-hidden="true" size={17} />Refresh</button></div></section>
         <section aria-label={`${definition.title} status`} className="hr-automation-summary hr-automation-summary--three">
           {definition.metrics.map((metric, index) => <article key={metric}><WorkspaceIcon aria-hidden="true" size={20} /><span>{metric}</span><strong>{index === 0 ? workspaceQuery.data.counts.primary : index === 1 ? workspaceQuery.data.counts.secondary : workspaceQuery.data.counts.tertiary}</strong></article>)}
         </section>
         <section className="panel hr-automation-worklist">
           <div className="section-heading"><div><p className="eyebrow">Current work</p><h2>{definition.title} worklist</h2></div></div>
-          {workspaceQuery.data.items.length ? <div className="hr-automation-list">{workspaceQuery.data.items.map((item) => <article key={item.id}><div><strong>{item.title}</strong><span>{item.subtitle}{item.detail ? ` · ${item.detail}` : ''}</span></div><div><span className="action-status">{item.status}</span>{formatDate(item.dateLabel) ? <small>{formatDate(item.dateLabel)}</small> : null}</div></article>)}</div> : <div className="compact-empty"><WorkspaceIcon aria-hidden="true" size={24} /><span>{definition.empty}</span></div>}
+          {workspaceQuery.data.items.length ? <div className="hr-automation-list">{workspaceQuery.data.items.map((item) => <article key={item.id}><div><strong>{item.title}</strong><span>{item.subtitle}{item.detail ? ` · ${item.detail}` : ''}</span></div><div className="hr-lifecycle-row-actions"><span className="action-status">{item.status.replaceAll('_', ' ')}</span>{formatDate(item.dateLabel) ? <small>{formatDate(item.dateLabel)}</small> : null}{module === 'offboarding' && item.status === 'pending_approval' && canApproveLifecycle ? <HrOperationalActions actionKeys={['review_case']} initialValues={{ id: item.id }} items={[item]} module="offboarding" onComplete={() => workspaceQuery.refetch()} showPlusIcon={false} triggerClassName="secondary-button secondary-button--small" triggerLabel="Manage" /> : null}</div></article>)}</div> : <div className="compact-empty"><WorkspaceIcon aria-hidden="true" size={24} /><span>{definition.empty}</span></div>}
         </section>
         <HrPagination itemCount={workspaceQuery.data.items.length} label={`${definition.title} records`} offset={offset} onOffsetChange={setOffset} onPageSizeChange={setPageSize} pageSize={pageSize} />
       </> : null}

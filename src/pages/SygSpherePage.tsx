@@ -5,6 +5,7 @@ import { ALargeSmall, ArrowLeft, Bell, BellOff, Bookmark, Check, ChevronDown, Do
 import { getSessionContext } from '../data/auth'
 import { readSphereDraft, sphereActiveMentions, sphereCanPreview, sphereConversation, sphereCreate, sphereDirectory, sphereDownload, sphereDraftKey, sphereFiles, sphereInbox, sphereMessage, sphereMessageParts, sphereMessages, spherePath, spherePhoto, spherePreferences, spherePreview, sphereRequest, sphereSearch, sphereSend, sphereUpload, writeSphereDraft, type SphereConversation, type SphereFile, type SphereMention, type SphereMessage, type SpherePerson, type SpherePreview, type SphereTextSize } from '../data/sygsphere'
 import { ModalDialog } from '../components/ModalDialog'
+import { SecurePdfViewer } from '../components/SecurePdfViewer'
 import '../styles/sygsphere.css'
 
 const reactions = ['👍', '❤️', '✅', '🎉', '👀', '🙏']
@@ -299,7 +300,7 @@ function FileButton({ file }: { file: SphereFile }) {
     <button type="button" disabled={download.isPending} onClick={() => download.mutate()}><Download size={17} />{download.isPending ? 'Downloading…' : 'Download'}</button>
   </div></div><ErrorNotice error={download.error || preview.error} />
   {preview.data ? <ModalDialog title={file.filename} description="Protected SygSphere preview" className="sphere-modal sphere-preview-modal" onClose={() => preview.reset()}><div className="sphere-preview">
-    {preview.data.kind === 'text' ? <pre>{preview.data.text}</pre> : preview.data.kind === 'image' ? <img src={preview.data.url} alt={`Preview of ${file.filename}`} /> : <iframe src={preview.data.url} title={`Preview of ${file.filename}`} sandbox="" />}
+    {preview.data.kind === 'text' ? <pre>{preview.data.text}</pre> : preview.data.kind === 'image' ? <img src={preview.data.url} alt={`Preview of ${file.filename}`} /> : <SecurePdfViewer title={file.filename} url={preview.data.url} />}
     <footer><button type="button" onClick={() => preview.reset()}>Close</button><button type="button" onClick={() => download.mutate()} disabled={download.isPending}><Download size={17} />Download</button></footer>
   </div></ModalDialog> : null}</div>
 }

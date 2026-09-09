@@ -239,6 +239,14 @@ interface SelfServicePasswordResetClaim extends Partial<LoginEmailTarget> {
   eligible: boolean
 }
 
+interface SelfServiceUsernameClaim {
+  eligible: boolean
+  employeeId?: string
+  contactEmail?: string
+  displayName?: string
+  usernames?: string[]
+}
+
 interface AuthUser {
   id: string
   email?: string
@@ -5273,6 +5281,41 @@ function buildPasswordResetEmail(
   }
 }
 
+function buildUsernameReminderEmail(
+  displayName: string,
+  usernames: string[],
+  appUrl: string,
+): NotificationJob['message'] {
+  const firstName = greetingName(displayName)
+  const normalizedAppUrl = appUrl.replace(/\/+$/, '')
+  const usernameLines = usernames.map((username) => `- ${username}`)
+  const usernameItems = usernames.map((username) => `<li><strong>${escapeHtml(username)}</strong></li>`).join('')
+  return {
+    subject: 'Your SygShift username',
+    text: [
+      `Hello ${firstName},`,
+      usernames.length === 1
+        ? 'The username for your active SygShift account is:'
+        : 'The usernames for the active SygShift accounts using this email are:',
+      usernameLines.join('\n'),
+      `Sign in to SygShift: ${normalizedAppUrl}`,
+      'If you did not request this reminder, no action is required. Your password and security settings were not changed.',
+      'SygShift',
+      'Guardianship Security',
+    ].join('\n\n'),
+    html: `
+      <p>Hello ${escapeHtml(firstName)},</p>
+      <p>${usernames.length === 1
+        ? 'The username for your active SygShift account is:'
+        : 'The usernames for the active SygShift accounts using this email are:'}</p>
+      <ul>${usernameItems}</ul>
+      <p><a href="${escapeHtml(normalizedAppUrl)}">Sign in to SygShift</a></p>
+      <p>If you did not request this reminder, no action is required. Your password and security settings were not changed.</p>
+      <p><strong>SygShift</strong><br>Guardianship Security</p>
+    `,
+  }
+}
+
 type GeneratedPasswordRecoveryLink = {
   action_link?: string
   hashed_token?: string
@@ -5293,6 +5336,7 @@ function buildApplicationPasswordRecoveryLink(
 }
 
 const passwordResetAcceptedMessage = 'If an active SygShift account and approved personal email match that username, a password-reset link will arrive shortly.'
+const usernameRecoveryAcceptedMessage = 'If an active SygShift account uses that approved email, a username reminder will arrive shortly.'
 
 async function passwordResetRequestFingerprint(
   request: Request,
@@ -5428,6 +5472,85 @@ async function handleSelfServicePasswordResetApi(
   }
 
   return json({ accepted: true, message: passwordResetAcceptedMessage, requestId }, 202)
+}
+
+async function handleSelfServiceUsernameRecoveryApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  if (request.method !== 'POST') {
+    return errorJson('method_not_allowed', requestId, 405)
+  }
+
+  const config = configuredSupabase(environment)
+  if (!config) {
+    throw new ApiError('username_recovery_unavailable', 503, 'Username recovery is temporarily unavailable.')
+  }
+
+  const body = await readJsonBody(request)
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+  const fingerprint = request.headers.get('cf-connecting-ip')?.trim() || 'unavailable'
+  const [emailHash, fingerprintHash] = await Promise.all([
+    sha256Hex(`username-recovery-email:${email}`),
+    sha256Hex(`username-recovery-request:${fingerprint}`),
+  ])
+
+  try {
+    const claim = await callRpc<SelfServiceUsernameClaim>(
+      { serviceRoleKey: config.serviceRoleKey, url: config.url },
+      'service_claim_self_service_username',
+      {
+        target_email: email,
+        target_email_hash: emailHash,
+        target_request_fingerprint_hash: fingerprintHash,
+        target_request_id: requestId,
+      },
+      config.serviceRoleKey,
+    )
+
+    if (claim.eligible) {
+      if (
+        typeof claim.employeeId !== 'string'
+        || typeof claim.contactEmail !== 'string'
+        || typeof claim.displayName !== 'string'
+        || !Array.isArray(claim.usernames)
+        || claim.usernames.length < 1
+        || claim.usernames.some((username) => typeof username !== 'string' || !/^[a-z][a-z0-9]{1,62}$/.test(username))
+      ) {
+        throw new Error('The username-recovery target was incomplete.')
+      }
+      if (isBlockedEmailRecipient(environment, claim.contactEmail)) {
+        throw new Error('The username-recovery recipient is not approved for delivery.')
+      }
+
+      const appUrl = environment.SYGSHIFT_PUBLIC_APP_URL?.trim() || defaultAppUrl
+      const delivery = await sendAuditedEmail(
+        environment,
+        claim.contactEmail,
+        buildUsernameReminderEmail(claim.displayName, claim.usernames, appUrl),
+        {
+          notificationType: 'username_recovery_self_service',
+          relatedRecordId: claim.employeeId,
+          relatedRecordType: 'employee',
+        },
+        defaultSupportEmail,
+      )
+      if (delivery.failed.length > 0 || delivery.suppressed.length > 0 || delivery.sent.length === 0) {
+        throw new Error('The username-reminder email could not be delivered.')
+      }
+    }
+  } catch (error) {
+    // Account existence, matching usernames, delivery addresses, and rate-limit
+    // outcomes are intentionally never returned to the signed-out browser.
+    console.error(JSON.stringify({
+      event: 'self_service_username_recovery_failed',
+      failureType: error instanceof ApiError ? error.code : 'username_recovery_delivery_failed',
+      requestId,
+    }))
+  }
+
+  return json({ accepted: true, message: usernameRecoveryAcceptedMessage, requestId }, 202)
 }
 
 async function sendLoginInstructions(
@@ -7267,6 +7390,19 @@ export default {
         response = error instanceof ApiError
           ? errorJson(error.code, requestId, error.status, error.message)
           : errorJson('password_reset_unavailable', requestId, 503, 'Password recovery is temporarily unavailable.')
+      }
+    } else if (url.pathname === '/api/v1/auth/username-recovery/request') {
+      try {
+        response = await handleSelfServiceUsernameRecoveryApi(request, environment, requestId)
+      } catch (error) {
+        console.error(JSON.stringify({
+          event: 'username_recovery_request_failed',
+          failureType: error instanceof ApiError ? error.code : 'username_recovery_unavailable',
+          requestId,
+        }))
+        response = error instanceof ApiError
+          ? errorJson(error.code, requestId, error.status, error.message)
+          : errorJson('username_recovery_unavailable', requestId, 503, 'Username recovery is temporarily unavailable.')
       }
     } else if (url.pathname === '/api/v1/internal/document-pipeline/canary') {
       try {

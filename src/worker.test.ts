@@ -474,6 +474,82 @@ describe('Cloudflare Worker boundary', () => {
     vi.unstubAllGlobals()
   })
 
+  it('accepts an unknown self-service username-recovery email without revealing account state', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ eligible: false }), {
+      headers: { 'content-type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/auth/username-recovery/request', {
+        body: JSON.stringify({ email: 'unknown@example.com' }),
+        headers: { 'cf-connecting-ip': '192.0.2.20', 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), configuredEnvironment),
+    )
+    const payload = await response.json() as { accepted: boolean; message: string }
+
+    expect(response.status).toBe(202)
+    expect(payload.accepted).toBe(true)
+    expect(payload.message).toContain('If an active SygShift account')
+    expect(JSON.stringify(payload)).not.toContain('unknown@example.com')
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/rest/v1/rpc/service_claim_self_service_username')
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      target_email: 'unknown@example.com',
+    })
+    vi.unstubAllGlobals()
+  })
+
+  it('emails active usernames without changing password or MFA settings', async () => {
+    const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        eligible: true,
+        employeeId: targetEmployeeId,
+        contactEmail: 'employee@example.com',
+        displayName: 'Example Employee',
+        usernames: ['employee', 'employee2'],
+      }), { headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ logged: true }), {
+        headers: { 'content-type': 'application/json' },
+      }))
+    const send = vi.fn().mockResolvedValue({ messageId: 'username-reminder-message' })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/auth/username-recovery/request', {
+        body: JSON.stringify({ email: 'Employee@Example.com' }),
+        headers: { 'cf-connecting-ip': '192.0.2.21', 'content-type': 'application/json' },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        EMAIL: { send },
+        SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+        SYGSHIFT_PUBLIC_APP_URL: 'https://app.sygshift.com',
+      }),
+    )
+    const payload = await response.json() as { accepted: boolean; message: string }
+
+    expect(response.status).toBe(202)
+    expect(payload.accepted).toBe(true)
+    expect(JSON.stringify(payload)).not.toContain('employee@example.com')
+    expect(JSON.stringify(payload)).not.toContain('employee2')
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ to: 'employee@example.com' })
+    expect(send.mock.calls[0]?.[0].subject).toBe('Your SygShift username')
+    expect(send.mock.calls[0]?.[0].html).toContain('<strong>employee</strong>')
+    expect(send.mock.calls[0]?.[0].html).toContain('<strong>employee2</strong>')
+    expect(send.mock.calls[0]?.[0].html).not.toContain('password-recovery')
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
+      target_notification_type: 'username_recovery_self_service',
+      target_related_record_id: targetEmployeeId,
+    })
+    vi.unstubAllGlobals()
+  })
+
   it('sends an enumeration-safe self-service password-reset email to the approved personal address', async () => {
     const targetEmployeeId = '10000000-0000-4000-8000-000000000010'
     const targetAuthUserId = '20000000-0000-4000-8000-000000000010'

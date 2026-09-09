@@ -49,13 +49,35 @@ const actions: Record<HrOperationalModule, Action[]> = {
   reporting: [{ key: 'create_definition', label: 'Create HR report definition', description: 'Create a permission-filtered report definition for later execution.', fields: [{ key: 'name', label: 'Report name', required: true }, { key: 'description', label: 'Description', kind: 'textarea' }, { key: 'sourceKey', label: 'Source', options: ['people', 'employment', 'documents', 'leave', 'benefits', 'compensation', 'learning', 'assets', 'lifecycle'], required: true }, { key: 'visibility', label: 'Visibility', options: ['private', 'role', 'authorized_hr'], required: true }, { key: 'selectedColumnsText', label: 'Columns (comma separated)', required: true }] }],
 }
 
-export function HrOperationalActions({ module, items, onComplete }: { module: HrOperationalModule; items: Item[]; onComplete: () => void }) {
+export function HrOperationalActions({
+  actionKeys,
+  initialValues = {},
+  items,
+  module,
+  onComplete,
+  showPlusIcon = true,
+  triggerClassName = 'primary-action',
+  triggerLabel = 'New or manage',
+}: {
+  actionKeys?: string[]
+  initialValues?: Record<string, string>
+  items: Item[]
+  module: HrOperationalModule
+  onComplete: () => void
+  showPlusIcon?: boolean
+  triggerClassName?: string
+  triggerLabel?: string
+}) {
   const [open, setOpen] = useState(false)
-  const [selected, setSelected] = useState(actions[module][0].key)
+  const visibleActions = useMemo(
+    () => actions[module].filter((entry) => !actionKeys || actionKeys.includes(entry.key)),
+    [actionKeys, module],
+  )
+  const [selected, setSelected] = useState(visibleActions[0]?.key ?? actions[module][0].key)
   const [values, setValues] = useState<Record<string, string>>({})
   const [reason, setReason] = useState('')
   const [message, setMessage] = useState('')
-  const action = useMemo(() => actions[module].find((entry) => entry.key === selected) ?? actions[module][0], [module, selected])
+  const action = useMemo(() => visibleActions.find((entry) => entry.key === selected) ?? visibleActions[0] ?? actions[module][0], [module, selected, visibleActions])
   const optionsQuery = useQuery({ queryKey: ['hr-operational-options', module], queryFn: () => getHrOperationalOptions(module), enabled: open })
   const mutation = useMutation({ mutationFn: runHrOperationalAction, onSuccess: () => { setMessage('Saved successfully.'); setValues({}); setReason(''); onComplete() } })
 
@@ -68,16 +90,31 @@ export function HrOperationalActions({ module, items, onComplete }: { module: Hr
     mutation.mutate({ module, action: action.key, payload, reason })
   }
 
+  function openDialog() {
+    setSelected(visibleActions[0]?.key ?? actions[module][0].key)
+    setValues(initialValues)
+    setReason('')
+    setMessage('')
+    mutation.reset()
+    setOpen(true)
+  }
+
+  function closeDialog() {
+    setOpen(false)
+    setMessage('')
+    mutation.reset()
+  }
+
   return <>
-    <button className="primary-action" onClick={() => setOpen(true)} type="button"><Plus aria-hidden="true" size={17} />New or manage</button>
-    {open ? <ModalDialog busy={mutation.isPending} className="hr-operational-modal" description={action.description} eyebrow="Protected HR action" headingIcon={<ShieldCheck size={20} />} onClose={() => setOpen(false)} title={action.label}>
+    <button className={triggerClassName} onClick={openDialog} type="button">{showPlusIcon ? <Plus aria-hidden="true" size={17} /> : null}{triggerLabel}</button>
+    {open ? <ModalDialog busy={mutation.isPending} className="hr-operational-modal" description={action.description} eyebrow="Protected HR action" headingIcon={<ShieldCheck size={20} />} onClose={closeDialog} title={action.label}>
       <form className="request-form hr-operational-form" onSubmit={submit}>
-        <label><span>Action</span><select value={selected} onChange={(event) => { setSelected(event.target.value); setValues({}); setMessage('') }}>{actions[module].map((entry) => <option key={entry.key} value={entry.key}>{entry.label}</option>)}</select></label>
+        {visibleActions.length > 1 ? <label><span>Action</span><select value={selected} onChange={(event) => { setSelected(event.target.value); setValues({ ...initialValues }); setMessage('') }}>{visibleActions.map((entry) => <option key={entry.key} value={entry.key}>{entry.label}</option>)}</select></label> : null}
         <div className="hr-operational-form__grid">{action.fields.map((field) => <label key={field.key}><span>{field.label}</span>{field.kind === 'textarea' ? <textarea required={field.required} value={values[field.key] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} /> : field.options || field.kind === 'employee' || field.kind === 'record' || field.kind === 'reference' ? <select required={field.required} value={values[field.key] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))}><option value="">Choose…</option>{field.options?.map((option) => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}{field.kind === 'employee' ? optionsQuery.data?.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>) : null}{field.kind === 'record' ? items.map((item) => <option key={item.id} value={item.id}>{item.title} · {item.subtitle ?? item.status}</option>) : null}{field.kind === 'reference' ? optionsQuery.data?.references.map((entry) => <option key={entry.id} value={entry.id}>{entry.label} · {entry.detail}</option>) : null}</select> : <input required={field.required} type={field.kind ?? 'text'} value={values[field.key] ?? ''} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} />}</label>)}</div>
         <label><span>Business reason</span><textarea required value={reason} onChange={(event) => setReason(event.target.value)} /></label>
         {mutation.isError ? <p className="form-error" role="alert">{mutation.error.message}</p> : null}
         {message ? <p className="form-success" role="status"><CheckCircle2 aria-hidden="true" size={17} />{message}</p> : null}
-        <div className="modal-actions"><button className="secondary-button" disabled={mutation.isPending} onClick={() => setOpen(false)} type="button">Close</button><button className="primary-action" disabled={mutation.isPending} type="submit">Save HR action</button></div>
+        <div className="modal-actions"><button className="secondary-button" disabled={mutation.isPending} onClick={closeDialog} type="button">Close</button><button className="primary-action" disabled={mutation.isPending} type="submit">Save HR action</button></div>
       </form>
     </ModalDialog> : null}
   </>

@@ -25,6 +25,16 @@ export const scheduleRoutePermissions = [
   ...scheduleTeamViewPermissions,
 ] as const
 
+export const reportRoutePermissions = [
+  'reports.view',
+  'time.reports.view',
+  'licensing.view',
+  'patrol.reports.view',
+  'patrol.manage',
+  'clients.activity.view',
+  'clients.manage',
+] as const
+
 export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = {
   '/': { anyOf: [] },
   '/account': { anyOf: [] },
@@ -81,8 +91,8 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/requests': { anyOf: [] },
   '/announcements': { anyOf: ['announcements.send', 'announcements.banner.manage'] },
   '/notifications': { anyOf: [] },
-  '/reports': { anyOf: ['reports.view', 'time.reports.view', 'clients.activity.view'] },
-  '/reports/:reportKey': { anyOf: ['reports.view', 'time.reports.view', 'clients.activity.view'] },
+  '/reports': { anyOf: reportRoutePermissions },
+  '/reports/:reportKey': { anyOf: reportRoutePermissions },
   '/users': { anyOf: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.password_reset', 'admin.users.separate', 'admin.users.delete'] },
   '/access-control': { anyOf: ['admin.roles.view', 'admin.roles.manage'] },
   '/administration/access': { anyOf: ['admin.users.view', 'admin.users.basic', 'admin.users.manage', 'admin.users.invite', 'admin.users.password_reset', 'admin.users.separate', 'admin.users.delete', 'admin.roles.view', 'admin.roles.manage'] },

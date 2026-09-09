@@ -30,7 +30,7 @@ import {
   LifeBuoy,
   type LucideIcon,
 } from 'lucide-react'
-import { documentStudioAccessPermission, scheduleRoutePermissions } from './accessPolicy'
+import { documentStudioAccessPermission, reportRoutePermissions, scheduleRoutePermissions } from './accessPolicy'
 export interface NavigationItem {
   label: string
   path: string
@@ -180,7 +180,7 @@ export const navigationGroups: NavigationGroup[] = [
       { label: 'SygTasks', path: '/tasks', icon: ClipboardList, permissions: [] },
       { label: 'Announcements', path: '/announcements', icon: Megaphone, permissions: ['announcements.send', 'announcements.banner.manage'] },
       { label: 'Notifications', path: '/notifications', icon: Bell, permissions: ['notifications.view', 'notifications.manage'] },
-      { label: 'Reports', path: '/reports', icon: FileBarChart, permissions: ['reports.view', 'time.reports.view', 'clients.activity.view'] },
+      { label: 'Reports', path: '/reports', icon: FileBarChart, permissions: [...reportRoutePermissions] },
     ],
   },
   {

@@ -24,7 +24,7 @@ const sessionContextSchema = z.object({
   permissions: z.array(z.string()).optional().default([]),
 })
 
-const passwordResetRequestSchema = z.object({
+const recoveryRequestSchema = z.object({
   accepted: z.literal(true),
   message: z.string().min(1),
 })
@@ -88,9 +88,27 @@ export async function requestPasswordReset(username: string): Promise<string> {
     throw new Error('Password recovery is temporarily unavailable. Please try again shortly.')
   }
 
-  const result = passwordResetRequestSchema.safeParse(await response.json())
+  const result = recoveryRequestSchema.safeParse(await response.json())
   if (!result.success) {
     throw new Error('Password recovery is temporarily unavailable. Please try again shortly.')
+  }
+  return result.data.message
+}
+
+export async function requestUsernameReminder(email: string): Promise<string> {
+  const response = await fetch('/api/v1/auth/username-recovery/request', {
+    body: JSON.stringify({ email: email.trim().toLowerCase() }),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  })
+
+  if (!response.ok) {
+    throw new Error('Username recovery is temporarily unavailable. Please try again shortly.')
+  }
+
+  const result = recoveryRequestSchema.safeParse(await response.json())
+  if (!result.success) {
+    throw new Error('Username recovery is temporarily unavailable. Please try again shortly.')
   }
   return result.data.message
 }

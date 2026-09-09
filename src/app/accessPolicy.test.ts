@@ -5,6 +5,7 @@ import {
   hasAnyEffectivePermission,
   hasEffectivePermission,
   resolveAuthorizedLandingRoute,
+  reportRoutePermissions,
   routeAccessPolicies,
   scheduleRoutePermissions,
   scheduleTeamViewPermissions,
@@ -96,6 +97,16 @@ describe('central access policy', () => {
   it('makes credential-editor access to the Licensing Center functional without granting broader licensing management', () => {
     expect(canAccessRoute('/licensing', session(['directory.edit_credentials']))).toBe(true)
     expect(canAccessRoute('/licensing', session([]))).toBe(false)
+  })
+
+  it('opens Reports from every supported effective report capability, including additive roles', () => {
+    for (const permission of reportRoutePermissions) {
+      expect(canAccessRoute('/reports', session([permission]))).toBe(true)
+      expect(canAccessRoute('/reports/licensingStatus', session([permission]))).toBe(true)
+    }
+    expect(canAccessRoute('/reports', session(['reports.view']))).toBe(true)
+    expect(canAccessRoute('/reports', session([]))).toBe(false)
+    expect(navigationGroups.flatMap((group) => group.items).find((item) => item.path === '/reports')?.permissions).toEqual([...reportRoutePermissions])
   })
 
   it('keeps every navigation destination covered by the route policy', () => {

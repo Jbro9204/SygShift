@@ -2017,6 +2017,19 @@
   gap: 0.75rem;
 }
 
+.hr-lifecycle-row-actions {
+  display: flex;
+  min-width: min(100%, 230px);
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hr-lifecycle-row-actions small {
+  color: var(--text-muted);
+}
+
 .modal-dialog.hr-operational-modal {
   width: min(760px, calc(100vw - 2rem));
 }
@@ -21507,7 +21520,7 @@ a.home-metric-card:focus-visible {
 }
 
 .time-metric__top span {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 900;
   letter-spacing: 0.055em;
   line-height: 1.25;
@@ -21527,7 +21540,7 @@ a.home-metric-card:focus-visible {
 
 .time-metric small {
   color: light-dark(#726b60, #b9b2a7);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.42;
 }
 

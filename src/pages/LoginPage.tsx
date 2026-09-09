@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Eye, EyeOff, KeyRound, LockKeyhole, MailCheck, ShieldCheck } from 'lucide-react'
-import { getSessionContext, requestPasswordReset, signInWithUsername, signOut } from '../data/auth'
+import { getSessionContext, requestPasswordReset, requestUsernameReminder, signInWithUsername, signOut } from '../data/auth'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { beginLoginSound, cancelLoginSound } from '../lib/notificationSounds'
 
@@ -25,7 +25,8 @@ export function LoginPage() {
   const [alreadySignedIn, setAlreadySignedIn] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
-  const [recoveryMode, setRecoveryMode] = useState(false)
+  const [recoveryMode, setRecoveryMode] = useState<'password' | 'username' | null>(null)
+  const [recoveryEmail, setRecoveryEmail] = useState('')
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
 
   const returnPath = useMemo(() => {
@@ -101,16 +102,38 @@ export function LoginPage() {
     }
   }
 
+  async function handleUsernameReminder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setErrorMessage(null)
+    setRecoveryMessage(null)
+    setLoading(true)
+
+    try {
+      setRecoveryMessage(await requestUsernameReminder(recoveryEmail))
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Username recovery is temporarily unavailable.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   function openPasswordRecovery() {
     setErrorMessage(null)
     setRecoveryMessage(null)
-    setRecoveryMode(true)
+    setRecoveryMode('password')
+  }
+
+  function openUsernameRecovery() {
+    setErrorMessage(null)
+    setRecoveryMessage(null)
+    setRecoveryEmail('')
+    setRecoveryMode('username')
   }
 
   function closePasswordRecovery() {
     setErrorMessage(null)
     setRecoveryMessage(null)
-    setRecoveryMode(false)
+    setRecoveryMode(null)
   }
 
   if (alreadySignedIn) {
@@ -144,14 +167,25 @@ export function LoginPage() {
           </div>
         ) : null}
 
-        <form className="login-form" onSubmit={recoveryMode ? handlePasswordReset : handleSubmit}>
-          {recoveryMode ? (
+        <form className="login-form" onSubmit={recoveryMode === 'password' ? handlePasswordReset : recoveryMode === 'username' ? handleUsernameReminder : handleSubmit}>
+          {recoveryMode === 'password' ? (
             <div className="login-recovery__intro">
               <p className="eyebrow">Password recovery</p>
               <h2>Reset your password</h2>
               <p>
                 Enter your SygShift username. If the account is active, we’ll send a secure,
                 single-use reset link to the approved personal email on file.
+              </p>
+            </div>
+          ) : null}
+
+          {recoveryMode === 'username' ? (
+            <div className="login-recovery__intro">
+              <p className="eyebrow">Username recovery</p>
+              <h2>Find your username</h2>
+              <p>
+                Enter the approved email on your employee record. If it matches an active account,
+                we’ll send the username without changing your password or security settings.
               </p>
             </div>
           ) : null}
@@ -163,20 +197,38 @@ export function LoginPage() {
             </div>
           ) : null}
 
-          <label className="field-label">
-            <span>Username</span>
-            <input
-              autoCapitalize="none"
-              autoComplete="username"
-              disabled={!isSupabaseConfigured || checkingSession || loading}
-              inputMode="text"
-              onChange={(event) => setUsername(event.target.value)}
-              placeholder="Username"
-              required
-              type="text"
-              value={username}
-            />
-          </label>
+          {recoveryMode === 'username' ? (
+            <label className="field-label">
+              <span>Email on your employee record</span>
+              <input
+                autoCapitalize="none"
+                autoComplete="email"
+                disabled={!isSupabaseConfigured || checkingSession || loading}
+                inputMode="email"
+                maxLength={254}
+                onChange={(event) => setRecoveryEmail(event.target.value)}
+                placeholder="you@example.com"
+                required
+                type="email"
+                value={recoveryEmail}
+              />
+            </label>
+          ) : (
+            <label className="field-label">
+              <span>Username</span>
+              <input
+                autoCapitalize="none"
+                autoComplete="username"
+                disabled={!isSupabaseConfigured || checkingSession || loading}
+                inputMode="text"
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="Username"
+                required
+                type="text"
+                value={username}
+              />
+            </label>
+          )}
 
           {!recoveryMode ? (
             <div className="field-label">
@@ -203,6 +255,9 @@ export function LoginPage() {
               <button className="login-recovery__link" onClick={openPasswordRecovery} type="button">
                 Forgot password?
               </button>
+              <button className="login-recovery__link" onClick={openUsernameRecovery} type="button">
+                Forgot username?
+              </button>
             </div>
           ) : null}
 
@@ -226,7 +281,9 @@ export function LoginPage() {
             type="submit"
           >
             {recoveryMode ? <MailCheck aria-hidden="true" size={20} /> : <KeyRound aria-hidden="true" size={20} />}
-            {loading ? (recoveryMode ? 'Sending secure link…' : 'Checking access…') : (recoveryMode ? 'Send reset link' : 'Sign in')}
+            {loading
+              ? (recoveryMode === 'password' ? 'Sending secure link…' : recoveryMode === 'username' ? 'Sending reminder…' : 'Checking access…')
+              : (recoveryMode === 'password' ? 'Send reset link' : recoveryMode === 'username' ? 'Send username reminder' : 'Sign in')}
           </button>
 
           {recoveryMode ? (
