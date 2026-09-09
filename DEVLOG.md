@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/08/2026 - Canonical Password Recovery Hardening
+
+- Replaced provider action URLs with a first-party single-use token-hash recovery route and fresh-login completion.
+- Added a timestamped HMAC bridge so Sygilant can invoke SygShift's canonical employee recovery without receiving identity, email, token, or security authority.
+- Preserved direct recovery, transactional limits, personal-first delivery, blocked-domain enforcement, MFA, security keys, trusted devices, schedules, payroll, and timekeeping.
+- Passed 192 files / 942 tests, TypeScript, zero-warning lint, both builds, and all 38 mandatory desktop/mobile time-clock checks.
+- Production activation is pending secret installation, final build, deployment, and live verification.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-08-2026_CANONICAL_PASSWORD_RECOVERY.md`.
+
 ## 09/08/2026 - Sygilant To SygSphere Shared Session
 
 - Added a production shared-session receiver that opens the canonical SygSphere workspace from Sygilant without copying messages, files, permissions, or identity records.

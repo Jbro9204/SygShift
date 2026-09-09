@@ -69,6 +69,7 @@ type Environment = Partial<Env> & {
   SYGSHIFT_SHARED_IDENTITY_INTROSPECTION_URL?: string
   SYGSHIFT_SHARED_IDENTITY_ISSUER?: string
   SYGSHIFT_SHARED_IDENTITY_SESSION_SECRET?: string
+  SYGSHIFT_PASSWORD_RECOVERY_BRIDGE_SECRET?: string
 }
 
 interface DocumentScanQueueMessage {
@@ -1141,6 +1142,19 @@ function normalizeRecoveryCode(value: string): string {
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function hmacSha256Hex(secret: string, value: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { hash: 'SHA-256', name: 'HMAC' },
+    false,
+    ['sign'],
+  )
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(value))
+  return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 async function sha256BytesHex(value: Uint8Array): Promise<string> {
@@ -5246,6 +5260,49 @@ function buildApplicationPasswordRecoveryLink(
 
 const passwordResetAcceptedMessage = 'If an active SygShift account and approved personal email match that username, a password-reset link will arrive shortly.'
 
+async function passwordResetRequestFingerprint(
+  request: Request,
+  environment: Environment,
+  username: string,
+): Promise<string> {
+  const expectedSecret = environment.SYGSHIFT_PASSWORD_RECOVERY_BRIDGE_SECRET?.trim() ?? ''
+  const fingerprint = request.headers.get('x-sygilant-password-recovery-fingerprint')?.trim().toLowerCase() ?? ''
+  const nonce = request.headers.get('x-sygilant-password-recovery-nonce')?.trim().toLowerCase() ?? ''
+  const providedSignature = request.headers.get('x-sygilant-password-recovery-signature')?.trim().toLowerCase() ?? ''
+  const timestampValue = request.headers.get('x-sygilant-password-recovery-timestamp')?.trim() ?? ''
+  const bridgeAttempt = Boolean(fingerprint || nonce || providedSignature || timestampValue)
+
+  if (!bridgeAttempt) {
+    return request.headers.get('cf-connecting-ip')?.trim() || 'unavailable'
+  }
+  if (expectedSecret.length < 32) {
+    throw new ApiError('password_recovery_bridge_not_configured', 503, 'Password recovery is temporarily unavailable.')
+  }
+
+  const timestamp = Number(timestampValue)
+  const currentSeconds = Math.floor(Date.now() / 1000)
+  if (
+    !/^[0-9a-f]{64}$/.test(fingerprint)
+    || !validUuid(nonce)
+    || !/^[0-9a-f]{64}$/.test(providedSignature)
+    || !/^\d{10}$/.test(timestampValue)
+    || !Number.isSafeInteger(timestamp)
+    || Math.abs(currentSeconds - timestamp) > 90
+  ) {
+    throw new ApiError('password_recovery_bridge_authentication_failed', 401, 'Password recovery could not be authenticated.')
+  }
+
+  const expectedSignature = await hmacSha256Hex(
+    expectedSecret,
+    `v1\n${timestampValue}\n${nonce}\n${fingerprint}\n${username}`,
+  )
+  if (!await constantTimeSecretMatches(providedSignature, expectedSignature)) {
+    throw new ApiError('password_recovery_bridge_authentication_failed', 401, 'Password recovery could not be authenticated.')
+  }
+
+  return `sygilant:${fingerprint}`
+}
+
 async function handleSelfServicePasswordResetApi(
   request: Request,
   environment: Environment,
@@ -5262,7 +5319,7 @@ async function handleSelfServicePasswordResetApi(
 
   const body = await readJsonBody(request)
   const username = typeof body.username === 'string' ? body.username.trim().toLowerCase() : ''
-  const fingerprint = request.headers.get('cf-connecting-ip')?.trim() || 'unavailable'
+  const fingerprint = await passwordResetRequestFingerprint(request, environment, username)
   const [usernameHash, fingerprintHash] = await Promise.all([
     sha256Hex(`password-reset-username:${username}`),
     sha256Hex(`password-reset-request:${fingerprint}`),
