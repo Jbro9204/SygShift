@@ -48,7 +48,15 @@ describe('Sygilant to SygSphere shared session bridge', () => {
       const body = typeof init.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : null
       const headers = new Headers(init.headers)
       calls.push({ authorization: headers.get('authorization'), body, method: init.method ?? 'GET', url })
-      if (url.includes('/api/apps/sygshift/introspect')) return json({ identity: sharedIdentity() })
+      if (url === environment.SYGSHIFT_SHARED_IDENTITY_INTROSPECTION_URL) {
+        return new Response(null, {
+          headers: { location: '/api/apps/sygshift/introspect?canonical=true' },
+          status: 307,
+        })
+      }
+      if (url === `${environment.SYGSHIFT_SHARED_IDENTITY_INTROSPECTION_URL}?canonical=true`) {
+        return json({ identity: sharedIdentity() })
+      }
       if (url.includes('/rest/v1/rpc/service_get_employee_login_email_target')) return json(localIdentity())
       if (url.includes('/auth/v1/admin/generate_link')) {
         return json({ action_link: 'https://project.supabase.co/auth/v1/verify?token=opaque&type=magiclink&redirect_to=https%3A%2F%2Fapp.sygilant.us%2Fauth%2Fshared-identity%2Fcallback' })
@@ -91,11 +99,20 @@ describe('Sygilant to SygSphere shared session bridge', () => {
     const bootstrap = cookieValue(completedCookies, '__Host-sygshift-shared-bootstrap')
     expect(completedCookies).toContain('HttpOnly')
     expect(completedCookies).toContain('SameSite=Strict')
-    expect(calls.find((call) => call.url.includes('/api/apps/sygshift/introspect'))).toMatchObject({
-      authorization: `Bearer ${environment.SYGSHIFT_SHARED_IDENTITY_CONSUMER_SECRET}`,
-      body: { assertion },
-      method: 'POST',
-    })
+    expect(calls.filter((call) => call.url.includes('/api/apps/sygshift/introspect'))).toEqual([
+      expect.objectContaining({
+        authorization: `Bearer ${environment.SYGSHIFT_SHARED_IDENTITY_CONSUMER_SECRET}`,
+        body: { assertion },
+        method: 'POST',
+        url: environment.SYGSHIFT_SHARED_IDENTITY_INTROSPECTION_URL,
+      }),
+      expect.objectContaining({
+        authorization: `Bearer ${environment.SYGSHIFT_SHARED_IDENTITY_CONSUMER_SECRET}`,
+        body: { assertion },
+        method: 'POST',
+        url: `${environment.SYGSHIFT_SHARED_IDENTITY_INTROSPECTION_URL}?canonical=true`,
+      }),
+    ])
     const finalized = await handleSharedIdentityRequest(new Request(
       'https://app.sygilant.us/api/v1/auth/shared-identity/finalize',
       {
@@ -160,6 +177,25 @@ describe('Sygilant to SygSphere shared session bridge', () => {
     ), environment, requestId)
     expect(loggedOut?.status).toBe(204)
     expect(loggedOut?.headers.get('set-cookie')).toContain('__Host-sygshift-shared-session=; Max-Age=0')
+  })
+
+  it('rejects a cross-origin upstream redirect before forwarding protected launch credentials', async () => {
+    const upstream = vi.fn().mockResolvedValue(new Response(null, {
+      headers: { location: 'https://attacker.example/collect' },
+      status: 307,
+    }))
+    vi.stubGlobal('fetch', upstream)
+
+    const received = await handleSharedIdentityRequest(launchRequest(), environment, requestId)
+    const launchCookie = cookieValue(received?.headers.get('set-cookie') ?? '', '__Host-sygshift-shared-launch')
+    const completed = await handleSharedIdentityRequest(new Request(
+      'https://app.sygilant.us/api/v1/auth/shared-identity/complete',
+      { headers: { cookie: `__Host-sygshift-shared-launch=${launchCookie}` } },
+    ), environment, requestId)
+
+    expect(completed?.status).toBe(502)
+    await expect(completed?.json()).resolves.toMatchObject({ error: 'shared_identity_upstream_redirect_rejected' })
+    expect(upstream).toHaveBeenCalledTimes(1)
   })
 
   it('rejects tampered protected cookies and never restores them', async () => {

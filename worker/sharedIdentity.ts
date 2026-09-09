@@ -13,6 +13,7 @@ const assertionPattern = /^glsi_v1\.[A-Za-z0-9_-]{20,3000}\.[a-f0-9]{64}$/i
 const ticketPattern = /^sygsso_v1\.[A-Za-z0-9_-]{20,3000}\.[a-f0-9]{64}$/i
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const assuranceLevels = new Set(['aal2', 'security_key', 'trusted_device', 'external_mfa'])
+const redirectStatuses = new Set([301, 302, 303, 307, 308])
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
@@ -90,11 +91,13 @@ type SharedIdentitySessionEnvelope = {
 
 class SharedIdentityError extends Error {
   readonly code: string
+  readonly diagnostic?: string
   readonly status: number
 
-  constructor(code: string, status: number, message: string) {
+  constructor(code: string, status: number, message: string, diagnostic?: string) {
     super(message)
     this.code = code
+    this.diagnostic = diagnostic
     this.status = status
   }
 }
@@ -117,7 +120,22 @@ export async function handleSharedIdentityRequest(
   } catch (error) {
     const failure = error instanceof SharedIdentityError
       ? error
-      : new SharedIdentityError('shared_identity_unavailable', 503, 'Shared access is temporarily unavailable.')
+      : new SharedIdentityError(
+          'shared_identity_unavailable',
+          503,
+          'Shared access is temporarily unavailable.',
+          unexpectedErrorCategory(error),
+        )
+    if (failure.status >= 500) {
+      console.error(JSON.stringify({
+        code: failure.code,
+        ...(failure.diagnostic ? { diagnostic: failure.diagnostic } : {}),
+        event: 'shared_identity_failure',
+        path,
+        requestId,
+        status: failure.status,
+      }))
+    }
     return responseJson({ error: failure.code, detail: failure.message, requestId }, failure.status)
   }
 }
@@ -375,15 +393,13 @@ async function clearSharedSession(request: Request, config: SharedIdentityConfig
 }
 
 async function introspectAssertion(assertion: string, config: SharedIdentityConfiguration): Promise<SharedIdentity> {
-  const response = await fetch(config.introspectionUrl, {
+  const response = await fetchWithProtectedRedirect(config.introspectionUrl, {
     body: JSON.stringify({ assertion }),
     headers: {
       authorization: `Bearer ${config.consumerSecret}`,
       'content-type': 'application/json',
     },
     method: 'POST',
-    redirect: 'error',
-    signal: AbortSignal.timeout(5000),
   })
   const payload = await response.json().catch(() => null) as { identity?: unknown } | null
   if (!response.ok) {
@@ -463,12 +479,10 @@ async function verifySessionLink(
   if (!tokenHash || tokenHash.length > 4096 || !['email', 'magiclink'].includes(verificationType)) {
     throw new SharedIdentityError('shared_identity_session_unavailable', 502, 'The SygShift session could not be created.')
   }
-  const response = await fetch(`${config.supabaseUrl}/auth/v1/verify`, {
+  const response = await fetchWithProtectedRedirect(`${config.supabaseUrl}/auth/v1/verify`, {
     body: JSON.stringify({ token_hash: tokenHash, type: verificationType }),
     headers: { apikey: config.publishableKey, 'content-type': 'application/json' },
     method: 'POST',
-    redirect: 'error',
-    signal: AbortSignal.timeout(5000),
   })
   const payload = await response.json().catch(() => null) as {
     access_token?: unknown
@@ -505,12 +519,10 @@ async function refreshSupabaseSession(
   expectedAuthUserId: string,
   config: SharedIdentityConfiguration,
 ): Promise<SharedIdentityBootstrap> {
-  const response = await fetch(`${config.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+  const response = await fetchWithProtectedRedirect(`${config.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
     body: JSON.stringify({ refresh_token: refreshToken }),
     headers: { apikey: config.publishableKey, 'content-type': 'application/json' },
     method: 'POST',
-    redirect: 'error',
-    signal: AbortSignal.timeout(5000),
   })
   const payload = await response.json().catch(() => null) as {
     access_token?: unknown
@@ -543,7 +555,7 @@ async function refreshSupabaseSession(
 }
 
 async function verifySharedSession(sessionToken: string, accessToken: string, config: SharedIdentityConfiguration): Promise<boolean> {
-  const response = await fetch(`${config.supabaseUrl}/rest/v1/rpc/has_shared_identity_session`, {
+  const response = await fetchWithProtectedRedirect(`${config.supabaseUrl}/rest/v1/rpc/has_shared_identity_session`, {
     body: '{}',
     headers: {
       apikey: config.publishableKey,
@@ -552,8 +564,6 @@ async function verifySharedSession(sessionToken: string, accessToken: string, co
       'x-sygshift-shared-identity': sessionToken,
     },
     method: 'POST',
-    redirect: 'error',
-    signal: AbortSignal.timeout(5000),
   })
   const payload = await response.json().catch(() => false)
   return response.ok && payload === true
@@ -561,11 +571,9 @@ async function verifySharedSession(sessionToken: string, accessToken: string, co
 
 async function verifyAuthUser(token: string, config: SharedIdentityConfiguration): Promise<{ id: string }> {
   if (!token) throw new SharedIdentityError('shared_identity_auth_required', 401, 'A SygShift session is required.')
-  const response = await fetch(`${config.supabaseUrl}/auth/v1/user`, {
+  const response = await fetchWithProtectedRedirect(`${config.supabaseUrl}/auth/v1/user`, {
     headers: { apikey: config.publishableKey, authorization: `Bearer ${token}` },
     method: 'GET',
-    redirect: 'error',
-    signal: AbortSignal.timeout(5000),
   })
   const payload = await response.json().catch(() => null) as { id?: unknown } | null
   if (!response.ok || typeof payload?.id !== 'string' || !uuidPattern.test(payload.id)) {
@@ -583,12 +591,68 @@ async function callServiceRpc(name: string, body: Record<string, unknown>, confi
 }
 
 async function upstreamJson(url: string, init: RequestInit): Promise<unknown> {
-  const response = await fetch(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(5000) })
+  const response = await fetchWithProtectedRedirect(url, init)
   const payload = await response.json().catch(() => null)
   if (!response.ok) {
     throw new SharedIdentityError('shared_identity_upstream_rejected', response.status === 409 ? 409 : 502, 'The shared session could not be completed.')
   }
   return payload
+}
+
+async function fetchWithProtectedRedirect(url: string, init: RequestInit): Promise<Response> {
+  const firstResponse = await fetch(url, {
+    ...init,
+    redirect: 'manual',
+    signal: AbortSignal.timeout(5000),
+  })
+  if (!redirectStatuses.has(firstResponse.status)) return firstResponse
+
+  const location = firstResponse.headers.get('location')
+  const source = new URL(url)
+  let target: URL
+  try {
+    target = new URL(location ?? '', source)
+  } catch {
+    throw new SharedIdentityError(
+      'shared_identity_upstream_redirect_rejected',
+      502,
+      'The shared identity service returned an invalid redirect.',
+    )
+  }
+  if (!location || target.protocol !== 'https:' || target.origin !== source.origin) {
+    throw new SharedIdentityError(
+      'shared_identity_upstream_redirect_rejected',
+      502,
+      'The shared identity service returned an untrusted redirect.',
+    )
+  }
+
+  const secondResponse = await fetch(target, {
+    ...init,
+    redirect: 'manual',
+    signal: AbortSignal.timeout(5000),
+  })
+  if (redirectStatuses.has(secondResponse.status)) {
+    throw new SharedIdentityError(
+      'shared_identity_upstream_redirect_rejected',
+      502,
+      'The shared identity service returned too many redirects.',
+    )
+  }
+  return secondResponse
+}
+
+function unexpectedErrorCategory(error: unknown): string {
+  if (!(error instanceof Error)) return 'non_error_rejection'
+  const message = error.message.toLowerCase()
+  if (error.name === 'TimeoutError' || message.includes('timed out') || message.includes('timeout')) return 'request_timeout'
+  if (error.name === 'AbortError' || message.includes('abort')) return 'request_aborted'
+  if (message.includes('redirect')) return 'redirect_rejected'
+  if (message.includes('network')) return 'network_failure'
+  if (message.includes('fetch')) return 'fetch_failure'
+  if (message.includes('signal')) return 'signal_failure'
+  if (message.includes('illegal invocation') || message.includes('incorrect this')) return 'runtime_invocation_failure'
+  return error.name === 'TypeError' ? 'type_error' : 'unexpected_error'
 }
 
 function serviceHeaders(config: SharedIdentityConfiguration): Record<string, string> {
