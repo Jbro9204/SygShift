@@ -55,5 +55,16 @@ messaging workspace.
 
 ## Release Evidence
 
-The receiver source is verified locally and the database changes are live. Worker deployment and live
-cross-application acceptance evidence will be appended after the receiver release is complete.
+- Receiver source `8a3d495` is preserved by tag
+  `release/sygshift-platform-receiver-20260909` and deployed as Cloudflare Worker
+  `52f596d2-286f-4ea0-974a-20c7be80421b`.
+- Production health and readiness returned HTTP 200 with `ready: true` and every shared-identity
+  dependency configured.
+- Sygilant's native SygSphere workspace displayed the canonical SygShift conversations and received a
+  current preview update without reloading.
+- The Sygilant SygShift launcher opened the full workforce platform as the same Jordan/Admin session
+  without another login. SygShift's SygSphere destination displayed the same conversation state.
+- The SygShift Sygilant launcher returned to the authenticated Sygilant dashboard without another
+  login, and native SygSphere remained authenticated after the complete round trip.
+
+Remaining acceptance: none for this release.

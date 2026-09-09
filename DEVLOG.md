@@ -1985,5 +1985,9 @@ pnpm exec wrangler deploy --keep-vars
   production verification, and Supabase Security Advisor reported no errors.
 - `pnpm check` passed 214 files / 1,074 tests, TypeScript, zero-warning lint, Worker build, and client
   build. The mandatory Time Clock browser workflow passed 38/38 desktop and mobile checks.
+- Released source `8a3d495` under tag `release/sygshift-platform-receiver-20260909` as Worker
+  `52f596d2-286f-4ea0-974a-20c7be80421b`. Live health/readiness, native shared SygSphere delivery, the
+  authenticated Sygilant-to-SygShift launch, matching SygSphere state, and the authenticated return to
+  Sygilant all passed without another login.
 - See `docs/changelogs/CHANGELOG_09-09-2026_SHARED_PLATFORM_RECEIVER_AND_NATIVE_SYGSPHERE_BRIDGE.md`
   for implementation, security, rollback, and release evidence.
