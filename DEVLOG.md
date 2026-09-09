@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/08/2026 - Source Authority Hygiene
+
+- Removed inherited development-tool and provider-specific references from owned documentation,
+  configuration examples, and the HR packaging runtime default.
+- Preserved the explicit Python-command override and made no product, identity, database, or production
+  behavior change.
+- Detailed verification and rollback notes are recorded in
+  `docs/changelogs/CHANGELOG_09-08-2026_SOURCE_AUTHORITY_HYGIENE.md`.
+
 ## 09/08/2026 - Canonical Password Recovery Hardening
 
 - Replaced provider action URLs with a first-party single-use token-hash recovery route and fresh-login completion.
