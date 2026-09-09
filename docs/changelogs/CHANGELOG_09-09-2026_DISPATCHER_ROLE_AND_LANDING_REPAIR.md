@@ -40,5 +40,13 @@ an employee who also lacked Home access therefore entered a redirect loop that a
   client build.
 - The focused access-control and mandatory Time Clock browser matrix passed 44/44 desktop and mobile
   checks, including Dispatcher clock controls.
+- The required post-deployment Time Clock workflow passed 38/38 desktop and mobile checks.
+- Production health and readiness returned healthy/ready, the exact live application asset matched the
+  fresh release build, and authenticated Schedule and Home navigation loaded successfully.
 - Linked database lint did not identify the repaired permission function. It continues to report older,
   unrelated function issues that predate this release.
+
+## Release
+
+- Source commit: `d811363`
+- Cloudflare Worker version: `1f5fc59e-8184-4ea8-8f6a-7805d9bfb650`

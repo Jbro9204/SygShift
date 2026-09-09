@@ -2007,3 +2007,19 @@ pnpm exec wrangler deploy --keep-vars
   passed.
 - See `docs/changelogs/CHANGELOG_09-09-2026_TIME_CORRECTION_WORKFLOW_REPAIR.md` for full implementation,
   database, rollback, and release evidence.
+
+## 09/09/2026 — Dispatcher Role and Landing Repair
+
+- Traced the Dispatcher-only blank screen to an audited 08/31 role save that disabled Home / Operations,
+  Scheduler, Reports, and Timekeeping Reports on the protected canonical Dispatcher role.
+- Restored the four permissions in place for both active Dispatcher employees without changing accounts,
+  role assignments, schedules, shifts, time records, or MFA, and protected that baseline from accidental
+  removal through future role-editor saves.
+- Replaced the unauthorized-to-Home redirect loop with a resolver that selects an actually permitted
+  landing workspace, preventing another valid signed-in role from being stranded on a blank screen.
+- Applied and recorded exact migration `20260909164732`, pushed source `d811363`, and deployed Worker
+  `1f5fc59e-8184-4ea8-8f6a-7805d9bfb650`.
+- `pnpm check` passed 218 files / 1,088 tests; the focused access-control plus Time Clock browser matrix
+  passed 44/44, the required post-deployment Time Clock workflow passed 38/38, and live health,
+  readiness, asset-integrity, Schedule, and Home checks passed.
+- See `docs/changelogs/CHANGELOG_09-09-2026_DISPATCHER_ROLE_AND_LANDING_REPAIR.md` for full evidence.
