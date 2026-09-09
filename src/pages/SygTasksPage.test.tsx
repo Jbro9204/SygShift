@@ -16,7 +16,7 @@ vi.mock('../data/sygtasks', async () => {
 })
 vi.mock('../lib/supabase', () => ({ getSupabaseClient: () => ({
   auth: { getSession: vi.fn().mockResolvedValue({ data: { session: null } }) },
-  channel: vi.fn(), removeChannel: vi.fn(),
+  realtime: { setAuth: vi.fn().mockResolvedValue(undefined) }, channel: vi.fn(), removeChannel: vi.fn(),
 }) }))
 
 function task() {

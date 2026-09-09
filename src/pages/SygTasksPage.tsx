@@ -199,7 +199,12 @@ export function SygTasksPage() {
     if (!workspace?.employeeId) return
     const client = getSupabaseClient(); let disposed = false; let channel: ReturnType<typeof client.channel> | undefined
     const refresh = () => { if (!disposed) void queryClient.invalidateQueries({ queryKey: ['sygtasks'] }) }
-    void client.auth.getSession().then(({ data }) => { if (disposed || !data.session) return; channel = client.channel(`employee:${data.session.user.id}`, { config: { private: true } }).on('broadcast', { event: 'changed' }, refresh).subscribe((status) => { if (status === 'SUBSCRIBED') refresh() }) }).catch(() => undefined)
+    void client.auth.getSession().then(async ({ data }) => {
+      if (disposed || !data.session) return
+      await client.realtime.setAuth(data.session.access_token)
+      if (disposed) return
+      channel = client.channel(`employee:${data.session.user.id}`, { config: { private: true } }).on('broadcast', { event: 'changed' }, refresh).subscribe((status) => { if (status === 'SUBSCRIBED') refresh() })
+    }).catch(() => undefined)
     window.addEventListener('focus', refresh); window.addEventListener('online', refresh)
     return () => { disposed = true; window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); if (channel) void client.removeChannel(channel) }
   }, [queryClient, workspace?.employeeId])

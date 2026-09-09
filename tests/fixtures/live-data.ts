@@ -1,6 +1,9 @@
 // Isolated, shared browser state for exercising real components. Never contacts production.
 import type { SupportTicketDetail, SupportTicketStatus } from '../../src/data/support'
 export const isSupabaseConfigured = true
+// The fixture client is already isolated; shared-session switching is intentionally a no-op.
+export async function activateSharedIdentitySupabaseSession(_accessToken: string, _refreshToken: string) {}
+export function deactivateSharedIdentitySupabaseSession() {}
 export const employeeId = '10000000-0000-4000-8000-000000000001'
 const adminId = '10000000-0000-4000-8000-000000000002'
 const requester = { id: employeeId, name: 'Alex Employee' }

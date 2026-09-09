@@ -197,28 +197,42 @@ stable
 security definer
 set search_path = ''
 as $$
-  with operational_handlers as materialized (
+  with administrators as materialized (
     select employee.id
     from public.employees employee
     join private.employee_accounts account
       on account.employee_id = employee.id
      and account.disabled_at is null
     where employee.status = 'active'
-      and employee.role <> 'admin'
+      and (
+        employee.role = 'admin'
+        or exists (
+          select 1
+          from public.employee_access_roles assignment
+          join public.access_roles access_role
+            on access_role.id = assignment.role_id
+           and access_role.active
+           and access_role.code = 'system_admin'
+          where assignment.employee_id = employee.id
+        )
+      )
+  ), operational_handlers as materialized (
+    select employee.id
+    from public.employees employee
+    join private.employee_accounts account
+      on account.employee_id = employee.id
+     and account.disabled_at is null
+    where employee.status = 'active'
+      and not exists (select 1 from administrators admin where admin.id = employee.id)
       and 'support.tickets.view' = any(private.employee_effective_permissions(employee.id))
       and 'support.tickets.manage' = any(private.employee_effective_permissions(employee.id))
       and target_route_permission = any(private.employee_effective_permissions(employee.id))
   )
   select handler.id from operational_handlers handler
   union all
-  select employee.id
-  from public.employees employee
-  join private.employee_accounts account
-    on account.employee_id = employee.id
-   and account.disabled_at is null
-  where employee.status = 'active'
-    and employee.role = 'admin'
-    and not exists (select 1 from operational_handlers)
+  select admin.id
+  from administrators admin
+  where not exists (select 1 from operational_handlers)
 $$;
 
 create or replace function private.queue_support_ticket_notification(

@@ -1,15 +1,19 @@
 import { useState } from 'react'
 import { LoaderCircle, TriangleAlert } from 'lucide-react'
-import { launchSygilantPlatform } from '../data/platformLaunch'
+import {
+  launchSygilantPlatform,
+  submitSygilantPlatformLaunch,
+  type SygilantPlatformLaunch,
+} from '../data/platformLaunch'
 
 type SygilantLauncherProps = {
-  launch?: () => Promise<string>
-  navigate?: (url: string) => void
+  launch?: () => Promise<SygilantPlatformLaunch>
+  submit?: (launch: SygilantPlatformLaunch) => void
 }
 
 export function SygilantLauncher({
   launch = launchSygilantPlatform,
-  navigate = (url) => window.location.assign(url),
+  submit = submitSygilantPlatformLaunch,
 }: SygilantLauncherProps) {
   const [launching, setLaunching] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -20,8 +24,8 @@ export function SygilantLauncher({
     setError(null)
 
     try {
-      const launchUrl = await launch()
-      navigate(launchUrl)
+      const handoff = await launch()
+      submit(handoff)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Sygilant could not be opened securely. Please try again.')
       setLaunching(false)
@@ -36,14 +40,14 @@ export function SygilantLauncher({
         className="platform-launcher platform-launcher--sygilant"
         disabled={launching}
         onClick={() => void handleLaunch()}
-        title="Open Sygilant main platform"
+        title="Sygilant — Main Platform"
         type="button"
       >
         <span aria-hidden="true" className="platform-launcher__emblem">
-          <img src="/branding/sygilant-horizontal.png" alt="" />
+          <img src="/branding/sygilant-horizontal-transparent.png" alt="" />
         </span>
         <span aria-hidden="true" className="platform-launcher__brand">
-          <img src="/branding/sygilant-horizontal.png" alt="" />
+          <img src="/branding/sygilant-horizontal-transparent.png" alt="" />
           <small>MAIN PLATFORM</small>
         </span>
         {launching ? <LoaderCircle aria-hidden="true" className="platform-launcher__spinner" size={18} /> : null}

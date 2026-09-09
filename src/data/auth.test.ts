@@ -14,6 +14,7 @@ import {
 } from '../lib/trustedDeviceToken'
 
 const supabaseMock = vi.hoisted(() => ({
+  deactivateSharedIdentitySupabaseSession: vi.fn(),
   client: {
     auth: {
       signOut: vi.fn(),
@@ -22,6 +23,7 @@ const supabaseMock = vi.hoisted(() => ({
 }))
 
 vi.mock('../lib/supabase', () => ({
+  deactivateSharedIdentitySupabaseSession: supabaseMock.deactivateSharedIdentitySupabaseSession,
   getSupabaseClient: () => supabaseMock.client,
 }))
 
@@ -52,6 +54,7 @@ describe('signOut', () => {
 
     await signOut()
 
+    expect(supabaseMock.deactivateSharedIdentitySupabaseSession).toHaveBeenCalledOnce()
     expect(localStorage.getItem('sygshift:trusted-device-token:v1')).toBe('remembered-device-token')
   })
 })

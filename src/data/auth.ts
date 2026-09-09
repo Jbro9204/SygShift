@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { getSupabaseClient } from '../lib/supabase'
+import { deactivateSharedIdentitySupabaseSession, getSupabaseClient } from '../lib/supabase'
 import { clearSecurityKeySession } from '../lib/securityKeySession'
-import { clearSharedIdentitySession } from '../lib/sharedIdentitySession'
+import { clearSharedIdentityServerSession } from '../lib/sharedIdentitySession'
 import { clearPushSession } from './pushNotifications'
 import { cancelLoginSound } from '../lib/notificationSounds'
 
@@ -97,12 +97,14 @@ export async function requestPasswordReset(username: string): Promise<string> {
 export async function signOut(): Promise<void> {
   cancelLoginSound()
   await clearPushSession()
+  await clearSharedIdentityServerSession()
+  const client = getSupabaseClient()
   try {
-    const { error } = await getSupabaseClient().auth.signOut()
+    const { error } = await client.auth.signOut()
     if (error) throw new Error('You could not be signed out. Please try again.')
   } finally {
+    deactivateSharedIdentitySupabaseSession()
     clearSecurityKeySession()
-    clearSharedIdentitySession()
   }
 }
 

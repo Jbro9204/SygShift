@@ -1,6 +1,9 @@
 // Isolated browser fixtures. No Supabase client, real accounts, or email transport.
 import type { SupportTicketDetail, SupportTicketStatus } from '../../src/data/support'
 export const isSupabaseConfigured = true
+// The fixture client is already isolated; shared-session switching is intentionally a no-op.
+export async function activateSharedIdentitySupabaseSession(_accessToken: string, _refreshToken: string) {}
+export function deactivateSharedIdentitySupabaseSession() {}
 const requester = { id: '10000000-0000-4000-8000-000000000001', name: 'Alex Employee' }
 const handler = { id: '10000000-0000-4000-8000-000000000002', name: 'Casey Support' }
 let status: SupportTicketStatus = 'new'

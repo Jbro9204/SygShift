@@ -35,6 +35,26 @@ const supabasePublishableKey = supabaseConfig.supabasePublishableKey
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabasePublishableKey)
 
 let client: SupabaseClient | undefined
+let sharedIdentityClient: SupabaseClient | undefined
+const sharedIdentityAuthStorage = createMemoryOnlyAuthStorage()
+
+export function createMemoryOnlyAuthStorage() {
+  const values = new Map<string, string>()
+  return {
+    clear() {
+      values.clear()
+    },
+    getItem(key: string) {
+      return values.get(key) ?? null
+    },
+    removeItem(key: string) {
+      values.delete(key)
+    },
+    setItem(key: string, value: string) {
+      values.set(key, value)
+    },
+  }
+}
 
 export function attachTrustedDeviceHeader(input: RequestInfo | URL, init?: RequestInit): RequestInit | undefined {
   const target = typeof input === 'string'
@@ -43,13 +63,27 @@ export function attachTrustedDeviceHeader(input: RequestInfo | URL, init?: Reque
       ? input.toString()
       : input.url
 
-  if (!target.includes('/rest/v1/')) return init
+  let pathname = ''
+  try {
+    pathname = new URL(target).pathname
+  } catch {
+    return init
+  }
+  const isRestRequest = pathname.includes('/rest/v1/')
+  const isSygSphereRequest = /\/rest\/v1\/rpc\/sygsphere_[a-z0-9_]+$/i.test(pathname)
+  const isSygSphereAvatarRequest = pathname.includes('/storage/v1/object/') && pathname.includes('/employee-photos/')
+  if (!isRestRequest && !isSygSphereAvatarRequest) return init
 
   const headers = new Headers(input instanceof Request ? input.headers : undefined)
   new Headers(init?.headers).forEach((value, key) => {
     headers.set(key, value)
   })
-  return { ...init, headers: appendProtectedSessionHeaders(headers) }
+  return {
+    ...init,
+    headers: appendProtectedSessionHeaders(headers, {
+      includeSharedIdentity: isSygSphereRequest || isSygSphereAvatarRequest,
+    }),
+  }
 }
 
 export function getSupabaseClient(): SupabaseClient {
@@ -57,6 +91,12 @@ export function getSupabaseClient(): SupabaseClient {
     throw new Error('The secure data connection has not been configured.')
   }
 
+  if (sharedIdentityClient) return sharedIdentityClient
+
+  return getNativeSupabaseClient()
+}
+
+function getNativeSupabaseClient(): SupabaseClient {
   client ??= createClient(supabaseUrl, supabasePublishableKey, {
     auth: {
       autoRefreshToken: true,
@@ -69,4 +109,37 @@ export function getSupabaseClient(): SupabaseClient {
   })
 
   return client
+}
+
+export async function activateSharedIdentitySupabaseSession(accessToken: string, refreshToken: string): Promise<void> {
+  if (!supabaseUrl || !supabasePublishableKey) {
+    throw new Error('The secure data connection has not been configured.')
+  }
+  await getNativeSupabaseClient().auth.signOut({ scope: 'local' })
+  sharedIdentityAuthStorage.clear()
+  sharedIdentityClient = createClient(supabaseUrl, supabasePublishableKey, {
+    auth: {
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+      persistSession: true,
+      storage: sharedIdentityAuthStorage,
+      storageKey: 'sygshift-shared-identity-memory-session',
+    },
+    global: {
+      fetch: (input, init) => fetch(input, attachTrustedDeviceHeader(input, init)),
+    },
+  })
+  const { error } = await sharedIdentityClient.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  })
+  if (error) {
+    deactivateSharedIdentitySupabaseSession()
+    throw new Error('The SygShift session could not be established.')
+  }
+}
+
+export function deactivateSharedIdentitySupabaseSession(): void {
+  sharedIdentityClient = undefined
+  sharedIdentityAuthStorage.clear()
 }

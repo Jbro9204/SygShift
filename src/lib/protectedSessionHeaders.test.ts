@@ -22,12 +22,23 @@ describe('protected-session request headers', () => {
     setSecurityKeySession('key-token', new Date(Date.now() + 60_000).toISOString())
     setSharedIdentitySession('shared-token'.repeat(5), new Date(Date.now() + 60_000).toISOString(), false)
 
-    const headers = appendProtectedSessionHeaders({ authorization: 'Bearer access-token' })
+    const headers = appendProtectedSessionHeaders(
+      { authorization: 'Bearer access-token' },
+      { includeSharedIdentity: true },
+    )
 
     expect(headers.get('authorization')).toBe('Bearer access-token')
     expect(headers.get('x-sygshift-trusted-device')).toBe('trusted-token')
     expect(headers.get('x-sygshift-security-key')).toBe('key-token')
     expect(headers.get('x-sygshift-shared-identity')).toBe('shared-token'.repeat(5))
+  })
+
+  it('does not attach SygSphere assurance unless the caller explicitly opts in', () => {
+    setSharedIdentitySession('shared-token'.repeat(5), new Date(Date.now() + 60_000).toISOString(), true)
+    const headers = appendProtectedSessionHeaders({ authorization: 'Bearer access-token' })
+
+    expect(headers.get('authorization')).toBe('Bearer access-token')
+    expect(headers.has('x-sygshift-shared-identity')).toBe(false)
   })
 
   it('does not invent assurance headers when no verified session exists', () => {

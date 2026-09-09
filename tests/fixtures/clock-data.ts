@@ -1,5 +1,8 @@
 // Real components and data parsers; isolated RPC transport. Never uses live accounts.
 export const isSupabaseConfigured = true
+// The fixture client is already isolated; shared-session switching is intentionally a no-op.
+export async function activateSharedIdentitySupabaseSession(_accessToken: string, _refreshToken: string) {}
+export function deactivateSharedIdentitySupabaseSession() {}
 const params = new URLSearchParams(location.search)
 const scenario = params.get('scenario') ?? 'early'
 const employeeId = '10000000-0000-4000-8000-000000000001'

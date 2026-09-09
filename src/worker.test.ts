@@ -127,6 +127,62 @@ describe('Cloudflare Worker boundary', () => {
     expect(payload.status).toBe('misconfigured')
   })
 
+  it.each([
+    {
+      label: 'missing signing secret',
+      values: {
+        SYGILANT_SHARED_IDENTITY_CONSUMER_SECRET: 'consumer-secret-with-enough-entropy-0001',
+      },
+    },
+    {
+      label: 'short consumer secret',
+      values: {
+        SYGILANT_SHARED_IDENTITY_CONSUMER_SECRET: 'too-short',
+        SYGILANT_SHARED_IDENTITY_SIGNING_SECRET: 'signing-secret-with-enough-entropy-00001',
+      },
+    },
+    {
+      label: 'identical signing and consumer secrets',
+      values: {
+        SYGILANT_SHARED_IDENTITY_CONSUMER_SECRET: 'one-shared-secret-with-enough-entropy',
+        SYGILANT_SHARED_IDENTITY_SIGNING_SECRET: 'one-shared-secret-with-enough-entropy',
+      },
+    },
+  ])('reports the enabled Sygilant identity bridge as not ready with $label', async ({ values }) => {
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/ready'),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        ...values,
+        SYGILANT_SHARED_IDENTITY_ENABLED: 'true',
+      }),
+    )
+    const payload = await response.json() as { checks: Record<string, boolean>; ready: boolean; status: string }
+
+    expect(response.status).toBe(503)
+    expect(payload.ready).toBe(false)
+    expect(payload.status).toBe('misconfigured')
+  })
+
+  it('reports the enabled Sygilant identity bridge ready only with distinct strong secrets', async () => {
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/v1/ready'),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        SYGILANT_SHARED_IDENTITY_CONSUMER_SECRET: 'consumer-secret-with-enough-entropy-0001',
+        SYGILANT_SHARED_IDENTITY_ENABLED: 'true',
+        SYGILANT_SHARED_IDENTITY_SIGNING_SECRET: 'signing-secret-with-enough-entropy-00001',
+      }),
+    )
+    const payload = await response.json() as { checks: Record<string, boolean>; ready: boolean; status: string }
+
+    expect(response.status).toBe(200)
+    expect(payload.ready).toBe(true)
+    expect(payload.checks.sygilantSharedIdentityConsumerSecret).toBe(true)
+    expect(payload.checks.sygilantSharedIdentityKeySeparation).toBe(true)
+    expect(payload.checks.sygilantSharedIdentitySigningSecret).toBe(true)
+  })
+
   it('hardens asset responses and prevents HTML caching', async () => {
     const assets = environment(new Response('<!doctype html>', {
       headers: { 'cache-control': 'public, max-age=3600', 'content-type': 'text/html' },

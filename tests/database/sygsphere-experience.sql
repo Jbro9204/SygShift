@@ -1,7 +1,10 @@
+begin;
+
 update private.sygsphere_gate set enabled=true;
 do $$
 declare
   actors uuid[]; accounts uuid[]; usernames text[]; cid uuid; mid uuid; request_id uuid:=gen_random_uuid(); payload jsonb;
+  upload_id uuid:=gen_random_uuid(); upload_client_id uuid:=gen_random_uuid(); lease_id uuid;
 begin
   select array_agg(employee_id order by employee_id),array_agg(auth_user_id order by employee_id),array_agg(username order by employee_id)
     into actors,accounts,usernames from (
@@ -34,8 +37,34 @@ begin
   perform set_config('request.jwt.claims',jsonb_build_object('sub',accounts[1],'role','authenticated','aal','aal2')::text,true);
   perform public.sygsphere_request('edit',jsonb_build_object('conversationId',cid,'messageId',mid,'body','Mention removed','mentionIds','[]'::jsonb));
   if exists(select 1 from private.sygsphere_mentions where message_id=mid) then raise exception 'Removed mention retained'; end if;
-  if (public.sygsphere_upload_capabilities()->>'resumableEnabled')::boolean then raise exception 'Unsafe resumable route enabled'; end if;
+  payload:=public.sygsphere_upload_capabilities();
+  if not (payload->>'resumableEnabled')::boolean
+    or (payload->>'inlineMaxBytes')::integer<>26214400
+    or (payload->>'resumableMaxBytes')::integer<>104857600 then
+    raise exception 'Protected resumable capability bounds are incorrect';
+  end if;
   if has_function_privilege('authenticated','public.service_begin_sygsphere_resumable_upload(uuid,jsonb)','EXECUTE') then raise exception 'Browser can authorize resumable uploads'; end if;
   if has_function_privilege('anon','public.sygsphere_people(text,jsonb)','EXECUTE') then raise exception 'Anonymous people access granted'; end if;
+
+  perform set_config('request.jwt.claim.role','service_role',true);
+  perform set_config('request.jwt.claims',jsonb_build_object('role','service_role')::text,true);
+  payload:=public.service_begin_sygsphere_resumable_upload(actors[1],jsonb_build_object(
+    'conversationId',cid,'fileId',upload_id,'clientId',upload_client_id,'filename','large-evidence.png',
+    'mimeType','image/png','sizeBytes',26214401));
+  if payload->>'state'<>'prepared' or (payload->>'uploadId')::uuid<>upload_id then raise exception 'Resumable begin failed'; end if;
+  if (public.service_begin_sygsphere_resumable_upload(actors[1],jsonb_build_object(
+    'conversationId',cid,'fileId',upload_id,'clientId',upload_client_id,'filename','large-evidence.png',
+    'mimeType','image/png','sizeBytes',26214401))->>'uploadId')::uuid<>upload_id then raise exception 'Resumable retry changed operation'; end if;
+  perform public.service_mark_sygsphere_resumable_uploaded(actors[1],upload_id,26214401,'image/png');
+  payload:=public.service_claim_sygsphere_resumable_scan(upload_id); lease_id:=(payload->>'leaseId')::uuid;
+  if lease_id is null or payload->>'deferred'<>'false' then raise exception 'Resumable scan lease missing'; end if;
+  payload:=public.service_defer_sygsphere_resumable_scan(upload_id,gen_random_uuid(),'stale rehearsal');
+  if payload->>'stale'<>'true' or payload ? 'objectKey' then raise exception 'Stale lease was not isolated'; end if;
+  payload:=public.service_complete_sygsphere_resumable_scan(upload_id,lease_id,'clean',repeat('a',64),'ClamAV rehearsal',null);
+  if payload->>'state'<>'clean' then raise exception 'Clean resumable completion failed'; end if;
+  payload:=public.service_defer_sygsphere_resumable_scan(upload_id,lease_id,'lost response rehearsal');
+  if payload->>'state'<>'clean' or payload ? 'objectKey' then raise exception 'Clean terminal file exposed for deletion'; end if;
 end $$;
-select 'SygSphere mentions, profile identity, text preferences, and disabled resumable foundation assertions passed; transaction will roll back.' as result;
+select 'SygSphere mentions, profile identity, text preferences, and protected resumable transitions passed; transaction will roll back.' as result;
+
+rollback;

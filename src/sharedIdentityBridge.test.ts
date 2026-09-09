@@ -42,18 +42,37 @@ describe('Sygilant to SygSphere shared session bridge', () => {
   })
 
   it('revalidates locally, creates the existing user session, and binds inherited MFA to it', async () => {
-    const calls: Array<{ body: Record<string, unknown> | null, url: string }> = []
+    const calls: Array<{ authorization: string | null, body: Record<string, unknown> | null, method: string, url: string }> = []
     vi.stubGlobal('fetch', vi.fn(async (input, init = {}) => {
       const url = String(input)
       const body = typeof init.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : null
-      calls.push({ body, url })
+      const headers = new Headers(init.headers)
+      calls.push({ authorization: headers.get('authorization'), body, method: init.method ?? 'GET', url })
       if (url.includes('/api/apps/sygshift/introspect')) return json({ identity: sharedIdentity() })
       if (url.includes('/rest/v1/rpc/service_get_employee_login_email_target')) return json(localIdentity())
       if (url.includes('/auth/v1/admin/generate_link')) {
         return json({ action_link: 'https://project.supabase.co/auth/v1/verify?token=opaque&type=magiclink&redirect_to=https%3A%2F%2Fapp.sygilant.us%2Fauth%2Fshared-identity%2Fcallback' })
       }
+      if (url.includes('/auth/v1/verify')) {
+        return json({
+          access_token: accessToken(),
+          expires_at: Math.floor(Date.now() / 1000) + 30,
+          refresh_token: 'refresh-token-value',
+          user: { id: authUserId },
+        })
+      }
+      if (url.includes('/auth/v1/token?grant_type=refresh_token')) {
+        return json({
+          access_token: accessToken(),
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          refresh_token: 'refresh-token-rotated',
+          user: { id: authUserId },
+        })
+      }
       if (url.includes('/auth/v1/user')) return json({ id: authUserId })
       if (url.includes('/rest/v1/rpc/service_issue_shared_identity_session')) return json({ id: crypto.randomUUID() })
+      if (url.includes('/rest/v1/rpc/has_shared_identity_session')) return json(true)
+      if (url.includes('/rest/v1/rpc/service_revoke_shared_identity_session')) return json(true)
       return json({ error: 'unhandled' }, 500)
     }))
 
@@ -64,24 +83,43 @@ describe('Sygilant to SygSphere shared session bridge', () => {
       { headers: { cookie: `__Host-sygshift-shared-launch=${launchCookie}` } },
     ), environment, requestId)
     expect(completed?.status).toBe(303)
-    expect(completed?.headers.get('location')).toMatch(/^https:\/\/project\.supabase\.co\/auth\/v1\/verify/)
+    expect(completed?.headers.get('location')).toBe('/auth/shared-identity/callback')
+    expect(completed?.headers.get('location')).not.toMatch(/token|assertion|code/i)
 
-    const ticket = cookieValue(completed?.headers.get('set-cookie') ?? '', '__Host-sygshift-shared-ticket')
+    const completedCookies = completed?.headers.get('set-cookie') ?? ''
+    const ticket = cookieValue(completedCookies, '__Host-sygshift-shared-ticket')
+    const bootstrap = cookieValue(completedCookies, '__Host-sygshift-shared-bootstrap')
+    expect(completedCookies).toContain('HttpOnly')
+    expect(completedCookies).toContain('SameSite=Strict')
+    expect(calls.find((call) => call.url.includes('/api/apps/sygshift/introspect'))).toMatchObject({
+      authorization: `Bearer ${environment.SYGSHIFT_SHARED_IDENTITY_CONSUMER_SECRET}`,
+      body: { assertion },
+      method: 'POST',
+    })
     const finalized = await handleSharedIdentityRequest(new Request(
       'https://app.sygilant.us/api/v1/auth/shared-identity/finalize',
       {
         headers: {
-          authorization: `Bearer ${accessToken()}`,
-          cookie: `__Host-sygshift-shared-ticket=${ticket}`,
+          cookie: `__Host-sygshift-shared-ticket=${ticket}; __Host-sygshift-shared-bootstrap=${bootstrap}`,
           origin: 'https://app.sygilant.us',
         },
         method: 'POST',
       },
     ), environment, requestId)
-    const payload = await finalized?.json() as { destination: string, persistent: boolean, sharedIdentityToken: string }
+    const payload = await finalized?.json() as {
+      destination: string
+      persistent: boolean
+      sharedIdentityToken: string
+      supabaseSession: { accessToken: string, refreshToken: string }
+    }
     expect(finalized?.status).toBe(200)
     expect(payload).toMatchObject({ destination: '/sygsphere', persistent: true })
     expect(payload.sharedIdentityToken).toMatch(/^[A-Za-z0-9_-]{64}$/)
+    expect(payload.supabaseSession).toEqual({ accessToken: accessToken(), refreshToken: 'refresh-token-value' })
+    const finalizedCookies = finalized?.headers.get('set-cookie') ?? ''
+    const sharedCookie = cookieValue(finalizedCookies, '__Host-sygshift-shared-session')
+    expect(finalizedCookies).toContain('HttpOnly')
+    expect(finalizedCookies).toContain('SameSite=Strict')
     const issuance = calls.find((call) => call.url.includes('service_issue_shared_identity_session'))?.body
     expect(issuance).toMatchObject({
       target_assurance_level: 'trusted_device',
@@ -89,6 +127,55 @@ describe('Sygilant to SygSphere shared session bridge', () => {
       target_employee_id: employeeId,
       target_launch_request_id: requestId,
     })
+
+    const restored = await handleSharedIdentityRequest(new Request(
+      'https://app.sygilant.us/api/v1/auth/shared-identity/session',
+      {
+        headers: {
+          cookie: `__Host-sygshift-shared-session=${sharedCookie}`,
+          origin: 'https://app.sygilant.us',
+        },
+        method: 'POST',
+      },
+    ), environment, requestId)
+    expect(restored?.status).toBe(200)
+    await expect(restored?.json()).resolves.toMatchObject({
+      sharedIdentityToken: payload.sharedIdentityToken,
+      supabaseSession: {
+        accessToken: accessToken(),
+        refreshToken: 'refresh-token-rotated',
+      },
+    })
+    expect(restored?.headers.get('set-cookie')).toContain('__Host-sygshift-shared-session=')
+
+    const loggedOut = await handleSharedIdentityRequest(new Request(
+      'https://app.sygilant.us/api/v1/auth/shared-identity/session/logout',
+      {
+        headers: {
+          cookie: `__Host-sygshift-shared-session=${sharedCookie}`,
+          origin: 'https://app.sygilant.us',
+        },
+        method: 'POST',
+      },
+    ), environment, requestId)
+    expect(loggedOut?.status).toBe(204)
+    expect(loggedOut?.headers.get('set-cookie')).toContain('__Host-sygshift-shared-session=; Max-Age=0')
+  })
+
+  it('rejects tampered protected cookies and never restores them', async () => {
+    const response = await handleSharedIdentityRequest(new Request(
+      'https://app.sygilant.us/api/v1/auth/shared-identity/session',
+      {
+        headers: {
+          authorization: `Bearer ${accessToken()}`,
+          cookie: '__Host-sygshift-shared-session=sygenc_v1.tampered',
+          origin: 'https://app.sygilant.us',
+        },
+        method: 'POST',
+      },
+    ), environment, requestId)
+    expect(response?.status).toBe(204)
+    expect(response?.headers.get('set-cookie')).toContain('__Host-sygshift-shared-session=; Max-Age=0')
   })
 
   it('denies an identity that no longer matches the active SygShift account', async () => {

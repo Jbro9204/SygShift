@@ -23,9 +23,10 @@ describe('support routing and notification data foundation', () => {
 
   it('separates full Admin access from automatic routed delivery', () => {
     expect(migration).toContain('create or replace function private.support_notification_recipients')
-    expect(migration).toContain("employee.role <> 'admin'")
+    expect(migration).toContain("access_role.code = 'system_admin'")
+    expect(migration).toContain('not exists (select 1 from administrators admin where admin.id = employee.id)')
     expect(migration).toContain("'support.tickets.manage' = any(private.employee_effective_permissions(employee.id))")
-    expect(migration).toContain('and not exists (select 1 from operational_handlers)')
+    expect(migration).toContain('where not exists (select 1 from operational_handlers)')
     expect(migration).toContain('from private.support_notification_recipients(route_code)')
   })
 

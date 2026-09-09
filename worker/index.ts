@@ -15,6 +15,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { deliverPushBatch, validPushHook } from './webPush'
 import { handleSphereFiles } from './sygsphereFiles'
 import { handleSharedIdentityRequest } from './sharedIdentity'
+import { handleSygilantSharedIdentityRequest } from './sygilantSharedIdentity'
 import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
@@ -69,6 +70,13 @@ type Environment = Partial<Env> & {
   SYGSHIFT_SHARED_IDENTITY_INTROSPECTION_URL?: string
   SYGSHIFT_SHARED_IDENTITY_ISSUER?: string
   SYGSHIFT_SHARED_IDENTITY_SESSION_SECRET?: string
+  SYGILANT_SHARED_IDENTITY_APPLICATION_URL?: string
+  SYGILANT_SHARED_IDENTITY_AUDIENCE?: string
+  SYGILANT_SHARED_IDENTITY_CONSUMER_SECRET?: string
+  SYGILANT_SHARED_IDENTITY_ENABLED?: string
+  SYGILANT_SHARED_IDENTITY_ISSUER?: string
+  SYGILANT_SHARED_IDENTITY_SIGNING_SECRET?: string
+  SYGILANT_SHARED_IDENTITY_TOKEN_TTL_SECONDS?: string
 }
 
 interface DocumentScanQueueMessage {
@@ -105,6 +113,7 @@ interface SygSphereResumableUploadOperation {
   parentId?: string | null
   sizeBytes?: number
   state?: 'prepared' | 'uploading' | 'uploaded' | 'scanning' | 'clean' | 'rejected' | 'error' | 'expired'
+  stale?: boolean
   terminal?: boolean
   uploadId?: string
 }
@@ -545,7 +554,7 @@ const contentSecurityPolicy = [
   "base-uri 'self'",
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
   "font-src 'self'",
-  "form-action 'self'",
+  "form-action 'self' https://sygilant.us",
   "frame-ancestors 'self'",
   "img-src 'self' data: blob: https://*.supabase.co",
   "object-src 'none'",
@@ -1849,7 +1858,7 @@ async function processSygSphereScanMessage(
     const scannerEvidence = integrityFailed
       ? 'integrity-boundary sha256-or-size-mismatch'
       : `${scan.scannerName} ${scan.scannerVersion}`
-    await callRpc(
+    const completion = await callRpc<SygSphereResumableUploadOperation>(
       config,
       'service_complete_sygsphere_resumable_scan',
       {
@@ -1862,7 +1871,7 @@ async function processSygSphereScanMessage(
       },
       config.serviceRoleKey,
     )
-    if (state !== 'clean') {
+    if (completion.state && ['rejected', 'error'].includes(completion.state)) {
       await deletePrivateStorageObject(config, sygsphereResumableBucket, operation.objectKey)
     }
     return 'complete'
@@ -2516,15 +2525,16 @@ async function rejectSygSphereResumableUpload(
   actorId: string,
   uploadId: string,
   detail: string,
-  objectKey?: string,
 ): Promise<void> {
-  await callRpc(
+  const rejected = await callRpc<SygSphereResumableUploadOperation>(
     config,
     'service_reject_sygsphere_resumable_upload',
     { target_actor_id: actorId, target_error: detail, target_upload_id: uploadId },
     config.serviceRoleKey,
   )
-  if (objectKey) await deletePrivateStorageObject(config, sygsphereResumableBucket, objectKey).catch(() => undefined)
+  if (rejected.objectKey && ['rejected', 'error', 'expired'].includes(rejected.state ?? '')) {
+    await deletePrivateStorageObject(config, sygsphereResumableBucket, rejected.objectKey).catch(() => undefined)
+  }
 }
 
 async function handleSygSphereResumableUpload(
@@ -2621,10 +2631,10 @@ async function handleSygSphereResumableUpload(
       const prefix = await readPrivateStoragePrefixWithin(serviceConfig, sygsphereResumableBucket, operation.objectKey)
       validateSygSphereResumableFile(prefix, operation.filename, mimeType, sizeBytes)
     } catch (error) {
-      const detail = error instanceof Error ? error.message : 'The stored file did not pass validation.'
-      await rejectSygSphereResumableUpload(serviceConfig, session.context.employee_id, uploadId, detail, operation.objectKey)
-      if (error instanceof ApiError) throw error
-      throw new ApiError('sygsphere_file_integrity_failed', 422, detail)
+      if (!(error instanceof ApiError)) throw error
+      const detail = error.message
+      await rejectSygSphereResumableUpload(serviceConfig, session.context.employee_id, uploadId, detail)
+      throw error
     }
     await callRpc(
       serviceConfig,
@@ -3609,7 +3619,7 @@ function drawWrappedAuditText(
   return cursorY - size - 4
 }
 
-async function buildSignedPdf(
+export async function buildSignedPdf(
   config: { serviceRoleKey: string, url: string },
   payload: SignatureFinalizationPayload,
   sourceBytes: Uint8Array,
@@ -3617,6 +3627,7 @@ async function buildSignedPdf(
   if (payload.sourceMimeType !== 'application/pdf') throw new Error('Signature finalization requires a PDF source document.')
   const pdf = await PDFDocument.load(sourceBytes, { ignoreEncryption: false, updateMetadata: false })
   const font = await pdf.embedFont(StandardFonts.Helvetica)
+  const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold)
   const recipients = Array.isArray(payload.recipients) ? payload.recipients : []
   for (const recipient of recipients) {
     const fields = Array.isArray(recipient.fields) ? recipient.fields as Array<Record<string, unknown>> : []
@@ -3630,6 +3641,7 @@ async function buildSignedPdf(
       const isPng = bytes[0] === 0x89 && bytes[1] === 0x50
       signatureImage = isPng ? await pdf.embedPng(bytes) : await pdf.embedJpg(bytes)
     }
+    let signaturePlaced = false
     for (const field of fields) {
       const pageNumber = Number(field.pageNumber)
       if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > pdf.getPageCount()) throw new Error('A template field references an invalid PDF page.')
@@ -3649,6 +3661,7 @@ async function buildSignedPdf(
             x: x + Math.max(0, (width - signatureImage.width * scale) / 2),
             y: y + Math.max(0, (height - signatureImage.height * scale) / 2),
           })
+          signaturePlaced = true
         }
         continue
       }
@@ -3658,6 +3671,27 @@ async function buildSignedPdf(
       if (!value) continue
       const fontSize = Math.max(6, Math.min(11, height * 0.58))
       page.drawText(value, { color: rgb(0.08, 0.09, 0.1), font, maxWidth: Math.max(1, width), size: fontSize, x: x + 2, y: y + Math.max(1, (height - fontSize) / 2) })
+    }
+    // A template is intentionally optional. If the sender did not place a
+    // signature field, retain the immutable source pages and append a visible
+    // signature page instead of producing a final PDF with no visible mark.
+    if (signatureImage && !signaturePlaced) {
+      const page = pdf.addPage([612, 792])
+      const gold = rgb(0.78, 0.54, 0.18)
+      page.drawRectangle({ color: rgb(0.06, 0.07, 0.08), height: 92, width: 612, x: 0, y: 700 })
+      page.drawText('SygShift Electronic Signature', { color: gold, font: boldFont, size: 20, x: 48, y: 742 })
+      page.drawText('Signature completion page', { color: rgb(0.88, 0.88, 0.86), font, size: 10, x: 48, y: 720 })
+      page.drawText(safePdfText(payload.documentTitle ?? 'Document', 120), { color: rgb(0.08, 0.09, 0.1), font: boldFont, maxWidth: 516, size: 15, x: 48, y: 652 })
+      page.drawText('Electronic signature', { color: gold, font: boldFont, size: 10, x: 48, y: 604 })
+      const signatureScale = Math.min(420 / signatureImage.width, 110 / signatureImage.height)
+      page.drawImage(signatureImage, { height: signatureImage.height * signatureScale, width: signatureImage.width * signatureScale, x: 48, y: 472 })
+      page.drawLine({ color: rgb(0.45, 0.45, 0.43), end: { x: 500, y: 466 }, start: { x: 48, y: 466 }, thickness: 0.8 })
+      page.drawText(safePdfText(signature?.displayName ?? recipient.legalName ?? 'Signer', 120), { color: rgb(0.08, 0.09, 0.1), font: boldFont, size: 12, x: 48, y: 444 })
+      page.drawText(`Action: ${safePdfText(recipient.requiredAction ?? 'signed', 40)}`, { color: rgb(0.25, 0.26, 0.27), font, size: 10, x: 48, y: 420 })
+      page.drawText(`Completed: ${signatureTimestamp(recipient.actedAt)}`, { color: rgb(0.25, 0.26, 0.27), font, size: 10, x: 48, y: 402 })
+      page.drawText(`Envelope: ${safePdfText(payload.envelopeId, 80)}`, { color: rgb(0.25, 0.26, 0.27), font, size: 9, x: 48, y: 370 })
+      page.drawText(`Source checksum: ${safePdfText(payload.sourceChecksum ?? '', 80)}`, { color: rgb(0.25, 0.26, 0.27), font, size: 8, x: 48, y: 352 })
+      drawWrappedAuditText(page, font, 'This page records the electronic signature applied through SygShift. The separate audit certificate contains the complete consent, authentication, integrity, and event evidence.', 48, 306, 516, 9)
     }
   }
   pdf.setProducer('SygShift Document Studio')
@@ -6932,6 +6966,9 @@ async function processNotificationJobs(environment: Environment, limit = 10): Pr
 function readiness(environment: Environment, requestId: string): Response {
   const config = configuredSupabase(environment)
   const sharedIdentityEnabled = environment.SYGSHIFT_SHARED_IDENTITY_ENABLED?.trim().toLowerCase() === 'true'
+  const sygilantSharedIdentityEnabled = environment.SYGILANT_SHARED_IDENTITY_ENABLED?.trim().toLowerCase() === 'true'
+  const sygilantSigningSecret = environment.SYGILANT_SHARED_IDENTITY_SIGNING_SECRET?.trim() ?? ''
+  const sygilantConsumerSecret = environment.SYGILANT_SHARED_IDENTITY_CONSUMER_SECRET?.trim() ?? ''
   const checks = {
     assetsBinding: Boolean(environment.ASSETS),
     supabasePublishableKey: Boolean(
@@ -6941,8 +6978,11 @@ function readiness(environment: Environment, requestId: string): Response {
     supabaseUrl: Boolean(environment.SUPABASE_URL?.trim() || environment.VITE_SUPABASE_URL?.trim()),
     sharedIdentityConsumerSecret: !sharedIdentityEnabled || Boolean(environment.SYGSHIFT_SHARED_IDENTITY_CONSUMER_SECRET?.trim()),
     sharedIdentitySessionSecret: !sharedIdentityEnabled || Boolean(environment.SYGSHIFT_SHARED_IDENTITY_SESSION_SECRET?.trim()),
+    sygilantSharedIdentityConsumerSecret: !sygilantSharedIdentityEnabled || sygilantConsumerSecret.length >= 32,
+    sygilantSharedIdentityKeySeparation: !sygilantSharedIdentityEnabled || sygilantSigningSecret !== sygilantConsumerSecret,
+    sygilantSharedIdentitySigningSecret: !sygilantSharedIdentityEnabled || sygilantSigningSecret.length >= 32,
   }
-  const ready = Boolean(config && checks.assetsBinding && checks.sharedIdentityConsumerSecret && checks.sharedIdentitySessionSecret)
+  const ready = Boolean(config && Object.values(checks).every(Boolean))
 
   return json({
     checks,
@@ -6968,7 +7008,9 @@ async function handleDocumentScanQueue(
         }
       } catch (error) {
         let terminal = false
+        let stale = false
         let objectKey: string | undefined
+        let terminalState: SygSphereResumableUploadOperation['state']
         if (config && error instanceof SygSphereScanFailure && validUuid(message.body?.operationId ?? '')) {
           const deferred = await callRpc<SygSphereResumableUploadOperation>(
             config,
@@ -6981,10 +7023,14 @@ async function handleDocumentScanQueue(
             config.serviceRoleKey,
           ).catch(() => null)
           terminal = deferred?.terminal === true
-          objectKey = deferred?.objectKey ?? error.objectKey
+          stale = deferred?.stale === true
+          terminalState = deferred?.state
+          objectKey = deferred?.objectKey
         }
-        if (terminal) {
-          if (config && objectKey) await deletePrivateStorageObject(config, sygsphereResumableBucket, objectKey).catch(() => undefined)
+        if (terminal || stale) {
+          if (config && objectKey && ['rejected', 'error', 'expired'].includes(terminalState ?? '')) {
+            await deletePrivateStorageObject(config, sygsphereResumableBucket, objectKey).catch(() => undefined)
+          }
           message.ack()
         } else {
           message.retry({ delaySeconds: Math.min(300, 15 * Math.max(1, message.attempts)) })
@@ -7124,6 +7170,9 @@ export default {
       }
     } else if (url.pathname.startsWith('/api/v1/auth/shared-identity/')) {
       response = await handleSharedIdentityRequest(request, environment, requestId)
+        ?? errorJson('not_found', requestId, 404)
+    } else if (url.pathname === '/api/v1/apps/sygilant/launch' || url.pathname === '/api/v1/apps/sygilant/introspect') {
+      response = await handleSygilantSharedIdentityRequest(request, environment, requestId)
         ?? errorJson('not_found', requestId, 404)
     } else if (url.pathname === '/api/v1/auth/password-reset/request') {
       try {

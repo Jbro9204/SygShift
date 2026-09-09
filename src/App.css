@@ -9451,6 +9451,8 @@ a.home-metric-card:focus-visible {
   inset: 0 auto 0 0;
   display: flex;
   width: 276px;
+  height: 100dvh;
+  max-height: 100dvh;
   flex-direction: column;
   color: #f8f6f0;
   background:
@@ -9551,12 +9553,18 @@ a.home-metric-card:focus-visible {
   scrollbar-width: thin;
 }
 
+@media (max-height: 520px) {
+  .sidebar-navigation {
+    padding-block: 8px;
+  }
+}
+
 .sidebar-utilities {
   display: flex;
   min-width: 0;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   padding: 12px 14px 16px;
   border-top: 1px solid rgb(255 255 255 / 9%);
 }
@@ -9584,6 +9592,7 @@ a.home-metric-card:focus-visible {
   position: relative;
   display: flex;
   width: 100%;
+  height: 64px;
   min-height: 64px;
   align-items: center;
   gap: 10px;
@@ -9607,7 +9616,9 @@ a.home-metric-card:focus-visible {
 }
 
 .platform-launcher:hover,
-.platform-launcher:focus-visible {
+.platform-launcher:focus-visible,
+.sidebar-utilities .sphere-launcher:hover,
+.sidebar-utilities .sphere-launcher:focus-visible {
   border-color: #e1b85f;
   box-shadow:
     inset 0 0 0 1px rgb(255 255 255 / 5%),
@@ -9619,6 +9630,16 @@ a.home-metric-card:focus-visible {
 .platform-launcher:focus-visible {
   outline: 2px solid #f6d891;
   outline-offset: 2px;
+}
+
+.sidebar-utilities .sphere-launcher:focus-visible {
+  outline: 2px solid #f6d891;
+  outline-offset: 2px;
+}
+
+.sidebar-utilities .sphere-launcher:active,
+.platform-launcher:active {
+  transform: translateY(0);
 }
 
 .platform-launcher:disabled {
@@ -9807,6 +9828,7 @@ a.home-metric-card:focus-visible {
 
 .sidebar--collapsed .platform-launcher {
   width: 48px;
+  height: 48px;
   min-height: 48px;
   justify-content: center;
   padding: 0;

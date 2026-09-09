@@ -21,7 +21,12 @@ import {
   type SessionContext,
 } from '../data/auth'
 import { shouldShowPayrollExportReminder } from '../lib/payrollReminder'
-import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
+import {
+  activateSharedIdentitySupabaseSession,
+  deactivateSharedIdentitySupabaseSession,
+  getSupabaseClient,
+  isSupabaseConfigured,
+} from '../lib/supabase'
 import { lastCompletedPayrollWeek } from '../lib/time'
 import { MaintenanceNotice, MaintenanceUnavailablePanel } from './MaintenanceNotice'
 import { getMaintenanceStatus, maintenanceFeatureForPath } from '../data/maintenance'
@@ -36,9 +41,17 @@ import { OperationalTimeHeader } from './OperationalTimeHeader'
 import { HeaderNotificationButton } from './HeaderNotificationButton'
 import { LiveNotifications } from './LiveNotifications'
 import { clearPushSession } from '../data/pushNotifications'
+import { requiresSecurityCheckpoint } from '../lib/securityCheckpoint'
+import {
+  clearSharedIdentitySession,
+  getSharedIdentitySessionToken,
+  hydrateSharedIdentitySession,
+} from '../lib/sharedIdentitySession'
 
 const INACTIVITY_WARNING_MS = 55 * 60 * 1000
 const INACTIVITY_LOGOUT_MS = 60 * 60 * 1000
+const SESSION_ACTIVITY_STORAGE_PREFIX = 'sygshift.session.activity.v1'
+const SESSION_ACTIVITY_THROTTLE_MS = 5_000
 const WORKSPACE_ALERT_ROTATE_MS = 9_000
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sygshift.sidebar.collapsed'
 const SIDEBAR_GROUP_STORAGE_KEY = 'sygshift.sidebar.open-group'
@@ -149,6 +162,7 @@ export function AppShell() {
   const internalHistoryRef = useRef<InternalNavigationEntry[]>(parseInternalHistory(window.sessionStorage.getItem(INTERNAL_NAVIGATION_STORAGE_KEY)))
   const previousScrollRef = useRef(0)
   const location = useLocation()
+  const initialSharedIdentityRouteRef = useRef(location.pathname === '/sygsphere')
   const navigate = useNavigate()
   const payrollReminderWeek = lastCompletedPayrollWeek()
   const showPayrollReminder = shouldShowPayrollExportReminder(sessionContext)
@@ -271,8 +285,12 @@ export function AppShell() {
     return routeMaintenanceFeature ? window.featureCodes.includes(routeMaintenanceFeature) : false
   }) ?? null
 
-  const needsSecurityCheckpoint = Boolean(
-    sessionContext?.mustChangePassword || (sessionContext?.mfaRequired && !sessionContext.hasMfa),
+  const hasRouteScopedSharedAssurance = location.pathname === '/sygsphere'
+    && Boolean(getSharedIdentitySessionToken())
+  const needsSecurityCheckpoint = requiresSecurityCheckpoint(
+    sessionContext,
+    location.pathname,
+    hasRouteScopedSharedAssurance,
   )
   const isAccountSecurityRoute = location.pathname === '/account-security'
   const lacksRouteAccess = Boolean(
@@ -356,6 +374,7 @@ export function AppShell() {
 
   useEffect(() => {
     let active = true
+    let authSubscription: { unsubscribe: () => void } | null = null
 
     if (!isSupabaseConfigured) {
       setAuthLoading(false)
@@ -365,14 +384,25 @@ export function AppShell() {
       }
     }
 
-    async function loadSessionContext(showLoading = true) {
+    async function loadSessionContext(showLoading = true, restoreSharedSession = false) {
       if (showLoading) setAuthLoading(true)
       setAuthMessage(null)
 
+      if (restoreSharedSession && initialSharedIdentityRouteRef.current) {
+        const restored = await hydrateSharedIdentitySession().catch(() => null)
+        if (restored) {
+          await activateSharedIdentitySupabaseSession(restored.accessToken, restored.refreshToken).catch(() => {
+            clearSharedIdentitySession()
+            deactivateSharedIdentitySupabaseSession()
+          })
+        }
+      }
       const { data } = await getSupabaseClient().auth.getSession()
       if (!active) return
 
       if (!data.session) {
+        deactivateSharedIdentitySupabaseSession()
+        clearSharedIdentitySession()
         setSessionContext(null)
         setAuthLoading(false)
         return
@@ -392,25 +422,28 @@ export function AppShell() {
       }
     }
 
-    void loadSessionContext()
-
-    const {
-      data: { subscription },
-    } = getSupabaseClient().auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        for (const key of ['support', 'my-notifications', 'notification-device-session', 'notification-device-push', 'sygsphere']) {
-          queryClient.removeQueries({ queryKey: [key] })
+    void (async () => {
+      await loadSessionContext(true, true)
+      if (!active) return
+      const { data: { subscription } } = getSupabaseClient().auth.onAuthStateChange((_event, session) => {
+        if (!session) {
+          for (const key of ['support', 'my-notifications', 'notification-device-session', 'notification-device-push', 'sygsphere']) {
+            queryClient.removeQueries({ queryKey: [key] })
+          }
+          void clearPushSession()
+          clearSharedIdentitySession()
+          deactivateSharedIdentitySupabaseSession()
+          setSessionContext(null)
+          setAuthLoading(false)
+          return
         }
-        void clearPushSession()
-        setSessionContext(null)
-        setAuthLoading(false)
-        return
-      }
 
-      // Token refreshes commonly occur when a user returns to a background tab.
-      // Refresh permissions without replacing and unmounting the active workspace.
-      void loadSessionContext(false)
-    })
+        // Token refreshes commonly occur when a user returns to a background tab.
+        // Refresh permissions without replacing and unmounting the active workspace.
+        void loadSessionContext(false)
+      })
+      authSubscription = subscription
+    })()
 
     const refreshSecurityContext = () => {
       setAccountRefreshVersion((current) => current + 1)
@@ -420,7 +453,7 @@ export function AppShell() {
 
     return () => {
       active = false
-      subscription.unsubscribe()
+      authSubscription?.unsubscribe()
       window.removeEventListener(SESSION_CONTEXT_REFRESH_EVENT, refreshSecurityContext)
     }
   }, [queryClient])
@@ -473,6 +506,9 @@ export function AppShell() {
     let logoutTimer: number | undefined
     let countdownTimer: number | undefined
     let logoutAt = Date.now() + INACTIVITY_LOGOUT_MS
+    let lastLocalActivityAt = 0
+    let lastSharedActivityWriteAt = 0
+    const sharedActivityKey = `${SESSION_ACTIVITY_STORAGE_PREFIX}:${sessionContext.employeeId}`
 
     const clearTimers = () => {
       if (warningTimer) window.clearTimeout(warningTimer)
@@ -491,35 +527,56 @@ export function AppShell() {
       }
     }
 
-    const startTimers = () => {
+    const startTimers = (activityAt: number) => {
       clearTimers()
       setLogoutWarningRemaining(null)
-      logoutAt = Date.now() + INACTIVITY_LOGOUT_MS
-      warningTimer = window.setTimeout(() => {
+      const now = Date.now()
+      logoutAt = activityAt + INACTIVITY_LOGOUT_MS
+      const warningDelay = Math.max(0, activityAt + INACTIVITY_WARNING_MS - now)
+      const logoutDelay = Math.max(0, logoutAt - now)
+      const showWarning = () => {
         setLogoutWarningRemaining(Math.max(0, Math.ceil((logoutAt - Date.now()) / 1000)))
         countdownTimer = window.setInterval(() => {
           setLogoutWarningRemaining(Math.max(0, Math.ceil((logoutAt - Date.now()) / 1000)))
         }, 1000)
-      }, INACTIVITY_WARNING_MS)
+      }
+      if (warningDelay === 0) showWarning()
+      else warningTimer = window.setTimeout(showWarning, warningDelay)
       logoutTimer = window.setTimeout(() => {
         void autoSignOut()
-      }, INACTIVITY_LOGOUT_MS)
+      }, logoutDelay)
     }
 
     const handleActivity = () => {
       if (document.visibilityState === 'hidden') return
-      startTimers()
+      const now = Date.now()
+      if (now - lastLocalActivityAt < 1_000) return
+      lastLocalActivityAt = now
+      startTimers(now)
+      if (now - lastSharedActivityWriteAt < SESSION_ACTIVITY_THROTTLE_MS) return
+      lastSharedActivityWriteAt = now
+      try { window.localStorage.setItem(sharedActivityKey, String(now)) } catch { /* This tab still retains its own timer. */ }
+    }
+
+    const handleSharedActivity = (event: StorageEvent) => {
+      if (event.key !== sharedActivityKey || !event.newValue) return
+      const activityAt = Number(event.newValue)
+      const now = Date.now()
+      if (!Number.isFinite(activityAt) || activityAt <= 0 || activityAt > now + 5_000) return
+      startTimers(Math.min(activityAt, now))
     }
 
     const events: Array<keyof WindowEventMap> = ['keydown', 'mousedown', 'mousemove', 'scroll', 'touchstart', 'wheel']
     for (const event of events) window.addEventListener(event, handleActivity, { passive: true })
     document.addEventListener('visibilitychange', handleActivity)
-    startTimers()
+    window.addEventListener('storage', handleSharedActivity)
+    handleActivity()
 
     return () => {
       clearTimers()
       for (const event of events) window.removeEventListener(event, handleActivity)
       document.removeEventListener('visibilitychange', handleActivity)
+      window.removeEventListener('storage', handleSharedActivity)
     }
   }, [navigate, sessionContext])
 

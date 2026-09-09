@@ -24,7 +24,7 @@ create table private.sygsphere_resumable_policy (
   singleton boolean primary key default true check (singleton),
   enabled boolean not null default true,
   inline_max_bytes integer not null default 26214400 check (inline_max_bytes = 26214400),
-  resumable_max_bytes integer not null default 104857600 check (resumable_max_bytes between 26214401 and 524288000)
+  resumable_max_bytes integer not null default 104857600 check (resumable_max_bytes = 104857600)
 );
 insert into private.sygsphere_resumable_policy(singleton) values(true);
 create table private.sygsphere_resumable_uploads (
@@ -36,7 +36,7 @@ create table private.sygsphere_resumable_uploads (
   object_key text not null unique,
   filename text not null check(length(filename) between 1 and 240),
   mime_type text not null,
-  size_bytes integer not null check(size_bytes between 26214401 and 524288000),
+  size_bytes integer not null check(size_bytes between 26214401 and 104857600),
   state text not null default 'prepared' check(state in ('prepared','uploading','uploaded','scanning','clean','rejected','error','expired')),
   checksum text check(checksum is null or checksum ~ '^[0-9a-f]{64}$'),
   scanner text,
@@ -315,6 +315,7 @@ returns jsonb language plpgsql security definer set search_path='' as $$
 declare config_row private.sygsphere_resumable_policy%rowtype; cid uuid:=(input->>'conversationId')::uuid; fid uuid:=(input->>'fileId')::uuid; item private.sygsphere_resumable_uploads%rowtype;
 begin
   if auth.role() is distinct from 'service_role' then raise insufficient_privilege; end if;
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(target_actor_id::text,0));
   select * into config_row from private.sygsphere_resumable_policy where singleton;
   if not config_row.enabled then raise object_not_in_prerequisite_state using message='Larger resumable SygSphere uploads are not enabled.'; end if;
   if not exists(select 1 from private.sygsphere_gate where enabled) or not exists(select 1 from public.employees employee
@@ -323,7 +324,7 @@ begin
   if (input->>'sizeBytes')::bigint<=config_row.inline_max_bytes or (input->>'sizeBytes')::bigint>config_row.resumable_max_bytes then raise check_violation using message='File size is outside the resumable range.'; end if;
   if left(trim(coalesce(input->>'filename','')),240)='' or lower(trim(coalesce(input->>'mimeType',''))) not in ('image/jpeg','image/png','image/webp') then raise check_violation using message='Larger uploads support JPEG, PNG, and WebP image files.'; end if;
   if (select count(*) from private.sygsphere_resumable_uploads where author_id=target_actor_id and client_id<>(input->>'clientId')::uuid and created_at>clock_timestamp()-interval '1 hour')>=10 then raise check_violation using message='Hourly larger-file limit reached. Try again later.'; end if;
-  if (select count(*) from private.sygsphere_resumable_uploads where author_id=target_actor_id and state in ('prepared','uploading','uploaded','scanning') and expires_at>clock_timestamp())>=3 then raise check_violation using message='Finish or allow your existing larger uploads to expire before starting another.'; end if;
+  if (select count(*) from private.sygsphere_resumable_uploads where author_id=target_actor_id and client_id<>(input->>'clientId')::uuid and state in ('prepared','uploading','uploaded','scanning') and expires_at>clock_timestamp())>=3 then raise check_violation using message='Finish or allow your existing larger uploads to expire before starting another.'; end if;
   if not exists(select 1 from private.sygsphere_members member join private.sygsphere_conversations conversation on conversation.id=member.conversation_id
     where member.conversation_id=cid and member.employee_id=target_actor_id and member.removed_at is null and not conversation.archived) then raise insufficient_privilege; end if;
   if nullif(input->>'parentId','') is not null and not exists(select 1 from private.sygsphere_messages where id=(input->>'parentId')::uuid and conversation_id=cid and parent_id is null and deleted_at is null) then raise check_violation using message='Thread is not available.'; end if;
@@ -403,7 +404,12 @@ begin
     select * into item from private.sygsphere_resumable_uploads where id=target_upload_id and author_id=target_actor_id;
   end if;
   if item.id is null then raise insufficient_privilege; end if;
-  return jsonb_build_object('uploadId',item.id,'state',item.state,'messageId',item.message_id);
+  return jsonb_build_object(
+    'uploadId',item.id,
+    'state',item.state,
+    'messageId',item.message_id,
+    'objectKey',case when item.state in ('rejected','error','expired') then item.object_key else null end
+  );
 end
 $$;
 
@@ -417,7 +423,7 @@ begin
   if item.state in ('clean','rejected','error','expired') then
     return jsonb_build_object('terminal',true,'state',item.state,'objectKey',case when item.state='clean' then null else item.object_key end);
   end if;
-  if item.expires_at<=clock_timestamp() then
+  if item.state in ('prepared','uploading','uploaded') and item.expires_at<=clock_timestamp() then
     update private.sygsphere_resumable_uploads set state='expired',lease_id=null,updated_at=clock_timestamp() where id=item.id;
     return jsonb_build_object('terminal',true,'state','expired','objectKey',item.object_key);
   end if;
@@ -446,7 +452,7 @@ returns jsonb language plpgsql security definer set search_path='' as $$
 declare item private.sygsphere_resumable_uploads%rowtype; result jsonb;
 begin
   if auth.role() is distinct from 'service_role' then raise insufficient_privilege; end if;
-  if target_state not in ('clean','rejected','error') or target_checksum !~ '^[0-9a-f]{64}$' then raise check_violation; end if;
+  if target_state not in ('clean','rejected','error') or coalesce(target_checksum,'') !~ '^[0-9a-f]{64}$' then raise check_violation; end if;
   select * into item from private.sygsphere_resumable_uploads where id=target_upload_id for update;
   if item.id is null then raise check_violation using message='Larger-file upload not found.'; end if;
   if item.state in ('clean','rejected','error') then
@@ -480,8 +486,23 @@ begin
       updated_at=clock_timestamp()
   where id=target_upload_id and state='scanning' and lease_id=target_lease_id
   returning * into item;
-  if item.id is null then return jsonb_build_object('terminal',true); end if;
-  return jsonb_build_object('terminal',item.state='error','state',item.state,'objectKey',item.object_key);
+  if item.id is null then
+    select * into item from private.sygsphere_resumable_uploads where id=target_upload_id;
+    if item.id is null then return jsonb_build_object('terminal',true,'state','missing'); end if;
+    if item.state in ('clean','rejected','error','expired') then
+      return jsonb_build_object(
+        'terminal',true,
+        'state',item.state,
+        'objectKey',case when item.state in ('rejected','error','expired') then item.object_key else null end
+      );
+    end if;
+    return jsonb_build_object('terminal',false,'stale',true,'state',item.state);
+  end if;
+  return jsonb_build_object(
+    'terminal',item.state='error',
+    'state',item.state,
+    'objectKey',case when item.state='error' then item.object_key else null end
+  );
 end
 $$;
 
@@ -497,7 +518,11 @@ begin
     into result
     from (
       select id,object_key from private.sygsphere_resumable_uploads
-      where state in ('rejected','error','expired') and purged_at is null
+      where state in ('rejected','error','expired')
+        and (
+          purged_at is null
+          or (expires_at + interval '27 hours'>clock_timestamp() and purged_at<=clock_timestamp()-interval '15 minutes')
+        )
       order by updated_at,id limit greatest(1,least(coalesce(target_limit,25),100))
     ) candidate;
   return result;
@@ -510,7 +535,7 @@ declare affected integer;
 begin
   if auth.role() is distinct from 'service_role' then raise insufficient_privilege; end if;
   update private.sygsphere_resumable_uploads set purged_at=clock_timestamp(),updated_at=clock_timestamp()
-    where id=any(coalesce(target_upload_ids,'{}'::uuid[])) and state in ('rejected','error','expired') and purged_at is null;
+    where id=any(coalesce(target_upload_ids,'{}'::uuid[])) and state in ('rejected','error','expired');
   get diagnostics affected=row_count;
   return affected;
 end

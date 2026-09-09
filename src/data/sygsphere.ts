@@ -135,7 +135,10 @@ export async function sphereFiles(conversationId: string, before?: string, messa
 async function sphereFileHeaders(contentType?: string) {
   const { data } = await getSupabaseClient().auth.getSession()
   if (!data.session) throw new Error('Your secure session is unavailable. Sign in again.')
-  const headers = appendProtectedSessionHeaders(new Headers({ authorization: `Bearer ${data.session.access_token}` }))
+  const headers = appendProtectedSessionHeaders(
+    new Headers({ authorization: `Bearer ${data.session.access_token}` }),
+    { includeSharedIdentity: true },
+  )
   if (contentType) headers.set('content-type', contentType)
   return headers
 }

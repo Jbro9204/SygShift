@@ -1,5 +1,8 @@
 import type { SphereConversation, SphereMessage, SpherePerson } from '../../src/data/sygsphere'
 export const isSupabaseConfigured = true
+// The fixture client is already isolated; shared-session switching is intentionally a no-op.
+export async function activateSharedIdentitySupabaseSession(_accessToken: string, _refreshToken: string) {}
+export function deactivateSharedIdentitySupabaseSession() {}
 const a = '10000000-0000-4000-8000-000000000001'
 const b = '10000000-0000-4000-8000-000000000002'
 const c = '10000000-0000-4000-8000-000000000003'
@@ -46,7 +49,7 @@ function request(action: string, input: Record<string, unknown>) {
   write(value); return { ok: true }
 }
 export function getSupabaseClient() {
-  return { auth: { getSession: async () => ({ data: { session: { access_token: 'fixture-only', user: { id: actor } } } }) }, storage: { from: () => ({ download: async () => ({ data: null, error: { message: 'No fixture photo' } }) }) }, channel: () => {
+  return { auth: { getSession: async () => ({ data: { session: { access_token: 'fixture-only', user: { id: actor } } } }) }, realtime: { setAuth: async () => {} }, storage: { from: () => ({ download: async () => ({ data: null, error: { message: 'No fixture photo' } }) }) }, channel: () => {
     let listener = () => {}
     const receive = () => listener()
     const channel = { on: (_type: string, _filter: unknown, callback: () => void) => { listener = callback; return channel }, subscribe: (callback: (status: string) => void) => { bus.addEventListener('message', receive); window.addEventListener('sphere-fixture-update', receive); queueMicrotask(() => callback('SUBSCRIBED')); return channel }, close: () => { bus.removeEventListener('message', receive); window.removeEventListener('sphere-fixture-update', receive) } }; return channel

@@ -341,7 +341,7 @@ const inventory = {
 
 const requiredChecks = [
   [inventory.frontend.routes.some((route) => route.path === '/access-control'), 'Roles & Permissions route was not inventoried.'],
-  [inventory.frontend.navigation.some((item) => item.path === '/users'), 'Users & Access navigation was not inventoried.'],
+  [inventory.frontend.navigation.some((item) => item.path === '/administration/access'), 'Users & Roles navigation was not inventoried.'],
   [inventory.frontend.rpcCalls.some((call) => call.name === 'get_session_context'), 'Session context RPC was not inventoried.'],
   [inventory.backend.currentFunctions.some((item) => item.name.endsWith('.has_effective_permission')), 'Effective-permission function was not inventoried.'],
   [inventory.permissions.some((permission) => permission.name === 'admin.roles.manage'), 'Core role-management permission was not inventoried.'],

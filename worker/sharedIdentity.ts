@@ -1,10 +1,14 @@
 const launchPath = '/api/v1/auth/shared-identity/launch'
 const completionPath = '/api/v1/auth/shared-identity/complete'
 const finalizationPath = '/api/v1/auth/shared-identity/finalize'
+const sessionPath = '/api/v1/auth/shared-identity/session'
+const sessionLogoutPath = '/api/v1/auth/shared-identity/session/logout'
 const callbackPath = '/auth/shared-identity/callback'
 const destination = '/sygsphere'
 const launchCookie = '__Host-sygshift-shared-launch'
 const ticketCookie = '__Host-sygshift-shared-ticket'
+const bootstrapCookie = '__Host-sygshift-shared-bootstrap'
+const sessionCookie = '__Host-sygshift-shared-session'
 const assertionPattern = /^glsi_v1\.[A-Za-z0-9_-]{20,3000}\.[a-f0-9]{64}$/i
 const ticketPattern = /^sygsso_v1\.[A-Za-z0-9_-]{20,3000}\.[a-f0-9]{64}$/i
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -66,6 +70,24 @@ type SharedIdentityTicket = {
   username: string
 }
 
+type SharedIdentityBootstrap = {
+  accessToken: string
+  expiresAt: string
+  refreshToken: string
+}
+
+type SharedIdentitySessionEnvelope = {
+  accessToken: string
+  accessTokenExpiresAt: string
+  authSessionId: string
+  authUserId: string
+  employeeId: string
+  expiresAt: string
+  persistent: boolean
+  refreshToken: string
+  sessionToken: string
+}
+
 class SharedIdentityError extends Error {
   readonly code: string
   readonly status: number
@@ -83,13 +105,15 @@ export async function handleSharedIdentityRequest(
   requestId: string,
 ): Promise<Response | null> {
   const path = new URL(request.url).pathname
-  if (![launchPath, completionPath, finalizationPath].includes(path)) return null
+  if (![launchPath, completionPath, finalizationPath, sessionPath, sessionLogoutPath].includes(path)) return null
 
   try {
     const config = configuration(environment)
     if (path === launchPath) return await receiveLaunch(request, config, requestId)
     if (path === completionPath) return await completeLaunch(request, config, requestId)
-    return await finalizeLaunch(request, config, requestId)
+    if (path === finalizationPath) return await finalizeLaunch(request, config, requestId)
+    if (path === sessionPath) return await restoreSharedSession(request, config, requestId)
+    return await clearSharedSession(request, config, requestId)
   } catch (error) {
     const failure = error instanceof SharedIdentityError
       ? error
@@ -163,7 +187,13 @@ async function completeLaunch(request: Request, config: SharedIdentityConfigurat
   validateLocalIdentity(identity, local)
   const ticket = await createTicket(identity, config)
   const actionLink = await createSessionLink(local.authEmail, config)
-  const response = redirectResponse(actionLink, [clearCookie(launchCookie), cookie(ticketCookie, ticket, 180)], 303)
+  const bootstrap = await verifySessionLink(actionLink, local.existingAuthUserId, config)
+  const bootstrapValue = await encryptEnvelope(bootstrap, config.sessionSecret)
+  const response = redirectResponse(callbackPath, [
+    clearCookie(launchCookie),
+    cookie(ticketCookie, ticket, 180),
+    protectedCookie(bootstrapCookie, bootstrapValue, 180),
+  ], 303)
   response.headers.set('referrer-policy', 'no-referrer')
   return response
 }
@@ -177,13 +207,22 @@ async function finalizeLaunch(request: Request, config: SharedIdentityConfigurat
   const ticket = ticketValue ? await verifyTicket(ticketValue, config) : null
   if (!ticket) throw new SharedIdentityError('shared_identity_ticket_invalid', 401, 'The shared session request is missing or expired.')
 
-  const token = bearerToken(request)
+  const bootstrapValue = readCookie(request, bootstrapCookie)
+  const bootstrap = bootstrapValue
+    ? await decryptEnvelope<SharedIdentityBootstrap>(bootstrapValue, config.sessionSecret)
+    : null
+  if (!validBootstrap(bootstrap)) {
+    throw new SharedIdentityError('shared_identity_bootstrap_invalid', 401, 'The shared sign-in request is missing or expired.')
+  }
+
+  const token = bootstrap.accessToken
   const claims = accessTokenClaims(token)
+  const authSessionId = claims.session_id ?? ''
   const authUser = await verifyAuthUser(token, config)
   if (
     authUser.id !== ticket.authUserId
     || claims.sub !== ticket.authUserId
-    || !uuidPattern.test(claims.session_id ?? '')
+    || !uuidPattern.test(authSessionId)
     || typeof claims.exp !== 'number'
     || claims.exp * 1000 <= Date.now()
   ) {
@@ -200,7 +239,7 @@ async function finalizeLaunch(request: Request, config: SharedIdentityConfigurat
   const expiresAt = new Date(Date.now() + (persistent ? 14 * 24 * 60 * 60 * 1000 : 12 * 60 * 60 * 1000)).toISOString()
   await callServiceRpc('service_issue_shared_identity_session', {
     target_assurance_level: ticket.assuranceLevel,
-    target_auth_session_id: claims.session_id,
+    target_auth_session_id: authSessionId,
     target_auth_user_id: ticket.authUserId,
     target_employee_id: ticket.employeeId,
     target_expires_at: expiresAt,
@@ -209,7 +248,128 @@ async function finalizeLaunch(request: Request, config: SharedIdentityConfigurat
     target_token_hash: await sha256Hex(sessionToken),
   }, config)
 
-  const response = responseJson({ destination, expiresAt, persistent, sharedIdentityToken: sessionToken }, 200)
+  const sessionEnvelope = await encryptEnvelope({
+    accessToken: bootstrap.accessToken,
+    accessTokenExpiresAt: bootstrap.expiresAt,
+    authSessionId,
+    authUserId: ticket.authUserId,
+    employeeId: ticket.employeeId,
+    expiresAt,
+    persistent,
+    refreshToken: bootstrap.refreshToken,
+    sessionToken,
+  } satisfies SharedIdentitySessionEnvelope, config.sessionSecret)
+  const response = responseJson({
+    destination,
+    expiresAt,
+    persistent,
+    sharedIdentityToken: sessionToken,
+    supabaseSession: {
+      accessToken: bootstrap.accessToken,
+      refreshToken: bootstrap.refreshToken,
+    },
+  }, 200)
+  response.headers.append('set-cookie', clearCookie(ticketCookie))
+  response.headers.append('set-cookie', clearCookie(bootstrapCookie))
+  response.headers.append('set-cookie', protectedCookie(
+    sessionCookie,
+    sessionEnvelope,
+    persistent ? secondsUntil(expiresAt) : undefined,
+  ))
+  return response
+}
+
+async function restoreSharedSession(request: Request, config: SharedIdentityConfiguration, requestId: string): Promise<Response> {
+  if (request.method !== 'POST') return methodNotAllowed('POST', requestId)
+  if (request.headers.get('origin') !== config.appOrigin) {
+    throw new SharedIdentityError('shared_identity_origin_denied', 403, 'The shared session request did not come from SygShift.')
+  }
+  const cookieValue = readCookie(request, sessionCookie)
+  if (!cookieValue) return responseEmpty(204)
+  const shared = await decryptEnvelope<SharedIdentitySessionEnvelope>(cookieValue, config.sessionSecret)
+  if (!validSharedSessionEnvelope(shared)) {
+    const response = responseEmpty(204)
+    response.headers.append('set-cookie', clearCookie(sessionCookie))
+    return response
+  }
+
+  let authSession: SharedIdentityBootstrap = {
+    accessToken: shared.accessToken,
+    expiresAt: shared.accessTokenExpiresAt,
+    refreshToken: shared.refreshToken,
+  }
+  let refreshed = false
+  if (Date.parse(authSession.expiresAt) <= Date.now() + 60_000) {
+    try {
+      authSession = await refreshSupabaseSession(authSession.refreshToken, shared.authUserId, config)
+      refreshed = true
+    } catch {
+      const response = responseEmpty(204)
+      response.headers.append('set-cookie', clearCookie(sessionCookie))
+      return response
+    }
+  }
+  const token = authSession.accessToken
+  const claims = accessTokenClaims(token)
+  const authUser = await verifyAuthUser(token, config)
+  if (
+    authUser.id !== shared.authUserId
+    || claims.sub !== shared.authUserId
+    || claims.session_id !== shared.authSessionId
+    || typeof claims.exp !== 'number'
+    || claims.exp * 1000 <= Date.now()
+    || !await verifySharedSession(shared.sessionToken, token, config)
+  ) {
+    const response = responseEmpty(204)
+    response.headers.append('set-cookie', clearCookie(sessionCookie))
+    return response
+  }
+  const response = responseJson({
+    expiresAt: shared.expiresAt,
+    persistent: shared.persistent,
+    sharedIdentityToken: shared.sessionToken,
+    supabaseSession: {
+      accessToken: authSession.accessToken,
+      refreshToken: authSession.refreshToken,
+    },
+  }, 200)
+  if (refreshed) {
+    response.headers.append('set-cookie', protectedCookie(
+      sessionCookie,
+      await encryptEnvelope({
+        ...shared,
+        accessToken: authSession.accessToken,
+        accessTokenExpiresAt: authSession.expiresAt,
+        refreshToken: authSession.refreshToken,
+      } satisfies SharedIdentitySessionEnvelope, config.sessionSecret),
+      shared.persistent ? secondsUntil(shared.expiresAt) : undefined,
+    ))
+  }
+  return response
+}
+
+async function clearSharedSession(request: Request, config: SharedIdentityConfiguration, requestId: string): Promise<Response> {
+  if (request.method !== 'POST') return methodNotAllowed('POST', requestId)
+  if (request.headers.get('origin') !== config.appOrigin) {
+    throw new SharedIdentityError('shared_identity_origin_denied', 403, 'The shared session request did not come from SygShift.')
+  }
+  const cookieValue = readCookie(request, sessionCookie)
+  const shared = cookieValue
+    ? await decryptEnvelope<SharedIdentitySessionEnvelope>(cookieValue, config.sessionSecret)
+    : null
+  if (validSharedSessionEnvelope(shared)) {
+    try {
+      await callServiceRpc('service_revoke_shared_identity_session', {
+        target_request_id: requestId,
+        target_token_hash: await sha256Hex(shared.sessionToken),
+      }, config)
+    } catch {
+      // Browser sign-out must still clear the protected cookie if revocation is temporarily unavailable.
+    }
+  }
+  const response = responseEmpty(204)
+  response.headers.append('set-cookie', clearCookie(sessionCookie))
+  response.headers.append('set-cookie', clearCookie(bootstrapCookie))
   response.headers.append('set-cookie', clearCookie(ticketCookie))
   return response
 }
@@ -292,6 +452,113 @@ async function createSessionLink(authEmail: string, config: SharedIdentityConfig
   return actionLink
 }
 
+async function verifySessionLink(
+  actionLink: string,
+  expectedAuthUserId: string,
+  config: SharedIdentityConfiguration,
+): Promise<SharedIdentityBootstrap> {
+  const link = new URL(actionLink)
+  const tokenHash = link.searchParams.get('token_hash') || link.searchParams.get('token') || ''
+  const verificationType = link.searchParams.get('type') || 'magiclink'
+  if (!tokenHash || tokenHash.length > 4096 || !['email', 'magiclink'].includes(verificationType)) {
+    throw new SharedIdentityError('shared_identity_session_unavailable', 502, 'The SygShift session could not be created.')
+  }
+  const response = await fetch(`${config.supabaseUrl}/auth/v1/verify`, {
+    body: JSON.stringify({ token_hash: tokenHash, type: verificationType }),
+    headers: { apikey: config.publishableKey, 'content-type': 'application/json' },
+    method: 'POST',
+    redirect: 'error',
+    signal: AbortSignal.timeout(5000),
+  })
+  const payload = await response.json().catch(() => null) as {
+    access_token?: unknown
+    expires_at?: unknown
+    expires_in?: unknown
+    refresh_token?: unknown
+    user?: { id?: unknown }
+  } | null
+  const accessToken = typeof payload?.access_token === 'string' ? payload.access_token : ''
+  const refreshToken = typeof payload?.refresh_token === 'string' ? payload.refresh_token : ''
+  const claims = accessTokenClaims(accessToken)
+  const expiresAtMs = typeof payload?.expires_at === 'number'
+    ? payload.expires_at * 1000
+    : Date.now() + Number(payload?.expires_in ?? 0) * 1000
+  if (
+    !response.ok
+    || payload?.user?.id !== expectedAuthUserId
+    || claims.sub !== expectedAuthUserId
+    || !uuidPattern.test(claims.session_id ?? '')
+    || accessToken.length < 20
+    || accessToken.length > 10_000
+    || refreshToken.length < 8
+    || refreshToken.length > 4096
+    || !Number.isFinite(expiresAtMs)
+    || expiresAtMs <= Date.now()
+  ) {
+    throw new SharedIdentityError('shared_identity_session_unavailable', 502, 'The SygShift session could not be created.')
+  }
+  return { accessToken, expiresAt: new Date(expiresAtMs).toISOString(), refreshToken }
+}
+
+async function refreshSupabaseSession(
+  refreshToken: string,
+  expectedAuthUserId: string,
+  config: SharedIdentityConfiguration,
+): Promise<SharedIdentityBootstrap> {
+  const response = await fetch(`${config.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+    body: JSON.stringify({ refresh_token: refreshToken }),
+    headers: { apikey: config.publishableKey, 'content-type': 'application/json' },
+    method: 'POST',
+    redirect: 'error',
+    signal: AbortSignal.timeout(5000),
+  })
+  const payload = await response.json().catch(() => null) as {
+    access_token?: unknown
+    expires_at?: unknown
+    expires_in?: unknown
+    refresh_token?: unknown
+    user?: { id?: unknown }
+  } | null
+  const accessToken = typeof payload?.access_token === 'string' ? payload.access_token : ''
+  const nextRefreshToken = typeof payload?.refresh_token === 'string' ? payload.refresh_token : ''
+  const claims = accessTokenClaims(accessToken)
+  const expiresAtMs = typeof payload?.expires_at === 'number'
+    ? payload.expires_at * 1000
+    : Date.now() + Number(payload?.expires_in ?? 0) * 1000
+  if (
+    !response.ok
+    || payload?.user?.id !== expectedAuthUserId
+    || claims.sub !== expectedAuthUserId
+    || !uuidPattern.test(claims.session_id ?? '')
+    || accessToken.length < 20
+    || accessToken.length > 10_000
+    || nextRefreshToken.length < 8
+    || nextRefreshToken.length > 4096
+    || !Number.isFinite(expiresAtMs)
+    || expiresAtMs <= Date.now()
+  ) {
+    throw new SharedIdentityError('shared_identity_session_expired', 401, 'The shared SygSphere session expired.')
+  }
+  return { accessToken, expiresAt: new Date(expiresAtMs).toISOString(), refreshToken: nextRefreshToken }
+}
+
+async function verifySharedSession(sessionToken: string, accessToken: string, config: SharedIdentityConfiguration): Promise<boolean> {
+  const response = await fetch(`${config.supabaseUrl}/rest/v1/rpc/has_shared_identity_session`, {
+    body: '{}',
+    headers: {
+      apikey: config.publishableKey,
+      authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json',
+      'x-sygshift-shared-identity': sessionToken,
+    },
+    method: 'POST',
+    redirect: 'error',
+    signal: AbortSignal.timeout(5000),
+  })
+  const payload = await response.json().catch(() => false)
+  return response.ok && payload === true
+}
+
 async function verifyAuthUser(token: string, config: SharedIdentityConfiguration): Promise<{ id: string }> {
   if (!token) throw new SharedIdentityError('shared_identity_auth_required', 401, 'A SygShift session is required.')
   const response = await fetch(`${config.supabaseUrl}/auth/v1/user`, {
@@ -366,15 +633,45 @@ async function verifyTicket(value: string, config: SharedIdentityConfiguration):
   return ticket as SharedIdentityTicket
 }
 
-function bearerToken(request: Request): string {
-  const authorization = request.headers.get('authorization') ?? ''
-  return authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : ''
-}
-
 function accessTokenClaims(token: string): { exp?: number, session_id?: string, sub?: string } {
   const encoded = token.split('.')[1]
   if (!encoded) return {}
   return decodeJson(encoded) as { exp?: number, session_id?: string, sub?: string } ?? {}
+}
+
+function validBootstrap(value: SharedIdentityBootstrap | null): value is SharedIdentityBootstrap {
+  if (!value) return false
+  const expiresAt = Date.parse(value.expiresAt)
+  return value.accessToken.length >= 20
+    && value.accessToken.length <= 10_000
+    && value.refreshToken.length >= 8
+    && value.refreshToken.length <= 4096
+    && Number.isFinite(expiresAt)
+    && expiresAt > Date.now()
+}
+
+function validSharedSessionEnvelope(value: SharedIdentitySessionEnvelope | null): value is SharedIdentitySessionEnvelope {
+  if (!value) return false
+  if (
+    typeof value.accessToken !== 'string'
+    || typeof value.accessTokenExpiresAt !== 'string'
+    || typeof value.refreshToken !== 'string'
+  ) return false
+  const expiresAt = Date.parse(value.expiresAt)
+  const accessTokenExpiresAt = Date.parse(value.accessTokenExpiresAt)
+  return value.accessToken.length >= 20
+    && value.accessToken.length <= 10_000
+    && value.refreshToken.length >= 8
+    && value.refreshToken.length <= 4096
+    && Number.isFinite(accessTokenExpiresAt)
+    && uuidPattern.test(value.authSessionId)
+    && uuidPattern.test(value.authUserId)
+    && uuidPattern.test(value.employeeId)
+    && /^[A-Za-z0-9_-]{40,180}$/.test(value.sessionToken)
+    && typeof value.persistent === 'boolean'
+    && Number.isFinite(expiresAt)
+    && expiresAt > Date.now()
+    && expiresAt <= Date.now() + 14 * 24 * 60 * 60 * 1000 + 300_000
 }
 
 async function boundedText(request: Request, maximumBytes: number): Promise<string> {
@@ -405,6 +702,11 @@ function cookie(name: string, value: string, maxAge: number): string {
   return `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; Secure; HttpOnly; SameSite=Lax`
 }
 
+function protectedCookie(name: string, value: string, maxAge?: number): string {
+  const lifetime = typeof maxAge === 'number' ? `; Max-Age=${Math.max(0, maxAge)}` : ''
+  return `${name}=${encodeURIComponent(value)}${lifetime}; Path=/; Secure; HttpOnly; SameSite=Strict`
+}
+
 function clearCookie(name: string): string {
   return `${name}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax`
 }
@@ -420,6 +722,10 @@ function responseJson(payload: unknown, status: number): Response {
     headers: { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' },
     status,
   })
+}
+
+function responseEmpty(status: number): Response {
+  return new Response(null, { headers: { 'cache-control': 'no-store' }, status })
 }
 
 function methodNotAllowed(allow: string, requestId: string): Response {
@@ -466,6 +772,46 @@ async function sha256Hex(value: string): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+async function encryptionKey(secret: string): Promise<CryptoKey> {
+  const material = await crypto.subtle.digest('SHA-256', encoder.encode(secret))
+  return crypto.subtle.importKey('raw', material, { name: 'AES-GCM' }, false, ['decrypt', 'encrypt'])
+}
+
+async function encryptEnvelope<T>(value: T, secret: string): Promise<string> {
+  const iv = new Uint8Array(12)
+  crypto.getRandomValues(iv)
+  const plaintext = encoder.encode(JSON.stringify(value))
+  const encrypted = await crypto.subtle.encrypt({ iv, name: 'AES-GCM' }, await encryptionKey(secret), plaintext)
+  const bytes = new Uint8Array(iv.byteLength + encrypted.byteLength)
+  bytes.set(iv)
+  bytes.set(new Uint8Array(encrypted), iv.byteLength)
+  const encoded = `sygenc_v1.${encodeBase64Url(bytes)}`
+  if (encoded.length > 3800) {
+    throw new SharedIdentityError('shared_identity_session_unavailable', 502, 'The shared session could not be protected.')
+  }
+  return encoded
+}
+
+async function decryptEnvelope<T>(value: string, secret: string): Promise<T | null> {
+  if (!value.startsWith('sygenc_v1.') || value.length > 3800) return null
+  const bytes = decodeBase64Url(value.slice('sygenc_v1.'.length))
+  if (!bytes || bytes.byteLength <= 28) return null
+  try {
+    const plaintext = await crypto.subtle.decrypt(
+      { iv: bytes.slice(0, 12), name: 'AES-GCM' },
+      await encryptionKey(secret),
+      bytes.slice(12),
+    )
+    return JSON.parse(decoder.decode(plaintext)) as T
+  } catch {
+    return null
+  }
+}
+
+function secondsUntil(expiresAt: string): number {
+  return Math.max(1, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000))
+}
+
 function constantTimeEqual(left: string, right: string): boolean {
   if (left.length !== right.length) return false
   let difference = 0
@@ -484,6 +830,18 @@ function decodeJson(value: string): unknown {
     const bytes = new Uint8Array(binary.length)
     for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
     return JSON.parse(decoder.decode(bytes))
+  } catch {
+    return null
+  }
+}
+
+function decodeBase64Url(value: string): Uint8Array | null {
+  try {
+    const normalized = value.replaceAll('-', '+').replaceAll('_', '/').padEnd(Math.ceil(value.length / 4) * 4, '=')
+    const binary = atob(normalized)
+    const bytes = new Uint8Array(binary.length)
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+    return bytes
   } catch {
     return null
   }

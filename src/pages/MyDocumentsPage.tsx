@@ -56,8 +56,21 @@ export function MyDocumentsPage() {
 
 function SignatureRecipientRow({item,onOpen}:{item:SignatureRecipient;onOpen:()=>void}){
   const [certificateBusy,setCertificateBusy]=useState(false)
+  const [documentBusy,setDocumentBusy]=useState<'preview'|'download'|null>(null)
+  const [error,setError]=useState('')
+  async function finalDocument(action:'preview'|'download'){
+    setDocumentBusy(action);setError('')
+    try{
+      const file=await getSignatureDocumentBlob(item.id,action,`Employee ${action} of completed signed document.`)
+      const url=URL.createObjectURL(file.blob)
+      if(action==='preview')window.open(url,'_blank','noopener,noreferrer')
+      else{const link=document.createElement('a');link.href=url;link.download=file.filename;link.click()}
+      window.setTimeout(()=>URL.revokeObjectURL(url),60_000)
+    }catch(cause){setError(cause instanceof Error?cause.message:'The completed signed document could not be opened.')}
+    finally{setDocumentBusy(null)}
+  }
   async function certificate(){setCertificateBusy(true);try{const blob=await downloadSignatureCertificate(item.envelopeId,'Employee download of completed signature audit certificate.');const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`${item.documentTitle}-audit-certificate.pdf`;link.click();URL.revokeObjectURL(url)}finally{setCertificateBusy(false)}}
-  return <article className="my-document-row my-signature-row"><div><strong>{item.envelopeTitle}</strong><span>{item.documentTitle} · {item.requiredAction.replaceAll('_',' ')} · {item.authenticationTier} verification</span><p>{item.completedAt?`Completed ${dateLabel(item.completedAt.slice(0,10))}`:item.expiresAt?`Due before ${new Date(item.expiresAt).toLocaleString()}`:'No expiration'}</p></div><span className={`hr-workflow-status hr-workflow-status--${item.status}`}>{item.status.replaceAll('_',' ')}</span><div className="my-document-row__actions">{item.canAct?<button className="primary-action" onClick={onOpen} type="button">Review &amp; {item.requiredAction}</button>:null}{item.envelopeStatus==='completed'?<button className="secondary-button" disabled={certificateBusy} onClick={()=>void certificate()} type="button"><Download size={16}/>Audit certificate</button>:null}</div></article>
+  return <article className="my-document-row my-signature-row"><div><strong>{item.envelopeTitle}</strong><span>{item.documentTitle} · {item.requiredAction.replaceAll('_',' ')} · {item.authenticationTier} verification</span><p>{item.completedAt?`Completed ${dateLabel(item.completedAt.slice(0,10))}`:item.expiresAt?`Due before ${new Date(item.expiresAt).toLocaleString()}`:'No expiration'}</p>{error?<small className="form-error" role="alert">{error}</small>:null}</div><span className={`hr-workflow-status hr-workflow-status--${item.status}`}>{item.status.replaceAll('_',' ')}</span><div className="my-document-row__actions">{item.canAct?<button className="primary-action" onClick={onOpen} type="button">Review &amp; {item.requiredAction}</button>:null}{item.envelopeStatus==='completed'?<><button className="secondary-button" disabled={documentBusy!==null} onClick={()=>void finalDocument('preview')} type="button"><Eye size={16}/>Preview signed PDF</button><button className="secondary-button" disabled={documentBusy!==null} onClick={()=>void finalDocument('download')} type="button"><Download size={16}/>Download signed PDF</button><button className="secondary-button" disabled={certificateBusy} onClick={()=>void certificate()} type="button"><Download size={16}/>Audit certificate</button></>:null}</div></article>
 }
 
 function SignatureModal({adoption,item,onClose,onSaved}:{adoption:MySignatureWorkspace['adoption'];item:SignatureRecipient;onClose:()=>void;onSaved:()=>Promise<void>}){

@@ -1,4 +1,4 @@
-import { Component, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -34,6 +34,7 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
   const queryClient = useQueryClient()
   const inbox = useQuery({ queryKey: ['sygsphere', employeeId, 'inbox'], queryFn: sphereInbox, refetchInterval: 30000, retry: 1 })
   const [toast, setToast] = useState<{ title: string; path: string; mentioned: boolean } | null>(null)
+  const [audioBlocked, setAudioBlocked] = useState(false)
   const seen = useRef<Set<string> | null>(null)
   const seenMentions = useRef<Set<string> | null>(null)
   const audio = useRef<HTMLAudioElement | null>(null)
@@ -46,6 +47,18 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
     window.addEventListener('pointerdown', unlock, { once: true }); window.addEventListener('keydown', unlock, { once: true })
     return () => { sound.pause(); audio.current = null; window.removeEventListener('pointerdown', unlock); window.removeEventListener('keydown', unlock) }
   }, [])
+  const playAlertSound = useCallback(async () => {
+    const prefs = getSoundPreferences()
+    if (!inbox.data?.soundEnabled || prefs.muted || prefs.volume <= 0 || !audio.current) return true
+    audio.current.volume = prefs.volume
+    audio.current.currentTime = 0
+    try {
+      await audio.current.play()
+      return true
+    } catch {
+      return false
+    }
+  }, [inbox.data?.soundEnabled])
   useEffect(() => {
     const client = getSupabaseClient()
     let disposed = false
@@ -56,8 +69,10 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
       timer = setTimeout(() => { timer = undefined; if (!disposed) void queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] }) }, 120)
     }
     const heartbeat = () => { if (document.visibilityState === 'visible') void sphereRequest('presence').catch(() => undefined) }
-    void client.auth.getSession().then(({ data }) => {
+    void client.auth.getSession().then(async ({ data }) => {
       if (disposed || !data.session) return
+      await client.realtime.setAuth(data.session.access_token)
+      if (disposed) return
       channel = client.channel(`sygsphere:${data.session.user.id}`, { config: { private: true } })
         .on('broadcast', { event: 'changed' }, refresh).subscribe((status) => { if (status === 'SUBSCRIBED') refresh() })
     }).catch(() => undefined)
@@ -85,8 +100,7 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
       void claimSphereAlert(employeeId, mention.messageId).then((claimed) => {
         if (!claimed || cancelled) return
         setToast({ title: mention.conversationName, path: spherePath(mention.conversationId, mention.messageId, mention.parentId), mentioned: true })
-        const prefs = getSoundPreferences()
-        if (data.soundEnabled && !prefs.muted && prefs.volume > 0 && audio.current) { audio.current.volume = prefs.volume; audio.current.currentTime = 0; void audio.current.play().catch(() => undefined) }
+        void playAlertSound().then((played) => { if (!cancelled) setAudioBlocked(!played) })
       })
     }
     for (const conversation of data.conversations) {
@@ -98,21 +112,20 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
       void claimSphereAlert(employeeId, message.id).then((claimed) => {
         if (!claimed || cancelled) return
         setToast({ title: conversation.name, path: spherePath(conversation.id, message.id, message.parentId), mentioned: false })
-        const prefs = getSoundPreferences()
-        if (data.soundEnabled && !prefs.muted && prefs.volume > 0 && audio.current) { audio.current.volume = prefs.volume; audio.current.currentTime = 0; void audio.current.play().catch(() => undefined) }
+        void playAlertSound().then((played) => { if (!cancelled) setAudioBlocked(!played) })
       })
     }
     return () => { cancelled = true }
-  }, [inbox.data, employeeId])
+  }, [inbox.data, employeeId, playAlertSound])
   useEffect(() => { if (!toast) return; const timeout = setTimeout(() => setToast(null), 10000); return () => clearTimeout(timeout) }, [toast])
   const unread = sphereUnread(inbox.data)
   return <>
-    <Link className="sphere-launcher" to="/sygsphere" title={`SygSphere${unread ? ` · ${unread} unread conversations` : ' · Messages'}`} aria-label={`SygSphere messages${unread ? `, ${unread} unread conversations` : ''}`}>
+    <Link className="sphere-launcher" to="/sygsphere" title={`SygSphere — ${unread ? `${unread} unread conversations` : 'Messages'}`} aria-label={`Open SygSphere messages${unread ? `, ${unread} unread conversations` : ''}`}>
       <img className="sphere-launcher__emblem" src="/branding/sygsphere-emblem.png" alt="" />
       <span className="sphere-launcher__brand"><img src="/branding/sygsphere-logo.png" alt="SygSphere" /><small>MESSAGES</small></span>
       {unread > 0 ? <span className="sphere-badge">{unread > 99 ? '99+' : unread}</span> : null}
     </Link>
     {createPortal(<Link className="sphere-mobile-launcher" to="/sygsphere" aria-label={`Open SygSphere${unread ? `, ${unread} unread conversations` : ''}`}><img src="/branding/sygsphere-emblem.png" alt="" />SygSphere{unread > 0 ? <span className="sphere-badge">{unread > 99 ? '99+' : unread}</span> : null}</Link>, document.body)}
-    {toast ? createPortal(<aside className={`sphere-toast ${toast.mentioned ? 'sphere-toast--mention' : ''}`} role="status"><Link onClick={() => setToast(null)} to={toast.path}><strong>SygSphere · {toast.title}</strong><span>{toast.mentioned ? 'You were mentioned. Open the message.' : 'You have a new message. Open conversation.'}</span></Link><button type="button" aria-label="Dismiss message notification" onClick={() => setToast(null)}><X size={18} /></button></aside>, document.body) : null}
+    {toast ? createPortal(<aside className={`sphere-toast ${toast.mentioned ? 'sphere-toast--mention' : ''}`} role="status"><Link onClick={() => setToast(null)} to={toast.path}><strong>SygSphere · {toast.title}</strong><span>{toast.mentioned ? 'You were mentioned. Open the message.' : 'You have a new message. Open conversation.'}</span></Link>{audioBlocked ? <button type="button" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} onClick={() => { void playAlertSound().then((played) => setAudioBlocked(!played)) }}>Enable SygSphere sounds</button> : null}<button type="button" aria-label="Dismiss message notification" onClick={() => setToast(null)}><X size={18} /></button></aside>, document.body) : null}
   </>
 }

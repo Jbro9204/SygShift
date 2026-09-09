@@ -1,5 +1,16 @@
 # SygShift Development Log
 
+## 09/08/2026 - Communications, Tasks, Documents, and Sygilant Launch
+
+- Consolidated ticket-opening delivery, exact effective-role routing, safe notification clearing, and queue ownership so specialized timekeeping/HR processors retain their work.
+- Expanded SygSphere with authenticated live delivery, recoverable supplied audio, profile photos, mentions, private previews/downloads, larger protected image uploads, readable text sizing, and mobile-safe composition.
+- Added the first production SygTasks work-management foundation with private personal/team/company boards, assignment, followers, status, priority, dates, labels, checklists, dependencies, comments, activity, notifications, and live refresh.
+- Added privacy-safe write-up delivery, easier outside-document signature preparation, completed-PDF access, and visible signature completion pages when a template has no placed signature field.
+- Extended synchronized inactivity handling to a 55-minute warning and 60-minute sign-out, mapped Dispatcher into the effective role system, and added the permanent branded Sygilant launcher.
+- Activated the one-time server-signed SygShift-to-Sygilant bridge only after the reciprocal Sygilant consumer, independent secrets, exact database migration, and fail-closed live boundary were verified.
+- Applied the seven SygShift-owned migrations individually, preserving the divergent remote-only history; all protected release details and remaining parity boundaries are recorded in `docs/changelogs/CHANGELOG_09-08-2026_COMMUNICATIONS_TASKS_DOCUMENTS_AND_PLATFORM_LAUNCH.md`.
+- Pre-release verification passed 207 test files / 1,027 tests, the 236-check desktop/mobile browser matrix, all 38 protected Time Clock workflows, access inventory, exact database rehearsals, TypeScript, lint, and production build. The production Worker identity and post-release canaries are appended to the linked changelog after deployment.
+
 ## 09/08/2026 - Sygilant To SygSphere Shared Session
 
 - Added a production shared-session receiver that opens the canonical SygSphere workspace from Sygilant without copying messages, files, permissions, or identity records.
@@ -1904,3 +1915,12 @@ pnpm exec wrangler deploy --keep-vars
 - No database or operational record changed. `pnpm check` passed 189 files / 931 tests; 14 targeted desktop/mobile visual checks and all 38 required Time Clock workflow checks passed.
 - Pushed release commit `8db9e0e` and deployed Worker `18e0cfd5-6db7-4fda-ae9d-51805d6bdcad`; production health/readiness and exact live JavaScript/CSS asset hashes passed verification.
 - See `docs/changelogs/CHANGELOG_09-07-2026_ROLE_LIBRARY_AND_PATROL_OPERATIONS_REPAIR.md` for detailed scope and release evidence.
+## 09/08/2026 - Communications, Tasks, Documents, and Reciprocal Platform Launch
+
+- Consolidated ticket opening delivery, corrected exact-role routing and Admin fallback, normalized Closed to Resolved, added safe Clear all, and prevented the generic claimant from stealing specialized notification queue rows.
+- Expanded SygSphere with authenticated Realtime, recoverable audible alerts, profile photos, local text sizes, structured mentions, private previews/downloads, scanned resumable images through 100 MB, mobile overflow protection, and clean-file retry deletion safeguards.
+- Added SygTasks with private My Work and personal/team/company boards, list/kanban views, assignees, followers, dates, status, priority, labels, checklists, dependencies, comments, history, notifications, Realtime refresh, and effective-role controls.
+- Added privacy-safe write-up delivery, improved outside-document/signature guidance, completed signed-PDF access, and a visible signature completion page when a source template has no placed signature field.
+- Extended synchronized inactivity handling to a 55-minute warning and 60-minute sign-out, moved Dispatcher capability onto the effective role model, and added a secure one-time SygShift-to-Sygilant launch provider and branded sidebar control.
+- Applied seven exact forward migrations individually while preserving the Sygilant-owned migration history. Production rollback rehearsals passed for notification claimant ownership and the SygSphere resumable lifecycle without retaining test data.
+- Passed `pnpm check` with 207 files / 1,027 tests, the 236-check desktop/mobile browser matrix, all 38 mandatory Time Clock checks, and the 36-navigation/66-route/79-permission access inventory.
