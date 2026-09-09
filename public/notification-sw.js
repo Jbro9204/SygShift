@@ -42,7 +42,7 @@ self.addEventListener('push', (event) => {
     const path = typeof payload.path === 'string' && payload.path.startsWith('/') && !payload.path.startsWith('//') && !/[\\\r\n]/.test(payload.path) ? payload.path : '/notifications'
     await self.registration.showNotification('SygShift update', {
       body: 'You have a new update. Open SygShift to review it securely.',
-      icon: '/brand/sygshift-logo.png', tag: `sygshift-${payload.id}`, renotify: false,
+      icon: '/pwa/sygshift-192.png', tag: `sygshift-${payload.id}`, renotify: false,
       silent: owner.muted === true,
       data: { path, employeeId: payload.employeeId },
     })

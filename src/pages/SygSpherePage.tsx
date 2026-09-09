@@ -3,7 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ALargeSmall, ArrowLeft, Bell, BellOff, Bookmark, Check, ChevronDown, Download, Eye, Hash, Info, MessageCircle, Paperclip, Plus, Search, Send, Smile, Users, X } from 'lucide-react'
 import { getSessionContext } from '../data/auth'
-import { readSphereDraft, sphereActiveMentions, sphereCanPreview, sphereConversation, sphereCreate, sphereDirectory, sphereDownload, sphereDraftKey, sphereFiles, sphereInbox, sphereMessage, sphereMessageParts, sphereMessages, spherePath, spherePhoto, spherePreferences, spherePreview, sphereRequest, sphereSearch, sphereSend, sphereUpload, writeSphereDraft, type SphereConversation, type SphereFile, type SphereMention, type SphereMessage, type SpherePerson, type SpherePreview, type SphereTextSize } from '../data/sygsphere'
+import { readSphereDraft, sphereActiveMentions, sphereCanPreview, sphereConversation, sphereCreate, sphereDirectory, sphereDownload, sphereDraftKey, sphereFiles, sphereInbox, sphereMessage, sphereMessageParts, sphereMessages, spherePath, spherePhoto, spherePreferences, spherePreview, sphereRequest, sphereRetryUpload, sphereSearch, sphereSend, sphereUpload, sphereUploadStatus, SphereUploadError, writeSphereDraft, type SphereConversation, type SphereFile, type SphereMention, type SphereMessage, type SpherePerson, type SpherePreview, type SphereTextSize, type SphereUploadStage } from '../data/sygsphere'
 import { ModalDialog } from '../components/ModalDialog'
 import { SecurePdfViewer } from '../components/SecurePdfViewer'
 import '../styles/sygsphere.css'
@@ -88,6 +88,7 @@ export function SphereWorkspace({ employeeId }: { employeeId: string }) {
   const conversationId = params.get('conversation')
   const threadId = params.get('thread')
   const focusId = params.get('message')
+  const uploadId = params.get('upload')
   const conversation = inbox.data?.conversations.find((item) => item.id === conversationId)
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] })
   const preferences = useMutation({ mutationFn: (soundEnabled: boolean) => sphereRequest('presence', { soundEnabled }), onSuccess: refresh })
@@ -130,6 +131,7 @@ export function SphereWorkspace({ employeeId }: { employeeId: string }) {
       </> : <div className="sphere-welcome"><img src="/branding/sygsphere-emblem.png" alt="" /><span className="sphere-eyebrow">WELCOME TO SYGSPHERE</span><h2>Good work starts with<br />a conversation.</h2><p>Connect with anyone in SygShift. Keep your team’s messages, decisions and shared work together.</p><button className="sphere-primary" type="button" onClick={() => setNewOpen(true)}><Plus size={18} /> Start a conversation</button>{conversationId ? <p role="status">That conversation is no longer available to your account.</p> : null}</div>}
     </div>
     {newOpen ? <NewConversation employeeId={employeeId} onClose={() => setNewOpen(false)} onCreated={(id) => { setNewOpen(false); openConversation(id) }} /> : null}
+    {uploadId && /^[0-9a-f-]{36}$/i.test(uploadId) ? <SphereUploadRecovery employeeId={employeeId} uploadId={uploadId} onClose={() => navigate(conversationId ? spherePath(conversationId) : '/sygsphere', { replace: true })} /> : null}
   </section>
 }
 
@@ -235,6 +237,8 @@ function SphereComposer({ employeeId, conversationId, parentId, members }: { emp
   const [mention, setMention] = useState(false)
   const [file, setFile] = useState<{ file: File; id: string } | null>(null)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadStage, setUploadStage] = useState<SphereUploadStage>('uploading')
+  const [uploadNotice, setUploadNotice] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const lastTyping = useRef(0)
@@ -242,7 +246,25 @@ function SphereComposer({ employeeId, conversationId, parentId, members }: { emp
     const empty = { body: '', clientId: crypto.randomUUID(), mentions: [] }; setDraft(empty); writeSphereDraft(key, empty)
     await queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] }); inputRef.current?.focus()
   } })
-  const upload = useMutation({ mutationFn: async () => { if (file) await sphereUpload(file.file, file.id, conversationId, parentId, setUploadProgress) }, onSuccess: async () => { setFile(null); setUploadProgress(0); await queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] }) } })
+  const upload = useMutation({ mutationFn: async () => file ? sphereUpload(file.file, file.id, conversationId, parentId, (percentage, stage) => { setUploadProgress(percentage); setUploadStage(stage) }) : null, onSuccess: async (result) => {
+    setFile(null); setUploadProgress(0); setUploadStage('uploading')
+    setUploadNotice(result?.state === 'clean' ? 'Your file is ready in this conversation.' : 'Upload complete. The private security check is continuing in the background. SygShift will notify you when the file is ready.')
+    await queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] })
+  } })
+  const retryScan = useMutation({ mutationFn: (uploadId: string) => sphereRetryUpload(uploadId), onSuccess: () => {
+    setFile(null); setUploadProgress(0); setUploadStage('uploading'); setUploadNotice('Security check restarted without uploading the file again. SygShift will notify you when it is ready.')
+  } })
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    if (!draft.body) {
+      input.style.height = '40px'
+      return
+    }
+    input.style.height = 'auto'
+    input.style.height = `${Math.min(input.scrollHeight, 104)}px`
+  }, [draft.body])
+  const retryableUpload = upload.error instanceof SphereUploadError && upload.error.retryable && upload.error.uploadId ? upload.error : null
   function change(body: string, mentions = draft.mentions) {
     if (send.isPending) return
     const limited = body.slice(0, 12000)
@@ -255,11 +277,33 @@ function SphereComposer({ employeeId, conversationId, parentId, members }: { emp
     <textarea aria-label={parentId ? 'Write a thread reply' : 'Write a message'} ref={inputRef} value={draft.body} onChange={(event) => change(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit() } }} placeholder={parentId ? 'Add your reply…' : 'Write a message…'} maxLength={12000} disabled={send.isPending} />
     <div className="sphere-composer-tools"><div><button type="button" aria-label="Attach a file" onClick={() => fileInput.current?.click()}><Paperclip size={19} /></button><button type="button" aria-label="Mention a participant" aria-expanded={mention} onClick={() => setMention(!mention)}>@</button><button type="button" aria-label="Add a smile" onClick={() => { change(`${draft.body} 🙂`); inputRef.current?.focus() }}><Smile size={19} /></button><small>Enter to send · Shift + Enter for a new line</small></div><button type="submit" className="sphere-primary" disabled={!draft.body.trim() || send.isPending}><Send size={17} />{send.isPending ? 'Sending…' : send.isError ? 'Retry send' : 'Send'}</button></div>
     <input ref={fileInput} type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.xlsx" onChange={(event) => { const chosen = event.target.files?.[0]; if (chosen) { setFile({ file: chosen, id: crypto.randomUUID() }); setUploadProgress(0); upload.reset() } event.target.value = '' }} />
-    {file ? <ModalDialog title="Share a file" description="Only participants in this conversation can download it." className="sphere-modal" busy={upload.isPending} busyLabel={uploadProgress > 90 ? 'Security-checking the file before sharing…' : `Uploading securely… ${uploadProgress}%`} onClose={() => setFile(null)}><div className="sphere-form"><strong>{file.file.name}</strong><p>{(file.file.size / 1048576).toFixed(2)} MB · Maximum 100 MB</p><p className="sphere-hint">PDF, images, text, DOCX and XLSX are supported through 25 MB. JPEG, PNG and WebP images can be as large as 100 MB. Every file is checked before anyone can download it; larger files remain download-only to protect mobile devices. Your message draft stays in place.</p>{upload.isPending ? <progress aria-label="File upload and security check progress" max="100" value={uploadProgress}>{uploadProgress}%</progress> : null}<ErrorNotice error={upload.error} /><footer><button type="button" disabled={upload.isPending} onClick={() => setFile(null)}>Cancel</button><button type="button" className="sphere-primary" disabled={upload.isPending || file.file.size > 104857600 || file.file.size < 1} onClick={() => upload.mutate()}>{upload.isError ? 'Retry sharing' : 'Share file'}</button></footer></div></ModalDialog> : null}
+    {file ? <ModalDialog title="Share a file" description="Only participants in this conversation can download it." className="sphere-modal" busy={upload.isPending || retryScan.isPending} busyLabel={uploadStage === 'scanning' ? 'Moving the upload into its private security check…' : `Uploading securely… ${uploadProgress}%`} onClose={() => setFile(null)}><div className="sphere-form"><strong>{file.file.name}</strong><p>{(file.file.size / 1048576).toFixed(2)} MB · Maximum 100 MB</p><p className="sphere-hint">PDF, images, text, DOCX and XLSX are supported through 25 MB. JPEG, PNG and WebP images can be as large as 100 MB. Files stay private while checked and appear only after passing. Your message draft and selected file remain available if the upload is interrupted.</p>{upload.isPending ? <><progress aria-label="File upload progress" max="100" value={uploadProgress}>{uploadProgress}%</progress><p className="sphere-hint">{uploadStage === 'scanning' ? 'Upload complete. Starting the background security check…' : 'Uploading to private quarantine…'}</p></> : null}<ErrorNotice error={upload.error || retryScan.error} />{upload.error instanceof SphereUploadError && upload.error.requestReference ? <p className="sphere-reference">Reference ID: <code>{upload.error.requestReference}</code></p> : null}<footer><button type="button" disabled={upload.isPending || retryScan.isPending} onClick={() => setFile(null)}>Cancel</button>{retryableUpload ? <button type="button" className="sphere-primary" disabled={retryScan.isPending} onClick={() => retryScan.mutate(retryableUpload.uploadId!)}>{retryScan.isPending ? 'Restarting check…' : 'Retry security check'}</button> : <button type="button" className="sphere-primary" disabled={upload.isPending || retryScan.isPending || file.file.size > 104857600 || file.file.size < 1} onClick={() => upload.mutate()}>{upload.isError ? 'Retry upload' : 'Share file'}</button>}</footer></div></ModalDialog> : null}
     {mention ? <div className="sphere-mention-list" aria-label="Conversation participants">{members.filter((person) => person.id !== employeeId && person.active && person.username).map((person) => <button key={person.id} type="button" onClick={() => { const token = `@${person.username}`; change(`${draft.body}${draft.body.endsWith(' ') || !draft.body ? '' : ' '}${token} `, [...draft.mentions, { id: person.id, name: person.name, username: person.username! }]); setMention(false); inputRef.current?.focus() }}><Avatar name={person.name} photoPath={person.photoPath} /><span><strong>{person.name}</strong><small>@{person.username}</small></span></button>)}</div> : null}
+    {uploadNotice ? <p className="sphere-upload-notice" role="status">{uploadNotice}</p> : null}
     <ErrorNotice error={send.error} />{send.isError ? <p className="sphere-hint">Your draft is safe here. Retry uses the same send identifier to prevent duplicates.</p> : null}
     {!storageAvailable ? <p className="sphere-error">Device storage is unavailable. Keep this page open until you send your draft.</p> : null}
   </form>
+}
+
+function SphereUploadRecovery({ employeeId, uploadId, onClose }: { employeeId: string; uploadId: string; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const status = useQuery({
+    queryKey: ['sygsphere', employeeId, 'upload', uploadId],
+    queryFn: () => sphereUploadStatus(uploadId),
+    refetchInterval: (query) => ['prepared', 'uploading', 'uploaded', 'scanning'].includes(query.state.data?.state ?? '') ? 5000 : false,
+  })
+  const retry = useMutation({ mutationFn: () => sphereRetryUpload(uploadId), onSuccess: async () => {
+    await status.refetch()
+    await queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] })
+  } })
+  const state = status.data?.state
+  const processing = ['prepared', 'uploading', 'uploaded', 'scanning'].includes(state ?? '')
+  return <ModalDialog title="SygSphere file status" description="Private upload and security-check status" className="sphere-modal" busy={retry.isPending} onClose={onClose}><div className="sphere-form">
+    {status.isPending ? <p role="status">Checking the file…</p> : state === 'clean' ? <><strong>File ready</strong><p>The file passed its security check and is now available to this conversation’s participants.</p></> : state === 'rejected' ? <><strong>File blocked</strong><p>The file did not pass validation or its security check and was not shared.</p></> : state === 'expired' ? <><strong>Upload expired</strong><p>Choose the file again from the conversation composer to start a new protected upload.</p></> : state === 'error' ? <><strong>Security check needs attention</strong><p>The upload remains in private quarantine and can be checked again without re-uploading it.</p></> : <><strong>Security check in progress</strong><p>You may close this window. SygShift will notify you when the file is ready or needs attention.</p></>}
+    <ErrorNotice error={status.error || retry.error} />
+    {status.data?.requestReference ? <p className="sphere-reference">Reference ID: <code>{status.data.requestReference}</code></p> : null}
+    <footer><button type="button" onClick={onClose}>Close</button>{state === 'error' && status.data?.retryable ? <button type="button" className="sphere-primary" disabled={retry.isPending} onClick={() => retry.mutate()}>{retry.isPending ? 'Restarting check…' : 'Retry security check'}</button> : processing ? <button type="button" disabled={status.isFetching} onClick={() => void status.refetch()}>{status.isFetching ? 'Checking…' : 'Check again'}</button> : null}</footer>
+  </div></ModalDialog>
 }
 
 function SphereResults({ employeeId, query, saved, onOpen }: { employeeId: string; query: string; saved: boolean; onOpen: (message: SphereMessage) => void }) {

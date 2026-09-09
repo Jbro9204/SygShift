@@ -78,7 +78,7 @@ export function OperationalTimeHeader({
   return (
     <header className="topbar">
       <div className="topbar-date">
-        <CalendarDays aria-hidden="true" size={19} strokeWidth={1.9} />
+        <CalendarDays aria-hidden="true" size={20} strokeWidth={1.9} />
         <span>{formatOperationalDate(now)}</span>
       </div>
       <section aria-label="United States operational time zones" className="operational-time-zone-strip">

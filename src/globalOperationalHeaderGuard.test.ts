@@ -74,5 +74,7 @@ describe('global operational time header guardrails', () => {
     expect(css).toContain('margin: 14px clamp(24px, 4vw, 54px) 0')
     expect(css).toContain('@media (prefers-reduced-motion: reduce)')
     expect(css).toContain('.operational-clock__hand--second')
+    expect(css).toMatch(/\.topbar-date\s*\{[\s\S]*?font-size:\s*16px;/)
+    expect(themeCss).toMatch(/\.topbar-date\s*\{[\s\S]*?font-size:\s*16px;/)
   })
 })

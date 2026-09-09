@@ -7,5 +7,11 @@
   "display": "standalone",
   "background_color": "#10100f",
   "theme_color": "#10100f",
-  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+  "description": "Guardianship Security workforce operations, scheduling, time, HR, and communications.",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/pwa/sygshift-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/sygshift-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa/sygshift-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
 }

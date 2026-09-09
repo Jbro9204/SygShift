@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 import { getSoundPreferences } from '../lib/notificationSounds'
+import { ensureSygShiftServiceWorker } from '../lib/pwaInstall'
 
 export function pushSupported(): boolean {
   return typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
@@ -32,7 +33,7 @@ export async function enableDevicePush(employeeId: string): Promise<void> {
   const response = await fetch('/api/v1/notifications/push/config')
   const config = z.object({ configured: z.boolean(), publicKey: z.string().nullable() }).parse(await response.json())
   if (!response.ok || !config.configured || !config.publicKey) throw new Error('Device notification delivery is not configured yet.')
-  await navigator.serviceWorker.register('/notification-sw.js', { scope: '/', updateViaCache: 'none' })
+  await ensureSygShiftServiceWorker()
   const registration = await navigator.serviceWorker.ready
   const key = Uint8Array.from(atob(config.publicKey.replaceAll('-', '+').replaceAll('_', '/')), (character) => character.charCodeAt(0))
   const subscription = await registration.pushManager.getSubscription() || await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key })

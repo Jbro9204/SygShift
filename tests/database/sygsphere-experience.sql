@@ -5,6 +5,7 @@ do $$
 declare
   actors uuid[]; accounts uuid[]; usernames text[]; cid uuid; mid uuid; request_id uuid:=gen_random_uuid(); payload jsonb;
   upload_id uuid:=gen_random_uuid(); upload_client_id uuid:=gen_random_uuid(); lease_id uuid;
+  small_upload_id uuid:=gen_random_uuid(); small_upload_client_id uuid:=gen_random_uuid(); retry_request_id uuid:=gen_random_uuid();
 begin
   select array_agg(employee_id order by employee_id),array_agg(auth_user_id order by employee_id),array_agg(username order by employee_id)
     into actors,accounts,usernames from (
@@ -44,6 +45,7 @@ begin
     raise exception 'Protected resumable capability bounds are incorrect';
   end if;
   if has_function_privilege('authenticated','public.service_begin_sygsphere_resumable_upload(uuid,jsonb)','EXECUTE') then raise exception 'Browser can authorize resumable uploads'; end if;
+  if has_function_privilege('authenticated','public.service_retry_sygsphere_resumable_scan(uuid,uuid,uuid)','EXECUTE') then raise exception 'Browser can retry quarantine scans directly'; end if;
   if has_function_privilege('anon','public.sygsphere_people(text,jsonb)','EXECUTE') then raise exception 'Anonymous people access granted'; end if;
 
   perform set_config('request.jwt.claim.role','service_role',true);
@@ -64,7 +66,26 @@ begin
   if payload->>'state'<>'clean' then raise exception 'Clean resumable completion failed'; end if;
   payload:=public.service_defer_sygsphere_resumable_scan(upload_id,lease_id,'lost response rehearsal');
   if payload->>'state'<>'clean' or payload ? 'objectKey' then raise exception 'Clean terminal file exposed for deletion'; end if;
+
+  payload:=public.service_begin_sygsphere_resumable_upload(actors[1],jsonb_build_object(
+    'conversationId',cid,'fileId',small_upload_id,'clientId',small_upload_client_id,'filename','small-evidence.png',
+    'mimeType','image/png','sizeBytes',29500,'requestId',retry_request_id));
+  if payload->>'state'<>'prepared' or payload->>'requestReference'<>retry_request_id::text then raise exception 'Small protected begin failed'; end if;
+  perform public.service_mark_sygsphere_resumable_uploaded(actors[1],small_upload_id,29500,'image/png');
+  for retry_index in 1..5 loop
+    payload:=public.service_claim_sygsphere_resumable_scan(small_upload_id); lease_id:=(payload->>'leaseId')::uuid;
+    if lease_id is null then raise exception 'Retry rehearsal scan lease missing at attempt %',retry_index; end if;
+    payload:=public.service_defer_sygsphere_resumable_scan(small_upload_id,lease_id,'scanner rehearsal interruption');
+    if retry_index<5 then
+      update private.sygsphere_resumable_uploads set available_at=clock_timestamp() where id=small_upload_id;
+    end if;
+  end loop;
+  if payload->>'state'<>'error' or payload ? 'objectKey' then raise exception 'Terminal scan error was not retained privately'; end if;
+  payload:=public.service_get_sygsphere_resumable_upload(actors[1],small_upload_id);
+  if payload->>'retryable'<>'true' then raise exception 'Retained scan error is not retryable'; end if;
+  payload:=public.service_retry_sygsphere_resumable_scan(actors[1],small_upload_id,gen_random_uuid());
+  if payload->>'state'<>'uploaded' or (payload->>'manualRetryCount')::integer<>1 then raise exception 'Security scan retry did not restart without re-upload'; end if;
 end $$;
-select 'SygSphere mentions, profile identity, text preferences, and protected resumable transitions passed; transaction will roll back.' as result;
+select 'SygSphere mentions, profile identity, text preferences, and protected recoverable upload transitions passed; transaction will roll back.' as result;
 
 rollback;

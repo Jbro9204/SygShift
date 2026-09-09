@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BellRing, Volume2 } from 'lucide-react'
+import { BellRing, Download, Smartphone, Volume2 } from 'lucide-react'
 import { getSessionContext } from '../data/auth'
 import { disableDevicePush, enableDevicePush, getDevicePushEnabled, pushSupported } from '../data/pushNotifications'
 import { enableAudio, getSoundPreferences, playSound, saveSoundPreferences, SOUND_PREFERENCES_EVENT, type SoundPreferences } from '../lib/notificationSounds'
+import { getPwaInstallState, pwaInstallInstructions, requestPwaInstall, subscribePwaInstallState } from '../lib/pwaInstall'
 import './NotificationPreferences.css'
 
 export function NotificationPreferences() {
@@ -12,8 +13,11 @@ export function NotificationPreferences() {
   const [preferences, setPreferences] = useState(getSoundPreferences)
   const [soundMessage, setSoundMessage] = useState('')
   const [testing, setTesting] = useState(false)
+  const [installState, setInstallState] = useState(getPwaInstallState)
+  const [installMessage, setInstallMessage] = useState('')
   const session = useQuery({ queryKey: ['notification-device-session'], queryFn: getSessionContext, enabled: open })
   const push = useQuery({ queryKey: ['notification-device-push'], queryFn: getDevicePushEnabled, enabled: open })
+  const pushPermission = pushSupported() ? Notification.permission : 'unsupported'
   const device = useMutation({ mutationFn: (enabled: boolean) => enabled ? enableDevicePush(session.data!.employeeId) : disableDevicePush(session.data!.employeeId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notification-device-push'] }) })
   useEffect(() => {
@@ -22,6 +26,7 @@ export function NotificationPreferences() {
     window.addEventListener(SOUND_PREFERENCES_EVENT, update)
     return () => { window.removeEventListener('storage', update); window.removeEventListener(SOUND_PREFERENCES_EVENT, update) }
   }, [])
+  useEffect(() => subscribePwaInstallState(() => setInstallState(getPwaInstallState())), [])
   function change(next: Partial<SoundPreferences>) {
     const value = { ...preferences, ...next }
     setPreferences(value)
@@ -36,8 +41,17 @@ export function NotificationPreferences() {
     setSoundMessage(played ? 'Test sound played. If you did not hear it, check the device volume and browser mute setting.' : 'This browser blocked sound. Check this site’s sound permission and try again.')
     setTesting(false)
   }
+  async function install() {
+    const result = await requestPwaInstall()
+    setInstallState(getPwaInstallState())
+    setInstallMessage(result === 'installed'
+      ? 'SygShift is installed on this device.'
+      : result === 'dismissed'
+        ? 'Installation was canceled. You can install SygShift later from this section.'
+        : pwaInstallInstructions())
+  }
   return <details className="notification-preferences operations-panel" onToggle={(event) => setOpen(event.currentTarget.open)}>
-    <summary><Volume2 aria-hidden="true" size={20} /><span>Sounds &amp; device notifications</span><small>Settings for this device</small></summary>
+    <summary><Volume2 aria-hidden="true" size={20} /><span>Sounds &amp; device notifications</span><small>Settings and app install for this device</small></summary>
     {open ? <div className="notification-preferences__body">
       <section aria-label="Sound preferences"><h2>Make SygShift sound like SygShift</h2><p>Your selected login and notification sounds play while SygShift is open. Login plays only after a successful manual sign-in and required verification.</p>
         <div className="notification-preferences__toggles">
@@ -51,12 +65,18 @@ export function NotificationPreferences() {
       </section>
       <section aria-label="Device notifications"><h2><BellRing aria-hidden="true" size={20} />Updates when SygShift is closed</h2><p>Enable notifications separately on each device. Lock-screen alerts keep ticket details private. Background sounds follow your browser and device settings, not the custom in-app sound.</p>
         {!pushSupported() ? <p>This browser does not support device notifications. On iPhone or iPad, add SygShift to your Home Screen and open it there.</p> : <>
-          <p role="status">{push.isPending ? 'Checking this device…' : push.data ? 'Device notifications are enabled.' : 'Device notifications are off.'}</p>
+          <p role="status">{push.isPending ? 'Checking this device…' : push.data ? 'Device notifications are enabled for this signed-in account.' : pushPermission === 'denied' ? 'Device notifications are blocked in this browser.' : 'Device notifications are off on this device.'}</p>
           <button className="primary-action" disabled={device.isPending || session.isPending || session.isError || push.isPending} onClick={() => device.mutate(!push.data)} type="button">{device.isPending ? 'Updating device…' : push.data ? 'Turn off device notifications' : 'Enable device notifications'}</button>
-          <p className="form-note">Allow notifications when prompted. If blocked, change this site’s notification permission in browser settings. On iPhone or iPad, use the Home Screen app. Signing out stops notifications for that session.</p>
+          <p className="form-note">{pushPermission === 'denied' ? 'Open this site’s browser settings, change Notifications to Allow, then return here. ' : 'Allow notifications when prompted. '}On iPhone or iPad, install and open the Home Screen app first. Signing out removes this account from background delivery on this device.</p>
         </>}
         {device.isSuccess ? <p role="status">Device notification setting updated.</p> : null}
         {device.isError || push.isError || session.isError ? <p role="alert">{device.error?.message || push.error?.message || session.error?.message}</p> : null}
+      </section>
+      <section aria-label="Install SygShift" className="notification-preferences__install"><div className="notification-preferences__install-copy"><h2><Smartphone aria-hidden="true" size={20} />Install SygShift on this device</h2><p>Use SygShift like an app with its own icon and window. Installation does not create another account, bypass sign-in, or store protected records for offline use.</p></div>
+        <div className="notification-preferences__install-action">
+          {installState.installed ? <p className="notification-preferences__installed" role="status">SygShift is installed on this device.</p> : <button className="secondary-button" type="button" onClick={() => void install()}><Download aria-hidden="true" size={17} />{installState.canPrompt ? 'Install SygShift' : 'How to install'}</button>}
+          {installMessage && !installState.installed ? <p className="form-note" role="status">{installMessage}</p> : null}
+        </div>
       </section>
     </div> : null}
   </details>

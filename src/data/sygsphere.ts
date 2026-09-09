@@ -146,46 +146,57 @@ async function sphereFileResponse(response: Response) {
   if (!response.ok) { const result = z.object({ detail: z.string().optional() }).safeParse(await response.json().catch(() => null)); throw new Error(result.success && result.data.detail ? result.data.detail : 'The protected file request could not be completed.') }
   return response
 }
-const sphereInlineMaxBytes = 26214400
 const sphereResumableMaxBytes = 104857600
-const sphereLargeImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp'])
 const sphereResumableTargetSchema = z.object({
   bucket: z.string().optional(), expiresAt: z.string().optional(), messageId: z.string().nullable().optional(), objectKey: z.string().optional(),
   resumableEndpoint: z.string().url().optional(), signedUploadToken: z.string().min(1).optional(),
+  failureStage: z.enum(['file_validation', 'security_scan', 'storage', 'expired']).nullable().optional(),
+  manualRetryCount: z.number().int().nonnegative().optional(), requestReference: z.string().uuid().nullable().optional(), retryable: z.boolean().optional(),
   state: z.enum(['prepared', 'uploading', 'uploaded', 'scanning', 'clean', 'rejected', 'error', 'expired']).optional(), uploadId: z.string().uuid(),
 })
+export type SphereUploadStatus = z.infer<typeof sphereResumableTargetSchema>
+export type SphereUploadStage = 'uploading' | 'scanning'
+export type SphereUploadResult = { state: 'clean' | 'processing'; uploadId: string; requestReference?: string }
+
+export class SphereUploadError extends Error {
+  readonly requestReference?: string
+  readonly retryable: boolean
+  readonly uploadId?: string
+
+  constructor(message: string, options: { requestReference?: string; retryable?: boolean; uploadId?: string } = {}) {
+    super(message)
+    this.name = 'SphereUploadError'
+    this.requestReference = options.requestReference
+    this.retryable = options.retryable === true
+    this.uploadId = options.uploadId
+  }
+}
 
 async function sphereApiError(response: Response, fallback: string) {
-  const payload = z.object({ detail: z.string().optional() }).safeParse(await response.json().catch(() => null))
-  return new Error(payload.success && payload.data.detail ? payload.data.detail : fallback)
+  const payload = z.object({ detail: z.string().optional(), requestId: z.string().uuid().optional(), retryable: z.boolean().optional(), uploadId: z.string().uuid().optional() }).safeParse(await response.json().catch(() => null))
+  const message = payload.success && payload.data.detail ? payload.data.detail : fallback
+  return new SphereUploadError(message, payload.success ? { requestReference: payload.data.requestId, retryable: payload.data.retryable, uploadId: payload.data.uploadId } : {})
 }
 
-async function pollSygSphereUpload(uploadId: string): Promise<void> {
-  for (let attempt = 0; attempt < 240; attempt += 1) {
-    const response = await fetch(`/api/v1/sygsphere/uploads/${uploadId}`, { headers: await sphereFileHeaders(), cache: 'no-store' })
-    if (!response.ok) throw await sphereApiError(response, 'The larger-file security check could not be read.')
-    const status = sphereResumableTargetSchema.parse(await response.json())
-    if (status.state === 'clean') return
-    if (status.state && ['rejected', 'error', 'expired'].includes(status.state)) {
-      throw new Error(status.state === 'rejected' ? 'This file was blocked by its security check and was not shared.' : 'The larger-file upload expired or could not be checked safely. Retry the upload.')
-    }
-    await new Promise((resolve) => window.setTimeout(resolve, 2000))
-  }
-  throw new Error('The file is still being checked. It will appear in the conversation when the security check finishes.')
+export async function sphereUploadStatus(uploadId: string): Promise<SphereUploadStatus> {
+  const response = await fetch(`/api/v1/sygsphere/uploads/${uploadId}`, { headers: await sphereFileHeaders(), cache: 'no-store' })
+  if (!response.ok) throw await sphereApiError(response, 'The file security-check status could not be read.')
+  return sphereResumableTargetSchema.parse(await response.json())
 }
 
-async function sphereResumableUpload(file: File, fileId: string, conversationId: string, parentId: string | null, mimeType: string, onProgress?: (percentage: number) => void) {
-  if (!sphereLargeImageTypes.has(mimeType)) throw new Error('Files over 25 MB must be JPEG, PNG, or WebP images. Other supported files remain limited to 25 MB.')
+async function sphereProtectedUpload(file: File, fileId: string, conversationId: string, parentId: string | null, mimeType: string, onProgress?: (percentage: number, stage: SphereUploadStage) => void): Promise<SphereUploadResult> {
   const authorizationHeaders = await sphereFileHeaders('application/json')
   const authorization = await fetch('/api/v1/sygsphere/uploads', {
     body: JSON.stringify({ clientId: fileId, conversationId, fileId, filename: file.name, mimeType, parentId, sizeBytes: file.size }),
     headers: authorizationHeaders, method: 'POST', cache: 'no-store',
   })
-  if (!authorization.ok) throw await sphereApiError(authorization, 'The larger-file upload could not be authorized.')
+  if (!authorization.ok) throw await sphereApiError(authorization, 'The protected file upload could not be authorized.')
   const target = sphereResumableTargetSchema.parse(await authorization.json())
-  if (target.state === 'clean') { onProgress?.(100); return }
+  if (target.state === 'clean') { onProgress?.(100, 'scanning'); return { state: 'clean', uploadId: target.uploadId, requestReference: target.requestReference ?? undefined } }
+  if (target.state === 'error') throw new SphereUploadError('The file could not complete its security check. Retry the security check without uploading it again.', { requestReference: target.requestReference ?? undefined, retryable: target.retryable, uploadId: target.uploadId })
+  onProgress?.(1, 'uploading')
   if (target.state === 'prepared') {
-    if (!target.bucket || !target.objectKey || !target.resumableEndpoint || !target.signedUploadToken) throw new Error('The secure larger-file upload target is incomplete.')
+    if (!target.bucket || !target.objectKey || !target.resumableEndpoint || !target.signedUploadToken) throw new Error('The secure file upload target is incomplete.')
     await new Promise<void>((resolve, reject) => {
       const upload = new Upload(file, {
         chunkSize: 6 * 1024 * 1024,
@@ -193,8 +204,8 @@ async function sphereResumableUpload(file: File, fileId: string, conversationId:
         fingerprint: async () => `sygsphere:${target.uploadId}:${target.objectKey}:${file.size}:${file.lastModified}`,
         headers: { 'x-signature': target.signedUploadToken! },
         metadata: { bucketName: target.bucket!, cacheControl: '3600', contentType: mimeType, filename: file.name, objectName: target.objectKey! },
-        onError: (error) => reject(new Error(error.message || 'The resumable upload failed.')),
-        onProgress: (uploaded, total) => onProgress?.(total > 0 ? Math.min(99, Math.round((uploaded / total) * 90)) : 0),
+        onError: (error) => reject(new Error(error.message || 'The protected upload was interrupted. Your draft and selected file are still available.')),
+        onProgress: (uploaded, total) => onProgress?.(total > 0 ? Math.min(90, Math.max(1, Math.round((uploaded / total) * 90))) : 1, 'uploading'),
         onSuccess: () => resolve(),
         removeFingerprintOnSuccess: true,
         retryDelays: [0, 3000, 5000, 10000, 20000],
@@ -210,22 +221,25 @@ async function sphereResumableUpload(file: File, fileId: string, conversationId:
     const complete = await fetch(`/api/v1/sygsphere/uploads/${target.uploadId}/complete`, {
       headers: await sphereFileHeaders('application/json'), body: '{}', method: 'POST', cache: 'no-store',
     })
-    if (!complete.ok) throw await sphereApiError(complete, 'The larger-file upload could not be finalized.')
+    if (!complete.ok) throw await sphereApiError(complete, 'The protected file upload could not be finalized.')
   }
-  onProgress?.(92)
-  await pollSygSphereUpload(target.uploadId)
-  onProgress?.(100)
+  onProgress?.(100, 'scanning')
+  return { state: 'processing', uploadId: target.uploadId, requestReference: target.requestReference ?? undefined }
 }
 
-export async function sphereUpload(file: File, fileId: string, conversationId: string, parentId: string | null, onProgress?: (percentage: number) => void) {
+export async function sphereUpload(file: File, fileId: string, conversationId: string, parentId: string | null, onProgress?: (percentage: number, stage: SphereUploadStage) => void): Promise<SphereUploadResult> {
   if (file.size > sphereResumableMaxBytes || file.size < 1) throw new Error('Choose a file between 1 byte and 100 MB.')
   const fallbackMime: Record<string, string> = { pdf: 'application/pdf', txt: 'text/plain', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
   const mimeType = file.type || fallbackMime[file.name.split('.').at(-1)?.toLowerCase() || ''] || 'application/octet-stream'
-  if (file.size > sphereInlineMaxBytes) return sphereResumableUpload(file, fileId, conversationId, parentId, mimeType, onProgress)
-  const params = new URLSearchParams({ conversation: conversationId, filename: file.name })
-  if (parentId) params.set('thread', parentId)
-  await sphereFileResponse(await fetch(`/api/v1/sygsphere/files/${fileId}?${params}`, { method: 'PUT', headers: await sphereFileHeaders(mimeType), body: file, cache: 'no-store' }))
-  onProgress?.(100)
+  return sphereProtectedUpload(file, fileId, conversationId, parentId, mimeType, onProgress)
+}
+
+export async function sphereRetryUpload(uploadId: string): Promise<SphereUploadStatus> {
+  const response = await fetch(`/api/v1/sygsphere/uploads/${uploadId}/retry`, {
+    headers: await sphereFileHeaders('application/json'), body: '{}', method: 'POST', cache: 'no-store',
+  })
+  if (!response.ok) throw await sphereApiError(response, 'The file security check could not be retried.')
+  return sphereResumableTargetSchema.parse(await response.json())
 }
 export async function sphereDownload(file: SphereFile) {
   const response = await sphereFileResponse(await fetch(`/api/v1/sygsphere/files/${file.id}`, { headers: await sphereFileHeaders(), cache: 'no-store' }))

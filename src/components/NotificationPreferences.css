@@ -11,4 +11,11 @@
 .notification-preferences__volume { display: grid; gap: 10px; max-width: 360px; margin-bottom: 18px; }
 .notification-preferences__volume input { width: 100%; accent-color: #bb8b30; }
 .notification-preferences__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.notification-preferences__install { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-top: 22px; border-top: 1px solid var(--line); }
+.notification-preferences__install-copy { max-width: 760px; }
+.notification-preferences__install-copy h2 { margin-top: 0; }
+.notification-preferences__install-action { display: grid; min-width: min(100%, 250px); gap: 8px; justify-items: end; }
+.notification-preferences__install-action button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.notification-preferences__installed { margin: 0; color: var(--success); font-weight: 800; }
 @media(max-width: 700px) { .notification-preferences__body { grid-template-columns: 1fr; } .notification-preferences summary { flex-wrap: wrap; } .notification-preferences summary small { flex-basis: 100%; margin-left: 30px; } }
+@media(max-width: 700px) { .notification-preferences__install { align-items: stretch; flex-direction: column; gap: 12px; } .notification-preferences__install-action { justify-items: stretch; } }

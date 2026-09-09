@@ -2,7 +2,7 @@
 // protected SygSphere streaming/preview boundary is exercised by the normal test command.
 import '../worker/sygsphereFiles.test'
 import { describe, expect, it } from 'vitest'
-import { validateSygSphereResumableFile } from '../worker/index'
+import { validateSygSphereResumableFile, validateSygSphereUploadIntent } from '../worker/index'
 
 describe('SygSphere larger-file validation', () => {
   const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -18,5 +18,15 @@ describe('SygSphere larger-file validation', () => {
     expect(() => validateSygSphereResumableFile(png, 'field-photo.jpg', 'image/jpeg', 26214401)).toThrow('do not match')
     expect(() => validateSygSphereResumableFile(new TextEncoder().encode('%PDF-1.7'), 'report.pdf', 'application/pdf', 26214401)).toThrow('JPEG, PNG, and WebP')
     expect(() => validateSygSphereResumableFile(png, 'field-photo.png', 'image/png', 104857601)).toThrow('100 MB')
+  })
+
+  it('authorizes small supported documents for the same private quarantine pipeline', () => {
+    expect(validateSygSphereUploadIntent('field-report.pdf', 'application/pdf', 29_500)).toEqual({
+      mimeType: 'application/pdf',
+      sanitizedFilename: 'field-report.pdf',
+    })
+    expect(validateSygSphereUploadIntent('briefing.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 26214400).mimeType).toContain('wordprocessingml')
+    expect(() => validateSygSphereUploadIntent('field-report.pdf', 'application/pdf', 26214401)).toThrow('over 25 MB')
+    expect(() => validateSygSphereUploadIntent('field-report.pdf', 'text/plain', 29_500)).toThrow('do not match')
   })
 })

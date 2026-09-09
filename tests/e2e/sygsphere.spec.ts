@@ -127,6 +127,18 @@ test('keeps Send above a mobile keyboard-sized viewport while composing', async 
   await expect(page.locator('.operational-time-zone-strip')).toBeVisible()
   await expect(page.locator('.workspace-alert-strip')).toBeVisible()
 })
+test('keeps the mobile composer compact and grows it only for multiline work', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 640 })
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
+  const input = page.getByRole('textbox', { name: 'Write a message', exact: true })
+  const initialHeight = await input.evaluate((element) => element.getBoundingClientRect().height)
+  await input.fill('One\nTwo\nThree\nFour\nFive\nSix')
+  await expect.poll(() => input.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(initialHeight)
+  const grownHeight = await input.evaluate((element) => element.getBoundingClientRect().height)
+  expect(initialHeight).toBeLessThanOrEqual(48)
+  expect(grownHeight).toBeLessThanOrEqual(106)
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeInViewport()
+})
 test('keeps drafts over reload, retains a failed send and retries successfully', async ({ page }) => {
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
   const input = page.getByRole('textbox', { name: 'Write a message', exact: true })
