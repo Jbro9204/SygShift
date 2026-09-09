@@ -116,7 +116,7 @@ function filterExceptionRows(rows: TimekeepingReviewRow[], filter: ExceptionFilt
   if (filter === 'missing_punches') {
     return exceptionRows.filter((row) => row.exceptionCodes.includes('missing_clock_in') || row.exceptionCodes.includes('missing_clock_out'))
   }
-  if (filter === 'pending_correction') return exceptionRows.filter((row) => row.exceptionCodes.length === 0 && !row.payrollReady)
+  if (filter === 'pending_correction') return exceptionRows.filter((row) => row.exceptionCodes.includes('pending_correction'))
   return exceptionRows.filter((row) => row.exceptionCodes.includes(filter))
 }
 
@@ -271,6 +271,8 @@ export function TimeExceptionsPage() {
         queryClient.invalidateQueries({ queryKey: ['time-team-summary'] }),
         queryClient.invalidateQueries({ queryKey: ['time-maintenance'] }),
         queryClient.invalidateQueries({ queryKey: ['timekeeping-dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-event-correction-queue'] }),
+        queryClient.invalidateQueries({ queryKey: ['time-operations-workspace'] }),
       ])
     },
   })

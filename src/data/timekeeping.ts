@@ -1263,6 +1263,18 @@ export async function getTimekeepingReview(input: {
   }
 }
 
+export async function getPendingTimeEventCorrections(input: {
+  fromDate: string
+  throughDate: string
+}): Promise<PendingCorrection[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_pending_time_event_corrections', {
+    target_from_date: input.fromDate,
+    target_through_date: input.throughDate,
+  })
+  if (error) throw new Error(error.message || 'Pending punch correction requests could not be loaded.')
+  return z.array(pendingCorrectionSchema).parse(data ?? [])
+}
+
 export async function correctTimeRecordWorkType(input: {
   timeEventId: string
   workType: WorkType

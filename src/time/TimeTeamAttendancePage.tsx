@@ -26,6 +26,7 @@ import { formatOperationalDateTime } from '../lib/time'
 import { TimeMaintenanceWorkbench, type TimeMaintenanceFocusRequest } from '../pages/TimePage'
 import { currentPayrollWeek, formatUsDateKey, type TimePeriod } from './timeRules'
 import { canManageTime, canViewTeamTime } from './timePermissions'
+import { timeCorrectionReviewPath } from './timeCorrectionWorkflow'
 import { buildTeamRows, type TeamClockState } from './teamAttendanceRows'
 import {
   TimeAlertCard,
@@ -340,7 +341,7 @@ export function TimeTeamAttendancePage() {
                       </dl>
                       <div className="time-team-person__actions">
                         {manageAllowed ? <TimeButton onClick={() => focusEmployee(row.employeeId)} variant="primary">Open Employee Time</TimeButton> : <span>View-only access</span>}
-                        {row.pendingCorrectionCount > 0 && reviewQueueAllowed ? <Link className="time-button time-button--secondary" to={`/time/review?employee=${row.employeeId}`}><AlertTriangle aria-hidden="true" size={18} /><span>Review Requests</span></Link> : null}
+                        {row.pendingCorrectionCount > 0 && reviewQueueAllowed ? <Link className="time-button time-button--secondary" to={timeCorrectionReviewPath({ employeeId: row.employeeId, fromDate, throughDate })}><AlertTriangle aria-hidden="true" size={18} /><span>Review Requests</span></Link> : null}
                       </div>
                     </div>
                   ) : null}

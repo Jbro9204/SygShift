@@ -2,9 +2,11 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, format } from 'date-fns'
 import { BellRing, CheckCircle2, Clock3, FileClock, ShieldAlert } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import { getSessionContext } from '../data/auth'
+import { getPendingTimeEventCorrections, type PendingCorrection } from '../data/timekeeping'
 import {
   acknowledgeOperationalAlert,
   cancelTimeAdjustmentRequest,
@@ -31,6 +33,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { TimeButton, TimePageHeader, TimeStatusBadge } from './TimeKit'
+import { pendingTimeRequestCount, timeCorrectionReviewPath } from './timeCorrectionWorkflow'
 
 type DialogName = 'adjustment' | 'manual' | 'calloff' | null
 
@@ -53,6 +56,7 @@ function invalidateOperations(queryClient: ReturnType<typeof useQueryClient>) {
     queryClient.invalidateQueries({ queryKey: ['my-time-review'] }),
     queryClient.invalidateQueries({ queryKey: ['my-missing-time-workspace'] }),
     queryClient.invalidateQueries({ queryKey: ['missing-time-request-workspace'] }),
+    queryClient.invalidateQueries({ queryKey: ['time-event-correction-queue'] }),
   ])
 }
 
@@ -80,6 +84,12 @@ export function TimeOperationsPage() {
     queryKey: ['missing-time-request-workspace', fromDate, throughDate],
     refetchInterval: 30_000,
   })
+  const eventCorrectionQuery = useQuery({
+    enabled: isSupabaseConfigured && sessionQuery.isSuccess,
+    queryFn: () => getPendingTimeEventCorrections({ fromDate, throughDate }),
+    queryKey: ['time-event-correction-queue', fromDate, throughDate],
+    refetchInterval: 30_000,
+  })
   const workspace = workspaceQuery.data
   const adjustmentRequests = useMemo(() => {
     const requests = [...(workspace?.adjustmentRequests ?? []), ...(missingTimeWorkspaceQuery.data?.requests ?? [])]
@@ -89,18 +99,27 @@ export function TimeOperationsPage() {
     () => adjustmentRequests.filter((request) => request.employeeId === sessionQuery.data?.employeeId),
     [adjustmentRequests, sessionQuery.data?.employeeId],
   )
+  const eventCorrections = eventCorrectionQuery.data ?? []
+  const ownEventCorrections = eventCorrections.filter((request) => request.employeeId === sessionQuery.data?.employeeId)
 
-  if (!isSupabaseConfigured || sessionQuery.isPending || workspaceQuery.isPending || missingTimeWorkspaceQuery.isPending) {
+  if (!isSupabaseConfigured || sessionQuery.isPending || workspaceQuery.isPending || missingTimeWorkspaceQuery.isPending || eventCorrectionQuery.isPending) {
     return <main className="page page--sygshift-time"><DataStatePanel icon={Clock3} title="Loading time workflows"><p>Loading requests, exceptions, manual entries, and operational alerts.</p></DataStatePanel></main>
   }
-  if (sessionQuery.isError || workspaceQuery.isError || missingTimeWorkspaceQuery.isError || !workspace) {
-    return <main className="page page--sygshift-time"><DataStatePanel icon={ShieldAlert} title="Time workflows unavailable" tone="error"><p>{workspaceQuery.error?.message ?? missingTimeWorkspaceQuery.error?.message ?? sessionQuery.error?.message ?? 'The secure workspace could not be loaded.'}</p></DataStatePanel></main>
+  if (sessionQuery.isError || workspaceQuery.isError || missingTimeWorkspaceQuery.isError || eventCorrectionQuery.isError || !workspace) {
+    return <main className="page page--sygshift-time"><DataStatePanel icon={ShieldAlert} title="Time workflows unavailable" tone="error"><p>{workspaceQuery.error?.message ?? missingTimeWorkspaceQuery.error?.message ?? eventCorrectionQuery.error?.message ?? sessionQuery.error?.message ?? 'The secure workspace could not be loaded.'}</p></DataStatePanel></main>
   }
 
   const unresolved = workspace.exceptions.filter((exception) => exception.status === 'unresolved')
   const visibleUnresolved = unresolved.slice(0, exceptionVisibleCount)
   const hiddenExceptionCount = Math.max(0, unresolved.length - visibleUnresolved.length)
   const pending = adjustmentRequests.filter((request) => request.status === 'submitted' || request.status === 'under_review')
+  const visiblePending = workspace.canReviewAdjustments ? pending : ownRequests.filter((request) => request.status === 'submitted' || request.status === 'under_review')
+  const visibleEventCorrections = workspace.canReviewAdjustments ? eventCorrections : ownEventCorrections
+  const pendingRequestTotal = pendingTimeRequestCount(visiblePending.length, visibleEventCorrections.length)
+  const ownOpenRequestTotal = pendingTimeRequestCount(
+    ownRequests.filter((request) => request.status === 'submitted' || request.status === 'under_review').length,
+    ownEventCorrections.length,
+  )
   const urgent = workspace.alerts.filter((alert) => alert.priority === 'urgent' && !alert.acknowledgedAt)
 
   return (
@@ -121,9 +140,9 @@ export function TimeOperationsPage() {
 
       <section className="time-operations-metrics" aria-label="Time workflow totals">
         <article><span>Unresolved exceptions</span><strong>{unresolved.length}</strong><small>Automatic clock-outs and missed starts</small></article>
-        <article><span>Requests awaiting review</span><strong>{pending.length}</strong><small>Employee-submitted time changes</small></article>
+        <article><span>Requests awaiting review</span><strong>{pendingRequestTotal}</strong><small>Employee-submitted time changes</small></article>
         <article><span>Manual entries</span><strong>{workspace.manualEntries.length}</strong><small>Audited paired time records</small></article>
-        <article><span>Your open requests</span><strong>{ownRequests.filter((request) => request.status === 'submitted' || request.status === 'under_review').length}</strong><small>Track decisions and history here</small></article>
+        <article><span>Your open requests</span><strong>{ownOpenRequestTotal}</strong><small>Track decisions and history here</small></article>
       </section>
 
       <div className="time-operations-grid">
@@ -147,13 +166,26 @@ export function TimeOperationsPage() {
         </section>
 
         <section className="time-operations-panel">
-          <div className="time-operations-panel__heading"><div><p className="eyebrow">Employee requests</p><h2>Time-adjustment decisions</h2></div><TimeStatusBadge tone={pending.length ? 'warning' : 'good'}>{pending.length ? `${pending.length} waiting` : 'Clear'}</TimeStatusBadge></div>
-          {(workspace.canReviewAdjustments ? pending : ownRequests).length ? (workspace.canReviewAdjustments ? pending : ownRequests).map((request) => (
-            <article className="time-workflow-row" key={request.id}>
-               <div><strong>{request.employeeName}</strong><span>{readableStatus(request.issueType)} · {request.workDate}</span><small>{request.reason} · {readableStatus(request.status)}</small><RequestDecisionHistory actions={workspace.adjustmentRequestActions.filter((action) => action.requestId === request.id)} /></div>
-              {workspace.canReviewAdjustments && (request.status === 'submitted' || request.status === 'under_review') ? <TimeButton onClick={() => setSelectedRequest(request)} variant="secondary">Review</TimeButton> : request.employeeId === sessionQuery.data.employeeId && (request.status === 'submitted' || request.status === 'under_review') ? <CancelRequestButton id={request.id} onChanged={() => invalidateOperations(queryClient)} /> : null}
-            </article>
-          )) : <EmptyMessage icon={FileClock} title="No time-adjustment requests in this range" />}
+          <div className="time-operations-panel__heading"><div><p className="eyebrow">Employee requests</p><h2>Time-adjustment decisions</h2></div><TimeStatusBadge tone={pendingRequestTotal ? 'warning' : 'good'}>{pendingRequestTotal ? `${pendingRequestTotal} waiting` : 'Clear'}</TimeStatusBadge></div>
+          {pendingRequestTotal ? (
+            <>
+              {visiblePending.map((request) => (
+                <article className="time-workflow-row" key={request.id}>
+                  <div><strong>{request.employeeName}</strong><span>{readableStatus(request.issueType)} · {request.workDate}</span><small>{request.reason} · {readableStatus(request.status)}</small><RequestDecisionHistory actions={workspace.adjustmentRequestActions.filter((action) => action.requestId === request.id)} /></div>
+                  {workspace.canReviewAdjustments ? <TimeButton onClick={() => setSelectedRequest(request)} variant="secondary">Review</TimeButton> : <CancelRequestButton id={request.id} onChanged={() => invalidateOperations(queryClient)} />}
+                </article>
+              ))}
+              {visibleEventCorrections.map((correction) => (
+                <PunchCorrectionRequestRow
+                  canReview={workspace.canReviewAdjustments}
+                  correction={correction}
+                  fromDate={fromDate}
+                  key={correction.id}
+                  throughDate={throughDate}
+                />
+              ))}
+            </>
+          ) : <EmptyMessage icon={FileClock} title="No time-adjustment requests in this range" />}
         </section>
       </div>
 
@@ -239,6 +271,31 @@ function ManualEntryEditDialog({ entry, onClose, onSaved, workspace }: { entry: 
 
 function EmptyMessage({ icon: Icon, title }: { icon: typeof Clock3; title: string }) {
   return <div className="time-workflow-empty"><Icon aria-hidden="true" size={25} /><strong>{title}</strong></div>
+}
+
+function PunchCorrectionRequestRow({
+  canReview,
+  correction,
+  fromDate,
+  throughDate,
+}: {
+  canReview: boolean
+  correction: PendingCorrection
+  fromDate: string
+  throughDate: string
+}) {
+  return (
+    <article className="time-workflow-row" key={correction.id}>
+      <div>
+        <strong>{correction.employeeName}</strong>
+        <span>{correction.voided ? 'Void punch' : `Correct ${readableStatus(correction.kind)}`} · {formatOperationalDateTime(correction.recordedAt)}</span>
+        <small>{correction.reason} · Awaiting review</small>
+      </div>
+      {canReview ? (
+        <Link className="time-button time-button--secondary" to={timeCorrectionReviewPath({ employeeId: correction.employeeId, fromDate, throughDate })}>Review</Link>
+      ) : <TimeStatusBadge tone="warning">Awaiting review</TimeStatusBadge>}
+    </article>
+  )
 }
 
 function RequestDecisionHistory({ actions }: { actions: TimeOperationsWorkspace['adjustmentRequestActions'] }) {
