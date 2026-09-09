@@ -120,6 +120,7 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Signed-out employees request password recovery with their SygShift username. The Worker, not the browser, resolves that username to the internal authentication alias and the approved personal delivery address.
 - The recovery boundary returns one generic accepted response for eligible, unknown, disabled, incomplete, and rate-limited accounts. Only an eligible active account receives a single-use Supabase recovery link.
 - Recovery claims are rate-limited transactionally by one-way username and request-source hashes. The private claim ledger is forced-RLS, append-only, audited, and inaccessible to browser roles.
+- Sygilant may submit the same public recovery workflow through a timestamped HMAC-signed bridge request. SygShift verifies the nonce, 90-second freshness window, signature, and one-way forwarded source fingerprint before using it for rate limiting. The shared secret is never transmitted, and SygShift still owns every identity, eligibility, email, token, and audit decision.
 - Administrator-assisted recovery remains a separate MFA- and permission-protected workflow. Both workflows return through the existing Account Security password-recovery page and do not change MFA or security-key state.
 
 ## Automatic timekeeping compatibility

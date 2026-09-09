@@ -17,6 +17,40 @@ const configuredEnvironment = {
   SUPABASE_URL: 'https://example.supabase.co',
 }
 
+async function bridgeRecoveryHeaders(
+  secret: string,
+  username: string,
+  fingerprint = 'c'.repeat(64),
+  timestamp = String(Math.floor(Date.now() / 1000)),
+) {
+  const nonce = crypto.randomUUID()
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { hash: 'SHA-256', name: 'HMAC' },
+    false,
+    ['sign'],
+  )
+  const result = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    encoder.encode(`v1\n${timestamp}\n${nonce}\n${fingerprint}\n${username}`),
+  )
+  const signature = [...new Uint8Array(result)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+  return {
+    fingerprint,
+    headers: {
+      'x-sygilant-password-recovery-fingerprint': fingerprint,
+      'x-sygilant-password-recovery-nonce': nonce,
+      'x-sygilant-password-recovery-signature': signature,
+      'x-sygilant-password-recovery-timestamp': timestamp,
+    },
+  }
+}
+
 function withClearMaintenanceStatus(
   fetchMock: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
 ) {
@@ -411,16 +445,22 @@ describe('Cloudflare Worker boundary', () => {
     const send = vi.fn().mockResolvedValue({ messageId: 'self-service-reset-message' })
     vi.stubGlobal('fetch', fetchMock)
 
+    const bridgeSecret = 'recovery-bridge-secret-that-is-at-least-32-characters'
+    const bridge = await bridgeRecoveryHeaders(bridgeSecret, 'employee')
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/auth/password-reset/request', {
         body: JSON.stringify({ username: 'Employee' }),
-        headers: { 'cf-connecting-ip': '192.0.2.11', 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...bridge.headers,
+        },
         method: 'POST',
       }),
       environment(new Response('asset'), {
         ...configuredEnvironment,
         EMAIL: { send },
         SYGSHIFT_EMAIL_FROM: 'scheduling@sygilant.us',
+        SYGSHIFT_PASSWORD_RECOVERY_BRIDGE_SECRET: bridgeSecret,
         SYGSHIFT_PUBLIC_APP_URL: 'https://app.sygilant.us',
       }),
     )
@@ -435,6 +475,46 @@ describe('Cloudflare Worker boundary', () => {
     expect(send.mock.calls[0]?.[0].html).toContain('https://app.sygilant.us/password-recovery#token_hash=aaaaaaaa')
     expect(send.mock.calls[0]?.[0].html).not.toContain('example.supabase.co/auth/v1/verify')
     expect(send.mock.calls[0]?.[0].html).toContain('We received a request')
+    const fingerprintBytes = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(`password-reset-request:sygilant:${bridge.fingerprint}`),
+    )
+    const expectedFingerprintHash = [...new Uint8Array(fingerprintBytes)]
+      .map((byte) => byte.toString(16).padStart(2, '0'))
+      .join('')
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      target_request_fingerprint_hash: expectedFingerprintHash,
+    })
+    vi.unstubAllGlobals()
+  })
+
+  it('rejects stale or invalid Sygilant bridge signatures before querying identity data', async () => {
+    const bridgeSecret = 'recovery-bridge-secret-that-is-at-least-32-characters'
+    const stale = await bridgeRecoveryHeaders(
+      bridgeSecret,
+      'employee',
+      'd'.repeat(64),
+      String(Math.floor(Date.now() / 1000) - 300),
+    )
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const response = await worker.fetch(
+      new Request('https://app.sygilant.us/api/v1/auth/password-reset/request', {
+        body: JSON.stringify({ username: 'employee' }),
+        headers: { 'content-type': 'application/json', ...stale.headers },
+        method: 'POST',
+      }),
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        SYGSHIFT_PASSWORD_RECOVERY_BRIDGE_SECRET: bridgeSecret,
+      }),
+    )
+    const payload = await response.json() as { error: string }
+
+    expect(response.status).toBe(401)
+    expect(payload.error).toBe('password_recovery_bridge_authentication_failed')
+    expect(fetchMock).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
   })
 
