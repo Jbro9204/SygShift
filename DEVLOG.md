@@ -2040,3 +2040,13 @@ pnpm exec wrangler deploy --keep-vars
   required post-deployment Time Clock matrix passed 38/38; live health, readiness, asset integrity, and
   authenticated Admin/Dispatcher behavior passed.
 - See `docs/changelogs/CHANGELOG_09-09-2026_BASIC_AND_OPERATIONS_HOME_SELECTION.md` for full evidence.
+
+## 09/09/2026 — Future Queue Management Decisions
+
+- Recorded management's decision to retain the existing Dispatch log and removed the open
+  retain/replace/retire decision from Future Items.
+- Removed the active-employee headcount audit, related record-cleanup/count-definition work, and the
+  already-completed On Duty Now action from the active queue.
+- Preserved the separate schedule-driven attendance-alert refresh item and updated the TrackTik
+  transition instructions to protect Dispatch-log continuity.
+- This documentation-only change did not alter production code, data, access, or workflows.

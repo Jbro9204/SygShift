@@ -421,37 +421,31 @@ Completion criteria:
 
 ## Workforce Data Integrity & Attendance
 
-### Workforce Record Reconciliation and Attendance Refresh
+### Attendance Alert Schedule Refresh
 
 - Priority: **High**
-- Target window: Focused workforce data-quality and attendance reliability release
-- Status: Partially complete; the dedicated live clock roster is complete, while data reconciliation and schedule-change refresh remain open
+- Target window: Focused attendance reliability release
+- Status: Approved / queued; schedule-change refresh remains open
 - Added: 09/02/2026
 
 #### Execution instructions
 
-1. Management must name the headcount-audit owner and approve the exact definitions of Active, onboarding, floating/Flex, placeholder, test, separated, and inactive records.
-2. Generate a read-only reconciliation report first. Review every proposed deactivation or reclassification with the owner; never bulk-delete employee, account, schedule, time, payroll, or audit history.
-3. Repair attendance refresh against the current published schedule using idempotent server-side reconciliation, with the original alert retained as auditable evidence when it is resolved or superseded.
-4. Test assignment removal, reassignment, schedule correction, revision publication, overnight shifts, salary exclusions, and concurrent supplemental Dispatch duty before release.
-5. Compare Directory, HR, User Accounts, scheduling, and reporting totals after the canary and obtain the owner's approval before closing the reconciliation.
+1. Re-evaluate each attendance alert against the current published schedule after an assignment, removal, correction, or schedule revision.
+2. Use idempotent server-side reconciliation and retain the original alert as auditable evidence when it is resolved or superseded.
+3. Test assignment removal, reassignment, schedule correction, revision publication, overnight shifts, salary exclusions, and concurrent supplemental Dispatch duty before release.
+4. Verify the refreshed alert state in the manager workspace and applicable reports before closing the release.
 
-Produce one reliable active-workforce population and ensure schedule corrections immediately flow into attendance signals without deleting valid history.
+Ensure schedule corrections immediately flow into attendance signals without deleting valid history.
 
 Required work:
 
-- [ ] Assign the final management owner of the active-employee headcount audit.
-- [ ] Identify and deactivate or formally classify test accounts, placeholder records, separated employees, abandoned partial onboarding records, and non-active floating records; do not hard-delete audit or payroll history.
-- [ ] Define one authoritative active-employee count and document which statuses and classifications are included or excluded.
 - [ ] Make attendance alerts re-evaluate the current published schedule after assignments, removals, corrections, and revision publication.
 - [ ] Recalculate or close stale attendance alerts when the authoritative schedule no longer supports them, while preserving an audit trail of the original signal and its resolution.
-- [x] Route **On Duty Now** and **Clocked In** to the dedicated, automatically refreshed roster of employees with open clock sessions. Completed 09/02/2026.
 
 Completion criteria:
 
-- [ ] Directory, HR, User Accounts, scheduling, and reporting agree on the active population under the approved definition.
 - [ ] A schedule correction cannot leave an unsupported missing-clock or attendance alert active.
-- [ ] No cleanup changes valid employee, time, payroll, licensing, or audit history.
+- [ ] Alert refresh does not change valid employee, time, payroll, licensing, schedule, or audit history.
 
 ## Client, Patrol & Operational Migration
 
@@ -535,15 +529,14 @@ Completion criteria:
 2. Classify each capability as Replicate, Improve, Replace, or Exclude and document the operational reason, dependency, security boundary, and acceptance test.
 3. Build the migration map from TrackTik identifiers to canonical SygShift/Sygilant client, site, employee, route, report, document, and media identifiers before importing data.
 4. Rehearse migration and rollback with non-production copies, reconcile row/file counts and checksums, then operate an approved parallel-use window with named support coverage.
-5. Retire TrackTik only after management signs the acceptance report and confirms the replacement, historical access, exports, media, dispatch decision, recovery, and contingency plan.
+5. Retire TrackTik only after management signs the acceptance report and confirms the replacement, historical access, exports, media, retained Dispatch-log continuity, recovery, and contingency plan.
 
-Create a documented replacement and migration program before discontinuing TrackTik.
+Create a documented replacement and migration program before discontinuing TrackTik while preserving the existing Dispatch log.
 
 Required work:
 
 - [ ] Obtain and review Zach's TrackTik research notes and classify each function as Replicate, Improve, Replace with another workflow, or Intentionally exclude.
 - [ ] Inventory migration requirements for clients, sites, addresses, contacts, post orders, routes, reports, media, and applicable employee/licensing records.
-- [ ] Decide whether the existing dispatch log is retained, replaced, or retired and identify its final management owner during transition.
 - [ ] Define source cleanup, identity matching, duplicate prevention, transformation, reconciliation, exception handling, audit, and rollback procedures.
 - [ ] Establish acceptance criteria and a controlled parallel-use period where required so operational coverage is never dependent on an unverified replacement.
 - [ ] Do not discontinue TrackTik until the replacement workflows, migrated data, reports, media, permissions, and recovery plan are tested and formally accepted.
