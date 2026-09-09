@@ -49,18 +49,20 @@ tokens, MFA factors, security keys, roles, or audit records.
 - Final coordinated production baseline: `rollback/password-recovery-pre-activation-20260908`.
 - Final first-party route checkpoint: `rollback/password-recovery-hardened-final-20260908`.
 - Final signed bridge checkpoint: `rollback/password-recovery-bridge-final-20260908`.
+- Release-stable route checkpoint: `rollback/password-recovery-release-stable-20260908`.
 - Removing `SYGSHIFT_PASSWORD_RECOVERY_BRIDGE_SECRET` disables cross-platform signature acceptance while
   preserving direct SygShift recovery.
 
 ## Release Status
 
-The encrypted bridge secret is installed in both runtimes. Source commit `43fe48a` is live as Cloudflare
-Worker `72454c66-4805-453b-ab45-2794f1da74d4`. Health returned HTTP 200, readiness returned HTTP 200 with
+The encrypted bridge secret is installed in both runtimes. Source commit `9a3df0a` is live as Cloudflare
+Worker `c3b8c7ac-7687-492c-b954-2c4a255916fe`. Health returned HTTP 200, readiness returned HTTP 200 with
 every dependency true, a signed unknown-username request returned the generic HTTP 202 response, and a
 hostile-origin request failed closed with HTTP 403.
 
 An authorized `jbrown` request reached the delivery audit as `password_reset_self_service` with status
 `sent` and no recorded failure at 09/08/2026 10:56:51 PM EDT (09/09/2026 02:56:51 UTC). The live
-first-party reset route and signed-out recovery form render without browser console warnings or errors.
+first-party reset route and signed-out recovery form render from the stable bundle without browser console
+logs.
 Inbox receipt and final password submission remain user-present acceptance checks; release verification
 did not access an employee mailbox, password, or browser token.

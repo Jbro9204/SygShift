@@ -28,7 +28,7 @@
 - Added a timestamped HMAC bridge so Sygilant can invoke SygShift's canonical employee recovery without receiving identity, email, token, or security authority.
 - Preserved direct recovery, transactional limits, personal-first delivery, blocked-domain enforcement, MFA, security keys, trusted devices, schedules, payroll, and timekeeping.
 - Passed 208 files / 1,034 tests, TypeScript, zero-warning lint, both builds, all 38 mandatory desktop/mobile time-clock checks, and a fresh production build after browser testing.
-- Installed the encrypted bridge secret and released source commit `43fe48a` as Cloudflare Worker `72454c66-4805-453b-ab45-2794f1da74d4`; health, complete readiness, signed bridge acceptance, hostile-origin rejection, first-party recovery rendering, and the audited email handoff passed. Inbox receipt and final password submission remain user-present acceptance checks.
+- Installed the encrypted bridge secret and released source commit `9a3df0a` as Cloudflare Worker `c3b8c7ac-7687-492c-b954-2c4a255916fe`; health, complete readiness, signed bridge acceptance, hostile-origin rejection, stable first-party recovery rendering, and the audited email handoff passed. Inbox receipt and final password submission remain user-present acceptance checks.
 - Full release evidence: `docs/changelogs/CHANGELOG_09-08-2026_CANONICAL_PASSWORD_RECOVERY.md`.
 
 ## 09/08/2026 - Sygilant To SygSphere Shared Session
