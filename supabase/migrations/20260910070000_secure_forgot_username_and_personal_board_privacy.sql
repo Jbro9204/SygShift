@@ -440,10 +440,12 @@ declare created_notification_id uuid;
 begin
   if target_recipient_employee_id is null
      or target_recipient_employee_id = target_actor_employee_id
-     or case
-       when target_task_id is null then not private.sygtasks_can_view_board(target_recipient_employee_id, target_board_id)
-       else not private.sygtasks_can_view_task(target_recipient_employee_id, target_task_id)
-     end
+     or (
+       case
+         when target_task_id is null then not private.sygtasks_can_view_board(target_recipient_employee_id, target_board_id)
+         else not private.sygtasks_can_view_task(target_recipient_employee_id, target_task_id)
+       end
+     )
      or not exists (
        select 1
        from public.employees employee
