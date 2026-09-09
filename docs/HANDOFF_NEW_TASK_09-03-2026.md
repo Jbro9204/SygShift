@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document onboards a fresh Codex task into the established SygShift production project without relying on the oversized historical conversation. It is operating context, not authorization to change production. The user's current request determines whether the task should discuss, diagnose, implement, deploy, or wait.
+This document onboards a fresh engineering task into the established SygShift production project without relying on oversized historical context. It is operating context, not authorization to change production. The user's current request determines whether the task should discuss, diagnose, implement, deploy, or wait.
 
 ## Canonical workspace and production services
 
@@ -69,7 +69,7 @@ If any access check fails, stop and report the exact missing capability. Do not 
 9. Verify production bundles and both primary/fallback health and readiness endpoints.
 10. Update `DEVLOG.md`, add a dated changelog, update Future Items, and sync the established Desktop copies when applicable.
 
-Avoid long-running commands with uncontrolled output. Split verification, build, migration, and deployment into bounded steps with limited output so Jordan can stop the task and the Codex interface remains responsive.
+Avoid long-running commands with uncontrolled output. Split verification, build, migration, and deployment into bounded steps with limited output so Jordan can stop the task and the development interface remains responsive.
 
 ## Current release context
 

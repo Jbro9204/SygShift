@@ -3,7 +3,7 @@ param(
   [string]$SourceRoot,
   [Parameter(Mandatory = $true)]
   [string]$OutputRoot,
-  [string]$Python = "C:\Users\Jordan\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe",
+  [string]$Python = "python",
   [switch]$Force
 )
 
