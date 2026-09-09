@@ -1,5 +1,12 @@
 # SygShift Development Log
 
+## 09/09/2026 - SygTasks Dark Mode Readability Repair
+
+- Reconnected the complete SygTasks workspace and dialogs to SygShift's canonical light/dark foreground, muted, border, surface, control, and semantic-state tokens.
+- Corrected the undefined accessibility helper class that exposed search and filter labels as visible toolbar text.
+- Added SygTasks-specific source guards and a rendered light/dark desktop/phone matrix covering empty and populated states, semantic chips, dialogs, WCAG contrast, and containment.
+- Verification passed 210 test files / 1,053 tests, the fresh 250-check desktop/mobile browser matrix, and all 38 protected Time Clock workflows. Exact production identity is recorded in `docs/changelogs/CHANGELOG_09-09-2026_SYGTASKS_DARK_MODE_READABILITY.md`.
+
 ## 09/08/2026 - Communications, Tasks, Documents, and Sygilant Launch
 
 - Consolidated ticket-opening delivery, exact effective-role routing, safe notification clearing, and queue ownership so specialized timekeeping/HR processors retain their work.
