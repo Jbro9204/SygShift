@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 09/09/2026 - SygTasks Parent-Scope Repair
+
+- Repaired the silent SygTasks membership failure that treated an employee's membership on any board as membership on the selected board; Chief Hood's active, eligible account can now be added to another authorized team or company board.
+- Qualified all 23 board/task/label parent comparisons in the central mutation function and enabled fail-closed PL/pgSQL ambiguity handling, protecting memberships, tasks, assignments, watchers, labels, checklists, dependencies, comments, and notification recipients from cross-parent matching.
+- Applied forward-only production migration `20260910120000`, pushed runtime commit `f943f80` and strengthened regression commit `633597d`, and retained rollback tag `rollback/sygtasks-parent-scope-pre-release-20260909`.
+- Verification passed 225 test files / 1,129 tests, TypeScript, zero-warning application lint, both builds, the full rollback-only live scope/data-contract suite, the exact Chief Hood canary, all 42 desktop/mobile Time Clock checks, and live health/readiness with zero leaked fixtures.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-09-2026_SYGTASKS_PARENT_SCOPE_REPAIR.md`.
+
 ## 09/09/2026 - SygTasks Communication Navigation Removal
 
 - Removed the duplicate SygTasks entry from Communication while preserving the permanent branded lower-sidebar launcher and the `/tasks` route.
