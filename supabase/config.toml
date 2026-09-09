@@ -175,7 +175,7 @@ max_buckets = 10
 max_indexes = 5
 
 # Vector Buckets is available to Supabase Pro plan.
-# [storage.vector.buckets.documents-openai]
+# [storage.vector.buckets.documents-embeddings]
 
 [auth]
 enabled = true
