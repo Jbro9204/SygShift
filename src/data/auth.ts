@@ -149,6 +149,108 @@ export async function getSessionContext(): Promise<SessionContext> {
   }
 }
 
+export async function recordCompletedSignIn(sharedSygSphereSession = false): Promise<void> {
+  const rpcName = sharedSygSphereSession
+    ? 'sygsphere_record_completed_sign_in'
+    : 'record_completed_sign_in'
+  try {
+    const { error, status } = await getSupabaseClient().rpc(rpcName)
+    if (error) {
+      const errorCode = error.code ?? ''
+      const responseStatus = status ?? 0
+      const transientCodes = new Set([
+        '40001', '40P01', '53300', '57014', '57P01', '57P02', '57P03',
+        'PGRST000', 'PGRST001', 'PGRST002', 'PGRST003', 'PGRST202',
+      ])
+      const retryable = transientCodes.has(errorCode)
+        || errorCode.startsWith('08')
+        || responseStatus === 408
+        || responseStatus === 425
+        || responseStatus === 429
+        || responseStatus >= 500
+      throw new CompletedSignInActivityError(retryable)
+    }
+  } catch (error) {
+    if (error instanceof CompletedSignInActivityError) throw error
+    throw new CompletedSignInActivityError(true)
+  }
+}
+
+type CompletedSignInRetryOptions = {
+  maxAttempts?: number
+  retryDelaysMs?: readonly number[]
+  signal?: AbortSignal
+}
+
+class CompletedSignInActivityError extends Error {
+  readonly retryable: boolean
+
+  constructor(retryable: boolean) {
+    super('Completed sign-in activity could not be recorded.')
+    this.name = 'CompletedSignInActivityError'
+    this.retryable = retryable
+  }
+}
+
+const DEFAULT_COMPLETED_SIGN_IN_RETRY_DELAYS_MS = [0, 1_000, 4_000, 15_000, 60_000] as const
+
+function waitForCompletedSignInRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (delayMs <= 0 || signal?.aborted) return Promise.resolve()
+  return new Promise((resolve) => {
+    const finish = () => {
+      window.clearTimeout(timer)
+      signal?.removeEventListener('abort', finish)
+      resolve()
+    }
+    const timer = window.setTimeout(finish, delayMs)
+    signal?.addEventListener('abort', finish, { once: true })
+  })
+}
+
+export async function recordCompletedSignInWithRetry(
+  sharedSygSphereSession = false,
+  options: CompletedSignInRetryOptions = {},
+): Promise<void> {
+  const retryDelaysMs = options.retryDelaysMs?.length
+    ? options.retryDelaysMs
+    : DEFAULT_COMPLETED_SIGN_IN_RETRY_DELAYS_MS
+  const maximumAttempts = Math.max(
+    1,
+    Math.floor(options.maxAttempts ?? retryDelaysMs.length),
+  )
+  let attempt = 0
+
+  while (!options.signal?.aborted && attempt < maximumAttempts) {
+    const delayMs = retryDelaysMs[Math.min(attempt, retryDelaysMs.length - 1)]
+    await waitForCompletedSignInRetry(delayMs, options.signal)
+    if (options.signal?.aborted) return
+    try {
+      await recordCompletedSignIn(sharedSygSphereSession)
+      return
+    } catch (error) {
+      attempt += 1
+      if (!(error instanceof CompletedSignInActivityError) || !error.retryable) throw error
+      if (attempt >= maximumAttempts) throw error
+    }
+  }
+}
+
+export function authSessionIdFromAccessToken(accessToken: string): string | null {
+  try {
+    const encodedPayload = accessToken.split('.')[1]
+    if (!encodedPayload) return null
+    const base64 = encodedPayload.replaceAll('-', '+').replaceAll('_', '/')
+      .padEnd(Math.ceil(encodedPayload.length / 4) * 4, '=')
+    const payload = JSON.parse(globalThis.atob(base64)) as { session_id?: unknown }
+    return typeof payload.session_id === 'string'
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.session_id)
+      ? payload.session_id
+      : null
+  } catch {
+    return null
+  }
+}
+
 export function notifySessionContextChanged(): void {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new Event(SESSION_CONTEXT_REFRESH_EVENT))

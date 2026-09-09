@@ -15,7 +15,9 @@ import { canAccessRoute, canLaunchSygilantPlatform, hasAnyEffectivePermission } 
 import { getActiveAnnouncementBanners, type AnnouncementBanner } from '../data/announcements'
 import { getTimekeepingOperationsWorkspace } from '../data/timeOperations'
 import {
+  authSessionIdFromAccessToken,
   getSessionContext,
+  recordCompletedSignInWithRetry,
   SESSION_CONTEXT_REFRESH_EVENT,
   signOut,
   type SessionContext,
@@ -41,7 +43,7 @@ import { OperationalTimeHeader } from './OperationalTimeHeader'
 import { HeaderNotificationButton } from './HeaderNotificationButton'
 import { LiveNotifications } from './LiveNotifications'
 import { clearPushSession } from '../data/pushNotifications'
-import { requiresSecurityCheckpoint } from '../lib/securityCheckpoint'
+import { completedSignInRecordKind, isSygSpherePath, requiresSecurityCheckpoint } from '../lib/securityCheckpoint'
 import {
   clearSharedIdentitySession,
   getSharedIdentitySessionToken,
@@ -151,6 +153,7 @@ export function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true')
   const [openNavigationGroup, setOpenNavigationGroup] = useState(() => window.localStorage.getItem(SIDEBAR_GROUP_STORAGE_KEY) ?? 'Operations')
   const [sessionContext, setSessionContext] = useState<SessionContext | null>(null)
+  const [authSessionId, setAuthSessionId] = useState<string | null>(null)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [authMessage, setAuthMessage] = useState<string | null>(null)
   const [logoutWarningRemaining, setLogoutWarningRemaining] = useState<number | null>(null)
@@ -162,7 +165,7 @@ export function AppShell() {
   const internalHistoryRef = useRef<InternalNavigationEntry[]>(parseInternalHistory(window.sessionStorage.getItem(INTERNAL_NAVIGATION_STORAGE_KEY)))
   const previousScrollRef = useRef(0)
   const location = useLocation()
-  const initialSharedIdentityRouteRef = useRef(location.pathname === '/sygsphere')
+  const initialSharedIdentityRouteRef = useRef(isSygSpherePath(location.pathname))
   const navigate = useNavigate()
   const payrollReminderWeek = lastCompletedPayrollWeek()
   const showPayrollReminder = shouldShowPayrollExportReminder(sessionContext)
@@ -285,7 +288,7 @@ export function AppShell() {
     return routeMaintenanceFeature ? window.featureCodes.includes(routeMaintenanceFeature) : false
   }) ?? null
 
-  const hasRouteScopedSharedAssurance = location.pathname === '/sygsphere'
+  const hasRouteScopedSharedAssurance = isSygSpherePath(location.pathname)
     && Boolean(getSharedIdentitySessionToken())
   const needsSecurityCheckpoint = requiresSecurityCheckpoint(
     sessionContext,
@@ -297,6 +300,24 @@ export function AppShell() {
     sessionContext
       && !canAccessRoute(location.pathname, sessionContext),
   )
+  const passwordRecoverySession = location.pathname === '/account-security'
+    && new URLSearchParams(location.search).get('mode') === 'password-recovery'
+  const completedSignInKind = passwordRecoverySession
+    ? null
+    : completedSignInRecordKind(sessionContext, location.pathname, hasRouteScopedSharedAssurance)
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !completedSignInKind || !authSessionId) return
+    const abortController = new AbortController()
+    void recordCompletedSignInWithRetry(completedSignInKind === 'sygsphere', {
+      signal: abortController.signal,
+    }).catch((error: unknown) => {
+      if (!abortController.signal.aborted) {
+        console.error('Completed sign-in activity could not be recorded after retry.', error)
+      }
+    })
+    return () => abortController.abort()
+  }, [authSessionId, completedSignInKind, sessionContext?.employeeId])
 
   useEffect(() => {
     setNavigationOpen(false)
@@ -399,6 +420,7 @@ export function AppShell() {
       }
       const { data } = await getSupabaseClient().auth.getSession()
       if (!active) return
+      setAuthSessionId(data.session ? authSessionIdFromAccessToken(data.session.access_token) : null)
 
       if (!data.session) {
         deactivateSharedIdentitySupabaseSession()
@@ -426,6 +448,7 @@ export function AppShell() {
       await loadSessionContext(true, true)
       if (!active) return
       const { data: { subscription } } = getSupabaseClient().auth.onAuthStateChange((_event, session) => {
+        setAuthSessionId(session ? authSessionIdFromAccessToken(session.access_token) : null)
         if (!session) {
           for (const key of ['support', 'my-notifications', 'notification-device-session', 'notification-device-push', 'sygsphere']) {
             queryClient.removeQueries({ queryKey: [key] })

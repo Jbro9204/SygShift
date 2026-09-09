@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionContext } from '../data/auth'
-import { requiresSecurityCheckpoint } from '../lib/securityCheckpoint'
+import { completedSignInRecordKind, requiresSecurityCheckpoint } from '../lib/securityCheckpoint'
 
 const protectedSession: SessionContext = {
   displayName: 'Shared User',
@@ -31,5 +31,13 @@ describe('AppShell shared identity checkpoint', () => {
   it('keeps the existing behavior for normal verified sessions', () => {
     expect(requiresSecurityCheckpoint({ ...protectedSession, hasMfa: true }, '/time', false)).toBe(false)
     expect(requiresSecurityCheckpoint({ ...protectedSession, mfaRequired: false }, '/time', false)).toBe(false)
+  })
+
+  it('records activity only after the applicable checkpoint is complete', () => {
+    expect(completedSignInRecordKind(protectedSession, '/time', false)).toBeNull()
+    expect(completedSignInRecordKind({ ...protectedSession, mustChangePassword: true }, '/sygsphere', true)).toBeNull()
+    expect(completedSignInRecordKind({ ...protectedSession, hasMfa: true }, '/time', false)).toBe('native')
+    expect(completedSignInRecordKind(protectedSession, '/sygsphere', true)).toBe('sygsphere')
+    expect(completedSignInRecordKind(protectedSession, '/sygsphere/', true)).toBe('sygsphere')
   })
 })

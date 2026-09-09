@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   AUTH_EMAIL_DOMAIN,
+  authSessionIdFromAccessToken,
   isValidUsername,
   normalizeUsername,
+  recordCompletedSignIn,
+  recordCompletedSignInWithRetry,
   signOut,
   usernameToAuthEmail,
   validatePassword,
@@ -21,6 +24,7 @@ const supabaseMock = vi.hoisted(() => ({
       signOut: vi.fn(),
       verifyOtp: vi.fn(),
     },
+    rpc: vi.fn(),
   },
 }))
 
@@ -84,6 +88,87 @@ describe('password recovery verification', () => {
   it('rejects malformed recovery tokens without calling Supabase', async () => {
     await expect(verifyPasswordRecoveryToken('not a token')).rejects.toThrow('invalid or has expired')
     expect(supabaseMock.client.auth.verifyOtp).not.toHaveBeenCalled()
+  })
+})
+
+describe('completed sign-in activity', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    supabaseMock.client.rpc.mockResolvedValue({ data: null, error: null })
+  })
+
+  it('records native and shared SygSphere sessions through separate guarded RPCs', async () => {
+    await recordCompletedSignIn()
+    await recordCompletedSignIn(true)
+
+    expect(supabaseMock.client.rpc).toHaveBeenNthCalledWith(1, 'record_completed_sign_in')
+    expect(supabaseMock.client.rpc).toHaveBeenNthCalledWith(2, 'sygsphere_record_completed_sign_in')
+  })
+
+  it('does not silently accept a failed activity record', async () => {
+    supabaseMock.client.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42501', message: 'checkpoint incomplete' },
+      status: 403,
+    })
+
+    await expect(recordCompletedSignIn()).rejects.toThrow('could not be recorded')
+  })
+
+  it('retries a temporary activity-recording failure without creating another sign-in', async () => {
+    supabaseMock.client.rpc
+      .mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'schema cache refreshing' }, status: 404 })
+      .mockResolvedValueOnce({ data: null, error: null, status: 200 })
+
+    await recordCompletedSignInWithRetry(false, { retryDelaysMs: [0, 0] })
+
+    expect(supabaseMock.client.rpc).toHaveBeenCalledTimes(2)
+    expect(supabaseMock.client.rpc).toHaveBeenNthCalledWith(1, 'record_completed_sign_in')
+    expect(supabaseMock.client.rpc).toHaveBeenNthCalledWith(2, 'record_completed_sign_in')
+  })
+
+  it('does not retry a rejected or incomplete security checkpoint', async () => {
+    supabaseMock.client.rpc.mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'required MFA incomplete' },
+      status: 403,
+    })
+
+    await expect(recordCompletedSignInWithRetry(false, {
+      maxAttempts: 4,
+      retryDelaysMs: [0],
+    })).rejects.toThrow('could not be recorded')
+
+    expect(supabaseMock.client.rpc).toHaveBeenCalledOnce()
+  })
+
+  it('bounds persistent transient retries at the configured release backoff', async () => {
+    vi.useFakeTimers()
+    supabaseMock.client.rpc.mockResolvedValue({
+      data: null,
+      error: { code: 'PGRST202', message: 'schema cache refreshing' },
+      status: 404,
+    })
+
+    try {
+      const rejection = expect(recordCompletedSignInWithRetry()).rejects.toThrow('could not be recorded')
+      await vi.runAllTimersAsync()
+      await rejection
+      expect(supabaseMock.client.rpc).toHaveBeenCalledTimes(5)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('extracts the auth session identity used to trigger one record per login session', () => {
+    const sessionId = '7c21701a-56ed-4c64-8c47-c9dc516e4398'
+    const payload = globalThis.btoa(JSON.stringify({ session_id: sessionId }))
+      .replaceAll('+', '-')
+      .replaceAll('/', '_')
+      .replace(/=+$/, '')
+
+    expect(authSessionIdFromAccessToken(`header.${payload}.signature`)).toBe(sessionId)
+    expect(authSessionIdFromAccessToken('not-a-jwt')).toBeNull()
   })
 })
 

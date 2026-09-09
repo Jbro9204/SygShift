@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ALargeSmall, ArrowLeft, Bell, BellOff, Bookmark, Check, ChevronDown, Download, Eye, Hash, Info, MessageCircle, Paperclip, Plus, Search, Send, Smile, Users, X } from 'lucide-react'
@@ -9,6 +9,39 @@ import '../styles/sygsphere.css'
 
 const reactions = ['👍', '❤️', '✅', '🎉', '👀', '🙏']
 function ErrorNotice({ error }: { error: unknown }) { return error ? <p className="sphere-error" role="alert">{error instanceof Error ? error.message : 'This request could not be completed. Please try again.'}</p> : null }
+
+function MessageActionPopover({ label, trigger, panelClassName, children }: { label: string; trigger: ReactNode; panelClassName: string; children: ReactNode }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null)
+  const summaryRef = useRef<HTMLElement>(null)
+  const [open, setOpen] = useState(false)
+  const close = (restoreFocus = false) => {
+    const details = detailsRef.current
+    if (!details?.open) return
+    details.open = false
+    setOpen(false)
+    if (restoreFocus) summaryRef.current?.focus()
+  }
+  useEffect(() => {
+    if (!open) return
+    const closeFromOutsidePointer = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Node && !detailsRef.current?.contains(target)) close()
+    }
+    document.addEventListener('pointerdown', closeFromOutsidePointer, true)
+    return () => document.removeEventListener('pointerdown', closeFromOutsidePointer, true)
+  }, [open])
+  return <details ref={detailsRef} onToggle={(event) => setOpen(event.currentTarget.open)} onKeyDown={(event) => {
+    if (event.key !== 'Escape' || !event.currentTarget.open) return
+    event.preventDefault(); event.stopPropagation(); close(true)
+  }} onClick={(event) => {
+    const target = event.target
+    if (target instanceof Element && target.closest('button')?.closest('details') === event.currentTarget) close(true)
+  }}>
+    <summary ref={summaryRef} aria-expanded={open} aria-label={label}>{trigger}</summary>
+    <div className={panelClassName}>{children}</div>
+  </details>
+}
+
 function Avatar({ name, photoPath }: { name: string; photoPath?: string | null }) {
   const photo = useQuery({ queryKey: ['sygsphere', 'avatar', photoPath], queryFn: () => spherePhoto(photoPath!), enabled: Boolean(photoPath), staleTime: 300000, retry: 1 })
   const [url, setUrl] = useState<string | null>(null)
@@ -181,9 +214,9 @@ function MessageCard({ employeeId, message, author, onThread, hideReply = false,
         {message.body.startsWith('Shared file: ') ? <MessageFiles employeeId={employeeId} message={message} /> : null}
         <div className="sphere-reactions">{message.reactions.map((reaction) => <button type="button" key={reaction.emoji} aria-pressed={reaction.mine} aria-label={`${reaction.emoji} reaction, ${reaction.count}`} disabled={mutation.isPending} onClick={() => mutation.mutate({ action: 'react', emoji: reaction.emoji, enabled: !reaction.mine })}>{reaction.emoji} {reaction.count}</button>)}</div>
         <div className="sphere-message-actions">{!hideReply ? <button type="button" onClick={() => onThread(message)}><MessageCircle size={14} />{message.replyCount ? `${message.replyCount} ${message.replyCount === 1 ? 'reply' : 'replies'}` : 'Reply'}{message.unreadReplies > 0 ? <span className="sphere-unread-dot" aria-label="Unread replies" /> : null}</button> : null}
-          <details><summary aria-label="Add reaction"><Smile size={16} /></summary><div className="sphere-reaction-picker">{reactions.map((emoji) => <button type="button" key={emoji} aria-label={`React ${emoji}`} disabled={mutation.isPending} onClick={() => mutation.mutate({ action: 'react', emoji, enabled: true })}>{emoji}</button>)}</div></details>
+          <MessageActionPopover label="Add reaction" trigger={<Smile size={16} />} panelClassName="sphere-reaction-picker">{reactions.map((emoji) => <button type="button" key={emoji} aria-label={`React ${emoji}`} disabled={mutation.isPending} onClick={() => mutation.mutate({ action: 'react', emoji, enabled: true })}>{emoji}</button>)}</MessageActionPopover>
           <button type="button" aria-label={message.saved ? 'Unsave message' : 'Save message'} aria-pressed={message.saved} disabled={mutation.isPending} onClick={() => mutation.mutate({ action: 'save', enabled: !message.saved })}><Bookmark size={15} /></button>
-          <details><summary aria-label="More message actions">•••</summary><div className="sphere-message-menu"><button type="button" onClick={() => mutation.mutate({ action: 'pin', enabled: !message.pinned })}>{message.pinned ? 'Unpin message' : 'Pin message'}</button><button type="button" onClick={() => { void navigator.clipboard.writeText(`${window.location.origin}${spherePath(message.conversationId, message.id, message.parentId)}`).then(() => setNotice('Message link copied.')).catch(() => setNotice('Could not copy. Open the message and copy its page address.')) }}>Copy message link</button>{message.authorId === employeeId ? <><button type="button" onClick={() => { setBody(message.body); setEdit(true) }}>Edit message</button><button type="button" onClick={() => setDeleting(true)}>Delete message</button></> : null}</div></details>
+          <MessageActionPopover label="More message actions" trigger="•••" panelClassName="sphere-message-menu"><button type="button" onClick={() => mutation.mutate({ action: 'pin', enabled: !message.pinned })}>{message.pinned ? 'Unpin message' : 'Pin message'}</button><button type="button" onClick={() => { void navigator.clipboard.writeText(`${window.location.origin}${spherePath(message.conversationId, message.id, message.parentId)}`).then(() => setNotice('Message link copied.')).catch(() => setNotice('Could not copy. Open the message and copy its page address.')) }}>Copy message link</button>{message.authorId === employeeId ? <><button type="button" onClick={() => { setBody(message.body); setEdit(true) }}>Edit message</button><button type="button" onClick={() => setDeleting(true)}>Delete message</button></> : null}</MessageActionPopover>
           {message.authorId === employeeId ? <span className="sphere-delivery" title={message.readBy.length ? `Read by ${message.readBy.map((person) => person.name).join(', ')}` : 'Saved securely to SygSphere'}><Check size={13} />{message.readBy.length ? `Read by ${message.readBy.length}` : 'Sent'}</span> : null}
         </div></>}
       <ErrorNotice error={mutation.error} />{notice ? <small role="status">{notice}</small> : null}
