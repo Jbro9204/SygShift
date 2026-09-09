@@ -109,6 +109,13 @@ describe('central access policy', () => {
     expect(navigationGroups.flatMap((group) => group.items).find((item) => item.path === '/reports')?.permissions).toEqual([...reportRoutePermissions])
   })
 
+  it('keeps SygTasks in its permanent launcher instead of duplicating it under Communication', () => {
+    const communication = navigationGroups.find((group) => group.label === 'Communication')
+
+    expect(communication?.items.some((item) => item.path === '/tasks')).toBe(false)
+    expect(canAccessRoute('/tasks', session([]))).toBe(true)
+  })
+
   it('keeps every navigation destination covered by the route policy', () => {
     const navigationPaths = navigationGroups.flatMap((group) => group.items.map((item) => item.path.split(/[?#]/, 1)[0]))
     expect(navigationPaths.every((path) => path in routeAccessPolicies)).toBe(true)
