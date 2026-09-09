@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/09/2026 - Split-Shift Return and Request Notifications
+
+- Enabled an employee to clock out for an unpaid appointment and return to the same assigned shift as a new append-only segment, including a bounded six-hour post-shift recovery window and a clear **Resume work** action across Home and Time & Attendance.
+- Routed operational requests, time corrections, HR self-service/document work, independent lifecycle/candidate/compensation/payroll approvals, and signature actions into the existing live Notification Center using effective permissions, supervisor scope, active-account checks, maker-checker separation, and privacy-safe outcome messages.
+- Protected unresolved workflow alerts from dismissal and **Clear all**, retained resolved alerts as completed history, and consolidated 39 existing compensation proposals into four reviewer queue alerts instead of 156 individual notifications.
+- Applied and recorded exact migration `20260910110000`, pushed source commit `5648265`, retained rollback tag `rollback/split-shift-notifications-pre-release-20260909`, and deployed Worker `7059b973-0e4d-4ded-9019-8dd2b2e7496f`.
+- Verification passed 224 test files / 1,126 tests, TypeScript, zero-warning lint, both builds, the linked rollback-only migration/lifecycle suite, and the 42-check actual-component Time Clock matrix both before and after deployment. Live health/readiness, exact release assets, 12 workflow triggers, recent automatic Timekeeping runs, and zero persisted test punches passed.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-09-2026_SPLIT_SHIFT_RETURN_AND_REQUEST_NOTIFICATIONS.md`.
+
 ## 09/09/2026 - SygTasks Production Redesign
 
 - Rebuilt SygTasks as a branded, responsive work-management workspace with an always-visible first-position launcher, exact My Work summaries, every authorized board, server-backed search/filter/pagination, List and Board views, rounded creation/detail/settings dialogs, and permission-aware assignment.
