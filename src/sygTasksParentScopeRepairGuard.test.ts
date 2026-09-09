@@ -59,6 +59,9 @@ describe('SygTasks parent-scope repair', () => {
     expect(regression.match(/^rollback;$/gm)).toHaveLength(1)
 
     for (const action of [
+      'create_task',
+      'create_label',
+      'add_checklist_item',
       'add_board_member',
       'remove_board_member',
       'assign_task',

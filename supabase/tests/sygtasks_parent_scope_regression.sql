@@ -17,6 +17,9 @@ declare
   v_task_b_one_id uuid := gen_random_uuid();
   v_task_b_two_id uuid := gen_random_uuid();
   v_label_a_id uuid := gen_random_uuid();
+  v_created_task_id uuid;
+  v_created_label_id uuid;
+  v_checklist_item_id uuid;
   v_request_id uuid;
   v_token text := 'scope-' || gen_random_uuid()::text;
   v_result jsonb;
@@ -106,7 +109,8 @@ begin
   values
     (v_board_a_id, v_actor_employee_id, 'owner', v_actor_employee_id),
     (v_board_b_id, v_actor_employee_id, 'owner', v_actor_employee_id),
-    (v_board_a_id, v_target_employee_id, 'member', v_actor_employee_id);
+    (v_board_a_id, v_target_employee_id, 'member', v_actor_employee_id),
+    (v_board_b_id, v_unrelated_employee_id, 'member', v_actor_employee_id);
 
   insert into private.sygtasks_tasks (
     id,
@@ -182,6 +186,79 @@ begin
   );
 
   v_result := public.mutate_sygtasks(
+    'create_task',
+    jsonb_build_object(
+      'boardId', v_board_b_id,
+      'title', left(v_token || '-created-task', 240),
+      'description', 'Parent-scoped task creation regression.',
+      'status', 'ready',
+      'priority', 'routine'
+    ),
+    gen_random_uuid(),
+    null
+  );
+  v_created_task_id := nullif(v_result->>'taskId', '')::uuid;
+
+  if v_created_task_id is null
+     or not exists (
+       select 1
+       from private.sygtasks_tasks task
+       where task.id = v_created_task_id
+         and task.board_id = v_board_b_id
+         and task.archived_at is null
+     )
+  then
+    raise exception 'Creating work did not retain the selected board: %', v_result;
+  end if;
+
+  v_result := public.mutate_sygtasks(
+    'create_label',
+    jsonb_build_object(
+      'boardId', v_board_b_id,
+      'name', left(v_token || '-created-label', 50),
+      'color', '#E3AD3B'
+    ),
+    gen_random_uuid(),
+    null
+  );
+  v_created_label_id := nullif(v_result->>'labelId', '')::uuid;
+
+  if v_created_label_id is null
+     or not exists (
+       select 1
+       from private.sygtasks_labels label
+       where label.id = v_created_label_id
+         and label.board_id = v_board_b_id
+         and label.archived_at is null
+     )
+  then
+    raise exception 'Creating a label did not retain the selected board: %', v_result;
+  end if;
+
+  v_result := public.mutate_sygtasks(
+    'add_checklist_item',
+    jsonb_build_object(
+      'taskId', v_task_b_two_id,
+      'title', 'Parent-scoped checklist regression.'
+    ),
+    gen_random_uuid(),
+    null
+  );
+  v_checklist_item_id := nullif(v_result->>'checklistItemId', '')::uuid;
+
+  if v_checklist_item_id is null
+     or not exists (
+       select 1
+       from private.sygtasks_checklist_items item
+       where item.id = v_checklist_item_id
+         and item.task_id = v_task_b_two_id
+         and item.archived_at is null
+     )
+  then
+    raise exception 'Creating a checklist item did not retain the selected task: %', v_result;
+  end if;
+
+  v_result := public.mutate_sygtasks(
     'add_board_member',
     jsonb_build_object(
       'boardId', v_board_b_id,
@@ -193,6 +270,13 @@ begin
   );
 
   if (v_result->>'changed')::boolean is not true
+     or exists (
+       select 1
+       from private.sygtasks_task_assignees assignee
+       where assignee.task_id = v_task_b_one_id
+         and assignee.employee_id = v_target_employee_id
+         and assignee.removed_at is null
+     )
      or not exists (
        select 1
        from private.sygtasks_board_memberships membership
@@ -273,6 +357,13 @@ begin
   );
 
   if (v_result->>'changed')::boolean is not true
+     or exists (
+       select 1
+       from private.sygtasks_task_assignees assignee
+       where assignee.task_id = v_task_b_one_id
+         and assignee.employee_id = v_target_employee_id
+         and assignee.removed_at is null
+     )
      or not exists (
        select 1
        from private.sygtasks_task_assignees assignee
@@ -313,6 +404,13 @@ begin
   );
 
   if (v_result->>'changed')::boolean is not true
+     or exists (
+       select 1
+       from private.sygtasks_task_watchers watcher
+       where watcher.task_id = v_task_b_one_id
+         and watcher.employee_id = v_actor_employee_id
+         and watcher.removed_at is null
+     )
      or not exists (
        select 1
        from private.sygtasks_task_watchers watcher
@@ -349,6 +447,13 @@ begin
   );
 
   if (v_result->>'changed')::boolean is not true
+     or exists (
+       select 1
+       from private.sygtasks_task_labels task_label
+       where task_label.task_id = v_task_a_two_id
+         and task_label.label_id = v_label_a_id
+         and task_label.removed_at is null
+     )
      or not exists (
        select 1
        from private.sygtasks_task_labels task_label
@@ -385,6 +490,13 @@ begin
   );
 
   if (v_result->>'changed')::boolean is not true
+     or exists (
+       select 1
+       from private.sygtasks_dependencies dependency
+       where dependency.task_id = v_task_b_one_id
+         and dependency.depends_on_task_id = v_task_b_two_id
+         and dependency.removed_at is null
+     )
      or not exists (
        select 1
        from private.sygtasks_dependencies dependency
