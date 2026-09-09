@@ -51,6 +51,26 @@ describe('SygShift to Sygilant protected platform launch', () => {
     expect(upstream).not.toHaveBeenCalled()
   })
 
+  it('identifies an unavailable session-context stage without exposing upstream details', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('private upstream failure')))
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    try {
+      const response = await handleSygilantSharedIdentityRequest(launchRequest(), environment, apiRequestId)
+
+      expect(response?.status).toBe(503)
+      await expect(response?.json()).resolves.toEqual({
+        detail: 'The active SygShift security context could not be confirmed.',
+        error: 'sygilant_launch_session_context_unavailable',
+        requestId: apiRequestId,
+      })
+      expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('sygilant_launch_session_context_unavailable'))
+      expect(errorLog).not.toHaveBeenCalledWith(expect.stringContaining('private upstream failure'))
+    } finally {
+      errorLog.mockRestore()
+    }
+  })
+
   it('issues a short-lived signed assertion only for a permissioned MFA session', async () => {
     const rpcBodies: Record<string, unknown>[] = []
     vi.stubGlobal('fetch', vi.fn(async (input, init = {}) => {

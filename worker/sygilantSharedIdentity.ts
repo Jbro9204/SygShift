@@ -103,6 +103,15 @@ export async function handleSygilantSharedIdentityRequest(
     const failure = error instanceof SharedLaunchError
       ? error
       : new SharedLaunchError('sygilant_shared_identity_unavailable', 503, 'Sygilant shared access is temporarily unavailable.')
+    if (failure.status >= 500) {
+      console.error(JSON.stringify({
+        code: failure.code,
+        event: 'sygilant_shared_identity_failure',
+        path,
+        requestId,
+        status: failure.status,
+      }))
+    }
     return responseJson({ error: failure.code, detail: failure.message, requestId }, failure.status)
   }
 }
@@ -149,8 +158,16 @@ async function issueLaunch(request: Request, config: Configuration, requestId: s
 
   const token = bearerToken(request)
   if (!token) throw new SharedLaunchError('authentication_required', 401, 'A verified SygShift session is required.')
-  const context = await sessionContext(token, request, config)
-  const authUser = await verifyAuthUser(token, config)
+  const context = await launchStage(
+    'sygilant_launch_session_context_unavailable',
+    'The active SygShift security context could not be confirmed.',
+    () => sessionContext(token, request, config),
+  )
+  const authUser = await launchStage(
+    'sygilant_launch_auth_identity_unavailable',
+    'The active SygShift identity could not be confirmed.',
+    () => verifyAuthUser(token, config),
+  )
   const claims = accessTokenClaims(token)
   if (
     !uuidPattern.test(authUser.id ?? '')
@@ -188,17 +205,27 @@ async function issueLaunch(request: Request, config: Configuration, requestId: s
     roleId: context.role,
     version: 1,
   }
-  const encoded = encodeJson(payload)
-  const assertion = `ssli_v1.${encoded}.${await hmacHex(encoded, config.signingSecret)}`
-  await serviceRpc('service_issue_sygilant_shared_launch', {
-    target_payload: {
-      ...payload,
-      assertionHash: await sha256Hex(assertion),
-      nonceHash: await sha256Hex(payload.nonce),
-      requestContext: requestContext(request, requestId),
-      sourceAuthSessionId: claims.session_id,
+  const assertion = await launchStage(
+    'sygilant_launch_assertion_unavailable',
+    'The secure launch assertion could not be prepared.',
+    async () => {
+      const encoded = encodeJson(payload)
+      return `ssli_v1.${encoded}.${await hmacHex(encoded, config.signingSecret)}`
     },
-  }, config)
+  )
+  await launchStage(
+    'sygilant_launch_ledger_unavailable',
+    'The secure launch request could not be recorded.',
+    async () => serviceRpc('service_issue_sygilant_shared_launch', {
+      target_payload: {
+        ...payload,
+        assertionHash: await sha256Hex(assertion),
+        nonceHash: await sha256Hex(payload.nonce),
+        requestContext: requestContext(request, requestId),
+        sourceAuthSessionId: claims.session_id,
+      },
+    }, config),
+  )
 
   return responseJson({
     launch: {
@@ -412,6 +439,19 @@ function normalizedOrigin(value: unknown): string {
 
 function clean(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+async function launchStage<T>(
+  code: string,
+  detail: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    if (error instanceof SharedLaunchError) throw error
+    throw new SharedLaunchError(code, 503, detail)
+  }
 }
 
 function randomToken(size = 48): string {
