@@ -2023,3 +2023,20 @@ pnpm exec wrangler deploy --keep-vars
   passed 44/44, the required post-deployment Time Clock workflow passed 38/38, and live health,
   readiness, asset-integrity, Schedule, and Home checks passed.
 - See `docs/changelogs/CHANGELOG_09-09-2026_DISPATCHER_ROLE_AND_LANDING_REPAIR.md` for full evidence.
+
+## 09/09/2026 — Basic Home and Operations Home Selection
+
+- Added one clear role-level Home experience selector: Basic Home for employee self-service or
+  Operations Home for organization-wide staffing, coverage, priority, and management information.
+- Made Basic Home the authenticated fallback and required both `home.operations.view` and
+  `operations.view` for Operations Home, eliminating blank landing paths without broadening management
+  access.
+- Released Operations Home for Admin, Supervisor, Chief, Human Resources Manager, and Operations
+  Manager; Guard, Dispatcher, Scheduler, Recruiting & Licensing, and Human Resources Employee remain
+  on Basic Home unless an additive role explicitly grants Operations Home.
+- Applied and recorded exact migration `20260909190000`, pushed source commits `bc94ea8` and `0bdd0f4`,
+  and deployed Cloudflare Worker `b8828c1d-af96-41cc-bb9b-45ab828bc365`.
+- `pnpm check` passed 219 files / 1,091 tests; final Home selector checks passed 2/2 desktop/mobile; the
+  required post-deployment Time Clock matrix passed 38/38; live health, readiness, asset integrity, and
+  authenticated Admin/Dispatcher behavior passed.
+- See `docs/changelogs/CHANGELOG_09-09-2026_BASIC_AND_OPERATIONS_HOME_SELECTION.md` for full evidence.
