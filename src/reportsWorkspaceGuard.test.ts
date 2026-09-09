@@ -43,11 +43,17 @@ describe('Reports workspace guardrails', () => {
 
   it('authorizes the report-library summary through additive effective roles', () => {
     const migration = read('supabase/migrations/20260910090000_effective_role_operations_report_access.sql')
+    const databaseRegression = read('supabase/tests/effective_role_operations_report_access.sql')
 
     expect(migration).toContain("public.has_effective_permission(''reports.view'')")
     expect(migration).toContain('Reports access with verified MFA is required')
     expect(migration).toContain('unexpected authorization boundary; refusing to rewrite it')
     expect(migration).toContain('execute repaired_definition')
     expect(migration).toContain('grant execute on function public.get_operations_report() to authenticated, service_role')
+    expect(databaseRegression).toContain("employee.role not in ('supervisor', 'admin')")
+    expect(databaseRegression).toContain('perform public.get_operations_report()')
+    expect(databaseRegression).toContain('denied_without_permission')
+    expect(databaseRegression).toContain('denied_without_mfa')
+    expect(databaseRegression.trimEnd()).toMatch(/rollback;$/)
   })
 })
