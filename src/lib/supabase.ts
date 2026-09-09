@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { appendProtectedSessionHeaders } from './protectedSessionHeaders'
+import { getSharedIdentitySessionScope } from './sharedIdentitySession'
 
 const defaultSupabaseUrl = 'https://eqkdfrbwtioiqtjsyglg.supabase.co'
 const defaultSupabasePublishableKey = 'sb_publishable_-uU9fD3XIeZ58r815-fl_Q_g4IIRPQ5'
@@ -72,7 +73,13 @@ export function attachTrustedDeviceHeader(input: RequestInfo | URL, init?: Reque
   const isRestRequest = pathname.includes('/rest/v1/')
   const isSygSphereRequest = /\/rest\/v1\/rpc\/sygsphere_[a-z0-9_]+$/i.test(pathname)
   const isSygSphereAvatarRequest = pathname.includes('/storage/v1/object/') && pathname.includes('/employee-photos/')
-  if (!isRestRequest && !isSygSphereAvatarRequest) return init
+  const isStorageObjectRequest = pathname.includes('/storage/v1/object/')
+  if (!isRestRequest && !isStorageObjectRequest) return init
+
+  const sharedIdentityScope = getSharedIdentitySessionScope()
+  const includeSharedIdentity = sharedIdentityScope === 'platform'
+    ? isRestRequest || isStorageObjectRequest
+    : sharedIdentityScope === 'sygsphere' && (isSygSphereRequest || isSygSphereAvatarRequest)
 
   const headers = new Headers(input instanceof Request ? input.headers : undefined)
   new Headers(init?.headers).forEach((value, key) => {
@@ -81,7 +88,7 @@ export function attachTrustedDeviceHeader(input: RequestInfo | URL, init?: Reque
   return {
     ...init,
     headers: appendProtectedSessionHeaders(headers, {
-      includeSharedIdentity: isSygSphereRequest || isSygSphereAvatarRequest,
+      includeSharedIdentity,
     }),
   }
 }
@@ -115,20 +122,22 @@ export async function activateSharedIdentitySupabaseSession(accessToken: string,
   if (!supabaseUrl || !supabasePublishableKey) {
     throw new Error('The secure data connection has not been configured.')
   }
-  await getNativeSupabaseClient().auth.signOut({ scope: 'local' })
-  sharedIdentityAuthStorage.clear()
-  sharedIdentityClient = createClient(supabaseUrl, supabasePublishableKey, {
-    auth: {
-      autoRefreshToken: true,
-      detectSessionInUrl: false,
-      persistSession: true,
-      storage: sharedIdentityAuthStorage,
-      storageKey: 'sygshift-shared-identity-memory-session',
-    },
-    global: {
-      fetch: (input, init) => fetch(input, attachTrustedDeviceHeader(input, init)),
-    },
-  })
+  if (!sharedIdentityClient) {
+    await getNativeSupabaseClient().auth.signOut({ scope: 'local' })
+    sharedIdentityAuthStorage.clear()
+    sharedIdentityClient = createClient(supabaseUrl, supabasePublishableKey, {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: true,
+        storage: sharedIdentityAuthStorage,
+        storageKey: 'sygshift-shared-identity-memory-session',
+      },
+      global: {
+        fetch: (input, init) => fetch(input, attachTrustedDeviceHeader(input, init)),
+      },
+    })
+  }
   const { error } = await sharedIdentityClient.auth.setSession({
     access_token: accessToken,
     refresh_token: refreshToken,
@@ -140,6 +149,9 @@ export async function activateSharedIdentitySupabaseSession(accessToken: string,
 }
 
 export function deactivateSharedIdentitySupabaseSession(): void {
+  const retiringClient = sharedIdentityClient
   sharedIdentityClient = undefined
+  retiringClient?.auth.stopAutoRefresh()
+  void retiringClient?.auth.signOut({ scope: 'local' }).catch(() => undefined)
   sharedIdentityAuthStorage.clear()
 }

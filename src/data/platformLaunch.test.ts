@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getSupabaseClient } from '../lib/supabase'
+import { clearSharedIdentitySession, setSharedIdentitySession } from '../lib/sharedIdentitySession'
 import { launchSygilantPlatform, submitSygilantPlatformLaunch, SYGILANT_LAUNCH_ENDPOINT } from './platformLaunch'
 
 vi.mock('../lib/supabase', () => ({
@@ -10,6 +11,7 @@ const getSupabaseClientMock = vi.mocked(getSupabaseClient)
 
 describe('Sygilant platform launch boundary', () => {
   beforeEach(() => {
+    clearSharedIdentitySession()
     window.localStorage.clear()
     window.sessionStorage.clear()
     getSupabaseClientMock.mockReturnValue({
@@ -66,6 +68,30 @@ describe('Sygilant platform launch boundary', () => {
     expect(headers.get('x-sygshift-trusted-device')).toBe('trusted-device-proof')
     expect(headers.get('x-sygshift-security-key')).toBe('security-key-proof')
     expect(headers.has('x-sygshift-shared-identity')).toBe(false)
+  })
+
+  it('forwards platform assurance when returning from SygShift to Sygilant', async () => {
+    setSharedIdentitySession(
+      'shared-token'.repeat(5),
+      new Date(Date.now() + 60_000).toISOString(),
+      false,
+      'platform',
+    )
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      launch: {
+        applicationId: 'sygilant',
+        applicationUrl: 'https://sygilant.us',
+        assertion: `ssli_v1.${'a'.repeat(80)}.${'b'.repeat(64)}`,
+        destination: '/dashboard',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        requestId: crypto.randomUUID(),
+      },
+    }), { status: 201 }))
+
+    await launchSygilantPlatform()
+
+    const headers = new Headers(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.headers)
+    expect(headers.get('x-sygshift-shared-identity')).toBe('shared-token'.repeat(5))
   })
 
   it('rejects any launch destination outside the official HTTPS Sygilant domain', async () => {

@@ -1971,3 +1971,19 @@ pnpm exec wrangler deploy --keep-vars
 - Final verification passed 209 files / 1,048 tests, 74 combined desktop/mobile feature checks, all 38
   required post-deployment Time Clock checks, production health/readiness, live recovery visuals, and
   a clean reset-page browser console.
+
+## 09/09/2026 - Shared Platform Receiver And Native SygSphere Bridge
+
+- Added destination-bound `platform` and `sygsphere` shared identity scopes while preserving SygShift
+  as the sole identity, role, permission, MFA, FIDO2, trusted-device, and SygSphere data authority.
+- Kept shared tokens in an encrypted HttpOnly Worker session, disabled browser token refresh, and
+  confined SygSphere-only sessions to the exact messaging route.
+- Added the critical `apps.sygshift.access` entitlement for the canonical `system_admin` role and
+  introduced the additive Sygilant session binding used by the native SygSphere workspace.
+- Applied and recorded exact migrations `20260909064652`, `20260910040000`, and `20260910050000`;
+  forced RLS, session scope, trigger state, entitlement assignment, and active-session binding passed
+  production verification, and Supabase Security Advisor reported no errors.
+- `pnpm check` passed 214 files / 1,074 tests, TypeScript, zero-warning lint, Worker build, and client
+  build. The mandatory Time Clock browser workflow passed 38/38 desktop and mobile checks.
+- See `docs/changelogs/CHANGELOG_09-09-2026_SHARED_PLATFORM_RECEIVER_AND_NATIVE_SYGSPHERE_BRIDGE.md`
+  for implementation, security, rollback, and release evidence.

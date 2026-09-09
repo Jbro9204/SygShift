@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { deactivateSharedIdentitySupabaseSession, getSupabaseClient } from '../lib/supabase'
+import { publishSharedIdentityBrowserEvent } from '../lib/sharedIdentityBrowserSync'
 import { clearSecurityKeySession } from '../lib/securityKeySession'
-import { clearSharedIdentityServerSession } from '../lib/sharedIdentitySession'
+import { clearSharedIdentityServerSession, getSharedIdentitySessionScope } from '../lib/sharedIdentitySession'
 import { clearPushSession } from './pushNotifications'
 import { cancelLoginSound } from '../lib/notificationSounds'
 
@@ -117,6 +118,7 @@ export async function verifyPasswordRecoveryToken(tokenHash: string): Promise<vo
 export async function signOut(): Promise<void> {
   cancelLoginSound()
   await clearPushSession()
+  const sharedIdentitySession = getSharedIdentitySessionScope() !== null
   await clearSharedIdentityServerSession()
   const client = getSupabaseClient()
   try {
@@ -125,6 +127,7 @@ export async function signOut(): Promise<void> {
   } finally {
     deactivateSharedIdentitySupabaseSession()
     clearSecurityKeySession()
+    if (sharedIdentitySession) publishSharedIdentityBrowserEvent('cleared')
   }
 }
 
@@ -149,10 +152,14 @@ export async function getSessionContext(): Promise<SessionContext> {
   }
 }
 
-export async function recordCompletedSignIn(sharedSygSphereSession = false): Promise<void> {
-  const rpcName = sharedSygSphereSession
-    ? 'sygsphere_record_completed_sign_in'
-    : 'record_completed_sign_in'
+export type CompletedSignInKind = 'native' | 'platform' | 'sygsphere'
+
+export async function recordCompletedSignIn(kind: CompletedSignInKind = 'native'): Promise<void> {
+  const rpcName = kind === 'platform'
+    ? 'platform_record_completed_sign_in'
+    : kind === 'sygsphere'
+      ? 'sygsphere_record_completed_sign_in'
+      : 'record_completed_sign_in'
   try {
     const { error, status } = await getSupabaseClient().rpc(rpcName)
     if (error) {
@@ -208,7 +215,7 @@ function waitForCompletedSignInRetry(delayMs: number, signal?: AbortSignal): Pro
 }
 
 export async function recordCompletedSignInWithRetry(
-  sharedSygSphereSession = false,
+  kind: CompletedSignInKind = 'native',
   options: CompletedSignInRetryOptions = {},
 ): Promise<void> {
   const retryDelaysMs = options.retryDelaysMs?.length
@@ -225,7 +232,7 @@ export async function recordCompletedSignInWithRetry(
     await waitForCompletedSignInRetry(delayMs, options.signal)
     if (options.signal?.aborted) return
     try {
-      await recordCompletedSignIn(sharedSygSphereSession)
+      await recordCompletedSignIn(kind)
       return
     } catch (error) {
       attempt += 1

@@ -41,6 +41,20 @@ describe('protected-session request headers', () => {
     expect(headers.has('x-sygshift-shared-identity')).toBe(false)
   })
 
+  it('attaches platform assurance to protected calls without a route-specific opt-in', () => {
+    setSharedIdentitySession(
+      'shared-token'.repeat(5),
+      new Date(Date.now() + 60_000).toISOString(),
+      false,
+      'platform',
+    )
+
+    const headers = appendProtectedSessionHeaders({ authorization: 'Bearer access-token' })
+
+    expect(headers.get('authorization')).toBe('Bearer access-token')
+    expect(headers.get('x-sygshift-shared-identity')).toBe('shared-token'.repeat(5))
+  })
+
   it('does not invent assurance headers when no verified session exists', () => {
     const headers = appendProtectedSessionHeaders()
 

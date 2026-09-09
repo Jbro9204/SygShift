@@ -245,7 +245,9 @@ describe('button layout guardrails', () => {
     expect(supabaseClient).toContain('new Headers(input instanceof Request ? input.headers : undefined)')
     expect(supabaseClient).toContain('new Headers(init?.headers).forEach((value, key) => {')
     expect(supabaseClient).toContain('appendProtectedSessionHeaders(headers, {')
-    expect(supabaseClient).toContain('includeSharedIdentity: isSygSphereRequest || isSygSphereAvatarRequest')
+    expect(supabaseClient).toContain("sharedIdentityScope === 'platform'")
+    expect(supabaseClient).toContain("sharedIdentityScope === 'sygsphere' && (isSygSphereRequest || isSygSphereAvatarRequest)")
+    expect(supabaseClient).toContain('includeSharedIdentity,')
   })
 
   it('keeps recently deleted user retention compact and clearly labeled', () => {

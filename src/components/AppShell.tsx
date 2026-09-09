@@ -43,11 +43,17 @@ import { OperationalTimeHeader } from './OperationalTimeHeader'
 import { HeaderNotificationButton } from './HeaderNotificationButton'
 import { LiveNotifications } from './LiveNotifications'
 import { clearPushSession } from '../data/pushNotifications'
-import { completedSignInRecordKind, isSygSpherePath, requiresSecurityCheckpoint } from '../lib/securityCheckpoint'
+import { completedSignInRecordKind, isSygSpherePath, requiresSecurityCheckpoint, sharedIdentityScopeAllowsPath } from '../lib/securityCheckpoint'
+import {
+  publishSharedIdentityBrowserEvent,
+  subscribeToSharedIdentityBrowserEvents,
+} from '../lib/sharedIdentityBrowserSync'
 import {
   clearSharedIdentitySession,
-  getSharedIdentitySessionToken,
+  clearSharedIdentityServerSession,
+  getSharedIdentitySessionScope,
   hydrateSharedIdentitySession,
+  sharedIdentityRefreshDelayMs,
 } from '../lib/sharedIdentitySession'
 
 const INACTIVITY_WARNING_MS = 55 * 60 * 1000
@@ -162,10 +168,9 @@ export function AppShell() {
   const [accountRefreshVersion, setAccountRefreshVersion] = useState(0)
   const [theme, setTheme] = useState<SygShiftTheme>(getCurrentTheme)
   const activeMutationCount = useIsMutating()
+  const location = useLocation()
   const internalHistoryRef = useRef<InternalNavigationEntry[]>(parseInternalHistory(window.sessionStorage.getItem(INTERNAL_NAVIGATION_STORAGE_KEY)))
   const previousScrollRef = useRef(0)
-  const location = useLocation()
-  const initialSharedIdentityRouteRef = useRef(isSygSpherePath(location.pathname))
   const navigate = useNavigate()
   const payrollReminderWeek = lastCompletedPayrollWeek()
   const showPayrollReminder = shouldShowPayrollExportReminder(sessionContext)
@@ -288,12 +293,12 @@ export function AppShell() {
     return routeMaintenanceFeature ? window.featureCodes.includes(routeMaintenanceFeature) : false
   }) ?? null
 
-  const hasRouteScopedSharedAssurance = isSygSpherePath(location.pathname)
-    && Boolean(getSharedIdentitySessionToken())
+  const sharedIdentityScope = getSharedIdentitySessionScope()
+  const sharedIdentityScopePermitsRoute = sharedIdentityScopeAllowsPath(location.pathname, sharedIdentityScope)
   const needsSecurityCheckpoint = requiresSecurityCheckpoint(
     sessionContext,
     location.pathname,
-    hasRouteScopedSharedAssurance,
+    sharedIdentityScope,
   )
   const isAccountSecurityRoute = location.pathname === '/account-security'
   const lacksRouteAccess = Boolean(
@@ -304,12 +309,12 @@ export function AppShell() {
     && new URLSearchParams(location.search).get('mode') === 'password-recovery'
   const completedSignInKind = passwordRecoverySession
     ? null
-    : completedSignInRecordKind(sessionContext, location.pathname, hasRouteScopedSharedAssurance)
+    : completedSignInRecordKind(sessionContext, location.pathname, sharedIdentityScope)
 
   useEffect(() => {
     if (!isSupabaseConfigured || !completedSignInKind || !authSessionId) return
     const abortController = new AbortController()
-    void recordCompletedSignInWithRetry(completedSignInKind === 'sygsphere', {
+    void recordCompletedSignInWithRetry(completedSignInKind, {
       signal: abortController.signal,
     }).catch((error: unknown) => {
       if (!abortController.signal.aborted) {
@@ -396,6 +401,8 @@ export function AppShell() {
   useEffect(() => {
     let active = true
     let authSubscription: { unsubscribe: () => void } | null = null
+    let sharedIdentityRefreshTimer: number | undefined
+    let unsubscribeSharedBrowserEvents: () => void = () => undefined
 
     if (!isSupabaseConfigured) {
       setAuthLoading(false)
@@ -405,18 +412,78 @@ export function AppShell() {
       }
     }
 
-    async function loadSessionContext(showLoading = true, restoreSharedSession = false) {
+    function clearSharedIdentityRefreshTimer() {
+      if (sharedIdentityRefreshTimer) window.clearTimeout(sharedIdentityRefreshTimer)
+      sharedIdentityRefreshTimer = undefined
+    }
+
+    function tearDownSharedIdentitySession(message: string | null, notifyOtherTabs: boolean) {
+      clearSharedIdentityRefreshTimer()
+      deactivateSharedIdentitySupabaseSession()
+      clearSharedIdentitySession()
+      setAuthSessionId(null)
+      setSessionContext(null)
+      setAuthMessage(message)
+      setAuthLoading(false)
+      if (notifyOtherTabs) publishSharedIdentityBrowserEvent('cleared')
+    }
+
+    function scheduleSharedIdentityRestore(accessToken: string) {
+      clearSharedIdentityRefreshTimer()
+      sharedIdentityRefreshTimer = window.setTimeout(() => {
+        void loadSessionContext(false, true, true)
+      }, sharedIdentityRefreshDelayMs(accessToken))
+    }
+
+    async function restoreSharedIdentitySession(notifyOtherTabs: boolean): Promise<boolean> {
+      const previouslyShared = getSharedIdentitySessionScope() !== null
+      let restored
+      try {
+        restored = await hydrateSharedIdentitySession()
+      } catch {
+        if (previouslyShared) {
+          tearDownSharedIdentitySession(
+            'Your secure shared session could not be renewed. Open SygShift from Sygilant again or sign in directly.',
+            notifyOtherTabs,
+          )
+        }
+        return false
+      }
+      if (!active) return false
+      if (!restored) {
+        if (previouslyShared) tearDownSharedIdentitySession(null, notifyOtherTabs)
+        return false
+      }
+      if (restored.scope === 'sygsphere' && !isSygSpherePath(window.location.pathname)) {
+        await clearSharedIdentityServerSession(restored.accessToken)
+        tearDownSharedIdentitySession(null, notifyOtherTabs)
+        return false
+      }
+      try {
+        await activateSharedIdentitySupabaseSession(restored.accessToken, restored.refreshToken)
+      } catch {
+        await clearSharedIdentityServerSession(restored.accessToken)
+        tearDownSharedIdentitySession(
+          'The shared SygShift session could not be established. Sign in directly or retry from Sygilant.',
+          notifyOtherTabs,
+        )
+        return false
+      }
+      scheduleSharedIdentityRestore(restored.accessToken)
+      if (notifyOtherTabs) publishSharedIdentityBrowserEvent('updated')
+      return true
+    }
+
+    async function loadSessionContext(
+      showLoading = true,
+      restoreSharedSession = false,
+      notifyOtherTabs = false,
+    ) {
       if (showLoading) setAuthLoading(true)
       setAuthMessage(null)
 
-      if (restoreSharedSession && initialSharedIdentityRouteRef.current) {
-        const restored = await hydrateSharedIdentitySession().catch(() => null)
-        if (restored) {
-          await activateSharedIdentitySupabaseSession(restored.accessToken, restored.refreshToken).catch(() => {
-            clearSharedIdentitySession()
-            deactivateSharedIdentitySupabaseSession()
-          })
-        }
+      if (restoreSharedSession) {
+        await restoreSharedIdentitySession(notifyOtherTabs)
       }
       const { data } = await getSupabaseClient().auth.getSession()
       if (!active) return
@@ -434,7 +501,13 @@ export function AppShell() {
         const context = await getSessionContext()
         if (active) setSessionContext(context)
       } catch {
-        await signOut()
+        const wasShared = getSharedIdentitySessionScope() !== null
+        if (wasShared) {
+          await clearSharedIdentityServerSession(data.session.access_token)
+          tearDownSharedIdentitySession(null, true)
+        } else {
+          await signOut()
+        }
         if (active) {
           setSessionContext(null)
           setAuthMessage('Your account is not linked to an active SygShift employee record.')
@@ -448,6 +521,7 @@ export function AppShell() {
       await loadSessionContext(true, true)
       if (!active) return
       const { data: { subscription } } = getSupabaseClient().auth.onAuthStateChange((_event, session) => {
+        if (getSharedIdentitySessionScope()) return
         setAuthSessionId(session ? authSessionIdFromAccessToken(session.access_token) : null)
         if (!session) {
           for (const key of ['support', 'my-notifications', 'notification-device-session', 'notification-device-push', 'sygsphere']) {
@@ -468,6 +542,21 @@ export function AppShell() {
       authSubscription = subscription
     })()
 
+    unsubscribeSharedBrowserEvents = subscribeToSharedIdentityBrowserEvents((action) => {
+      if (action === 'cleared') {
+        if (getSharedIdentitySessionScope()) tearDownSharedIdentitySession(null, false)
+        return
+      }
+      void loadSessionContext(false, true)
+    })
+
+    const restoreVisibleSharedSession = () => {
+      if (document.visibilityState === 'visible' && getSharedIdentitySessionScope()) {
+        void loadSessionContext(false, true, true)
+      }
+    }
+    document.addEventListener('visibilitychange', restoreVisibleSharedSession)
+
     const refreshSecurityContext = () => {
       setAccountRefreshVersion((current) => current + 1)
       void loadSessionContext(false)
@@ -476,7 +565,10 @@ export function AppShell() {
 
     return () => {
       active = false
+      clearSharedIdentityRefreshTimer()
       authSubscription?.unsubscribe()
+      unsubscribeSharedBrowserEvents()
+      document.removeEventListener('visibilitychange', restoreVisibleSharedSession)
       window.removeEventListener(SESSION_CONTEXT_REFRESH_EVENT, refreshSecurityContext)
     }
   }, [queryClient])
@@ -617,6 +709,10 @@ export function AppShell() {
 
   if (isSupabaseConfigured && !sessionContext) {
     return <Navigate to="/login" replace state={{ from: location }} />
+  }
+
+  if (isSupabaseConfigured && !sharedIdentityScopePermitsRoute) {
+    return <Navigate to="/sygsphere" replace />
   }
 
   if (isSupabaseConfigured && needsSecurityCheckpoint && !isAccountSecurityRoute) {

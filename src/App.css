@@ -11147,6 +11147,29 @@ a.home-metric-card:focus-visible {
   font-size: 16px;
 }
 
+.shared-identity-callback__actions {
+  display: flex;
+  width: min(100%, 520px);
+  align-items: stretch;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.shared-identity-callback__actions .primary-action,
+.shared-identity-callback__actions .secondary-button {
+  min-height: 48px;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 560px) {
+  .shared-identity-callback__actions {
+    flex-direction: column;
+  }
+}
+
 .login-card__brand {
   display: flex;
   min-height: 150px;

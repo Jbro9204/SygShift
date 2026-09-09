@@ -97,12 +97,14 @@ describe('completed sign-in activity', () => {
     supabaseMock.client.rpc.mockResolvedValue({ data: null, error: null })
   })
 
-  it('records native and shared SygSphere sessions through separate guarded RPCs', async () => {
+  it('records native, platform, and SygSphere sessions through separate guarded RPCs', async () => {
     await recordCompletedSignIn()
-    await recordCompletedSignIn(true)
+    await recordCompletedSignIn('platform')
+    await recordCompletedSignIn('sygsphere')
 
     expect(supabaseMock.client.rpc).toHaveBeenNthCalledWith(1, 'record_completed_sign_in')
-    expect(supabaseMock.client.rpc).toHaveBeenNthCalledWith(2, 'sygsphere_record_completed_sign_in')
+    expect(supabaseMock.client.rpc).toHaveBeenNthCalledWith(2, 'platform_record_completed_sign_in')
+    expect(supabaseMock.client.rpc).toHaveBeenNthCalledWith(3, 'sygsphere_record_completed_sign_in')
   })
 
   it('does not silently accept a failed activity record', async () => {
@@ -120,7 +122,7 @@ describe('completed sign-in activity', () => {
       .mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'schema cache refreshing' }, status: 404 })
       .mockResolvedValueOnce({ data: null, error: null, status: 200 })
 
-    await recordCompletedSignInWithRetry(false, { retryDelaysMs: [0, 0] })
+    await recordCompletedSignInWithRetry('native', { retryDelaysMs: [0, 0] })
 
     expect(supabaseMock.client.rpc).toHaveBeenCalledTimes(2)
     expect(supabaseMock.client.rpc).toHaveBeenNthCalledWith(1, 'record_completed_sign_in')
@@ -134,7 +136,7 @@ describe('completed sign-in activity', () => {
       status: 403,
     })
 
-    await expect(recordCompletedSignInWithRetry(false, {
+    await expect(recordCompletedSignInWithRetry('native', {
       maxAttempts: 4,
       retryDelaysMs: [0],
     })).rejects.toThrow('could not be recorded')

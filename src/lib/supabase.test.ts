@@ -51,6 +51,25 @@ describe('supabase browser configuration', () => {
     expect(new Headers(payroll?.headers).has('x-sygshift-shared-identity')).toBe(false)
   })
 
+  it('sends platform assurance to SygShift data and storage surfaces', () => {
+    setSharedIdentitySession(
+      'shared-token'.repeat(5),
+      new Date(Date.now() + 60_000).toISOString(),
+      false,
+      'platform',
+    )
+
+    const context = attachTrustedDeviceHeader('https://project.supabase.co/rest/v1/rpc/get_session_context')
+    const payroll = attachTrustedDeviceHeader('https://project.supabase.co/rest/v1/rpc/get_payroll_workspace')
+    const document = attachTrustedDeviceHeader('https://project.supabase.co/storage/v1/object/authenticated/hr-documents/report.pdf')
+    const auth = attachTrustedDeviceHeader('https://project.supabase.co/auth/v1/user')
+
+    expect(new Headers(context?.headers).has('x-sygshift-shared-identity')).toBe(true)
+    expect(new Headers(payroll?.headers).has('x-sygshift-shared-identity')).toBe(true)
+    expect(new Headers(document?.headers).has('x-sygshift-shared-identity')).toBe(true)
+    expect(new Headers(auth?.headers).has('x-sygshift-shared-identity')).toBe(false)
+  })
+
   it('keeps a cross-platform Supabase session in memory instead of Web Storage', () => {
     window.localStorage.clear()
     window.sessionStorage.clear()
@@ -66,4 +85,5 @@ describe('supabase browser configuration', () => {
     expect(window.localStorage.length).toBe(0)
     expect(window.sessionStorage.length).toBe(0)
   })
+
 })

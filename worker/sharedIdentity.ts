@@ -4,7 +4,10 @@ const finalizationPath = '/api/v1/auth/shared-identity/finalize'
 const sessionPath = '/api/v1/auth/shared-identity/session'
 const sessionLogoutPath = '/api/v1/auth/shared-identity/session/logout'
 const callbackPath = '/auth/shared-identity/callback'
-const destination = '/sygsphere'
+const launchScopes = {
+  '/': 'platform',
+  '/sygsphere': 'sygsphere',
+} as const
 const launchCookie = '__Host-sygshift-shared-launch'
 const ticketCookie = '__Host-sygshift-shared-ticket'
 const bootstrapCookie = '__Host-sygshift-shared-bootstrap'
@@ -16,6 +19,9 @@ const assuranceLevels = new Set(['aal2', 'security_key', 'trusted_device', 'exte
 const redirectStatuses = new Set([301, 302, 303, 307, 308])
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
+
+type SharedIdentityDestination = keyof typeof launchScopes
+type SharedIdentityScope = (typeof launchScopes)[SharedIdentityDestination]
 
 export type SharedIdentityEnvironment = {
   SUPABASE_PUBLISHABLE_KEY?: string
@@ -45,7 +51,7 @@ type SharedIdentityConfiguration = {
 type SharedIdentity = {
   applicationId: 'sygshift'
   assuranceLevel: 'aal2' | 'security_key' | 'trusted_device' | 'external_mfa'
-  destination: '/sygsphere'
+  destination: SharedIdentityDestination
   expiresAt: string
   externalEmployeeId: string
   externalSubjectId: string
@@ -64,6 +70,7 @@ type LocalIdentity = {
 type SharedIdentityTicket = {
   assuranceLevel: SharedIdentity['assuranceLevel']
   authUserId: string
+  destination?: SharedIdentityDestination
   employeeId: string
   expiresAt: string
   nonce: string
@@ -82,11 +89,13 @@ type SharedIdentitySessionEnvelope = {
   accessTokenExpiresAt: string
   authSessionId: string
   authUserId: string
+  destination?: SharedIdentityDestination
   employeeId: string
   expiresAt: string
   persistent: boolean
   refreshToken: string
   sessionToken: string
+  scope?: SharedIdentityScope
 }
 
 class SharedIdentityError extends Error {
@@ -109,6 +118,13 @@ export async function handleSharedIdentityRequest(
 ): Promise<Response | null> {
   const path = new URL(request.url).pathname
   if (![launchPath, completionPath, finalizationPath, sessionPath, sessionLogoutPath].includes(path)) return null
+
+  if (environment.SYGSHIFT_SHARED_IDENTITY_ENABLED?.trim().toLowerCase() !== 'true') {
+    const disabled = path === sessionPath || path === sessionLogoutPath
+      ? responseEmpty(204)
+      : responseJson({ error: 'shared_identity_disabled', detail: 'Shared access is not enabled.', requestId }, 503)
+    return clearAllSharedIdentityCookies(disabled)
+  }
 
   try {
     const config = configuration(environment)
@@ -136,7 +152,10 @@ export async function handleSharedIdentityRequest(
         status: failure.status,
       }))
     }
-    return responseJson({ error: failure.code, detail: failure.message, requestId }, failure.status)
+    const response = responseJson({ error: failure.code, detail: failure.message, requestId }, failure.status)
+    return path === sessionPath || path === sessionLogoutPath
+      ? clearAllSharedIdentityCookies(response)
+      : response
   }
 }
 
@@ -182,11 +201,22 @@ async function receiveLaunch(request: Request, config: SharedIdentityConfigurati
 
   const text = await boundedText(request, 4096)
   const form = new URLSearchParams(text)
-  if ([...form.keys()].some((key) => key !== 'assertion' && key !== 'destination')) {
+  const keys = [...form.keys()]
+  const requestedDestination = clean(form.get('destination'))
+  const assertion = form.get('assertion')?.trim() ?? ''
+  if (
+    keys.length !== 2
+    || keys.some((key) => key !== 'assertion' && key !== 'destination')
+    || form.getAll('assertion').length !== 1
+    || form.getAll('destination').length !== 1
+  ) {
     throw new SharedIdentityError('invalid_shared_identity_request', 400, 'The shared access request contained unexpected fields.')
   }
-  const assertion = form.get('assertion')?.trim() ?? ''
-  if (form.get('destination') !== destination || !assertionPattern.test(assertion)) {
+  if (
+    !isSharedIdentityDestination(requestedDestination)
+    || !assertionPattern.test(assertion)
+    || readUnverifiedAssertionDestination(assertion) !== requestedDestination
+  ) {
     throw new SharedIdentityError('invalid_shared_identity_request', 400, 'The shared access request was invalid.')
   }
 
@@ -252,6 +282,8 @@ async function finalizeLaunch(request: Request, config: SharedIdentityConfigurat
     throw new SharedIdentityError('shared_identity_subject_mismatch', 403, 'The shared session identity is no longer active.')
   }
 
+  const destination = ticket.destination ?? '/sygsphere'
+  const scope = launchScopes[destination]
   const sessionToken = generateOpaqueToken()
   const persistent = ticket.assuranceLevel === 'trusted_device'
   const expiresAt = new Date(Date.now() + (persistent ? 14 * 24 * 60 * 60 * 1000 : 12 * 60 * 60 * 1000)).toISOString()
@@ -263,6 +295,7 @@ async function finalizeLaunch(request: Request, config: SharedIdentityConfigurat
     target_expires_at: expiresAt,
     target_launch_request_id: ticket.requestId,
     target_request_id: requestId,
+    target_scope: scope,
     target_token_hash: await sha256Hex(sessionToken),
   }, config)
 
@@ -271,16 +304,19 @@ async function finalizeLaunch(request: Request, config: SharedIdentityConfigurat
     accessTokenExpiresAt: bootstrap.expiresAt,
     authSessionId,
     authUserId: ticket.authUserId,
+    destination,
     employeeId: ticket.employeeId,
     expiresAt,
     persistent,
     refreshToken: bootstrap.refreshToken,
     sessionToken,
+    scope,
   } satisfies SharedIdentitySessionEnvelope, config.sessionSecret)
   const response = responseJson({
     destination,
     expiresAt,
     persistent,
+    scope,
     sharedIdentityToken: sessionToken,
     supabaseSession: {
       accessToken: bootstrap.accessToken,
@@ -305,7 +341,8 @@ async function restoreSharedSession(request: Request, config: SharedIdentityConf
   const cookieValue = readCookie(request, sessionCookie)
   if (!cookieValue) return responseEmpty(204)
   const shared = await decryptEnvelope<SharedIdentitySessionEnvelope>(cookieValue, config.sessionSecret)
-  if (!validSharedSessionEnvelope(shared)) {
+  const scope = shared ? sharedIdentitySessionScope(shared) : null
+  if (!validSharedSessionEnvelope(shared) || !scope) {
     const response = responseEmpty(204)
     response.headers.append('set-cookie', clearCookie(sessionCookie))
     return response
@@ -336,16 +373,18 @@ async function restoreSharedSession(request: Request, config: SharedIdentityConf
     || claims.session_id !== shared.authSessionId
     || typeof claims.exp !== 'number'
     || claims.exp * 1000 <= Date.now()
-    || !await verifySharedSession(shared.sessionToken, token, config)
+    || !await verifySharedSession(shared.sessionToken, token, scope, config)
   ) {
     const response = responseEmpty(204)
     response.headers.append('set-cookie', clearCookie(sessionCookie))
     return response
   }
   const response = responseJson({
+    destination: destinationForScope(scope),
     expiresAt: shared.expiresAt,
     persistent: shared.persistent,
     sharedIdentityToken: shared.sessionToken,
+    scope,
     supabaseSession: {
       accessToken: authSession.accessToken,
       refreshToken: authSession.refreshToken,
@@ -392,6 +431,14 @@ async function clearSharedSession(request: Request, config: SharedIdentityConfig
   return response
 }
 
+function clearAllSharedIdentityCookies(response: Response): Response {
+  response.headers.append('set-cookie', clearCookie(sessionCookie))
+  response.headers.append('set-cookie', clearCookie(bootstrapCookie))
+  response.headers.append('set-cookie', clearCookie(ticketCookie))
+  response.headers.append('set-cookie', clearCookie(launchCookie))
+  return response
+}
+
 async function introspectAssertion(assertion: string, config: SharedIdentityConfiguration): Promise<SharedIdentity> {
   const response = await fetchWithProtectedRedirect(config.introspectionUrl, {
     body: JSON.stringify({ assertion }),
@@ -408,7 +455,7 @@ async function introspectAssertion(assertion: string, config: SharedIdentityConf
   const identity = payload?.identity as Partial<SharedIdentity> | undefined
   if (
     identity?.applicationId !== 'sygshift'
-    || identity.destination !== destination
+    || !isSharedIdentityDestination(identity.destination)
     || !uuidPattern.test(identity.externalSubjectId ?? '')
     || identity.profileId !== identity.externalSubjectId
     || !uuidPattern.test(identity.externalEmployeeId ?? '')
@@ -549,14 +596,19 @@ async function refreshSupabaseSession(
     || !Number.isFinite(expiresAtMs)
     || expiresAtMs <= Date.now()
   ) {
-    throw new SharedIdentityError('shared_identity_session_expired', 401, 'The shared SygSphere session expired.')
+    throw new SharedIdentityError('shared_identity_session_expired', 401, 'The shared SygShift session expired.')
   }
   return { accessToken, expiresAt: new Date(expiresAtMs).toISOString(), refreshToken: nextRefreshToken }
 }
 
-async function verifySharedSession(sessionToken: string, accessToken: string, config: SharedIdentityConfiguration): Promise<boolean> {
-  const response = await fetchWithProtectedRedirect(`${config.supabaseUrl}/rest/v1/rpc/has_shared_identity_session`, {
-    body: '{}',
+async function verifySharedSession(
+  sessionToken: string,
+  accessToken: string,
+  scope: SharedIdentityScope,
+  config: SharedIdentityConfiguration,
+): Promise<boolean> {
+  const response = await fetchWithProtectedRedirect(`${config.supabaseUrl}/rest/v1/rpc/has_scoped_shared_identity_session`, {
+    body: JSON.stringify({ target_scope: scope }),
     headers: {
       apikey: config.publishableKey,
       authorization: `Bearer ${accessToken}`,
@@ -667,6 +719,7 @@ async function createTicket(identity: SharedIdentity, config: SharedIdentityConf
   const payload: SharedIdentityTicket = {
     assuranceLevel: identity.assuranceLevel,
     authUserId: identity.externalSubjectId,
+    destination: identity.destination,
     employeeId: identity.externalEmployeeId,
     expiresAt: new Date(Date.now() + 180_000).toISOString(),
     nonce: generateOpaqueToken(24),
@@ -683,18 +736,20 @@ async function verifyTicket(value: string, config: SharedIdentityConfiguration):
   const expected = await hmacHex(encoded, config.sessionSecret)
   if (!constantTimeEqual(signature.toLowerCase(), expected)) return null
   const ticket = decodeJson(encoded) as Partial<SharedIdentityTicket> | null
+  const destination = ticket?.destination ?? '/sygsphere'
   if (
     !ticket
     || !uuidPattern.test(ticket.authUserId ?? '')
     || !uuidPattern.test(ticket.employeeId ?? '')
     || !uuidPattern.test(ticket.requestId ?? '')
     || !/^[a-z][a-z0-9]{1,62}$/.test(ticket.username ?? '')
+    || !isSharedIdentityDestination(destination)
     || !assuranceLevels.has(ticket.assuranceLevel ?? '')
     || !ticket.expiresAt
     || Date.parse(ticket.expiresAt) <= Date.now()
     || Date.parse(ticket.expiresAt) > Date.now() + 185_000
   ) return null
-  return ticket as SharedIdentityTicket
+  return { ...ticket, destination } as SharedIdentityTicket
 }
 
 function accessTokenClaims(token: string): { exp?: number, session_id?: string, sub?: string } {
@@ -727,6 +782,7 @@ function validSharedSessionEnvelope(value: SharedIdentitySessionEnvelope | null)
     && value.accessToken.length <= 10_000
     && value.refreshToken.length >= 8
     && value.refreshToken.length <= 4096
+    && sharedIdentitySessionScope(value) !== null
     && Number.isFinite(accessTokenExpiresAt)
     && uuidPattern.test(value.authSessionId)
     && uuidPattern.test(value.authUserId)
@@ -736,6 +792,28 @@ function validSharedSessionEnvelope(value: SharedIdentitySessionEnvelope | null)
     && Number.isFinite(expiresAt)
     && expiresAt > Date.now()
     && expiresAt <= Date.now() + 14 * 24 * 60 * 60 * 1000 + 300_000
+}
+
+function isSharedIdentityDestination(value: unknown): value is SharedIdentityDestination {
+  return value === '/' || value === '/sygsphere'
+}
+
+function destinationForScope(scope: SharedIdentityScope): SharedIdentityDestination {
+  return scope === 'platform' ? '/' : '/sygsphere'
+}
+
+function sharedIdentitySessionScope(value: SharedIdentitySessionEnvelope): SharedIdentityScope | null {
+  const destination = value.destination ?? '/sygsphere'
+  const scope = value.scope ?? 'sygsphere'
+  if (!isSharedIdentityDestination(destination)) return null
+  return launchScopes[destination] === scope ? scope : null
+}
+
+function readUnverifiedAssertionDestination(assertion: string): string {
+  const encoded = assertion.split('.')[1] ?? ''
+  const payload = decodeJson(encoded)
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return ''
+  return clean((payload as { destination?: unknown }).destination)
 }
 
 async function boundedText(request: Request, maximumBytes: number): Promise<string> {
