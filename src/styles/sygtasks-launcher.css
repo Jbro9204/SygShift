@@ -1,0 +1,211 @@
+.sygtasks-launcher-shell {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.sygtasks-launcher {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 64px;
+  min-height: 64px;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 12px;
+  color: #f5d986;
+  background:
+    linear-gradient(120deg, rgb(227 173 59 / 13%), transparent 46%),
+    #0c0d0d;
+  border: 1px solid #c89637;
+  border-radius: 15px;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 3%),
+    0 6px 18px rgb(0 0 0 / 20%);
+  text-decoration: none;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.sygtasks-launcher:hover,
+.sygtasks-launcher:focus-visible {
+  border-color: #f5d986;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 6%),
+    0 0 0 3px rgb(227 173 59 / 15%),
+    0 8px 22px rgb(0 0 0 / 26%);
+  transform: translateY(-1px);
+}
+
+.sygtasks-launcher:focus-visible {
+  outline: 2px solid #f5d986;
+  outline-offset: 2px;
+}
+
+.sygtasks-launcher:active {
+  transform: translateY(0);
+}
+
+.sygtasks-launcher--active {
+  border-color: #f5d986;
+  background:
+    linear-gradient(120deg, rgb(227 173 59 / 22%), transparent 50%),
+    #11100d;
+  box-shadow:
+    inset 3px 0 0 #e3ad3b,
+    inset 0 0 0 1px rgb(255 255 255 / 5%),
+    0 0 0 2px rgb(227 173 59 / 12%),
+    0 8px 22px rgb(0 0 0 / 25%);
+}
+
+.sygtasks-launcher__brand {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  height: 50px;
+  place-items: center;
+}
+
+.sygtasks-launcher__brand img {
+  display: block;
+  width: min(100%, 205px);
+  max-height: 39px;
+  object-fit: contain;
+}
+
+.sygtasks-launcher__brand small {
+  color: #dfbd73;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  line-height: 1;
+  text-align: center;
+}
+
+.sygtasks-launcher__emblem {
+  display: none;
+}
+
+.sygtasks-launcher__tooltip {
+  position: absolute;
+  z-index: 50;
+  top: 50%;
+  left: calc(100% + 10px);
+  width: max-content;
+  max-width: 220px;
+  padding: 8px 11px;
+  color: #f7f4ec;
+  background: #151718;
+  border: 1px solid #c89637;
+  border-radius: 9px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 36%);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(4px, -50%);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms ease;
+  visibility: hidden;
+}
+
+.sidebar--collapsed .sygtasks-launcher-shell {
+  width: 48px;
+}
+
+.sidebar--collapsed .sygtasks-launcher {
+  width: 48px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
+  border-radius: 13px;
+}
+
+.sidebar--collapsed .sygtasks-launcher__brand {
+  display: none;
+}
+
+.sidebar--collapsed .sygtasks-launcher__emblem {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+}
+
+.sidebar--collapsed .sygtasks-launcher__emblem img {
+  display: block;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.sidebar--collapsed .sygtasks-launcher:hover .sygtasks-launcher__tooltip,
+.sidebar--collapsed .sygtasks-launcher:focus-visible .sygtasks-launcher__tooltip {
+  opacity: 1;
+  transform: translate(0, -50%);
+  visibility: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sygtasks-launcher,
+  .sygtasks-launcher__tooltip {
+    transition: none;
+  }
+}
+
+@media (max-height: 520px) {
+  .sidebar .sidebar-brand,
+  .sidebar.sidebar--collapsed .sidebar-brand {
+    height: 88px;
+    min-height: 88px;
+    flex-basis: 88px;
+    padding-block: 8px 5px;
+  }
+
+  .sidebar .sidebar-brand img,
+  .sidebar.sidebar--collapsed .sidebar-brand img {
+    width: 170px;
+    transform: translateY(9px);
+  }
+
+  .sidebar .sidebar-navigation {
+    padding-block: 6px;
+  }
+
+  .sidebar .sidebar-utilities {
+    gap: 5px;
+    padding: 6px 10px 8px;
+  }
+
+  .sidebar-utilities .sygtasks-launcher,
+  .sidebar-utilities .platform-launcher,
+  .sidebar-utilities .sphere-launcher {
+    height: 48px;
+    min-height: 48px;
+    padding-block: 4px;
+  }
+
+  .sidebar-utilities .sygtasks-launcher__brand,
+  .sidebar-utilities .platform-launcher__brand {
+    height: 40px;
+  }
+
+  .sidebar-utilities .sygtasks-launcher__brand img {
+    max-height: 30px;
+  }
+
+  .sidebar-utilities .support-help-button {
+    min-height: 44px;
+    padding-block: 8px;
+  }
+
+  .sidebar-utilities > .system-status-indicator {
+    min-height: 40px;
+    padding-block: 6px;
+  }
+}

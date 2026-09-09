@@ -27,7 +27,7 @@ export function ModalDialog({ busy = false, busyLabel = 'Saving changes...', chi
     dialog.showModal()
     const focusFrame = window.requestAnimationFrame(() => {
       dialog.scrollTop = 0
-      const initialControl = dialog.querySelector<HTMLElement>('[autofocus]')
+      const initialControl = dialog.querySelector<HTMLElement>('[data-dialog-autofocus], [autofocus]')
       initialControl?.focus({ preventScroll: true })
     })
     return () => {

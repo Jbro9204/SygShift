@@ -1,170 +1,75 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { ClipboardList, Plus, RefreshCw, Settings2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Archive, Bell, BellOff, Check, CheckCircle2, ChevronRight, Circle, ClipboardList, Columns3, History, List, MessageSquare, Plus, RefreshCw, Search, Settings2, Tag, Users } from 'lucide-react'
-import { ModalDialog } from '../components/ModalDialog'
-import { formatSygTaskPriority, formatSygTaskStatus, getSygTasksWorkspace, mutateSygTasks, sygTaskPath, sygTaskPriorities, sygTaskStatuses, type SygTask, type SygTaskAction, type SygTaskDetail, type SygTaskPriority, type SygTaskStatus, type SygTasksWorkspace } from '../data/sygtasks'
+import {
+  createSygTask,
+  formatSygTaskStatus,
+  getSygTasksWorklist,
+  getSygTasksWorkspace,
+  mutateSygTasks,
+  sygTaskPath,
+  type CreateSygTaskInput,
+  type SygTask,
+  type SygTaskAction,
+  type SygTaskPriority,
+  type SygTaskStatus,
+  type SygTasksWorklistSummary,
+  type SygTasksWorkspace,
+} from '../data/sygtasks'
 import { getSupabaseClient } from '../lib/supabase'
+import {
+  BoardRail,
+  KanbanBoard,
+  SygTasksHeader,
+  SygTasksPrimaryTabs,
+  SygTasksSummary,
+  TaskTable,
+  TaskToolbar,
+  TasksEmptyState,
+  WorklistPagination,
+  type SygTasksMode,
+  type SygTasksView,
+} from '../components/sygtasks/SygTasksElements'
+import {
+  BoardSettingsDialog,
+  CreateBoardDialog,
+  CreateTaskDialog,
+  SygTasksErrorNotice,
+  SygTasksSuccessNotice,
+  TaskDetailDialog,
+} from '../components/sygtasks/SygTasksDialogs'
 import '../styles/sygtasks.css'
 
-type WorkspaceMode = 'my-work' | 'boards'
-type BoardView = 'kanban' | 'list'
-const formatSTaskStatus = formatSygTaskStatus
-
-function ErrorNotice({ error }: { error: unknown }) {
-  if (!error) return null
-  return <p className="sygtasks-notice sygtasks-notice--error" role="alert">{error instanceof Error ? error.message : 'SygTasks could not complete this request.'}</p>
+const emptySummary: SygTasksWorklistSummary = {
+  accessibleBoards: 0,
+  current: 0,
+  dueToday: 0,
+  inProgress: 0,
+  upcoming: 0,
+  completedThisMonth: 0,
+  timezone: 'America/Denver',
+  asOf: new Date(0).toISOString(),
 }
 
-function SuccessNotice({ message }: { message: string | null }) {
-  return message ? <p className="sygtasks-notice sygtasks-notice--success" role="status">{message}</p> : null
+function uniqueTasks(pages: SygTasksWorkspace[] | undefined) {
+  const seen = new Set<string>()
+  return (pages?.flatMap((workspace) => workspace.tasks) ?? []).filter((task) => !seen.has(task.id) && Boolean(seen.add(task.id)))
 }
 
-function TaskStatus({ status }: { status: SygTaskStatus }) {
-  return <span className={`sygtasks-chip sygtasks-chip--status-${status}`}>{formatSygTaskStatus(status)}</span>
+function useStoredBoardView() {
+  const [view, setViewState] = useState<SygTasksView>(() => {
+    try { return sessionStorage.getItem('sygtasks.board-view') === 'list' ? 'list' : 'kanban' } catch { return 'kanban' }
+  })
+  const setView = (next: SygTasksView) => {
+    setViewState(next)
+    try { sessionStorage.setItem('sygtasks.board-view', next) } catch { /* Browsing remains usable when storage is disabled. */ }
+  }
+  return [view, setView] as const
 }
 
-function TaskPriority({ priority }: { priority: SygTaskPriority }) {
-  return <span className={`sygtasks-chip sygtasks-chip--priority-${priority}`}>{formatSygTaskPriority(priority)}</span>
-}
-
-function formatDue(value: string | null) {
-  if (!value) return 'No due date'
-  const due = new Date(value)
-  if (Number.isNaN(due.valueOf())) return 'No due date'
-  return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Denver', month: '2-digit', day: '2-digit', year: 'numeric' }).format(due)
-}
-
-function dueClass(value: string | null, status: SygTaskStatus) {
-  if (!value || status === 'done' || status === 'canceled') return ''
-  const time = Date.parse(value)
-  if (time < Date.now()) return ' sygtasks-due--late'
-  if (time - Date.now() < 86_400_000) return ' sygtasks-due--soon'
-  return ''
-}
-
-function initials(name: string) {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
-}
-
-function AssigneeStack({ task }: { task: SygTask }) {
-  if (!task.assignees.length) return <span className="sygtasks-unassigned">Unassigned</span>
-  return <span className="sygtasks-avatars" aria-label={`Assigned to ${task.assignees.map((person) => person.name).join(', ')}`}>
-    {task.assignees.slice(0, 3).map((person) => <span key={person.id} aria-hidden="true" title={person.name}>{initials(person.name)}</span>)}
-    {task.assignees.length > 3 ? <span aria-hidden="true">+{task.assignees.length - 3}</span> : null}
-  </span>
-}
-
-function TaskCard({ task, onOpen, onStatus, busy }: { task: SygTask; onOpen: () => void; onStatus: (status: SygTaskStatus) => void; busy: boolean }) {
-  return <article className={`sygtasks-card sygtasks-card--${task.priority}`}>
-    <button type="button" className="sygtasks-card__open" onClick={onOpen} aria-label={`Open ${task.title}`}>
-      <span className="sygtasks-card__labels">{task.labels.map((label) => <span key={label.id} style={{ '--task-label': label.color } as CSSProperties}>{label.name}</span>)}</span>
-      <strong>{task.title}</strong>
-      {task.description ? <span className="sygtasks-card__description">{task.description}</span> : null}
-    </button>
-    <div className="sygtasks-card__meta">
-      <TaskPriority priority={task.priority} />
-      <span className={`sygtasks-due${dueClass(task.dueAt, task.status)}`}>{formatDue(task.dueAt)}</span>
-    </div>
-    <div className="sygtasks-card__footer">
-      <AssigneeStack task={task} />
-      <span aria-label={`${task.checklist.completed} of ${task.checklist.total} checklist items complete`}><CheckCircle2 size={15} /> {task.checklist.completed}/{task.checklist.total}</span>
-      <span aria-label={`${task.commentCount} comments`}><MessageSquare size={15} /> {task.commentCount}</span>
-    </div>
-    {task.canUpdateStatus ? <label className="sygtasks-card__status"><span className="visually-hidden">Change status for {task.title}</span><select value={task.status} disabled={busy} onChange={(event) => onStatus(event.target.value as SygTaskStatus)}>{sygTaskStatuses.map((status) => <option key={status} value={status}>{formatSygTaskStatus(status)}</option>)}</select></label> : <TaskStatus status={task.status} />}
-  </article>
-}
-
-function TaskList({ tasks, onOpen, onStatus, busy }: { tasks: SygTask[]; onOpen: (task: SygTask) => void; onStatus: (task: SygTask, status: SygTaskStatus) => void; busy: boolean }) {
-  if (!tasks.length) return <div className="sygtasks-empty"><ClipboardList size={32} /><h3>No work here yet</h3><p>New and assigned work will appear here.</p></div>
-  return <div className="sygtasks-table-wrap"><table className="sygtasks-table"><thead><tr><th>Task</th><th>Status</th><th>Priority</th><th>Assignees</th><th>Due</th><th>Progress</th></tr></thead><tbody>
-    {tasks.map((task) => <tr key={task.id}>
-      <th scope="row"><button type="button" onClick={() => onOpen(task)}>{task.title}<span>{task.boardName ?? task.description}</span></button></th>
-      <td>{task.canUpdateStatus ? <select aria-label={`Status for ${task.title}`} value={task.status} disabled={busy} onChange={(event) => onStatus(task, event.target.value as SygTaskStatus)}>{sygTaskStatuses.map((status) => <option key={status} value={status}>{formatSygTaskStatus(status)}</option>)}</select> : <TaskStatus status={task.status} />}</td>
-      <td><TaskPriority priority={task.priority} /></td><td><AssigneeStack task={task} /></td>
-      <td><span className={`sygtasks-due${dueClass(task.dueAt, task.status)}`}>{formatDue(task.dueAt)}</span></td>
-      <td>{task.checklist.completed}/{task.checklist.total}</td>
-    </tr>)}
-  </tbody></table></div>
-}
-
-function FormField({ label, optional, children }: { label: string; optional?: boolean; children: ReactNode }) {
-  return <label className="sygtasks-field"><span>{label}{optional ? <small>Optional</small> : null}</span>{children}</label>
-}
-
-function CreateBoardDialog({ allowShared, busy, error, onClose, onSubmit }: { allowShared: boolean; busy: boolean; error: unknown; onClose: () => void; onSubmit: (input: { name: string; description: string; scope: 'personal' | 'team' | 'company' }) => void }) {
-  const [scope, setScope] = useState<'personal' | 'team' | 'company'>('personal')
-  return <ModalDialog className="sygtasks-dialog" title="Create a SygTasks board" eyebrow="New workspace" description="Organize personal work or coordinate a shared team." busy={busy} onClose={onClose}>
-    <form onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); onSubmit({ name: String(data.get('name') ?? ''), description: String(data.get('description') ?? ''), scope }) }}>
-      <div className="sygtasks-form-grid"><FormField label="Board name"><input name="name" required maxLength={120} autoFocus /></FormField><FormField label="Who is this for?"><select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}><option value="personal">Just me</option>{allowShared ? <><option value="team">A team</option><option value="company">The company</option></> : null}</select></FormField></div>
-      <FormField label="Description" optional><textarea name="description" maxLength={2000} rows={4} /></FormField>
-      <ErrorNotice error={error} /><div className="sygtasks-dialog__actions"><button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" disabled={busy}>{busy ? 'Creating…' : 'Create board'}</button></div>
-    </form>
-  </ModalDialog>
-}
-
-function CreateTaskDialog({ boardName, busy, error, onClose, onSubmit }: { boardName: string; busy: boolean; error: unknown; onClose: () => void; onSubmit: (input: { title: string; description: string; status: SygTaskStatus; priority: SygTaskPriority; dueAt: string | null }) => void }) {
-  return <ModalDialog className="sygtasks-dialog" title="Create a task" eyebrow={boardName} description="Give the work a clear owner, outcome, and due date." busy={busy} onClose={onClose}>
-    <form onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const due = String(data.get('dueAt') ?? ''); onSubmit({ title: String(data.get('title') ?? ''), description: String(data.get('description') ?? ''), status: String(data.get('status')) as SygTaskStatus, priority: String(data.get('priority')) as SygTaskPriority, dueAt: due ? new Date(due).toISOString() : null }) }}>
-      <FormField label="Task title"><input name="title" required maxLength={240} autoFocus /></FormField>
-      <FormField label="Description" optional><textarea name="description" maxLength={10000} rows={5} placeholder="What needs to be completed? Include the outcome and any important context." /></FormField>
-      <div className="sygtasks-form-grid"><FormField label="Starting status"><select name="status" defaultValue="backlog">{sygTaskStatuses.map((status) => <option key={status} value={status}>{formatSygTaskStatus(status)}</option>)}</select></FormField><FormField label="Priority"><select name="priority" defaultValue="routine">{sygTaskPriorities.map((priority) => <option key={priority} value={priority}>{formatSygTaskPriority(priority)}</option>)}</select></FormField><FormField label="Due date and time" optional><input name="dueAt" type="datetime-local" /></FormField></div>
-      <ErrorNotice error={error} /><div className="sygtasks-dialog__actions"><button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" disabled={busy}>{busy ? 'Creating…' : 'Create task'}</button></div>
-    </form>
-  </ModalDialog>
-}
-
-interface DetailProps {
-  workspace: SygTasksWorkspace
-  detail: SygTaskDetail
-  busy: boolean
-  error: unknown
-  onClose: () => void
-  act: (action: SygTaskAction, payload: Record<string, unknown>, expectedVersion?: number) => Promise<void>
-}
-
-function TaskDetailDialog({ workspace, detail, busy, error, onClose, act }: DetailProps) {
-  const [section, setSection] = useState<'overview' | 'people' | 'checklist' | 'comments' | 'activity'>('overview')
-  const [editing, setEditing] = useState(false)
-  const assigned = new Set(detail.assignees.map((person) => person.id))
-  const appliedLabels = new Set(detail.labels.map((label) => label.id))
-  const dependencyIds = new Set(detail.dependencies.map((dependency) => dependency.taskId))
-  const boardCandidates = workspace.tasks.filter((task) => task.id !== detail.id && !dependencyIds.has(task.id))
-  const dueInput = detail.dueAt ? new Date(detail.dueAt).toISOString().slice(0, 16) : ''
-  return <ModalDialog className="sygtasks-detail-dialog" title={detail.title} eyebrow={`${workspace.selectedBoard?.name ?? 'SygTasks'} · ${formatSygTaskStatus(detail.status)}`} description={`${formatSygTaskPriority(detail.priority)} priority · Updated ${formatDue(detail.updatedAt)}`} busy={busy} onClose={onClose}>
-    <nav className="sygtasks-detail-tabs" aria-label="Task details">{([['overview', 'Overview'], ['people', 'People'], ['checklist', 'Checklist'], ['comments', `Comments (${detail.commentCount})`], ['activity', 'Activity']] as const).map(([value, label]) => <button type="button" key={value} aria-current={section === value ? 'page' : undefined} onClick={() => setSection(value)}>{label}</button>)}</nav>
-    <ErrorNotice error={error} />
-    {section === 'overview' ? <div className="sygtasks-detail-section">
-      {editing && detail.canEdit ? <form onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const due = String(data.get('dueAt') ?? ''); void act('update_task', { taskId: detail.id, title: String(data.get('title') ?? ''), description: String(data.get('description') ?? ''), status: data.get('status'), priority: data.get('priority'), dueAt: due ? new Date(due).toISOString() : null }, detail.version).then(() => setEditing(false)) }}>
-        <FormField label="Task title"><input name="title" defaultValue={detail.title} maxLength={240} required /></FormField>
-        <FormField label="Description" optional><textarea name="description" defaultValue={detail.description} maxLength={10000} rows={6} /></FormField>
-        <div className="sygtasks-form-grid"><FormField label="Status"><select name="status" defaultValue={detail.status}>{sygTaskStatuses.map((status) => <option key={status} value={status}>{formatSygTaskStatus(status)}</option>)}</select></FormField><FormField label="Priority"><select name="priority" defaultValue={detail.priority}>{sygTaskPriorities.map((priority) => <option key={priority} value={priority}>{formatSygTaskPriority(priority)}</option>)}</select></FormField><FormField label="Due date and time" optional><input name="dueAt" type="datetime-local" defaultValue={dueInput} /></FormField></div>
-        <div className="sygtasks-inline-actions"><button type="button" className="secondary-button" onClick={() => setEditing(false)}>Cancel</button><button type="submit" disabled={busy}>Save changes</button></div>
-      </form> : <>
-        <div className="sygtasks-detail-summary"><div><span>Status</span><TaskStatus status={detail.status} /></div><div><span>Priority</span><TaskPriority priority={detail.priority} /></div><div><span>Due</span><strong className={`sygtasks-due${dueClass(detail.dueAt, detail.status)}`}>{formatDue(detail.dueAt)}</strong></div><div><span>Progress</span><strong>{detail.checklist.completed} of {detail.checklist.total}</strong></div></div>
-        <section className="sygtasks-description"><h3>Description</h3><p>{detail.description || 'No description has been added yet.'}</p></section>
-        <div className="sygtasks-inline-actions">{detail.canEdit ? <button type="button" onClick={() => setEditing(true)}>Edit details</button> : null}{detail.canUpdateStatus && !detail.canEdit ? <select aria-label="Update task status" value={detail.status} disabled={busy} onChange={(event) => void act('update_task', { taskId: detail.id, status: event.target.value }, detail.version)}>{sygTaskStatuses.map((status) => <option key={status} value={status}>{formatSygTaskStatus(status)}</option>)}</select> : null}{detail.canEdit ? <button type="button" className="danger-button" disabled={busy} onClick={() => { if (window.confirm('Archive this task? Its history will be preserved.')) void act('archive_task', { taskId: detail.id }, detail.version).then(onClose) }}><Archive size={16} /> Archive</button> : null}</div>
-      </>}
-      <section className="sygtasks-labels"><h3><Tag size={17} /> Labels</h3><div>{workspace.labels.map((label) => <button type="button" key={label.id} className={appliedLabels.has(label.id) ? 'is-active' : ''} style={{ '--task-label': label.color } as CSSProperties} disabled={busy || !detail.canEdit} onClick={() => void act(appliedLabels.has(label.id) ? 'remove_label' : 'apply_label', { taskId: detail.id, labelId: label.id })}>{appliedLabels.has(label.id) ? <Check size={14} /> : null}{label.name}</button>)}</div>{detail.canEdit ? <form className="sygtasks-compact-form" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); void act('create_label', { boardId: detail.boardId, name: data.get('name'), color: data.get('color') }).then(() => event.currentTarget.reset()) }}><input name="name" aria-label="New label name" placeholder="New label" maxLength={50} required /><input name="color" aria-label="Label color" type="color" defaultValue="#d7a944" /><button type="submit" disabled={busy}>Add</button></form> : null}</section>
-      <section className="sygtasks-dependencies"><h3>Dependencies</h3>{detail.dependencies.length ? <ul>{detail.dependencies.map((dependency) => <li key={dependency.id}><span>{dependency.title} <TaskStatus status={dependency.status} /></span>{detail.canEdit ? <button type="button" className="icon-button" aria-label={`Remove dependency ${dependency.title}`} disabled={busy} onClick={() => void act('remove_dependency', { taskId: detail.id, dependsOnTaskId: dependency.taskId })}>×</button> : null}</li>)}</ul> : <p>No dependencies.</p>}{detail.canEdit && boardCandidates.length ? <form className="sygtasks-compact-form" onSubmit={(event) => { event.preventDefault(); const select = event.currentTarget.elements.namedItem('dependency') as HTMLSelectElement; void act('add_dependency', { taskId: detail.id, dependsOnTaskId: select.value }) }}><select name="dependency" aria-label="Task dependency">{boardCandidates.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}</select><button type="submit" disabled={busy}>Add dependency</button></form> : null}</section>
-    </div> : null}
-    {section === 'people' ? <div className="sygtasks-detail-section"><section><h3><Users size={18} /> Assignees</h3><div className="sygtasks-people-grid">{workspace.members.map((member) => <label key={member.employeeId}><input type="checkbox" checked={assigned.has(member.employeeId)} disabled={busy || !detail.canEdit} onChange={() => void act(assigned.has(member.employeeId) ? 'unassign_task' : 'assign_task', { taskId: detail.id, employeeId: member.employeeId })} /><span>{initials(member.name)}</span><strong>{member.name}<small>@{member.username}</small></strong></label>)}</div></section><section><h3>{detail.watching ? <Bell size={18} /> : <BellOff size={18} />} Following this task</h3><p>Followers receive SygShift notifications when important task details change.</p><button type="button" disabled={busy} onClick={() => void act(detail.watching ? 'unwatch_task' : 'watch_task', { taskId: detail.id })}>{detail.watching ? 'Stop following' : 'Follow task'}</button><p className="sygtasks-muted">{detail.watchers.length} follower{detail.watchers.length === 1 ? '' : 's'}: {detail.watchers.map((watcher) => watcher.name).join(', ') || 'None'}</p></section></div> : null}
-    {section === 'checklist' ? <div className="sygtasks-detail-section"><section><h3><CheckCircle2 size={18} /> Checklist</h3><div className="sygtasks-progress"><span style={{ width: `${detail.checklist.total ? (detail.checklist.completed / detail.checklist.total) * 100 : 0}%` }} /></div><ul className="sygtasks-checklist">{detail.checklistItems.map((item) => <li key={item.id}><button type="button" className="icon-button" aria-label={`${item.completedAt ? 'Mark incomplete' : 'Mark complete'}: ${item.title}`} disabled={busy || !detail.canEdit} onClick={() => void act('update_checklist_item', { checklistItemId: item.id, completed: !item.completedAt }, item.version)}>{item.completedAt ? <CheckCircle2 /> : <Circle />}</button><span className={item.completedAt ? 'is-complete' : ''}>{item.title}</span>{detail.canEdit ? <button type="button" className="icon-button" aria-label={`Remove ${item.title}`} onClick={() => void act('archive_checklist_item', { checklistItemId: item.id }, item.version)}>×</button> : null}</li>)}</ul>{detail.canEdit ? <form className="sygtasks-compact-form" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); void act('add_checklist_item', { taskId: detail.id, title: data.get('title') }).then(() => event.currentTarget.reset()) }}><input name="title" placeholder="Add a checklist item" aria-label="Checklist item" maxLength={500} required /><button type="submit" disabled={busy}>Add item</button></form> : null}</section></div> : null}
-    {section === 'comments' ? <div className="sygtasks-detail-section"><section><h3><MessageSquare size={18} /> Discussion</h3><ol className="sygtasks-comments">{detail.comments.map((comment) => <li key={comment.id}><span>{initials(comment.authorName)}</span><div><header><strong>{comment.authorName}</strong><time>{formatDue(comment.createdAt)}{comment.editedAt ? ' · edited' : ''}</time></header><p>{comment.body}</p>{comment.canEdit ? <button type="button" className="text-button" disabled={busy} onClick={() => { const body = window.prompt('Edit comment', comment.body); if (body?.trim()) void act('edit_comment', { commentId: comment.id, body }, comment.version) }}>Edit</button> : null}</div></li>)}</ol><form className="sygtasks-comment-form" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); void act('add_comment', { taskId: detail.id, body: data.get('body') }).then(() => event.currentTarget.reset()) }}><FormField label="Add a comment"><textarea name="body" rows={4} maxLength={5000} required placeholder="Share an update, question, or decision." /></FormField><button type="submit" disabled={busy}>Post comment</button></form></section></div> : null}
-    {section === 'activity' ? <div className="sygtasks-detail-section"><section><h3><History size={18} /> Activity</h3><ol className="sygtasks-activity">{detail.activity.map((item) => <li key={item.id}><span /><div><strong>{item.actorName}</strong> {item.action.replaceAll('.', ' ')}<time>{formatDue(item.createdAt)}</time></div></li>)}</ol></section></div> : null}
-  </ModalDialog>
-}
-
-function BoardSettingsDialog({ workspace, busy, error, onClose, act }: { workspace: SygTasksWorkspace; busy: boolean; error: unknown; onClose: () => void; act: DetailProps['act'] }) {
-  const board = workspace.selectedBoard
-  if (!board) return null
-  return <ModalDialog className="sygtasks-dialog" title="Board settings" eyebrow={board.name} description={board.scope === 'personal' ? 'This private board belongs only to you.' : 'Manage the board and who can work in it.'} busy={busy} onClose={onClose}>
-    <ErrorNotice error={error} />
-    {board.scope === 'personal'
-      ? <section className="sygtasks-personal-board-notice"><h3>Private to you</h3><p>Only you can find, open, change, follow, or receive updates from this board and its tasks. To coordinate with other people, use a team board.</p></section>
-      : <section><h3>Members</h3><div className="sygtasks-member-admin">{workspace.availableMembers.map((member) => <div key={member.employeeId}><span>{initials(member.name)}</span><strong>{member.name}<small>@{member.username}</small></strong>{member.isMember ? member.role === 'owner' ? <em>Owner</em> : <button type="button" className="secondary-button" disabled={busy} onClick={() => void act('remove_board_member', { boardId: board.id, employeeId: member.employeeId })}>Remove</button> : <button type="button" disabled={busy} onClick={() => void act('add_board_member', { boardId: board.id, employeeId: member.employeeId, memberRole: 'member' })}>Add</button>}</div>)}</div></section>}
-    <div className="sygtasks-dialog__actions"><button type="button" className="danger-button" disabled={busy} onClick={() => { if (window.confirm('Archive this board? Task history will be preserved.')) void act('archive_board', { boardId: board.id }, board.version).then(onClose) }}><Archive size={16} /> Archive board</button><button type="button" onClick={onClose}>Done</button></div>
-  </ModalDialog>
+function SygTasksLoading() {
+  return <section className="sygtasks-loading" role="status" aria-live="polite"><img aria-hidden="true" src="/branding/sygtasks-emblem.png" alt="" /><RefreshCw aria-hidden="true" className="spin" size={22} /><strong>Opening SygTasks…</strong><span>Loading your authorized boards and work.</span></section>
 }
 
 export function SygTasksPage() {
@@ -173,70 +78,183 @@ export function SygTasksPage() {
   const queryClient = useQueryClient()
   const boardId = params.get('board')
   const taskId = params.get('task')
-  const [mode, setMode] = useState<WorkspaceMode>(boardId ? 'boards' : 'my-work')
-  const [view, setView] = useState<BoardView>('kanban')
+  const [mode, setMode] = useState<SygTasksMode>(boardId ? 'boards' : 'my-work')
+  const [view, setView] = useStoredBoardView()
   const [search, setSearch] = useState('')
+  const deferredSearch = useDeferredValue(search.trim())
   const [statusFilter, setStatusFilter] = useState<SygTaskStatus | 'all'>('all')
   const [priorityFilter, setPriorityFilter] = useState<SygTaskPriority | 'all'>('all')
-  const [createBoard, setCreateBoard] = useState(false)
-  const [createTask, setCreateTask] = useState(false)
-  const [boardSettings, setBoardSettings] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<5 | 10 | 20 | 50>(20)
+  const [createBoardOpen, setCreateBoardOpen] = useState(false)
+  const [createTaskOpen, setCreateTaskOpen] = useState(false)
+  const [boardSettingsOpen, setBoardSettingsOpen] = useState(false)
   const [success, setSuccess] = useState<string | null>(null)
+
   const workspaceQuery = useInfiniteQuery({
-    queryKey: ['sygtasks', boardId, taskId],
-    queryFn: ({ pageParam }) => getSygTasksWorkspace({ boardId, taskId, cursor: pageParam, pageSize: 20 }),
+    queryKey: ['sygtasks', 'workspace', boardId, taskId],
+    queryFn: ({ pageParam }) => getSygTasksWorkspace({ boardId, taskId, cursor: pageParam, pageSize: 50 }),
     initialPageParam: null as { updatedAt: string; taskId: string } | null,
     getNextPageParam: (lastPage) => lastPage.page.nextCursor ?? undefined,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   })
-  const action = useMutation({ mutationFn: ({ kind, payload, expectedVersion }: { kind: SygTaskAction; payload: Record<string, unknown>; expectedVersion?: number }) => mutateSygTasks(kind, payload, { expectedVersion }), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sygtasks'] }) })
   const workspace = workspaceQuery.data?.pages[0]
-  const boardTasks = useMemo(() => {
-    const seen = new Set<string>()
-    return (workspaceQuery.data?.pages.flatMap((page) => page.tasks) ?? []).filter((task) => !seen.has(task.id) && Boolean(seen.add(task.id)))
-  }, [workspaceQuery.data?.pages])
-  const act = async (kind: SygTaskAction, payload: Record<string, unknown>, expectedVersion?: number) => { setSuccess(null); await action.mutateAsync({ kind, payload, expectedVersion }) }
+  const activeBoardId = boardId ?? (mode === 'boards' ? workspace?.selectedBoard?.id ?? null : null)
+  const canLoadWorklist = Boolean(workspace && (mode === 'my-work' || activeBoardId))
+  const worklistQuery = useQuery({
+    queryKey: ['sygtasks', 'worklist', mode, activeBoardId, deferredSearch, statusFilter, priorityFilter, page, pageSize],
+    queryFn: () => getSygTasksWorklist({
+      mode: mode === 'my-work' ? 'my_work' : 'board',
+      boardId: mode === 'boards' ? activeBoardId : null,
+      search: deferredSearch,
+      status: statusFilter === 'all' ? null : statusFilter,
+      priority: priorityFilter === 'all' ? null : priorityFilter,
+      page,
+      pageSize,
+    }),
+    enabled: canLoadWorklist,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+  })
+
+  const invalidateSygTasks = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['sygtasks'] })
+  }, [queryClient])
+  const action = useMutation({
+    mutationFn: ({ kind, payload, expectedVersion, clientRequestId }: { kind: SygTaskAction; payload: Record<string, unknown>; expectedVersion?: number; clientRequestId?: string }) => mutateSygTasks(kind, payload, { expectedVersion, clientRequestId }),
+    onSuccess: invalidateSygTasks,
+  })
+  const createTaskAction = useMutation({
+    mutationFn: ({ input, clientRequestId }: { input: CreateSygTaskInput; clientRequestId: string }) => createSygTask(input, { clientRequestId }),
+    onSuccess: invalidateSygTasks,
+  })
+
+  useEffect(() => {
+    setMode(boardId ? 'boards' : 'my-work')
+  }, [boardId])
+  useEffect(() => { setPage(1) }, [activeBoardId, deferredSearch, mode, pageSize, priorityFilter, statusFilter])
+  useEffect(() => {
+    const totalPages = worklistQuery.data?.page.totalPages
+    if (typeof totalPages === 'number' && totalPages > 0 && page > totalPages) setPage(totalPages)
+  }, [page, worklistQuery.data?.page.totalPages])
+  useEffect(() => {
+    if (!success) return
+    const timeout = window.setTimeout(() => setSuccess(null), 6000)
+    return () => window.clearTimeout(timeout)
+  }, [success])
   useEffect(() => {
     if (!workspace?.employeeId) return
-    const client = getSupabaseClient(); let disposed = false; let channel: ReturnType<typeof client.channel> | undefined
-    const refresh = () => { if (!disposed) void queryClient.invalidateQueries({ queryKey: ['sygtasks'] }) }
+    const client = getSupabaseClient()
+    let disposed = false
+    let channel: ReturnType<typeof client.channel> | undefined
+    let refreshTimer: number | undefined
+    const refresh = () => {
+      if (disposed || refreshTimer) return
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = undefined
+        if (!disposed) void invalidateSygTasks()
+      }, 120)
+    }
     void client.auth.getSession().then(async ({ data }) => {
       if (disposed || !data.session) return
       await client.realtime.setAuth(data.session.access_token)
       if (disposed) return
-      channel = client.channel(`employee:${data.session.user.id}`, { config: { private: true } }).on('broadcast', { event: 'changed' }, refresh).subscribe((status) => { if (status === 'SUBSCRIBED') refresh() })
+      channel = client.channel(`employee:${data.session.user.id}`, { config: { private: true } })
+        .on('broadcast', { event: 'changed' }, refresh)
+        .subscribe((status) => { if (status === 'SUBSCRIBED') refresh() })
     }).catch(() => undefined)
-    window.addEventListener('focus', refresh); window.addEventListener('online', refresh)
-    return () => { disposed = true; window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh); if (channel) void client.removeChannel(channel) }
-  }, [queryClient, workspace?.employeeId])
-  const visibleTasks = useMemo(() => {
-    const source = mode === 'my-work' ? workspace?.myTasks ?? [] : boardTasks
-    const query = search.trim().toLocaleLowerCase()
-    return source.filter((task) => (statusFilter === 'all' || task.status === statusFilter)
-      && (priorityFilter === 'all' || task.priority === priorityFilter)
-      && (!query || `${task.title} ${task.description} ${task.assignees.map((person) => person.name).join(' ')} ${task.labels.map((label) => label.name).join(' ')}`.toLocaleLowerCase().includes(query)))
-  }, [boardTasks, mode, priorityFilter, search, statusFilter, workspace?.myTasks])
+    window.addEventListener('focus', refresh)
+    window.addEventListener('online', refresh)
+    return () => {
+      disposed = true
+      if (refreshTimer) window.clearTimeout(refreshTimer)
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('online', refresh)
+      if (channel) void client.removeChannel(channel)
+    }
+  }, [invalidateSygTasks, workspace?.employeeId])
+
+  const workspaceForDetail = useMemo(() => workspace ? { ...workspace, tasks: uniqueTasks(workspaceQuery.data?.pages) } : null, [workspace, workspaceQuery.data?.pages])
+  const summary = worklistQuery.data?.summary ?? emptySummary
+  const trustedReferenceTime = worklistQuery.data?.summary.asOf
+  const authorizedBoards = worklistQuery.data?.boards ?? workspace?.boards ?? []
+  const tasks = worklistQuery.data?.tasks ?? []
+  const counts = worklistQuery.data?.counts.status ?? { backlog: 0, ready: 0, in_progress: 0, blocked: 0, review: 0, done: 0, canceled: 0 }
+  const displayedCounts = statusFilter === 'all' ? counts : { backlog: 0, ready: 0, in_progress: 0, blocked: 0, review: 0, done: 0, canceled: 0, [statusFilter]: worklistQuery.data?.page.total ?? 0 }
+  const filtered = Boolean(search.trim() || statusFilter !== 'all' || priorityFilter !== 'all')
+  const selectedBoard = workspace?.selectedBoard
+  const createTaskMembers = selectedBoard?.scope === 'company' && workspace?.permissions.manageShared
+    ? workspace.availableMembers
+    : workspace?.members ?? []
+  const busy = action.isPending || createTaskAction.isPending
+  const pageActionError = !createBoardOpen && !createTaskOpen && !boardSettingsOpen && !taskId
+    ? action.error ?? createTaskAction.error
+    : null
+
+  const clearFilters = () => { setSearch(''); setStatusFilter('all'); setPriorityFilter('all'); setPage(1) }
+  const openCreateBoard = () => { action.reset(); setCreateBoardOpen(true) }
+  const openCreateTask = () => { createTaskAction.reset(); setCreateTaskOpen(true) }
+  const openBoardSettings = () => { action.reset(); setBoardSettingsOpen(true) }
+  const switchMode = (next: SygTasksMode) => {
+    setSuccess(null)
+    if (next === 'my-work') { setMode('my-work'); navigate('/tasks'); return }
+    setMode('boards')
+    const target = selectedBoard ?? authorizedBoards[0]
+    if (target) navigate(sygTaskPath(target.id))
+  }
   const openTask = (task: SygTask) => { setMode('boards'); navigate(sygTaskPath(task.boardId, task.id)) }
-  const changeStatus = (task: SygTask, status: SygTaskStatus) => void act('update_task', { taskId: task.id, status }, task.version)
-  if (workspaceQuery.isLoading) return <section className="sygtasks-loading" role="status"><RefreshCw className="spin" /> Opening SygTasks…</section>
-  if (workspaceQuery.isError || !workspace) return <section className="sygtasks-unavailable"><ClipboardList size={42} /><h1>SygTasks is unavailable</h1><ErrorNotice error={workspaceQuery.error} /><button type="button" onClick={() => void workspaceQuery.refetch()}>Try again</button><p>Your other SygShift tools remain available.</p></section>
-  return <section className="sygtasks-workspace">
-    <header className="sygtasks-header"><div><span className="sygtasks-header__icon"><ClipboardList /></span><div><p>SygShift work management</p><h1>SygTasks</h1><span>Plan work, assign ownership, and keep progress visible.</span></div></div><div className="sygtasks-header__actions"><button type="button" className="secondary-button" aria-label="Refresh SygTasks" disabled={workspaceQuery.isFetching} onClick={() => void workspaceQuery.refetch()}><RefreshCw className={workspaceQuery.isFetching ? 'spin' : ''} size={18} /> Refresh</button><button type="button" onClick={() => setCreateBoard(true)}><Plus size={18} /> New board</button></div></header>
-    <nav className="sygtasks-mode-tabs" aria-label="SygTasks workspaces"><button type="button" aria-current={mode === 'my-work' ? 'page' : undefined} onClick={() => { setMode('my-work'); navigate('/tasks') }}>My Work <span>{workspace.myTasks.length}</span></button><button type="button" aria-current={mode === 'boards' ? 'page' : undefined} onClick={() => setMode('boards')}>Boards <span>{workspace.boards.length}</span></button></nav>
-    <SuccessNotice message={success} /><ErrorNotice error={action.error} />
-    <div className="sygtasks-layout">
-      {mode === 'boards' ? <aside className="sygtasks-board-rail"><header><h2>Boards</h2><button type="button" className="icon-button" aria-label="Create board" onClick={() => setCreateBoard(true)}><Plus /></button></header><nav aria-label="Task boards">{workspace.boards.map((board) => <button key={board.id} type="button" aria-current={workspace.selectedBoard?.id === board.id ? 'page' : undefined} onClick={() => navigate(sygTaskPath(board.id))}><span>{board.name}<small>{board.scope} · {board.ownerName}</small></span><em>{board.openTaskCount ?? 0}</em><ChevronRight /></button>)}</nav></aside> : null}
-      <main className="sygtasks-main">
-        <header className="sygtasks-main__heading"><div><p>{mode === 'my-work' ? 'Personal focus' : workspace.selectedBoard?.scope ?? 'Workspace'}</p><h2>{mode === 'my-work' ? 'My Work' : workspace.selectedBoard?.name ?? 'Choose a board'}</h2><span>{mode === 'my-work' ? 'Tasks you own, follow, or were assigned.' : workspace.selectedBoard?.description || 'Work shared with this board.'}</span></div>{mode === 'boards' && workspace.selectedBoard ? <div>{workspace.selectedBoard.canManageBoard ? <button type="button" className="secondary-button" onClick={() => setBoardSettings(true)}><Settings2 size={17} /> Board settings</button> : null}{workspace.selectedBoard.canCreateTask ? <button type="button" onClick={() => setCreateTask(true)}><Plus size={17} /> New task</button> : null}</div> : null}</header>
-        <div className="sygtasks-toolbar"><label className="sygtasks-toolbar__search"><Search size={18} /><span className="visually-hidden">Search tasks</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search tasks, people, or labels" /></label><label className="sygtasks-toolbar__filter"><span className="visually-hidden">Filter by status</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}><option value="all">All statuses</option>{sygTaskStatuses.map((status) => <option key={status} value={status}>{formatSTaskStatus(status)}</option>)}</select></label><label className="sygtasks-toolbar__filter"><span className="visually-hidden">Filter by priority</span><select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as typeof priorityFilter)}><option value="all">All priorities</option>{sygTaskPriorities.map((priority) => <option key={priority} value={priority}>{formatSygTaskPriority(priority)}</option>)}</select></label><div role="group" aria-label="Task view"><button type="button" aria-pressed={view === 'kanban'} onClick={() => setView('kanban')}><Columns3 size={17} /> Board</button><button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}><List size={17} /> List</button></div></div>
-        {view === 'list' || mode === 'my-work' ? <TaskList tasks={visibleTasks} onOpen={openTask} onStatus={changeStatus} busy={action.isPending} /> : <div className="sygtasks-kanban" aria-label="Kanban board">{sygTaskStatuses.map((status) => { const tasks = visibleTasks.filter((task) => task.status === status); return <section key={status} className={`sygtasks-column sygtasks-column--${status}`}><header><h3>{formatSygTaskStatus(status)}</h3><span>{tasks.length}</span></header><div>{tasks.map((task) => <TaskCard key={task.id} task={task} onOpen={() => openTask(task)} onStatus={(next) => changeStatus(task, next)} busy={action.isPending} />)}{!tasks.length ? <p>Nothing here</p> : null}</div></section> })}</div>}
-        {mode === 'boards' && workspaceQuery.hasNextPage ? <div className="sygtasks-load-more"><button type="button" className="secondary-button" disabled={workspaceQuery.isFetchingNextPage} onClick={() => void workspaceQuery.fetchNextPage()}>{workspaceQuery.isFetchingNextPage ? 'Loading…' : 'Load more tasks'}</button></div> : null}
-      </main>
-    </div>
-    {createBoard ? <CreateBoardDialog allowShared={workspace.permissions.manageShared} busy={action.isPending} error={action.error} onClose={() => { setCreateBoard(false); action.reset() }} onSubmit={(input) => void act('create_board', input).then(() => { setCreateBoard(false); setSuccess('Board created.'); setMode('boards') })} /> : null}
-    {createTask && workspace.selectedBoard ? <CreateTaskDialog boardName={workspace.selectedBoard.name} busy={action.isPending} error={action.error} onClose={() => { setCreateTask(false); action.reset() }} onSubmit={(input) => void act('create_task', { ...input, boardId: workspace.selectedBoard!.id }).then(() => { setCreateTask(false); setSuccess('Task created.') })} /> : null}
-    {taskId && workspace.taskDetail ? <TaskDetailDialog key={`${workspace.taskDetail.id}:${workspace.taskDetail.version}`} workspace={workspace} detail={workspace.taskDetail} busy={action.isPending} error={action.error} onClose={() => { action.reset(); navigate(sygTaskPath(workspace.taskDetail!.boardId)) }} act={act} /> : null}
-    {boardSettings ? <BoardSettingsDialog workspace={workspace} busy={action.isPending} error={action.error} onClose={() => { setBoardSettings(false); action.reset() }} act={act} /> : null}
-  </section>
+  const act = async (kind: SygTaskAction, payload: Record<string, unknown>, expectedVersion?: number) => {
+    setSuccess(null)
+    await action.mutateAsync({ kind, payload, expectedVersion })
+  }
+  const changeStatus = (task: SygTask, status: SygTaskStatus) => {
+    void act('update_task', { taskId: task.id, status }, task.version)
+      .then(() => setSuccess(`“${task.title}” moved to ${formatSygTaskStatus(status)}.`))
+      .catch(() => undefined)
+  }
+  const refresh = () => {
+    setSuccess(null)
+    const request = canLoadWorklist
+      ? Promise.all([
+          workspaceQuery.refetch({ throwOnError: true }),
+          worklistQuery.refetch({ throwOnError: true }),
+        ])
+      : workspaceQuery.refetch({ throwOnError: true })
+    void request.then(() => setSuccess('SygTasks is up to date.')).catch(() => undefined)
+  }
+
+  if (workspaceQuery.isPending) return <SygTasksLoading />
+  if (workspaceQuery.isError || !workspace) {
+    return <section className="sygtasks-unavailable"><img aria-hidden="true" src="/branding/sygtasks-emblem.png" alt="" /><h1>SygTasks is unavailable</h1><SygTasksErrorNotice error={workspaceQuery.error} /><button type="button" className="sygtasks-button sygtasks-button--primary" onClick={() => void workspaceQuery.refetch()}>Try Again</button><p>Your other SygShift tools remain available.</p></section>
+  }
+
+  return (
+    <section className="sygtasks-workspace" aria-labelledby="sygtasks-title">
+      <SygTasksHeader fetching={workspaceQuery.isFetching || worklistQuery.isFetching} onCreateBoard={openCreateBoard} onRefresh={refresh} />
+      <SygTasksPrimaryTabs mode={mode} taskCount={summary.current} boardCount={worklistQuery.data ? summary.accessibleBoards : workspace.boards.length} onChange={switchMode} />
+      <SygTasksSuccessNotice message={success} />
+      <SygTasksErrorNotice error={pageActionError} />
+      {workspaceQuery.isRefetchError || worklistQuery.isRefetchError ? <SygTasksErrorNotice error={workspaceQuery.error ?? worklistQuery.error} /> : null}
+      <div className={`sygtasks-layout${mode === 'my-work' ? ' sygtasks-layout--my-work' : ''}`}>
+        {mode === 'boards' ? <BoardRail boards={authorizedBoards} selectedId={selectedBoard?.id} onAdd={openCreateBoard} onSelect={(board) => navigate(sygTaskPath(board.id))} /> : null}
+        <section className="sygtasks-main">
+          <header className="sygtasks-main__heading">
+            <div><p>{mode === 'my-work' ? 'Personal focus' : selectedBoard?.scope ?? 'Workspace'}</p><h2>{mode === 'my-work' ? 'My Work' : selectedBoard?.name ?? 'Choose a board'}</h2><span>{mode === 'my-work' ? 'Tasks you own, follow, were assigned, or are responsible for reviewing.' : selectedBoard?.description || 'Work shared with this board.'}</span></div>
+            {mode === 'boards' && selectedBoard ? <div>{selectedBoard.canManageBoard ? <button type="button" className="sygtasks-button sygtasks-button--secondary" onClick={openBoardSettings}><Settings2 aria-hidden="true" size={17} />Board Settings</button> : null}{selectedBoard.canCreateTask ? <button type="button" className="sygtasks-button sygtasks-button--primary" onClick={openCreateTask}><Plus aria-hidden="true" size={17} />New Task</button> : null}</div> : null}
+          </header>
+          {mode === 'my-work' ? <SygTasksSummary summary={summary} /> : null}
+          {mode === 'boards' && !selectedBoard ? <div className="sygtasks-empty sygtasks-empty--board"><ClipboardList aria-hidden="true" size={34} /><h3>No board selected</h3><p>Create your first board or choose an authorized board from the rail.</p><button type="button" className="sygtasks-button sygtasks-button--primary" onClick={openCreateBoard}><Plus aria-hidden="true" size={17} />New Board</button></div> : <>
+            <TaskToolbar mode={mode} search={search} status={statusFilter} priority={priorityFilter} view={view} onSearch={setSearch} onStatus={setStatusFilter} onPriority={setPriorityFilter} onView={setView} />
+            {worklistQuery.isPending ? <div className="sygtasks-list-loading" role="status"><RefreshCw aria-hidden="true" className="spin" /><strong>Loading tasks…</strong><span>Finding the work you are authorized to view.</span></div> : worklistQuery.isError ? <div className="sygtasks-list-error"><SygTasksErrorNotice error={worklistQuery.error} /><button type="button" className="sygtasks-button sygtasks-button--primary" onClick={() => void worklistQuery.refetch()}>Try Again</button></div> : !tasks.length ? <TasksEmptyState filtered={filtered} onClear={clearFilters} /> : mode === 'boards' && view === 'kanban' ? <KanbanBoard tasks={tasks} counts={displayedCounts} referenceTime={summary.asOf} busy={busy} onOpen={openTask} onStatus={changeStatus} /> : <TaskTable tasks={tasks} referenceTime={summary.asOf} busy={busy} onOpen={openTask} onStatus={changeStatus} />}
+            {worklistQuery.data ? <WorklistPagination page={worklistQuery.data.page.number} pageSize={worklistQuery.data.page.size} total={worklistQuery.data.page.total} totalPages={worklistQuery.data.page.totalPages} busy={worklistQuery.isFetching} onPage={setPage} onPageSize={setPageSize} /> : null}
+          </>}
+        </section>
+      </div>
+      {createBoardOpen ? <CreateBoardDialog allowShared={workspace.permissions.manageShared} busy={action.isPending} error={action.error} onClose={() => { setCreateBoardOpen(false); action.reset() }} onSubmit={(input, clientRequestId) => { setSuccess(null); void action.mutateAsync({ kind: 'create_board', payload: input, clientRequestId }).then((result) => { const createdBoardId = typeof result.boardId === 'string' ? result.boardId : null; setCreateBoardOpen(false); setSuccess('Board created successfully.'); setMode('boards'); if (createdBoardId) navigate(sygTaskPath(createdBoardId)) }).catch(() => undefined) }} /> : null}
+      {createTaskOpen && selectedBoard ? <CreateTaskDialog boardName={selectedBoard.name} members={createTaskMembers} employeeId={workspace.employeeId} canAssignOthers={workspace.permissions.manageShared} busy={createTaskAction.isPending} error={createTaskAction.error} onClose={() => { setCreateTaskOpen(false); createTaskAction.reset() }} onSubmit={(input, clientRequestId) => { void createTaskAction.mutateAsync({ input: { ...input, boardId: selectedBoard.id }, clientRequestId }).then(() => { setCreateTaskOpen(false); setSuccess('Task created and the board is up to date.') }).catch(() => undefined) }} /> : null}
+      {taskId && workspaceForDetail?.taskDetail ? <TaskDetailDialog key={`${workspaceForDetail.taskDetail.id}:${workspaceForDetail.taskDetail.version}`} workspace={workspaceForDetail} detail={workspaceForDetail.taskDetail} referenceTime={trustedReferenceTime} busy={action.isPending} error={action.error} canLoadMoreCandidates={Boolean(workspaceQuery.hasNextPage)} loadingMoreCandidates={workspaceQuery.isFetchingNextPage} onLoadMoreCandidates={() => { void workspaceQuery.fetchNextPage() }} onClose={() => { action.reset(); navigate(sygTaskPath(workspaceForDetail.taskDetail!.boardId)) }} act={act} /> : null}
+      {boardSettingsOpen ? <BoardSettingsDialog workspace={workspace} busy={action.isPending} error={action.error} onClose={() => { setBoardSettingsOpen(false); action.reset() }} onArchived={() => { setBoardSettingsOpen(false); setMode('my-work'); setSuccess('Board archived. Its history remains preserved.'); navigate('/tasks') }} act={act} /> : null}
+    </section>
+  )
 }

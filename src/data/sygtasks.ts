@@ -68,6 +68,83 @@ export const sygTaskBoardSchema = z.object({
   canCreateTask: z.boolean(),
 })
 
+export const sygTasksWorklistSummarySchema = z.object({
+  accessibleBoards: z.coerce.number().int().nonnegative(),
+  current: z.coerce.number().int().nonnegative(),
+  dueToday: z.coerce.number().int().nonnegative(),
+  inProgress: z.coerce.number().int().nonnegative(),
+  upcoming: z.coerce.number().int().nonnegative(),
+  completedThisMonth: z.coerce.number().int().nonnegative(),
+  timezone: z.literal('America/Denver'),
+  asOf: z.string(),
+})
+
+const sygTaskStatusCountsSchema = z.object({
+  backlog: z.coerce.number().int().nonnegative(),
+  ready: z.coerce.number().int().nonnegative(),
+  in_progress: z.coerce.number().int().nonnegative(),
+  blocked: z.coerce.number().int().nonnegative(),
+  review: z.coerce.number().int().nonnegative(),
+  done: z.coerce.number().int().nonnegative(),
+  canceled: z.coerce.number().int().nonnegative(),
+})
+
+const sygTaskPriorityCountsSchema = z.object({
+  low: z.coerce.number().int().nonnegative(),
+  routine: z.coerce.number().int().nonnegative(),
+  high: z.coerce.number().int().nonnegative(),
+  urgent: z.coerce.number().int().nonnegative(),
+})
+
+export const sygTasksWorklistSchema = z.object({
+  summary: sygTasksWorklistSummarySchema,
+  boards: z.array(sygTaskBoardSchema),
+  tasks: z.array(sygTaskSchema),
+  counts: z.object({
+    status: sygTaskStatusCountsSchema,
+    priority: sygTaskPriorityCountsSchema,
+  }),
+  filters: z.object({
+    mode: z.enum(['my_work', 'board']),
+    boardId: z.string().uuid().nullable(),
+    search: z.string(),
+    status: sygTaskStatusSchema.nullable(),
+    priority: sygTaskPrioritySchema.nullable(),
+    includeArchived: z.boolean(),
+  }),
+  page: z.object({
+    number: z.coerce.number().int().positive(),
+    size: z.union([z.literal(5), z.literal(10), z.literal(20), z.literal(50)]),
+    total: z.coerce.number().int().nonnegative(),
+    totalPages: z.coerce.number().int().nonnegative(),
+    hasPrevious: z.boolean(),
+    hasMore: z.boolean(),
+  }),
+})
+
+export const createSygTaskInputSchema = z.object({
+  boardId: z.string().uuid(),
+  title: z.string().trim().min(1).max(240),
+  description: z.string().max(10_000).optional(),
+  status: sygTaskStatusSchema.optional(),
+  priority: sygTaskPrioritySchema.optional(),
+  dueAt: z.string().nullable().optional(),
+  sortRank: z.number().int().min(-1_000_000_000).max(1_000_000_000).optional(),
+  assigneeId: z.string().uuid().nullable().optional(),
+}).strict()
+
+export const createSygTaskResultSchema = z.object({
+  action: z.literal('create_task_with_assignee'),
+  boardId: z.string().uuid(),
+  taskId: z.string().uuid(),
+  version: z.number().int().positive(),
+  clientRequestId: z.string().uuid(),
+  assignedEmployeeId: z.string().uuid().nullable(),
+  assignmentId: z.string().uuid().nullable(),
+  assignmentChanged: z.boolean(),
+  changed: z.boolean(),
+}).passthrough()
+
 const memberSchema = z.object({
   membershipId: z.string().uuid().nullable().optional(),
   employeeId: z.string().uuid(),
@@ -128,6 +205,10 @@ export type SygTasksWorkspace = z.infer<typeof sygTasksWorkspaceSchema>
 export type SygTaskStatus = z.infer<typeof sygTaskStatusSchema>
 export type SygTaskPriority = z.infer<typeof sygTaskPrioritySchema>
 export type SygTaskMember = z.infer<typeof memberSchema>
+export type SygTasksWorklist = z.infer<typeof sygTasksWorklistSchema>
+export type SygTasksWorklistSummary = z.infer<typeof sygTasksWorklistSummarySchema>
+export type CreateSygTaskInput = z.infer<typeof createSygTaskInputSchema>
+export type CreateSygTaskResult = z.infer<typeof createSygTaskResultSchema>
 export type SygTaskAction =
   | 'create_board' | 'update_board' | 'archive_board' | 'add_board_member' | 'remove_board_member'
   | 'create_task' | 'update_task' | 'archive_task' | 'assign_task' | 'unassign_task' | 'watch_task' | 'unwatch_task'
@@ -143,6 +224,17 @@ export interface SygTasksQuery {
   includeArchived?: boolean
 }
 
+export interface SygTasksWorklistQuery {
+  mode?: 'my_work' | 'board'
+  boardId?: string | null
+  search?: string
+  status?: SygTaskStatus | null
+  priority?: SygTaskPriority | null
+  page?: number
+  pageSize?: 5 | 10 | 20 | 50
+  includeArchived?: boolean
+}
+
 export async function getSygTasksWorkspace(input: SygTasksQuery = {}): Promise<SygTasksWorkspace> {
   const { data, error } = await getSupabaseClient().rpc('get_sygtasks_workspace', {
     target_board_id: input.boardId ?? null,
@@ -154,6 +246,34 @@ export async function getSygTasksWorkspace(input: SygTasksQuery = {}): Promise<S
   })
   if (error) throw new Error(error.message || 'SygTasks could not load your work.')
   return sygTasksWorkspaceSchema.parse(data)
+}
+
+export async function getSygTasksWorklist(input: SygTasksWorklistQuery = {}): Promise<SygTasksWorklist> {
+  const { data, error } = await getSupabaseClient().rpc('get_sygtasks_worklist', {
+    target_mode: input.mode ?? 'my_work',
+    target_board_id: input.boardId ?? null,
+    target_search: input.search ?? '',
+    target_status: input.status ?? null,
+    target_priority: input.priority ?? null,
+    target_page: input.page ?? 1,
+    target_page_size: input.pageSize ?? 20,
+    target_include_archived: input.includeArchived ?? false,
+  })
+  if (error) throw new Error(error.message || 'SygTasks could not load this task list.')
+  return sygTasksWorklistSchema.parse(data)
+}
+
+export async function createSygTask(
+  input: CreateSygTaskInput,
+  options: { clientRequestId?: string } = {},
+): Promise<CreateSygTaskResult> {
+  const payload = createSygTaskInputSchema.parse(input)
+  const { data, error } = await getSupabaseClient().rpc('create_sygtasks_task', {
+    target_payload: payload,
+    target_client_request_id: options.clientRequestId ?? crypto.randomUUID(),
+  })
+  if (error) throw new Error(error.message || 'SygTasks could not create this task.')
+  return createSygTaskResultSchema.parse(data)
 }
 
 export async function mutateSygTasks(

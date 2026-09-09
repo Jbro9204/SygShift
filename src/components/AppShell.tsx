@@ -39,6 +39,7 @@ import { SystemStatusIndicator } from './SystemStatusIndicator'
 import { SupportHelpButton } from './SupportHelpButton'
 import { SygSphereLauncher } from './SygSphereLauncher'
 import { SygilantLauncher } from './SygilantLauncher'
+import { SygTasksLauncher } from './SygTasksLauncher'
 import { OperationalTimeHeader } from './OperationalTimeHeader'
 import { HeaderNotificationButton } from './HeaderNotificationButton'
 import { LiveNotifications } from './LiveNotifications'
@@ -828,6 +829,7 @@ export function AppShell() {
         </nav>
 
         <div className="sidebar-utilities">
+          {sessionContext && !needsSecurityCheckpoint && sharedIdentityScopeAllowsPath('/tasks', sharedIdentityScope) ? <SygTasksLauncher /> : null}
           {sessionContext && !needsSecurityCheckpoint && canOpenSygilant ? <SygilantLauncher /> : null}
           {sessionContext && !needsSecurityCheckpoint ? <SygSphereLauncher employeeId={sessionContext.employeeId} /> : null}
           <SupportHelpButton />
