@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/09/2026 - Approved Workflow Quick Wins
+
+- Released the six approved usability and access corrections together: clearer My Time summary cards, separate Employee Lifecycle create/manage actions, secure Forgot Username recovery, additive multi-role report access, owner-only personal SygTasks boards, and the centralized secure PDF viewer in SygSphere.
+- Enforced personal-board privacy in database read/write helpers, membership and assignment mutations, Realtime delivery, and notification recipients rather than relying on hidden interface controls.
+- Added a generic, rate-limited username-reminder workflow that stores only hashed request identifiers, prevents account discovery, preserves MFA/password state, and uses the audited SygShift email path.
+- Applied and verified production migration `20260910070000`; forced RLS, service-only username-claim execution, personal-board mutation guards, and zero cross-owner personal-board visibility were confirmed.
+- Verification passed 220 test files / 1,100 tests, TypeScript, zero-warning lint, both production builds, targeted quick-win coverage, and the mandatory Time Clock browser workflow. Released commits `ddc8506` and `0ec878f` as Cloudflare Worker `fc6a1ae7-0829-4254-8a77-2d728175f7ab`; live health, readiness, exact asset identity, and the signed-out username-recovery boundary passed.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-09-2026_APPROVED_QUICK_WINS_RELEASE.md`.
+
 ## 09/09/2026 - SygTasks Dark Mode Readability Repair
 
 - Reconnected the complete SygTasks workspace and dialogs to SygShift's canonical light/dark foreground, muted, border, surface, control, and semantic-state tokens.
