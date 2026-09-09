@@ -1944,3 +1944,22 @@ pnpm exec wrangler deploy --keep-vars
 - Extended synchronized inactivity handling to a 55-minute warning and 60-minute sign-out, moved Dispatcher capability onto the effective role model, and added a secure one-time SygShift-to-Sygilant launch provider and branded sidebar control.
 - Applied seven exact forward migrations individually while preserving the Sygilant-owned migration history. Production rollback rehearsals passed for notification claimant ownership and the SygSphere resumable lifecycle without retaining test data.
 - Passed `pnpm check` with 207 files / 1,027 tests, the 236-check desktop/mobile browser matrix, all 38 mandatory Time Clock checks, and the 36-navigation/66-route/79-permission access inventory.
+
+## 09/09/2026 — Password Recovery, Completed Sign-In Activity, and SygSphere Popovers
+
+- Confirmed and preserved the canonical first-party password-recovery release: Forgot Password opens
+  the full signed-out form, emailed links land on the stable eager reset route, and invalid/expired
+  links show an explicit recovery state instead of a blank screen.
+- Replaced provider-derived Last Activity with an application-owned, immutable per-session completion
+  ledger. Native sessions require a live linked account, password proof, completed password-change
+  checkpoint, and required MFA; shared SygSphere sessions require their bound shared assertion.
+- Added row locking, idempotent concurrent-session handling, monotonic Last Activity updates,
+  auth-session-aware client triggering, bounded transient retry, and explicit recovery-session
+  exclusion. The separate account-activation lifecycle and historical records were not changed.
+- Made SygSphere reaction and More menus dismiss on outside click/tap, peer-menu opening, Escape, and
+  action selection while preserving drafts and all existing message actions.
+- Applied exact migration `20260910030000`, pushed source commit `32109da`, and deployed Worker
+  `8550606d-a554-452c-b6c0-3aea68ec49f4`.
+- Final verification passed 209 files / 1,048 tests, 74 combined desktop/mobile feature checks, all 38
+  required post-deployment Time Clock checks, production health/readiness, live recovery visuals, and
+  a clean reset-page browser console.
