@@ -276,6 +276,56 @@ Talent, Learning, Employee Cases, Safety, and Assets became operational on 09/03
 
 Offboarding & Rehire, HR Self-Service, and HR Reporting became operational on 09/03/2026 through exact permissions and audited actions. Separation and rehire decisions retain independent approval and preserved history; self-service remains scoped to the signed-in employee or effective manager authority; and governed report definitions remain permission filtered. Offboarding and Reporting continue to require recent MFA. The release created no lifecycle case, request, report, schedule, payroll, licensing, document, training, asset, or access mutation.
 
+#### Stage 9 follow-up — Unified Termination & Offboarding Perfection
+
+- Priority: High
+- Target window: Future focused HR workflow release
+- Status: Approved / queued
+- Added: 09/09/2026
+
+Turn the existing Employee Lifecycle case and Employee File termination action into one complete,
+guided offboarding workflow. HR should never have to remember that an approved future separation still
+requires a disconnected second action, and no employee or historical record may be duplicated.
+
+- [ ] Create one canonical lifecycle case and timeline for voluntary resignation, involuntary
+  termination, job abandonment, end of assignment, and rehire, with clear Draft, Pending Approval,
+  Approved/Scheduled, Due, In Progress, Completed, Denied, and Canceled states.
+- [ ] Carry an approved future separation into a protected effective-date queue. Trigger prominent,
+  mandatory HR reminders and provide one clear final execution action from the case and Employee File.
+- [ ] Before enabling unattended effective-date execution, obtain an explicit management decision on
+  whether access shutdown must remain a final human-confirmed action or may execute automatically.
+- [ ] Preserve independent maker-checker approval: the person who opens a separation case cannot be
+  its approver, and the final actor must have recent MFA, `hr.people.manage`, and
+  `hr.offboarding.approve`.
+- [ ] Reuse the canonical termination transaction for final execution: mark the employee Separated,
+  record the effective date, disable login, revoke remembered devices and active access, release
+  current/future work, reopen understaffed shifts, and cancel pending future shift requests.
+- [ ] Add a role-appropriate checklist with owners, due dates, completion evidence, and reasoned
+  waivers for final timecard review, payroll and final pay, benefits, licensing, training, documents,
+  property/assets, schedules, client/site notifications, communications, and records retention.
+- [ ] Connect the approved HR forms without copying files or facts: GS-HR-700, GS-HR-701, GS-HR-702,
+  GS-HR-703, and GS-HR-704 should be assignable, signable, viewable, and downloadable from the same
+  lifecycle case and permanent Employee File.
+- [ ] Keep restricted separation reasons, investigations, medical information, and legal material in
+  their correct protected vaults; show operational teams only the minimum information needed to
+  release coverage and equipment.
+- [ ] Handle active shifts, open punches, pending corrections, an open payroll period, leave,
+  outstanding property, active investigations, retroactive dates, future dates, self-termination,
+  Admin termination, and the final-active-Admin safeguard explicitly.
+- [ ] Prevent case completion until every required task is complete or an authorized person records a
+  waiver and reason. Never silently mark downstream work complete.
+- [ ] Preserve all historical schedules, punches, timecards, payroll rows, licenses, documents,
+  training, cases, approvals, account history, and audit events. Termination must never hard-delete or
+  rewrite history.
+- [ ] Add governed offboarding dashboards and exportable reports for scheduled separations, overdue
+  tasks, access shutdown, released shifts, property recovery, documents, final-pay readiness, and
+  completed cases.
+- [ ] Make rehire a separate approved restoration workflow. Do not silently reactivate prior roles,
+  permissions, MFA devices, schedules, pay, licenses, or assignments.
+- [ ] Verify navigation, permissions, Worker endpoints, database enforcement, MFA/FIDO behavior,
+  reminders, mobile and desktop layouts, dark and light modes, accessibility, audit evidence, and
+  rollback before production activation.
+
 #### Stage 10 — Payroll Integration & Enterprise Hardening (control plane completed 08/30/2026; external cutover gated)
 
 - [x] Define a versioned HR-to-Payroll integration contract and independent approval path. The installed contract remains a draft until authorized business approval.
