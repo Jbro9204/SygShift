@@ -107,4 +107,36 @@ describe('Sygilant reciprocal launch release guard', () => {
     expect(regression).toContain("'aal', 'aal2'")
     expect(regression).toContain('from public.get_session_context()')
   })
+
+  it('releases reciprocal return access without widening the Guard AAL1 boundary', () => {
+    const migration = read('supabase/migrations/20260912040000_universal_sygshift_return_access.sql')
+    const regression = read('supabase/tests/universal_sygshift_return_access.sql')
+    const approvedRoles = [
+      'system_guard',
+      'system_dispatcher',
+      'system_scheduler',
+      'system_recruiting_licensing',
+      'system_supervisor',
+      'system_admin',
+      'custom_chief',
+      'operations_manager',
+      'human_resources',
+      'human_resources_employee',
+    ]
+
+    for (const role of approvedRoles) expect(migration).toContain(`'${role}'::text`)
+    expect(migration).toContain("granted.permission_code in ('apps.sygilant.access', 'apps.sygshift.access')")
+    expect(migration).toContain("actor.role = 'guard'")
+    expect(migration).toContain('not actor.requires_mfa')
+    expect(migration).toContain('private.employee_effective_permissions(actor.employee_id)')
+    expect(migration).not.toContain('create or replace function private.employee_effective_permissions')
+    expect(migration).toContain('set search_path = \'\'')
+    expect(migration).toContain('revoke all on function public.get_effective_permissions() from public, anon')
+    expect(migration).toContain('grant execute on function public.get_effective_permissions() to authenticated')
+    expect(regression).toContain("array['apps.sygilant.access', 'apps.sygshift.access']::text[]")
+    expect(regression).toContain("projected.permission_code not in ('apps.sygilant.access', 'apps.sygshift.access')")
+    expect(regression).toContain("'aal', 'aal1'")
+    expect(regression).toContain("'aal', 'aal2'")
+    expect(regression).toContain('from public.get_session_context()')
+  })
 })

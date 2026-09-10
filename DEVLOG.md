@@ -2147,3 +2147,13 @@ pnpm exec wrangler deploy --keep-vars
 - Released source commit `54069aa` as Cloudflare Worker `061e3d2a-1f0d-4360-8206-029356e2000a`; primary/fallback roots, health, and readiness passed, and the anonymous launch boundary rejected access.
 - Verification passed 228 test files / 1,172 tests, TypeScript, zero-warning application lint, both production builds, the live database matrix, and all 54 desktop/mobile launcher and actual-component Time Clock checks.
 - See `docs/changelogs/CHANGELOG_09-10-2026_GUARD_AAL1_SYGILANT_LAUNCH_REPAIR.md` for release and verification evidence.
+
+## 09/10/2026 - Universal SygShift Return Access
+
+- Corrected the reciprocal handoff gap by enabling the existing locked `apps.sygshift.access` permission for exactly the ten approved canonical roles.
+- Extended the narrow Guard AAL1 projection to the two platform-launch permissions while preserving direct denials and MFA filtering for every unrelated protected permission.
+- Applied and recorded migration `20260912040000`; protected identity, account, assignment, override, role, catalog, and unrelated-permission fingerprints remained unchanged.
+- Production postflight confirmed 10 approved grants, 0 unapproved grants, 2 intact launch safeguards, authenticated-only projection execution, and 9 append-only grant audit events.
+- A live synthetic Guard completed SygShift to Sygilant to SygShift without another login or MFA; direct Dispatch and Access Control routes remained denied.
+- Verification passed 229 test files / 1,178 tests, TypeScript, zero-warning application lint, both production builds, the production assurance matrix, and all 54 desktop/mobile launcher and actual-component Time Clock checks.
+- See `docs/changelogs/CHANGELOG_09-10-2026_UNIVERSAL_SYGSHIFT_RETURN_ACCESS.md` for complete security, acceptance, and rollback evidence.

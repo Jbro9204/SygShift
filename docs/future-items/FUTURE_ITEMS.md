@@ -549,7 +549,7 @@ Required work:
 
 - Priority: **Strategic / High**
 - Target window: Side-by-side integration first; Sygilant-hosted consolidation only after independent readiness and rollback approval
-- Status: Approved direction; no change to SygShift's current production login or authorization boundary is authorized yet
+- Status: Side-by-side shared identity and reciprocal employee launch active; consolidation acceptance remains open
 - Added: 09/02/2026
 
 #### Execution instructions
@@ -564,11 +564,8 @@ Allow SygShift and Sygilant to operate side by side with one secure employee ide
 
 Required work:
 
-- [ ] Define one authoritative identity provider and stable person/account identifiers; never synchronize password hashes, recovery secrets, authenticator seeds, FIDO credentials, or remembered-device tokens between independent stores.
-- [ ] Reuse SygShift's proven authentication, account-recovery, MFA/FIDO, session, audit, and security patterns in Sygilant through a reviewed shared-identity architecture rather than a visual imitation or duplicate account directory.
 - [ ] Keep authentication shared but authorization independent: platform, role, permission, client, site, record, and publication checks must remain server-enforced within each application's boundary.
 - [ ] Introduce the integration side by side with feature flags, versioned contracts/events, isolated canaries, session-revocation behavior, monitoring, rollback, and no required change to the current SygShift production login.
-- [ ] Give Sygilant the same repository discipline for Future Items, dated changelogs, DEVLOG updates, production verification, backups, and removal of completed queue items.
 - [ ] When Sygilant is ready, launch SygShift only from an authenticated Sygilant workspace and retire direct SygShift login only after account mapping, deep links, MFA, recovery, logout, outage, and rollback tests pass.
 - [ ] Preserve stable URLs or controlled redirects, audit attribution, least privilege, and emergency access during the final consolidation.
 
