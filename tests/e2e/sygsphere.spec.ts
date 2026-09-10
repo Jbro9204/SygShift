@@ -16,6 +16,50 @@ test('loads and decodes the exact SygSphere-only notification sound', async ({ p
   expect(result.contentType).toContain('audio/mpeg')
   expect(createHash('sha256').update(Uint8Array.from(result.bytes)).digest('hex')).toBe('46421aca65b0da122e826b43664ddd79cd40513149007da365b627069a99c059')
 })
+test('keeps a completed PDF frame visible while resize, zoom, and rotation renders settle', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 840 })
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}&pdf&theme=dark`)
+  const viewer = page.getByRole('region', { name: 'PDF viewer for Stable preview fixture' })
+  const canvas = page.getByLabel('Stable preview fixture, page 1')
+  await expect(canvas).toBeVisible()
+  await expect(viewer).toHaveAttribute('aria-busy', 'false')
+
+  await canvas.evaluate((node) => {
+    const target = node as HTMLCanvasElement
+    const state = { blankFrames: 0, hiddenChanges: 0, samples: 0, stop: false }
+    ;(window as typeof window & { pdfFrameAudit?: typeof state }).pdfFrameAudit = state
+    new MutationObserver(() => { state.hiddenChanges += 1 }).observe(target, { attributeFilter: ['hidden'], attributes: true })
+    const sample = () => {
+      if (state.stop) return
+      const context = target.getContext('2d')
+      if (context && target.width && target.height) {
+        const pixel = context.getImageData(Math.floor(target.width / 2), Math.floor(target.height / 2), 1, 1).data
+        state.samples += 1
+        if (pixel[3] === 0 || (pixel[0] > 245 && pixel[1] > 245 && pixel[2] > 245)) state.blankFrames += 1
+      }
+      requestAnimationFrame(sample)
+    }
+    requestAnimationFrame(sample)
+  })
+
+  await page.getByRole('button', { name: 'Zoom in' }).click()
+  await page.waitForTimeout(30)
+  await page.getByRole('button', { name: 'Rotate clockwise' }).click()
+  await page.setViewportSize({ width: 1040, height: 760 })
+  await page.waitForTimeout(30)
+  await page.setViewportSize({ width: 1120, height: 800 })
+  await expect(viewer).toHaveAttribute('aria-busy', 'false')
+  await page.waitForTimeout(100)
+
+  const audit = await page.evaluate(() => {
+    const state = (window as typeof window & { pdfFrameAudit?: { blankFrames: number; hiddenChanges: number; samples: number; stop: boolean } }).pdfFrameAudit!
+    state.stop = true
+    return state
+  })
+  expect(audit.samples).toBeGreaterThan(5)
+  expect(audit.hiddenChanges).toBe(0)
+  expect(audit.blankFrames).toBe(0)
+})
 test('creates a group using the real rounded form and sends a message', async ({ page }) => {
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
   await page.getByRole('button', { name: 'New message', exact: true }).click()

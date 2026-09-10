@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const pdf = vi.hoisted(() => {
@@ -22,6 +22,7 @@ import { SecurePdfViewer } from './SecurePdfViewer'
 const canvasContext = {
   fillRect: vi.fn(),
   fillStyle: '',
+  drawImage: vi.fn(),
   restore: vi.fn(),
   save: vi.fn(),
 }
@@ -33,6 +34,7 @@ describe('SecurePdfViewer', () => {
     pdf.loaded.getPage.mockClear()
     pdf.page.getViewport.mockClear()
     pdf.render.mockClear()
+    canvasContext.drawImage.mockClear()
     vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([37, 80, 68, 70]), { status: 200 })))
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(760)
@@ -50,8 +52,31 @@ describe('SecurePdfViewer', () => {
 
     expect(pdf.getDocument).toHaveBeenCalledWith({ data: new Uint8Array([37, 80, 68, 70]) })
     expect(screen.getByLabelText('Test file, page 1')).not.toHaveAttribute('hidden')
+    expect(canvasContext.drawImage).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
+  })
+
+  it('keeps the last completed page visible while a replacement frame renders', async () => {
+    render(<SecurePdfViewer title="Stable file" url="blob:stable-file" />)
+    const canvas = await screen.findByLabelText('Stable file, page 1')
+    await waitFor(() => expect(canvas).not.toHaveAttribute('hidden'))
+
+    let finishRender: () => void = () => undefined
+    pdf.render.mockImplementationOnce(() => ({
+      cancel: vi.fn(),
+      promise: new Promise<void>((resolve) => { finishRender = resolve }),
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }))
+
+    await waitFor(() => expect(pdf.render).toHaveBeenCalledTimes(2))
+    expect(canvas).not.toHaveAttribute('hidden')
+    expect(screen.queryByText('Rendering page 1…')).not.toBeInTheDocument()
+    expect(canvasContext.drawImage).toHaveBeenCalledTimes(1)
+
+    finishRender()
+    await waitFor(() => expect(canvasContext.drawImage).toHaveBeenCalledTimes(2))
+    expect(canvas).not.toHaveAttribute('hidden')
   })
 
   it('shows a usable fallback instead of a permanent blank page when the file cannot load', async () => {

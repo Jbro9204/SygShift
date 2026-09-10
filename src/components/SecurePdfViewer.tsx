@@ -26,6 +26,7 @@ export function SecurePdfViewer({ title, url, page: controlledPage, onPageChange
   const [search, setSearch] = useState('')
   const [matches, setMatches] = useState<number[]>([])
   const [rendering, setRendering] = useState(false)
+  const [renderedPage, setRenderedPage] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -34,6 +35,7 @@ export function SecurePdfViewer({ title, url, page: controlledPage, onPageChange
     setPdfDocument(null)
     setError(null)
     setRendering(false)
+    setRenderedPage(null)
     setMatches([])
 
     void (async () => {
@@ -104,22 +106,34 @@ export function SecurePdfViewer({ title, url, page: controlledPage, onPageChange
         const available = Math.max(160, containerWidth - 28)
         const scale = fitWidth ? available / base.width : zoom
         const viewport = pdfPage.getViewport({ rotation, scale })
-        const canvas = canvasRef.current
+        const buffer = document.createElement('canvas')
         const ratio = Math.min(window.devicePixelRatio || 1, 2)
-        canvas.width = Math.max(1, Math.floor(viewport.width * ratio))
-        canvas.height = Math.max(1, Math.floor(viewport.height * ratio))
-        canvas.style.width = `${viewport.width}px`
-        canvas.style.height = `${viewport.height}px`
-        const context = canvas.getContext('2d', { alpha: false })
+        buffer.width = Math.max(1, Math.floor(viewport.width * ratio))
+        buffer.height = Math.max(1, Math.floor(viewport.height * ratio))
+        const context = buffer.getContext('2d', { alpha: false })
         if (!context) throw new Error('Canvas is unavailable')
         context.save()
         context.fillStyle = '#fff'
-        context.fillRect(0, 0, canvas.width, canvas.height)
+        context.fillRect(0, 0, buffer.width, buffer.height)
         context.restore()
-        activeTask = pdfPage.render({ canvas, canvasContext: context, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0], viewport })
+        activeTask = pdfPage.render({ canvas: buffer, canvasContext: context, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0], viewport })
         renderTaskRef.current = activeTask
         await activeTask.promise
-        if (!cancelled) setRendering(false)
+        if (cancelled || !canvasRef.current) return
+
+        // PDF.js paints into a detached buffer. The visible canvas keeps the
+        // last completed page until this synchronous copy, so resize, zoom,
+        // rotation, and page changes cannot expose partially painted frames.
+        const canvas = canvasRef.current
+        canvas.width = buffer.width
+        canvas.height = buffer.height
+        canvas.style.width = `${viewport.width}px`
+        canvas.style.height = `${viewport.height}px`
+        const visibleContext = canvas.getContext('2d', { alpha: false })
+        if (!visibleContext) throw new Error('Canvas is unavailable')
+        visibleContext.drawImage(buffer, 0, 0)
+        setRenderedPage(page)
+        setRendering(false)
       } catch (reason) {
         if (!cancelled && (reason as { name?: string } | null)?.name !== 'RenderingCancelledException') {
           setRendering(false)
@@ -157,7 +171,7 @@ export function SecurePdfViewer({ title, url, page: controlledPage, onPageChange
   }
 
   return (
-    <section aria-label={`PDF viewer for ${title}`} className={`secure-pdf-viewer${fitWidth ? ' is-fit-width' : ''}`}>
+    <section aria-busy={rendering} aria-label={`PDF viewer for ${title}`} className={`secure-pdf-viewer${fitWidth ? ' is-fit-width' : ''}`}>
       <div className="secure-pdf-viewer__toolbar">
         <div className="secure-pdf-viewer__paging">
           <button aria-label="Previous page" disabled={page <= 1} onClick={() => goToPage(page - 1)} title="Previous page" type="button"><ChevronLeft size={17} /></button>
@@ -179,8 +193,8 @@ export function SecurePdfViewer({ title, url, page: controlledPage, onPageChange
       {error ? <p className="form-error" role="alert">{error}</p> : null}
       <div className="secure-pdf-viewer__canvas" ref={containerRef}>
         {!pdfDocument && !error ? <p className="secure-pdf-viewer__status" role="status">Opening PDF…</p> : null}
-        {pdfDocument && rendering && !error ? <p className="secure-pdf-viewer__status" role="status">Rendering page {page}…</p> : null}
-        <canvas aria-label={`${title}, page ${page}`} hidden={!pdfDocument || rendering || Boolean(error)} ref={canvasRef} />
+        {pdfDocument && rendering && renderedPage === null && !error ? <p className="secure-pdf-viewer__status" role="status">Rendering page {page}…</p> : null}
+        <canvas aria-label={`${title}, page ${renderedPage ?? page}`} hidden={!pdfDocument || renderedPage === null || Boolean(error)} ref={canvasRef} />
       </div>
     </section>
   )
