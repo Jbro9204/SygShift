@@ -3,7 +3,7 @@ import '@fontsource/allura/400.css'
 import '@fontsource/dancing-script/600.css'
 import '@fontsource/great-vibes/400.css'
 
-import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CalendarDays,
@@ -15,7 +15,13 @@ import {
   FilePenLine,
   FileSignature,
   FolderInput,
+  Maximize2,
+  Minimize2,
+  Minus,
+  Move,
+  Plus,
   Redo2,
+  Scaling,
   Search,
   Send,
   Trash2,
@@ -31,7 +37,11 @@ import { getHrDocumentWorkspace, uploadHrDocument, type HrDocumentWorkspace } fr
 import {
   completedPdfFilename,
   createTypedSignaturePng,
+  DEFAULT_TEXT_FONT_SIZE,
+  DEFAULT_TEXT_WIDTH_RATIO,
   finalizePdf,
+  movePdfAnnotation,
+  resizePdfTextAnnotation,
   type PdfAnnotation,
   type PdfAnnotationKind,
 } from '../lib/pdfWorkbench'
@@ -41,6 +51,21 @@ GlobalWorkerOptions.workerSrc = workerUrl
 type WorkbenchPanel = 'edit' | 'file' | 'send'
 type RequiredAction = 'acknowledge' | 'approve' | 'certify' | 'review' | 'sign'
 type SignatureFamily = 'Alex Brush' | 'Allura' | 'Dancing Script' | 'Great Vibes'
+
+interface AnnotationGesture {
+  annotationId: string
+  changed: boolean
+  mode: 'move' | 'resize'
+  originalAnnotations: PdfAnnotation[]
+  pointerId: number
+  sheetHeight: number
+  sheetWidth: number
+  startClientX: number
+  startClientY: number
+  startWidthRatio: number
+  startXRatio: number
+  startYRatio: number
+}
 
 const signatureFamilies: SignatureFamily[] = ['Great Vibes', 'Dancing Script', 'Allura', 'Alex Brush']
 const actionLabels: Record<RequiredAction, string> = {
@@ -81,24 +106,30 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
   const sheetRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const renderTaskRef = useRef<RenderTask | null>(null)
+  const gestureRef = useRef<AnnotationGesture | null>(null)
+  const annotationsRef = useRef<PdfAnnotation[]>([])
   const idempotencyKeysRef = useRef(new Map<string, string>())
   const [file, setFile] = useState<File | null>(initialFile)
   const [sourceBytes, setSourceBytes] = useState<Uint8Array | null>(null)
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null)
   const [page, setPage] = useState(1)
   const [sheetSize, setSheetSize] = useState({ height: 0, width: 0 })
+  const [sheetScale, setSheetScale] = useState(1)
   const [viewportWidth, setViewportWidth] = useState(0)
   const [rendering, setRendering] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
   const [title, setTitle] = useState(initialTitle || initialFile?.name.replace(/\.pdf$/i, '') || '')
   const [panel, setPanel] = useState<WorkbenchPanel>(employeeOnly ? 'file' : 'edit')
+  const [maximized, setMaximized] = useState(false)
   const [tool, setTool] = useState<PdfAnnotationKind | null>('text')
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null)
   const [textValue, setTextValue] = useState('')
   const [signatureName, setSignatureName] = useState('')
   const [signatureFamily, setSignatureFamily] = useState<SignatureFamily>('Great Vibes')
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([])
-  const [redoStack, setRedoStack] = useState<PdfAnnotation[]>([])
+  const [undoHistory, setUndoHistory] = useState<PdfAnnotation[][]>([])
+  const [redoHistory, setRedoHistory] = useState<PdfAnnotation[][]>([])
   const [employeeSearch, setEmployeeSearch] = useState('')
   const [employeeId, setEmployeeId] = useState(employeeOnly ? '' : 'company')
   const [category, setCategory] = useState('Business document')
@@ -128,13 +159,19 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
     return workspace.employees.filter((employee) => ['active', 'leave'].includes(employee.status) && (!search || `${employee.legalName} ${employee.employeeNumber ?? ''}`.toLocaleLowerCase().includes(search)))
   }, [recipientSearch, workspace.employees])
   const documentFingerprint = useMemo(() => JSON.stringify({
-    annotations: annotations.map(({ fontFamily, kind, page: annotationPage, text, xRatio, yRatio }) => ({ fontFamily, kind, page: annotationPage, text, xRatio, yRatio })),
+    annotations: annotations.map(({ fontFamily, fontSize, kind, page: annotationPage, text, widthRatio, xRatio, yRatio }) => ({ fontFamily, fontSize, kind, page: annotationPage, text, widthRatio, xRatio, yRatio })),
     category,
     description,
     employeeId,
     source: file ? `${file.name}:${file.size}:${file.lastModified}` : '',
     title,
   }), [annotations, category, description, employeeId, file, title])
+  const selectedAnnotation = annotations.find((annotation) => annotation.id === selectedAnnotationId) ?? null
+
+  useEffect(() => {
+    annotationsRef.current = annotations
+    if (selectedAnnotationId && !annotations.some((annotation) => annotation.id === selectedAnnotationId)) setSelectedAnnotationId(null)
+  }, [annotations, selectedAnnotationId])
 
   useEffect(() => {
     const container = viewportRef.current
@@ -161,7 +198,10 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
     setLoadError(null)
     setPage(1)
     setAnnotations([])
-    setRedoStack([])
+    annotationsRef.current = []
+    setUndoHistory([])
+    setRedoHistory([])
+    setSelectedAnnotationId(null)
     void (async () => {
       try {
         if (file.type !== 'application/pdf' && !file.name.toLocaleLowerCase().endsWith('.pdf')) throw new Error('Choose a PDF so it can be opened, completed, and signed here.')
@@ -219,6 +259,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
         canvas.style.height = `${viewport.height}px`
         canvas.getContext('2d', { alpha: false })?.drawImage(buffer, 0, 0)
         setSheetSize({ height: viewport.height, width: viewport.width })
+        setSheetScale(viewport.width / base.width)
       } catch (error) {
         if (!cancelled && (error as { name?: string } | null)?.name !== 'RenderingCancelledException') setLoadError('This page could not be displayed. Choose the PDF again or download the original.')
       } finally {
@@ -230,11 +271,28 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
       cancelled = true
       activeTask?.cancel()
     }
-  }, [page, pdf, viewportWidth])
+  }, [page, pdf, viewportWidth, maximized])
 
   async function createFinalFile(): Promise<File> {
     if (!sourceBytes || !title.trim()) throw new Error('Open a PDF and add a document title first.')
     return bytesAsFile(await finalizePdf(sourceBytes, annotations), title)
+  }
+
+  function setAnnotationSnapshot(next: PdfAnnotation[]) {
+    annotationsRef.current = next
+    setAnnotations(next)
+  }
+
+  function commitAnnotationSnapshot(next: PdfAnnotation[]) {
+    const current = annotationsRef.current
+    if (next === current) return
+    setUndoHistory((history) => [...history, current].slice(-60))
+    setRedoHistory([])
+    setAnnotationSnapshot(next)
+  }
+
+  function updateAnnotation(id: string, update: (annotation: PdfAnnotation) => PdfAnnotation) {
+    commitAnnotationSnapshot(annotationsRef.current.map((annotation) => annotation.id === id ? update(annotation) : annotation))
   }
 
   async function addAnnotation(event: ReactPointerEvent<HTMLDivElement>) {
@@ -250,19 +308,90 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
       return
     }
     const value = tool === 'text' ? textValue.trim() : tool === 'date' ? new Intl.DateTimeFormat('en-US').format(new Date()) : tool === 'checkmark' ? '✓' : signatureName.trim()
-    setAnnotations((current) => [...current, {
-      id: crypto.randomUUID(),
+    const id = crypto.randomUUID()
+    const annotation = movePdfAnnotation({
+      fontSize: tool === 'text' ? DEFAULT_TEXT_FONT_SIZE : undefined,
+      id,
       fontFamily: tool === 'signature' ? signatureFamily : undefined,
       kind: tool,
       page,
       signaturePng,
       text: value,
-      xRatio: Math.min(.98, Math.max(.02, (event.clientX - bounds.left) / bounds.width)),
-      yRatio: Math.min(.98, Math.max(.02, (event.clientY - bounds.top) / bounds.height)),
-    }])
-    setRedoStack([])
+      widthRatio: tool === 'text' ? DEFAULT_TEXT_WIDTH_RATIO : undefined,
+      xRatio: (event.clientX - bounds.left) / bounds.width,
+      yRatio: (event.clientY - bounds.top) / bounds.height,
+    }, (event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height)
+    commitAnnotationSnapshot([...annotationsRef.current, annotation])
+    setSelectedAnnotationId(id)
     setLoadError(null)
     if (tool === 'text') setTextValue('')
+  }
+
+  function startAnnotationGesture(event: ReactPointerEvent<HTMLElement>, annotation: PdfAnnotation, mode: AnnotationGesture['mode']) {
+    if (!sheetRef.current) return
+    event.preventDefault()
+    event.stopPropagation()
+    const bounds = sheetRef.current.getBoundingClientRect()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    gestureRef.current = {
+      annotationId: annotation.id,
+      changed: false,
+      mode,
+      originalAnnotations: annotationsRef.current,
+      pointerId: event.pointerId,
+      sheetHeight: Math.max(1, bounds.height),
+      sheetWidth: Math.max(1, bounds.width),
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startWidthRatio: annotation.widthRatio ?? DEFAULT_TEXT_WIDTH_RATIO,
+      startXRatio: annotation.xRatio,
+      startYRatio: annotation.yRatio,
+    }
+    setSelectedAnnotationId(annotation.id)
+    setPanel('edit')
+    if (annotation.kind === 'text') setTool('text')
+  }
+
+  function continueAnnotationGesture(event: ReactPointerEvent<HTMLElement>) {
+    const gesture = gestureRef.current
+    if (!gesture || gesture.pointerId !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+    const deltaX = (event.clientX - gesture.startClientX) / gesture.sheetWidth
+    const deltaY = (event.clientY - gesture.startClientY) / gesture.sheetHeight
+    if (Math.abs(deltaX) < .001 && Math.abs(deltaY) < .001) return
+    gesture.changed = true
+    const next = annotationsRef.current.map((annotation) => {
+      if (annotation.id !== gesture.annotationId) return annotation
+      if (gesture.mode === 'resize') return resizePdfTextAnnotation(annotation, gesture.startWidthRatio + deltaX)
+      return movePdfAnnotation(annotation, gesture.startXRatio + deltaX, gesture.startYRatio + deltaY)
+    })
+    setAnnotationSnapshot(next)
+  }
+
+  function finishAnnotationGesture(event: ReactPointerEvent<HTMLElement>) {
+    const gesture = gestureRef.current
+    if (!gesture || gesture.pointerId !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+    gestureRef.current = null
+    if (!gesture.changed) return
+    setUndoHistory((history) => [...history, gesture.originalAnnotations].slice(-60))
+    setRedoHistory([])
+  }
+
+  function moveAnnotationWithKeyboard(event: ReactKeyboardEvent<HTMLButtonElement>, annotation: PdfAnnotation) {
+    const direction = { ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1] }[event.key]
+    if (!direction) {
+      if ((event.key === 'Delete' || event.key === 'Backspace') && annotation.id === selectedAnnotationId) {
+        event.preventDefault()
+        commitAnnotationSnapshot(annotationsRef.current.filter((item) => item.id !== annotation.id))
+      }
+      return
+    }
+    event.preventDefault()
+    const step = event.shiftKey ? .02 : .004
+    updateAnnotation(annotation.id, (current) => movePdfAnnotation(current, current.xRatio + direction[0] * step, current.yRatio + direction[1] * step))
   }
 
   function chooseFile(nextFile: File | null) {
@@ -271,25 +400,26 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
     setTitle(nextFile.name.replace(/\.pdf$/i, ''))
     setSavedMessage(null)
     setSavedDocument(null)
+    setSelectedAnnotationId(null)
+    setUndoHistory([])
+    setRedoHistory([])
     idempotencyKeysRef.current.clear()
   }
 
   function undo() {
-    setAnnotations((current) => {
-      const removed = current.at(-1)
-      if (!removed) return current
-      setRedoStack((redo) => [...redo, removed])
-      return current.slice(0, -1)
-    })
+    const previous = undoHistory.at(-1)
+    if (!previous) return
+    setUndoHistory((history) => history.slice(0, -1))
+    setRedoHistory((history) => [...history, annotationsRef.current].slice(-60))
+    setAnnotationSnapshot(previous)
   }
 
   function redo() {
-    setRedoStack((current) => {
-      const restored = current.at(-1)
-      if (!restored) return current
-      setAnnotations((items) => [...items, restored])
-      return current.slice(0, -1)
-    })
+    const next = redoHistory.at(-1)
+    if (!next) return
+    setRedoHistory((history) => history.slice(0, -1))
+    setUndoHistory((history) => [...history, annotationsRef.current].slice(-60))
+    setAnnotationSnapshot(next)
   }
 
   const save = useMutation({
@@ -412,13 +542,14 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
   }
 
   const visibleAnnotations = annotations.filter((annotation) => annotation.page === page)
+  const selectedTextAnnotation = selectedAnnotation?.kind === 'text' ? selectedAnnotation : null
   const busy = save.isPending || sendDocument.isPending
   const operationError = save.error ?? sendDocument.error
 
   return <ModalDialog
     busy={busy}
     busyLabel={save.isPending ? `Saving document… ${progress}%` : progress < 100 ? `Preparing document… ${progress}%` : 'Sending document…'}
-    className="document-workbench"
+    className={`document-workbench${maximized ? ' is-maximized' : ''}`}
     description={file ? 'Type, sign, download, send, or add this PDF to an employee file from one place.' : 'Choose a PDF from your device. It opens immediately so you can work without a setup process.'}
     dismissible={!busy}
     headingIcon={<FilePenLine />}
@@ -442,10 +573,11 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
           <button aria-label="Next page" disabled={!pdf || page >= pdf.numPages} onClick={() => setPage((current) => Math.min(pdf?.numPages ?? current, current + 1))} type="button"><ChevronRight size={18} /></button>
         </div>
         <div className="document-workbench__history">
-          <button aria-label="Undo" disabled={!annotations.length} onClick={undo} title="Undo" type="button"><Undo2 size={18} /></button>
-          <button aria-label="Redo" disabled={!redoStack.length} onClick={redo} title="Redo" type="button"><Redo2 size={18} /></button>
-          <button aria-label="Clear all additions" disabled={!annotations.length} onClick={() => { setAnnotations([]); setRedoStack([]) }} title="Clear all additions" type="button"><Trash2 size={18} /></button>
+          <button aria-label="Undo last document change" disabled={!undoHistory.length} onClick={undo} title="Undo" type="button"><Undo2 size={18} /></button>
+          <button aria-label="Redo last document change" disabled={!redoHistory.length} onClick={redo} title="Redo" type="button"><Redo2 size={18} /></button>
+          <button aria-label="Clear all additions" disabled={!annotations.length} onClick={() => { commitAnnotationSnapshot([]); setSelectedAnnotationId(null) }} title="Clear all additions" type="button"><Trash2 size={18} /></button>
         </div>
+        <button aria-label={maximized ? 'Restore editor size' : 'Maximize editor'} aria-pressed={maximized} className="document-workbench__maximize" onClick={() => setMaximized((current) => !current)} title={maximized ? 'Restore editor size' : 'Maximize editor'} type="button">{maximized ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button>
         <button className="secondary-button secondary-button--small" onClick={() => inputRef.current?.click()} type="button">Choose another PDF</button>
         <input accept="application/pdf,.pdf" hidden onChange={(event) => chooseFile(event.target.files?.item(0) ?? null)} ref={inputRef} type="file" />
       </header>
@@ -456,16 +588,40 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
           {!pdf && !loadError ? <p className="document-workbench__loading">Opening PDF…</p> : null}
           <div className={`document-workbench__sheet${tool ? ' is-placing' : ''}`} onPointerDown={(event) => void addAnnotation(event)} ref={sheetRef} style={{ height: sheetSize.height || undefined, width: sheetSize.width || undefined }}>
             <canvas hidden={!pdf || !sheetSize.width} ref={canvasRef} />
-            {visibleAnnotations.map((annotation) => <button
-              aria-label={`Remove ${annotation.kind}: ${annotation.text}`}
-              className={`document-workbench__annotation is-${annotation.kind}`}
+            {visibleAnnotations.map((annotation) => <div
+              className={`document-workbench__annotation is-${annotation.kind}${selectedAnnotationId === annotation.id ? ' is-selected' : ''}`}
               key={annotation.id}
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={() => setAnnotations((current) => current.filter((item) => item.id !== annotation.id))}
-              style={{ left: `${annotation.xRatio * 100}%`, top: `${annotation.yRatio * 100}%`, ...(annotation.kind === 'signature' ? { fontFamily: `"${annotation.fontFamily ?? signatureFamily}", cursive` } : {}) }}
-              title="Click to remove"
-              type="button"
-            >{annotation.text}</button>)}
+              style={{
+                left: `${annotation.xRatio * 100}%`,
+                top: `${annotation.yRatio * 100}%`,
+                ...(annotation.kind === 'text' ? { fontSize: `${Math.max(10, (annotation.fontSize ?? DEFAULT_TEXT_FONT_SIZE) * sheetScale)}px`, width: `${(annotation.widthRatio ?? DEFAULT_TEXT_WIDTH_RATIO) * 100}%` } : {}),
+                ...(annotation.kind === 'signature' ? { fontFamily: `"${annotation.fontFamily ?? signatureFamily}", cursive` } : {}),
+              }}
+            >
+              <button
+                aria-label={`${annotation.kind === 'text' ? 'Text box' : annotation.kind}: ${annotation.text}. Drag or use arrow keys to move.`}
+                aria-pressed={selectedAnnotationId === annotation.id}
+                className="document-workbench__annotation-content"
+                onClick={() => setSelectedAnnotationId(annotation.id)}
+                onKeyDown={(event) => moveAnnotationWithKeyboard(event, annotation)}
+                onPointerCancel={finishAnnotationGesture}
+                onPointerDown={(event) => startAnnotationGesture(event, annotation, 'move')}
+                onPointerMove={continueAnnotationGesture}
+                onPointerUp={finishAnnotationGesture}
+                title="Drag to move. Arrow keys also move this item."
+                type="button"
+              >{annotation.text}</button>
+              {annotation.kind === 'text' && selectedAnnotationId === annotation.id ? <button
+                aria-label="Resize selected text box"
+                className="document-workbench__resize-handle"
+                onPointerCancel={finishAnnotationGesture}
+                onPointerDown={(event) => startAnnotationGesture(event, annotation, 'resize')}
+                onPointerMove={continueAnnotationGesture}
+                onPointerUp={finishAnnotationGesture}
+                title="Drag to resize text box"
+                type="button"
+              ><Scaling aria-hidden="true" size={13} /></button> : null}
+            </div>)}
           </div>
         </section>
 
@@ -479,18 +635,26 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
           {panel === 'edit' ? <div className="document-workbench__panel">
             <div><p className="eyebrow">Add to the PDF</p><h3>Choose a tool, then click the page</h3><p>Every addition can be undone or removed before you finish.</p></div>
             <div className="document-workbench__tools">
-              <button aria-pressed={tool === 'text'} className={tool === 'text' ? 'active' : ''} onClick={() => setTool('text')} type="button"><Type size={18} /><span>Text</span></button>
-              <button aria-pressed={tool === 'signature'} className={tool === 'signature' ? 'active' : ''} onClick={() => setTool('signature')} type="button"><FileSignature size={18} /><span>Signature</span></button>
-              <button aria-pressed={tool === 'date'} className={tool === 'date' ? 'active' : ''} onClick={() => setTool('date')} type="button"><CalendarDays size={18} /><span>Date</span></button>
-              <button aria-pressed={tool === 'checkmark'} className={tool === 'checkmark' ? 'active' : ''} onClick={() => setTool('checkmark')} type="button"><Check size={18} /><span>Check</span></button>
+              <button aria-pressed={tool === 'text' && !selectedAnnotationId} className={tool === 'text' && !selectedAnnotationId ? 'active' : ''} onClick={() => { setTool('text'); setSelectedAnnotationId(null) }} type="button"><Type size={18} /><span>Text</span></button>
+              <button aria-pressed={tool === 'signature'} className={tool === 'signature' ? 'active' : ''} onClick={() => { setTool('signature'); setSelectedAnnotationId(null) }} type="button"><FileSignature size={18} /><span>Signature</span></button>
+              <button aria-pressed={tool === 'date'} className={tool === 'date' ? 'active' : ''} onClick={() => { setTool('date'); setSelectedAnnotationId(null) }} type="button"><CalendarDays size={18} /><span>Date</span></button>
+              <button aria-pressed={tool === 'checkmark'} className={tool === 'checkmark' ? 'active' : ''} onClick={() => { setTool('checkmark'); setSelectedAnnotationId(null) }} type="button"><Check size={18} /><span>Check</span></button>
             </div>
-            {tool === 'text' ? <label className="document-workbench__field">Text to add<input maxLength={240} onChange={(event) => setTextValue(event.target.value)} placeholder="Type here" value={textValue} /></label> : null}
+            {tool === 'text' ? <>
+              <label className="document-workbench__field">{selectedTextAnnotation ? 'Selected text box' : 'Text to add'}<textarea maxLength={2000} onChange={(event) => selectedTextAnnotation ? updateAnnotation(selectedTextAnnotation.id, (current) => ({ ...current, text: event.target.value })) : setTextValue(event.target.value)} placeholder="Type the complete text here" rows={4} value={selectedTextAnnotation?.text ?? textValue} /></label>
+              {selectedTextAnnotation ? <section className="document-workbench__text-controls" aria-label="Selected text box controls">
+                <div className="document-workbench__selection-heading"><span><Move aria-hidden="true" size={17} /></span><div><strong>Selected text box</strong><small>Drag the text to move it. Drag its gold corner to resize the box.</small></div></div>
+                <div className="document-workbench__size-control"><span>Text size</span><div><button aria-label="Decrease text size" disabled={(selectedTextAnnotation.fontSize ?? DEFAULT_TEXT_FONT_SIZE) <= 8} onClick={() => updateAnnotation(selectedTextAnnotation.id, (current) => ({ ...current, fontSize: Math.max(8, (current.fontSize ?? DEFAULT_TEXT_FONT_SIZE) - 1) }))} type="button"><Minus size={16} /></button><output>{selectedTextAnnotation.fontSize ?? DEFAULT_TEXT_FONT_SIZE} pt</output><button aria-label="Increase text size" disabled={(selectedTextAnnotation.fontSize ?? DEFAULT_TEXT_FONT_SIZE) >= 28} onClick={() => updateAnnotation(selectedTextAnnotation.id, (current) => ({ ...current, fontSize: Math.min(28, (current.fontSize ?? DEFAULT_TEXT_FONT_SIZE) + 1) }))} type="button"><Plus size={16} /></button></div></div>
+                <label className="document-workbench__width-control">Text box width <output>{Math.round((selectedTextAnnotation.widthRatio ?? DEFAULT_TEXT_WIDTH_RATIO) * 100)}%</output><input aria-label="Text box width" max="88" min="16" onChange={(event) => updateAnnotation(selectedTextAnnotation.id, (current) => resizePdfTextAnnotation(current, Number(event.target.value) / 100))} type="range" value={Math.round((selectedTextAnnotation.widthRatio ?? DEFAULT_TEXT_WIDTH_RATIO) * 100)} /></label>
+                <div className="document-workbench__selection-actions"><button className="secondary-button secondary-button--small" onClick={() => { setSelectedAnnotationId(null); setTextValue('') }} type="button"><Type size={16} />Add another text box</button><button className="danger-button danger-button--small" onClick={() => { commitAnnotationSnapshot(annotationsRef.current.filter((item) => item.id !== selectedTextAnnotation.id)); setSelectedAnnotationId(null) }} type="button"><Trash2 size={16} />Remove text box</button></div>
+              </section> : null}
+            </> : null}
             {tool === 'signature' ? <div className="document-workbench__signature">
               <label className="document-workbench__field">Signer name<input maxLength={120} onChange={(event) => setSignatureName(event.target.value)} placeholder="Type the full name" value={signatureName} /></label>
               <div className="document-workbench__signature-preview" style={{ fontFamily: `"${signatureFamily}", cursive` }}>{signatureName || 'Your signature'}</div>
               <div className="document-workbench__signature-styles" aria-label="Signature style">{signatureFamilies.map((family) => <button aria-pressed={signatureFamily === family} className={signatureFamily === family ? 'active' : ''} key={family} onClick={() => setSignatureFamily(family)} style={{ fontFamily: `"${family}", cursive` }} type="button">{signatureName || 'Signature'}</button>)}</div>
             </div> : null}
-            <p className="document-workbench__tip">Tip: additions on the page are removable—click one to take it off.</p>
+            <p className="document-workbench__tip">Tip: select an item to move it. Text boxes can also wrap, resize, and be edited after placement.</p>
           </div> : null}
 
           {panel === 'file' ? <div className="document-workbench__panel">
