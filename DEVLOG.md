@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/10/2026 - Compensation Worklist Approvals
+
+- Turned the Compensation approval worklist into the direct destination for pay-rate decisions: authorized reviewers can open the exact pending proposal, inspect its amount, effective date, proposer, and business reason, then approve or reject it without searching for the employee file.
+- Preserved recent-MFA enforcement, `hr.compensation.approve`, independent approval, the self-approval prohibition, required review reasons, append-only decision evidence, and effective-dated compensation history at the existing Worker and database boundaries.
+- Added clear loading, recovery, stale-proposal, insufficient-access, and independent-review states, plus immediate Compensation and notification refresh after a successful decision.
+- Released source commit `39f1749` as Cloudflare Worker `1f424e63-12e2-46e6-97bb-d5f703214926`; rollback tag `rollback/pre-compensation-worklist-approvals-20260910` points to `6d85e23`.
+- Verification passed 230 test files / 1,188 tests, 10 focused approval tests, 2 responsive light/dark browser checks, and the 42-check Time Clock matrix before and after deployment. Both production origins are healthy/ready, the live route and exact assets match, and signed-out decisions remain denied.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-10-2026_COMPENSATION_WORKLIST_APPROVALS.md`.
+
 ## 09/10/2026 - SygSphere Standard Upload Routing Repair
 
 - Corrected the desktop and mobile SygSphere failure where normal PDFs and photos were authorized but no private storage object was created.
