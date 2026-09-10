@@ -48,7 +48,7 @@ The employee-signature control plane was complete, but its primary interface exp
 - Document Studio rendered layout and accessibility matrix: **12/12 passed** across desktop/mobile and light/dark modes.
 - SygTasks rendered layout, dialog, accessibility, and 200% reflow matrix: **10/10 passed**.
 - Pre-release actual-component Time Clock preservation matrix: **42/42 passed** across desktop and mobile, including early clock-in, punch controls, split-shift return, ambiguity handling, duplicate prevention, role boundaries, and both themes.
-- `pnpm check`: passed TypeScript, zero-warning application lint, **230 test files / 1,185 tests**, and fresh Worker/client production builds.
+- `pnpm check`: passed TypeScript, zero-warning application lint, **231 test files / 1,193 tests**, and fresh Worker/client production builds after integration with the latest upstream releases.
 - `git diff --check`: passed.
 
 ## Database status
@@ -57,10 +57,12 @@ No migration was needed or applied. The implementation deliberately reuses the r
 
 ## Release status
 
-- Git commit/push: pending final release run.
-- Rollback tag: pending final release run.
-- Cloudflare Worker deployment: pending final release run.
-- Live primary/fallback health, readiness, route, asset, and mandatory post-deployment Time Clock verification: pending final release run.
+- Application source commit: `2f8ee5f` (`fix: simplify document delivery and strengthen task alarms`), pushed to `origin/main` after rebasing onto the latest upstream SygSphere and compensation releases.
+- Rollback tag: `rollback/pre-document-delivery-task-alarm-repair-20260910` at pre-release source `506b4fe`, pushed to origin.
+- Cloudflare Worker version: `17397cfe-66c0-454c-9bc4-76839f949a4f`.
+- Primary `https://app.sygilant.us` and fallback `https://sygshift.sygilant.workers.dev` roots, `/hr/documents`, and `/tasks` returned HTTP 200; health returned `ok` and readiness returned `true` on both origins.
+- Live `index-GbXp0kda.js`, `index-D7gd4tdq.css`, `HrisDocumentsPage-BzgRMEl3.js`, and `SygTasksPage-Bwf7VCl7.js` matched the final local production build by SHA-256.
+- Mandatory post-deployment actual-component Time Clock preservation matrix: **42/42 passed** across desktop and mobile.
 
 ## Remaining limitations
 
