@@ -42,12 +42,13 @@ SygShift now uses the available screen width cleanly on 14-inch and other compac
 - Post-deployment mandatory Time Clock workflow passed 42/42 desktop/mobile checks, covering early clock-in acknowledgment, ordinary punches, breaks, resumed work, ambiguous shifts, active controls, permission boundaries, failure recovery, and duplicate-submit protection.
 - Primary root, `/sygsphere`, and fallback Worker root returned HTTP 200.
 - Production health returned `ok`; readiness returned `ready` with every required check true.
-- Live application assets are `assets/index-xezfMBWS.js` and `assets/index-KyggoZYh.css`; the live CSS contains the compact-shell drawer and SygSphere compact-alert rules.
+- The initial release served `assets/index-xezfMBWS.js` and `assets/index-KyggoZYh.css`. The immediately following coordinated SygSphere upload-repair deployment serves `assets/index-BFV1APP2.js` with the same `assets/index-KyggoZYh.css`; live CSS still contains the compact-shell drawer and SygSphere compact-alert rules.
 
 ## Release
 
 - Application source: `99f7397` (`fix: adapt SygShift shell for smaller screens`).
-- Cloudflare Worker version: `a0b20e77-3855-4a17-a8a5-62ca5f92f7e4`.
+- Initial Cloudflare Worker version: `a0b20e77-3855-4a17-a8a5-62ca5f92f7e4`.
+- Current coordinated Cloudflare Worker version: `1b607a3b-f6af-4636-8409-127e0ea9c603`; it retains this responsive release and adds the separately verified SygSphere upload-completion repair.
 - Primary URL: `https://app.sygilant.us`.
 - Fallback URL: `https://sygshift.sygilant.workers.dev`.
 

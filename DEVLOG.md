@@ -13,7 +13,7 @@
 - Replaced the permanent desktop rail with a full-size off-canvas navigation drawer on compact laptops, giving every module the full screen width while preserving all navigation groups, branded launchers, Need Help, and online status.
 - Added explicit coverage for widths up to 1280 pixels and common 1366x768 laptops, while preserving the employee's saved rail preference when returning to a larger screen.
 - Condensed the SygSphere alert at laptop sizes so conversations, the active message, composer, Send control, and all four required clocks stay visible and usable.
-- Released source commit `99f7397` as Cloudflare Worker `a0b20e77-3855-4a17-a8a5-62ca5f92f7e4`; retained rollback tag `rollback/pre-small-screen-shell-20260910`.
+- Released source commit `99f7397` as Cloudflare Worker `a0b20e77-3855-4a17-a8a5-62ca5f92f7e4`; coordinated Worker `1b607a3b-f6af-4636-8409-127e0ea9c603` retains the responsive release alongside the separate SygSphere upload repair. Retained rollback tag `rollback/pre-small-screen-shell-20260910`.
 - Verification passed 229 test files / 1,179 tests, the 58-check focused responsive matrix, 120 broad layout checks, the post-deployment 42-check Time Clock matrix, live asset identity, and production health/readiness. Full release evidence: `docs/changelogs/CHANGELOG_09-10-2026_SMALL_SCREEN_SHELL_AND_SYGSPHERE_LAPTOP.md`.
 
 ## 09/10/2026 - Attendance Alert Schedule Refresh
