@@ -4,14 +4,19 @@ import { readFileSync } from 'node:fs'
 
 describe('sound lifecycle', () => {
   const started = vi.fn()
+  const createdSources: Array<{ onended: (() => void) | null }> = []
   beforeEach(() => {
-    vi.resetModules(); localStorage.clear(); started.mockClear()
+    vi.resetModules(); localStorage.clear(); started.mockClear(); createdSources.length = 0
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) })))
     vi.stubGlobal('AudioContext', class {
       state = 'running'; destination = {}
       async resume() {}
       async decodeAudioData() { return {} }
-      createBufferSource() { return { connect: (target: unknown) => target, start: started, stop() {}, disconnect() {}, buffer: null, onended: null } }
+      createBufferSource() {
+        const source = { connect: (target: unknown) => target, start: started, stop() {}, disconnect() {}, buffer: null, onended: null as (() => void) | null }
+        createdSources.push(source)
+        return source
+      }
       createGain() { return { gain: { value: 0 }, connect() {}, disconnect() {} } }
     })
   })
@@ -39,6 +44,17 @@ describe('sound lifecycle', () => {
       expect(createHash('sha256').update(readFileSync(`public/sounds/${name}`)).digest('hex')).toBe(expected)
     }
   })
+  it('keeps an alarm cycle active until the sound finishes', async () => {
+    const sound = await import('./notificationSounds')
+    await sound.enableAudio()
+    let finished = false
+    const cycle = sound.playAlarmSoundCycle().then((played) => { finished = true; return played })
+    await vi.waitFor(() => expect(started).toHaveBeenCalledTimes(1))
+    expect(finished).toBe(false)
+    createdSources.at(-1)?.onended?.()
+    await expect(cycle).resolves.toBe(true)
+    expect(finished).toBe(true)
+  })
   it('does not play on failed or mismatched sign-in', async () => {
     const sound = await import('./notificationSounds')
     sound.beginLoginSound('alex'); sound.cancelLoginSound(); await sound.completeLoginSound('alex')
@@ -48,7 +64,7 @@ describe('sound lifecycle', () => {
   it('honors separate preferences and mute without affecting test playback', async () => {
     const sound = await import('./notificationSounds')
     await sound.enableAudio()
-    sound.saveSoundPreferences({ login: false, notification: true, alarm: false, muted: true, volume: .5 })
+    sound.saveSoundPreferences({ login: false, notification: true, alarm: false, muted: true, volume: .5, alarmVolume: 1 })
     await sound.playSound('login'); await sound.playSound('notification'); expect(started).not.toHaveBeenCalled()
     await sound.playSound('notification', true); expect(started).toHaveBeenCalledTimes(1)
   })
@@ -61,6 +77,6 @@ describe('sound lifecycle', () => {
   it('repairs invalid stored preferences and clamps volume', async () => {
     const sound = await import('./notificationSounds')
     localStorage.setItem('sygshift.sound-preferences.v1', '{"volume":3,"muted":"no"}')
-    expect(sound.getSoundPreferences()).toEqual({ login: true, notification: true, alarm: true, muted: false, volume: 1 })
+    expect(sound.getSoundPreferences()).toEqual({ login: true, notification: true, alarm: true, muted: false, volume: 1, alarmVolume: 1 })
   })
 })

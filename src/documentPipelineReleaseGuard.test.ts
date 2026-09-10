@@ -40,7 +40,7 @@ describe('protected document production release', () => {
   })
 
   it('supports company-owned records and automatically refreshes pending scans', () => {
-    expect(page).toContain('Company / shared document')
+    expect(page).toContain('Company / shared records')
     expect(page).toContain("employeeId: employeeId === 'company' ? null : employeeId")
     expect(page).toContain('refetchInterval:')
     expect(worker).toContain('renderOfficeDocumentPreview')

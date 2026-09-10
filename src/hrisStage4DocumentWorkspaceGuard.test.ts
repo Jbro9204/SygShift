@@ -55,7 +55,7 @@ describe('HRIS Stage 4 protected document workspace', () => {
     expect(page).toContain('<option value={10}>10</option>')
     expect(page).toContain('<option value={20}>20</option>')
     expect(page).toContain('aria-expanded={isExpanded}')
-    expect(page).toContain('Upload HR document')
+    expect(page).toContain('Upload a document')
     expect(page).toContain('Open protected preview')
     expect(page).toContain('Download protected file')
   })

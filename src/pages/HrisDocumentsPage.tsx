@@ -125,7 +125,7 @@ export function HrisDocumentsPage() {
         <Link to="/hr/documents/workflows">Requests &amp; assignments</Link>
       </nav>
 
-      <DocumentStudioDashboard documents={workspace} />
+      <DocumentStudioDashboard documents={workspace} onUploadDocument={() => setUploadOpen(true)} />
 
       {workspaceQuery.isPending ? (
         <DataStatePanel icon={Files} title="Loading protected documents">
@@ -214,9 +214,9 @@ export function HrisDocumentsPage() {
 function DocumentUploadModal({ onClose, onUploaded, workspace }: { onClose: () => void; onUploaded: () => void; workspace: HrDocumentWorkspace }) {
   const manageableVaults = workspace.vaults.filter((vault) => vault.canManage)
   const [employeeId, setEmployeeId] = useState('company')
-  const [vaultCode, setVaultCode] = useState(manageableVaults[0]?.code ?? '')
+  const [vaultCode, setVaultCode] = useState(manageableVaults.find((vault) => vault.code === 'hr-general')?.code ?? manageableVaults[0]?.code ?? '')
   const [title, setTitle] = useState('')
-  const [category, setCategory] = useState('Employment document')
+  const [category, setCategory] = useState('Business document')
   const [description, setDescription] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID())
@@ -238,7 +238,12 @@ function DocumentUploadModal({ onClose, onUploaded, workspace }: { onClose: () =
     setProgress(0)
     setFile(nextFile)
     setIdempotencyKey(crypto.randomUUID())
-    if (nextFile && !title.trim()) setTitle(nextFile.name.replace(/\.[^.]+$/, ''))
+    if (nextFile) {
+      if (!title.trim()) setTitle(nextFile.name.replace(/\.[^.]+$/, ''))
+      const compatible = manageableVaults.filter((vault) => Boolean(nextFile.type) && vault.allowedMimeTypes.includes(nextFile.type) && nextFile.size <= vault.maximumFileSizeBytes)
+      const automatic = compatible.find((vault) => vault.code === 'hr-general') ?? compatible[0]
+      setVaultCode(automatic?.code ?? '')
+    }
   }
 
   function validateFile(): string | null {
@@ -276,23 +281,21 @@ function DocumentUploadModal({ onClose, onUploaded, workspace }: { onClose: () =
   const formReady = Boolean(file && employeeId && title.trim() && category.trim() && !fileError)
 
   return (
-    <ModalDialog busy={uploadMutation.isPending} busyLabel={`Uploading protected document… ${progress}%`} className="hr-document-modal" description="Choose an employee or company record, select an authorized vault, then upload one supported file." onClose={onClose} title="Upload HR document">
+    <ModalDialog busy={uploadMutation.isPending} busyLabel={`Uploading protected document… ${progress}%`} className="hr-document-modal" description="Choose the file first. SygShift selects the ordinary protected filing area automatically; specialized filing details remain optional." onClose={onClose} title="Upload a document">
       <form className="hr-document-upload-form" onSubmit={submit}>
-        <div className="hr-document-upload-form__fields">
-          <label>Record owner<select onChange={(event) => setEmployeeId(event.target.value)} required value={employeeId}><option value="company">Company / shared document</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select></label>
-          <label>Document vault<select onChange={(event) => { setVaultCode(event.target.value); chooseFile(null) }} required value={vaultCode}>{manageableVaults.map((vault) => <option key={vault.code} value={vault.code}>{vault.name}</option>)}</select></label>
-          <label>Document title<input maxLength={160} onChange={(event) => setTitle(event.target.value)} required value={title} /></label>
-          <label>Category<input maxLength={100} onChange={(event) => setCategory(event.target.value)} required value={category} /></label>
-          <label className="wide">Description <span>Optional</span><textarea maxLength={1000} onChange={(event) => setDescription(event.target.value)} rows={3} value={description} /></label>
-        </div>
         <div className={`hr-document-dropzone${dragActive ? ' active' : ''}`} onDragEnter={(event) => { event.preventDefault(); setDragActive(true) }} onDragLeave={() => setDragActive(false)} onDragOver={(event) => event.preventDefault()} onDrop={acceptDrop}>
-          <input accept={selectedVault?.allowedMimeTypes.join(',')} hidden onChange={(event) => chooseFile(event.target.files?.item(0) ?? null)} ref={fileInputRef} type="file" />
+          <input accept={manageableVaults.flatMap((vault) => vault.allowedMimeTypes).filter((value, index, all) => all.indexOf(value) === index).join(',')} hidden onChange={(event) => chooseFile(event.target.files?.item(0) ?? null)} ref={fileInputRef} type="file" />
           <UploadCloud aria-hidden="true" size={32} />
           <strong>{file ? file.name : 'Drop one document here'}</strong>
           <span>{file ? formatFileSize(file.size) : 'or choose a supported file from this device'}</span>
           <button className="secondary-button" onClick={() => fileInputRef.current?.click()} type="button">Choose file</button>
-          {selectedVault ? <small>Maximum {formatFileSize(selectedVault.maximumFileSizeBytes)} · {classificationLabels[selectedVault.classification]}</small> : null}
+          {selectedVault ? <small>Filed automatically in {selectedVault.name} · Maximum {formatFileSize(selectedVault.maximumFileSizeBytes)}</small> : null}
         </div>
+        <div className="hr-document-upload-form__fields">
+          <label>Document title<input maxLength={160} onChange={(event) => setTitle(event.target.value)} required value={title} /></label>
+          <label>Document type<select onChange={(event) => setCategory(event.target.value)} value={category}><option>Business document</option><option>Proposal</option><option>Employment document</option><option>Policy or acknowledgment</option><option>Training document</option><option>Other</option></select></label>
+        </div>
+        <details className="hr-document-upload-form__advanced"><summary>Optional filing details</summary><div className="hr-document-upload-form__fields"><label>File with<select onChange={(event) => setEmployeeId(event.target.value)} required value={employeeId}><option value="company">Company / shared records</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select></label><label>Protected document area<select onChange={(event) => setVaultCode(event.target.value)} required value={vaultCode}>{manageableVaults.filter((vault) => !file || (Boolean(file.type) && vault.allowedMimeTypes.includes(file.type) && file.size <= vault.maximumFileSizeBytes)).map((vault) => <option key={vault.code} value={vault.code}>{vault.name}</option>)}</select></label><label className="wide">Internal description <span>Optional</span><textarea maxLength={1000} onChange={(event) => setDescription(event.target.value)} rows={3} value={description} /></label></div></details>
         {file && fileError ? <p className="form-error" role="alert">{fileError}</p> : null}
         {uploadMutation.isError ? <p className="form-error" role="alert">{uploadMutation.error instanceof Error ? uploadMutation.error.message : 'The upload could not be completed. You can retry safely.'}</p> : null}
         {uploadMutation.isPending ? <div aria-label={`Upload ${progress}% complete`} className="hr-document-progress"><span style={{ width: `${progress}%` }} /></div> : null}

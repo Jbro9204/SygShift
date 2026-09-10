@@ -9,7 +9,11 @@ const mocks = vi.hoisted(() => ({
   getAlarmState: vi.fn(),
   manageAlarm: vi.fn(),
   mutateTasks: vi.fn(),
+  playAlarmSoundCycle: vi.fn(),
   playSound: vi.fn(),
+  enableAudio: vi.fn(),
+  getSoundPreferences: vi.fn(),
+  saveSoundPreferences: vi.fn(),
   stopAlarmSound: vi.fn(),
 }))
 
@@ -20,9 +24,11 @@ vi.mock('../data/sygtasks', () => ({
   sygTaskPath: (boardId: string, taskId: string) => `/tasks?board=${boardId}&task=${taskId}`,
 }))
 vi.mock('../lib/notificationSounds', () => ({
-  enableAudio: vi.fn().mockResolvedValue(true),
-  getSoundPreferences: () => ({ login: true, notification: true, alarm: true, muted: false, volume: .5 }),
+  enableAudio: mocks.enableAudio,
+  getSoundPreferences: mocks.getSoundPreferences,
+  playAlarmSoundCycle: mocks.playAlarmSoundCycle,
   playSound: mocks.playSound,
+  saveSoundPreferences: mocks.saveSoundPreferences,
   SOUND_PREFERENCES_EVENT: 'sygshift:sound-preferences',
   stopAlarmSound: mocks.stopAlarmSound,
 }))
@@ -52,7 +58,11 @@ describe('SygTasks alarm host', () => {
     mocks.getAlarmState.mockReset().mockResolvedValue(activeAlarm())
     mocks.manageAlarm.mockReset().mockResolvedValue(undefined)
     mocks.mutateTasks.mockReset().mockResolvedValue({ changed: true })
+    mocks.playAlarmSoundCycle.mockReset().mockResolvedValue(true)
     mocks.playSound.mockReset().mockResolvedValue(true)
+    mocks.enableAudio.mockReset().mockResolvedValue(true)
+    mocks.getSoundPreferences.mockReset().mockReturnValue({ login: true, notification: true, alarm: true, muted: false, volume: .5, alarmVolume: 1 })
+    mocks.saveSoundPreferences.mockReset()
     mocks.stopAlarmSound.mockReset()
   })
 
@@ -63,7 +73,7 @@ describe('SygTasks alarm host', () => {
     expect(screen.getByRole('button', { name: 'Snooze' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Open task/ })).toHaveAttribute('href', `/tasks?board=${boardId}&task=${taskId}`)
     expect(screen.getByRole('button', { name: /Mark complete/ })).toBeInTheDocument()
-    await waitFor(() => expect(mocks.playSound).toHaveBeenCalledWith('alarm'))
+    await waitFor(() => expect(mocks.playAlarmSoundCycle).toHaveBeenCalled())
     view.unmount()
   })
 
@@ -73,5 +83,15 @@ describe('SygTasks alarm host', () => {
     await user.click(await screen.findByRole('button', { name: 'Stop alarm' }))
     expect(mocks.stopAlarmSound).toHaveBeenCalled()
     expect(mocks.manageAlarm).toHaveBeenCalledWith('acknowledge', occurrenceId, null)
+  })
+
+  it('automatically enables audible delivery when a recipient receives an active alarm', async () => {
+    mocks.getSoundPreferences.mockReturnValue({ login: true, notification: true, alarm: false, muted: true, volume: .5, alarmVolume: 0 })
+    renderHost()
+    expect(await screen.findByRole('heading', { name: 'Confirm weekend coverage' })).toBeInTheDocument()
+    await waitFor(() => expect(mocks.saveSoundPreferences).toHaveBeenCalledWith({
+      login: true, notification: true, alarm: true, muted: false, volume: .5, alarmVolume: 1,
+    }))
+    expect(mocks.enableAudio).toHaveBeenCalled()
   })
 })

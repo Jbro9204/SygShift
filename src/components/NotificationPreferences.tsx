@@ -60,7 +60,10 @@ export function NotificationPreferences() {
           <label><input type="checkbox" checked={preferences.alarm} onChange={(event) => change({ alarm: event.target.checked })} /><span><AlarmClock aria-hidden="true" size={17} />Repeating task-alarm sound</span></label>
           <label><input type="checkbox" checked={preferences.muted} onChange={(event) => change({ muted: event.target.checked })} /><span>Mute all SygShift sounds</span></label>
         </div>
-        <label className="notification-preferences__volume"><span>Volume · {Math.round(preferences.volume * 100)}%</span><input aria-label="Sound volume" type="range" min="0" max="100" value={Math.round(preferences.volume * 100)} onChange={(event) => change({ volume: Number(event.target.value) / 100 })} /></label>
+        <div className="notification-preferences__volumes">
+          <label className="notification-preferences__volume"><span>Login &amp; notification volume · {Math.round(preferences.volume * 100)}%</span><input aria-label="Login and notification volume" type="range" min="0" max="100" value={Math.round(preferences.volume * 100)} onChange={(event) => change({ volume: Number(event.target.value) / 100 })} /></label>
+          <label className="notification-preferences__volume"><span>Task alarm volume · {Math.round(preferences.alarmVolume * 100)}%</span><input aria-label="Task alarm volume" type="range" min="0" max="100" value={Math.round(preferences.alarmVolume * 100)} onChange={(event) => change({ alarmVolume: Number(event.target.value) / 100 })} /></label>
+        </div>
         <div className="notification-preferences__actions"><button className="secondary-button" disabled={testing} onClick={() => void test('login')} type="button">Test login sound</button><button className="secondary-button" disabled={testing} onClick={() => void test('notification')} type="button">Test notification sound</button><button className="secondary-button" disabled={testing} onClick={() => void test('alarm')} type="button">Test task alarm</button></div>
         {soundMessage ? <p role="status">{soundMessage}</p> : null}
       </section>

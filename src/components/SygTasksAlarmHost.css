@@ -105,6 +105,8 @@ html[data-theme='dark'] .sygtasks-alarm-host__card header small { color: #f5d986
 .sygtasks-alarm-host__details strong { font-size: 13px; line-height: 1.35; }
 .sygtasks-alarm-host__sound { display: flex; align-items: flex-start; gap: 8px; color: var(--tasks-muted); font-size: 12px; line-height: 1.4; }
 .sygtasks-alarm-host__sound svg { flex: 0 0 auto; margin-top: 1px; }
+.sygtasks-alarm-host__volume { display: grid; gap: 6px; margin-top: 11px; color: var(--tasks-muted); font-size: 12px; font-weight: 800; }
+.sygtasks-alarm-host__volume input { width: 100%; min-height: 24px; accent-color: var(--tasks-gold); }
 .sygtasks-alarm-host__audio { margin-top: 11px; }
 .sygtasks-alarm-host__card > .sygtasks-notice { margin: 12px 0 0; }
 

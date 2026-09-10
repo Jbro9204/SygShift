@@ -54,7 +54,8 @@ describe('enterprise Document Studio safeguards', () => {
   })
 
   it('ships real management and employee execution surfaces with a PDF renderer', () => {
-    expect(studioPage).toContain('Signature envelopes')
+    expect(studioPage).toContain('Signature requests')
+    expect(studioPage).toContain('DocumentSignatureWizard')
     expect(studioPage).toContain('New document policy version')
     expect(employeePage).toContain('Adopt your signature')
     expect(employeePage).toContain('Request correction')

@@ -8,6 +8,7 @@ import {
   type SygTaskReminder,
 } from '../../data/sygtasks'
 import { fromOperationalDateTimeInput } from '../../lib/operationalDateTime'
+import { enableAudio, getSoundPreferences, saveSoundPreferences } from '../../lib/notificationSounds'
 import { formatTaskDue } from '../../lib/sygtasksPresentation'
 
 const offsetOptions = [
@@ -39,6 +40,8 @@ export function SygTasksRemindersPanel({ taskId, taskHasDueDate }: { taskId: str
   const [timingKind, setTimingKind] = useState<'relative' | 'absolute'>(taskHasDueDate ? 'relative' : 'absolute')
   const [success, setSuccess] = useState<string | null>(null)
   const [validation, setValidation] = useState<string | null>(null)
+  const [soundWarning, setSoundWarning] = useState<string | null>(null)
+  const [alarmVolume, setAlarmVolume] = useState(() => getSoundPreferences().alarmVolume)
   const reminders = useQuery({
     queryKey: ['sygtasks', 'reminders', taskId],
     queryFn: () => getSygTaskReminders(taskId),
@@ -47,6 +50,7 @@ export function SygTasksRemindersPanel({ taskId, taskHasDueDate }: { taskId: str
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['sygtasks'] }),
       queryClient.invalidateQueries({ queryKey: ['sygtasks-badge'] }),
+      queryClient.invalidateQueries({ queryKey: ['sygtasks-alarms'] }),
       queryClient.invalidateQueries({ queryKey: ['my-notifications'] }),
     ])
   }
@@ -81,6 +85,16 @@ export function SygTasksRemindersPanel({ taskId, taskHasDueDate }: { taskId: str
       if (Date.parse(absoluteAt) <= Date.now()) { setValidation('Choose a reminder time in the future.'); return }
     }
     if (timingKind === 'relative' && !taskHasDueDate) { setValidation('Add a task due date before using a relative reminder.'); return }
+    if (kind === 'alarm') {
+      const preferences = getSoundPreferences()
+      const nextVolume = alarmVolume > 0 ? alarmVolume : 1
+      saveSoundPreferences({ ...preferences, alarm: true, muted: false, alarmVolume: nextVolume })
+      setAlarmVolume(nextVolume)
+      setSoundWarning(null)
+      void enableAudio().then((enabled) => {
+        if (!enabled) setSoundWarning('The alarm is scheduled, but this browser blocked audio. Use Enable alarm sound when it appears, and allow sound for SygShift in your browser settings.')
+      })
+    }
     setValidation(null)
     setSuccess(null)
     create.mutate({
@@ -96,7 +110,7 @@ export function SygTasksRemindersPanel({ taskId, taskHasDueDate }: { taskId: str
 
   return <div className="sygtasks-reminders">
     <section className="sygtasks-reminder-intro">
-      <div><AlarmClock aria-hidden="true" size={24} /><div><h3>Reminders &amp; alarms</h3><p>Reminders notify once. Alarms repeat while SygShift is open until the recipient stops, snoozes, opens, or completes the task.</p></div></div>
+      <div><AlarmClock aria-hidden="true" size={24} /><div><h3>Reminders &amp; alarms</h3><p>Reminders notify once. Alarms repeat while SygShift is open until the recipient stops, snoozes, completes, or cancels the alarm.</p></div></div>
       <p className="sygtasks-muted">Background device alerts use browser and device notification settings. Custom repeating audio is available while SygShift is open.</p>
     </section>
 
@@ -110,10 +124,11 @@ export function SygTasksRemindersPanel({ taskId, taskHasDueDate }: { taskId: str
           : <label className={`sygtasks-field${validation ? ' sygtasks-field--error' : ''}`}><span>Date and time (Mountain Time)<small>Required</small></span><span className="sygtasks-field__control"><input name="absoluteAt" type="datetime-local" aria-invalid={Boolean(validation)} onChange={() => setValidation(null)} /></span>{validation ? <small className="sygtasks-field__error">{validation}</small> : null}</label>}
       </div>
       <label className="sygtasks-reminder-email"><input name="emailEnabled" type="checkbox" /><Mail aria-hidden="true" size={18} /><span><strong>Also send email</strong><small>Uses the approved personal-first SygShift delivery route.</small></span></label>
-      {kind === 'alarm' ? <p className="sygtasks-reminder-alarm-note"><BellRing aria-hidden="true" size={18} />The recipient must explicitly stop or snooze this alarm. Opening the task silences the current browser without recording a false acknowledgment.</p> : null}
+      {kind === 'alarm' ? <div className="sygtasks-reminder-alarm-settings"><p className="sygtasks-reminder-alarm-note"><BellRing aria-hidden="true" size={18} />Scheduling automatically enables alarm audio on this device. It repeats three seconds after each play finishes until stopped, snoozed, completed, or canceled; opening the task does not silence it.</p><label><span>Alarm volume · {Math.round(alarmVolume * 100)}%</span><input aria-label="New task alarm volume" max="100" min="10" onChange={(event) => setAlarmVolume(Number(event.target.value) / 100)} type="range" value={Math.round(alarmVolume * 100)} /></label></div> : null}
       {validation ? <p className="sygtasks-notice sygtasks-notice--error" role="alert">{validation}</p> : null}
       <ErrorNotice error={create.error || cancel.error || reminders.error} />
       {success ? <p className="sygtasks-notice sygtasks-notice--success" role="status">{success}</p> : null}
+      {soundWarning ? <p className="sygtasks-notice sygtasks-notice--error" role="alert">{soundWarning}</p> : null}
       <div className="sygtasks-inline-actions"><button className="sygtasks-button sygtasks-button--primary" type="submit" disabled={busy || reminders.isPending}>{create.isPending ? 'Scheduling…' : kind === 'alarm' ? 'Schedule Alarm' : 'Schedule Reminder'}</button></div>
     </form>
 

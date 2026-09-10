@@ -2211,3 +2211,11 @@ pnpm exec wrangler deploy --keep-vars
 - `pnpm check` passed 229 files / 1,178 tests; the combined SygSphere/header/Time Clock matrix passed 98/98; the post-deployment Time Clock workflow passed 42/42.
 - Released source `2adbe72` as Cloudflare Worker `1957c6e2-abed-440b-9024-4f33b00a4146`; primary/fallback roots, `/sygsphere`, health, readiness, and exact live CSS markers passed verification.
 - See `docs/changelogs/CHANGELOG_09-10-2026_SYGSPHERE_MOBILE_VIEWPORT_AND_BANNER.md` for complete scope, preservation, verification, and rollback evidence.
+
+## 09/10/2026 - Direct Document Delivery and Task Alarm Repair
+
+- Rebuilt the normal Document Studio path around the work HR actually needs to do: choose an outside file, select one to 25 employees and the required action, review, then let SygShift securely upload, scan, apply the approved standard policy, send, notify, and track the request.
+- Kept advanced templates, policy management, existing-document delivery, immutable versions, private storage, malware quarantine, audit evidence, and fail-closed external signing intact while making ordinary vault and policy choices automatic.
+- Corrected task alarms to enable audible delivery when scheduled or received, play the complete supplied sound, wait exactly three seconds, and repeat until stopped, snoozed, completed, or canceled. Opening the task no longer silences the alarm.
+- Added a dedicated task-alarm volume control without changing login/notification volume and preserved the single-tab playback lease.
+- No database migration or protected-data mutation was required. See `docs/changelogs/CHANGELOG_09-10-2026_DOCUMENT_DELIVERY_AND_TASK_ALARM_REPAIR.md` for complete release evidence.
