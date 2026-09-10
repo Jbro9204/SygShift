@@ -52,4 +52,3 @@ SygSphere now transfers normal documents and photos through Supabase's signed st
 
 - Pre-release source tag: `rollback/pre-sygsphere-standard-upload-routing-repair-20260910` at `33ccf07`.
 - This is an application-only release. If containment is required, restore the tagged application source and redeploy with the existing bindings preserved.
-
