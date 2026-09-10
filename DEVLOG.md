@@ -2157,3 +2157,13 @@ pnpm exec wrangler deploy --keep-vars
 - A live synthetic Guard completed SygShift to Sygilant to SygShift without another login or MFA; direct Dispatch and Access Control routes remained denied.
 - Verification passed 229 test files / 1,178 tests, TypeScript, zero-warning application lint, both production builds, the production assurance matrix, and all 54 desktop/mobile launcher and actual-component Time Clock checks.
 - See `docs/changelogs/CHANGELOG_09-10-2026_UNIVERSAL_SYGSHIFT_RETURN_ACCESS.md` for complete security, acceptance, and rollback evidence.
+
+## 09/10/2026 - SygSphere Mobile Viewport and Banner Repair
+
+- Reclaimed the initial phone viewport by converting SygSphere's four-clock mobile header into a compact, horizontally swipeable row and the missing-clock-in banner into a concise one-row alert.
+- Preserved all four approved clocks, their Pacific-to-Eastern order, Mountain system-time emphasis, alert review action, account controls, and desktop behavior.
+- Added navigation-button clearance, kept the SygSphere toolbar on one row, and proved the composer and Send control remain contained and usable before focus and at keyboard height.
+- No database, account, message, schedule, shift, punch, role, permission, MFA, notification, or shared-identity data changed.
+- `pnpm check` passed 229 files / 1,178 tests; the combined SygSphere/header/Time Clock matrix passed 98/98; the post-deployment Time Clock workflow passed 42/42.
+- Released source `2adbe72` as Cloudflare Worker `1957c6e2-abed-440b-9024-4f33b00a4146`; primary/fallback roots, `/sygsphere`, health, readiness, and exact live CSS markers passed verification.
+- See `docs/changelogs/CHANGELOG_09-10-2026_SYGSPHERE_MOBILE_VIEWPORT_AND_BANNER.md` for complete scope, preservation, verification, and rollback evidence.
