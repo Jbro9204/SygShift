@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/10/2026 - Attendance Alert Schedule Refresh
+
+- Made the current published schedule authoritative for persistent missing-clock alerts after assignment removal, restoration, shift correction, and schedule revision publication.
+- Added deferred database reconciliation triggers, idempotent reopen/resolve behavior, append-only action evidence, and a failure-isolated every-minute Worker safety pass.
+- Reconciled production without deleting source history: 45 obsolete revision occurrences were resolved, 12 restored occurrences were reopened for payroll review, and zero unsupported unresolved or active-with-resolved-source alerts remain.
+- Applied and recorded migration `20260912020000`, pushed runtime commit `87c250f`, and deployed Cloudflare Worker `427edcaf-4a38-48ec-8c6d-0764b85cf98f`.
+- Verification passed 229 test files / 1,176 tests, both production builds, the 42-check actual-component Time Clock matrix, rollback-only live schedule/assignment/salary/Dispatch regression, production health/readiness, and a successful live scheduled refresh.
+- Removed the completed initiative from Future Items. Full release evidence: `docs/changelogs/CHANGELOG_09-10-2026_ATTENDANCE_ALERT_SCHEDULE_REFRESH.md`.
+
 ## 09/10/2026 - Future Queue Employee Time-Zone Reconciliation
 
 - Removed the completed **Employee-Local Shift Time Presentation** initiative from the active Future Items queue.

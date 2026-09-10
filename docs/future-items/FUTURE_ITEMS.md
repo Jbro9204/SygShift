@@ -449,32 +449,6 @@ Completion criteria:
 
 ## Workforce Data Integrity & Attendance
 
-### Attendance Alert Schedule Refresh
-
-- Priority: **High**
-- Target window: Focused attendance reliability release
-- Status: Approved / queued; schedule-change refresh remains open
-- Added: 09/02/2026
-
-#### Execution instructions
-
-1. Re-evaluate each attendance alert against the current published schedule after an assignment, removal, correction, or schedule revision.
-2. Use idempotent server-side reconciliation and retain the original alert as auditable evidence when it is resolved or superseded.
-3. Test assignment removal, reassignment, schedule correction, revision publication, overnight shifts, salary exclusions, and concurrent supplemental Dispatch duty before release.
-4. Verify the refreshed alert state in the manager workspace and applicable reports before closing the release.
-
-Ensure schedule corrections immediately flow into attendance signals without deleting valid history.
-
-Required work:
-
-- [ ] Make attendance alerts re-evaluate the current published schedule after assignments, removals, corrections, and revision publication.
-- [ ] Recalculate or close stale attendance alerts when the authoritative schedule no longer supports them, while preserving an audit trail of the original signal and its resolution.
-
-Completion criteria:
-
-- [ ] A schedule correction cannot leave an unsupported missing-clock or attendance alert active.
-- [ ] Alert refresh does not change valid employee, time, payroll, licensing, schedule, or audit history.
-
 ## Client, Patrol & Operational Migration
 
 ### Client Data Import, Association, and Visibility Hardening
