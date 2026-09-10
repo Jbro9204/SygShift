@@ -2236,5 +2236,6 @@ pnpm exec wrangler deploy --keep-vars
 - Corrected the SygSphere launcher so a newly observed incoming message produces its toast and sound even when its conversation is already open, its unread count was immediately cleared, or fallback delivery was delayed.
 - Preserved message permissions, read receipts, Realtime, polling, cross-tab deduplication, explicit mute/volume settings, existing username-tag history, mobile behavior, and every non-SygSphere workflow.
 - Applied and recorded exact migration `20260910163434`; the isolated release preview named only that migration and the changed functions have no database-linter finding.
-- Verification passed 231 test files / 1,196 tests, TypeScript, zero-warning lint, both production builds, 20 focused unit tests, and the 90/90 desktop/mobile SygSphere plus mandatory Time Clock browser matrix.
+- Verification passed 231 test files / 1,196 tests, TypeScript, zero-warning lint, both production builds, 20 focused unit tests, the 90/90 desktop/mobile SygSphere plus mandatory Time Clock browser matrix, and the post-release 42/42 Time Clock matrix.
+- Released source `6fb6076` as Cloudflare Worker `45243dba-f4ea-4bed-bb65-cceb494fca44`; primary/fallback roots, `/sygsphere`, health, readiness, exact live application assets, and the approved SygSphere sound passed production verification.
 - See `docs/changelogs/CHANGELOG_09-10-2026_SYGSPHERE_NAME_MENTIONS_AND_ALERT_RELIABILITY.md` for the full release record.

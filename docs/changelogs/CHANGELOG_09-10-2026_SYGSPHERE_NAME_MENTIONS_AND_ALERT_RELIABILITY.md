@@ -1,7 +1,7 @@
 # SygSphere Name Mentions and Alert Reliability
 
 **Date:** 09/10/2026  
-**Status:** Database released; application release verification in progress
+**Status:** Released and verified in production
 
 ## Problem and user impact
 
@@ -37,14 +37,22 @@ SygSphere required employees to choose or type account usernames such as `@mhood
 - Focused SygSphere data and launcher suite: 2 files / 20 tests passed.
 - Complete application gate: TypeScript passed, application lint passed with zero warnings, 231 test files / 1,196 tests passed, and both production builds passed.
 - SygSphere and mandatory Time Clock browser matrix: 90/90 passed across desktop and mobile. This covered direct typed-name resolution, picker insertion, targeted mention delivery, live two-account delivery, sounds, mobile/small-screen layouts, drafts/retries, threads, attachments, and the complete Time Clock workflow including Early Clock-In and clock-in/break/clock-out controls.
+- Post-release mandatory Time Clock preservation matrix: 42/42 passed across desktop and mobile.
+- Primary and fallback roots, `/sygsphere`, health, and readiness returned HTTP 200; readiness reported every required binding and shared-identity check ready.
+- The primary and fallback domains served byte-for-byte identical main JavaScript, SygSphere JavaScript, application CSS, and SygSphere notification audio. The live SygSphere bundle contains the human-name picker markers and the live CSS contains the rounded mention-picker presentation.
 - Added `supabase/tests/sygsphere_human_name_mentions_regression.sql` for transactional database contract verification.
 
 ## Release record
 
 - Pre-release fallback tag: `rollback/pre-sygsphere-name-mentions-alert-reliability-20260910` at `26f4eda`.
-- Source commit: pending final release commit.
-- Cloudflare Worker: pending deployment.
-- Production health/readiness and live asset verification: pending deployment.
+- Source commit: `6fb6076` (`fix: make SygSphere mentions and alerts reliable`).
+- Cloudflare Worker: `45243dba-f4ea-4bed-bb65-cceb494fca44`.
+- Production origins: `https://app.sygilant.us` and `https://sygshift.sygilant.workers.dev`.
+- Exact live assets:
+  - `index-BW3V7cmd.js` — SHA-256 `D47CA1D563E66337B454DEBDC5CE083F95F781E245E3A20D4F1A6E1E6BA727D9`
+  - `SygSpherePage-D-GVEo_J.js` — SHA-256 `B75140C87BEA4286928B68B9B31122A78FC626ADBC3C32605E35E0C3AE8E5836`
+  - `index-VnA1RqeC.css` — SHA-256 `A63482CB94D66BC406AE59C18259DBA6A8930B13C451025BD6B662D3001690FA`
+  - `SygSphere_Notification_46421aca.mp3` — SHA-256 `46421ACA65B0DA122E826B43664DDD79CD40513149007DA365B627069A99C059`
 
 ## Remaining limitation
 
