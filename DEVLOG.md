@@ -1,5 +1,15 @@
 # SygShift Development Log
 
+## 09/10/2026 - Document Delivery Wizard Presentation
+
+- Refined all four **Send a document** wizard steps with one consistent rounded control system, balanced modal/panel/section padding, larger readable labels and helper text, and clearer light/dark contrast.
+- Removed the browser-default monospace appearance from document descriptions and messages by explicitly inheriting SygShift typography across inputs, selects, textareas, and buttons.
+- Corrected the employee search field with protected icon space, a 48-pixel control height, readable placeholder text, a 13-pixel radius, and a visible focus state so the magnifying glass cannot overlap the query.
+- Added computed-style, overflow, responsive, screenshot, and automated accessibility coverage for the document fields and recipient-selection screen on desktop and mobile in both themes.
+- Released source commit `b4c9799` as Cloudflare Worker `4031b5cc-6d02-4cb9-8992-8482caa43803`; rollback tag `rollback/pre-document-wizard-presentation-20260910` points to `530c08a`.
+- Verification passed 231 test files / 1,193 tests, 14 focused component/guard checks, 16 Document Studio browser checks, and the 42-check Time Clock matrix before and after deployment. Both production origins are healthy/ready, `/hr/documents` is available, and exact live assets match the verified build.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-10-2026_DOCUMENT_DELIVERY_WIZARD_PRESENTATION.md`.
+
 ## 09/10/2026 - SygSphere Fast Upload Confirmation
 
 - Removed the stacked, multi-second storage-confirmation waits that kept the **Share a file** dialog open after a normal attachment had already transferred.
