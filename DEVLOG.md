@@ -1,5 +1,12 @@
 # SygShift Development Log
 
+## 09/10/2026 - Future Queue Employee Time-Zone Reconciliation
+
+- Removed the completed **Employee-Local Shift Time Presentation** initiative from the active Future Items queue.
+- Confirmed the production implementation was released on 09/01/2026 and its employee-local early-clock-in presentation was completed on 09/04/2026.
+- Preserved the full implementation and verification evidence in the existing dated changelogs rather than retaining a duplicate queued item.
+- Full reconciliation record: `docs/changelogs/CHANGELOG_09-10-2026_FUTURE_QUEUE_TIMEZONE_RECONCILIATION.md`.
+
 ## 09/09/2026 - SygTasks Reminders and Repeating Alarms
 
 - Added private self reminders and manager-created assignee reminders to Task Detail, with one-time reminders, persistent alarms, relative or specific Mountain Time scheduling, and optional existing-route email delivery.
