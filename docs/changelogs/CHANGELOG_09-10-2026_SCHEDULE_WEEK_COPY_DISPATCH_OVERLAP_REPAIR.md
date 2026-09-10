@@ -79,4 +79,3 @@ The rollback-only SQL lifecycle proves that:
 ## Scope Preservation
 
 No employee, schedule, shift, assignment, punch, payroll, credential, permission, account, notification, or audit record was deleted or rewritten by the release. The actual 09/13/2026 schedule was not created during testing. Only the stored week-copy function definition and its migration-history record changed.
-
