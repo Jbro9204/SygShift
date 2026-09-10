@@ -2239,3 +2239,12 @@ pnpm exec wrangler deploy --keep-vars
 - Verification passed 231 test files / 1,196 tests, TypeScript, zero-warning lint, both production builds, 20 focused unit tests, the 90/90 desktop/mobile SygSphere plus mandatory Time Clock browser matrix, and the post-release 42/42 Time Clock matrix.
 - Released source `6fb6076` as Cloudflare Worker `45243dba-f4ea-4bed-bb65-cceb494fca44`; primary/fallback roots, `/sygsphere`, health, readiness, exact live application assets, and the approved SygSphere sound passed production verification.
 - See `docs/changelogs/CHANGELOG_09-10-2026_SYGSPHERE_NAME_MENTIONS_AND_ALERT_RELIABILITY.md` for the full release record.
+
+## 09/10/2026 - Schedule Week Copy Dispatch-Overlap Repair
+
+- Repaired **Copy week** so a copied concurrent Dispatch phone-duty shift receives its authoritative classification before employee-overlap validation runs.
+- Preserved the atomic exact-revision replacement, MFA/effective-permission boundary, valid Dispatch-plus-post overlap, and the prohibition against genuine standard-shift double-booking.
+- Applied and recorded migration `20260910165913`; Michael-context rollback verification copied 125 shifts, 126 assignments, 13 sites, and both Dispatch-duty classifications without creating the actual 09/13/2026 draft.
+- Verification passed 232 files / 1,199 tests, 24 focused Schedule/Dispatch guards, the rollback-only database lifecycle, all 42 required desktop/mobile Time Clock checks, database advisors, and production health/readiness.
+- Source repair commit: `c21d3b3`. No Cloudflare deployment was required because this repair is entirely database-resident.
+- See `docs/changelogs/CHANGELOG_09-10-2026_SCHEDULE_WEEK_COPY_DISPATCH_OVERLAP_REPAIR.md` for full diagnosis, preservation, and release evidence.

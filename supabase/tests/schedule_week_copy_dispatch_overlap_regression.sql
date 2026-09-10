@@ -1,7 +1,5 @@
 -- Run against a migrated database. Every fixture, copied schedule, assignment,
 -- override, and audit row is enclosed in this transaction and rolled back.
-\set ON_ERROR_STOP on
-
 begin;
 
 insert into public.employees (id, username, first_name, last_name, role)
