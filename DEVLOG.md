@@ -2266,3 +2266,12 @@ pnpm exec wrangler deploy --keep-vars
 - Verification passed 232 files / 1,199 tests, 24 focused Schedule/Dispatch guards, the rollback-only database lifecycle, all 42 required desktop/mobile Time Clock checks, database advisors, and production health/readiness.
 - Source repair commit: `c21d3b3`. No Cloudflare deployment was required because this repair is entirely database-resident.
 - See `docs/changelogs/CHANGELOG_09-10-2026_SCHEDULE_WEEK_COPY_DISPATCH_OVERLAP_REPAIR.md` for full diagnosis, preservation, and release evidence.
+
+## 09/10/2026 - SygSphere Direct Document Upload Repair
+
+- Replaced the unreliable browser-to-storage path for ordinary SygSphere attachments with the existing authenticated same-origin Worker upload endpoint, so valid documents are received, checked, stored, and published in one action.
+- Removed the broken secure-storage confirmation loop and **Finish upload** action; an interrupted upload now keeps the selected file and **Retry upload** resends its bytes.
+- Kept authorization, conversation membership enforcement, type/size validation, scanning, and auditability behind the interface without requiring a manual security step from employees.
+- No database migration or production-data rewrite was required.
+- Verification passed 234 files / 1,207 tests, the 92/92 desktop/mobile SygSphere plus Time Clock browser matrix, the post-release 42/42 Time Clock matrix, production health/readiness, and exact live-asset comparison on both origins.
+- Released source `8bb1622` as Cloudflare Worker `2a4387ec-9f4f-4de2-9894-9721dbba7304`; see `docs/changelogs/CHANGELOG_09-10-2026_SYGSPHERE_DIRECT_DOCUMENT_UPLOAD_REPAIR.md` for complete evidence and rollback details.
