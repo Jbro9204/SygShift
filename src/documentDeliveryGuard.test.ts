@@ -9,6 +9,7 @@ const migration = readFileSync(join(root, 'supabase', 'migrations', '20260909220
 const worker = readFileSync(join(root, 'worker', 'index.ts'), 'utf8')
 const studio = readFileSync(join(root, 'src', 'components', 'DocumentStudioDashboard.tsx'), 'utf8')
 const signatureWizard = readFileSync(join(root, 'src', 'components', 'DocumentSignatureWizard.tsx'), 'utf8')
+const workbench = readFileSync(join(root, 'src', 'components', 'DocumentWorkbench.tsx'), 'utf8')
 const myDocuments = readFileSync(join(root, 'src', 'pages', 'MyDocumentsPage.tsx'), 'utf8')
 
 describe('employee write-up and signature delivery', () => {
@@ -70,15 +71,17 @@ describe('employee write-up and signature delivery', () => {
   })
 
   it('makes the outside-document signing path clear and keeps templates optional', () => {
-    expect(studio).toContain('Upload, prepare, and send from one workspace')
-    expect(studio).toContain('Upload for records only')
-    expect(studio).toContain('Send a document')
-    expect(studio).toContain('A reusable template is optional.')
+    expect(studio).toContain('Open it, complete it, and choose where it goes')
+    expect(studio).toContain('No policy, template, filing section, or setup wizard is required.')
+    expect(studio).toContain('Add to an employee file')
+    expect(workbench).toContain('Send document')
+    expect(workbench).toContain('createTypedSignaturePng')
     expect(studio).toContain('Send document without placed fields')
     expect(studio).toContain('An approved signing policy is required')
+    expect(workbench).toContain("policy.active && policy.code === 'STANDARD_EMPLOYEE_ELECTRONIC_SIGNATURE'")
+    expect(workbench).toContain('routingOrder: 1')
+    expect(workbench).toContain("vault.code === 'hr-general'")
     expect(signatureWizard).toContain("policy.code === 'STANDARD_EMPLOYEE_ELECTRONIC_SIGNATURE'")
-    expect(signatureWizard).toContain('routingOrder: 1')
-    expect(signatureWizard).toContain("vault.code === 'hr-general'")
     expect(signatureWizard).toContain('You do not have to choose a section.')
     expect(signatureWizard).toContain('recipients: recipientIds.map')
     expect(signatureWizard).toContain('await sendSignatureEnvelope(created.id)')

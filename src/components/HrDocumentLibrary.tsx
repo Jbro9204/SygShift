@@ -8,6 +8,7 @@ import {
   Download,
   Eye,
   FileCheck2,
+  FilePenLine,
   Files,
   FilterX,
   Search,
@@ -43,7 +44,7 @@ const kindLabels: Record<HrDocumentLibraryKind, string> = {
   document_guide: 'Document guide', training_form: 'Training form',
 }
 
-export function HrDocumentLibrary({ mode = 'employee' }: { mode?: 'employee' | 'studio' | 'training' }) {
+export function HrDocumentLibrary({ mode = 'employee', onUseDocument }: { mode?: 'employee' | 'studio' | 'training'; onUseDocument?: (file: File, title: string) => void }) {
   const [searchInput, setSearchInput] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [filters, setFilters] = useState<HrDocumentLibraryFilters>({ page: 1, pageSize: 10, kind: mode === 'training' ? 'training_module' : undefined })
@@ -53,6 +54,13 @@ export function HrDocumentLibrary({ mode = 'employee' }: { mode?: 'employee' | '
     queryKey: ['hr-document-library', filters],
   })
   const workspace = query.data
+  const useDocument = useMutation({
+    mutationFn: async ({ documentId, title }: { documentId: string; title: string }) => {
+      const result = await getHrDocumentBlob(documentId, 'download', 'Create an editable working copy from the company document library.')
+      return { file: new File([result.blob], result.filename || `${title}.pdf`, { type: result.blob.type || 'application/pdf' }), title }
+    },
+    onSuccess: ({ file, title }) => onUseDocument?.(file, title),
+  })
 
   useEffect(() => {
     if (workspace && (filters.page ?? 1) > Math.max(workspace.pagination.totalPages, 1)) {
@@ -105,7 +113,7 @@ export function HrDocumentLibrary({ mode = 'employee' }: { mode?: 'employee' | '
 
         <div className="hr-template-library__notice">
           <ShieldCheck aria-hidden="true" size={20}/>
-          <div><strong>One index, permission-aware results</strong><span>Blank-form discovery is separated from completed employee records. Protected files become available only after security review and authorized release.</span></div>
+          <div><strong>One searchable company library</strong><span>Find an approved form, open a working copy, and then type, sign, download, send, or file it with an employee.</span></div>
         </div>
 
         <div className="hr-template-library__filters">
@@ -144,8 +152,8 @@ export function HrDocumentLibrary({ mode = 'employee' }: { mode?: 'employee' | '
                   <div><dt>Handling</dt><dd>{sensitivityLabels[item.sensitivity]}</dd></div>
                   <div><dt>Controlled source</dt><dd>{item.sourceFilename}</dd></div>
                 </dl>
-                <p className="hr-template-library__access-note">{item.availability === 'available' ? 'The controlled PDF has passed security review and is available through audited access.' : 'The record is indexed. Its PDF remains unavailable until protected upload and malware scanning finish.'}</p>
-                {item.availability === 'available' && item.sourceDocumentId ? <div className="hr-template-library__actions"><button className="secondary-button" onClick={()=>setAccessTarget({id:item.sourceDocumentId!,title:item.title})} type="button"><Eye size={17}/>Preview PDF</button><button className="secondary-button" onClick={()=>void downloadLibraryItem(item.sourceDocumentId!,item.title)} type="button"><Download size={17}/>Download</button></div> : null}
+                <p className="hr-template-library__access-note">{item.availability === 'available' ? 'This PDF is ready to preview, download, or use as a new working copy.' : 'This form is indexed, but its PDF has not been added to the company library yet.'}</p>
+                {item.availability === 'available' && item.sourceDocumentId ? <div className="hr-template-library__actions">{onUseDocument?<button className="primary-action" disabled={useDocument.isPending} onClick={()=>useDocument.mutate({documentId:item.sourceDocumentId!,title:item.title})} type="button"><FilePenLine size={17}/>Use this document</button>:null}<button className="secondary-button" onClick={()=>setAccessTarget({id:item.sourceDocumentId!,title:item.title})} type="button"><Eye size={17}/>Preview PDF</button><button className="secondary-button" onClick={()=>void downloadLibraryItem(item.sourceDocumentId!,item.title)} type="button"><Download size={17}/>Download</button></div> : null}
               </div> : null}
             </article>
           })}
@@ -158,6 +166,7 @@ export function HrDocumentLibrary({ mode = 'employee' }: { mode?: 'employee' | '
         </div>
       </> : null}
       {accessTarget ? <LibraryPreview documentId={accessTarget.id} onClose={()=>setAccessTarget(null)} title={accessTarget.title}/> : null}
+      {useDocument.isError ? <div className="toast toast--error" role="alert">{useDocument.error instanceof Error ? useDocument.error.message : 'The working copy could not be opened.'}</div> : null}
     </section>
   )
 }

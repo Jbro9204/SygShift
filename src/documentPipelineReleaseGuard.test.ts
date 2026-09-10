@@ -6,6 +6,7 @@ const config = readFileSync('wrangler.jsonc', 'utf8')
 const evidenceMigration = readFileSync('supabase/migrations/20260903001850_document_pipeline_scanner_release_evidence.sql', 'utf8')
 const activationMigration = readFileSync('supabase/migrations/20260903001851_document_studio_controlled_activation.sql', 'utf8')
 const page = readFileSync('src/pages/HrisDocumentsPage.tsx', 'utf8')
+const workbench = readFileSync('src/components/DocumentWorkbench.tsx', 'utf8')
 
 describe('protected document production release', () => {
   it('dispatches every stored HR document through the private scan queue', () => {
@@ -40,8 +41,9 @@ describe('protected document production release', () => {
   })
 
   it('supports company-owned records and automatically refreshes pending scans', () => {
-    expect(page).toContain('Company / shared records')
-    expect(page).toContain("employeeId: employeeId === 'company' ? null : employeeId")
+    expect(workbench).toContain('Company documents')
+    expect(workbench).toContain("employeeId: employeeId === 'company' ? null : employeeId")
+    expect(workbench).toContain('Add to employee file')
     expect(page).toContain('refetchInterval:')
     expect(worker).toContain('renderOfficeDocumentPreview')
   })

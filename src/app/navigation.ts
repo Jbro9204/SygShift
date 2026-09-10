@@ -82,7 +82,7 @@ export const navigationGroups: NavigationGroup[] = [
         permissions: ['hr.people.view', 'hr.people.manage'],
       },
       {
-        label: 'Document Studio',
+        label: 'Document Center',
         path: '/hr/documents',
         icon: Files,
         permissions: [documentStudioAccessPermission],

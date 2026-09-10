@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 const migration = readFileSync('supabase/migrations/20260902202948_enterprise_document_studio.sql', 'utf8')
 const worker = readFileSync('worker/index.ts', 'utf8')
 const studioPage = readFileSync('src/components/DocumentStudioDashboard.tsx', 'utf8')
+const workbench = readFileSync('src/components/DocumentWorkbench.tsx', 'utf8')
 const employeePage = readFileSync('src/pages/MyDocumentsPage.tsx', 'utf8')
 const viewer = readFileSync('src/components/SecurePdfViewer.tsx', 'utf8')
 
@@ -55,7 +56,9 @@ describe('enterprise Document Studio safeguards', () => {
 
   it('ships real management and employee execution surfaces with a PDF renderer', () => {
     expect(studioPage).toContain('Signature requests')
-    expect(studioPage).toContain('DocumentSignatureWizard')
+    expect(studioPage).toContain('Open a PDF')
+    expect(workbench).toContain('Add to employee file')
+    expect(workbench).toContain('createTypedSignaturePng')
     expect(studioPage).toContain('New document policy version')
     expect(employeePage).toContain('Adopt your signature')
     expect(employeePage).toContain('Request correction')

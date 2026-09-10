@@ -1,4 +1,4 @@
-import { type DragEvent, type FormEvent, useEffect, useRef, useState } from 'react'
+import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Download,
   Eye,
+  FilePenLine,
   FileImage,
   FileSpreadsheet,
   FileText,
@@ -19,22 +20,20 @@ import {
 import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { DocumentStudioDashboard } from '../components/DocumentStudioDashboard'
+import { DocumentWorkbench } from '../components/DocumentWorkbench'
 import { ModalDialog } from '../components/ModalDialog'
 import { SecurePdfViewer } from '../components/SecurePdfViewer'
 import {
   getHrDocumentBlob,
   getHrDocumentWorkspace,
-  hrDocumentMimeType,
-  uploadHrDocument,
   type HrDocumentRecord,
-  type HrDocumentUploadInput,
-  type HrDocumentWorkspace,
   type HrDocumentWorkspaceFilters,
 } from '../data/hrDocuments'
 import { formatOperationalDateTime } from '../lib/time'
 
 type PageSize = 5 | 10 | 20
 type AccessAction = 'preview' | 'download'
+type WorkbenchRequest = { employeeOnly?: boolean; file?: File; title?: string }
 
 const classificationLabels = {
   confidential: 'Confidential',
@@ -78,7 +77,7 @@ export function HrisDocumentsPage() {
     search: '',
   })
   const [expandedDocumentId, setExpandedDocumentId] = useState<string | null>(null)
-  const [uploadOpen, setUploadOpen] = useState(false)
+  const [workbench, setWorkbench] = useState<WorkbenchRequest | null>(null)
   const [accessTarget, setAccessTarget] = useState<{ action: AccessAction; document: HrDocumentRecord } | null>(null)
   const workspaceQuery = useQuery({
     queryFn: () => getHrDocumentWorkspace(filters),
@@ -88,6 +87,13 @@ export function HrisDocumentsPage() {
     )) ? 2_000 : false,
   })
   const workspace = workspaceQuery.data
+  const openForWork = useMutation({
+    mutationFn: async (document: HrDocumentRecord) => {
+      const result = await getHrDocumentBlob(document.id, 'download', 'Create an editable working copy.')
+      return { file: new File([result.blob], result.filename || `${document.title}.pdf`, { type: result.blob.type || 'application/pdf' }), title: document.title }
+    },
+    onSuccess: (source) => setWorkbench(source),
+  })
 
   useEffect(() => {
     if (workspace && (filters.page ?? 1) > Math.max(workspace.pagination.totalPages, 1)) {
@@ -110,23 +116,28 @@ export function HrisDocumentsPage() {
       <header className="hr-documents-hero">
         <div>
           <p className="eyebrow">HR &amp; Finance</p>
-          <h1>Document Studio</h1>
-          <p>Upload, organize, send, sign, and retrieve employee or company documents from one workspace.</p>
+          <h1>Document Center</h1>
+          <p>Open a PDF, complete it, and then download, send, or add it directly to an employee file.</p>
         </div>
         <div className="hr-documents-hero__security">
           <ShieldCheck aria-hidden="true" size={24} />
-          <div><strong>Private document workspace</strong><span>Access and document activity are recorded automatically</span></div>
+          <div><strong>One document workspace</strong><span>Files go to the right record and activity is recorded automatically</span></div>
         </div>
       </header>
 
       <nav aria-label="People and HR sections" className="hr-people-tabs">
         <Link to="/hr">Overview</Link>
         <Link to="/hr/people">People</Link>
-        <Link className="active" to="/hr/documents">Document Studio</Link>
+        <Link className="active" to="/hr/documents">Document Center</Link>
         <Link to="/hr/documents/workflows">Requests &amp; assignments</Link>
       </nav>
 
-      <DocumentStudioDashboard documents={workspace} onUploadDocument={() => setUploadOpen(true)} />
+      <DocumentStudioDashboard
+        documents={workspace}
+        onFileEmployeeDocument={() => setWorkbench({ employeeOnly: true })}
+        onUploadDocument={() => setWorkbench({})}
+        onUseDocument={(file, title) => setWorkbench({ file, title })}
+      />
 
       {workspaceQuery.isPending ? (
         <DataStatePanel icon={Files} title="Loading documents">
@@ -144,7 +155,7 @@ export function HrisDocumentsPage() {
           <section className="hr-documents-toolbar">
             <div className="hr-documents-toolbar__heading">
               <div><p className="eyebrow">Document inventory</p><h2>Employee records</h2><p>Legal names are used throughout this workspace.</p></div>
-              {workspace.actor.canManageAny ? <button className="primary-action" onClick={() => setUploadOpen(true)} type="button"><UploadCloud aria-hidden="true" size={18} />Upload document</button> : null}
+              {workspace.actor.canManageAny ? <button className="primary-action" onClick={() => setWorkbench({})} type="button"><UploadCloud aria-hidden="true" size={18} />Open a PDF</button> : null}
             </div>
             <div className="hr-documents-filters">
               <form onSubmit={submitSearch}>
@@ -186,6 +197,7 @@ export function HrisDocumentsPage() {
                             <div><dt>File</dt><dd>{document.version ? `${document.version.filename} · ${formatFileSize(document.version.sizeBytes)}` : 'No released file'}</dd></div>
                           </dl>
                           <div className="hr-document-row__actions">
+                            {document.canDownload && document.version?.mimeType === 'application/pdf' ? <button className="primary-action" disabled={openForWork.isPending} onClick={() => openForWork.mutate(document)} type="button"><FilePenLine aria-hidden="true" size={17} />Work on a copy</button> : null}
                             {document.canPreview ? <button className="secondary-button" onClick={() => setAccessTarget({ action: 'preview', document })} type="button"><Eye aria-hidden="true" size={17} />Preview</button> : null}
                             {document.canDownload ? <button className="secondary-button" onClick={() => setAccessTarget({ action: 'download', document })} type="button"><Download aria-hidden="true" size={17} />Download</button> : null}
                             {!document.canPreview && !document.canDownload ? <span>This file is still being prepared. It will be available here automatically.</span> : null}
@@ -204,107 +216,12 @@ export function HrisDocumentsPage() {
             </div>
           </section>
 
-          {uploadOpen ? <DocumentUploadModal onClose={() => setUploadOpen(false)} onUploaded={() => void queryClient.invalidateQueries({ queryKey: ['hr-documents'] })} workspace={workspace} /> : null}
+          {workbench ? <DocumentWorkbench employeeOnly={workbench.employeeOnly} initialFile={workbench.file} initialTitle={workbench.title} onClose={() => setWorkbench(null)} onSaved={() => void queryClient.invalidateQueries({ queryKey: ['hr-documents'] })} workspace={workspace} /> : null}
           {accessTarget ? <DocumentAccessModal action={accessTarget.action} document={accessTarget.document} onClose={() => setAccessTarget(null)} /> : null}
+          {openForWork.isError ? <div className="toast toast--error" role="alert">{openForWork.error instanceof Error ? openForWork.error.message : 'The working copy could not be opened.'}</div> : null}
         </>
       ) : null}
     </main>
-  )
-}
-
-function DocumentUploadModal({ onClose, onUploaded, workspace }: { onClose: () => void; onUploaded: () => void; workspace: HrDocumentWorkspace }) {
-  const manageableVaults = workspace.vaults.filter((vault) => vault.canManage)
-  const [employeeId, setEmployeeId] = useState('company')
-  const [vaultCode, setVaultCode] = useState(manageableVaults.find((vault) => vault.code === 'hr-general')?.code ?? manageableVaults[0]?.code ?? '')
-  const [title, setTitle] = useState('')
-  const [category, setCategory] = useState('Business document')
-  const [description, setDescription] = useState('')
-  const [file, setFile] = useState<File | null>(null)
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID())
-  const [dragActive, setDragActive] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const selectedVault = manageableVaults.find((vault) => vault.code === vaultCode)
-
-  const uploadMutation = useMutation({
-    mutationFn: (input: HrDocumentUploadInput) => uploadHrDocument(input, setProgress),
-    onSuccess: () => {
-      onUploaded()
-      onClose()
-    },
-  })
-
-  function chooseFile(nextFile: File | null) {
-    uploadMutation.reset()
-    setProgress(0)
-    setFile(nextFile)
-    setIdempotencyKey(crypto.randomUUID())
-    if (nextFile) {
-      if (!title.trim()) setTitle(nextFile.name.replace(/\.[^.]+$/, ''))
-      const mimeType = hrDocumentMimeType(nextFile)
-      const compatible = manageableVaults.filter((vault) => Boolean(mimeType) && vault.allowedMimeTypes.includes(mimeType) && nextFile.size <= vault.maximumFileSizeBytes)
-      const automatic = compatible.find((vault) => vault.code === 'hr-general') ?? compatible[0]
-      setVaultCode(automatic?.code ?? '')
-    }
-  }
-
-  function validateFile(): string | null {
-    if (!file) return 'Choose a file to upload.'
-    if (!selectedVault) return 'Choose an authorized document vault.'
-    const mimeType = hrDocumentMimeType(file)
-    if (!mimeType || !selectedVault.allowedMimeTypes.includes(mimeType)) return 'This file type is not allowed in the selected vault.'
-    if (file.size > selectedVault.maximumFileSizeBytes) return `The selected file exceeds the ${formatFileSize(selectedVault.maximumFileSizeBytes)} limit.`
-    return null
-  }
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const fileError = validateFile()
-    if (fileError || !file || !selectedVault || !employeeId || !title.trim() || !category.trim()) return
-    setProgress(0)
-    uploadMutation.mutate({
-      accessClassification: selectedVault.classification,
-      category,
-      description,
-      employeeId: employeeId === 'company' ? null : employeeId,
-      file,
-      idempotencyKey,
-      title,
-      vaultCode,
-    })
-  }
-
-  function acceptDrop(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault()
-    setDragActive(false)
-    chooseFile(event.dataTransfer.files.item(0))
-  }
-
-  const fileError = validateFile()
-  const formReady = Boolean(file && employeeId && title.trim() && category.trim() && !fileError)
-
-  return (
-    <ModalDialog busy={uploadMutation.isPending} busyLabel={`Uploading document… ${progress}%`} className="hr-document-modal" description="Choose the file first. SygShift selects the normal filing area automatically; additional filing details are optional." onClose={onClose} title="Upload a document">
-      <form className="hr-document-upload-form" onSubmit={submit}>
-        <div className={`hr-document-dropzone${dragActive ? ' active' : ''}`} onDragEnter={(event) => { event.preventDefault(); setDragActive(true) }} onDragLeave={() => setDragActive(false)} onDragOver={(event) => event.preventDefault()} onDrop={acceptDrop}>
-          <input accept={manageableVaults.flatMap((vault) => vault.allowedMimeTypes).filter((value, index, all) => all.indexOf(value) === index).join(',')} hidden onChange={(event) => chooseFile(event.target.files?.item(0) ?? null)} ref={fileInputRef} type="file" />
-          <UploadCloud aria-hidden="true" size={32} />
-          <strong>{file ? file.name : 'Drop one document here'}</strong>
-          <span>{file ? formatFileSize(file.size) : 'or choose a supported file from this device'}</span>
-          <button className="secondary-button" onClick={() => fileInputRef.current?.click()} type="button">Choose file</button>
-          {selectedVault ? <small>Filed automatically in {selectedVault.name} · Maximum {formatFileSize(selectedVault.maximumFileSizeBytes)}</small> : null}
-        </div>
-        <div className="hr-document-upload-form__fields">
-          <label>Document title<input maxLength={160} onChange={(event) => setTitle(event.target.value)} required value={title} /></label>
-          <label>Document type<select onChange={(event) => setCategory(event.target.value)} value={category}><option>Business document</option><option>Proposal</option><option>Employment document</option><option>Policy or acknowledgment</option><option>Training document</option><option>Other</option></select></label>
-        </div>
-        <details className="hr-document-upload-form__advanced"><summary>Optional filing details</summary><div className="hr-document-upload-form__fields"><label>File with<select onChange={(event) => setEmployeeId(event.target.value)} required value={employeeId}><option value="company">Company / shared records</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select></label><label>Filing area<select onChange={(event) => setVaultCode(event.target.value)} required value={vaultCode}>{manageableVaults.filter((vault) => !file || (Boolean(hrDocumentMimeType(file)) && vault.allowedMimeTypes.includes(hrDocumentMimeType(file)) && file.size <= vault.maximumFileSizeBytes)).map((vault) => <option key={vault.code} value={vault.code}>{vault.name}</option>)}</select></label><label className="wide">Internal description <span>Optional</span><textarea maxLength={1000} onChange={(event) => setDescription(event.target.value)} rows={3} value={description} /></label></div></details>
-        {file && fileError ? <p className="form-error" role="alert">{fileError}</p> : null}
-        {uploadMutation.isError ? <p className="form-error" role="alert">{uploadMutation.error instanceof Error ? uploadMutation.error.message : 'The upload could not be completed. You can retry safely.'}</p> : null}
-        {uploadMutation.isPending ? <div aria-label={`Upload ${progress}% complete`} className="hr-document-progress"><span style={{ width: `${progress}%` }} /></div> : null}
-        <div className="modal-actions"><button className="secondary-button" disabled={uploadMutation.isPending} onClick={onClose} type="button">Cancel</button><button className="primary-action" disabled={!formReady || uploadMutation.isPending} type="submit">Upload document</button></div>
-      </form>
-    </ModalDialog>
   )
 }
 
