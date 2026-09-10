@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/10/2026 - SygSphere Mention Send Repair
+
+- Repaired the production `invalid regular expression: quantifier operand invalid` failure that blocked messages containing real-name mentions such as `@Michelle`.
+- Replaced dynamic database regex construction with literal token matching, preserved employee-ID mention identity and private execution boundaries, aligned browser punctuation handling, and replaced raw SQL diagnostics with a draft-safe retry message.
+- Hardened production verification to use completed MFA and always roll back its test message; removed and verified the absence of the one temporary verification message created while correcting that older probe.
+- Released source head `d67aa85` and migration `20260912050000_repair_sygsphere_mention_token_matcher.sql` as Cloudflare Worker `c868692b-5d56-4b00-aafc-e22992cd02e0`; rollback tag `rollback/pre-sygsphere-mention-token-repair-20260910` points to `083d07b`.
+- Verification passed 234 test files / 1,207 tests, the 92-check SygSphere/Time Clock desktop/mobile matrix, 20 repeated text-size refresh checks, the real transactional production send path, the 42-check post-deployment Time Clock matrix, both production origins, and byte-for-byte live identity of the main and SygSphere assets.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-10-2026_SYGSPHERE_MENTION_SEND_REPAIR.md`.
+
 ## 09/10/2026 - Document Access, Upload, and Preview Repair
 
 - Removed redundant free-text access-reason gates from ordinary authorized HR, Licensing, and Client document views/downloads while retaining automatic specific audits, exact permissions, MFA, private storage, quarantine, malware scanning, short-lived access, and dangerous-content blocking.
