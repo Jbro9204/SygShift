@@ -66,13 +66,13 @@ describe('SygSphere navigation and drafts', () => {
     await expect(sphereCompleteUpload(requestId, undefined, [0, 0])).resolves.toMatchObject({ state: 'processing', uploadId: requestId })
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
-  it('preserves a completion-only recovery action instead of asking mobile users to upload again', async () => {
+  it('requires a real retransmission when storage never received a resumable upload', async () => {
     const uploadId = '44444444-4444-4444-8444-444444444444'
     const requestId = '55555555-5555-4555-8555-555555555555'
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => Response.json({ detail: 'The upload has not finished.', error: 'sygsphere_file_not_stored', requestId }, { status: 409 })))
     const error = await sphereCompleteUpload(uploadId, undefined, [0, 0]).catch((reason: unknown) => reason)
     expect(error).toBeInstanceOf(SphereUploadError)
-    expect(error).toMatchObject({ code: 'sygsphere_file_not_stored', completionPending: true, requestReference: requestId, uploadId })
+    expect(error).toMatchObject({ code: 'sygsphere_storage_transfer_failed', completionPending: false, requestReference: requestId, uploadId })
   })
   it('keeps the normal upload confirmation window short before offering recovery', async () => {
     vi.useFakeTimers()
@@ -86,51 +86,35 @@ describe('SygSphere navigation and drafts', () => {
     const error = await completion
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(error).toMatchObject({ completionPending: true, uploadId })
+    expect(error).toMatchObject({ code: 'sygsphere_storage_transfer_failed', completionPending: false, uploadId })
   })
-  it('uses a signed standard transfer for normal attachments before requesting the security scan', async () => {
-    const uploadId = '66666666-6666-4666-8666-666666666666'
+  it('sends normal attachments through the same-origin file endpoint and returns only after sharing succeeds', async () => {
+    const fileId = '66666666-6666-4666-8666-666666666666'
+    const conversationId = '67676767-6767-4767-8767-676767676767'
+    const messageId = '68686868-6868-4868-8868-686868686868'
     const requestReference = '77777777-7777-4777-8777-777777777777'
-    const uploadToSignedUrl = vi.fn().mockResolvedValue({ data: { path: 'conversation/file.pdf' }, error: null })
-    vi.mocked(getSupabaseClient).mockReturnValue({
-      auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'test-token' } } }) },
-      storage: { from: vi.fn().mockReturnValue({ uploadToSignedUrl }) },
-    } as never)
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(Response.json({
-        bucket: 'sygsphere-files',
-        objectKey: 'conversation/file.pdf',
-        requestReference,
-        resumableEndpoint: 'https://project.storage.supabase.co/storage/v1/upload/resumable',
-        signedUploadToken: 'signed-token',
-        state: 'prepared',
-        uploadId,
-      }, { status: 201 }))
-      .mockResolvedValueOnce(Response.json({ state: 'uploaded', uploadId }, { status: 202 }))
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(
+      { id: fileId, messageId, state: 'clean' },
+      { headers: { 'x-request-id': requestReference } },
+    ))
     vi.stubGlobal('fetch', fetchMock)
     const file = new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], 'report.pdf', { type: 'application/pdf' })
 
-    await expect(sphereUpload(file, crypto.randomUUID(), crypto.randomUUID(), null)).resolves.toMatchObject({ state: 'processing', uploadId })
-    expect(uploadToSignedUrl).toHaveBeenCalledWith('conversation/file.pdf', 'signed-token', file, {
-      cacheControl: '3600', contentType: 'application/pdf', upsert: false,
-    })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(`/api/v1/sygsphere/uploads/${uploadId}/complete`)
+    await expect(sphereUpload(file, fileId, conversationId, null)).resolves.toEqual({ state: 'clean', uploadId: fileId, requestReference })
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`/api/v1/sygsphere/files/${fileId}?conversation=${conversationId}&filename=report.pdf`)
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ body: file, cache: 'no-store', method: 'PUT' })
   })
-  it('keeps the selected normal attachment retryable when its signed transfer fails', async () => {
-    const uploadId = '88888888-8888-4888-8888-888888888888'
+  it('keeps the selected normal attachment retryable when the same-origin transfer fails', async () => {
+    const fileId = '88888888-8888-4888-8888-888888888888'
     const requestReference = '99999999-9999-4999-8999-999999999999'
-    vi.mocked(getSupabaseClient).mockReturnValue({
-      auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'test-token' } } }) },
-      storage: { from: vi.fn().mockReturnValue({ uploadToSignedUrl: vi.fn().mockResolvedValue({ data: null, error: { message: 'Network failure' } }) }) },
-    } as never)
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({
-      bucket: 'sygsphere-files', objectKey: 'conversation/file.pdf', requestReference,
-      resumableEndpoint: 'https://project.storage.supabase.co/storage/v1/upload/resumable', signedUploadToken: 'signed-token', state: 'prepared', uploadId,
-    }, { status: 201 })))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(
+      { detail: 'The file could not be stored.', error: 'sygsphere_file_error' },
+      { status: 503, headers: { 'x-request-id': requestReference } },
+    )))
 
-    const error = await sphereUpload(new File(['%PDF'], 'report.pdf', { type: 'application/pdf' }), crypto.randomUUID(), crypto.randomUUID(), null).catch((reason: unknown) => reason)
+    const error = await sphereUpload(new File(['%PDF'], 'report.pdf', { type: 'application/pdf' }), fileId, crypto.randomUUID(), null).catch((reason: unknown) => reason)
     expect(error).toBeInstanceOf(SphereUploadError)
-    expect(error).toMatchObject({ code: 'sygsphere_storage_transfer_failed', completionPending: false, requestReference, uploadId })
+    expect(error).toMatchObject({ code: 'sygsphere_file_error', completionPending: false, requestReference })
   })
 })

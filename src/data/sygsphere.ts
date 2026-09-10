@@ -223,7 +223,8 @@ export class SphereUploadError extends Error {
 async function sphereApiError(response: Response, fallback: string) {
   const payload = z.object({ detail: z.string().optional(), error: z.string().optional(), requestId: z.string().uuid().optional(), requestReference: z.string().uuid().optional(), retryable: z.boolean().optional(), uploadId: z.string().uuid().optional() }).safeParse(await response.json().catch(() => null))
   const message = payload.success && payload.data.detail ? payload.data.detail : fallback
-  return new SphereUploadError(message, payload.success ? { code: payload.data.error, requestReference: payload.data.requestReference ?? payload.data.requestId, retryable: payload.data.retryable, uploadId: payload.data.uploadId } : {})
+  const responseRequestId = response.headers.get('x-request-id') ?? undefined
+  return new SphereUploadError(message, payload.success ? { code: payload.data.error, requestReference: payload.data.requestReference ?? payload.data.requestId ?? responseRequestId, retryable: payload.data.retryable, uploadId: payload.data.uploadId } : { requestReference: responseRequestId })
 }
 
 export async function sphereUploadStatus(uploadId: string): Promise<SphereUploadStatus> {
@@ -233,6 +234,7 @@ export async function sphereUploadStatus(uploadId: string): Promise<SphereUpload
 }
 
 const sphereCompletionRetryDelaysMs = [0, 250]
+const sphereDirectUploadMaxBytes = 25 * 1024 * 1024
 
 function waitForUploadCompletionRetry(delayMs: number) {
   return delayMs > 0 ? new Promise<void>((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve()
@@ -264,14 +266,30 @@ export async function sphereCompleteUpload(
     pendingError = error
   }
   throw new SphereUploadError(
-    'Your file finished uploading, but secure storage is still confirming it. Tap Check upload to finish without selecting the file again.',
+    'The file did not reach storage. Retry upload to send the selected file again.',
     {
-      code: pendingError?.code,
-      completionPending: true,
+      code: 'sygsphere_storage_transfer_failed',
+      completionPending: false,
       requestReference: pendingError?.requestReference,
       uploadId,
     },
   )
+}
+
+async function sphereDirectUpload(file: File, fileId: string, conversationId: string, parentId: string | null, mimeType: string, onProgress?: (percentage: number, stage: SphereUploadStage) => void): Promise<SphereUploadResult> {
+  const query = new URLSearchParams({ conversation: conversationId, filename: file.name })
+  if (parentId) query.set('thread', parentId)
+  onProgress?.(1, 'uploading')
+  const response = await fetch(`/api/v1/sygsphere/files/${fileId}?${query}`, {
+    body: file,
+    cache: 'no-store',
+    headers: await sphereFileHeaders(mimeType),
+    method: 'PUT',
+  })
+  if (!response.ok) throw await sphereApiError(response, 'The file could not be shared. Your selected file is still available to retry.')
+  const result = z.object({ id: z.string().uuid(), messageId: z.string().uuid().nullable(), state: z.literal('clean') }).parse(await response.json())
+  onProgress?.(100, 'uploading')
+  return { state: 'clean', uploadId: result.id, requestReference: response.headers.get('x-request-id') ?? undefined }
 }
 
 async function sphereProtectedUpload(file: File, fileId: string, conversationId: string, parentId: string | null, mimeType: string, onProgress?: (percentage: number, stage: SphereUploadStage) => void): Promise<SphereUploadResult> {
@@ -287,42 +305,25 @@ async function sphereProtectedUpload(file: File, fileId: string, conversationId:
   onProgress?.(1, 'uploading')
   if (target.state === 'prepared') {
     if (!target.bucket || !target.objectKey || !target.resumableEndpoint || !target.signedUploadToken) throw new Error('The secure file upload target is incomplete.')
-    if (file.size <= sphereStandardUploadMaxBytes) {
-      const { error } = await getSupabaseClient().storage
-        .from(target.bucket)
-        .uploadToSignedUrl(target.objectKey, target.signedUploadToken, file, {
-          cacheControl: '3600',
-          contentType: mimeType,
-          upsert: false,
-        })
-      if (error) {
-        throw new SphereUploadError(
-          'The protected upload was interrupted before storage received the file. Your draft and selected file are still available.',
-          { code: 'sygsphere_storage_transfer_failed', requestReference: target.requestReference ?? undefined, uploadId: target.uploadId },
-        )
-      }
-      onProgress?.(90, 'uploading')
-    } else {
-      await new Promise<void>((resolve, reject) => {
-        const upload = new Upload(file, {
-          chunkSize: sphereStandardUploadMaxBytes,
-          endpoint: target.resumableEndpoint,
-          fingerprint: async () => `sygsphere:${target.uploadId}:${target.objectKey}:${file.size}:${file.lastModified}`,
-          headers: { 'x-signature': target.signedUploadToken! },
-          metadata: { bucketName: target.bucket!, cacheControl: '3600', contentType: mimeType, filename: file.name, objectName: target.objectKey! },
-          onError: (error) => reject(new Error(error.message || 'The protected upload was interrupted. Your draft and selected file are still available.')),
-          onProgress: (uploaded, total) => onProgress?.(total > 0 ? Math.min(90, Math.max(1, Math.round((uploaded / total) * 90))) : 1, 'uploading'),
-          onSuccess: () => resolve(),
-          removeFingerprintOnSuccess: true,
-          retryDelays: [0, 3000, 5000, 10000, 20000],
-          uploadDataDuringCreation: true,
-        })
-        void upload.findPreviousUploads().then((previous) => {
-          if (previous[0]) upload.resumeFromPreviousUpload(previous[0])
-          upload.start()
-        }).catch(reject)
+    await new Promise<void>((resolve, reject) => {
+      const upload = new Upload(file, {
+        chunkSize: sphereStandardUploadMaxBytes,
+        endpoint: target.resumableEndpoint,
+        fingerprint: async () => `sygsphere:${target.uploadId}:${target.objectKey}:${file.size}:${file.lastModified}`,
+        headers: { 'x-signature': target.signedUploadToken! },
+        metadata: { bucketName: target.bucket!, cacheControl: '3600', contentType: mimeType, filename: file.name, objectName: target.objectKey! },
+        onError: (error) => reject(new Error(error.message || 'The upload was interrupted. Your draft and selected file are still available.')),
+        onProgress: (uploaded, total) => onProgress?.(total > 0 ? Math.min(90, Math.max(1, Math.round((uploaded / total) * 90))) : 1, 'uploading'),
+        onSuccess: () => resolve(),
+        removeFingerprintOnSuccess: true,
+        retryDelays: [0, 3000, 5000, 10000, 20000],
+        uploadDataDuringCreation: true,
       })
-    }
+      void upload.findPreviousUploads().then((previous) => {
+        if (previous[0]) upload.resumeFromPreviousUpload(previous[0])
+        upload.start()
+      }).catch(reject)
+    })
   }
   if (target.state !== 'scanning') return sphereCompleteUpload(target.uploadId, onProgress)
   onProgress?.(100, 'scanning')
@@ -333,6 +334,7 @@ export async function sphereUpload(file: File, fileId: string, conversationId: s
   if (file.size > sphereResumableMaxBytes || file.size < 1) throw new Error('Choose a file between 1 byte and 100 MB.')
   const fallbackMime: Record<string, string> = { pdf: 'application/pdf', txt: 'text/plain', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
   const mimeType = file.type || fallbackMime[file.name.split('.').at(-1)?.toLowerCase() || ''] || 'application/octet-stream'
+  if (file.size <= sphereDirectUploadMaxBytes) return sphereDirectUpload(file, fileId, conversationId, parentId, mimeType, onProgress)
   return sphereProtectedUpload(file, fileId, conversationId, parentId, mimeType, onProgress)
 }
 

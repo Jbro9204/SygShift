@@ -230,67 +230,53 @@ test('keeps the mobile composer compact and grows it only for multiline work', a
   expect(grownHeight).toBeLessThanOrEqual(106)
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeInViewport()
 })
-test('automatically survives transient mobile upload confirmation lag', async ({ page }) => {
+test('shares an ordinary mobile attachment through the same-origin upload', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 640 })
-  let completionAttempts = 0
-  await page.route('**/api/v1/sygsphere/uploads**', async (route) => {
-    if (route.request().url().endsWith('/complete')) {
-      completionAttempts += 1
-      await route.fulfill(completionAttempts === 1
-        ? { status: 409, contentType: 'application/json', body: JSON.stringify({ detail: 'The upload has not finished.', error: 'sygsphere_file_not_stored', requestId: '30000000-0000-4000-8000-000000000001' }) }
-        : { status: 202, contentType: 'application/json', body: JSON.stringify({ state: 'uploaded', uploadId: '30000000-0000-4000-8000-000000000002' }) })
-      return
-    }
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ state: 'uploaded', uploadId: '30000000-0000-4000-8000-000000000002' }) })
+  let uploadCount = 0
+  await page.route('**/api/v1/sygsphere/files/**', async (route) => {
+    if (route.request().method() !== 'PUT') return route.continue()
+    uploadCount += 1
+    const fileId = new URL(route.request().url()).pathname.split('/').at(-1)
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: fileId, messageId: '30000000-0000-4000-8000-000000000002', state: 'clean' }) })
   })
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
   await page.locator('input[type="file"]').setInputFiles({ name: 'mobile-photo.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })
   await page.getByRole('button', { name: 'Share file', exact: true }).click()
-  await expect(page.getByText('Upload complete. The private security check is continuing in the background.')).toBeVisible()
-  expect(completionAttempts).toBe(2)
+  await expect(page.getByText('Your file has been shared.')).toBeVisible()
+  expect(uploadCount).toBe(1)
 })
-test('transfers a normal desktop PDF through its signed storage target before completing it', async ({ page }) => {
-  const uploadId = '30000000-0000-4000-8000-000000000005'
-  let completionAttempts = 0
-  await page.route('**/api/v1/sygsphere/uploads**', async (route) => {
-    if (route.request().url().endsWith('/complete')) {
-      completionAttempts += 1
-      await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ state: 'uploaded', uploadId }) })
-      return
-    }
-    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({
-      bucket: 'sygsphere-files', objectKey: 'conversation/desktop-report.pdf', requestReference: '30000000-0000-4000-8000-000000000006',
-      resumableEndpoint: 'https://project.storage.supabase.co/storage/v1/upload/resumable', signedUploadToken: 'signed-token', state: 'prepared', uploadId,
-    }) })
+test('transfers a normal desktop PDF through SygShift before reporting it shared', async ({ page }) => {
+  let uploadedBytes: Buffer | null = null
+  await page.route('**/api/v1/sygsphere/files/**', async (route) => {
+    if (route.request().method() !== 'PUT') return route.continue()
+    uploadedBytes = route.request().postDataBuffer()
+    const fileId = new URL(route.request().url()).pathname.split('/').at(-1)
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: fileId, messageId: '30000000-0000-4000-8000-000000000006', state: 'clean' }) })
   })
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
   await page.locator('input[type="file"]').setInputFiles({ name: 'desktop-report.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\n%%EOF') })
   await page.getByRole('button', { name: 'Share file', exact: true }).click()
-  await expect(page.getByText('Upload complete. The private security check is continuing in the background.')).toBeVisible()
-  expect(completionAttempts).toBe(1)
-  expect(await page.locator('html').getAttribute('data-sphere-signed-upload-path')).toBe('conversation/desktop-report.pdf')
+  await expect(page.getByText('Your file has been shared.')).toBeVisible()
+  expect(uploadedBytes?.toString()).toBe('%PDF-1.7\n%%EOF')
 })
-test('offers completion-only recovery without making a mobile user select or transfer the file again', async ({ page }) => {
+test('retries the retained mobile file when its first transfer does not reach storage', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 640 })
-  let completionAttempts = 0
-  await page.route('**/api/v1/sygsphere/uploads**', async (route) => {
-    if (route.request().url().endsWith('/complete')) {
-      completionAttempts += 1
-      await route.fulfill(completionAttempts <= 2
-        ? { status: 409, contentType: 'application/json', body: JSON.stringify({ detail: 'The upload has not finished.', error: 'sygsphere_file_not_stored', requestId: '30000000-0000-4000-8000-000000000003' }) }
-        : { status: 202, contentType: 'application/json', body: JSON.stringify({ state: 'uploaded', uploadId: '30000000-0000-4000-8000-000000000004' }) })
-      return
-    }
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ state: 'uploaded', uploadId: '30000000-0000-4000-8000-000000000004' }) })
+  let uploadAttempts = 0
+  await page.route('**/api/v1/sygsphere/files/**', async (route) => {
+    if (route.request().method() !== 'PUT') return route.continue()
+    uploadAttempts += 1
+    const fileId = new URL(route.request().url()).pathname.split('/').at(-1)
+    await route.fulfill(uploadAttempts === 1
+      ? { status: 503, contentType: 'application/json', headers: { 'x-request-id': '30000000-0000-4000-8000-000000000003' }, body: JSON.stringify({ detail: 'The file could not be stored.', error: 'sygsphere_file_error' }) }
+      : { status: 200, contentType: 'application/json', body: JSON.stringify({ id: fileId, messageId: '30000000-0000-4000-8000-000000000004', state: 'clean' }) })
   })
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
   await page.locator('input[type="file"]').setInputFiles({ name: 'mobile-resume.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })
   await page.getByRole('button', { name: 'Share file', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Finish upload', exact: true })).toBeEnabled({ timeout: 10_000 })
-  await expect(page.getByText('without selecting the file again')).toBeVisible()
-  await page.getByRole('button', { name: 'Finish upload', exact: true }).click()
-  await expect(page.getByText('Upload complete. The private security check is continuing in the background.')).toBeVisible()
-  expect(completionAttempts).toBe(3)
+  await expect(page.getByRole('button', { name: 'Retry upload', exact: true })).toBeEnabled({ timeout: 10_000 })
+  await page.getByRole('button', { name: 'Retry upload', exact: true }).click()
+  await expect(page.getByText('Your file has been shared.')).toBeVisible()
+  expect(uploadAttempts).toBe(2)
 })
 test('keeps drafts over reload, retains a failed send and retries successfully', async ({ page }) => {
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
