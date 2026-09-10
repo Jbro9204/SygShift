@@ -31,17 +31,20 @@ SygSphere mobile attachments no longer fail when the resumable transfer finishes
 
 - Focused SygSphere data/Worker tests: 24/24 passed.
 - `pnpm check`: passed TypeScript, zero-warning application lint, 229 test files, 1,182 tests, Worker build, and client production build.
-- Mobile SygSphere upload workflow: 19/19 checks passed.
+- SygSphere browser workflow: 44/44 desktop/mobile checks passed, including the phone-sized attachment flow.
 - Combined SygSphere and mandatory actual-component Time Clock browser matrix: 86/86 desktop/mobile checks passed against the integrated current `main` branch.
 - The browser regressions prove both automatic recovery from a transient completion delay and completion-only recovery after a prolonged delay without retransmitting the selected file.
-- Required fresh production build after browser testing: pending release step.
-- Post-deployment mandatory Time Clock workflow: pending release step.
-- Production health, readiness, route, and exact live asset verification: pending release step.
+- Required fresh production build after browser testing: passed immediately before deployment.
+- Post-deployment mandatory Time Clock workflow: 42/42 desktop/mobile checks passed.
+- Primary and fallback production health returned `ok`; readiness returned `ready` with every required check true.
+- The production `/sygsphere` route returned HTTP 200, and live assets `assets/index-BFV1APP2.js` and `assets/SygSpherePage-D0Fw3blo.js` match the verified build byte-for-byte.
+- The live application bundle contains the completion-only recovery copy and **Check upload** state.
+- A signed-out request to the protected completion endpoint returned HTTP 401.
 
 ## Release
 
-- Application source: pending.
-- Cloudflare Worker version: pending.
+- Application source: `36accc2` (`fix: recover mobile SygSphere upload completion`).
+- Cloudflare Worker version: `1b607a3b-f6af-4636-8409-127e0ea9c603`.
 - Primary URL: `https://app.sygilant.us`.
 - Fallback URL: `https://sygshift.sygilant.workers.dev`.
 

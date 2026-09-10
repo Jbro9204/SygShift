@@ -5,7 +5,8 @@
 - Repaired the mobile attachment race that could report an upload as unfinished after its resumable transfer had already completed but before private storage exposed the object to the Worker.
 - Added bounded storage confirmation on both sides of finalization and a completion-only **Check upload** recovery action that preserves the selected file, message draft, upload identity, and request reference without retransmitting the attachment.
 - Preserved private quarantine, security scanning, authorization, participant access, download behavior, notifications, and all non-SygSphere workflows; no database or production-data change is required.
-- Pre-release verification passed 229 test files / 1,182 tests, 24 focused data/Worker tests, 19 mobile SygSphere checks, and the 86-check SygSphere plus mandatory actual-component Time Clock browser matrix.
+- Released source commit `36accc2` as Cloudflare Worker `1b607a3b-f6af-4636-8409-127e0ea9c603`; the remote rollback tag is `rollback/pre-sygsphere-mobile-upload-repair-20260910`.
+- Verification passed 229 test files / 1,182 tests, 24 focused data/Worker tests, 44 SygSphere desktop/mobile checks, the combined 86-check SygSphere plus mandatory actual-component Time Clock matrix, and the 42-check post-deployment Time Clock matrix. Both production origins are healthy/ready, the live SygSphere route is available, exact assets match, and signed-out completion remains denied.
 - Full release evidence: `docs/changelogs/CHANGELOG_09-10-2026_SYGSPHERE_MOBILE_UPLOAD_COMPLETION_REPAIR.md`.
 
 ## 09/10/2026 - Small-Screen Shell and SygSphere Laptop Layout
