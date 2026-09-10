@@ -23,7 +23,7 @@ The production Guard canary identified that an active Guard could sign in at AAL
 
 ## Implementation
 
-- Added migration `20260912020000_guard_aal1_sygilant_permission_projection.sql`.
+- Added migration `20260912020100_guard_aal1_sygilant_permission_projection.sql`.
 - Added a production postflight contract for the function definition, protected Guard role, enabled role grant, and protected launcher catalog entry.
 - Extended the shared-identity source guard so later changes cannot silently remove the exception or broaden the MFA bypass.
 
@@ -31,6 +31,7 @@ The production Guard canary identified that an active Guard could sign in at AAL
 
 - Focused SygShift shared-identity suite: 5 files, 61 tests passed.
 - `git diff --check`: passed.
+- Production preflight identified an unrelated concurrent migration at `20260912020000`; the repair was moved to unique version `20260912020100` before execution.
 - Production migration, postflight, deployment, and user-present Guard handoff evidence are recorded below after release.
 
 ## Rollback
