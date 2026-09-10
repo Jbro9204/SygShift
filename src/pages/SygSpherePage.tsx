@@ -3,7 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ALargeSmall, ArrowLeft, Bell, BellOff, Bookmark, Check, ChevronDown, Download, Eye, Hash, Info, MessageCircle, Paperclip, Plus, Search, Send, Smile, Users, X } from 'lucide-react'
 import { getSessionContext } from '../data/auth'
-import { readSphereDraft, sphereActiveMentions, sphereCanPreview, sphereCompleteUpload, sphereConversation, sphereCreate, sphereDirectory, sphereDownload, sphereDraftKey, sphereFiles, sphereInbox, sphereMessage, sphereMessageParts, sphereMessages, spherePath, spherePhoto, spherePreferences, spherePreview, sphereRequest, sphereRetryUpload, sphereSearch, sphereSend, sphereUpload, sphereUploadStatus, SphereUploadError, writeSphereDraft, type SphereConversation, type SphereFile, type SphereMention, type SphereMessage, type SpherePerson, type SpherePreview, type SphereTextSize, type SphereUploadStage } from '../data/sygsphere'
+import { readSphereDraft, sphereActiveMentions, sphereCanPreview, sphereCompleteUpload, sphereConversation, sphereCreate, sphereDirectory, sphereDownload, sphereDraftKey, sphereFiles, sphereInbox, sphereMessage, sphereMessageParts, sphereMessages, spherePath, spherePersonMentionLabel, spherePhoto, spherePreferences, spherePreview, sphereRequest, sphereResolveTypedMentions, sphereRetryUpload, sphereSearch, sphereSend, sphereUpload, sphereUploadStatus, SphereUploadError, writeSphereDraft, type SphereConversation, type SphereDraft, type SphereFile, type SphereMention, type SphereMessage, type SpherePerson, type SpherePreview, type SphereTextSize, type SphereUploadStage } from '../data/sygsphere'
 import { ModalDialog } from '../components/ModalDialog'
 import { SecurePdfViewer } from '../components/SecurePdfViewer'
 import '../styles/sygsphere.css'
@@ -64,6 +64,22 @@ function MessageBody({ text, mentions, employeeId }: { text: string; mentions: S
   return <div className="sphere-message__body">{sphereMessageParts(text, mentions).map((part, index) => part.kind === 'link'
     ? <a key={index} href={part.text} target="_blank" rel="noopener noreferrer">{part.text}</a>
     : part.kind === 'mention' ? <mark key={index} className={part.mention?.id === employeeId ? 'sphere-mention sphere-mention--self' : 'sphere-mention'} title={part.mention?.name}>{part.text}</mark> : part.text)}</div>
+}
+
+function mentionQueryAt(body: string, caret: number) {
+  const before = body.slice(0, caret)
+  const at = before.lastIndexOf('@')
+  if (at < 0 || (at > 0 && /[\p{L}\p{N}_]/u.test(before[at - 1]))) return null
+  const query = before.slice(at + 1)
+  if (query.length > 80 || /[\n\r,!?;:()[\]{}]/u.test(query)) return null
+  return { start: at, query }
+}
+
+function personMatchesMentionQuery(person: SpherePerson, query: string) {
+  const needle = query.trim().toLocaleLowerCase()
+  if (!needle) return true
+  return [person.firstName, person.preferredName, person.legalName, person.name]
+    .some((value) => value?.toLocaleLowerCase().includes(needle))
 }
 
 export function SygSpherePage() {
@@ -235,6 +251,7 @@ function SphereComposer({ employeeId, conversationId, parentId, members }: { emp
   const [draft, setDraft] = useState(() => readSphereDraft(key))
   const [storageAvailable, setStorageAvailable] = useState(true)
   const [mention, setMention] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
   const [file, setFile] = useState<{ file: File; id: string } | null>(null)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadStage, setUploadStage] = useState<SphereUploadStage>('uploading')
@@ -242,7 +259,7 @@ function SphereComposer({ employeeId, conversationId, parentId, members }: { emp
   const fileInput = useRef<HTMLInputElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const lastTyping = useRef(0)
-  const send = useMutation({ mutationFn: () => sphereSend({ conversationId, parentId, ...draft }), onSuccess: async () => {
+  const send = useMutation({ mutationFn: (message: SphereDraft) => sphereSend({ conversationId, parentId, ...message }), onSuccess: async () => {
     const empty = { body: '', clientId: crypto.randomUUID(), mentions: [] }; setDraft(empty); writeSphereDraft(key, empty)
     await queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] }); inputRef.current?.focus()
   } })
@@ -268,20 +285,60 @@ function SphereComposer({ employeeId, conversationId, parentId, members }: { emp
   }, [draft.body])
   const retryableUpload = upload.error instanceof SphereUploadError && upload.error.retryable && upload.error.uploadId ? upload.error : null
   const pendingCompletion = upload.error instanceof SphereUploadError && upload.error.completionPending && upload.error.uploadId ? upload.error : null
-  function change(body: string, mentions = draft.mentions) {
+  function change(body: string, mentions = draft.mentions, caret?: number) {
     if (send.isPending) return
     const limited = body.slice(0, 12000)
-    const next = { body: limited, clientId: send.isError ? crypto.randomUUID() : draft.clientId, mentions: sphereActiveMentions(limited, mentions) }
+    const next = { body: limited, clientId: send.isError ? crypto.randomUUID() : draft.clientId, mentions: sphereResolveTypedMentions(limited, mentions, members, employeeId) }
     setDraft(next); setStorageAvailable(writeSphereDraft(key, next)); if (send.isError) send.reset()
+    if (caret !== undefined) {
+      const activeMention = mentionQueryAt(limited, caret)
+      const completedMention = activeMention && next.mentions.some((item) => {
+        const label = item.label || item.username
+        return activeMention.query.toLocaleLowerCase().startsWith(`${label.toLocaleLowerCase()} `)
+      })
+      setMention(Boolean(activeMention) && !completedMention); setMentionQuery(activeMention && !completedMention ? activeMention.query : '')
+    }
     if (Date.now() - lastTyping.current > 4000) { lastTyping.current = Date.now(); void sphereRequest('typing', { conversationId, typing: Boolean(body.trim()) }).catch(() => undefined) }
   }
-  function submit(event?: FormEvent) { event?.preventDefault(); if (!send.isPending && draft.body.trim()) send.mutate() }
+  function chooseMention(person: SpherePerson) {
+    if (!person.username) return
+    const input = inputRef.current
+    const caret = input?.selectionStart ?? draft.body.length
+    const activeMention = mentionQueryAt(draft.body, caret)
+    const label = spherePersonMentionLabel(person, members)
+    const before = activeMention ? draft.body.slice(0, activeMention.start) : `${draft.body.slice(0, caret)}${caret > 0 && !/\s$/.test(draft.body.slice(0, caret)) ? ' ' : ''}`
+    const after = draft.body.slice(caret).replace(/^\s+/, '')
+    const nextBody = `${before}@${label} ${after}`
+    const nextCaret = before.length + label.length + 2
+    change(nextBody, [...draft.mentions, { id: person.id, name: person.name, username: person.username, label }])
+    setMention(false); setMentionQuery('')
+    requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(nextCaret, nextCaret) })
+  }
+  function openMentionPicker() {
+    if (mention) { setMention(false); setMentionQuery(''); return }
+    const input = inputRef.current
+    const caret = input?.selectionStart ?? draft.body.length
+    const before = draft.body.slice(0, caret)
+    const separator = before && !/\s$/.test(before) ? ' ' : ''
+    const nextBody = `${before}${separator}@${draft.body.slice(caret)}`
+    const nextCaret = caret + separator.length + 1
+    change(nextBody, draft.mentions)
+    setMention(true); setMentionQuery('')
+    requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(nextCaret, nextCaret) })
+  }
+  function submit(event?: FormEvent) {
+    event?.preventDefault()
+    if (send.isPending || !draft.body.trim()) return
+    const ready = { ...draft, mentions: sphereResolveTypedMentions(draft.body, draft.mentions, members, employeeId) }
+    send.mutate(ready)
+  }
+  const mentionCandidates = members.filter((person) => person.id !== employeeId && person.active && person.username && personMatchesMentionQuery(person, mentionQuery))
   return <form className="sphere-composer" onSubmit={submit}>
-    <textarea aria-label={parentId ? 'Write a thread reply' : 'Write a message'} ref={inputRef} value={draft.body} onChange={(event) => change(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit() } }} placeholder={parentId ? 'Add your reply…' : 'Write a message…'} maxLength={12000} disabled={send.isPending} />
-    <div className="sphere-composer-tools"><div><button type="button" aria-label="Attach a file" onClick={() => fileInput.current?.click()}><Paperclip size={19} /></button><button type="button" aria-label="Mention a participant" aria-expanded={mention} onClick={() => setMention(!mention)}>@</button><button type="button" aria-label="Add a smile" onClick={() => { change(`${draft.body} 🙂`); inputRef.current?.focus() }}><Smile size={19} /></button><small>Enter to send · Shift + Enter for a new line</small></div><button type="submit" className="sphere-primary" disabled={!draft.body.trim() || send.isPending}><Send size={17} />{send.isPending ? 'Sending…' : send.isError ? 'Retry send' : 'Send'}</button></div>
+    <textarea aria-label={parentId ? 'Write a thread reply' : 'Write a message'} ref={inputRef} value={draft.body} onChange={(event) => change(event.target.value, draft.mentions, event.target.selectionStart)} onKeyDown={(event) => { if (event.key === 'Escape' && mention) { event.preventDefault(); setMention(false); setMentionQuery(''); return } if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit() } }} placeholder={parentId ? 'Add your reply…' : 'Write a message…'} maxLength={12000} disabled={send.isPending} />
+    <div className="sphere-composer-tools"><div><button type="button" aria-label="Attach a file" onClick={() => fileInput.current?.click()}><Paperclip size={19} /></button><button type="button" aria-label="Mention a participant" aria-expanded={mention} onClick={openMentionPicker}>@</button><button type="button" aria-label="Add a smile" onClick={() => { change(`${draft.body} 🙂`); inputRef.current?.focus() }}><Smile size={19} /></button><small>Enter to send · Shift + Enter for a new line</small></div><button type="submit" className="sphere-primary" disabled={!draft.body.trim() || send.isPending}><Send size={17} />{send.isPending ? 'Sending…' : send.isError ? 'Retry send' : 'Send'}</button></div>
     <input ref={fileInput} type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.docx,.xlsx" onChange={(event) => { const chosen = event.target.files?.[0]; if (chosen) { setFile({ file: chosen, id: crypto.randomUUID() }); setUploadProgress(0); upload.reset() } event.target.value = '' }} />
     {file ? <ModalDialog title="Share a file" description="Only participants in this conversation can download it." className="sphere-modal" busy={upload.isPending || retryScan.isPending} busyLabel={uploadStage === 'scanning' ? 'Moving the upload into its private security check…' : `Uploading securely… ${uploadProgress}%`} onClose={() => setFile(null)}><div className="sphere-form"><strong>{file.file.name}</strong><p>{(file.file.size / 1048576).toFixed(2)} MB · Maximum 100 MB</p><p className="sphere-hint">PDF, images, text, DOCX and XLSX are supported through 25 MB. JPEG, PNG and WebP images can be as large as 100 MB. Files stay private while checked and appear only after passing. Your message draft and selected file remain available if the upload is interrupted.</p>{upload.isPending ? <><progress aria-label="File upload progress" max="100" value={uploadProgress}>{uploadProgress}%</progress><p className="sphere-hint">{uploadStage === 'scanning' ? 'Upload complete. Starting the background security check…' : 'Uploading to private quarantine…'}</p></> : null}<ErrorNotice error={upload.error || retryScan.error} />{upload.error instanceof SphereUploadError && upload.error.requestReference ? <p className="sphere-reference">Reference ID: <code>{upload.error.requestReference}</code></p> : null}<footer><button type="button" disabled={upload.isPending || retryScan.isPending} onClick={() => setFile(null)}>Cancel</button>{retryableUpload ? <button type="button" className="sphere-primary" disabled={retryScan.isPending} onClick={() => retryScan.mutate(retryableUpload.uploadId!)}>{retryScan.isPending ? 'Restarting check…' : 'Retry security check'}</button> : <button type="button" className="sphere-primary" disabled={upload.isPending || retryScan.isPending || file.file.size > 104857600 || file.file.size < 1} onClick={() => upload.mutate(pendingCompletion?.uploadId)}>{upload.isPending && upload.variables ? 'Checking upload…' : pendingCompletion ? 'Check upload' : upload.isError ? 'Retry upload' : 'Share file'}</button>}</footer></div></ModalDialog> : null}
-    {mention ? <div className="sphere-mention-list" aria-label="Conversation participants">{members.filter((person) => person.id !== employeeId && person.active && person.username).map((person) => <button key={person.id} type="button" onClick={() => { const token = `@${person.username}`; change(`${draft.body}${draft.body.endsWith(' ') || !draft.body ? '' : ' '}${token} `, [...draft.mentions, { id: person.id, name: person.name, username: person.username! }]); setMention(false); inputRef.current?.focus() }}><Avatar name={person.name} photoPath={person.photoPath} /><span><strong>{person.name}</strong><small>@{person.username}</small></span></button>)}</div> : null}
+    {mention ? <div className="sphere-mention-list" aria-label="Conversation participants"><header><strong>Tag someone</strong><small>{mentionQuery ? `Matching “${mentionQuery}”` : 'Type a name or choose a person'}</small></header>{mentionCandidates.map((person) => <button key={person.id} type="button" onClick={() => chooseMention(person)}><Avatar name={person.name} photoPath={person.photoPath} /><span><strong>{person.name}</strong><small>Tag as @{spherePersonMentionLabel(person, members)}{person.role ? ` · ${person.role}` : ''}</small></span></button>)}{mentionCandidates.length === 0 ? <p>No participant matches that name.</p> : null}</div> : null}
     {uploadNotice ? <p className="sphere-upload-notice" role="status">{uploadNotice}</p> : null}
     <ErrorNotice error={send.error} />{send.isError ? <p className="sphere-hint">Your draft is safe here. Retry uses the same send identifier to prevent duplicates.</p> : null}
     {!storageAvailable ? <p className="sphere-error">Device storage is unavailable. Keep this page open until you send your draft.</p> : null}

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getSupabaseClient } from '../lib/supabase'
-import { readSphereDraft, sphereCanPreview, sphereCompleteUpload, sphereDraftKey, sphereMentionIds, sphereMessageParts, spherePath, sphereUnread, sphereUpload, SphereUploadError, writeSphereDraft } from './sygsphere'
+import { readSphereDraft, sphereCanPreview, sphereCompleteUpload, sphereDraftKey, sphereMentionIds, sphereMessageParts, spherePath, spherePersonMentionLabel, sphereResolveTypedMentions, sphereUnread, sphereUpload, SphereUploadError, writeSphereDraft } from './sygsphere'
 vi.mock('../lib/supabase', () => ({ getSupabaseClient: vi.fn() }))
 describe('SygSphere navigation and drafts', () => {
   beforeEach(() => {
@@ -28,6 +28,20 @@ describe('SygSphere navigation and drafts', () => {
       { kind: 'text', text: 'Hi ' }, { kind: 'mention', text: '@jordan.brown', mention: jordan },
       { kind: 'text', text: ': ' }, { kind: 'link', text: 'https://example.test' },
     ])
+  })
+  it('resolves a typed human first name to one employee identity without exposing usernames', () => {
+    const michelle = { id: '33333333-3333-4333-8333-333333333333', name: 'Chief Hood', firstName: 'Michelle', preferredName: 'Chief', legalName: 'Michelle Hood', username: 'mhood', active: true, photoPath: null, presence: 'available' }
+    const jordan = { id: '44444444-4444-4444-8444-444444444444', name: 'Jordan Brown', firstName: 'Jordan', preferredName: null, legalName: 'Jordan Brown', username: 'jbrown', active: true, photoPath: null, presence: 'available' }
+    const mentions = sphereResolveTypedMentions('Please review this @michelle', [], [michelle, jordan], jordan.id)
+    expect(mentions).toEqual([{ id: michelle.id, name: 'Chief Hood', username: 'mhood', label: 'Michelle' }])
+    expect(sphereMentionIds('Please review this @michelle', mentions)).toEqual([michelle.id])
+    expect(sphereMessageParts('Please review this @michelle', mentions).at(-1)).toEqual({ kind: 'mention', text: '@michelle', mention: mentions[0] })
+  })
+  it('uses a full human name when a first name is not unique', () => {
+    const first = { id: '55555555-5555-4555-8555-555555555555', name: 'Michelle Hood', firstName: 'Michelle', preferredName: null, legalName: 'Michelle Hood', username: 'mhood', active: true, photoPath: null, presence: 'available' }
+    const second = { id: '66666666-6666-4666-8666-666666666666', name: 'Michelle Lane', firstName: 'Michelle', preferredName: null, legalName: 'Michelle Lane', username: 'mlane', active: true, photoPath: null, presence: 'available' }
+    expect(spherePersonMentionLabel(first, [first, second])).toBe('Michelle Hood')
+    expect(sphereResolveTypedMentions('Hello @Michelle', [], [first, second], crypto.randomUUID())).toEqual([])
   })
   it('previews only bounded text and the approved inline media types', () => {
     expect(sphereCanPreview({ mimeType: 'application/pdf', sizeBytes: 26214400 })).toBe(true)

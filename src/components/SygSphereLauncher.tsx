@@ -1,6 +1,6 @@
 import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, useLocation } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { sphereInbox, spherePath, sphereRequest, sphereUnread } from '../data/sygsphere'
@@ -45,7 +45,6 @@ async function claimSphereAlert(employeeId: string, messageId: string) {
 }
 
 function SphereLauncherContent({ employeeId }: { employeeId: string }) {
-  const location = useLocation()
   const queryClient = useQueryClient()
   const inbox = useQuery({ queryKey: ['sygsphere', employeeId, 'inbox'], queryFn: sphereInbox, refetchInterval: 30000, retry: 1 })
   const [toast, setToast] = useState<{ title: string; path: string; mentioned: boolean } | null>(null)
@@ -53,8 +52,6 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
   const seen = useRef<Set<string> | null>(null)
   const seenMentions = useRef<Set<string> | null>(null)
   const audio = useRef<HTMLAudioElement | null>(null)
-  const activeLocation = useRef(location)
-  useEffect(() => { activeLocation.current = location }, [location])
   useEffect(() => {
     const sound = new Audio('/sounds/SygSphere_Notification_46421aca.mp3')
     sound.preload = 'auto'; audio.current = sound
@@ -105,13 +102,11 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
       return
     }
     let cancelled = false
-    const active = activeLocation.current
-    const activeConversation = document.visibilityState === 'visible' && active.pathname === '/sygsphere' ? new URLSearchParams(active.search).get('conversation') : null
     const mentionedMessageIds = new Set(data.mentions.map((item) => item.messageId))
     for (const mention of data.mentions) {
       if (seenMentions.current.has(mention.messageId)) continue
       seenMentions.current.add(mention.messageId)
-      if (mention.authorId === employeeId || Date.now() - Date.parse(mention.createdAt) > 30000 || activeConversation === mention.conversationId) continue
+      if (mention.authorId === employeeId) continue
       void claimSphereAlert(employeeId, mention.messageId).then((claimed) => {
         if (!claimed || cancelled) return
         setToast({ title: mention.conversationName, path: spherePath(mention.conversationId, mention.messageId, mention.parentId), mentioned: true })
@@ -122,8 +117,7 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
       const message = conversation.latest
       if (!message || seen.current.has(message.id)) continue
       seen.current.add(message.id)
-      if (mentionedMessageIds.has(message.id) || conversation.muted || conversation.unread === 0 || message.authorId === employeeId || Date.now() - Date.parse(message.createdAt) > 30000) continue
-      if (activeConversation === conversation.id) continue
+      if (mentionedMessageIds.has(message.id) || conversation.muted || message.authorId === employeeId) continue
       void claimSphereAlert(employeeId, message.id).then((claimed) => {
         if (!claimed || cancelled) return
         setToast({ title: conversation.name, path: spherePath(conversation.id, message.id, message.parentId), mentioned: false })

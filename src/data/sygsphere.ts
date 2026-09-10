@@ -5,10 +5,11 @@ import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 
 const personSchema = z.object({
   id: z.string().uuid(), name: z.string(), username: z.string().optional(), role: z.string().optional(),
+  firstName: z.string().optional(), preferredName: z.string().nullable().optional(), legalName: z.string().optional(),
   photoPath: z.string().nullable().default(null), presence: z.string().default('offline'), owner: z.boolean().optional(),
   active: z.boolean().optional(), typing: z.boolean().optional(),
 })
-const mentionSchema = z.object({ id: z.string().uuid(), name: z.string(), username: z.string() })
+const mentionSchema = z.object({ id: z.string().uuid(), name: z.string(), username: z.string(), label: z.string().optional() })
 const messageSchema = z.object({
   id: z.string().uuid(), sequence: z.number(), conversationId: z.string().uuid(), authorId: z.string().uuid(), authorName: z.string(),
   body: z.string(), parentId: z.string().nullable(), createdAt: z.string(), editedAt: z.string().nullable(), deleted: z.boolean(), pinned: z.boolean(), saved: z.boolean(), read: z.boolean(),
@@ -101,19 +102,52 @@ export function readSphereDraft(key: string): SphereDraft {
 export function writeSphereDraft(key: string, draft: SphereDraft): boolean {
   try { if (draft.body) localStorage.setItem(key, JSON.stringify(draft)); else localStorage.removeItem(key); return true } catch { return false }
 }
+function sphereEscapeExpression(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
+function sphereHasMentionToken(body: string, label: string) {
+  return new RegExp(`(^|[^\\p{L}\\p{N}_])@${sphereEscapeExpression(label)}(?=$|[^\\p{L}\\p{N}_.-])`, 'iu').test(body)
+}
+function spherePersonAliases(person: SpherePerson) {
+  return [...new Set([person.legalName, person.name, person.firstName, person.preferredName].map((value) => value?.trim()).filter((value): value is string => Boolean(value)))]
+    .sort((left, right) => right.length - left.length)
+}
+function sphereAliasOwners(alias: string, members: SpherePerson[]) {
+  return members.filter((person) => person.active && spherePersonAliases(person).some((candidate) => candidate.toLocaleLowerCase() === alias.toLocaleLowerCase()))
+}
+export function spherePersonMentionLabel(person: SpherePerson, members: SpherePerson[]) {
+  const first = person.firstName?.trim() || person.preferredName?.trim() || person.name.trim().split(/\s+/)[0]
+  if (first && sphereAliasOwners(first, members).length === 1) return first
+  return person.legalName?.trim() || person.name.trim()
+}
+export function sphereResolveTypedMentions(body: string, mentions: SphereMention[], members: SpherePerson[], employeeId: string) {
+  const resolved = [...mentions]
+  for (const person of members) {
+    if (person.id === employeeId || !person.active || !person.username) continue
+    const label = spherePersonAliases(person).find((alias) => sphereAliasOwners(alias, members).length === 1 && sphereHasMentionToken(body, alias))
+    if (!label) continue
+    const index = resolved.findIndex((mention) => mention.id === person.id)
+    const next = { id: person.id, name: person.name, username: person.username, label }
+    if (index < 0) resolved.push(next); else resolved[index] = next
+  }
+  return sphereActiveMentions(body, resolved)
+}
 export function sphereActiveMentions(body: string, mentions: SphereMention[]) {
-  const lower = body.toLocaleLowerCase()
-  return mentions.filter((mention, index) => mentions.findIndex((item) => item.id === mention.id) === index && lower.includes(`@${mention.username.toLocaleLowerCase()}`))
+  return mentions.filter((mention, index) => mentions.findIndex((item) => item.id === mention.id) === index
+    && sphereHasMentionToken(body, mention.label || mention.username))
 }
 export function sphereMentionIds(body: string, mentions: SphereMention[]) { return sphereActiveMentions(body, mentions).map((mention) => mention.id) }
 export type SphereMessagePart = { kind: 'text' | 'link' | 'mention'; text: string; mention?: SphereMention }
 export function sphereMessageParts(body: string, mentions: SphereMention[]): SphereMessagePart[] {
-  const byUsername = new Map(mentions.map((mention) => [mention.username.toLocaleLowerCase(), mention]))
-  const parts: SphereMessagePart[] = []; const matcher = /https?:\/\/[^\s<>]+|@[a-z0-9._-]+/gi; let cursor = 0
+  const byToken = new Map<string, SphereMention>()
+  for (const mention of mentions) {
+    byToken.set(`@${mention.label || mention.username}`.toLocaleLowerCase(), mention)
+    if (!mention.label) byToken.set(`@${mention.username}`.toLocaleLowerCase(), mention)
+  }
+  const mentionPattern = [...byToken.keys()].sort((left, right) => right.length - left.length).map(sphereEscapeExpression).join('|')
+  const parts: SphereMessagePart[] = []; const matcher = new RegExp(`https?:\\/\\/[^\\s<>]+${mentionPattern ? `|(?:${mentionPattern})(?=$|[^\\p{L}\\p{N}_.-])` : ''}`, 'giu'); let cursor = 0
   for (const match of body.matchAll(matcher)) {
     const index = match.index ?? 0
     if (index > cursor) parts.push({ kind: 'text', text: body.slice(cursor, index) })
-    const token = match[0]; const mention = token.startsWith('@') ? byUsername.get(token.slice(1).toLocaleLowerCase()) : undefined
+    const token = match[0]; const mention = token.startsWith('@') ? byToken.get(token.toLocaleLowerCase()) : undefined
     parts.push(mention ? { kind: 'mention', text: token, mention } : /^https?:\/\//i.test(token) ? { kind: 'link', text: token } : { kind: 'text', text: token })
     cursor = index + token.length
   }

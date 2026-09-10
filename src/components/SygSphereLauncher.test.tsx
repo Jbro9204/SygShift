@@ -68,10 +68,10 @@ function inbox(messageId: string, unread = 0): SphereInbox {
   }
 }
 
-function renderLauncher(initial: SphereInbox) {
+function renderLauncher(initial: SphereInbox, initialEntry = '/') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   client.setQueryData(['sygsphere', employeeId, 'inbox'], initial)
-  render(<QueryClientProvider client={client}><MemoryRouter><SygSphereLauncher employeeId={employeeId} /></MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[initialEntry]}><SygSphereLauncher employeeId={employeeId} /></MemoryRouter></QueryClientProvider>)
   return client
 }
 
@@ -132,6 +132,18 @@ describe('SygSphere launcher sounds', () => {
     expect(await screen.findByText('You have a new message. Open conversation.')).toBeInTheDocument()
     expect(play).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: 'Enable SygSphere sounds' })).not.toBeInTheDocument()
+  })
+
+  it('alerts for a new arrival even when that conversation is open and already marked read', async () => {
+    play.mockResolvedValue(undefined)
+    const client = renderLauncher(inbox(firstMessageId), `/sygsphere?conversation=${conversationId}`)
+    const delayedArrival = inbox(newMessageId, 0)
+    delayedArrival.conversations[0].latest!.createdAt = new Date(Date.now() - 120000).toISOString()
+
+    client.setQueryData(['sygsphere', employeeId, 'inbox'], delayedArrival)
+
+    expect(await screen.findByText('You have a new message. Open conversation.')).toBeInTheDocument()
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(1))
   })
 
   it('authenticates the private realtime channel before subscribing', async () => {

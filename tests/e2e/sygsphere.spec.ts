@@ -49,9 +49,17 @@ test('inserts a validated participant mention and renders it as a highlighted id
   await page.getByRole('button', { name: 'Mention a participant' }).click()
   await page.getByRole('button', { name: /Devon Ruiz/ }).click()
   const message = page.getByRole('textbox', { name: 'Write a message', exact: true })
-  await expect(message).toHaveValue('@druiz ')
+  await expect(message).toHaveValue('@Devon ')
   await message.press('Enter')
-  await expect(page.locator('.sphere-mention').filter({ hasText: '@druiz' })).toBeVisible()
+  await expect(page.locator('.sphere-mention').filter({ hasText: '@Devon' })).toBeVisible()
+})
+test('resolves a typed employee name without requiring a username', async ({ page }) => {
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
+  const message = page.getByRole('textbox', { name: 'Write a message', exact: true })
+  await message.fill('Please review this @devon')
+  await expect(page.getByText('Matching “devon”')).toBeVisible()
+  await message.press('Enter')
+  await expect(page.locator('.sphere-mention').filter({ hasText: '@devon' })).toBeVisible()
 })
 test('lets each employee enlarge SygSphere text without scaling the rest of SygShift', async ({ page }) => {
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
@@ -376,7 +384,7 @@ test('a structured mention raises a targeted SygSphere notification for the sele
   await sender.getByRole('textbox', { name: 'Write a message', exact: true }).press('Enter')
   await expect(recipient.locator('.sphere-toast')).toContainText('You were mentioned')
   await recipient.locator('.sphere-toast a').click()
-  await expect(recipient.locator('.sphere-mention--self')).toHaveText('@druiz')
+  await expect(recipient.locator('.sphere-mention--self')).toHaveText('@Devon')
 })
 for (const theme of ['light', 'dark']) test(`comfortable ${theme} controls and no horizontal overflow`, async ({ page }) => {
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}&theme=${theme}`)
