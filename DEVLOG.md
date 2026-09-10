@@ -2141,6 +2141,9 @@ pnpm exec wrangler deploy --keep-vars
 
 - Corrected the authenticated permission projection so an active canonical Guard whose effective policy does not require MFA retains the locked `apps.sygilant.access` launcher entitlement at AAL1.
 - Preserved direct employee denials and all existing MFA filtering for every other protected permission and role.
-- Added migration and postflight contracts plus shared-identity regression protection; no identity, credential, role, assignment, or permission-grant records are modified.
+- Applied and recorded migrations `20260912020100` and the independently verified hardening follow-up `20260912030000`; neither changes identity, credential, role, assignment, override, or permission-grant records.
+- Added postflight contracts, shared-identity source guards, and a rollback-only production session-context matrix that proves eligible Guard AAL1 access without admitting any unrelated MFA-sensitive permission.
 - Created rollback tag `rollback/pre-guard-aal1-permission-projection-20260910` at `88c37a6` before the production change.
+- Released source commit `54069aa` as Cloudflare Worker `061e3d2a-1f0d-4360-8206-029356e2000a`; primary/fallback roots, health, and readiness passed, and the anonymous launch boundary rejected access.
+- Verification passed 228 test files / 1,172 tests, TypeScript, zero-warning application lint, both production builds, the live database matrix, and all 54 desktop/mobile launcher and actual-component Time Clock checks.
 - See `docs/changelogs/CHANGELOG_09-10-2026_GUARD_AAL1_SYGILANT_LAUNCH_REPAIR.md` for release and verification evidence.
