@@ -2127,3 +2127,11 @@ pnpm exec wrangler deploy --keep-vars
 - Preserved the separate schedule-driven attendance-alert refresh item and updated the TrackTik
   transition instructions to protect Dispatch-log continuity.
 - This documentation-only change did not alter production code, data, access, or workflows.
+
+## 09/10/2026 - Guard AAL1 Sygilant Launch Repair
+
+- Corrected the authenticated permission projection so an active canonical Guard whose effective policy does not require MFA retains the locked `apps.sygilant.access` launcher entitlement at AAL1.
+- Preserved direct employee denials and all existing MFA filtering for every other protected permission and role.
+- Added migration and postflight contracts plus shared-identity regression protection; no identity, credential, role, assignment, or permission-grant records are modified.
+- Created rollback tag `rollback/pre-guard-aal1-permission-projection-20260910` at `88c37a6` before the production change.
+- See `docs/changelogs/CHANGELOG_09-10-2026_GUARD_AAL1_SYGILANT_LAUNCH_REPAIR.md` for release and verification evidence.
