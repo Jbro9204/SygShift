@@ -23,6 +23,7 @@ describe('Sygilant launcher', () => {
 
   it('uses the production transparent Sygilant wordmark asset', () => {
     render(<SygilantLauncher launch={vi.fn()} submit={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Open Sygilant main platform' })).toHaveClass('syg-launcher', 'syg-launcher--sygilant')
     expect(document.querySelectorAll('img[src="/branding/sygilant-horizontal-transparent.png"]')).toHaveLength(2)
   })
 

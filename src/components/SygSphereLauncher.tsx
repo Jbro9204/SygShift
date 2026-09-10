@@ -11,7 +11,22 @@ import '../styles/sygsphere.css'
 class SphereBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false }
   static getDerivedStateFromError() { return { failed: true } }
-  render() { return this.state.failed ? <Link className="sphere-launcher" to="/sygsphere">SygSphere</Link> : this.props.children }
+  render() {
+    return this.state.failed ? (
+      <Link
+        aria-label="Open SygSphere messages"
+        className="syg-launcher syg-launcher--sphere sphere-launcher"
+        title="SygSphere — Messages"
+        to="/sygsphere"
+      >
+        <img alt="" aria-hidden="true" className="syg-launcher__emblem sphere-launcher__emblem" src="/branding/sygsphere-emblem.png" />
+        <span aria-hidden="true" className="syg-launcher__brand sphere-launcher__brand">
+          <img alt="" src="/branding/sygsphere-logo.png" />
+          <small>MESSAGES</small>
+        </span>
+      </Link>
+    ) : this.props.children
+  }
 }
 export function SygSphereLauncher({ employeeId }: { employeeId: string }) { return <SphereBoundary><SphereLauncherContent key={employeeId} employeeId={employeeId} /></SphereBoundary> }
 
@@ -120,10 +135,10 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
   useEffect(() => { if (!toast) return; const timeout = setTimeout(() => setToast(null), 10000); return () => clearTimeout(timeout) }, [toast])
   const unread = sphereUnread(inbox.data)
   return <>
-    <Link className="sphere-launcher" to="/sygsphere" title={`SygSphere — ${unread ? `${unread} unread conversations` : 'Messages'}`} aria-label={`Open SygSphere messages${unread ? `, ${unread} unread conversations` : ''}`}>
-      <img className="sphere-launcher__emblem" src="/branding/sygsphere-emblem.png" alt="" />
-      <span className="sphere-launcher__brand"><img src="/branding/sygsphere-logo.png" alt="SygSphere" /><small>MESSAGES</small></span>
-      {unread > 0 ? <span className="sphere-badge">{unread > 99 ? '99+' : unread}</span> : null}
+    <Link className="syg-launcher syg-launcher--sphere sphere-launcher" to="/sygsphere" title={`SygSphere — ${unread ? `${unread} unread conversations` : 'Messages'}`} aria-label={`Open SygSphere messages${unread ? `, ${unread} unread conversations` : ''}`}>
+      <img aria-hidden="true" className="syg-launcher__emblem sphere-launcher__emblem" src="/branding/sygsphere-emblem.png" alt="" />
+      <span aria-hidden="true" className="syg-launcher__brand sphere-launcher__brand"><img src="/branding/sygsphere-logo.png" alt="" /><small>MESSAGES</small></span>
+      {unread > 0 ? <span className="syg-launcher__badge sphere-badge">{unread > 99 ? '99+' : unread}</span> : null}
     </Link>
     {createPortal(<Link className="sphere-mobile-launcher" to="/sygsphere" aria-label={`Open SygSphere${unread ? `, ${unread} unread conversations` : ''}`}><img src="/branding/sygsphere-emblem.png" alt="" />SygSphere{unread > 0 ? <span className="sphere-badge">{unread > 99 ? '99+' : unread}</span> : null}</Link>, document.body)}
     {toast ? createPortal(<aside className={`sphere-toast ${toast.mentioned ? 'sphere-toast--mention' : ''}`} role="status"><Link onClick={() => setToast(null)} to={toast.path}><strong>SygSphere · {toast.title}</strong><span>{toast.mentioned ? 'You were mentioned. Open the message.' : 'You have a new message. Open conversation.'}</span></Link>{audioBlocked ? <button type="button" onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} onClick={() => { void playAlertSound().then((played) => setAudioBlocked(!played)) }}>Enable SygSphere sounds</button> : null}<button type="button" aria-label="Dismiss message notification" onClick={() => setToast(null)}><X size={18} /></button></aside>, document.body) : null}

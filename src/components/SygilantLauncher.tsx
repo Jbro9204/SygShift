@@ -33,20 +33,20 @@ export function SygilantLauncher({
   }
 
   return (
-    <div className="platform-launcher-shell">
+    <div className="syg-launcher-shell platform-launcher-shell">
       <button
         aria-label={launching ? 'Opening Sygilant main platform' : 'Open Sygilant main platform'}
         aria-describedby={error ? 'sygilant-launch-error' : undefined}
-        className="platform-launcher platform-launcher--sygilant"
+        className="syg-launcher syg-launcher--sygilant platform-launcher platform-launcher--sygilant"
         disabled={launching}
         onClick={() => void handleLaunch()}
         title="Sygilant — Main Platform"
         type="button"
       >
-        <span aria-hidden="true" className="platform-launcher__emblem">
+        <span aria-hidden="true" className="syg-launcher__emblem platform-launcher__emblem">
           <img src="/branding/sygilant-horizontal-transparent.png" alt="" />
         </span>
-        <span aria-hidden="true" className="platform-launcher__brand">
+        <span aria-hidden="true" className="syg-launcher__brand platform-launcher__brand">
           <img src="/branding/sygilant-horizontal-transparent.png" alt="" />
           <small>MAIN PLATFORM</small>
         </span>

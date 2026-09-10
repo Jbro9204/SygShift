@@ -1,0 +1,299 @@
+/*
+ * Shared Syg ecosystem launcher system.
+ *
+ * The three launchers keep their own navigation and status behavior. This file
+ * owns their common geometry, spacing, depth, interaction, and compact state so
+ * the sidebar cannot drift into three separate visual treatments again.
+ */
+.sidebar-utilities .syg-launcher-shell {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+.sidebar-utilities .syg-launcher {
+  --syg-launcher-accent: #d5a33f;
+  --syg-launcher-highlight: #f2d486;
+  --syg-launcher-tint: rgb(213 163 63 / 14%);
+  --syg-launcher-focus-ring: rgb(213 163 63 / 18%);
+
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 64px;
+  min-height: 64px;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin: 0;
+  padding: 7px 12px;
+  overflow: hidden;
+  color: #f6e5bc;
+  background:
+    linear-gradient(180deg, rgb(255 248 226 / 7%), transparent 34%),
+    linear-gradient(122deg, var(--syg-launcher-tint), transparent 52%),
+    #0e1112;
+  border: 1px solid var(--syg-launcher-accent);
+  border-radius: 15px;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 7%),
+    inset 0 -2px 0 rgb(0 0 0 / 34%),
+    0 6px 16px rgb(0 0 0 / 24%);
+  font: inherit;
+  text-decoration: none !important;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.sidebar-utilities .syg-launcher--tasks,
+.sidebar-utilities .syg-launcher--sphere {
+  --syg-launcher-accent: #d5a33f;
+  --syg-launcher-highlight: #f2d486;
+  --syg-launcher-tint: rgb(213 163 63 / 14%);
+  --syg-launcher-focus-ring: rgb(213 163 63 / 18%);
+}
+
+.sidebar-utilities .syg-launcher--sygilant {
+  --syg-launcher-accent: #d3b474;
+  --syg-launcher-highlight: #f4dfad;
+  --syg-launcher-tint: rgb(211 180 116 / 13%);
+  --syg-launcher-focus-ring: rgb(211 180 116 / 18%);
+}
+
+.sidebar-utilities .syg-launcher:hover,
+.sidebar-utilities .syg-launcher:focus-visible {
+  border-color: var(--syg-launcher-highlight);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 10%),
+    inset 0 -2px 0 rgb(0 0 0 / 30%),
+    0 0 0 3px var(--syg-launcher-focus-ring),
+    0 9px 20px rgb(0 0 0 / 30%);
+  transform: translateY(-1px);
+}
+
+.sidebar-utilities .syg-launcher:focus-visible {
+  outline: 2px solid var(--syg-launcher-highlight);
+  outline-offset: 2px;
+}
+
+.sidebar-utilities .syg-launcher:active {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 5%),
+    inset 0 2px 4px rgb(0 0 0 / 35%),
+    0 3px 9px rgb(0 0 0 / 22%);
+  transform: translateY(0);
+}
+
+.sidebar-utilities .syg-launcher:disabled {
+  opacity: 0.82;
+  cursor: progress;
+  transform: none;
+}
+
+.sidebar-utilities .syg-launcher--tasks.sygtasks-launcher--active {
+  border-color: var(--syg-launcher-highlight);
+  background:
+    linear-gradient(180deg, rgb(255 248 226 / 9%), transparent 34%),
+    linear-gradient(122deg, rgb(213 163 63 / 24%), transparent 55%),
+    #12110e;
+  box-shadow:
+    inset 3px 0 0 var(--syg-launcher-accent),
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    inset 0 -2px 0 rgb(0 0 0 / 32%),
+    0 0 0 2px rgb(213 163 63 / 12%),
+    0 7px 18px rgb(0 0 0 / 27%);
+}
+
+.sidebar-utilities .syg-launcher__brand {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 49px;
+  min-width: 0;
+  grid-template-rows: 36px 9px;
+  row-gap: 4px;
+  place-items: center;
+  overflow: hidden;
+}
+
+.sidebar-utilities .syg-launcher__brand img {
+  position: static;
+  display: block;
+  width: auto;
+  max-width: 164px;
+  height: auto;
+  max-height: 32px;
+  object-fit: contain;
+  transform: none;
+}
+
+.sidebar-utilities .syg-launcher__brand small {
+  position: static;
+  display: block;
+  align-self: end;
+  width: 100%;
+  padding: 0;
+  color: #dfbd73;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  line-height: 9px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.sidebar-utilities .syg-launcher--tasks .syg-launcher__brand img {
+  max-height: 32px;
+}
+
+.sidebar-utilities .syg-launcher--sphere .syg-launcher__brand img {
+  max-height: 27px;
+}
+
+.sidebar-utilities .syg-launcher--sygilant .syg-launcher__brand img {
+  width: 148px;
+  max-width: 148px;
+  max-height: none;
+}
+
+.sidebar-utilities .syg-launcher--sygilant .syg-launcher__brand small {
+  color: #e4c88c;
+}
+
+.sidebar-utilities .syg-launcher__emblem {
+  display: none;
+}
+
+.sidebar-utilities .syg-launcher__badge {
+  position: absolute;
+  z-index: 2;
+  top: 5px;
+  right: 6px;
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0 5px;
+  color: #17130c;
+  background: linear-gradient(180deg, #f3d98f, #d5a33f);
+  border: 1px solid #f6e3ae;
+  border-radius: 999px;
+  box-shadow:
+    0 2px 6px rgb(0 0 0 / 38%),
+    inset 0 1px 0 rgb(255 255 255 / 40%);
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.sidebar-utilities .syg-launcher .platform-launcher__spinner {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  margin: 0;
+  padding: 2px;
+  color: #17130c;
+  background: var(--syg-launcher-highlight);
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 35%);
+}
+
+.sidebar--collapsed .sidebar-utilities .syg-launcher-shell {
+  width: 48px;
+}
+
+.sidebar--collapsed .sidebar-utilities .syg-launcher {
+  width: 48px;
+  height: 48px;
+  min-height: 48px;
+  justify-content: center;
+  padding: 0;
+  border-radius: 13px;
+}
+
+.sidebar--collapsed .sidebar-utilities .syg-launcher__brand {
+  display: none;
+}
+
+.sidebar--collapsed .sidebar-utilities .syg-launcher__emblem {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  overflow: hidden;
+}
+
+.sidebar--collapsed .sidebar-utilities .syg-launcher__emblem img {
+  position: static;
+  display: block;
+  width: 34px;
+  max-width: none;
+  height: 34px;
+  object-fit: contain;
+  transform: none;
+}
+
+.sidebar--collapsed .sidebar-utilities .syg-launcher--sygilant .syg-launcher__emblem img {
+  width: 130px;
+  height: auto;
+  justify-self: start;
+  transform: translateX(-1px);
+}
+
+.sidebar--collapsed .sidebar-utilities .syg-launcher__badge {
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding-inline: 4px;
+  font-size: 8px;
+}
+
+@media (max-height: 520px) {
+  .sidebar-utilities .syg-launcher {
+    height: 48px;
+    min-height: 48px;
+    padding-block: 4px;
+  }
+
+  .sidebar-utilities .syg-launcher__brand {
+    height: 40px;
+    grid-template-rows: 29px 8px;
+    row-gap: 3px;
+  }
+
+  .sidebar-utilities .syg-launcher__brand img {
+    max-height: 25px;
+  }
+
+  .sidebar-utilities .syg-launcher--tasks .syg-launcher__brand img {
+    max-height: 27px;
+  }
+
+  .sidebar-utilities .syg-launcher--sphere .syg-launcher__brand img {
+    max-height: 23px;
+  }
+
+  .sidebar-utilities .syg-launcher--sygilant .syg-launcher__brand img {
+    width: 128px;
+    max-width: 128px;
+    max-height: none;
+  }
+
+  .sidebar-utilities .syg-launcher__brand small {
+    font-size: 7px;
+    line-height: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-utilities .syg-launcher {
+    transition: none;
+  }
+}

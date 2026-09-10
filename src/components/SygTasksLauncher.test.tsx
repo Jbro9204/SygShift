@@ -17,6 +17,7 @@ describe('SygTasks launcher', () => {
 
     const launcher = screen.getByRole('link', { name: 'Open SygTasks work management' })
     expect(launcher).toHaveAttribute('href', '/tasks')
+    expect(launcher).toHaveClass('syg-launcher', 'syg-launcher--tasks')
     expect(launcher).toHaveAttribute('aria-describedby', 'sygtasks-launcher-tooltip')
     expect(screen.getByRole('tooltip')).toHaveTextContent('SygTasks · Work Management')
     expect(document.querySelector('img[src="/branding/sygtasks-logo.png"]')).toBeInTheDocument()

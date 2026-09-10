@@ -21,23 +21,23 @@ async function installSidebarFixture(page: Page, options: SidebarFixtureOptions 
           <div class="sidebar-brand"><img alt="SygShift" src="/brand/sygshift-logo.png" /></div>
           <nav aria-label="Primary navigation" class="sidebar-navigation">${navigation}</nav>
           <div class="sidebar-utilities">
-            <div class="sygtasks-launcher-shell">
-              <a aria-describedby="sygtasks-launcher-tooltip" aria-label="Open SygTasks work management" class="sygtasks-launcher" href="/tasks">
-                <span aria-hidden="true" class="sygtasks-launcher__emblem"><img alt="" src="/branding/sygtasks-emblem.png" /></span>
-                <span aria-hidden="true" class="sygtasks-launcher__brand"><img alt="" src="/branding/sygtasks-logo.png" /><small>WORK MANAGEMENT</small></span>
+            <div class="syg-launcher-shell sygtasks-launcher-shell">
+              <a aria-describedby="sygtasks-launcher-tooltip" aria-label="Open SygTasks work management" class="syg-launcher syg-launcher--tasks sygtasks-launcher" href="/tasks">
+                <span aria-hidden="true" class="syg-launcher__emblem sygtasks-launcher__emblem"><img alt="" src="/branding/sygtasks-emblem.png" /></span>
+                <span aria-hidden="true" class="syg-launcher__brand sygtasks-launcher__brand"><img alt="" src="/branding/sygtasks-logo.png" /><small>WORK MANAGEMENT</small></span>
                 <span class="sygtasks-launcher__tooltip" id="sygtasks-launcher-tooltip" role="tooltip">SygTasks · Work Management</span>
               </a>
             </div>
-            <div class="platform-launcher-shell">
-              <button aria-label="Open Sygilant main platform" class="platform-launcher platform-launcher--sygilant" title="Sygilant — Main Platform" type="button">
-                <span aria-hidden="true" class="platform-launcher__emblem"><img alt="" src="/branding/sygilant-horizontal-transparent.png" /></span>
-                <span aria-hidden="true" class="platform-launcher__brand"><img alt="" src="/branding/sygilant-horizontal-transparent.png" /><small>MAIN PLATFORM</small></span>
+            <div class="syg-launcher-shell platform-launcher-shell">
+              <button aria-label="Open Sygilant main platform" class="syg-launcher syg-launcher--sygilant platform-launcher platform-launcher--sygilant" title="Sygilant — Main Platform" type="button">
+                <span aria-hidden="true" class="syg-launcher__emblem platform-launcher__emblem"><img alt="" src="/branding/sygilant-horizontal-transparent.png" /></span>
+                <span aria-hidden="true" class="syg-launcher__brand platform-launcher__brand"><img alt="" src="/branding/sygilant-horizontal-transparent.png" /><small>MAIN PLATFORM</small></span>
               </button>
             </div>
-            <a aria-label="Open SygSphere messages, 3 unread conversations" class="sphere-launcher" href="#sygsphere" title="SygSphere — 3 unread conversations">
-              <img alt="" class="sphere-launcher__emblem" src="/branding/sygsphere-emblem.png" />
-              <span class="sphere-launcher__brand"><img alt="SygSphere" src="/branding/sygsphere-logo.png" /><small>MESSAGES</small></span>
-              <span class="sphere-badge">3</span>
+            <a aria-label="Open SygSphere messages, 3 unread conversations" class="syg-launcher syg-launcher--sphere sphere-launcher" href="#sygsphere" title="SygSphere — 3 unread conversations">
+              <img alt="" class="syg-launcher__emblem sphere-launcher__emblem" src="/branding/sygsphere-emblem.png" />
+              <span aria-hidden="true" class="syg-launcher__brand sphere-launcher__brand"><img alt="" src="/branding/sygsphere-logo.png" /><small>MESSAGES</small></span>
+              <span class="syg-launcher__badge sphere-badge">3</span>
             </a>
             <button class="support-help-button" title="Need Help?" type="button"><span aria-hidden="true">?</span><span>Need Help?</span></button>
             <div class="system-status-indicator"><span class="system-status-indicator__dot"></span><span>Online</span></div>
@@ -52,6 +52,9 @@ test('expanded launchers match, stay ordered, and preserve a scrollable navigati
   await page.setViewportSize({ width: 1280, height: 720 })
   await page.goto('/')
   await installSidebarFixture(page)
+  await page.locator('.syg-launcher img').evaluateAll(async (images) => {
+    await Promise.all(images.map((image) => (image as HTMLImageElement).decode()))
+  })
 
   const utilities = page.locator('.sidebar-utilities')
   await expect(utilities.locator(':scope > *')).toHaveCount(5)
@@ -82,9 +85,43 @@ test('expanded launchers match, stay ordered, and preserve a scrollable navigati
   expect(Math.abs(tasksBox!.height - sygilantBox!.height)).toBeLessThanOrEqual(1)
   expect(Math.abs(sygilantBox!.width - sphereBox!.width)).toBeLessThanOrEqual(1)
   expect(Math.abs(sygilantBox!.height - sphereBox!.height)).toBeLessThanOrEqual(1)
+  expect(tasksBox!.width).toBeGreaterThanOrEqual(240)
   expect(tasksBox!.y + tasksBox!.height).toBeLessThanOrEqual(sygilantBox!.y)
   expect(sygilantBox!.y + sygilantBox!.height).toBeLessThanOrEqual(sphereBox!.y)
   expect(sygilantBox!.height).toBeGreaterThanOrEqual(63)
+
+  const visualSystem = await Promise.all([tasks, sygilant, sphere].map((launcher) => launcher.evaluate((element) => {
+    const style = getComputedStyle(element)
+    const elementBox = element.getBoundingClientRect()
+    const logo = element.querySelector('.syg-launcher__brand img') as HTMLImageElement
+    const logoBox = logo.getBoundingClientRect()
+    const subtitle = element.querySelector('small') as HTMLElement
+    const subtitleBox = subtitle.getBoundingClientRect()
+    return {
+      backgroundColor: style.backgroundColor,
+      borderRadius: style.borderRadius,
+      boxShadow: style.boxShadow,
+      height: style.height,
+      logoComplete: logo.complete,
+      logoHeight: logoBox.height,
+      logoNaturalWidth: logo.naturalWidth,
+      logoWidth: logoBox.width,
+      paddingBlock: `${style.paddingTop} ${style.paddingBottom}`,
+      subtitleBottomInset: elementBox.bottom - subtitleBox.bottom,
+      subtitleFontSize: getComputedStyle(subtitle).fontSize,
+      subtitleLetterSpacing: getComputedStyle(subtitle).letterSpacing,
+    }
+  })))
+  expect(new Set(visualSystem.map((item) => item.height))).toEqual(new Set(['64px']))
+  expect(new Set(visualSystem.map((item) => item.borderRadius))).toEqual(new Set(['15px']))
+  expect(new Set(visualSystem.map((item) => item.paddingBlock))).toEqual(new Set(['7px 7px']))
+  expect(new Set(visualSystem.map((item) => item.backgroundColor)).size).toBe(1)
+  expect(new Set(visualSystem.map((item) => item.boxShadow)).size).toBe(1)
+  expect(new Set(visualSystem.map((item) => item.subtitleFontSize))).toEqual(new Set(['8px']))
+  expect(new Set(visualSystem.map((item) => item.subtitleLetterSpacing)).size).toBe(1)
+  expect(Math.max(...visualSystem.map((item) => item.subtitleBottomInset)) - Math.min(...visualSystem.map((item) => item.subtitleBottomInset))).toBeLessThanOrEqual(1)
+  expect(visualSystem.every((item) => item.logoComplete && item.logoNaturalWidth > 0)).toBe(true)
+  expect(visualSystem.every((item) => item.logoWidth >= 100 && item.logoHeight >= 25)).toBe(true)
 
   const layout = await page.locator('.sidebar').evaluate((sidebar) => {
     const navigation = sidebar.querySelector('.sidebar-navigation') as HTMLElement
@@ -127,6 +164,9 @@ test('collapsed launchers become matching icon controls with exact tooltips', as
   await page.setViewportSize({ width: 1024, height: 720 })
   await page.goto('/')
   await installSidebarFixture(page, { collapsed: true })
+  await page.locator('.syg-launcher img').evaluateAll(async (images) => {
+    await Promise.all(images.map((image) => (image as HTMLImageElement).decode()))
+  })
 
   const tasks = page.getByRole('link', { name: 'Open SygTasks work management' })
   const sygilant = page.getByRole('button', { name: 'Open Sygilant main platform' })
@@ -159,6 +199,19 @@ test('collapsed launchers become matching icon controls with exact tooltips', as
   expect(Math.abs(sygilantBox!.width - sphereBox!.width)).toBeLessThanOrEqual(1)
   expect(Math.abs(sygilantBox!.height - sphereBox!.height)).toBeLessThanOrEqual(1)
   expect(sygilantBox!.width).toBeGreaterThanOrEqual(48)
+  const compactStyles = await Promise.all([tasks, sygilant, sphere].map((launcher) => launcher.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return {
+      borderRadius: style.borderRadius,
+      height: style.height,
+      padding: style.padding,
+      width: style.width,
+    }
+  })))
+  expect(new Set(compactStyles.map((item) => item.width))).toEqual(new Set(['48px']))
+  expect(new Set(compactStyles.map((item) => item.height))).toEqual(new Set(['48px']))
+  expect(new Set(compactStyles.map((item) => item.borderRadius))).toEqual(new Set(['13px']))
+  expect(new Set(compactStyles.map((item) => item.padding))).toEqual(new Set(['0px']))
   await expect(tasksTooltip).toBeHidden()
   await tasks.focus()
   await expect(tasksTooltip).toBeVisible()

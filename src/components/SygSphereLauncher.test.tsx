@@ -98,6 +98,14 @@ describe('SygSphere launcher sounds', () => {
     vi.stubGlobal('Audio', vi.fn(function AudioMock() { return sound }))
   })
 
+  it('uses the shared launcher visual system without changing unread behavior', () => {
+    renderLauncher(inbox(firstMessageId, 3))
+
+    const launcher = screen.getByRole('link', { name: 'Open SygSphere messages, 1 unread conversations' })
+    expect(launcher).toHaveClass('syg-launcher', 'syg-launcher--sphere')
+    expect(launcher.querySelector('.syg-launcher__badge')).toHaveTextContent('1')
+  })
+
   it('offers explicit recovery after blocked playback and plays once on recovery', async () => {
     const user = userEvent.setup()
     play.mockRejectedValueOnce(new DOMException('Playback blocked', 'NotAllowedError')).mockResolvedValueOnce(undefined)

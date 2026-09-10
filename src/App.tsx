@@ -6,6 +6,7 @@ import './App.css'
 import './theme.css'
 import './cursors.css'
 import './documentStudio.css'
+import './styles/platform-launchers.css'
 
 function App() {
   return (
