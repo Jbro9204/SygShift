@@ -70,6 +70,8 @@ describe('SygSphere experience boundaries', () => {
     expect(uploadRecovery).toContain("'SygSphere file is ready'")
     expect(uploadRecovery).toContain("'SygSphere file needs attention'")
     expect(data).toContain('sphereResumableMaxBytes = 104857600')
+    expect(data).toContain('sphereStandardUploadMaxBytes = 6 * 1024 * 1024')
+    expect(data).toContain('.uploadToSignedUrl(target.objectKey, target.signedUploadToken, file')
     expect(data).toContain('new Upload(file')
     expect(data).toContain('fingerprint: async () => `sygsphere:')
     expect(data).toContain('sphereRetryUpload')

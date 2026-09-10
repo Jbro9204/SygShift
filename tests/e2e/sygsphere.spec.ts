@@ -234,6 +234,27 @@ test('automatically survives transient mobile upload confirmation lag', async ({
   await expect(page.getByText('Upload complete. The private security check is continuing in the background.')).toBeVisible()
   expect(completionAttempts).toBe(2)
 })
+test('transfers a normal desktop PDF through its signed storage target before completing it', async ({ page }) => {
+  const uploadId = '30000000-0000-4000-8000-000000000005'
+  let completionAttempts = 0
+  await page.route('**/api/v1/sygsphere/uploads**', async (route) => {
+    if (route.request().url().endsWith('/complete')) {
+      completionAttempts += 1
+      await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ state: 'uploaded', uploadId }) })
+      return
+    }
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({
+      bucket: 'sygsphere-files', objectKey: 'conversation/desktop-report.pdf', requestReference: '30000000-0000-4000-8000-000000000006',
+      resumableEndpoint: 'https://project.storage.supabase.co/storage/v1/upload/resumable', signedUploadToken: 'signed-token', state: 'prepared', uploadId,
+    }) })
+  })
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
+  await page.locator('input[type="file"]').setInputFiles({ name: 'desktop-report.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\n%%EOF') })
+  await page.getByRole('button', { name: 'Share file', exact: true }).click()
+  await expect(page.getByText('Upload complete. The private security check is continuing in the background.')).toBeVisible()
+  expect(completionAttempts).toBe(1)
+  expect(await page.locator('html').getAttribute('data-sphere-signed-upload-path')).toBe('conversation/desktop-report.pdf')
+})
 test('offers completion-only recovery without making a mobile user select or transfer the file again', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 640 })
   let completionAttempts = 0

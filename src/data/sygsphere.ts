@@ -147,6 +147,7 @@ async function sphereFileResponse(response: Response) {
   return response
 }
 const sphereResumableMaxBytes = 104857600
+const sphereStandardUploadMaxBytes = 6 * 1024 * 1024
 const sphereResumableTargetSchema = z.object({
   bucket: z.string().optional(), expiresAt: z.string().optional(), messageId: z.string().nullable().optional(), objectKey: z.string().optional(),
   resumableEndpoint: z.string().url().optional(), signedUploadToken: z.string().min(1).optional(),
@@ -243,25 +244,42 @@ async function sphereProtectedUpload(file: File, fileId: string, conversationId:
   onProgress?.(1, 'uploading')
   if (target.state === 'prepared') {
     if (!target.bucket || !target.objectKey || !target.resumableEndpoint || !target.signedUploadToken) throw new Error('The secure file upload target is incomplete.')
-    await new Promise<void>((resolve, reject) => {
-      const upload = new Upload(file, {
-        chunkSize: 6 * 1024 * 1024,
-        endpoint: target.resumableEndpoint,
-        fingerprint: async () => `sygsphere:${target.uploadId}:${target.objectKey}:${file.size}:${file.lastModified}`,
-        headers: { 'x-signature': target.signedUploadToken! },
-        metadata: { bucketName: target.bucket!, cacheControl: '3600', contentType: mimeType, filename: file.name, objectName: target.objectKey! },
-        onError: (error) => reject(new Error(error.message || 'The protected upload was interrupted. Your draft and selected file are still available.')),
-        onProgress: (uploaded, total) => onProgress?.(total > 0 ? Math.min(90, Math.max(1, Math.round((uploaded / total) * 90))) : 1, 'uploading'),
-        onSuccess: () => resolve(),
-        removeFingerprintOnSuccess: true,
-        retryDelays: [0, 3000, 5000, 10000, 20000],
-        uploadDataDuringCreation: true,
+    if (file.size <= sphereStandardUploadMaxBytes) {
+      const { error } = await getSupabaseClient().storage
+        .from(target.bucket)
+        .uploadToSignedUrl(target.objectKey, target.signedUploadToken, file, {
+          cacheControl: '3600',
+          contentType: mimeType,
+          upsert: false,
+        })
+      if (error) {
+        throw new SphereUploadError(
+          'The protected upload was interrupted before storage received the file. Your draft and selected file are still available.',
+          { code: 'sygsphere_storage_transfer_failed', requestReference: target.requestReference ?? undefined, uploadId: target.uploadId },
+        )
+      }
+      onProgress?.(90, 'uploading')
+    } else {
+      await new Promise<void>((resolve, reject) => {
+        const upload = new Upload(file, {
+          chunkSize: sphereStandardUploadMaxBytes,
+          endpoint: target.resumableEndpoint,
+          fingerprint: async () => `sygsphere:${target.uploadId}:${target.objectKey}:${file.size}:${file.lastModified}`,
+          headers: { 'x-signature': target.signedUploadToken! },
+          metadata: { bucketName: target.bucket!, cacheControl: '3600', contentType: mimeType, filename: file.name, objectName: target.objectKey! },
+          onError: (error) => reject(new Error(error.message || 'The protected upload was interrupted. Your draft and selected file are still available.')),
+          onProgress: (uploaded, total) => onProgress?.(total > 0 ? Math.min(90, Math.max(1, Math.round((uploaded / total) * 90))) : 1, 'uploading'),
+          onSuccess: () => resolve(),
+          removeFingerprintOnSuccess: true,
+          retryDelays: [0, 3000, 5000, 10000, 20000],
+          uploadDataDuringCreation: true,
+        })
+        void upload.findPreviousUploads().then((previous) => {
+          if (previous[0]) upload.resumeFromPreviousUpload(previous[0])
+          upload.start()
+        }).catch(reject)
       })
-      void upload.findPreviousUploads().then((previous) => {
-        if (previous[0]) upload.resumeFromPreviousUpload(previous[0])
-        upload.start()
-      }).catch(reject)
-    })
+    }
   }
   if (target.state !== 'scanning') return sphereCompleteUpload(target.uploadId, onProgress)
   onProgress?.(100, 'scanning')

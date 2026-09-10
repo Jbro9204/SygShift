@@ -49,7 +49,7 @@ function request(action: string, input: Record<string, unknown>) {
   write(value); return { ok: true }
 }
 export function getSupabaseClient() {
-  return { auth: { getSession: async () => ({ data: { session: { access_token: 'fixture-only', user: { id: actor } } } }) }, realtime: { setAuth: async () => {} }, storage: { from: () => ({ download: async () => ({ data: null, error: { message: 'No fixture photo' } }) }) }, channel: () => {
+  return { auth: { getSession: async () => ({ data: { session: { access_token: 'fixture-only', user: { id: actor } } } }) }, realtime: { setAuth: async () => {} }, storage: { from: () => ({ download: async () => ({ data: null, error: { message: 'No fixture photo' } }), uploadToSignedUrl: async (path: string) => { document.documentElement.dataset.sphereSignedUploadPath = path; return { data: { path }, error: null } } }) }, channel: () => {
     let listener = () => {}
     const receive = () => listener()
     const channel = { on: (_type: string, _filter: unknown, callback: () => void) => { listener = callback; return channel }, subscribe: (callback: (status: string) => void) => { bus.addEventListener('message', receive); window.addEventListener('sphere-fixture-update', receive); queueMicrotask(() => callback('SUBSCRIBED')); return channel }, close: () => { bus.removeEventListener('message', receive); window.removeEventListener('sphere-fixture-update', receive) } }; return channel

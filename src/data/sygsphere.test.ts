@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getSupabaseClient } from '../lib/supabase'
-import { readSphereDraft, sphereCanPreview, sphereCompleteUpload, sphereDraftKey, sphereMentionIds, sphereMessageParts, spherePath, sphereUnread, SphereUploadError, writeSphereDraft } from './sygsphere'
+import { readSphereDraft, sphereCanPreview, sphereCompleteUpload, sphereDraftKey, sphereMentionIds, sphereMessageParts, spherePath, sphereUnread, sphereUpload, SphereUploadError, writeSphereDraft } from './sygsphere'
 vi.mock('../lib/supabase', () => ({ getSupabaseClient: vi.fn() }))
 describe('SygSphere navigation and drafts', () => {
   beforeEach(() => {
@@ -51,5 +51,50 @@ describe('SygSphere navigation and drafts', () => {
     const error = await sphereCompleteUpload(uploadId, undefined, [0, 0]).catch((reason: unknown) => reason)
     expect(error).toBeInstanceOf(SphereUploadError)
     expect(error).toMatchObject({ code: 'sygsphere_file_not_stored', completionPending: true, requestReference: requestId, uploadId })
+  })
+  it('uses a signed standard transfer for normal attachments before requesting the security scan', async () => {
+    const uploadId = '66666666-6666-4666-8666-666666666666'
+    const requestReference = '77777777-7777-4777-8777-777777777777'
+    const uploadToSignedUrl = vi.fn().mockResolvedValue({ data: { path: 'conversation/file.pdf' }, error: null })
+    vi.mocked(getSupabaseClient).mockReturnValue({
+      auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'test-token' } } }) },
+      storage: { from: vi.fn().mockReturnValue({ uploadToSignedUrl }) },
+    } as never)
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({
+        bucket: 'sygsphere-files',
+        objectKey: 'conversation/file.pdf',
+        requestReference,
+        resumableEndpoint: 'https://project.storage.supabase.co/storage/v1/upload/resumable',
+        signedUploadToken: 'signed-token',
+        state: 'prepared',
+        uploadId,
+      }, { status: 201 }))
+      .mockResolvedValueOnce(Response.json({ state: 'uploaded', uploadId }, { status: 202 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const file = new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], 'report.pdf', { type: 'application/pdf' })
+
+    await expect(sphereUpload(file, crypto.randomUUID(), crypto.randomUUID(), null)).resolves.toMatchObject({ state: 'processing', uploadId })
+    expect(uploadToSignedUrl).toHaveBeenCalledWith('conversation/file.pdf', 'signed-token', file, {
+      cacheControl: '3600', contentType: 'application/pdf', upsert: false,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(`/api/v1/sygsphere/uploads/${uploadId}/complete`)
+  })
+  it('keeps the selected normal attachment retryable when its signed transfer fails', async () => {
+    const uploadId = '88888888-8888-4888-8888-888888888888'
+    const requestReference = '99999999-9999-4999-8999-999999999999'
+    vi.mocked(getSupabaseClient).mockReturnValue({
+      auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'test-token' } } }) },
+      storage: { from: vi.fn().mockReturnValue({ uploadToSignedUrl: vi.fn().mockResolvedValue({ data: null, error: { message: 'Network failure' } }) }) },
+    } as never)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({
+      bucket: 'sygsphere-files', objectKey: 'conversation/file.pdf', requestReference,
+      resumableEndpoint: 'https://project.storage.supabase.co/storage/v1/upload/resumable', signedUploadToken: 'signed-token', state: 'prepared', uploadId,
+    }, { status: 201 })))
+
+    const error = await sphereUpload(new File(['%PDF'], 'report.pdf', { type: 'application/pdf' }), crypto.randomUUID(), crypto.randomUUID(), null).catch((reason: unknown) => reason)
+    expect(error).toBeInstanceOf(SphereUploadError)
+    expect(error).toMatchObject({ code: 'sygsphere_storage_transfer_failed', completionPending: false, requestReference, uploadId })
   })
 })
