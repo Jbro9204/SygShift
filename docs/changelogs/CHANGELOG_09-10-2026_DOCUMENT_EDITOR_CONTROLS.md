@@ -1,6 +1,6 @@
 # Document Center Editor Controls
 
-**Date:** 09/10/2026  
+**Date:** 09/10/2026
 **Status:** Released and verified in production
 
 ## Outcome
