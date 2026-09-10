@@ -254,6 +254,42 @@ const taskDetailSchema = sygTaskSchema.extend({
   })),
 })
 
+export const sygTaskActivityEventSchema = z.object({
+  id: z.coerce.number().int().positive(),
+  action: z.string(),
+  entityType: z.string(),
+  entityId: z.string().uuid(),
+  details: z.record(z.string(), z.unknown()),
+  actorId: z.string().uuid(),
+  actorName: z.string(),
+  actorSource: z.enum(['employee', 'system']),
+  createdAt: z.string(),
+  subject: z.object({
+    employeeId: z.string().uuid(),
+    name: z.string(),
+    username: z.string(),
+  }).nullable(),
+  label: z.object({
+    labelId: z.string().uuid(),
+    name: z.string(),
+    color: z.string().regex(/^#[0-9a-f]{6}$/i),
+  }).nullable(),
+  relatedTask: z.object({
+    taskId: z.string().uuid(),
+    title: z.string(),
+  }).nullable(),
+})
+
+export const sygTaskActivityPageSchema = z.object({
+  taskId: z.string().uuid(),
+  events: z.array(sygTaskActivityEventSchema),
+  page: z.object({
+    size: z.union([z.literal(20), z.literal(50), z.literal(100)]),
+    hasMore: z.boolean(),
+    nextBeforeId: z.coerce.number().int().positive().nullable(),
+  }),
+})
+
 export const sygTasksWorkspaceSchema = z.object({
   employeeId: z.string().uuid(),
   permissions: z.object({ viewShared: z.boolean(), manageShared: z.boolean() }),
@@ -285,6 +321,8 @@ export type CreateSygTaskInput = z.infer<typeof createSygTaskInputSchema>
 export type CreateSygTaskResult = z.infer<typeof createSygTaskResultSchema>
 export type SygTaskReminder = z.infer<typeof sygTaskReminderSchema>
 export type SygTaskReminders = z.infer<typeof sygTaskRemindersSchema>
+export type SygTaskActivityEvent = z.infer<typeof sygTaskActivityEventSchema>
+export type SygTaskActivityPage = z.infer<typeof sygTaskActivityPageSchema>
 export type SygTasksAlarm = z.infer<typeof sygTasksAlarmSchema>
 export type SygTasksAlarmState = z.infer<typeof sygTasksAlarmStateSchema>
 export type CreateSygTaskReminderInput = z.infer<typeof createSygTaskReminderInputSchema>
@@ -359,6 +397,20 @@ export async function getSygTaskReminders(taskId: string): Promise<SygTaskRemind
   const { data, error } = await getSupabaseClient().rpc('get_sygtasks_task_reminders', { target_task_id: taskId })
   if (error) throw new Error(error.message || 'Task reminders could not load.')
   return sygTaskRemindersSchema.parse(data)
+}
+
+export async function getSygTaskActivity(
+  taskId: string,
+  beforeId?: number | null,
+  pageSize: 20 | 50 | 100 = 50,
+): Promise<SygTaskActivityPage> {
+  const { data, error } = await getSupabaseClient().rpc('get_sygtasks_task_activity', {
+    target_task_id: z.string().uuid().parse(taskId),
+    target_before_id: beforeId ?? null,
+    target_page_size: pageSize,
+  })
+  if (error) throw new Error(error.message || 'Task activity could not load.')
+  return sygTaskActivityPageSchema.parse(data)
 }
 
 export async function createSygTaskReminder(

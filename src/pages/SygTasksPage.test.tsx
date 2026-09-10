@@ -7,6 +7,7 @@ import { SygTasksPage } from './SygTasksPage'
 
 const mocks = vi.hoisted(() => ({
   createTask: vi.fn(),
+  getActivity: vi.fn(),
   getWorklist: vi.fn(),
   getWorkspace: vi.fn(),
   mutate: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('../data/sygtasks', async () => {
   return {
     ...actual,
     createSygTask: mocks.createTask,
+    getSygTaskActivity: mocks.getActivity,
     getSygTasksWorklist: mocks.getWorklist,
     getSygTasksWorkspace: mocks.getWorkspace,
     mutateSygTasks: mocks.mutate,
@@ -177,6 +179,24 @@ describe('SygTasksPage', () => {
       taskDetail: input.taskId ? taskDetail() : null,
     }))
     mocks.getWorklist.mockReset().mockResolvedValue(worklist())
+    mocks.getActivity.mockReset().mockResolvedValue({
+      taskId,
+      events: [{
+        id: 1,
+        action: 'task.created',
+        entityType: 'task',
+        entityId: taskId,
+        details: { after: { title: 'Confirm weekend coverage', status: 'ready', priority: 'high' } },
+        actorId: employeeId,
+        actorName: 'Jordan Brown',
+        actorSource: 'employee',
+        createdAt: '2026-09-08T12:00:00Z',
+        subject: null,
+        label: null,
+        relatedTask: null,
+      }],
+      page: { size: 50, hasMore: false, nextBeforeId: null },
+    })
     mocks.mutate.mockReset().mockResolvedValue({ changed: true })
     mocks.createTask.mockReset().mockResolvedValue({ changed: true, taskId })
     HTMLDialogElement.prototype.showModal = vi.fn(function (this: HTMLDialogElement) { this.open = true })
@@ -350,7 +370,7 @@ describe('SygTasksPage', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Comments (1)' }))
     expect(within(dialog).getByText('Coverage request sent.')).toBeInTheDocument()
     await user.click(within(dialog).getByRole('button', { name: 'Activity' }))
-    expect(within(dialog).getByText(/task created/)).toBeInTheDocument()
+    expect(await within(dialog).findByText((_, node) => node?.tagName === 'P' && node.textContent === 'Jordan Brown created this task')).toBeInTheDocument()
   })
 
   it('keeps personal board settings owner-only and uses a separate archive confirmation', async () => {

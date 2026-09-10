@@ -8,6 +8,7 @@ import {
   getSygTasksWorkspace,
   getMySygTasksAlarmState,
   getMySygTasksBadge,
+  getSygTaskActivity,
   manageMySygTasksAlarm,
   mutateSygTasks,
   sygTaskPath,
@@ -101,6 +102,40 @@ describe('SygTasks data boundary', () => {
     expect(rpc).toHaveBeenCalledWith('get_sygtasks_workspace', {
       target_board_id: boardId, target_task_id: taskId, target_cursor_updated_at: null,
       target_cursor_task_id: null, target_page_size: 20, target_include_archived: false,
+    })
+  })
+
+  it('requests a bounded task activity page and validates enriched names', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        taskId,
+        events: [{
+          id: 44,
+          action: 'assignee.added',
+          entityType: 'assignee',
+          entityId: assignmentId,
+          details: { employeeId },
+          actorId: employeeId,
+          actorName: 'Jordan Brown',
+          actorSource: 'employee',
+          createdAt: '2026-09-10T16:35:00Z',
+          subject: { employeeId, name: 'Jordan Brown', username: 'jordan' },
+          label: null,
+          relatedTask: null,
+        }],
+        page: { size: 50, hasMore: true, nextBeforeId: 44 },
+      },
+      error: null,
+    })
+
+    await expect(getSygTaskActivity(taskId, 90, 50)).resolves.toMatchObject({
+      events: [{ actorName: 'Jordan Brown', subject: { name: 'Jordan Brown' } }],
+      page: { nextBeforeId: 44 },
+    })
+    expect(rpc).toHaveBeenCalledWith('get_sygtasks_task_activity', {
+      target_task_id: taskId,
+      target_before_id: 90,
+      target_page_size: 50,
     })
   })
 

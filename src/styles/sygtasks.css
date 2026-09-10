@@ -558,10 +558,36 @@ html[data-theme='dark'] .sygtasks-field__error { color: #ffaaa3; }
 .sygtasks-comment-form > button { justify-self: end; }
 .sygtasks-comment-edit { display: grid; gap: 8px; }
 .sygtasks-comment-edit > div { display: flex; justify-content: flex-end; gap: 8px; }
-.sygtasks-activity { position: relative; display: grid; }
-.sygtasks-activity::before { position: absolute; top: 10px; bottom: 10px; left: 6px; width: 2px; background: var(--tasks-border); content: ''; }
-.sygtasks-activity li { position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 10px; padding: 8px 0; color: var(--tasks-muted); font-size: 14px; }
-.sygtasks-activity li > span { z-index: 1; width: 12px; height: 12px; margin-top: 3px; background: var(--tasks-gold); border: 2px solid var(--tasks-panel); border-radius: 50%; }
+.sygtasks-activity-panel { gap: 16px !important; }
+.sygtasks-activity-panel__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.sygtasks-activity-panel__heading > div { display: grid; gap: 4px; }
+.sygtasks-activity-panel__heading p { margin: 0; }
+.sygtasks-activity-panel__heading > span { flex: 0 0 auto; padding: 5px 9px; color: var(--tasks-muted); background: var(--tasks-panel); border: 1px solid var(--tasks-border); border-radius: 999px; font-size: 11px; font-weight: 800; }
+.sygtasks-activity { position: relative; display: grid; gap: 11px; }
+.sygtasks-activity::before { position: absolute; top: 13px; bottom: 13px; left: 8px; width: 2px; background: color-mix(in srgb, var(--tasks-gold) 45%, var(--tasks-border)); content: ''; }
+.sygtasks-activity > li { position: relative; display: grid; min-width: 0; grid-template-columns: 18px minmax(0, 1fr); gap: 11px; color: var(--tasks-muted); }
+.sygtasks-activity__dot { z-index: 1; width: 16px; height: 16px; margin-top: 18px; background: linear-gradient(145deg, var(--tasks-champagne), var(--tasks-gold)); border: 3px solid var(--tasks-panel); border-radius: 50%; box-shadow: 0 0 0 1px color-mix(in srgb, var(--tasks-gold) 60%, var(--tasks-border)); }
+.sygtasks-activity__card { display: grid; min-width: 0; gap: 10px; padding: 14px; color: var(--tasks-ink); background: var(--tasks-control); border: 1px solid var(--tasks-border); border-radius: 13px; box-shadow: 0 3px 9px rgb(12 13 13 / 5%); }
+.sygtasks-activity__card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.sygtasks-activity__card > header > div { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 7px; }
+.sygtasks-activity__card > header p { margin: 0; color: var(--tasks-ink); font-size: 14px; line-height: 1.5; }
+.sygtasks-activity__card time { flex: 0 0 auto; color: var(--tasks-muted); font-size: 11px; font-weight: 650; line-height: 1.45; text-align: right; }
+.sygtasks-activity__source { padding: 4px 7px; color: var(--tasks-muted); background: var(--tasks-panel); border: 1px solid var(--tasks-border); border-radius: 999px; font-size: 10px; font-weight: 850; letter-spacing: .03em; text-transform: uppercase; }
+.sygtasks-activity__source--system { color: var(--tasks-gold-ink); background: color-mix(in srgb, var(--tasks-gold) 12%, var(--tasks-panel)); border-color: color-mix(in srgb, var(--tasks-gold) 42%, var(--tasks-border)); }
+.sygtasks-activity__context { padding: 8px 10px; margin: 0 !important; background: color-mix(in srgb, var(--tasks-gold) 7%, var(--tasks-panel)); border-radius: 9px; font-size: 12px !important; line-height: 1.45 !important; }
+.sygtasks-activity__details { overflow: hidden; border: 1px solid var(--tasks-border); border-radius: 10px; }
+.sygtasks-activity__details > summary { display: flex; min-height: 44px; align-items: center; padding: 9px 11px; color: var(--tasks-gold-ink); background: var(--tasks-panel); font-size: 12px; font-weight: 850; cursor: pointer; list-style-position: inside; }
+.sygtasks-activity__details > summary:hover { background: color-mix(in srgb, var(--tasks-gold) 9%, var(--tasks-panel)); }
+.sygtasks-activity__details dl { display: grid; gap: 0; padding: 0 11px; margin: 0; }
+.sygtasks-activity__details dl > div { display: grid; gap: 6px; padding: 11px 0; border-top: 1px solid var(--tasks-border); }
+.sygtasks-activity__details dt { color: var(--tasks-ink); font-size: 11px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.sygtasks-activity__details dd { display: grid; min-width: 0; align-items: center; grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr); gap: 8px; margin: 0; }
+.sygtasks-activity__details dd > span { min-width: 0; padding: 9px 10px; overflow-wrap: anywhere; color: var(--tasks-ink); background: color-mix(in srgb, var(--tasks-bg) 62%, var(--tasks-panel)); border: 1px solid var(--tasks-border); border-radius: 9px; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
+.sygtasks-activity__details dd small { display: block; margin-bottom: 3px; color: var(--tasks-muted); font-size: 9px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.sygtasks-activity__details dd > svg { color: var(--tasks-gold-ink); }
+.sygtasks-activity__state { display: flex; min-height: 72px; align-items: center; justify-content: center; gap: 8px; padding: 14px; margin: 0 !important; background: var(--tasks-control); border: 1px dashed var(--tasks-border-strong); border-radius: 12px; text-align: center; }
+.sygtasks-activity__state--error { color: var(--tasks-danger); border-color: color-mix(in srgb, var(--tasks-danger) 40%, var(--tasks-border)); }
+.sygtasks-activity__load { justify-self: center; }
 
 .sygtasks-reminders { display: grid; gap: 15px; }
 .sygtasks-reminder-intro,
@@ -705,6 +731,9 @@ html[data-theme='dark'] .sygtasks-reminder-state--scheduled { color: #9addbd; }
   .sygtasks-choice-grid { grid-template-columns: 1fr; }
   .sygtasks-add-member { grid-template-columns: 1fr; }
   .sygtasks-danger-zone { align-items: stretch; flex-direction: column; }
+  .sygtasks-activity-panel__heading,
+  .sygtasks-activity__card > header { align-items: stretch; flex-direction: column; }
+  .sygtasks-activity__card time { text-align: left; }
 }
 
 @media (max-width: 480px) {
@@ -737,6 +766,9 @@ html[data-theme='dark'] .sygtasks-reminder-state--scheduled { color: #9addbd; }
   .sygtasks-inline-actions .sygtasks-button { width: 100%; }
   .sygtasks-reminder-list li { grid-template-columns: 38px minmax(0, 1fr); }
   .sygtasks-reminder-list__cancel { grid-column: 1 / -1; width: 100%; }
+  .sygtasks-activity-panel__heading > span { align-self: flex-start; }
+  .sygtasks-activity__details dd { grid-template-columns: 1fr; }
+  .sygtasks-activity__details dd > svg { transform: rotate(90deg); justify-self: center; }
 }
 
 @media (prefers-reduced-motion: reduce) {
