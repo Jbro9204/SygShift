@@ -40,6 +40,10 @@ describe('SygSphere navigation and drafts', () => {
     expect(mentions).toEqual([{ id: michelle.id, name: 'Chief Hood', username: 'mhood', label: 'Michelle' }])
     expect(sphereMentionIds('Please review this @michelle', mentions)).toEqual([michelle.id])
     expect(sphereMessageParts('Please review this @michelle', mentions).at(-1)).toEqual({ kind: 'mention', text: '@michelle', mention: mentions[0] })
+    expect(sphereMentionIds('Please review this @michelle.', mentions)).toEqual([michelle.id])
+    expect(sphereMessageParts('Please review this @michelle.', mentions).slice(-2)).toEqual([
+      { kind: 'mention', text: '@michelle', mention: mentions[0] }, { kind: 'text', text: '.' },
+    ])
   })
   it('uses a full human name when a first name is not unique', () => {
     const first = { id: '55555555-5555-4555-8555-555555555555', name: 'Michelle Hood', firstName: 'Michelle', preferredName: null, legalName: 'Michelle Hood', username: 'mhood', active: true, photoPath: null, presence: 'available' }

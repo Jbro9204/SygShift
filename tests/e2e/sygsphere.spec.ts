@@ -61,12 +61,19 @@ test('resolves a typed employee name without requiring a username', async ({ pag
   await message.press('Enter')
   await expect(page.locator('.sphere-mention').filter({ hasText: '@devon' })).toBeVisible()
 })
+test('sends a typed employee mention before ordinary sentence punctuation', async ({ page }) => {
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
+  const message = page.getByRole('textbox', { name: 'Write a message', exact: true })
+  await message.fill('Please review this @devon.')
+  await message.press('Enter')
+  await expect(page.locator('.sphere-mention').filter({ hasText: '@devon' })).toBeVisible()
+  await expect(page.locator('.sphere-message__body').filter({ hasText: 'Please review this @devon.' })).toBeVisible()
+})
 test('lets each employee enlarge SygSphere text without scaling the rest of SygShift', async ({ page }) => {
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
   await page.getByLabel('Message text size').selectOption('large')
   await expect(page.locator('.sphere-workspace')).toHaveAttribute('data-text-size', 'large')
-  const fontSize = await page.locator('.sphere-composer textarea').evaluate((node) => parseFloat(getComputedStyle(node).fontSize))
-  expect(fontSize).toBeGreaterThanOrEqual(18)
+  await expect.poll(() => page.locator('.sphere-composer textarea').evaluate((node) => parseFloat(getComputedStyle(node).fontSize))).toBeGreaterThanOrEqual(18)
 })
 test('keeps the identity, text-size, sound, and new-message controls usable at 320px', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 })

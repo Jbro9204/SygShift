@@ -111,8 +111,9 @@ export function writeSphereDraft(key: string, draft: SphereDraft): boolean {
   try { if (draft.body) localStorage.setItem(key, JSON.stringify(draft)); else localStorage.removeItem(key); return true } catch { return false }
 }
 function sphereEscapeExpression(value: string) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
+const sphereMentionEndExpression = '(?=$|[^\\p{L}\\p{N}_.-]|[.-](?=$|[^\\p{L}\\p{N}_]))'
 function sphereHasMentionToken(body: string, label: string) {
-  return new RegExp(`(^|[^\\p{L}\\p{N}_])@${sphereEscapeExpression(label)}(?=$|[^\\p{L}\\p{N}_.-])`, 'iu').test(body)
+  return new RegExp(`(^|[^\\p{L}\\p{N}_])@${sphereEscapeExpression(label)}${sphereMentionEndExpression}`, 'iu').test(body)
 }
 function spherePersonAliases(person: SpherePerson) {
   return [...new Set([person.legalName, person.name, person.firstName, person.preferredName].map((value) => value?.trim()).filter((value): value is string => Boolean(value)))]
@@ -151,7 +152,7 @@ export function sphereMessageParts(body: string, mentions: SphereMention[]): Sph
     if (!mention.label) byToken.set(`@${mention.username}`.toLocaleLowerCase(), mention)
   }
   const mentionPattern = [...byToken.keys()].sort((left, right) => right.length - left.length).map(sphereEscapeExpression).join('|')
-  const parts: SphereMessagePart[] = []; const matcher = new RegExp(`https?:\\/\\/[^\\s<>]+${mentionPattern ? `|(?:${mentionPattern})(?=$|[^\\p{L}\\p{N}_.-])` : ''}`, 'giu'); let cursor = 0
+  const parts: SphereMessagePart[] = []; const matcher = new RegExp(`https?:\\/\\/[^\\s<>]+${mentionPattern ? `|(?:${mentionPattern})${sphereMentionEndExpression}` : ''}`, 'giu'); let cursor = 0
   for (const match of body.matchAll(matcher)) {
     const index = match.index ?? 0
     if (index > cursor) parts.push({ kind: 'text', text: body.slice(cursor, index) })

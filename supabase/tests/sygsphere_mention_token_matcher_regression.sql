@@ -7,6 +7,7 @@ do $$
 begin
   assert private.sygsphere_body_has_mention('Hello @Michelle', 'Michelle');
   assert private.sygsphere_body_has_mention('Hello @mIcHeLle!', 'Michelle');
+  assert private.sygsphere_body_has_mention('Hello @Michelle.', 'Michelle');
   assert private.sygsphere_body_has_mention('Please review with @Michelle Hood.', 'Michelle Hood');
   assert private.sygsphere_body_has_mention('Please ask @Anne O''Neil (HR).', 'Anne O''Neil');
   assert private.sygsphere_body_has_mention('Please ask @A+B [Ops]!', 'A+B [Ops]');

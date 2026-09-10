@@ -22,6 +22,7 @@ declare
   token_end integer;
   left_character text;
   right_character text;
+  following_character text;
 begin
   if normalized_label = '' then
     return false;
@@ -45,9 +46,20 @@ begin
       when token_end <= char_length(normalized_body) then substring(normalized_body from token_end for 1)
       else null
     end;
+    following_character := case
+      when token_end + 1 <= char_length(normalized_body) then substring(normalized_body from token_end + 1 for 1)
+      else null
+    end;
 
     if (left_character is null or left_character !~ '[[:alnum:]_]')
-      and (right_character is null or right_character !~ '[[:alnum:]_.-]') then
+      and (
+        right_character is null
+        or right_character !~ '[[:alnum:]_.-]'
+        or (
+          right_character in ('.', '-')
+          and (following_character is null or following_character !~ '[[:alnum:]_]')
+        )
+      ) then
       return true;
     end if;
 
@@ -67,6 +79,8 @@ begin
     'A simple first-name mention must match';
   assert private.sygsphere_body_has_mention('Hello @mIcHeLle!', 'Michelle'),
     'Mention matching must remain case-insensitive';
+  assert private.sygsphere_body_has_mention('Hello @Michelle.', 'Michelle'),
+    'Ordinary sentence punctuation must end a mention';
   assert private.sygsphere_body_has_mention('Please review with @Michelle Hood.', 'Michelle Hood'),
     'A full human name must match literally';
   assert private.sygsphere_body_has_mention('Please ask @Anne O''Neil (HR).', 'Anne O''Neil'),
