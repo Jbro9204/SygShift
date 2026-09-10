@@ -35163,3 +35163,85 @@ button.patrol-overview-row:focus-visible {
   .support-progress .is-current .support-progress__step,
   .support-progress .is-current .support-progress__connector svg { animation: none; }
 }
+
+/*
+ * Compact application shell
+ *
+ * A 1280px effective viewport is common on 14-inch laptops using display
+ * scaling. Keeping the 276px navigation rail permanently open at that size
+ * starves every workspace before its own responsive layout can help. The
+ * shell marks those viewports explicitly and uses the existing accessible
+ * navigation drawer instead. Tall/wide desktop layouts remain unchanged.
+ */
+body:has(.app-shell--compact-navigation .sidebar--open) {
+  overflow: hidden;
+}
+
+.app-shell--compact-navigation .mobile-menu-button {
+  position: fixed;
+  z-index: 32;
+  top: 15px;
+  left: 16px;
+  display: flex;
+  color: light-dark(#25231f, #f5f1e8);
+  background: light-dark(#ffffff, #171b1f);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+}
+
+.app-shell--compact-navigation .sidebar {
+  width: min(320px, calc(100vw - 40px));
+  visibility: hidden;
+  transform: translateX(-105%);
+  transition:
+    transform 180ms ease,
+    visibility 0s linear 180ms;
+  box-shadow: var(--shadow-lg);
+}
+
+.app-shell--compact-navigation .sidebar--open {
+  visibility: visible;
+  transform: translateX(0);
+  transition-delay: 0s;
+}
+
+.app-shell--compact-navigation .sidebar-close {
+  display: flex;
+}
+
+.app-shell--compact-navigation .sidebar-collapse {
+  display: none;
+}
+
+.app-shell--compact-navigation .navigation-scrim {
+  position: fixed;
+  z-index: 29;
+  inset: 0;
+  display: block;
+  background: rgb(10 10 9 / 55%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.app-shell--compact-navigation .navigation-scrim--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-shell--compact-navigation .workspace,
+.app-shell--compact-navigation.app-shell--sidebar-collapsed .workspace {
+  width: 100%;
+  margin-left: 0;
+}
+
+.app-shell--compact-navigation .topbar {
+  padding-left: 78px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell--compact-navigation .sidebar,
+  .app-shell--compact-navigation .navigation-scrim {
+    transition: none;
+  }
+}

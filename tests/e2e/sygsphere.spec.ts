@@ -142,6 +142,52 @@ test('keeps the mobile composer and Send control usable inside the full SygShift
   await expect(page.locator('.sphere-message__body').filter({ hasText: 'Mobile send remains reachable' })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('sygsphere-mobile-shell.png'), fullPage: true })
 })
+
+for (const viewport of [
+  { label: '14-inch-laptop', width: 1366, height: 768 },
+  { label: 'scaled-laptop', width: 1280, height: 720 },
+  { label: 'compact-laptop', width: 1024, height: 720 },
+]) {
+  test(`keeps SygSphere readable and actionable throughout the ${viewport.label} viewport`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport)
+    await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
+    const input = page.getByRole('textbox', { name: 'Write a message', exact: true })
+    const send = page.getByRole('button', { name: 'Send', exact: true })
+    await input.evaluate((element) => element.blur())
+    await expect(page.locator('.operational-clock')).toHaveCount(4)
+    await expect(page.locator('.sphere-conversations')).toBeVisible()
+    await expect(page.locator('.sphere-main')).toBeVisible()
+    await expect(input).toBeVisible()
+    await expect(send).toBeInViewport()
+
+    const geometry = await page.evaluate(() => {
+      const alert = document.querySelector<HTMLElement>('.workspace-alert-strip')!
+      const composer = document.querySelector<HTMLElement>('.sphere-composer')!
+      const sphere = document.querySelector<HTMLElement>('.sphere-workspace')!
+      return {
+        alertHeight: Math.round(alert.getBoundingClientRect().height),
+        composerBottom: Math.round(composer.getBoundingClientRect().bottom),
+        composerRight: Math.round(composer.getBoundingClientRect().right),
+        documentHeightOverflow: document.documentElement.scrollHeight - window.innerHeight,
+        documentWidthOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        sphereBottom: Math.round(sphere.getBoundingClientRect().bottom),
+        sphereTop: Math.round(sphere.getBoundingClientRect().top),
+      }
+    })
+    expect(geometry.documentHeightOverflow).toBeLessThanOrEqual(1)
+    expect(geometry.documentWidthOverflow).toBeLessThanOrEqual(1)
+    expect(geometry.alertHeight).toBeLessThanOrEqual(58)
+    expect(geometry.sphereTop).toBeLessThanOrEqual(205)
+    expect(geometry.sphereBottom).toBe(viewport.height)
+    expect(geometry.composerBottom).toBeLessThanOrEqual(viewport.height)
+    expect(geometry.composerRight).toBeLessThanOrEqual(viewport.width)
+
+    await input.fill(`Message sent from the ${viewport.label} layout`)
+    await send.click()
+    await expect(page.locator('.sphere-message__body').filter({ hasText: `Message sent from the ${viewport.label} layout` })).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath(`sygsphere-${viewport.label}.png`), fullPage: true })
+  })
+}
 test('keeps Send above a mobile keyboard-sized viewport while composing', async ({ page }) => {
   await page.setViewportSize({ width: 412, height: 480 })
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)

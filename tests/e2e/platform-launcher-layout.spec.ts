@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 type SidebarFixtureOptions = {
   collapsed?: boolean
+  compact?: boolean
   mobileOpen?: boolean
 }
 
@@ -16,7 +17,9 @@ async function installSidebarFixture(page: Page, options: SidebarFixtureOptions 
         <span aria-hidden="true">●</span><span>Navigation item ${index + 1}</span>
       </a>`).join('')
     fixtureRoot.innerHTML = `
-      <div class="app-shell${fixtureOptions.collapsed ? ' app-shell--sidebar-collapsed' : ''}">
+      <div class="app-shell${fixtureOptions.collapsed ? ' app-shell--sidebar-collapsed' : ''}${fixtureOptions.compact ? ' app-shell--compact-navigation' : ''}">
+        <button aria-expanded="false" aria-label="Open navigation" class="mobile-menu-button" type="button">☰</button>
+        <div aria-hidden="true" class="navigation-scrim"></div>
         <aside class="sidebar${fixtureOptions.collapsed ? ' sidebar--collapsed' : ''}${fixtureOptions.mobileOpen ? ' sidebar--open' : ''}">
           <div class="sidebar-brand"><img alt="SygShift" src="/brand/sygshift-logo.png" /></div>
           <nav aria-label="Primary navigation" class="sidebar-navigation">${navigation}</nav>
@@ -217,6 +220,59 @@ test('collapsed launchers become matching icon controls with exact tooltips', as
   await expect(tasksTooltip).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('platform-launchers-collapsed.png'), fullPage: true })
 })
+
+for (const viewport of [
+  { label: '14-inch-laptop', width: 1366, height: 768 },
+  { label: 'scaled-laptop', width: 1280, height: 720 },
+  { label: 'compact-laptop', width: 1024, height: 768 },
+]) {
+  test(`compact shell returns workspace width and a full navigation drawer at ${viewport.label}`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport)
+    await page.goto('/')
+    await installSidebarFixture(page, { compact: true })
+
+    const menu = page.getByRole('button', { name: 'Open navigation' })
+    const sidebar = page.locator('.sidebar')
+    const workspace = page.locator('.workspace')
+    await expect(menu).toBeVisible()
+    await expect(sidebar).toBeHidden()
+    const closedLayout = await workspace.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      return { left: box.left, right: box.right, width: box.width }
+    })
+    expect(closedLayout.left).toBe(0)
+    expect(closedLayout.right).toBe(viewport.width)
+    expect(closedLayout.width).toBe(viewport.width)
+
+    await sidebar.evaluate((element) => element.classList.add('sidebar--open'))
+    await page.locator('.navigation-scrim').evaluate((element) => element.classList.add('navigation-scrim--visible'))
+    await expect(sidebar).toBeVisible()
+    await expect.poll(() => sidebar.evaluate((element) => Math.round(element.getBoundingClientRect().left))).toBe(0)
+    await expect(page.getByRole('link', { name: 'Open SygTasks work management' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Open Sygilant main platform' })).toBeVisible()
+    await expect(page.getByRole('link', { name: /SygSphere messages/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Need Help?' })).toBeVisible()
+    const drawer = await sidebar.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const navigation = element.querySelector<HTMLElement>('.sidebar-navigation')!
+      const utilities = element.querySelector<HTMLElement>('.sidebar-utilities')!
+      return {
+        bottom: box.bottom,
+        left: box.left,
+        navigationBottom: navigation.getBoundingClientRect().bottom,
+        utilitiesBottom: utilities.getBoundingClientRect().bottom,
+        utilitiesTop: utilities.getBoundingClientRect().top,
+        width: box.width,
+      }
+    })
+    expect(Math.round(drawer.left)).toBe(0)
+    expect(drawer.width).toBeGreaterThanOrEqual(280)
+    expect(drawer.navigationBottom).toBeLessThanOrEqual(drawer.utilitiesTop + 1)
+    expect(drawer.utilitiesBottom).toBeLessThanOrEqual(drawer.bottom + 1)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width)
+    await page.screenshot({ path: testInfo.outputPath(`compact-shell-${viewport.label}.png`), fullPage: true })
+  })
+}
 
 for (const viewport of [
   { label: 'mobile-phone', width: 390, height: 844 },

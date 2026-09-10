@@ -131,6 +131,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('AppShell shared-session lifecycle', () => {
@@ -169,6 +170,28 @@ describe('AppShell shared-session lifecycle', () => {
 
     expect(await screen.findByText('Platform home')).toBeInTheDocument()
     expect(screen.queryByText('Account security')).not.toBeInTheDocument()
+  })
+
+  it('switches scaled laptop viewports to the full-width navigation drawer without losing the saved desktop preference', async () => {
+    const removeEventListener = vi.fn()
+    vi.stubGlobal('matchMedia', vi.fn(() => ({
+      addEventListener: vi.fn(),
+      matches: true,
+      media: '(max-width: 1280px)',
+      onchange: null,
+      removeEventListener,
+    })))
+    localStorage.setItem('sygshift.sidebar.collapsed', 'true')
+    prepareSharedSession('platform')
+    const view = renderShell('/')
+
+    expect(await screen.findByText('Platform home')).toBeInTheDocument()
+    expect(view.container.querySelector('.app-shell')).toHaveClass('app-shell--compact-navigation')
+    expect(view.container.querySelector('.app-shell')).not.toHaveClass('app-shell--sidebar-collapsed')
+    expect(view.container.querySelector('.sidebar')).not.toHaveClass('sidebar--collapsed')
+    expect(localStorage.getItem('sygshift.sidebar.collapsed')).toBe('true')
+    view.unmount()
+    expect(removeEventListener).toHaveBeenCalledWith('change', expect.any(Function))
   })
 
   it('deactivates the browser client and returns to login when Worker restoration reports revocation', async () => {

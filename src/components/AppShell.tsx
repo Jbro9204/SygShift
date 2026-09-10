@@ -65,6 +65,11 @@ const SESSION_ACTIVITY_THROTTLE_MS = 5_000
 const WORKSPACE_ALERT_ROTATE_MS = 9_000
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sygshift.sidebar.collapsed'
 const SIDEBAR_GROUP_STORAGE_KEY = 'sygshift.sidebar.open-group'
+const COMPACT_NAVIGATION_QUERY = '(max-width: 1280px), (max-width: 1366px) and (max-height: 800px)'
+
+function compactNavigationMatches(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia(COMPACT_NAVIGATION_QUERY).matches
+}
 
 function titleCase(value: string): string {
   return value
@@ -159,6 +164,7 @@ export function AppShell() {
   const queryClient = useQueryClient()
   const [navigationOpen, setNavigationOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true')
+  const [compactNavigation, setCompactNavigation] = useState(compactNavigationMatches)
   const [openNavigationGroup, setOpenNavigationGroup] = useState(() => window.localStorage.getItem(SIDEBAR_GROUP_STORAGE_KEY) ?? 'Operations')
   const [sessionContext, setSessionContext] = useState<SessionContext | null>(null)
   const [authSessionId, setAuthSessionId] = useState<string | null>(null)
@@ -312,6 +318,18 @@ export function AppShell() {
   const completedSignInKind = passwordRecoverySession
     ? null
     : completedSignInRecordKind(sessionContext, location.pathname, sharedIdentityScope)
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const mediaQuery = window.matchMedia(COMPACT_NAVIGATION_QUERY)
+    const handleChange = (event: MediaQueryListEvent) => {
+      setCompactNavigation(event.matches)
+      if (!event.matches) setNavigationOpen(false)
+    }
+    setCompactNavigation(mediaQuery.matches)
+    mediaQuery.addEventListener('change', handleChange)
+    return () => mediaQuery.removeEventListener('change', handleChange)
+  }, [])
 
   useEffect(() => {
     if (!isSupabaseConfigured || !completedSignInKind || !authSessionId) return
@@ -726,7 +744,7 @@ export function AppShell() {
   }
 
   return (
-    <div className={`app-shell${sidebarCollapsed ? ' app-shell--sidebar-collapsed' : ''}${isSygSpherePath(location.pathname) ? ' app-shell--sygsphere' : ''}`}>
+    <div className={`app-shell${sidebarCollapsed && !compactNavigation ? ' app-shell--sidebar-collapsed' : ''}${compactNavigation ? ' app-shell--compact-navigation' : ''}${isSygSpherePath(location.pathname) ? ' app-shell--sygsphere' : ''}`}>
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
@@ -749,7 +767,7 @@ export function AppShell() {
       />
 
       <aside
-        className={`${navigationOpen ? 'sidebar sidebar--open' : 'sidebar'}${sidebarCollapsed ? ' sidebar--collapsed' : ''}`}
+        className={`${navigationOpen ? 'sidebar sidebar--open' : 'sidebar'}${sidebarCollapsed && !compactNavigation ? ' sidebar--collapsed' : ''}`}
         id="primary-navigation"
       >
         <div className="sidebar-brand">

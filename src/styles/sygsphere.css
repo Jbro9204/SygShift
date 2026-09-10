@@ -131,3 +131,15 @@ body:has(.sidebar--open) .sphere-mobile-launcher{display:none!important}
 @media(max-width:440px){.sphere-workspace .sphere-text-size select{width:88px;max-width:88px}.sphere-topbar .sphere-primary{flex:0 0 62px}}
 @media(max-width:480px){.app-shell--sygsphere .topbar-date{display:none}}
 @media(max-width:360px){.sphere-topbar h1{display:none}.sphere-workspace .sphere-text-size select{width:82px;max-width:82px}}
+
+/* Keep the SygSphere workspace prominent on compact laptop shells too. */
+@media(min-width:621px){
+  .app-shell--compact-navigation.app-shell--sygsphere .workspace-alert-strip{grid-template-columns:40px minmax(0,1fr) auto auto;gap:8px;margin:6px 12px 0;padding:8px 10px;border-radius:12px}
+  .app-shell--compact-navigation.app-shell--sygsphere .workspace-alert-strip__icon{width:40px;height:40px;border-radius:12px}
+  .app-shell--compact-navigation.app-shell--sygsphere .workspace-alert-strip__copy{gap:1px}
+  .app-shell--compact-navigation.app-shell--sygsphere .workspace-alert-strip__copy strong{font-size:11px;line-height:1.2}
+  .app-shell--compact-navigation.app-shell--sygsphere .workspace-alert-strip__ticker{overflow:hidden;font-size:14px;line-height:1.3}
+  .app-shell--compact-navigation.app-shell--sygsphere .workspace-alert-strip__ticker span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .app-shell--compact-navigation.app-shell--sygsphere .workspace-alert-strip__position{grid-column:auto;min-width:34px;min-height:30px;padding:4px 7px;font-size:11px}
+  .app-shell--compact-navigation.app-shell--sygsphere .workspace-alert-strip__action{grid-column:auto;width:auto;min-height:38px;padding:8px 12px;font-size:12px}
+}
