@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/09/2026 - SygTasks Reminders and Repeating Alarms
+
+- Added private self reminders and manager-created assignee reminders to Task Detail, with one-time reminders, persistent alarms, relative or specific Mountain Time scheduling, and optional existing-route email delivery.
+- Added a separate SygTasks launcher badge and a server-backed alarm card with Stop, 5/10/15/30/60-minute Snooze, Open Task, and permission-aware Mark Complete actions. The supplied sound repeats in one visible browser tab with roughly six seconds between plays, and its setting remains separate from ordinary notifications and SygSphere.
+- Enforced idempotent per-recipient occurrences, due-date reflow, assignment/task/account lifecycle cancellation, private Realtime invalidation, service-only skip-locked processing, and an independent Worker scheduling branch that cannot block timekeeping or other notification jobs.
+- Applied production migrations `20260911020000` and forward repair `20260911021000`, released source commit `e8e7dd3` as Cloudflare Worker `f408249b-e093-466f-8dd9-048adde6fc94`, and retained rollback tag `rollback/sygtasks-reminders-pre-release-20260909`.
+- Verification passed 228 test files / 1,143 tests, both production builds, 10 responsive SygTasks layout/accessibility checks, the 42-check actual-component Time Clock matrix before and after deployment, both production health/readiness origins, `/tasks`, exact live JS/CSS/audio identity, and the repaired database lint/history checks.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-09-2026_SYGTASKS_REMINDERS_AND_ALARMS.md`.
+
 ## 09/09/2026 - SygSphere Upload, PWA, and Header Refinement
 
 - Routed every supported SygSphere attachment through private quarantine and asynchronous scanning, preserving the draft and selected file on interruption and adding bounded scan retry without re-upload, safe reference IDs, and Notification Center outcomes.

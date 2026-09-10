@@ -76,12 +76,14 @@ Both migrations are present in linked production history. The database linter re
 
 ## Production release
 
-- Application source commit: pending final release commit.
-- Git push: pending.
-- Cloudflare Worker version: pending.
-- Primary and fallback health/readiness: pending post-deployment verification.
-- Live route and asset identity: pending post-deployment verification.
-- Post-deployment actual-component Time Clock matrix: pending.
+- Application source commit: `e8e7dd3` (`feat: add SygTasks reminders and repeating alarms`).
+- Git push: `main` pushed to `origin` before deployment.
+- Cloudflare Worker version: `f408249b-e093-466f-8dd9-048adde6fc94`.
+- Primary `https://app.sygilant.us` and fallback `https://sygshift.sygilant.workers.dev` health returned `ok`; readiness returned `true` on both.
+- `/tasks` returned HTTP 200 on both origins.
+- Live byte identity matched the fresh production build for `index-CNKqnite.js`, `SygTasksPage-Du1fuYd8.js`, and `SygTasksPage-ldIA2hmi.css`. The live SygTasks alarm MP3 also matched the approved source hash exactly.
+- Post-deployment actual-component Time Clock preservation matrix: **42/42 passed** on desktop and mobile.
+- A final normal production build was restored after the isolated post-deployment browser matrix, preventing its blank test environment from being confused with the deployed asset set.
 
 ## Remaining boundary
 
