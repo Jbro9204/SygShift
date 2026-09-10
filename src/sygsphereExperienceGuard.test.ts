@@ -78,7 +78,7 @@ describe('SygSphere experience boundaries', () => {
     expect(data).toContain('sphereCompletionRetryDelaysMs = [0, 250]')
     expect(data).toContain('completionPending: true')
     expect(data).not.toContain("method: 'PUT', headers: await sphereFileHeaders(mimeType)")
-    expect(page).toContain("pendingCompletion ? 'Check upload'")
+    expect(page).toContain("pendingCompletion ? 'Finish upload'")
     expect(files).toContain('const limit = 26214400')
     expect(worker).toContain("message.body?.kind === 'sygsphere'")
     expect(worker).toContain('stored.body.pipeThrough(integrityStream)')

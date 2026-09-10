@@ -166,16 +166,35 @@ function encodeMetadata(value: Record<string, unknown>): string {
   return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
 }
 
+const hrDocumentMimeTypesByExtension: Record<string, string> = {
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  pdf: 'application/pdf',
+  png: 'image/png',
+  txt: 'text/plain',
+  webp: 'image/webp',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+}
+
+export function hrDocumentMimeType(file: Pick<File, 'name' | 'type'>): string {
+  const declared = file.type.trim().toLowerCase().split(';')[0]
+  if (Object.values(hrDocumentMimeTypesByExtension).includes(declared)) return declared
+  const extension = file.name.trim().toLowerCase().split('.').at(-1) ?? ''
+  return hrDocumentMimeTypesByExtension[extension] ?? declared
+}
+
 export async function uploadHrDocument(
   input: HrDocumentUploadInput,
   onProgress: (percent: number) => void,
 ): Promise<z.infer<typeof uploadResultSchema>> {
   async function attemptUpload(): Promise<z.infer<typeof uploadResultSchema>> {
-    const headers = await documentApiHeaders(input.file.type)
+    const mimeType = hrDocumentMimeType(input.file)
+    const headers = await documentApiHeaders(mimeType)
     headers.set('x-sygshift-document-metadata', encodeMetadata({
       accessClassification: input.accessClassification,
       category: input.category.trim(),
-      declaredMimeType: input.file.type,
+      declaredMimeType: mimeType,
       description: input.description.trim(),
       documentId: input.documentId ?? null,
       employeeId: input.employeeId,
@@ -230,10 +249,10 @@ export async function uploadHrDocument(
 export async function getHrDocumentBlob(
   documentId: string,
   action: 'preview' | 'download',
-  reason: string,
+  reason?: string,
 ): Promise<{ blob: Blob; filename: string }> {
   const grantResponse = await documentApiRequest(`/api/v1/hr/documents/${documentId}/access`, {
-    body: JSON.stringify({ action, reason: reason.trim() }),
+    body: JSON.stringify({ action, reason: reason?.trim() || undefined }),
     method: 'POST',
   })
   if (!grantResponse.ok) throw await parseApiError(grantResponse, 'Protected document access could not be granted.')

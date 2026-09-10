@@ -454,10 +454,10 @@ export async function uploadCredentialDocument(
 export async function getLicensingDocumentBlob(
   documentId: string,
   action: 'preview' | 'download',
-  reason: string,
+  reason?: string,
 ): Promise<{ blob: Blob; filename: string }> {
   const response = await fetch(`/api/v1/licensing/documents/${encodeURIComponent(documentId)}/content`, {
-    body: JSON.stringify({ action, reason: reason.trim() }),
+    body: JSON.stringify({ action, reason: reason?.trim() || undefined }),
     cache: 'no-store',
     headers: await licensingApiHeaders('application/json'),
     method: 'POST',

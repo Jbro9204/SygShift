@@ -1390,9 +1390,17 @@ function inspectOfficeZip(bytes: Uint8Array): { entryNames: string[], detectedMi
   }
   for (const [name, contents] of Object.entries(archive)) {
     if (!name.toLowerCase().endsWith('.rels')) continue
-    const relationshipXml = strFromU8(contents).toLowerCase()
-    if (/targetmode\s*=\s*["']external["']/.test(relationshipXml)) {
-      throw new ApiError('external_content_not_allowed', 400, 'Office documents with external relationships are not allowed.')
+    const relationshipXml = strFromU8(contents)
+    for (const relationship of relationshipXml.matchAll(/<Relationship\b[^>]*>/gi)) {
+      const tag = relationship[0]
+      const attribute = (key: string) => tag.match(new RegExp(`\\b${key}\\s*=\\s*["']([^"']*)["']`, 'i'))?.[1]?.trim() ?? ''
+      if (attribute('TargetMode').toLowerCase() !== 'external') continue
+      const type = attribute('Type').toLowerCase()
+      const target = attribute('Target')
+      const safeHyperlink = type.endsWith('/hyperlink') && /^(https?:\/\/|mailto:|tel:)/i.test(target)
+      if (!safeHyperlink) {
+        throw new ApiError('external_content_not_allowed', 400, 'Office documents cannot contain linked files, remote templates, or external data sources.')
+      }
     }
   }
 
@@ -1439,7 +1447,7 @@ export function validateHrDocumentFile(
     // contain strings such as "/JS". Only inspect the PDF object structure;
     // ClamAV still scans the complete, unmodified binary after quarantine.
     const pdfStructure = pdfText.replace(/stream\r?\n[\s\S]*?endstream/gi, 'stream\nendstream')
-    if (/\/(javascript|js|launch|embeddedfile|openaction|aa|richmedia)\b/i.test(pdfStructure)) {
+    if (/\/(javascript|js|launch|embeddedfile|aa|richmedia)\b/i.test(pdfStructure)) {
       throw new ApiError('active_content_not_allowed', 400, 'PDF files with scripts, launch actions, or embedded content are not allowed.')
     }
   } else if (hasSignature(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) {
@@ -2272,8 +2280,8 @@ async function handleLicensingDocumentAccess(
   if (!['preview', 'download'].includes(action)) {
     throw new ApiError('invalid_document_action', 422, 'Choose Preview or Download.')
   }
-  const reason = requiredText(body.reason, 'Access reason', 500)
-  if (reason.length < 8) throw new ApiError('document_reason_required', 422, 'Enter a short business reason for document access.')
+  const reason = optionalText(body.reason, 'Access reason', 500)
+    ?? `Authorized ${action} from the Licensing Center.`
 
   const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
   const target = await callRpc<LicensingDocumentAccessObject>(
@@ -2426,8 +2434,8 @@ async function handleClientDocumentAccess(request: Request, environment: Environ
   const body = await readJsonBody(request)
   const action = requiredText(body.action, 'Document action', 20)
   if (!['preview', 'download'].includes(action)) throw new ApiError('invalid_document_action', 422, 'Choose Preview or Download.')
-  const reason = requiredText(body.reason, 'Access reason', 500)
-  if (reason.length < 8) throw new ApiError('document_reason_required', 422, 'Enter a short business reason for document access.')
+  const reason = optionalText(body.reason, 'Access reason', 500)
+    ?? `Authorized ${action} from Client Files.`
   const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
   const target = await callRpc<ClientDocumentAccessObject>(serviceConfig, 'service_authorize_client_document_access', { target_action: action, target_actor_id: session.context.employee_id, target_document_id: documentId, target_mfa_method: mfa.method, target_mfa_verified_at: mfa.verifiedAt, target_reason: reason, target_request_id: requestId }, session.config.serviceRoleKey)
   const stored = await fetchPrivateStorageObject(serviceConfig, target.bucket, target.objectKey)
@@ -3318,7 +3326,8 @@ async function handleHrDocumentAccessGrant(
   if (!['preview', 'view', 'download'].includes(action)) {
     throw new ApiError('invalid_document_action', 422, 'Choose preview, view, or download.')
   }
-  const reason = requiredText(body.reason, 'Access reason', 1000)
+  const reason = optionalText(body.reason, 'Access reason', 1000)
+    ?? `Authorized ${action} from Document Studio.`
   const rawToken = generateOpaqueToken()
   const grant = await callRpc<HrDocumentAccessGrant>(
     { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },

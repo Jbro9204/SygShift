@@ -55,11 +55,11 @@ describe('Document Studio identity recovery', () => {
     expect(screen.queryByText('Test HR reference PDF')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Verify with security key' }))
 
-    await screen.findByText('Protected workspace operational')
+    await screen.findByText('Document services ready')
     await screen.findByText('Test HR reference PDF')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.queryByText('Document Studio unavailable')).not.toBeInTheDocument()
-    expect(screen.queryByText('Protected inventory unavailable')).not.toBeInTheDocument()
+    expect(screen.queryByText('Document inventory unavailable')).not.toBeInTheDocument()
     expect(counts).toEqual({ studio: 2, inventory: 2 })
     expect(screen.getAllByText('537')).toHaveLength(2)
     client.clear()

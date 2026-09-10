@@ -28,6 +28,7 @@ describe('enterprise Client Files release guard', () => {
     expect(worker).toContain('requireRecentDocumentMfa(request, session)')
     expect(worker).toContain("requireAnySessionPermission(session.context, ['clients.documents.manage'])")
     expect(worker).toContain("requireAnySessionPermission(session.context, ['clients.documents.view'])")
+    expect(worker).toContain('Authorized ${action} from Client Files.')
   })
 
   it('renders protected PDFs in the shared in-app viewer instead of a browser-blocked frame', () => {
@@ -35,6 +36,8 @@ describe('enterprise Client Files release guard', () => {
     expect(page).toContain("import { SecurePdfViewer } from '../components/SecurePdfViewer'")
     expect(page).toContain('<SecurePdfViewer title={document.title} url={preview.url} />')
     expect(page).not.toContain('<iframe')
+    expect(page).toContain('getClientDocumentBlob(document.id, action)')
+    expect(page).not.toContain('<span>Business reason</span><textarea')
   })
 
   it('provides compact navigation, reporting, and controlled source review', () => {

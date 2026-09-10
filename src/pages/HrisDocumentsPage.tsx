@@ -24,6 +24,7 @@ import { SecurePdfViewer } from '../components/SecurePdfViewer'
 import {
   getHrDocumentBlob,
   getHrDocumentWorkspace,
+  hrDocumentMimeType,
   uploadHrDocument,
   type HrDocumentRecord,
   type HrDocumentUploadInput,
@@ -42,11 +43,11 @@ const classificationLabels = {
 } as const
 
 const scanLabels = {
-  clean: 'Security review complete',
-  quarantined: 'Quarantined',
-  rejected: 'Rejected',
-  scan_error: 'Security review failed',
-  scan_pending: 'Security review pending',
+  clean: 'Ready',
+  quarantined: 'Uploading',
+  rejected: 'File not accepted',
+  scan_error: 'Upload needs attention',
+  scan_pending: 'Finishing upload',
 } as const
 
 function formatDate(value: string | null): string {
@@ -110,11 +111,11 @@ export function HrisDocumentsPage() {
         <div>
           <p className="eyebrow">HR &amp; Finance</p>
           <h1>Document Studio</h1>
-          <p>Create, route, sign, retain, and retrieve protected records from one controlled document system.</p>
+          <p>Upload, organize, send, sign, and retrieve employee or company documents from one workspace.</p>
         </div>
         <div className="hr-documents-hero__security">
           <ShieldCheck aria-hidden="true" size={24} />
-          <div><strong>Protected document workspace</strong><span>Recent MFA and assigned vault permission required</span></div>
+          <div><strong>Private document workspace</strong><span>Access and document activity are recorded automatically</span></div>
         </div>
       </header>
 
@@ -128,13 +129,13 @@ export function HrisDocumentsPage() {
       <DocumentStudioDashboard documents={workspace} onUploadDocument={() => setUploadOpen(true)} />
 
       {workspaceQuery.isPending ? (
-        <DataStatePanel icon={Files} title="Loading protected documents">
-          <p>Checking your HR permissions and authorized document vaults.</p>
+        <DataStatePanel icon={Files} title="Loading documents">
+          <p>Opening your document workspace.</p>
         </DataStatePanel>
       ) : null}
       {workspaceQuery.isError ? (
-        <DataStatePanel icon={AlertTriangle} tone="error" title="Protected inventory unavailable">
-          <p>{workspaceQuery.error instanceof Error ? workspaceQuery.error.message : 'The protected document workspace could not be loaded.'}</p>
+        <DataStatePanel icon={AlertTriangle} tone="error" title="Document inventory unavailable">
+          <p>{workspaceQuery.error instanceof Error ? workspaceQuery.error.message : 'The document workspace could not be loaded.'}</p>
         </DataStatePanel>
       ) : null}
 
@@ -172,7 +173,7 @@ export function HrisDocumentsPage() {
                         <span className="hr-document-row__icon"><FileTypeIcon mimeType={document.version?.mimeType ?? null} /></span>
                         <span className="hr-document-row__identity"><strong>{document.title}</strong><small>{document.employeeLegalName ?? 'Company record'}{document.employeeNumber ? ` · ${document.employeeNumber}` : ''}</small></span>
                         <span><small>Category</small><strong>{document.category}</strong><em>{document.vaultCode}</em></span>
-                        <span><small>Security</small><strong>{classificationLabels[document.accessClassification]}</strong><em className={`hr-scan-state hr-scan-state--${document.version?.scanState ?? 'scan_pending'}`}>{document.version ? scanLabels[document.version.scanState] : 'No version'}</em></span>
+                        <span><small>Access</small><strong>{classificationLabels[document.accessClassification]}</strong><em className={`hr-scan-state hr-scan-state--${document.version?.scanState ?? 'scan_pending'}`}>{document.version ? scanLabels[document.version.scanState] : 'No file'}</em></span>
                         <span><small>Version</small><strong>{document.version ? `Version ${document.version.versionNumber}` : 'Pending'}</strong><em>{document.version ? formatOperationalDateTime(document.version.uploadedAt) : 'No upload recorded'}</em></span>
                         <ChevronDown aria-hidden="true" className={isExpanded ? 'rotated' : ''} />
                       </button>
@@ -187,7 +188,7 @@ export function HrisDocumentsPage() {
                           <div className="hr-document-row__actions">
                             {document.canPreview ? <button className="secondary-button" onClick={() => setAccessTarget({ action: 'preview', document })} type="button"><Eye aria-hidden="true" size={17} />Preview</button> : null}
                             {document.canDownload ? <button className="secondary-button" onClick={() => setAccessTarget({ action: 'download', document })} type="button"><Download aria-hidden="true" size={17} />Download</button> : null}
-                            {!document.canPreview && !document.canDownload ? <span>File access remains unavailable until the security review is complete.</span> : null}
+                            {!document.canPreview && !document.canDownload ? <span>This file is still being prepared. It will be available here automatically.</span> : null}
                           </div>
                         </div>
                       ) : null}
@@ -240,7 +241,8 @@ function DocumentUploadModal({ onClose, onUploaded, workspace }: { onClose: () =
     setIdempotencyKey(crypto.randomUUID())
     if (nextFile) {
       if (!title.trim()) setTitle(nextFile.name.replace(/\.[^.]+$/, ''))
-      const compatible = manageableVaults.filter((vault) => Boolean(nextFile.type) && vault.allowedMimeTypes.includes(nextFile.type) && nextFile.size <= vault.maximumFileSizeBytes)
+      const mimeType = hrDocumentMimeType(nextFile)
+      const compatible = manageableVaults.filter((vault) => Boolean(mimeType) && vault.allowedMimeTypes.includes(mimeType) && nextFile.size <= vault.maximumFileSizeBytes)
       const automatic = compatible.find((vault) => vault.code === 'hr-general') ?? compatible[0]
       setVaultCode(automatic?.code ?? '')
     }
@@ -249,7 +251,8 @@ function DocumentUploadModal({ onClose, onUploaded, workspace }: { onClose: () =
   function validateFile(): string | null {
     if (!file) return 'Choose a file to upload.'
     if (!selectedVault) return 'Choose an authorized document vault.'
-    if (!file.type || !selectedVault.allowedMimeTypes.includes(file.type)) return 'This file type is not allowed in the selected vault.'
+    const mimeType = hrDocumentMimeType(file)
+    if (!mimeType || !selectedVault.allowedMimeTypes.includes(mimeType)) return 'This file type is not allowed in the selected vault.'
     if (file.size > selectedVault.maximumFileSizeBytes) return `The selected file exceeds the ${formatFileSize(selectedVault.maximumFileSizeBytes)} limit.`
     return null
   }
@@ -281,7 +284,7 @@ function DocumentUploadModal({ onClose, onUploaded, workspace }: { onClose: () =
   const formReady = Boolean(file && employeeId && title.trim() && category.trim() && !fileError)
 
   return (
-    <ModalDialog busy={uploadMutation.isPending} busyLabel={`Uploading protected document… ${progress}%`} className="hr-document-modal" description="Choose the file first. SygShift selects the ordinary protected filing area automatically; specialized filing details remain optional." onClose={onClose} title="Upload a document">
+    <ModalDialog busy={uploadMutation.isPending} busyLabel={`Uploading document… ${progress}%`} className="hr-document-modal" description="Choose the file first. SygShift selects the normal filing area automatically; additional filing details are optional." onClose={onClose} title="Upload a document">
       <form className="hr-document-upload-form" onSubmit={submit}>
         <div className={`hr-document-dropzone${dragActive ? ' active' : ''}`} onDragEnter={(event) => { event.preventDefault(); setDragActive(true) }} onDragLeave={() => setDragActive(false)} onDragOver={(event) => event.preventDefault()} onDrop={acceptDrop}>
           <input accept={manageableVaults.flatMap((vault) => vault.allowedMimeTypes).filter((value, index, all) => all.indexOf(value) === index).join(',')} hidden onChange={(event) => chooseFile(event.target.files?.item(0) ?? null)} ref={fileInputRef} type="file" />
@@ -295,21 +298,21 @@ function DocumentUploadModal({ onClose, onUploaded, workspace }: { onClose: () =
           <label>Document title<input maxLength={160} onChange={(event) => setTitle(event.target.value)} required value={title} /></label>
           <label>Document type<select onChange={(event) => setCategory(event.target.value)} value={category}><option>Business document</option><option>Proposal</option><option>Employment document</option><option>Policy or acknowledgment</option><option>Training document</option><option>Other</option></select></label>
         </div>
-        <details className="hr-document-upload-form__advanced"><summary>Optional filing details</summary><div className="hr-document-upload-form__fields"><label>File with<select onChange={(event) => setEmployeeId(event.target.value)} required value={employeeId}><option value="company">Company / shared records</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select></label><label>Protected document area<select onChange={(event) => setVaultCode(event.target.value)} required value={vaultCode}>{manageableVaults.filter((vault) => !file || (Boolean(file.type) && vault.allowedMimeTypes.includes(file.type) && file.size <= vault.maximumFileSizeBytes)).map((vault) => <option key={vault.code} value={vault.code}>{vault.name}</option>)}</select></label><label className="wide">Internal description <span>Optional</span><textarea maxLength={1000} onChange={(event) => setDescription(event.target.value)} rows={3} value={description} /></label></div></details>
+        <details className="hr-document-upload-form__advanced"><summary>Optional filing details</summary><div className="hr-document-upload-form__fields"><label>File with<select onChange={(event) => setEmployeeId(event.target.value)} required value={employeeId}><option value="company">Company / shared records</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select></label><label>Filing area<select onChange={(event) => setVaultCode(event.target.value)} required value={vaultCode}>{manageableVaults.filter((vault) => !file || (Boolean(hrDocumentMimeType(file)) && vault.allowedMimeTypes.includes(hrDocumentMimeType(file)) && file.size <= vault.maximumFileSizeBytes)).map((vault) => <option key={vault.code} value={vault.code}>{vault.name}</option>)}</select></label><label className="wide">Internal description <span>Optional</span><textarea maxLength={1000} onChange={(event) => setDescription(event.target.value)} rows={3} value={description} /></label></div></details>
         {file && fileError ? <p className="form-error" role="alert">{fileError}</p> : null}
         {uploadMutation.isError ? <p className="form-error" role="alert">{uploadMutation.error instanceof Error ? uploadMutation.error.message : 'The upload could not be completed. You can retry safely.'}</p> : null}
         {uploadMutation.isPending ? <div aria-label={`Upload ${progress}% complete`} className="hr-document-progress"><span style={{ width: `${progress}%` }} /></div> : null}
-        <div className="modal-actions"><button className="secondary-button" disabled={uploadMutation.isPending} onClick={onClose} type="button">Cancel</button><button className="primary-action" disabled={!formReady || uploadMutation.isPending} type="submit">Upload securely</button></div>
+        <div className="modal-actions"><button className="secondary-button" disabled={uploadMutation.isPending} onClick={onClose} type="button">Cancel</button><button className="primary-action" disabled={!formReady || uploadMutation.isPending} type="submit">Upload document</button></div>
       </form>
     </ModalDialog>
   )
 }
 
 function DocumentAccessModal({ action, document, onClose }: { action: AccessAction; document: HrDocumentRecord; onClose: () => void }) {
-  const [reason, setReason] = useState('')
+  const started = useRef(false)
   const [preview, setPreview] = useState<{ mimeType: string; text?: string; url?: string } | null>(null)
   const accessMutation = useMutation({
-    mutationFn: () => getHrDocumentBlob(document.id, action, reason),
+    mutationFn: () => getHrDocumentBlob(document.id, action),
     onSuccess: async ({ blob, filename }) => {
       if (action === 'download') {
         const url = URL.createObjectURL(blob)
@@ -329,10 +332,16 @@ function DocumentAccessModal({ action, document, onClose }: { action: AccessActi
     },
   })
 
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+    accessMutation.mutate()
+  }, [accessMutation])
+
   useEffect(() => () => { if (preview?.url) URL.revokeObjectURL(preview.url) }, [preview?.url])
 
   return (
-    <ModalDialog busy={accessMutation.isPending} busyLabel={`Preparing protected ${action}…`} className="hr-document-modal hr-document-access-modal" description={`${document.employeeLegalName ?? 'Company record'} · ${document.category}`} onClose={onClose} title={`${action === 'preview' ? 'Preview' : 'Download'} ${document.title}`}>
+    <ModalDialog busy={accessMutation.isPending} busyLabel={action === 'preview' ? 'Opening document…' : 'Preparing download…'} className="hr-document-modal hr-document-access-modal" description={`${document.employeeLegalName ?? 'Company record'} · ${document.category}`} onClose={onClose} title={`${action === 'preview' ? 'Preview' : 'Download'} ${document.title}`}>
       {preview ? (
         <div className="hr-document-preview">
           {preview.mimeType === 'application/pdf' && preview.url ? <SecurePdfViewer title={document.title} url={preview.url} /> : null}
@@ -341,12 +350,11 @@ function DocumentAccessModal({ action, document, onClose }: { action: AccessActi
           <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Close preview</button></div>
         </div>
       ) : (
-        <form className="hr-document-access-form" onSubmit={(event) => { event.preventDefault(); if (reason.trim().length >= 8) accessMutation.mutate() }}>
+        <div className="document-access-progress">
           <div className="hr-document-access-summary"><FileTypeIcon mimeType={document.version?.mimeType ?? null} /><div><strong>{document.version?.filename ?? document.title}</strong><span>{classificationLabels[document.accessClassification]} · Access is recorded in the audit history.</span></div></div>
-          <label>Business reason<textarea autoFocus maxLength={500} minLength={8} onChange={(event) => setReason(event.target.value)} placeholder="Explain why this document is needed." required rows={3} value={reason} /></label>
           {accessMutation.isError ? <p className="form-error" role="alert">{accessMutation.error instanceof Error ? accessMutation.error.message : 'Document access could not be completed.'}</p> : null}
-          <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Cancel</button><button className="primary-action" disabled={reason.trim().length < 8 || accessMutation.isPending} type="submit">{action === 'preview' ? 'Open protected preview' : 'Download protected file'}</button></div>
-        </form>
+          <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Close</button>{accessMutation.isError ? <button className="primary-action" disabled={accessMutation.isPending} onClick={() => accessMutation.mutate()} type="button">Try again</button> : null}</div>
+        </div>
       )}
     </ModalDialog>
   )

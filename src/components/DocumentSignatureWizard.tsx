@@ -5,6 +5,7 @@ import { ModalDialog } from './ModalDialog'
 import { createSignatureEnvelope, sendSignatureEnvelope, type DocumentStudioPolicy } from '../data/documentStudio'
 import {
   getHrDocumentWorkspace,
+  hrDocumentMimeType,
   uploadHrDocument,
   type HrDocumentUploadInput,
   type HrDocumentVault,
@@ -32,7 +33,7 @@ function formatFileSize(bytes: number): string {
 
 function compatibleVaults(workspace: HrDocumentWorkspace, file: File | null): HrDocumentVault[] {
   return workspace.vaults.filter((vault) => vault.canManage && (!file || (
-    Boolean(file.type) && vault.allowedMimeTypes.includes(file.type) && file.size <= vault.maximumFileSizeBytes
+    Boolean(hrDocumentMimeType(file)) && vault.allowedMimeTypes.includes(hrDocumentMimeType(file)) && file.size <= vault.maximumFileSizeBytes
   )))
 }
 
@@ -166,7 +167,8 @@ export function DocumentSignatureWizard({
     if (!file) { setValidation('Choose the document you want to send.'); return false }
     if (!title.trim()) { setValidation('Add a clear document title.'); return false }
     if (!selectedVault) { setValidation('This file cannot be stored in an authorized document area.'); return false }
-    if (!file.type || !selectedVault.allowedMimeTypes.includes(file.type)) { setValidation('This file type is not supported in the selected document area.'); return false }
+    const mimeType = hrDocumentMimeType(file)
+    if (!mimeType || !selectedVault.allowedMimeTypes.includes(mimeType)) { setValidation('This file type is not supported in the selected document area.'); return false }
     if (file.size > selectedVault.maximumFileSizeBytes) { setValidation(`This file exceeds the ${formatFileSize(selectedVault.maximumFileSizeBytes)} limit.`); return false }
     setValidation(null)
     return true

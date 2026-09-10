@@ -33,6 +33,13 @@ describe('HRIS Stage 4 protected document pipeline', () => {
       .toBe('application/pdf')
   })
 
+  it('accepts a normal PDF initial view without weakening active-content checks', () => {
+    const normalPdf = encoder.encode('%PDF-1.7\n1 0 obj << /OpenAction [2 0 R /Fit] >>\nendobj')
+
+    expect(validateHrDocumentFile(normalPdf, 'normal.pdf', 'application/pdf').detectedMimeType)
+      .toBe('application/pdf')
+  })
+
   it('rejects Office files with macros, embedded objects, or external relationships', () => {
     const macroDocument = zipSync({
       'word/document.xml': strToU8('<document/>'),
@@ -52,7 +59,7 @@ describe('HRIS Stage 4 protected document pipeline', () => {
       externalDocument,
       'external.docx',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    )).toThrow('Office documents with external relationships are not allowed.')
+    )).toThrow('Office documents cannot contain linked files, remote templates, or external data sources.')
   })
 
   it('accepts a structurally verified macro-free Office document', () => {
@@ -64,6 +71,20 @@ describe('HRIS Stage 4 protected document pipeline', () => {
     expect(validateHrDocumentFile(
       document,
       'verified.docx',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ).detectedMimeType).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+  })
+
+  it('accepts ordinary web hyperlinks but still rejects linked files and remote data', () => {
+    const linkedDocument = zipSync({
+      '[Content_Types].xml': strToU8('<Types/>'),
+      'word/document.xml': strToU8('<document><body>Proposal</body></document>'),
+      'word/_rels/document.xml.rels': strToU8('<Relationships><Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://sygilant.us" TargetMode="External" /></Relationships>'),
+    })
+
+    expect(validateHrDocumentFile(
+      linkedDocument,
+      'linked-proposal.docx',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     ).detectedMimeType).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
   })

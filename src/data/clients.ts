@@ -170,8 +170,8 @@ export async function uploadClientDocument(input: { clientId: string; file: File
   })
 }
 
-export async function getClientDocumentBlob(documentId: string, action: 'preview' | 'download', reason: string): Promise<{ blob: Blob; filename: string }> {
-  const response = await fetch(`/api/v1/clients/documents/${encodeURIComponent(documentId)}/content`, { body: JSON.stringify({ action, reason: reason.trim() }), cache: 'no-store', headers: await apiHeaders('application/json'), method: 'POST' })
+export async function getClientDocumentBlob(documentId: string, action: 'preview' | 'download', reason?: string): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(`/api/v1/clients/documents/${encodeURIComponent(documentId)}/content`, { body: JSON.stringify({ action, reason: reason?.trim() || undefined }), cache: 'no-store', headers: await apiHeaders('application/json'), method: 'POST' })
   if (!response.ok) { const payload = await response.json().catch(() => null) as { detail?: string; error?: string } | null; throw new ClientDocumentApiError(payload?.detail || 'The protected client document could not be loaded.', payload?.error ?? null) }
   const disposition = response.headers.get('content-disposition') ?? ''; const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
   return { blob: await response.blob(), filename: encoded ? decodeURIComponent(encoded) : 'SygShift-client-document' }

@@ -38,6 +38,7 @@ describe('secure licensing document workflow', () => {
     expect(data).toContain('getLicensingDocumentBlob')
     expect(data).not.toContain('storagePath:')
     expect(worker).toContain('service_authorize_licensing_document_access')
+    expect(worker).toContain('Authorized ${action} from the Licensing Center.')
     expect(migration).toContain('LICENSING_DOCUMENT_PREVIEWED')
     expect(migration).toContain('LICENSING_DOCUMENT_DOWNLOADED')
     expect(migration).toContain('service_get_licensing_credential_documents')
@@ -45,7 +46,8 @@ describe('secure licensing document workflow', () => {
 
   it('provides compact in-app viewing and downloading without an unbounded list', () => {
     expect(page).toContain('View licensing document')
-    expect(page).toContain('Download protected file')
+    expect(page).toContain('getLicensingDocumentBlob(document.id, action)')
+    expect(page).not.toContain('Explain why you need to view or download this document.')
     expect(page).toContain('setPageSize(Number(event.target.value) as 5 | 10 | 20)')
     expect(page).toContain('<option value={5}>5</option>')
     expect(page).toContain('<CredentialDocumentsModal')

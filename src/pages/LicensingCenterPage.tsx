@@ -376,12 +376,12 @@ function CredentialDocumentAccessModal({
   document: LicensingCredentialDocument
   onClose: () => void
 }) {
-  const [reason, setReason] = useState('')
+  const started = useRef(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewType, setPreviewType] = useState('')
   const [verificationOpen, setVerificationOpen] = useState(false)
   const accessMutation = useMutation({
-    mutationFn: () => getLicensingDocumentBlob(document.id, action, reason),
+    mutationFn: () => getLicensingDocumentBlob(document.id, action),
     onSuccess: ({ blob, filename }) => {
       if (action === 'download') {
         const url = URL.createObjectURL(blob)
@@ -401,13 +401,19 @@ function CredentialDocumentAccessModal({
     },
   })
 
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+    accessMutation.mutate()
+  }, [accessMutation])
+
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl) }, [previewUrl])
 
   return (
     <>
       <ModalDialog
       busy={accessMutation.isPending}
-      busyLabel={`Preparing protected ${action}…`}
+      busyLabel={action === 'preview' ? 'Opening document…' : 'Preparing download…'}
       className="licensing-document-access-modal"
       description={`${document.filename} · Access is recorded in the licensing audit history.`}
       onClose={onClose}
@@ -420,12 +426,11 @@ function CredentialDocumentAccessModal({
           <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Close preview</button></div>
         </div>
       ) : (
-        <form className="licensing-document-access-form" onSubmit={(event) => { event.preventDefault(); if (reason.trim().length >= 8) accessMutation.mutate() }}>
+        <div className="licensing-document-access-form document-access-progress">
           <div className="licensing-document-access-summary"><FileText aria-hidden="true" size={24} /><div><strong>{document.filename}</strong><span>{formatFileSize(document.byteSize)} · Protected credential evidence</span></div></div>
-          <label>Business reason<textarea autoFocus maxLength={500} minLength={8} onChange={(event) => setReason(event.target.value)} placeholder="Explain why you need to view or download this document." required rows={3} value={reason} /></label>
           {accessMutation.isError && !isLicensingIdentityVerificationRequired(accessMutation.error) ? <div className="inline-alert" role="alert">{accessMutation.error instanceof Error ? accessMutation.error.message : 'Document access could not be completed.'}</div> : null}
-          <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Cancel</button><button className="primary-action" disabled={reason.trim().length < 8 || accessMutation.isPending} type="submit">{action === 'preview' ? <Eye aria-hidden="true" size={17} /> : <Download aria-hidden="true" size={17} />}{action === 'preview' ? 'Open protected preview' : 'Download protected file'}</button></div>
-        </form>
+          <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Close</button>{accessMutation.isError && !isLicensingIdentityVerificationRequired(accessMutation.error) ? <button className="primary-action" disabled={accessMutation.isPending} onClick={() => accessMutation.mutate()} type="button">Try again</button> : null}</div>
+        </div>
       )}
       </ModalDialog>
       {verificationOpen ? (
