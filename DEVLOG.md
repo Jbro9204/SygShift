@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/10/2026 - Document Access, Upload, and Preview Repair
+
+- Removed redundant free-text access-reason gates from ordinary authorized HR, Licensing, and Client document views/downloads while retaining automatic specific audits, exact permissions, MFA, private storage, quarantine, malware scanning, short-lived access, and dangerous-content blocking.
+- Rebuilt the shared PDF viewer around stable in-memory bytes and serialized canvas rendering, then widened and responsively reorganized the preview modal so documents paint reliably and paging/search controls remain readable on desktop and mobile.
+- Corrected false-positive upload rejection for normal PDF initial-view actions, safe Office hyperlinks, and supported Windows/browser files whose MIME type is blank or generic; scripts, launch actions, embedded files, macros, ActiveX, OLE, remote templates, linked files, and external data sources remain blocked.
+- Released source commit `2328da7` as Cloudflare Worker `29691cf9-16fb-4e02-a913-a90b0ce51e3d`; rollback tag `rollback/pre-document-workflow-repair-20260910` points to `47efe51`.
+- Verification passed 234 test files / 1,205 tests, all 106 Document Studio/SygSphere/Time Clock browser checks, the 42-check post-deployment Time Clock matrix, production health/readiness and route checks on both origins, and byte-for-byte live identity for all affected assets.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-10-2026_DOCUMENT_ACCESS_UPLOAD_AND_PREVIEW_REPAIR.md`.
+
 ## 09/10/2026 - Document Delivery Wizard Presentation
 
 - Refined all four **Send a document** wizard steps with one consistent rounded control system, balanced modal/panel/section padding, larger readable labels and helper text, and clearer light/dark contrast.
