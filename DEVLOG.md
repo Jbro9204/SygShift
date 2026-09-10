@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/10/2026 - Document Center Editor Controls
+
+- Corrected the File and Send employee-search fields so global modal padding can no longer place the magnifying glass over the entered or placeholder text.
+- Added a full-screen editing view, explicit annotation selection, pointer/touch and keyboard movement, resizable text boxes, font-size controls, selected-text editing, and deliberate removal controls.
+- Added matching visual and exported-PDF wrapping for long-form text and paragraph breaks, plus complete-state undo/redo for editor changes.
+- Released source commit `cbe1603` as Cloudflare Worker `9d86390f-91b1-4add-9552-25866bb5ed33`; rollback tag `rollback/pre-document-editor-controls-20260910` points to `d993ebb`.
+- Verification passed 239 test files / 1,223 tests, 36 Document Center browser checks, the 42-check actual Time Clock/Early Clock-In matrix before and after deployment, both production origins, and exact live bundle identity.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-10-2026_DOCUMENT_EDITOR_CONTROLS.md`.
+
 ## 09/10/2026 - Document Center Workbench
 
 - Replaced the ordinary Document Studio entry path with a direct Document Center workspace: open a PDF immediately, add text/date/checkmarks, generate a signature from a typed name, and download the finished PDF without first creating a policy or template.
