@@ -726,7 +726,7 @@ export function AppShell() {
   }
 
   return (
-    <div className={sidebarCollapsed ? 'app-shell app-shell--sidebar-collapsed' : 'app-shell'}>
+    <div className={`app-shell${sidebarCollapsed ? ' app-shell--sidebar-collapsed' : ''}${isSygSpherePath(location.pathname) ? ' app-shell--sygsphere' : ''}`}>
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>

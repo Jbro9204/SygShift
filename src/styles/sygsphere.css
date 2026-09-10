@@ -14,6 +14,7 @@ body:has(.sidebar--open) .sphere-mobile-launcher{display:none!important}
 .sphere-workspace button:disabled,.sphere-modal button:disabled{opacity:.55;cursor:wait}
 .sphere-workspace :focus-visible,.sphere-modal :focus-visible,.sphere-launcher:focus-visible{outline:3px solid var(--sp-gold,#d6a446);outline-offset:3px}
 .sphere-workspace .sphere-primary,.sphere-modal .sphere-primary{background:linear-gradient(110deg,#edcc7a,#d1a144);border-color:#c09239;color:#211e17;box-shadow:0 2px 4px #00000010}
+.sphere-new-message__label--short{display:none}
 .sphere-workspace input:not([type="checkbox"]),.sphere-workspace select,.sphere-workspace textarea,.sphere-modal input:not([type="checkbox"]),.sphere-modal select,.sphere-modal textarea{appearance:auto;width:100%;min-width:0;min-height:44px;background:var(--sp-panel);border:1px solid var(--sp-border);border-radius:10px;color:var(--sp-text);font:inherit;padding:11px 13px;line-height:1.5;box-shadow:none}
 .sphere-workspace textarea,.sphere-modal textarea{resize:vertical;min-height:100px;font-family:inherit}
 .sphere-workspace input::placeholder,.sphere-workspace textarea::placeholder,.sphere-modal input::placeholder{color:var(--sp-muted);font-weight:400;opacity:.9}
@@ -36,7 +37,70 @@ body:has(.sidebar--open) .sphere-mobile-launcher{display:none!important}
 .sphere-launcher{display:flex;align-items:center;gap:10px;flex-shrink:0;position:relative;margin:12px 14px 8px;padding:11px 12px;min-height:65px;border:1px solid #d1a044;border-radius:15px;background:linear-gradient(115deg,#22201a,#101516);box-shadow:0 0 0 3px #d1a0440b;color:#f6e7bd;text-decoration:none!important}.sphere-launcher:hover{box-shadow:0 0 0 3px #d1a04424}.sphere-launcher__emblem{width:35px;height:31px;object-fit:contain}.sphere-launcher__brand{display:flex;flex-direction:column;flex:1;gap:4px;min-width:0}.sphere-launcher__brand img{display:block;width:100%;max-width:147px;height:auto;object-fit:contain}.sphere-launcher__brand small{font-size:8px;letter-spacing:3px;padding-left:3px}.sphere-launcher .sphere-badge{margin-left:auto}.sidebar--collapsed .sphere-launcher{margin:10px 8px;padding:9px;justify-content:center}.sidebar--collapsed .sphere-launcher__brand{display:none}.sidebar--collapsed .sphere-launcher .sphere-badge{position:absolute;top:-5px;right:-3px;font-size:9px;min-width:18px;height:18px}.sphere-toast{position:fixed;bottom:24px;right:24px;z-index:1200;max-width:360px;display:flex;align-items:flex-start;gap:10px;padding:18px;background:var(--sp-panel);border:1px solid var(--sp-gold);border-radius:14px;box-shadow:0 8px 30px #0003}.sphere-toast>a{color:var(--sp-text);text-decoration:none}.sphere-toast strong,.sphere-toast span{display:block}.sphere-toast span{font-size:12px;color:var(--sp-muted);margin-top:5px}.sphere-toast button{padding:4px;min-height:28px;background:transparent;border:0}
 @media(max-width:1250px){.sphere-conversations{width:230px}.sphere-detail{width:290px}.sphere-message-list{padding:20px 16px 6px}.sphere-composer{margin:0 14px 16px}.sphere-composer-tools small{display:none}.sphere-layout{position:relative}.sphere-detail:not(.sphere-thread){position:absolute;right:0;top:0;bottom:0;z-index:6;box-shadow:-10px 0 30px #0002}}
 @media(max-width:850px){.sphere-conversations{width:210px}.sphere-thread{position:absolute;right:0;top:0;bottom:0;z-index:6;width:min(420px,100%);box-shadow:-10px 0 30px #0002}}
-@media(max-width:620px){.workspace:has(> #main-content > .sphere-workspace)>#main-content,.sphere-workspace,.sphere-layout,.sphere-main{overflow:hidden}.sphere-workspace{border-radius:12px}.sphere-topbar{padding:13px;gap:8px}.sphere-topbar h1{font-size:19px}.sphere-topbar h1 span{display:none}.sphere-topbar img{width:30px;height:26px}.sphere-topbar>div{gap:7px}.sphere-topbar button{font-size:12px;padding:8px}.sphere-layout{display:flex}.sphere-conversations{width:100%;border:0}.sphere-workspace--conversation .sphere-conversations{display:none}.sphere-workspace:not(.sphere-workspace--conversation) .sphere-welcome{display:none}.sphere-layout:has(.sphere-results) .sphere-conversations{display:none}.sphere-main{width:100%}.sphere-chat-header{padding:13px;min-height:62px}.sphere-chat-header .sphere-mobile-back{display:inline-flex;padding:8px}.sphere-message-list{min-height:0;scrollbar-gutter:auto;padding:14px 12px 4px}.sphere-message{gap:8px;margin-bottom:16px}.sphere-message>.sphere-avatar{width:27px;height:27px;flex-basis:27px;font-size:10px}.sphere-message__body{padding:11px 12px}.sphere-typing{height:18px;min-height:18px;padding-inline:14px}.sphere-composer{margin:0 8px max(8px,env(safe-area-inset-bottom));padding:3px 7px 6px;border-radius:13px}.sphere-workspace .sphere-composer textarea{height:auto;min-height:40px;max-height:104px;resize:none;padding:8px 4px 5px;font-size:16px;line-height:1.35}.sphere-composer-tools{gap:5px}.sphere-composer-tools>div{gap:1px}.sphere-composer-tools>div>button{width:36px;min-width:36px;min-height:36px;padding:5px}.sphere-composer-tools>.sphere-primary{min-height:38px;padding:7px 12px}.sphere-detail,.sphere-thread{width:100%!important}.sphere-toast{bottom:15px;right:15px;left:15px;max-width:none}.sphere-modal>.sphere-form{padding:18px}.sphere-launcher{min-height:59px}.sphere-results{padding:16px}.sphere-search-form{padding:16px 16px 0}.workspace:has(> #main-content .sphere-composer:focus-within)> .topbar .operational-time-zone-strip,.workspace:has(> #main-content .sphere-composer:focus-within)> .workspace-alert-strip{display:none}.workspace:has(> #main-content .sphere-composer:focus-within)> .topbar{grid-template-columns:minmax(0,1fr) max-content;min-height:56px}}
+@media(max-width:620px){
+  .workspace:has(> #main-content > .sphere-workspace)>#main-content,.sphere-workspace,.sphere-layout,.sphere-main{overflow:hidden}
+  .sphere-workspace{border-radius:12px}
+  .sphere-topbar{min-height:58px;padding:8px 10px;gap:8px;flex-wrap:nowrap}
+  .sphere-topbar h1{font-size:18px}
+  .sphere-topbar h1 span{display:none}
+  .sphere-topbar img{width:29px;height:25px}
+  .sphere-topbar>div{gap:6px;min-width:0}
+  .sphere-topbar>div:last-child{width:auto;flex:0 0 auto;justify-content:flex-end}
+  .sphere-topbar button{font-size:12px;padding:7px}
+  .sphere-workspace .sphere-text-size select{width:96px;max-width:96px;min-height:40px;padding:7px 24px 7px 8px;font-size:12px}
+  .sphere-workspace .sphere-new-message{width:62px;min-width:62px;min-height:40px;padding:7px 9px}
+  .sphere-new-message__label--full{display:none}
+  .sphere-new-message__label--short{display:inline}
+  .sphere-layout{display:flex}
+  .sphere-conversations{width:100%;border:0}
+  .sphere-workspace--conversation .sphere-conversations{display:none}
+  .sphere-workspace:not(.sphere-workspace--conversation) .sphere-welcome{display:none}
+  .sphere-layout:has(.sphere-results) .sphere-conversations{display:none}
+  .sphere-main{width:100%}
+  .sphere-chat-header{padding:9px 10px;min-height:58px}
+  .sphere-chat-header .sphere-mobile-back{display:inline-flex;width:40px;min-width:40px;padding:7px}
+  .sphere-chat-header>button:last-child{width:40px;min-width:40px;padding:7px}
+  .sphere-message-list{min-height:0;scrollbar-gutter:auto;padding:14px 12px 4px}
+  .sphere-message{gap:8px;margin-bottom:16px}
+  .sphere-message>.sphere-avatar{width:27px;height:27px;flex-basis:27px;font-size:10px}
+  .sphere-message__body{padding:11px 12px}
+  .sphere-typing{height:18px;min-height:18px;padding-inline:14px}
+  .sphere-composer{margin:0 8px max(8px,env(safe-area-inset-bottom));padding:3px 7px 6px;border-radius:13px}
+  .sphere-workspace .sphere-composer textarea{height:auto;min-height:40px;max-height:104px;resize:none;padding:8px 4px 5px;font-size:16px;line-height:1.35}
+  .sphere-composer-tools{gap:5px}
+  .sphere-composer-tools>div{gap:1px}
+  .sphere-composer-tools>div>button{width:36px;min-width:36px;min-height:36px;padding:5px}
+  .sphere-composer-tools>.sphere-primary{min-height:38px;padding:7px 12px}
+  .sphere-detail,.sphere-thread{width:100%!important}
+  .sphere-toast{bottom:15px;right:15px;left:15px;max-width:none}
+  .sphere-modal>.sphere-form{padding:18px}
+  .sphere-launcher{min-height:59px}
+  .sphere-results{padding:16px}
+  .sphere-search-form{padding:16px 16px 0}
+
+  /* Messaging keeps all four clocks and urgent alerts available without letting
+     global chrome consume most of a phone viewport. */
+  .app-shell--sygsphere .topbar{min-height:0;gap:4px 7px;padding:5px 8px 5px 62px}
+  .app-shell--sygsphere .topbar-date{min-height:40px;font-size:13px}
+  .app-shell--sygsphere .operational-time-zone-strip{width:calc(100% + 54px);margin-left:-54px;padding:4px 0 2px;overflow-x:auto;overscroll-behavior-x:contain;scroll-padding-inline-start:56px;scroll-snap-type:x proximity;border-top:1px solid var(--line);border-right:0}
+  .app-shell--sygsphere .operational-time-zone-grid{display:flex;min-width:max-content;gap:6px;padding:0 8px 0 56px}
+  .app-shell--sygsphere .operational-clock,.app-shell--sygsphere .operational-clock.operational-clock--default{width:150px;min-width:150px;min-height:54px;flex:0 0 150px;grid-template-columns:32px minmax(0,1fr);gap:5px;padding:4px 6px;scroll-snap-align:start}
+  .app-shell--sygsphere .operational-clock__face{width:32px;height:32px}
+  .app-shell--sygsphere .operational-clock__digital{font-size:12.5px}
+  .app-shell--sygsphere .operational-clock__zone{font-size:11.5px}
+  .app-shell--sygsphere .operational-clock em{font-size:8.5px;padding:1px 4px}
+  .app-shell--sygsphere .workspace-alert-strip{grid-template-columns:36px minmax(0,1fr) auto auto;gap:7px;margin:6px 8px 0;padding:7px 9px;border-radius:11px}
+  .app-shell--sygsphere .workspace-alert-strip__icon{width:36px;height:36px;border-radius:11px}
+  .app-shell--sygsphere .workspace-alert-strip__copy{gap:1px}
+  .app-shell--sygsphere .workspace-alert-strip__copy strong{font-size:10px;line-height:1.2}
+  .app-shell--sygsphere .workspace-alert-strip__ticker{overflow:hidden;font-size:12.5px;line-height:1.25}
+  .app-shell--sygsphere .workspace-alert-strip__ticker span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .app-shell--sygsphere .workspace-alert-strip__position{grid-column:auto;min-width:30px;min-height:28px;padding:3px 6px;font-size:10px}
+  .app-shell--sygsphere .workspace-alert-strip__action{grid-column:auto;width:auto;min-height:36px;padding:7px 10px;font-size:11px}
+
+  .workspace:has(> #main-content .sphere-composer:focus-within)> .topbar .operational-time-zone-strip,.workspace:has(> #main-content .sphere-composer:focus-within)> .workspace-alert-strip{display:none}
+  .workspace:has(> #main-content .sphere-composer:focus-within)> .topbar{grid-template-columns:minmax(0,1fr) max-content;min-height:56px}
+}
 @media(prefers-reduced-motion:reduce){.sphere-workspace *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 
 /* SygSphere readability and identity layer. These sizes are intentionally local to messaging. */
@@ -64,4 +128,6 @@ body:has(.sidebar--open) .sphere-mobile-launcher{display:none!important}
 .sphere-form progress{width:100%;height:10px;overflow:hidden;border:0;border-radius:999px;background:var(--sp-soft)}.sphere-form progress::-webkit-progress-bar{background:var(--sp-soft);border-radius:999px}.sphere-form progress::-webkit-progress-value{background:var(--sp-gold);border-radius:999px}.sphere-form progress::-moz-progress-bar{background:var(--sp-gold);border-radius:999px}
 .sphere-preview-modal{width:min(920px,calc(100vw - 28px))}.sphere-preview{padding:18px;display:flex;flex-direction:column;gap:16px}.sphere-preview>img{display:block;max-width:100%;max-height:65dvh;object-fit:contain;margin:auto;border-radius:10px}.sphere-preview>iframe{width:100%;height:min(68dvh,780px);border:1px solid var(--sp-border);border-radius:10px;background:#fff}.sphere-preview>pre{max-height:65dvh;overflow:auto;margin:0;padding:16px;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--sp-border);border-radius:10px;background:var(--sp-soft);color:var(--sp-text);font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace}.sphere-preview footer{display:flex;justify-content:space-between;gap:10px}
 @media(max-width:760px){.sphere-text-size span,.sphere-text-size svg{display:none}.sphere-workspace .sphere-text-size select{max-width:108px}.sphere-workspace{--sp-conversation-title:16px;--sp-conversation-preview:14px;--sp-message-author:14px;--sp-message-meta:12px;--sp-message-text:16px}.sphere-file{align-items:flex-start!important;flex-wrap:wrap}.sphere-file>span{min-width:calc(100% - 34px)}.sphere-file>div{width:100%}.sphere-file>div button{flex:1}.sphere-preview{padding:12px}.sphere-preview>iframe{height:58dvh}}
-@media(max-width:440px){.sphere-topbar{flex-wrap:wrap}.sphere-topbar>div:last-child{width:100%;justify-content:space-between}.sphere-workspace .sphere-text-size select{max-width:104px}.sphere-topbar .sphere-primary{flex:1}}
+@media(max-width:440px){.sphere-workspace .sphere-text-size select{width:88px;max-width:88px}.sphere-topbar .sphere-primary{flex:0 0 62px}}
+@media(max-width:480px){.app-shell--sygsphere .topbar-date{display:none}}
+@media(max-width:360px){.sphere-topbar h1{display:none}.sphere-workspace .sphere-text-size select{width:82px;max-width:82px}}

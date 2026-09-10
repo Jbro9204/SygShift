@@ -91,21 +91,51 @@ test('keeps the mobile composer and Send control usable inside the full SygShift
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
   const input = page.getByRole('textbox', { name: 'Write a message', exact: true })
   const send = page.getByRole('button', { name: 'Send', exact: true })
+  await input.evaluate((element) => element.blur())
+  await expect(page.locator('.operational-clock')).toHaveCount(4)
+  await expect(send).toBeInViewport()
+  const initialClockClearance = await page.evaluate(() => {
+    const menu = document.querySelector<HTMLElement>('.mobile-menu-button')!.getBoundingClientRect()
+    const firstClock = document.querySelector<HTMLElement>('.operational-clock')!.getBoundingClientRect()
+    return Math.round(firstClock.left - menu.right)
+  })
+  expect(initialClockClearance).toBeGreaterThanOrEqual(2)
+  const clocksReachable = await page.locator('.operational-time-zone-strip').evaluate((strip) => {
+    const lastClock = strip.querySelector<HTMLElement>('.operational-clock:last-child')!
+    strip.scrollLeft = strip.scrollWidth
+    const stripBox = strip.getBoundingClientRect()
+    const clockBox = lastClock.getBoundingClientRect()
+    const reachable = clockBox.left >= stripBox.left - 1 && clockBox.right <= stripBox.right + 1
+    strip.scrollLeft = 0
+    return reachable
+  })
+  expect(clocksReachable).toBe(true)
   await input.fill('Mobile send remains reachable')
   await expect(send).toBeVisible()
   const geometry = await page.evaluate(() => {
+    const header = document.querySelector<HTMLElement>('.topbar')!
+    const alert = document.querySelector<HTMLElement>('.workspace-alert-strip')!
     const sphere = document.querySelector<HTMLElement>('.sphere-workspace')!
     const composer = document.querySelector<HTMLElement>('.sphere-composer')!
     const sendButton = composer.querySelector<HTMLElement>('button[type="submit"]')!
     return {
       documentOverflow: document.documentElement.scrollHeight - window.innerHeight,
+      documentWidthOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      headerHeight: Math.round(header.getBoundingClientRect().height),
+      alertHeight: Math.round(alert.getBoundingClientRect().height),
+      sphereTop: Math.round(sphere.getBoundingClientRect().top),
       sphereBottom: Math.round(sphere.getBoundingClientRect().bottom),
+      composerTop: Math.round(composer.getBoundingClientRect().top),
       composerBottom: Math.round(composer.getBoundingClientRect().bottom),
       sendBottom: Math.round(sendButton.getBoundingClientRect().bottom),
       viewportBottom: window.innerHeight,
     }
   })
   expect(geometry.documentOverflow).toBeLessThanOrEqual(1)
+  expect(geometry.documentWidthOverflow).toBeLessThanOrEqual(1)
+  expect(geometry.headerHeight).toBeLessThanOrEqual(125)
+  expect(geometry.alertHeight).toBeLessThanOrEqual(64)
+  expect(geometry.sphereTop).toBeLessThanOrEqual(200)
   expect(geometry.composerBottom).toBeLessThanOrEqual(geometry.sphereBottom)
   expect(geometry.sendBottom).toBeLessThanOrEqual(geometry.viewportBottom)
   await send.click()
