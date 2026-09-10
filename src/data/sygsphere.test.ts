@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getSupabaseClient } from '../lib/supabase'
-import { readSphereDraft, sphereCanPreview, sphereCompleteUpload, sphereDraftKey, sphereMentionIds, sphereMessageParts, spherePath, spherePersonMentionLabel, sphereResolveTypedMentions, sphereUnread, sphereUpload, SphereUploadError, writeSphereDraft } from './sygsphere'
+import { readSphereDraft, sphereCanPreview, sphereCompleteUpload, sphereDraftKey, sphereMentionIds, sphereMessageParts, spherePath, spherePersonMentionLabel, sphereRequest, sphereResolveTypedMentions, sphereUnread, sphereUpload, SphereUploadError, writeSphereDraft } from './sygsphere'
 vi.mock('../lib/supabase', () => ({ getSupabaseClient: vi.fn() }))
 describe('SygSphere navigation and drafts', () => {
   beforeEach(() => {
@@ -20,6 +20,10 @@ describe('SygSphere navigation and drafts', () => {
   it('handles unavailable and malformed stored drafts safely', () => { localStorage.setItem('broken', '{'); expect(readSphereDraft('broken').body).toBe('') })
   it('keeps pre-mention drafts backward compatible', () => { localStorage.setItem('legacy', JSON.stringify({ body: 'Existing draft', clientId: crypto.randomUUID() })); expect(readSphereDraft('legacy').mentions).toEqual([]) })
   it('does not add any system notification count', () => { expect(sphereUnread()).toBe(0) })
+  it('does not expose raw database diagnostics when a message send fails', async () => {
+    vi.mocked(getSupabaseClient).mockReturnValue({ rpc: vi.fn().mockResolvedValue({ data: null, error: { message: 'invalid regular expression: quantifier operand invalid CONTEXT: SQL function' } }) } as never)
+    await expect(sphereRequest('send', {})).rejects.toThrow('SygSphere could not send this message. Your draft is safe. Please retry.')
+  })
   it('keeps only selected mention identities that remain in the body', () => {
     const jordan = { id: '11111111-1111-4111-8111-111111111111', name: 'Jordan Brown', username: 'jordan.brown' }
     const zach = { id: '22222222-2222-4222-8222-222222222222', name: 'Zach Ward', username: 'zward' }

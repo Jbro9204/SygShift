@@ -33,9 +33,17 @@ export type SphereMessage = z.infer<typeof messageSchema>
 export type SphereConversation = z.infer<typeof conversationSchema>
 export type SphereInbox = z.infer<typeof inboxSchema>
 
+function sphereRequestError(action: string, message?: string) {
+  const fallback = action === 'send'
+    ? 'SygSphere could not send this message. Your draft is safe. Please retry.'
+    : 'SygSphere could not complete this request. Your other SygShift features are unaffected.'
+  if (!message || /invalid regular expression|sql function|context:|syntax error|operator does not exist|column .* does not exist/i.test(message)) return fallback
+  return message
+}
+
 export async function sphereRequest(action: string, input: Record<string, unknown> = {}): Promise<unknown> {
   const { data, error } = await getSupabaseClient().rpc('sygsphere_request', { action, input })
-  if (error) throw new Error(error.message || 'SygSphere could not complete this request. Your other SygShift features are unaffected.')
+  if (error) throw new Error(sphereRequestError(action, error.message))
   return data
 }
 async function spherePeople(action: 'directory' | 'conversation' | 'avatars', input: Record<string, unknown> = {}) {

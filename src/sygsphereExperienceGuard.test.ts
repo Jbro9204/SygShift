@@ -8,12 +8,19 @@ const root = process.cwd()
 const migration = readFileSync(join(root, 'supabase', 'migrations', '20260908233000_sygsphere_experience_mentions_previews.sql'), 'utf8')
 const cleanTerminalRepair = readFileSync(join(root, 'supabase', 'migrations', '20260910020000_redact_clean_sygsphere_resumable_object_keys.sql'), 'utf8')
 const uploadRecovery = readFileSync(join(root, 'supabase', 'migrations', '20260911013000_sygsphere_async_upload_recovery.sql'), 'utf8')
+const mentionMatcherRepair = readFileSync(join(root, 'supabase', 'migrations', '20260912050000_repair_sygsphere_mention_token_matcher.sql'), 'utf8')
 const data = readFileSync(join(root, 'src', 'data', 'sygsphere.ts'), 'utf8')
 const page = readFileSync(join(root, 'src', 'pages', 'SygSpherePage.tsx'), 'utf8')
 const files = readFileSync(join(root, 'worker', 'sygsphereFiles.ts'), 'utf8')
 const worker = readFileSync(join(root, 'worker', 'index.ts'), 'utf8')
 
 describe('SygSphere experience boundaries', () => {
+  it('matches human-name mentions literally without executing employee names as regular expressions', () => {
+    expect(mentionMatcherRepair).toContain('strpos(substring(normalized_body from search_from), mention_token)')
+    expect(mentionMatcherRepair).toContain("'Please ask @A+B [Ops]!', 'A+B [Ops]'")
+    expect(mentionMatcherRepair).not.toMatch(/regexp_replace\s*\(\s*lower\s*\(\s*target_label/i)
+  })
+
   it('stores structured mentions and validates every target against active conversation membership', () => {
     expect(migration).toContain('create table private.sygsphere_mentions')
     expect(migration).toContain('member.conversation_id = new.conversation_id')
