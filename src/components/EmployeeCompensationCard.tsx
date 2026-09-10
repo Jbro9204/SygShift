@@ -96,7 +96,7 @@ function PayRateProposalDialog({ employeeId, employeeName, onClose, onSaved }: {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['hr-employee-compensation', employeeId] }),
-        queryClient.invalidateQueries({ queryKey: ['hr-compensation'] }),
+        queryClient.invalidateQueries({ queryKey: ['hr-compensation-workspace'] }),
         queryClient.invalidateQueries({ queryKey: ['hris-employee-file', employeeId] }),
       ])
       onSaved()
@@ -114,7 +114,7 @@ function PayRateProposalDialog({ employeeId, employeeName, onClose, onSaved }: {
   return <ModalDialog busy={mutation.isPending} busyLabel="Saving protected pay-rate proposal…" className="hr-file-editor-modal" description="Pay values are encrypted in transit, stored in the protected compensation schema, and never shown to ordinary HR or operations roles." onClose={() => !mutation.isPending && onClose()} title={`Pay rate · ${employeeName}`}><form onSubmit={submit}><div className="hr-file-editor-notice"><ShieldCheck aria-hidden="true" /><div><strong>Independent approval required</strong><p>The administrator who proposes this rate cannot approve it. A second compensation-authorized administrator must review the change.</p></div></div><div className="hr-file-editor-grid"><label>Pay amount<input autoFocus inputMode="decimal" min="0" onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required step="0.01" type="number" value={amount} /></label><label>Pay frequency<select onChange={(event) => setPayFrequency(event.target.value as HrPayFrequency)} value={payFrequency}>{Object.entries(frequencyLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>Effective date<input onChange={(event) => setEffectiveFrom(event.target.value)} required type="date" value={effectiveFrom} /></label></div><label>Business reason<textarea maxLength={1000} onChange={(event) => setReason(event.target.value)} placeholder="Explain the approved offer, raise, adjustment, or correction." required rows={4} value={reason} /></label>{mutation.isError ? <div className="error-message" role="alert">{mutation.error instanceof Error ? mutation.error.message : 'The pay-rate proposal could not be saved.'}</div> : null}<div className="modal-actions"><button className="secondary-button" disabled={mutation.isPending} onClick={onClose} type="button">Cancel</button><button className="primary-action" disabled={mutation.isPending || !amount || !effectiveFrom} type="submit"><BadgeDollarSign aria-hidden="true" size={17} />Submit for approval</button></div></form></ModalDialog>
 }
 
-function PayRateReviewDialog({ employeeId, employeeName, onClose, onSaved, proposal }: { employeeId: string; employeeName: string; onClose: () => void; onSaved: (status: 'approved' | 'rejected') => void; proposal: HrEmployeeCompensation['pendingProposals'][number] }) {
+export function PayRateReviewDialog({ employeeId, employeeName, onClose, onSaved, proposal }: { employeeId: string; employeeName: string; onClose: () => void; onSaved: (status: 'approved' | 'rejected') => void; proposal: HrEmployeeCompensation['pendingProposals'][number] }) {
   const queryClient = useQueryClient()
   const [decision, setDecision] = useState<'approved' | 'rejected'>('approved')
   const [reason, setReason] = useState('')
@@ -123,8 +123,9 @@ function PayRateReviewDialog({ employeeId, employeeName, onClose, onSaved, propo
     onSuccess: async (result) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['hr-employee-compensation', employeeId] }),
-        queryClient.invalidateQueries({ queryKey: ['hr-compensation'] }),
+        queryClient.invalidateQueries({ queryKey: ['hr-compensation-workspace'] }),
         queryClient.invalidateQueries({ queryKey: ['hris-employee-file', employeeId] }),
+        queryClient.invalidateQueries({ queryKey: ['my-notifications'] }),
       ])
       onSaved(result.status)
       onClose()

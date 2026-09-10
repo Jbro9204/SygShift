@@ -60,4 +60,13 @@ describe('HRIS Stage 7 leave, benefits, and compensation foundation', () => {
     expect(pagination).toContain('<option value="20">20</option>')
     expect(page).toContain('is safely staged')
   })
+
+  it('lets authorized approvers resolve compensation directly from its worklist', () => {
+    expect(page).toContain("permissions.includes('hr.compensation.approve')")
+    expect(page).toContain('Review compensation for ${item.employeeName}')
+    expect(page).toContain('<PayRateReviewDialog')
+    expect(page).toContain("proposal.proposedByCurrentActor")
+    expect(worker).toContain("requireSessionPermission(session.context, 'hr.compensation.approve')")
+    expect(employeeFileRelease).toContain('proposal_record.proposed_by = target_actor_id')
+  })
 })

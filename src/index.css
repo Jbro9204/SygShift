@@ -264,6 +264,14 @@ select:focus-visible,
 .hr-automation-list article > div { display: grid; gap: 5px; }
 .hr-automation-list article > div:last-child { justify-items: end; }
 .hr-automation-list span:not(.action-status), .hr-automation-list small { color: var(--muted, light-dark(#6d665c, #b9b2a7)); }
+.hr-compensation-worklist__notice { align-items: center; display: flex; gap: 8px; margin: 0 24px 8px; padding: 11px 13px; border: 1px solid light-dark(#9ecab7, #216a4d); border-radius: 10px; background: light-dark(#edf8f2, #173b2e); color: light-dark(#245e49, #a9dfc7); font-weight: 800; }
+.hr-compensation-row__controls { align-items: center; display: flex !important; gap: 14px !important; }
+.hr-compensation-row__controls > div { display: grid; gap: 3px; justify-items: end; }
+.hr-compensation-row__controls .secondary-button { min-width: 94px; }
+.hr-compensation-review-state { align-items: center; display: flex; gap: 12px; min-height: 110px; padding: 24px; color: light-dark(#554c41, #d5cec3); }
+.hr-compensation-review-state > div { display: grid; gap: 4px; }
+.hr-compensation-review-state :is(p, strong) { margin: 0; }
+.hr-compensation-review-state .secondary-button { margin-left: auto; }
 .compact-empty { align-items: center; border-top: 1px solid var(--line, light-dark(#e5ded2, #33383d)); color: light-dark(#176546, #bdebd3); display: flex; gap: 12px; justify-content: center; min-height: 116px; padding: 24px; }
 .compact-pagination { align-items: center; border-top: 1px solid var(--line, light-dark(#e5ded2, #33383d)); display: flex; gap: 12px; justify-content: flex-end; padding: 14px 24px; }
 .compact-pagination > span { color: var(--muted, light-dark(#6d665c, #b9b2a7)); font-size: .88rem; }
@@ -313,6 +321,10 @@ select:focus-visible,
   .hr-automation-summary { grid-template-columns: 1fr; }
   .hr-automation-list article { grid-template-columns: 1fr; }
   .hr-automation-list article > div:last-child { justify-items: start; }
+  .hr-compensation-row__controls { width: 100%; justify-content: space-between; }
+  .hr-compensation-row__controls > div { justify-items: start; }
+  .hr-compensation-review-state { align-items: flex-start; flex-wrap: wrap; padding: 20px 16px; }
+  .hr-compensation-review-state .secondary-button { width: 100%; margin-left: 0; }
   .compact-pagination { justify-content: space-between; padding-inline: 16px; }
   .hr-onboarding-header-actions, .hr-onboarding-header-actions button { width: 100%; }
   .hr-onboarding-form, .hr-onboarding-case-workspace, .hr-onboarding-action-form { padding-inline: 16px; }
