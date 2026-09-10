@@ -1041,6 +1041,8 @@ describe('Cloudflare Worker boundary', () => {
       const url = String(input)
       const payload = url.includes('/rpc/service_run_timekeeping_automation')
         ? { jobRunId: 'generated-by-worker', status: 'completed' }
+        : url.includes('/rpc/service_refresh_attendance_alert_schedule_state')
+          ? { status: 'completed', fullReconciliation: false }
         : url.includes('/rpc/service_reconcile_operational_alert_lifecycle')
           ? { status: 'completed', fullReconciliation: false }
           : url.includes('/rpc/service_reconcile_patrol_obligations')
@@ -1067,11 +1069,12 @@ describe('Cloudflare Worker boundary', () => {
 
     expect(scheduledWork).toHaveLength(4)
     await Promise.all(scheduledWork)
-    expect(fetchMock).toHaveBeenCalledTimes(10)
+    expect(fetchMock).toHaveBeenCalledTimes(11)
     const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
     for (const rpc of [
       'service_process_due_sygtasks_reminders',
       'service_run_timekeeping_automation',
+      'service_refresh_attendance_alert_schedule_state',
       'service_reconcile_operational_alert_lifecycle',
       'service_reconcile_patrol_obligations',
       'service_publish_due_announcement_work_items',
@@ -1082,10 +1085,13 @@ describe('Cloudflare Worker boundary', () => {
       'service_claim_employee_notification_batch',
     ]) expect(calledUrls.some((url) => url.includes(`/rpc/${rpc}`))).toBe(true)
     const automationCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/rpc/service_run_timekeeping_automation'))!
+    const scheduleRefreshCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/rpc/service_refresh_attendance_alert_schedule_state'))!
     const lifecycleCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/rpc/service_reconcile_operational_alert_lifecycle'))!
     const automationBody = JSON.parse(String(automationCall[1]?.body)) as { target_job_run_id: string }
+    const scheduleRefreshBody = JSON.parse(String(scheduleRefreshCall[1]?.body)) as { target_full_reconciliation: boolean }
     const lifecycleBody = JSON.parse(String(lifecycleCall[1]?.body)) as { target_full_reconciliation: boolean }
     expect(automationBody.target_job_run_id).toMatch(/^[a-f0-9-]{36}$/)
+    expect(scheduleRefreshBody.target_full_reconciliation).toBe(false)
     expect(lifecycleBody.target_full_reconciliation).toBe(false)
     expect(emailSend).not.toHaveBeenCalled()
     vi.unstubAllGlobals()

@@ -7845,6 +7845,21 @@ export default {
       const denverHour = denverTimeParts.find((part) => part.type === 'hour')?.value
       const denverMinute = denverTimeParts.find((part) => part.type === 'minute')?.value
       const fullReconciliation = denverHour === '02' && denverMinute === '00'
+      let attendanceScheduleRefresh: Record<string, unknown>
+      try {
+        attendanceScheduleRefresh = await callRpc<Record<string, unknown>>(
+          { serviceRoleKey: config.serviceRoleKey, url: config.url },
+          'service_refresh_attendance_alert_schedule_state',
+          { target_full_reconciliation: fullReconciliation },
+          config.serviceRoleKey,
+        )
+      } catch (error) {
+        attendanceScheduleRefresh = {
+          status: 'failed',
+          message: error instanceof Error ? error.message : 'Unknown attendance schedule refresh failure',
+        }
+        console.error(JSON.stringify({ event: 'attendance_alert_schedule_refresh_failed', ...attendanceScheduleRefresh }))
+      }
       const alertLifecycle = await callRpc<Record<string, unknown>>(
         { serviceRoleKey: config.serviceRoleKey, url: config.url },
         'service_reconcile_operational_alert_lifecycle',
@@ -7866,7 +7881,7 @@ export default {
       const hrAutomation = await processHrAutomationJobs(environment, 10)
       const signatureFinalization = await processSignatureFinalizationJobs(environment, 2)
       const notifications = await processNotificationJobs(environment, 25)
-      console.info(JSON.stringify({ alertLifecycle, automation, cron: controller.cron, fullReconciliation, hrAutomation, jobRunId, notifications, patrol, scheduledAnnouncements, scheduledTime: controller.scheduledTime, signatureFinalization }))
+      console.info(JSON.stringify({ alertLifecycle, attendanceScheduleRefresh, automation, cron: controller.cron, fullReconciliation, hrAutomation, jobRunId, notifications, patrol, scheduledAnnouncements, scheduledTime: controller.scheduledTime, signatureFinalization }))
     })())
   },
 }
