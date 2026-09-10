@@ -2275,3 +2275,12 @@ pnpm exec wrangler deploy --keep-vars
 - No database migration or production-data rewrite was required.
 - Verification passed 234 files / 1,207 tests, the 92/92 desktop/mobile SygSphere plus Time Clock browser matrix, the post-release 42/42 Time Clock matrix, production health/readiness, and exact live-asset comparison on both origins.
 - Released source `8bb1622` as Cloudflare Worker `2a4387ec-9f4f-4de2-9894-9721dbba7304`; see `docs/changelogs/CHANGELOG_09-10-2026_SYGSPHERE_DIRECT_DOCUMENT_UPLOAD_REPAIR.md` for complete evidence and rollback details.
+
+## 09/10/2026 - SygSphere PDF Preview Stability Repair
+
+- Replaced direct painting into the visible PDF canvas with a detached render buffer and a single completed-frame swap, so the last good page remains visible through resize, zoom, rotation, and page changes.
+- Removed the layout-triggered hide/show cycle that allowed the rendering message, scrollbar, and `ResizeObserver` to sustain severe white flashing.
+- Added an actual PDF.js browser audit that samples every animation frame; desktop and mobile both recorded zero blank frames and zero hidden-canvas transitions after initial render.
+- No database, document, message, permission, timekeeping, schedule, payroll, HR, or employee data changed.
+- Verification passed 234 files / 1,208 tests, the serial 94/94 desktop/mobile SygSphere plus Time Clock matrix, the post-release 42/42 Time Clock matrix, and exact production-asset checks on both origins.
+- Released source `c57fd69` as Cloudflare Worker `b0b7c330-1c96-45ae-8057-54de7c4f23c9`; see `docs/changelogs/CHANGELOG_09-10-2026_SYGSPHERE_PDF_PREVIEW_STABILITY.md` for complete evidence and rollback details.
