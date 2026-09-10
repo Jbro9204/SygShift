@@ -5,6 +5,9 @@ export const sygTaskStatuses = ['backlog', 'ready', 'in_progress', 'blocked', 'r
 export const sygTaskPriorities = ['low', 'routine', 'high', 'urgent'] as const
 export const sygTaskStatusSchema = z.enum(sygTaskStatuses)
 export const sygTaskPrioritySchema = z.enum(sygTaskPriorities)
+export const sygTaskReminderKinds = ['reminder', 'alarm'] as const
+export const sygTaskReminderRecipientScopes = ['self', 'assignees'] as const
+export const sygTaskReminderTimingKinds = ['relative', 'absolute'] as const
 
 const personSchema = z.object({
   id: z.string().uuid(),
@@ -145,6 +148,77 @@ export const createSygTaskResultSchema = z.object({
   changed: z.boolean(),
 }).passthrough()
 
+const sygTaskReminderOccurrenceSchema = z.object({
+  id: z.string().uuid(),
+  recipientEmployeeId: z.string().uuid(),
+  recipientName: z.string(),
+  scheduledFor: z.string(),
+  state: z.enum(['scheduled', 'triggered', 'snoozed', 'acknowledged', 'cancelled']),
+  snoozedUntil: z.string().nullable(),
+  triggeredAt: z.string().nullable(),
+  acknowledgedAt: z.string().nullable(),
+  cancelledAt: z.string().nullable(),
+  cancellationReason: z.string().nullable(),
+})
+
+export const sygTaskReminderSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(sygTaskReminderKinds),
+  recipientScope: z.enum(sygTaskReminderRecipientScopes),
+  timingKind: z.enum(sygTaskReminderTimingKinds),
+  offsetMinutes: z.number().int().min(0).max(43_200).nullable(),
+  absoluteAt: z.string().nullable(),
+  emailEnabled: z.boolean(),
+  requiredAcknowledgement: z.boolean(),
+  createdBy: z.string().uuid(),
+  createdByName: z.string(),
+  createdAt: z.string(),
+  canCancel: z.boolean(),
+  occurrences: z.array(sygTaskReminderOccurrenceSchema),
+})
+
+export const sygTaskRemindersSchema = z.object({
+  taskId: z.string().uuid(),
+  canCreateForAssignees: z.boolean(),
+  reminders: z.array(sygTaskReminderSchema),
+})
+
+export const sygTasksAlarmSchema = z.object({
+  occurrenceId: z.string().uuid(),
+  reminderId: z.string().uuid(),
+  taskId: z.string().uuid(),
+  boardId: z.string().uuid(),
+  title: z.string(),
+  priority: sygTaskPrioritySchema,
+  dueAt: z.string().nullable(),
+  scheduledFor: z.string(),
+  triggeredAt: z.string(),
+  deliveryCount: z.number().int().positive(),
+  taskVersion: z.number().int().positive(),
+  canComplete: z.boolean(),
+})
+
+export const sygTasksAlarmStateSchema = z.object({
+  serverTime: z.string(),
+  alarms: z.array(sygTasksAlarmSchema),
+})
+
+export const sygTasksBadgeSchema = z.object({
+  count: z.coerce.number().int().nonnegative(),
+  unreadCount: z.coerce.number().int().nonnegative(),
+  activeAlarmCount: z.coerce.number().int().nonnegative(),
+})
+
+export const createSygTaskReminderInputSchema = z.object({
+  taskId: z.string().uuid(),
+  kind: z.enum(sygTaskReminderKinds),
+  recipientScope: z.enum(sygTaskReminderRecipientScopes),
+  timingKind: z.enum(sygTaskReminderTimingKinds),
+  offsetMinutes: z.number().int().min(0).max(43_200).nullable(),
+  absoluteAt: z.string().nullable(),
+  emailEnabled: z.boolean(),
+}).strict()
+
 const memberSchema = z.object({
   membershipId: z.string().uuid().nullable().optional(),
   employeeId: z.string().uuid(),
@@ -209,6 +283,11 @@ export type SygTasksWorklist = z.infer<typeof sygTasksWorklistSchema>
 export type SygTasksWorklistSummary = z.infer<typeof sygTasksWorklistSummarySchema>
 export type CreateSygTaskInput = z.infer<typeof createSygTaskInputSchema>
 export type CreateSygTaskResult = z.infer<typeof createSygTaskResultSchema>
+export type SygTaskReminder = z.infer<typeof sygTaskReminderSchema>
+export type SygTaskReminders = z.infer<typeof sygTaskRemindersSchema>
+export type SygTasksAlarm = z.infer<typeof sygTasksAlarmSchema>
+export type SygTasksAlarmState = z.infer<typeof sygTasksAlarmStateSchema>
+export type CreateSygTaskReminderInput = z.infer<typeof createSygTaskReminderInputSchema>
 export type SygTaskAction =
   | 'create_board' | 'update_board' | 'archive_board' | 'add_board_member' | 'remove_board_member'
   | 'create_task' | 'update_task' | 'archive_task' | 'assign_task' | 'unassign_task' | 'watch_task' | 'unwatch_task'
@@ -274,6 +353,60 @@ export async function createSygTask(
   })
   if (error) throw new Error(error.message || 'SygTasks could not create this task.')
   return createSygTaskResultSchema.parse(data)
+}
+
+export async function getSygTaskReminders(taskId: string): Promise<SygTaskReminders> {
+  const { data, error } = await getSupabaseClient().rpc('get_sygtasks_task_reminders', { target_task_id: taskId })
+  if (error) throw new Error(error.message || 'Task reminders could not load.')
+  return sygTaskRemindersSchema.parse(data)
+}
+
+export async function createSygTaskReminder(
+  input: CreateSygTaskReminderInput,
+  options: { clientRequestId?: string } = {},
+): Promise<Record<string, unknown>> {
+  const payload = createSygTaskReminderInputSchema.parse(input)
+  const { data, error } = await getSupabaseClient().rpc('create_sygtasks_task_reminder', {
+    target_payload: payload,
+    target_client_request_id: options.clientRequestId ?? crypto.randomUUID(),
+  })
+  if (error) throw new Error(error.message || 'Task reminder could not be created.')
+  return z.record(z.string(), z.unknown()).parse(data)
+}
+
+export async function cancelSygTaskReminder(reminderId: string, clientRequestId = crypto.randomUUID()): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('cancel_sygtasks_task_reminder', {
+    target_reminder_id: z.string().uuid().parse(reminderId),
+    target_client_request_id: clientRequestId,
+  })
+  if (error) throw new Error(error.message || 'Task reminder could not be canceled.')
+}
+
+export async function getMySygTasksAlarmState(): Promise<SygTasksAlarmState> {
+  const { data, error } = await getSupabaseClient().rpc('get_my_sygtasks_alarm_state')
+  if (error) throw new Error(error.message || 'Task alarms could not be checked.')
+  return sygTasksAlarmStateSchema.parse(data)
+}
+
+export async function getMySygTasksBadge() {
+  const { data, error } = await getSupabaseClient().rpc('get_my_sygtasks_badge')
+  if (error) throw new Error(error.message || 'SygTasks notifications could not be checked.')
+  return sygTasksBadgeSchema.parse(data)
+}
+
+export async function manageMySygTasksAlarm(
+  action: 'acknowledge' | 'snooze',
+  occurrenceId: string,
+  snoozeMinutes: 5 | 10 | 15 | 30 | 60 | null,
+  clientRequestId = crypto.randomUUID(),
+): Promise<void> {
+  const { error } = await getSupabaseClient().rpc('manage_my_sygtasks_alarm', {
+    target_action: action,
+    target_occurrence_id: z.string().uuid().parse(occurrenceId),
+    target_snooze_minutes: snoozeMinutes,
+    target_client_request_id: clientRequestId,
+  })
+  if (error) throw new Error(error.message || 'The task alarm could not be updated.')
 }
 
 export async function mutateSygTasks(

@@ -40,6 +40,7 @@ import { SupportHelpButton } from './SupportHelpButton'
 import { SygSphereLauncher } from './SygSphereLauncher'
 import { SygilantLauncher } from './SygilantLauncher'
 import { SygTasksLauncher } from './SygTasksLauncher'
+import { SygTasksAlarmHost } from './SygTasksAlarmHost'
 import { OperationalTimeHeader } from './OperationalTimeHeader'
 import { HeaderNotificationButton } from './HeaderNotificationButton'
 import { LiveNotifications } from './LiveNotifications'
@@ -928,6 +929,7 @@ export function AppShell() {
 
         <WorkspaceAlertStrip entries={workspaceAlerts} />
         {sessionContext && !needsSecurityCheckpoint ? <LiveNotifications key={sessionContext.employeeId} employeeId={sessionContext.employeeId} username={sessionContext.username} /> : null}
+        {sessionContext && !needsSecurityCheckpoint && sharedIdentityScopeAllowsPath('/tasks', sharedIdentityScope) ? <SygTasksAlarmHost employeeId={sessionContext.employeeId} /> : null}
 
         <main id="main-content" tabIndex={-1}>
           {unavailableRouteWindow ? <MaintenanceUnavailablePanel window={unavailableRouteWindow} /> : <Outlet />}

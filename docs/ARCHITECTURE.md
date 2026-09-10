@@ -174,6 +174,15 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - The Worker checks membership before accepting bounded file bytes, validates content, stores private quarantine objects and uses the existing malware scanner. Service-only completion requires matching clean checksum evidence. Downloads require current membership and a clean attached, nondeleted message; no public Storage policy or signed public URL is introduced.
 - A SygSphere-only release gate provides isolation without deleting history. Voice/video, Microsoft calendar integration and SygSphere background Web Push are not part of this release.
 
+## SygTasks reminders and alarms
+
+- Reminder definitions and recipient occurrences are private server-authoritative records tied to one task. A reminder fires once; an alarm remains active until its recipient stops, snoozes, opens the task locally, or completes the task when authorized.
+- Employees may create private reminders for themselves. Authorized task editors may target the task's current assignees. Recipient expansion, active-account checks, task access, deduplication, cancellation and due-date recalculation are enforced in PostgreSQL rather than trusted to the browser.
+- Relative reminders follow the current task due date. Task completion, cancellation, archive, assignment removal, or loss of eligible account access cancels future occurrences without deleting audit history.
+- The scheduled Worker claims due occurrences with bounded, skip-locked service processing. It creates one SygTasks notification per occurrence, optionally queues the approved personal-first email route, and sends only a private Realtime invalidation signal.
+- The SygTasks launcher owns a badge independent from SygSphere. A visible authorized shell displays the active alarm and uses a one-tab lease so multiple tabs do not overlap audio. The custom sound repeats about every eight seconds until the local or server action stops it; background or closed-browser delivery remains subject to browser and device notification behavior.
+- Device sound preferences separate task alarms from ordinary notifications. Server acknowledgment and snooze persist across sessions and devices; opening a task only silences the current browser and never records a false acknowledgment.
+
 ## System status and release communication
 
 - The application shell shows every signed-in user one compact service state: Online, Attention Needed, or Service Disruption.

@@ -88,6 +88,25 @@
   display: none;
 }
 
+.sygtasks-launcher__badge {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  display: grid;
+  min-width: 23px;
+  height: 23px;
+  padding: 0 6px;
+  color: #181006;
+  background: #f5d986;
+  border: 2px solid #0c0d0d;
+  border-radius: 999px;
+  box-shadow: 0 3px 12px rgb(0 0 0 / 38%);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  place-items: center;
+}
+
 .sygtasks-launcher__tooltip {
   position: absolute;
   z-index: 50;
@@ -142,6 +161,11 @@
   width: 36px;
   height: 36px;
   object-fit: contain;
+}
+
+.sidebar--collapsed .sygtasks-launcher__badge {
+  top: -6px;
+  right: -6px;
 }
 
 .sidebar--collapsed .sygtasks-launcher:hover .sygtasks-launcher__tooltip,

@@ -7,6 +7,7 @@
 .notification-preferences__body p { line-height: 1.55; font-size: 14px; }
 .notification-preferences__toggles { display: grid; gap: 14px; margin: 20px 0; }
 .notification-preferences__toggles label { display: flex; align-items: center; gap: 10px; }
+.notification-preferences__toggles label > span { display: inline-flex; align-items: center; gap: 7px; }
 .notification-preferences__toggles input { width: 18px; height: 18px; accent-color: #bb8b30; }
 .notification-preferences__volume { display: grid; gap: 10px; max-width: 360px; margin-bottom: 18px; }
 .notification-preferences__volume input { width: 100%; accent-color: #bb8b30; }

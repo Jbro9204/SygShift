@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createSygTask,
+  createSygTaskReminder,
   formatSygTaskPriority,
   formatSygTaskStatus,
   getSygTasksWorklist,
   getSygTasksWorkspace,
+  getMySygTasksAlarmState,
+  getMySygTasksBadge,
+  manageMySygTasksAlarm,
   mutateSygTasks,
   sygTaskPath,
 } from './sygtasks'
@@ -160,6 +164,44 @@ describe('SygTasks data boundary', () => {
   it('rejects malformed task creation before sending it to the database', async () => {
     await expect(createSygTask({ boardId, title: '' })).rejects.toThrow()
     expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('creates a bounded task alarm with an idempotency key', async () => {
+    rpc.mockResolvedValue({ data: { reminderId: assignmentId, taskId, changed: true }, error: null })
+    await expect(createSygTaskReminder({
+      taskId,
+      kind: 'alarm',
+      recipientScope: 'assignees',
+      timingKind: 'relative',
+      offsetMinutes: 60,
+      absoluteAt: null,
+      emailEnabled: true,
+    }, { clientRequestId: requestId })).resolves.toMatchObject({ reminderId: assignmentId })
+    expect(rpc).toHaveBeenCalledWith('create_sygtasks_task_reminder', {
+      target_payload: expect.objectContaining({ taskId, kind: 'alarm', offsetMinutes: 60 }),
+      target_client_request_id: requestId,
+    })
+  })
+
+  it('reads and controls only the signed-in employee task alarms', async () => {
+    rpc.mockResolvedValueOnce({ data: { serverTime: '2026-09-09T12:00:00Z', alarms: [{
+      occurrenceId: assignmentId, reminderId: requestId, taskId, boardId, title: 'Review coverage', priority: 'urgent',
+      dueAt: null, scheduledFor: '2026-09-09T11:59:00Z', triggeredAt: '2026-09-09T12:00:00Z', deliveryCount: 1,
+      taskVersion: 3, canComplete: true,
+    }] }, error: null })
+    await expect(getMySygTasksAlarmState()).resolves.toMatchObject({ alarms: [{ occurrenceId: assignmentId, canComplete: true }] })
+
+    rpc.mockResolvedValueOnce({ data: { count: 4, unreadCount: 3, activeAlarmCount: 1 }, error: null })
+    await expect(getMySygTasksBadge()).resolves.toEqual({ count: 4, unreadCount: 3, activeAlarmCount: 1 })
+
+    rpc.mockResolvedValueOnce({ data: { changed: true }, error: null })
+    await manageMySygTasksAlarm('snooze', assignmentId, 10, requestId)
+    expect(rpc).toHaveBeenLastCalledWith('manage_my_sygtasks_alarm', {
+      target_action: 'snooze',
+      target_occurrence_id: assignmentId,
+      target_snooze_minutes: 10,
+      target_client_request_id: requestId,
+    })
   })
 
   it('provides readable labels and stable deep links', () => {

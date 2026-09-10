@@ -1,0 +1,188 @@
+.sygtasks-alarm-host {
+  position: fixed;
+  z-index: 1250;
+  right: 22px;
+  bottom: 22px;
+  width: min(440px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.sygtasks-alarm-host__card {
+  --tasks-surface: #fff;
+  --tasks-panel: #fff;
+  --tasks-control: #fff;
+  --tasks-surface-2: #f7f4ec;
+  --tasks-ink: #0c0d0d;
+  --tasks-muted: #5b5e60;
+  --tasks-border: #d8d3c8;
+  --tasks-border-strong: #aaa69e;
+  --tasks-gold: #e3ad3b;
+  --tasks-champagne: #f5d986;
+  --tasks-danger: #bd3d35;
+  --tasks-danger-soft: #fff2f0;
+  overflow: hidden;
+  padding: 20px;
+  color: var(--tasks-ink);
+  background:
+    linear-gradient(135deg, rgb(227 173 59 / 14%), transparent 54%),
+    var(--tasks-surface);
+  border: 1px solid #d4a643;
+  border-radius: 20px;
+  box-shadow: 0 22px 60px rgb(0 0 0 / 32%), 0 0 0 4px rgb(227 173 59 / 10%);
+  pointer-events: auto;
+}
+
+html[data-theme='dark'] .sygtasks-alarm-host__card {
+  --tasks-surface: #141718;
+  --tasks-panel: #1b1f20;
+  --tasks-control: #101314;
+  --tasks-surface-2: #101314;
+  --tasks-ink: #f7f4ec;
+  --tasks-muted: #c6c8c9;
+  --tasks-border: #3d4244;
+  --tasks-border-strong: #63696b;
+  --tasks-danger-soft: #3b1e1c;
+}
+
+.sygtasks-alarm-host__card--urgent,
+.sygtasks-alarm-host__card--high {
+  border-color: #d96756;
+  box-shadow: 0 22px 60px rgb(0 0 0 / 34%), 0 0 0 4px rgb(217 103 86 / 12%);
+}
+
+.sygtasks-alarm-host__card > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+}
+
+.sygtasks-alarm-host__card h2,
+.sygtasks-alarm-host__card p { margin: 0; }
+.sygtasks-alarm-host__card h2 { margin-top: 2px; font-size: 20px; line-height: 1.18; overflow-wrap: anywhere; }
+.sygtasks-alarm-host__card header small { color: #9a6815; font-size: 11px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
+html[data-theme='dark'] .sygtasks-alarm-host__card header small { color: #f5d986; }
+
+.sygtasks-alarm-host__icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  color: #201500;
+  background: linear-gradient(145deg, #f8dda0, #dda135);
+  border-radius: 14px;
+  place-items: center;
+}
+
+.sygtasks-alarm-host__count {
+  min-width: 34px;
+  padding: 7px 9px;
+  color: #171008;
+  background: #f5d986;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.sygtasks-alarm-host__details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin: 17px 0 12px;
+}
+
+.sygtasks-alarm-host__details > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--tasks-surface-2) 88%, transparent);
+  border: 1px solid var(--tasks-border);
+  border-radius: 12px;
+}
+
+.sygtasks-alarm-host__details small { color: var(--tasks-muted); font-size: 10px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.sygtasks-alarm-host__details strong { font-size: 13px; line-height: 1.35; }
+.sygtasks-alarm-host__sound { display: flex; align-items: flex-start; gap: 8px; color: var(--tasks-muted); font-size: 12px; line-height: 1.4; }
+.sygtasks-alarm-host__sound svg { flex: 0 0 auto; margin-top: 1px; }
+.sygtasks-alarm-host__audio { margin-top: 11px; }
+.sygtasks-alarm-host__card > .sygtasks-notice { margin: 12px 0 0; }
+
+.sygtasks-alarm-host .sygtasks-button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 15px;
+  color: var(--tasks-ink);
+  background: var(--tasks-panel);
+  border: 1px solid var(--tasks-border);
+  border-radius: 11px;
+  box-shadow: 0 2px 7px rgb(12 13 13 / 7%);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.sygtasks-alarm-host .sygtasks-button:hover:not(:disabled) { border-color: var(--tasks-gold); transform: translateY(-1px); }
+.sygtasks-alarm-host .sygtasks-button:disabled { cursor: not-allowed; opacity: .55; }
+.sygtasks-alarm-host .sygtasks-button--primary { color: #0c0d0d; background: linear-gradient(180deg, #f5d986, #e3ad3b); border-color: #c28c22; box-shadow: 0 4px 12px rgb(227 173 59 / 22%); }
+.sygtasks-alarm-host .sygtasks-button--secondary { color: var(--tasks-ink); background: var(--tasks-control); border-color: var(--tasks-border-strong); }
+.sygtasks-alarm-host .sygtasks-button:focus-visible,
+.sygtasks-alarm-host select:focus-visible { outline: 3px solid color-mix(in srgb, var(--tasks-gold) 74%, white); outline-offset: 2px; }
+
+.sygtasks-alarm-host .sygtasks-notice {
+  padding: 11px 13px;
+  border: 1px solid;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.sygtasks-alarm-host .sygtasks-notice--error { color: var(--tasks-danger); background: var(--tasks-danger-soft); border-color: color-mix(in srgb, var(--tasks-danger) 50%, transparent); }
+html[data-theme='dark'] .sygtasks-alarm-host .sygtasks-notice--error { color: #ffb5af; }
+
+.sygtasks-alarm-host__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 17px;
+  padding-top: 15px;
+  border-top: 1px solid var(--tasks-border);
+}
+
+.sygtasks-alarm-host__actions .sygtasks-button { min-height: 42px; padding: 9px 13px; }
+.sygtasks-alarm-host__actions a { text-decoration: none; }
+.sygtasks-alarm-host__snooze { display: inline-flex; }
+.sygtasks-alarm-host__snooze select {
+  min-height: 42px;
+  max-width: 118px;
+  padding: 0 26px 0 10px;
+  color: var(--tasks-ink);
+  background: var(--tasks-surface-2);
+  border: 1px solid var(--tasks-border-strong);
+  border-radius: 11px 0 0 11px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+.sygtasks-alarm-host__snooze .sygtasks-button { border-radius: 0 11px 11px 0; }
+
+@media (max-width: 600px) {
+  .sygtasks-alarm-host { right: 10px; bottom: 10px; width: calc(100vw - 20px); }
+  .sygtasks-alarm-host__card { max-height: calc(100dvh - 20px); padding: 16px; border-radius: 17px; overflow-y: auto; }
+  .sygtasks-alarm-host__details { grid-template-columns: 1fr; }
+  .sygtasks-alarm-host__actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .sygtasks-alarm-host__actions .sygtasks-button,
+  .sygtasks-alarm-host__snooze { width: 100%; }
+  .sygtasks-alarm-host__snooze select,
+  .sygtasks-alarm-host__snooze .sygtasks-button { flex: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sygtasks-alarm-host__card { scroll-behavior: auto; }
+}

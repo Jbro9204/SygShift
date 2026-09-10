@@ -1037,39 +1037,23 @@ describe('Cloudflare Worker boundary', () => {
   })
 
   it('runs the idempotent timekeeping job before processing scheduled notifications', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        jobRunId: 'generated-by-worker',
-        status: 'completed',
-      }), { headers: { 'content-type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        status: 'completed',
-        fullReconciliation: false,
-      }), { headers: { 'content-type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        updated: 0,
-      }), { headers: { 'content-type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        published: 0,
-      }), { headers: { 'content-type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
-        headers: { 'content-type': 'application/json' },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
-        headers: { 'content-type': 'application/json' },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
-        headers: { 'content-type': 'application/json' },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
-        headers: { 'content-type': 'application/json' },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify([]), {
-        headers: { 'content-type': 'application/json' },
-      }))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input)
+      const payload = url.includes('/rpc/service_run_timekeeping_automation')
+        ? { jobRunId: 'generated-by-worker', status: 'completed' }
+        : url.includes('/rpc/service_reconcile_operational_alert_lifecycle')
+          ? { status: 'completed', fullReconciliation: false }
+          : url.includes('/rpc/service_reconcile_patrol_obligations')
+            ? { updated: 0 }
+            : url.includes('/rpc/service_publish_due_announcement_work_items')
+              ? { published: 0 }
+              : url.includes('/rpc/service_process_due_sygtasks_reminders')
+                ? { processed: 0, triggered: 0, cancelled: 0 }
+                : []
+      return new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } })
+    })
     const emailSend = vi.fn()
-    let scheduledWork: Promise<unknown> | undefined
+    const scheduledWork: Promise<unknown>[] = []
     vi.stubGlobal('fetch', fetchMock)
 
     await worker.scheduled(
@@ -1078,23 +1062,29 @@ describe('Cloudflare Worker boundary', () => {
         ...configuredEnvironment,
         EMAIL: { send: emailSend },
       }),
-      { waitUntil: (promise: Promise<unknown>) => { scheduledWork = promise } },
+      { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
     )
 
-    expect(scheduledWork).toBeDefined()
-    await scheduledWork
-    expect(fetchMock).toHaveBeenCalledTimes(9)
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/rpc/service_run_timekeeping_automation')
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/rpc/service_reconcile_operational_alert_lifecycle')
-    expect(String(fetchMock.mock.calls[2]?.[0])).toContain('/rpc/service_reconcile_patrol_obligations')
-    expect(String(fetchMock.mock.calls[3]?.[0])).toContain('/rpc/service_publish_due_announcement_work_items')
-    expect(String(fetchMock.mock.calls[4]?.[0])).toContain('/rpc/service_claim_timekeeping_notification_batch')
-    expect(String(fetchMock.mock.calls[5]?.[0])).toContain('/rpc/service_claim_time_off_notification_batch')
-    expect(String(fetchMock.mock.calls[6]?.[0])).toContain('/rpc/service_claim_notification_batch')
-    expect(String(fetchMock.mock.calls[7]?.[0])).toContain('/rpc/service_claim_support_ticket_notification_batch')
-    expect(String(fetchMock.mock.calls[8]?.[0])).toContain('/rpc/service_claim_employee_notification_batch')
-    const automationBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { target_job_run_id: string }
-    const lifecycleBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as { target_full_reconciliation: boolean }
+    expect(scheduledWork).toHaveLength(4)
+    await Promise.all(scheduledWork)
+    expect(fetchMock).toHaveBeenCalledTimes(10)
+    const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
+    for (const rpc of [
+      'service_process_due_sygtasks_reminders',
+      'service_run_timekeeping_automation',
+      'service_reconcile_operational_alert_lifecycle',
+      'service_reconcile_patrol_obligations',
+      'service_publish_due_announcement_work_items',
+      'service_claim_timekeeping_notification_batch',
+      'service_claim_time_off_notification_batch',
+      'service_claim_notification_batch',
+      'service_claim_support_ticket_notification_batch',
+      'service_claim_employee_notification_batch',
+    ]) expect(calledUrls.some((url) => url.includes(`/rpc/${rpc}`))).toBe(true)
+    const automationCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/rpc/service_run_timekeeping_automation'))!
+    const lifecycleCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/rpc/service_reconcile_operational_alert_lifecycle'))!
+    const automationBody = JSON.parse(String(automationCall[1]?.body)) as { target_job_run_id: string }
+    const lifecycleBody = JSON.parse(String(lifecycleCall[1]?.body)) as { target_full_reconciliation: boolean }
     expect(automationBody.target_job_run_id).toMatch(/^[a-f0-9-]{36}$/)
     expect(lifecycleBody.target_full_reconciliation).toBe(false)
     expect(emailSend).not.toHaveBeenCalled()

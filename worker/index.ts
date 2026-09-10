@@ -7033,6 +7033,17 @@ async function processPushJobs(environment: Environment): Promise<void> {
   }
 }
 
+async function processSygTasksReminderJobs(environment: Environment): Promise<Record<string, unknown>> {
+  const config = configuredSupabase(environment)
+  if (!config) throw new ApiError('server_not_configured', 503, 'The protected data service is not configured.')
+  return callRpc<Record<string, unknown>>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_process_due_sygtasks_reminders',
+    { target_limit: 100 },
+    config.serviceRoleKey,
+  )
+}
+
 async function processNotificationJobs(environment: Environment, limit = 10): Promise<{
   delivered: string[]
   failed: Array<{ id: string, error: string }>
@@ -7799,6 +7810,16 @@ export default {
   ): Promise<void> {
     // Independent from timekeeping/email: push failures cannot stop existing scheduled jobs.
     context.waitUntil(processPushJobs(environment))
+    // Task reminders are isolated from timekeeping and the general email queue so
+    // a reminder failure cannot delay punches, alerts, or payroll automation.
+    context.waitUntil(processSygTasksReminderJobs(environment).then((sygtasksReminders) => {
+      console.info(JSON.stringify({ event: 'sygtasks_reminders_processed', sygtasksReminders }))
+    }).catch((error) => {
+      console.error(JSON.stringify({
+        event: 'sygtasks_reminders_failed',
+        message: error instanceof Error ? error.message : 'Unknown reminder processing failure',
+      }))
+    }))
     context.waitUntil(purgeExpiredSygSphereUploads(environment).catch((error) => {
       console.error(JSON.stringify({
         event: 'sygsphere_quarantine_cleanup_failed',

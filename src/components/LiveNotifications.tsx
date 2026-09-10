@@ -38,6 +38,9 @@ export function LiveNotifications({ employeeId, username }: { employeeId: string
         if (!active) return
         void queryClient.invalidateQueries({ queryKey: ['my-notifications'] })
         void queryClient.invalidateQueries({ queryKey: ['support'] })
+        void queryClient.invalidateQueries({ queryKey: ['sygtasks'] })
+        void queryClient.invalidateQueries({ queryKey: ['sygtasks-badge'] })
+        void queryClient.invalidateQueries({ queryKey: ['sygtasks-alarms'] })
       }, 150)
     }
     const sync = async (alert: boolean) => {
@@ -85,7 +88,7 @@ export function LiveNotifications({ employeeId, username }: { employeeId: string
       channel = client.channel(`employee:${data.session.user.id}`, { config: { private: true } })
         .on('broadcast', { event: 'changed' }, (event) => {
           invalidate()
-          if (event.payload?.kind === 'notification' && event.payload?.isNew === true) void sync(true)
+          if (['notification', 'sygtasks_alarm', 'sygtasks_reminder'].includes(String(event.payload?.kind)) && event.payload?.isNew === true) void sync(true)
         })
         .subscribe((status) => { if (status === 'SUBSCRIBED') { invalidate(); void sync(false) } })
       await sync(false)

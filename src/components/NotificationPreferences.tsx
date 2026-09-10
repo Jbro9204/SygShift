@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BellRing, Download, Smartphone, Volume2 } from 'lucide-react'
+import { AlarmClock, BellRing, Download, Smartphone, Volume2 } from 'lucide-react'
 import { getSessionContext } from '../data/auth'
 import { disableDevicePush, enableDevicePush, getDevicePushEnabled, pushSupported } from '../data/pushNotifications'
 import { enableAudio, getSoundPreferences, playSound, saveSoundPreferences, SOUND_PREFERENCES_EVENT, type SoundPreferences } from '../lib/notificationSounds'
@@ -34,7 +34,7 @@ export function NotificationPreferences() {
     setSoundMessage('Sound settings saved on this device.')
     if (!value.muted) void enableAudio()
   }
-  async function test(kind: 'login' | 'notification') {
+  async function test(kind: 'login' | 'notification' | 'alarm') {
     setTesting(true)
     const enabled = await enableAudio()
     const played = enabled && await playSound(kind, true)
@@ -53,14 +53,15 @@ export function NotificationPreferences() {
   return <details className="notification-preferences operations-panel" onToggle={(event) => setOpen(event.currentTarget.open)}>
     <summary><Volume2 aria-hidden="true" size={20} /><span>Sounds &amp; device notifications</span><small>Settings and app install for this device</small></summary>
     {open ? <div className="notification-preferences__body">
-      <section aria-label="Sound preferences"><h2>Make SygShift sound like SygShift</h2><p>Your selected login and notification sounds play while SygShift is open. Login plays only after a successful manual sign-in and required verification.</p>
+      <section aria-label="Sound preferences"><h2>Make SygShift sound like SygShift</h2><p>Your selected login, notification, and task-alarm sounds play while SygShift is open. Login plays only after a successful manual sign-in and required verification.</p>
         <div className="notification-preferences__toggles">
           <label><input type="checkbox" checked={preferences.login} onChange={(event) => change({ login: event.target.checked })} /><span>Login sound</span></label>
           <label><input type="checkbox" checked={preferences.notification} onChange={(event) => change({ notification: event.target.checked })} /><span>Notification sound</span></label>
+          <label><input type="checkbox" checked={preferences.alarm} onChange={(event) => change({ alarm: event.target.checked })} /><span><AlarmClock aria-hidden="true" size={17} />Repeating task-alarm sound</span></label>
           <label><input type="checkbox" checked={preferences.muted} onChange={(event) => change({ muted: event.target.checked })} /><span>Mute all SygShift sounds</span></label>
         </div>
         <label className="notification-preferences__volume"><span>Volume · {Math.round(preferences.volume * 100)}%</span><input aria-label="Sound volume" type="range" min="0" max="100" value={Math.round(preferences.volume * 100)} onChange={(event) => change({ volume: Number(event.target.value) / 100 })} /></label>
-        <div className="notification-preferences__actions"><button className="secondary-button" disabled={testing} onClick={() => void test('login')} type="button">Test login sound</button><button className="secondary-button" disabled={testing} onClick={() => void test('notification')} type="button">Test notification sound</button></div>
+        <div className="notification-preferences__actions"><button className="secondary-button" disabled={testing} onClick={() => void test('login')} type="button">Test login sound</button><button className="secondary-button" disabled={testing} onClick={() => void test('notification')} type="button">Test notification sound</button><button className="secondary-button" disabled={testing} onClick={() => void test('alarm')} type="button">Test task alarm</button></div>
         {soundMessage ? <p role="status">{soundMessage}</p> : null}
       </section>
       <section aria-label="Device notifications"><h2><BellRing aria-hidden="true" size={20} />Updates when SygShift is closed</h2><p>Enable notifications separately on each device. Lock-screen alerts keep ticket details private. Background sounds follow your browser and device settings, not the custom in-app sound.</p>
