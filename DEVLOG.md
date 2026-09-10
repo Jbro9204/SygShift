@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/10/2026 - SygSphere Standard Upload Routing Repair
+
+- Corrected the desktop and mobile SygSphere failure where normal PDFs and photos were authorized but no private storage object was created.
+- Routed attachments through 6 MiB through signed standard upload while retaining signed TUS resumable transfer for larger media; both paths still use the same private quarantine, Worker validation, asynchronous malware scan, audit, and participant-access controls.
+- Added direct unit and real-component desktop PDF coverage proving storage transfer occurs before upload completion.
+- Released source commit `25fa3f3` as Cloudflare Worker `4d30f3ce-6b8d-4808-8ec6-c2f126d78961`; rollback tag `rollback/pre-sygsphere-standard-upload-routing-repair-20260910` points to `33ccf07`.
+- Verification passed 229 test files / 1,184 tests, the 88-check combined SygSphere and mandatory Time Clock browser matrix, and the 42-check post-deployment Time Clock matrix. Both production origins are healthy/ready, live assets match exactly, and signed-out completion remains denied.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-10-2026_SYGSPHERE_STANDARD_UPLOAD_ROUTING_REPAIR.md`.
+
 ## 09/10/2026 - SygSphere Mobile Upload Completion Repair
 
 - Repaired the mobile attachment race that could report an upload as unfinished after its resumable transfer had already completed but before private storage exposed the object to the Worker.
