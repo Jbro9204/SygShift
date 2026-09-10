@@ -4,7 +4,7 @@ import '../worker/sygsphereFiles.test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { validateSygSphereResumableFile, validateSygSphereUploadIntent, waitForPrivateStorageObjectHead } from '../worker/index'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe('SygSphere larger-file validation', () => {
   const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -45,5 +45,22 @@ describe('SygSphere larger-file validation', () => {
     )
     expect(response.status).toBe(200)
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('bounds the Worker storage visibility wait to three short checks', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 404 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const pending = waitForPrivateStorageObjectHead(
+      { serviceRoleKey: 'service-role-test', url: 'https://project.supabase.co' },
+      'sygsphere-files',
+      'conversation/file',
+    )
+    await vi.runAllTimersAsync()
+    const response = await pending
+
+    expect(response.status).toBe(404)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })

@@ -261,7 +261,7 @@ test('offers completion-only recovery without making a mobile user select or tra
   await page.route('**/api/v1/sygsphere/uploads**', async (route) => {
     if (route.request().url().endsWith('/complete')) {
       completionAttempts += 1
-      await route.fulfill(completionAttempts <= 5
+      await route.fulfill(completionAttempts <= 2
         ? { status: 409, contentType: 'application/json', body: JSON.stringify({ detail: 'The upload has not finished.', error: 'sygsphere_file_not_stored', requestId: '30000000-0000-4000-8000-000000000003' }) }
         : { status: 202, contentType: 'application/json', body: JSON.stringify({ state: 'uploaded', uploadId: '30000000-0000-4000-8000-000000000004' }) })
       return
@@ -275,7 +275,7 @@ test('offers completion-only recovery without making a mobile user select or tra
   await expect(page.getByText('without selecting the file again')).toBeVisible()
   await page.getByRole('button', { name: 'Check upload', exact: true }).click()
   await expect(page.getByText('Upload complete. The private security check is continuing in the background.')).toBeVisible()
-  expect(completionAttempts).toBe(6)
+  expect(completionAttempts).toBe(3)
 })
 test('keeps drafts over reload, retains a failed send and retries successfully', async ({ page }) => {
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)

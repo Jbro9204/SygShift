@@ -1594,7 +1594,7 @@ export async function waitForPrivateStorageObjectHead(
   config: { serviceRoleKey: string, url: string },
   bucket: string,
   objectKey: string,
-  retryDelaysMs = [0, 150, 450, 900],
+  retryDelaysMs = [0, 100, 300],
 ): Promise<Response> {
   let response: Response | null = null
   for (const delayMs of retryDelaysMs) {

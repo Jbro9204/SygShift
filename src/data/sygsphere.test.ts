@@ -7,7 +7,7 @@ describe('SygSphere navigation and drafts', () => {
     localStorage.clear()
     vi.mocked(getSupabaseClient).mockReturnValue({ auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'test-token' } } }) } } as never)
   })
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
   it('keeps message and thread destinations together', () => { expect(spherePath('conversation', 'message', 'parent')).toBe('/sygsphere?conversation=conversation&message=message&thread=parent') })
   it('keeps unsent text and its retry identifier through reload', () => {
     const key = sphereDraftKey('a', 'conversation', null); const value = { body: 'Please review the handoff', clientId: crypto.randomUUID(), mentions: [] }
@@ -51,6 +51,20 @@ describe('SygSphere navigation and drafts', () => {
     const error = await sphereCompleteUpload(uploadId, undefined, [0, 0]).catch((reason: unknown) => reason)
     expect(error).toBeInstanceOf(SphereUploadError)
     expect(error).toMatchObject({ code: 'sygsphere_file_not_stored', completionPending: true, requestReference: requestId, uploadId })
+  })
+  it('keeps the normal upload confirmation window short before offering recovery', async () => {
+    vi.useFakeTimers()
+    const uploadId = '45454545-4545-4545-8545-454545454545'
+    const requestId = '56565656-5656-4565-8565-565656565656'
+    const fetchMock = vi.fn().mockImplementation(async () => Response.json({ detail: 'The upload has not finished.', error: 'sygsphere_file_not_stored', requestId }, { status: 409 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const completion = sphereCompleteUpload(uploadId).catch((reason: unknown) => reason)
+    await vi.runAllTimersAsync()
+    const error = await completion
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(error).toMatchObject({ completionPending: true, uploadId })
   })
   it('uses a signed standard transfer for normal attachments before requesting the security scan', async () => {
     const uploadId = '66666666-6666-4666-8666-666666666666'

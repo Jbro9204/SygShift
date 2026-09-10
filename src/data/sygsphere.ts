@@ -189,7 +189,7 @@ export async function sphereUploadStatus(uploadId: string): Promise<SphereUpload
   return sphereResumableTargetSchema.parse(await response.json())
 }
 
-const sphereCompletionRetryDelaysMs = [0, 350, 850, 1_500, 2_500]
+const sphereCompletionRetryDelaysMs = [0, 250]
 
 function waitForUploadCompletionRetry(delayMs: number) {
   return delayMs > 0 ? new Promise<void>((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve()
