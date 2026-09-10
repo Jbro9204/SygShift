@@ -59,6 +59,8 @@ Guard is the only role eligible for AAL1, and only when the authoritative effect
 - Cloudflare Worker version: `a7bf4030-94c7-4a27-82dc-47d9f61ba739`.
 - Primary `https://app.sygilant.us` and fallback `https://sygshift.sygilant.workers.dev` health returned `ok`; readiness returned `true`; both roots returned HTTP 200.
 - The unauthenticated Sygilant launch boundary rejected access with HTTP 403.
+- A real production Admin high-assurance round trip passed Sygilant → SygShift → Sygilant without another login, and both platform sessions restored correctly.
+- No real user-present Guard account was impersonated for a production browser canary. Guard AAL1 is supported by the deployed contract, production postflight, and automated role/assurance suites described above; this record does not misstate those checks as a human Guard browser test.
 - Pre-release rollback tag: `rollback/pre-sygilant-universal-launch-20260909` at `cca5804`.
 - Reciprocal Sygilant baseline supplied by the coordinated merger task: source commit `00d1195`, migration `20260912000100`, and rollback tag `rollback/canonical-handoff-stage-four-20260909`.
 
