@@ -1,5 +1,15 @@
 # SygShift Development Log
 
+## 09/10/2026 - Document Center Workbench
+
+- Replaced the ordinary Document Studio entry path with a direct Document Center workspace: open a PDF immediately, add text/date/checkmarks, generate a signature from a typed name, and download the finished PDF without first creating a policy or template.
+- Added first-class filing to a selected employee record and a company-document destination, plus direct reuse of searchable company PDFs through working copies.
+- Preserved optional internal delivery, signature-request tracking, authorization, recent-HR MFA, audit evidence, private storage, and asynchronous document scanning while removing those implementation details from the employee workflow.
+- Added retry-safe document save/send behavior, responsive light/dark presentation, and regression coverage for Document Center, Document Studio, the company library, and the complete Time Clock workflow.
+- Released source commit `73586c3` as Cloudflare Worker `509d4533-e1d6-4266-abe8-62f6a50eb080`; rollback tag `rollback/pre-document-center-workbench-20260910` points to `d3e9bc0`.
+- Verification passed 238 test files / 1,220 tests, 70 pre-release browser checks, the 42-check post-deployment Time Clock matrix, both production origins, and exact live bundle identity.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-10-2026_DOCUMENT_CENTER_WORKBENCH.md`.
+
 ## 09/10/2026 - SygSphere Mention Send Repair
 
 - Repaired the production `invalid regular expression: quantifier operand invalid` failure that blocked messages containing real-name mentions such as `@Michelle`.
