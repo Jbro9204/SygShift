@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 09/10/2026 - SygSphere Mobile Upload Completion Repair
+
+- Repaired the mobile attachment race that could report an upload as unfinished after its resumable transfer had already completed but before private storage exposed the object to the Worker.
+- Added bounded storage confirmation on both sides of finalization and a completion-only **Check upload** recovery action that preserves the selected file, message draft, upload identity, and request reference without retransmitting the attachment.
+- Preserved private quarantine, security scanning, authorization, participant access, download behavior, notifications, and all non-SygSphere workflows; no database or production-data change is required.
+- Pre-release verification passed 229 test files / 1,182 tests, 24 focused data/Worker tests, 19 mobile SygSphere checks, and the 86-check SygSphere plus mandatory actual-component Time Clock browser matrix.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-10-2026_SYGSPHERE_MOBILE_UPLOAD_COMPLETION_REPAIR.md`.
+
 ## 09/10/2026 - Attendance Alert Schedule Refresh
 
 - Made the current published schedule authoritative for persistent missing-clock alerts after assignment removal, restoration, shift correction, and schedule revision publication.

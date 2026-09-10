@@ -1,8 +1,10 @@
 // The primary Vitest include is intentionally limited to src. Import the Worker suite here so the
 // protected SygSphere streaming/preview boundary is exercised by the normal test command.
 import '../worker/sygsphereFiles.test'
-import { describe, expect, it } from 'vitest'
-import { validateSygSphereResumableFile, validateSygSphereUploadIntent } from '../worker/index'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { validateSygSphereResumableFile, validateSygSphereUploadIntent, waitForPrivateStorageObjectHead } from '../worker/index'
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('SygSphere larger-file validation', () => {
   const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -28,5 +30,20 @@ describe('SygSphere larger-file validation', () => {
     expect(validateSygSphereUploadIntent('briefing.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 26214400).mimeType).toContain('wordprocessingml')
     expect(() => validateSygSphereUploadIntent('field-report.pdf', 'application/pdf', 26214401)).toThrow('over 25 MB')
     expect(() => validateSygSphereUploadIntent('field-report.pdf', 'text/plain', 29_500)).toThrow('do not match')
+  })
+
+  it('waits for a just-finished resumable object to become visible before finalization', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const response = await waitForPrivateStorageObjectHead(
+      { serviceRoleKey: 'service-role-test', url: 'https://project.supabase.co' },
+      'sygsphere-files',
+      'conversation/file',
+      [0, 0],
+    )
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

@@ -1590,6 +1590,27 @@ async function fetchPrivateStorageObject(
   })
 }
 
+export async function waitForPrivateStorageObjectHead(
+  config: { serviceRoleKey: string, url: string },
+  bucket: string,
+  objectKey: string,
+  retryDelaysMs = [0, 150, 450, 900],
+): Promise<Response> {
+  let response: Response | null = null
+  for (const delayMs of retryDelaysMs) {
+    if (delayMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, delayMs))
+    response = await fetch(privateStorageObjectUrl(config, bucket, objectKey), {
+      headers: {
+        apikey: config.serviceRoleKey,
+        authorization: `Bearer ${config.serviceRoleKey}`,
+      },
+      method: 'HEAD',
+    })
+    if (response.ok || response.status !== 404) return response
+  }
+  return response ?? new Response(null, { status: 404 })
+}
+
 async function deletePrivateStorageObject(
   config: { serviceRoleKey: string, url: string },
   bucket: string,
@@ -2690,10 +2711,7 @@ async function handleSygSphereResumableUpload(
     return json({ detail: operation.state === 'rejected' ? 'This file was blocked by its security check and was not shared.' : 'The protected file security check needs attention.', error: 'sygsphere_file_unavailable', requestId, requestReference: operation.requestReference ?? requestId, retryable: operation.retryable === true, state: operation.state, uploadId }, 409)
   }
   if (operation.state === 'prepared') {
-    const stored = await fetch(privateStorageObjectUrl(serviceConfig, sygsphereResumableBucket, operation.objectKey), {
-      headers: { apikey: serviceConfig.serviceRoleKey, authorization: `Bearer ${serviceConfig.serviceRoleKey}` },
-      method: 'HEAD',
-    })
+    const stored = await waitForPrivateStorageObjectHead(serviceConfig, sygsphereResumableBucket, operation.objectKey)
     if (!stored.ok) throw new ApiError('sygsphere_file_not_stored', 409, 'The upload has not finished. Wait for it to complete and try again.')
     const sizeBytes = Number(stored.headers.get('content-length'))
     const mimeType = normalizedMimeType(stored.headers.get('content-type') ?? '')

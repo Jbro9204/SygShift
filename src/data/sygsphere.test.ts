@@ -1,8 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { readSphereDraft, sphereCanPreview, sphereDraftKey, sphereMentionIds, sphereMessageParts, spherePath, sphereUnread, writeSphereDraft } from './sygsphere'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { getSupabaseClient } from '../lib/supabase'
+import { readSphereDraft, sphereCanPreview, sphereCompleteUpload, sphereDraftKey, sphereMentionIds, sphereMessageParts, spherePath, sphereUnread, SphereUploadError, writeSphereDraft } from './sygsphere'
 vi.mock('../lib/supabase', () => ({ getSupabaseClient: vi.fn() }))
 describe('SygSphere navigation and drafts', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => {
+    localStorage.clear()
+    vi.mocked(getSupabaseClient).mockReturnValue({ auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'test-token' } } }) } } as never)
+  })
+  afterEach(() => vi.unstubAllGlobals())
   it('keeps message and thread destinations together', () => { expect(spherePath('conversation', 'message', 'parent')).toBe('/sygsphere?conversation=conversation&message=message&thread=parent') })
   it('keeps unsent text and its retry identifier through reload', () => {
     const key = sphereDraftKey('a', 'conversation', null); const value = { body: 'Please review the handoff', clientId: crypto.randomUUID(), mentions: [] }
@@ -29,5 +34,22 @@ describe('SygSphere navigation and drafts', () => {
     expect(sphereCanPreview({ mimeType: 'image/png', sizeBytes: 26214401 })).toBe(false)
     expect(sphereCanPreview({ mimeType: 'text/plain', sizeBytes: 1048577 })).toBe(false)
     expect(sphereCanPreview({ mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', sizeBytes: 100 })).toBe(false)
+  })
+  it('waits through transient mobile storage confirmation before completing the upload', async () => {
+    const requestId = '33333333-3333-4333-8333-333333333333'
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({ detail: 'The upload has not finished.', error: 'sygsphere_file_not_stored', requestId }, { status: 409 }))
+      .mockResolvedValueOnce(Response.json({ state: 'uploaded', uploadId: requestId }, { status: 202 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(sphereCompleteUpload(requestId, undefined, [0, 0])).resolves.toMatchObject({ state: 'processing', uploadId: requestId })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+  it('preserves a completion-only recovery action instead of asking mobile users to upload again', async () => {
+    const uploadId = '44444444-4444-4444-8444-444444444444'
+    const requestId = '55555555-5555-4555-8555-555555555555'
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => Response.json({ detail: 'The upload has not finished.', error: 'sygsphere_file_not_stored', requestId }, { status: 409 })))
+    const error = await sphereCompleteUpload(uploadId, undefined, [0, 0]).catch((reason: unknown) => reason)
+    expect(error).toBeInstanceOf(SphereUploadError)
+    expect(error).toMatchObject({ code: 'sygsphere_file_not_stored', completionPending: true, requestReference: requestId, uploadId })
   })
 })
