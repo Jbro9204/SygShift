@@ -4,6 +4,7 @@ import { handleSharedIdentityRequest, type SharedIdentityEnvironment } from '../
 const authUserId = 'cc65cc0f-1715-4c58-9a86-001731f67376'
 const employeeId = 'a25a5f5f-45b6-4e43-87a6-79298ed9347f'
 const requestId = 'eacdc293-e7ff-4d14-8f8e-38340e26a2c5'
+const accessTokenExpiration = Math.floor(Date.now() / 1000) + 3600
 const sygsphereAssertion = assertionFor('/sygsphere')
 const environment: SharedIdentityEnvironment = {
   SUPABASE_PUBLISHABLE_KEY: 'publishable-key',
@@ -337,6 +338,48 @@ describe('Sygilant to SygSphere shared session bridge', () => {
     expect(response?.status).toBe(403)
     await expect(response?.json()).resolves.toMatchObject({ error: 'shared_identity_subject_mismatch' })
   })
+
+  it.each([
+    { identityRole: 'guard', localRequiresMfa: false, localRole: 'guard', status: 303 },
+    { identityRole: 'guard', localRequiresMfa: true, localRole: 'guard', status: 403 },
+    { identityRole: 'guard', localRequiresMfa: false, localRole: 'supervisor', status: 403 },
+    { identityRole: 'admin', localRequiresMfa: false, localRole: 'guard', status: 502 },
+  ])(
+    'enforces the reciprocal Guard-only AAL1 policy for $identityRole -> $localRole',
+    async ({ identityRole, localRequiresMfa, localRole, status }) => {
+      vi.stubGlobal('fetch', vi.fn(async (input) => {
+        const url = String(input)
+        if (url.includes('/api/apps/sygshift/introspect')) {
+          return json({ identity: sharedIdentity('/', { assuranceLevel: 'aal1', roleId: identityRole }) })
+        }
+        if (url.includes('/rest/v1/rpc/service_get_employee_login_email_target')) {
+          return json(localIdentity({ requiresMfa: localRequiresMfa, role: localRole }))
+        }
+        if (url.includes('/auth/v1/admin/generate_link')) {
+          return json({ action_link: 'https://project.supabase.co/auth/v1/verify?token=opaque&type=magiclink&redirect_to=https%3A%2F%2Fapp.sygilant.us%2Fauth%2Fshared-identity%2Fcallback' })
+        }
+        if (url.includes('/auth/v1/verify')) {
+          return json({
+            access_token: accessToken(),
+            expires_at: Math.floor(Date.now() / 1000) + 3600,
+            refresh_token: 'refresh-token-value',
+            user: { id: authUserId },
+          })
+        }
+        return json({ error: 'unhandled' }, 500)
+      }))
+
+      const received = await handleSharedIdentityRequest(launchRequest({ destination: '/' }), environment, requestId)
+      const launchCookie = cookieValue(received?.headers.get('set-cookie') ?? '', '__Host-sygshift-shared-launch')
+      const response = await handleSharedIdentityRequest(new Request(
+        'https://app.sygilant.us/api/v1/auth/shared-identity/complete',
+        { headers: { cookie: `__Host-sygshift-shared-launch=${launchCookie}` } },
+      ), environment, requestId)
+
+      expect(response?.status).toBe(status)
+      if (status === 303) expect(response?.headers.get('location')).toBe('/auth/shared-identity/callback')
+    },
+  )
 })
 
 function launchRequest(overrides: { destination?: string, origin?: string, signedDestination?: string } = {}) {
@@ -351,10 +394,13 @@ function launchRequest(overrides: { destination?: string, origin?: string, signe
   })
 }
 
-function sharedIdentity(destination: '/' | '/sygsphere' = '/sygsphere') {
+function sharedIdentity(
+  destination: '/' | '/sygsphere' = '/sygsphere',
+  overrides: { assuranceLevel?: 'aal1' | 'trusted_device', roleId?: string } = {},
+) {
   return {
     applicationId: 'sygshift',
-    assuranceLevel: 'trusted_device',
+    assuranceLevel: overrides.assuranceLevel ?? 'trusted_device',
     destination,
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     externalEmployeeId: employeeId,
@@ -362,6 +408,7 @@ function sharedIdentity(destination: '/' | '/sygsphere' = '/sygsphere') {
     externalUsername: 'lucius',
     profileId: authUserId,
     requestId,
+    roleId: overrides.roleId ?? 'supervisor',
   }
 }
 
@@ -373,18 +420,20 @@ function assertionFor(destination: string) {
   return `glsi_v1.${payload}.${'b'.repeat(64)}`
 }
 
-function localIdentity() {
+function localIdentity(overrides: { requiresMfa?: boolean, role?: string } = {}) {
   return {
     authEmail: 'lucius@accounts.sygshift.invalid',
     employeeId,
     existingAuthUserId: authUserId,
+    requiresMfa: overrides.requiresMfa ?? true,
+    role: overrides.role ?? 'supervisor',
     username: 'lucius',
   }
 }
 
 function accessToken(overrides: { authUserId?: string, sessionId?: string } = {}) {
   const claims = btoa(JSON.stringify({
-    exp: Math.floor(Date.now() / 1000) + 3600,
+    exp: accessTokenExpiration,
     session_id: overrides.sessionId ?? '7c21701a-56ed-4c64-8c47-c9dc516e4398',
     sub: overrides.authUserId ?? authUserId,
   })).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')

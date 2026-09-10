@@ -4,7 +4,7 @@ const destination = '/dashboard'
 const applicationId = 'sygilant'
 const assertionPattern = /^ssli_v1\.[A-Za-z0-9_-]{20,5000}\.[a-f0-9]{64}$/i
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const assuranceLevels = new Set(['aal2', 'security_key', 'trusted_device', 'external_mfa'])
+const assuranceLevels = new Set(['aal1', 'aal2', 'security_key', 'trusted_device', 'external_mfa'])
 const redirectStatuses = new Set([301, 302, 303, 307, 308])
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
@@ -40,6 +40,7 @@ type Configuration = {
 type SessionContext = {
   employee_id?: string
   has_mfa?: boolean
+  mfa_required?: boolean
   permissions?: string[]
   role?: string
   username?: string
@@ -49,7 +50,7 @@ type AuthUser = { id?: string }
 
 type AssertionPayload = {
   applicationId: 'sygilant'
-  assuranceLevel: 'aal2' | 'security_key' | 'trusted_device' | 'external_mfa'
+  assuranceLevel: 'aal1' | 'aal2' | 'security_key' | 'trusted_device' | 'external_mfa'
   audience: string
   destination: '/dashboard'
   expiresAt: string
@@ -186,7 +187,8 @@ async function issueLaunch(request: Request, config: Configuration, requestId: s
   if (context.permissions?.includes('apps.sygilant.access') !== true) {
     throw new SharedLaunchError('sygilant_launch_permission_required', 403, 'Your account is not approved for the Sygilant main platform.')
   }
-  if (context.has_mfa !== true) {
+  const guardMfaException = context.role === 'guard' && context.mfa_required === false
+  if (context.has_mfa !== true && !guardMfaException) {
     throw new SharedLaunchError('sygilant_launch_mfa_required', 403, 'Complete SygShift security verification before opening Sygilant.')
   }
 
@@ -194,7 +196,7 @@ async function issueLaunch(request: Request, config: Configuration, requestId: s
   const expiresAt = new Date(issuedAt.getTime() + config.ttlSeconds * 1000)
   const payload: AssertionPayload = {
     applicationId,
-    assuranceLevel: assuranceLevel(request, claims),
+    assuranceLevel: assuranceLevel(request, claims, context.has_mfa === true),
     audience: config.audience,
     destination,
     expiresAt: expiresAt.toISOString(),
@@ -412,7 +414,12 @@ async function fetchWithProtectedRedirect(url: string, init: RequestInit): Promi
   return secondResponse
 }
 
-function assuranceLevel(request: Request, claims: { aal?: string }): AssertionPayload['assuranceLevel'] {
+function assuranceLevel(
+  request: Request,
+  claims: { aal?: string },
+  hasMfa: boolean,
+): AssertionPayload['assuranceLevel'] {
+  if (!hasMfa) return 'aal1'
   if (claims.aal === 'aal2') return 'aal2'
   if (request.headers.get('x-sygshift-security-key')) return 'security_key'
   if (request.headers.get('x-sygshift-trusted-device')) return 'trusted_device'

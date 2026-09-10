@@ -22,6 +22,19 @@ const environment: SygilantSharedIdentityEnvironment = {
   SYGILANT_SHARED_IDENTITY_TOKEN_TTL_SECONDS: '60',
 }
 
+const approvedLaunchRoles = [
+  { accessRole: 'system_guard', mfaRequired: false, roleId: 'guard' },
+  { accessRole: 'system_dispatcher', mfaRequired: true, roleId: 'dispatcher' },
+  { accessRole: 'system_scheduler', mfaRequired: true, roleId: 'scheduler' },
+  { accessRole: 'system_recruiting_licensing', mfaRequired: true, roleId: 'recruiting_licensing' },
+  { accessRole: 'system_supervisor', mfaRequired: true, roleId: 'supervisor' },
+  { accessRole: 'system_admin', mfaRequired: true, roleId: 'admin' },
+  { accessRole: 'custom_chief', mfaRequired: true, roleId: 'supervisor' },
+  { accessRole: 'operations_manager', mfaRequired: true, roleId: 'supervisor' },
+  { accessRole: 'human_resources', mfaRequired: true, roleId: 'recruiting_licensing' },
+  { accessRole: 'human_resources_employee', mfaRequired: true, roleId: 'recruiting_licensing' },
+] as const
+
 afterEach(() => vi.unstubAllGlobals())
 
 describe('SygShift to Sygilant protected platform launch', () => {
@@ -161,6 +174,133 @@ describe('SygShift to Sygilant protected platform launch', () => {
     expect(assertionPayload).not.toHaveProperty('sourceAuthSessionId')
   })
 
+  it.each(approvedLaunchRoles)(
+    'issues an authorized assertion for $accessRole with the approved MFA policy',
+    async ({ mfaRequired, roleId }) => {
+      vi.stubGlobal('fetch', vi.fn(async (input, init = {}) => {
+        const url = String(input)
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {}
+        if (url.includes('/rest/v1/rpc/get_session_context')) {
+          return json({
+            employee_id: employeeId,
+            has_mfa: mfaRequired,
+            mfa_required: mfaRequired,
+            permissions: ['apps.sygilant.access'],
+            role: roleId,
+            username: 'jordan',
+          })
+        }
+        if (url.includes('/auth/v1/user')) return json({ id: authUserId })
+        if (url.includes('/rest/v1/rpc/service_issue_sygilant_shared_launch')) {
+          return json({ requestId: (body.target_payload as Record<string, unknown>).requestId })
+        }
+        return json({ error: 'unhandled' }, 500)
+      }))
+
+      const response = await handleSygilantSharedIdentityRequest(
+        launchRequest('https://app.sygilant.us', mfaRequired ? 'aal2' : 'aal1'),
+        environment,
+        apiRequestId,
+      )
+
+      expect(response?.status).toBe(201)
+      const responseBody = await response?.json() as { launch: { assertion: string } }
+      expect(decodeAssertion(responseBody.launch.assertion)).toMatchObject({
+        assuranceLevel: mfaRequired ? 'aal2' : 'aal1',
+        roleId,
+      })
+    },
+  )
+
+  it.each(approvedLaunchRoles.filter(({ mfaRequired }) => mfaRequired))(
+    'rejects $accessRole until its required MFA is verified',
+    async ({ roleId }) => {
+      const upstream = vi.fn(async (input) => {
+        const url = String(input)
+        if (url.includes('/rest/v1/rpc/get_session_context')) {
+          return json({
+            employee_id: employeeId,
+            has_mfa: false,
+            mfa_required: true,
+            permissions: ['apps.sygilant.access'],
+            role: roleId,
+            username: 'jordan',
+          })
+        }
+        if (url.includes('/auth/v1/user')) return json({ id: authUserId })
+        return json({ error: 'unhandled' }, 500)
+      })
+      vi.stubGlobal('fetch', upstream)
+
+      const response = await handleSygilantSharedIdentityRequest(
+        launchRequest('https://app.sygilant.us', 'aal1'),
+        environment,
+        apiRequestId,
+      )
+
+      expect(response?.status).toBe(403)
+      await expect(response?.json()).resolves.toMatchObject({ error: 'sygilant_launch_mfa_required' })
+      expect(upstream).not.toHaveBeenCalledWith(
+        expect.stringContaining('/rest/v1/rpc/service_issue_sygilant_shared_launch'),
+        expect.anything(),
+      )
+    },
+  )
+
+  it('does not extend the Guard exception when an additive role makes MFA required', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      const url = String(input)
+      if (url.includes('/rest/v1/rpc/get_session_context')) {
+        return json({
+          employee_id: employeeId,
+          has_mfa: false,
+          mfa_required: true,
+          permissions: ['apps.sygilant.access'],
+          role: 'guard',
+          username: 'jordan',
+        })
+      }
+      if (url.includes('/auth/v1/user')) return json({ id: authUserId })
+      return json({ error: 'unhandled' }, 500)
+    }))
+
+    const response = await handleSygilantSharedIdentityRequest(
+      launchRequest('https://app.sygilant.us', 'aal1'),
+      environment,
+      apiRequestId,
+    )
+
+    expect(response?.status).toBe(403)
+    await expect(response?.json()).resolves.toMatchObject({ error: 'sygilant_launch_mfa_required' })
+  })
+
+  it.each([
+    { assuranceLevel: 'security_key', header: 'x-sygshift-security-key' },
+    { assuranceLevel: 'trusted_device', header: 'x-sygshift-trusted-device' },
+    { assuranceLevel: 'external_mfa', header: null },
+  ] as const)('preserves the verified $assuranceLevel assurance', async ({ assuranceLevel, header }) => {
+    vi.stubGlobal('fetch', vi.fn(async (input, init = {}) => {
+      const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {}
+      if (url.includes('/rest/v1/rpc/get_session_context')) {
+        return json({ employee_id: employeeId, has_mfa: true, mfa_required: true, permissions: ['apps.sygilant.access'], role: 'admin', username: 'jordan' })
+      }
+      if (url.includes('/auth/v1/user')) return json({ id: authUserId })
+      if (url.includes('/rest/v1/rpc/service_issue_sygilant_shared_launch')) {
+        return json({ requestId: (body.target_payload as Record<string, unknown>).requestId })
+      }
+      return json({ error: 'unhandled' }, 500)
+    }))
+    const request = launchRequest('https://app.sygilant.us', 'aal1')
+    if (header) request.headers.set(header, 'verified-session-token')
+
+    const response = await handleSygilantSharedIdentityRequest(request, environment, apiRequestId)
+
+    expect(response?.status).toBe(201)
+    const responseBody = await response?.json() as { launch: { assertion: string } }
+    expect(decodeAssertion(responseBody.launch.assertion)).toMatchObject({ assuranceLevel })
+  })
+
   it.each(['revoked', 'expired', 'mismatched'])(
     'does not issue an assertion when the source auth session is %s',
     async (sourceSessionState) => {
@@ -271,16 +411,16 @@ describe('SygShift to Sygilant protected platform launch', () => {
   )
 })
 
-function launchRequest(origin = 'https://app.sygilant.us') {
+function launchRequest(origin = 'https://app.sygilant.us', aal: 'aal1' | 'aal2' = 'aal2') {
   return new Request('https://app.sygilant.us/api/v1/apps/sygilant/launch', {
-    headers: { authorization: `Bearer ${accessToken()}`, origin },
+    headers: { authorization: `Bearer ${accessToken(aal)}`, origin },
     method: 'POST',
   })
 }
 
-function accessToken() {
+function accessToken(aal: 'aal1' | 'aal2' = 'aal2') {
   const claims = btoa(JSON.stringify({
-    aal: 'aal2',
+    aal,
     exp: Math.floor(Date.now() / 1000) + 3600,
     session_id: authSessionId,
     sub: authUserId,

@@ -54,4 +54,32 @@ describe('Sygilant reciprocal launch release guard', () => {
     expect(browser).not.toMatch(/[?&](?:assertion|token)=/)
     expect(workerIndex).toContain("form-action 'self' https://sygilant.us")
   })
+
+  it('limits universal access to the ten approved roles and keeps AAL1 Guard-only', () => {
+    const migration = read('supabase/migrations/20260912010000_universal_sygilant_launch_access.sql')
+    const worker = read('worker/sygilantSharedIdentity.ts')
+    const approvedRoles = [
+      'system_guard',
+      'system_dispatcher',
+      'system_scheduler',
+      'system_recruiting_licensing',
+      'system_supervisor',
+      'system_admin',
+      'custom_chief',
+      'operations_manager',
+      'human_resources',
+      'human_resources_employee',
+    ]
+
+    for (const role of approvedRoles) expect(migration).toContain(`'${role}'::text`)
+    expect(migration).toContain("('system_guard'::text, false)")
+    expect(migration.match(/::text, true\)/g)).toHaveLength(9)
+    expect(migration).toContain("employee.role = 'guard'")
+    expect(migration).toContain('not private.employee_requires_mfa(employee.id)')
+    expect(migration).toContain("assurance_level <> 'aal1' or role_id = 'guard'")
+    expect(migration).toContain('enforce_sygilant_launch_assurance')
+    expect(migration).toContain('private.sygilant_launch_assurance_allowed(employee.id, assurance_value)')
+    expect(worker).toContain("context.role === 'guard' && context.mfa_required === false")
+    expect(worker).toContain("if (!hasMfa) return 'aal1'")
+  })
 })

@@ -15,7 +15,7 @@ const sessionCookie = '__Host-sygshift-shared-session'
 const assertionPattern = /^glsi_v1\.[A-Za-z0-9_-]{20,3000}\.[a-f0-9]{64}$/i
 const ticketPattern = /^sygsso_v1\.[A-Za-z0-9_-]{20,3000}\.[a-f0-9]{64}$/i
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const assuranceLevels = new Set(['aal2', 'security_key', 'trusted_device', 'external_mfa'])
+const assuranceLevels = new Set(['aal1', 'aal2', 'security_key', 'trusted_device', 'external_mfa'])
 const redirectStatuses = new Set([301, 302, 303, 307, 308])
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
@@ -50,13 +50,14 @@ type SharedIdentityConfiguration = {
 
 type SharedIdentity = {
   applicationId: 'sygshift'
-  assuranceLevel: 'aal2' | 'security_key' | 'trusted_device' | 'external_mfa'
+  assuranceLevel: 'aal1' | 'aal2' | 'security_key' | 'trusted_device' | 'external_mfa'
   destination: SharedIdentityDestination
   expiresAt: string
   externalEmployeeId: string
   externalSubjectId: string
   externalUsername: string
   profileId: string
+  roleId: string
   requestId: string
 }
 
@@ -64,6 +65,8 @@ type LocalIdentity = {
   authEmail: string
   employeeId: string
   existingAuthUserId: string
+  requiresMfa: boolean
+  role: string
   username: string
 }
 
@@ -75,6 +78,7 @@ type SharedIdentityTicket = {
   expiresAt: string
   nonce: string
   requestId: string
+  roleId: string
   username: string
 }
 
@@ -87,6 +91,7 @@ type SharedIdentityBootstrap = {
 type SharedIdentitySessionEnvelope = {
   accessToken: string
   accessTokenExpiresAt: string
+  assuranceLevel: SharedIdentity['assuranceLevel']
   authSessionId: string
   authUserId: string
   destination?: SharedIdentityDestination
@@ -94,8 +99,10 @@ type SharedIdentitySessionEnvelope = {
   expiresAt: string
   persistent: boolean
   refreshToken: string
+  roleId: string
   sessionToken: string
   scope?: SharedIdentityScope
+  username: string
 }
 
 class SharedIdentityError extends Error {
@@ -278,7 +285,12 @@ async function finalizeLaunch(request: Request, config: SharedIdentityConfigurat
   }
 
   const local = await loadLocalIdentity(ticket.employeeId, config)
-  if (local.existingAuthUserId !== ticket.authUserId || local.username !== ticket.username) {
+  if (
+    local.existingAuthUserId !== ticket.authUserId
+    || local.username !== ticket.username
+    || local.role !== ticket.roleId
+    || !localAssuranceAllowed(ticket.assuranceLevel, local)
+  ) {
     throw new SharedIdentityError('shared_identity_subject_mismatch', 403, 'The shared session identity is no longer active.')
   }
 
@@ -302,6 +314,7 @@ async function finalizeLaunch(request: Request, config: SharedIdentityConfigurat
   const sessionEnvelope = await encryptEnvelope({
     accessToken: bootstrap.accessToken,
     accessTokenExpiresAt: bootstrap.expiresAt,
+    assuranceLevel: ticket.assuranceLevel,
     authSessionId,
     authUserId: ticket.authUserId,
     destination,
@@ -309,8 +322,10 @@ async function finalizeLaunch(request: Request, config: SharedIdentityConfigurat
     expiresAt,
     persistent,
     refreshToken: bootstrap.refreshToken,
+    roleId: ticket.roleId,
     sessionToken,
     scope,
+    username: ticket.username,
   } satisfies SharedIdentitySessionEnvelope, config.sessionSecret)
   const response = responseJson({
     destination,
@@ -367,12 +382,17 @@ async function restoreSharedSession(request: Request, config: SharedIdentityConf
   const token = authSession.accessToken
   const claims = accessTokenClaims(token)
   const authUser = await verifyAuthUser(token, config)
+  const local = await loadLocalIdentity(shared.employeeId, config)
   if (
     authUser.id !== shared.authUserId
     || claims.sub !== shared.authUserId
     || claims.session_id !== shared.authSessionId
     || typeof claims.exp !== 'number'
     || claims.exp * 1000 <= Date.now()
+    || local.existingAuthUserId !== shared.authUserId
+    || local.username !== shared.username
+    || local.role !== shared.roleId
+    || !localAssuranceAllowed(shared.assuranceLevel, local)
     || !await verifySharedSession(shared.sessionToken, token, scope, config)
   ) {
     const response = responseEmpty(204)
@@ -462,6 +482,8 @@ async function introspectAssertion(assertion: string, config: SharedIdentityConf
     || !/^[a-z][a-z0-9]{1,62}$/.test(identity.externalUsername ?? '')
     || !uuidPattern.test(identity.requestId ?? '')
     || !assuranceLevels.has(identity.assuranceLevel ?? '')
+    || !/^[a-z][a-z0-9_]{1,62}$/.test(identity.roleId ?? '')
+    || (identity.assuranceLevel === 'aal1' && identity.roleId !== 'guard')
     || !identity.expiresAt
     || Date.parse(identity.expiresAt) <= Date.now()
   ) {
@@ -481,6 +503,8 @@ async function loadLocalIdentity(employeeId: string, config: SharedIdentityConfi
     || !/^[a-z][a-z0-9]{1,62}$/.test(payload.username ?? '')
     || typeof payload.authEmail !== 'string'
     || payload.authEmail.length > 320
+    || !/^[a-z][a-z0-9_]{1,62}$/.test(payload.role ?? '')
+    || typeof payload.requiresMfa !== 'boolean'
   ) {
     throw new SharedIdentityError('shared_identity_account_unavailable', 403, 'The SygShift account is not active.')
   }
@@ -492,9 +516,15 @@ function validateLocalIdentity(identity: SharedIdentity, local: LocalIdentity): 
     local.existingAuthUserId !== identity.externalSubjectId
     || local.employeeId !== identity.externalEmployeeId
     || local.username !== identity.externalUsername
+    || local.role !== identity.roleId
+    || !localAssuranceAllowed(identity.assuranceLevel, local)
   ) {
     throw new SharedIdentityError('shared_identity_subject_mismatch', 403, 'The shared identity did not match the active SygShift account.')
   }
+}
+
+function localAssuranceAllowed(assurance: SharedIdentity['assuranceLevel'], local: LocalIdentity): boolean {
+  return assurance !== 'aal1' || (local.role === 'guard' && local.requiresMfa === false)
 }
 
 async function createSessionLink(authEmail: string, config: SharedIdentityConfiguration): Promise<string> {
@@ -724,6 +754,7 @@ async function createTicket(identity: SharedIdentity, config: SharedIdentityConf
     expiresAt: new Date(Date.now() + 180_000).toISOString(),
     nonce: generateOpaqueToken(24),
     requestId: identity.requestId,
+    roleId: identity.roleId,
     username: identity.externalUsername,
   }
   const encoded = encodeJson(payload)
@@ -743,8 +774,10 @@ async function verifyTicket(value: string, config: SharedIdentityConfiguration):
     || !uuidPattern.test(ticket.employeeId ?? '')
     || !uuidPattern.test(ticket.requestId ?? '')
     || !/^[a-z][a-z0-9]{1,62}$/.test(ticket.username ?? '')
+    || !/^[a-z][a-z0-9_]{1,62}$/.test(ticket.roleId ?? '')
     || !isSharedIdentityDestination(destination)
     || !assuranceLevels.has(ticket.assuranceLevel ?? '')
+    || (ticket.assuranceLevel === 'aal1' && ticket.roleId !== 'guard')
     || !ticket.expiresAt
     || Date.parse(ticket.expiresAt) <= Date.now()
     || Date.parse(ticket.expiresAt) > Date.now() + 185_000
@@ -787,6 +820,10 @@ function validSharedSessionEnvelope(value: SharedIdentitySessionEnvelope | null)
     && uuidPattern.test(value.authSessionId)
     && uuidPattern.test(value.authUserId)
     && uuidPattern.test(value.employeeId)
+    && assuranceLevels.has(value.assuranceLevel)
+    && /^[a-z][a-z0-9_]{1,62}$/.test(value.roleId)
+    && /^[a-z][a-z0-9]{1,62}$/.test(value.username)
+    && (value.assuranceLevel !== 'aal1' || value.roleId === 'guard')
     && /^[A-Za-z0-9_-]{40,180}$/.test(value.sessionToken)
     && typeof value.persistent === 'boolean'
     && Number.isFinite(expiresAt)
