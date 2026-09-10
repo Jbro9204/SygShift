@@ -374,7 +374,6 @@ Required work:
 - [ ] Convert approved operational material into governed checklists, fillable forms, site rules, guided prompts, and required reporting workflows with named owners and version history.
 - [ ] Release the corrective-action workflow from authorized supervisors to HR, including factual records, evidence, follow-up, receipt acknowledgment that does not imply agreement, employee response, restricted visibility, and audit history.
 - [ ] Activate the remaining protected HR modules only after each module has approved operating policy, permission ownership, recent-MFA rules, canary validation, recovery evidence, and production verification.
-- [ ] Review the protected-document reauthentication window so continuously active authorized HR work is usable while inactivity, session expiration, and especially sensitive actions still require strong reauthentication.
 - [ ] Keep compensation rate changes under the existing restricted maker-checker control and obtain the required second qualified approver before activation or amendment.
 - [ ] Preserve employment classification separately from pay basis: full-time, part-time, Flex, temporary, or another approved classification must not be conflated with hourly, salary, or another approved compensation basis.
 - [ ] Add OCR, native PDF form/content editing, irreversible redaction, page restructuring, regulated-document automation, external signers, and organizational seals only as separately reviewed capabilities with immutable originals, exact permissions, audit evidence, recovery controls, and legal approval.
@@ -385,6 +384,35 @@ Completion criteria:
 - [ ] Every released HR workflow has complete UI, persistence, server authorization, audit, document behavior, allow-and-deny tests, recovery evidence, and production validation.
 - [ ] Authorized HR employees can complete their work without gaining compensation, security-administration, payroll-vault, or unrelated employee access.
 - [ ] Advanced document features remain visibly unavailable—not simulated—until their independent release gates pass.
+
+### Unified 30-Minute HR MFA Window
+
+- Priority: **High**
+- Target window: Next focused HR usability and authentication release
+- Status: Approved / queued; exact behavior confirmed with Jordan
+- Added: 09/10/2026
+
+Replace the fragmented module-specific and action-specific HR reauthentication timers with one server-authoritative MFA verification window covering the entire HR & Finance system.
+
+Required behavior:
+
+- [ ] One successful MFA verification authorizes every HR & Finance module and every otherwise authorized HR action for exactly 30 minutes.
+- [ ] Moving between modules, opening records, refreshing a page, downloading a document, signing, or performing another HR action must not present another MFA prompt while that shared window remains valid.
+- [ ] Do not maintain separate timers or stricter step-up exceptions for Compensation, Documents, Cases, Safety, Reporting, Offboarding, signatures, downloads, or other HR functions.
+- [ ] Measure the fixed 30-minute window from the most recent successful MFA verification. Ordinary activity and navigation must not silently extend it.
+- [ ] After the window expires, allow the next protected HR request to open one MFA prompt, automatically retry the pending request after success, and begin one new 30-minute system-wide window.
+- [ ] Coordinate simultaneous and multi-tab requests so one expired window produces one verification flow rather than duplicate prompts.
+- [ ] Bind the window to the current employee, authentication user, and active authentication session. Do not store a reusable authorization grant in local storage or expose it to browser scripts unnecessarily.
+- [ ] Immediately invalidate the window on logout, account disablement, password or MFA reset, role or permission removal, forced session revocation, or authentication-session expiration.
+- [ ] Preserve existing permission checks, maker-checker approvals, required reasons, record-level authorization, and audit trails. The shared window changes MFA frequency only; it must not broaden what the employee may access or approve.
+- [ ] Record successful verification, expiration, revocation, and rejected use without logging factor secrets or one-time codes.
+
+Completion criteria:
+
+- [ ] An authorized HR employee verifies once and can use all permitted HR & Finance modules and actions for the following 30 minutes without another MFA prompt.
+- [ ] The first protected HR request after 30 minutes requires exactly one new verification and resumes automatically after success.
+- [ ] Unauthorized, disabled, downgraded, logged-out, expired-session, and revoked-session requests remain denied immediately even when a prior 30-minute window existed.
+- [ ] Desktop, mobile, multiple tabs, refresh, direct routes, failed verification, cancellation, retry, permissions, audit, and rollback tests pass before production activation.
 
 ### Organizational Hierarchy and Permission Governance
 
