@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { PDFDocument } from 'pdf-lib'
 import type { HrDocumentWorkspace } from '../data/hrDocuments'
 
 const pdf = vi.hoisted(() => {
@@ -16,6 +17,19 @@ const pdf = vi.hoisted(() => {
 
 vi.mock('pdfjs-dist', () => ({ GlobalWorkerOptions: {}, getDocument: pdf.getDocument }))
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '/pdf.worker.test.mjs' }))
+
+const documentApi = vi.hoisted(() => ({
+  getBlob: vi.fn(),
+  getWorkspace: vi.fn(),
+  upload: vi.fn(),
+}))
+
+vi.mock('../data/hrDocuments', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../data/hrDocuments')>(),
+  getHrDocumentBlob: documentApi.getBlob,
+  getHrDocumentWorkspace: documentApi.getWorkspace,
+  uploadHrDocument: documentApi.upload,
+}))
 
 import { DocumentWorkbench } from './DocumentWorkbench'
 
@@ -38,9 +52,18 @@ const workspace: HrDocumentWorkspace = {
 }
 
 const canvasContext = {
+  clearRect: vi.fn(),
   drawImage: vi.fn(),
+  fillText: vi.fn(),
   fillRect: vi.fn(),
   fillStyle: '',
+  font: '',
+  measureText: vi.fn(() => ({ width: 500 })),
+  restore: vi.fn(),
+  save: vi.fn(),
+  scale: vi.fn(),
+  textBaseline: '',
+  translate: vi.fn(),
 }
 
 describe('DocumentWorkbench editor', () => {
@@ -57,6 +80,12 @@ describe('DocumentWorkbench editor', () => {
       return { bottom: height, height, left: 0, right: width, toJSON: () => ({}), top: 0, width, x: 0, y: 0 }
     })
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(canvasContext as unknown as CanvasRenderingContext2D)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => callback(new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' })))
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:finished-pdf')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    documentApi.getBlob.mockReset()
+    documentApi.getWorkspace.mockReset()
+    documentApi.upload.mockReset()
   })
 
   afterEach(() => {
@@ -109,6 +138,115 @@ describe('DocumentWorkbench editor', () => {
     fireEvent.click(maximize)
     expect(screen.getByRole('dialog')).toHaveClass('is-maximized')
     expect(screen.getByRole('button', { name: 'Restore editor size' })).toBeInTheDocument()
+    client.clear()
+  })
+
+  it('places one signature at a time, then supports selection, resizing, and explicit removal', async () => {
+    const source = new Uint8Array([37, 80, 68, 70])
+    const file = new File([source], 'signature.pdf', { type: 'application/pdf' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => source.buffer.slice(0) })
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><DocumentWorkbench initialFile={file} onClose={vi.fn()} onSaved={vi.fn()} workspace={workspace} /></QueryClientProvider>)
+
+    await waitFor(() => expect(pdf.renderPage).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Signature' }))
+    fireEvent.change(screen.getByPlaceholderText('Type the full name'), { target: { value: 'Michelle Hood' } })
+    const sheet = document.querySelector<HTMLElement>('.document-workbench__sheet')
+    fireEvent.pointerDown(sheet!, { clientX: 300, clientY: 640, pointerId: 10 })
+
+    const signature = await screen.findByRole('button', { name: /signature: Michelle Hood/i })
+    expect(screen.getByRole('region', { name: 'Selected signature controls' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Select / move' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getAllByRole('button', { name: /signature: Michelle Hood/i })).toHaveLength(1)
+
+    fireEvent.pointerDown(sheet!, { clientX: 400, clientY: 700, pointerId: 11 })
+    expect(screen.getAllByRole('button', { name: /signature: Michelle Hood/i })).toHaveLength(1)
+    fireEvent.click(signature)
+    fireEvent.change(screen.getByRole('slider', { name: 'Signature size' }), { target: { value: '50' } })
+    expect(signature.closest('.document-workbench__annotation')).toHaveStyle({ width: '50%' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove signature' }))
+    expect(screen.queryByRole('button', { name: /signature: Michelle Hood/i })).not.toBeInTheDocument()
+    client.clear()
+  })
+
+  it('reopens and checksum-verifies the exact completed PDF before reporting it saved', async () => {
+    const sourcePdf = await PDFDocument.create()
+    sourcePdf.addPage([612, 792])
+    const source = await sourcePdf.save()
+    const sourceBuffer = source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength) as ArrayBuffer
+    const file = new File([sourceBuffer], 'verified.pdf', { type: 'application/pdf' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength) })
+    const documentId = '20000000-0000-4000-8000-000000000001'
+    let uploadedFile: File | null = null
+    documentApi.upload.mockImplementation(async (input: { file: File }) => {
+      uploadedFile = input.file
+      return { documentId, operationId: '30000000-0000-4000-8000-000000000001', requestId: 'request', scanState: 'scan_pending', versionId: '40000000-0000-4000-8000-000000000001' }
+    })
+    documentApi.getWorkspace.mockResolvedValue({
+      ...workspace,
+      documents: [{ accessClassification: 'confidential', archivedAt: null, canDownload: true, canManage: true, canPreview: true, category: 'Business document', description: null, effectiveDate: null, employeeId: null, employeeLegalName: null, employeeNumber: null, expirationDate: null, id: documentId, title: 'verified', vaultCode: 'hr-general', version: { filename: 'verified.pdf', id: '40000000-0000-4000-8000-000000000001', mimeType: 'application/pdf', scanState: 'clean', sizeBytes: 100, uploadedAt: '2026-09-10T12:00:00Z', versionNumber: 1 } }],
+      pagination: { page: 1, pageSize: 20, totalCount: 1, totalPages: 1 },
+    })
+    documentApi.getBlob.mockImplementation(async () => ({ blob: uploadedFile!, filename: 'verified.pdf' }))
+    const onSaved = vi.fn()
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><DocumentWorkbench initialFile={file} onClose={vi.fn()} onSaved={onSaved} workspace={workspace} /></QueryClientProvider>)
+
+    await waitFor(() => expect(pdf.renderPage).toHaveBeenCalled())
+    fireEvent.change(screen.getByPlaceholderText('Type the complete text here'), { target: { value: 'Stored round-trip marker 12345' } })
+    fireEvent.pointerDown(document.querySelector<HTMLElement>('.document-workbench__sheet')!, { clientX: 100, clientY: 180, pointerId: 20 })
+    fireEvent.click(screen.getByRole('tab', { name: 'File' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save to company documents' }))
+
+    await screen.findByText('Saved to Company documents. The stored PDF was reopened and verified.')
+    expect(documentApi.getBlob).toHaveBeenCalledWith(documentId, 'preview')
+    expect(onSaved).toHaveBeenCalledTimes(1)
+    expect(uploadedFile).not.toBeNull()
+    const pdfjs = await vi.importActual<typeof import('pdfjs-dist/legacy/build/pdf.mjs')>('pdfjs-dist/legacy/build/pdf.mjs')
+    const completedBytes = new Uint8Array(await uploadedFile!.arrayBuffer())
+    const completed = await pdfjs.getDocument({ data: completedBytes }).promise
+    const text = (await (await completed.getPage(1)).getTextContent()).items.map((item) => 'str' in item ? item.str : '').join(' ')
+    expect(text).toContain('Stored round-trip marker 12345')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview finished PDF' }))
+    await screen.findByRole('dialog', { name: 'Review verified' })
+    expect(URL.createObjectURL).toHaveBeenCalledWith(uploadedFile)
+    client.clear()
+  })
+
+  it('does not report success when the reopened stored PDF differs from the completed PDF', async () => {
+    const sourcePdf = await PDFDocument.create()
+    sourcePdf.addPage([612, 792])
+    const source = await sourcePdf.save()
+    const sourceBuffer = source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength) as ArrayBuffer
+    const file = new File([sourceBuffer], 'mismatch.pdf', { type: 'application/pdf' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => sourceBuffer })
+    const documentId = '50000000-0000-4000-8000-000000000001'
+    documentApi.upload.mockResolvedValue({
+      documentId,
+      operationId: '60000000-0000-4000-8000-000000000001',
+      requestId: 'request',
+      scanState: 'scan_pending',
+      versionId: '70000000-0000-4000-8000-000000000001',
+    })
+    documentApi.getWorkspace.mockResolvedValue({
+      ...workspace,
+      documents: [{ accessClassification: 'confidential', archivedAt: null, canDownload: true, canManage: true, canPreview: true, category: 'Business document', description: null, effectiveDate: null, employeeId: null, employeeLegalName: null, employeeNumber: null, expirationDate: null, id: documentId, title: 'mismatch', vaultCode: 'hr-general', version: { filename: 'mismatch.pdf', id: '70000000-0000-4000-8000-000000000001', mimeType: 'application/pdf', scanState: 'clean', sizeBytes: 3, uploadedAt: '2026-09-10T12:00:00Z', versionNumber: 1 } }],
+      pagination: { page: 1, pageSize: 20, totalCount: 1, totalPages: 1 },
+    })
+    documentApi.getBlob.mockResolvedValue({ blob: new Blob([new Uint8Array([1, 2, 3])], { type: 'application/pdf' }), filename: 'mismatch.pdf' })
+    const onSaved = vi.fn()
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><DocumentWorkbench initialFile={file} onClose={vi.fn()} onSaved={onSaved} workspace={workspace} /></QueryClientProvider>)
+
+    await waitFor(() => expect(pdf.renderPage).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('tab', { name: 'File' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save to company documents' }))
+
+    await screen.findByText('The saved copy did not match the completed PDF. Keep this window open and try saving again.')
+    expect(onSaved).not.toHaveBeenCalled()
+    expect(screen.queryByText(/stored PDF was reopened and verified/i)).not.toBeInTheDocument()
     client.clear()
   })
 })

@@ -2,8 +2,10 @@ import { PDFDocument } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import {
   completedPdfFilename,
+  DEFAULT_SIGNATURE_WIDTH_RATIO,
   finalizePdf,
   movePdfAnnotation,
+  resizePdfAnnotation,
   resizePdfTextAnnotation,
   wrapPdfText,
   type PdfAnnotation,
@@ -32,6 +34,14 @@ describe('PDF workbench finalization', () => {
     const reopened = await PDFDocument.load(completed)
     expect(reopened.getPageCount()).toBe(1)
     expect(completed.byteLength).toBeGreaterThan(bytes.byteLength)
+
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const loaded = await pdfjs.getDocument({ data: new Uint8Array(completed) }).promise
+    const content = await (await loaded.getPage(1)).getTextContent()
+    const savedText = content.items.map((item) => 'str' in item ? item.str : '').join(' ')
+    expect(savedText).toContain('Approved')
+    expect(savedText).toContain('This is a long explanation')
+    expect(savedText).toContain('This line was entered separately.')
   })
 
   it('creates a safe completed PDF filename', () => {
@@ -50,5 +60,13 @@ describe('PDF workbench finalization', () => {
     expect(movePdfAnnotation(annotation, .9, -.2)).toMatchObject({ xRatio: .54, yRatio: .02 })
     expect(resizePdfTextAnnotation(annotation, .05).widthRatio).toBe(.16)
     expect(resizePdfTextAnnotation(annotation, .95).widthRatio).toBe(.78)
+  })
+
+  it('resizes signatures proportionally and keeps their full width on the page', () => {
+    const signature: PdfAnnotation = { id: 'signature', kind: 'signature', page: 1, text: 'Michelle Hood', widthRatio: DEFAULT_SIGNATURE_WIDTH_RATIO, xRatio: .5, yRatio: .8 }
+    expect(resizePdfAnnotation(signature, .05).widthRatio).toBe(.12)
+    expect(resizePdfAnnotation(signature, .95).widthRatio).toBe(.7)
+    expect(movePdfAnnotation(resizePdfAnnotation(signature, .7), .95, .8).xRatio).toBe(.65)
+    expect(movePdfAnnotation(resizePdfAnnotation(signature, .7), .01, .8).xRatio).toBe(.35)
   })
 })

@@ -5,6 +5,7 @@ const worker = readFileSync('worker/index.ts', 'utf8')
 const managerPage = readFileSync('src/pages/HrisDocumentWorkflowsPage.tsx', 'utf8')
 const employeePage = readFileSync('src/pages/MyDocumentsPage.tsx', 'utf8')
 const data = readFileSync('src/data/hrDocumentWorkflows.ts', 'utf8')
+const documentData = readFileSync('src/data/hrDocuments.ts', 'utf8')
 const routes = readFileSync('src/app/router.tsx', 'utf8')
 const accessPolicy = readFileSync('src/app/accessPolicy.ts', 'utf8')
 const navigation = readFileSync('src/app/navigation.ts', 'utf8')
@@ -50,7 +51,7 @@ requireValue(worker.includes('requireHrDocumentPipeline(environment)'), 'Worker 
 requireValue(worker.includes('requireAuthenticatedSession'), 'Worker document workflows must require authentication.')
 requireValue(worker.includes('requireRecentDocumentMfa'), 'Worker document access and completion must require recent MFA.')
 
-requireValue(data.includes("cache: 'no-store'"), 'Document workflow requests must never use a browser cache.')
+requireValue(data.includes('documentApiRequest(path, init)') && documentData.includes("cache: 'no-store'"), 'Document workflow requests must never use a browser cache.')
 requireValue(data.includes('/api/v1/hr/documents/assignments/${assignmentId}/access'), 'The employee exact-assignment access request is missing.')
 requireValue(data.includes('/api/v1/hr/documents/assignments/${id}/complete'), 'The employee completion request is missing.')
 requireValue(!data.includes('storage.from('), 'The browser must not access document storage directly.')
@@ -67,10 +68,10 @@ requireValue(employeePage.includes('mutation.isPending'), 'Employee document mut
 
 requireValue(routes.includes("path: 'hr/documents/workflows'"), 'The manager workflow route is missing.')
 requireValue(routes.includes("path: 'my-documents'"), 'The employee document route is missing.')
-requireValue(accessPolicy.includes("'/hr/documents/workflows': { anyOf: ['hr.documents.view', 'hr.documents.manage'] }"), 'Manager workflow route authorization is missing.')
-requireValue(accessPolicy.includes("pathname === '/my-documents'"), 'The authenticated self-document route boundary is missing.')
+requireValue(accessPolicy.includes("'/hr/documents/workflows': { anyOf: [documentStudioAccessPermission] }"), 'Manager workflow route authorization is missing.')
+requireValue(accessPolicy.includes("'/my-documents': { anyOf: [] }") && accessPolicy.includes("'/my-documents',"), 'The authenticated self-document route boundary is missing.')
 requireValue(!navigation.includes("path: '/hr/documents/workflows'"), 'The dormant manager workflow must not appear in navigation.')
-requireValue(!navigation.includes("path: '/my-documents'"), 'The dormant employee workflow must not appear in navigation.')
+requireValue(navigation.includes("path: '/my-documents'"), 'The employee document workspace must appear in navigation.')
 
 if (failures.length > 0) {
   console.error(failures.map((failure) => `- ${failure}`).join('\n'))

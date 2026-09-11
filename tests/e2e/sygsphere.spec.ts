@@ -88,6 +88,38 @@ test('sends with Enter and keeps Shift Enter as a new line in messages and repli
   await reply.press('Enter')
   await expect(page.locator('.sphere-thread .sphere-message__body').filter({ hasText: 'Thread reply' })).toBeVisible()
 })
+test('keeps attachment names readable inside the narrow thread panel', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1180, height: 820 })
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}&theme=dark`)
+  await page.getByRole('textbox', { name: 'Write a message', exact: true }).fill('Attachment layout check')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await page.locator('article').filter({ hasText: 'Attachment layout check' }).getByRole('button', { name: 'Reply', exact: true }).click()
+  await page.locator('.sphere-thread .sphere-message__content').first().evaluate((content) => {
+    const row = document.createElement('div')
+    row.className = 'sphere-file-row'
+    row.innerHTML = '<div class="sphere-file"><svg aria-hidden="true" width="19" height="19"></svg><span><strong>BD Compensation Package Draft.pdf</strong><small>0.19 MB</small></span><div><button type="button">Preview</button><button type="button">Download</button></div></div>'
+    content.append(row)
+  })
+  const geometry = await page.locator('.sphere-thread .sphere-file').evaluate((file) => {
+    const label = file.querySelector<HTMLElement>('span')!
+    const actions = file.querySelector<HTMLElement>('div')!
+    const name = file.querySelector<HTMLElement>('strong')!
+    const labelBox = label.getBoundingClientRect()
+    const actionsBox = actions.getBoundingClientRect()
+    const style = getComputedStyle(name)
+    return {
+      actionsBelowLabel: actionsBox.top >= labelBox.bottom - 1,
+      labelWidth: Math.round(labelBox.width),
+      lineCount: Math.round(name.getBoundingClientRect().height / Number.parseFloat(style.lineHeight)),
+      overflow: file.scrollWidth - file.clientWidth,
+    }
+  })
+  expect(geometry.actionsBelowLabel).toBe(true)
+  expect(geometry.labelWidth).toBeGreaterThan(180)
+  expect(geometry.lineCount).toBeLessThanOrEqual(3)
+  expect(geometry.overflow).toBeLessThanOrEqual(1)
+  await page.screenshot({ path: testInfo.outputPath('sygsphere-thread-attachment.png'), fullPage: true })
+})
 test('inserts a validated participant mention and renders it as a highlighted identity', async ({ page }) => {
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
   await page.getByRole('button', { name: 'Mention a participant' }).click()

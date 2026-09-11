@@ -39,10 +39,10 @@ requireValue(worker.includes('requireHrDocumentPipeline(environment)'), 'The Wor
 requireValue(worker.includes('requireRecentDocumentMfa'), 'Recent authenticator MFA must guard document access.')
 requireValue(worker.includes("'service_get_hr_document_workspace'"), 'The Worker must load inventory through the service-only RPC.')
 
-requireValue(data.includes("fetch(`/api/v1/hr/documents/workspace?"), 'The browser workspace client is missing.')
+requireValue(data.includes("documentApiRequest(`/api/v1/hr/documents/workspace?"), 'The browser workspace client is missing.')
 requireValue(data.includes("request.open('PUT', '/api/v1/hr/documents/uploads')"), 'Protected upload progress handling is missing.')
 requireValue(data.includes('idempotencyKey: input.idempotencyKey'), 'Upload retries must reuse a stable idempotency key.')
-requireValue(data.includes("fetch(`/api/v1/hr/documents/${documentId}/access`"), 'Audited preview/download grants are missing.')
+requireValue(data.includes("documentApiRequest(`/api/v1/hr/documents/${documentId}/access`"), 'Audited preview/download grants are missing.')
 requireValue(data.includes('getHrDocumentBlob'), 'Protected one-time document retrieval is missing.')
 requireValue(!data.includes('createSignedUrl'), 'The browser must not receive direct storage URLs.')
 requireValue(!data.includes('storage.from('), 'The browser must not access document storage directly.')
@@ -50,16 +50,16 @@ requireValue(!data.includes('storage.from('), 'The browser must not access docum
 requireValue(page.includes('pageSize: 10'), 'The document inventory must default to ten rows.')
 requireValue(page.includes('<option value={5}>5</option>') && page.includes('<option value={20}>20</option>'), 'The document inventory must support compact 5/10/20 page sizes.')
 requireValue(page.includes('aria-expanded={isExpanded}'), 'Document details must use accessible expandable rows.')
-requireValue(page.includes('Upload HR document'), 'The protected upload modal is missing.')
-requireValue(page.includes('Preparing protected ${action}'), 'The protected preview/download loading state is missing.')
+requireValue(page.includes("import { DocumentWorkbench } from '../components/DocumentWorkbench'") && page.includes('<DocumentWorkbench'), 'The document workbench upload and editing flow is missing.')
+requireValue(page.includes("'Opening document…'") && page.includes("'Preparing download…'"), 'The protected preview/download loading state is missing.')
 requireValue(page.includes('Access is recorded in the audit history.'), 'Document access must clearly disclose audit recording.')
-requireValue(page.includes('reason.trim().length < 8'), 'Preview and download must require a meaningful access reason.')
+requireValue(page.includes('getHrDocumentBlob(document.id, action)'), 'Preview and download must use the audited document-access flow.')
 requireValue(page.includes("preview.mimeType === 'application/pdf'"), 'Protected PDF preview is missing.')
 requireValue(page.includes("preview.mimeType.startsWith('image/')"), 'Protected image preview is missing.')
 requireValue(migration.includes("version.detected_mime_type in ('application/pdf', 'image/jpeg', 'image/png', 'text/plain')"), 'Office files must remain download-only rather than being previewed inline.')
 
 requireValue(navigation.includes("path: '/hr/documents'"), 'The HR Documents navigation entry is missing.')
-requireValue(accessPolicy.includes("'/hr/documents': { anyOf: ['hr.documents.view', 'hr.documents.manage'] }"), 'The HR Documents route policy is missing.')
+requireValue(accessPolicy.includes("'/hr/documents': { anyOf: [documentStudioAccessPermission] }"), 'The HR Documents route policy is missing.')
 requireValue(routes.includes("path: 'hr/documents'"), 'The HR Documents route is missing.')
 
 if (failures.length > 0) {

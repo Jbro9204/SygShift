@@ -17,9 +17,11 @@ export interface PdfAnnotation {
 
 export const DEFAULT_TEXT_WIDTH_RATIO = .44
 export const DEFAULT_TEXT_FONT_SIZE = 12
+export const DEFAULT_SIGNATURE_WIDTH_RATIO = .31
 
 const boundedRatio = (value: number) => Math.min(.98, Math.max(.02, value))
 const boundedTextWidth = (value: number) => Math.min(.88, Math.max(.16, value))
+const boundedSignatureWidth = (value: number) => Math.min(.7, Math.max(.12, value))
 
 function printableText(value: string): string {
   return value
@@ -33,12 +35,27 @@ function printableText(value: string): string {
 }
 
 export function movePdfAnnotation(annotation: PdfAnnotation, xRatio: number, yRatio: number): PdfAnnotation {
-  const width = annotation.kind === 'text' ? boundedTextWidth(annotation.widthRatio ?? DEFAULT_TEXT_WIDTH_RATIO) : 0
+  const width = annotation.kind === 'text'
+    ? boundedTextWidth(annotation.widthRatio ?? DEFAULT_TEXT_WIDTH_RATIO)
+    : annotation.kind === 'signature'
+      ? boundedSignatureWidth(annotation.widthRatio ?? DEFAULT_SIGNATURE_WIDTH_RATIO)
+      : 0
+  const centered = annotation.kind === 'signature'
   return {
     ...annotation,
-    xRatio: Math.min(annotation.kind === 'text' ? .98 - width : .98, Math.max(.02, xRatio)),
+    xRatio: centered
+      ? Math.min(1 - width / 2, Math.max(width / 2, xRatio))
+      : Math.min(annotation.kind === 'text' ? .98 - width : .98, Math.max(.02, xRatio)),
     yRatio: boundedRatio(yRatio),
   }
+}
+
+export function resizePdfAnnotation(annotation: PdfAnnotation, widthRatio: number): PdfAnnotation {
+  if (annotation.kind === 'signature') {
+    const bounded = boundedSignatureWidth(widthRatio)
+    return movePdfAnnotation({ ...annotation, widthRatio: bounded }, annotation.xRatio, annotation.yRatio)
+  }
+  return resizePdfTextAnnotation(annotation, widthRatio)
 }
 
 export function resizePdfTextAnnotation(annotation: PdfAnnotation, widthRatio: number): PdfAnnotation {
@@ -131,7 +148,7 @@ export async function finalizePdf(source: Uint8Array, annotations: PdfAnnotation
 
     if (annotation.kind === 'signature' && annotation.signaturePng) {
       const image = await pdf.embedPng(annotation.signaturePng)
-      const imageWidth = Math.min(width * .34, 190)
+      const imageWidth = width * boundedSignatureWidth(annotation.widthRatio ?? DEFAULT_SIGNATURE_WIDTH_RATIO)
       const imageHeight = imageWidth * (image.height / image.width)
       page.drawImage(image, {
         height: imageHeight,
