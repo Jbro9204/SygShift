@@ -19,7 +19,7 @@ Keep this repository copy synchronized with:
 
 - Priority: **Urgent**
 - Target window: Staged security-hardening program beginning with immediate credential containment
-- Status: Approved / queued; no employee login-flow changes authorized
+- Status: Read-only discovery and first code-side release gate completed 09/11/2026; credential rotation, edge activation, database remediation, and employee login changes remain gated
 - Added: 08/31/2026
 
 #### Execution instructions
@@ -83,7 +83,7 @@ Build a defense-in-depth security program that materially reduces the likelihood
 #### Stage 7 — Secure Development and Release Protection
 
 - [ ] Protect the main branch with reviewed changes and required security validation before production release.
-- [ ] Run secret scanning, static analysis, dependency and supply-chain scanning, lockfile-integrity checks, and software-bill-of-materials generation in the release pipeline.
+- [ ] Run secret scanning, static analysis, dependency and supply-chain scanning, lockfile-integrity checks, and software-bill-of-materials generation in the release pipeline. (Dependency audit, full regression, CodeQL, and Dependabot configuration added 09/11/2026; GitHub owner settings, secret scanning, action pinning, and SBOM remain.)
 - [ ] Require negative authorization, RLS, upload, export, session, recovery, and privileged-action tests for security-sensitive changes.
 - [ ] Preserve canary deployment, maintenance communication, version-aware refresh, rollback, and audited migration procedures; never perform an untracked production write.
 - [ ] Schedule quarterly access and architecture reviews and an independent penetration test before activating highly restricted HR, document, compensation, or payroll-vault capabilities.
@@ -102,13 +102,13 @@ Program completion criteria:
 - [ ] Every privileged change and restricted download is attributable and auditable.
 - [ ] Revoked sessions and credentials are proven unusable within the approved response target.
 - [ ] Backup restoration and incident-response exercises pass with recorded evidence.
-- [ ] The implementation is reviewed against NIST Cybersecurity Framework 2.0, CISA Secure by Design principles, and an OWASP ASVS Level 2 target before the program is closed.
+- [ ] The implementation is reviewed against NIST Cybersecurity Framework 2.0, CISA Secure by Design principles, and an OWASP ASVS 5.0.0 Level 2 target before the program is closed.
 
 ### Duo Authentication Feasibility and Controlled Pilot
 
 - Priority: **Low**
 - Target window: Security architecture review after immediate credential-containment work; pilot only after compatibility approval
-- Status: Approved for feasibility research / no production login change authorized
+- Status: Feasibility research completed 09/11/2026 with a Defer recommendation; no production login change authorized
 - Added: 08/31/2026
 
 #### Execution instructions
@@ -123,18 +123,18 @@ Evaluate whether Cisco Duo can be integrated safely with SygShift's current Supa
 
 Required feasibility work:
 
-- [ ] Confirm the currently supported Duo integration method for the SygShift architecture, including Duo Universal Prompt and any supported OIDC, SAML, or identity-gateway option.
-- [ ] Confirm whether Supabase Auth can remain the authoritative user and session system or whether a safe server-side Cloudflare integration is required; do not create parallel employee identities.
-- [ ] Map the complete login lifecycle for ordinary employees, protected roles, first-time setup, password reset, remembered devices, MFA recovery, role promotion and demotion, separation, login disablement, administrator recovery, and the Jordan-only FIDO2 pilot.
-- [ ] Define the exact relationship between Duo verification, Supabase assurance levels, existing authenticator MFA, recent-authentication requirements, remembered-device policy, and FIDO2 so no path can downgrade another security control.
-- [ ] Evaluate the available Duo methods and licensing before promising functionality, including push, passcodes, hardware tokens, supported recovery methods, trusted-device policy, and any optional device-posture controls.
-- [ ] Require server-side validation, protected secrets, signed state and nonce checks, anti-replay protection, exact production redirect origins, secure session binding, revocation, rate limiting, and complete authentication audit evidence.
+- [x] Confirm the currently supported Duo integration method for the SygShift architecture, including Duo Universal Prompt and the OIDC Auth API.
+- [x] Confirm whether Supabase Auth can remain the authoritative user and session system or whether a safe server-side Cloudflare integration is required; do not create parallel employee identities.
+- [x] Map the complete login lifecycle for ordinary employees, protected roles, first-time setup, password reset, remembered devices, MFA recovery, role promotion and demotion, separation, login disablement, administrator recovery, and the Jordan-only FIDO2 pilot.
+- [x] Define the exact relationship between Duo verification, Supabase assurance levels, existing authenticator MFA, recent-authentication requirements, remembered-device policy, and FIDO2 so no path can downgrade another security control.
+- [x] Evaluate the available Duo methods and licensing before promising functionality, including push, passcodes, hardware tokens, supported recovery methods, trusted-device policy, and any optional device-posture controls.
+- [x] Require server-side validation, protected secrets, signed state and nonce checks, anti-replay protection, exact production redirect origins, secure session binding, revocation, rate limiting, and complete authentication audit evidence in any future design.
 - [ ] Review the employee identifiers, phone or device information, authentication metadata, retention, privacy obligations, vendor terms, administrative access, and breach-notification responsibilities associated with Duo.
-- [ ] Document licensing cost, per-user or per-feature limits, administrator workload, enrollment support, recovery operations, vendor outage behavior, and the effect on employees using mobile and desktop devices.
-- [ ] Design a clear fallback and emergency-access path that does not lock out the company, bypass required controls, or depend on an unrecorded manual database change.
+- [x] Document licensing cost, per-user or per-feature limits, administrator workload, enrollment support, recovery operations, vendor outage behavior, and the effect on employees using mobile and desktop devices.
+- [x] Design a clear fallback and emergency-access path that does not lock out the company, bypass required controls, or depend on an unrecorded manual database change.
 - [ ] Build any prototype only in an isolated or feature-gated environment and restrict the first production pilot to an explicitly approved account, preferably Jordan Brown, before considering broader use.
 - [ ] Test successful and denied authentication, cancellation, timeout, offline and vendor-outage behavior, replay attempts, account disablement, role downgrade, session revocation, recovery, fallback, and rollback.
-- [ ] Deliver a written **Adopt**, **Defer**, or **Reject** recommendation covering the final architecture, cost, affected roles, employee experience, security impact, migration plan, support plan, and rollback procedure.
+- [x] Deliver a written **Adopt**, **Defer**, or **Reject** recommendation covering the architecture, cost, affected roles, employee experience, security impact, migration plan, support plan, and rollback procedure. (Defer recorded 09/11/2026; privacy/contract review and any pilot remain open.)
 
 Completion criteria:
 
@@ -548,6 +548,50 @@ Completion criteria:
 - [x] Compromise or excessive authority in one platform does not silently grant access to the other.
 - [x] Direct SygShift login remains available until Sygilant provides verified replacement entry, recovery, support, monitoring, and rollback paths and management approves final cutover.
 
+### Microsoft 365 Calendar and Teams Meeting Connection
+
+- Priority: **Strategic / Medium**
+- Target window: Controlled opt-in after Entra ownership, tenant consent, privacy, and canary approval
+- Status: Feasibility and architecture completed 09/11/2026; no tenant connection authorized
+- Added: 09/11/2026
+
+Adopt a phased Microsoft Graph connection. Start with delegated calendar visibility using the least
+privilege that supports the approved experience. Add calendar writes only for users who authorize
+SygShift to create or update events, and create Teams meetings as Outlook-backed online-meeting events
+so Outlook remains authoritative for the external event.
+
+Required work:
+
+- [ ] Assign the Entra app, Microsoft 365 tenant, privacy, support, and calendar-data owners.
+- [ ] Confirm licenses, redirect origins, consent policy, delegated scopes, token storage, disconnect,
+      revocation, retention, rate limits, and outage behavior.
+- [ ] Build an isolated opt-in read-only calendar canary before any event write.
+- [ ] Add event-backed Teams meeting creation only after read sync and rollback pass.
+- [ ] Preserve SygShift Schedule, staffing, attendance, and timekeeping as authoritative and prove that a
+      Graph delay or outage cannot change a shift or punch.
+
+### Dialpad Connection
+
+- Priority: **Strategic / Medium**
+- Target window: Narrow OAuth launch and event pilot after account-plan and data-policy confirmation
+- Status: Feasibility and architecture completed 09/11/2026; no Dialpad connection authorized
+- Added: 09/11/2026
+
+Adopt a narrow first phase that connects approved employees to the existing Dialpad service and uses
+signed, approved call or messaging events. Defer embedded browser voice/video until it has a separate
+media, recording, emergency-calling, consent, accessibility, device, and support design.
+
+Required work:
+
+- [ ] Assign the Dialpad account, OAuth application, privacy, retention, and support owners.
+- [ ] Confirm the current company plan, API entitlements, user mapping, consent, recordings,
+      transcripts, event scope, retention, and cost.
+- [ ] Build an isolated OAuth/PKCE launch canary with server-only tokens and signed webhook validation.
+- [ ] Prove authorization, replay denial, retries, revocation, outage behavior, audit, and rollback before
+      exposing Dialpad events in SygSphere.
+- [ ] Keep recordings and transcripts in Dialpad unless a separately approved Restricted SygShift data
+      boundary is released.
+
 ### SigSales Platform and Controlled Client Handoff
 
 - Priority: **Later expansion**
@@ -704,7 +748,7 @@ The current release provides portal-ready states only. It does not create client
 
 - Priority: Research
 - Target window: Later expansion
-- Status: Pinned for later
+- Status: Official Partner API feasibility confirmed 09/11/2026; direct integration deferred pending partner access, terms, and recruiting ownership
 - Added: Before 08/25/2026
 
 #### Execution instructions

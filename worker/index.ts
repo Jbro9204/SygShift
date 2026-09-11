@@ -575,6 +575,7 @@ const contentSecurityPolicy = [
   "object-src 'none'",
   "script-src 'self'",
   "style-src 'self'",
+  "style-src-attr 'unsafe-inline'",
   'upgrade-insecure-requests',
 ].join('; ')
 
