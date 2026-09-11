@@ -131,7 +131,9 @@ const eventSchema = z.object({
   decisionNote: z.string().nullable(),
   reviewable: z.boolean(),
   actionHistory: z.array(actionHistorySchema),
-  reconciliation: reconciliationSchema.nullable(),
+  // A damaged nested reconciliation must not take down the employee, event,
+  // action history, or the entire Accountability workspace.
+  reconciliation: reconciliationSchema.nullable().catch(null),
 })
 
 const exceptionSummarySchema = z.object({
@@ -186,6 +188,14 @@ export type AccountabilityDecision = z.infer<typeof decisionSchema>
 const attendanceReportSchema = z.object({ serverTimestamp: z.string(), fromDate: z.string(), throughDate: z.string(), events: z.array(eventSchema) })
 export type AttendanceReport = z.infer<typeof attendanceReportSchema>
 
+export function parseAccountabilityWorkspacePayload(data: unknown): AccountabilityWorkspace {
+  const result = workspaceSchema.safeParse(data)
+  if (!result.success) {
+    throw new Error('Accountability information could not be loaded. Refresh the page and try again.')
+  }
+  return result.data
+}
+
 export async function getAttendanceReport(input: { fromDate: string; throughDate: string; export?: boolean }): Promise<AttendanceReport> {
   const { data, error } = await getSupabaseClient().rpc('get_attendance_report', {
     target_from_date: input.fromDate, target_through_date: input.throughDate, target_export: input.export ?? false,
@@ -208,7 +218,7 @@ export async function getAccountabilityWorkspace(input: { fromDate: string; thro
     target_through_date: input.throughDate,
   })
   if (error) throw new Error(error.message || 'The Accountability Tracker could not be loaded. MFA is required.')
-  return workspaceSchema.parse(data)
+  return parseAccountabilityWorkspacePayload(data)
 }
 
 export async function createAccountabilityOccurrence(input: {

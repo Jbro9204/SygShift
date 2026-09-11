@@ -1103,6 +1103,46 @@ describe('Cloudflare Worker boundary', () => {
     vi.unstubAllGlobals()
   })
 
+  it('keeps minute-by-minute automation running while the attendance safety scan waits for its five-minute interval', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const payload = url.includes('/rpc/service_run_timekeeping_automation')
+        ? { status: 'completed' }
+        : url.includes('/rpc/service_reconcile_operational_alert_lifecycle')
+          ? { status: 'completed' }
+          : url.includes('/rpc/service_reconcile_patrol_obligations')
+            ? { updated: 0 }
+            : url.includes('/rpc/service_publish_due_announcement_work_items')
+              ? { published: 0 }
+              : url.includes('/rpc/service_process_due_sygtasks_reminders')
+                ? { processed: 0 }
+                : url.includes('/rpc/service_process_due_sygtasks_recurring_series')
+                  ? { processed: 0 }
+                  : url.includes('/rpc/service_refresh_hr_offboarding_due_cases')
+                    ? { dueCases: 0 }
+                    : []
+      return new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } })
+    })
+    const scheduledWork: Promise<unknown>[] = []
+    vi.stubGlobal('fetch', fetchMock)
+
+    await worker.scheduled(
+      { cron: '* * * * *', scheduledTime: Date.UTC(2026, 7, 18, 18, 3) },
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        EMAIL: { send: vi.fn() },
+      }),
+      { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+    )
+
+    await Promise.all(scheduledWork)
+    const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
+    expect(calledUrls.some((url) => url.includes('/rpc/service_run_timekeeping_automation'))).toBe(true)
+    expect(calledUrls.some((url) => url.includes('/rpc/service_reconcile_operational_alert_lifecycle'))).toBe(true)
+    expect(calledUrls.some((url) => url.includes('/rpc/service_refresh_attendance_alert_schedule_state'))).toBe(false)
+    vi.unstubAllGlobals()
+  })
+
   it('validates admin-supplied temporary passwords before sending them to authentication', () => {
     expect(validateSuppliedTemporaryPassword('short', 'jbrown')).toContain('Use at least 12 characters.')
     expect(validateSuppliedTemporaryPassword('jbrownStrong!234', 'jbrown')).toContain('Do not include the username.')
