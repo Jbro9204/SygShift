@@ -3223,6 +3223,42 @@ async function handleHrDocumentWorkspace(
   return json({ ...payload, requestId })
 }
 
+async function handleHrDocumentArchive(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+  documentId: string,
+): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  if (!validUuid(documentId)) throw new ApiError('invalid_document_id', 422, 'The document identifier is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
+  await requireRecentHrMfa(request, session)
+  const body = await readJsonBody(request)
+  if (typeof body.archived !== 'boolean') throw new ApiError('invalid_document_lifecycle', 422, 'Choose whether the document should be removed or restored.')
+  try {
+    const result = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_set_hr_document_archived',
+      {
+        target_actor_id: session.context.employee_id,
+        target_archived: body.archived,
+        target_document_id: documentId,
+        target_request_id: requestId,
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId })
+  } catch (error) {
+    if (error instanceof SupabaseRequestError && error.operation === 'service_set_hr_document_archived') {
+      const status = error.code === '42501' ? 403 : error.code === 'P0002' ? 404 : 409
+      throw new ApiError(status === 403 ? 'document_management_forbidden' : status === 404 ? 'document_not_found' : 'document_lifecycle_blocked', status, error.message)
+    }
+    throw error
+  }
+}
+
 async function handleHrTemplateLibrary(
   request: Request,
   environment: Environment,
@@ -5333,6 +5369,8 @@ async function handleHrDocumentsApi(
   if (url.pathname === '/api/v1/hr/documents/uploads') {
     return handleHrDocumentUpload(request, environment, requestId)
   }
+  const archiveDocumentId = url.pathname.match(/^\/api\/v1\/hr\/documents\/([0-9a-f-]{36})\/archive$/i)?.[1]
+  if (archiveDocumentId) return handleHrDocumentArchive(request, environment, requestId, archiveDocumentId)
   const scanOperationId = url.pathname.match(/^\/api\/v1\/hr\/documents\/scans\/([0-9a-f-]{36})$/i)?.[1]
   if (scanOperationId) return handleHrDocumentScanCallback(request, environment, requestId, scanOperationId)
   const accessToken = url.pathname.match(/^\/api\/v1\/hr\/documents\/access\/([A-Za-z0-9_-]{40,100})$/)?.[1]

@@ -57,6 +57,16 @@ describe('SecurePdfViewer', () => {
     expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
   })
 
+  it('opens supplied PDF bytes without fetching a temporary blob URL', async () => {
+    const supplied = new Uint8Array([37, 80, 68, 70, 45, 49])
+    render(<SecurePdfViewer bytes={supplied} title="Completed form" />)
+
+    await waitFor(() => expect(pdf.render).toHaveBeenCalledTimes(1))
+    expect(fetch).not.toHaveBeenCalled()
+    expect(pdf.getDocument).toHaveBeenCalledWith({ data: supplied })
+    expect(screen.getByLabelText('Completed form, page 1')).not.toHaveAttribute('hidden')
+  })
+
   it('keeps the last completed page visible while a replacement frame renders', async () => {
     render(<SecurePdfViewer title="Stable file" url="blob:stable-file" />)
     const canvas = await screen.findByLabelText('Stable file, page 1')
@@ -80,10 +90,16 @@ describe('SecurePdfViewer', () => {
   })
 
   it('shows a usable fallback instead of a permanent blank page when the file cannot load', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 404 })))
+    const fetchPdf = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(new Uint8Array([37, 80, 68, 70]), { status: 200 }))
+    vi.stubGlobal('fetch', fetchPdf)
     render(<SecurePdfViewer title="Missing file" url="blob:missing-file" />)
 
     expect(await screen.findByRole('alert')).toHaveTextContent('This PDF could not be opened')
     expect(screen.getByLabelText('Missing file, page 1')).toHaveAttribute('hidden')
+    fireEvent.click(screen.getByRole('button', { name: 'Try preview again' }))
+    await waitFor(() => expect(fetchPdf).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByLabelText('Missing file, page 1')).not.toHaveAttribute('hidden'))
   })
 })

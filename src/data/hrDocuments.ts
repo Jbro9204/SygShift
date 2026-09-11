@@ -85,6 +85,13 @@ const accessGrantSchema = z.object({
   requestId: z.string(),
 })
 
+const documentLifecycleResultSchema = z.object({
+  archivedAt: nullableText,
+  documentId: z.string().uuid(),
+  requestId: z.string(),
+  status: z.enum(['active', 'archived']),
+})
+
 export type HrDocumentWorkspace = z.infer<typeof workspaceSchema>
 export type HrDocumentRecord = z.infer<typeof documentSchema>
 export type HrDocumentVault = z.infer<typeof vaultSchema>
@@ -157,6 +164,15 @@ export async function getHrDocumentWorkspace(filters: HrDocumentWorkspaceFilters
   const response = await documentApiRequest(`/api/v1/hr/documents/workspace?${query.toString()}`)
   if (!response.ok) throw await parseApiError(response, 'The protected document workspace could not be loaded.')
   return workspaceSchema.parse(await response.json())
+}
+
+export async function setHrDocumentArchived(documentId: string, archived: boolean): Promise<z.infer<typeof documentLifecycleResultSchema>> {
+  const response = await documentApiRequest(`/api/v1/hr/documents/${encodeURIComponent(documentId)}/archive`, {
+    body: JSON.stringify({ archived }),
+    method: 'POST',
+  })
+  if (!response.ok) throw await parseApiError(response, archived ? 'The document could not be removed from the active file.' : 'The document could not be restored.')
+  return documentLifecycleResultSchema.parse(await response.json())
 }
 
 function encodeMetadata(value: Record<string, unknown>): string {

@@ -14,6 +14,7 @@ import {
   FileSpreadsheet,
   FileText,
   Files,
+  RotateCcw,
   Search,
   ShieldCheck,
   UploadCloud,
@@ -27,6 +28,7 @@ import { SecurePdfViewer } from '../components/SecurePdfViewer'
 import {
   getHrDocumentBlob,
   getHrDocumentWorkspace,
+  setHrDocumentArchived,
   type HrDocumentRecord,
   type HrDocumentWorkspaceFilters,
 } from '../data/hrDocuments'
@@ -88,6 +90,8 @@ export function HrisDocumentsPage() {
   const [expandedDocumentId, setExpandedDocumentId] = useState<string | null>(null)
   const [workbench, setWorkbench] = useState<WorkbenchRequest | null>(null)
   const [accessTarget, setAccessTarget] = useState<{ action: AccessAction; document: HrDocumentRecord } | null>(null)
+  const [lifecycleTarget, setLifecycleTarget] = useState<HrDocumentRecord | null>(null)
+  const [lifecycleMessage, setLifecycleMessage] = useState<string | null>(null)
   const workspaceQuery = useQuery({
     queryFn: () => getHrDocumentWorkspace(filters),
     queryKey: ['hr-documents', filters],
@@ -107,6 +111,16 @@ export function HrisDocumentsPage() {
       return { file: new File([result.blob], result.filename || `${document.title}.pdf`, { type: result.blob.type || 'application/pdf' }), title: document.title }
     },
     onSuccess: (source) => setWorkbench(source),
+  })
+  const lifecycleMutation = useMutation({
+    mutationFn: (document: HrDocumentRecord) => setHrDocumentArchived(document.id, !document.archivedAt),
+    onSuccess: async (result) => {
+      const restored = result.status === 'active'
+      setLifecycleMessage(restored ? 'Document restored to the active file.' : 'Document removed from the active file. It can be restored from Include archived.')
+      setLifecycleTarget(null)
+      setExpandedDocumentId(null)
+      await queryClient.invalidateQueries({ queryKey: ['hr-documents'] })
+    },
   })
 
   useEffect(() => {
@@ -253,6 +267,7 @@ export function HrisDocumentsPage() {
                             {document.canDownload && document.version?.mimeType === 'application/pdf' ? <button className="primary-action" disabled={openForWork.isPending} onClick={() => openForWork.mutate(document)} type="button"><FilePenLine aria-hidden="true" size={17} />Work on a copy</button> : null}
                             {document.canPreview ? <button className="secondary-button" onClick={() => setAccessTarget({ action: 'preview', document })} type="button"><Eye aria-hidden="true" size={17} />Preview</button> : null}
                             {document.canDownload ? <button className="secondary-button" onClick={() => setAccessTarget({ action: 'download', document })} type="button"><Download aria-hidden="true" size={17} />Download</button> : null}
+                            {document.canManage ? <button className={document.archivedAt ? 'secondary-button' : 'danger-button'} onClick={() => { lifecycleMutation.reset(); setLifecycleTarget(document) }} type="button">{document.archivedAt ? <><RotateCcw aria-hidden="true" size={17} />Restore</> : <><Archive aria-hidden="true" size={17} />{document.employeeId ? 'Remove from employee file' : 'Archive'}</>}</button> : null}
                             {!document.canPreview && !document.canDownload ? <span>This file is still being prepared. It will be available here automatically.</span> : null}
                           </div>
                         </div>
@@ -271,7 +286,9 @@ export function HrisDocumentsPage() {
 
           {workbench ? <DocumentWorkbench employeeOnly={workbench.employeeOnly} initialEmployeeId={workbench.employeeId} initialFile={workbench.file} initialTitle={workbench.title} onClose={() => setWorkbench(null)} onSaved={() => void queryClient.invalidateQueries({ queryKey: ['hr-documents'] })} workspace={workspace} /> : null}
           {accessTarget ? <DocumentAccessModal action={accessTarget.action} document={accessTarget.document} onClose={() => setAccessTarget(null)} /> : null}
+          {lifecycleTarget ? <DocumentLifecycleModal document={lifecycleTarget} error={lifecycleMutation.error} busy={lifecycleMutation.isPending} onClose={() => setLifecycleTarget(null)} onConfirm={() => lifecycleMutation.mutate(lifecycleTarget)} /> : null}
           {openForWork.isError ? <div className="toast toast--error" role="alert">{openForWork.error instanceof Error ? openForWork.error.message : 'The working copy could not be opened.'}</div> : null}
+          {lifecycleMessage ? <div className="toast toast--success" role="status"><span>{lifecycleMessage}</span><button aria-label="Dismiss document update" onClick={() => setLifecycleMessage(null)} type="button">×</button></div> : null}
         </>
       ) : null}
     </main>
@@ -280,7 +297,7 @@ export function HrisDocumentsPage() {
 
 function DocumentAccessModal({ action, document, onClose }: { action: AccessAction; document: HrDocumentRecord; onClose: () => void }) {
   const started = useRef(false)
-  const [preview, setPreview] = useState<{ mimeType: string; text?: string; url?: string } | null>(null)
+  const [preview, setPreview] = useState<{ bytes?: Uint8Array; mimeType: string; text?: string; url?: string } | null>(null)
   const accessMutation = useMutation({
     mutationFn: () => getHrDocumentBlob(document.id, action),
     onSuccess: async ({ blob, filename }) => {
@@ -294,7 +311,9 @@ function DocumentAccessModal({ action, document, onClose }: { action: AccessActi
         onClose()
         return
       }
-      if (blob.type.startsWith('text/')) {
+      if (blob.type === 'application/pdf') {
+        setPreview({ bytes: new Uint8Array(await blob.arrayBuffer()), mimeType: blob.type })
+      } else if (blob.type.startsWith('text/')) {
         setPreview({ mimeType: blob.type, text: await blob.text() })
       } else {
         setPreview({ mimeType: blob.type, url: URL.createObjectURL(blob) })
@@ -314,7 +333,7 @@ function DocumentAccessModal({ action, document, onClose }: { action: AccessActi
     <ModalDialog busy={accessMutation.isPending} busyLabel={action === 'preview' ? 'Opening document…' : 'Preparing download…'} className="hr-document-modal hr-document-access-modal" description={`${document.employeeLegalName ?? 'Company record'} · ${document.category}`} onClose={onClose} title={`${action === 'preview' ? 'Preview' : 'Download'} ${document.title}`}>
       {preview ? (
         <div className="hr-document-preview">
-          {preview.mimeType === 'application/pdf' && preview.url ? <SecurePdfViewer title={document.title} url={preview.url} /> : null}
+          {preview.mimeType === 'application/pdf' && preview.bytes ? <SecurePdfViewer bytes={preview.bytes} title={document.title} /> : null}
           {preview.mimeType.startsWith('image/') && preview.url ? <img alt={`Preview of ${document.title}`} src={preview.url} /> : null}
           {preview.text !== undefined ? <pre>{preview.text}</pre> : null}
           <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Close preview</button></div>
@@ -328,4 +347,17 @@ function DocumentAccessModal({ action, document, onClose }: { action: AccessActi
       )}
     </ModalDialog>
   )
+}
+
+function DocumentLifecycleModal({ busy, document, error, onClose, onConfirm }: { busy: boolean; document: HrDocumentRecord; error: unknown; onClose: () => void; onConfirm: () => void }) {
+  const restoring = Boolean(document.archivedAt)
+  const destination = document.employeeLegalName ? `${document.employeeLegalName}'s employee file` : 'company documents'
+  return <ModalDialog busy={busy} busyLabel={restoring ? 'Restoring document…' : 'Removing document…'} className="hr-document-lifecycle-modal" description={`${document.title} · ${destination}`} dialogRole="alertdialog" dismissible={!busy} onClose={onClose} title={restoring ? 'Restore this document?' : 'Remove this document from the active file?'}>
+      <div className="hr-document-lifecycle-confirm">
+        {restoring ? <RotateCcw aria-hidden="true" size={34} /> : <Archive aria-hidden="true" size={34} />}
+        <p>{restoring ? `This returns the document to ${destination}.` : 'The file and its audit history will be preserved. Authorized HR users can restore it from Include archived.'}</p>
+        {error ? <p className="form-error" role="alert">{error instanceof Error ? error.message : 'The document could not be updated.'}</p> : null}
+        <div className="modal-actions"><button className="secondary-button" disabled={busy} onClick={onClose} type="button">Cancel</button><button className={restoring ? 'primary-action' : 'danger-button'} disabled={busy} onClick={onConfirm} type="button">{restoring ? 'Restore document' : 'Remove document'}</button></div>
+      </div>
+    </ModalDialog>
 }

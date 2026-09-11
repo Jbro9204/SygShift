@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PDFDocument } from 'pdf-lib'
 import type { HrDocumentWorkspace } from '../data/hrDocuments'
@@ -7,7 +7,8 @@ import type { HrDocumentWorkspace } from '../data/hrDocuments'
 const pdf = vi.hoisted(() => {
   const renderPage = vi.fn(() => ({ cancel: vi.fn(), promise: Promise.resolve() }))
   const page = {
-    getViewport: vi.fn(({ scale }: { scale: number }) => ({ height: 800 * scale, width: 600 * scale })),
+    getTextContent: vi.fn(async () => ({ items: [] as Array<Record<string, unknown>> })),
+    getViewport: vi.fn(({ scale }: { scale: number }) => ({ convertToViewportPoint: (x: number, y: number) => [x * scale, 800 * scale - y * scale], height: 800 * scale, width: 600 * scale })),
     render: renderPage,
   }
   const loaded = { destroy: vi.fn(async () => undefined), getPage: vi.fn(async () => page), numPages: 1 }
@@ -86,6 +87,7 @@ describe('DocumentWorkbench editor', () => {
     documentApi.getBlob.mockReset()
     documentApi.getWorkspace.mockReset()
     documentApi.upload.mockReset()
+    pdf.page.getTextContent.mockReset().mockResolvedValue({ items: [] })
   })
 
   afterEach(() => {
@@ -170,6 +172,42 @@ describe('DocumentWorkbench editor', () => {
     client.clear()
   })
 
+  it('shows a complete long-name signature image in the editor instead of clipping CSS text', async () => {
+    const source = new Uint8Array([37, 80, 68, 70])
+    const file = new File([source], 'long-signature.pdf', { type: 'application/pdf' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => source.buffer.slice(0) })
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><DocumentWorkbench initialFile={file} onClose={vi.fn()} onSaved={vi.fn()} workspace={workspace} /></QueryClientProvider>)
+
+    await waitFor(() => expect(pdf.renderPage).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'Signature' }))
+    fireEvent.change(screen.getByPlaceholderText('Type the full name'), { target: { value: 'Jordan C Brown' } })
+    fireEvent.pointerDown(document.querySelector<HTMLElement>('.document-workbench__sheet')!, { clientX: 300, clientY: 640, pointerId: 14 })
+
+    const signature = await screen.findByRole('button', { name: /signature: Jordan C Brown/i })
+    expect(signature.querySelector('img')).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/))
+    expect(screen.getByRole('region', { name: 'Selected signature controls' }).querySelector('img')).toBeInTheDocument()
+    client.clear()
+  })
+
+  it('turns flattened bracket prompts into guided fields on the correct PDF page', async () => {
+    pdf.page.getTextContent.mockResolvedValue({
+      items: [{ height: 12, str: '[Legal name]', transform: [12, 0, 0, 12, 120, 620], width: 82 }],
+    })
+    const source = new Uint8Array([37, 80, 68, 70])
+    const file = new File([source], 'company-template.pdf', { type: 'application/pdf' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => source.buffer.slice(0) })
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><DocumentWorkbench initialFile={file} onClose={vi.fn()} onSaved={vi.fn()} workspace={workspace} /></QueryClientProvider>)
+
+    const region = await screen.findByRole('region', { name: 'Detected form fields' })
+    const field = within(region).getByPlaceholderText('Enter legal name')
+    fireEvent.change(field, { target: { value: 'Zachary Alexander Ward' } })
+    expect(await screen.findByRole('button', { name: /Text box: Zachary Alexander Ward/ })).toBeInTheDocument()
+    expect(region).toHaveTextContent('Page 1')
+    client.clear()
+  })
+
   it('preselects the employee when the workbench is opened from that employee file', async () => {
     const source = new Uint8Array([37, 80, 68, 70])
     const file = new File([source], 'employee-record.pdf', { type: 'application/pdf' })
@@ -220,7 +258,8 @@ describe('DocumentWorkbench editor', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Preview finished PDF' }))
     await screen.findByRole('dialog', { name: 'Review verified' })
-    expect(URL.createObjectURL).toHaveBeenCalledWith(uploadedFile)
+    await waitFor(() => expect(pdf.getDocument).toHaveBeenLastCalledWith({ data: expect.any(Uint8Array) }))
+    expect(URL.createObjectURL).not.toHaveBeenCalledWith(uploadedFile)
     client.clear()
   })
 

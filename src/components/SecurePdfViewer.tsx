@@ -5,14 +5,23 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
-interface SecurePdfViewerProps {
+type SecurePdfViewerSource =
+  | { bytes: Uint8Array; url?: never }
+  | { bytes?: never; url: string }
+
+type SecurePdfViewerProps = SecurePdfViewerSource & {
   title: string
-  url: string
   page?: number
   onPageChange?: (page: number) => void
 }
 
-export function SecurePdfViewer({ title, url, page: controlledPage, onPageChange }: SecurePdfViewerProps) {
+function stablePdfBytes(value: Uint8Array): Uint8Array {
+  const copy = new Uint8Array(value.byteLength)
+  copy.set(value)
+  return copy
+}
+
+export function SecurePdfViewer({ bytes, title, url, page: controlledPage, onPageChange }: SecurePdfViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const initialPageRef = useRef(controlledPage)
@@ -28,6 +37,7 @@ export function SecurePdfViewer({ title, url, page: controlledPage, onPageChange
   const [rendering, setRendering] = useState(false)
   const [renderedPage, setRenderedPage] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sourceAttempt, setSourceAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -40,12 +50,17 @@ export function SecurePdfViewer({ title, url, page: controlledPage, onPageChange
 
     void (async () => {
       try {
-        // Read the file into stable bytes first. PDF.js loading directly from a
-        // short-lived object URL could finish parsing after the URL lifecycle
-        // moved on, leaving a valid page count but an unpainted canvas.
-        const response = await fetch(url, { cache: 'no-store' })
-        if (!response.ok) throw new Error(`PDF request failed with ${response.status}`)
-        const data = new Uint8Array(await response.arrayBuffer())
+        // Completed and protected PDFs can be supplied as bytes so PDF.js does
+        // not need to fetch a temporary blob URL. That keeps previews within
+        // the production connect-src policy and avoids short-lived URL races.
+        let data: Uint8Array
+        if (bytes) {
+          data = stablePdfBytes(bytes)
+        } else {
+          const response = await fetch(url, { cache: 'no-store' })
+          if (!response.ok) throw new Error(`PDF request failed with ${response.status}`)
+          data = new Uint8Array(await response.arrayBuffer())
+        }
         if (cancelled) return
         loadingTask = getDocument({ data })
         const loaded = await loadingTask.promise
@@ -63,7 +78,7 @@ export function SecurePdfViewer({ title, url, page: controlledPage, onPageChange
       renderTaskRef.current = null
       void loadingTask?.destroy()
     }
-  }, [url])
+  }, [bytes, sourceAttempt, url])
 
   useEffect(() => {
     if (controlledPage === undefined || !pdfDocument) return
@@ -190,7 +205,7 @@ export function SecurePdfViewer({ title, url, page: controlledPage, onPageChange
         </form>
       </div>
       {matches.length ? <div className="secure-pdf-viewer__matches"><span>{matches.length} matching pages</span>{matches.slice(0, 10).map((match) => <button className={match === page ? 'active' : ''} key={match} onClick={() => goToPage(match)} type="button">{match}</button>)}</div> : null}
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {error ? <div className="secure-pdf-viewer__error" role="alert"><p className="form-error">{error}</p><button className="secondary-button secondary-button--small" onClick={() => setSourceAttempt((attempt) => attempt + 1)} type="button"><RotateCw aria-hidden="true" size={16} />Try preview again</button></div> : null}
       <div className="secure-pdf-viewer__canvas" ref={containerRef}>
         {!pdfDocument && !error ? <p className="secure-pdf-viewer__status" role="status">Opening PDF…</p> : null}
         {pdfDocument && rendering && renderedPage === null && !error ? <p className="secure-pdf-viewer__status" role="status">Rendering page {page}…</p> : null}

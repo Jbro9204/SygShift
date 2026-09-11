@@ -38,7 +38,8 @@ describe('Document Studio access boundary', () => {
   it('requires the exact permission before MFA on every management endpoint', () => {
     const managementHandlers = [
       handler('handleHrDocumentUpload', 'handleHrDocumentWorkspace'),
-      handler('handleHrDocumentWorkspace', 'handleHrTemplateLibrary'),
+      handler('handleHrDocumentWorkspace', 'handleHrDocumentArchive'),
+      handler('handleHrDocumentArchive', 'handleHrTemplateLibrary'),
       handler('handleHrTemplateLibrary', 'handleHrDocumentScanCallback'),
       handler('handleHrDocumentAccessGrant', 'handleHrDocumentAccess'),
       handler('handleHrDocumentWorkflowWorkspace', 'handleMyHrDocumentWorkspace'),

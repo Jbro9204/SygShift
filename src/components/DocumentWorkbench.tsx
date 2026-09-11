@@ -3,7 +3,7 @@ import '@fontsource/allura/400.css'
 import '@fontsource/dancing-script/600.css'
 import '@fontsource/great-vibes/400.css'
 
-import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent as ReactChangeEvent, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CalendarDays,
@@ -90,6 +90,18 @@ interface DocumentWorkbenchProps {
   workspace: HrDocumentWorkspace
 }
 
+interface DetectedTemplateField {
+  eraseHeightRatio: number
+  eraseWidthRatio: number
+  fontSize: number
+  id: string
+  label: string
+  page: number
+  widthRatio: number
+  xRatio: number
+  yRatio: number
+}
+
 function friendlyError(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
 }
@@ -104,6 +116,62 @@ function bytesAsFile(bytes: Uint8Array, title: string): File {
   return new File([copy.buffer], completedPdfFilename(title), { type: 'application/pdf' })
 }
 
+function bytesAsDataUrl(bytes: Uint8Array, mimeType: string): string {
+  let binary = ''
+  for (let offset = 0; offset < bytes.length; offset += 8_192) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 8_192))
+  }
+  return `data:${mimeType};base64,${window.btoa(binary)}`
+}
+
+function SignatureImage({ annotation }: { annotation: PdfAnnotation }) {
+  const source = useMemo(() => annotation.signaturePng ? bytesAsDataUrl(annotation.signaturePng, 'image/png') : null, [annotation.signaturePng])
+  return source ? <img alt="" draggable={false} src={source} /> : <span>{annotation.text}</span>
+}
+
+async function detectTemplateFields(pdf: PDFDocumentProxy): Promise<DetectedTemplateField[]> {
+  const fields: DetectedTemplateField[] = []
+  const seen = new Set<string>()
+  for (let pageNumber = 1; pageNumber <= pdf.numPages && fields.length < 80; pageNumber += 1) {
+    const pdfPage = await pdf.getPage(pageNumber)
+    if (typeof pdfPage.getTextContent !== 'function') continue
+    const viewport = pdfPage.getViewport({ scale: 1 })
+    const content = await pdfPage.getTextContent()
+    for (const item of content.items) {
+      if (!('str' in item) || !item.str.includes('[') || !Array.isArray(item.transform)) continue
+      const expression = /\[([^\]\r\n]{2,160})\]/g
+      let match: RegExpExecArray | null
+      while ((match = expression.exec(item.str)) && fields.length < 80) {
+        const label = match[1].replace(/\s+/g, ' ').trim()
+        if (!label) continue
+        const itemWidth = Math.max(Number(item.width) || 0, 24)
+        const itemHeight = Math.max(Math.abs(Number(item.height) || Number(item.transform[3]) || 0), 9)
+        const startFraction = match.index / Math.max(item.str.length, 1)
+        const widthFraction = match[0].length / Math.max(item.str.length, 1)
+        const [baselineX, baselineY] = viewport.convertToViewportPoint(Number(item.transform[4]) || 0, Number(item.transform[5]) || 0)
+        const xRatio = Math.max(.01, Math.min(.92, (baselineX + itemWidth * startFraction) / viewport.width))
+        const detectedWidth = Math.max(.16, Math.min(.7, (itemWidth * widthFraction + 10) / viewport.width))
+        const yRatio = Math.max(.01, Math.min(.97, (baselineY - itemHeight * 1.08) / viewport.height))
+        const key = `${pageNumber}:${Math.round(xRatio * 1_000)}:${Math.round(yRatio * 1_000)}:${label.toLocaleLowerCase()}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        fields.push({
+          eraseHeightRatio: Math.max(.018, Math.min(.08, itemHeight * 1.45 / viewport.height)),
+          eraseWidthRatio: Math.max(detectedWidth, Math.min(.72, (itemWidth * widthFraction + 14) / viewport.width)),
+          fontSize: Math.max(8, Math.min(15, Math.round(itemHeight))),
+          id: key,
+          label,
+          page: pageNumber,
+          widthRatio: Math.min(detectedWidth, .98 - xRatio),
+          xRatio,
+          yRatio,
+        })
+      }
+    }
+  }
+  return fields
+}
+
 export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, initialFile = null, initialTitle = '', onClose, onSaved, workspace }: DocumentWorkbenchProps) {
   const queryClient = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -115,7 +183,6 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
   const annotationsRef = useRef<PdfAnnotation[]>([])
   const idempotencyKeysRef = useRef(new Map<string, string>())
   const finalFileCacheRef = useRef<{ file: File; fingerprint: string } | null>(null)
-  const previewUrlRef = useRef<string | null>(null)
   const [file, setFile] = useState<File | null>(initialFile)
   const [sourceBytes, setSourceBytes] = useState<Uint8Array | null>(null)
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null)
@@ -135,6 +202,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
   const [signatureName, setSignatureName] = useState('')
   const [signatureFamily, setSignatureFamily] = useState<SignatureFamily>('Great Vibes')
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([])
+  const [templateFields, setTemplateFields] = useState<DetectedTemplateField[]>([])
   const [undoHistory, setUndoHistory] = useState<PdfAnnotation[][]>([])
   const [redoHistory, setRedoHistory] = useState<PdfAnnotation[][]>([])
   const initialEmployee = workspace.employees.find((employee) => employee.id === initialEmployeeId)
@@ -150,7 +218,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
   const [requiredAction, setRequiredAction] = useState<RequiredAction>('sign')
   const [message, setMessage] = useState('Please review and complete this document in SygShift.')
   const [expiresAt, setExpiresAt] = useState('')
-  const [preview, setPreview] = useState<{ fingerprint: string; url: string } | null>(null)
+  const [preview, setPreview] = useState<{ bytes: Uint8Array; fingerprint: string } | null>(null)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
 
@@ -170,7 +238,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     return workspace.employees.filter((employee) => ['active', 'leave'].includes(employee.status) && (!search || `${employee.legalName} ${employee.employeeNumber ?? ''}`.toLocaleLowerCase().includes(search)))
   }, [recipientSearch, workspace.employees])
   const documentFingerprint = useMemo(() => JSON.stringify({
-    annotations: annotations.map(({ fontFamily, fontSize, kind, page: annotationPage, text, widthRatio, xRatio, yRatio }) => ({ fontFamily, fontSize, kind, page: annotationPage, text, widthRatio, xRatio, yRatio })),
+    annotations: annotations.map(({ eraseHeightRatio, eraseWidthRatio, fontFamily, fontSize, kind, page: annotationPage, templateFieldKey, text, widthRatio, xRatio, yRatio }) => ({ eraseHeightRatio, eraseWidthRatio, fontFamily, fontSize, kind, page: annotationPage, templateFieldKey, text, widthRatio, xRatio, yRatio })),
     category,
     description,
     employeeId,
@@ -183,10 +251,6 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     annotationsRef.current = annotations
     if (selectedAnnotationId && !annotations.some((annotation) => annotation.id === selectedAnnotationId)) setSelectedAnnotationId(null)
   }, [annotations, selectedAnnotationId])
-
-  useEffect(() => () => {
-    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
-  }, [])
 
   useEffect(() => {
     const container = viewportRef.current
@@ -217,6 +281,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     setUndoHistory([])
     setRedoHistory([])
     setSelectedAnnotationId(null)
+    setTemplateFields([])
     void (async () => {
       try {
         if (file.type !== 'application/pdf' && !file.name.toLocaleLowerCase().endsWith('.pdf')) throw new Error('Choose a PDF so it can be opened, completed, and signed here.')
@@ -228,6 +293,8 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
         if (cancelled) return
         setSourceBytes(bytes)
         setPdf(loaded)
+        const detected = await detectTemplateFields(loaded)
+        if (!cancelled) setTemplateFields(detected)
       } catch (error) {
         if (!cancelled) setLoadError(friendlyError(error, 'This PDF could not be opened.'))
       }
@@ -323,10 +390,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     setPreviewError(null)
     try {
       const finished = await createFinalFile()
-      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
-      const url = URL.createObjectURL(finished)
-      previewUrlRef.current = url
-      setPreview({ fingerprint: documentFingerprint, url })
+      setPreview({ bytes: new Uint8Array(await finished.arrayBuffer()), fingerprint: documentFingerprint })
     } catch (error) {
       setPreviewError(friendlyError(error, 'The completed PDF could not be previewed.'))
     } finally {
@@ -335,8 +399,6 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
   }
 
   function closePreview() {
-    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
-    previewUrlRef.current = null
     setPreview(null)
   }
 
@@ -355,6 +417,42 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
 
   function updateAnnotation(id: string, update: (annotation: PdfAnnotation) => PdfAnnotation) {
     commitAnnotationSnapshot(annotationsRef.current.map((annotation) => annotation.id === id ? update(annotation) : annotation))
+  }
+
+  function templateAnnotation(field: DetectedTemplateField, value: string): PdfAnnotation {
+    return {
+      eraseHeightRatio: field.eraseHeightRatio,
+      eraseWidthRatio: field.eraseWidthRatio,
+      fontSize: field.fontSize,
+      id: `template:${field.id}`,
+      kind: 'text',
+      page: field.page,
+      templateFieldKey: field.id,
+      text: value,
+      widthRatio: field.widthRatio,
+      xRatio: field.xRatio,
+      yRatio: field.yRatio,
+    }
+  }
+
+  function updateTemplateField(field: DetectedTemplateField, value: string) {
+    const withoutField = annotationsRef.current.filter((annotation) => annotation.templateFieldKey !== field.id)
+    commitAnnotationSnapshot(value.trim() ? [...withoutField, templateAnnotation(field, value)] : withoutField)
+  }
+
+  function fillSelectedEmployeeDetails() {
+    const employee = workspace.employees.find((candidate) => candidate.id === employeeId)
+    if (!employee) return
+    const next = annotationsRef.current.filter((annotation) => !annotation.templateFieldKey)
+    for (const field of templateFields) {
+      const normalized = field.label.toLocaleLowerCase()
+      const isOtherPerson = /(supervisor|manager|representative|witness|owner)/.test(normalized)
+      let value = annotationsRef.current.find((annotation) => annotation.templateFieldKey === field.id)?.text ?? ''
+      if (!value && !isOtherPerson && /(employee|applicant).*(legal )?name|(legal )?name.*(employee|applicant)/.test(normalized)) value = employee.legalName
+      if (!value && /(employee|payroll).*(id|number)|(id|number).*(employee|payroll)/.test(normalized)) value = employee.employeeNumber ?? ''
+      if (value.trim()) next.push(templateAnnotation(field, value))
+    }
+    commitAnnotationSnapshot(next)
   }
 
   async function addAnnotation(event: ReactPointerEvent<HTMLDivElement>) {
@@ -655,7 +753,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
           <div className={`document-workbench__sheet${tool ? ' is-placing' : ''}`} onPointerDown={(event) => void addAnnotation(event)} ref={sheetRef} style={{ height: sheetSize.height || undefined, width: sheetSize.width || undefined }}>
             <canvas hidden={!pdf || !sheetSize.width} ref={canvasRef} />
             {visibleAnnotations.map((annotation) => <div
-              className={`document-workbench__annotation is-${annotation.kind}${selectedAnnotationId === annotation.id ? ' is-selected' : ''}`}
+              className={`document-workbench__annotation is-${annotation.kind}${annotation.templateFieldKey ? ' is-template-field' : ''}${selectedAnnotationId === annotation.id ? ' is-selected' : ''}`}
               key={annotation.id}
               style={{
                 left: `${annotation.xRatio * 100}%`,
@@ -676,7 +774,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
                 onPointerUp={finishAnnotationGesture}
                 title="Drag to move. Arrow keys also move this item."
                 type="button"
-              >{annotation.text}</button>
+              >{annotation.kind === 'signature' ? <SignatureImage annotation={annotation} /> : annotation.text}</button>
               {(annotation.kind === 'text' || annotation.kind === 'signature') && selectedAnnotationId === annotation.id ? <button
                 aria-label={annotation.kind === 'signature' ? 'Resize selected signature' : 'Resize selected text box'}
                 className="document-workbench__resize-handle"
@@ -700,6 +798,14 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
 
           {panel === 'edit' ? <div className="document-workbench__panel">
             <div><p className="eyebrow">Add to the PDF</p><h3>Choose a tool, then click the page</h3><p>Every addition can be undone or removed before you finish.</p></div>
+            {templateFields.length ? <section className="document-workbench__guided-fields" aria-label="Detected form fields">
+              <div className="document-workbench__guided-heading"><div><p className="eyebrow">Fill this form</p><h3>{templateFields.length} editable {templateFields.length === 1 ? 'field' : 'fields'} found</h3><p>Type each answer here. SygShift replaces the bracketed prompt on the PDF.</p></div>{workspace.employees.some((employee) => employee.id === employeeId) ? <button className="secondary-button secondary-button--small" onClick={fillSelectedEmployeeDetails} type="button">Use selected employee</button> : null}</div>
+              <div className="document-workbench__guided-list">{templateFields.map((field) => {
+                const fieldAnnotation = annotations.find((annotation) => annotation.templateFieldKey === field.id)
+                const controlProps = { maxLength: 2000, onChange: (event: ReactChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => updateTemplateField(field, event.target.value), onFocus: () => setPage(field.page), placeholder: `Enter ${field.label.toLocaleLowerCase()}`, value: fieldAnnotation?.text ?? '' }
+                return <label key={field.id}><span>{field.label}<small>Page {field.page}</small></span>{field.label.length > 44 ? <textarea {...controlProps} rows={3} /> : <input {...controlProps} />}</label>
+              })}</div>
+            </section> : null}
             <div className="document-workbench__tools">
               <button aria-pressed={tool === null} className={tool === null ? 'active' : ''} onClick={() => { setTool(null); setSelectedAnnotationId(null) }} type="button"><Move size={18} /><span>Select / move</span></button>
               <button aria-pressed={tool === 'text' && !selectedAnnotationId} className={tool === 'text' && !selectedAnnotationId ? 'active' : ''} onClick={() => { setTool('text'); setSelectedAnnotationId(null) }} type="button"><Type size={18} /><span>Text</span></button>
@@ -719,7 +825,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
             {tool === 'signature' || selectedSignatureAnnotation ? <div className="document-workbench__signature">
               {selectedSignatureAnnotation ? <section className="document-workbench__text-controls" aria-label="Selected signature controls">
                 <div className="document-workbench__selection-heading"><span><Move aria-hidden="true" size={17} /></span><div><strong>Selected signature</strong><small>Drag the signature to move it. Drag its gold corner or use the size control below.</small></div></div>
-                <div className="document-workbench__selected-signature" style={{ fontFamily: `"${selectedSignatureAnnotation.fontFamily ?? signatureFamily}", cursive` }}>{selectedSignatureAnnotation.text}</div>
+                <div className="document-workbench__selected-signature"><SignatureImage annotation={selectedSignatureAnnotation} /></div>
                 <label className="document-workbench__width-control">Signature size <output>{Math.round((selectedSignatureAnnotation.widthRatio ?? DEFAULT_SIGNATURE_WIDTH_RATIO) * 100)}%</output><input aria-label="Signature size" max="70" min="12" onChange={(event) => updateAnnotation(selectedSignatureAnnotation.id, (current) => resizePdfAnnotation(current, Number(event.target.value) / 100))} type="range" value={Math.round((selectedSignatureAnnotation.widthRatio ?? DEFAULT_SIGNATURE_WIDTH_RATIO) * 100)} /></label>
                 <div className="document-workbench__selection-actions"><button className="secondary-button secondary-button--small" onClick={() => { setSelectedAnnotationId(null); setTool('signature') }} type="button"><FileSignature size={16} />Add another signature</button><button className="danger-button danger-button--small" onClick={() => { commitAnnotationSnapshot(annotationsRef.current.filter((item) => item.id !== selectedSignatureAnnotation.id)); setSelectedAnnotationId(null); setTool(null) }} type="button"><Trash2 size={16} />Remove signature</button></div>
               </section> : <>
@@ -760,7 +866,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
         {operationError || previewError ? <p className="form-error" role="alert">{previewError ?? friendlyError(operationError, 'The document action could not be completed.')}</p> : null}
         <div><button className="secondary-button" disabled={busy} onClick={onClose} type="button">Close</button><button className="secondary-button" disabled={!sourceBytes || !title.trim() || busy} onClick={() => void openPreview()} type="button"><Eye size={18} />Preview finished PDF</button><button className="primary-action" disabled={!sourceBytes || !title.trim() || busy} onClick={() => void download()} type="button"><Download size={18} />Download PDF</button></div>
       </footer>
-      {preview ? <ModalDialog className="document-workbench-preview" description="This is the exact completed PDF that will be downloaded, filed, or sent." onClose={closePreview} title={`Review ${title}`}><div className="document-workbench-preview__body" data-output-fingerprint={preview.fingerprint}><SecurePdfViewer title={`Finished ${title}`} url={preview.url} /><footer><button className="secondary-button" onClick={closePreview} type="button">Back to editing</button><button className="primary-action" onClick={() => void download()} type="button"><Download size={18} />Download this PDF</button></footer></div></ModalDialog> : null}
+      {preview ? <ModalDialog className="document-workbench-preview" description="This is the exact completed PDF that will be downloaded, filed, or sent." onClose={closePreview} title={`Review ${title}`}><div className="document-workbench-preview__body" data-output-fingerprint={preview.fingerprint}><SecurePdfViewer bytes={preview.bytes} title={`Finished ${title}`} /><footer><button className="secondary-button" onClick={closePreview} type="button">Back to editing</button><button className="primary-action" onClick={() => void download()} type="button"><Download size={18} />Download this PDF</button></footer></div></ModalDialog> : null}
     </div>}
   </ModalDialog>
 }

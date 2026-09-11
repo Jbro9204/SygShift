@@ -3,6 +3,8 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 export type PdfAnnotationKind = 'checkmark' | 'date' | 'signature' | 'text'
 
 export interface PdfAnnotation {
+  eraseHeightRatio?: number
+  eraseWidthRatio?: number
   fontSize?: number
   fontFamily?: string
   id: string
@@ -13,6 +15,7 @@ export interface PdfAnnotation {
   xRatio: number
   yRatio: number
   signaturePng?: Uint8Array
+  templateFieldKey?: string
 }
 
 export const DEFAULT_TEXT_WIDTH_RATIO = .44
@@ -114,21 +117,34 @@ export async function createTypedSignaturePng(
   const fontWeight = family === 'Dancing Script' ? 600 : 400
   await document.fonts?.load(`${fontWeight} 96px "${family}"`).catch(() => undefined)
   const canvas = document.createElement('canvas')
-  canvas.width = 1_400
-  canvas.height = 300
+  canvas.width = 1
+  canvas.height = 1
   const context = canvas.getContext('2d')
   if (!context) throw new Error('The signature canvas is unavailable.')
-  context.clearRect(0, 0, canvas.width, canvas.height)
-  context.fillStyle = '#17130d'
   context.font = `${fontWeight} 180px "${family}", cursive`
-  context.textBaseline = 'middle'
-  const measured = Math.max(1, context.measureText(trimmed).width)
-  const scale = Math.min(1, 1_250 / measured)
-  context.save()
-  context.translate(70, canvas.height / 2)
-  context.scale(scale, scale)
-  context.fillText(trimmed, 0, 0)
-  context.restore()
+  const metrics = context.measureText(trimmed)
+  const left = Math.max(0, metrics.actualBoundingBoxLeft || 0)
+  const right = Math.max(1, metrics.actualBoundingBoxRight || metrics.width || 1)
+  const ascent = Math.max(1, metrics.actualBoundingBoxAscent || 150)
+  const descent = Math.max(1, metrics.actualBoundingBoxDescent || 45)
+  const contentWidth = left + right
+  const contentHeight = ascent + descent
+  const horizontalPadding = 54
+  const verticalPadding = 28
+  const scale = Math.min(1, 1_280 / contentWidth, 250 / contentHeight)
+  canvas.width = Math.max(1, Math.ceil(contentWidth * scale + horizontalPadding * 2))
+  canvas.height = Math.max(1, Math.ceil(contentHeight * scale + verticalPadding * 2))
+  const drawingContext = canvas.getContext('2d')
+  if (!drawingContext) throw new Error('The signature canvas is unavailable.')
+  drawingContext.clearRect(0, 0, canvas.width, canvas.height)
+  drawingContext.fillStyle = '#17130d'
+  drawingContext.font = `${fontWeight} 180px "${family}", cursive`
+  drawingContext.textBaseline = 'alphabetic'
+  drawingContext.save()
+  drawingContext.translate(horizontalPadding + left * scale, verticalPadding + ascent * scale)
+  drawingContext.scale(scale, scale)
+  drawingContext.fillText(trimmed, 0, 0)
+  drawingContext.restore()
   const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error('The signature image could not be created.')), 'image/png'))
   return new Uint8Array(await blob.arrayBuffer())
 }
@@ -164,6 +180,16 @@ export async function finalizePdf(source: Uint8Array, annotations: PdfAnnotation
       const boxWidth = Math.max(42, Math.min(width - x - 8, width * boundedTextWidth(annotation.widthRatio ?? DEFAULT_TEXT_WIDTH_RATIO)))
       const lineHeight = size * 1.28
       const lines = wrapPdfText(annotation.text, boxWidth, (line) => font.widthOfTextAtSize(line, size))
+      if (annotation.eraseWidthRatio && annotation.eraseHeightRatio) {
+        const eraseHeight = Math.max(size * 1.4, height * annotation.eraseHeightRatio)
+        page.drawRectangle({
+          color: rgb(1, 1, 1),
+          height: eraseHeight,
+          width: Math.max(boxWidth, width * annotation.eraseWidthRatio),
+          x: Math.max(0, x - 2),
+          y: Math.max(0, y - eraseHeight),
+        })
+      }
       lines.forEach((line, index) => {
         const baseline = y - size - index * lineHeight
         if (baseline < 8) return
