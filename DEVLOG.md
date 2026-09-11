@@ -1,5 +1,25 @@
 # SygShift Development Log
 
+## 09/11/2026 - Security Foundation and External Integration Discovery
+
+- Cleared the identified high-severity React Router advisory by updating to 7.18.2 and added a
+  dependency/regression plus CodeQL release workflow.
+- Applied the Worker security boundary to Cloudflare-served static pages and assets, then ran the
+  browser matrix under that policy to prove the application remains usable.
+- Configured Dependabot for grouped security updates only; routine version-update pull requests remain
+  off to prevent review and notification flooding.
+- Completed current official-source architecture decisions for Microsoft 365 calendar/Teams meetings,
+  Dialpad, Duo, and Indeed without connecting a vendor or changing employee authentication.
+- Recorded twelve legacy database-lint findings for bounded follow-up migrations instead of rewriting
+  unrelated production functions together.
+- Released runtime source `e105354` as Cloudflare Worker
+  `9972373a-2450-4178-8664-8107c6ec1b48`; security workflow refinement source is `56111c4`.
+- Verification passed 248 files / 1,268 tests, 146 pre-release browser checks, 42/42 post-release Time
+  Clock checks, live header/endpoint/asset validation, owner-account preservation, and both GitHub
+  dependency/regression and CodeQL jobs.
+- Full evidence:
+  `docs/changelogs/CHANGELOG_09-11-2026_SECURITY_FOUNDATION_AND_INTEGRATION_DISCOVERY.md`.
+
 ## 09/11/2026 - Unified 30-Minute HR MFA Window
 
 - Replaced fragmented HR module and document reauthentication timers with one fixed, server-authoritative 30-minute window for every otherwise-authorized HR workflow.

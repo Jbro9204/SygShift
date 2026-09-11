@@ -24,5 +24,25 @@
 
 ## Verification
 
-Final source, browser, deployment, live-header, endpoint, account-preservation, and GitHub workflow
-evidence will be added after the release gate and controlled production deployment complete.
+- The full local release gate passed 248 test files / 1,268 tests, TypeScript, zero-warning application
+  lint, and the production build.
+- Forty-two focused Worker and static-header tests passed.
+- The security-policy browser matrix passed 146 desktop/mobile checks covering password recovery,
+  SygSphere messaging/uploads/previews, SygTasks, Document Studio, platform launchers, Home clock
+  controls, early-clock-in acknowledgment, breaks, clock-out, and duplicate-punch prevention.
+- The mandatory post-release Time Clock workflow passed 42/42 desktop/mobile checks.
+- GitHub Actions run 34631742091 passed both the dependency/regression gate and CodeQL.
+- The custom and fallback production roots, SygSphere, health, and readiness returned 200. CSP, HSTS,
+  MIME-sniffing, frame, referrer, browser-capability, and cross-origin headers were present on real page,
+  asset, and API responses.
+- The live main JavaScript and CSS matched the final production build byte for byte.
+- Jordan Brown remained active and activated, with login enabled and the Required Actions Checkpoint
+  canary disabled.
+
+## Release
+
+- Runtime source: e10535407e4217e1e66523c893af06796d7dc74d
+- Dependency-notification refinement: 56111c44d8dae370d5261b83092907e7f0b3d71f
+- Cloudflare Worker: 9972373a-2450-4178-8664-8107c6ec1b48
+- Rollback tag: rollback/pre-security-foundation-20260911
+- No database migration was required.
