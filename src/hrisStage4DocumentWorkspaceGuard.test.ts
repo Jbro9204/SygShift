@@ -36,7 +36,7 @@ describe('HRIS Stage 4 protected document workspace', () => {
     const handler = worker.slice(start, end)
     expect(handler).toContain('requireHrDocumentPipeline(environment)')
     expect(handler).toContain('requireAuthenticatedSession')
-    expect(handler).toContain('requireRecentDocumentMfa')
+    expect(handler).toContain('requireRecentHrMfa')
     expect(handler).toContain("'service_get_hr_document_workspace'")
   })
 

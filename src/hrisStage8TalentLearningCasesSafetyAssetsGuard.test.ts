@@ -32,17 +32,20 @@ describe('HRIS Stage 8 talent, learning, cases, safety, and assets foundation', 
     expect(migration).toContain('hr_asset_acknowledgments_append_only')
   })
 
-  it('requires verified sessions and exact permissions', () => {
-    expect(worker).toContain('requireVerifiedOperationsSession(request, environment, `hr_${module}_mfa_required`)')
+  it('requires unified recent HR sessions and exact permissions', () => {
+    expect(worker).toContain('const session = await requireRecentHrSession(request, environment)')
     expect(worker).toContain('requireSessionPermission(session.context, hrStage8Permissions[module])')
     for (const permission of ['hr.talent.view', 'hr.learning.view', 'hr.cases.view', 'hr.safety.view', 'hr.assets.view']) {
       expect(worker).toContain(permission)
     }
   })
 
-  it('requires recent MFA for employee cases and safety records', () => {
-    expect(worker).toContain("module === 'cases' || module === 'safety'")
-    expect(worker).toContain('requireRecentDocumentMfa(request, session)')
+  it('passes the shared HR MFA proof for every stage-eight workspace', () => {
+    const start = worker.indexOf('async function handleHrStage8Api')
+    const end = worker.indexOf('async function handleHrStage9Api', start)
+    const handler = worker.slice(start, end)
+    expect(handler).toContain('const mfa = session.mfa')
+    expect(handler).not.toContain("module === 'cases' || module === 'safety'")
     expect(migration).toContain("target_module in ('cases','safety')")
     expect(migration).toContain('hr_stage8_require_recent_mfa')
   })

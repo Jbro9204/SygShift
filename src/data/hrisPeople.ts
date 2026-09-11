@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
+import { requireHrMfaWindow } from './hrMfa'
 
 const statusSchema = z.enum(['onboarding', 'active', 'leave', 'inactive', 'separated'])
 
@@ -255,6 +256,7 @@ export type HrisEmployeeContactUpdateInput = {
 }
 
 export async function getHrisPeopleWorkspace(query: HrisPeopleQuery = {}): Promise<HrisPeopleWorkspace> {
+  await requireHrMfaWindow()
   const { data, error } = await getSupabaseClient().rpc('get_hr_people_workspace', {
     target_search: query.search?.trim() || null,
     target_status: query.status ?? 'active',
@@ -270,18 +272,21 @@ export async function getHrisPeopleWorkspace(query: HrisPeopleQuery = {}): Promi
 }
 
 export async function getHrisEmployeeFile(employeeId: string): Promise<HrisEmployeeFile> {
+  await requireHrMfaWindow()
   const { data, error } = await getSupabaseClient().rpc('get_hr_people_record', { target_employee_id: employeeId })
   if (error) throw new Error(error.message || 'The employee file could not be loaded.')
   return employeeFileSchema.parse(data)
 }
 
 export async function getHrisEmployeeProfileEditorContext(employeeId: string): Promise<HrisEmployeeProfileEditorContext> {
+  await requireHrMfaWindow()
   const { data, error } = await getSupabaseClient().rpc('get_hr_employee_profile_editor_context', { target_employee_id: employeeId })
   if (error) throw new Error(error.message || 'Employee editing controls could not be loaded.')
   return employeeProfileEditorContextSchema.parse(data)
 }
 
 export async function updateHrisEmployeeIdentity(input: HrisEmployeeIdentityUpdateInput) {
+  await requireHrMfaWindow()
   const { data, error } = await getSupabaseClient().rpc('update_hr_employee_identity', {
     target_employee_id: input.employeeId,
     target_employee_number: input.employeeNumber,
@@ -295,6 +300,7 @@ export async function updateHrisEmployeeIdentity(input: HrisEmployeeIdentityUpda
 }
 
 export async function updateHrisEmployeeEmploymentProfile(input: HrisEmployeeEmploymentUpdateInput) {
+  await requireHrMfaWindow()
   const { data, error } = await getSupabaseClient().rpc('update_hr_employee_employment_profile', {
     target_employee_id: input.employeeId,
     target_employment_type: input.employmentType,
@@ -307,6 +313,7 @@ export async function updateHrisEmployeeEmploymentProfile(input: HrisEmployeeEmp
 }
 
 export async function updateHrisEmployeeContactDetails(input: HrisEmployeeContactUpdateInput) {
+  await requireHrMfaWindow()
   const { data, error } = await getSupabaseClient().rpc('update_hr_employee_contact_details', {
     target_address_line_1: input.addressLine1,
     target_address_line_2: input.addressLine2,
@@ -328,6 +335,7 @@ export async function updateHrisEmployeeContactDetails(input: HrisEmployeeContac
 }
 
 export async function getHrisEmploymentDateHistory(employeeId: string): Promise<HrisEmploymentDateHistory> {
+  await requireHrMfaWindow()
   const { data, error } = await getSupabaseClient().rpc('get_hr_employee_employment_date_history', {
     target_employee_id: employeeId,
     target_limit: 5,
@@ -337,6 +345,7 @@ export async function getHrisEmploymentDateHistory(employeeId: string): Promise<
 }
 
 export async function updateHrisEmploymentDates(input: HrisEmploymentDateUpdateInput) {
+  await requireHrMfaWindow()
   const { data, error } = await getSupabaseClient().rpc('update_hr_employee_employment_dates', {
     target_employee_id: input.employeeId,
     target_hired_on: input.hiredOn,
@@ -350,6 +359,7 @@ export async function updateHrisEmploymentDates(input: HrisEmploymentDateUpdateI
 }
 
 export async function terminateHrisEmployee(input: HrisEmployeeTerminationInput): Promise<HrisEmployeeTerminationResult> {
+  await requireHrMfaWindow()
   const { data, error } = await getSupabaseClient().rpc('terminate_hr_employee', {
     target_confirmation_username: input.confirmationUsername.trim(),
     target_employee_id: input.employeeId,
@@ -361,6 +371,7 @@ export async function terminateHrisEmployee(input: HrisEmployeeTerminationInput)
 }
 
 export async function saveHrisPeopleView(name: string, query: HrisPeopleQuery): Promise<string> {
+  await requireHrMfaWindow()
   const { data, error } = await getSupabaseClient().rpc('save_hr_people_view', {
     target_name: name.trim(),
     target_search: query.search?.trim() || '',
@@ -376,6 +387,7 @@ export async function saveHrisPeopleView(name: string, query: HrisPeopleQuery): 
 }
 
 export async function deleteHrisPeopleView(id: string): Promise<boolean> {
+  await requireHrMfaWindow()
   const { data, error } = await getSupabaseClient().rpc('delete_hr_people_view', { target_id: id })
   if (error) throw new Error(error.message || 'The saved view could not be deleted.')
   return z.boolean().parse(data)

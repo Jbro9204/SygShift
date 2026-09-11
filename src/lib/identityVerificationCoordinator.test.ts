@@ -36,6 +36,25 @@ describe('identity verification coordinator', () => {
     unsubscribe()
   })
 
+  it('labels HR and licensing checkpoints without changing ordinary permission handling', async () => {
+    const contexts: string[] = []
+    const unsubscribe = subscribeToIdentityVerification((required, context) => {
+      if (required) contexts.push(context)
+    })
+    const hrRequest = vi.fn().mockResolvedValue(jsonResponse(403, 'recent_hr_mfa_required'))
+    const hrResponse = fetchWithIdentityVerification(hrRequest)
+    await vi.waitFor(() => expect(contexts).toEqual(['hr']))
+    cancelIdentityVerification()
+    await hrResponse
+
+    const licensingRequest = vi.fn().mockResolvedValue(jsonResponse(403, 'licensing_document_mfa_required'))
+    const licensingResponse = fetchWithIdentityVerification(licensingRequest)
+    await vi.waitFor(() => expect(contexts).toEqual(['hr', 'licensing']))
+    cancelIdentityVerification()
+    await licensingResponse
+    unsubscribe()
+  })
+
   it('returns the original protected response when the employee cancels verification', async () => {
     const makeRequest = vi.fn().mockResolvedValue(jsonResponse(403, 'operations_mfa_required'))
     let verificationRequested!: () => void

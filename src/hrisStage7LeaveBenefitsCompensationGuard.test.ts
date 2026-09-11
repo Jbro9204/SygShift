@@ -36,17 +36,19 @@ describe('HRIS Stage 7 leave, benefits, and compensation foundation', () => {
     expect(migration).toContain('to service_role')
   })
 
-  it('requires exact permissions and verified operations sessions', () => {
-    expect(worker).toContain("requireVerifiedOperationsSession(request, environment, 'hr_leave_mfa_required')")
-    expect(worker).toContain("requireVerifiedOperationsSession(request, environment, 'hr_benefits_mfa_required')")
-    expect(worker).toContain("requireVerifiedOperationsSession(request, environment, 'hr_compensation_mfa_required')")
+  it('requires exact permissions and the unified recent HR session', () => {
+    expect(worker).toContain('async function requireRecentHrSession')
+    expect(worker).toContain('async function handleHrLeaveApi')
+    expect(worker).toContain('async function handleHrBenefitsApi')
+    expect(worker).toContain('async function handleHrCompensationApi')
+    expect(worker).toContain('const session = await requireRecentHrSession(request, environment)')
     expect(worker).toContain("requireSessionPermission(session.context, 'hr.leave.view')")
     expect(worker).toContain("requireSessionPermission(session.context, 'hr.benefits.view')")
     expect(worker).toContain("requireSessionPermission(session.context, 'hr.compensation.view')")
   })
 
-  it('protects compensation with recent MFA and two-person approval', () => {
-    expect(worker).toContain('const mfa = await requireRecentDocumentMfa(request, session)')
+  it('protects compensation with the shared HR MFA proof and two-person approval', () => {
+    expect(worker).toContain('const mfa = session.mfa')
     expect(migration).toContain('hr_compensation_require_recent_mfa')
     expect(migration).toContain('hr_compensation_approval_separation')
     expect(migration).toContain('proposal_author = new.approver_id')

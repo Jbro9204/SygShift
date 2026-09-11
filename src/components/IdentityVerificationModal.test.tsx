@@ -74,4 +74,12 @@ describe('IdentityVerificationModal', () => {
     expect(verified).toHaveBeenCalledWith('security_key')
     expect(screen.getByRole('button', { name: 'Verify authenticator' })).toBeInTheDocument()
   })
+
+  it('explains that one HR verification remains valid across authorized HR areas for 30 minutes', async () => {
+    render(<IdentityVerificationModal context="hr" onCancel={vi.fn()} onVerified={vi.fn()} />)
+
+    expect(await screen.findByText('HR verification checkpoint')).toBeInTheDocument()
+    expect(screen.getByText(/valid across HR for 30 minutes/i)).toBeInTheDocument()
+    expect(screen.getByText(/every HR area you are authorized to use for 30 minutes/i)).toBeInTheDocument()
+  })
 })

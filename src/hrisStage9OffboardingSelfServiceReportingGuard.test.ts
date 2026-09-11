@@ -38,11 +38,11 @@ describe('HRIS Stage 9 lifecycle, self-service, and reporting foundation', () =>
     expect(migration).toContain("can_manage or report.owner_id=target_actor_id or report.visibility='authorized_hr'")
   })
 
-  it('requires verified sessions, exact permissions, and recent MFA', () => {
-    expect(worker).toContain('requireVerifiedOperationsSession(request, environment, `hr_${module}_mfa_required`)')
+  it('requires unified recent HR sessions, exact permissions, and MFA proof', () => {
+    expect(worker).toContain('const session = await requireRecentHrSession(request, environment)')
     expect(worker).toContain('requireSessionPermission(session.context, hrStage9Permissions[module])')
-    expect(worker).toContain("module === 'offboarding' || module === 'reporting'")
-    expect(worker).toContain('requireRecentDocumentMfa(request, session)')
+    expect(worker).toContain('const mfa = session.mfa')
+    expect(worker).not.toContain("module === 'offboarding' || module === 'reporting'")
   })
 
   it('uses compact lists and safe staged messages', () => {

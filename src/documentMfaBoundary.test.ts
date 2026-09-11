@@ -21,12 +21,18 @@ function request(endpoint: string, key: string | null = 'test-key', recentTotp =
   return new Request(`https://app.sygshift.example/api/v1/hr/documents/${endpoint}`, { headers })
 }
 function installTransport(verification: () => Response, permitted = true, workspace: Record<string, unknown> = { summary: { documents: 537 } }) {
-  const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     if (String(url).endsWith('/get_session_context')) return Response.json({
       employee_id: actorId, has_mfa: true, role: 'admin',
       permissions: permitted ? ['documents.workspace.view', 'hr.documents.view'] : [],
     })
     if (String(url).endsWith('/service_verify_security_key_document_mfa')) return verification()
+    if (String(url).endsWith('/service_verify_recent_hr_mfa')) {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { target_method?: string, target_verified_at?: string }
+      return body.target_method === 'authenticator' && body.target_verified_at
+        ? Response.json({ method: 'authenticator', verifiedAt: body.target_verified_at })
+        : verification()
+    }
     if (String(url).endsWith('/service_get_document_studio_workspace')) return Response.json(workspace)
     if (String(url).endsWith('/service_get_signature_policy_options')) return Response.json([{ id: '10000000-0000-4000-8000-000000000099', active: true }])
     if (String(url).endsWith('/service_get_hr_document_workspace')) return Response.json({ documents: [], pagination: { totalCount: 537 } })
@@ -39,11 +45,11 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe.each(['studio', 'workspace'])('Document %s verification boundary', (endpoint) => {
   it('turns a stale FIDO denial into the existing verification popup trigger, without reading documents', async () => {
-    const fetchMock = installTransport(() => Response.json({ code: '42501', message: 'A recent security-key verification is required.' }, { status: 403 }))
+    const fetchMock = installTransport(() => Response.json(null))
     const response = await worker.fetch(request(endpoint), env)
     expect(response.status).toBe(403)
     expect(await responseRequiresIdentityVerification(response)).toBe(true)
-    expect(await response.json()).toMatchObject({ error: 'recent_document_mfa_required' })
+    expect(await response.json()).toMatchObject({ error: 'recent_hr_mfa_required' })
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
   it('accepts fresh FIDO evidence and resumes the authorized read', async () => {
@@ -66,13 +72,13 @@ describe.each(['studio', 'workspace'])('Document %s verification boundary', (end
   it('accepts recent authenticator evidence without requiring FIDO', async () => {
     const fetchMock = installTransport(() => { throw new Error('FIDO should not be called') })
     expect((await worker.fetch(request(endpoint, null, true), env)).status).toBe(200)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
   it('requests verification when no recent factor is supplied', async () => {
-    const fetchMock = installTransport(() => { throw new Error('No key supplied') })
+    const fetchMock = installTransport(() => Response.json(null))
     const response = await worker.fetch(request(endpoint, null), env)
     expect(await responseRequiresIdentityVerification(response)).toBe(true)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
   it.each([
     [503, 'unavailable', 'Database unavailable'],

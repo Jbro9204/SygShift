@@ -535,6 +535,7 @@ const maxWebAuthnBodyBytes = 64 * 1024
 const maxHrDocumentBytes = 25 * 1024 * 1024
 const maxHrDocumentMetadataBytes = 16 * 1024
 const recentDocumentMfaSeconds = 15 * 60
+const recentHrMfaSeconds = 30 * 60
 const defaultAppUrl = 'https://app.sygilant.us'
 const defaultSupportEmail = 'jbrown@guardianshipsecurity.net'
 const dispatchAlertEmail = 'dispatch@guardianshipsecurity.net'
@@ -1487,6 +1488,7 @@ export function validateHrDocumentFile(
 export function recentAuthenticatorMfa(
   claims: AccessTokenClaims | null,
   nowSeconds = Math.floor(Date.now() / 1000),
+  maximumAgeSeconds = recentDocumentMfaSeconds,
 ): string | null {
   if (claims?.aal !== 'aal2' || !Array.isArray(claims.amr)) return null
   const verified = claims.amr
@@ -1494,7 +1496,7 @@ export function recentAuthenticatorMfa(
     .map((entry) => entry.timestamp)
     .filter((timestamp): timestamp is number => Number.isFinite(timestamp))
     .sort((left, right) => right - left)[0]
-  if (!verified || verified < nowSeconds - recentDocumentMfaSeconds || verified > nowSeconds + 60) return null
+  if (!verified || verified < nowSeconds - maximumAgeSeconds || verified > nowSeconds + 60) return null
   return new Date(verified * 1000).toISOString()
 }
 
@@ -2081,6 +2083,54 @@ async function requireRecentDocumentMfa(
     throw new ApiError('recent_document_mfa_required', 403, 'Verify with your security key before accessing protected HR information.')
   }
   return { method: 'security_key', verifiedAt: verification.verifiedAt }
+}
+
+async function requireRecentHrMfa(
+  _request: Request,
+  session: Awaited<ReturnType<typeof requireAuthenticatedSession>>,
+): Promise<{ method: 'authenticator' | 'security_key', verifiedAt: string }> {
+  const claims = accessTokenClaims(session.token)
+  const authenticatorVerifiedAt = recentAuthenticatorMfa(
+    claims,
+    Math.floor(Date.now() / 1000),
+    recentHrMfaSeconds,
+  )
+  const authSessionId = claims?.session_id
+  if (!authSessionId || !validUuid(authSessionId)) {
+    console.info(JSON.stringify({
+      employeeId: session.context.employee_id,
+      event: 'hr_mfa_window_rejected',
+      reason: 'missing_auth_session',
+    }))
+    throw new ApiError('recent_hr_mfa_required', 403, 'Verify with your authenticator or security key to start a 30-minute HR session.')
+  }
+
+  const verification = await callRpc<{ method?: string, verifiedAt?: string } | null>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_verify_recent_hr_mfa',
+    {
+      target_actor_id: session.context.employee_id,
+      target_auth_session_id: authSessionId,
+      target_method: authenticatorVerifiedAt ? 'authenticator' : 'security_key',
+      target_verified_at: authenticatorVerifiedAt,
+    },
+    session.config.serviceRoleKey,
+  )
+  if (!['authenticator', 'security_key'].includes(verification?.method ?? '') || !verification?.verifiedAt) {
+    console.info(JSON.stringify({
+      employeeId: session.context.employee_id,
+      event: 'hr_mfa_window_rejected',
+      reason: 'expired_or_missing',
+    }))
+    throw new ApiError('recent_hr_mfa_required', 403, 'Verify with your authenticator or security key to start a 30-minute HR session.')
+  }
+  return { method: verification.method as 'authenticator' | 'security_key', verifiedAt: verification.verifiedAt }
+}
+
+async function requireRecentHrSession(request: Request, environment: Environment) {
+  const session = await requireAuthenticatedSession(request, environment)
+  const mfa = await requireRecentHrMfa(request, session)
+  return { ...session, mfa }
 }
 
 function parseLicensingDocumentMetadata(request: Request): LicensingDocumentUploadMetadata {
@@ -2978,7 +3028,7 @@ async function handleHrDocumentUpload(
   const session = rolloutActorId ? null : await requireAuthenticatedSession(request, environment)
   if (session) {
     requireDocumentStudioAccess(session.context)
-    await requireRecentDocumentMfa(request, session)
+    await requireRecentHrMfa(request, session)
   }
   const config = configuredSupabase(environment)
   if (!config) throw new ApiError('server_not_configured', 503, 'The protected document service is unavailable.')
@@ -3091,7 +3141,7 @@ async function handleHrDocumentWorkspace(
   requireHrDocumentPipeline(environment)
   const session = await requireAuthenticatedSession(request, environment)
   requireDocumentStudioAccess(session.context)
-  await requireRecentDocumentMfa(request, session)
+  await requireRecentHrMfa(request, session)
   const url = new URL(request.url)
   const search = url.searchParams.get('search')?.trim() ?? ''
   if (search.length > 120) throw new ApiError('invalid_document_search', 422, 'Document search is limited to 120 characters.')
@@ -3151,6 +3201,7 @@ async function handleHrTemplateLibrary(
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   const session = await requireAuthenticatedSession(request, environment)
   requireDocumentStudioAccess(session.context)
+  await requireRecentHrMfa(request, session)
   const url = new URL(request.url)
   const search = url.searchParams.get('search')?.trim() ?? ''
   if (search.length > 120) throw new ApiError('invalid_template_search', 422, 'Document-library search is limited to 120 characters.')
@@ -3195,7 +3246,7 @@ async function handleHrSystemRegistration(
   const session = rolloutActorId ? null : await requireAuthenticatedSession(request, environment)
   if (session) {
     requireDocumentStudioAccess(session.context)
-    await requireRecentDocumentMfa(request, session)
+    await requireRecentHrMfa(request, session)
   }
   const config = configuredSupabase(environment)
   if (!config) throw new ApiError('server_not_configured', 503, 'The protected document service is unavailable.')
@@ -3320,7 +3371,7 @@ async function handleHrDocumentAccessGrant(
   if (!validUuid(documentId)) throw new ApiError('invalid_document_id', 422, 'The document identifier is invalid.')
   const session = await requireAuthenticatedSession(request, environment)
   requireDocumentStudioAccess(session.context)
-  const mfa = await requireRecentDocumentMfa(request, session)
+  const mfa = await requireRecentHrMfa(request, session)
   const body = await readJsonBody(request)
   const action = requiredText(body.action, 'Document action', 20)
   if (!['preview', 'view', 'download'].includes(action)) {
@@ -3466,7 +3517,7 @@ async function handleHrDocumentWorkflowWorkspace(
   requireHrDocumentPipeline(environment)
   const session = await requireAuthenticatedSession(request, environment)
   requireDocumentStudioAccess(session.context)
-  await requireRecentDocumentMfa(request, session)
+  await requireRecentHrMfa(request, session)
   const url = new URL(request.url)
   const status = url.searchParams.get('status')?.trim() || null
   const allowedStatuses = ['requested', 'submitted', 'accepted', 'rejected', 'cancelled', 'pending', 'completed', 'declined']
@@ -3492,7 +3543,7 @@ async function handleMyHrDocumentWorkspace(
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   requireHrDocumentPipeline(environment)
   const session = await requireAuthenticatedSession(request, environment)
-  await requireRecentDocumentMfa(request, session)
+  await requireRecentHrMfa(request, session)
   const payload = await callRpc<HrDocumentWorkflowPayload>(
     { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
     'service_get_my_hr_document_workspace',
@@ -3507,7 +3558,7 @@ async function handleCreateHrDocumentRequest(request: Request, environment: Envi
   requireHrDocumentPipeline(environment)
   const session = await requireAuthenticatedSession(request, environment)
   requireDocumentStudioAccess(session.context)
-  await requireRecentDocumentMfa(request, session)
+  await requireRecentHrMfa(request, session)
   const body = await readJsonBody(request)
   const employeeId = requiredText(body.employeeId, 'Employee', 36)
   if (!validUuid(employeeId)) throw new ApiError('invalid_employee_id', 422, 'The employee is invalid.')
@@ -3535,7 +3586,7 @@ async function handleReviewHrDocumentRequest(request: Request, environment: Envi
   if (!validUuid(workflowId)) throw new ApiError('invalid_document_request', 422, 'The document request is invalid.')
   const session = await requireAuthenticatedSession(request, environment)
   requireDocumentStudioAccess(session.context)
-  await requireRecentDocumentMfa(request, session)
+  await requireRecentHrMfa(request, session)
   const body = await readJsonBody(request)
   const action = requiredText(body.action, 'Review action', 20)
   if (!['accepted', 'rejected', 'cancelled'].includes(action)) throw new ApiError('invalid_document_request_action', 422, 'Choose accept, reject, or cancel.')
@@ -3553,7 +3604,7 @@ async function handleCreateHrDocumentAssignment(request: Request, environment: E
   requireHrDocumentPipeline(environment)
   const session = await requireAuthenticatedSession(request, environment)
   requireDocumentStudioAccess(session.context)
-  await requireRecentDocumentMfa(request, session)
+  await requireRecentHrMfa(request, session)
   const body = await readJsonBody(request)
   const employeeId = requiredText(body.employeeId, 'Employee', 36)
   const documentId = requiredText(body.documentId, 'Document', 36)
@@ -3583,7 +3634,7 @@ async function handleCancelHrDocumentAssignment(request: Request, environment: E
   if (!validUuid(assignmentId)) throw new ApiError('invalid_document_assignment', 422, 'The document assignment is invalid.')
   const session = await requireAuthenticatedSession(request, environment)
   requireDocumentStudioAccess(session.context)
-  await requireRecentDocumentMfa(request, session)
+  await requireRecentHrMfa(request, session)
   const body = await readJsonBody(request)
   const payload = await callRpc<Record<string, unknown>>(
     { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
@@ -3599,7 +3650,7 @@ async function handleMyHrDocumentAccessGrant(request: Request, environment: Envi
   requireHrDocumentPipeline(environment)
   if (!validUuid(assignmentId)) throw new ApiError('invalid_document_assignment', 422, 'The document assignment is invalid.')
   const session = await requireAuthenticatedSession(request, environment)
-  const mfa = await requireRecentDocumentMfa(request, session)
+  const mfa = await requireRecentHrMfa(request, session)
   const body = await readJsonBody(request)
   const action = requiredText(body.action, 'Document action', 20)
   if (!['preview', 'view', 'download'].includes(action)) throw new ApiError('invalid_document_action', 422, 'Choose preview, view, or download.')
@@ -3627,7 +3678,7 @@ async function handleCompleteHrDocumentAssignment(request: Request, environment:
   requireHrDocumentPipeline(environment)
   if (!validUuid(assignmentId)) throw new ApiError('invalid_document_assignment', 422, 'The document assignment is invalid.')
   const session = await requireAuthenticatedSession(request, environment)
-  const mfa = await requireRecentDocumentMfa(request, session)
+  const mfa = await requireRecentHrMfa(request, session)
   const body = await readJsonBody(request)
   const action = requiredText(body.action, 'Completion action', 20)
   if (!['acknowledge', 'sign'].includes(action)) throw new ApiError('invalid_document_completion', 422, 'Choose acknowledge or sign.')
@@ -3950,7 +4001,7 @@ async function handleDocumentStudioWorkspace(request: Request, environment: Envi
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   const session = await requireAuthenticatedSession(request, environment)
   requireDocumentStudioAccess(session.context)
-  await requireRecentDocumentMfa(request, session)
+  await requireRecentHrMfa(request, session)
   const url = new URL(request.url)
   const search = url.searchParams.get('search')?.trim() ?? ''
   if (search.length > 120) throw new ApiError('invalid_document_search', 422, 'Document search is limited to 120 characters.')
@@ -3977,6 +4028,7 @@ async function handleDocumentStudioWorkspace(request: Request, environment: Envi
 async function handleMySignatureWorkspace(request: Request, environment: Environment, requestId: string): Promise<Response> {
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   const session = await requireAuthenticatedSession(request, environment)
+  await requireRecentHrMfa(request, session)
   const payload = await callRpc<Record<string, unknown>>(
     { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
     'service_get_my_signature_workspace',
@@ -4002,7 +4054,7 @@ async function handleMySignatureAdoption(request: Request, environment: Environm
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
   requireHrDocumentPipeline(environment)
   const session = await requireAuthenticatedSession(request, environment)
-  const mfa = await requireRecentDocumentMfa(request, session)
+  const mfa = await requireRecentHrMfa(request, session)
   const config = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
   const target = await callRpc<{ bucket: string, objectKey: string, checksum: string, method: string, displayName: string }>(config, 'service_get_my_signature_adoption_access', {
     target_actor_id: session.context.employee_id,
@@ -4026,7 +4078,7 @@ async function handleMySignatureAccess(request: Request, environment: Environmen
   requireHrDocumentPipeline(environment)
   if (!validUuid(recipientId)) throw new ApiError('invalid_signature_recipient', 422, 'The assigned document action is invalid.')
   const session = await requireAuthenticatedSession(request, environment)
-  const mfa = await requireRecentDocumentMfa(request, session)
+  const mfa = await requireRecentHrMfa(request, session)
   const body = await readJsonBody(request)
   const action = requiredText(body.action, 'Document action', 20)
   if (!['preview','view','download'].includes(action)) throw new ApiError('invalid_document_action', 422, 'Choose preview, view, or download.')
@@ -4045,7 +4097,7 @@ async function handleMySignatureAction(request: Request, environment: Environmen
   requireHrDocumentPipeline(environment)
   if (!validUuid(recipientId)) throw new ApiError('invalid_signature_recipient', 422, 'The assigned document action is invalid.')
   const session = await requireAuthenticatedSession(request, environment)
-  const mfa = await requireRecentDocumentMfa(request, session)
+  const mfa = await requireRecentHrMfa(request, session)
   const body = await readJsonBody(request)
   const action = requiredText(body.action, 'Document action', 30)
   if (!['fill','review','acknowledge','approve','certify','initial','sign','countersign','witness','decline','request_correction'].includes(action)) throw new ApiError('invalid_signature_action', 422, 'Choose an available document action.')
@@ -4095,7 +4147,7 @@ async function handleSignatureAuditCertificate(request: Request, environment: En
   requireHrDocumentPipeline(environment)
   if (!validUuid(envelopeId)) throw new ApiError('invalid_signature_envelope', 422, 'The signature envelope is invalid.')
   const session = await requireAuthenticatedSession(request, environment)
-  const mfa = await requireRecentDocumentMfa(request, session)
+  const mfa = await requireRecentHrMfa(request, session)
   const body = await readJsonBody(request)
   const config = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
   const target = await callRpc<SignatureCertificateAccess>(config, 'service_get_signature_audit_certificate_access', {
@@ -4116,7 +4168,7 @@ async function handleDocumentStudioMutation(request: Request, environment: Envir
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
   const session = await requireAuthenticatedSession(request, environment)
   requireDocumentStudioAccess(session.context)
-  const mfa = await requireRecentDocumentMfa(request, session)
+  const mfa = await requireRecentHrMfa(request, session)
   const body = await readJsonBody(request)
   const config = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
   let rpc = ''
@@ -4186,13 +4238,28 @@ function disabledRecruitingWorkspace(requestId: string): Record<string, unknown>
   }
 }
 
+async function handleHrMfaWindowApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  const session = await requireRecentHrSession(request, environment)
+  return json({
+    expiresAt: new Date(Date.parse(session.mfa.verifiedAt) + recentHrMfaSeconds * 1000).toISOString(),
+    method: session.mfa.method,
+    requestId,
+    verifiedAt: session.mfa.verifiedAt,
+  })
+}
+
 async function handleHrRecruitingApi(
   request: Request,
   environment: Environment,
   requestId: string,
 ): Promise<Response> {
   const url = new URL(request.url)
-  const session = await requireVerifiedOperationsSession(request, environment, 'hr_recruiting_mfa_required')
+  const session = await requireRecentHrSession(request, environment)
 
   if (url.pathname === '/api/v1/hr/recruiting/workspace') {
     if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
@@ -4314,7 +4381,7 @@ async function handleHrOnboardingApi(
   requestId: string,
 ): Promise<Response> {
   const url = new URL(request.url)
-  const session = await requireVerifiedOperationsSession(request, environment, 'hr_onboarding_mfa_required')
+  const session = await requireRecentHrSession(request, environment)
 
   if (url.pathname === '/api/v1/hr/onboarding/prehires') {
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
@@ -4484,7 +4551,7 @@ async function handleHrLeaveApi(
   requestId: string,
 ): Promise<Response> {
   const url = new URL(request.url)
-  const session = await requireVerifiedOperationsSession(request, environment, 'hr_leave_mfa_required')
+  const session = await requireRecentHrSession(request, environment)
   if (url.pathname !== '/api/v1/hr/leave/workspace') return errorJson('not_found', requestId, 404)
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   requireSessionPermission(session.context, 'hr.leave.view')
@@ -4505,7 +4572,7 @@ async function handleHrBenefitsApi(
   requestId: string,
 ): Promise<Response> {
   const url = new URL(request.url)
-  const session = await requireVerifiedOperationsSession(request, environment, 'hr_benefits_mfa_required')
+  const session = await requireRecentHrSession(request, environment)
   if (url.pathname !== '/api/v1/hr/benefits/workspace') return errorJson('not_found', requestId, 404)
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   requireSessionPermission(session.context, 'hr.benefits.view')
@@ -4526,7 +4593,7 @@ async function handleHrCompensationApi(
   requestId: string,
 ): Promise<Response> {
   const url = new URL(request.url)
-  const session = await requireVerifiedOperationsSession(request, environment, 'hr_compensation_mfa_required')
+  const session = await requireRecentHrSession(request, environment)
   const employeeMatch = /^\/api\/v1\/hr\/compensation\/employees\/([0-9a-f-]{36})$/i.exec(url.pathname)
   const proposalMatch = /^\/api\/v1\/hr\/compensation\/employees\/([0-9a-f-]{36})\/pay-rate-proposals$/i.exec(url.pathname)
   const decisionMatch = /^\/api\/v1\/hr\/compensation\/pay-rate-proposals\/([0-9a-f-]{36})\/decision$/i.exec(url.pathname)
@@ -4535,7 +4602,7 @@ async function handleHrCompensationApi(
     if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
     requireSessionPermission(session.context, 'hr.compensation.view')
     if (!hrCompensationEnabled(environment)) return json(disabledHrCompensationWorkspace(requestId))
-    const mfa = await requireRecentDocumentMfa(request, session)
+    const mfa = session.mfa
     const { offset, pageSize } = boundedWorkspacePage(url)
     const payload = await callRpc<Record<string, unknown>>(
       { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
@@ -4555,7 +4622,7 @@ async function handleHrCompensationApi(
   if (!hrCompensationEnabled(environment)) {
     throw new ApiError('hr_compensation_unavailable', 503, 'Protected compensation has not been released.')
   }
-  const mfa = await requireRecentDocumentMfa(request, session)
+  const mfa = session.mfa
   const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
 
   if (employeeMatch) {
@@ -4678,7 +4745,7 @@ const hrOperationalActionPermissions: Record<string, string> = {
 }
 
 async function handleHrOperationalAction(request: Request, environment: Environment, requestId: string): Promise<Response> {
-  const session = await requireVerifiedOperationsSession(request, environment, 'hr_operation_mfa_required')
+  const session = await requireRecentHrSession(request, environment)
   if (request.method === 'GET') {
     const module = requiredText(new URL(request.url).searchParams.get('module'), 'HR module', 40).toLowerCase()
     requireSessionPermission(session.context, 'hr.people.view')
@@ -4707,8 +4774,7 @@ async function handleHrOperationalAction(request: Request, environment: Environm
           : false
   if (!enabled) throw new ApiError('hr_module_unavailable', 503, 'This HR workspace has not been released.')
 
-  const needsRecentMfa = module === 'cases' || module === 'safety' || module === 'offboarding' || module === 'reporting'
-  const mfa = needsRecentMfa ? await requireRecentDocumentMfa(request, session) : null
+  const mfa = session.mfa
   const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload) ? body.payload : {}
   const reason = requiredText(body.reason, 'Business reason', 4000)
   const result = await callRpc<Record<string, unknown>>(
@@ -4717,8 +4783,8 @@ async function handleHrOperationalAction(request: Request, environment: Environm
     {
       target_action: action,
       target_actor_id: session.context.employee_id,
-      target_mfa_method: mfa?.method ?? null,
-      target_mfa_verified_at: mfa?.verifiedAt ?? null,
+      target_mfa_method: mfa.method,
+      target_mfa_verified_at: mfa.verifiedAt,
       target_module: module,
       target_payload: payload,
       target_reason: reason,
@@ -4738,20 +4804,18 @@ async function handleHrStage8Api(
   if (!match) return errorJson('not_found', requestId, 404)
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   const module = match[1] as HrStage8Module
-  const session = await requireVerifiedOperationsSession(request, environment, `hr_${module}_mfa_required`)
+  const session = await requireRecentHrSession(request, environment)
   requireSessionPermission(session.context, hrStage8Permissions[module])
   if (!hrStage8Enabled(environment, module)) return json(disabledHrStage8Workspace(module, requestId))
-  const mfa = module === 'cases' || module === 'safety'
-    ? await requireRecentDocumentMfa(request, session)
-    : null
+  const mfa = session.mfa
   const { offset, pageSize } = boundedWorkspacePage(url)
   const payload = await callRpc<Record<string, unknown>>(
     { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
     'service_get_hr_stage8_workspace',
     {
       target_actor_id: session.context.employee_id,
-      target_mfa_method: mfa?.method ?? null,
-      target_mfa_verified_at: mfa?.verifiedAt ?? null,
+      target_mfa_method: mfa.method,
+      target_mfa_verified_at: mfa.verifiedAt,
       target_module: module,
       target_offset: offset,
       target_page_size: pageSize,
@@ -4783,20 +4847,18 @@ async function handleHrStage9Api(
   if (!match) return errorJson('not_found', requestId, 404)
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   const module = match[1] === 'self-service' ? 'self_service' : match[1] as HrStage9Module
-  const session = await requireVerifiedOperationsSession(request, environment, `hr_${module}_mfa_required`)
+  const session = await requireRecentHrSession(request, environment)
   requireSessionPermission(session.context, hrStage9Permissions[module])
   if (!hrStage9Enabled(environment, module)) return json(disabledHrStage9Workspace(module, requestId))
-  const mfa = module === 'offboarding' || module === 'reporting'
-    ? await requireRecentDocumentMfa(request, session)
-    : null
+  const mfa = session.mfa
   const { offset, pageSize } = boundedWorkspacePage(url)
   const payload = await callRpc<Record<string, unknown>>(
     { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
     'service_get_hr_stage9_workspace',
     {
       target_actor_id: session.context.employee_id,
-      target_mfa_method: mfa?.method ?? null,
-      target_mfa_verified_at: mfa?.verifiedAt ?? null,
+      target_mfa_method: mfa.method,
+      target_mfa_verified_at: mfa.verifiedAt,
       target_module: module,
       target_offset: offset,
       target_page_size: pageSize,
@@ -4838,11 +4900,11 @@ async function handleHrStage10Api(
   if (url.pathname !== '/api/v1/hr/payroll-integration/workspace') return errorJson('not_found', requestId, 404)
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
 
-  const session = await requireVerifiedOperationsSession(request, environment, 'hr_payroll_integration_mfa_required')
+  const session = await requireRecentHrSession(request, environment)
   requireSessionPermission(session.context, 'hr.payroll_integration.view')
   if (!hrStage10IntegrationEnabled(environment)) return json(disabledHrStage10Workspace(requestId))
 
-  const mfa = await requireRecentDocumentMfa(request, session)
+  const mfa = session.mfa
   const { offset, pageSize } = boundedWorkspacePage(url)
   const payload = await callRpc<Record<string, unknown>>(
     { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
@@ -4868,7 +4930,7 @@ async function handleHrAutomationApi(
 
   if (url.pathname === '/api/v1/hr/automation/mine') {
     if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
-    const session = await requireAuthenticatedSession(request, environment)
+    const session = await requireRecentHrSession(request, environment)
     requireSessionPermission(session.context, 'actions.self.view')
     if (!hrAutomationEnabled(environment)) return json({ enabled: false, total: 0, tasks: [], requestId })
     const payload = await callRpc<Record<string, unknown>>(
@@ -4882,7 +4944,7 @@ async function handleHrAutomationApi(
 
   if (url.pathname === '/api/v1/hr/automation/workspace') {
     if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
-    const session = await requireVerifiedOperationsSession(request, environment, 'hr_automation_mfa_required')
+    const session = await requireRecentHrSession(request, environment)
     requireSessionPermission(session.context, 'hr.automation.view')
     if (!hrAutomationEnabled(environment)) return json(disabledHrAutomationWorkspace(requestId))
     const requestedPageSize = Number.parseInt(url.searchParams.get('pageSize') ?? '10', 10)
@@ -4903,7 +4965,7 @@ async function handleHrAutomationApi(
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
     requireHrAutomationRelease(environment)
     if (!validUuid(viewedTaskId)) throw new ApiError('invalid_automation_task', 422, 'The automation task is invalid.')
-    const session = await requireAuthenticatedSession(request, environment)
+    const session = await requireRecentHrSession(request, environment)
     requireSessionPermission(session.context, 'actions.self.view')
     const payload = await callRpc<Record<string, unknown>>(
       { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
@@ -4919,7 +4981,7 @@ async function handleHrAutomationApi(
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
     requireHrAutomationRelease(environment)
     if (!validUuid(completeTaskId)) throw new ApiError('invalid_automation_task', 422, 'The automation task is invalid.')
-    const session = await requireAuthenticatedSession(request, environment)
+    const session = await requireRecentHrSession(request, environment)
     requireSessionPermission(session.context, 'actions.self.view')
     const body = await readJsonBody(request)
     const payload = await callRpc<Record<string, unknown>>(
@@ -7621,6 +7683,19 @@ export default {
           response = error instanceof ApiError
             ? errorJson(error.code, requestId, error.status, error.message)
             : errorJson('patrol_request_failed', requestId, 500, 'The protected Patrol request could not be completed.')
+        }
+      }
+    } else if (url.pathname === '/api/v1/hr/mfa/window') {
+      try {
+        response = await handleHrMfaWindowApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('hr_mfa_window_failed', requestId, 500, 'The HR verification window could not be checked.')
         }
       }
     } else if (url.pathname === '/api/v1/hr/operations/actions' || url.pathname === '/api/v1/hr/operations/options') {

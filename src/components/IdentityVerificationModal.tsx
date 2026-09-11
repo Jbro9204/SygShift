@@ -7,7 +7,7 @@ import { ModalDialog } from './ModalDialog'
 type VerificationMethod = 'authenticator' | 'security_key'
 
 interface IdentityVerificationModalProps {
-  context?: 'general' | 'licensing'
+  context?: 'general' | 'hr' | 'licensing'
   onCancel: () => void
   onVerified: (method: VerificationMethod) => Promise<void> | void
 }
@@ -87,6 +87,7 @@ export function IdentityVerificationModal({ context = 'general', onCancel, onVer
   const busy = busyMethod !== null
   const hasMethod = securityKeys.length > 0 || Boolean(verifiedAuthenticator)
   const isLicensing = context === 'licensing'
+  const isHr = context === 'hr'
 
   return (
     <ModalDialog
@@ -95,6 +96,8 @@ export function IdentityVerificationModal({ context = 'general', onCancel, onVer
       className="identity-verification-modal"
       description={isLicensing
         ? 'Licensing documents contain protected employee information. Confirm your identity to continue; the pending document action will resume automatically.'
+        : isHr
+          ? 'One verification unlocks every HR area you are authorized to use for 30 minutes. The action that brought you here will resume automatically.'
         : 'This area contains protected SygShift information. Confirm your identity to continue; the action that brought you here will resume automatically.'}
       dismissible={!busy}
       onClose={onCancel}
@@ -104,9 +107,11 @@ export function IdentityVerificationModal({ context = 'general', onCancel, onVer
         <div className="identity-verification-modal__notice">
           <ShieldCheck aria-hidden="true" size={22} />
           <div>
-            <strong>{isLicensing ? 'Protected document checkpoint' : 'Protected access checkpoint'}</strong>
+            <strong>{isLicensing ? 'Protected document checkpoint' : isHr ? 'HR verification checkpoint' : 'Protected access checkpoint'}</strong>
             <span>{isLicensing
               ? 'Verification remains valid for 15 minutes. Your selected file and licensing information will remain in place.'
+              : isHr
+                ? 'Verification remains valid across HR for 30 minutes. Your current page and entered information will remain in place.'
               : 'Verification remains valid for 15 minutes. Your current page and entered information will remain in place.'}</span>
           </div>
         </div>

@@ -241,7 +241,7 @@ export async function uploadHrDocument(
     return await attemptUpload()
   } catch (error) {
     if (!(error instanceof ProtectedApiError) || !isIdentityVerificationRequiredCode(error.code)) throw error
-    await requestIdentityVerification()
+    await requestIdentityVerification('hr')
     return attemptUpload()
   }
 }

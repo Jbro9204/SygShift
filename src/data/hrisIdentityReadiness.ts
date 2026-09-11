@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
+import { requireHrMfaWindow } from './hrMfa'
 
 export const hrisDateSourceTypeSchema = z.enum([
   'hr_export',
@@ -113,6 +114,7 @@ export type HrisEffectiveDateAuthorizationInput = {
 export async function getHrisIdentityReadiness(
   query: HrisIdentityReadinessQuery = {},
 ): Promise<HrisIdentityReadinessWorkspace> {
+  await requireHrMfaWindow()
   const { data, error } = await getSupabaseClient().rpc('get_hris_stage2_identity_readiness', {
     target_page: query.page ?? 1,
     target_page_size: query.pageSize ?? 10,
@@ -126,6 +128,7 @@ export async function getHrisIdentityReadiness(
 export async function authorizeHrisEffectiveDates(
   input: HrisEffectiveDateAuthorizationInput,
 ): Promise<string> {
+  await requireHrMfaWindow()
   const parsedSourceType = hrisDateSourceTypeSchema.parse(input.sourceType)
   const { data, error } = await getSupabaseClient().rpc('authorize_hris_stage2_effective_dates', {
     target_employee_id: input.employeeId,

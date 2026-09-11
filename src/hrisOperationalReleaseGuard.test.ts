@@ -34,13 +34,14 @@ describe('HR Suite operational release', () => {
     }
   })
 
-  it('enforces exact Worker permissions and recent MFA for restricted modules', () => {
+  it('enforces exact Worker permissions and recent MFA for every HR module', () => {
     expect(worker).toContain('hrOperationalActionPermissions')
     expect(worker).toContain("'/api/v1/hr/operations/actions'")
     expect(worker).toContain("'/api/v1/hr/operations/options'")
     expect(worker).toContain('requireSessionPermission(session.context, permission)')
-    expect(worker).toContain("module === 'cases' || module === 'safety' || module === 'offboarding' || module === 'reporting'")
-    expect(worker).toContain('requireRecentDocumentMfa(request, session)')
+    expect(worker).toContain('const session = await requireRecentHrSession(request, environment)')
+    expect(worker).toContain('const mfa = session.mfa')
+    expect(worker).not.toContain("module === 'cases' || module === 'safety' || module === 'offboarding' || module === 'reporting'")
   })
 
   it('provides real management controls instead of read-only staged pages', () => {
