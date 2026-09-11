@@ -43,3 +43,16 @@ Date: 09/11/2026
 ## Recovery boundary
 
 The application rollback tag preserves the pre-release source. The database change is additive and forward-only; it does not modify existing boards, tasks, assignments, reminders, alarms, or activity records.
+
+## Production release
+
+- Source commit: `6d18838` (`feat: add guided recurring SygTasks`), pushed to `origin/main`.
+- Recovery tag: `rollback/pre-sygtasks-recurring-work-20260911`.
+- Migration `20260912160000` applied and recorded in linked production history.
+- The production rollback-only lifecycle regression passed without leaving a series, occurrence, task, reminder, or activity record behind.
+- Existing operational work remained identical before and after migration: 5 boards, 9 tasks, 9 assignments, 3 reminders, and task fingerprint `8102a448ef888b3c412ec02513d23521`.
+- Private recurring tables expose zero direct `anon` or `authenticated` table grants; authenticated clients use the three approved RPC boundaries.
+- Mandatory post-release actual-component Time Clock matrix: 42/42 passed on desktop and mobile.
+- A fresh production build was created after the final browser run and deployed as Cloudflare Worker version `cee4fa73-685a-44cf-86c3-94627cd32f89`.
+- Primary and fallback root, health, and readiness endpoints returned HTTP 200. `/tasks` returned HTTP 200, and the live primary entry bundle exactly matched the fresh production build.
+- The owner account remained active, activated, enabled, and outside the Required Actions canary throughout this release.

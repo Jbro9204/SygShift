@@ -2,7 +2,7 @@
 
 Date: 2026-09-11
 
-Decision: **Ready for additive production release after live postflight**
+Decision: **Released and verified in production**
 
 ## Preserved behavior
 
@@ -36,10 +36,13 @@ Decision: **Ready for additive production release after live postflight**
 - Full repository check: 247 files / 1,265 tests, typecheck, lint, and production build passed.
 - Rendered SygTasks layout/accessibility matrix: 10 desktop, laptop, tablet, mobile, dialog, and 200% reflow checks passed.
 
-## Required live postflight
+## Live postflight
 
-- Apply and ledger the additive migration.
-- Re-run the rollback-only lifecycle regression against linked production.
-- Confirm existing board, task, assignment, and reminder counts/fingerprints are unchanged.
-- Confirm no recurring series exists until a user deliberately creates one.
-- Deploy the Worker and verify health/readiness, scheduled processing, SygTasks desktop/mobile layout, and time-clock preservation.
+- [x] Applied and ledgered additive migration `20260912160000`.
+- [x] Re-ran the rollback-only lifecycle regression against linked production.
+- [x] Confirmed existing counts and task fingerprint are unchanged: 5 boards, 9 tasks, 9 assignments, 3 reminders, fingerprint `8102a448ef888b3c412ec02513d23521`.
+- [x] Confirmed zero recurring series, occurrences, or series-activity rows remained after the rollback test.
+- [x] Confirmed private table access and the three authenticated RPC boundaries.
+- [x] Passed 42/42 actual-component desktop/mobile Time Clock preservation checks.
+- [x] Rebuilt production assets after the final browser suite and deployed Worker version `cee4fa73-685a-44cf-86c3-94627cd32f89`.
+- [x] Confirmed primary and fallback root, health, and readiness endpoints are HTTP 200 and the live entry bundle matches the fresh production build.
