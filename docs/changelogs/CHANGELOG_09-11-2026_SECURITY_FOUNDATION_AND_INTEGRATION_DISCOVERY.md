@@ -6,7 +6,8 @@
   Indeed workstreams.
 - Updated React Router from 7.18.1 to 7.18.2 to clear the identified high-severity production advisory.
 - Added a Cloudflare Static Assets header policy matching the existing Worker security boundary.
-- Added GitHub dependency/regression and CodeQL checks plus weekly Dependabot proposals.
+- Added GitHub dependency/regression and CodeQL checks plus grouped security-only Dependabot proposals;
+  routine version-update pull requests remain disabled to prevent notification and review flooding.
 - Added a permanent source guard that prevents the static application header boundary from disappearing
   or silently weakening script execution or framing controls.
 - Recorded the phased integration decisions and the exact longer-program release order in

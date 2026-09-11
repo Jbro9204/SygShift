@@ -7,7 +7,14 @@ updates:
       day: monday
       time: "06:00"
       timezone: America/Denver
-    open-pull-requests-limit: 3
+    # Routine version churn stays off. Security updates remain available and
+    # are grouped so reviewers receive one focused change instead of a flood.
+    open-pull-requests-limit: 0
+    groups:
+      security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
     labels:
       - dependencies
       - security
@@ -21,7 +28,14 @@ updates:
       day: monday
       time: "06:00"
       timezone: America/Denver
-    open-pull-requests-limit: 5
+    # The scheduled release gate reports ordinary drift; Dependabot opens
+    # grouped pull requests only for security updates enabled by the owner.
+    open-pull-requests-limit: 0
+    groups:
+      security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
     labels:
       - dependencies
       - security

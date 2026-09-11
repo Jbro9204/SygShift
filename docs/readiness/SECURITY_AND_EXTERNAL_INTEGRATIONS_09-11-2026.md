@@ -41,7 +41,8 @@ connection.
   together or touch operational data.
 - Unauthenticated GitHub API access could not confirm repository-level secret scanning, push protection,
   or branch protection. Those settings require an authenticated owner review. A repository security
-  workflow and Dependabot configuration are included so supported checks start from reviewed source.
+  workflow and grouped security-only Dependabot configuration are included so supported checks start
+  from reviewed source without generating routine version-update pull-request noise.
 
 ## Microsoft 365 calendar and meeting architecture
 
