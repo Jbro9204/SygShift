@@ -1,5 +1,16 @@
 # SygShift Development Log
 
+## 09/11/2026 - Connected Workspace Reliability Repair
+
+- Restored the HR Employee File by removing repeated Required Actions checkpoint evaluation from the effective-permission projection while preserving every permission, MFA, and urgent-action rule.
+- Restored Accountability events tied to superseded or archived schedule revisions through a dedicated historical reconciliation path and replaced raw validation output with a safe employee-facing failure boundary.
+- Coalesced repeated schedule-trigger refreshes, added targeted indexes, bounded non-full attendance safety work, and reduced only the global safety cadence from every minute to every five minutes; immediate schedule reconciliation, every-minute timekeeping automation, and the daily full pass remain intact.
+- Improved the affected HR file request to 100.208 ms, effective permissions to 11.288 ms, and the incremental attendance safety refresh from 2,689.047 ms to 703.668 ms.
+- Applied and recorded forward migrations `20260912180000_connected_reliability_repair.sql` and `20260912181000_bound_attendance_safety_refresh.sql` without rewriting employee, schedule, timekeeping, Accountability, HR, or audit history.
+- Released source commits `f18bc5c` and `0c3cd3a` as Cloudflare Worker `3fd54f68-15b0-4210-a17d-9d22e64fcc27`; rollback tag `rollback/pre-connected-reliability-repair-20260911` points to `b99762d`.
+- Verification passed 250 test files / 1,277 tests, 316 browser checks with zero failures, all 46 post-release Time Clock/Early Clock-In checks, both production health/readiness endpoints, database invariants, and byte-for-byte identity of all affected live assets.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-11-2026_CONNECTED_WORKSPACE_RELIABILITY_REPAIR.md`.
+
 ## 09/11/2026 - Termination Execution and Form Typography Repair
 
 - Repaired the production lifecycle execution mismatch that rejected an approved separation after every checklist item was complete.
