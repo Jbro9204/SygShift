@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 const migration = readFileSync('supabase/migrations/20260912110000_guided_offboarding_workflow.sql', 'utf8')
 const backfill = readFileSync('supabase/migrations/20260912111000_guided_offboarding_existing_case_backfill.sql', 'utf8')
+const executionRepair = readFileSync('supabase/migrations/20260912170000_hr_lifecycle_effective_date_source_repair.sql', 'utf8')
 const worker = readFileSync('worker/index.ts', 'utf8')
 const page = readFileSync('src/pages/HrisStage9Page.tsx', 'utf8')
 const wizard = readFileSync('src/components/HrLifecycleCaseWizard.tsx', 'utf8')
@@ -45,6 +46,17 @@ describe('unified guided HR lifecycle workflow', () => {
     expect(backfill).toContain('guided_workflow_backfilled')
     expect(backfill).not.toMatch(/update\s+public\.(employees|time_events|shifts|shift_assignments)/i)
     expect(backfill).not.toMatch(/delete\s+from/i)
+  })
+
+  it('allows the guided separation source in effective-date history without weakening prior sources', () => {
+    expect(migration).toContain("'offboarding_case'")
+    expect(executionRepair).toContain('drop constraint if exists hr_stage2_effective_dates_source')
+    expect(executionRepair).toContain('add constraint hr_stage2_effective_dates_source check')
+    expect(executionRepair).toContain('validate constraint hr_stage2_effective_dates_source')
+    for (const source of ['hr_export', 'employee_file', 'verified_hr_record', 'verified_manual', 'offboarding_case']) {
+      expect(executionRepair).toContain(`'${source}'`)
+    }
+    expect(executionRepair).not.toMatch(/delete\s+from/i)
   })
 
   it('provides the guided workspace, live readiness, linked forms, reminders, and audit timeline', () => {

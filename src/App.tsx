@@ -7,6 +7,7 @@ import './theme.css'
 import './cursors.css'
 import './documentStudio.css'
 import './styles/platform-launchers.css'
+import './styles/form-controls.css'
 
 function App() {
   return (

@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/11/2026 - Termination Execution and Form Typography Repair
+
+- Repaired the production lifecycle execution mismatch that rejected an approved separation after every checklist item was complete.
+- Added `offboarding_case` to the existing effective-date authorization source constraint without removing or renaming any prior source type.
+- Standardized text-entry controls on the SygShift product font at a readable 16px minimum, including textareas that previously fell back to a small browser monospace font.
+- Applied and recorded forward migration `20260912170000_hr_lifecycle_effective_date_source_repair.sql`; a production rollback-only rehearsal completed the full separation transaction and left the case, employee, audit events, and access unchanged.
+- Verification passed 249 test files / 1,271 tests, the six-check Employee Lifecycle desktop/mobile browser suite, and all 42 Time Clock and Early Clock-In regression checks.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-11-2026_TERMINATION_EXECUTION_AND_FORM_TYPOGRAPHY_REPAIR.md`.
+
 ## 09/11/2026 - Security Foundation and External Integration Discovery
 
 - Cleared the identified high-severity React Router advisory by updating to 7.18.2 and added a

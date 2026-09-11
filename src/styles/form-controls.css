@@ -1,0 +1,9 @@
+/* Keep every text-entry surface readable and in the product typeface. */
+html :where(
+  input:not([type='button']):not([type='checkbox']):not([type='color']):not([type='file']):not([type='hidden']):not([type='image']):not([type='radio']):not([type='range']):not([type='reset']):not([type='submit']),
+  textarea
+) {
+  font-family: Aptos, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+  font-size: 1rem !important;
+  line-height: 1.5;
+}
