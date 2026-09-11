@@ -16,6 +16,7 @@ import {
   Megaphone,
   Plus,
   Search,
+  ShieldAlert,
   Workflow,
 } from 'lucide-react'
 import { getSessionContext, notifySessionContextChanged } from '../data/auth'
@@ -48,6 +49,12 @@ import { ModalDialog } from '../components/ModalDialog'
 import { alignPostNameWithShiftRequirement, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { getAssignedTrainingDocument } from '../data/hrSystemImport'
+import {
+  getMyGuidedCorrectiveActions,
+  respondToMyGuidedCorrectiveAction,
+  type CorrectiveActionResponseType,
+  type EmployeeCorrectiveAction,
+} from '../data/correctiveActions'
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return 'No due date'
@@ -116,6 +123,16 @@ function HrAutomationActions({
           </button>
         ))}
       </div>
+    </section>
+  )
+}
+
+function CorrectiveActionItems({ items, onOpen }: { items: EmployeeCorrectiveAction[]; onOpen: (item: EmployeeCorrectiveAction) => void }) {
+  if (!items.length) return null
+  return (
+    <section className="panel action-section corrective-employee-section">
+      <div className="section-heading"><div><p className="eyebrow">Private employment records</p><h2>Corrective actions</h2><p>Review the complete record. You may acknowledge receipt, add a response, dispute it, or decline acknowledgment.</p></div></div>
+      <div className="hr-action-list">{items.map((item) => <button className="hr-action-item" key={item.id} onClick={() => onOpen(item)} type="button"><span className="action-item__icon"><ShieldAlert aria-hidden="true" size={21} /></span><span className="hr-action-item__copy"><strong>{item.title}</strong><small>Case #{item.caseNumber} · {item.actionLevel.replaceAll('_', ' ')}</small></span><span className={`action-status action-status--${item.status}`}>{item.status.replaceAll('_', ' ')}</span><span className="hr-action-item__due">Due {formatDate(item.responseDueAt)}</span></button>)}</div>
     </section>
   )
 }
@@ -428,11 +445,16 @@ export function ActionCenterPage() {
   const [tab, setTab] = useState<ActionWorkspaceTab>('attention')
   const [trainingOpen, setTrainingOpen] = useState(false)
   const [selectedHrTask, setSelectedHrTask] = useState<HrAutomationTask | null>(null)
+  const [selectedCorrectiveAction, setSelectedCorrectiveAction] = useState<EmployeeCorrectiveAction | null>(null)
+  const [correctiveResponseType, setCorrectiveResponseType] = useState<CorrectiveActionResponseType>('acknowledged_receipt')
+  const [correctiveStatement, setCorrectiveStatement] = useState('')
+  const [correctiveError, setCorrectiveError] = useState<string | null>(null)
   const [hrCompletionNote, setHrCompletionNote] = useState('')
   const [hrTaskError, setHrTaskError] = useState<string | null>(null)
   const sessionQuery = useQuery({ queryKey: ['session-context'], queryFn: getSessionContext, enabled: isSupabaseConfigured })
   const actionQuery = useQuery({ queryKey: ['employee-action-center'], queryFn: getEmployeeActionCenter, enabled: isSupabaseConfigured && sessionQuery.isSuccess })
   const hrTasksQuery = useQuery({ queryKey: ['hr-automation-actions'], queryFn: getMyHrAutomationTasks, enabled: isSupabaseConfigured && sessionQuery.isSuccess })
+  const correctiveQuery = useQuery({ queryKey: ['my-guided-corrective-actions'], queryFn: getMyGuidedCorrectiveActions, enabled: isSupabaseConfigured && sessionQuery.isSuccess })
   const canManage = Boolean(sessionQuery.data?.permissions.includes('training.manage'))
   const canReport = Boolean(sessionQuery.data?.permissions.some((permission) => ['training.export', 'schedule.acknowledgments.manage', 'announcements.acknowledgments.manage'].includes(permission)))
   const canViewTeamHistory = Boolean(sessionQuery.data?.hasMfa && sessionQuery.data.permissions.some((permission) => ['announcements.acknowledgments.manage', 'training.manage', 'schedule.acknowledgments.manage', 'hr.automation.manage'].includes(permission)))
@@ -474,6 +496,24 @@ export function ActionCenterPage() {
     onSettled: () => setBusyId(null),
   })
 
+  const correctiveMutation = useMutation({
+    mutationFn: ({ id, responseType, statement }: { id: string; responseType: CorrectiveActionResponseType; statement: string | null }) => respondToMyGuidedCorrectiveAction(id, responseType, statement),
+    onMutate: ({ id }) => { setBusyId(id); setCorrectiveError(null) },
+    onSuccess: async () => {
+      setSelectedCorrectiveAction(null)
+      setCorrectiveResponseType('acknowledged_receipt')
+      setCorrectiveStatement('')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['required-action-checkpoint'] }),
+        queryClient.invalidateQueries({ queryKey: ['my-guided-corrective-actions'] }),
+        queryClient.invalidateQueries({ queryKey: ['guided-corrective-actions'] }),
+      ])
+      notifySessionContextChanged()
+    },
+    onError: (nextError: Error) => setCorrectiveError(nextError.message),
+    onSettled: () => setBusyId(null),
+  })
+
   async function openHrTask(task: HrAutomationTask) {
     setSelectedHrTask(task)
     setHrCompletionNote('')
@@ -493,12 +533,14 @@ export function ActionCenterPage() {
   const inProgressActions = useMemo(() => actionQuery.data ? filteredEmployeeActions(actionQuery.data, 'in_progress') : null, [actionQuery.data])
   const attentionHrTasks = useMemo(() => (hrTasksQuery.data?.tasks ?? []).filter((task) => task.status === 'open'), [hrTasksQuery.data])
   const inProgressHrTasks = useMemo(() => (hrTasksQuery.data?.tasks ?? []).filter((task) => task.status === 'viewed'), [hrTasksQuery.data])
-  const attentionCount = (attentionActions?.summary.announcementCount ?? 0) + (attentionActions?.summary.trainingCount ?? 0) + (attentionActions?.summary.scheduleCount ?? 0) + attentionHrTasks.length
-  const inProgressCount = (inProgressActions?.summary.announcementCount ?? 0) + (inProgressActions?.summary.trainingCount ?? 0) + (inProgressActions?.summary.scheduleCount ?? 0) + inProgressHrTasks.length
+  const attentionCorrectiveActions = useMemo(() => (correctiveQuery.data?.items ?? []).filter((item) => item.status === 'delivered'), [correctiveQuery.data])
+  const inProgressCorrectiveActions = useMemo(() => (correctiveQuery.data?.items ?? []).filter((item) => item.status === 'employee_responded'), [correctiveQuery.data])
+  const attentionCount = (attentionActions?.summary.announcementCount ?? 0) + (attentionActions?.summary.trainingCount ?? 0) + (attentionActions?.summary.scheduleCount ?? 0) + attentionHrTasks.length + attentionCorrectiveActions.length
+  const inProgressCount = (inProgressActions?.summary.announcementCount ?? 0) + (inProgressActions?.summary.trainingCount ?? 0) + (inProgressActions?.summary.scheduleCount ?? 0) + inProgressHrTasks.length + inProgressCorrectiveActions.length
 
   if (!isSupabaseConfigured) return <DataStatePanel icon={AlertTriangle} title="Action Center needs the secure connection" tone="setup"><p>Connect Supabase to load employee actions.</p></DataStatePanel>
-  if (sessionQuery.isPending || actionQuery.isPending || hrTasksQuery.isPending) return <DataStatePanel icon={FileCheck2} title="Loading Action Center"><p>Checking required employee actions.</p></DataStatePanel>
-  if (sessionQuery.isError || actionQuery.isError || hrTasksQuery.isError) return <DataStatePanel icon={AlertTriangle} title="Action Center unavailable" tone="error"><p>{sessionQuery.error?.message ?? actionQuery.error?.message ?? hrTasksQuery.error?.message}</p></DataStatePanel>
+  if (sessionQuery.isPending || actionQuery.isPending || hrTasksQuery.isPending || correctiveQuery.isPending) return <DataStatePanel icon={FileCheck2} title="Loading Action Center"><p>Checking required employee actions.</p></DataStatePanel>
+  if (sessionQuery.isError || actionQuery.isError || hrTasksQuery.isError || correctiveQuery.isError) return <DataStatePanel icon={AlertTriangle} title="Action Center unavailable" tone="error"><p>{sessionQuery.error?.message ?? actionQuery.error?.message ?? hrTasksQuery.error?.message ?? correctiveQuery.error?.message}</p></DataStatePanel>
 
   return (
     <div className="page page--action-center">
@@ -510,8 +552,8 @@ export function ActionCenterPage() {
         <button aria-current={tab === 'history' ? 'page' : undefined} className={tab === 'history' ? 'is-active' : ''} onClick={() => setTab('history')} type="button"><HistoryIcon aria-hidden="true" size={17} />History</button>
       </nav>
       {tab !== 'history' && mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
-      {tab === 'attention' && attentionActions ? <><HrAutomationActions busyId={busyId} onOpen={openHrTask} tasks={attentionHrTasks} /><EmployeeActions data={attentionActions} busyId={busyId} emptyCopy={{ title: 'Nothing needs your attention', body: 'New required announcements, training, schedules, and HR actions will appear here.' }} onOpen={(type, id) => mutation.mutate({ type, id, viewed: true })} onComplete={(type, id, attestation) => mutation.mutate({ type, id, attestation })} showEmpty={!attentionHrTasks.length} /></> : null}
-      {tab === 'in_progress' && inProgressActions ? <><HrAutomationActions busyId={busyId} onOpen={openHrTask} tasks={inProgressHrTasks} /><EmployeeActions data={inProgressActions} busyId={busyId} emptyCopy={{ title: 'Nothing is in progress', body: 'Opening an assigned action moves it here until it is completed.' }} onOpen={(type, id) => mutation.mutate({ type, id, viewed: true })} onComplete={(type, id, attestation) => mutation.mutate({ type, id, attestation })} showEmpty={!inProgressHrTasks.length} /></> : null}
+      {tab === 'attention' && attentionActions ? <><CorrectiveActionItems items={attentionCorrectiveActions} onOpen={(item) => { setSelectedCorrectiveAction(item); setCorrectiveError(null) }} /><HrAutomationActions busyId={busyId} onOpen={openHrTask} tasks={attentionHrTasks} /><EmployeeActions data={attentionActions} busyId={busyId} emptyCopy={{ title: 'Nothing needs your attention', body: 'New required announcements, training, schedules, HR actions, and private employment records will appear here.' }} onOpen={(type, id) => mutation.mutate({ type, id, viewed: true })} onComplete={(type, id, attestation) => mutation.mutate({ type, id, attestation })} showEmpty={!attentionHrTasks.length && !attentionCorrectiveActions.length} /></> : null}
+      {tab === 'in_progress' && inProgressActions ? <><CorrectiveActionItems items={inProgressCorrectiveActions} onOpen={(item) => { setSelectedCorrectiveAction(item); setCorrectiveError(null) }} /><HrAutomationActions busyId={busyId} onOpen={openHrTask} tasks={inProgressHrTasks} /><EmployeeActions data={inProgressActions} busyId={busyId} emptyCopy={{ title: 'Nothing is in progress', body: 'Opening an assigned action moves it here until it is completed.' }} onOpen={(type, id) => mutation.mutate({ type, id, viewed: true })} onComplete={(type, id, attestation) => mutation.mutate({ type, id, attestation })} showEmpty={!inProgressHrTasks.length && !inProgressCorrectiveActions.length} /></> : null}
       {tab === 'history' ? <ActionHistoryWorkspace canViewTeam={canViewTeamHistory} /> : null}
       {tab === 'history' && canViewTeamHistory ? <RequiredActionsTeamQueue /> : null}
       {tab === 'history' && canReport ? <section className="panel action-report"><div className="section-heading"><div><p className="eyebrow">Compliance</p><h2>Completion reporting</h2></div><button className="secondary-button" disabled={!reportQuery.data} onClick={() => reportQuery.data && downloadText(trainingComplianceCsv(reportQuery.data), `sygshift-training-completion-${new Date().toISOString().slice(0, 10)}.csv`)} type="button"><Download aria-hidden="true" size={17} />Export training</button></div><div className="action-report-grid"><article><span>Announcement records</span><strong>{reportQuery.data?.announcements.length ?? 0}</strong></article><article><span>Training records</span><strong>{reportQuery.data?.training.length ?? 0}</strong></article><article><span>Schedule records</span><strong>{reportQuery.data?.schedules.length ?? 0}</strong></article></div></section> : null}
@@ -531,6 +573,31 @@ export function ActionCenterPage() {
             <label className="form-field"><span>Completion note</span><textarea autoFocus onChange={(event) => setHrCompletionNote(event.target.value)} placeholder="Describe what was completed and include any relevant follow-up." required rows={5} value={hrCompletionNote} /></label>
             {hrTaskError ? <div className="inline-alert" role="alert">{hrTaskError}</div> : null}
             <div className="modal-actions"><button className="secondary-button" onClick={() => { setSelectedHrTask(null); setHrCompletionNote(''); setHrTaskError(null) }} type="button">Cancel</button><button className="primary-action" type="submit"><CheckCircle2 aria-hidden="true" size={17} />Complete action</button></div>
+          </form>
+        </ModalDialog>
+      ) : null}
+      {selectedCorrectiveAction ? (
+        <ModalDialog busy={correctiveMutation.isPending} busyLabel="Saving your protected response…" className="modal-dialog--corrective-response" description="Read the complete record, then choose the response that accurately reflects your position." onClose={() => { setSelectedCorrectiveAction(null); setCorrectiveError(null) }} title={selectedCorrectiveAction.title}>
+          <form className="corrective-response" onSubmit={(event) => {
+            event.preventDefault()
+            const statement = correctiveStatement.trim()
+            if (correctiveResponseType !== 'acknowledged_receipt' && statement.length < 8) {
+              setCorrectiveError('Enter your response in at least 8 characters.')
+              return
+            }
+            correctiveMutation.mutate({ id: selectedCorrectiveAction.id, responseType: correctiveResponseType, statement: correctiveResponseType === 'acknowledged_receipt' ? null : statement })
+          }}>
+            <div className="corrective-response__meta"><span>Case #{selectedCorrectiveAction.caseNumber}</span><span>{selectedCorrectiveAction.actionLevel.replaceAll('_', ' ')}</span><span>Occurred {formatDate(selectedCorrectiveAction.occurredOn)}</span></div>
+            <section><h3>Observed facts</h3><p>{selectedCorrectiveAction.factualSummary}</p></section>
+            <section><h3>Policy or expectation</h3><p>{selectedCorrectiveAction.policyExpectation}</p></section>
+            <section><h3>Improvement needed</h3><p>{selectedCorrectiveAction.improvementExpectation}</p></section>
+            {selectedCorrectiveAction.response ? <section className="corrective-response__saved"><h3>Your saved response</h3><p><strong>{selectedCorrectiveAction.response.type.replaceAll('_', ' ')}</strong>{selectedCorrectiveAction.response.statement ? ` — ${selectedCorrectiveAction.response.statement}` : ''}</p></section> : <>
+              <fieldset><legend>How would you like to respond?</legend><label><input checked={correctiveResponseType === 'acknowledged_receipt'} name="responseType" onChange={() => setCorrectiveResponseType('acknowledged_receipt')} type="radio" />Acknowledge receipt only</label><label><input checked={correctiveResponseType === 'employee_response'} name="responseType" onChange={() => setCorrectiveResponseType('employee_response')} type="radio" />Add my response</label><label><input checked={correctiveResponseType === 'dispute'} name="responseType" onChange={() => setCorrectiveResponseType('dispute')} type="radio" />Dispute this record</label><label><input checked={correctiveResponseType === 'declined_acknowledgment'} name="responseType" onChange={() => setCorrectiveResponseType('declined_acknowledgment')} type="radio" />Decline acknowledgment</label></fieldset>
+              <div className="corrective-response__receipt"><ShieldAlert aria-hidden="true" size={19} /><p>{selectedCorrectiveAction.receiptWording}</p></div>
+              {correctiveResponseType !== 'acknowledged_receipt' ? <label className="form-field"><span>Your statement</span><textarea autoFocus maxLength={10000} onChange={(event) => setCorrectiveStatement(event.target.value)} placeholder="Explain your response in your own words." rows={6} value={correctiveStatement} /><small>{correctiveStatement.length.toLocaleString()} / 10,000</small></label> : null}
+              {correctiveError ? <div className="inline-alert" role="alert">{correctiveError}</div> : null}
+              <div className="modal-actions"><button className="secondary-button" onClick={() => setSelectedCorrectiveAction(null)} type="button">Review later</button><button className="primary-action" type="submit">Save my response</button></div>
+            </>}
           </form>
         </ModalDialog>
       ) : null}

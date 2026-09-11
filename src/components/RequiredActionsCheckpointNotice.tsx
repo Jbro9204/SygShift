@@ -9,6 +9,7 @@ const actionIcons = {
   hr_task: CheckCircle2,
   document: FileSignature,
   signature: FileSignature,
+  corrective_action: ShieldAlert,
 } as const
 
 function dueLabel(value: string | null): string | null {
@@ -22,6 +23,7 @@ function actionTypeLabel(item: RequiredActionCheckpointItem): string {
   if (item.actionType === 'hr_task') return 'HR action'
   if (item.actionType === 'signature') return 'Signature request'
   if (item.actionType === 'document') return 'Assigned document'
+  if (item.actionType === 'corrective_action') return 'Corrective action'
   return item.actionType.charAt(0).toUpperCase() + item.actionType.slice(1)
 }
 

@@ -75,7 +75,7 @@ const actionCenterSchema = z.object({
 const requiredActionCheckpointItemSchema = z.object({
   id: z.string().uuid(),
   position: z.number().int().positive(),
-  actionType: z.enum(['announcement', 'training', 'schedule', 'hr_task', 'document', 'signature']),
+  actionType: z.enum(['announcement', 'training', 'schedule', 'hr_task', 'document', 'signature', 'corrective_action']),
   title: z.string(),
   description: z.string(),
   status: z.string(),

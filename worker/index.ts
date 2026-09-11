@@ -4829,6 +4829,79 @@ async function handleHrStage8Api(
   requestId: string,
 ): Promise<Response> {
   const url = new URL(request.url)
+  const correctiveActionMatch = url.pathname.match(/^\/api\/v1\/hr\/cases\/corrective-actions\/([0-9a-f-]{36})\/(review|deliver|close)$/i)
+
+  if (url.pathname === '/api/v1/hr/cases/corrective-actions' || correctiveActionMatch) {
+    const session = await requireRecentHrSession(request, environment)
+    const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+
+    if (url.pathname === '/api/v1/hr/cases/corrective-actions' && request.method === 'GET') {
+      requireSessionPermission(session.context, 'hr.cases.view')
+      if (!hrStage8Enabled(environment, 'cases')) throw new ApiError('hr_cases_unavailable', 503, 'Employee Cases has not been released.')
+      const { offset, pageSize } = boundedWorkspacePage(url)
+      const payload = await callRpc<Record<string, unknown>>(
+        serviceConfig,
+        'service_get_guided_corrective_actions',
+        {
+          target_actor_id: session.context.employee_id,
+          target_mfa_method: session.mfa.method,
+          target_mfa_verified_at: session.mfa.verifiedAt,
+          target_offset: offset,
+          target_page_size: pageSize,
+        },
+        session.config.serviceRoleKey,
+      )
+      return json({ ...payload, requestId })
+    }
+
+    requireSessionPermission(session.context, 'hr.cases.manage')
+    if (!hrStage8Enabled(environment, 'cases')) throw new ApiError('hr_cases_unavailable', 503, 'Employee Cases has not been released.')
+
+    if (url.pathname === '/api/v1/hr/cases/corrective-actions' && request.method === 'POST') {
+      const body = await readJsonBody(request)
+      const payload = await callRpc<Record<string, unknown>>(
+        serviceConfig,
+        'service_create_guided_corrective_action',
+        {
+          target_actor_id: session.context.employee_id,
+          target_mfa_method: session.mfa.method,
+          target_mfa_verified_at: session.mfa.verifiedAt,
+          target_payload: body,
+        },
+        session.config.serviceRoleKey,
+      )
+      return json({ ...payload, requestId }, 201)
+    }
+
+    if (correctiveActionMatch && request.method === 'POST') {
+      const body = await readJsonBody(request)
+      const actionId = correctiveActionMatch[1]
+      const action = correctiveActionMatch[2]
+      const reason = requiredText(body.reason, action === 'review' ? 'Review reason' : action === 'deliver' ? 'Delivery note' : 'Closure reason', 4000)
+      const rpcName = action === 'review'
+        ? 'service_review_guided_corrective_action'
+        : action === 'deliver'
+          ? 'service_deliver_guided_corrective_action'
+          : 'service_close_guided_corrective_action'
+      const rpcPayload: Record<string, unknown> = {
+        target_actor_id: session.context.employee_id,
+        target_corrective_action_id: actionId,
+        target_mfa_method: session.mfa.method,
+        target_mfa_verified_at: session.mfa.verifiedAt,
+        target_reason: reason,
+      }
+      if (action === 'review') {
+        const decision = requiredText(body.decision, 'Decision', 20).toLowerCase()
+        if (!['approved', 'canceled'].includes(decision)) throw new ApiError('invalid_corrective_action_decision', 422, 'Choose Approve or Return / cancel.')
+        rpcPayload.target_decision = decision
+      }
+      const payload = await callRpc<Record<string, unknown>>(serviceConfig, rpcName, rpcPayload, session.config.serviceRoleKey)
+      return json({ ...payload, requestId })
+    }
+
+    return errorJson('method_not_allowed', requestId, 405)
+  }
+
   const match = url.pathname.match(/^\/api\/v1\/hr\/(talent|learning|cases|safety|assets)\/workspace$/)
   if (!match) return errorJson('not_found', requestId, 404)
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
