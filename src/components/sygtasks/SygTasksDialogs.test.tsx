@@ -169,6 +169,37 @@ describe('SygTasks dialogs', () => {
     expect(randomUUID).toHaveBeenCalledTimes(2)
   })
 
+  it('walks the user through a recurring task without changing the one-time defaults', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+    render(
+      <CreateTaskDialog
+        boardName="Operations"
+        busy={false}
+        canAssignOthers
+        employeeId={employeeId}
+        error={null}
+        members={[member(employeeId, 'Jordan Brown', 'jordan')]}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    )
+
+    expect(screen.queryByText('Choose the pattern')).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText(/Task title/), 'Weekly coverage review')
+    await user.click(screen.getByRole('checkbox', { name: /Repeat this task/ }))
+    expect(screen.getByText('Choose the pattern')).toBeInTheDocument()
+    await user.type(screen.getByLabelText(/First due date and time/), '2026-09-14T09:00')
+    await user.selectOptions(screen.getByRole('combobox', { name: /^RepeatRequired$/ }), 'weekly')
+    await user.click(screen.getByRole('button', { name: 'Create Task' }))
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Weekly coverage review' }),
+      expect.any(String),
+      expect.objectContaining({ frequency: 'weekly', firstDueLocal: '2026-09-14T09:00', timeZone: 'America/Denver' }),
+    )
+  })
+
   it('loads another bounded page of dependency candidates only on explicit request', async () => {
     const user = userEvent.setup()
     const onLoadMoreCandidates = vi.fn()

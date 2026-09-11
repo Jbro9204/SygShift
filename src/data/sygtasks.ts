@@ -8,6 +8,9 @@ export const sygTaskPrioritySchema = z.enum(sygTaskPriorities)
 export const sygTaskReminderKinds = ['reminder', 'alarm'] as const
 export const sygTaskReminderRecipientScopes = ['self', 'assignees'] as const
 export const sygTaskReminderTimingKinds = ['relative', 'absolute'] as const
+export const sygTaskRecurrenceFrequencies = ['daily', 'weekly', 'monthly'] as const
+export const sygTaskRecurrenceStatuses = ['active', 'paused', 'canceled', 'completed'] as const
+export const sygTaskRecurrenceTimeZones = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles'] as const
 
 const personSchema = z.object({
   id: z.string().uuid(),
@@ -147,6 +150,97 @@ export const createSygTaskResultSchema = z.object({
   assignmentChanged: z.boolean(),
   changed: z.boolean(),
 }).passthrough()
+
+export const createSygTaskRecurringSeriesInputSchema = z.object({
+  boardId: z.string().uuid(),
+  title: z.string().trim().min(1).max(240),
+  description: z.string().max(10_000).optional(),
+  status: z.enum(['backlog', 'ready', 'in_progress']).optional(),
+  priority: sygTaskPrioritySchema.optional(),
+  assigneeId: z.string().uuid().nullable().optional(),
+  firstDueLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+  timeZone: z.enum(sygTaskRecurrenceTimeZones),
+  frequency: z.enum(sygTaskRecurrenceFrequencies),
+  intervalCount: z.number().int().min(1).max(12),
+  endsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  maxOccurrences: z.number().int().min(1).max(500).nullable(),
+  reminderKind: z.enum(['none', 'reminder', 'alarm']),
+  reminderOffsetMinutes: z.number().int().min(0).max(43_200).nullable(),
+  reminderEmailEnabled: z.boolean(),
+}).strict().superRefine((value, context) => {
+  if (value.reminderKind !== 'none' && value.reminderOffsetMinutes === null) {
+    context.addIssue({ code: 'custom', path: ['reminderOffsetMinutes'], message: 'Choose when the alert should happen.' })
+  }
+  if (value.reminderKind === 'none' && (value.reminderOffsetMinutes !== null || value.reminderEmailEnabled)) {
+    context.addIssue({ code: 'custom', path: ['reminderKind'], message: 'Choose a reminder or alarm before adding alert options.' })
+  }
+})
+
+export const createSygTaskRecurringSeriesResultSchema = z.object({
+  action: z.literal('create_recurring_series'),
+  seriesId: z.string().uuid(),
+  boardId: z.string().uuid(),
+  taskId: z.string().uuid(),
+  version: z.number().int().positive(),
+  clientRequestId: z.string().uuid(),
+  changed: z.boolean(),
+})
+
+const sygTaskRecurringOccurrenceSchema = z.object({
+  id: z.string().uuid(),
+  occurrenceOn: z.string(),
+  dueAt: z.string(),
+  state: z.enum(['generated', 'skipped']),
+  taskId: z.string().uuid().nullable(),
+  skipReason: z.string().nullable(),
+  createdAt: z.string(),
+})
+
+const sygTaskRecurringActivitySchema = z.object({
+  id: z.coerce.number().int().positive(),
+  action: z.string(),
+  details: z.record(z.string(), z.unknown()),
+  actorEmployeeId: z.string().uuid(),
+  actorName: z.string(),
+  createdAt: z.string(),
+})
+
+export const sygTaskRecurringSeriesSchema = z.object({
+  id: z.string().uuid(),
+  boardId: z.string().uuid(),
+  title: z.string(),
+  description: z.string(),
+  initialStatus: z.enum(['backlog', 'ready', 'in_progress']),
+  priority: sygTaskPrioritySchema,
+  assigneeEmployeeId: z.string().uuid().nullable(),
+  assigneeName: z.string().nullable(),
+  frequency: z.enum(sygTaskRecurrenceFrequencies),
+  intervalCount: z.number().int().min(1).max(12),
+  timeZone: z.enum(sygTaskRecurrenceTimeZones),
+  localDueTime: z.string(),
+  startsOn: z.string(),
+  endsOn: z.string().nullable(),
+  maxOccurrences: z.number().int().min(1).max(500).nullable(),
+  nextOccurrenceOn: z.string(),
+  occurrenceCount: z.number().int().nonnegative(),
+  generatedCount: z.number().int().nonnegative(),
+  reminderKind: z.enum(['reminder', 'alarm']).nullable(),
+  reminderOffsetMinutes: z.number().int().min(0).max(43_200).nullable(),
+  reminderEmailEnabled: z.boolean(),
+  status: z.enum(sygTaskRecurrenceStatuses),
+  statusReason: z.string().nullable(),
+  version: z.number().int().positive(),
+  canManage: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  occurrences: z.array(sygTaskRecurringOccurrenceSchema),
+  activity: z.array(sygTaskRecurringActivitySchema),
+})
+
+export const sygTaskRecurringSeriesResponseSchema = z.object({
+  taskId: z.string().uuid(),
+  series: sygTaskRecurringSeriesSchema.nullable(),
+})
 
 const sygTaskReminderOccurrenceSchema = z.object({
   id: z.string().uuid(),
@@ -319,6 +413,9 @@ export type SygTasksWorklist = z.infer<typeof sygTasksWorklistSchema>
 export type SygTasksWorklistSummary = z.infer<typeof sygTasksWorklistSummarySchema>
 export type CreateSygTaskInput = z.infer<typeof createSygTaskInputSchema>
 export type CreateSygTaskResult = z.infer<typeof createSygTaskResultSchema>
+export type CreateSygTaskRecurringSeriesInput = z.infer<typeof createSygTaskRecurringSeriesInputSchema>
+export type CreateSygTaskRecurringSeriesResult = z.infer<typeof createSygTaskRecurringSeriesResultSchema>
+export type SygTaskRecurringSeries = z.infer<typeof sygTaskRecurringSeriesSchema>
 export type SygTaskReminder = z.infer<typeof sygTaskReminderSchema>
 export type SygTaskReminders = z.infer<typeof sygTaskRemindersSchema>
 export type SygTaskActivityEvent = z.infer<typeof sygTaskActivityEventSchema>
@@ -391,6 +488,44 @@ export async function createSygTask(
   })
   if (error) throw new Error(error.message || 'SygTasks could not create this task.')
   return createSygTaskResultSchema.parse(data)
+}
+
+export async function createSygTaskRecurringSeries(
+  input: CreateSygTaskRecurringSeriesInput,
+  options: { clientRequestId?: string } = {},
+): Promise<CreateSygTaskRecurringSeriesResult> {
+  const payload = createSygTaskRecurringSeriesInputSchema.parse(input)
+  const { data, error } = await getSupabaseClient().rpc('create_sygtasks_recurring_series', {
+    target_payload: payload,
+    target_client_request_id: options.clientRequestId ?? crypto.randomUUID(),
+  })
+  if (error) throw new Error(error.message || 'SygTasks could not create this recurring task.')
+  return createSygTaskRecurringSeriesResultSchema.parse(data)
+}
+
+export async function getSygTaskRecurringSeries(taskId: string) {
+  const cleanTaskId = z.string().uuid().parse(taskId)
+  const { data, error } = await getSupabaseClient().rpc('get_sygtasks_recurring_series', { target_task_id: cleanTaskId })
+  if (error) throw new Error(error.message || 'The recurring task details could not load.')
+  return sygTaskRecurringSeriesResponseSchema.parse(data)
+}
+
+export async function manageSygTaskRecurringSeries(
+  seriesId: string,
+  action: 'pause' | 'resume' | 'cancel' | 'skip_next' | 'update_future',
+  payload: Record<string, unknown>,
+  expectedVersion: number,
+  clientRequestId = crypto.randomUUID(),
+) {
+  const { data, error } = await getSupabaseClient().rpc('manage_sygtasks_recurring_series', {
+    target_series_id: z.string().uuid().parse(seriesId),
+    target_action: action,
+    target_payload: z.record(z.string(), z.unknown()).parse(payload),
+    target_client_request_id: clientRequestId,
+    target_expected_version: z.number().int().positive().parse(expectedVersion),
+  })
+  if (error) throw new Error(error.message || 'The recurring task could not be updated.')
+  return z.object({ seriesId: z.string().uuid(), action: z.string(), status: z.string(), version: z.number().int().positive(), changed: z.boolean() }).parse(data)
 }
 
 export async function getSygTaskReminders(taskId: string): Promise<SygTaskReminders> {

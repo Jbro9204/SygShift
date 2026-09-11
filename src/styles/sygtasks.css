@@ -633,6 +633,89 @@ html[data-theme='dark'] .sygtasks-reminder-state--triggered { color: #ffb1aa; ba
 html[data-theme='dark'] .sygtasks-reminder-state--scheduled { color: #9addbd; }
 .sygtasks-reminder-list__cancel { align-self: start; }
 
+.sygtasks-recurrence-builder { display: grid; gap: 14px; padding: 13px; background: color-mix(in srgb, var(--tasks-bg) 48%, var(--tasks-panel)); border: 1px solid var(--tasks-border); border-radius: 14px; }
+.sygtasks-recurrence-builder.is-open { border-color: color-mix(in srgb, var(--tasks-gold) 58%, var(--tasks-border)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tasks-gold) 12%, transparent); }
+.sygtasks-recurrence-toggle { display: grid; min-height: 64px; align-items: center; grid-template-columns: 20px 34px minmax(0, 1fr); gap: 10px; padding: 10px 12px; color: var(--tasks-ink); background: var(--tasks-control); border: 1px solid var(--tasks-border); border-radius: 12px; cursor: pointer; }
+.sygtasks-recurrence-toggle input { width: 18px; min-height: 18px; padding: 0; accent-color: var(--tasks-gold); }
+.sygtasks-recurrence-toggle > svg { color: var(--tasks-gold-ink); }
+.sygtasks-recurrence-toggle > span { display: grid; gap: 3px; }
+.sygtasks-recurrence-toggle small { color: var(--tasks-muted); font-size: 12px; font-weight: 550; line-height: 1.35; }
+.sygtasks-recurrence-fields { display: grid; gap: 13px; padding: 3px; }
+.sygtasks-guided-step { display: flex; align-items: center; gap: 10px; padding-top: 3px; }
+.sygtasks-guided-step > span { display: grid; width: 28px; height: 28px; flex: 0 0 28px; color: #1d1607; background: linear-gradient(145deg, var(--tasks-champagne), var(--tasks-gold)); border-radius: 50%; font-size: 13px; font-weight: 950; place-items: center; }
+.sygtasks-guided-step > div { display: grid; gap: 1px; }
+.sygtasks-guided-step strong { color: var(--tasks-ink); font-size: 14px; }
+.sygtasks-guided-step small { color: var(--tasks-muted); font-size: 12px; }
+.sygtasks-recurrence-review { display: flex; align-items: flex-start; gap: 9px; padding: 11px 12px; margin: 0; color: var(--tasks-muted); background: color-mix(in srgb, var(--tasks-success) 9%, var(--tasks-panel)); border: 1px solid color-mix(in srgb, var(--tasks-success) 38%, var(--tasks-border)); border-radius: 11px; font-size: 12px; line-height: 1.5; }
+.sygtasks-recurrence-review > svg { flex: 0 0 auto; margin-top: 1px; color: var(--tasks-success); }
+.sygtasks-recurrence-review strong { display: block; margin-bottom: 2px; color: var(--tasks-ink); }
+.sygtasks-form-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sygtasks-recurrence-end { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.sygtasks-recurrence-end label { display: flex; min-height: 48px; align-items: center; gap: 8px; padding: 9px 11px; color: var(--tasks-ink); background: var(--tasks-control); border: 1px solid var(--tasks-border); border-radius: 11px; font-size: 13px; font-weight: 800; cursor: pointer; }
+.sygtasks-recurrence-end label.is-selected { background: color-mix(in srgb, var(--tasks-gold) 14%, var(--tasks-control)); border-color: color-mix(in srgb, var(--tasks-gold) 64%, var(--tasks-border)); }
+.sygtasks-recurrence-end input { width: 17px; min-height: 17px; padding: 0; accent-color: var(--tasks-gold); }
+
+.sygtasks-recurring { display: grid; gap: 14px; }
+.sygtasks-recurring-state,
+.sygtasks-recurring-empty { display: grid; min-height: 180px; align-content: center; justify-items: center; gap: 8px; padding: 22px; color: var(--tasks-muted); background: var(--tasks-control); border: 1px dashed var(--tasks-border-strong); border-radius: 14px; text-align: center; }
+.sygtasks-recurring-empty h3,
+.sygtasks-recurring-empty p { margin: 0; }
+.sygtasks-recurring-empty h3 { color: var(--tasks-ink); }
+.sygtasks-recurring-empty p { max-width: 560px; line-height: 1.55; }
+.sygtasks-recurring-hero,
+.sygtasks-recurring-controls,
+.sygtasks-recurring-edit,
+.sygtasks-recurring-history { display: grid; gap: 14px; padding: 16px; color: var(--tasks-ink); background: color-mix(in srgb, var(--tasks-bg) 38%, var(--tasks-panel)); border: 1px solid var(--tasks-border); border-radius: 14px; }
+.sygtasks-recurring-hero { grid-template-columns: minmax(0, 1fr) auto; border-color: color-mix(in srgb, var(--tasks-gold) 52%, var(--tasks-border)); }
+.sygtasks-recurring-hero > div:first-child { display: flex; align-items: center; gap: 10px; }
+.sygtasks-recurring-hero > div:first-child > svg { padding: 9px; box-sizing: content-box; color: #211600; background: linear-gradient(145deg, var(--tasks-champagne), var(--tasks-gold)); border-radius: 12px; }
+.sygtasks-recurring-hero > div:first-child > span { display: grid; gap: 2px; }
+.sygtasks-recurring-hero small,
+.sygtasks-recurring-controls small,
+.sygtasks-recurring-edit header > small,
+.sygtasks-recurring-history header small { color: var(--tasks-gold-ink); font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.sygtasks-recurring-hero dl { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.sygtasks-recurring-hero dl > div { display: grid; gap: 4px; padding: 11px; background: var(--tasks-control); border: 1px solid var(--tasks-border); border-radius: 10px; }
+.sygtasks-recurring-hero dt { color: var(--tasks-muted); font-size: 10px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.sygtasks-recurring-hero dd { overflow-wrap: anywhere; margin: 0; font-size: 13px; font-weight: 800; }
+.sygtasks-recurring-hero > p { grid-column: 1 / -1; padding: 9px 11px; margin: 0; color: var(--tasks-muted); background: var(--tasks-control); border-radius: 9px; font-size: 12px; }
+.sygtasks-series-status { align-self: start; padding: 5px 8px; color: var(--tasks-muted); background: var(--tasks-control); border: 1px solid var(--tasks-border); border-radius: 999px; font-size: 10px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.sygtasks-series-status--active { color: var(--tasks-success); background: var(--tasks-success-soft); border-color: color-mix(in srgb, var(--tasks-success) 40%, var(--tasks-border)); }
+.sygtasks-series-status--paused { color: var(--tasks-gold-ink); background: color-mix(in srgb, var(--tasks-gold) 13%, var(--tasks-panel)); }
+.sygtasks-series-status--canceled { color: var(--tasks-danger); background: var(--tasks-danger-soft); }
+.sygtasks-recurring-controls > header,
+.sygtasks-recurring-history > header { display: flex; align-items: end; justify-content: space-between; gap: 14px; }
+.sygtasks-recurring-controls h3,
+.sygtasks-recurring-controls header span,
+.sygtasks-recurring-history h3,
+.sygtasks-recurring-edit h3,
+.sygtasks-recurring-edit p { margin: 0; }
+.sygtasks-recurring-controls header span { max-width: 390px; color: var(--tasks-muted); font-size: 12px; line-height: 1.45; text-align: right; }
+.sygtasks-recurring-controls > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.sygtasks-recurring-confirm { display: grid; align-items: center; grid-template-columns: auto minmax(0, 1fr) auto; gap: 13px; padding: 15px; color: var(--tasks-danger); background: var(--tasks-danger-soft); border: 1px solid color-mix(in srgb, var(--tasks-danger) 45%, var(--tasks-border)); border-radius: 13px; }
+.sygtasks-recurring-confirm h3,
+.sygtasks-recurring-confirm p { margin: 0; }
+.sygtasks-recurring-confirm p { margin-top: 4px; color: var(--tasks-muted); font-size: 12px; line-height: 1.45; }
+.sygtasks-recurring-confirm > div:last-child { display: flex; gap: 8px; }
+.sygtasks-recurring-edit label { display: grid; gap: 7px; color: var(--tasks-ink); font-size: 13px; font-weight: 800; }
+.sygtasks-recurring-edit label > span small { color: var(--tasks-muted); font-weight: 550; }
+.sygtasks-recurring-edit input,
+.sygtasks-recurring-edit textarea,
+.sygtasks-recurring-edit select { width: 100%; min-height: 46px; padding: 10px 12px; color: var(--tasks-ink); background: var(--tasks-control); border: 1px solid var(--tasks-border-strong); border-radius: 11px; font: inherit; }
+.sygtasks-recurring-edit textarea { min-height: 96px; resize: vertical; }
+.sygtasks-recurrence-email { display: flex !important; min-height: 60px; align-items: center; grid-template-columns: auto minmax(0, 1fr); gap: 10px !important; padding: 10px 12px; background: var(--tasks-control); border: 1px solid var(--tasks-border); border-radius: 11px; }
+.sygtasks-recurrence-email input { width: 18px; min-height: 18px; padding: 0; accent-color: var(--tasks-gold); }
+.sygtasks-recurrence-email > span { display: grid; gap: 2px; }
+.sygtasks-recurrence-email small { color: var(--tasks-muted); font-size: 11px; }
+.sygtasks-recurring-history header > span { color: var(--tasks-muted); font-size: 12px; font-weight: 800; }
+.sygtasks-recurring-history ol { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
+.sygtasks-recurring-history li { display: grid; min-height: 58px; align-items: center; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 10px; border-top: 1px solid var(--tasks-border); }
+.sygtasks-recurring-history li > div { display: grid; gap: 3px; }
+.sygtasks-recurring-history li small { color: var(--tasks-muted); font-size: 11px; }
+.sygtasks-occurrence-dot { width: 10px; height: 10px; background: var(--tasks-gold); border-radius: 50%; box-shadow: 0 0 0 3px color-mix(in srgb, var(--tasks-gold) 15%, transparent); }
+.sygtasks-occurrence-dot--generated { background: var(--tasks-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tasks-success) 15%, transparent); }
+.sygtasks-occurrence-dot--skipped { background: var(--tasks-muted); box-shadow: none; }
+
 .sygtasks-board-profile { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; padding: 20px 0 0; }
 .sygtasks-board-profile > div { display: grid; min-height: 75px; align-content: center; gap: 4px; padding: 11px; background: color-mix(in srgb, var(--tasks-bg) 48%, var(--tasks-panel)); border: 1px solid var(--tasks-border); border-radius: 11px; }
 .sygtasks-board-profile span { color: var(--tasks-muted); font-size: 11px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
@@ -727,13 +810,20 @@ html[data-theme='dark'] .sygtasks-reminder-state--scheduled { color: #9addbd; }
   .sygtasks-detail-summary,
   .sygtasks-board-profile { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sygtasks-form-grid,
-  .sygtasks-form-grid--two { grid-template-columns: 1fr; }
+  .sygtasks-form-grid--two,
+  .sygtasks-form-grid--three { grid-template-columns: 1fr; }
   .sygtasks-choice-grid { grid-template-columns: 1fr; }
   .sygtasks-add-member { grid-template-columns: 1fr; }
   .sygtasks-danger-zone { align-items: stretch; flex-direction: column; }
   .sygtasks-activity-panel__heading,
   .sygtasks-activity__card > header { align-items: stretch; flex-direction: column; }
   .sygtasks-activity__card time { text-align: left; }
+  .sygtasks-recurrence-end { grid-template-columns: 1fr; }
+  .sygtasks-recurring-hero dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sygtasks-recurring-controls > header { align-items: flex-start; flex-direction: column; }
+  .sygtasks-recurring-controls header span { text-align: left; }
+  .sygtasks-recurring-confirm { align-items: start; grid-template-columns: auto minmax(0, 1fr); }
+  .sygtasks-recurring-confirm > div:last-child { grid-column: 1 / -1; width: 100%; }
 }
 
 @media (max-width: 480px) {
@@ -769,6 +859,16 @@ html[data-theme='dark'] .sygtasks-reminder-state--scheduled { color: #9addbd; }
   .sygtasks-activity-panel__heading > span { align-self: flex-start; }
   .sygtasks-activity__details dd { grid-template-columns: 1fr; }
   .sygtasks-activity__details dd > svg { transform: rotate(90deg); justify-self: center; }
+  .sygtasks-recurring-hero { grid-template-columns: 1fr; }
+  .sygtasks-recurring-hero > .sygtasks-series-status { grid-row: 2; }
+  .sygtasks-recurring-hero dl { grid-template-columns: 1fr; }
+  .sygtasks-recurring-controls > div,
+  .sygtasks-recurring-confirm > div:last-child { display: grid; grid-template-columns: 1fr; }
+  .sygtasks-recurring-controls .sygtasks-button,
+  .sygtasks-recurring-confirm .sygtasks-button { width: 100%; }
+  .sygtasks-recurring-history li { grid-template-columns: 14px minmax(0, 1fr); padding: 9px 0; }
+  .sygtasks-recurring-history li > .sygtasks-button,
+  .sygtasks-recurring-history li > .sygtasks-series-status { grid-column: 2; justify-self: start; }
 }
 
 @media (prefers-reduced-motion: reduce) {

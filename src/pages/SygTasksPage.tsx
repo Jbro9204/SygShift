@@ -4,12 +4,14 @@ import { ClipboardList, Plus, RefreshCw, Settings2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   createSygTask,
+  createSygTaskRecurringSeries,
   formatSygTaskStatus,
   getSygTasksWorklist,
   getSygTasksWorkspace,
   mutateSygTasks,
   sygTaskPath,
   type CreateSygTaskInput,
+  type CreateSygTaskRecurringSeriesInput,
   type SygTask,
   type SygTaskAction,
   type SygTaskPriority,
@@ -129,6 +131,10 @@ export function SygTasksPage() {
     mutationFn: ({ input, clientRequestId }: { input: CreateSygTaskInput; clientRequestId: string }) => createSygTask(input, { clientRequestId }),
     onSuccess: invalidateSygTasks,
   })
+  const createRecurringAction = useMutation({
+    mutationFn: ({ input, clientRequestId }: { input: CreateSygTaskRecurringSeriesInput; clientRequestId: string }) => createSygTaskRecurringSeries(input, { clientRequestId }),
+    onSuccess: invalidateSygTasks,
+  })
 
   useEffect(() => {
     setMode(boardId ? 'boards' : 'my-work')
@@ -187,14 +193,14 @@ export function SygTasksPage() {
   const createTaskMembers = selectedBoard?.scope === 'company' && workspace?.permissions.manageShared
     ? workspace.availableMembers
     : workspace?.members ?? []
-  const busy = action.isPending || createTaskAction.isPending
+  const busy = action.isPending || createTaskAction.isPending || createRecurringAction.isPending
   const pageActionError = !createBoardOpen && !createTaskOpen && !boardSettingsOpen && !taskId
-    ? action.error ?? createTaskAction.error
+    ? action.error ?? createTaskAction.error ?? createRecurringAction.error
     : null
 
   const clearFilters = () => { setSearch(''); setStatusFilter('all'); setPriorityFilter('all'); setPage(1) }
   const openCreateBoard = () => { action.reset(); setCreateBoardOpen(true) }
-  const openCreateTask = () => { createTaskAction.reset(); setCreateTaskOpen(true) }
+  const openCreateTask = () => { createTaskAction.reset(); createRecurringAction.reset(); setCreateTaskOpen(true) }
   const openBoardSettings = () => { action.reset(); setBoardSettingsOpen(true) }
   const switchMode = (next: SygTasksMode) => {
     setSuccess(null)
@@ -252,7 +258,20 @@ export function SygTasksPage() {
         </section>
       </div>
       {createBoardOpen ? <CreateBoardDialog allowShared={workspace.permissions.manageShared} busy={action.isPending} error={action.error} onClose={() => { setCreateBoardOpen(false); action.reset() }} onSubmit={(input, clientRequestId) => { setSuccess(null); void action.mutateAsync({ kind: 'create_board', payload: input, clientRequestId }).then((result) => { const createdBoardId = typeof result.boardId === 'string' ? result.boardId : null; setCreateBoardOpen(false); setSuccess('Board created successfully.'); setMode('boards'); if (createdBoardId) navigate(sygTaskPath(createdBoardId)) }).catch(() => undefined) }} /> : null}
-      {createTaskOpen && selectedBoard ? <CreateTaskDialog boardName={selectedBoard.name} members={createTaskMembers} employeeId={workspace.employeeId} canAssignOthers={workspace.permissions.manageShared} busy={createTaskAction.isPending} error={createTaskAction.error} onClose={() => { setCreateTaskOpen(false); createTaskAction.reset() }} onSubmit={(input, clientRequestId) => { void createTaskAction.mutateAsync({ input: { ...input, boardId: selectedBoard.id }, clientRequestId }).then(() => { setCreateTaskOpen(false); setSuccess('Task created and the board is up to date.') }).catch(() => undefined) }} /> : null}
+      {createTaskOpen && selectedBoard ? <CreateTaskDialog boardName={selectedBoard.name} members={createTaskMembers} employeeId={workspace.employeeId} canAssignOthers={workspace.permissions.manageShared} busy={createTaskAction.isPending || createRecurringAction.isPending} error={createTaskAction.error ?? createRecurringAction.error} onClose={() => { setCreateTaskOpen(false); createTaskAction.reset(); createRecurringAction.reset() }} onSubmit={(input, clientRequestId, recurrence) => {
+        const request = recurrence
+          ? createRecurringAction.mutateAsync({ input: {
+              boardId: selectedBoard.id,
+              title: input.title,
+              description: input.description,
+              status: input.status === 'ready' || input.status === 'in_progress' ? input.status : 'backlog',
+              priority: input.priority,
+              assigneeId: input.assigneeId,
+              ...recurrence,
+            }, clientRequestId })
+          : createTaskAction.mutateAsync({ input: { ...input, boardId: selectedBoard.id }, clientRequestId })
+        void request.then(() => { setCreateTaskOpen(false); setSuccess(recurrence ? 'Recurring task created. The first occurrence is ready.' : 'Task created and the board is up to date.') }).catch(() => undefined)
+      }} /> : null}
       {taskId && workspaceForDetail?.taskDetail ? <TaskDetailDialog key={`${workspaceForDetail.taskDetail.id}:${workspaceForDetail.taskDetail.version}`} workspace={workspaceForDetail} detail={workspaceForDetail.taskDetail} referenceTime={trustedReferenceTime} busy={action.isPending} error={action.error} canLoadMoreCandidates={Boolean(workspaceQuery.hasNextPage)} loadingMoreCandidates={workspaceQuery.isFetchingNextPage} onLoadMoreCandidates={() => { void workspaceQuery.fetchNextPage() }} onClose={() => { action.reset(); navigate(sygTaskPath(workspaceForDetail.taskDetail!.boardId)) }} act={act} /> : null}
       {boardSettingsOpen ? <BoardSettingsDialog workspace={workspace} busy={action.isPending} error={action.error} onClose={() => { setBoardSettingsOpen(false); action.reset() }} onArchived={() => { setBoardSettingsOpen(false); setMode('my-work'); setSuccess('Board archived. Its history remains preserved.'); navigate('/tasks') }} act={act} /> : null}
     </section>

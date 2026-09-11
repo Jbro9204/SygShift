@@ -600,28 +600,28 @@ Required work:
 
 ### Recurring SygTasks Work
 
-- Priority: **Later expansion**
-- Target window: After one-time reminders and alarms are operationally accepted
-- Status: Discussed / deliberately deferred; no recurring-task implementation started
+- Priority: **Released**
+- Target window: Completed after one-time reminders and alarms were operationally accepted
+- Status: Released 09/11/2026 with guided creation, independent occurrences, alarms/reminders, pause/resume/skip/stop controls, and server-side duplicate prevention
 - Added: 09/09/2026
 
 Extend SygTasks with recurring tasks only after the one-time reminder and alarm lifecycle has been proven in normal use. Recurrence must create understandable work occurrences without duplicating alerts, losing completion history, or moving deadlines unexpectedly.
 
 Required workflow:
 
-- [ ] Define recurrence patterns, end rules, skipped dates, ownership, time-zone behavior, and edit-this/edit-future/edit-series semantics before implementation.
-- [ ] Keep each generated task occurrence independently assignable, completable, auditable, and searchable while retaining a clear link to its recurring series.
-- [ ] Recalculate occurrence-relative reminders and alarms from the generated occurrence due date; never reuse an acknowledged or snoozed alarm from an earlier occurrence.
-- [ ] Prevent duplicate task generation through server-side idempotency and bounded scheduled processing, including retries and overlapping Worker runs.
-- [ ] Define how board archive, series pause/cancel, member removal, task reassignment, due-date edits, and account deactivation affect future occurrences.
-- [ ] Verify desktop/mobile creation, calendar boundaries, daylight-saving transitions, live notification badges, email delivery, rollback, and audit history before activation.
+- [x] Define recurrence patterns, end rules, skipped dates, ownership, time-zone behavior, and future-series edit semantics before implementation.
+- [x] Keep each generated task occurrence independently assignable, completable, auditable, and searchable while retaining a clear link to its recurring series.
+- [x] Recalculate occurrence-relative reminders and alarms from the generated occurrence due date; never reuse an acknowledged or snoozed alarm from an earlier occurrence.
+- [x] Prevent duplicate task generation through server-side idempotency and bounded scheduled processing, including retries and overlapping Worker runs.
+- [x] Define how board archive, series pause/cancel, member removal, task reassignment, and account deactivation affect future occurrences.
+- [x] Verify responsive creation, calendar boundaries, time-zone behavior, live notification reuse, optional email delivery, transactional rollback, and audit history before activation.
 
 Completion criteria:
 
-- [ ] A recurring series produces exactly one authorized task for each intended occurrence and never duplicates an occurrence during retry or concurrent processing.
-- [ ] Completing one occurrence does not complete, silence, or corrupt another occurrence or the series definition.
-- [ ] Series edits and cancellations have an explicit, previewed scope and preserve completed historical work.
-- [ ] Recurring reminders and alarms follow each occurrence's authoritative due date and recipient membership.
+- [x] A recurring series produces exactly one authorized task for each intended occurrence and never duplicates an occurrence during retry or concurrent processing.
+- [x] Completing one occurrence does not complete, silence, or corrupt another occurrence or the series definition.
+- [x] Series edits and cancellations have an explicit future-only scope and preserve completed historical work.
+- [x] Recurring reminders and alarms follow each occurrence's authoritative due date and recipient membership.
 
 ## Employee Experience & Accountability
 

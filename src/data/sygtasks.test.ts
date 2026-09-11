@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createSygTask,
+  createSygTaskRecurringSeries,
   createSygTaskReminder,
   formatSygTaskPriority,
   formatSygTaskStatus,
@@ -9,6 +10,8 @@ import {
   getMySygTasksAlarmState,
   getMySygTasksBadge,
   getSygTaskActivity,
+  getSygTaskRecurringSeries,
+  manageSygTaskRecurringSeries,
   manageMySygTasksAlarm,
   mutateSygTasks,
   sygTaskPath,
@@ -198,6 +201,65 @@ describe('SygTasks data boundary', () => {
 
   it('rejects malformed task creation before sending it to the database', async () => {
     await expect(createSygTask({ boardId, title: '' })).rejects.toThrow()
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('creates, reads, and manages a bounded recurring task series through dedicated RPCs', async () => {
+    rpc.mockResolvedValueOnce({ data: {
+      action: 'create_recurring_series', seriesId: assignmentId, boardId, taskId,
+      version: 1, clientRequestId: requestId, changed: true,
+    }, error: null })
+    await expect(createSygTaskRecurringSeries({
+      boardId,
+      title: 'Weekly dispatch review',
+      description: 'Review uncovered assignments.',
+      status: 'ready',
+      priority: 'high',
+      assigneeId: employeeId,
+      firstDueLocal: '2026-09-14T09:00',
+      timeZone: 'America/Denver',
+      frequency: 'weekly',
+      intervalCount: 1,
+      endsOn: null,
+      maxOccurrences: 12,
+      reminderKind: 'alarm',
+      reminderOffsetMinutes: 60,
+      reminderEmailEnabled: true,
+    }, { clientRequestId: requestId })).resolves.toMatchObject({ seriesId: assignmentId, taskId })
+    expect(rpc).toHaveBeenLastCalledWith('create_sygtasks_recurring_series', {
+      target_payload: expect.objectContaining({ frequency: 'weekly', maxOccurrences: 12, reminderKind: 'alarm' }),
+      target_client_request_id: requestId,
+    })
+
+    rpc.mockResolvedValueOnce({ data: { taskId, series: null }, error: null })
+    await expect(getSygTaskRecurringSeries(taskId)).resolves.toEqual({ taskId, series: null })
+    expect(rpc).toHaveBeenLastCalledWith('get_sygtasks_recurring_series', { target_task_id: taskId })
+
+    rpc.mockResolvedValueOnce({ data: { seriesId: assignmentId, action: 'pause', status: 'paused', version: 2, changed: true }, error: null })
+    await manageSygTaskRecurringSeries(assignmentId, 'pause', {}, 1, requestId)
+    expect(rpc).toHaveBeenLastCalledWith('manage_sygtasks_recurring_series', {
+      target_series_id: assignmentId,
+      target_action: 'pause',
+      target_payload: {},
+      target_client_request_id: requestId,
+      target_expected_version: 1,
+    })
+  })
+
+  it('rejects incomplete recurrence settings before they reach the database', async () => {
+    await expect(createSygTaskRecurringSeries({
+      boardId,
+      title: 'Invalid recurrence',
+      firstDueLocal: '2026-09-14T09:00',
+      timeZone: 'America/Denver',
+      frequency: 'weekly',
+      intervalCount: 0,
+      endsOn: null,
+      maxOccurrences: null,
+      reminderKind: 'none',
+      reminderOffsetMinutes: null,
+      reminderEmailEnabled: false,
+    })).rejects.toThrow()
     expect(rpc).not.toHaveBeenCalled()
   })
 

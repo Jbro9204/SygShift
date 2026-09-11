@@ -7,6 +7,7 @@ import { SygTasksPage } from './SygTasksPage'
 
 const mocks = vi.hoisted(() => ({
   createTask: vi.fn(),
+  createRecurringTask: vi.fn(),
   getActivity: vi.fn(),
   getWorklist: vi.fn(),
   getWorkspace: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock('../data/sygtasks', async () => {
   return {
     ...actual,
     createSygTask: mocks.createTask,
+    createSygTaskRecurringSeries: mocks.createRecurringTask,
     getSygTaskActivity: mocks.getActivity,
     getSygTasksWorklist: mocks.getWorklist,
     getSygTasksWorkspace: mocks.getWorkspace,

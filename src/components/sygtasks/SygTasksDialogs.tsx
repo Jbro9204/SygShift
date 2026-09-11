@@ -1,12 +1,15 @@
 import { cloneElement, isValidElement, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactElement } from 'react'
-import { Archive, Bell, BellOff, Check, CheckCircle2, Circle, MessageSquare, ShieldAlert, Tag, Users } from 'lucide-react'
+import { Archive, Bell, BellOff, CalendarClock, Check, CheckCircle2, Circle, MessageSquare, ShieldAlert, Tag, Users } from 'lucide-react'
 import { ModalDialog } from '../ModalDialog'
 import {
   formatSygTaskPriority,
   formatSygTaskStatus,
   sygTaskPriorities,
+  sygTaskRecurrenceFrequencies,
+  sygTaskRecurrenceTimeZones,
   sygTaskStatuses,
   type CreateSygTaskInput,
+  type CreateSygTaskRecurringSeriesInput,
   type SygTaskAction,
   type SygTaskDetail,
   type SygTasksWorkspace,
@@ -16,6 +19,7 @@ import { employeeInitials, formatTaskDue, taskDueState } from '../../lib/sygtask
 import { TaskPriorityBadge, TaskStatusBadge } from './SygTasksElements'
 import { SygTasksActivityPanel } from './SygTasksActivityPanel'
 import { SygTasksRemindersPanel } from './SygTasksRemindersPanel'
+import { SygTasksRecurringPanel } from './SygTasksRecurringPanel'
 
 export type SygTasksAct = (action: SygTaskAction, payload: Record<string, unknown>, expectedVersion?: number) => Promise<void>
 
@@ -95,9 +99,17 @@ export function CreateTaskDialog({ boardName, busy, canAssignOthers, employeeId,
   error: unknown
   members: SygTasksWorkspace['members']
   onClose: () => void
-  onSubmit: (input: Omit<CreateSygTaskInput, 'boardId'>, clientRequestId: string) => void
+  onSubmit: (
+    input: Omit<CreateSygTaskInput, 'boardId'>,
+    clientRequestId: string,
+    recurrence?: Omit<CreateSygTaskRecurringSeriesInput, 'boardId' | 'title' | 'description' | 'status' | 'priority' | 'assigneeId'>,
+  ) => void
 }) {
-  const [validation, setValidation] = useState<{ title?: string; dueAt?: string }>({})
+  const [validation, setValidation] = useState<{ title?: string; dueAt?: string; recurrence?: string }>({})
+  const [repeats, setRepeats] = useState(false)
+  const [frequency, setFrequency] = useState<(typeof sygTaskRecurrenceFrequencies)[number]>('weekly')
+  const [endRule, setEndRule] = useState<'never' | 'date' | 'count'>('never')
+  const [reminderKind, setReminderKind] = useState<'none' | 'reminder' | 'alarm'>('none')
   const lastSubmission = useRef<{ fingerprint: string; requestId: string } | null>(null)
   const assignableMembers = canAssignOthers ? members : members.filter((member) => member.employeeId === employeeId)
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -109,9 +121,16 @@ export function CreateTaskDialog({ boardName, busy, canAssignOthers, employeeId,
     const errors: typeof validation = {}
     if (!title) errors.title = 'Enter a task title.'
     let dueAt: string | null = null
-    if (localDueAt) {
+    if (localDueAt && !repeats) {
       try { dueAt = fromOperationalDateTimeInput(localDueAt) } catch (reason) { errors.dueAt = reason instanceof Error ? reason.message : 'Enter a valid Mountain Time date and time.' }
     }
+    if (repeats && !localDueAt) errors.dueAt = 'Choose when the first task is due.'
+    const intervalCount = Number(data.get('intervalCount') ?? 1)
+    const endsOn = endRule === 'date' ? String(data.get('endsOn') ?? '') : ''
+    const maxOccurrences = endRule === 'count' ? Number(data.get('maxOccurrences') ?? 0) : null
+    if (repeats && (!Number.isInteger(intervalCount) || intervalCount < 1 || intervalCount > 12)) errors.recurrence = 'Repeat every 1 to 12 days, weeks, or months.'
+    if (repeats && endRule === 'date' && (!endsOn || endsOn < localDueAt.slice(0, 10))) errors.recurrence = 'Choose an end date on or after the first due date.'
+    if (repeats && endRule === 'count' && (!maxOccurrences || maxOccurrences < 1 || maxOccurrences > 500)) errors.recurrence = 'Choose between 1 and 500 occurrences.'
     setValidation(errors)
     if (Object.keys(errors).length) return
     const assigneeId = String(data.get('assigneeId') ?? '') || null
@@ -123,18 +142,45 @@ export function CreateTaskDialog({ boardName, busy, canAssignOthers, employeeId,
       dueAt,
       assigneeId,
     }
-    const fingerprint = JSON.stringify(input)
+    const recurrence = repeats ? {
+      firstDueLocal: localDueAt,
+      timeZone: String(data.get('timeZone') ?? 'America/Denver') as CreateSygTaskRecurringSeriesInput['timeZone'],
+      frequency,
+      intervalCount,
+      endsOn: endRule === 'date' ? endsOn : null,
+      maxOccurrences: endRule === 'count' ? maxOccurrences : null,
+      reminderKind,
+      reminderOffsetMinutes: reminderKind === 'none' ? null : Number(data.get('reminderOffsetMinutes') ?? 60),
+      reminderEmailEnabled: reminderKind === 'none' ? false : data.get('reminderEmailEnabled') === 'on',
+    } satisfies Omit<CreateSygTaskRecurringSeriesInput, 'boardId' | 'title' | 'description' | 'status' | 'priority' | 'assigneeId'> : undefined
+    const fingerprint = JSON.stringify({ input, recurrence })
     if (!lastSubmission.current || lastSubmission.current.fingerprint !== fingerprint) {
       lastSubmission.current = { fingerprint, requestId: crypto.randomUUID() }
     }
-    onSubmit(input, lastSubmission.current.requestId)
+    onSubmit(input, lastSubmission.current.requestId, recurrence)
   }
   return (
     <ModalDialog className="sygtasks-dialog sygtasks-dialog--task" title="Create a task" eyebrow={boardName} description="Define the work, assign ownership, and set a clear operational deadline." busy={busy} busyLabel="Creating task…" onClose={onClose}>
       <form noValidate onSubmit={submit}>
         <FormField label="Task title" error={validation.title}><input name="title" required maxLength={240} autoFocus data-dialog-autofocus onChange={() => setValidation((current) => ({ ...current, title: undefined }))} placeholder="What needs to be completed?" /></FormField>
         <FormField label="Description" optional><textarea name="description" maxLength={10000} rows={5} placeholder="Include the expected outcome and any important context." /></FormField>
-        <div className="sygtasks-form-grid sygtasks-form-grid--two"><FormField label="Starting status"><select name="status" defaultValue="backlog">{sygTaskStatuses.map((status) => <option key={status} value={status}>{formatSygTaskStatus(status)}</option>)}</select></FormField><FormField label="Priority"><select name="priority" defaultValue="routine">{sygTaskPriorities.map((priority) => <option key={priority} value={priority}>{formatSygTaskPriority(priority)}</option>)}</select></FormField><FormField label="Assignee" optional><select name="assigneeId" defaultValue=""><option value="">Unassigned</option>{assignableMembers.map((member) => <option key={member.employeeId} value={member.employeeId}>{member.name}{member.username ? ` · @${member.username}` : ''}</option>)}</select></FormField><FormField label="Due date and time (Mountain Time)" optional error={validation.dueAt}><input name="dueAt" type="datetime-local" onChange={() => setValidation((current) => ({ ...current, dueAt: undefined }))} /></FormField></div>
+        <div className="sygtasks-form-grid sygtasks-form-grid--two"><FormField label="Starting status"><select name="status" defaultValue="backlog">{sygTaskStatuses.filter((status) => !repeats || !['done', 'canceled', 'review', 'blocked'].includes(status)).map((status) => <option key={status} value={status}>{formatSygTaskStatus(status)}</option>)}</select></FormField><FormField label="Priority"><select name="priority" defaultValue="routine">{sygTaskPriorities.map((priority) => <option key={priority} value={priority}>{formatSygTaskPriority(priority)}</option>)}</select></FormField><FormField label="Assignee" optional><select name="assigneeId" defaultValue=""><option value="">Unassigned</option>{assignableMembers.map((member) => <option key={member.employeeId} value={member.employeeId}>{member.name}{member.username ? ` · @${member.username}` : ''}</option>)}</select></FormField><FormField label={repeats ? 'First due date and time' : 'Due date and time (Mountain Time)'} optional={!repeats} error={validation.dueAt}><input name="dueAt" type="datetime-local" onChange={() => setValidation((current) => ({ ...current, dueAt: undefined }))} /></FormField></div>
+        <section className={`sygtasks-recurrence-builder${repeats ? ' is-open' : ''}`}>
+          <label className="sygtasks-recurrence-toggle"><input type="checkbox" checked={repeats} onChange={(event) => { setRepeats(event.target.checked); setValidation((current) => ({ ...current, recurrence: undefined })) }} /><CalendarClock aria-hidden="true" size={21} /><span><strong>Repeat this task</strong><small>Create each occurrence as its own task, with separate progress and history.</small></span></label>
+          {repeats ? <div className="sygtasks-recurrence-fields">
+            <div className="sygtasks-guided-step"><span>1</span><div><strong>Choose the pattern</strong><small>The first due date above anchors the schedule.</small></div></div>
+            <div className="sygtasks-form-grid sygtasks-form-grid--three"><FormField label="Repeat"><select name="frequency" value={frequency} onChange={(event) => setFrequency(event.target.value as typeof frequency)}>{sygTaskRecurrenceFrequencies.map((value) => <option key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}</select></FormField><FormField label="Repeat every"><input name="intervalCount" type="number" inputMode="numeric" min={1} max={12} defaultValue={1} aria-label={`Repeat every number of ${frequency === 'daily' ? 'days' : frequency === 'weekly' ? 'weeks' : 'months'}`} /></FormField><FormField label="Time zone"><select name="timeZone" defaultValue="America/Denver">{sygTaskRecurrenceTimeZones.map((zone) => <option key={zone} value={zone}>{({ 'America/New_York': 'Eastern', 'America/Chicago': 'Central', 'America/Denver': 'Mountain', 'America/Los_Angeles': 'Pacific' } as const)[zone]}</option>)}</select></FormField></div>
+            <div className="sygtasks-guided-step"><span>2</span><div><strong>Choose when it ends</strong><small>Existing occurrences are never rewritten when the series ends.</small></div></div>
+            <div className="sygtasks-recurrence-end" role="group" aria-label="Recurring task end rule">{([['never', 'No end date'], ['date', 'On a date'], ['count', 'After a number']] as const).map(([value, label]) => <label key={value} className={endRule === value ? 'is-selected' : ''}><input type="radio" name="endRule" checked={endRule === value} onChange={() => setEndRule(value)} /><span>{label}</span></label>)}</div>
+            {endRule === 'date' ? <FormField label="Last occurrence date"><input name="endsOn" type="date" /></FormField> : null}
+            {endRule === 'count' ? <FormField label="Number of occurrences"><input name="maxOccurrences" type="number" inputMode="numeric" min={1} max={500} defaultValue={10} /></FormField> : null}
+            <div className="sygtasks-guided-step"><span>3</span><div><strong>Add an alert</strong><small>Optional. Alarms repeat until stopped or snoozed.</small></div></div>
+            <div className="sygtasks-form-grid sygtasks-form-grid--two"><FormField label="Alert"><select name="reminderKind" value={reminderKind} onChange={(event) => setReminderKind(event.target.value as typeof reminderKind)}><option value="none">No alert</option><option value="reminder">Reminder</option><option value="alarm">Repeating alarm</option></select></FormField>{reminderKind !== 'none' ? <FormField label="Before due time"><select name="reminderOffsetMinutes" defaultValue="60"><option value="0">At due time</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">1 hour</option><option value="1440">1 day</option><option value="10080">1 week</option></select></FormField> : <span />}</div>
+            {reminderKind !== 'none' ? <label className="sygtasks-recurrence-email"><input name="reminderEmailEnabled" type="checkbox" /><span><strong>Also send email</strong><small>Each occurrence follows the employee's notification safeguards.</small></span></label> : null}
+            <p className="sygtasks-recurrence-review"><CheckCircle2 aria-hidden="true" size={18} /><span><strong>What will happen</strong> SygTasks creates the first task now. Future tasks are created once, keep independent completion, and use this template until you pause or stop the series.</span></p>
+            {validation.recurrence ? <p className="sygtasks-field__error" role="alert">{validation.recurrence}</p> : null}
+          </div> : null}
+        </section>
         <SygTasksErrorNotice error={error} />
         <div className="sygtasks-dialog__actions"><button type="button" className="sygtasks-button sygtasks-button--secondary" onClick={onClose} disabled={busy}>Cancel</button><button type="submit" className="sygtasks-button sygtasks-button--primary" disabled={busy}>{busy ? 'Creating…' : 'Create Task'}</button></div>
       </form>
@@ -154,7 +200,7 @@ export function TaskDetailDialog({ workspace, detail, busy, error, referenceTime
   onClose: () => void
   act: SygTasksAct
 }) {
-  const [section, setSection] = useState<'overview' | 'people' | 'reminders' | 'checklist' | 'comments' | 'activity'>('overview')
+  const [section, setSection] = useState<'overview' | 'people' | 'recurrence' | 'reminders' | 'checklist' | 'comments' | 'activity'>('overview')
   const [editing, setEditing] = useState(false)
   const [overviewError, setOverviewError] = useState<string | null>(null)
   const [confirmArchive, setConfirmArchive] = useState(false)
@@ -194,7 +240,7 @@ export function TaskDetailDialog({ workspace, detail, busy, error, referenceTime
 
   return (
     <ModalDialog className="sygtasks-detail-dialog" title={detail.title} eyebrow={`${workspace.selectedBoard?.name ?? 'SygTasks'} · ${formatSygTaskStatus(detail.status)}`} description={`${formatSygTaskPriority(detail.priority)} priority · Updated ${formatTaskDue(detail.updatedAt)}`} busy={busy} onClose={onClose}>
-      <nav className="sygtasks-detail-tabs" aria-label="Task details">{([['overview', 'Overview'], ['people', 'People'], ['reminders', 'Reminders'], ['checklist', 'Checklist'], ['comments', `Comments (${detail.commentCount})`], ['activity', 'Activity']] as const).map(([value, label]) => <button type="button" key={value} aria-current={section === value ? 'page' : undefined} onClick={() => setSection(value)}>{label}</button>)}</nav>
+      <nav className="sygtasks-detail-tabs" aria-label="Task details">{([['overview', 'Overview'], ['people', 'People'], ['recurrence', 'Repeat'], ['reminders', 'Reminders'], ['checklist', 'Checklist'], ['comments', `Comments (${detail.commentCount})`], ['activity', 'Activity']] as const).map(([value, label]) => <button type="button" key={value} aria-current={section === value ? 'page' : undefined} onClick={() => setSection(value)}>{label}</button>)}</nav>
       <SygTasksErrorNotice error={error} />
       {section === 'overview' ? <div className="sygtasks-detail-section">
         {editing && detail.canEdit ? <form onSubmit={saveOverview}><FormField label="Task title"><input name="title" defaultValue={detail.title} maxLength={240} required autoFocus /></FormField><FormField label="Description" optional><textarea name="description" defaultValue={detail.description} maxLength={10000} rows={6} /></FormField><div className="sygtasks-form-grid"><FormField label="Status"><select name="status" defaultValue={detail.status}>{sygTaskStatuses.map((status) => <option key={status} value={status}>{formatSygTaskStatus(status)}</option>)}</select></FormField><FormField label="Priority"><select name="priority" defaultValue={detail.priority}>{sygTaskPriorities.map((priority) => <option key={priority} value={priority}>{formatSygTaskPriority(priority)}</option>)}</select></FormField><FormField label="Due date and time (Mountain Time)" optional error={overviewError}><input name="dueAt" type="datetime-local" defaultValue={dueInput} onChange={() => setOverviewError(null)} /></FormField></div><div className="sygtasks-inline-actions"><button type="button" className="sygtasks-button sygtasks-button--secondary" onClick={() => { setOverviewError(null); setEditing(false) }}>Cancel</button><button type="submit" className="sygtasks-button sygtasks-button--primary" disabled={busy}>Save Changes</button></div></form> : <><div className="sygtasks-detail-summary"><div><span>Status</span><TaskStatusBadge status={detail.status} /></div><div><span>Priority</span><TaskPriorityBadge priority={detail.priority} /></div><div><span>Due</span><strong className={referenceTime ? `sygtasks-due sygtasks-due--${taskDueState(detail, referenceTime)}` : 'sygtasks-due'}>{formatTaskDue(detail.dueAt)}</strong></div><div><span>Progress</span><strong>{detail.checklist.completed} of {detail.checklist.total}</strong></div></div><section className="sygtasks-description"><h3>Description</h3><p>{detail.description || 'No description has been added yet.'}</p></section><div className="sygtasks-inline-actions">{detail.canEdit ? <button type="button" className="sygtasks-button sygtasks-button--primary" onClick={() => setEditing(true)}>Edit Details</button> : null}{detail.canUpdateStatus && !detail.canEdit ? <select aria-label="Update task status" value={detail.status} disabled={busy} onChange={(event) => run(act('update_task', { taskId: detail.id, status: event.target.value }, detail.version))}>{sygTaskStatuses.map((status) => <option key={status} value={status}>{formatSygTaskStatus(status)}</option>)}</select> : null}{detail.canEdit ? <button type="button" className="sygtasks-button sygtasks-button--danger" disabled={busy} onClick={() => setConfirmArchive(true)}><Archive aria-hidden="true" size={16} />Archive</button> : null}</div></>}
@@ -202,6 +248,7 @@ export function TaskDetailDialog({ workspace, detail, busy, error, referenceTime
         <section className="sygtasks-dependencies"><h3>Dependencies</h3>{detail.dependencies.length ? <ul>{detail.dependencies.map((dependency) => <li key={dependency.id}><span>{dependency.title}<TaskStatusBadge status={dependency.status} /></span>{detail.canEdit ? <button type="button" className="sygtasks-icon-button" aria-label={`Remove dependency ${dependency.title}`} disabled={busy} onClick={() => run(act('remove_dependency', { taskId: detail.id, dependsOnTaskId: dependency.taskId }))}>×</button> : null}</li>)}</ul> : <p>No dependencies.</p>}{detail.canEdit && boardCandidates.length ? <form className="sygtasks-compact-form" onSubmit={(event) => { event.preventDefault(); const select = event.currentTarget.elements.namedItem('dependency') as HTMLSelectElement; run(act('add_dependency', { taskId: detail.id, dependsOnTaskId: select.value })) }}><select name="dependency" aria-label="Task dependency">{boardCandidates.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}</select><button type="submit" className="sygtasks-button sygtasks-button--primary" disabled={busy}>Add Dependency</button></form> : null}{detail.canEdit && canLoadMoreCandidates && onLoadMoreCandidates ? <button type="button" className="sygtasks-button sygtasks-button--secondary sygtasks-load-more-candidates" disabled={busy || loadingMoreCandidates} onClick={onLoadMoreCandidates}>{loadingMoreCandidates ? 'Loading more tasks…' : 'Load more dependency candidates'}</button> : null}</section>
       </div> : null}
       {section === 'people' ? <div className="sygtasks-detail-section"><section><h3><Users aria-hidden="true" size={18} />Assignees</h3><div className="sygtasks-people-grid">{assignmentCandidates.map((member) => { const canChangeAssignee = workspace.permissions.manageShared || member.employeeId === workspace.employeeId; return <label key={member.employeeId}><input type="checkbox" checked={assigned.has(member.employeeId)} disabled={busy || !detail.canEdit || !canChangeAssignee} onChange={() => run(act(assigned.has(member.employeeId) ? 'unassign_task' : 'assign_task', { taskId: detail.id, employeeId: member.employeeId }))} /><span className="sygtasks-person-avatar">{employeeInitials(member.name)}</span><strong>{member.name}<small>@{member.username}</small></strong></label> })}</div></section><section><h3>{detail.watching ? <Bell aria-hidden="true" size={18} /> : <BellOff aria-hidden="true" size={18} />}Following this task</h3><p>Followers receive SygShift notifications when important task details change.</p><button type="button" className="sygtasks-button sygtasks-button--primary" disabled={busy} onClick={() => run(act(detail.watching ? 'unwatch_task' : 'watch_task', { taskId: detail.id }))}>{detail.watching ? 'Stop Following' : 'Follow Task'}</button><p className="sygtasks-muted">{detail.watchers.length} follower{detail.watchers.length === 1 ? '' : 's'}: {detail.watchers.map((watcher) => watcher.name).join(', ') || 'None'}</p></section></div> : null}
+      {section === 'recurrence' ? <div className="sygtasks-detail-section"><SygTasksRecurringPanel taskId={detail.id} workspace={workspace} /></div> : null}
       {section === 'reminders' ? <div className="sygtasks-detail-section"><SygTasksRemindersPanel taskId={detail.id} taskHasDueDate={Boolean(detail.dueAt)} /></div> : null}
       {section === 'checklist' ? <div className="sygtasks-detail-section"><section><h3><CheckCircle2 aria-hidden="true" size={18} />Checklist</h3><div className="sygtasks-progress" aria-label={`${detail.checklist.completed} of ${detail.checklist.total} checklist items complete`}><span style={{ width: `${detail.checklist.total ? (detail.checklist.completed / detail.checklist.total) * 100 : 0}%` }} /></div><ul className="sygtasks-checklist">{detail.checklistItems.map((item) => <li key={item.id}><button type="button" className="sygtasks-icon-button" aria-label={`${item.completedAt ? 'Mark incomplete' : 'Mark complete'}: ${item.title}`} disabled={busy || !detail.canEdit} onClick={() => run(act('update_checklist_item', { checklistItemId: item.id, completed: !item.completedAt }, item.version))}>{item.completedAt ? <CheckCircle2 aria-hidden="true" /> : <Circle aria-hidden="true" />}</button><span className={item.completedAt ? 'is-complete' : ''}>{item.title}</span>{detail.canEdit ? <button type="button" className="sygtasks-icon-button" aria-label={`Remove ${item.title}`} disabled={busy} onClick={() => run(act('archive_checklist_item', { checklistItemId: item.id }, item.version))}>×</button> : null}</li>)}</ul>{detail.canEdit ? <form className="sygtasks-compact-form" onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); run(act('add_checklist_item', { taskId: detail.id, title: data.get('title') }).then(() => form.reset())) }}><input name="title" placeholder="Add a checklist item" aria-label="Checklist item" maxLength={500} required /><button type="submit" className="sygtasks-button sygtasks-button--primary" disabled={busy}>Add Item</button></form> : null}</section></div> : null}
       {section === 'comments' ? <div className="sygtasks-detail-section"><section><h3><MessageSquare aria-hidden="true" size={18} />Discussion</h3><ol className="sygtasks-comments">{detail.comments.map((comment) => <li key={comment.id}><span className="sygtasks-person-avatar">{employeeInitials(comment.authorName)}</span><div><header><strong>{comment.authorName}</strong><time>{formatTaskDue(comment.createdAt)}{comment.editedAt ? ' · edited' : ''}</time></header>{editingComment?.id === comment.id ? <form className="sygtasks-comment-edit" onSubmit={(event) => { event.preventDefault(); run(act('edit_comment', { commentId: comment.id, body: editingComment.body.trim() }, comment.version).then(() => setEditingComment(null))) }}><textarea aria-label={`Edit comment by ${comment.authorName}`} maxLength={5000} rows={4} value={editingComment.body} onChange={(event) => setEditingComment({ ...editingComment, body: event.target.value })} autoFocus /><div><button type="button" className="sygtasks-button sygtasks-button--secondary" onClick={() => setEditingComment(null)}>Cancel</button><button type="submit" className="sygtasks-button sygtasks-button--primary" disabled={busy || !editingComment.body.trim()}>Save</button></div></form> : <><p>{comment.body}</p>{comment.canEdit ? <button type="button" className="sygtasks-text-button" disabled={busy} onClick={() => setEditingComment({ id: comment.id, body: comment.body, version: comment.version })}>Edit</button> : null}</>}</div></li>)}</ol><form className="sygtasks-comment-form" onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); run(act('add_comment', { taskId: detail.id, body: data.get('body') }).then(() => form.reset())) }}><FormField label="Add a comment"><textarea name="body" rows={4} maxLength={5000} required placeholder="Share an update, question, or decision." /></FormField><button type="submit" className="sygtasks-button sygtasks-button--primary" disabled={busy}>Post Comment</button></form></section></div> : null}

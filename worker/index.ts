@@ -7390,12 +7390,22 @@ async function processPushJobs(environment: Environment): Promise<void> {
 async function processSygTasksReminderJobs(environment: Environment): Promise<Record<string, unknown>> {
   const config = configuredSupabase(environment)
   if (!config) throw new ApiError('server_not_configured', 503, 'The protected data service is not configured.')
-  return callRpc<Record<string, unknown>>(
+  // Generate recurrence occurrences first so a reminder due for a newly-created
+  // task can be processed in the same scheduled run. Both RPCs are independently
+  // idempotent and bounded.
+  const recurringSeries = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: config.serviceRoleKey, url: config.url },
+    'service_process_due_sygtasks_recurring_series',
+    { target_horizon_days: 7, target_limit: 50 },
+    config.serviceRoleKey,
+  )
+  const reminders = await callRpc<Record<string, unknown>>(
     { serviceRoleKey: config.serviceRoleKey, url: config.url },
     'service_process_due_sygtasks_reminders',
     { target_limit: 100 },
     config.serviceRoleKey,
   )
+  return { recurringSeries, reminders }
 }
 
 async function processNotificationJobs(environment: Environment, limit = 10): Promise<{
@@ -8179,12 +8189,12 @@ export default {
     context.waitUntil(processPushJobs(environment))
     // Task reminders are isolated from timekeeping and the general email queue so
     // a reminder failure cannot delay punches, alerts, or payroll automation.
-    context.waitUntil(processSygTasksReminderJobs(environment).then((sygtasksReminders) => {
-      console.info(JSON.stringify({ event: 'sygtasks_reminders_processed', sygtasksReminders }))
+    context.waitUntil(processSygTasksReminderJobs(environment).then((sygtasksScheduledWork) => {
+      console.info(JSON.stringify({ event: 'sygtasks_scheduled_work_processed', sygtasksScheduledWork }))
     }).catch((error) => {
       console.error(JSON.stringify({
-        event: 'sygtasks_reminders_failed',
-        message: error instanceof Error ? error.message : 'Unknown reminder processing failure',
+        event: 'sygtasks_scheduled_work_failed',
+        message: error instanceof Error ? error.message : 'Unknown scheduled task processing failure',
       }))
     }))
     context.waitUntil(purgeExpiredSygSphereUploads(environment).catch((error) => {

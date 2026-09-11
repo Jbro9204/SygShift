@@ -36,7 +36,7 @@ describe('SygTasks reminder and alarm contract', () => {
     expect(migration).toContain('private.create_employee_notification')
     expect(migration).toContain('public.employee_notification_email_deliveries')
     expect(worker).toContain("'service_process_due_sygtasks_reminders'")
-    expect(worker).toContain("event: 'sygtasks_reminders_failed'")
+    expect(worker).toContain("event: 'sygtasks_scheduled_work_failed'")
   })
 
   it('keeps browser access behind scoped RPCs and the service processor behind service_role', () => {
