@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/11/2026 - Employee Document Filing Latency Repair
+
+- Corrected the Document Workbench File action that kept users waiting after their completed PDF was already durably stored.
+- Confirmed the reported 719,094-byte Zach Ward PDF reached durable storage in 0.322 seconds; the old foreground workflow then waited approximately 49 seconds for background scanner pickup and completion before admitting the filing succeeded.
+- Removed only the redundant client-side scan polling and full-file re-download from ordinary employee/company filing, while preserving validation, checksums, private storage, queueing, scanning, permissions, MFA, auditing, and the Send action's clean-file requirement.
+- Released source `9b99356` as Cloudflare Worker `f6539268-095e-42d3-8144-569a14d6a6d2`; rollback tag `rollback/pre-document-filing-latency-repair-20260911` points to `95d7608`.
+- Verification passed 250 test files / 1,277 tests, 316 browser checks with zero failures, 82 combined document/clock checks, all 46 post-release Time Clock/Early Clock-In checks, both production health/readiness endpoints, and exact identity of all affected live bundles.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-11-2026_EMPLOYEE_DOCUMENT_FILING_LATENCY_REPAIR.md`.
+
 ## 09/11/2026 - Connected Workspace Reliability Repair
 
 - Restored the HR Employee File by removing repeated Required Actions checkpoint evaluation from the effective-permission projection while preserving every permission, MFA, and urgent-action rule.
