@@ -1,5 +1,15 @@
 # SygShift Development Log
 
+## 09/11/2026 - Employee Document Discovery
+
+- Added a prominent **Files for [employee]** card to each authorized Employee File and made it open that employee's filtered document inventory directly.
+- Removed the general Document Studio dashboard from the employee-focused route, surfaced the matching files at the top, and added clear Employee File, Add document, and View all documents actions.
+- Made employee-file uploads preselect the exact employee and kept pending background-processing uploads visible instead of appearing to vanish.
+- Preserved every HR MFA, permission, vault, private-storage, validation, scanning, preview/download, and audit boundary; no migration or production-data change was required.
+- Released source `9b58ed8` as Cloudflare Worker `487412dd-230e-4054-8820-53c32512606a`; rollback tag `rollback/pre-employee-document-discovery-20260911` points to `26de511`.
+- Verification passed 250 test files / 1,279 tests, 320 browser checks with zero failures, 18 responsive employee-document checks, all 46 post-release Time Clock/Early Clock-In checks, both production health/readiness endpoints, and exact identity of every affected live bundle.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-11-2026_EMPLOYEE_DOCUMENT_DISCOVERY.md`.
+
 ## 09/11/2026 - Employee Document Filing Latency Repair
 
 - Corrected the Document Workbench File action that kept users waiting after their completed PDF was already durably stored.
