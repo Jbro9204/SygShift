@@ -10,6 +10,10 @@ const migration = readFileSync(
   join(root, 'supabase', 'migrations', '20260912180000_connected_reliability_repair.sql'),
   'utf8',
 )
+const boundedRefreshMigration = readFileSync(
+  join(root, 'supabase', 'migrations', '20260912181000_bound_attendance_safety_refresh.sql'),
+  'utf8',
+)
 const worker = readFileSync(join(root, 'worker', 'index.ts'), 'utf8')
 
 describe('connected reliability repair', () => {
@@ -35,6 +39,9 @@ describe('connected reliability repair', () => {
     expect(migration).toContain('private.queue_attendance_alert_schedule_refresh(')
     expect(migration).toContain('run_queued_attendance_alert_schedule_refresh')
     expect(migration).toContain('operational_alerts_related_exception_idx')
+    expect(boundedRefreshMigration).toContain("alert.lifecycle_state = 'active_operations'")
+    expect(boundedRefreshMigration).toContain('target_full_reconciliation')
+    expect(boundedRefreshMigration).toContain("exception.detected_at >= clock_timestamp() - interval '14 days'")
     expect(worker).toContain('Number(denverMinute) % 5 === 0')
     expect(worker).toContain("reason: 'five_minute_safety_interval'")
     expect(worker.indexOf("'service_run_timekeeping_automation'")).toBeLessThan(worker.indexOf('attendanceSafetyRefreshDue'))
