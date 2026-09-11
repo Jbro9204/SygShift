@@ -522,7 +522,7 @@ Required work:
 
 - Priority: **Strategic / High**
 - Target window: Side-by-side integration first; Sygilant-hosted consolidation only after independent readiness and rollback approval
-- Status: Side-by-side shared identity and reciprocal employee launch active; consolidation acceptance remains open
+- Status: Side-by-side shared identity and reciprocal employee launch accepted 09/11/2026; final Sygilant-hosted cutover remains gated
 - Added: 09/02/2026
 
 #### Execution instructions
@@ -537,16 +537,16 @@ Allow SygShift and Sygilant to operate side by side with one secure employee ide
 
 Required work:
 
-- [ ] Keep authentication shared but authorization independent: platform, role, permission, client, site, record, and publication checks must remain server-enforced within each application's boundary.
-- [ ] Introduce the integration side by side with feature flags, versioned contracts/events, isolated canaries, session-revocation behavior, monitoring, rollback, and no required change to the current SygShift production login.
+- [x] Keep authentication shared but authorization independent: platform, role, permission, client, site, record, and publication checks remain server-enforced within each application's boundary.
+- [x] Introduce the integration side by side with feature flags, versioned contracts/events, isolated canaries, session-revocation behavior, monitoring, rollback, and no required change to the current SygShift production login.
 - [ ] When Sygilant is ready, launch SygShift only from an authenticated Sygilant workspace and retire direct SygShift login only after account mapping, deep links, MFA, recovery, logout, outage, and rollback tests pass.
-- [ ] Preserve stable URLs or controlled redirects, audit attribution, least privilege, and emergency access during the final consolidation.
+- [x] Preserve stable URLs or controlled redirects, audit attribution, least privilege, and emergency access during side-by-side operation. Revalidate these controls during final consolidation.
 
 Completion criteria:
 
-- [ ] The same authorized person can use both platforms through one approved identity lifecycle without maintaining two passwords or creating duplicate employee records.
-- [ ] Compromise or excessive authority in one platform does not silently grant access to the other.
-- [ ] Direct SygShift login is not removed until Sygilant provides verified replacement entry, recovery, support, monitoring, and rollback paths.
+- [x] The same authorized person can use both platforms through one approved identity lifecycle without maintaining two passwords or creating duplicate employee records.
+- [x] Compromise or excessive authority in one platform does not silently grant access to the other.
+- [x] Direct SygShift login remains available until Sygilant provides verified replacement entry, recovery, support, monitoring, and rollback paths and management approves final cutover.
 
 ### SigSales Platform and Controlled Client Handoff
 
