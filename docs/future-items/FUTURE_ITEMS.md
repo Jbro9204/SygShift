@@ -172,6 +172,37 @@ Completion criteria:
 - [ ] Unauthorized users, legal holds, active document workflows, and retention controls cannot be bypassed.
 - [ ] No employee, document version, signature evidence, or audit history is silently deleted.
 
+### Document Center Editing, Selection, and Preview Repairs
+
+- Priority: **Urgent**
+- Target window: Next focused Document Center usability release, with employee result-list and signature clipping first
+- Status: Approved and queued from 09/11/2026 screenshots; investigation only completed, no runtime change made
+- Added: 09/11/2026
+
+Make the Document Center reliably usable for finding an employee, completing approved HR forms, placing a full signature, and reviewing the exact finished PDF.
+
+Required workflow:
+
+- [ ] Repair the **Find an employee** results area in the File panel so matching employees render as complete readable rows instead of a clipped strip with a nested scrollbar.
+- [ ] Apply the same result-list sizing and containment rules to **Find recipients** in the Send panel; keep the selected employee visible and provide enough usable height at common laptop sizes, browser zoom levels, and short viewports.
+- [ ] Keep the Document type, Note, and final File/Send actions reachable without allowing the employee-results list or the entire side panel to collapse, overlap, or trap scrolling.
+- [ ] Make the placed signature box automatically contain the entire generated name. The on-page editor, selection outline, resize handle, finished preview, downloaded PDF, filed PDF, and sent PDF must all show the same complete signature without clipping its first or last characters.
+- [ ] Define signature sizing from the generated image's real aspect ratio and preserve that ratio while resizing or moving it; long names must scale down within the selected width instead of being cropped.
+- [ ] Replace flattened bracketed placeholders in approved HR templates with real guided fields or a controlled field map so values such as employee name, ID, position, supervisor, site, dates, narrative sections, checks, and signatures can be completed cleanly without typing over existing placeholder text.
+- [ ] Distinguish system-prefilled employee information from editable user-entered information, show what will be inserted before placement, and allow authorized corrections before producing the finished PDF.
+- [ ] Repair **Preview finished PDF** by giving the viewer stable completed-PDF bytes through a browser-policy-compatible path. Do not weaken the production Content Security Policy merely to permit temporary `blob:` fetches.
+- [ ] Keep **Back to editing** and **Download this PDF** usable when preview fails, preserve all unsaved additions, and provide a specific retry state rather than a blank viewer.
+- [ ] Add end-to-end production-policy coverage for the complete flow: open a controlled HR template, search and select an employee, fill representative short and long fields, place and resize a long signature, preview the completed PDF, download it, file it to that employee, reopen it, and verify identical visible content.
+- [ ] Verify light/dark mode, desktop, 14-inch laptop, browser zoom, mobile, keyboard, touch, accessibility, long employee names, empty/no-result searches, and large employee lists before release.
+
+Completion criteria:
+
+- [ ] Employee and recipient matches are fully readable, selectable, and contained at every supported viewport and zoom level.
+- [ ] A long typed name produces one complete signature everywhere with no clipping, distortion, duplication, or export mismatch.
+- [ ] Approved HR forms can be completed without leaving their original placeholder text underneath or beside entered values.
+- [ ] The exact finished PDF opens in Preview under the production browser policy and remains identical when downloaded, filed, sent, and reopened.
+- [ ] No Document Center release is considered complete until the real production-style workflow passes, not only isolated component or static-layout fixtures.
+
 ### SygShift HR & Finance Suite
 
 - Priority: **Urgent**
