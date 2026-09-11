@@ -1,5 +1,14 @@
 # SygShift Development Log
 
+## 09/11/2026 - Unified 30-Minute HR MFA Window
+
+- Replaced fragmented HR module and document reauthentication timers with one fixed, server-authoritative 30-minute window for every otherwise-authorized HR workflow.
+- Coordinated protected requests across components and browser tabs so an expired window produces one verification prompt, then automatically retries the original action without clearing the page or entered information.
+- Bound authenticator and security-key evidence to the active employee and authentication session, invalidated stale evidence after password or MFA reset, preserved every permission and approval check, and kept reusable grants out of browser storage.
+- Applied forward migration `20260912100000_unified_thirty_minute_hr_mfa_window.sql` and released source commit `99ed1e2` as Cloudflare Worker `227c7dea-68c4-4639-94cf-a8f3f5ce3125`; rollback tag `rollback/pre-unified-hr-mfa-window-20260911` points to `e332cdf`.
+- Verification passed 241 test files / 1,237 tests, 90 pre-release browser checks, 46 post-release Time Clock/Early Clock-In checks, the live database boundary probe, both production origins, and exact live identity of six application and HR assets.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-11-2026_UNIFIED_HR_MFA_WINDOW.md`.
+
 ## 09/10/2026 - Document Center Editor Controls
 
 - Corrected the File and Send employee-search fields so global modal padding can no longer place the magnifying glass over the entered or placeholder text.
