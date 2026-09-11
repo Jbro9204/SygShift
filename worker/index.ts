@@ -4843,19 +4843,182 @@ async function handleHrStage9Api(
   requestId: string,
 ): Promise<Response> {
   const url = new URL(request.url)
+  const session = await requireRecentHrSession(request, environment)
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  const caseMatch = url.pathname.match(/^\/api\/v1\/hr\/offboarding\/cases\/([0-9a-f-]{36})$/i)
+  const reviewMatch = url.pathname.match(/^\/api\/v1\/hr\/offboarding\/cases\/([0-9a-f-]{36})\/review$/i)
+  const cancelMatch = url.pathname.match(/^\/api\/v1\/hr\/offboarding\/cases\/([0-9a-f-]{36})\/cancel$/i)
+  const executeMatch = url.pathname.match(/^\/api\/v1\/hr\/offboarding\/cases\/([0-9a-f-]{36})\/execute$/i)
+  const taskMatch = url.pathname.match(/^\/api\/v1\/hr\/offboarding\/tasks\/([0-9a-f-]{36})$/i)
+
+  if (url.pathname === '/api/v1/hr/offboarding/options') {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    requireSessionPermission(session.context, 'hr.offboarding.view')
+    if (!hrStage9Enabled(environment, 'offboarding')) return json({ enabled: false, employees: [], owners: [], requestId })
+    const result = await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_get_hr_offboarding_options',
+      { target_actor_id: session.context.employee_id },
+      session.config.serviceRoleKey,
+    )
+    return json({ enabled: true, ...result, requestId })
+  }
+
+  if (url.pathname === '/api/v1/hr/offboarding/cases') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireSessionPermission(session.context, 'hr.offboarding.manage')
+    if (!hrStage9Enabled(environment, 'offboarding')) throw new ApiError('hr_offboarding_unavailable', 503, 'Employee Lifecycle has not been released.')
+    const body = await readJsonBody(request)
+    const employeeId = requiredText(body.employeeId, 'Employee', 36)
+    if (!validUuid(employeeId)) throw new ApiError('invalid_employee_id', 422, 'Choose a valid employee.')
+    const lifecycleType = requiredText(body.lifecycleType, 'Lifecycle type', 40).toLowerCase()
+    if (!['voluntary_resignation', 'involuntary_termination', 'job_abandonment', 'end_of_assignment', 'rehire'].includes(lifecycleType)) {
+      throw new ApiError('invalid_lifecycle_type', 422, 'Choose a supported employee lifecycle type.')
+    }
+    const effectiveOn = optionalIsoDate(body.effectiveOn, 'Effective date')
+    if (!effectiveOn) throw new ApiError('invalid_effective_date', 422, 'Choose the effective date.')
+    const reason = requiredText(body.reason, 'Business reason', 4000)
+    const result = await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_create_hr_lifecycle_case',
+      {
+        target_actor_id: session.context.employee_id,
+        target_effective_on: effectiveOn,
+        target_employee_id: employeeId,
+        target_lifecycle_type: lifecycleType,
+        target_mfa_method: session.mfa.method,
+        target_mfa_verified_at: session.mfa.verifiedAt,
+        target_reason: reason,
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId }, 201)
+  }
+
+  if (caseMatch) {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    requireSessionPermission(session.context, 'hr.offboarding.view')
+    if (!hrStage9Enabled(environment, 'offboarding')) throw new ApiError('hr_offboarding_unavailable', 503, 'Employee Lifecycle has not been released.')
+    const result = await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_get_hr_lifecycle_case',
+      {
+        target_actor_id: session.context.employee_id,
+        target_case_id: caseMatch[1],
+        target_mfa_method: session.mfa.method,
+        target_mfa_verified_at: session.mfa.verifiedAt,
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId })
+  }
+
+  if (reviewMatch) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireSessionPermission(session.context, 'hr.offboarding.approve')
+    const body = await readJsonBody(request)
+    const decision = requiredText(body.decision, 'Decision', 20).toLowerCase()
+    if (!['approved', 'denied'].includes(decision)) throw new ApiError('invalid_lifecycle_decision', 422, 'Choose Approve or Deny.')
+    const result = await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_review_hr_lifecycle_case',
+      {
+        target_actor_id: session.context.employee_id,
+        target_case_id: reviewMatch[1],
+        target_decision: decision,
+        target_mfa_method: session.mfa.method,
+        target_mfa_verified_at: session.mfa.verifiedAt,
+        target_reason: requiredText(body.reason, 'Decision reason', 4000),
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId })
+  }
+
+  if (taskMatch) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireSessionPermission(session.context, 'hr.offboarding.manage')
+    const body = await readJsonBody(request)
+    const status = requiredText(body.status, 'Checklist status', 20).toLowerCase()
+    if (!['ready', 'in_progress', 'blocked', 'completed', 'waived'].includes(status)) throw new ApiError('invalid_checklist_status', 422, 'Choose a supported checklist status.')
+    const assignedTo = optionalText(body.assignedTo, 'Checklist owner', 36)
+    if (assignedTo && !validUuid(assignedTo)) throw new ApiError('invalid_checklist_owner', 422, 'Choose a valid checklist owner.')
+    const result = await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_update_hr_lifecycle_task',
+      {
+        target_actor_id: session.context.employee_id,
+        target_assigned_to: assignedTo,
+        target_due_on: optionalIsoDate(body.dueOn, 'Due date'),
+        target_mfa_method: session.mfa.method,
+        target_mfa_verified_at: session.mfa.verifiedAt,
+        target_note: optionalText(body.note, 'Evidence or waiver reason', 4000),
+        target_status: status,
+        target_task_id: taskMatch[1],
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId })
+  }
+
+  if (cancelMatch) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireSessionPermission(session.context, 'hr.offboarding.manage')
+    const body = await readJsonBody(request)
+    const result = await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_cancel_hr_lifecycle_case',
+      {
+        target_actor_id: session.context.employee_id,
+        target_case_id: cancelMatch[1],
+        target_mfa_method: session.mfa.method,
+        target_mfa_verified_at: session.mfa.verifiedAt,
+        target_reason: requiredText(body.reason, 'Cancellation reason', 4000),
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId })
+  }
+
+  if (executeMatch) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireSessionPermission(session.context, 'hr.offboarding.approve')
+    requireSessionPermission(session.context, 'hr.people.manage')
+    const body = await readJsonBody(request)
+    const result = await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_execute_hr_lifecycle_case',
+      {
+        target_actor_id: session.context.employee_id,
+        target_case_id: executeMatch[1],
+        target_confirmation_username: requiredText(body.confirmationUsername, 'Employee username', 80),
+        target_mfa_method: session.mfa.method,
+        target_mfa_verified_at: session.mfa.verifiedAt,
+        target_reason: requiredText(body.reason, 'Final execution reason', 1000),
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId })
+  }
+
   const match = url.pathname.match(/^\/api\/v1\/hr\/(offboarding|self-service|reporting)\/workspace$/)
   if (!match) return errorJson('not_found', requestId, 404)
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   const module = match[1] === 'self-service' ? 'self_service' : match[1] as HrStage9Module
-  const session = await requireRecentHrSession(request, environment)
   requireSessionPermission(session.context, hrStage9Permissions[module])
   if (!hrStage9Enabled(environment, module)) return json(disabledHrStage9Workspace(module, requestId))
   const mfa = session.mfa
   const { offset, pageSize } = boundedWorkspacePage(url)
   const payload = await callRpc<Record<string, unknown>>(
     { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
-    'service_get_hr_stage9_workspace',
-    {
+    module === 'offboarding' ? 'service_get_hr_offboarding_workspace' : 'service_get_hr_stage9_workspace',
+    module === 'offboarding' ? {
+      target_actor_id: session.context.employee_id,
+      target_mfa_method: mfa.method,
+      target_mfa_verified_at: mfa.verifiedAt,
+      target_offset: offset,
+      target_page_size: pageSize,
+    } : {
       target_actor_id: session.context.employee_id,
       target_mfa_method: mfa.method,
       target_mfa_verified_at: mfa.verifiedAt,
@@ -7980,10 +8143,25 @@ export default {
         { target_limit: 25 },
         config.serviceRoleKey,
       )
+      let offboardingDue: Record<string, unknown>
+      try {
+        offboardingDue = await callRpc<Record<string, unknown>>(
+          { serviceRoleKey: config.serviceRoleKey, url: config.url },
+          'service_refresh_hr_offboarding_due_cases',
+          {},
+          config.serviceRoleKey,
+        )
+      } catch (error) {
+        offboardingDue = {
+          status: 'failed',
+          message: error instanceof Error ? error.message : 'Unknown offboarding queue refresh failure',
+        }
+        console.error(JSON.stringify({ event: 'offboarding_due_refresh_failed', ...offboardingDue }))
+      }
       const hrAutomation = await processHrAutomationJobs(environment, 10)
       const signatureFinalization = await processSignatureFinalizationJobs(environment, 2)
       const notifications = await processNotificationJobs(environment, 25)
-      console.info(JSON.stringify({ alertLifecycle, attendanceScheduleRefresh, automation, cron: controller.cron, fullReconciliation, hrAutomation, jobRunId, notifications, patrol, scheduledAnnouncements, scheduledTime: controller.scheduledTime, signatureFinalization }))
+      console.info(JSON.stringify({ alertLifecycle, attendanceScheduleRefresh, automation, cron: controller.cron, fullReconciliation, hrAutomation, jobRunId, notifications, offboardingDue, patrol, scheduledAnnouncements, scheduledTime: controller.scheduledTime, signatureFinalization }))
     })())
   },
 }

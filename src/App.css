@@ -2073,6 +2073,481 @@
   margin: 0;
 }
 
+.modal-dialog.hr-lifecycle-wizard,
+.modal-dialog.hr-lifecycle-case-modal {
+  width: min(1040px, calc(100vw - 24px));
+}
+
+.modal-dialog.hr-lifecycle-case-modal {
+  max-height: min(94vh, 980px);
+}
+
+.hr-lifecycle-steps,
+.hr-lifecycle-case__progress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 14px var(--presentation-gutter);
+  background: light-dark(#f7f2e8, #121619);
+  border-bottom: 1px solid light-dark(#ded5c7, #353b41);
+  list-style: none;
+}
+
+.hr-lifecycle-steps li,
+.hr-lifecycle-case__progress li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.hr-lifecycle-steps li > span,
+.hr-lifecycle-case__progress li > span {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  place-items: center;
+  border: 1px solid light-dark(#cabfae, #4a5157);
+  border-radius: 999px;
+  background: light-dark(#fff, #1c2226);
+}
+
+.hr-lifecycle-steps li.is-current,
+.hr-lifecycle-steps li.is-complete,
+.hr-lifecycle-case__progress li.is-complete {
+  color: light-dark(#74520e, #f2ce7e);
+}
+
+.hr-lifecycle-steps li.is-current > span,
+.hr-lifecycle-steps li.is-complete > span,
+.hr-lifecycle-case__progress li.is-complete > span {
+  color: #17130b;
+  border-color: #ad7d24;
+  background: linear-gradient(145deg, #f5d986, #d49b37);
+  box-shadow: 0 0 0 3px rgb(214 166 72 / 14%);
+}
+
+.hr-lifecycle-wizard__body,
+.hr-lifecycle-case {
+  display: grid;
+  gap: 18px;
+  padding: 22px var(--presentation-gutter) 26px;
+}
+
+.hr-lifecycle-wizard__body > label,
+.hr-lifecycle-task-editor label,
+.hr-lifecycle-case__decision form label,
+.hr-lifecycle-case__final form label,
+.hr-lifecycle-case__cancel form label {
+  display: grid;
+  gap: 7px;
+  font-weight: 720;
+}
+
+.hr-lifecycle-wizard__body textarea,
+.hr-lifecycle-task-editor textarea,
+.hr-lifecycle-case textarea {
+  resize: vertical;
+}
+
+.hr-lifecycle-step-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.hr-lifecycle-step-heading h3,
+.hr-lifecycle-step-heading p {
+  margin: 0;
+}
+
+.hr-lifecycle-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.hr-lifecycle-choice-grid legend {
+  width: 100%;
+  margin-bottom: 8px;
+  font-weight: 760;
+}
+
+.hr-lifecycle-choice-grid label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-height: 82px;
+  padding: 14px;
+  border: 1px solid light-dark(#d9d0c3, #3a4248);
+  border-radius: 13px;
+  background: light-dark(#fff, #191e22);
+  cursor: pointer;
+}
+
+.hr-lifecycle-choice-grid label.is-selected {
+  border-color: #c18c2d;
+  background: light-dark(#fff8e9, #2a2318);
+  box-shadow: inset 0 0 0 1px rgb(214 166 72 / 35%);
+}
+
+.hr-lifecycle-choice-grid label span,
+.hr-lifecycle-search,
+.hr-lifecycle-search > div {
+  display: grid;
+  gap: 5px;
+}
+
+.hr-lifecycle-choice-grid small,
+.hr-lifecycle-wizard__body label > small {
+  color: var(--text-muted);
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.hr-lifecycle-search > div {
+  position: relative;
+}
+
+.hr-lifecycle-search svg {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 14px;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.hr-lifecycle-search input {
+  padding-left: 42px;
+}
+
+.hr-lifecycle-safety-note,
+.hr-lifecycle-terminal,
+.hr-lifecycle-final-warning {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 11px;
+  align-items: start;
+  padding: 13px 14px;
+  border: 1px solid light-dark(#dec88d, #6e5527);
+  border-radius: 12px;
+  background: light-dark(#fff9e9, #2a2317);
+}
+
+.hr-lifecycle-safety-note p,
+.hr-lifecycle-terminal p,
+.hr-lifecycle-final-warning p {
+  margin: 0;
+}
+
+.hr-lifecycle-checklist-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hr-lifecycle-checklist-preview span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 9px 12px;
+  border: 1px solid light-dark(#ded6c9, #374046);
+  border-radius: 11px;
+  background: light-dark(#fff, #191e22);
+  font-weight: 680;
+}
+
+.hr-lifecycle-checklist-preview em {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: light-dark(#f3e2bb, #342819);
+  color: light-dark(#68490d, #f0cc79);
+  font-style: normal;
+}
+
+.hr-lifecycle-review {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin: 0;
+}
+
+.hr-lifecycle-review > div {
+  display: grid;
+  gap: 3px;
+  padding: 13px;
+  border-radius: 11px;
+  background: light-dark(#f6f1e8, #191e22);
+}
+
+.hr-lifecycle-review dt {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.hr-lifecycle-review dd {
+  margin: 0;
+  font-weight: 760;
+}
+
+.hr-lifecycle-wizard__body .modal-actions {
+  margin-top: 2px;
+}
+
+.hr-lifecycle-case {
+  padding-top: 18px;
+}
+
+.hr-lifecycle-case__summary,
+.hr-lifecycle-case__conditions,
+.hr-lifecycle-case__checklist,
+.hr-lifecycle-case__documents,
+.hr-lifecycle-case__decision,
+.hr-lifecycle-case__final,
+.hr-lifecycle-case__cancel {
+  display: grid;
+  gap: 13px;
+  padding: 17px;
+  border: 1px solid light-dark(#ded6c9, #374046);
+  border-radius: 14px;
+  background: light-dark(#fff, #171c20);
+}
+
+.hr-lifecycle-case__summary > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px 13px;
+}
+
+.hr-lifecycle-case__summary h3,
+.hr-lifecycle-case__summary p {
+  margin: 0;
+}
+
+.hr-lifecycle-case__summary dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.hr-lifecycle-case__summary dl > div {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border-radius: 10px;
+  background: light-dark(#f6f1e8, #20262a);
+}
+
+.hr-lifecycle-case__summary dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.hr-lifecycle-case__summary dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.hr-lifecycle-case__reason {
+  display: grid;
+  gap: 4px;
+  padding-top: 10px;
+  border-top: 1px solid light-dark(#e8e0d4, #30383e);
+  line-height: 1.55;
+}
+
+.hr-lifecycle-terminal.is-complete {
+  border-color: light-dark(#a8d1b6, #356c4b);
+  background: light-dark(#eef9f1, #16281e);
+}
+
+.hr-lifecycle-case__conditions > div:first-child h3,
+.hr-lifecycle-case__conditions > div:first-child p,
+.hr-lifecycle-case .section-heading h3,
+.hr-lifecycle-case .section-heading p {
+  margin: 0;
+}
+
+.hr-lifecycle-case__conditions > div:nth-child(2) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hr-lifecycle-case__conditions > div:nth-child(2) span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: light-dark(#f4eee3, #22282d);
+  font-size: 13px;
+}
+
+.hr-lifecycle-task-list,
+.hr-lifecycle-case__documents > div:last-child {
+  display: grid;
+  gap: 8px;
+}
+
+.hr-lifecycle-task-list > article,
+.hr-lifecycle-case__documents article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid light-dark(#e3dbcf, #343c42);
+  border-radius: 11px;
+  background: light-dark(#faf7f1, #1b2125);
+}
+
+.hr-lifecycle-task-list > article.is-done {
+  border-color: light-dark(#b7d5c0, #356649);
+  background: light-dark(#f3faf5, #17251d);
+}
+
+.hr-lifecycle-task-list__icon {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  background: light-dark(#eee4d3, #2a2f32);
+}
+
+.hr-lifecycle-task-list > article > div:nth-child(2),
+.hr-lifecycle-case__documents article > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.hr-lifecycle-task-list small,
+.hr-lifecycle-task-list span,
+.hr-lifecycle-case__documents small {
+  color: var(--text-muted);
+}
+
+.hr-lifecycle-task-editor {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 13px;
+  border-radius: 10px;
+  background: light-dark(#fff, #12171a);
+}
+
+.hr-lifecycle-task-editor .wide {
+  grid-column: 1 / -1;
+}
+
+.hr-lifecycle-case__decision > div,
+.hr-lifecycle-case__final > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+}
+
+.hr-lifecycle-case__decision > div span,
+.hr-lifecycle-case__final > div span {
+  display: grid;
+  gap: 3px;
+}
+
+.hr-lifecycle-case__decision form,
+.hr-lifecycle-case__final form,
+.hr-lifecycle-case__cancel form {
+  display: grid;
+  gap: 11px;
+  padding-top: 12px;
+  border-top: 1px solid light-dark(#e3dbcf, #343c42);
+}
+
+.hr-file-card__actions a.hr-file-card__edit {
+  text-decoration: none;
+}
+
+@media (max-width: 820px) {
+  .hr-lifecycle-steps,
+  .hr-lifecycle-case__progress {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hr-lifecycle-choice-grid,
+  .hr-lifecycle-checklist-preview,
+  .hr-lifecycle-review,
+  .hr-lifecycle-case__summary dl {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hr-lifecycle-task-list > article,
+  .hr-lifecycle-case__documents article {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .hr-lifecycle-task-list > article > .action-status,
+  .hr-lifecycle-task-list > article > button,
+  .hr-lifecycle-case__documents article > a {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+@media (max-width: 560px) {
+  .modal-dialog.hr-lifecycle-wizard,
+  .modal-dialog.hr-lifecycle-case-modal {
+    width: calc(100vw - 12px);
+  }
+
+  .hr-lifecycle-wizard__body,
+  .hr-lifecycle-case {
+    padding: 15px;
+  }
+
+  .hr-lifecycle-choice-grid,
+  .hr-lifecycle-checklist-preview,
+  .hr-lifecycle-review,
+  .hr-lifecycle-case__summary dl,
+  .hr-lifecycle-task-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .hr-lifecycle-case__decision > div,
+  .hr-lifecycle-case__final > div {
+    align-items: start;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .hr-lifecycle-case__decision > div > button,
+  .hr-lifecycle-case__final > div > button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
 @media (max-width: 680px) {
   .hr-operational-form__grid {
     grid-template-columns: 1fr;

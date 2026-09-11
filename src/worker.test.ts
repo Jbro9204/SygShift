@@ -1051,6 +1051,8 @@ describe('Cloudflare Worker boundary', () => {
               ? { published: 0 }
               : url.includes('/rpc/service_process_due_sygtasks_reminders')
                 ? { processed: 0, triggered: 0, cancelled: 0 }
+                : url.includes('/rpc/service_refresh_hr_offboarding_due_cases')
+                  ? { dueCases: 0, notificationsCreated: 0 }
                 : []
       return new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } })
     })
@@ -1069,7 +1071,7 @@ describe('Cloudflare Worker boundary', () => {
 
     expect(scheduledWork).toHaveLength(4)
     await Promise.all(scheduledWork)
-    expect(fetchMock).toHaveBeenCalledTimes(11)
+    expect(fetchMock).toHaveBeenCalledTimes(12)
     const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
     for (const rpc of [
       'service_process_due_sygtasks_reminders',
@@ -1078,6 +1080,7 @@ describe('Cloudflare Worker boundary', () => {
       'service_reconcile_operational_alert_lifecycle',
       'service_reconcile_patrol_obligations',
       'service_publish_due_announcement_work_items',
+      'service_refresh_hr_offboarding_due_cases',
       'service_claim_timekeeping_notification_batch',
       'service_claim_time_off_notification_batch',
       'service_claim_notification_batch',

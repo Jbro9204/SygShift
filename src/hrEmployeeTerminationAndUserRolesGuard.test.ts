@@ -4,8 +4,9 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const migration = readFileSync('supabase/migrations/20260902222001_hr_employee_termination_and_user_role_assignment.sql', 'utf8')
+const lifecycleMigration = readFileSync('supabase/migrations/20260912110000_guided_offboarding_workflow.sql', 'utf8')
 const employeeFile = readFileSync('src/pages/HrisEmployeeFilePage.tsx', 'utf8')
-const terminationDialog = readFileSync('src/components/EmployeeTerminationDialog.tsx', 'utf8')
+const lifecycleDialog = readFileSync('src/components/HrLifecycleCaseDialog.tsx', 'utf8')
 const userAccounts = readFileSync('src/pages/UserAdminPage.tsx', 'utf8')
 const adminUsers = readFileSync('src/data/adminUsers.ts', 'utf8')
 
@@ -21,14 +22,18 @@ describe('HR termination and complete User Accounts role controls', () => {
     expect(migration).toContain('private.hr_stage2_effective_date_authorizations')
   })
 
-  it('provides an explicit, guarded termination action inside the Employee File', () => {
-    expect(employeeFile).toContain('Terminate employment')
+  it('routes Employee File lifecycle actions into the guarded, auditable workflow', () => {
+    expect(employeeFile).toContain('Start lifecycle case')
+    expect(employeeFile).toContain('Start rehire case')
     expect(employeeFile).toContain('editorContext?.canTerminate')
-    expect(employeeFile).toContain('EmployeeTerminationDialog')
-    expect(terminationDialog).toContain('This action takes effect immediately.')
-    expect(terminationDialog).toContain('Keep employee active')
-    expect(terminationDialog).toContain('confirmationMatches')
-    expect(terminationDialog).toContain("queryKey: ['admin-user-directory']")
+    expect(employeeFile).toContain('/hr/offboarding?employee=')
+    expect(employeeFile).not.toContain('EmployeeTerminationDialog')
+    expect(lifecycleDialog).toContain('Independent approval required')
+    expect(lifecycleDialog).toContain('Final human-confirmed action')
+    expect(lifecycleDialog).toContain('after all checklist items are complete or waived')
+    expect(lifecycleDialog).toContain('Permanent case timeline')
+    expect(lifecycleMigration).toContain('private.separate_employee_account_and_future_work(')
+    expect(lifecycleMigration).toContain('Only an Admin can complete an Admin separation.')
   })
 
   it('loads the central role library and atomically saves selected memberships', () => {
