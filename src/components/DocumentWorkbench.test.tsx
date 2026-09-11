@@ -170,7 +170,7 @@ describe('DocumentWorkbench editor', () => {
     client.clear()
   })
 
-  it('reopens and checksum-verifies the exact completed PDF before reporting it saved', async () => {
+  it('reports a durable filing immediately while the exact completed PDF finishes processing in the background', async () => {
     const sourcePdf = await PDFDocument.create()
     sourcePdf.addPage([612, 792])
     const source = await sourcePdf.save()
@@ -183,12 +183,6 @@ describe('DocumentWorkbench editor', () => {
       uploadedFile = input.file
       return { documentId, operationId: '30000000-0000-4000-8000-000000000001', requestId: 'request', scanState: 'scan_pending', versionId: '40000000-0000-4000-8000-000000000001' }
     })
-    documentApi.getWorkspace.mockResolvedValue({
-      ...workspace,
-      documents: [{ accessClassification: 'confidential', archivedAt: null, canDownload: true, canManage: true, canPreview: true, category: 'Business document', description: null, effectiveDate: null, employeeId: null, employeeLegalName: null, employeeNumber: null, expirationDate: null, id: documentId, title: 'verified', vaultCode: 'hr-general', version: { filename: 'verified.pdf', id: '40000000-0000-4000-8000-000000000001', mimeType: 'application/pdf', scanState: 'clean', sizeBytes: 100, uploadedAt: '2026-09-10T12:00:00Z', versionNumber: 1 } }],
-      pagination: { page: 1, pageSize: 20, totalCount: 1, totalPages: 1 },
-    })
-    documentApi.getBlob.mockImplementation(async () => ({ blob: uploadedFile!, filename: 'verified.pdf' }))
     const onSaved = vi.fn()
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
     render(<QueryClientProvider client={client}><DocumentWorkbench initialFile={file} onClose={vi.fn()} onSaved={onSaved} workspace={workspace} /></QueryClientProvider>)
@@ -199,8 +193,9 @@ describe('DocumentWorkbench editor', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'File' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save to company documents' }))
 
-    await screen.findByText('Saved to Company documents. The stored PDF was reopened and verified.')
-    expect(documentApi.getBlob).toHaveBeenCalledWith(documentId, 'preview')
+    await screen.findByText('Saved to Company documents. You can close this window; processing will finish in the background.')
+    expect(documentApi.getWorkspace).not.toHaveBeenCalled()
+    expect(documentApi.getBlob).not.toHaveBeenCalled()
     expect(onSaved).toHaveBeenCalledTimes(1)
     expect(uploadedFile).not.toBeNull()
     const pdfjs = await vi.importActual<typeof import('pdfjs-dist/legacy/build/pdf.mjs')>('pdfjs-dist/legacy/build/pdf.mjs')
@@ -215,7 +210,7 @@ describe('DocumentWorkbench editor', () => {
     client.clear()
   })
 
-  it('does not report success when the reopened stored PDF differs from the completed PDF', async () => {
+  it('does not report filing success when the durable upload was rejected', async () => {
     const sourcePdf = await PDFDocument.create()
     sourcePdf.addPage([612, 792])
     const source = await sourcePdf.save()
@@ -227,15 +222,9 @@ describe('DocumentWorkbench editor', () => {
       documentId,
       operationId: '60000000-0000-4000-8000-000000000001',
       requestId: 'request',
-      scanState: 'scan_pending',
+      scanState: 'rejected',
       versionId: '70000000-0000-4000-8000-000000000001',
     })
-    documentApi.getWorkspace.mockResolvedValue({
-      ...workspace,
-      documents: [{ accessClassification: 'confidential', archivedAt: null, canDownload: true, canManage: true, canPreview: true, category: 'Business document', description: null, effectiveDate: null, employeeId: null, employeeLegalName: null, employeeNumber: null, expirationDate: null, id: documentId, title: 'mismatch', vaultCode: 'hr-general', version: { filename: 'mismatch.pdf', id: '70000000-0000-4000-8000-000000000001', mimeType: 'application/pdf', scanState: 'clean', sizeBytes: 3, uploadedAt: '2026-09-10T12:00:00Z', versionNumber: 1 } }],
-      pagination: { page: 1, pageSize: 20, totalCount: 1, totalPages: 1 },
-    })
-    documentApi.getBlob.mockResolvedValue({ blob: new Blob([new Uint8Array([1, 2, 3])], { type: 'application/pdf' }), filename: 'mismatch.pdf' })
     const onSaved = vi.fn()
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
     render(<QueryClientProvider client={client}><DocumentWorkbench initialFile={file} onClose={vi.fn()} onSaved={onSaved} workspace={workspace} /></QueryClientProvider>)
@@ -244,9 +233,9 @@ describe('DocumentWorkbench editor', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'File' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save to company documents' }))
 
-    await screen.findByText('The saved copy did not match the completed PDF. Keep this window open and try saving again.')
+    await screen.findByText('This file could not be accepted. Download it, check the PDF, and try again.')
     expect(onSaved).not.toHaveBeenCalled()
-    expect(screen.queryByText(/stored PDF was reopened and verified/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Saved to Company documents/i)).not.toBeInTheDocument()
     client.clear()
   })
 })

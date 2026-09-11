@@ -493,7 +493,6 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
       const finished = await createFinalFile()
       const savedFingerprint = documentFingerprint
       const savedEmployeeId = employeeId
-      const savedTitle = title
       const idempotencyKey = idempotencyKeysRef.current.get(`save:${documentFingerprint}`) ?? crypto.randomUUID()
       idempotencyKeysRef.current.set(`save:${documentFingerprint}`, idempotencyKey)
       const result = await uploadHrDocument({
@@ -508,14 +507,18 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
         title,
         vaultCode: selectedVault.code,
       }, setProgress)
-      await verifyStoredDocument(result.documentId, finished, savedTitle)
+      if (result.scanState === 'rejected' || result.scanState === 'cancelled') {
+        throw new Error('This file could not be accepted. Download it, check the PDF, and try again.')
+      }
       return { employeeId: savedEmployeeId, fingerprint: savedFingerprint, result }
     },
-    onSuccess: async ({ employeeId: savedEmployeeId, fingerprint, result }) => {
+    onSuccess: ({ employeeId: savedEmployeeId, fingerprint, result }) => {
       const owner = savedEmployeeId === 'company' ? 'Company documents' : workspace.employees.find((employee) => employee.id === savedEmployeeId)?.legalName ?? 'the employee file'
       setSavedDocument({ employeeId: savedEmployeeId, fingerprint, id: result.documentId })
-      setSavedMessage(`Saved to ${owner}. The stored PDF was reopened and verified.`)
-      await queryClient.invalidateQueries({ queryKey: ['hr-documents'] })
+      setSavedMessage(result.scanState === 'clean'
+        ? `Saved to ${owner}.`
+        : `Saved to ${owner}. You can close this window; processing will finish in the background.`)
+      void queryClient.invalidateQueries({ queryKey: ['hr-documents'] })
       onSaved()
     },
   })
@@ -609,7 +612,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
 
   return <ModalDialog
     busy={busy}
-    busyLabel={previewBusy ? 'Building the finished preview…' : save.isPending ? `Saving and verifying document… ${progress}%` : progress < 100 ? `Preparing document… ${progress}%` : 'Sending document…'}
+    busyLabel={previewBusy ? 'Building the finished preview…' : save.isPending ? `Saving document… ${progress}%` : progress < 100 ? `Preparing document… ${progress}%` : 'Sending document…'}
     className={`document-workbench${maximized ? ' is-maximized' : ''}`}
     description={file ? 'Type, sign, download, send, or add this PDF to an employee file from one place.' : 'Choose a PDF from your device. It opens immediately so you can work without a setup process.'}
     dismissible={!busy}
