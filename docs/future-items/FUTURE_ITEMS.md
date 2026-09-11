@@ -472,6 +472,8 @@ Completion criteria:
 
 Finish the operational rollout of Patrol with real addresses, route ownership, field feedback, and evidence that mobile reporting and larger media behave reliably under actual guard conditions.
 
+On 09/11/2026, a permission-scoped live release-readiness checklist was added to Patrol. It verifies canonical site ownership, addresses, active routes, Schedule-linked assignments, stored photo/long-video evidence, and cross-client relationship integrity without changing operational rows. Current production data keeps the release blocked; authoritative source data and Joseph's field evidence remain required.
+
 Required work:
 
 - [ ] Add and verify the remaining route addresses, site instructions, and editable hit requirements using the permanent Patrol management workflow.

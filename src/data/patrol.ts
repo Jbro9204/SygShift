@@ -98,6 +98,18 @@ const patrolReportSchema = z.object({
   summary: z.object({ completed: z.number(), evidence: z.number(), extra: z.number(), incidents: z.number(), makeupAssigned: z.number(), makeupCompleted: z.number(), missed: z.number(), required: z.number() }),
 })
 
+const patrolReadinessSchema = z.object({
+  generatedAt: z.string(),
+  readyForBroadRelease: z.boolean(),
+  summary: z.object({
+    activeSites: z.number().int().nonnegative(), sitesMissingClient: z.number().int().nonnegative(), sitesMissingAddress: z.number().int().nonnegative(),
+    activeRoutes: z.number().int().nonnegative(), activeAssignments: z.number().int().nonnegative(), storedPhotos: z.number().int().nonnegative(),
+    storedVideos: z.number().int().nonnegative(), longestVideoSeconds: z.number().int().nonnegative().nullable(),
+  }),
+  checks: z.array(z.object({ code: z.string(), label: z.string(), state: z.enum(['ready', 'blocked']), detail: z.string(), action: z.string() })),
+  routes: z.array(z.object({ id: z.string().uuid(), code: z.string(), name: z.string(), status: z.string(), version: z.number().int().positive(), stops: z.number().int().nonnegative(), missingAddresses: z.number().int().nonnegative(), unlinkedSites: z.number().int().nonnegative() })),
+})
+
 export type PatrolWorkspace = z.infer<typeof workspaceSchema>
 export type PatrolRoute = z.infer<typeof routeSchema>
 export type PatrolStop = z.infer<typeof stopSchema>
@@ -109,6 +121,7 @@ export type PatrolHit = z.infer<typeof hitSchema>
 export type PatrolEvidence = z.infer<typeof evidenceSchema>
 export type PatrolReport = z.infer<typeof patrolReportSchema>
 export type PatrolScheduleCandidate = z.infer<typeof scheduleCandidateSchema>
+export type PatrolReleaseReadiness = z.infer<typeof patrolReadinessSchema>
 
 export interface PatrolRouteInput {
   changeReason: string; code: string; effectiveFrom: string | null; effectiveThrough: string | null; id: string | null
@@ -154,6 +167,12 @@ export async function getPatrolWorkspace(): Promise<PatrolWorkspace> {
       makeupObligations: makeupWork.filter((item) => item.assignmentId === assignment.id),
     })),
   }
+}
+
+export async function getPatrolReleaseReadiness(): Promise<PatrolReleaseReadiness> {
+  const { data, error } = await getSupabaseClient().rpc('get_patrol_release_readiness')
+  if (error) throw messageFromError(error, 'Patrol release readiness could not be loaded.')
+  return patrolReadinessSchema.parse(data)
 }
 
 export async function savePatrolRoute(route: PatrolRouteInput): Promise<string> {
