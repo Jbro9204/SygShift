@@ -2303,3 +2303,13 @@ pnpm exec wrangler deploy --keep-vars
 - No database, document, message, permission, timekeeping, schedule, payroll, HR, or employee data changed.
 - Verification passed 234 files / 1,208 tests, the serial 94/94 desktop/mobile SygSphere plus Time Clock matrix, the post-release 42/42 Time Clock matrix, and exact production-asset checks on both origins.
 - Released source `c57fd69` as Cloudflare Worker `b0b7c330-1c96-45ae-8057-54de7c4f23c9`; see `docs/changelogs/CHANGELOG_09-10-2026_SYGSPHERE_PDF_PREVIEW_STABILITY.md` for complete evidence and rollback details.
+
+## 09/10/2026 - Document Roundtrip and SygSphere Thread Layout
+
+- Required the Document Center to reopen completed uploads and match their byte length and SHA-256 digest before showing **Saved** or creating a signature envelope.
+- Reused one exact finalized PDF for preview, download, filing, and sending, preventing completion paths from silently producing different document output.
+- Made typed-name signatures selectable, movable, resizable, and explicitly removable; annotation placement now returns to selection mode to prevent accidental duplicates.
+- Repaired narrow SygSphere attachment cards so filenames remain readable and file actions reflow beneath the details instead of compressing the name into a one-character column.
+- No database migration or production-data mutation was required; document authorization, HR MFA, private storage, scanning, audit, versioning, and delivery boundaries remain intact.
+- Verification passed 239 files / 1,227 tests, 9 focused PDF/workbench tests, 54/54 Document Studio plus Time Clock browser checks, the corrected 2/2 narrow attachment layout, all document validators, and the post-release 42/42 Time Clock matrix.
+- Released source `691431f` as Cloudflare Worker `dcad2b7a-34df-4e1e-9ac9-fa0f8a1fe1cd`; see `docs/changelogs/CHANGELOG_09-10-2026_DOCUMENT_ROUNDTRIP_AND_SYGSPHERE_THREAD_LAYOUT.md` for complete output-integrity, production, and rollback evidence.
