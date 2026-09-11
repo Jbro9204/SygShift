@@ -1,7 +1,7 @@
 # Termination Execution and Form Typography Repair
 
 **Date:** 09/11/2026  
-**Status:** Production database repaired; application release verified and ready to deploy
+**Status:** Released and verified in production
 
 ## Outcome
 
@@ -38,6 +38,14 @@ The affected production lifecycle case was not executed during the repair. It re
 - Complete repository gate: 249 test files and 1,271 tests passed, with TypeScript, zero-warning lint, Worker build, and client production build passing.
 - Employee Lifecycle and User Accounts rendered browser suite: 6/6 passed across desktop and Pixel 7 mobile dimensions, including computed 16px sans-serif typography for the final reason and username fields.
 - Actual Time Clock and Early Clock-In workflow matrix: 42/42 passed across desktop and mobile, including clock-in, clock-out, break/resume, early acknowledgement, multiple-shift choice, permissions, duplicate prevention, and cross-page synchronization.
+- Both `https://app.sygilant.us` and `https://sygshift.sygilant.workers.dev` returned HTTP 200 from `/api/v1/health` and `/api/v1/ready`, with every readiness check passing.
+- The live production page references `index-Ctorapz-.js` and `index-Cn4sNS9v.css`. The live stylesheet matches the final local production build byte-for-byte with SHA-256 `BD3E6D5CD895BF53791C13B76C7003D57DBC6D5907F1CD878F04D60333D6A553`.
+
+## Release record
+
+- Source commit: `cfbea64` (`fix: restore lifecycle termination execution`).
+- Cloudflare Worker version: `0695996f-6f99-4488-ba5d-00a0fa28f664`, serving 100% of traffic.
+- Pre-release fallback tag: `rollback/pre-termination-typography-repair-20260911` at `efb49cb0f9a0302b2c39cf70078ecebb5c3332c0`.
 
 ## Files
 
@@ -51,4 +59,4 @@ The affected production lifecycle case was not executed during the repair. It re
 
 ## Recovery
 
-The interface can be restored to the prior application release without changing production business data. The database migration is forward-only and backward compatible: it only permits the explicit guided-lifecycle source in the existing authorization history constraint. A future corrective migration, not migration-history editing, would be required to remove that source.
+The interface can be restored to the prior application release with `rollback/pre-termination-typography-repair-20260911` without changing production business data. The database migration is forward-only and backward compatible: it only permits the explicit guided-lifecycle source in the existing authorization history constraint. A future corrective migration, not migration-history editing, would be required to remove that source.
