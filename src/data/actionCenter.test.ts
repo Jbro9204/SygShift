@@ -3,6 +3,8 @@ import {
   completeEmployeeAction,
   getEmployeeActionCenter,
   getEmployeeActionHistory,
+  getRequiredActionCheckpoint,
+  getRequiredActionCheckpointReport,
   publishTrainingVersion,
   trainingComplianceCsv,
 } from './actionCenter'
@@ -91,6 +93,84 @@ describe('employee action-center data contracts', () => {
       target_action_id: actionCenter.training[0].id,
       target_action_type: 'training',
       target_attestation: 'I completed and reviewed this training.',
+    })
+  })
+
+  it('parses one ordered required-action checkpoint with urgent access preserved', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        blocking: true,
+        items: [{
+          actionLabel: 'Confirm schedule',
+          actionType: 'schedule',
+          assignedAt: '2026-09-11T12:00:00Z',
+          authoritativeVersion: 'Schedule revision 4',
+          description: 'Review the published schedule.',
+          dueAt: null,
+          id: '70000000-0000-4000-8000-000000000001',
+          metadata: { shiftsDigest: 'a'.repeat(64) },
+          position: 1,
+          priority: 'critical',
+          responseKind: 'confirmation',
+          route: '/actions?checkpoint=required',
+          status: 'pending',
+          title: 'Schedule for week of 09/13/2026',
+          viewedAt: null,
+        }],
+        serverTimestamp: '2026-09-11T12:01:00Z',
+        rollout: { enabled: true, enrolled: true, mode: 'canary' },
+        summary: { announcements: 0, critical: 1, documents: 0, hrTasks: 0, overdue: 0, schedules: 1, signatures: 0, training: 0 },
+        total: 1,
+        urgentAccess: [
+          { id: 'time-clock', label: 'Clock in or out', route: '/' },
+          { id: 'call-off', label: 'Report sick / call-off', route: '/time/my-time?report=call-off' },
+          { id: 'emergency', label: 'Emergency information', route: null },
+        ],
+      },
+      error: null,
+    })
+
+    const checkpoint = await getRequiredActionCheckpoint()
+
+    expect(checkpoint.blocking).toBe(true)
+    expect(checkpoint.rollout).toEqual({ enabled: true, enrolled: true, mode: 'canary' })
+    expect(checkpoint.items[0]).toMatchObject({ actionType: 'schedule', position: 1, responseKind: 'confirmation' })
+    expect(checkpoint.urgentAccess.map((item) => item.id)).toEqual(['time-clock', 'call-off', 'emergency'])
+    expect(rpc).toHaveBeenCalledWith('get_required_action_checkpoint')
+  })
+
+  it('loads compact manager reporting without requesting unrelated employee records', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        items: [{
+          actionType: 'document',
+          assignedAt: '2026-09-11T12:00:00Z',
+          authoritativeVersion: 'Document version 2',
+          contactState: 'available',
+          dueAt: '2026-09-12T06:00:00Z',
+          employeeId: '70000000-0000-4000-8000-000000000002',
+          employeeName: 'Zach Employee',
+          employeeNumber: 'GS-1002',
+          id: '70000000-0000-4000-8000-000000000003',
+          priority: 'high',
+          responseKind: 'acknowledgment',
+          status: 'pending',
+          title: 'Updated post orders',
+        }],
+        page: { number: 1, size: 10, total: 1, totalPages: 1 },
+        serverTimestamp: '2026-09-11T12:01:00Z',
+        summary: { critical: 0, overdue: 0, pending: 1, unreachable: 0 },
+      },
+      error: null,
+    })
+
+    const report = await getRequiredActionCheckpointReport({ page: 1, pageSize: 10, search: 'Zach' })
+
+    expect(report.items[0]).toMatchObject({ employeeName: 'Zach Employee', actionType: 'document' })
+    expect(rpc).toHaveBeenCalledWith('get_required_action_checkpoint_report', {
+      target_page: 1,
+      target_page_size: 10,
+      target_search: 'Zach',
     })
   })
 

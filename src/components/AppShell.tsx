@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useIsMutating, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, BellRing, ChevronDown, ChevronsLeft, ChevronsRight, FileClock, Home, LogOut, Megaphone, Menu, Moon, ShieldCheck, Sun, X } from 'lucide-react'
+import { ArrowLeft, BellRing, ChevronDown, ChevronsLeft, ChevronsRight, FileClock, Home, LogOut, Megaphone, Menu, Moon, ShieldAlert, ShieldCheck, Sun, X } from 'lucide-react'
 import { homeNavigationItem, navigationGroups } from '../app/navigation'
 import {
   INTERNAL_NAVIGATION_STORAGE_KEY,
@@ -14,6 +14,7 @@ import {
 import { canAccessRoute, canLaunchSygilantPlatform, hasAnyEffectivePermission, resolveAuthorizedLandingRoute } from '../app/accessPolicy'
 import { getActiveAnnouncementBanners, type AnnouncementBanner } from '../data/announcements'
 import { getTimekeepingOperationsWorkspace } from '../data/timeOperations'
+import { getRequiredActionCheckpoint } from '../data/actionCenter'
 import {
   authSessionIdFromAccessToken,
   getSessionContext,
@@ -44,6 +45,7 @@ import { SygTasksAlarmHost } from './SygTasksAlarmHost'
 import { OperationalTimeHeader } from './OperationalTimeHeader'
 import { HeaderNotificationButton } from './HeaderNotificationButton'
 import { LiveNotifications } from './LiveNotifications'
+import { RequiredActionsCheckpointNotice } from './RequiredActionsCheckpointNotice'
 import { clearPushSession } from '../data/pushNotifications'
 import { completedSignInRecordKind, isSygSpherePath, requiresSecurityCheckpoint, sharedIdentityScopeAllowsPath } from '../lib/securityCheckpoint'
 import {
@@ -107,6 +109,11 @@ function canOpenNavigationItem(
 
 function routePathFromHref(href: string): string {
   return href.split(/[?#]/, 1)[0] || '/'
+}
+
+function checkpointAllowsLocation(pathname: string, search: string): boolean {
+  if (pathname === '/' || pathname === '/actions' || pathname === '/my-documents' || pathname === '/account-security') return true
+  return pathname === '/time/my-time' && new URLSearchParams(search).get('report') === 'call-off'
 }
 
 function WorkspaceAlertStrip({ entries }: { entries: WorkspaceAlertEntry[] }) {
@@ -210,6 +217,15 @@ export function AppShell() {
     queryKey: ['system-readiness'],
     refetchInterval: 30_000,
   })
+  const requiredActionQuery = useQuery({
+    enabled: isSupabaseConfigured && Boolean(sessionContext),
+    queryFn: getRequiredActionCheckpoint,
+    queryKey: ['required-action-checkpoint', sessionContext?.employeeId],
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
+  })
+  const requiredActionCheckpoint = requiredActionQuery.data ?? null
+  const requiredActionCheckpointActive = Boolean(requiredActionCheckpoint?.blocking || requiredActionQuery.isError)
   const workspaceAlerts = useMemo<WorkspaceAlertEntry[]>(() => {
     const announcementAlerts = (activeBannerQuery.data ?? [])
       .filter((banner) => banner.tone === 'urgent')
@@ -267,7 +283,9 @@ export function AppShell() {
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => {
-        return canOpenNavigationItem(item, sessionContext)
+        if (!canOpenNavigationItem(item, sessionContext)) return false
+        if (!requiredActionCheckpointActive) return true
+        return ['/actions', '/my-documents'].includes(routePathFromHref(item.path))
       }),
     }))
     .filter((group) => group.items.length > 0)
@@ -739,12 +757,45 @@ export function AppShell() {
     return <Navigate to="/account-security" replace state={{ from: location }} />
   }
 
+  if (isSupabaseConfigured && sessionContext && !needsSecurityCheckpoint && requiredActionQuery.isPending) {
+    return (
+      <main className="security-page">
+        <section className="security-card security-card--compact" role="status">
+          <ShieldCheck aria-hidden="true" size={36} />
+          <h1>Checking required actions…</h1>
+          <p>SygShift is checking your current schedules, notices, training, and documents before opening the workspace.</p>
+        </section>
+      </main>
+    )
+  }
+
+  if (isSupabaseConfigured && sessionContext && !needsSecurityCheckpoint && requiredActionQuery.isError && !checkpointAllowsLocation(location.pathname, location.search)) {
+    return (
+      <main className="security-page">
+        <section className="security-card" role="alert">
+          <ShieldAlert aria-hidden="true" size={36} />
+          <h1>Required actions could not be verified</h1>
+          <p>The ordinary workspace is paused until SygShift can safely check your queue. Urgent time and call-off access remains available.</p>
+          <div className="security-card__actions">
+            <Link className="secondary-button" to="/">Clock in or out</Link>
+            <Link className="secondary-button" to="/time/my-time?report=call-off">Report sick / call-off</Link>
+            <button className="primary-action" onClick={() => void requiredActionQuery.refetch()} type="button">Try again</button>
+          </div>
+        </section>
+      </main>
+    )
+  }
+
+  if (isSupabaseConfigured && requiredActionCheckpointActive && !checkpointAllowsLocation(location.pathname, location.search)) {
+    return <Navigate to="/actions?checkpoint=required" replace state={{ from: location }} />
+  }
+
   if (isSupabaseConfigured && lacksRouteAccess) {
     return <Navigate to={resolveAuthorizedLandingRoute(sessionContext)} replace />
   }
 
   return (
-    <div className={`app-shell${sidebarCollapsed && !compactNavigation ? ' app-shell--sidebar-collapsed' : ''}${compactNavigation ? ' app-shell--compact-navigation' : ''}${isSygSpherePath(location.pathname) ? ' app-shell--sygsphere' : ''}`}>
+    <div className={`app-shell${sidebarCollapsed && !compactNavigation ? ' app-shell--sidebar-collapsed' : ''}${compactNavigation ? ' app-shell--compact-navigation' : ''}${isSygSpherePath(location.pathname) ? ' app-shell--sygsphere' : ''}${requiredActionCheckpointActive ? ' app-shell--required-actions' : ''}`}>
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
@@ -848,9 +899,9 @@ export function AppShell() {
         </nav>
 
         <div className="sidebar-utilities">
-          {sessionContext && !needsSecurityCheckpoint && sharedIdentityScopeAllowsPath('/tasks', sharedIdentityScope) ? <SygTasksLauncher /> : null}
-          {sessionContext && !needsSecurityCheckpoint && canOpenSygilant ? <SygilantLauncher /> : null}
-          {sessionContext && !needsSecurityCheckpoint ? <SygSphereLauncher employeeId={sessionContext.employeeId} /> : null}
+          {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive && sharedIdentityScopeAllowsPath('/tasks', sharedIdentityScope) ? <SygTasksLauncher /> : null}
+          {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive && canOpenSygilant ? <SygilantLauncher /> : null}
+          {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive ? <SygSphereLauncher employeeId={sessionContext.employeeId} /> : null}
           <SupportHelpButton />
           <SystemStatusIndicator canOpenOperations={canOpenSystemOperations} status={systemServiceStatus} />
         </div>
@@ -936,6 +987,13 @@ export function AppShell() {
           </div>
         ) : null}
 
+        {requiredActionQuery.isError ? (
+          <div className="shell-alert shell-alert--warning" role="alert">
+            Required actions could not be verified. Only the Action Center, My Documents, time clock, and call-off workflow remain available until the check succeeds.
+            <button className="secondary-button secondary-button--small" onClick={() => void requiredActionQuery.refetch()} type="button">Retry check</button>
+          </div>
+        ) : null}
+
         {logoutWarningRemaining !== null ? (
           <div className="shell-alert shell-alert--warning" role="alert">
             You will be signed out for inactivity in {Math.ceil(logoutWarningRemaining / 60)} minute
@@ -946,10 +1004,11 @@ export function AppShell() {
         <MaintenanceNotice active={activeMaintenance} completed={completedMaintenance} upcoming={upcomingMaintenance} />
 
         <WorkspaceAlertStrip entries={workspaceAlerts} />
-        {sessionContext && !needsSecurityCheckpoint ? <LiveNotifications key={sessionContext.employeeId} employeeId={sessionContext.employeeId} username={sessionContext.username} /> : null}
-        {sessionContext && !needsSecurityCheckpoint && sharedIdentityScopeAllowsPath('/tasks', sharedIdentityScope) ? <SygTasksAlarmHost employeeId={sessionContext.employeeId} /> : null}
+        {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive ? <LiveNotifications key={sessionContext.employeeId} employeeId={sessionContext.employeeId} username={sessionContext.username} /> : null}
+        {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive && sharedIdentityScopeAllowsPath('/tasks', sharedIdentityScope) ? <SygTasksAlarmHost employeeId={sessionContext.employeeId} /> : null}
 
         <main id="main-content" tabIndex={-1}>
+          {requiredActionCheckpoint ? <RequiredActionsCheckpointNotice checkpoint={requiredActionCheckpoint} /> : null}
           {unavailableRouteWindow ? <MaintenanceUnavailablePanel window={unavailableRouteWindow} /> : <Outlet />}
         </main>
       </div>

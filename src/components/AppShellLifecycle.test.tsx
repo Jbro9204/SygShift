@@ -84,6 +84,17 @@ vi.mock('../data/auth', () => ({
 
 vi.mock('../data/announcements', () => ({ getActiveAnnouncementBanners: vi.fn(async () => []) }))
 vi.mock('../data/timeOperations', () => ({ getTimekeepingOperationsWorkspace: vi.fn(async () => ({ alerts: [] })) }))
+vi.mock('../data/actionCenter', () => ({
+  getRequiredActionCheckpoint: vi.fn(async () => ({
+    blocking: false,
+    items: [],
+    rollout: { enabled: true, enrolled: false, mode: 'canary' },
+    serverTimestamp: '2026-09-11T12:00:00Z',
+    summary: { announcements: 0, critical: 0, documents: 0, hrTasks: 0, overdue: 0, schedules: 0, signatures: 0, training: 0 },
+    total: 0,
+    urgentAccess: [],
+  })),
+}))
 vi.mock('../data/maintenance', () => ({
   getMaintenanceStatus: vi.fn(async () => ({ active: [], recentlyCompleted: [], upcoming: [] })),
   maintenanceFeatureForPath: vi.fn(() => null),

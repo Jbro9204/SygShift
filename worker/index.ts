@@ -971,6 +971,15 @@ function forwardedAssuranceHeaders(request: Request): Record<string, string> | u
   return Object.keys(headers).length > 0 ? headers : undefined
 }
 
+function requiredActionCheckpointAllowsMutation(pathname: string): boolean {
+  return pathname.startsWith('/api/v1/account/')
+    || pathname === '/api/v1/time/attendance/report'
+    || /^\/api\/v1\/hr\/automation\/tasks\/[0-9a-f-]{36}\/(?:viewed|complete)$/i.test(pathname)
+    || /^\/api\/v1\/hr\/documents\/assignments\/[0-9a-f-]{36}\/(?:access|complete)$/i.test(pathname)
+    || /^\/api\/v1\/hr\/documents\/signatures\/[0-9a-f-]{36}\/(?:access|actions)$/i.test(pathname)
+    || pathname === '/api/v1/hr/documents/signatures/adoption'
+}
+
 async function requireAuthenticatedSession(request: Request, environment: Environment): Promise<{
   config: NonNullable<ReturnType<typeof configuredSupabase>>
   context: SessionContext
@@ -1007,6 +1016,26 @@ async function requireAuthenticatedSession(request: Request, environment: Enviro
       headers: { 'content-type': 'application/json; charset=utf-8' },
       status: 401,
     })
+  }
+
+  const pathname = new URL(request.url).pathname
+  const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())
+  if (mutation && !requiredActionCheckpointAllowsMutation(pathname)) {
+    const checkpointActive = await callRpc<boolean>(
+      { serviceRoleKey: config.serviceRoleKey, url: config.url },
+      'service_has_required_action_checkpoint',
+      { target_actor_id: context.employee_id },
+      config.serviceRoleKey,
+    )
+    if (checkpointActive) {
+      throw new Response(JSON.stringify({
+        error: 'required_actions_checkpoint',
+        message: 'Complete your Required Actions before making this change.',
+      }), {
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        status: 423,
+      })
+    }
   }
 
   return { config, context, token }

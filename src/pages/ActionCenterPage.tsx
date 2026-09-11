@@ -18,12 +18,13 @@ import {
   Search,
   Workflow,
 } from 'lucide-react'
-import { getSessionContext } from '../data/auth'
+import { getSessionContext, notifySessionContextChanged } from '../data/auth'
 import {
   completeEmployeeAction,
   getEmployeeActionCenter,
   getEmployeeActionComplianceReport,
   getEmployeeActionHistory,
+  getRequiredActionCheckpointReport,
   getTrainingCatalog,
   markEmployeeActionViewed,
   publishTrainingVersion,
@@ -344,6 +345,28 @@ function ActionHistoryWorkspace({ canViewTeam }: { canViewTeam: boolean }) {
   )
 }
 
+function RequiredActionsTeamQueue() {
+  const [search, setSearch] = useState('')
+  const reportQuery = useQuery({
+    queryFn: () => getRequiredActionCheckpointReport({ page: 1, pageSize: 10, search }),
+    queryKey: ['required-action-checkpoint-report', search],
+  })
+
+  return (
+    <section className="panel required-actions-team-report">
+      <div className="section-heading"><div><p className="eyebrow">Required-action checkpoint</p><h2>Outstanding employee actions</h2><p>Only employees and action details within your authorized management scope are shown.</p></div><button className="secondary-button" disabled={reportQuery.isFetching} onClick={() => void reportQuery.refetch()} type="button">Refresh</button></div>
+      <label className="required-actions-team-report__search"><Search aria-hidden="true" size={17} /><span className="sr-only">Search outstanding actions</span><input onChange={(event) => setSearch(event.target.value)} placeholder="Search employee, number, action, or type" value={search} /></label>
+      {reportQuery.isPending ? <p>Loading outstanding required actions…</p> : null}
+      {reportQuery.isError ? <div className="inline-alert" role="alert">{reportQuery.error.message}</div> : null}
+      {reportQuery.data ? <>
+        <div className="action-report-grid"><article><span>Pending</span><strong>{reportQuery.data.summary.pending}</strong></article><article><span>Overdue</span><strong>{reportQuery.data.summary.overdue}</strong></article><article><span>Critical</span><strong>{reportQuery.data.summary.critical}</strong></article><article><span>Unreachable</span><strong>{reportQuery.data.summary.unreachable}</strong></article></div>
+        {reportQuery.data.items.length ? <div className="required-actions-team-report__list">{reportQuery.data.items.map((item) => <article key={`${item.actionType}-${item.id}`}><div><strong>{item.employeeName}</strong><span>{item.employeeNumber ?? 'No employee number'} · {item.contactState}</span></div><div><strong>{item.title}</strong><span>{item.actionType.replaceAll('_', ' ')} · {item.authoritativeVersion}</span></div><div><strong>{item.status}</strong><span>{item.priority} priority · {formatDate(item.dueAt)}</span></div></article>)}</div> : <p className="my-documents-empty">No outstanding required actions match this search.</p>}
+        <small>Showing {reportQuery.data.items.length} of {reportQuery.data.page.total} active requirements.</small>
+      </> : null}
+    </section>
+  )
+}
+
 function TrainingEditor({ onClose, onPublished }: { onClose: () => void; onPublished: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const catalogQuery = useQuery({ queryKey: ['training-catalog'], queryFn: getTrainingCatalog })
@@ -419,12 +442,14 @@ export function ActionCenterPage() {
   const mutation = useMutation({
     mutationFn: ({ type, id, attestation, viewed }: { type: 'announcement' | 'training' | 'schedule'; id: string; attestation?: string; viewed?: boolean }) => viewed ? markEmployeeActionViewed(type, id) : completeEmployeeAction(type, id, attestation),
     onMutate: ({ id }) => setBusyId(id),
-    onSuccess: async (data) => {
+    onSuccess: async (data, variables) => {
       queryClient.setQueryData(['employee-action-center'], data)
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['required-action-checkpoint'] }),
         queryClient.invalidateQueries({ queryKey: ['employee-action-history'] }),
         queryClient.invalidateQueries({ queryKey: ['employee-action-report'] }),
       ])
+      if (!variables.viewed) notifySessionContextChanged()
     },
     onSettled: () => setBusyId(null),
   })
@@ -439,9 +464,11 @@ export function ActionCenterPage() {
       setSelectedHrTask(null)
       setHrCompletionNote('')
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['required-action-checkpoint'] }),
         queryClient.invalidateQueries({ queryKey: ['hr-automation-actions'] }),
         queryClient.invalidateQueries({ queryKey: ['employee-action-history'] }),
       ])
+      notifySessionContextChanged()
     },
     onError: (error: Error) => setHrTaskError(error.message),
     onSettled: () => setBusyId(null),
@@ -486,6 +513,7 @@ export function ActionCenterPage() {
       {tab === 'attention' && attentionActions ? <><HrAutomationActions busyId={busyId} onOpen={openHrTask} tasks={attentionHrTasks} /><EmployeeActions data={attentionActions} busyId={busyId} emptyCopy={{ title: 'Nothing needs your attention', body: 'New required announcements, training, schedules, and HR actions will appear here.' }} onOpen={(type, id) => mutation.mutate({ type, id, viewed: true })} onComplete={(type, id, attestation) => mutation.mutate({ type, id, attestation })} showEmpty={!attentionHrTasks.length} /></> : null}
       {tab === 'in_progress' && inProgressActions ? <><HrAutomationActions busyId={busyId} onOpen={openHrTask} tasks={inProgressHrTasks} /><EmployeeActions data={inProgressActions} busyId={busyId} emptyCopy={{ title: 'Nothing is in progress', body: 'Opening an assigned action moves it here until it is completed.' }} onOpen={(type, id) => mutation.mutate({ type, id, viewed: true })} onComplete={(type, id, attestation) => mutation.mutate({ type, id, attestation })} showEmpty={!inProgressHrTasks.length} /></> : null}
       {tab === 'history' ? <ActionHistoryWorkspace canViewTeam={canViewTeamHistory} /> : null}
+      {tab === 'history' && canViewTeamHistory ? <RequiredActionsTeamQueue /> : null}
       {tab === 'history' && canReport ? <section className="panel action-report"><div className="section-heading"><div><p className="eyebrow">Compliance</p><h2>Completion reporting</h2></div><button className="secondary-button" disabled={!reportQuery.data} onClick={() => reportQuery.data && downloadText(trainingComplianceCsv(reportQuery.data), `sygshift-training-completion-${new Date().toISOString().slice(0, 10)}.csv`)} type="button"><Download aria-hidden="true" size={17} />Export training</button></div><div className="action-report-grid"><article><span>Announcement records</span><strong>{reportQuery.data?.announcements.length ?? 0}</strong></article><article><span>Training records</span><strong>{reportQuery.data?.training.length ?? 0}</strong></article><article><span>Schedule records</span><strong>{reportQuery.data?.schedules.length ?? 0}</strong></article></div></section> : null}
       {trainingOpen ? <TrainingEditor onClose={() => setTrainingOpen(false)} onPublished={async () => { setTrainingOpen(false); await Promise.all([queryClient.invalidateQueries({ queryKey: ['training-catalog'] }), queryClient.invalidateQueries({ queryKey: ['employee-action-center'] }), queryClient.invalidateQueries({ queryKey: ['employee-action-report'] })]) }} /> : null}
       {selectedHrTask ? (

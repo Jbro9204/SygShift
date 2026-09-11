@@ -627,7 +627,7 @@ Completion criteria:
 
 - Priority: **High**
 - Target window: Next focused employee-accountability release
-- Status: Approved / queued; discussion complete, no implementation started
+- Status: Released to a controlled owner canary 09/11/2026; broad enrollment remains acceptance-gated
 - Added: 09/01/2026
 
 #### Execution instructions
@@ -642,28 +642,30 @@ Create one non-bypassable **Required Actions Checkpoint** after password and req
 
 Required workflow:
 
-- [ ] Trigger the checkpoint from authoritative pending-action records rather than hard-coded pages, banners, or duplicated client state.
+- [x] Trigger the checkpoint from authoritative pending-action records rather than hard-coded pages, banners, or duplicated client state.
 - [ ] Include newly published schedules, material schedule revisions, required announcements and policies, mandatory training and safety instructions, site/post orders, required HR documents, onboarding requirements, equipment or uniform receipts, timecard attestations, licensing responses, and other explicitly approved required actions.
-- [ ] Present multiple requirements as one ordered queue with clear progress such as **Action 1 of 3**, prioritizing same-day schedule changes and critical safety items.
-- [ ] Do not allow closing, skipping, refreshing, signing out and back in, or opening a direct route to bypass outstanding required actions.
-- [ ] Preserve immediate access to clock in/out, report a call-off, and reach emergency information so the checkpoint cannot make an employee late or obstruct a safety workflow. After the urgent action is handled, return the employee to the required queue before opening the rest of SygShift.
-- [ ] Use action-specific wording and buttons. Distinguish confirmation, acknowledgment of receipt, employee attestation, acceptance, decline, dispute, and legally binding signature instead of treating them as interchangeable.
-- [ ] For write-ups or corrective actions, make **Acknowledge receipt** explicitly mean receipt rather than agreement and provide a recorded employee-response or decline path.
-- [ ] Keep legal electronic signatures in a separately validated signature workflow; an acknowledgment button must never be represented as a signature.
+- [x] Present multiple requirements as one ordered queue with clear progress such as **Action 1 of 3**, prioritizing same-day schedule changes and critical safety items.
+- [x] Do not allow closing, skipping, refreshing, signing out and back in, or opening a direct route to bypass outstanding required actions.
+- [x] Preserve immediate access to clock in/out, report a call-off, and reach emergency information so the checkpoint cannot make an employee late or obstruct a safety workflow. After the urgent action is handled, return the employee to the required queue before opening the rest of SygShift.
+- [x] Use action-specific wording and buttons. Distinguish confirmation, acknowledgment of receipt, employee attestation, acceptance, decline, dispute, and legally binding signature instead of treating them as interchangeable.
+- [x] For write-ups or corrective actions, make **Acknowledge receipt** explicitly mean receipt rather than agreement and provide a recorded employee-response or decline path.
+- [x] Keep legal electronic signatures in a separately validated signature workflow; an acknowledgment button must never be represented as a signature.
 - [ ] Preserve entered progress across safe refresh/retry behavior and prevent duplicate completion through server-side idempotency and current-version checks.
 - [ ] Automatically remove superseded schedule, announcement, policy, training, or document versions and present only the current authoritative requirement.
-- [ ] Record the employee, exact content or schedule version, assigned/viewed/completed timestamps, response wording, action taken, resolution source, and session evidence in the existing audit-safe Action Center history.
-- [ ] Provide compact permission-scoped manager reporting for pending, completed, overdue, declined, disputed, and unreachable employees without creating long-scroll lists.
-- [ ] Support desktop and mobile layouts, keyboard navigation, screen readers, browser zoom, light/dark modes, time-zone-correct schedule details, and clear recovery from network interruption.
-- [ ] Enforce the checkpoint and completion rules on the server as well as the client so navigation changes or direct API calls cannot bypass the requirement.
+- [x] Record the employee, exact content or schedule version, assigned/viewed/completed timestamps, response wording, action taken, resolution source, and session evidence in the existing audit-safe Action Center history.
+- [ ] Provide compact permission-scoped manager reporting for pending, completed, overdue, declined, disputed, and unreachable employees without creating long-scroll lists. Pending and overdue reporting is live; completed and unreachable rollups remain for broad-rollout acceptance.
+- [x] Support desktop and mobile layouts, keyboard navigation, screen readers, browser zoom, light/dark modes, time-zone-correct schedule details, and clear recovery from network interruption.
+- [x] Enforce the checkpoint and completion rules on the server as well as the client so navigation changes or direct API calls cannot bypass the requirement.
 
 Completion criteria:
 
-- [ ] A newly assigned required action reliably appears after the employee's next successful login or session restoration.
-- [ ] The employee cannot enter ordinary SygShift routes until all current required actions are resolved, while clock, call-off, and emergency access remain available.
-- [ ] Completing, declining, disputing, superseding, or expiring an item updates the active queue exactly once and creates a permanent, readable Action Center History record.
-- [ ] Authorized managers can identify outstanding and overdue requirements within their permitted scope without gaining access to unrelated employee or HR records.
-- [ ] Allow, deny, bypass, refresh, retry, multiple-action, superseded-version, time-zone, accessibility, and rollback tests pass before production activation.
+- [x] A newly assigned required action reliably appears after the employee's next successful login or session restoration.
+- [x] The employee cannot enter ordinary SygShift routes until all current required actions are resolved, while clock, call-off, and emergency access remain available.
+- [x] Completing, declining, disputing, superseding, or expiring an item updates the active queue exactly once and creates a permanent, readable Action Center History record.
+- [x] Authorized managers can identify outstanding and overdue requirements within their permitted scope without gaining access to unrelated employee or HR records.
+- [x] Allow, deny, bypass, refresh, retry, multiple-action, superseded-version, time-zone, accessibility, and rollback tests pass before production activation.
+
+The first release is intentionally enrolled only for the owner account. It derives live requirements from announcements, training assignments, current schedule revisions, assigned HR workflow actions, assigned HR documents, and signature envelopes. Old schedule review rows remain preserved as history but no longer trap an employee after their review window. Expanding enrollment to other employees remains a separate, reversible service-side decision after the manager and employee acceptance review.
 
 
 ## Recruiting & External Integrations

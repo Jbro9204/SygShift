@@ -72,6 +72,82 @@ const actionCenterSchema = z.object({
   schedules: z.array(scheduleActionSchema),
 })
 
+const requiredActionCheckpointItemSchema = z.object({
+  id: z.string().uuid(),
+  position: z.number().int().positive(),
+  actionType: z.enum(['announcement', 'training', 'schedule', 'hr_task', 'document', 'signature']),
+  title: z.string(),
+  description: z.string(),
+  status: z.string(),
+  priority: z.enum(['critical', 'high', 'normal']),
+  responseKind: z.enum(['confirmation', 'acknowledgment', 'attestation', 'signature', 'completion']),
+  actionLabel: z.string(),
+  route: z.string(),
+  assignedAt: z.string(),
+  dueAt: z.string().nullable(),
+  viewedAt: z.string().nullable(),
+  authoritativeVersion: z.string(),
+  metadata: z.record(z.string(), z.unknown()),
+})
+
+const requiredActionCheckpointSchema = z.object({
+  serverTimestamp: z.string(),
+  rollout: z.object({
+    enabled: z.boolean(),
+    mode: z.enum(['canary', 'all']),
+    enrolled: z.boolean(),
+  }),
+  blocking: z.boolean(),
+  total: z.number().int().nonnegative(),
+  summary: z.object({
+    critical: z.number().int().nonnegative(),
+    overdue: z.number().int().nonnegative(),
+    announcements: z.number().int().nonnegative(),
+    training: z.number().int().nonnegative(),
+    schedules: z.number().int().nonnegative(),
+    hrTasks: z.number().int().nonnegative(),
+    documents: z.number().int().nonnegative(),
+    signatures: z.number().int().nonnegative(),
+  }),
+  items: z.array(requiredActionCheckpointItemSchema),
+  urgentAccess: z.array(z.object({
+    id: z.enum(['time-clock', 'call-off', 'emergency']),
+    label: z.string(),
+    route: z.string().nullable(),
+  })),
+})
+
+const requiredActionCheckpointReportSchema = z.object({
+  serverTimestamp: z.string(),
+  summary: z.object({
+    pending: z.number().int().nonnegative(),
+    overdue: z.number().int().nonnegative(),
+    critical: z.number().int().nonnegative(),
+    unreachable: z.number().int().nonnegative(),
+  }),
+  page: z.object({
+    number: z.number().int().positive(),
+    size: z.union([z.literal(5), z.literal(10), z.literal(20)]),
+    total: z.number().int().nonnegative(),
+    totalPages: z.number().int().nonnegative(),
+  }),
+  items: z.array(z.object({
+    id: z.string().uuid(),
+    employeeId: z.string().uuid(),
+    employeeName: z.string(),
+    employeeNumber: z.string().nullable(),
+    contactState: z.enum(['available', 'unreachable']),
+    actionType: requiredActionCheckpointItemSchema.shape.actionType,
+    title: z.string(),
+    status: z.string(),
+    priority: requiredActionCheckpointItemSchema.shape.priority,
+    responseKind: requiredActionCheckpointItemSchema.shape.responseKind,
+    assignedAt: z.string(),
+    dueAt: z.string().nullable(),
+    authoritativeVersion: z.string(),
+  })),
+})
+
 const actionHistoryTypeSchema = z.enum(['announcement', 'training', 'schedule', 'hr_task'])
 const actionHistoryStatusSchema = z.enum(['acknowledged', 'completed', 'superseded', 'cancelled', 'expired'])
 const actionHistoryItemSchema = z.object({
@@ -155,6 +231,9 @@ const trainingCatalogItemSchema = z.object({
 })
 
 export type EmployeeActionCenter = z.infer<typeof actionCenterSchema>
+export type RequiredActionCheckpoint = z.infer<typeof requiredActionCheckpointSchema>
+export type RequiredActionCheckpointItem = z.infer<typeof requiredActionCheckpointItemSchema>
+export type RequiredActionCheckpointReport = z.infer<typeof requiredActionCheckpointReportSchema>
 export type EmployeeActionHistory = z.infer<typeof actionHistorySchema>
 export type EmployeeActionHistoryItem = z.infer<typeof actionHistoryItemSchema>
 export type EmployeeActionHistoryType = z.infer<typeof actionHistoryTypeSchema>
@@ -196,6 +275,22 @@ export async function getEmployeeActionCenter(): Promise<EmployeeActionCenter> {
   const { data, error } = await getSupabaseClient().rpc('get_employee_action_center')
   if (error) throw new Error(error.message || 'Your employee actions could not be loaded.')
   return actionCenterSchema.parse(data)
+}
+
+export async function getRequiredActionCheckpoint(): Promise<RequiredActionCheckpoint> {
+  const { data, error } = await getSupabaseClient().rpc('get_required_action_checkpoint')
+  if (error) throw new Error(error.message || 'Your required actions could not be checked.')
+  return requiredActionCheckpointSchema.parse(data)
+}
+
+export async function getRequiredActionCheckpointReport(input: { page?: number; pageSize?: 5 | 10 | 20; search?: string } = {}): Promise<RequiredActionCheckpointReport> {
+  const { data, error } = await getSupabaseClient().rpc('get_required_action_checkpoint_report', {
+    target_page: Math.max(1, input.page ?? 1),
+    target_page_size: input.pageSize ?? 10,
+    target_search: input.search?.trim() || null,
+  })
+  if (error) throw new Error(error.message || 'Required-action reporting could not be loaded.')
+  return requiredActionCheckpointReportSchema.parse(data)
 }
 
 export async function getEmployeeActionHistory(input: EmployeeActionHistoryInput = {}): Promise<EmployeeActionHistory> {
