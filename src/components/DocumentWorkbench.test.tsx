@@ -170,6 +170,20 @@ describe('DocumentWorkbench editor', () => {
     client.clear()
   })
 
+  it('preselects the employee when the workbench is opened from that employee file', async () => {
+    const source = new Uint8Array([37, 80, 68, 70])
+    const file = new File([source], 'employee-record.pdf', { type: 'application/pdf' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => source.buffer.slice(0) })
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><DocumentWorkbench employeeOnly initialEmployeeId={workspace.employees[0].id} initialFile={file} onClose={vi.fn()} onSaved={vi.fn()} workspace={workspace} /></QueryClientProvider>)
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'File' }))
+    expect(screen.getByRole('radio', { name: /Michelle Hood/ })).toBeChecked()
+    expect(screen.getByPlaceholderText('Search by name or employee number')).toHaveValue('Michelle Hood')
+    expect(screen.getByRole('button', { name: 'Add to employee file' })).toBeEnabled()
+    client.clear()
+  })
+
   it('reports a durable filing immediately while the exact completed PDF finishes processing in the background', async () => {
     const sourcePdf = await PDFDocument.create()
     sourcePdf.addPage([612, 792])

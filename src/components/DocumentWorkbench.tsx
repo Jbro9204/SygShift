@@ -82,6 +82,7 @@ const actionLabels: Record<RequiredAction, string> = {
 
 interface DocumentWorkbenchProps {
   employeeOnly?: boolean
+  initialEmployeeId?: string
   initialFile?: File | null
   initialTitle?: string
   onClose: () => void
@@ -103,7 +104,7 @@ function bytesAsFile(bytes: Uint8Array, title: string): File {
   return new File([copy.buffer], completedPdfFilename(title), { type: 'application/pdf' })
 }
 
-export function DocumentWorkbench({ employeeOnly = false, initialFile = null, initialTitle = '', onClose, onSaved, workspace }: DocumentWorkbenchProps) {
+export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, initialFile = null, initialTitle = '', onClose, onSaved, workspace }: DocumentWorkbenchProps) {
   const queryClient = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -136,8 +137,9 @@ export function DocumentWorkbench({ employeeOnly = false, initialFile = null, in
   const [annotations, setAnnotations] = useState<PdfAnnotation[]>([])
   const [undoHistory, setUndoHistory] = useState<PdfAnnotation[][]>([])
   const [redoHistory, setRedoHistory] = useState<PdfAnnotation[][]>([])
-  const [employeeSearch, setEmployeeSearch] = useState('')
-  const [employeeId, setEmployeeId] = useState(employeeOnly ? '' : 'company')
+  const initialEmployee = workspace.employees.find((employee) => employee.id === initialEmployeeId)
+  const [employeeSearch, setEmployeeSearch] = useState(initialEmployee?.legalName ?? '')
+  const [employeeId, setEmployeeId] = useState(initialEmployee?.id ?? (employeeOnly ? '' : 'company'))
   const [category, setCategory] = useState('Business document')
   const [description, setDescription] = useState('')
   const [progress, setProgress] = useState(0)

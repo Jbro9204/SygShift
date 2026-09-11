@@ -101,6 +101,9 @@ export function HrisEmployeeFilePage() {
   const editorContext = editorContextQuery.data
   const supervisorAssignment = supervisionQuery.data?.assignments.find((assignment) => assignment.employeeId === employeeId) ?? null
   const canOpenDocumentStudio = canAccessRoute('/hr/documents', sessionQuery.data)
+  const employeeDocumentsPath = record
+    ? `/hr/documents?employeeId=${encodeURIComponent(record.employeeId)}&employeeName=${encodeURIComponent(record.legalName)}`
+    : '/hr/documents'
 
   function openEmploymentDateEditor() {
     if (!record) return
@@ -121,7 +124,7 @@ export function HrisEmployeeFilePage() {
         {
           detail: record.connectedRecords.documents ? `${countLabel(record.connectedRecords.documents.expiring, 'expiring document')} within 60 days` : '',
           label: 'Documents',
-          path: '/hr/documents',
+          path: employeeDocumentsPath,
           status: record.connectedRecords.documents ? countLabel(record.connectedRecords.documents.total, 'current document') : '',
           visible: record.moduleAccess.documents && canOpenDocumentStudio,
         },
@@ -224,7 +227,7 @@ export function HrisEmployeeFilePage() {
     },
   ].map((group) => ({
     ...group,
-    modules: group.modules.filter((module) => module.visible && canAccessRoute(module.path, sessionQuery.data)),
+    modules: group.modules.filter((module) => module.visible && canAccessRoute(module.path.split('?')[0], sessionQuery.data)),
   })).filter((group) => group.modules.length > 0) : []
 
   return (
@@ -243,6 +246,19 @@ export function HrisEmployeeFilePage() {
           </header>
 
           {record.readinessSignals.length > 0 ? <section className="hr-file-alert" aria-label="Record readiness"><AlertTriangle aria-hidden="true" /><div><strong>Employee record needs attention</strong><div>{record.readinessSignals.map((signal) => <span key={signal}>{readinessLabels[signal] ?? titleCase(signal)}</span>)}</div></div></section> : <section className="hr-file-ready"><ShieldCheck aria-hidden="true" /><strong>Core employee record is ready.</strong></section>}
+
+          {record.moduleAccess.documents && canOpenDocumentStudio ? (
+            <section className="hr-file-documents-entry" aria-label={`Files and documents for ${record.legalName}`}>
+              <span className="hr-file-documents-entry__icon"><FileStack aria-hidden="true" /></span>
+              <div>
+                <p className="eyebrow">Employee documents</p>
+                <h2>Files for {record.legalName}</h2>
+                <p>Open every document filed to this employee, including uploads that are still finishing in the background.</p>
+              </div>
+              <span className="hr-file-documents-entry__count"><strong>{record.connectedRecords.documents?.total ?? 0}</strong><small>{(record.connectedRecords.documents?.total ?? 0) === 1 ? 'file' : 'files'}</small></span>
+              <Link className="primary-action" to={employeeDocumentsPath}>Open employee files<MoveUpRight aria-hidden="true" size={17} /></Link>
+            </section>
+          ) : null}
 
           <section className="hr-file-grid">
             <article className="hr-file-card">

@@ -36,8 +36,10 @@ describe('comprehensive Employee File guardrails', () => {
   it('uses the Employee File as one permission-aware record with audited field editors', () => {
     expect(data).toContain('moduleAccess: z.object')
     expect(employeeFile).toContain('No information is copied or maintained twice.')
-    expect(employeeFile).toContain('module.visible && canAccessRoute(module.path, sessionQuery.data)')
+    expect(employeeFile).toContain("module.visible && canAccessRoute(module.path.split('?')[0], sessionQuery.data)")
     expect(employeeFile).toContain('The Employee File owns core identity, employment, contact, emergency-contact, and protected pay-rate maintenance.')
+    expect(employeeFile).toContain('employeeDocumentsPath')
+    expect(employeeFile).toContain('Open employee files')
     expect(employeeFile).toContain('EmploymentDateEditorDialog')
     expect(editors).toContain('updateHrisEmployeeIdentity')
     expect(editors).toContain('updateHrisEmployeeEmploymentProfile')
@@ -51,7 +53,6 @@ describe('comprehensive Employee File guardrails', () => {
 
   it('connects every major employee-record domain', () => {
     for (const path of [
-      '/hr/documents',
       '/hr/onboarding',
       '/hr/leave',
       '/hr/benefits',
@@ -61,6 +62,7 @@ describe('comprehensive Employee File guardrails', () => {
       '/hr/offboarding',
       '/hr/self-service',
     ]) expect(employeeFile).toContain(`path: '${path}'`)
+    expect(employeeFile).toContain('`/hr/documents?employeeId=${encodeURIComponent(record.employeeId)}&employeeName=${encodeURIComponent(record.legalName)}`')
     expect(employeeFile).toContain("label: 'Employee relations'")
     expect(employeeFile).toContain("label: 'Assigned assets'")
   })

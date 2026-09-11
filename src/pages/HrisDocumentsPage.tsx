@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   Archive,
+  ArrowLeft,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -17,7 +18,7 @@ import {
   ShieldCheck,
   UploadCloud,
 } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { DocumentStudioDashboard } from '../components/DocumentStudioDashboard'
 import { DocumentWorkbench } from '../components/DocumentWorkbench'
@@ -33,7 +34,7 @@ import { formatOperationalDateTime } from '../lib/time'
 
 type PageSize = 5 | 10 | 20
 type AccessAction = 'preview' | 'download'
-type WorkbenchRequest = { employeeOnly?: boolean; file?: File; title?: string }
+type WorkbenchRequest = { employeeOnly?: boolean; employeeId?: string; file?: File; title?: string }
 
 const classificationLabels = {
   confidential: 'Confidential',
@@ -67,10 +68,18 @@ function FileTypeIcon({ mimeType }: { mimeType: string | null }) {
   return <FileText aria-hidden="true" />
 }
 
+function validEmployeeId(value: string | null): string | undefined {
+  return value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : undefined
+}
+
 export function HrisDocumentsPage() {
   const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const routeEmployeeId = validEmployeeId(searchParams.get('employeeId'))
+  const routeEmployeeName = searchParams.get('employeeName')?.trim().slice(0, 160) || null
   const [searchInput, setSearchInput] = useState('')
   const [filters, setFilters] = useState<HrDocumentWorkspaceFilters>({
+    employeeId: routeEmployeeId,
     includeArchived: false,
     page: 1,
     pageSize: 10,
@@ -87,6 +96,11 @@ export function HrisDocumentsPage() {
     )) ? 2_000 : false,
   })
   const workspace = workspaceQuery.data
+  const focusedEmployee = workspace?.employees.find((employee) => employee.id === filters.employeeId)
+  const focusedEmployeeName = focusedEmployee?.legalName
+    ?? workspace?.documents.find((document) => document.employeeId === filters.employeeId)?.employeeLegalName
+    ?? routeEmployeeName
+    ?? 'Selected employee'
   const openForWork = useMutation({
     mutationFn: async (document: HrDocumentRecord) => {
       const result = await getHrDocumentBlob(document.id, 'download', 'Create an editable working copy.')
@@ -101,6 +115,13 @@ export function HrisDocumentsPage() {
     }
   }, [filters.page, workspace])
 
+  useEffect(() => {
+    setExpandedDocumentId(null)
+    setFilters((current) => current.employeeId === routeEmployeeId
+      ? current
+      : { ...current, employeeId: routeEmployeeId, page: 1 })
+  }, [routeEmployeeId])
+
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setFilters((current) => ({ ...current, page: 1, search: searchInput.trim() }))
@@ -109,6 +130,21 @@ export function HrisDocumentsPage() {
   function updateFilter(key: keyof HrDocumentWorkspaceFilters, value: string | number | boolean | undefined) {
     setExpandedDocumentId(null)
     setFilters((current) => ({ ...current, [key]: value, page: 1 }))
+  }
+
+  function updateEmployeeFilter(employeeId: string | undefined) {
+    const nextParams = new URLSearchParams(searchParams)
+    if (employeeId) {
+      const employeeName = workspace?.employees.find((employee) => employee.id === employeeId)?.legalName
+      nextParams.set('employeeId', employeeId)
+      if (employeeName) nextParams.set('employeeName', employeeName)
+      else nextParams.delete('employeeName')
+    } else {
+      nextParams.delete('employeeId')
+      nextParams.delete('employeeName')
+    }
+    setSearchParams(nextParams, { replace: true })
+    updateFilter('employeeId', employeeId)
   }
 
   return (
@@ -132,12 +168,29 @@ export function HrisDocumentsPage() {
         <Link to="/hr/documents/workflows">Requests &amp; assignments</Link>
       </nav>
 
-      <DocumentStudioDashboard
-        documents={workspace}
-        onFileEmployeeDocument={() => setWorkbench({ employeeOnly: true })}
-        onUploadDocument={() => setWorkbench({})}
-        onUseDocument={(file, title) => setWorkbench({ file, title })}
-      />
+      {filters.employeeId ? (
+        <section className="hr-documents-employee-focus" aria-label={`Documents for ${focusedEmployeeName}`}>
+          <span className="hr-documents-employee-focus__icon"><Files aria-hidden="true" /></span>
+          <div>
+            <p className="eyebrow">Employee file</p>
+            <h2>{focusedEmployeeName}</h2>
+            <p>This view contains only documents filed to this employee. New uploads appear here as soon as they are saved.</p>
+          </div>
+          <span className="hr-documents-employee-focus__count"><strong>{workspace?.pagination.totalCount ?? '—'}</strong><small>{workspace?.pagination.totalCount === 1 ? 'document' : 'documents'}</small></span>
+          <div className="hr-documents-employee-focus__actions">
+            <Link className="secondary-button" to={`/hr/people/${encodeURIComponent(filters.employeeId)}`}><ArrowLeft aria-hidden="true" size={17} />Employee File</Link>
+            {workspace?.actor.canManageAny ? <button className="primary-action" onClick={() => setWorkbench({ employeeId: filters.employeeId, employeeOnly: true })} type="button"><UploadCloud aria-hidden="true" size={17} />Add document</button> : null}
+            <button className="secondary-button" onClick={() => updateEmployeeFilter(undefined)} type="button">View all documents</button>
+          </div>
+        </section>
+      ) : (
+        <DocumentStudioDashboard
+          documents={workspace}
+          onFileEmployeeDocument={() => setWorkbench({ employeeOnly: true })}
+          onUploadDocument={() => setWorkbench({})}
+          onUseDocument={(file, title) => setWorkbench({ file, title })}
+        />
+      )}
 
       {workspaceQuery.isPending ? (
         <DataStatePanel icon={Files} title="Loading documents">
@@ -154,8 +207,8 @@ export function HrisDocumentsPage() {
         <>
           <section className="hr-documents-toolbar">
             <div className="hr-documents-toolbar__heading">
-              <div><p className="eyebrow">Document inventory</p><h2>Employee records</h2><p>Legal names are used throughout this workspace.</p></div>
-              {workspace.actor.canManageAny ? <button className="primary-action" onClick={() => setWorkbench({})} type="button"><UploadCloud aria-hidden="true" size={18} />Open a PDF</button> : null}
+              <div><p className="eyebrow">Document inventory</p><h2>{filters.employeeId ? `Files for ${focusedEmployeeName}` : 'Employee records'}</h2><p>{filters.employeeId ? 'Every current file assigned to this employee is shown below.' : 'Legal names are used throughout this workspace.'}</p></div>
+              {workspace.actor.canManageAny ? <button className="primary-action" onClick={() => setWorkbench(filters.employeeId ? { employeeId: filters.employeeId, employeeOnly: true } : {})} type="button"><UploadCloud aria-hidden="true" size={18} />{filters.employeeId ? 'Add document' : 'Open a PDF'}</button> : null}
             </div>
             <div className="hr-documents-filters">
               <form onSubmit={submitSearch}>
@@ -163,7 +216,7 @@ export function HrisDocumentsPage() {
                 <div><Search aria-hidden="true" size={18} /><input id="hr-document-search" onChange={(event) => setSearchInput(event.target.value)} placeholder="Title, category, employee, or file" value={searchInput} /></div>
                 <button className="secondary-button" type="submit">Search</button>
               </form>
-              <label>Employee<select onChange={(event) => updateFilter('employeeId', event.target.value || undefined)} value={filters.employeeId ?? ''}><option value="">All authorized employees</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select></label>
+              <label>Employee<select onChange={(event) => updateEmployeeFilter(event.target.value || undefined)} value={filters.employeeId ?? ''}><option value="">All authorized employees</option>{filters.employeeId && !workspace.employees.some((employee) => employee.id === filters.employeeId) ? <option value={filters.employeeId}>{focusedEmployeeName}</option> : null}{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select></label>
               <label>Vault<select onChange={(event) => updateFilter('vaultCode', event.target.value || undefined)} value={filters.vaultCode ?? ''}><option value="">All authorized vaults</option>{workspace.vaults.filter((vault) => vault.canView).map((vault) => <option key={vault.code} value={vault.code}>{vault.name}</option>)}</select></label>
               <label>Rows<select onChange={(event) => updateFilter('pageSize', Number(event.target.value) as PageSize)} value={filters.pageSize ?? 10}><option value={5}>5</option><option value={10}>10</option><option value={20}>20</option></select></label>
               <label className="hr-documents-archive-filter"><input checked={Boolean(filters.includeArchived)} onChange={(event) => updateFilter('includeArchived', event.target.checked)} type="checkbox" /><Archive aria-hidden="true" size={17} />Include archived</label>
@@ -173,7 +226,7 @@ export function HrisDocumentsPage() {
           <section className="hr-documents-inventory">
             <div className="hr-documents-inventory__summary"><span><strong>{workspace.pagination.totalCount}</strong> matching documents</span><span>Page {workspace.pagination.totalCount === 0 ? 0 : workspace.pagination.page} of {workspace.pagination.totalPages}</span></div>
             {workspace.documents.length === 0 ? (
-              <DataStatePanel icon={Search} title="No documents match these filters"><p>Clear the search or choose another employee or vault.</p></DataStatePanel>
+              <DataStatePanel icon={Search} title={filters.employeeId ? `No documents filed to ${focusedEmployeeName}` : 'No documents match these filters'}><p>{filters.employeeId ? 'Use Add document to place the first file on this employee record.' : 'Clear the search or choose another employee or vault.'}</p></DataStatePanel>
             ) : (
               <div className="hr-documents-list">
                 {workspace.documents.map((document) => {
@@ -216,7 +269,7 @@ export function HrisDocumentsPage() {
             </div>
           </section>
 
-          {workbench ? <DocumentWorkbench employeeOnly={workbench.employeeOnly} initialFile={workbench.file} initialTitle={workbench.title} onClose={() => setWorkbench(null)} onSaved={() => void queryClient.invalidateQueries({ queryKey: ['hr-documents'] })} workspace={workspace} /> : null}
+          {workbench ? <DocumentWorkbench employeeOnly={workbench.employeeOnly} initialEmployeeId={workbench.employeeId} initialFile={workbench.file} initialTitle={workbench.title} onClose={() => setWorkbench(null)} onSaved={() => void queryClient.invalidateQueries({ queryKey: ['hr-documents'] })} workspace={workspace} /> : null}
           {accessTarget ? <DocumentAccessModal action={accessTarget.action} document={accessTarget.document} onClose={() => setAccessTarget(null)} /> : null}
           {openForWork.isError ? <div className="toast toast--error" role="alert">{openForWork.error instanceof Error ? openForWork.error.message : 'The working copy could not be opened.'}</div> : null}
         </>

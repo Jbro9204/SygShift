@@ -64,4 +64,38 @@ describe('Document Studio identity recovery', () => {
     expect(screen.getAllByText('537')).toHaveLength(1)
     client.clear()
   })
+
+  it('opens a focused employee-file inventory without placing the general Document Studio ahead of the files', async () => {
+    verification.fresh = true
+    const employeeId = '50000000-0000-4000-8000-000000000001'
+    const requestedUrls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      requestedUrls.push(url)
+      if (!url.includes('/api/v1/hr/documents/workspace?')) throw new Error(`Unexpected document request: ${url}`)
+      return Response.json({
+        releaseState: 'released', actor: { canManageAny: true }, vaults: [],
+        employees: [{ id: employeeId, employeeNumber: 'SYG-1058', legalName: 'Zachary Alexander Ward', status: 'active' }],
+        documents: [{
+          id: '60000000-0000-4000-8000-000000000001', employeeId, employeeNumber: 'SYG-1058', employeeLegalName: 'Zachary Alexander Ward',
+          vaultCode: 'hr-general', title: 'Zach Ward Medical Excuse 9.11.26', category: 'Business document', description: null,
+          accessClassification: 'confidential', effectiveDate: null, expirationDate: null, archivedAt: null,
+          canManage: true, canPreview: false, canDownload: false,
+          version: { id: '70000000-0000-4000-8000-000000000001', versionNumber: 1, filename: 'zach-ward-medical-excuse.pdf', mimeType: 'application/pdf', sizeBytes: 719094, uploadedAt: '2026-09-11T20:00:23Z', scanState: 'scan_pending' },
+        }],
+        pagination: { page: 1, pageSize: 10, totalCount: 1, totalPages: 1 },
+      })
+    }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/hr/documents?employeeId=${employeeId}&employeeName=Zachary%20Alexander%20Ward`]}><HrisDocumentsPage /></MemoryRouter></QueryClientProvider>)
+
+    await screen.findByText('Zach Ward Medical Excuse 9.11.26')
+    expect(requestedUrls).toHaveLength(1)
+    expect(requestedUrls[0]).toContain(`employeeId=${employeeId}`)
+    expect(screen.getByRole('region', { name: 'Documents for Zachary Alexander Ward' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Employee' })).toHaveValue(employeeId)
+    expect(screen.getByRole('link', { name: 'Employee File' })).toHaveAttribute('href', `/hr/people/${employeeId}`)
+    expect(screen.queryByText('Open it, complete it, and choose where it goes')).not.toBeInTheDocument()
+    client.clear()
+  })
 })
