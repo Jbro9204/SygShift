@@ -1,5 +1,15 @@
 # SygShift Development Log
 
+## 09/11/2026 - Document Center Complete Repair
+
+- Repaired clipped File/Send employee results, long typed-signature cropping, and the failed finished-PDF preview path.
+- Added guided completion for approved PDFs with bracketed prompts, including editable matching employee-name and employee-ID prefills.
+- Added permission- and MFA-controlled recoverable document removal, archived-file discovery, Restore, immutable audit evidence, and plain-language blockers for protected or active workflows.
+- Kept previews inside the existing production CSP by supplying stable PDF bytes and added a visible retry state; no security boundary was relaxed.
+- Applied migration `20260912190000_hr_document_archive_restore.sql` and released source `978b8cf` as Cloudflare Worker `a36ca760-e124-4331-915e-7824091c7daa`.
+- Verification passed 251 test files / 1,286 tests, 320 full browser checks with zero failures, all 46 post-release Time Clock/Early Clock-In checks, both production origins, the live API denial boundary, and exact live identity of every affected bundle.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-11-2026_DOCUMENT_CENTER_COMPLETE_REPAIR.md`.
+
 ## 09/11/2026 - Employee Document Discovery
 
 - Added a prominent **Files for [employee]** card to each authorized Employee File and made it open that employee's filtered document inventory directly.

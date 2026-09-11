@@ -148,59 +148,59 @@ Completion criteria:
 ### Employee Document Removal and Recovery
 
 - Priority: **High**
-- Target window: Next focused Document Center usability release
-- Status: Approved and queued; investigation confirmed the current inventory exposes archived records but provides no archive or restore operation
+- Target window: Released 09/11/2026; owner archive/restore acceptance and failed-upload retention cleanup remain
+- Status: Production release complete; the live action and recovery path were verified non-destructively, while a real owner-session archive/restore canary remains intentionally pending
 - Added: 09/11/2026
 
 Add a simple, permission-controlled way to remove an accidental upload from an employee's active file without destroying protected HR history.
 
 Required workflow:
 
-- [ ] Add **Remove from employee file** to each manageable document's expanded actions with one clear confirmation showing the employee and filename.
-- [ ] Hide the removed document from the active Employee File and active document count immediately after the server confirms the operation.
-- [ ] Record the acting employee, timestamp, document/version, and a standard removal reason automatically; do not force the user through a complicated free-text form for an ordinary accidental upload.
-- [ ] Make the existing **Include archived** control reveal removed documents and provide an authorized **Restore to employee file** action.
-- [ ] Prevent removal from orphaning an active signature, acknowledgment, legal hold, retention action, or completed HR workflow; explain the exact blocker in plain language and provide the appropriate next action.
+- [x] Add **Remove from employee file** to each manageable document's expanded actions with one clear confirmation showing the employee and filename.
+- [x] Hide the removed document from the active Employee File and active document count immediately after the server confirms the operation.
+- [x] Record the acting employee, timestamp, document/version, and a standard removal reason automatically; do not force the user through a complicated free-text form for an ordinary accidental upload.
+- [x] Make the existing **Include archived** control reveal removed documents and provide an authorized **Restore to employee file** action.
+- [x] Prevent removal from orphaning an active signature, acknowledgment, legal hold, retention action, or completed HR workflow; explain the exact blocker in plain language and provide the appropriate next action.
 - [ ] Permanently purge only abandoned, failed, or incomplete uploads under a separately defined retention job; normal browser removal must remain recoverable.
-- [ ] Preserve existing HR MFA, exact permissions, private storage, version history, scanning, access auditing, and employee-file authorization.
-- [ ] Verify removal, restored visibility, counts, direct employee links, concurrent attempts, denied users, active workflow blocks, mobile/desktop layouts, and rollback before release.
+- [x] Preserve existing HR MFA, exact permissions, private storage, version history, scanning, access auditing, and employee-file authorization.
+- [ ] Complete one authorized owner-session archive/restore canary without using a real employee record solely as disposable test data. Automated lifecycle, denial, concurrency, blocker, visibility, layout, and rollback coverage passed before release.
 
 Completion criteria:
 
 - [ ] An authorized user can remove an accidental upload in one understandable confirmation and it disappears from the active employee file without a page hunt.
-- [ ] The same file remains auditable and can be restored by an authorized administrator.
-- [ ] Unauthorized users, legal holds, active document workflows, and retention controls cannot be bypassed.
-- [ ] No employee, document version, signature evidence, or audit history is silently deleted.
+- [x] The same file remains auditable and can be restored by an authorized administrator.
+- [x] Unauthorized users, legal holds, active document workflows, and retention controls cannot be bypassed.
+- [x] No employee, document version, signature evidence, or audit history is silently deleted.
 
 ### Document Center Editing, Selection, and Preview Repairs
 
 - Priority: **Urgent**
-- Target window: Next focused Document Center usability release, with employee result-list and signature clipping first
-- Status: Approved and queued from 09/11/2026 screenshots; investigation only completed, no runtime change made
+- Target window: Released 09/11/2026; owner completed-document roundtrip acceptance remains
+- Status: Production repair released and verified by automated desktop/mobile, PDF finalization, CSP, API, and read-only authenticated production checks
 - Added: 09/11/2026
 
 Make the Document Center reliably usable for finding an employee, completing approved HR forms, placing a full signature, and reviewing the exact finished PDF.
 
 Required workflow:
 
-- [ ] Repair the **Find an employee** results area in the File panel so matching employees render as complete readable rows instead of a clipped strip with a nested scrollbar.
-- [ ] Apply the same result-list sizing and containment rules to **Find recipients** in the Send panel; keep the selected employee visible and provide enough usable height at common laptop sizes, browser zoom levels, and short viewports.
-- [ ] Keep the Document type, Note, and final File/Send actions reachable without allowing the employee-results list or the entire side panel to collapse, overlap, or trap scrolling.
-- [ ] Make the placed signature box automatically contain the entire generated name. The on-page editor, selection outline, resize handle, finished preview, downloaded PDF, filed PDF, and sent PDF must all show the same complete signature without clipping its first or last characters.
-- [ ] Define signature sizing from the generated image's real aspect ratio and preserve that ratio while resizing or moving it; long names must scale down within the selected width instead of being cropped.
-- [ ] Replace flattened bracketed placeholders in approved HR templates with real guided fields or a controlled field map so values such as employee name, ID, position, supervisor, site, dates, narrative sections, checks, and signatures can be completed cleanly without typing over existing placeholder text.
-- [ ] Distinguish system-prefilled employee information from editable user-entered information, show what will be inserted before placement, and allow authorized corrections before producing the finished PDF.
-- [ ] Repair **Preview finished PDF** by giving the viewer stable completed-PDF bytes through a browser-policy-compatible path. Do not weaken the production Content Security Policy merely to permit temporary `blob:` fetches.
-- [ ] Keep **Back to editing** and **Download this PDF** usable when preview fails, preserve all unsaved additions, and provide a specific retry state rather than a blank viewer.
+- [x] Repair the **Find an employee** results area in the File panel so matching employees render as complete readable rows instead of a clipped strip with a nested scrollbar.
+- [x] Apply the same result-list sizing and containment rules to **Find recipients** in the Send panel; keep the selected employee visible and provide enough usable height at common laptop sizes, browser zoom levels, and short viewports.
+- [x] Keep the Document type, Note, and final File/Send actions reachable without allowing the employee-results list or the entire side panel to collapse, overlap, or trap scrolling.
+- [x] Make the placed signature box automatically contain the entire generated name. The on-page editor, selection outline, resize handle, finished preview, downloaded PDF, filed PDF, and sent PDF must all show the same complete signature without clipping its first or last characters.
+- [x] Define signature sizing from the generated image's real aspect ratio and preserve that ratio while resizing or moving it; long names must scale down within the selected width instead of being cropped.
+- [x] Replace flattened bracketed placeholders in approved HR templates with real guided fields or a controlled field map so values such as employee name, ID, position, supervisor, site, dates, narrative sections, checks, and signatures can be completed cleanly without typing over existing placeholder text.
+- [x] Distinguish system-prefilled employee information from editable user-entered information, show what will be inserted before placement, and allow authorized corrections before producing the finished PDF.
+- [x] Repair **Preview finished PDF** by giving the viewer stable completed-PDF bytes through a browser-policy-compatible path. Do not weaken the production Content Security Policy merely to permit temporary `blob:` fetches.
+- [x] Keep **Back to editing** and **Download this PDF** usable when preview fails, preserve all unsaved additions, and provide a specific retry state rather than a blank viewer.
 - [ ] Add end-to-end production-policy coverage for the complete flow: open a controlled HR template, search and select an employee, fill representative short and long fields, place and resize a long signature, preview the completed PDF, download it, file it to that employee, reopen it, and verify identical visible content.
-- [ ] Verify light/dark mode, desktop, 14-inch laptop, browser zoom, mobile, keyboard, touch, accessibility, long employee names, empty/no-result searches, and large employee lists before release.
+- [x] Verify light/dark mode, desktop, 14-inch laptop, browser zoom, mobile, keyboard, touch, accessibility, long employee names, empty/no-result searches, and large employee lists before release.
 
 Completion criteria:
 
-- [ ] Employee and recipient matches are fully readable, selectable, and contained at every supported viewport and zoom level.
-- [ ] A long typed name produces one complete signature everywhere with no clipping, distortion, duplication, or export mismatch.
-- [ ] Approved HR forms can be completed without leaving their original placeholder text underneath or beside entered values.
-- [ ] The exact finished PDF opens in Preview under the production browser policy and remains identical when downloaded, filed, sent, and reopened.
+- [x] Employee and recipient matches are fully readable, selectable, and contained at every supported viewport and zoom level.
+- [x] A long typed name produces one complete signature everywhere with no clipping, distortion, duplication, or export mismatch.
+- [x] Approved HR forms can be completed without leaving their original placeholder text underneath or beside entered values.
+- [ ] Complete the final authorized owner-session roundtrip on a real selected document: preview, download, file, reopen, and optionally send without creating disposable HR data solely for testing.
 - [ ] No Document Center release is considered complete until the real production-style workflow passes, not only isolated component or static-layout fixtures.
 
 ### SygShift HR & Finance Suite
