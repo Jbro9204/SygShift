@@ -145,6 +145,33 @@ Completion criteria:
 
 ## HR, Finance & Employee Lifecycle
 
+### Employee Document Removal and Recovery
+
+- Priority: **High**
+- Target window: Next focused Document Center usability release
+- Status: Approved and queued; investigation confirmed the current inventory exposes archived records but provides no archive or restore operation
+- Added: 09/11/2026
+
+Add a simple, permission-controlled way to remove an accidental upload from an employee's active file without destroying protected HR history.
+
+Required workflow:
+
+- [ ] Add **Remove from employee file** to each manageable document's expanded actions with one clear confirmation showing the employee and filename.
+- [ ] Hide the removed document from the active Employee File and active document count immediately after the server confirms the operation.
+- [ ] Record the acting employee, timestamp, document/version, and a standard removal reason automatically; do not force the user through a complicated free-text form for an ordinary accidental upload.
+- [ ] Make the existing **Include archived** control reveal removed documents and provide an authorized **Restore to employee file** action.
+- [ ] Prevent removal from orphaning an active signature, acknowledgment, legal hold, retention action, or completed HR workflow; explain the exact blocker in plain language and provide the appropriate next action.
+- [ ] Permanently purge only abandoned, failed, or incomplete uploads under a separately defined retention job; normal browser removal must remain recoverable.
+- [ ] Preserve existing HR MFA, exact permissions, private storage, version history, scanning, access auditing, and employee-file authorization.
+- [ ] Verify removal, restored visibility, counts, direct employee links, concurrent attempts, denied users, active workflow blocks, mobile/desktop layouts, and rollback before release.
+
+Completion criteria:
+
+- [ ] An authorized user can remove an accidental upload in one understandable confirmation and it disappears from the active employee file without a page hunt.
+- [ ] The same file remains auditable and can be restored by an authorized administrator.
+- [ ] Unauthorized users, legal holds, active document workflows, and retention controls cannot be bypassed.
+- [ ] No employee, document version, signature evidence, or audit history is silently deleted.
+
 ### SygShift HR & Finance Suite
 
 - Priority: **Urgent**
