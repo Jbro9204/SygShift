@@ -245,9 +245,10 @@ export function HrisDocumentsPage() {
               <div className="hr-documents-list">
                 {workspace.documents.map((document) => {
                   const isExpanded = expandedDocumentId === document.id
+                  const detailsId = `hr-document-details-${document.id}`
                   return (
                     <article className="hr-document-row" key={document.id}>
-                      <button aria-expanded={isExpanded} className="hr-document-row__summary" onClick={() => setExpandedDocumentId(isExpanded ? null : document.id)} type="button">
+                      <button aria-controls={detailsId} aria-expanded={isExpanded} className="hr-document-row__summary" onClick={() => setExpandedDocumentId(isExpanded ? null : document.id)} type="button">
                         <span className="hr-document-row__icon"><FileTypeIcon mimeType={document.version?.mimeType ?? null} /></span>
                         <span className="hr-document-row__identity"><strong>{document.title}</strong><small>{document.employeeLegalName ?? 'Company record'}{document.employeeNumber ? ` · ${document.employeeNumber}` : ''}</small></span>
                         <span><small>Category</small><strong>{document.category}</strong><em>{document.vaultCode}</em></span>
@@ -256,14 +257,14 @@ export function HrisDocumentsPage() {
                         <ChevronDown aria-hidden="true" className={isExpanded ? 'rotated' : ''} />
                       </button>
                       {isExpanded ? (
-                        <div className="hr-document-row__details">
+                        <div className="hr-document-row__details" id={detailsId}>
                           <dl>
                             <div><dt>Description</dt><dd>{document.description || 'No description recorded'}</dd></div>
                             <div><dt>Effective date</dt><dd>{formatDate(document.effectiveDate)}</dd></div>
                             <div><dt>Expiration date</dt><dd>{formatDate(document.expirationDate)}</dd></div>
                             <div><dt>File</dt><dd>{document.version ? `${document.version.filename} · ${formatFileSize(document.version.sizeBytes)}` : 'No released file'}</dd></div>
                           </dl>
-                          <div className="hr-document-row__actions">
+                          <div aria-label={`Actions for ${document.title}`} className="hr-document-row__actions" role="group">
                             {document.canDownload && document.version?.mimeType === 'application/pdf' ? <button className="primary-action" disabled={openForWork.isPending} onClick={() => openForWork.mutate(document)} type="button"><FilePenLine aria-hidden="true" size={17} />Work on a copy</button> : null}
                             {document.canPreview ? <button className="secondary-button" onClick={() => setAccessTarget({ action: 'preview', document })} type="button"><Eye aria-hidden="true" size={17} />Preview</button> : null}
                             {document.canDownload ? <button className="secondary-button" onClick={() => setAccessTarget({ action: 'download', document })} type="button"><Download aria-hidden="true" size={17} />Download</button> : null}

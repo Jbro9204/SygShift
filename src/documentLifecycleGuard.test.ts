@@ -8,6 +8,7 @@ const worker = readFileSync('worker/index.ts', 'utf8')
 const data = readFileSync('src/data/hrDocuments.ts', 'utf8')
 const page = readFileSync('src/pages/HrisDocumentsPage.tsx', 'utf8')
 const viewer = readFileSync('src/components/SecurePdfViewer.tsx', 'utf8')
+const appCss = readFileSync('src/App.css', 'utf8')
 
 describe('recoverable HR document lifecycle', () => {
   it('preserves files and audit history while supporting archive and restore', () => {
@@ -48,5 +49,15 @@ describe('recoverable HR document lifecycle', () => {
     expect(viewer).toContain('if (bytes)')
     expect(worker).toContain("\"connect-src 'self' https://*.supabase.co wss://*.supabase.co\"")
     expect(worker).not.toContain("connect-src 'self' blob:")
+  })
+
+  it('keeps expanded document details separate from a wrapped, accessible action bar', () => {
+    expect(page).toContain('aria-controls={detailsId}')
+    expect(page).toContain('aria-label={`Actions for ${document.title}`}')
+    expect(page).toContain('role="group"')
+    expect(appCss).toMatch(/\.hr-document-row__details\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s)
+    expect(appCss).toMatch(/\.hr-document-row__actions\s*\{[^}]*border-top:[^}]*flex-wrap:\s*wrap[^}]*padding-top:/s)
+    expect(appCss).toContain('.hr-document-row__actions button { min-height: 44px; }')
+    expect(appCss).toMatch(/@media \(max-width:\s*480px\)[\s\S]*?\.hr-document-row__details dl\s*\{[^}]*grid-template-columns:\s*1fr/)
   })
 })
