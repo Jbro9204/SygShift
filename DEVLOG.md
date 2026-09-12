@@ -1,5 +1,15 @@
 # SygShift Development Log
 
+## 09/12/2026 - Accountability Notification Trigger Repair
+
+- Repaired the production trigger that rolled back manager-recorded Accountability occurrences with `column reference "notification_id" is ambiguous`.
+- Renamed the colliding PL/pgSQL variable, enabled strict variable-conflict checking, and preserved the existing in-app notification, employee email queue, Realtime signal, append-only action history, MFA, and permission boundaries.
+- Added a rollback-only database regression covering create, review, reclassification, three employee notifications, and three email-delivery rows; the same test reproduced the failure before the migration and passed after it without leaving fixture data.
+- Replaced raw database/provider output across the Accountability data boundary with safe retry guidance that confirms typed entries remain in the open form.
+- Applied and recorded forward migration `20260912200000`; released source `3ea71a2` as Cloudflare Worker `86177ff5-32ec-48dd-b81a-80bfd713cec0`; rollback tag `rollback/pre-accountability-notification-trigger-repair-20260912` points to `1af4692`.
+- Verification passed 253 test files / 1,295 tests, 322 complete browser checks with zero failures and 12 intentional skips, all 42 post-release Time Clock/Early Clock-In checks, both production health/readiness endpoints, the production database transaction, and exact live entry-asset identity.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-12-2026_ACCOUNTABILITY_NOTIFICATION_TRIGGER_REPAIR.md`.
+
 ## 09/11/2026 - Document Inventory Responsive QA Repair
 
 - Rebuilt expanded Document Center rows so metadata keeps its own readable space and all four document actions live in a separate, consistently cushioned action bar.
