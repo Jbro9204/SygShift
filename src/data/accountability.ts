@@ -196,11 +196,18 @@ export function parseAccountabilityWorkspacePayload(data: unknown): Accountabili
   return result.data
 }
 
+function accountabilityOperationError(message: string): Error {
+  // Database and provider diagnostics belong in protected logs, not in an
+  // employee-facing HR workspace. Each caller supplies the actionable step
+  // that is safe to display while the original error remains with Supabase.
+  return new Error(message)
+}
+
 export async function getAttendanceReport(input: { fromDate: string; throughDate: string; export?: boolean }): Promise<AttendanceReport> {
   const { data, error } = await getSupabaseClient().rpc('get_attendance_report', {
     target_from_date: input.fromDate, target_through_date: input.throughDate, target_export: input.export ?? false,
   })
-  if (error) throw new Error(error.message || 'The attendance report could not be loaded.')
+  if (error) throw accountabilityOperationError('The attendance report could not be loaded. Refresh the page and try again.')
   return attendanceReportSchema.parse(data)
 }
 
@@ -208,7 +215,7 @@ export async function reclassifyAccountabilityOccurrence(input: { eventId: strin
   const { data, error } = await getSupabaseClient().rpc('reclassify_attendance_accountability_event', {
     target_event_id: input.eventId, target_event_type: input.eventType, target_reason: input.reason,
   })
-  if (error) throw new Error(error.message || 'The occurrence type could not be updated.')
+  if (error) throw accountabilityOperationError('The occurrence type could not be updated. Your reason is still here; please try again.')
   return data
 }
 
@@ -217,7 +224,7 @@ export async function getAccountabilityWorkspace(input: { fromDate: string; thro
     target_from_date: input.fromDate,
     target_through_date: input.throughDate,
   })
-  if (error) throw new Error(error.message || 'The Accountability Tracker could not be loaded. MFA is required.')
+  if (error) throw accountabilityOperationError('The Accountability Tracker could not be loaded. Refresh the page and try again.')
   return parseAccountabilityWorkspacePayload(data)
 }
 
@@ -235,7 +242,7 @@ export async function createAccountabilityOccurrence(input: {
     target_operational_date: input.operationalDate,
     target_shift_id: input.shiftId,
   })
-  if (error) throw new Error(error.message || 'The accountability occurrence could not be recorded.')
+  if (error) throw accountabilityOperationError('The occurrence could not be recorded. Your entries are still here; please try again.')
   return createResultSchema.parse(data)
 }
 
@@ -249,6 +256,6 @@ export async function reviewAccountabilityOccurrence(input: {
     target_event_id: input.eventId,
     target_reason: input.reason,
   })
-  if (error) throw new Error(error.message || 'The accountability decision could not be saved.')
+  if (error) throw accountabilityOperationError('The accountability decision could not be saved. Your reason is still here; please try again.')
   return reviewResultSchema.parse(data)
 }
