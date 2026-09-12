@@ -1,5 +1,15 @@
 # SygShift Development Log
 
+## 09/11/2026 - Document Inventory Responsive QA Repair
+
+- Rebuilt expanded Document Center rows so metadata keeps its own readable space and all four document actions live in a separate, consistently cushioned action bar.
+- Made long filenames wrap normally, rebalanced metadata at laptop widths, and stacked full-width 44-pixel actions on compact screens and phones.
+- Added accessible summary/detail relationships and automated geometry, overflow, touch-target, viewport, theme, and accessibility regression coverage.
+- Preserved all document permissions, HR MFA, private storage, scanning, audit, archive/restore, employee data, and timekeeping behavior; no migration or data mutation was required.
+- Released source `d483fb0` as Cloudflare Worker `8f8366d2-69a6-4ef1-bc4a-8b045f074860`; rollback tag `rollback/pre-document-inventory-layout-qa-20260911` points to `5d1b435`.
+- Verification passed 251 test files / 1,287 tests, 322 complete browser checks with zero failures, all 46 post-release Time Clock/Early Clock-In checks, both production origins, the live API denial boundary, and byte-for-byte identity of every live entry asset.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-11-2026_DOCUMENT_INVENTORY_RESPONSIVE_QA.md`.
+
 ## 09/11/2026 - Document Center Complete Repair
 
 - Repaired clipped File/Send employee results, long typed-signature cropping, and the failed finished-PDF preview path.
