@@ -2424,3 +2424,14 @@ pnpm exec wrangler deploy --keep-vars
 - Applied and recorded migration `20260913175135`; production postflight preserved all baseline row counts and confirmed RLS, execution grants, and zero error-level advisor findings.
 - Released source `195fc83` as Cloudflare Worker `e96c1545-001d-480c-8bd8-a8c5b49e6611`; primary/fallback roots, Requests, health, readiness, signed-out access boundary, and exact live application assets passed.
 - See `docs/changelogs/CHANGELOG_09-13-2026_ABSENCE_COVERAGE_WORKFLOW.md` for complete behavior, preservation, verification, and release evidence.
+
+## 09/13/2026 - Salary Payroll Blocker and Timecard Range Repair
+
+- Excluded salaried punch activity and pending punch corrections from hourly payroll totals, overtime, export rows, and blocker queues while retaining the normal salary default.
+- Preserved every salaried employee's schedule presence, assignments, punches, corrections, and audit history; no source record was deleted or rewritten.
+- Synchronized the employee time-detail heading with its actual From/Through controls so a prior week's totals cannot be labeled as the current week.
+- Production now reports Matthew Swinney with his 40-hour salary default, zero hourly salary punch rows, zero salary overtime, and zero hourly blockers.
+- Production confirmed Ernesto Munguia at 40.75 scheduled hours for September 6–12 and 36.00 scheduled hours for September 13–19.
+- Verification passed 256 files / 1,308 tests, 33 focused guards, the clean 328-pass desktop/mobile browser matrix with 12 intentional skips, rollback-only live-schema rehearsal, and the post-release 42/42 Time Clock matrix.
+- Applied and recorded migration `20260913211117`; released source `6aa0dbc` as Cloudflare Worker `9ab647a7-fd65-4a69-9b42-2b9ec1c706b5`. Both production origins passed health, readiness, signed-out access, and exact-asset verification.
+- See `docs/changelogs/CHANGELOG_09-13-2026_SALARY_PAYROLL_BLOCKER_AND_TIMECARD_RANGE_REPAIR.md` for complete production and rollback evidence.
