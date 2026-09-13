@@ -44,17 +44,23 @@ SygShift now provides one guided manager workflow for turning a documented call-
 - No existing employee, punch, payroll, assignment, call-off, schedule, permission, or account record was rewritten during verification.
 - Rollback point: `rollback/pre-absence-coverage-workflow-20260913`.
 
-## Verification before release
+## Verification
 
 - Full repository gate passed: **255 test files / 1,305 tests**, TypeScript, zero-warning application lint, Worker build, and client production build.
 - Full browser matrix passed: **328 passed / 12 intentional skips / 0 failures** across desktop and mobile.
 - Mandatory Time Clock coverage passed as part of that matrix on both desktop and mobile.
+- The post-release actual-component Time Clock matrix passed **42/42** desktop and mobile checks.
 - The new coverage layout passed at desktop and mobile widths with no horizontal overflow, readable 16px fields, rounded controls, and a visible sticky action row.
 - A rollback-only production-data rehearsal passed migration compilation and the full lifecycle: create call-off, publish a separate opening, preserve the original assignment, rebase a manager draft, create a guard request, publish a later revision, remap the live case, approve the guard, close the opening, and replay idempotently. The rehearsal ended with `ROLLBACK` and committed no data.
+- Production postflight preserved all baseline row counts, found no coverage workflow rows before first use, confirmed RLS and service-only delivery boundaries, and returned no error-level database advisor findings.
+- Both production origins returned HTTP 200 for the root, Requests route, health, and readiness. Every readiness dependency reported ready.
+- The live application JavaScript, stylesheet, and Requests workspace bundle match the final production build byte-for-byte by SHA-256 on both origins.
+- A clean signed-out browser was redirected from `/requests` to the secure login route. No authenticated production browser session was available for a live manager submission, so authenticated behavior was verified through the full browser matrix and rollback-only production database lifecycle without creating real call-off or schedule data.
 
 ## Release references
 
-- Source commit: pending release
-- Database migration: `20260913175135_absence_coverage_workflow.sql` — pending release
-- Cloudflare Worker version: pending release
-
+- Source commit: `195fc83a87055221c7c50d823dc628aa5aa8e4a2`
+- Database migration: `20260913175135_absence_coverage_workflow.sql` — applied and recorded in production
+- Cloudflare Worker version: `e96c1545-001d-480c-8bd8-a8c5b49e6611`
+- Primary URL: `https://app.sygilant.us`
+- Fallback URL: `https://sygshift.sygilant.workers.dev`

@@ -2420,5 +2420,7 @@ pnpm exec wrangler deploy --keep-vars
 - Rebased unrelated manager drafts and remapped live coverage cases, requests, announcements, and replacement assignments across later schedule publications.
 - Added database-boundary eligibility and overtime revalidation, idempotent retries, append-only action history, and service-only notification waves at 0, 10, and optionally 20 minutes.
 - Added the Unexcused accountability classification without activating points or payroll consequences.
-- Pre-release verification passed 255 files / 1,305 tests, the complete 328-pass desktop/mobile browser matrix with 12 intentional skips, and a rollback-only production-data lifecycle through later revision remapping and guard approval.
+- Verification passed 255 files / 1,305 tests, the complete 328-pass desktop/mobile browser matrix with 12 intentional skips, the post-release 42/42 actual-component Time Clock matrix, and a rollback-only production-data lifecycle through later revision remapping and guard approval.
+- Applied and recorded migration `20260913175135`; production postflight preserved all baseline row counts and confirmed RLS, execution grants, and zero error-level advisor findings.
+- Released source `195fc83` as Cloudflare Worker `e96c1545-001d-480c-8bd8-a8c5b49e6611`; primary/fallback roots, Requests, health, readiness, signed-out access boundary, and exact live application assets passed.
 - See `docs/changelogs/CHANGELOG_09-13-2026_ABSENCE_COVERAGE_WORKFLOW.md` for complete behavior, preservation, verification, and release evidence.
