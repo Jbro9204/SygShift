@@ -175,8 +175,8 @@ Completion criteria:
 ### Document Center Editing, Selection, and Preview Repairs
 
 - Priority: **Urgent**
-- Target window: Released 09/11/2026; owner completed-document roundtrip acceptance remains
-- Status: Production repair released and verified by automated desktop/mobile, PDF finalization, CSP, API, and read-only authenticated production checks
+- Target window: Usability and fillable-field upgrade released 09/12/2026; owner completed-document roundtrip acceptance remains
+- Status: Guided Document Center, standard PDF form-field support, employee prefill, responsive navigation, and consistent form styling are live; automated desktop/mobile, PDF finalization, CSP, API, accessibility, and timekeeping regression gates passed
 - Added: 09/11/2026
 
 Make the Document Center reliably usable for finding an employee, completing approved HR forms, placing a full signature, and reviewing the exact finished PDF.
