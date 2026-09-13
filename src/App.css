@@ -37121,3 +37121,401 @@ body:has(.app-shell--compact-navigation .sidebar--open) {
   .required-actions-checkpoint__urgent nav { display: grid; grid-template-columns: 1fr; }
   .required-actions-team-report__list article { align-items: start; grid-template-columns: 1fr; }
 }
+
+/* Guided absence-to-coverage workflow */
+.modal-dialog--coverage-workflow {
+  width: min(920px, calc(100vw - 2rem));
+  max-height: min(900px, calc(100dvh - 2rem));
+}
+
+.coverage-workflow,
+.coverage-panel,
+.coverage-opening-fields,
+.coverage-candidate-picker,
+.coverage-review,
+.coverage-complete {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.coverage-workflow {
+  padding: 22px;
+}
+
+.coverage-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.coverage-steps li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 12px;
+  color: light-dark(#756d60, #aaa49a);
+  background: light-dark(#f5f2ec, #161b1f);
+  border: 1px solid light-dark(#ddd6ca, #353c41);
+  border-radius: 12px;
+}
+
+.coverage-steps li.is-active {
+  color: light-dark(#6d4708, #f2cb77);
+  background: light-dark(#fff7e7, #302714);
+  border-color: light-dark(#d9ad55, #7e6128);
+}
+
+.coverage-steps li > span {
+  display: inline-flex;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  background: light-dark(#fff, #101519);
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.coverage-steps strong,
+.coverage-panel,
+.coverage-panel input,
+.coverage-panel select,
+.coverage-panel textarea,
+.coverage-panel button {
+  font-family: inherit;
+}
+
+.coverage-original {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.coverage-original > div,
+.coverage-reported-note,
+.coverage-review dl {
+  display: grid;
+  gap: 5px;
+  padding: 15px;
+  background: light-dark(#fff, #12171b);
+  border: 1px solid light-dark(#ddd6ca, #363d42);
+  border-radius: 13px;
+}
+
+.coverage-original span,
+.coverage-reported-note > span,
+.coverage-review dt {
+  color: light-dark(#71695d, #b9b2a7);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.coverage-original strong,
+.coverage-reported-note p,
+.coverage-review dd {
+  margin: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.coverage-preservation-note,
+.coverage-wave-note,
+.accountability-policy-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px;
+  color: light-dark(#5c4824, #f1d59b);
+  background: light-dark(#fff8e9, #2b2418);
+  border: 1px solid light-dark(#e3c27f, #725929);
+  border-radius: 13px;
+}
+
+.coverage-preservation-note > svg,
+.coverage-wave-note > svg {
+  flex: 0 0 auto;
+}
+
+.coverage-preservation-note div,
+.coverage-wave-note div,
+.accountability-policy-note {
+  min-width: 0;
+}
+
+.coverage-preservation-note p,
+.coverage-wave-note p,
+.accountability-policy-note span {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.coverage-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.coverage-choice-grid legend {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 850;
+}
+
+.coverage-choice-grid > label,
+.coverage-candidate-list > label,
+.coverage-overtime-confirm {
+  display: grid;
+  min-width: 0;
+  align-items: start;
+  gap: 10px;
+  padding: 15px;
+  color: var(--ink);
+  background: light-dark(#fff, #12171b);
+  border: 1px solid light-dark(#d9d2c6, #394046);
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.coverage-choice-grid > label {
+  grid-template-columns: auto auto minmax(0, 1fr);
+}
+
+.coverage-choice-grid > label.is-selected,
+.coverage-candidate-list > label.is-selected {
+  background: light-dark(#fff8e9, #2a2317);
+  border-color: light-dark(#c9922f, #b58532);
+  box-shadow: 0 0 0 3px rgb(190 139 48 / 12%);
+}
+
+.coverage-choice-grid input,
+.coverage-candidate-list input,
+.coverage-overtime-confirm input {
+  width: 19px;
+  height: 19px;
+  margin: 2px 0 0;
+  accent-color: var(--gold-dark);
+}
+
+.coverage-choice-grid label > span,
+.coverage-candidate-list label > span,
+.coverage-overtime-confirm > span {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.coverage-choice-grid small,
+.coverage-candidate-list small,
+.coverage-overtime-confirm small,
+.coverage-review label small {
+  color: light-dark(#6f685e, #b8b1a6);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.coverage-choice-grid em,
+.coverage-candidate-list em {
+  color: light-dark(#8b3f35, #ffb8af);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.coverage-candidate-picker > label,
+.coverage-opening-fields > label,
+.coverage-review > label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.coverage-search {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 0 13px;
+  background: light-dark(#fff, #101519);
+  border: 1px solid light-dark(#aaa297, #566068);
+  border-radius: 12px;
+}
+
+.coverage-search:focus-within {
+  border-color: var(--gold-dark);
+  box-shadow: 0 0 0 3px rgb(184 135 49 / 14%);
+}
+
+.coverage-search input,
+.coverage-opening-fields input,
+.coverage-opening-fields textarea,
+.coverage-review textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 11px 13px;
+  color: var(--ink);
+  background: light-dark(#fff, #101519);
+  border: 1px solid light-dark(#aaa297, #566068);
+  border-radius: 12px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.coverage-search input {
+  min-width: 0;
+  padding-inline: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.coverage-opening-fields textarea,
+.coverage-review textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.coverage-candidate-list {
+  display: grid;
+  max-height: 280px;
+  gap: 8px;
+  overflow: auto;
+  padding: 3px;
+}
+
+.coverage-candidate-list > label {
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 12px 13px;
+}
+
+.coverage-candidate-list > label:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: .72;
+}
+
+.coverage-overtime-confirm {
+  grid-template-columns: auto minmax(0, 1fr);
+  background: light-dark(#fff9ef, #292217);
+  border-color: light-dark(#dfbd78, #705727);
+}
+
+.coverage-review h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.coverage-review dl {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.coverage-review dl > div {
+  display: grid;
+  gap: 4px;
+}
+
+.coverage-review dd {
+  font-weight: 750;
+}
+
+.coverage-workflow__actions {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 -22px -22px;
+  padding: 14px 22px 22px;
+  background: light-dark(#fff, #171b1f);
+  border-top: 1px solid light-dark(#e4ded3, #33383d);
+  box-shadow: 0 -8px 18px rgb(13 12 10 / 7%);
+}
+
+.coverage-workflow__actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 46px;
+}
+
+.coverage-complete {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 22px;
+}
+
+.coverage-complete > svg {
+  color: light-dark(#24734b, #72d7a2);
+}
+
+.coverage-complete h3,
+.coverage-complete p {
+  margin: 0;
+}
+
+.coverage-complete p {
+  margin-top: 5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .modal-dialog--coverage-workflow {
+    width: calc(100vw - 1rem);
+    max-height: calc(100dvh - 1rem);
+  }
+
+  .coverage-workflow {
+    padding: 16px;
+  }
+
+  .coverage-steps,
+  .coverage-original,
+  .coverage-choice-grid,
+  .coverage-review dl {
+    grid-template-columns: 1fr;
+  }
+
+  .coverage-steps li {
+    min-height: 48px;
+  }
+
+  .coverage-choice-grid legend {
+    grid-column: auto;
+  }
+
+  .coverage-workflow__actions,
+  .coverage-complete {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .coverage-workflow__actions {
+    margin: 0 -16px -16px;
+    padding: 12px 16px 16px;
+  }
+
+  .coverage-workflow__actions button,
+  .coverage-complete button {
+    width: 100%;
+  }
+}

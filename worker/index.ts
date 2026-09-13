@@ -8323,8 +8323,23 @@ export default {
       }
       const hrAutomation = await processHrAutomationJobs(environment, 10)
       const signatureFinalization = await processSignatureFinalizationJobs(environment, 2)
+      let coverageNotifications: Record<string, unknown>
+      try {
+        coverageNotifications = await callRpc<Record<string, unknown>>(
+          { serviceRoleKey: config.serviceRoleKey, url: config.url },
+          'service_process_shift_coverage_notification_waves',
+          { target_limit: 25 },
+          config.serviceRoleKey,
+        )
+      } catch (error) {
+        coverageNotifications = {
+          status: 'failed',
+          message: error instanceof Error ? error.message : 'Unknown coverage notification failure',
+        }
+        console.error(JSON.stringify({ event: 'shift_coverage_notifications_failed', ...coverageNotifications }))
+      }
       const notifications = await processNotificationJobs(environment, 25)
-      console.info(JSON.stringify({ alertLifecycle, attendanceSafetyRefreshDue, attendanceScheduleRefresh, automation, cron: controller.cron, fullReconciliation, hrAutomation, jobRunId, notifications, offboardingDue, patrol, scheduledAnnouncements, scheduledTime: controller.scheduledTime, signatureFinalization }))
+      console.info(JSON.stringify({ alertLifecycle, attendanceSafetyRefreshDue, attendanceScheduleRefresh, automation, coverageNotifications, cron: controller.cron, fullReconciliation, hrAutomation, jobRunId, notifications, offboardingDue, patrol, scheduledAnnouncements, scheduledTime: controller.scheduledTime, signatureFinalization }))
     })())
   },
 }

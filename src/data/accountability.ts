@@ -12,9 +12,9 @@ const eventTypeSchema = z.enum([
   'early_departure',
   'other',
 ])
-const reviewOutcomeSchema = z.enum(['confirmed', 'excused_protected', 'corrected', 'dismissed'])
-const actionSchema = z.enum(['created', 'confirmed', 'excused_protected', 'corrected', 'dismissed', 'voided', 'reopened', 'reclassified'])
-const decisionSchema = z.enum(['confirmed', 'excused_protected', 'corrected', 'dismissed', 'voided', 'reopened'])
+const reviewOutcomeSchema = z.enum(['confirmed', 'unexcused', 'excused_protected', 'corrected', 'dismissed'])
+const actionSchema = z.enum(['created', 'confirmed', 'unexcused', 'excused_protected', 'corrected', 'dismissed', 'voided', 'reopened', 'reclassified'])
+const decisionSchema = z.enum(['confirmed', 'unexcused', 'excused_protected', 'corrected', 'dismissed', 'voided', 'reopened'])
 
 const employeeSchema = z.object({
   id: z.string().uuid(),

@@ -2,11 +2,19 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   CalendarOff,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  CircleOff,
   ClipboardCheck,
   DatabaseZap,
   Megaphone,
+  Route,
+  Search,
   ShieldAlert,
   TriangleAlert,
+  UserCheck,
+  UsersRound,
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
@@ -14,13 +22,15 @@ import { TimeOffRequestModal, TimeOffReviewDialog } from '../components/TimeOffR
 import {
   decideShiftRequest,
   employeeName,
+  getCallOffCoverageWorkspace,
   getRequestCenter,
-  publishCallOffOpening,
   reportCallOff,
+  resolveCallOffCoverage,
   requestShiftLocation,
   requestShiftTitle,
   withdrawTimeOff,
   type CallOffReport,
+  type CallOffCoverageMode,
   type RequestShift,
   type ShiftWorkRequest,
   type TimeOffRequest,
@@ -33,7 +43,6 @@ type RequestAction =
   | { kind: 'withdraw-time-off'; requestId: string }
   | { kind: 'report-call-off'; shiftId: string; reason: string }
   | { kind: 'decide-shift'; requestId: string; decision: 'approved' | 'declined'; note: string | null }
-  | { kind: 'publish-call-off'; callOffId: string; title: string; body: string }
 
 function useRequestAction() {
   const queryClient = useQueryClient()
@@ -43,7 +52,6 @@ function useRequestAction() {
         case 'withdraw-time-off': return withdrawTimeOff(action.requestId)
         case 'report-call-off': return reportCallOff(action.shiftId, action.reason)
         case 'decide-shift': return decideShiftRequest(action.requestId, action.decision, action.note)
-        case 'publish-call-off': return publishCallOffOpening(action.callOffId, action.title, action.body)
       }
     },
     onMutate: async (action) => {
@@ -325,62 +333,167 @@ function DecisionDialog({
   )
 }
 
-function AnnouncementDialog({
+const coverageChoices: Array<{
+  description: string
+  icon: typeof UserCheck
+  label: string
+  value: CallOffCoverageMode
+}> = [
+  { value: 'assigned_guard', label: 'Coverage already found', description: 'Choose the qualified guard who agreed to work this shift.', icon: UserCheck },
+  { value: 'open_pool', label: 'Find an available guard', description: 'Open the shift and notify eligible Flex guards first.', icon: UsersRound },
+  { value: 'patrol_review', label: 'Request patrol review', description: 'Ask Dispatch to review a one-night patrol fallback without changing the standing route.', icon: Route },
+  { value: 'no_replacement', label: 'No replacement needed', description: 'Close the staffing need while preserving the original schedule and absence record.', icon: CircleOff },
+]
+
+function CoverageWorkflowDialog({
   report,
-  mutation,
   onClose,
+  onSaved,
 }: {
   report: CallOffReport
-  mutation: ReturnType<typeof useRequestAction>
   onClose: () => void
+  onSaved: (message: string) => void
 }) {
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const form = new FormData(event.currentTarget)
+  const queryClient = useQueryClient()
+  const [step, setStep] = useState(1)
+  const [mode, setMode] = useState<CallOffCoverageMode>('open_pool')
+  const [replacementEmployeeId, setReplacementEmployeeId] = useState('')
+  const [search, setSearch] = useState('')
+  const [title, setTitle] = useState('Open shift available')
+  const [body, setBody] = useState('A qualified guard is needed for this opening. Review the shift details and request it if you are available.')
+  const [reason, setReason] = useState('')
+  const [allowOvertime, setAllowOvertime] = useState(false)
+  const [idempotencyKey] = useState(() => crypto.randomUUID())
+  const workspaceQuery = useQuery({
+    queryKey: ['call-off-coverage', report.id],
+    queryFn: () => getCallOffCoverageWorkspace(report.id),
+  })
+  const mutation = useMutation({
+    mutationFn: resolveCallOffCoverage,
+    onSuccess: async (result) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['request-center'] }),
+        queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
+        queryClient.invalidateQueries({ queryKey: ['weekly-schedule'] }),
+        queryClient.invalidateQueries({ queryKey: ['call-off-coverage', report.id] }),
+      ])
+      const label = result.status === 'assigned'
+        ? 'Replacement assigned and original schedule preserved.'
+        : result.status === 'open_pool'
+          ? 'Opening published. Eligible Flex guards will be notified first.'
+          : result.status === 'patrol_review'
+            ? 'Dispatch was notified to review a one-night patrol fallback.'
+            : 'Absence recorded; no replacement is required.'
+      onSaved(label)
+      onClose()
+    },
+  })
+
+  const workspace = workspaceQuery.data
+  const normalizedSearch = search.trim().toLowerCase()
+  const candidates = workspace?.candidates.filter((candidate) => !normalizedSearch
+    || `${candidate.name} ${candidate.employeeNumber ?? ''}`.toLowerCase().includes(normalizedSearch)) ?? []
+  const selectedCandidate = workspace?.candidates.find((candidate) => candidate.id === replacementEmployeeId) ?? null
+  const completed = workspace?.coverageCase?.status === 'assigned' || workspace?.coverageCase?.status === 'no_replacement' || workspace?.coverageCase?.status === 'closed'
+  const canContinueFromChoice = mode !== 'assigned_guard' || Boolean(replacementEmployeeId)
+  const canSave = reason.trim().length >= 8
+    && canContinueFromChoice
+    && (mode !== 'open_pool' || (title.trim().length > 0 && body.trim().length > 0))
+
+  function submit() {
+    if (!canSave) return
     mutation.mutate({
-      kind: 'publish-call-off',
       callOffId: report.id,
-      title: String(form.get('title')).trim(),
-      body: String(form.get('body')).trim(),
-    }, { onSuccess: onClose })
+      mode,
+      replacementEmployeeId: mode === 'assigned_guard' ? replacementEmployeeId : null,
+      announcementTitle: mode === 'open_pool' ? title.trim() : null,
+      announcementBody: mode === 'open_pool' ? body.trim() : null,
+      reason,
+      allowOvertime: mode === 'assigned_guard' ? Boolean(selectedCandidate?.requiresOvertimeApproval && allowOvertime) : allowOvertime,
+      idempotencyKey,
+    })
   }
 
   return (
     <ModalDialog
       busy={mutation.isPending}
-      busyLabel="Publishing opening..."
-      description="Publishing cancels the original assignment, opens the shift, and queues announcement delivery."
+      busyLabel="Saving the coverage decision..."
+      className="modal-dialog--coverage-workflow"
+      description="The original assignment stays in the permanent history. Follow the three short steps to handle coverage."
       onClose={onClose}
-      title="Publish replacement opening"
+      title="Handle an employee absence"
     >
-      <div className="confirmation-summary">
-        <strong>{requestShiftTitle(report.shift)}</strong>
-        <span>{formatShiftDate(report.shift)}</span>
-        <span>{requestShiftLocation(report.shift)}</span>
-      </div>
-      <form className="request-form" onSubmit={submit}>
-        <label className="field-stack">
-          <span>Announcement title</span>
-          <input autoFocus defaultValue="Open shift available" maxLength={160} name="title" required />
-        </label>
-        <label className="field-stack">
-          <span>Message to qualified guards</span>
-          <textarea
-            defaultValue="A qualified guard is needed for this opening. Review the shift details and request it if you are available."
-            maxLength={4000}
-            name="body"
-            required
-            rows={5}
-          />
-        </label>
-        <p className="form-note">Do not include access codes, alarm details, or other sensitive site instructions.</p>
-        <div className="modal-actions">
-          <button className="secondary-button" onClick={onClose} type="button">Cancel</button>
-          <button className="primary-action" disabled={mutation.isPending} type="submit">
-            {mutation.isPending ? 'Publishing…' : 'Publish & queue delivery'}
-          </button>
+      {workspaceQuery.isPending ? <DataStatePanel icon={ClipboardCheck} title="Loading the shift"><p>Checking the original assignment and qualified coverage options.</p></DataStatePanel> : null}
+      {workspaceQuery.isError ? <DataStatePanel icon={ShieldAlert} title="Coverage review unavailable" tone="error"><p>{workspaceQuery.error.message}</p></DataStatePanel> : null}
+      {workspace && completed ? (
+        <div className="coverage-complete">
+          <CheckCircle2 aria-hidden="true" size={28} />
+          <div><h3>This coverage case is complete</h3><p>The original assignment and every management action remain in the audit history.</p></div>
+          <button className="primary-action" onClick={onClose} type="button">Done</button>
         </div>
-      </form>
+      ) : workspace ? (
+        <div className="coverage-workflow">
+          <ol className="coverage-steps" aria-label="Coverage workflow progress">
+            {['Review absence', 'Choose coverage', 'Confirm'].map((label, index) => {
+              const number = index + 1
+              return <li aria-current={step === number ? 'step' : undefined} className={step >= number ? 'is-active' : ''} key={label}><span>{step > number ? <CheckCircle2 size={16} /> : number}</span><strong>{label}</strong></li>
+            })}
+          </ol>
+
+          {step === 1 ? <section className="coverage-panel">
+            <div className="coverage-original">
+              <div><span>Employee</span><strong>{workspace.callOff.employeeName}</strong></div>
+              <div><span>Original shift</span><strong>{workspace.shift.title}</strong></div>
+              <div><span>When</span><strong>{formatDualTimeRange(workspace.shift.startsAt, workspace.shift.endsAt, workspace.shift.timeZone)}</strong></div>
+              <div><span>Location</span><strong>{workspace.shift.location}</strong></div>
+            </div>
+            <div className="coverage-preservation-note"><ShieldAlert aria-hidden="true" size={20} /><div><strong>The original schedule will not disappear</strong><p>SygShift stores a permanent snapshot of the employee, assignment, shift, site, and times before any coverage change is made.</p></div></div>
+            <div className="coverage-reported-note"><span>Reported reason</span><p>{workspace.callOff.reason || 'No reason was recorded.'}</p></div>
+          </section> : null}
+
+          {step === 2 ? <section className="coverage-panel">
+            <fieldset className="coverage-choice-grid">
+              <legend>How should this shift be handled?</legend>
+              {coverageChoices.map((choice) => {
+                const Icon = choice.icon
+                const unavailable = choice.value === 'patrol_review' && !workspace.patrolFallback.available
+                return <label className={mode === choice.value ? 'is-selected' : ''} key={choice.value}><input checked={mode === choice.value} disabled={unavailable} name="coverage-mode" onChange={() => setMode(choice.value)} type="radio" value={choice.value} /><Icon aria-hidden="true" size={22} /><span><strong>{choice.label}</strong><small>{choice.description}</small>{unavailable ? <em>{workspace.patrolFallback.message}</em> : null}</span></label>
+              })}
+            </fieldset>
+
+            {mode === 'assigned_guard' ? <div className="coverage-candidate-picker">
+              <label><span>Find the guard</span><div className="coverage-search"><Search aria-hidden="true" size={19} /><input onChange={(event) => setSearch(event.target.value)} placeholder="Name or employee number" value={search} /></div></label>
+              <div className="coverage-candidate-list" role="list">
+                {candidates.slice(0, 12).map((candidate) => <label className={replacementEmployeeId === candidate.id ? 'is-selected' : ''} key={candidate.id}><input checked={replacementEmployeeId === candidate.id} disabled={!candidate.eligible} name="replacement-employee" onChange={() => { setReplacementEmployeeId(candidate.id); setAllowOvertime(false) }} type="radio" /><span><strong>{candidate.name}</strong><small>{candidate.isFlex ? 'Flex guard' : candidate.employmentType} · {candidate.requiresOvertimeApproval ? `${Math.round(candidate.overtimeMinutes / 60 * 10) / 10} overtime hr` : 'No scheduled overtime'}</small>{candidate.blockReason ? <em>{candidate.blockReason}</em> : null}</span></label>)}
+                {candidates.length === 0 ? <p>No guards match that search.</p> : null}
+              </div>
+              {selectedCandidate?.requiresOvertimeApproval ? <label className="coverage-overtime-confirm"><input checked={allowOvertime} onChange={(event) => setAllowOvertime(event.target.checked)} type="checkbox" /><span><strong>Overtime is approved for this replacement</strong><small>Required before SygShift can assign this guard.</small></span></label> : null}
+            </div> : null}
+
+            {mode === 'open_pool' ? <div className="coverage-opening-fields">
+              <div className="coverage-wave-note"><UsersRound aria-hidden="true" size={20} /><div><strong>Flex-first notification order</strong><p>Eligible Flex guards are notified now. Other eligible guards follow after 10 minutes. Overtime candidates are included only if you approve the final wave.</p></div></div>
+              <label><span>Opening title</span><input maxLength={160} onChange={(event) => setTitle(event.target.value)} required value={title} /></label>
+              <label><span>Message to qualified guards</span><textarea maxLength={4000} onChange={(event) => setBody(event.target.value)} required rows={4} value={body} /></label>
+              <label className="coverage-overtime-confirm"><input checked={allowOvertime} onChange={(event) => setAllowOvertime(event.target.checked)} type="checkbox" /><span><strong>Allow an overtime notification wave after 20 minutes</strong><small>No overtime assignment is automatic; management must still approve the guard request.</small></span></label>
+            </div> : null}
+
+            {mode === 'patrol_review' ? <div className="coverage-wave-note"><Route aria-hidden="true" size={20} /><div><strong>Dispatch approval is required</strong><p>{workspace.patrolFallback.message} The absent employee’s reason is not included in the guard-facing notice.</p></div></div> : null}
+            {mode === 'no_replacement' ? <div className="coverage-wave-note"><CircleOff aria-hidden="true" size={20} /><div><strong>The shift will not enter the open pool</strong><p>The absence and original assignment remain documented, and no replacement notification is sent.</p></div></div> : null}
+          </section> : null}
+
+          {step === 3 ? <section className="coverage-panel coverage-review">
+            <h3>Review before saving</h3>
+            <dl><div><dt>Original assignment</dt><dd>{workspace.callOff.employeeName} · preserved</dd></div><div><dt>Coverage plan</dt><dd>{coverageChoices.find((choice) => choice.value === mode)?.label}</dd></div>{selectedCandidate ? <div><dt>Replacement</dt><dd>{selectedCandidate.name}{selectedCandidate.requiresOvertimeApproval ? ' · overtime approved' : ''}</dd></div> : null}<div><dt>Shift</dt><dd>{workspace.shift.title} · {workspace.shift.location}</dd></div></dl>
+            <label htmlFor="coverage-management-note"><span>Required management note</span><textarea aria-label="Required management note" autoFocus id="coverage-management-note" maxLength={2000} minLength={8} onChange={(event) => setReason(event.target.value)} placeholder="Record who confirmed the plan and any operational details needed for the audit history." required rows={4} value={reason} /><small>{reason.trim().length}/2,000 · minimum 8 characters</small></label>
+            {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+          </section> : null}
+
+          <div className="coverage-workflow__actions">
+            <button className="secondary-button" onClick={step === 1 ? onClose : () => setStep((current) => current - 1)} type="button">{step === 1 ? 'Cancel' : <><ChevronLeft aria-hidden="true" size={18} />Back</>}</button>
+            {step < 3 ? <button className="primary-action" disabled={step === 2 && !canContinueFromChoice} onClick={() => setStep((current) => current + 1)} type="button">Continue<ChevronRight aria-hidden="true" size={18} /></button> : <button className="primary-action" disabled={!canSave || mutation.isPending} onClick={submit} type="button">{mutation.isPending ? 'Saving…' : 'Save coverage plan'}</button>}
+          </div>
+        </div>
+      ) : null}
     </ModalDialog>
   )
 }
@@ -417,7 +530,7 @@ function SupervisorQueue({
         <div className="approval-sections">
           {callOffs.length > 0 ? (
             <section className="approval-section" aria-labelledby="call-off-queue-title">
-              <div className="section-heading"><h2 id="call-off-queue-title">Call-offs requiring an opening</h2></div>
+              <div className="section-heading"><h2 id="call-off-queue-title">Absences requiring coverage review</h2></div>
               {callOffs.map((report) => (
                 <article className="approval-card approval-card--urgent" key={report.id}>
                   <div>
@@ -428,7 +541,7 @@ function SupervisorQueue({
                   </div>
                   <button className="primary-action" onClick={() => onAnnouncement(report)} type="button">
                     <Megaphone aria-hidden="true" size={18} />
-                    Publish opening
+                    Review coverage
                   </button>
                 </article>
               ))}
@@ -587,7 +700,7 @@ export function RequestsPage() {
           state={decision}
         />
       ) : null}
-      {announcement ? <AnnouncementDialog mutation={mutation} onClose={() => setAnnouncement(null)} report={announcement} /> : null}
+      {announcement ? <CoverageWorkflowDialog onClose={() => setAnnouncement(null)} onSaved={setActionMessage} report={announcement} /> : null}
     </div>
   )
 }

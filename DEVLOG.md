@@ -2412,3 +2412,13 @@ pnpm exec wrangler deploy --keep-vars
 - No database migration or production-data mutation was required; document authorization, HR MFA, private storage, scanning, audit, versioning, and delivery boundaries remain intact.
 - Verification passed 239 files / 1,227 tests, 9 focused PDF/workbench tests, 54/54 Document Studio plus Time Clock browser checks, the corrected 2/2 narrow attachment layout, all document validators, and the post-release 42/42 Time Clock matrix.
 - Released source `691431f` as Cloudflare Worker `dcad2b7a-34df-4e1e-9ac9-fa0f8a1fe1cd`; see `docs/changelogs/CHANGELOG_09-10-2026_DOCUMENT_ROUNDTRIP_AND_SYGSPHERE_THREAD_LAYOUT.md` for complete output-integrity, production, and rollback evidence.
+
+## 09/13/2026 - Preserved Absence Coverage Workflow
+
+- Replaced the call-off opening shortcut with a guided three-step manager workflow supporting direct assignment, Flex-first open pool, one-night Patrol review, and no-replacement decisions.
+- Preserved the absent employee's original assignment and immutable snapshot while publishing a separate linked coverage shift through a focused schedule revision.
+- Rebased unrelated manager drafts and remapped live coverage cases, requests, announcements, and replacement assignments across later schedule publications.
+- Added database-boundary eligibility and overtime revalidation, idempotent retries, append-only action history, and service-only notification waves at 0, 10, and optionally 20 minutes.
+- Added the Unexcused accountability classification without activating points or payroll consequences.
+- Pre-release verification passed 255 files / 1,305 tests, the complete 328-pass desktop/mobile browser matrix with 12 intentional skips, and a rollback-only production-data lifecycle through later revision remapping and guard approval.
+- See `docs/changelogs/CHANGELOG_09-13-2026_ABSENCE_COVERAGE_WORKFLOW.md` for complete behavior, preservation, verification, and release evidence.

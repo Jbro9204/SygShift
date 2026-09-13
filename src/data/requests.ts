@@ -81,6 +81,84 @@ export type UpcomingAssignment = z.infer<typeof assignmentSchema>
 export type RequestShift = z.infer<typeof requestShiftSchema>
 export type RequestEmployee = z.infer<typeof employeeSchema>
 
+const coverageModeSchema = z.enum(['open_pool', 'assigned_guard', 'patrol_review', 'no_replacement'])
+const coverageStatusSchema = z.enum(['draft', 'open_pool', 'assigned', 'patrol_review', 'no_replacement', 'closed', 'canceled'])
+const coverageCandidateSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  employeeNumber: z.string().nullable(),
+  employmentType: z.enum(['hourly', 'salary', 'flex']),
+  workClassification: z.string().nullable(),
+  isFlex: z.boolean(),
+  available: z.boolean(),
+  noOverlap: z.boolean(),
+  armedReady: z.boolean(),
+  overtimeMinutes: z.number().int().nonnegative(),
+  requiresOvertimeApproval: z.boolean(),
+  eligible: z.boolean(),
+  recommended: z.boolean(),
+  blockReason: z.string().nullable(),
+})
+
+const coverageWorkspaceSchema = z.object({
+  callOff: z.object({
+    id: z.string().uuid(),
+    employeeId: z.string().uuid(),
+    employeeName: z.string(),
+    reason: z.string().nullable(),
+    reportedAt: z.string(),
+    replacementNeeded: z.boolean(),
+  }),
+  shift: z.object({
+    id: z.string().uuid(),
+    startsAt: z.string(),
+    endsAt: z.string(),
+    timeZone: z.string(),
+    title: z.string(),
+    location: z.string(),
+    requiresArmed: z.boolean(),
+    isOpen: z.boolean(),
+  }),
+  coverageCase: z.object({
+    id: z.string().uuid(),
+    status: coverageStatusSchema,
+    coverageMode: coverageModeSchema.nullable(),
+    replacementEmployeeId: z.string().uuid().nullable(),
+    replacementAssignmentId: z.string().uuid().nullable(),
+    coverageShiftId: z.string().uuid().nullable(),
+    announcementId: z.string().uuid().nullable(),
+    allowOvertimeWave: z.boolean(),
+    originalAssignment: z.record(z.string(), z.unknown()),
+    openedAt: z.string(),
+    resolvedAt: z.string().nullable(),
+  }).nullable(),
+  candidates: z.array(coverageCandidateSchema),
+  actions: z.array(z.object({
+    id: z.string().uuid(),
+    action: z.string(),
+    actorId: z.string().uuid().nullable(),
+    actorName: z.string(),
+    reason: z.string(),
+    createdAt: z.string(),
+  })),
+  attendancePolicy: z.object({ pointsActive: z.boolean(), message: z.string() }),
+  patrolFallback: z.object({ available: z.boolean(), message: z.string() }),
+})
+
+const coverageResolutionSchema = z.object({
+  coverageCaseId: z.string().uuid(),
+  status: coverageStatusSchema,
+  coverageMode: coverageModeSchema,
+  coverageShiftId: z.string().uuid().nullable(),
+  announcementId: z.string().uuid().nullable(),
+  replacementAssignmentId: z.string().uuid().nullable(),
+  idempotentReplay: z.boolean(),
+})
+
+export type CallOffCoverageWorkspace = z.infer<typeof coverageWorkspaceSchema>
+export type CallOffCoverageCandidate = z.infer<typeof coverageCandidateSchema>
+export type CallOffCoverageMode = z.infer<typeof coverageModeSchema>
+
 export interface RequestCenter {
   employeeId: string
   role: z.infer<typeof roleSchema>
@@ -461,6 +539,38 @@ export async function publishCallOffOpening(
   })
   if (error) throw new Error('The replacement opening was not published. Refresh the call-off queue.')
   return z.string().uuid().parse(data)
+}
+
+export async function getCallOffCoverageWorkspace(callOffId: string): Promise<CallOffCoverageWorkspace> {
+  const { data, error } = await getSupabaseClient().rpc('get_call_off_coverage_workspace', {
+    target_call_off_id: callOffId,
+  })
+  if (error) throw new Error(error.message || 'The coverage review could not be loaded.')
+  return coverageWorkspaceSchema.parse(data)
+}
+
+export async function resolveCallOffCoverage(input: {
+  callOffId: string
+  mode: CallOffCoverageMode
+  replacementEmployeeId: string | null
+  announcementTitle: string | null
+  announcementBody: string | null
+  reason: string
+  allowOvertime: boolean
+  idempotencyKey: string
+}) {
+  const { data, error } = await getSupabaseClient().rpc('resolve_call_off_coverage', {
+    announcement_body: input.announcementBody,
+    announcement_title: input.announcementTitle,
+    target_allow_overtime: input.allowOvertime,
+    target_call_off_id: input.callOffId,
+    target_idempotency_key: input.idempotencyKey,
+    target_mode: input.mode,
+    target_reason: input.reason.trim(),
+    target_replacement_employee_id: input.replacementEmployeeId,
+  })
+  if (error) throw new Error(error.message || 'The coverage decision could not be saved. Nothing was changed.')
+  return coverageResolutionSchema.parse(data)
 }
 
 export function employeeName(employee: z.infer<typeof employeeSchema>): string {
