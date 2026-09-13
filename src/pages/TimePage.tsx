@@ -441,6 +441,7 @@ export function TimeMaintenanceWorkbench({
   initialEmployeeId,
   lockEmployeeFilter = false,
   onClose,
+  onPeriodChange,
 }: {
   defaultPeriod?: { fromDate: string; throughDate: string }
   defaultDate: string
@@ -451,6 +452,7 @@ export function TimeMaintenanceWorkbench({
   initialEmployeeId?: string
   lockEmployeeFilter?: boolean
   onClose?: () => void
+  onPeriodChange?: (period: { fromDate: string; throughDate: string }) => void
 }) {
   const queryClient = useQueryClient()
   const sessionQuery = useQuery({
@@ -709,6 +711,10 @@ export function TimeMaintenanceWorkbench({
     setEmployeeId(initialEmployeeId)
     setAddEmployeeId(initialEmployeeId)
   }, [initialEmployeeId])
+
+  useEffect(() => {
+    onPeriodChange?.({ fromDate, throughDate })
+  }, [fromDate, onPeriodChange, throughDate])
 
   useEffect(() => {
     setSelectedEvent(null)

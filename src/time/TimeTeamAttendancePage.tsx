@@ -84,6 +84,7 @@ function periodLabel(period: Pick<TimePeriod, 'fromDate' | 'throughDate'>): stri
 export function TimeTeamAttendancePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [focusRequest, setFocusRequest] = useState<TimeMaintenanceFocusRequest | null>(null)
+  const [detailPeriod, setDetailPeriod] = useState<Pick<TimePeriod, 'fromDate' | 'throughDate'> | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -188,12 +189,17 @@ export function TimeTeamAttendancePage() {
   }
 
   function focusEmployee(employeeId: string, date?: string) {
+    const nextPeriod = {
+      fromDate: date ?? fromDate,
+      throughDate: date ?? throughDate,
+    }
     setSelectedEmployeeId(employeeId)
+    setDetailPeriod(nextPeriod)
     setFocusRequest({
       employeeId,
-      fromDate: date ?? fromDate,
+      fromDate: nextPeriod.fromDate,
       requestId: Date.now(),
-      throughDate: date ?? throughDate,
+      throughDate: nextPeriod.throughDate,
     })
   }
 
@@ -365,10 +371,11 @@ export function TimeTeamAttendancePage() {
       {manageAllowed && selectedEmployee ? (
         <ModalDialog
           className="modal-dialog--wide modal-dialog--time-maintenance"
-          description={`Review and correct ${selectedEmployee.employeeName}'s punch history for ${periodLabel({ fromDate, throughDate })}.`}
+          description={`Review and correct ${selectedEmployee.employeeName}'s punch history for ${periodLabel(detailPeriod ?? { fromDate, throughDate })}.`}
           onClose={() => {
             setSelectedEmployeeId(null)
             setFocusRequest(null)
+            setDetailPeriod(null)
           }}
           title={`${selectedEmployee.employeeName} time details`}
         >
@@ -379,9 +386,11 @@ export function TimeTeamAttendancePage() {
               focusRequest={focusRequest}
               initialEmployeeId={selectedEmployee.employeeId}
               lockEmployeeFilter
+              onPeriodChange={setDetailPeriod}
               onClose={() => {
                 setSelectedEmployeeId(null)
                 setFocusRequest(null)
+                setDetailPeriod(null)
               }}
               headingEyebrow="Punch editor"
               headingSummary="Add missing punches, change times, void mistakes, or correct the Site/Post from this focused employee view."

@@ -4,7 +4,7 @@ export const ACTIVE_CLOCK_IN_REVIEW_LIMIT_HOURS = 14
 export const SCHEDULED_CLOCK_OUT_GRACE_HOURS = 2
 
 export function isWorkedTimeRow(row: TimekeepingReviewRow): boolean {
-  return row.rowKind === 'time_event'
+  return row.rowKind === 'time_event' && row.employmentType !== 'salary'
 }
 
 export function isExportableWorkedTimeRow(row: TimekeepingReviewRow): boolean {

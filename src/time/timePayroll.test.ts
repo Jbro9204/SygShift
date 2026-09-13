@@ -29,7 +29,7 @@ const cleanReview: TimekeepingReview = {
     breakMinutes: 30,
     employeeId: '73000000-0000-4000-8000-000000000001',
     employeeName: 'Jordan Brown',
-    employmentType: 'salary',
+    employmentType: 'hourly',
     eventCount: 4,
     eventName: null,
     exceptionCodes: [],
@@ -190,6 +190,35 @@ describe('payroll export readiness', () => {
     expect(workedTimePayrollReview(salaryOnlyReview)?.summary.rowCount).toBe(0)
     expect(payrollLockBlocker(salaryOnlyReview)).toContain('no SygShift clock-in/out')
     expect(exportableWorkedTimeRows(salaryOnlyReview.rows)).toHaveLength(0)
+  })
+
+  it('excludes salaried punch rows from hourly payroll totals and blockers', () => {
+    const salaryPunchReview: TimekeepingReview = {
+      ...cleanReview,
+      rows: [{
+        ...cleanReview.rows[0],
+        employmentType: 'salary',
+        exceptionCodes: ['multiple_work_segments'],
+        overtimeMinutes: 480,
+        payrollReady: false,
+        regularMinutes: 0,
+      }],
+      summary: {
+        ...cleanReview.summary,
+        exceptionCount: 1,
+        overtimeMinutes: 480,
+        readyCount: 0,
+      },
+    }
+
+    expect(workedTimePayrollReview(salaryPunchReview)?.summary).toMatchObject({
+      exceptionCount: 0,
+      overtimeMinutes: 0,
+      paidMinutes: 0,
+      rowCount: 0,
+    })
+    expect(exportableWorkedTimeRows(salaryPunchReview.rows)).toHaveLength(0)
+    expect(payrollLockBlocker(salaryPunchReview)).toContain('no SygShift clock-in/out')
   })
 
   it('blocks export when a worked-time row is missing a clock-out', () => {
