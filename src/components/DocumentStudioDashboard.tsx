@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, FileCog, FilePenLine, FileSignature, FileStack, FolderInput, Plus, Search, Send, ShieldAlert, ShieldCheck, UploadCloud, Users, Workflow, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, FileCog, FilePenLine, FileSignature, FileStack, FolderInput, GraduationCap, Plus, Search, Send, Settings, ShieldAlert, ShieldCheck, UploadCloud, Users, Workflow, XCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ModalDialog } from './ModalDialog'
 import { DataStatePanel } from './DataStatePanel'
@@ -20,13 +20,15 @@ import {
 import type { HrDocumentWorkspace } from '../data/hrDocuments'
 import { formatOperationalDateTime } from '../lib/time'
 
-type StudioTab = 'overview' | 'library' | 'templates' | 'signatures' | 'policies' | 'processing'
+type StudioTab = 'forms' | 'learning' | 'management' | 'overview' | 'signatures'
+type ManagementView = 'policies' | 'processing' | 'templates'
 
 function statusLabel(value: string) { return value.replaceAll('_', ' ') }
 
 export function DocumentStudioDashboard({ documents, onFileEmployeeDocument, onUploadDocument, onUseDocument }: { documents?: HrDocumentWorkspace; onFileEmployeeDocument?: () => void; onUploadDocument?: () => void; onUseDocument?: (file: File, title: string) => void }) {
   const client = useQueryClient()
   const [tab, setTab] = useState<StudioTab>('overview')
+  const [requestedManagementView, setManagementView] = useState<ManagementView>('templates')
   const [modal, setModal] = useState<'policy' | 'template' | 'envelope' | null>(null)
   const [fieldTarget, setFieldTarget] = useState<DocumentStudioTemplate | null>(null)
   const query = useQuery({ queryFn: () => getDocumentStudioWorkspace(), queryKey: ['document-studio'] })
@@ -34,14 +36,19 @@ export function DocumentStudioDashboard({ documents, onFileEmployeeDocument, onU
   if (query.isPending) return <DataStatePanel icon={FileStack} title="Loading Document Center"><p>Opening document tools and recent activity.</p></DataStatePanel>
   if (query.isError) return <DataStatePanel icon={AlertTriangle} tone="error" title="Document Center unavailable"><p>{query.error instanceof Error ? query.error.message : 'The workspace could not be loaded.'}</p></DataStatePanel>
   const data = query.data
+  const managementView: ManagementView = (
+    (requestedManagementView === 'templates' && data.permissions.canManageTemplates)
+    || (requestedManagementView === 'policies' && data.permissions.canManagePolicies)
+    || (requestedManagementView === 'processing' && data.permissions.canManageSignatures)
+  ) ? requestedManagementView : data.permissions.canManageTemplates ? 'templates' : data.permissions.canManagePolicies ? 'policies' : 'processing'
   const cleanDocumentCount = documents?.documents.filter((item) => item.version?.scanState === 'clean').length ?? 0
   const activePolicyCount = data.policies.filter((item) => item.active).length
   return (
     <section className="document-studio">
-      {(!data.releaseState.documentPipeline || !data.releaseState.workspace || tab==='processing') ? <div className={`document-studio__release ${data.releaseState.documentPipeline && data.releaseState.workspace ? 'ready' : 'held'}`}>
+      {(!data.releaseState.documentPipeline || !data.releaseState.workspace || (tab === 'management' && managementView === 'processing')) ? <div className={`document-studio__release ${data.releaseState.documentPipeline && data.releaseState.workspace ? 'ready' : 'held'}`}>
         {data.releaseState.documentPipeline && data.releaseState.workspace ? <ShieldCheck size={22}/> : <ShieldAlert size={22}/>}<div><strong>{data.releaseState.documentPipeline && data.releaseState.workspace ? 'Document services ready' : 'Document services unavailable'}</strong><span>{data.releaseState.documentPipeline && data.releaseState.workspace ? 'Upload, preview, delivery, signing, and recovery are available.' : 'Document uploads are temporarily unavailable while system checks finish.'}</span></div>
       </div> : null}
-      {tab==='signatures' || tab==='processing' ? <div className="document-studio__metrics">
+      {tab==='signatures' || tab==='management' ? <div className="document-studio__metrics">
         <article><FileStack/><span>Documents</span><strong>{data.summary.documents}</strong></article>
         <article><FileCog/><span>Templates</span><strong>{data.summary.templates}</strong></article>
         <article><Workflow/><span>Awaiting action</span><strong>{data.summary.awaitingAction}</strong></article>
@@ -51,19 +58,17 @@ export function DocumentStudioDashboard({ documents, onFileEmployeeDocument, onU
       <div className="document-studio__tabs" role="tablist" aria-label="Document Studio sections">
         {([
           ['overview', 'Start'],
+          ['forms', 'Working HR forms'],
+          ['learning', 'Training & guides'],
           ['signatures', 'Signature requests'],
-          ['library', 'Company documents'],
-          ...(data.permissions.canManageTemplates ? [['templates', 'Templates']] : []),
-          ...(data.permissions.canManagePolicies ? [['policies', 'Administration']] : []),
-          ...(data.permissions.canManageSignatures ? [['processing', 'Processing']] : []),
+          ...(data.permissions.canManageTemplates || data.permissions.canManagePolicies || data.permissions.canManageSignatures ? [['management', 'Manage system']] : []),
         ] as Array<[StudioTab, string]>).map(([item, label]) => <button aria-selected={tab===item} className={tab===item?'active':''} key={item} onClick={()=>setTab(item)} role="tab" type="button">{label}</button>)}
       </div>
-      {tab==='overview' ? <><div className="document-studio__quick-actions" aria-label="Document Center quick start"><div><p className="eyebrow">Simple document work</p><h2>Open it, complete it, and choose where it goes</h2><span>No policy, template, filing section, or setup wizard is required. Work on the PDF first, then download it, send it, or add it to an employee file.</span></div></div><div className="document-studio__launch-grid">{data.permissions.canUpload&&onUploadDocument?<button onClick={onUploadDocument} type="button"><span><FilePenLine/></span><strong>Open a PDF</strong><small>Type, date, check, or sign it now</small></button>:null}<button onClick={()=>setTab('library')} type="button"><span><Search/></span><strong>Find a company document</strong><small>Search existing forms and work on a copy</small></button>{data.permissions.canUpload&&onFileEmployeeDocument?<button onClick={onFileEmployeeDocument} type="button"><span><FolderInput/></span><strong>Add to an employee file</strong><small>Complete a PDF and file it with the right person</small></button>:null}</div><div className="document-studio__overview"><article><FilePenLine/><div><h3>Work directly on the PDF</h3><p>Add typed text, today’s date, checkmarks, and a generated signature without building a template.</p></div></article><article><FileSignature/><div><h3>Choose the outcome</h3><p>Download the completed PDF, send it for action, or save it directly to an employee record.</p></div></article><article><Users/><div><h3>Keep tracking simple</h3><p>Sent documents appear in <Link to="/my-documents">My Documents</Link>; completed and pending requests remain visible under Signature requests.</p></div></article></div></> : null}
-      {tab==='library' ? <HrDocumentLibrary mode="studio" onUseDocument={onUseDocument}/> : null}
-      {tab==='templates' ? <StudioTemplates data={data.templates} onAddField={setFieldTarget} onCreate={()=>setModal('template')} onRefresh={refresh} permitted={data.permissions.canManageTemplates && Boolean(documents)} /> : null}
-      {tab==='signatures' ? <StudioEnvelopes activePolicyCount={activePolicyCount} canManagePolicies={data.permissions.canManagePolicies} cleanDocumentCount={cleanDocumentCount} data={data.envelopes} onCreate={onUploadDocument??(()=>setTab('library'))} onCreatePolicy={()=>setModal('policy')} onRefresh={refresh} onUpload={onUploadDocument??(()=>setTab('library'))} onUseExisting={()=>setModal('envelope')} permitted={data.permissions.canRequestSignatures} released={data.releaseState.signatures} /> : null}
-      {tab==='policies' ? <StudioPolicies data={data.policies} onCreate={()=>setModal('policy')} permitted={data.permissions.canManagePolicies} /> : null}
-      {tab==='processing' ? <div className="document-studio__list">{data.processing.length ? data.processing.map((job)=><article key={job.id}><div><strong>{job.documentTitle}</strong><span>{statusLabel(job.jobType)} · attempt {job.attemptCount}</span></div><span className={`document-studio__status is-${job.status}`}>{statusLabel(job.status)}</span>{job.lastErrorCode?<small>{job.lastErrorCode}</small>:null}</article>):<div className="document-studio__empty"><CheckCircle2/><strong>No processing exceptions</strong><span>Background document work is clear.</span></div>}</div> : null}
+      {tab==='overview' ? <><div className="document-studio__quick-actions" aria-label="Document Center quick start"><div><p className="eyebrow">Simple document work</p><h2>What do you need to do?</h2><span>Choose one starting point. SygShift will guide you through the document, review, and final destination.</span></div></div><div className="document-studio__launch-grid">{data.permissions.canUpload&&onUploadDocument?<button onClick={onUploadDocument} type="button"><span><FilePenLine/></span><strong>Use an outside PDF</strong><small>Upload a proposal or other document and work on it now</small></button>:null}<button onClick={()=>setTab('forms')} type="button"><span><Search/></span><strong>Start an HR task</strong><small>Find the right working form by what you need to do</small></button>{data.permissions.canUpload&&onFileEmployeeDocument?<button onClick={onFileEmployeeDocument} type="button"><span><FolderInput/></span><strong>Add to an employee file</strong><small>Complete a PDF and save it with the right person</small></button>:null}<button onClick={()=>setTab('learning')} type="button"><span><GraduationCap/></span><strong>Find training or a guide</strong><small>Open learning material without mixing it with HR forms</small></button></div><p className="document-studio__simple-note">No policy, template, filing section, or setup wizard is required.</p><div className="document-studio__overview"><article><FilePenLine/><div><h3>Fill the form, not the screen</h3><p>When a PDF contains form fields, SygShift detects them and keeps every answer in the correct box.</p></div></article><article><FileSignature/><div><h3>Review before finishing</h3><p>Preview the exact completed PDF, then download it, send it, or add it to an employee record.</p></div></article><article><Users/><div><h3>Find finished work easily</h3><p>Employee documents stay on the employee file; sent documents and responses stay in <Link to="/my-documents">My Documents</Link>.</p></div></article></div></> : null}
+      {tab==='forms' ? <HrDocumentLibrary collection="forms" mode="studio" onUseDocument={onUseDocument}/> : null}
+      {tab==='learning' ? <HrDocumentLibrary collection="learning" mode="studio" onUseDocument={onUseDocument}/> : null}
+      {tab==='signatures' ? <StudioEnvelopes activePolicyCount={activePolicyCount} canManagePolicies={data.permissions.canManagePolicies} cleanDocumentCount={cleanDocumentCount} data={data.envelopes} onCreate={onUploadDocument??(()=>setTab('forms'))} onCreatePolicy={()=>setModal('policy')} onRefresh={refresh} onUpload={onUploadDocument??(()=>setTab('forms'))} onUseExisting={()=>setModal('envelope')} permitted={data.permissions.canRequestSignatures} released={data.releaseState.signatures} /> : null}
+      {tab==='management' ? <div className="document-studio__management"><div className="document-studio__management-tabs" role="tablist" aria-label="Document system administration">{data.permissions.canManageTemplates?<button aria-selected={managementView==='templates'} className={managementView==='templates'?'active':''} onClick={()=>setManagementView('templates')} role="tab" type="button"><FileCog size={17}/>Templates</button>:null}{data.permissions.canManagePolicies?<button aria-selected={managementView==='policies'} className={managementView==='policies'?'active':''} onClick={()=>setManagementView('policies')} role="tab" type="button"><ShieldCheck size={17}/>Policies</button>:null}{data.permissions.canManageSignatures?<button aria-selected={managementView==='processing'} className={managementView==='processing'?'active':''} onClick={()=>setManagementView('processing')} role="tab" type="button"><Settings size={17}/>Processing</button>:null}</div>{managementView==='templates'?<StudioTemplates data={data.templates} onAddField={setFieldTarget} onCreate={()=>setModal('template')} onRefresh={refresh} permitted={data.permissions.canManageTemplates && Boolean(documents)} />:null}{managementView==='policies'?<StudioPolicies data={data.policies} onCreate={()=>setModal('policy')} permitted={data.permissions.canManagePolicies}/>:null}{managementView==='processing'?<div className="document-studio__section"><div className="document-studio__heading"><div><h2>Document processing</h2><p>System status for administrators. Routine HR work does not require this screen.</p></div></div><div className="document-studio__list">{data.processing.length ? data.processing.map((job)=><article key={job.id}><div><strong>{job.documentTitle}</strong><span>{statusLabel(job.jobType)} · attempt {job.attemptCount}</span></div><span className={`document-studio__status is-${job.status}`}>{statusLabel(job.status)}</span>{job.lastErrorCode?<small>{job.lastErrorCode}</small>:null}</article>):<div className="document-studio__empty"><CheckCircle2/><strong>No processing exceptions</strong><span>Background document work is clear.</span></div>}</div></div>:null}</div> : null}
       {modal==='policy' ? <PolicyModal onClose={()=>setModal(null)} onSaved={async()=>{setModal(null);await refresh()}} />:null}
       {modal==='template' && documents ? <TemplateModal documents={documents} policies={data.policies} onClose={()=>setModal(null)} onSaved={async()=>{setModal(null);await refresh()}} />:null}
       {modal==='envelope' && documents ? <EnvelopeModal documents={documents} policies={data.policies} templates={data.templates} onClose={()=>setModal(null)} onSaved={async()=>{setModal(null);await refresh()}} />:null}

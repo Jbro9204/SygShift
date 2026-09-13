@@ -91,15 +91,37 @@ interface DocumentWorkbenchProps {
 }
 
 interface DetectedTemplateField {
+  controlType: 'checkbox' | 'choice' | 'long_text' | 'text'
+  defaultValue?: string
   eraseHeightRatio: number
   eraseWidthRatio: number
   fontSize: number
   id: string
   label: string
+  nativeFieldName?: string
+  options?: Array<{ label: string; value: string }>
   page: number
   widthRatio: number
   xRatio: number
   yRatio: number
+}
+
+function humanizePdfFieldName(value: string): string {
+  const leaf = value.split('.').at(-1) ?? value
+  const cleaned = leaf
+    .replace(/\[\d+\]$/g, '')
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!cleaned) return 'Document field'
+  return cleaned.replace(/\b\w/g, (letter) => letter.toLocaleUpperCase())
+}
+
+function inferredControlType(label: string): DetectedTemplateField['controlType'] {
+  return /(describe|description|details|explain|explanation|facts|narrative|notes?|reason|statement|summary)/i.test(label)
+    ? 'long_text'
+    : 'text'
 }
 
 function friendlyError(error: unknown, fallback: string): string {
@@ -132,10 +154,60 @@ function SignatureImage({ annotation }: { annotation: PdfAnnotation }) {
 async function detectTemplateFields(pdf: PDFDocumentProxy): Promise<DetectedTemplateField[]> {
   const fields: DetectedTemplateField[] = []
   const seen = new Set<string>()
+  const seenNativeNames = new Set<string>()
   for (let pageNumber = 1; pageNumber <= pdf.numPages && fields.length < 80; pageNumber += 1) {
     const pdfPage = await pdf.getPage(pageNumber)
-    if (typeof pdfPage.getTextContent !== 'function') continue
     const viewport = pdfPage.getViewport({ scale: 1 })
+    if (typeof pdfPage.getAnnotations === 'function') {
+      const widgets = await pdfPage.getAnnotations({ intent: 'display' }).catch(() => [])
+      for (const widget of widgets) {
+        if (!widget || widget.subtype !== 'Widget' || typeof widget.fieldName !== 'string' || seenNativeNames.has(widget.fieldName) || !Array.isArray(widget.rect)) continue
+        const fieldType = widget.fieldType === 'Tx'
+          ? widget.multiLine ? 'long_text' : 'text'
+          : widget.fieldType === 'Btn' && widget.checkBox
+            ? 'checkbox'
+            : widget.fieldType === 'Ch'
+              ? 'choice'
+              : null
+        if (!fieldType) continue
+        const rect = widget.rect.map(Number)
+        const firstCorner = viewport.convertToViewportPoint(rect[0], rect[1])
+        const secondCorner = viewport.convertToViewportPoint(rect[2], rect[3])
+        const converted = [...firstCorner, ...secondCorner]
+        const left = Math.max(0, Math.min(converted[0], converted[2]))
+        const top = Math.max(0, Math.min(converted[1], converted[3]))
+        const width = Math.max(18, Math.abs(converted[2] - converted[0]))
+        const height = Math.max(12, Math.abs(converted[3] - converted[1]))
+        const label = typeof widget.alternativeText === 'string' && widget.alternativeText.trim()
+          ? widget.alternativeText.trim()
+          : humanizePdfFieldName(widget.fieldName)
+        const options = Array.isArray(widget.options)
+          ? widget.options.map((option: unknown) => {
+              const record = option && typeof option === 'object' ? option as Record<string, unknown> : {}
+              const value = typeof record.exportValue === 'string' ? record.exportValue : typeof record.displayValue === 'string' ? record.displayValue : ''
+              const optionLabel = typeof record.displayValue === 'string' ? record.displayValue : value
+              return { label: optionLabel, value }
+            }).filter((option: { value: string }) => option.value)
+          : undefined
+        seenNativeNames.add(widget.fieldName)
+        fields.push({
+          controlType: fieldType,
+          defaultValue: fieldType === 'checkbox' ? String(Boolean(widget.fieldValue && widget.fieldValue !== 'Off')) : typeof widget.fieldValue === 'string' ? widget.fieldValue : '',
+          eraseHeightRatio: 0,
+          eraseWidthRatio: 0,
+          fontSize: Math.max(8, Math.min(15, Math.round(height * .65))),
+          id: `native:${widget.fieldName}`,
+          label,
+          nativeFieldName: widget.fieldName,
+          options,
+          page: pageNumber,
+          widthRatio: Math.min(.88, width / viewport.width),
+          xRatio: Math.max(.01, Math.min(.97, left / viewport.width)),
+          yRatio: Math.max(.01, Math.min(.97, top / viewport.height)),
+        })
+      }
+    }
+    if (typeof pdfPage.getTextContent !== 'function') continue
     const content = await pdfPage.getTextContent()
     for (const item of content.items) {
       if (!('str' in item) || !item.str.includes('[') || !Array.isArray(item.transform)) continue
@@ -156,6 +228,7 @@ async function detectTemplateFields(pdf: PDFDocumentProxy): Promise<DetectedTemp
         if (seen.has(key)) continue
         seen.add(key)
         fields.push({
+          controlType: inferredControlType(label),
           eraseHeightRatio: Math.max(.018, Math.min(.08, itemHeight * 1.45 / viewport.height)),
           eraseWidthRatio: Math.max(detectedWidth, Math.min(.72, (itemWidth * widthFraction + 14) / viewport.width)),
           fontSize: Math.max(8, Math.min(15, Math.round(itemHeight))),
@@ -238,7 +311,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     return workspace.employees.filter((employee) => ['active', 'leave'].includes(employee.status) && (!search || `${employee.legalName} ${employee.employeeNumber ?? ''}`.toLocaleLowerCase().includes(search)))
   }, [recipientSearch, workspace.employees])
   const documentFingerprint = useMemo(() => JSON.stringify({
-    annotations: annotations.map(({ eraseHeightRatio, eraseWidthRatio, fontFamily, fontSize, kind, page: annotationPage, templateFieldKey, text, widthRatio, xRatio, yRatio }) => ({ eraseHeightRatio, eraseWidthRatio, fontFamily, fontSize, kind, page: annotationPage, templateFieldKey, text, widthRatio, xRatio, yRatio })),
+    annotations: annotations.map(({ eraseHeightRatio, eraseWidthRatio, fontFamily, fontSize, kind, nativeFieldName, nativeFieldType, page: annotationPage, templateFieldKey, text, widthRatio, xRatio, yRatio }) => ({ eraseHeightRatio, eraseWidthRatio, fontFamily, fontSize, kind, nativeFieldName, nativeFieldType, page: annotationPage, templateFieldKey, text, widthRatio, xRatio, yRatio })),
     category,
     description,
     employeeId,
@@ -421,11 +494,13 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
 
   function templateAnnotation(field: DetectedTemplateField, value: string): PdfAnnotation {
     return {
-      eraseHeightRatio: field.eraseHeightRatio,
-      eraseWidthRatio: field.eraseWidthRatio,
+      eraseHeightRatio: field.nativeFieldName ? undefined : field.eraseHeightRatio,
+      eraseWidthRatio: field.nativeFieldName ? undefined : field.eraseWidthRatio,
       fontSize: field.fontSize,
       id: `template:${field.id}`,
-      kind: 'text',
+      kind: field.controlType === 'checkbox' ? 'checkmark' : 'text',
+      nativeFieldName: field.nativeFieldName,
+      nativeFieldType: field.controlType === 'checkbox' ? 'checkbox' : field.controlType === 'choice' ? 'choice' : field.nativeFieldName ? 'text' : undefined,
       page: field.page,
       templateFieldKey: field.id,
       text: value,
@@ -437,19 +512,27 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
 
   function updateTemplateField(field: DetectedTemplateField, value: string) {
     const withoutField = annotationsRef.current.filter((annotation) => annotation.templateFieldKey !== field.id)
-    commitAnnotationSnapshot(value.trim() ? [...withoutField, templateAnnotation(field, value)] : withoutField)
+    commitAnnotationSnapshot(field.nativeFieldName || value.trim() ? [...withoutField, templateAnnotation(field, value)] : withoutField)
   }
 
-  function fillSelectedEmployeeDetails() {
-    const employee = workspace.employees.find((candidate) => candidate.id === employeeId)
+  function fillSelectedEmployeeDetails(targetEmployeeId = employeeId) {
+    const employee = workspace.employees.find((candidate) => candidate.id === targetEmployeeId)
     if (!employee) return
+    const today = new Intl.DateTimeFormat('en-US').format(new Date())
     const next = annotationsRef.current.filter((annotation) => !annotation.templateFieldKey)
     for (const field of templateFields) {
       const normalized = field.label.toLocaleLowerCase()
-      const isOtherPerson = /(supervisor|manager|representative|witness|owner)/.test(normalized)
-      let value = annotationsRef.current.find((annotation) => annotation.templateFieldKey === field.id)?.text ?? ''
-      if (!value && !isOtherPerson && /(employee|applicant).*(legal )?name|(legal )?name.*(employee|applicant)/.test(normalized)) value = employee.legalName
-      if (!value && /(employee|payroll).*(id|number)|(id|number).*(employee|payroll)/.test(normalized)) value = employee.employeeNumber ?? ''
+      const currentValue = annotationsRef.current.find((annotation) => annotation.templateFieldKey === field.id)?.text ?? field.defaultValue ?? ''
+      let employeeValue: string | undefined
+      if (/(employee|applicant).*(legal )?name|(legal )?name.*(employee|applicant)|^legal name$|^employee$/.test(normalized)) employeeValue = employee.legalName
+      else if (/(employee|payroll).*(id|number)|(id|number).*(employee|payroll)/.test(normalized)) employeeValue = employee.employeeNumber ?? ''
+      else if (/(job|position).*(title)|title.*(job|position)|^position$/.test(normalized)) employeeValue = employee.jobTitle ?? ''
+      else if (/employment.*(type|classification)|(type|classification).*employment/.test(normalized)) employeeValue = employee.employmentType?.replaceAll('_', ' ') ?? ''
+      else if (/(supervisor|manager).*(name)?|(name).*(supervisor|manager)/.test(normalized)) employeeValue = employee.supervisorLabel ?? ''
+      else if (/(work )?(location|site)|(location|site).*(work|employee)/.test(normalized)) employeeValue = employee.locationText ?? ''
+      else if (/(employer|company|business|organization).*(name)?|^employer$|^company$/.test(normalized)) employeeValue = 'Guardianship Security LLC'
+      else if (/(document|completion|completed|prepared|today).*(date)|^document date$/.test(normalized)) employeeValue = today
+      const value = employeeValue ?? currentValue
       if (value.trim()) next.push(templateAnnotation(field, value))
     }
     commitAnnotationSnapshot(next)
@@ -704,7 +787,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     }
   }
 
-  const visibleAnnotations = annotations.filter((annotation) => annotation.page === page)
+  const visibleAnnotations = annotations.filter((annotation) => annotation.page === page && !(annotation.nativeFieldType === 'checkbox' && annotation.text !== 'true'))
   const selectedTextAnnotation = selectedAnnotation?.kind === 'text' ? selectedAnnotation : null
   const selectedSignatureAnnotation = selectedAnnotation?.kind === 'signature' ? selectedAnnotation : null
   const busy = save.isPending || sendDocument.isPending || previewBusy
@@ -753,7 +836,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
           <div className={`document-workbench__sheet${tool ? ' is-placing' : ''}`} onPointerDown={(event) => void addAnnotation(event)} ref={sheetRef} style={{ height: sheetSize.height || undefined, width: sheetSize.width || undefined }}>
             <canvas hidden={!pdf || !sheetSize.width} ref={canvasRef} />
             {visibleAnnotations.map((annotation) => <div
-              className={`document-workbench__annotation is-${annotation.kind}${annotation.templateFieldKey ? ' is-template-field' : ''}${selectedAnnotationId === annotation.id ? ' is-selected' : ''}`}
+              className={`document-workbench__annotation is-${annotation.kind}${annotation.templateFieldKey ? ' is-template-field' : ''}${annotation.nativeFieldName ? ' is-native-field' : ''}${selectedAnnotationId === annotation.id ? ' is-selected' : ''}`}
               key={annotation.id}
               style={{
                 left: `${annotation.xRatio * 100}%`,
@@ -766,16 +849,16 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
                 aria-label={`${annotation.kind === 'text' ? 'Text box' : annotation.kind}: ${annotation.text}. Drag or use arrow keys to move.`}
                 aria-pressed={selectedAnnotationId === annotation.id}
                 className="document-workbench__annotation-content"
-                onClick={() => { setSelectedAnnotationId(annotation.id); setTool(null); setPanel('edit') }}
+                onClick={() => { if (!annotation.nativeFieldName) { setSelectedAnnotationId(annotation.id); setTool(null); setPanel('edit') } }}
                 onKeyDown={(event) => moveAnnotationWithKeyboard(event, annotation)}
                 onPointerCancel={finishAnnotationGesture}
-                onPointerDown={(event) => startAnnotationGesture(event, annotation, 'move')}
+                onPointerDown={(event) => annotation.nativeFieldName ? event.stopPropagation() : startAnnotationGesture(event, annotation, 'move')}
                 onPointerMove={continueAnnotationGesture}
                 onPointerUp={finishAnnotationGesture}
                 title="Drag to move. Arrow keys also move this item."
                 type="button"
-              >{annotation.kind === 'signature' ? <SignatureImage annotation={annotation} /> : annotation.text}</button>
-              {(annotation.kind === 'text' || annotation.kind === 'signature') && selectedAnnotationId === annotation.id ? <button
+              >{annotation.kind === 'signature' ? <SignatureImage annotation={annotation} /> : annotation.nativeFieldType === 'checkbox' ? '✓' : annotation.text}</button>
+              {(annotation.kind === 'text' || annotation.kind === 'signature') && !annotation.nativeFieldName && selectedAnnotationId === annotation.id ? <button
                 aria-label={annotation.kind === 'signature' ? 'Resize selected signature' : 'Resize selected text box'}
                 className="document-workbench__resize-handle"
                 onPointerCancel={finishAnnotationGesture}
@@ -799,11 +882,19 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
           {panel === 'edit' ? <div className="document-workbench__panel">
             <div><p className="eyebrow">Add to the PDF</p><h3>Choose a tool, then click the page</h3><p>Every addition can be undone or removed before you finish.</p></div>
             {templateFields.length ? <section className="document-workbench__guided-fields" aria-label="Detected form fields">
-              <div className="document-workbench__guided-heading"><div><p className="eyebrow">Fill this form</p><h3>{templateFields.length} editable {templateFields.length === 1 ? 'field' : 'fields'} found</h3><p>Type each answer here. SygShift replaces the bracketed prompt on the PDF.</p></div>{workspace.employees.some((employee) => employee.id === employeeId) ? <button className="secondary-button secondary-button--small" onClick={fillSelectedEmployeeDetails} type="button">Use selected employee</button> : null}</div>
+              <label className="document-workbench__guided-employee">Whose form is this?<select onChange={(event) => { const nextEmployeeId = event.target.value; setEmployeeId(nextEmployeeId); if (nextEmployeeId !== 'company') fillSelectedEmployeeDetails(nextEmployeeId) }} value={employeeId}><option value="company">Not tied to one employee</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select><small>Choosing an employee fills matching name, ID, title, supervisor, location, and company fields when available.</small></label>
+              <div className="document-workbench__guided-heading"><div><p className="eyebrow">Fill this form</p><h3>{templateFields.length} editable {templateFields.length === 1 ? 'field' : 'fields'} found</h3><p>{templateFields.some((field) => field.nativeFieldName) ? 'Complete the form fields here. The finished PDF keeps every answer in the correct box.' : 'Complete the fields here. SygShift places every answer in the correct spot on the PDF.'}</p></div>{workspace.employees.some((employee) => employee.id === employeeId) ? <button className="secondary-button secondary-button--small" onClick={() => fillSelectedEmployeeDetails()} type="button">Fill employee details</button> : null}</div>
               <div className="document-workbench__guided-list">{templateFields.map((field) => {
                 const fieldAnnotation = annotations.find((annotation) => annotation.templateFieldKey === field.id)
-                const controlProps = { maxLength: 2000, onChange: (event: ReactChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => updateTemplateField(field, event.target.value), onFocus: () => setPage(field.page), placeholder: `Enter ${field.label.toLocaleLowerCase()}`, value: fieldAnnotation?.text ?? '' }
-                return <label key={field.id}><span>{field.label}<small>Page {field.page}</small></span>{field.label.length > 44 ? <textarea {...controlProps} rows={3} /> : <input {...controlProps} />}</label>
+                const value = fieldAnnotation?.text ?? field.defaultValue ?? ''
+                const focusField = () => setPage(field.page)
+                return <label key={field.id}><span>{field.label}<small>Page {field.page}</small></span>{field.controlType === 'checkbox'
+                  ? <span className="document-workbench__guided-check"><input checked={value === 'true'} onChange={(event) => updateTemplateField(field, String(event.target.checked))} onFocus={focusField} type="checkbox"/><span>Yes</span></span>
+                  : field.controlType === 'choice' && field.options?.length
+                    ? <select onChange={(event) => updateTemplateField(field, event.target.value)} onFocus={focusField} value={value}><option value="">Choose an option</option>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+                    : field.controlType === 'long_text'
+                      ? <textarea maxLength={4000} onChange={(event: ReactChangeEvent<HTMLTextAreaElement>) => updateTemplateField(field, event.target.value)} onFocus={focusField} placeholder={`Enter ${field.label.toLocaleLowerCase()}`} rows={4} value={value}/>
+                      : <input maxLength={1000} onChange={(event: ReactChangeEvent<HTMLInputElement>) => updateTemplateField(field, event.target.value)} onFocus={focusField} placeholder={`Enter ${field.label.toLocaleLowerCase()}`} value={value}/>}</label>
               })}</div>
             </section> : null}
             <div className="document-workbench__tools">

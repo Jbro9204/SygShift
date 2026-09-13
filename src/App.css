@@ -5914,6 +5914,10 @@
 .document-studio__tabs { background: light-dark(#fff, #171b1f); border: 1px solid light-dark(#ddd5c8, #353b41); border-radius: 12px; display: flex; gap: 5px; overflow-x: auto; padding: 6px; }
 .document-studio__tabs button { background: transparent; border: 1px solid transparent; border-radius: 8px; color: inherit; font-weight: 850; min-height: 40px; padding: 8px 14px; white-space: nowrap; }
 .document-studio__tabs button.active { background: light-dark(#f1dfb9, #352a18); border-color: light-dark(#d3a049, #957026); color: light-dark(#60400e, #edc871); }
+.document-studio__management { display: grid; gap: 12px; }
+.document-studio__management-tabs { align-items: center; background: light-dark(#f8f4ec, #14191c); border: 1px solid light-dark(#ddd5c8, #353b41); border-radius: 12px; display: flex; flex-wrap: wrap; gap: 6px; padding: 7px; }
+.document-studio__management-tabs button { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 9px; color: inherit; display: inline-flex; font: inherit; font-size: .88rem; font-weight: 850; gap: 7px; min-height: 40px; padding: 8px 13px; }
+.document-studio__management-tabs button.active { background: light-dark(#fff, #2d2518); border-color: light-dark(#d3a049, #957026); color: light-dark(#60400e, #edc871); }
 .document-studio__quick-actions { align-items: center; background: light-dark(linear-gradient(135deg, #fffaf0, #f7ead0), linear-gradient(135deg, #1e1a13, #2d2417)); border: 1px solid light-dark(#dfc58d, #725723); border-radius: 14px; display: flex; gap: 22px; justify-content: space-between; padding: 18px 20px; }
 .document-studio__quick-actions > div:first-child { display: grid; gap: 4px; max-width: 760px; }
 .document-studio__quick-actions h2 { font-size: 1.08rem; margin: 0; }
@@ -36293,7 +36297,7 @@ body:has(.app-shell--compact-navigation .sidebar--open) {
 /* Document Center — direct PDF workbench */
 .document-studio__launch-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -36342,6 +36346,13 @@ body:has(.app-shell--compact-navigation .sidebar--open) {
   align-self: start;
   color: light-dark(#6d6458, #bbb3a8);
   line-height: 1.45;
+}
+
+.document-studio__simple-note {
+  color: light-dark(#655d52, #c7beb1);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 12px 0 0;
 }
 
 .modal-dialog.document-workbench {
@@ -36563,6 +36574,12 @@ body:has(.app-shell--compact-navigation .sidebar--open) {
   border-color: rgb(157 104 20 / 45%);
 }
 
+.document-workbench__annotation.is-native-field > .document-workbench__annotation-content {
+  cursor: default;
+  outline: 1px solid rgb(55 117 180 / 48%);
+  outline-offset: 1px;
+}
+
 .document-workbench__annotation.is-checkmark > .document-workbench__annotation-content { background: transparent; border-color: transparent; }
 
 .document-workbench__resize-handle {
@@ -36663,12 +36680,17 @@ body:has(.app-shell--compact-navigation .sidebar--open) {
 .document-workbench__guided-heading h3 { margin: 2px 0 3px; }
 .document-workbench__guided-heading p:not(.eyebrow) { margin: 0; color: light-dark(#6b6358, #c1b7a8); font-size: .83rem; line-height: 1.45; }
 .document-workbench__guided-heading button { justify-self: start; }
+.document-workbench__guided-employee { display: grid; gap: 7px; font-size: .86rem; font-weight: 850; }
+.document-workbench__guided-employee select { border-radius: 12px; font-family: inherit; font-size: 1rem; min-height: 46px; padding: 10px 12px; width: 100%; }
+.document-workbench__guided-employee small { color: light-dark(#6b6358, #c1b7a8); font-size: .78rem; font-weight: 650; line-height: 1.45; }
 .document-workbench__guided-list { display: grid; max-height: 290px; gap: 9px; padding-right: 3px; overflow: auto; }
 .document-workbench__guided-list label { display: grid; gap: 6px; color: var(--ink); font-size: .84rem; font-weight: 850; }
 .document-workbench__guided-list label > span { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 8px; }
 .document-workbench__guided-list small { flex: 0 0 auto; color: light-dark(#776f65, #aaa49b); font-size: .72rem; font-weight: 700; }
-.document-workbench__guided-list :is(input, textarea) { width: 100%; min-height: 44px; padding: 9px 11px; border-radius: 10px; font-family: inherit; font-size: .96rem; line-height: 1.45; }
+.document-workbench__guided-list :is(input, select, textarea) { width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 12px; font-family: inherit; font-size: 1rem; line-height: 1.5; }
 .document-workbench__guided-list textarea { resize: vertical; }
+.document-workbench__guided-check { align-items: center !important; background: light-dark(#fff, #171b1f); border: 1px solid light-dark(#d3c9ba, #4a5056); border-radius: 12px; display: flex !important; font-size: 1rem; font-weight: 750; gap: 10px; justify-content: flex-start !important; min-height: 46px; padding: 10px 12px; }
+.document-workbench__guided-check input { flex: 0 0 auto; height: 20px; min-height: 20px; padding: 0; width: 20px; }
 
 .document-workbench__tools button {
   display: flex;
@@ -36699,7 +36721,7 @@ body:has(.app-shell--compact-navigation .sidebar--open) {
 }
 
 .document-workbench__field > span { color: light-dark(#776f65, #aaa49b); font-weight: 650; }
-.document-workbench__field :is(input, select, textarea) { width: 100%; border-radius: 11px; font-family: inherit; font-size: 1rem; }
+.document-workbench__field :is(input, select, textarea) { width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 12px; font-family: inherit; font-size: 1rem; line-height: 1.5; }
 .document-workbench__field > textarea { min-height: 104px; line-height: 1.5; resize: vertical; }
 
 .document-workbench__search {
@@ -36922,6 +36944,21 @@ body:has(.app-shell--compact-navigation .sidebar--open) {
 }
 
 @media (max-width: 760px) {
+  .document-studio__tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .document-studio__tabs button {
+    line-height: 1.25;
+    white-space: normal;
+  }
+
+  .document-studio__tabs button:first-child {
+    grid-column: 1 / -1;
+  }
+
   .modal-dialog.document-workbench { border-radius: 15px; }
   .document-workbench > .modal-dialog__heading { padding: 15px 14px; }
   .document-workbench > .modal-dialog__heading p { display: none; }

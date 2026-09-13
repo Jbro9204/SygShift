@@ -1,4 +1,13 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import {
+  PDFCheckBox,
+  PDFDocument,
+  PDFDropdown,
+  PDFOptionList,
+  PDFRadioGroup,
+  PDFTextField,
+  StandardFonts,
+  rgb,
+} from 'pdf-lib'
 
 export type PdfAnnotationKind = 'checkmark' | 'date' | 'signature' | 'text'
 
@@ -9,6 +18,8 @@ export interface PdfAnnotation {
   fontFamily?: string
   id: string
   kind: PdfAnnotationKind
+  nativeFieldName?: string
+  nativeFieldType?: 'checkbox' | 'choice' | 'text'
   page: number
   text: string
   widthRatio?: number
@@ -154,7 +165,32 @@ export async function finalizePdf(source: Uint8Array, annotations: PdfAnnotation
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const checkFont = await pdf.embedFont(StandardFonts.ZapfDingbats)
 
+  const nativeAnnotations = annotations.filter((annotation) => annotation.nativeFieldName)
+  const form = pdf.getForm()
+  if (form.hasXFA()) form.deleteXFA()
+  for (const annotation of nativeAnnotations) {
+    const field = form.getFieldMaybe(annotation.nativeFieldName!)
+    if (!field) throw new Error(`The PDF field "${annotation.nativeFieldName}" is no longer available.`)
+    const value = printableText(annotation.text)
+    if (field instanceof PDFTextField) {
+      field.setText(value)
+    } else if (field instanceof PDFCheckBox) {
+      if (value === 'true') field.check()
+      else field.uncheck()
+    } else if (field instanceof PDFDropdown || field instanceof PDFOptionList || field instanceof PDFRadioGroup) {
+      if (value) field.select(value)
+      else field.clear()
+    } else {
+      throw new Error(`The PDF field "${annotation.nativeFieldName}" cannot be completed in this editor.`)
+    }
+  }
+  if (form.getFields().length) {
+    form.updateFieldAppearances(font)
+    form.flatten({ updateFieldAppearances: false })
+  }
+
   for (const annotation of annotations) {
+    if (annotation.nativeFieldName) continue
     const page = pdf.getPage(annotation.page - 1)
     if (!page) continue
     const { height, width } = page.getSize()

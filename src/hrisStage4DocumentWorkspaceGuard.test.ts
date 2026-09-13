@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const migration = readFileSync('supabase/migrations/20260830170000_hris_stage4_document_workspace.sql', 'utf8')
+const guidedPrefillMigration = readFileSync('supabase/migrations/20260912210000_guided_document_employee_prefill.sql', 'utf8')
 const worker = readFileSync('worker/index.ts', 'utf8')
 const page = readFileSync('src/pages/HrisDocumentsPage.tsx', 'utf8')
 const data = readFileSync('src/data/hrDocuments.ts', 'utf8')
@@ -37,7 +38,9 @@ describe('HRIS Stage 4 protected document workspace', () => {
     expect(handler).toContain('requireHrDocumentPipeline(environment)')
     expect(handler).toContain('requireAuthenticatedSession')
     expect(handler).toContain('requireRecentHrMfa')
-    expect(handler).toContain("'service_get_hr_document_workspace'")
+    expect(handler).toContain("'service_get_hr_document_workspace_v2'")
+    expect(guidedPrefillMigration).toContain('public.service_get_hr_document_workspace(')
+    expect(guidedPrefillMigration).toContain("if (select auth.role()) <> 'service_role'")
   })
 
   it('never exposes direct document storage paths to the browser', () => {

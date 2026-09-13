@@ -221,8 +221,8 @@ export function HrisDocumentsPage() {
         <>
           <section className="hr-documents-toolbar">
             <div className="hr-documents-toolbar__heading">
-              <div><p className="eyebrow">Document inventory</p><h2>{filters.employeeId ? `Files for ${focusedEmployeeName}` : 'Employee records'}</h2><p>{filters.employeeId ? 'Every current file assigned to this employee is shown below.' : 'Legal names are used throughout this workspace.'}</p></div>
-              {workspace.actor.canManageAny ? <button className="primary-action" onClick={() => setWorkbench(filters.employeeId ? { employeeId: filters.employeeId, employeeOnly: true } : {})} type="button"><UploadCloud aria-hidden="true" size={18} />{filters.employeeId ? 'Add document' : 'Open a PDF'}</button> : null}
+              <div><p className="eyebrow">Saved records</p><h2>{filters.employeeId ? `Files for ${focusedEmployeeName}` : 'Completed and uploaded documents'}</h2><p>{filters.employeeId ? 'Every current file assigned to this employee is shown below.' : 'Search documents that have already been saved to a company or employee record. Working forms and training material stay above.'}</p></div>
+              {workspace.actor.canManageAny ? <button className="primary-action" onClick={() => setWorkbench(filters.employeeId ? { employeeId: filters.employeeId, employeeOnly: true } : {})} type="button"><UploadCloud aria-hidden="true" size={18} />{filters.employeeId ? 'Add document' : 'Add completed PDF'}</button> : null}
             </div>
             <div className="hr-documents-filters">
               <form onSubmit={submitSearch}>

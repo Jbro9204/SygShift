@@ -55,7 +55,7 @@ describe('Document Studio identity recovery', () => {
     expect(screen.queryByText('Test HR reference PDF')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Verify with security key' }))
 
-    await screen.findByText('Open it, complete it, and choose where it goes')
+    await screen.findByText('What do you need to do?')
     await screen.findByText('Test HR reference PDF')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(screen.queryByText('Document Studio unavailable')).not.toBeInTheDocument()
@@ -95,7 +95,7 @@ describe('Document Studio identity recovery', () => {
     expect(screen.getByRole('region', { name: 'Documents for Zachary Alexander Ward' })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Employee' })).toHaveValue(employeeId)
     expect(screen.getByRole('link', { name: 'Employee File' })).toHaveAttribute('href', `/hr/people/${employeeId}`)
-    expect(screen.queryByText('Open it, complete it, and choose where it goes')).not.toBeInTheDocument()
+    expect(screen.queryByText('What do you need to do?')).not.toBeInTheDocument()
     client.clear()
   })
 })

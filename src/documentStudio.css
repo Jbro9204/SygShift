@@ -130,6 +130,38 @@
   grid-row: 1 / 3;
 }
 
+.hr-template-library__intent-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.hr-template-library__intent-grid button {
+  align-items: center;
+  background: light-dark(#fffdf9, #171b1f);
+  border: 1px solid light-dark(#d9cdbb, #3b4248);
+  border-radius: 13px;
+  color: inherit;
+  display: flex;
+  font: inherit;
+  font-size: .94rem;
+  font-weight: 850;
+  gap: 10px;
+  min-height: 58px;
+  padding: 13px 15px;
+  text-align: left;
+}
+
+.hr-template-library__intent-grid button:hover,
+.hr-template-library__intent-grid button:focus-visible,
+.hr-template-library__intent-grid button.active {
+  background: light-dark(#fff3d8, #302617);
+  border-color: light-dark(#c68b29, #9b7428);
+  color: light-dark(#68440b, #f1cb76);
+}
+
+.hr-template-library__intent-grid svg { flex: 0 0 auto; }
+
 .hr-template-library__notice {
   align-items: flex-start;
   background: light-dark(#fff7e5, #251f15);
@@ -194,7 +226,10 @@
 .hr-template-library__filters form input {
   background: transparent;
   border: 0;
-  min-height: 42px;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 1rem;
+  min-height: 46px;
   outline: 0;
   padding: 0;
   width: 100%;
@@ -210,7 +245,10 @@
 }
 
 .hr-template-library__filters select {
-  min-height: 42px;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 1rem;
+  min-height: 46px;
   width: 100%;
 }
 
@@ -341,6 +379,21 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.hr-template-library__technical-details {
+  background: light-dark(#fffdf9, #171b1f);
+  border: 1px solid light-dark(#ded5c7, #3a4147);
+  border-radius: 11px;
+  padding: 10px 12px;
+}
+
+.hr-template-library__technical-details summary {
+  cursor: pointer;
+  font-size: .84rem;
+  font-weight: 850;
+}
+
+.hr-template-library__technical-details[open] summary { margin-bottom: 12px; }
+
 .hr-template-library__details dl div {
   display: grid;
   gap: 4px;
@@ -389,6 +442,10 @@
 }
 
 @media (max-width: 1050px) {
+  .hr-template-library__intent-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .hr-template-library__filters {
     grid-template-columns: minmax(280px, 1.5fr) repeat(2, minmax(130px, .65fr));
   }
@@ -410,6 +467,7 @@
   }
 
   .hr-template-library__metrics,
+  .hr-template-library__intent-grid,
   .hr-template-library__filters {
     grid-template-columns: 1fr;
   }

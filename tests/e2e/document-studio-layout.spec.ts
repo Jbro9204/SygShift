@@ -16,6 +16,27 @@ async function installStudioFixture(page: import('@playwright/test').Page, theme
   }, theme)
 }
 
+async function installStudioStartFixture(page: import('@playwright/test').Page, theme: 'light' | 'dark') {
+  await page.evaluate((selectedTheme) => {
+    document.documentElement.dataset.theme = selectedTheme
+    document.documentElement.style.colorScheme = selectedTheme
+    document.body.innerHTML = `<main style="max-width:1440px;margin:0 auto;padding:24px"><h1>Document Center</h1>
+      <section class="document-studio" aria-label="Document Center">
+        <div class="document-studio__tabs" role="tablist" aria-label="Document Studio sections"><button aria-selected="true" class="active" role="tab">Start</button><button aria-selected="false" role="tab">Working HR forms</button><button aria-selected="false" role="tab">Training &amp; guides</button><button aria-selected="false" role="tab">Signature requests</button><button aria-selected="false" role="tab">Manage system</button></div>
+        <div class="document-studio__quick-actions"><div><p class="eyebrow">Simple document work</p><h2>What do you need to do?</h2><span>Choose one starting point. SygShift will guide you through the document, review, and final destination.</span></div></div>
+        <div class="document-studio__launch-grid">
+          <button type="button"><span>↑</span><strong>Use an outside PDF</strong><small>Upload a proposal or other document and work on it now</small></button>
+          <button type="button"><span>⌕</span><strong>Start an HR task</strong><small>Find the right working form by what you need to do</small></button>
+          <button type="button"><span>▤</span><strong>Add to an employee file</strong><small>Complete a PDF and save it with the right person</small></button>
+          <button type="button"><span>▱</span><strong>Find training or a guide</strong><small>Open learning material without mixing it with HR forms</small></button>
+        </div>
+        <p class="document-studio__simple-note">No policy, template, filing section, or setup wizard is required.</p>
+        <div class="document-studio__overview"><article><span>▤</span><div><h3>Fill the form, not the screen</h3><p>When a PDF contains form fields, SygShift detects them and keeps every answer in the correct box.</p></div></article><article><span>✓</span><div><h3>Review before finishing</h3><p>Preview the exact completed PDF, then download it, send it, or add it to an employee record.</p></div></article><article><span>◎</span><div><h3>Find finished work easily</h3><p>Employee documents stay on the employee file.</p></div></article></div>
+      </section>
+    </main>`
+  }, theme)
+}
+
 async function installSendDocumentFixture(page: import('@playwright/test').Page, theme: 'light' | 'dark') {
   await page.evaluate((selectedTheme) => {
     document.documentElement.dataset.theme = selectedTheme
@@ -41,6 +62,33 @@ async function installSignatureFixture(page: import('@playwright/test').Page, th
 }
 
 for (const theme of ['light', 'dark'] as const) {
+  test(`Document Center start screen stays simple and balanced in ${theme} mode`, async ({ page }, testInfo) => {
+    await page.goto('/')
+    await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--ink').trim().length > 0)
+    await installStudioStartFixture(page, theme)
+    await expect(page.locator('.document-studio__launch-grid > button')).toHaveCount(4)
+    const columns = await page.locator('.document-studio__launch-grid').evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(' ').length)
+    expect(columns).toBe(testInfo.project.name === 'mobile-chromium' ? 1 : 2)
+    for (const button of await page.locator('.document-studio__launch-grid > button').all()) {
+      const styles = await button.evaluate((control) => {
+        const style = getComputedStyle(control)
+        return { borderRadius: parseFloat(style.borderRadius), fontFamily: style.fontFamily, minHeight: control.getBoundingClientRect().height, padding: parseFloat(style.paddingLeft) }
+      })
+      expect(styles.borderRadius).toBeGreaterThanOrEqual(14)
+      expect(styles.fontFamily.toLowerCase()).not.toContain('monospace')
+      expect(styles.minHeight).toBeGreaterThanOrEqual(100)
+      expect(styles.padding).toBeGreaterThanOrEqual(16)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    if (testInfo.project.name === 'mobile-chromium') {
+      for (const tab of ['Start', 'Working HR forms', 'Training & guides', 'Signature requests', 'Manage system']) {
+        await expect(page.getByRole('tab', { name: tab })).toBeInViewport()
+      }
+    }
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+    await page.screenshot({ path: testInfo.outputPath(`document-center-start-${theme}.png`), fullPage: true })
+  })
+
   test(`Document Studio remains compact and accessible in ${theme} mode`, async ({ page }, testInfo) => {
     await page.goto('/')
     await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--ink').trim().length > 0)

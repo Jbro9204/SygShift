@@ -21,10 +21,16 @@ const vaultSchema = z.object({
 })
 
 const employeeSchema = z.object({
+  employmentType: nullableText.optional(),
+  hiredOn: nullableText.optional(),
   id: z.string().uuid(),
   employeeNumber: nullableText,
+  jobTitle: nullableText.optional(),
   legalName: z.string(),
+  locationText: nullableText.optional(),
+  role: nullableText.optional(),
   status: z.string(),
+  supervisorLabel: nullableText.optional(),
 })
 
 const versionSchema = z.object({

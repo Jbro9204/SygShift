@@ -3184,20 +3184,24 @@ async function handleHrDocumentWorkspace(
   const pageSizeValue = Number.parseInt(url.searchParams.get('pageSize') ?? '10', 10)
   const pageSize = [5, 10, 20].includes(pageSizeValue) ? pageSizeValue : 10
   const includeArchived = url.searchParams.get('includeArchived') === 'true'
-  const payload = await callRpc<HrDocumentWorkspacePayload>(
-    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
-    'service_get_hr_document_workspace',
-    {
-      target_actor_id: session.context.employee_id,
-      target_employee_id: employeeId || null,
-      target_include_archived: includeArchived,
-      target_page: page,
-      target_page_size: pageSize,
-      target_search: search || null,
-      target_vault_code: vaultCode || null,
-    },
-    session.config.serviceRoleKey,
-  )
+  const workspaceArguments = {
+    target_actor_id: session.context.employee_id,
+    target_employee_id: employeeId || null,
+    target_include_archived: includeArchived,
+    target_page: page,
+    target_page_size: pageSize,
+    target_search: search || null,
+    target_vault_code: vaultCode || null,
+  }
+  const workspaceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  let payload: HrDocumentWorkspacePayload
+  try {
+    payload = await callRpc<HrDocumentWorkspacePayload>(workspaceConfig, 'service_get_hr_document_workspace_v2', workspaceArguments, session.config.serviceRoleKey)
+  } catch (error) {
+    const v2Unavailable = error instanceof SupabaseRequestError && (error.status === 404 || error.code === 'PGRST202' || error.code === '42883')
+    if (!v2Unavailable) throw error
+    payload = await callRpc<HrDocumentWorkspacePayload>(workspaceConfig, 'service_get_hr_document_workspace', workspaceArguments, session.config.serviceRoleKey)
+  }
   payload.documents = Array.isArray(payload.documents)
     ? payload.documents.map((item) => {
         if (!item || typeof item !== 'object' || Array.isArray(item)) return item

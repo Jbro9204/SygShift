@@ -49,6 +49,34 @@ describe('PDF workbench finalization', () => {
     expect(completedPdfFilename('')).toBe('Completed document.pdf')
   })
 
+  it('fills and flattens native PDF form fields into the finished working copy', async () => {
+    const source = await PDFDocument.create()
+    const page = source.addPage([612, 792])
+    const font = await source.embedFont('Helvetica')
+    const form = source.getForm()
+    form.createTextField('employee_name').addToPage(page, { font, height: 24, width: 220, x: 72, y: 690 })
+    form.createCheckBox('employee_received_copy').addToPage(page, { height: 18, width: 18, x: 72, y: 650 })
+    const status = form.createDropdown('employment_status')
+    status.addOptions(['Active', 'Leave'])
+    status.addToPage(page, { font, height: 24, width: 160, x: 72, y: 610 })
+    const bytes = await source.save()
+
+    const completed = await finalizePdf(bytes, [
+      { id: 'name', kind: 'text', nativeFieldName: 'employee_name', nativeFieldType: 'text', page: 1, text: 'Michelle Hood', xRatio: .1, yRatio: .1 },
+      { id: 'copy', kind: 'checkmark', nativeFieldName: 'employee_received_copy', nativeFieldType: 'checkbox', page: 1, text: 'true', xRatio: .1, yRatio: .2 },
+      { id: 'status', kind: 'text', nativeFieldName: 'employment_status', nativeFieldType: 'choice', page: 1, text: 'Active', xRatio: .1, yRatio: .3 },
+    ])
+
+    const reopened = await PDFDocument.load(completed)
+    expect(reopened.getForm().getFields()).toHaveLength(0)
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const loaded = await pdfjs.getDocument({ data: new Uint8Array(completed) }).promise
+    const content = await (await loaded.getPage(1)).getTextContent()
+    const savedText = content.items.map((item) => 'str' in item ? item.str : '').join(' ')
+    expect(savedText).toContain('Michelle Hood')
+    expect(savedText).toContain('Active')
+  })
+
   it('wraps long text and preserves deliberate line breaks', () => {
     const lines = wrapPdfText('Alpha beta gamma delta\nSecond line', 12, (value) => value.length)
     expect(lines).toEqual(['Alpha beta', 'gamma delta', 'Second line'])

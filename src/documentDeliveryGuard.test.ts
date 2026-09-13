@@ -71,7 +71,8 @@ describe('employee write-up and signature delivery', () => {
   })
 
   it('makes the outside-document signing path clear and keeps templates optional', () => {
-    expect(studio).toContain('Open it, complete it, and choose where it goes')
+    expect(studio).toContain('What do you need to do?')
+    expect(studio).toContain('Use an outside PDF')
     expect(studio).toContain('No policy, template, filing section, or setup wizard is required.')
     expect(studio).toContain('Add to an employee file')
     expect(workbench).toContain('Send document')

@@ -7,8 +7,9 @@ import type { HrDocumentWorkspace } from '../data/hrDocuments'
 const pdf = vi.hoisted(() => {
   const renderPage = vi.fn(() => ({ cancel: vi.fn(), promise: Promise.resolve() }))
   const page = {
+    getAnnotations: vi.fn(async () => [] as Array<Record<string, unknown>>),
     getTextContent: vi.fn(async () => ({ items: [] as Array<Record<string, unknown>> })),
-    getViewport: vi.fn(({ scale }: { scale: number }) => ({ convertToViewportPoint: (x: number, y: number) => [x * scale, 800 * scale - y * scale], height: 800 * scale, width: 600 * scale })),
+    getViewport: vi.fn(({ scale }: { scale: number }) => ({ convertToViewportPoint: (x: number, y: number) => [x * scale, 800 * scale - y * scale], convertToViewportRectangle: ([x1, y1, x2, y2]: number[]) => [x1 * scale, 800 * scale - y1 * scale, x2 * scale, 800 * scale - y2 * scale], height: 800 * scale, width: 600 * scale })),
     render: renderPage,
   }
   const loaded = { destroy: vi.fn(async () => undefined), getPage: vi.fn(async () => page), numPages: 1 }
@@ -87,6 +88,7 @@ describe('DocumentWorkbench editor', () => {
     documentApi.getBlob.mockReset()
     documentApi.getWorkspace.mockReset()
     documentApi.upload.mockReset()
+    pdf.page.getAnnotations.mockReset().mockResolvedValue([])
     pdf.page.getTextContent.mockReset().mockResolvedValue({ items: [] })
   })
 
@@ -205,6 +207,30 @@ describe('DocumentWorkbench editor', () => {
     fireEvent.change(field, { target: { value: 'Zachary Alexander Ward' } })
     expect(await screen.findByRole('button', { name: /Text box: Zachary Alexander Ward/ })).toBeInTheDocument()
     expect(region).toHaveTextContent('Page 1')
+    client.clear()
+  })
+
+  it('turns native PDF form widgets into plain-language guided controls', async () => {
+    pdf.page.getAnnotations.mockResolvedValue([
+      { alternativeText: 'Employee legal name', fieldName: 'employee_name', fieldType: 'Tx', fieldValue: 'Existing Name', multiLine: false, rect: [80, 650, 330, 680], subtype: 'Widget' },
+      { alternativeText: 'Supervisor notes', fieldName: 'supervisor_notes', fieldType: 'Tx', fieldValue: '', multiLine: true, rect: [80, 420, 520, 620], subtype: 'Widget' },
+      { alternativeText: 'Employee received copy', checkBox: true, fieldName: 'received_copy', fieldType: 'Btn', fieldValue: 'Off', rect: [80, 380, 100, 400], subtype: 'Widget' },
+    ])
+    const source = new Uint8Array([37, 80, 68, 70])
+    const file = new File([source], 'fillable-form.pdf', { type: 'application/pdf' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => source.buffer.slice(0) })
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><DocumentWorkbench initialFile={file} onClose={vi.fn()} onSaved={vi.fn()} workspace={workspace} /></QueryClientProvider>)
+
+    const region = await screen.findByRole('region', { name: 'Detected form fields' })
+    expect(within(region).getByDisplayValue('Existing Name')).toBeInTheDocument()
+    expect(within(region).getByPlaceholderText('Enter supervisor notes').tagName).toBe('TEXTAREA')
+    fireEvent.change(within(region).getByRole('combobox', { name: /Whose form is this/i }), { target: { value: workspace.employees[0].id } })
+    expect(within(region).getByDisplayValue('Michelle Hood')).toBeInTheDocument()
+    const received = within(region).getByRole('checkbox', { name: /Employee received copy/i })
+    expect(received).not.toBeChecked()
+    fireEvent.click(received)
+    expect(await screen.findByRole('button', { name: /checkmark: true/i })).toHaveTextContent('✓')
     client.clear()
   })
 
