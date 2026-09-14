@@ -63,4 +63,3 @@ Michael had already rearranged Randy's coverage manually. To avoid double covera
 - Rollback tag: `rollback/pre-absence-coverage-completion-20260914`
 - Primary URL: `https://app.sygilant.us`
 - Fallback URL: `https://sygshift.sygilant.workers.dev`
-
