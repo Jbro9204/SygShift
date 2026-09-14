@@ -2446,3 +2446,15 @@ pnpm exec wrangler deploy --keep-vars
 - Verification passed 256 files / 1,308 tests, 42 focused clock/Document Center browser checks, the complete 328-pass desktop/mobile browser matrix with 12 intentional skips, and the post-release 42/42 Time Clock matrix.
 - Released source `597846c` as Cloudflare Worker `ecae9668-f0c4-4645-9ce8-074c4e26b860`; both production origins passed health, readiness, signed-out access, and exact application/CSS/Document Center asset verification.
 - See `docs/changelogs/CHANGELOG_09-14-2026_EQUAL_CLOCKS_AND_DOCUMENT_CENTER_GUIDANCE.md` for complete scope, preservation, verification, and rollback evidence.
+
+## 09/14/2026 - Attendance Absence Coverage Completion
+
+- Connected Accountability Tracker absences and Time Operations call-offs directly to the guided coverage workflow instead of ending after the factual attendance record.
+- Added the explicit **Absent / call-off** path, durable call-off linkage, interruption recovery, alert deep links, active coverage status, and safe correction of older **Other** occurrences.
+- Restored the required Request Center manager capability contract and aligned it with effective permissions; missing capability data no longer silently hides controls.
+- Preserved the absent employee's original published assignment and created a separate coverage shift only after management chooses the coverage outcome.
+- Left Randy's existing manually handled **Other** occurrence unchanged to prevent accidental duplicate coverage.
+- Applied and recorded migrations `20260914141934` and `20260914145246`; a rollback-only production lifecycle proved the exact separate open-shift path and left no test data.
+- Verification passed 259 files / 1,315 tests, the complete 328-pass desktop/mobile browser matrix with 12 intentional skips, the post-release 44/44 coverage plus Time Clock matrix, production database advisors, health/readiness, access boundaries, and byte-identical live assets.
+- Released source `420656e` as Cloudflare Worker `3a182c1b-44c2-4426-8ba8-425b19d0937e`.
+- See `docs/changelogs/CHANGELOG_09-14-2026_ABSENCE_COVERAGE_COMPLETION.md` for complete behavior, preservation, verification, and rollback evidence.
