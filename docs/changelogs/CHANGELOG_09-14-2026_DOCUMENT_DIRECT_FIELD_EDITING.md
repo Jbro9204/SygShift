@@ -29,14 +29,15 @@ The Document Center now treats the PDF itself as the primary form. An authorized
 - Focused Document Center browser checks passed **12/12** across desktop and mobile in light and dark modes.
 - Full repository gate passed: **259 test files / 1,321 tests**, TypeScript, zero-warning application lint, Worker build, and client production build.
 - Full browser matrix passed: **328 passed / 12 intentional skips / 0 failures** across desktop and mobile.
-- Post-release actual-component Time Clock verification: pending release gate.
-- Production health, readiness, protected access, and exact live-asset verification: pending release gate.
+- Post-release actual-component Time Clock preservation passed **42/42** across desktop and mobile.
+- Both production origins returned HTTP `200` for health, readiness, and `/hr/documents`; the protected Document Center workspace continued to return HTTP `401` without an authenticated session.
+- The live main JavaScript, shared stylesheet, Document Center bundle, and PDF viewer bundle matched the fresh production build byte-for-byte on both origins.
 
 ## Release references
 
-- Source commit: pending
+- Source commit: `52a194a`
 - Database migration: none
-- Cloudflare Worker version: pending
+- Cloudflare Worker version: `110a65f2-f98a-4fd5-9883-5bc349810a68`
 - Primary URL: `https://app.sygilant.us`
 - Fallback URL: `https://sygshift.sygilant.workers.dev`
 

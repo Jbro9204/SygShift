@@ -2479,5 +2479,6 @@ pnpm exec wrangler deploy --keep-vars
 - Kept File and Send transitions from hiding completed answers and retained manual placement for outside PDFs without detectable fields.
 - Preserved the existing final-PDF byte path, permissions, storage, scanning, audit, filing, and delivery controls; no database migration or production-data mutation was required.
 - Verification passed 259 files / 1,321 tests, 20 focused PDF/workbench tests, 23 focused theme/component tests, the 12/12 focused desktop/mobile Document Center matrix, and the complete 328-pass browser matrix with 12 intentional skips.
-- Release and post-release preservation checks are pending.
+- Post-release verification passed the 42/42 actual-component Time Clock matrix, health/readiness and signed-out access checks on both production origins, and byte-identical live application, stylesheet, Document Center, and PDF viewer assets.
+- Released source `52a194a` as Cloudflare Worker `110a65f2-f98a-4fd5-9883-5bc349810a68`; no database migration was required.
 - See `docs/changelogs/CHANGELOG_09-14-2026_DOCUMENT_DIRECT_FIELD_EDITING.md` for complete scope, preservation, verification, and release evidence.
