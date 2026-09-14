@@ -3,10 +3,10 @@ import { CalendarDays } from 'lucide-react'
 import { formatOperationalDate, formatTimeZoneClock } from '../lib/time'
 
 const OPERATIONAL_TIME_ZONES = [
-  { name: 'Pacific', operationalDefault: false, timeZone: 'America/Los_Angeles' },
-  { name: 'Mountain', timeZone: 'America/Denver', operationalDefault: true },
-  { name: 'Central', operationalDefault: false, timeZone: 'America/Chicago' },
-  { name: 'Eastern', operationalDefault: false, timeZone: 'America/New_York' },
+  { name: 'Pacific', systemTime: false, timeZone: 'America/Los_Angeles' },
+  { name: 'Mountain', systemTime: true, timeZone: 'America/Denver' },
+  { name: 'Central', systemTime: false, timeZone: 'America/Chicago' },
+  { name: 'Eastern', systemTime: false, timeZone: 'America/New_York' },
 ] as const
 
 type ClockAnchor = {
@@ -85,14 +85,14 @@ export function OperationalTimeHeader({
         <div className="operational-time-zone-grid">
           {OPERATIONAL_TIME_ZONES.map((zone) => {
             const display = formatTimeZoneClock(now, zone.timeZone)
-            const accessibleLabel = `${zone.name} time: ${display.digitalTime}, ${display.abbreviation}, ${display.accessibleDate}${zone.operationalDefault ? ', SygShift system time' : ''}`
+            const accessibleLabel = `${zone.name} time: ${display.digitalTime}, ${display.abbreviation}, ${display.accessibleDate}${zone.systemTime ? ', SygShift system time' : ''}`
             return (
-              <article aria-label={accessibleLabel} className={zone.operationalDefault ? 'operational-clock operational-clock--default' : 'operational-clock'} key={zone.timeZone}>
+              <article aria-label={accessibleLabel} className="operational-clock" key={zone.timeZone}>
                 <AnalogClock hour24={display.hour24} minute={display.minute} second={display.second} />
                 <span className="operational-clock__details">
                   <strong className="operational-clock__digital">{display.digitalTime}</strong>
                   <span className="operational-clock__zone">{zone.name} · {display.abbreviation}</span>
-                  {zone.operationalDefault ? <em>System time</em> : null}
+                  <em aria-hidden={!zone.systemTime}>{zone.systemTime ? 'System time' : '\u00a0'}</em>
                 </span>
               </article>
             )

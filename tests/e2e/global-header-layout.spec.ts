@@ -13,7 +13,7 @@ async function installHeaderFixture(page: import('@playwright/test').Page, colla
       ['Central', 'CDT'],
       ['Eastern', 'EDT'],
     ].map(([name, abbreviation]) => `
-      <article aria-label="${name} time" class="operational-clock${name === 'Mountain' ? ' operational-clock--default' : ''}">
+      <article aria-label="${name} time" class="operational-clock">
         <svg aria-hidden="true" class="operational-clock__face" viewBox="0 0 64 64">
           <circle class="operational-clock__dial" cx="32" cy="32" r="29"></circle>
           <line class="operational-clock__marker" x1="32" x2="32" y1="6" y2="11"></line>
@@ -25,7 +25,7 @@ async function installHeaderFixture(page: import('@playwright/test').Page, colla
         <span class="operational-clock__details">
           <strong class="operational-clock__digital">11:59 PM (23:59)</strong>
           <span class="operational-clock__zone">${name} · ${abbreviation}</span>
-          ${name === 'Mountain' ? '<em>System time</em>' : ''}
+          <em ${name === 'Mountain' ? '' : 'aria-hidden="true"'}>${name === 'Mountain' ? 'System time' : '&nbsp;'}</em>
         </span>
       </article>`).join('')
 
@@ -90,28 +90,53 @@ for (const width of widths) {
 
     const clippedDigitalTimes = await page.locator('.operational-clock__digital').evaluateAll((elements) => elements.filter((element) => element.scrollWidth > element.clientWidth + 1).length)
     expect(clippedDigitalTimes).toBe(0)
+    const clippedZoneLabels = await page.locator('.operational-clock__zone').evaluateAll((elements) => elements.filter((element) => element.scrollWidth > element.clientWidth + 1).length)
+    expect(clippedZoneLabels).toBe(0)
     const clockTextSize = await page.locator('.operational-clock__digital').first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
     const zoneTextSize = await page.locator('.operational-clock__zone').first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
     const clockFaceSize = await page.locator('.operational-clock__face').first().evaluate((element) => element.getBoundingClientRect().width)
-    expect(clockTextSize).toBeGreaterThanOrEqual(width <= 680 ? 13 : 14)
-    expect(zoneTextSize).toBeGreaterThanOrEqual(12.5)
-    expect(clockFaceSize).toBeGreaterThanOrEqual(width <= 680 ? 35 : width <= 1280 ? 36 : 38)
-    const highlight = await page.locator('.operational-clock--default').evaluate((element) => {
+    expect(clockTextSize).toBeGreaterThanOrEqual(width <= 680 ? 13 : 15)
+    expect(zoneTextSize).toBeGreaterThanOrEqual(width <= 680 ? 12.5 : 13)
+    expect(clockFaceSize).toBeGreaterThanOrEqual(width <= 680 ? 35 : width <= 1500 ? 40 : 44)
+    await expect(page.locator('.operational-clock--default')).toHaveCount(0)
+    const clockVisuals = await clocks.evaluateAll((elements) => elements.map((element) => {
       const box = element.getBoundingClientRect()
-      const face = element.querySelector('.operational-clock__face')!.getBoundingClientRect()
-      const details = element.querySelector('.operational-clock__details')!.getBoundingClientRect()
-      const contents = [...element.querySelectorAll('.operational-clock__details > *')].map((child) => child.getBoundingClientRect())
-      return { left: face.left - box.left, right: box.right - Math.max(...contents.map((child) => child.right)),
-        top: details.top - box.top, bottom: box.bottom - details.bottom }
-    })
-    expect(highlight.left).toBeGreaterThanOrEqual(width <= 680 ? 5 : 9)
-    expect(highlight.right).toBeGreaterThanOrEqual(width <= 680 ? 4 : 8)
-    expect(highlight.top).toBeGreaterThanOrEqual(7)
-    expect(highlight.bottom).toBeGreaterThanOrEqual(7)
+      const style = getComputedStyle(element)
+      const dial = element.querySelector<SVGCircleElement>('.operational-clock__dial')!
+      const dialStyle = getComputedStyle(dial)
+      return {
+        background: style.backgroundColor,
+        borderColor: style.borderColor,
+        borderRadius: style.borderRadius,
+        dialFill: dialStyle.fill,
+        dialStroke: dialStyle.stroke,
+        height: box.height,
+        padding: style.padding,
+        width: box.width,
+      }
+    }))
+    for (const visual of clockVisuals.slice(1)) {
+      expect(Math.abs(visual.width - clockVisuals[0].width)).toBeLessThanOrEqual(1)
+      expect(Math.abs(visual.height - clockVisuals[0].height)).toBeLessThanOrEqual(1)
+      expect(visual.background).toBe(clockVisuals[0].background)
+      expect(visual.borderColor).toBe(clockVisuals[0].borderColor)
+      expect(visual.borderRadius).toBe(clockVisuals[0].borderRadius)
+      expect(visual.dialFill).toBe(clockVisuals[0].dialFill)
+      expect(visual.dialStroke).toBe(clockVisuals[0].dialStroke)
+      expect(visual.padding).toBe(clockVisuals[0].padding)
+    }
     const clockBoxes = await clocks.evaluateAll((elements) => elements.map((element) => {
       const box = element.getBoundingClientRect()
       return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }
     }))
+    const stripBox = await page.locator('.operational-time-zone-strip').evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      return { left: box.left, right: box.right }
+    })
+    for (const box of clockBoxes) {
+      expect(box.left).toBeGreaterThanOrEqual(stripBox.left - 1)
+      expect(box.right).toBeLessThanOrEqual(stripBox.right + 1)
+    }
     for (let index = 1; index < clockBoxes.length; index += 1) {
       const previous = clockBoxes[index - 1], current = clockBoxes[index]
       if (current.top < previous.bottom) expect(current.left - previous.right).toBeGreaterThanOrEqual(1)

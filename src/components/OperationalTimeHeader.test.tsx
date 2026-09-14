@@ -24,6 +24,7 @@ describe('OperationalTimeHeader', () => {
     expect(screen.getByLabelText(/Pacific time: 11:45 AM, PDT/)).toBeInTheDocument()
     expect(screen.queryByText('Mountain Time is the operational default')).not.toBeInTheDocument()
     expect(screen.getByText('System time')).toBeInTheDocument()
+    expect(region.querySelectorAll('.operational-clock--default')).toHaveLength(0)
     expect(screen.getByRole('button', { name: 'My Account' })).toBeInTheDocument()
     expect(vi.getTimerCount()).toBe(1)
   })

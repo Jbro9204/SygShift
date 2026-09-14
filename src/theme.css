@@ -222,20 +222,9 @@ html[data-theme='dark'] .operational-clock {
   color: #ede8df;
 }
 
-html[data-theme='dark'] .operational-clock--default {
-  background: linear-gradient(145deg, #292317, #201c14);
-  border-color: #9d742b;
-  box-shadow: inset 0 0 0 1px rgb(224 182 90 / 8%);
-}
-
 html[data-theme='dark'] .operational-clock__dial {
   fill: #15191d;
   stroke: #897f70;
-}
-
-html[data-theme='dark'] .operational-clock--default .operational-clock__dial {
-  fill: #211d15;
-  stroke: #c28e34;
 }
 
 html[data-theme='dark'] .operational-clock__marker {
@@ -265,7 +254,7 @@ html[data-theme='dark'] .operational-clock small {
 
 html[data-theme='dark'] .operational-clock em {
   color: #f9ddb0;
-  background: #5b4319;
+  background: transparent;
 }
 
 html[data-theme='dark'] .workspace :where(

@@ -23,7 +23,11 @@ async function installStudioStartFixture(page: import('@playwright/test').Page, 
     document.body.innerHTML = `<main style="max-width:1440px;margin:0 auto;padding:24px"><h1>Document Center</h1>
       <section class="document-studio" aria-label="Document Center">
         <div class="document-studio__tabs" role="tablist" aria-label="Document Studio sections"><button aria-selected="true" class="active" role="tab">Start</button><button aria-selected="false" role="tab">Working HR forms</button><button aria-selected="false" role="tab">Training &amp; guides</button><button aria-selected="false" role="tab">Signature requests</button><button aria-selected="false" role="tab">Manage system</button></div>
-        <div class="document-studio__quick-actions"><div><p class="eyebrow">Simple document work</p><h2>What do you need to do?</h2><span>Choose one starting point. SygShift will guide you through the document, review, and final destination.</span></div></div>
+        <div class="document-studio__quick-actions" aria-label="Document Center quick start">
+          <span aria-hidden="true" class="document-studio__quick-actions-icon">✓</span>
+          <div class="document-studio__quick-actions-copy"><p class="eyebrow">Simple document work</p><h2>What would you like to do?</h2><span>Choose a starting point below. We’ll guide you through completing, reviewing, and saving or sending the document.</span></div>
+          <ol aria-label="Document work steps" class="document-studio__quick-actions-steps"><li><span>1</span><strong>Choose</strong></li><li><span>2</span><strong>Complete</strong></li><li><span>3</span><strong>Save or send</strong></li></ol>
+        </div>
         <div class="document-studio__launch-grid">
           <button type="button"><span>↑</span><strong>Use an outside PDF</strong><small>Upload a proposal or other document and work on it now</small></button>
           <button type="button"><span>⌕</span><strong>Start an HR task</strong><small>Find the right working form by what you need to do</small></button>
@@ -66,6 +70,15 @@ for (const theme of ['light', 'dark'] as const) {
     await page.goto('/')
     await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--ink').trim().length > 0)
     await installStudioStartFixture(page, theme)
+    await expect(page.getByRole('heading', { name: 'What would you like to do?' })).toBeVisible()
+    await expect(page.locator('.document-studio__quick-actions-steps > li')).toHaveText(['1Choose', '2Complete', '3Save or send'])
+    const introduction = await page.locator('.document-studio__quick-actions').evaluate((card) => {
+      const style = getComputedStyle(card)
+      return { borderRadius: parseFloat(style.borderRadius), paddingLeft: parseFloat(style.paddingLeft), paddingRight: parseFloat(style.paddingRight) }
+    })
+    expect(introduction.borderRadius).toBeGreaterThanOrEqual(16)
+    expect(Math.abs(introduction.paddingLeft - introduction.paddingRight)).toBeLessThanOrEqual(1)
+    expect(introduction.paddingLeft).toBeGreaterThanOrEqual(testInfo.project.name === 'mobile-chromium' ? 16 : 18)
     await expect(page.locator('.document-studio__launch-grid > button')).toHaveCount(4)
     const columns = await page.locator('.document-studio__launch-grid').evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(' ').length)
     expect(columns).toBe(testInfo.project.name === 'mobile-chromium' ? 1 : 2)
