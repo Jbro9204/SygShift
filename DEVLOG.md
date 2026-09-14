@@ -2467,4 +2467,6 @@ pnpm exec wrangler deploy --keep-vars
 - Recognized static and native signature fields, added a guided placement action, removed the underlying signature prompt, and constrained the complete generated signature by both field width and height.
 - Kept preview, download, employee filing, and sending on the same completed-PDF bytes without changing document authorization, storage, scanning, audit, employee data, schedules, punches, payroll, or access control.
 - Verification passed 259 files / 1,319 tests, 18 focused PDF/workbench tests, a rendered completed-PDF audit, the 12/12 focused desktop/mobile Document Center matrix, and the complete 328-pass browser matrix with 12 intentional skips.
+- Post-release verification passed the 42/42 actual-component Time Clock matrix, health/readiness and signed-out access checks on both production origins, and byte-identical live application, stylesheet, Document Center, and PDF viewer assets.
+- Released source `f0124c2` as Cloudflare Worker `bb8684d6-4b8c-422e-8c66-dc414f42122c`; no database migration was required.
 - See `docs/changelogs/CHANGELOG_09-14-2026_DOCUMENT_FIELD_OUTPUT_REPAIR.md` for complete scope, preservation, verification, and release evidence.

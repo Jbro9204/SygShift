@@ -36,12 +36,15 @@ The Document Center now keeps completed information inside the intended PDF fiel
 - Focused Document Center browser checks passed **12/12** across desktop and mobile in light and dark modes.
 - Full repository gate passed: **259 test files / 1,319 tests**, TypeScript, zero-warning application lint, Worker build, and client production build.
 - Full browser matrix passed: **328 passed / 12 intentional skips / 0 failures** across desktop and mobile.
+- Post-release actual-component Time Clock preservation passed **42/42** across desktop and mobile.
+- Both production origins returned HTTP `200` for health, readiness, and `/hr/documents`; the protected Document Center workspace continued to return HTTP `401` without an authenticated session.
+- The live main JavaScript, shared stylesheet, Document Center bundle, and PDF viewer bundle matched the fresh production build byte-for-byte on both origins.
 
 ## Release references
 
-- Source commit: pending release commit
+- Source commit: `f0124c2`
 - Database migration: none
-- Cloudflare Worker version: pending deployment
+- Cloudflare Worker version: `bb8684d6-4b8c-422e-8c66-dc414f42122c`
 - Primary URL: `https://app.sygilant.us`
 - Fallback URL: `https://sygshift.sygilant.workers.dev`
 
