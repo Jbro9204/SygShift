@@ -210,6 +210,28 @@ describe('DocumentWorkbench editor', () => {
     client.clear()
   })
 
+  it('recognizes a signature placeholder and snaps the complete generated signature into that box', async () => {
+    pdf.page.getTextContent.mockResolvedValue({
+      items: [{ height: 12, str: '[Enter / Sign]', transform: [12, 0, 0, 12, 120, 620], width: 86 }],
+    })
+    const source = new Uint8Array([37, 80, 68, 70])
+    const file = new File([source], 'signature-template.pdf', { type: 'application/pdf' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => source.buffer.slice(0) })
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><DocumentWorkbench initialFile={file} onClose={vi.fn()} onSaved={vi.fn()} workspace={workspace} /></QueryClientProvider>)
+
+    const region = await screen.findByRole('region', { name: 'Detected form fields' })
+    fireEvent.click(within(region).getByRole('button', { name: 'Place signature here' }))
+    fireEvent.change(screen.getByPlaceholderText('Type the full name'), { target: { value: 'Jordan C Brown' } })
+    fireEvent.pointerDown(document.querySelector<HTMLElement>('.document-workbench__sheet')!, { clientX: 205, clientY: 178, pointerId: 18 })
+
+    const signature = await screen.findByRole('button', { name: /signature: Jordan C Brown/i })
+    expect(signature.querySelector('img')).toBeInTheDocument()
+    expect(within(region).getByRole('button', { name: 'Review placed signature' })).toBeInTheDocument()
+    expect(region).toHaveTextContent('Jordan C Brown is placed in this signature box.')
+    client.clear()
+  })
+
   it('turns native PDF form widgets into plain-language guided controls', async () => {
     pdf.page.getAnnotations.mockResolvedValue([
       { alternativeText: 'Employee legal name', fieldName: 'employee_name', fieldType: 'Tx', fieldValue: 'Existing Name', multiLine: false, rect: [80, 650, 330, 680], subtype: 'Widget' },

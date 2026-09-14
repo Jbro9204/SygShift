@@ -36507,7 +36507,7 @@ body:has(.app-shell--compact-navigation .sidebar--open) {
 .document-workbench__annotation.is-selected { z-index: 4; }
 .document-workbench__annotation.is-text { min-width: 90px; transform: none; }
 .document-workbench__annotation.is-signature { font-size: clamp(24px, 3vw, 44px); font-weight: 400; transform: translate(-50%, -50%); }
-.document-workbench__annotation.is-checkmark { font-size: clamp(18px, 2vw, 28px); }
+.document-workbench__annotation.is-checkmark { font-size: clamp(18px, 2vw, 28px); transform: translate(-50%, -50%); }
 
 .document-workbench__annotation-content {
   display: block;
@@ -36567,6 +36567,12 @@ body:has(.app-shell--compact-navigation .sidebar--open) {
   color: #17130d;
   background: light-dark(#fff, #fff);
   border-color: rgb(157 104 20 / 45%);
+}
+
+.document-workbench__annotation.is-template-field:is(.is-text, .is-signature) > .document-workbench__annotation-content {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .document-workbench__annotation.is-native-field > .document-workbench__annotation-content {
@@ -36681,6 +36687,10 @@ body:has(.app-shell--compact-navigation .sidebar--open) {
 .document-workbench__guided-list { display: grid; max-height: 290px; gap: 9px; padding-right: 3px; overflow: auto; }
 .document-workbench__guided-list label { display: grid; gap: 6px; color: var(--ink); font-size: .84rem; font-weight: 850; }
 .document-workbench__guided-list label > span { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 8px; }
+.document-workbench__guided-signature { display: grid; gap: 7px; padding: 11px 12px; background: light-dark(#fff, #171b1f); border: 1px solid light-dark(#d3c9ba, #4a5056); border-radius: 12px; }
+.document-workbench__guided-signature > span { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: .84rem; font-weight: 850; }
+.document-workbench__guided-signature > button { justify-self: start; }
+.document-workbench__guided-signature > small { color: light-dark(#6b6358, #c1b7a8); line-height: 1.4; }
 .document-workbench__guided-list small { flex: 0 0 auto; color: light-dark(#776f65, #aaa49b); font-size: .72rem; font-weight: 700; }
 .document-workbench__guided-list :is(input, select, textarea) { width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 12px; font-family: inherit; font-size: 1rem; line-height: 1.5; }
 .document-workbench__guided-list textarea { resize: vertical; }

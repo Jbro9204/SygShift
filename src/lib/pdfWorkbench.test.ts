@@ -1,8 +1,9 @@
-import { PDFDocument } from 'pdf-lib'
+import { PDFDict, PDFDocument, PDFName } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import {
   completedPdfFilename,
   DEFAULT_SIGNATURE_WIDTH_RATIO,
+  fitPdfText,
   finalizePdf,
   movePdfAnnotation,
   resizePdfAnnotation,
@@ -77,10 +78,70 @@ describe('PDF workbench finalization', () => {
     expect(savedText).toContain('Active')
   })
 
+  it('auto-fits a long value inside a short native form row before flattening it', async () => {
+    const source = await PDFDocument.create()
+    const page = source.addPage([612, 792])
+    const font = await source.embedFont('Helvetica')
+    source.getForm().createTextField('position').addToPage(page, { font, height: 18, width: 110, x: 72, y: 690 })
+    const completed = await finalizePdf(await source.save(), [{
+      boxHeightRatio: 18 / 792,
+      fieldLabel: 'Position',
+      fitMode: 'single-line',
+      fontSize: 10,
+      id: 'position',
+      kind: 'text',
+      nativeFieldName: 'position',
+      nativeFieldType: 'text',
+      page: 1,
+      text: 'IT and Business Development Engineer',
+      widthRatio: 110 / 612,
+      xRatio: 72 / 612,
+      yRatio: (792 - 708) / 792,
+    }])
+
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const loaded = await pdfjs.getDocument({ data: new Uint8Array(completed) }).promise
+    const content = await (await loaded.getPage(1)).getTextContent()
+    const item = content.items.find((candidate) => 'str' in candidate && candidate.str.includes('IT and Business'))
+    expect(item && 'str' in item ? item.str : '').toBe('IT and Business Development Engineer')
+    expect(item && 'height' in item ? item.height : 99).toBeLessThan(10)
+  })
+
   it('wraps long text and preserves deliberate line breaks', () => {
     const lines = wrapPdfText('Alpha beta gamma delta\nSecond line', 12, (value) => value.length)
     expect(lines).toEqual(['Alpha beta', 'gamma delta', 'Second line'])
     expect(wrapPdfText('uninterruptedlongword', 6, (value) => value.length)).toEqual(['uninte', 'rrupte', 'dlongw', 'ord'])
+  })
+
+  it('shrinks a long position into one bounded line instead of overlapping the next row', () => {
+    const layout = fitPdfText(
+      'IT and Business Development Engineer',
+      110,
+      12,
+      10,
+      (value, size) => value.length * size * .5,
+      true,
+    )
+    expect(layout).not.toBeNull()
+    expect(layout?.lines).toEqual(['IT and Business Development Engineer'])
+    expect(layout?.fontSize).toBeLessThan(10)
+    expect(layout!.lines.length * layout!.lineHeight).toBeLessThanOrEqual(12)
+  })
+
+  it('draws manual checkmarks as visible vector strokes without a fragile dingbat font', async () => {
+    const source = await PDFDocument.create()
+    source.addPage([612, 792])
+    const completed = await finalizePdf(await source.save(), [
+      { id: 'check', kind: 'checkmark', page: 1, text: '✓', xRatio: .25, yRatio: .25 },
+    ])
+    const reopened = await PDFDocument.load(completed)
+    const resources = reopened.getPage(0).node.Resources()
+    const fonts = resources?.lookupMaybe(PDFName.of('Font'), PDFDict)
+    const baseFonts = fonts?.entries().map(([, reference]) => {
+      const dictionary = reopened.context.lookup(reference, PDFDict)
+      return dictionary.get(PDFName.of('BaseFont'))?.toString() ?? ''
+    }) ?? []
+    expect(baseFonts.some((name) => name.includes('ZapfDingbats'))).toBe(false)
   })
 
   it('keeps moved and resized text boxes inside the page', () => {

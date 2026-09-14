@@ -2458,3 +2458,13 @@ pnpm exec wrangler deploy --keep-vars
 - Verification passed 259 files / 1,315 tests, the complete 328-pass desktop/mobile browser matrix with 12 intentional skips, the post-release 44/44 coverage plus Time Clock matrix, production database advisors, health/readiness, access boundaries, and byte-identical live assets.
 - Released source `420656e` as Cloudflare Worker `3a182c1b-44c2-4426-8ba8-425b19d0937e`.
 - See `docs/changelogs/CHANGELOG_09-14-2026_ABSENCE_COVERAGE_COMPLETION.md` for complete behavior, preservation, verification, and rollback evidence.
+
+## 09/14/2026 - Document Field Output Repair
+
+- Repaired the shared Document Center PDF finalizer so long job titles stay within one short field row and narrative answers wrap within the detected field height instead of overlapping later form content.
+- Applied deterministic font fitting to both bracketed static prompts and native fillable text fields before completed PDFs are flattened.
+- Replaced fragile dingbat checkmarks with centered vector strokes that remain visible in the finished PDF.
+- Recognized static and native signature fields, added a guided placement action, removed the underlying signature prompt, and constrained the complete generated signature by both field width and height.
+- Kept preview, download, employee filing, and sending on the same completed-PDF bytes without changing document authorization, storage, scanning, audit, employee data, schedules, punches, payroll, or access control.
+- Verification passed 259 files / 1,319 tests, 18 focused PDF/workbench tests, a rendered completed-PDF audit, the 12/12 focused desktop/mobile Document Center matrix, and the complete 328-pass browser matrix with 12 intentional skips.
+- See `docs/changelogs/CHANGELOG_09-14-2026_DOCUMENT_FIELD_OUTPUT_REPAIR.md` for complete scope, preservation, verification, and release evidence.

@@ -176,7 +176,7 @@ Completion criteria:
 
 - Priority: **Urgent**
 - Target window: Usability and fillable-field upgrade released 09/12/2026; owner completed-document roundtrip acceptance remains
-- Status: Guided Document Center, standard PDF form-field support, employee prefill, responsive navigation, and consistent form styling are live; automated desktop/mobile, PDF finalization, CSP, API, accessibility, and timekeeping regression gates passed
+- Status: Guided Document Center, standard PDF form-field support, employee prefill, bounded short/long field output, vector checks, signature-field targeting, responsive navigation, and consistent form styling are live; final authorized owner-session roundtrip acceptance remains
 - Added: 09/11/2026
 
 Make the Document Center reliably usable for finding an employee, completing approved HR forms, placing a full signature, and reviewing the exact finished PDF.
@@ -190,6 +190,7 @@ Required workflow:
 - [x] Define signature sizing from the generated image's real aspect ratio and preserve that ratio while resizing or moving it; long names must scale down within the selected width instead of being cropped.
 - [x] Replace flattened bracketed placeholders in approved HR templates with real guided fields or a controlled field map so values such as employee name, ID, position, supervisor, site, dates, narrative sections, checks, and signatures can be completed cleanly without typing over existing placeholder text.
 - [x] Detect standard fillable-PDF fields directly, present text, long-text, checkbox, and choice fields as a guided form, write the answers into the original fields, and flatten the completed working copy for consistent preview, download, filing, and delivery.
+- [x] Fit short values into one field row, bound long narratives to the detected field height, render manual checks as centered vector marks, and recognize signature prompts so the generated signature replaces the prompt and remains inside the field.
 - [x] Distinguish system-prefilled employee information from editable user-entered information, show what will be inserted before placement, and allow authorized corrections before producing the finished PDF.
 - [x] Replace the mixed library landing page with task-first choices and separate **Working HR forms**, **Training & guides**, **Saved records**, **Signature requests**, and permission-controlled system management.
 - [x] Normalize awkward all-lowercase/all-uppercase library titles for display, keep technical source details collapsed by default, and provide plain-language HR task shortcuts without altering controlled source records.

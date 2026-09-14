@@ -12,8 +12,13 @@ import {
 export type PdfAnnotationKind = 'checkmark' | 'date' | 'signature' | 'text'
 
 export interface PdfAnnotation {
+  boxHeightRatio?: number
   eraseHeightRatio?: number
   eraseWidthRatio?: number
+  eraseXRatio?: number
+  eraseYRatio?: number
+  fieldLabel?: string
+  fitMode?: 'bounded' | 'free' | 'single-line'
   fontSize?: number
   fontFamily?: string
   id: string
@@ -36,6 +41,8 @@ export const DEFAULT_SIGNATURE_WIDTH_RATIO = .31
 const boundedRatio = (value: number) => Math.min(.98, Math.max(.02, value))
 const boundedTextWidth = (value: number) => Math.min(.88, Math.max(.16, value))
 const boundedSignatureWidth = (value: number) => Math.min(.7, Math.max(.12, value))
+const MIN_TEMPLATE_FONT_SIZE = 6
+const TEMPLATE_BOX_PADDING = 2
 
 function printableText(value: string): string {
   return value
@@ -118,6 +125,55 @@ export function wrapPdfText(value: string, maximumWidth: number, measure: (value
   return lines.length ? lines : ['']
 }
 
+interface BoundedTextLayout {
+  fontSize: number
+  lineHeight: number
+  lines: string[]
+}
+
+export function fitPdfText(
+  value: string,
+  maximumWidth: number,
+  maximumHeight: number,
+  preferredFontSize: number,
+  measure: (value: string, size: number) => number,
+  singleLine = false,
+): BoundedTextLayout | null {
+  const printable = printableText(value)
+  for (let size = preferredFontSize; size >= MIN_TEMPLATE_FONT_SIZE; size -= .5) {
+    const lineHeight = size * 1.18
+    const lines = singleLine
+      ? [printable.replace(/\s+/g, ' ').trim()]
+      : wrapPdfText(printable, maximumWidth, (line) => measure(line, size))
+    if (lines.length * lineHeight <= maximumHeight && lines.every((line) => measure(line, size) <= maximumWidth + .01)) {
+      return { fontSize: size, lineHeight, lines }
+    }
+  }
+  return null
+}
+
+function drawAnnotationMask(
+  page: ReturnType<PDFDocument['getPage']>,
+  annotation: PdfAnnotation,
+  pageWidth: number,
+  pageHeight: number,
+  fallbackXRatio: number,
+  fallbackYRatio: number,
+) {
+  if (!annotation.eraseWidthRatio || !annotation.eraseHeightRatio) return
+  const left = pageWidth * (annotation.eraseXRatio ?? fallbackXRatio)
+  const top = pageHeight - pageHeight * (annotation.eraseYRatio ?? fallbackYRatio)
+  const maskWidth = Math.min(pageWidth - Math.max(0, left - TEMPLATE_BOX_PADDING), pageWidth * annotation.eraseWidthRatio + TEMPLATE_BOX_PADDING * 2)
+  const maskHeight = Math.min(pageHeight, pageHeight * annotation.eraseHeightRatio + TEMPLATE_BOX_PADDING * 2)
+  page.drawRectangle({
+    color: rgb(1, 1, 1),
+    height: maskHeight,
+    width: maskWidth,
+    x: Math.max(0, left - TEMPLATE_BOX_PADDING),
+    y: Math.max(0, top - maskHeight + TEMPLATE_BOX_PADDING),
+  })
+}
+
 export async function createTypedSignaturePng(
   name: string,
   family: 'Alex Brush' | 'Allura' | 'Dancing Script' | 'Great Vibes',
@@ -163,7 +219,6 @@ export async function createTypedSignaturePng(
 export async function finalizePdf(source: Uint8Array, annotations: PdfAnnotation[]): Promise<Uint8Array> {
   const pdf = await PDFDocument.load(source, { ignoreEncryption: false })
   const font = await pdf.embedFont(StandardFonts.Helvetica)
-  const checkFont = await pdf.embedFont(StandardFonts.ZapfDingbats)
 
   const nativeAnnotations = annotations.filter((annotation) => annotation.nativeFieldName)
   const form = pdf.getForm()
@@ -173,6 +228,25 @@ export async function finalizePdf(source: Uint8Array, annotations: PdfAnnotation
     if (!field) throw new Error(`The PDF field "${annotation.nativeFieldName}" is no longer available.`)
     const value = printableText(annotation.text)
     if (field instanceof PDFTextField) {
+      if (annotation.fitMode === 'single-line' || annotation.fitMode === 'bounded') {
+        const page = pdf.getPage(annotation.page - 1)
+        const { height, width } = page.getSize()
+        const boxWidth = Math.max(1, width * (annotation.widthRatio ?? DEFAULT_TEXT_WIDTH_RATIO) - TEMPLATE_BOX_PADDING * 2)
+        const boxHeight = Math.max(1, height * (annotation.boxHeightRatio ?? .03) - TEMPLATE_BOX_PADDING * 2)
+        const layout = fitPdfText(
+          value,
+          boxWidth,
+          boxHeight,
+          annotation.fontSize ?? DEFAULT_TEXT_FONT_SIZE,
+          (line, fontSize) => font.widthOfTextAtSize(line, fontSize),
+          annotation.fitMode === 'single-line',
+        )
+        if (!layout) {
+          const label = annotation.fieldLabel ? ` in “${annotation.fieldLabel}”` : ''
+          throw new Error(`The text${label} does not fit in its document box. Shorten it and preview the PDF again.`)
+        }
+        field.setFontSize(layout.fontSize)
+      }
       field.setText(value)
     } else if (field instanceof PDFCheckBox) {
       if (value === 'true') field.check()
@@ -200,8 +274,14 @@ export async function finalizePdf(source: Uint8Array, annotations: PdfAnnotation
 
     if (annotation.kind === 'signature' && annotation.signaturePng) {
       const image = await pdf.embedPng(annotation.signaturePng)
-      const imageWidth = width * boundedSignatureWidth(annotation.widthRatio ?? DEFAULT_SIGNATURE_WIDTH_RATIO)
-      const imageHeight = imageWidth * (image.height / image.width)
+      const maximumImageWidth = width * boundedSignatureWidth(annotation.widthRatio ?? DEFAULT_SIGNATURE_WIDTH_RATIO)
+      const maximumImageHeight = annotation.boxHeightRatio
+        ? Math.max(8, height * annotation.boxHeightRatio - TEMPLATE_BOX_PADDING * 2)
+        : height - 16
+      const imageScale = Math.min(maximumImageWidth / image.width, maximumImageHeight / image.height)
+      const imageWidth = image.width * imageScale
+      const imageHeight = image.height * imageScale
+      drawAnnotationMask(page, annotation, width, height, positioned.xRatio, positioned.yRatio)
       page.drawImage(image, {
         height: imageHeight,
         width: imageWidth,
@@ -211,21 +291,39 @@ export async function finalizePdf(source: Uint8Array, annotations: PdfAnnotation
       continue
     }
 
-    const size = annotation.kind === 'checkmark' ? 18 : annotation.kind === 'date' ? 11 : annotation.fontSize ?? DEFAULT_TEXT_FONT_SIZE
+    const size = annotation.kind === 'date' ? 11 : annotation.fontSize ?? DEFAULT_TEXT_FONT_SIZE
     if (annotation.kind === 'text') {
       const boxWidth = Math.max(42, Math.min(width - x - 8, width * boundedTextWidth(annotation.widthRatio ?? DEFAULT_TEXT_WIDTH_RATIO)))
+      drawAnnotationMask(page, annotation, width, height, positioned.xRatio, positioned.yRatio)
+      if (annotation.fitMode === 'single-line' || annotation.fitMode === 'bounded') {
+        const boxHeight = Math.max(size * 1.25, height * (annotation.boxHeightRatio ?? annotation.eraseHeightRatio ?? .03))
+        const layout = fitPdfText(
+          annotation.text,
+          Math.max(1, boxWidth - TEMPLATE_BOX_PADDING * 2),
+          Math.max(1, boxHeight - TEMPLATE_BOX_PADDING * 2),
+          size,
+          (line, fontSize) => font.widthOfTextAtSize(line, fontSize),
+          annotation.fitMode === 'single-line',
+        )
+        if (!layout) {
+          const label = annotation.fieldLabel ? ` in “${annotation.fieldLabel}”` : ''
+          throw new Error(`The text${label} does not fit in its document box. Shorten it and preview the PDF again.`)
+        }
+        layout.lines.forEach((line, index) => {
+          const baseline = y - TEMPLATE_BOX_PADDING - layout.fontSize - index * layout.lineHeight
+          page.drawText(line, {
+            color: rgb(.075, .075, .075),
+            font,
+            maxWidth: boxWidth - TEMPLATE_BOX_PADDING * 2,
+            size: layout.fontSize,
+            x: x + TEMPLATE_BOX_PADDING,
+            y: baseline,
+          })
+        })
+        continue
+      }
       const lineHeight = size * 1.28
       const lines = wrapPdfText(annotation.text, boxWidth, (line) => font.widthOfTextAtSize(line, size))
-      if (annotation.eraseWidthRatio && annotation.eraseHeightRatio) {
-        const eraseHeight = Math.max(size * 1.4, height * annotation.eraseHeightRatio)
-        page.drawRectangle({
-          color: rgb(1, 1, 1),
-          height: eraseHeight,
-          width: Math.max(boxWidth, width * annotation.eraseWidthRatio),
-          x: Math.max(0, x - 2),
-          y: Math.max(0, y - eraseHeight),
-        })
-      }
       lines.forEach((line, index) => {
         const baseline = y - size - index * lineHeight
         if (baseline < 8) return
@@ -241,9 +339,28 @@ export async function finalizePdf(source: Uint8Array, annotations: PdfAnnotation
       continue
     }
 
-    page.drawText(annotation.kind === 'checkmark' ? '✓' : printableText(annotation.text), {
+    if (annotation.kind === 'checkmark') {
+      const markWidth = 12
+      const markHeight = 10
+      const thickness = 2.1
+      page.drawLine({
+        color: rgb(.045, .045, .045),
+        end: { x: x - markWidth * .08, y: y - markHeight * .42 },
+        start: { x: x - markWidth * .46, y: y - markHeight * .02 },
+        thickness,
+      })
+      page.drawLine({
+        color: rgb(.045, .045, .045),
+        end: { x: x + markWidth * .54, y: y + markHeight * .46 },
+        start: { x: x - markWidth * .08, y: y - markHeight * .42 },
+        thickness,
+      })
+      continue
+    }
+
+    page.drawText(printableText(annotation.text), {
       color: rgb(.075, .075, .075),
-      font: annotation.kind === 'checkmark' ? checkFont : font,
+      font,
       maxWidth: Math.max(80, width - x - 12),
       size,
       x: Math.max(8, x),

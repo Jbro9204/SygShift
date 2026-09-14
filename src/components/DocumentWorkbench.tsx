@@ -91,7 +91,8 @@ interface DocumentWorkbenchProps {
 }
 
 interface DetectedTemplateField {
-  controlType: 'checkbox' | 'choice' | 'long_text' | 'text'
+  boxHeightRatio: number
+  controlType: 'checkbox' | 'choice' | 'long_text' | 'signature' | 'text'
   defaultValue?: string
   eraseHeightRatio: number
   eraseWidthRatio: number
@@ -119,6 +120,7 @@ function humanizePdfFieldName(value: string): string {
 }
 
 function inferredControlType(label: string): DetectedTemplateField['controlType'] {
+  if (!/\bdate\b/i.test(label) && /enter\s*\/\s*sign|\b(?:sign|signature|initials?)\b/i.test(label)) return 'signature'
   return /(describe|description|details|explain|explanation|facts|narrative|notes?|reason|statement|summary)/i.test(label)
     ? 'long_text'
     : 'text'
@@ -168,6 +170,8 @@ async function detectTemplateFields(pdf: PDFDocumentProxy): Promise<DetectedTemp
             ? 'checkbox'
             : widget.fieldType === 'Ch'
               ? 'choice'
+              : widget.fieldType === 'Sig'
+                ? 'signature'
               : null
         if (!fieldType) continue
         const rect = widget.rect.map(Number)
@@ -191,6 +195,7 @@ async function detectTemplateFields(pdf: PDFDocumentProxy): Promise<DetectedTemp
           : undefined
         seenNativeNames.add(widget.fieldName)
         fields.push({
+          boxHeightRatio: Math.min(.4, height / viewport.height),
           controlType: fieldType,
           defaultValue: fieldType === 'checkbox' ? String(Boolean(widget.fieldValue && widget.fieldValue !== 'Off')) : typeof widget.fieldValue === 'string' ? widget.fieldValue : '',
           eraseHeightRatio: 0,
@@ -222,15 +227,24 @@ async function detectTemplateFields(pdf: PDFDocumentProxy): Promise<DetectedTemp
         const widthFraction = match[0].length / Math.max(item.str.length, 1)
         const [baselineX, baselineY] = viewport.convertToViewportPoint(Number(item.transform[4]) || 0, Number(item.transform[5]) || 0)
         const xRatio = Math.max(.01, Math.min(.92, (baselineX + itemWidth * startFraction) / viewport.width))
-        const detectedWidth = Math.max(.16, Math.min(.7, (itemWidth * widthFraction + 10) / viewport.width))
+        const controlType = inferredControlType(label)
+        const promptWidth = Math.max(.08, Math.min(.7, (itemWidth * widthFraction + 10) / viewport.width))
+        const detectedWidth = controlType === 'long_text'
+          ? Math.max(promptWidth, Math.min(.72, .94 - xRatio))
+          : controlType === 'signature'
+            ? Math.max(promptWidth, Math.min(.28, .94 - xRatio))
+            : Math.max(promptWidth, Math.min(.2, .94 - xRatio))
         const yRatio = Math.max(.01, Math.min(.97, (baselineY - itemHeight * 1.08) / viewport.height))
         const key = `${pageNumber}:${Math.round(xRatio * 1_000)}:${Math.round(yRatio * 1_000)}:${label.toLocaleLowerCase()}`
         if (seen.has(key)) continue
         seen.add(key)
         fields.push({
-          controlType: inferredControlType(label),
+          boxHeightRatio: controlType === 'long_text'
+            ? Math.max(.08, Math.min(.18, .92 - yRatio))
+            : Math.max(.018, Math.min(.05, itemHeight * 1.55 / viewport.height)),
+          controlType,
           eraseHeightRatio: Math.max(.018, Math.min(.08, itemHeight * 1.45 / viewport.height)),
-          eraseWidthRatio: Math.max(detectedWidth, Math.min(.72, (itemWidth * widthFraction + 14) / viewport.width)),
+          eraseWidthRatio: Math.max(promptWidth, Math.min(.72, (itemWidth * widthFraction + 14) / viewport.width)),
           fontSize: Math.max(8, Math.min(15, Math.round(itemHeight))),
           id: key,
           label,
@@ -311,7 +325,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     return workspace.employees.filter((employee) => ['active', 'leave'].includes(employee.status) && (!search || `${employee.legalName} ${employee.employeeNumber ?? ''}`.toLocaleLowerCase().includes(search)))
   }, [recipientSearch, workspace.employees])
   const documentFingerprint = useMemo(() => JSON.stringify({
-    annotations: annotations.map(({ eraseHeightRatio, eraseWidthRatio, fontFamily, fontSize, kind, nativeFieldName, nativeFieldType, page: annotationPage, templateFieldKey, text, widthRatio, xRatio, yRatio }) => ({ eraseHeightRatio, eraseWidthRatio, fontFamily, fontSize, kind, nativeFieldName, nativeFieldType, page: annotationPage, templateFieldKey, text, widthRatio, xRatio, yRatio })),
+    annotations: annotations.map(({ boxHeightRatio, eraseHeightRatio, eraseWidthRatio, eraseXRatio, eraseYRatio, fieldLabel, fitMode, fontFamily, fontSize, kind, nativeFieldName, nativeFieldType, page: annotationPage, templateFieldKey, text, widthRatio, xRatio, yRatio }) => ({ boxHeightRatio, eraseHeightRatio, eraseWidthRatio, eraseXRatio, eraseYRatio, fieldLabel, fitMode, fontFamily, fontSize, kind, nativeFieldName, nativeFieldType, page: annotationPage, templateFieldKey, text, widthRatio, xRatio, yRatio })),
     category,
     description,
     employeeId,
@@ -494,8 +508,11 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
 
   function templateAnnotation(field: DetectedTemplateField, value: string): PdfAnnotation {
     return {
+      boxHeightRatio: field.boxHeightRatio,
       eraseHeightRatio: field.nativeFieldName ? undefined : field.eraseHeightRatio,
       eraseWidthRatio: field.nativeFieldName ? undefined : field.eraseWidthRatio,
+      fieldLabel: field.label,
+      fitMode: field.controlType === 'long_text' ? 'bounded' : 'single-line',
       fontSize: field.fontSize,
       id: `template:${field.id}`,
       kind: field.controlType === 'checkbox' ? 'checkmark' : 'text',
@@ -511,6 +528,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
   }
 
   function updateTemplateField(field: DetectedTemplateField, value: string) {
+    if (field.controlType === 'signature') return
     const withoutField = annotationsRef.current.filter((annotation) => annotation.templateFieldKey !== field.id)
     commitAnnotationSnapshot(field.nativeFieldName || value.trim() ? [...withoutField, templateAnnotation(field, value)] : withoutField)
   }
@@ -521,6 +539,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     const today = new Intl.DateTimeFormat('en-US').format(new Date())
     const next = annotationsRef.current.filter((annotation) => !annotation.templateFieldKey)
     for (const field of templateFields) {
+      if (field.controlType === 'signature') continue
       const normalized = field.label.toLocaleLowerCase()
       const currentValue = annotationsRef.current.find((annotation) => annotation.templateFieldKey === field.id)?.text ?? field.defaultValue ?? ''
       let employeeValue: string | undefined
@@ -544,6 +563,22 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     if (tool === 'text' && !textValue.trim()) { setLoadError('Type the text you want to add first.'); return }
     if (tool === 'signature' && !signatureName.trim()) { setLoadError('Type the signer name first.'); return }
     const bounds = sheetRef.current.getBoundingClientRect()
+    const clickedXRatio = (event.clientX - bounds.left) / bounds.width
+    const clickedYRatio = (event.clientY - bounds.top) / bounds.height
+    const signatureTarget = tool === 'signature'
+      ? templateFields
+        .filter((field) => field.page === page && field.controlType === 'signature')
+        .map((field) => ({
+          distance: Math.hypot(clickedXRatio - (field.xRatio + field.widthRatio / 2), clickedYRatio - (field.yRatio + field.boxHeightRatio / 2)),
+          field,
+          inside: clickedXRatio >= field.xRatio - .03
+            && clickedXRatio <= field.xRatio + field.widthRatio + .03
+            && clickedYRatio >= field.yRatio - .03
+            && clickedYRatio <= field.yRatio + field.boxHeightRatio + .03,
+        }))
+        .filter((candidate) => candidate.inside)
+        .sort((left, right) => left.distance - right.distance)[0]?.field
+      : undefined
     let signaturePng: Uint8Array | undefined
     try {
       if (tool === 'signature') signaturePng = await createTypedSignaturePng(signatureName, signatureFamily)
@@ -554,18 +589,32 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     const value = tool === 'text' ? textValue.trim() : tool === 'date' ? new Intl.DateTimeFormat('en-US').format(new Date()) : tool === 'checkmark' ? '✓' : signatureName.trim()
     const id = crypto.randomUUID()
     const annotation = movePdfAnnotation({
+      boxHeightRatio: signatureTarget?.boxHeightRatio,
+      eraseHeightRatio: signatureTarget ? (signatureTarget.nativeFieldName ? signatureTarget.boxHeightRatio : signatureTarget.eraseHeightRatio) : undefined,
+      eraseWidthRatio: signatureTarget ? (signatureTarget.nativeFieldName ? signatureTarget.widthRatio : signatureTarget.eraseWidthRatio) : undefined,
+      eraseXRatio: signatureTarget?.xRatio,
+      eraseYRatio: signatureTarget?.yRatio,
+      fieldLabel: signatureTarget?.label,
       fontSize: tool === 'text' ? DEFAULT_TEXT_FONT_SIZE : undefined,
       id,
       fontFamily: tool === 'signature' ? signatureFamily : undefined,
       kind: tool,
       page,
       signaturePng,
+      templateFieldKey: signatureTarget?.id,
       text: value,
-      widthRatio: tool === 'text' ? DEFAULT_TEXT_WIDTH_RATIO : tool === 'signature' ? DEFAULT_SIGNATURE_WIDTH_RATIO : undefined,
-      xRatio: (event.clientX - bounds.left) / bounds.width,
-      yRatio: (event.clientY - bounds.top) / bounds.height,
-    }, (event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height)
-    commitAnnotationSnapshot([...annotationsRef.current, annotation])
+      widthRatio: tool === 'text'
+        ? DEFAULT_TEXT_WIDTH_RATIO
+        : tool === 'signature'
+          ? signatureTarget ? Math.max(.14, Math.min(.38, signatureTarget.widthRatio)) : DEFAULT_SIGNATURE_WIDTH_RATIO
+          : undefined,
+      xRatio: signatureTarget ? signatureTarget.xRatio + signatureTarget.widthRatio / 2 : clickedXRatio,
+      yRatio: signatureTarget ? signatureTarget.yRatio + signatureTarget.boxHeightRatio / 2 : clickedYRatio,
+    }, signatureTarget ? signatureTarget.xRatio + signatureTarget.widthRatio / 2 : clickedXRatio, signatureTarget ? signatureTarget.yRatio + signatureTarget.boxHeightRatio / 2 : clickedYRatio)
+    const withoutPreviousTarget = signatureTarget
+      ? annotationsRef.current.filter((current) => current.templateFieldKey !== signatureTarget.id)
+      : annotationsRef.current
+    commitAnnotationSnapshot([...withoutPreviousTarget, annotation])
     setSelectedAnnotationId(id)
     setTool(null)
     setLoadError(null)
@@ -841,8 +890,15 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
               style={{
                 left: `${annotation.xRatio * 100}%`,
                 top: `${annotation.yRatio * 100}%`,
-                ...(annotation.kind === 'text' ? { fontSize: `${Math.max(10, (annotation.fontSize ?? DEFAULT_TEXT_FONT_SIZE) * sheetScale)}px`, width: `${(annotation.widthRatio ?? DEFAULT_TEXT_WIDTH_RATIO) * 100}%` } : {}),
-                ...(annotation.kind === 'signature' ? { fontFamily: `"${annotation.fontFamily ?? signatureFamily}", cursive`, fontSize: `${Math.max(18, (annotation.widthRatio ?? DEFAULT_SIGNATURE_WIDTH_RATIO) * sheetSize.width / 5)}px`, width: `${(annotation.widthRatio ?? DEFAULT_SIGNATURE_WIDTH_RATIO) * 100}%` } : {}),
+                ...(annotation.kind === 'text' ? {
+                  fontSize: `${annotation.fitMode === 'single-line'
+                    ? Math.max(6, Math.min((annotation.fontSize ?? DEFAULT_TEXT_FONT_SIZE) * sheetScale, ((annotation.widthRatio ?? DEFAULT_TEXT_WIDTH_RATIO) * sheetSize.width - 12) / Math.max(1, annotation.text.length * .52)))
+                    : Math.max(10, (annotation.fontSize ?? DEFAULT_TEXT_FONT_SIZE) * sheetScale)}px`,
+                  ...(annotation.boxHeightRatio ? { height: `${annotation.boxHeightRatio * 100}%` } : {}),
+                  whiteSpace: annotation.fitMode === 'single-line' ? 'nowrap' : undefined,
+                  width: `${(annotation.widthRatio ?? DEFAULT_TEXT_WIDTH_RATIO) * 100}%`,
+                } : {}),
+                ...(annotation.kind === 'signature' ? { fontFamily: `"${annotation.fontFamily ?? signatureFamily}", cursive`, fontSize: `${Math.max(18, (annotation.widthRatio ?? DEFAULT_SIGNATURE_WIDTH_RATIO) * sheetSize.width / 5)}px`, ...(annotation.boxHeightRatio ? { height: `${annotation.boxHeightRatio * 100}%` } : {}), width: `${(annotation.widthRatio ?? DEFAULT_SIGNATURE_WIDTH_RATIO) * 100}%` } : {}),
               }}
             >
               <button
@@ -888,6 +944,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
                 const fieldAnnotation = annotations.find((annotation) => annotation.templateFieldKey === field.id)
                 const value = fieldAnnotation?.text ?? field.defaultValue ?? ''
                 const focusField = () => setPage(field.page)
+                if (field.controlType === 'signature') return <div className="document-workbench__guided-signature" key={field.id}><span>{field.label}<small>Page {field.page}</small></span><button className="secondary-button secondary-button--small" onClick={() => { setPage(field.page); setPanel('edit'); if (fieldAnnotation) { setSelectedAnnotationId(fieldAnnotation.id); setTool(null) } else { setSelectedAnnotationId(null); setTool('signature') } }} type="button">{fieldAnnotation ? 'Review placed signature' : 'Place signature here'}</button><small>{fieldAnnotation ? `${fieldAnnotation.text} is placed in this signature box.` : 'Type the signer name below, then click this signature box on the document.'}</small></div>
                 return <label key={field.id}><span>{field.label}<small>Page {field.page}</small></span>{field.controlType === 'checkbox'
                   ? <span className="document-workbench__guided-check"><input checked={value === 'true'} onChange={(event) => updateTemplateField(field, String(event.target.checked))} onFocus={focusField} type="checkbox"/><span>Yes</span></span>
                   : field.controlType === 'choice' && field.options?.length
