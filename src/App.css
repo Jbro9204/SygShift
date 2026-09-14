@@ -36497,6 +36497,106 @@ body:has(.app-shell--compact-navigation .sidebar--open) {
 .document-workbench__sheet.is-placing { cursor: crosshair; }
 .document-workbench__sheet canvas { display: block; width: 100%; height: 100%; }
 
+.document-workbench__template-control {
+  position: absolute;
+  z-index: 3;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 1px 4px;
+  overflow: hidden;
+  color: #15120e;
+  font-family: inherit;
+  font-weight: 650;
+  line-height: 1.15;
+  text-align: left;
+  background: light-dark(rgb(255 253 248 / 94%), rgb(255 253 248 / 94%));
+  border: 1px solid rgb(177 119 27 / 58%);
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 65%);
+  outline: 0;
+  touch-action: manipulation;
+}
+
+.document-workbench__template-control.is-empty {
+  color: #684811;
+  background: light-dark(rgb(255 241 202 / 48%), rgb(255 241 202 / 48%));
+  border-style: dashed;
+}
+
+.document-workbench__template-control:hover,
+.document-workbench__template-control:focus,
+.document-workbench__template-control.is-selected {
+  z-index: 6;
+  background: light-dark(rgb(255 251 239 / 98%), rgb(255 251 239 / 98%));
+  border-color: #b97816;
+  box-shadow: 0 0 0 3px rgb(218 158 51 / 25%);
+}
+
+.document-workbench__template-control::placeholder {
+  color: rgb(100 72 25 / 78%);
+  font-family: inherit;
+  font-size: max(7px, .85em);
+  font-style: normal;
+  font-weight: 700;
+  opacity: 1;
+}
+
+textarea.document-workbench__template-control {
+  padding: 4px 5px;
+  overflow: auto;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  resize: none;
+  white-space: pre-wrap;
+}
+
+select.document-workbench__template-control { padding-right: 15px; }
+
+button.document-workbench__template-control.is-checkbox {
+  display: grid;
+  padding: 0;
+  color: #17130d;
+  background: light-dark(rgb(255 253 248 / 80%), rgb(255 253 248 / 80%));
+  cursor: pointer;
+  place-items: center;
+}
+
+button.document-workbench__template-control.is-checkbox svg {
+  width: 82%;
+  height: 82%;
+  min-width: 9px;
+  min-height: 9px;
+  stroke-width: 3;
+}
+
+button.document-workbench__template-control.is-signature {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 4px;
+  cursor: pointer;
+}
+
+button.document-workbench__template-control.is-signature > span {
+  overflow: hidden;
+  color: #76511a;
+  font-size: max(7px, .72rem);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.document-workbench__template-control.is-signature img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  object-fit: contain;
+}
+
 .document-workbench__annotation {
   position: absolute;
   z-index: 2;
@@ -36688,6 +36788,8 @@ body:has(.app-shell--compact-navigation .sidebar--open) {
 .document-workbench__guided-list label { display: grid; gap: 6px; color: var(--ink); font-size: .84rem; font-weight: 850; }
 .document-workbench__guided-list label > span { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 8px; }
 .document-workbench__guided-signature { display: grid; gap: 7px; padding: 11px 12px; background: light-dark(#fff, #171b1f); border: 1px solid light-dark(#d3c9ba, #4a5056); border-radius: 12px; }
+.document-workbench__guided-list label.is-active,
+.document-workbench__guided-signature.is-active { padding: 9px; background: light-dark(#fff5df, #302617); border: 1px solid light-dark(#c99131, #987127); border-radius: 12px; box-shadow: inset 3px 0 #d9a43f; }
 .document-workbench__guided-signature > span { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: .84rem; font-weight: 850; }
 .document-workbench__guided-signature > button { justify-self: start; }
 .document-workbench__guided-signature > small { color: light-dark(#6b6358, #c1b7a8); line-height: 1.4; }
@@ -36857,6 +36959,10 @@ body:has(.app-shell--compact-navigation .sidebar--open) {
   border-radius: 11px;
 }
 .document-workbench__selected-signature img { display: block; width: 100%; max-height: 86px; object-fit: contain; }
+.document-workbench__direct-signature { display: grid; gap: 12px; padding: 14px; background: light-dark(#fff8e9, #241e15); border: 1px solid light-dark(#d8ad58, #846426); border-radius: 14px; box-shadow: 0 8px 22px rgb(0 0 0 / 9%); }
+.document-workbench__direct-signature .document-workbench__signature-preview { min-height: 72px; }
+.document-workbench__direct-signature-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.document-workbench__direct-signature-actions button { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; gap: 7px; }
 .document-workbench__tip { margin: 0; padding: 11px 12px; color: light-dark(#6f6250, #c8bca7); font-size: .8rem; line-height: 1.45; background: light-dark(#f8f2e7, #221e17); border-radius: 11px; }
 
 .document-workbench__people {

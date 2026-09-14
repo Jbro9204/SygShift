@@ -205,8 +205,55 @@ describe('DocumentWorkbench editor', () => {
     const region = await screen.findByRole('region', { name: 'Detected form fields' })
     const field = within(region).getByPlaceholderText('Enter legal name')
     fireEvent.change(field, { target: { value: 'Zachary Alexander Ward' } })
-    expect(await screen.findByRole('button', { name: /Text box: Zachary Alexander Ward/ })).toBeInTheDocument()
+    const onDocument = await screen.findByRole('textbox', { name: 'Legal name on document' })
+    expect(onDocument).toHaveValue('Zachary Alexander Ward')
+    fireEvent.change(onDocument, { target: { value: 'Zachary Ward' } })
+    expect(field).toHaveValue('Zachary Ward')
     expect(region).toHaveTextContent('Page 1')
+    fireEvent.click(screen.getByRole('tab', { name: 'File' }))
+    expect(await screen.findByRole('button', { name: /Text box: Zachary Ward/ })).toBeInTheDocument()
+    client.clear()
+  })
+
+  it('keeps direct long-form editing inside the space before the next printed section', async () => {
+    pdf.page.getTextContent.mockResolvedValue({
+      items: [
+        { height: 12, str: '[Employee explanation and relevant context]', transform: [12, 0, 0, 12, 100, 500], width: 250 },
+        { height: 12, str: 'CORRECTIVE ACTION PLAN', transform: [12, 0, 0, 12, 100, 420], width: 180 },
+      ],
+    })
+    const source = new Uint8Array([37, 80, 68, 70])
+    const file = new File([source], 'bounded-long-form.pdf', { type: 'application/pdf' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => source.buffer.slice(0) })
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><DocumentWorkbench initialFile={file} onClose={vi.fn()} onSaved={vi.fn()} workspace={workspace} /></QueryClientProvider>)
+
+    const onDocument = await screen.findByRole('textbox', { name: 'Employee explanation and relevant context on document' })
+    expect(Number.parseFloat(onDocument.style.height)).toBeLessThan(12)
+    expect(onDocument).toHaveClass('document-workbench__template-control', 'is-long_text')
+    fireEvent.change(onDocument, { target: { value: 'This answer stays inside the printed explanation section.' } })
+    expect(within(screen.getByRole('region', { name: 'Detected form fields' })).getByDisplayValue('This answer stays inside the printed explanation section.')).toBeInTheDocument()
+    client.clear()
+  })
+
+  it('turns printed checkbox symbols into directly clickable form controls', async () => {
+    pdf.page.getTextContent.mockResolvedValue({
+      items: [{ height: 11, str: '☐ Written warning', transform: [11, 0, 0, 11, 100, 520], width: 105 }],
+    })
+    const source = new Uint8Array([37, 80, 68, 70])
+    const file = new File([source], 'printed-checkbox.pdf', { type: 'application/pdf' })
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => source.buffer.slice(0) })
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><DocumentWorkbench initialFile={file} onClose={vi.fn()} onSaved={vi.fn()} workspace={workspace} /></QueryClientProvider>)
+
+    const onDocument = await screen.findByRole('button', { name: 'Written warning on document: not checked' })
+    expect(onDocument).not.toBePressed()
+    fireEvent.click(onDocument)
+    expect(await screen.findByRole('button', { name: 'Written warning on document: checked' })).toBePressed()
+    const sideCheckbox = within(screen.getByRole('region', { name: 'Detected form fields' })).getByRole('checkbox', { name: /Written warning/i })
+    expect(sideCheckbox).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Written warning on document: checked' }))
+    expect(await screen.findByRole('button', { name: 'Written warning on document: not checked' })).not.toBePressed()
     client.clear()
   })
 
@@ -221,11 +268,12 @@ describe('DocumentWorkbench editor', () => {
     render(<QueryClientProvider client={client}><DocumentWorkbench initialFile={file} onClose={vi.fn()} onSaved={vi.fn()} workspace={workspace} /></QueryClientProvider>)
 
     const region = await screen.findByRole('region', { name: 'Detected form fields' })
-    fireEvent.click(within(region).getByRole('button', { name: 'Place signature here' }))
+    const signatureField = await screen.findByRole('button', { name: /Signature field Enter \/ Sign on document/i })
+    fireEvent.click(signatureField)
     fireEvent.change(screen.getByPlaceholderText('Type the full name'), { target: { value: 'Jordan C Brown' } })
-    fireEvent.pointerDown(document.querySelector<HTMLElement>('.document-workbench__sheet')!, { clientX: 205, clientY: 178, pointerId: 18 })
+    fireEvent.click(screen.getByRole('button', { name: 'Place signature' }))
 
-    const signature = await screen.findByRole('button', { name: /signature: Jordan C Brown/i })
+    const signature = await screen.findByRole('button', { name: /Signature field Enter \/ Sign on document: Jordan C Brown/i })
     expect(signature.querySelector('img')).toBeInTheDocument()
     expect(within(region).getByRole('button', { name: 'Review placed signature' })).toBeInTheDocument()
     expect(region).toHaveTextContent('Jordan C Brown is placed in this signature box.')
@@ -252,7 +300,7 @@ describe('DocumentWorkbench editor', () => {
     const received = within(region).getByRole('checkbox', { name: /Employee received copy/i })
     expect(received).not.toBeChecked()
     fireEvent.click(received)
-    expect(await screen.findByRole('button', { name: /checkmark: true/i })).toHaveTextContent('✓')
+    expect(await screen.findByRole('button', { name: /Employee received copy on document: checked/i })).toBePressed()
     client.clear()
   })
 

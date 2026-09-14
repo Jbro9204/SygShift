@@ -214,6 +214,20 @@ async function detectTemplateFields(pdf: PDFDocumentProxy): Promise<DetectedTemp
     }
     if (typeof pdfPage.getTextContent !== 'function') continue
     const content = await pdfPage.getTextContent()
+    const positionedText = content.items.flatMap((contentItem) => {
+      if (!('str' in contentItem) || !contentItem.str.trim() || !Array.isArray(contentItem.transform)) return []
+      const contentHeight = Math.max(Math.abs(Number(contentItem.height) || Number(contentItem.transform[3]) || 0), 9)
+      const contentWidth = Math.max(Number(contentItem.width) || 0, contentHeight)
+      const [contentX, contentBaselineY] = viewport.convertToViewportPoint(Number(contentItem.transform[4]) || 0, Number(contentItem.transform[5]) || 0)
+      return [{
+        heightRatio: Math.max(.012, contentHeight / viewport.height),
+        leftRatio: Math.max(0, Math.min(1, contentX / viewport.width)),
+        text: contentItem.str.replace(/\s+/g, ' ').trim(),
+        topRatio: Math.max(0, Math.min(1, (contentBaselineY - contentHeight * 1.08) / viewport.height)),
+        widthRatio: Math.max(.012, contentWidth / viewport.width),
+      }]
+    })
+    const followingTextTops = positionedText.map((item) => item.topRatio).sort((left, right) => left - right)
     for (const item of content.items) {
       if (!('str' in item) || !item.str.includes('[') || !Array.isArray(item.transform)) continue
       const expression = /\[([^\]\r\n]{2,160})\]/g
@@ -235,12 +249,18 @@ async function detectTemplateFields(pdf: PDFDocumentProxy): Promise<DetectedTemp
             ? Math.max(promptWidth, Math.min(.28, .94 - xRatio))
             : Math.max(promptWidth, Math.min(.2, .94 - xRatio))
         const yRatio = Math.max(.01, Math.min(.97, (baselineY - itemHeight * 1.08) / viewport.height))
+        const nextTextTop = controlType === 'long_text'
+          ? followingTextTops.find((candidate) => candidate > yRatio + Math.max(.03, itemHeight * 2 / viewport.height))
+          : undefined
+        const boundedLongTextHeight = nextTextTop === undefined
+          ? Math.max(.06, Math.min(.18, .92 - yRatio))
+          : Math.max(.045, Math.min(.18, nextTextTop - yRatio - .008))
         const key = `${pageNumber}:${Math.round(xRatio * 1_000)}:${Math.round(yRatio * 1_000)}:${label.toLocaleLowerCase()}`
         if (seen.has(key)) continue
         seen.add(key)
         fields.push({
           boxHeightRatio: controlType === 'long_text'
-            ? Math.max(.08, Math.min(.18, .92 - yRatio))
+            ? boundedLongTextHeight
             : Math.max(.018, Math.min(.05, itemHeight * 1.55 / viewport.height)),
           controlType,
           eraseHeightRatio: Math.max(.018, Math.min(.08, itemHeight * 1.45 / viewport.height)),
@@ -254,6 +274,39 @@ async function detectTemplateFields(pdf: PDFDocumentProxy): Promise<DetectedTemp
           yRatio,
         })
       }
+    }
+    for (const item of positionedText) {
+      const symbol = /[☐☑□■]/u.exec(item.text)
+      if (!symbol || fields.length >= 80) continue
+      const afterSymbol = item.text.slice(symbol.index + symbol[0].length).trim()
+      const beforeSymbol = item.text.slice(0, symbol.index).trim()
+      const adjacentLabel = positionedText
+        .filter((candidate) => candidate !== item
+          && Math.abs(candidate.topRatio - item.topRatio) <= Math.max(.012, item.heightRatio)
+          && candidate.leftRatio > item.leftRatio
+          && candidate.leftRatio - item.leftRatio < .35)
+        .sort((left, right) => left.leftRatio - right.leftRatio)[0]?.text
+      const label = (afterSymbol || beforeSymbol || adjacentLabel || 'Checkbox').slice(0, 160)
+      const symbolFraction = symbol.index / Math.max(1, item.text.length)
+      const xRatio = Math.max(.01, Math.min(.97, item.leftRatio + item.widthRatio * symbolFraction))
+      const yRatio = Math.max(.01, Math.min(.97, item.topRatio))
+      const key = `checkbox:${pageNumber}:${Math.round(xRatio * 1_000)}:${Math.round(yRatio * 1_000)}:${label.toLocaleLowerCase()}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      fields.push({
+        boxHeightRatio: Math.max(.016, Math.min(.04, item.heightRatio * 1.25)),
+        controlType: 'checkbox',
+        defaultValue: String(/[☑■]/u.test(symbol[0])),
+        eraseHeightRatio: 0,
+        eraseWidthRatio: 0,
+        fontSize: Math.max(8, Math.min(15, Math.round(item.heightRatio * viewport.height))),
+        id: key,
+        label,
+        page: pageNumber,
+        widthRatio: Math.max(.016, Math.min(.04, item.heightRatio * viewport.height / viewport.width * 1.25)),
+        xRatio,
+        yRatio,
+      })
     }
   }
   return fields
@@ -285,6 +338,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
   const [maximized, setMaximized] = useState(false)
   const [tool, setTool] = useState<PdfAnnotationKind | null>('text')
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null)
+  const [selectedTemplateFieldId, setSelectedTemplateFieldId] = useState<string | null>(null)
   const [textValue, setTextValue] = useState('')
   const [signatureName, setSignatureName] = useState('')
   const [signatureFamily, setSignatureFamily] = useState<SignatureFamily>('Great Vibes')
@@ -368,6 +422,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     setUndoHistory([])
     setRedoHistory([])
     setSelectedAnnotationId(null)
+    setSelectedTemplateFieldId(null)
     setTemplateFields([])
     void (async () => {
       try {
@@ -381,7 +436,10 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
         setSourceBytes(bytes)
         setPdf(loaded)
         const detected = await detectTemplateFields(loaded)
-        if (!cancelled) setTemplateFields(detected)
+        if (!cancelled) {
+          setTemplateFields(detected)
+          if (detected.length) setTool(null)
+        }
       } catch (error) {
         if (!cancelled) setLoadError(friendlyError(error, 'This PDF could not be opened.'))
       }
@@ -522,15 +580,72 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
       templateFieldKey: field.id,
       text: value,
       widthRatio: field.widthRatio,
-      xRatio: field.xRatio,
-      yRatio: field.yRatio,
+      xRatio: field.controlType === 'checkbox' ? field.xRatio + field.widthRatio / 2 : field.xRatio,
+      yRatio: field.controlType === 'checkbox' ? field.yRatio + field.boxHeightRatio / 2 : field.yRatio,
     }
   }
 
   function updateTemplateField(field: DetectedTemplateField, value: string) {
     if (field.controlType === 'signature') return
     const withoutField = annotationsRef.current.filter((annotation) => annotation.templateFieldKey !== field.id)
-    commitAnnotationSnapshot(field.nativeFieldName || value.trim() ? [...withoutField, templateAnnotation(field, value)] : withoutField)
+    const shouldPersist = field.controlType === 'checkbox'
+      ? Boolean(field.nativeFieldName) || value === 'true'
+      : Boolean(field.nativeFieldName) || Boolean(value.trim())
+    commitAnnotationSnapshot(shouldPersist ? [...withoutField, templateAnnotation(field, value)] : withoutField)
+  }
+
+  function selectTemplateField(field: DetectedTemplateField) {
+    const current = annotationsRef.current.find((annotation) => annotation.templateFieldKey === field.id)
+    setPage(field.page)
+    setPanel('edit')
+    setTool(null)
+    setSelectedAnnotationId(null)
+    setSelectedTemplateFieldId(field.id)
+    if (field.controlType === 'signature') setSignatureName(current?.text ?? '')
+  }
+
+  async function placeTemplateSignature(field: DetectedTemplateField) {
+    const value = signatureName.trim()
+    if (!value) {
+      setLoadError('Type the signer name first.')
+      return
+    }
+    try {
+      const signaturePng = await createTypedSignaturePng(value, signatureFamily)
+      const existing = annotationsRef.current.find((annotation) => annotation.templateFieldKey === field.id)
+      const annotation = movePdfAnnotation({
+        boxHeightRatio: field.boxHeightRatio,
+        eraseHeightRatio: field.nativeFieldName ? field.boxHeightRatio : field.eraseHeightRatio,
+        eraseWidthRatio: field.nativeFieldName ? field.widthRatio : field.eraseWidthRatio,
+        eraseXRatio: field.xRatio,
+        eraseYRatio: field.yRatio,
+        fieldLabel: field.label,
+        fontFamily: signatureFamily,
+        id: existing?.id ?? `template-signature:${field.id}`,
+        kind: 'signature',
+        page: field.page,
+        signaturePng,
+        templateFieldKey: field.id,
+        text: value,
+        widthRatio: Math.max(.12, Math.min(.38, field.widthRatio)),
+        xRatio: field.xRatio + field.widthRatio / 2,
+        yRatio: field.yRatio + field.boxHeightRatio / 2,
+      }, field.xRatio + field.widthRatio / 2, field.yRatio + field.boxHeightRatio / 2)
+      commitAnnotationSnapshot([
+        ...annotationsRef.current.filter((current) => current.templateFieldKey !== field.id),
+        annotation,
+      ])
+      setSelectedTemplateFieldId(field.id)
+      setLoadError(null)
+    } catch (error) {
+      setLoadError(friendlyError(error, 'The signature could not be generated.'))
+    }
+  }
+
+  function removeTemplateSignature(field: DetectedTemplateField) {
+    commitAnnotationSnapshot(annotationsRef.current.filter((annotation) => annotation.templateFieldKey !== field.id))
+    setSignatureName('')
+    setLoadError(null)
   }
 
   function fillSelectedEmployeeDetails(targetEmployeeId = employeeId) {
@@ -558,7 +673,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
   }
 
   async function addAnnotation(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!tool) { setSelectedAnnotationId(null); return }
+    if (!tool) { setSelectedAnnotationId(null); setSelectedTemplateFieldId(null); return }
     if (!sheetRef.current) return
     if (tool === 'text' && !textValue.trim()) { setLoadError('Type the text you want to add first.'); return }
     if (tool === 'signature' && !signatureName.trim()) { setLoadError('Type the signer name first.'); return }
@@ -616,6 +731,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
       : annotationsRef.current
     commitAnnotationSnapshot([...withoutPreviousTarget, annotation])
     setSelectedAnnotationId(id)
+    setSelectedTemplateFieldId(null)
     setTool(null)
     setLoadError(null)
     if (tool === 'text') setTextValue('')
@@ -836,7 +952,104 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     }
   }
 
-  const visibleAnnotations = annotations.filter((annotation) => annotation.page === page && !(annotation.nativeFieldType === 'checkbox' && annotation.text !== 'true'))
+  function renderTemplateControl(field: DetectedTemplateField) {
+    const fieldAnnotation = annotations.find((annotation) => annotation.templateFieldKey === field.id)
+    const value = fieldAnnotation?.text ?? field.defaultValue ?? ''
+    const selected = selectedTemplateFieldId === field.id
+    const hasValue = field.controlType === 'checkbox' ? value === 'true' : Boolean(value)
+    const commonClassName = `document-workbench__template-control is-${field.controlType}${selected ? ' is-selected' : ''}${hasValue ? '' : ' is-empty'}`
+    const commonStyle = {
+      height: `${field.boxHeightRatio * 100}%`,
+      left: `${field.xRatio * 100}%`,
+      top: `${field.yRatio * 100}%`,
+      width: `${field.widthRatio * 100}%`,
+    }
+    const stopSheetPlacement = (event: ReactPointerEvent<HTMLElement>) => event.stopPropagation()
+    const focusField = () => selectTemplateField(field)
+
+    if (field.controlType === 'checkbox') {
+      const checked = value === 'true'
+      return <button
+        aria-label={`${field.label} on document: ${checked ? 'checked' : 'not checked'}`}
+        aria-pressed={checked}
+        className={commonClassName}
+        key={field.id}
+        onClick={() => updateTemplateField(field, String(!checked))}
+        onFocus={focusField}
+        onPointerDown={stopSheetPlacement}
+        style={commonStyle}
+        title={`${checked ? 'Clear' : 'Check'} ${field.label}`}
+        type="button"
+      >{checked ? <Check aria-hidden="true" /> : null}</button>
+    }
+
+    if (field.controlType === 'signature') {
+      return <button
+        aria-label={`Signature field ${field.label} on document${value ? `: ${value}` : ''}`}
+        className={commonClassName}
+        key={field.id}
+        onClick={focusField}
+        onPointerDown={stopSheetPlacement}
+        style={commonStyle}
+        title={value ? `Edit signature for ${value}` : `Sign ${field.label}`}
+        type="button"
+      >{fieldAnnotation ? <SignatureImage annotation={fieldAnnotation} /> : <span>Sign here</span>}</button>
+    }
+
+    if (field.controlType === 'choice' && field.options?.length) {
+      return <select
+        aria-label={`${field.label} on document`}
+        className={commonClassName}
+        key={field.id}
+        onChange={(event) => updateTemplateField(field, event.target.value)}
+        onFocus={focusField}
+        onPointerDown={stopSheetPlacement}
+        style={commonStyle}
+        value={value}
+      ><option value="">Choose</option>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+    }
+
+    if (field.controlType === 'long_text') {
+      return <textarea
+        aria-label={`${field.label} on document`}
+        className={commonClassName}
+        key={field.id}
+        maxLength={4000}
+        onChange={(event) => updateTemplateField(field, event.target.value)}
+        onFocus={focusField}
+        onPointerDown={stopSheetPlacement}
+        placeholder="Click to type"
+        spellCheck
+        style={{ ...commonStyle, fontSize: `${Math.max(7, field.fontSize * sheetScale)}px` }}
+        value={value}
+      />
+    }
+
+    const fittedFontSize = Math.max(6, Math.min(
+      field.fontSize * sheetScale,
+      (field.widthRatio * sheetSize.width - 10) / Math.max(1, value.length * .52),
+    ))
+    return <input
+      aria-label={`${field.label} on document`}
+      className={commonClassName}
+      key={field.id}
+      maxLength={1000}
+      onChange={(event) => updateTemplateField(field, event.target.value)}
+      onFocus={focusField}
+      onPointerDown={stopSheetPlacement}
+      placeholder="Click to type"
+      spellCheck
+      style={{ ...commonStyle, fontSize: `${fittedFontSize}px` }}
+      value={value}
+    />
+  }
+
+  const visibleAnnotations = annotations.filter((annotation) => annotation.page === page
+    && (panel !== 'edit' || !annotation.templateFieldKey)
+    && !(annotation.nativeFieldType === 'checkbox' && annotation.text !== 'true'))
+  const visibleTemplateFields = templateFields.filter((field) => field.page === page)
+  const selectedTemplateField = templateFields.find((field) => field.id === selectedTemplateFieldId) ?? null
+  const selectedTemplateAnnotation = selectedTemplateField ? annotations.find((annotation) => annotation.templateFieldKey === selectedTemplateField.id) ?? null : null
   const selectedTextAnnotation = selectedAnnotation?.kind === 'text' ? selectedAnnotation : null
   const selectedSignatureAnnotation = selectedAnnotation?.kind === 'signature' ? selectedAnnotation : null
   const busy = save.isPending || sendDocument.isPending || previewBusy
@@ -871,7 +1084,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
         <div className="document-workbench__history">
           <button aria-label="Undo last document change" disabled={!undoHistory.length} onClick={undo} title="Undo" type="button"><Undo2 size={18} /></button>
           <button aria-label="Redo last document change" disabled={!redoHistory.length} onClick={redo} title="Redo" type="button"><Redo2 size={18} /></button>
-          <button aria-label="Clear all additions" disabled={!annotations.length} onClick={() => { commitAnnotationSnapshot([]); setSelectedAnnotationId(null) }} title="Clear all additions" type="button"><Trash2 size={18} /></button>
+          <button aria-label="Clear all additions" disabled={!annotations.length} onClick={() => { commitAnnotationSnapshot([]); setSelectedAnnotationId(null); setSelectedTemplateFieldId(null) }} title="Clear all additions" type="button"><Trash2 size={18} /></button>
         </div>
         <button aria-label={maximized ? 'Restore editor size' : 'Maximize editor'} aria-pressed={maximized} className="document-workbench__maximize" onClick={() => setMaximized((current) => !current)} title={maximized ? 'Restore editor size' : 'Maximize editor'} type="button">{maximized ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button>
         <button className="secondary-button secondary-button--small" onClick={() => inputRef.current?.click()} type="button">Choose another PDF</button>
@@ -884,6 +1097,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
           {!pdf && !loadError ? <p className="document-workbench__loading">Opening PDF…</p> : null}
           <div className={`document-workbench__sheet${tool ? ' is-placing' : ''}`} onPointerDown={(event) => void addAnnotation(event)} ref={sheetRef} style={{ height: sheetSize.height || undefined, width: sheetSize.width || undefined }}>
             <canvas hidden={!pdf || !sheetSize.width} ref={canvasRef} />
+            {panel === 'edit' ? visibleTemplateFields.map(renderTemplateControl) : null}
             {visibleAnnotations.map((annotation) => <div
               className={`document-workbench__annotation is-${annotation.kind}${annotation.templateFieldKey ? ' is-template-field' : ''}${annotation.nativeFieldName ? ' is-native-field' : ''}${selectedAnnotationId === annotation.id ? ' is-selected' : ''}`}
               key={annotation.id}
@@ -905,7 +1119,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
                 aria-label={`${annotation.kind === 'text' ? 'Text box' : annotation.kind}: ${annotation.text}. Drag or use arrow keys to move.`}
                 aria-pressed={selectedAnnotationId === annotation.id}
                 className="document-workbench__annotation-content"
-                onClick={() => { if (!annotation.nativeFieldName) { setSelectedAnnotationId(annotation.id); setTool(null); setPanel('edit') } }}
+                onClick={() => { if (!annotation.nativeFieldName) { setSelectedAnnotationId(annotation.id); setSelectedTemplateFieldId(null); setTool(null); setPanel('edit') } }}
                 onKeyDown={(event) => moveAnnotationWithKeyboard(event, annotation)}
                 onPointerCancel={finishAnnotationGesture}
                 onPointerDown={(event) => annotation.nativeFieldName ? event.stopPropagation() : startAnnotationGesture(event, annotation, 'move')}
@@ -936,16 +1150,23 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
           </div>
 
           {panel === 'edit' ? <div className="document-workbench__panel">
-            <div><p className="eyebrow">Add to the PDF</p><h3>Choose a tool, then click the page</h3><p>Every addition can be undone or removed before you finish.</p></div>
+            <div><p className="eyebrow">{templateFields.length ? 'Fill on the document' : 'Add to the PDF'}</p><h3>{templateFields.length ? 'Click any highlighted box' : 'Choose a tool, then click the page'}</h3><p>{templateFields.length ? 'Type, check, choose, or sign directly on the form. The field list below remains available when you need it.' : 'Every addition can be undone or removed before you finish.'}</p></div>
+            {selectedTemplateField?.controlType === 'signature' ? <section className="document-workbench__direct-signature" aria-label={`Sign ${selectedTemplateField.label}`}>
+              <div className="document-workbench__selection-heading"><span><FileSignature aria-hidden="true" size={17} /></span><div><strong>{selectedTemplateAnnotation ? 'Update this signature' : 'Sign this field'}</strong><small>{selectedTemplateField.label} · Page {selectedTemplateField.page}</small></div></div>
+              <label className="document-workbench__field">Signer name<input autoFocus maxLength={120} onChange={(event) => setSignatureName(event.target.value)} placeholder="Type the full name" value={signatureName} /></label>
+              <div className="document-workbench__signature-preview" style={{ fontFamily: `"${signatureFamily}", cursive` }}>{signatureName || 'Your signature'}</div>
+              <div className="document-workbench__signature-styles" aria-label="Signature style">{signatureFamilies.map((family) => <button aria-pressed={signatureFamily === family} className={signatureFamily === family ? 'active' : ''} key={family} onClick={() => setSignatureFamily(family)} style={{ fontFamily: `"${family}", cursive` }} type="button">{signatureName || 'Signature'}</button>)}</div>
+              <div className="document-workbench__direct-signature-actions"><button className="primary-action" disabled={!signatureName.trim()} onClick={() => void placeTemplateSignature(selectedTemplateField)} type="button">{selectedTemplateAnnotation ? 'Update signature' : 'Place signature'}</button>{selectedTemplateAnnotation ? <button className="danger-button danger-button--small" onClick={() => removeTemplateSignature(selectedTemplateField)} type="button"><Trash2 size={16} />Remove</button> : null}</div>
+            </section> : null}
             {templateFields.length ? <section className="document-workbench__guided-fields" aria-label="Detected form fields">
               <label className="document-workbench__guided-employee">Whose form is this?<select onChange={(event) => { const nextEmployeeId = event.target.value; setEmployeeId(nextEmployeeId); if (nextEmployeeId !== 'company') fillSelectedEmployeeDetails(nextEmployeeId) }} value={employeeId}><option value="company">Not tied to one employee</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select><small>Choosing an employee fills matching name, ID, title, supervisor, location, and company fields when available.</small></label>
-              <div className="document-workbench__guided-heading"><div><p className="eyebrow">Fill this form</p><h3>{templateFields.length} editable {templateFields.length === 1 ? 'field' : 'fields'} found</h3><p>{templateFields.some((field) => field.nativeFieldName) ? 'Complete the form fields here. The finished PDF keeps every answer in the correct box.' : 'Complete the fields here. SygShift places every answer in the correct spot on the PDF.'}</p></div>{workspace.employees.some((employee) => employee.id === employeeId) ? <button className="secondary-button secondary-button--small" onClick={() => fillSelectedEmployeeDetails()} type="button">Fill employee details</button> : null}</div>
+              <div className="document-workbench__guided-heading"><div><p className="eyebrow">Field list</p><h3>{templateFields.length} editable {templateFields.length === 1 ? 'field' : 'fields'} found</h3><p>Click a box on the form for the fastest path, or use this list to jump between pages.</p></div>{workspace.employees.some((employee) => employee.id === employeeId) ? <button className="secondary-button secondary-button--small" onClick={() => fillSelectedEmployeeDetails()} type="button">Fill employee details</button> : null}</div>
               <div className="document-workbench__guided-list">{templateFields.map((field) => {
                 const fieldAnnotation = annotations.find((annotation) => annotation.templateFieldKey === field.id)
                 const value = fieldAnnotation?.text ?? field.defaultValue ?? ''
-                const focusField = () => setPage(field.page)
-                if (field.controlType === 'signature') return <div className="document-workbench__guided-signature" key={field.id}><span>{field.label}<small>Page {field.page}</small></span><button className="secondary-button secondary-button--small" onClick={() => { setPage(field.page); setPanel('edit'); if (fieldAnnotation) { setSelectedAnnotationId(fieldAnnotation.id); setTool(null) } else { setSelectedAnnotationId(null); setTool('signature') } }} type="button">{fieldAnnotation ? 'Review placed signature' : 'Place signature here'}</button><small>{fieldAnnotation ? `${fieldAnnotation.text} is placed in this signature box.` : 'Type the signer name below, then click this signature box on the document.'}</small></div>
-                return <label key={field.id}><span>{field.label}<small>Page {field.page}</small></span>{field.controlType === 'checkbox'
+                const focusField = () => selectTemplateField(field)
+                if (field.controlType === 'signature') return <div className={`document-workbench__guided-signature${selectedTemplateFieldId === field.id ? ' is-active' : ''}`} key={field.id}><span>{field.label}<small>Page {field.page}</small></span><button className="secondary-button secondary-button--small" onClick={() => selectTemplateField(field)} type="button">{fieldAnnotation ? 'Review placed signature' : 'Place signature here'}</button><small>{fieldAnnotation ? `${fieldAnnotation.text} is placed in this signature box.` : 'Click the signature box on the document or use this button.'}</small></div>
+                return <label className={selectedTemplateFieldId === field.id ? 'is-active' : ''} key={field.id}><span>{field.label}<small>Page {field.page}</small></span>{field.controlType === 'checkbox'
                   ? <span className="document-workbench__guided-check"><input checked={value === 'true'} onChange={(event) => updateTemplateField(field, String(event.target.checked))} onFocus={focusField} type="checkbox"/><span>Yes</span></span>
                   : field.controlType === 'choice' && field.options?.length
                     ? <select onChange={(event) => updateTemplateField(field, event.target.value)} onFocus={focusField} value={value}><option value="">Choose an option</option>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
@@ -955,11 +1176,11 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
               })}</div>
             </section> : null}
             <div className="document-workbench__tools">
-              <button aria-pressed={tool === null} className={tool === null ? 'active' : ''} onClick={() => { setTool(null); setSelectedAnnotationId(null) }} type="button"><Move size={18} /><span>Select / move</span></button>
-              <button aria-pressed={tool === 'text' && !selectedAnnotationId} className={tool === 'text' && !selectedAnnotationId ? 'active' : ''} onClick={() => { setTool('text'); setSelectedAnnotationId(null) }} type="button"><Type size={18} /><span>Text</span></button>
-              <button aria-pressed={tool === 'signature'} className={tool === 'signature' ? 'active' : ''} onClick={() => { setTool('signature'); setSelectedAnnotationId(null) }} type="button"><FileSignature size={18} /><span>Signature</span></button>
-              <button aria-pressed={tool === 'date'} className={tool === 'date' ? 'active' : ''} onClick={() => { setTool('date'); setSelectedAnnotationId(null) }} type="button"><CalendarDays size={18} /><span>Date</span></button>
-              <button aria-pressed={tool === 'checkmark'} className={tool === 'checkmark' ? 'active' : ''} onClick={() => { setTool('checkmark'); setSelectedAnnotationId(null) }} type="button"><Check size={18} /><span>Check</span></button>
+              <button aria-pressed={tool === null && !selectedTemplateFieldId} className={tool === null && !selectedTemplateFieldId ? 'active' : ''} onClick={() => { setTool(null); setSelectedAnnotationId(null); setSelectedTemplateFieldId(null) }} type="button"><Move size={18} /><span>Select / move</span></button>
+              <button aria-pressed={tool === 'text' && !selectedAnnotationId} className={tool === 'text' && !selectedAnnotationId ? 'active' : ''} onClick={() => { setTool('text'); setSelectedAnnotationId(null); setSelectedTemplateFieldId(null) }} type="button"><Type size={18} /><span>Text</span></button>
+              <button aria-pressed={tool === 'signature'} className={tool === 'signature' ? 'active' : ''} onClick={() => { setTool('signature'); setSelectedAnnotationId(null); setSelectedTemplateFieldId(null) }} type="button"><FileSignature size={18} /><span>Signature</span></button>
+              <button aria-pressed={tool === 'date'} className={tool === 'date' ? 'active' : ''} onClick={() => { setTool('date'); setSelectedAnnotationId(null); setSelectedTemplateFieldId(null) }} type="button"><CalendarDays size={18} /><span>Date</span></button>
+              <button aria-pressed={tool === 'checkmark'} className={tool === 'checkmark' ? 'active' : ''} onClick={() => { setTool('checkmark'); setSelectedAnnotationId(null); setSelectedTemplateFieldId(null) }} type="button"><Check size={18} /><span>Check</span></button>
             </div>
             {tool === 'text' || selectedTextAnnotation ? <>
               <label className="document-workbench__field">{selectedTextAnnotation ? 'Selected text box' : 'Text to add'}<textarea maxLength={2000} onChange={(event) => selectedTextAnnotation ? updateAnnotation(selectedTextAnnotation.id, (current) => ({ ...current, text: event.target.value })) : setTextValue(event.target.value)} placeholder="Type the complete text here" rows={4} value={selectedTextAnnotation?.text ?? textValue} /></label>
