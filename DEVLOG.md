@@ -2435,3 +2435,14 @@ pnpm exec wrangler deploy --keep-vars
 - Verification passed 256 files / 1,308 tests, 33 focused guards, the clean 328-pass desktop/mobile browser matrix with 12 intentional skips, rollback-only live-schema rehearsal, and the post-release 42/42 Time Clock matrix.
 - Applied and recorded migration `20260913211117`; released source `6aa0dbc` as Cloudflare Worker `9ab647a7-fd65-4a69-9b42-2b9ec1c706b5`. Both production origins passed health, readiness, signed-out access, and exact-asset verification.
 - See `docs/changelogs/CHANGELOG_09-13-2026_SALARY_PAYROLL_BLOCKER_AND_TIMECARD_RANGE_REPAIR.md` for complete production and rollback evidence.
+
+## 09/14/2026 - Equal Clocks and Document Center Guidance
+
+- Enlarged all four operational clocks while keeping Pacific, Mountain, Central, and Eastern identical in width, height, padding, border, background, and dial treatment.
+- Removed Mountain-only visual emphasis; its small **System time** line remains informational without making MDT more prominent.
+- Added a common-laptop header layout that gives the full clock strip its own row, preventing account-control overlap and Eastern-clock clipping.
+- Rebuilt the Document Center start banner as an evenly cushioned, rounded guide with the plain-language flow **Choose → Complete → Save or send**.
+- Preserved all document actions, permissions, storage, HR data, timekeeping, schedule, payroll, and employee behavior; no database migration or production-data mutation was required.
+- Verification passed 256 files / 1,308 tests, 42 focused clock/Document Center browser checks, the complete 328-pass desktop/mobile browser matrix with 12 intentional skips, and the post-release 42/42 Time Clock matrix.
+- Released source `597846c` as Cloudflare Worker `ecae9668-f0c4-4645-9ce8-074c4e26b860`; both production origins passed health, readiness, signed-out access, and exact application/CSS/Document Center asset verification.
+- See `docs/changelogs/CHANGELOG_09-14-2026_EQUAL_CLOCKS_AND_DOCUMENT_CENTER_GUIDANCE.md` for complete scope, preservation, verification, and rollback evidence.
