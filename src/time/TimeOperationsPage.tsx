@@ -5,6 +5,7 @@ import { BellRing, CheckCircle2, Clock3, FileClock, ShieldAlert } from 'lucide-r
 import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { CoverageWorkflowDialog } from '../pages/RequestsPage'
 import { getSessionContext } from '../data/auth'
 import { getPendingTimeEventCorrections, type PendingCorrection } from '../data/timekeeping'
 import {
@@ -47,6 +48,13 @@ function readableStatus(value: string): string {
   return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+function coverageStatusLabel(report: EmployeeCallOffReport): string {
+  if (!report.coverageStatus) return 'Coverage plan unfinished'
+  if (report.coverageStatus === 'open_pool') return 'Open shift published'
+  if (report.coverageStatus === 'patrol_review') return 'Patrol review requested'
+  return readableStatus(report.coverageStatus)
+}
+
 function invalidateOperations(queryClient: ReturnType<typeof useQueryClient>) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: ['time-operations-workspace'] }),
@@ -57,6 +65,9 @@ function invalidateOperations(queryClient: ReturnType<typeof useQueryClient>) {
     queryClient.invalidateQueries({ queryKey: ['my-missing-time-workspace'] }),
     queryClient.invalidateQueries({ queryKey: ['missing-time-request-workspace'] }),
     queryClient.invalidateQueries({ queryKey: ['time-event-correction-queue'] }),
+    queryClient.invalidateQueries({ queryKey: ['request-center'] }),
+    queryClient.invalidateQueries({ queryKey: ['open-opportunities'] }),
+    queryClient.invalidateQueries({ queryKey: ['weekly-schedule'] }),
   ])
 }
 
@@ -70,6 +81,7 @@ export function TimeOperationsPage() {
   const [selectedException, setSelectedException] = useState<OperationalException | null>(null)
   const [selectedManualEntry, setSelectedManualEntry] = useState<ManualTimeEntry | null>(null)
   const [selectedCallOff, setSelectedCallOff] = useState<EmployeeCallOffReport | null>(null)
+  const [coverageCallOff, setCoverageCallOff] = useState<EmployeeCallOffReport | null>(null)
   const [exceptionVisibleCount, setExceptionVisibleCount] = useState(EXCEPTION_QUEUE_BATCH_SIZE)
   const sessionQuery = useQuery({ enabled: isSupabaseConfigured, queryFn: getSessionContext, queryKey: ['session-context'] })
   const workspaceQuery = useQuery({
@@ -121,6 +133,7 @@ export function TimeOperationsPage() {
     ownEventCorrections.length,
   )
   const urgent = workspace.alerts.filter((alert) => alert.priority === 'urgent' && !alert.acknowledgedAt)
+  const activeCallOffReports = workspace.callOffReports.filter((report) => !report.resolvedAt)
 
   return (
     <main className="page page--sygshift-time">
@@ -203,11 +216,11 @@ export function TimeOperationsPage() {
 
       {workspace.canViewOperations ? (
         <section className="time-operations-panel">
-          <div className="time-operations-panel__heading"><div><p className="eyebrow">Attendance history</p><h2>Active sick and call-off records</h2></div><TimeStatusBadge tone={workspace.callOffReports.length ? 'warning' : 'good'}>{workspace.callOffReports.length ? `${workspace.callOffReports.length} active` : 'Clear'}</TimeStatusBadge></div>
-          {workspace.callOffReports.length ? workspace.callOffReports.map((report) => (
+          <div className="time-operations-panel__heading"><div><p className="eyebrow">Attendance history</p><h2>Active sick and call-off records</h2></div><TimeStatusBadge tone={activeCallOffReports.length ? 'warning' : 'good'}>{activeCallOffReports.length ? `${activeCallOffReports.length} active` : 'Clear'}</TimeStatusBadge></div>
+          {activeCallOffReports.length ? activeCallOffReports.map((report) => (
             <article className="time-workflow-row time-workflow-row--wide" key={report.id}>
               <div><strong>{report.employeeName}</strong><span>{readableStatus(report.callOffType)} · {report.location}</span><small>{formatOperationalDateTime(report.startsAt, { timeZone: report.timeZone })} – {formatOperationalDateTime(report.endsAt, { timeZone: report.timeZone })} · received by {report.receivedBy || 'authorized user'}</small></div>
-              <div className="time-workflow-row__actions"><TimeStatusBadge tone={report.replacementNeeded ? 'warning' : 'good'}>{report.replacementNeeded ? 'Coverage needed' : 'No replacement needed'}</TimeStatusBadge>{workspace.canReportCallOff ? <TimeButton onClick={() => setSelectedCallOff(report)} variant="secondary">Maintain</TimeButton> : null}</div>
+              <div className="time-workflow-row__actions"><TimeStatusBadge tone="warning">{coverageStatusLabel(report)}</TimeStatusBadge>{workspace.canReportCallOff ? <><TimeButton onClick={() => setCoverageCallOff(report)} variant="primary">{report.coverageStatus ? 'Review coverage' : 'Finish coverage'}</TimeButton><TimeButton onClick={() => setSelectedCallOff(report)} variant="secondary">Maintain</TimeButton></> : null}</div>
             </article>
           )) : <EmptyMessage icon={CheckCircle2} title="No active call-offs in this range" />}
         </section>
@@ -220,6 +233,7 @@ export function TimeOperationsPage() {
       {selectedException ? <ExceptionReviewDialog exception={selectedException} onClose={() => setSelectedException(null)} onSaved={() => invalidateOperations(queryClient)} /> : null}
       {selectedManualEntry ? <ManualEntryEditDialog entry={selectedManualEntry} onClose={() => setSelectedManualEntry(null)} onSaved={() => invalidateOperations(queryClient)} workspace={workspace} /> : null}
       {selectedCallOff ? <CallOffMaintenanceDialog onClose={() => setSelectedCallOff(null)} onSaved={() => invalidateOperations(queryClient)} report={selectedCallOff} /> : null}
+      {coverageCallOff ? <CoverageWorkflowDialog initialMode={coverageCallOff.replacementNeeded ? 'open_pool' : 'no_replacement'} onClose={() => setCoverageCallOff(null)} onSaved={() => invalidateOperations(queryClient)} report={coverageCallOff} /> : null}
     </main>
   )
 }
@@ -361,9 +375,11 @@ function ManualEntryDialog({ onClose, onSaved, workspace }: { onClose: () => voi
 
 function CallOffDialog({ onClose, onSaved, workspace }: { onClose: () => void; onSaved: () => Promise<unknown>; workspace: TimeOperationsWorkspace }) {
   const [employeeId, setEmployeeId] = useState('')
-  const mutation = useMutation({ mutationFn: reportEmployeeCallOff, onSuccess: async () => { await onSaved(); onClose() } })
+  const [recordedCallOff, setRecordedCallOff] = useState<{ id: string; replacementNeeded: boolean } | null>(null)
+  const mutation = useMutation({ mutationFn: reportEmployeeCallOff, onSuccess: async (result, input) => { await onSaved(); setRecordedCallOff({ id: result.id, replacementNeeded: input.replacementNeeded }) } })
   const shifts = workspace.shifts.filter((shift) => shift.employeeId === employeeId && new Date(shift.endsAt) >= new Date(workspace.serverTimestamp))
   function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); mutation.mutate({ employeeId, shiftId: String(data.get('shiftId')), callOffType: data.get('callOffType') as 'sick' | 'other', reason: String(data.get('reason')), callReceivedAt: zonedLocalDateTimeToUtc(String(data.get('callReceivedAt'))), notes: String(data.get('notes') || '') || null, replacementNeeded: data.get('replacementNeeded') === 'on', operationalDetails: String(data.get('operationalDetails') || '') || null }) }
+  if (recordedCallOff) return <CoverageWorkflowDialog initialMode={recordedCallOff.replacementNeeded ? 'open_pool' : 'no_replacement'} onClose={onClose} onSaved={async () => { await onSaved() }} report={recordedCallOff} />
   return <ModalDialog busy={mutation.isPending} className="modal-dialog--time-workflow modal-dialog--call-off" description="Creates a persistent urgent alert and keeps the original scheduled shift in the audit record." onClose={onClose} title="Report Sick / Call-Off"><form className="time-workflow-form" onSubmit={submit}><label><span>Employee</span><select onChange={(event) => setEmployeeId(event.target.value)} required value={employeeId}><option value="">Choose employee</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label><label><span>Scheduled shift</span><select name="shiftId" required><option value="">Choose shift</option>{shifts.map((shift) => <option key={shift.shiftId} value={shift.shiftId}>{formatOperationalDateTime(shift.startsAt, { timeZone: shift.timeZone })} · {shift.location}</option>)}</select></label><div className="time-workflow-form__two"><label><span>Call-off type</span><select name="callOffType"><option value="sick">Sick</option><option value="other">Other</option></select></label><label><span>Call received</span><input defaultValue={toZonedLocalDateTimeInput(workspace.serverTimestamp)} name="callReceivedAt" required type="datetime-local" /></label></div><label><span>Reason</span><input maxLength={200} name="reason" required /></label><label><span>Notes</span><textarea maxLength={1000} name="notes" rows={3} /></label><label><span>Operational details</span><textarea maxLength={1000} name="operationalDetails" rows={3} /></label><label className="time-workflow-confirm"><input defaultChecked name="replacementNeeded" type="checkbox" /><span>Replacement coverage is needed.</span></label>{mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}<div className="time-workflow-form__actions"><TimeButton onClick={onClose} type="button" variant="secondary">Cancel</TimeButton><TimeButton type="submit" variant="danger">Record call-off</TimeButton></div></form></ModalDialog>
 }
 
@@ -445,5 +461,5 @@ function CancelRequestButton({ id, onChanged }: { id: string; onChanged: () => P
 
 function AlertQueue({ alerts, onChanged }: { alerts: TimeOperationsWorkspace['alerts']; onChanged: () => Promise<unknown> }) {
   const mutation = useMutation({ mutationFn: acknowledgeOperationalAlert, onSuccess: onChanged })
-  return <section className="operational-alert-queue" aria-label="Urgent operational alerts"><div className="operational-alert-queue__heading"><BellRing aria-hidden="true" size={24} /><div><strong>Urgent attendance action required</strong><span>Corrected attendance and schedule changes clear automatically. Unresolved items move to payroll review after the live response window.</span></div></div>{alerts.map((alert) => <article key={alert.id}><div><strong>{alert.title}</strong><span>{alert.summary}</span><small>{formatOperationalDateTime(alert.createdAt)}</small></div><TimeButton disabled={mutation.isPending} onClick={() => mutation.mutate(alert.id)} variant="secondary">Acknowledge</TimeButton></article>)}</section>
+  return <section className="operational-alert-queue" aria-label="Urgent operational alerts"><div className="operational-alert-queue__heading"><BellRing aria-hidden="true" size={24} /><div><strong>Urgent attendance action required</strong><span>Corrected attendance and schedule changes clear automatically. Unresolved items move to payroll review after the live response window.</span></div></div>{alerts.map((alert) => <article key={alert.id}><div><strong>{alert.title}</strong><span>{alert.summary}</span><small>{formatOperationalDateTime(alert.createdAt)}</small></div><div className="time-workflow-row__actions">{alert.directPath ? <Link className="time-button time-button--primary" to={alert.directPath}><span>Handle coverage</span></Link> : null}<TimeButton disabled={mutation.isPending} onClick={() => mutation.mutate(alert.id)} variant="secondary">Acknowledge</TimeButton></div></article>)}</section>
 }

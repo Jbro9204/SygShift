@@ -143,6 +143,8 @@ const callOffReportSchema = z.object({
   replacementNeeded: z.boolean(),
   operationalDetails: z.string().nullable(),
   reportedAt: z.string(),
+  resolvedAt: z.string().nullable(),
+  coverageStatus: z.string().nullable(),
 })
 
 const workspaceSchema = z.object({
@@ -394,7 +396,12 @@ export async function reportEmployeeCallOff(input: {
     target_notes: input.notes ?? null,
     target_replacement_needed: input.replacementNeeded,
     target_operational_details: input.operationalDetails ?? null,
-  }, z.object({ id: z.string().uuid(), alertId: z.string().uuid(), status: z.string() }))
+  }, z.object({
+    id: z.string().uuid(),
+    alertId: z.string().uuid(),
+    status: z.string(),
+    coverageRequired: z.boolean(),
+  }))
 }
 
 export async function updateEmployeeCallOff(input: { id: string; callOffType: 'sick' | 'other'; reason: string; notes?: string | null; operationalDetails?: string | null; replacementNeeded: boolean }) {

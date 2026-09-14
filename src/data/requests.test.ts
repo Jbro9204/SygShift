@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   employeeName,
+  parseRequestCenterPayload,
   parseRequestCenterRecords,
   requestShiftLocation,
   requestShiftTitle,
@@ -60,5 +61,16 @@ describe('request center contracts', () => {
     expect(employeeName(employee)).toBe('Alex Rivera')
     expect(requestShiftTitle(shift)).toBe('Main entrance')
     expect(requestShiftLocation(shift)).toBe('North Campus')
+  })
+
+  it('rejects request-center payloads that omit manager permissions', () => {
+    expect(() => parseRequestCenterPayload({
+      employeeId: employee.id,
+      role: 'supervisor',
+      timeOff: [],
+      shiftRequests: [],
+      callOffs: [],
+      upcomingAssignments: [],
+    })).toThrow()
   })
 })

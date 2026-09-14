@@ -1,5 +1,6 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import {
   CalendarOff,
   CheckCircle2,
@@ -345,18 +346,20 @@ const coverageChoices: Array<{
   { value: 'no_replacement', label: 'No replacement needed', description: 'Close the staffing need while preserving the original schedule and absence record.', icon: CircleOff },
 ]
 
-function CoverageWorkflowDialog({
+export function CoverageWorkflowDialog({
   report,
   onClose,
   onSaved,
+  initialMode = 'open_pool',
 }: {
-  report: CallOffReport
+  report: Pick<CallOffReport, 'id'>
   onClose: () => void
-  onSaved: (message: string) => void
+  onSaved: (message: string) => void | Promise<unknown>
+  initialMode?: CallOffCoverageMode
 }) {
   const queryClient = useQueryClient()
   const [step, setStep] = useState(1)
-  const [mode, setMode] = useState<CallOffCoverageMode>('open_pool')
+  const [mode, setMode] = useState<CallOffCoverageMode>(initialMode)
   const [replacementEmployeeId, setReplacementEmployeeId] = useState('')
   const [search, setSearch] = useState('')
   const [title, setTitle] = useState('Open shift available')
@@ -384,7 +387,7 @@ function CoverageWorkflowDialog({
           : result.status === 'patrol_review'
             ? 'Dispatch was notified to review a one-night patrol fallback.'
             : 'Absence recorded; no replacement is required.'
-      onSaved(label)
+      await onSaved(label)
       onClose()
     },
   })
@@ -589,11 +592,12 @@ function SupervisorQueue({
 }
 
 export function RequestsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [pendingCallOff, setPendingCallOff] = useState<PendingCallOff | null>(null)
   const [decision, setDecision] = useState<DecisionDialogState | null>(null)
   const [timeOffOpen, setTimeOffOpen] = useState(false)
   const [timeOffReviewId, setTimeOffReviewId] = useState<string | null>(null)
-  const [announcement, setAnnouncement] = useState<CallOffReport | null>(null)
+  const [announcement, setAnnouncement] = useState<Pick<CallOffReport, 'id'> | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const requestQuery = useQuery({
     queryKey: ['request-center'],
@@ -606,6 +610,21 @@ export function RequestsPage() {
     () => requestQuery.data?.upcomingAssignments ?? [],
     [requestQuery.data?.upcomingAssignments],
   )
+  const linkedCallOffId = searchParams.get('callOff')
+
+  useEffect(() => {
+    if (privileged && linkedCallOffId && !announcement) {
+      setAnnouncement({ id: linkedCallOffId })
+    }
+  }, [announcement, linkedCallOffId, privileged])
+
+  function closeCoverageWorkflow() {
+    setAnnouncement(null)
+    if (!linkedCallOffId) return
+    const next = new URLSearchParams(searchParams)
+    next.delete('callOff')
+    setSearchParams(next, { replace: true })
+  }
 
   return (
     <div className="page page--requests">
@@ -700,7 +719,7 @@ export function RequestsPage() {
           state={decision}
         />
       ) : null}
-      {announcement ? <CoverageWorkflowDialog onClose={() => setAnnouncement(null)} onSaved={setActionMessage} report={announcement} /> : null}
+      {announcement ? <CoverageWorkflowDialog onClose={closeCoverageWorkflow} onSaved={setActionMessage} report={announcement} /> : null}
     </div>
   )
 }

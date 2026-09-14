@@ -209,12 +209,12 @@ const rpcShiftSchema = z.object({
   location: z.string(),
 })
 
-const requestCenterPayloadSchema = z.object({
+export const requestCenterPayloadSchema = z.object({
   employeeId: z.string().uuid(),
   role: roleSchema,
   permissions: z.object({
     canManage: z.boolean(),
-  }).optional().default({ canManage: false }),
+  }),
   timeOff: z.array(z.object({
     id: z.string().uuid(),
     employeeId: z.string().uuid(),
@@ -256,6 +256,10 @@ const requestCenterPayloadSchema = z.object({
   })),
 })
 
+export function parseRequestCenterPayload(input: unknown) {
+  return requestCenterPayloadSchema.parse(input)
+}
+
 function employeeFromPayload(id: string, displayName: string): z.infer<typeof employeeSchema> {
   const trimmedName = displayName.trim() || 'Employee'
   return {
@@ -286,7 +290,7 @@ export async function getRequestCenter(): Promise<RequestCenter> {
     throw new Error(error.message || 'The request center could not be loaded for this account.')
   }
 
-  const payload = requestCenterPayloadSchema.parse(data)
+  const payload = parseRequestCenterPayload(data)
   const records: RequestCenterRecords = {
     timeOff: payload.timeOff.map((request) => ({
       id: request.id,

@@ -169,6 +169,15 @@ const createResultSchema = z.object({
   status: z.string(),
   operationalDate: z.string(),
   createdAt: z.string(),
+  callOffId: z.string().uuid().nullable(),
+  coverageRequired: z.boolean(),
+})
+
+const reclassifyResultSchema = z.object({
+  id: z.string().uuid(),
+  eventType: eventTypeSchema,
+  callOffId: z.string().uuid().nullable(),
+  coverageRequired: z.boolean(),
 })
 
 const reviewResultSchema = z.object({
@@ -216,7 +225,7 @@ export async function reclassifyAccountabilityOccurrence(input: { eventId: strin
     target_event_id: input.eventId, target_event_type: input.eventType, target_reason: input.reason,
   })
   if (error) throw accountabilityOperationError('The occurrence type could not be updated. Your reason is still here; please try again.')
-  return data
+  return reclassifyResultSchema.parse(data)
 }
 
 export async function getAccountabilityWorkspace(input: { fromDate: string; throughDate: string }): Promise<AccountabilityWorkspace> {

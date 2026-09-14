@@ -4,7 +4,7 @@ export type AccountabilityDisplayState = 'open' | 'confirmed' | 'protected' | 'c
 
 export const accountabilityTypeLabels: Readonly<Record<AccountabilityEvent['eventType'], string>> = {
   called_in_sick: 'Called in sick',
-  call_off: 'Call-off',
+  call_off: 'Absent / call-off',
   vacation: 'Vacation / approved time off',
   no_call_no_show: 'No-call / no-show',
   late_arrival: 'Late arrival',
