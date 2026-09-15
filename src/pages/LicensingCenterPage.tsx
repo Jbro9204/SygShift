@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
+  Archive,
   BadgeCheck,
   BellRing,
   ChevronDown,
@@ -14,6 +15,7 @@ import {
   FolderOpen,
   Mail,
   Pencil,
+  RotateCcw,
   Save,
   Search,
   ShieldAlert,
@@ -27,6 +29,7 @@ import { ModalDialog } from '../components/ModalDialog'
 import { SecurePdfViewer } from '../components/SecurePdfViewer'
 import { getSessionContext } from '../data/auth'
 import {
+  archiveLicensingCredential,
   formatEligibility,
   formatRole,
   getLicensingCredentialDocuments,
@@ -34,6 +37,7 @@ import {
   getLicensingDocumentBlob,
   isLicensingIdentityVerificationRequired,
   recordLicensingCommunication,
+  restoreLicensingCredential,
   upsertLicensingCredential,
   upsertLicensingEmployee,
   uploadCredentialDocument,
@@ -42,8 +46,10 @@ import {
   type CredentialType,
   type LicensingCenter,
   type LicensingCredential,
+  type LicensingCredentialRemovalReason,
   type LicensingCredentialDocument,
   type LicensingEmployee,
+  type RemovedLicensingCredential,
   type RenewalStatus,
 } from '../data/licensing'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -75,6 +81,14 @@ type EligibilityFilter = 'all' | 'armed' | 'unarmed' | 'ineligible'
 type ExpirationFilter = 'all' | '30' | '60' | '90'
 type WorklistSort = 'employee' | 'expiration' | 'status' | 'eligibility'
 type ProfileTab = 'credentials' | 'renewals' | 'activity'
+
+const credentialRemovalReasons: Array<{ value: LicensingCredentialRemovalReason; label: string }> = [
+  { value: 'wrong_employee', label: 'Added to the wrong employee' },
+  { value: 'duplicate', label: 'Duplicate credential' },
+  { value: 'entered_by_mistake', label: 'Entered by mistake' },
+  { value: 'no_longer_applicable', label: 'No longer applicable' },
+  { value: 'other', label: 'Other' },
+]
 
 const complianceLabels: Record<ComplianceColor, string> = {
   gray: 'Neutral',
@@ -522,16 +536,108 @@ function CredentialDocumentsModal({ credential, onClose }: { credential: Licensi
   )
 }
 
+function CredentialRemovalModal({
+  credential,
+  employee,
+  onClose,
+  onRemoved,
+}: {
+  credential: LicensingCredential
+  employee: LicensingEmployee
+  onClose: () => void
+  onRemoved: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [reasonCode, setReasonCode] = useState<LicensingCredentialRemovalReason | ''>('')
+  const [reasonDetails, setReasonDetails] = useState('')
+  const mutation = useMutation({
+    mutationFn: archiveLicensingCredential,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['licensing-center'], refetchType: 'active' })
+      onRemoved()
+    },
+  })
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!credential.credentialId || !reasonCode) return
+    mutation.mutate({
+      credentialId: credential.credentialId,
+      employeeId: employee.employeeId,
+      reasonCode,
+      reasonDetails,
+    })
+  }
+
+  const otherReasonIncomplete = reasonCode === 'other' && reasonDetails.trim().length < 5
+
+  return (
+    <ModalDialog
+      busy={mutation.isPending}
+      busyLabel="Removing credential from profile..."
+      description={`${employee.displayName} • ${credentialDisplayName(credential)}`}
+      onClose={onClose}
+      title="Remove credential from profile?"
+    >
+      <form className="request-form licensing-credential-removal-form" onSubmit={submit}>
+        <section className="licensing-credential-removal-summary">
+          <Archive aria-hidden="true" size={22} />
+          <div>
+            <strong>{credentialDisplayName(credential)}</strong>
+            <span>{credential.credentialNumber || 'Credential number not recorded'}</span>
+          </div>
+        </section>
+        <div className="modal-warning">
+          <strong>This does not delete the record.</strong>
+          <span>
+            It will leave the active profile and eligibility calculations. Documents and history remain saved, and an authorized user can restore it later.
+            {credential.required ? ' Because this credential is required, the employee will show it as Missing.' : ''}
+          </span>
+        </div>
+        <label className="field-stack">
+          <span>Why are you removing it?</span>
+          <select autoFocus onChange={(event) => setReasonCode(event.target.value as LicensingCredentialRemovalReason | '')} required value={reasonCode}>
+            <option value="">Choose a reason</option>
+            {credentialRemovalReasons.map((reason) => <option key={reason.value} value={reason.value}>{reason.label}</option>)}
+          </select>
+        </label>
+        <label className="field-stack">
+          <span>Additional detail <small>{reasonCode === 'other' ? 'Required for Other' : 'Optional'}</small></span>
+          <textarea
+            maxLength={500}
+            minLength={reasonCode === 'other' ? 5 : undefined}
+            onChange={(event) => setReasonDetails(event.target.value)}
+            placeholder="Add a short note if it will help the next person understand the change."
+            required={reasonCode === 'other'}
+            rows={3}
+            value={reasonDetails}
+          />
+        </label>
+        {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+        <div className="modal-actions">
+          <button className="secondary-button" disabled={mutation.isPending} onClick={onClose} type="button">Keep credential</button>
+          <button className="danger-button" disabled={!reasonCode || otherReasonIncomplete || mutation.isPending} type="submit">
+            <Archive aria-hidden="true" size={17} />
+            {mutation.isPending ? 'Removing...' : 'Remove from profile'}
+          </button>
+        </div>
+      </form>
+    </ModalDialog>
+  )
+}
+
 function CredentialEditModal({
   credential,
   credentialTypes,
   employee,
   onClose,
+  onRemove,
 }: {
   credential: LicensingCredential
   credentialTypes: CredentialType[]
   employee: LicensingEmployee
   onClose: () => void
+  onRemove: () => void
 }) {
   const queryClient = useQueryClient()
   const [selectedStatus, setSelectedStatus] = useState<CredentialStatus>(
@@ -666,12 +772,21 @@ function CredentialEditModal({
           <span>Rejection reason <small>Only use when rejecting an invalid/unreadable document</small></span>
           <textarea defaultValue={credential.rejectionReason ?? ''} maxLength={2000} name="rejectionReason" rows={2} />
         </label>
-        <div className="modal-actions">
-          <button className="secondary-button" onClick={onClose} type="button">Close</button>
-          <button className="primary-action" disabled={credentialMutation.isPending} type="submit">
-            <Save aria-hidden="true" size={17} />
-            {credentialMutation.isPending ? 'Saving...' : 'Save credential/license'}
-          </button>
+        <div className="modal-actions licensing-credential-edit-actions">
+          <div>
+            {credential.credentialId ? (
+              <button className="danger-button" disabled={credentialMutation.isPending || documentMutation.isPending} onClick={onRemove} type="button">
+                <Archive aria-hidden="true" size={17} /> Remove from profile
+              </button>
+            ) : null}
+          </div>
+          <div>
+            <button className="secondary-button" onClick={onClose} type="button">Close</button>
+            <button className="primary-action" disabled={credentialMutation.isPending} type="submit">
+              <Save aria-hidden="true" size={17} />
+              {credentialMutation.isPending ? 'Saving...' : 'Save credential/license'}
+            </button>
+          </div>
         </div>
         {credentialMutation.isSuccess ? <div className="form-feedback form-feedback--success" role="status">Credential saved and compliance recalculated.</div> : null}
         {credentialMutation.isError ? <div className="inline-alert" role="alert">{credentialMutation.error.message}</div> : null}
@@ -824,10 +939,13 @@ function EmployeeLicensingProfile({
   onClose: () => void
   onEditEmployee: (employee: LicensingEmployee) => void
 }) {
+  const queryClient = useQueryClient()
   const [editingCredentialTypeId, setEditingCredentialTypeId] = useState<string | null>(null)
+  const [removingCredentialId, setRemovingCredentialId] = useState<string | null>(null)
   const [communicatingCredentialTypeId, setCommunicatingCredentialTypeId] = useState<string | null>(null)
   const [viewingDocumentCredentialTypeId, setViewingDocumentCredentialTypeId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<ProfileTab>('credentials')
+  const [lifecycleMessage, setLifecycleMessage] = useState<string | null>(null)
   const credentialChoices = useMemo(() => {
     const existingTypeIds = new Set(employee.credentials.map((credential) => credential.credentialTypeId))
     const readyToAdd = center.credentialTypes
@@ -853,8 +971,19 @@ function EmployeeLicensingProfile({
     ?? employee.credentials.find((credential) => credential.complianceColor === 'yellow')
   const credentialsOnFile = credentialChoices.filter((credential) => credential.credentialId)
   const credentialsAvailable = credentialChoices.filter((credential) => !credential.credentialId)
+  const removedCredentials = center.removedCredentials.filter((credential) => credential.employeeId === employee.employeeId)
+  const removingCredential = removingCredentialId
+    ? credentialsOnFile.find((credential) => credential.credentialId === removingCredentialId) ?? null
+    : null
   const firstCredential = firstAction ?? credentialsOnFile[0] ?? credentialsAvailable[0] ?? null
   const [expandedCredentialTypeId, setExpandedCredentialTypeId] = useState(firstCredential?.credentialTypeId ?? '')
+  const restoreMutation = useMutation({
+    mutationFn: restoreLicensingCredential,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['licensing-center'], refetchType: 'active' })
+      setLifecycleMessage('Credential restored to the active profile. Compliance and eligibility were recalculated.')
+    },
+  })
 
   useEffect(() => {
     if (credentialChoices.length === 0) {
@@ -876,6 +1005,22 @@ function EmployeeLicensingProfile({
     if (!targetCredential) return
     setExpandedCredentialTypeId(targetCredential.credentialTypeId)
     setEditingCredentialTypeId(targetCredential.credentialTypeId)
+  }
+
+  function hasActiveReplacement(removedCredential: RemovedLicensingCredential) {
+    return credentialsOnFile.some((credential) => (
+      (removedCredential.credentialTypeId && credential.credentialTypeId === removedCredential.credentialTypeId)
+      || (removedCredential.credentialTypeCode && credential.credentialTypeCode === removedCredential.credentialTypeCode)
+    ))
+  }
+
+  function restoreCredential(removedCredential: RemovedLicensingCredential) {
+    setLifecycleMessage(null)
+    restoreMutation.reset()
+    restoreMutation.mutate({
+      credentialId: removedCredential.credentialId,
+      employeeId: employee.employeeId,
+    })
   }
 
   function renderCredential(credential: LicensingCredential) {
@@ -996,6 +1141,9 @@ function EmployeeLicensingProfile({
         </section>
       )}
 
+      {lifecycleMessage ? <div className="form-feedback form-feedback--success licensing-lifecycle-feedback" role="status">{lifecycleMessage}</div> : null}
+      {restoreMutation.isError ? <div className="inline-alert licensing-lifecycle-feedback" role="alert">{restoreMutation.error.message}</div> : null}
+
       <nav className="licensing-profile-tabs" aria-label="Licensing profile sections">
         {([
           ['credentials', 'Credentials'],
@@ -1023,6 +1171,42 @@ function EmployeeLicensingProfile({
             <details className="licensing-available-credentials">
               <summary>Available and missing credential types <span>{credentialsAvailable.length}</span></summary>
               <div className="licensing-credential-accordion-list">{credentialsAvailable.map(renderCredential)}</div>
+            </details>
+          ) : null}
+          {removedCredentials.length > 0 ? (
+            <details className="licensing-removed-credentials">
+              <summary>Removed credentials <span>{removedCredentials.length}</span></summary>
+              <div className="licensing-removed-credentials__list">
+                {removedCredentials.map((removedCredential) => {
+                  const replacementExists = hasActiveReplacement(removedCredential)
+                  const restoring = restoreMutation.isPending && restoreMutation.variables?.credentialId === removedCredential.credentialId
+                  return (
+                    <article key={removedCredential.credentialId}>
+                      <Archive aria-hidden="true" size={20} />
+                      <div>
+                        <strong>{removedCredential.credentialName}</strong>
+                        <span>
+                          {removedCredential.credentialNumber || 'Number not recorded'}
+                          {' • '}Removed {formatTimestamp(removedCredential.archivedAt)} by {removedCredential.archivedByName}
+                        </span>
+                        <small>{removedCredential.reason} • {removedCredential.documentCount} saved document{removedCredential.documentCount === 1 ? '' : 's'}</small>
+                        {replacementExists ? <small>A current credential of this type is already on the profile, so this record cannot be restored.</small> : null}
+                      </div>
+                      {canEditCredentials ? (
+                        <button
+                          className="secondary-button secondary-button--small"
+                          disabled={replacementExists || restoreMutation.isPending}
+                          onClick={() => restoreCredential(removedCredential)}
+                          type="button"
+                        >
+                          <RotateCcw aria-hidden="true" size={15} />
+                          {restoring ? 'Restoring...' : 'Restore'}
+                        </button>
+                      ) : null}
+                    </article>
+                  )
+                })}
+              </div>
             </details>
           ) : null}
         </section>
@@ -1070,6 +1254,21 @@ function EmployeeLicensingProfile({
           employee={employee}
           key={`${employee.employeeId}-${editingCredential.credentialTypeId}-${editingCredential.credentialId ?? 'missing'}-${editingCredential.status}-${editingCredential.credentialNumber ?? ''}-${editingCredential.expirationDate ?? ''}`}
           onClose={() => setEditingCredentialTypeId(null)}
+          onRemove={() => {
+            setEditingCredentialTypeId(null)
+            setRemovingCredentialId(editingCredential.credentialId)
+          }}
+        />
+      ) : null}
+      {canEditCredentials && removingCredential ? (
+        <CredentialRemovalModal
+          credential={removingCredential}
+          employee={employee}
+          onClose={() => setRemovingCredentialId(null)}
+          onRemoved={() => {
+            setRemovingCredentialId(null)
+            setLifecycleMessage('Credential removed from the active profile. Its documents and history remain saved under Removed credentials.')
+          }}
         />
       ) : null}
       {canCommunicate && communicatingCredential ? (

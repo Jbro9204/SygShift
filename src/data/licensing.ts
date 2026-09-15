@@ -17,6 +17,13 @@ const renewalStatusSchema = z.enum([
 ])
 const complianceColorSchema = z.enum(['green', 'yellow', 'red', 'gray'])
 const workEligibilitySchema = z.enum(['eligible', 'eligible_with_warning', 'restricted', 'ineligible', 'pending_review'])
+const licensingCredentialRemovalReasonSchema = z.enum([
+  'wrong_employee',
+  'duplicate',
+  'entered_by_mistake',
+  'no_longer_applicable',
+  'other',
+])
 
 const licensingCredentialDocumentSchema = z.object({
   id: z.string().uuid(),
@@ -87,6 +94,25 @@ const licensingCredentialSchema = z.object({
   lastEmployeeNotification: z.string().nullable(),
 })
 
+const removedLicensingCredentialSchema = z.object({
+  credentialId: z.string().uuid(),
+  employeeId: z.string().uuid(),
+  credentialTypeId: z.string().uuid().nullable(),
+  credentialTypeCode: z.string().nullable(),
+  credentialName: z.string(),
+  category: z.string(),
+  status: z.string(),
+  credentialNumber: z.string().nullable(),
+  issuingAuthority: z.string().nullable(),
+  issueDate: z.string().nullable(),
+  expirationDate: z.string().nullable(),
+  archivedAt: z.string(),
+  archivedByName: z.string(),
+  reasonCode: licensingCredentialRemovalReasonSchema,
+  reason: z.string(),
+  documentCount: z.number().int().nonnegative(),
+})
+
 const licensingRecordSchema = licensingCredentialSchema.extend({
   employeeId: z.string().uuid(),
   employeeName: z.string(),
@@ -152,6 +178,13 @@ const licensingCenterSchema = z.object({
   credentialTypes: z.array(credentialTypeSchema),
   records: z.array(licensingRecordSchema),
   employees: z.array(licensingEmployeeSchema),
+  removedCredentials: z.array(removedLicensingCredentialSchema).default([]),
+})
+
+const licensingCredentialLifecycleResultSchema = z.object({
+  credentialId: z.string().uuid(),
+  employeeId: z.string().uuid(),
+  state: z.enum(['removed', 'restored']),
 })
 
 export type AppRole = z.infer<typeof appRoleSchema>
@@ -168,6 +201,8 @@ export type LicensingCredential = z.infer<typeof licensingCredentialSchema>
 export type LicensingRecord = z.infer<typeof licensingRecordSchema>
 export type LicensingEmployee = z.infer<typeof licensingEmployeeSchema>
 export type LicensingCenter = z.infer<typeof licensingCenterSchema>
+export type RemovedLicensingCredential = z.infer<typeof removedLicensingCredentialSchema>
+export type LicensingCredentialRemovalReason = z.infer<typeof licensingCredentialRemovalReasonSchema>
 
 export interface LicensingEmployeeInput {
   employeeId?: string | null
@@ -196,6 +231,13 @@ export interface LicensingCredentialInput {
   internalNotes?: string | null
   employeeNotes?: string | null
   rejectionReason?: string | null
+}
+
+export interface ArchiveLicensingCredentialInput {
+  employeeId: string
+  credentialId: string
+  reasonCode: LicensingCredentialRemovalReason
+  reasonDetails?: string | null
 }
 
 export interface LicensingCommunicationInput {
@@ -235,6 +277,9 @@ function filteredLicensingCenter(center: LicensingCenter, removedEmployeeIds: st
   const records = center.records.filter((record) => (
     retainedEmployeeIds.has(record.employeeId)
   ))
+  const removedCredentials = center.removedCredentials.filter((credential) => (
+    retainedEmployeeIds.has(credential.employeeId)
+  ))
   // Historical and non-active employees remain available through an intentional filter,
   // but only active employees contribute to the coordinator's current workload summary.
   const workingEmployees = employees.filter((employee) => employee.employmentStatus === 'active')
@@ -250,6 +295,7 @@ function filteredLicensingCenter(center: LicensingCenter, removedEmployeeIds: st
     ...center,
     employees,
     records,
+    removedCredentials,
     summary: {
       awaitingReview: workingRecords.filter((record) => record.status === 'Under Review').length,
       expired: workingRecords.filter((record) => record.statusLabel === 'Expired').length,
@@ -267,14 +313,19 @@ function filteredLicensingCenter(center: LicensingCenter, removedEmployeeIds: st
 
 export async function getLicensingCenter(): Promise<LicensingCenter> {
   const client = getSupabaseClient()
-  const [centerResult, removedResult] = await Promise.all([
+  const [centerResult, removedEmployeeResult, removedCredentialResult] = await Promise.all([
     client.rpc('get_licensing_center'),
     client.rpc('get_removed_employee_ids'),
+    client.rpc('get_removed_licensing_credentials'),
   ])
   if (centerResult.error) throw new Error(centerResult.error.message || 'Licensing Center could not be loaded.')
-  if (removedResult.error) throw new Error(removedResult.error.message || 'Removed employee records could not be reconciled.')
-  const center = licensingCenterSchema.parse(centerResult.data)
-  const removedEmployeeIds = z.array(z.string().uuid()).parse(removedResult.data)
+  if (removedEmployeeResult.error) throw new Error(removedEmployeeResult.error.message || 'Removed employee records could not be reconciled.')
+  if (removedCredentialResult.error) throw new Error(removedCredentialResult.error.message || 'Removed credentials could not be loaded.')
+  const center = licensingCenterSchema.parse({
+    ...z.record(z.string(), z.unknown()).parse(centerResult.data),
+    removedCredentials: removedCredentialResult.data,
+  })
+  const removedEmployeeIds = z.array(z.string().uuid()).parse(removedEmployeeResult.data)
   return filteredLicensingCenter(center, removedEmployeeIds)
 }
 
@@ -325,6 +376,26 @@ export async function upsertLicensingCredential(input: LicensingCredentialInput)
   })
   if (error) throw new Error(error.message || 'Credential record could not be saved.')
   return licensingCenterSchema.parse(data)
+}
+
+export async function archiveLicensingCredential(input: ArchiveLicensingCredentialInput) {
+  const { data, error } = await getSupabaseClient().rpc('archive_licensing_credential', {
+    target_credential_id: input.credentialId,
+    target_employee_id: input.employeeId,
+    target_reason_code: input.reasonCode,
+    target_reason_details: cleanOptional(input.reasonDetails),
+  })
+  if (error) throw new Error(error.message || 'The credential could not be removed from this profile.')
+  return licensingCredentialLifecycleResultSchema.parse(data)
+}
+
+export async function restoreLicensingCredential(input: { employeeId: string; credentialId: string }) {
+  const { data, error } = await getSupabaseClient().rpc('restore_licensing_credential', {
+    target_credential_id: input.credentialId,
+    target_employee_id: input.employeeId,
+  })
+  if (error) throw new Error(error.message || 'The credential could not be restored to this profile.')
+  return licensingCredentialLifecycleResultSchema.parse(data)
 }
 
 export async function recordLicensingCommunication(input: LicensingCommunicationInput): Promise<LicensingCenter> {

@@ -34633,7 +34633,8 @@ button.patrol-overview-row:focus-visible {
 
 .licensing-status-details > summary,
 .licensing-more-filters > summary,
-.licensing-available-credentials > summary {
+.licensing-available-credentials > summary,
+.licensing-removed-credentials > summary {
   display: flex;
   min-height: 46px;
   align-items: center;
@@ -34649,7 +34650,8 @@ button.patrol-overview-row:focus-visible {
 
 .licensing-status-details > summary::-webkit-details-marker,
 .licensing-more-filters > summary::-webkit-details-marker,
-.licensing-available-credentials > summary::-webkit-details-marker {
+.licensing-available-credentials > summary::-webkit-details-marker,
+.licensing-removed-credentials > summary::-webkit-details-marker {
   display: none;
 }
 
@@ -35015,14 +35017,16 @@ button.patrol-overview-row:focus-visible {
   line-height: 1.45;
 }
 
-.licensing-available-credentials {
+.licensing-available-credentials,
+.licensing-removed-credentials {
   overflow: hidden;
   background: light-dark(#fbf8f1, #342817);
   border: 1px solid light-dark(#ddd3c5, #33383d);
   border-radius: 11px;
 }
 
-.licensing-available-credentials > summary span {
+.licensing-available-credentials > summary span,
+.licensing-removed-credentials > summary span {
   display: inline-grid;
   min-width: 28px;
   min-height: 28px;
@@ -35034,6 +35038,117 @@ button.patrol-overview-row:focus-visible {
 
 .licensing-available-credentials > .licensing-credential-accordion-list {
   padding: 0 12px 12px;
+}
+
+.licensing-removed-credentials {
+  background: light-dark(#faf7f2, #1d2023);
+}
+
+.licensing-removed-credentials__list {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.licensing-removed-credentials__list article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  padding: 14px;
+  background: light-dark(#fff, #171b1f);
+  border: 1px solid light-dark(#ddd4c6, #33383d);
+  border-radius: 10px;
+}
+
+.licensing-removed-credentials__list article > svg {
+  color: light-dark(#8c5d1c, #e0b65a);
+}
+
+.licensing-removed-credentials__list article > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.licensing-removed-credentials__list strong,
+.licensing-removed-credentials__list span,
+.licensing-removed-credentials__list small {
+  overflow-wrap: anywhere;
+}
+
+.licensing-removed-credentials__list strong {
+  color: light-dark(#2b261f, #f5f1e8);
+  font-size: 15px;
+}
+
+.licensing-removed-credentials__list span,
+.licensing-removed-credentials__list small {
+  color: light-dark(#70675b, #b9b2a7);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.licensing-credential-edit-actions {
+  justify-content: space-between;
+}
+
+.licensing-credential-edit-actions > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.licensing-credential-removal-form {
+  display: grid;
+  gap: 18px;
+}
+
+.licensing-credential-removal-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background: light-dark(#faf7f2, #1d2023);
+  border: 1px solid light-dark(#ddd4c6, #33383d);
+  border-radius: 12px;
+}
+
+.licensing-credential-removal-summary > svg {
+  flex: 0 0 auto;
+  color: light-dark(#9b3229, #f0a29b);
+}
+
+.licensing-credential-removal-summary > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.licensing-credential-removal-summary strong,
+.licensing-credential-removal-summary span {
+  overflow-wrap: anywhere;
+}
+
+.licensing-credential-removal-summary span {
+  color: light-dark(#70675b, #b9b2a7);
+  font-size: 13px;
+}
+
+.licensing-credential-removal-form .modal-warning {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+}
+
+.licensing-credential-removal-form .field-stack > span small {
+  color: light-dark(#6f665a, #b9b2a7);
+}
+
+.licensing-lifecycle-feedback {
+  margin: 0 24px 14px;
 }
 
 .licensing-renewal-list article,
@@ -35260,6 +35375,33 @@ button.patrol-overview-row:focus-visible {
   .licensing-activity-list .licensing-selected-credential__actions {
     grid-column: auto;
   }
+
+  .licensing-removed-credentials__list article {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .licensing-removed-credentials__list article > button {
+    width: 100%;
+    grid-column: 1 / -1;
+  }
+
+  .licensing-credential-edit-actions,
+  .licensing-credential-edit-actions > div {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .licensing-credential-edit-actions button,
+  .licensing-credential-removal-form .modal-actions button {
+    width: 100%;
+  }
+
+  .licensing-lifecycle-feedback {
+    margin-right: 16px;
+    margin-left: 16px;
+  }
 }
 
 /* Final presentation-readiness overrides. Keep these last so shared spacing wins. */
@@ -35312,7 +35454,8 @@ button.patrol-overview-row:focus-visible {
 .modal-dialog select,
 .modal-dialog .primary-action,
 .modal-dialog .secondary-button,
-.modal-dialog .danger-primary {
+.modal-dialog .danger-primary,
+.modal-dialog .danger-button {
   min-height: var(--presentation-control-height);
 }
 
@@ -35338,7 +35481,8 @@ button.patrol-overview-row:focus-visible {
 
 .modal-dialog .primary-action,
 .modal-dialog .secondary-button,
-.modal-dialog .danger-primary {
+.modal-dialog .danger-primary,
+.modal-dialog .danger-button {
   display: inline-flex;
   min-height: 46px;
   align-items: center;
