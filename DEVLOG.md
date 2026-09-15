@@ -2482,3 +2482,13 @@ pnpm exec wrangler deploy --keep-vars
 - Post-release verification passed the 42/42 actual-component Time Clock matrix, health/readiness and signed-out access checks on both production origins, and byte-identical live application, stylesheet, Document Center, and PDF viewer assets.
 - Released source `52a194a` as Cloudflare Worker `110a65f2-f98a-4fd5-9883-5bc349810a68`; no database migration was required.
 - See `docs/changelogs/CHANGELOG_09-14-2026_DOCUMENT_DIRECT_FIELD_EDITING.md` for complete scope, preservation, verification, and release evidence.
+
+## 09/15/2026 - Recoverable Licensing Credential Removal
+
+- Added **Remove from profile** to Licensing Center credential management with an identified employee/credential summary, required plain-language reason, and explicit notice that the record is not deleted.
+- Archived credentials now leave active eligibility and reporting calculations, return required types to **Missing**, retain their documents and history, and remain visible under **Removed credentials**.
+- Added authorized restore with a same-type active-credential conflict guard, plus before-and-after audit evidence for both removal and restore.
+- Applied and recorded migration `20260915151039`; rollback-only production verification covered lifecycle, permissions, documents, audit, required-status recalculation, conflict handling, and complete fixture rollback.
+- Verification passed 260 files / 1,325 tests, the full 336-pass desktop/mobile browser matrix with 12 intentional skips, database advisors, exact live assets, signed-out access checks, and the post-release 42/42 Time Clock matrix.
+- Released source `6cca7ff` as Cloudflare Worker `676b05a2-7039-4587-81ca-032fef31a0ab`; both production origins passed health and readiness.
+- See `docs/changelogs/CHANGELOG_09-15-2026_LICENSING_CREDENTIAL_REMOVAL.md` for complete behavior, preservation, verification, and rollback evidence.
