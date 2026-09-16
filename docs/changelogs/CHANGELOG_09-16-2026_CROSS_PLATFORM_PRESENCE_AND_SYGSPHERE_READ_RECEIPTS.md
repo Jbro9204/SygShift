@@ -46,18 +46,23 @@ All seven migrations are registered in production. The final rollback-only regre
 
 ## Verification
 
-- Full SygShift repository gate passed: **263 test files / 1,332 tests**, strict TypeScript, zero-warning application lint, Worker build, and client production build.
+- Full SygShift repository gate passed: **263 test files / 1,334 tests**, strict TypeScript, zero-warning application lint, Worker build, and client production build.
 - Responsive SygSphere, User Accounts, and mandatory actual-component Time Clock browser matrix passed **100/100** across desktop and mobile.
 - Focused presence contract and database guards passed **3 files / 7 tests** after the durable-history migration.
 - Production contains the expected private tables, forced RLS, restricted RPC grants, supporting indexes, and no presence fixture data.
 - Security advisor notices for the private no-policy tables and authenticated security-definer RPCs are expected for this intentionally RPC-only design; both RPCs enforce their own session or administrative permission boundary.
 - The new auth-user index has not yet accumulated normal production use, but the prior missing-foreign-key-index finding is resolved.
+- Both production SygShift origins returned HTTP `200` for health and readiness, with every readiness dependency true.
+- The primary and fallback origins served the same versioned application assets. Cloudflare reports Worker version `4ac0e084-9f21-476b-b015-b40a428b19e3` at 100% of traffic.
+- The coordinated Sygilant custom domain and immutable deployment both passed the production perimeter: 13 pages, 28 protected reads, one rejected hostile-origin mutation, and 72 versioned assets.
 
 ## Release references
 
-- SygShift source commit: pending final release commit
-- Cloudflare Worker version: pending deployment
-- Sygilant coordinated release: pending final Sygilant gate
+- SygShift source commit: `a623fe9`
+- Cloudflare Worker version: `4ac0e084-9f21-476b-b015-b40a428b19e3`
+- Sygilant source commit: `da91892`
+- Sygilant Cloudflare Pages deployment: `3c029dd4-8108-451d-95a3-431e6df7dec5`
+- Sygilant immutable deployment URL: `https://3c029dd4.guardline.pages.dev`
 - Rollback tag: `rollback/pre-cross-platform-presence-20260916`
 - Primary URL: `https://app.sygilant.us`
 - Fallback URL: `https://sygshift.sygilant.workers.dev`

@@ -20,7 +20,9 @@
 - Preserved last-active history independently from short-lived heartbeat rows; disabled and inactive accounts remain Offline, and the signal is explicitly excluded from attendance, payroll, timekeeping, and discipline.
 - Removed the retired SygSphere presence write from recurring directory/avatar reads while preserving access checks, conversations, and sound preferences.
 - Applied production migrations `20260916132452`, `20260916134702`, `20260916135430`, `20260916140140`, `20260916141353`, `20260916142017`, and `20260916142703`; the rollback-only database regression passed and left no fixture data.
-- Verification passed 263 test files / 1,332 tests and 100/100 responsive SygSphere, Accounts, and actual-component Time Clock browser checks.
+- Verification passed 263 test files / 1,334 tests and 100/100 responsive SygSphere, Accounts, and actual-component Time Clock browser checks.
+- Released source `a623fe9` as Cloudflare Worker `4ac0e084-9f21-476b-b015-b40a428b19e3`; primary and fallback health/readiness returned HTTP `200`, readiness reported every dependency ready, and both origins served the same release assets.
+- Coordinated Sygilant source `da91892` deployed through Cloudflare Pages deployment `3c029dd4-8108-451d-95a3-431e6df7dec5`; custom and immutable hosts each passed 13 pages, 28 protected reads, one hostile mutation rejection, and 72 versioned assets.
 - Full release evidence: `docs/changelogs/CHANGELOG_09-16-2026_CROSS_PLATFORM_PRESENCE_AND_SYGSPHERE_READ_RECEIPTS.md`.
 
 ## 09/12/2026 - Accountability Notification Trigger Repair
