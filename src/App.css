@@ -26995,7 +26995,7 @@ button.patrol-overview-row:focus-visible {
 
 .user-admin-toolbar {
   display: grid;
-  grid-template-columns: minmax(280px, 1.7fr) repeat(4, minmax(140px, 1fr));
+  grid-template-columns: minmax(260px, 1.55fr) repeat(5, minmax(132px, 1fr));
   gap: 12px;
   align-items: end;
   padding: 16px;
@@ -27108,10 +27108,10 @@ button.patrol-overview-row:focus-visible {
 
 .user-admin-row {
   display: grid;
-  grid-template-columns: minmax(280px, 1.35fr) minmax(170px, 0.68fr) minmax(
+  grid-template-columns: minmax(230px, 1.15fr) minmax(150px, 0.62fr) minmax(
       150px,
-      0.56fr
-    ) minmax(220px, 0.9fr) minmax(112px, 0.38fr);
+      0.54fr
+    ) minmax(140px, 0.55fr) minmax(185px, 0.74fr) minmax(108px, 0.35fr);
   gap: 16px;
   align-items: center;
   padding: 15px 16px;
@@ -27157,8 +27157,63 @@ button.patrol-overview-row:focus-visible {
 
 .user-admin-role-employment,
 .user-admin-login-state,
+.user-admin-presence,
 .user-admin-last-activity {
   min-width: 0;
+}
+
+.account-presence {
+  display: inline-flex !important;
+  width: fit-content;
+  align-items: center;
+  gap: 7px;
+  color: light-dark(#514b42, #e8e2d7);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.account-presence i {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border: 2px solid var(--paper);
+  border-radius: 999px;
+  background: #8d887f;
+  box-shadow: 0 0 0 1px light-dark(#bdb6aa, #53585d);
+}
+
+.account-presence--active i { background: #2b9a68; box-shadow: 0 0 0 1px #2b9a68; }
+.account-presence--away i { background: #d49b31; box-shadow: 0 0 0 1px #d49b31; }
+.account-presence--offline i,
+.account-presence--never_active i,
+.account-presence--unknown i { background: #8d887f; }
+
+@media (min-width: 681px) and (max-width: 1180px) {
+  .user-admin-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 14px 20px;
+  }
+
+  .user-admin-row--header {
+    display: none;
+  }
+
+  .user-admin-row [role="cell"][data-label] {
+    display: grid;
+    grid-template-columns: minmax(112px, 0.35fr) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+  }
+
+  .user-admin-row [role="cell"][data-label]::before {
+    color: light-dark(#7a6a52, #b9b2a7);
+    content: attr(data-label);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
 }
 
 .user-admin-last-activity strong {

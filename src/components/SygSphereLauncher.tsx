@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
-import { sphereInbox, spherePath, sphereRequest, sphereUnread } from '../data/sygsphere'
+import { sphereInbox, spherePath, sphereUnread } from '../data/sygsphere'
 import { getSupabaseClient } from '../lib/supabase'
 import { getSoundPreferences } from '../lib/notificationSounds'
 import '../styles/sygsphere.css'
@@ -80,7 +80,6 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
       if (timer) return
       timer = setTimeout(() => { timer = undefined; if (!disposed) void queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] }) }, 120)
     }
-    const heartbeat = () => { if (document.visibilityState === 'visible') void sphereRequest('presence').catch(() => undefined) }
     void client.auth.getSession().then(async ({ data }) => {
       if (disposed || !data.session) return
       await client.realtime.setAuth(data.session.access_token)
@@ -88,10 +87,9 @@ function SphereLauncherContent({ employeeId }: { employeeId: string }) {
       channel = client.channel(`sygsphere:${data.session.user.id}`, { config: { private: true } })
         .on('broadcast', { event: 'changed' }, refresh).subscribe((status) => { if (status === 'SUBSCRIBED') refresh() })
     }).catch(() => undefined)
-    const interval = setInterval(heartbeat, 30000); heartbeat()
-    const focus = () => { refresh(); heartbeat() }
+    const focus = () => refresh()
     window.addEventListener('focus', focus); window.addEventListener('online', focus)
-    return () => { disposed = true; clearInterval(interval); if (timer) clearTimeout(timer); window.removeEventListener('focus', focus); window.removeEventListener('online', focus); if (channel) void client.removeChannel(channel) }
+    return () => { disposed = true; if (timer) clearTimeout(timer); window.removeEventListener('focus', focus); window.removeEventListener('online', focus); if (channel) void client.removeChannel(channel) }
   }, [employeeId, queryClient])
   useEffect(() => {
     if (!inbox.data) return

@@ -45,6 +45,7 @@ import { SygTasksAlarmHost } from './SygTasksAlarmHost'
 import { OperationalTimeHeader } from './OperationalTimeHeader'
 import { HeaderNotificationButton } from './HeaderNotificationButton'
 import { LiveNotifications } from './LiveNotifications'
+import { PlatformPresenceReporter } from './PlatformPresenceReporter'
 import { RequiredActionsCheckpointNotice } from './RequiredActionsCheckpointNotice'
 import { clearPushSession } from '../data/pushNotifications'
 import { completedSignInRecordKind, isSygSpherePath, requiresSecurityCheckpoint, sharedIdentityScopeAllowsPath } from '../lib/securityCheckpoint'
@@ -902,6 +903,7 @@ export function AppShell() {
           {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive && sharedIdentityScopeAllowsPath('/tasks', sharedIdentityScope) ? <SygTasksLauncher /> : null}
           {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive && canOpenSygilant ? <SygilantLauncher /> : null}
           {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive ? <SygSphereLauncher employeeId={sessionContext.employeeId} /> : null}
+          {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive ? <PlatformPresenceReporter /> : null}
           <SupportHelpButton />
           <SystemStatusIndicator canOpenOperations={canOpenSystemOperations} status={systemServiceStatus} />
         </div>

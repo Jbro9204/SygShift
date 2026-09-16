@@ -267,6 +267,7 @@ describe('button layout guardrails', () => {
   it('keeps User Accounts filters, actions, records, and account workspace organized', () => {
     expect(userAdminPage).toContain('className="user-admin-toolbar"')
     expect(userAdminPage).toContain('<span role="columnheader">Access &amp; Employment</span>')
+    expect(userAdminPage).toContain('<span role="columnheader">Presence</span>')
     expect(userAdminPage).toContain('<span role="columnheader">Last Activity</span>')
     expect(userAdminPage).toContain('<AccountActivityPanel user={employee} />')
     expect(userAdminPage).toContain('className="user-admin-summary"')
@@ -279,7 +280,9 @@ describe('button layout guardrails', () => {
 
     const toolbarBlock = topLevelBlockFor('.user-admin-toolbar')
     expect(toolbarBlock).toContain('display: grid')
-    expect(toolbarBlock).toContain('repeat(4, minmax(140px, 1fr))')
+    expect(toolbarBlock).toContain('repeat(5, minmax(132px, 1fr))')
+    expect(userAdminPage).toContain('<span>Sign-in history</span>')
+    expect(userAdminPage).toContain('<span>Presence</span>')
 
     expect(userAdminPage).toContain('className="user-admin-toolbar__actions"')
     expect(blockFor('.user-admin-toolbar__actions')).toContain('display: flex')

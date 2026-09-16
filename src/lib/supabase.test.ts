@@ -43,10 +43,12 @@ describe('supabase browser configuration', () => {
     setSharedIdentitySession('shared-token'.repeat(5), new Date(Date.now() + 60_000).toISOString(), false)
 
     const sphere = attachTrustedDeviceHeader('https://project.supabase.co/rest/v1/rpc/sygsphere_request')
+    const presence = attachTrustedDeviceHeader('https://project.supabase.co/rest/v1/rpc/record_platform_presence')
     const avatar = attachTrustedDeviceHeader('https://project.supabase.co/storage/v1/object/authenticated/employee-photos/user/photo.webp')
     const payroll = attachTrustedDeviceHeader('https://project.supabase.co/rest/v1/rpc/get_payroll_workspace')
 
     expect(new Headers(sphere?.headers).has('x-sygshift-shared-identity')).toBe(true)
+    expect(new Headers(presence?.headers).has('x-sygshift-shared-identity')).toBe(true)
     expect(new Headers(avatar?.headers).has('x-sygshift-shared-identity')).toBe(true)
     expect(new Headers(payroll?.headers).has('x-sygshift-shared-identity')).toBe(false)
   })

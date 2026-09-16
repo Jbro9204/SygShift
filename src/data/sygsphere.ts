@@ -2,18 +2,19 @@ import { z } from 'zod'
 import { Upload } from 'tus-js-client'
 import { getSupabaseClient } from '../lib/supabase'
 import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
+import { platformPresenceStatusSchema } from './platformPresence'
 
 const personSchema = z.object({
   id: z.string().uuid(), name: z.string(), username: z.string().optional(), role: z.string().optional(),
   firstName: z.string().optional(), preferredName: z.string().nullable().optional(), legalName: z.string().optional(),
-  photoPath: z.string().nullable().default(null), presence: z.string().default('offline'), owner: z.boolean().optional(),
+  photoPath: z.string().nullable().default(null), presence: platformPresenceStatusSchema.default('offline'), owner: z.boolean().optional(),
   active: z.boolean().optional(), typing: z.boolean().optional(),
 })
 const mentionSchema = z.object({ id: z.string().uuid(), name: z.string(), username: z.string(), label: z.string().optional() })
 const messageSchema = z.object({
   id: z.string().uuid(), sequence: z.number(), conversationId: z.string().uuid(), authorId: z.string().uuid(), authorName: z.string(),
   body: z.string(), parentId: z.string().nullable(), createdAt: z.string(), editedAt: z.string().nullable(), deleted: z.boolean(), pinned: z.boolean(), saved: z.boolean(), read: z.boolean(),
-  readBy: z.array(z.object({ id: z.string(), name: z.string() })), replyCount: z.number(), unreadReplies: z.number(),
+  readBy: z.array(z.object({ id: z.string(), name: z.string(), photoPath: z.string().nullable().default(null), readAt: z.string() })), replyCount: z.number(), unreadReplies: z.number(),
   reactions: z.array(z.object({ emoji: z.string(), count: z.number(), mine: z.boolean() })), mentions: z.array(mentionSchema).default([]),
 })
 const conversationBaseSchema = z.object({

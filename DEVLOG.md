@@ -11,6 +11,18 @@
 - No production credential or employee identity was fabricated for the remaining employee-present button click.
 - Full record: `docs/changelogs/CHANGELOG_09-16-2026_SHARED_IDENTITY_HANDOFF_RECOVERY.md`.
 
+## 09/16/2026 - Cross-Platform Presence and SygSphere Read Receipts
+
+- Added one private, indexed presence model shared by SygShift and Sygilant, aggregating every authenticated tab/device with Active now, Away, Offline, and Never active states.
+- Separated approximate presence from account sign-in history in User Accounts and added consistent status indicators throughout SygSphere.
+- Upgraded **Read by N** to an accessible hover, focus, and tap panel with reader identity, avatar, and exact read time.
+- Limited reader identity and exact read-time payloads to the message author at the database boundary.
+- Preserved last-active history independently from short-lived heartbeat rows; disabled and inactive accounts remain Offline, and the signal is explicitly excluded from attendance, payroll, timekeeping, and discipline.
+- Removed the retired SygSphere presence write from recurring directory/avatar reads while preserving access checks, conversations, and sound preferences.
+- Applied production migrations `20260916132452`, `20260916134702`, `20260916135430`, `20260916140140`, `20260916141353`, `20260916142017`, and `20260916142703`; the rollback-only database regression passed and left no fixture data.
+- Verification passed 263 test files / 1,332 tests and 100/100 responsive SygSphere, Accounts, and actual-component Time Clock browser checks.
+- Full release evidence: `docs/changelogs/CHANGELOG_09-16-2026_CROSS_PLATFORM_PRESENCE_AND_SYGSPHERE_READ_RECEIPTS.md`.
+
 ## 09/12/2026 - Accountability Notification Trigger Repair
 
 - Repaired the production trigger that rolled back manager-recorded Accountability occurrences with `column reference "notification_id" is ambiguous`.

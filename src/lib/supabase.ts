@@ -72,6 +72,7 @@ export function attachTrustedDeviceHeader(input: RequestInfo | URL, init?: Reque
   }
   const isRestRequest = pathname.includes('/rest/v1/')
   const isSygSphereRequest = /\/rest\/v1\/rpc\/sygsphere_[a-z0-9_]+$/i.test(pathname)
+    || /\/rest\/v1\/rpc\/record_platform_presence$/i.test(pathname)
   const isSygSphereAvatarRequest = pathname.includes('/storage/v1/object/') && pathname.includes('/employee-photos/')
   const isStorageObjectRequest = pathname.includes('/storage/v1/object/')
   if (!isRestRequest && !isStorageObjectRequest) return init

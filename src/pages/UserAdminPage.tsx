@@ -57,6 +57,13 @@ import { formatOperationalDateTime } from '../lib/time'
 import { summarizeUserAccounts } from '../lib/userAccountMetrics'
 import { EmployeeRolesField } from '../components/EmployeeRolesField'
 import { employeeRoleChange, employeeRoleOptions, initialEmployeeRoles, type EmployeeRoleDraft } from '../lib/employeeRoleSelection'
+import {
+  getPlatformPresenceDirectory,
+  platformApplicationLabels,
+  platformPresenceLabels,
+  type PlatformPresencePerson,
+  type PlatformPresenceStatus,
+} from '../data/platformPresence'
 
 const roleLabels: Record<AppRole, string> = {
   admin: 'Admin',
@@ -85,6 +92,17 @@ const EMPTY_USERS: AdminUser[] = []
 const EMPTY_ACCESS_ROLES: AccessRoleDefinition[] = []
 
 type AccountActivityFilter = 'all' | 'pending_setup' | 'activated' | 'signed_in' | 'never_signed_in'
+type PresenceFilter = 'all' | PlatformPresenceStatus
+
+function AccountPresence({ presence, unavailable = false }: { presence?: PlatformPresencePerson; unavailable?: boolean }) {
+  if (unavailable) return <span className="account-presence account-presence--unknown"><i aria-hidden="true" />Unavailable</span>
+  if (!presence) return <span className="account-presence account-presence--unknown"><i aria-hidden="true" />Updating…</span>
+  const sources = presence.applications.map((application) => platformApplicationLabels[application]).join(' and ')
+  return <span
+    className={`account-presence account-presence--${presence.status}`}
+    title={sources ? `Open in ${sources}. Approximate availability only.` : 'Approximate availability only.'}
+  ><i aria-hidden="true" />{platformPresenceLabels[presence.status]}</span>
+}
 
 function replaceDirectoryUser(directory: AdminUserDirectory | undefined, updatedUser: AdminUser): AdminUserDirectory | undefined {
   if (!directory) return directory
@@ -914,6 +932,7 @@ export function UserAdminPage() {
   const [status, setStatus] = useState<'all' | EmployeeStatus>('active')
   const [account, setAccount] = useState<'all' | 'not_created' | 'active' | 'disabled'>('all')
   const [activity, setActivity] = useState<AccountActivityFilter>('all')
+  const [presence, setPresence] = useState<PresenceFilter>('all')
   const [creating, setCreating] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [bulkCredentials, setBulkCredentials] = useState<ProvisioningCredential[]>([])
@@ -928,6 +947,18 @@ export function UserAdminPage() {
     queryKey: ['admin-user-directory'],
   })
   const users = directoryQuery.data?.users ?? EMPTY_USERS
+  const presenceQuery = useQuery({
+    enabled: directoryQuery.isSuccess,
+    queryFn: getPlatformPresenceDirectory,
+    queryKey: ['platform-presence-directory'],
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    retry: 1,
+  })
+  const presenceByEmployeeId = useMemo(
+    () => new Map((presenceQuery.data?.people ?? []).map((person) => [person.employeeId, person])),
+    [presenceQuery.data?.people],
+  )
 
   const sessionContext = sessionQuery.data
   const hasPermission = (permission: string) => Boolean(sessionContext?.permissions.includes(permission))
@@ -1022,6 +1053,7 @@ export function UserAdminPage() {
       return roleMatches
         && (status === 'all' || user.status === status)
         && (account === 'all' || user.accountStatus === account)
+        && (presence === 'all' || presenceByEmployeeId.get(user.id)?.status === presence)
         && (activity === 'all'
           || (activity === 'pending_setup' && user.accountStatus === 'active' && !user.account?.activatedAt)
           || (activity === 'activated' && Boolean(user.account?.activatedAt))
@@ -1029,7 +1061,7 @@ export function UserAdminPage() {
           || (activity === 'never_signed_in' && user.accountStatus === 'active' && !user.account?.lastSignInAt))
         && (!term || searchable.includes(term))
     })
-  }, [accessRoles, accessUsersById, account, activity, role, search, status, users])
+  }, [accessRoles, accessUsersById, account, activity, presence, presenceByEmployeeId, role, search, status, users])
   const selectedUser = selectedUserId ? users.find((user) => user.id === selectedUserId) ?? null : null
   const selectedAccessUser = selectedUserId ? accessUsersById.get(selectedUserId) : undefined
 
@@ -1096,7 +1128,8 @@ export function UserAdminPage() {
               <label className="select-field"><span>Role</span><select onChange={(event) => setRole(event.target.value)} value={role}><option value="all">All roles</option>{roleFilterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               <label className="select-field"><span>Employment</span><select onChange={(event) => setStatus(event.target.value as typeof status)} value={status}><option value="active">Active</option><option value="leave">On leave</option><option value="inactive">Inactive</option><option value="separated">Separated</option><option value="all">All statuses</option></select></label>
               <label className="select-field"><span>Login</span><select onChange={(event) => setAccount(event.target.value as typeof account)} value={account}><option value="all">All logins</option><option value="not_created">No login</option><option value="active">Active login</option><option value="disabled">Disabled</option></select></label>
-              <label className="select-field"><span>Activity</span><select onChange={(event) => setActivity(event.target.value as AccountActivityFilter)} value={activity}><option value="all">All activity</option><option value="pending_setup">Pending setup</option><option value="activated">Activated</option><option value="signed_in">Has signed in</option><option value="never_signed_in">Never signed in</option></select></label>
+              <label className="select-field"><span>Sign-in history</span><select onChange={(event) => setActivity(event.target.value as AccountActivityFilter)} value={activity}><option value="all">All sign-in history</option><option value="pending_setup">Pending setup</option><option value="activated">Activated</option><option value="signed_in">Has signed in</option><option value="never_signed_in">Never signed in</option></select></label>
+              <label className="select-field"><span>Presence</span><select disabled={!presenceQuery.data} onChange={(event) => setPresence(event.target.value as PresenceFilter)} value={presence}><option value="all">{presenceQuery.isError ? 'Presence unavailable' : 'All presence'}</option><option value="active">Active now</option><option value="away">Away</option><option value="offline">Offline</option><option value="never_active">Never active</option></select></label>
             </div>
             <div className="user-admin-toolbar__actions" aria-label="Bulk account actions">
               <span>{filteredUsers.length} account{filteredUsers.length === 1 ? '' : 's'} shown</span>
@@ -1136,12 +1169,13 @@ export function UserAdminPage() {
                   <span role="columnheader">Employee</span>
                   <span role="columnheader">Access &amp; Employment</span>
                   <span role="columnheader">Login</span>
+                  <span role="columnheader">Presence</span>
                   <span role="columnheader">Last Activity</span>
                   <span role="columnheader">Manage</span>
                 </div>
                 {filteredUsers.map((user) => (
                   <div className="user-admin-row" key={user.id} role="row">
-                    <div role="cell">
+                    <div role="cell" data-label="Employee">
                       <strong>{user.displayName}</strong>
                       <span>{user.employeeNumber ?? 'ID pending'} · @{user.username}</span>
                       {user.jobTitle ? <small>{user.jobTitle}</small> : null}
@@ -1154,6 +1188,10 @@ export function UserAdminPage() {
                     <div role="cell" className="user-admin-login-state" data-label="Login">
                       <AccountStatusBadge user={user} />
                       <small>{user.account?.activatedAt ? 'Activated' : user.accountStatus === 'active' ? 'Setup pending' : user.accountStatus === 'disabled' ? 'Access disabled' : 'No account'}</small>
+                    </div>
+                    <div role="cell" className="user-admin-presence" data-label="Presence">
+                      <AccountPresence presence={presenceByEmployeeId.get(user.id)} unavailable={presenceQuery.isError} />
+                      <small>{presenceByEmployeeId.get(user.id)?.lastActiveAt ? `Last active ${formatAccountDateTime(presenceByEmployeeId.get(user.id)?.lastActiveAt ?? null)}` : 'No recorded app activity'}</small>
                     </div>
                     <div role="cell" className="user-admin-last-activity" data-label="Last Activity">
                       <strong>{user.account?.lastSignInAt ? formatAccountDateTime(user.account.lastSignInAt) : 'Never signed in'}</strong>
