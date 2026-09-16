@@ -1,18 +1,24 @@
 import { useState } from 'react'
 import { LoaderCircle, TriangleAlert } from 'lucide-react'
 import {
+  isOfficialSygShiftOrigin,
   launchSygilantPlatform,
+  returnToOfficialSygShift,
   submitSygilantPlatformLaunch,
   type SygilantPlatformLaunch,
 } from '../data/platformLaunch'
 
 type SygilantLauncherProps = {
+  isOfficialOrigin?: () => boolean
   launch?: () => Promise<SygilantPlatformLaunch>
+  recoverOfficialOrigin?: () => void
   submit?: (launch: SygilantPlatformLaunch) => void
 }
 
 export function SygilantLauncher({
+  isOfficialOrigin = isOfficialSygShiftOrigin,
   launch = launchSygilantPlatform,
+  recoverOfficialOrigin = returnToOfficialSygShift,
   submit = submitSygilantPlatformLaunch,
 }: SygilantLauncherProps) {
   const [launching, setLaunching] = useState(false)
@@ -22,6 +28,12 @@ export function SygilantLauncher({
     if (launching) return
     setLaunching(true)
     setError(null)
+
+    if (!isOfficialOrigin()) {
+      setError('Sygilant must be opened from the official SygShift address. Taking you there now.')
+      recoverOfficialOrigin()
+      return
+    }
 
     try {
       const handoff = await launch()

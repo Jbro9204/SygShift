@@ -14,7 +14,7 @@ describe('Sygilant launcher', () => {
 
   it('submits the returned secure handoff in the current tab', async () => {
     const submit = vi.fn()
-    render(<SygilantLauncher launch={vi.fn().mockResolvedValue(handoff)} submit={submit} />)
+    render(<SygilantLauncher isOfficialOrigin={() => true} launch={vi.fn().mockResolvedValue(handoff)} submit={submit} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Sygilant main platform' }))
     expect(screen.getByRole('button', { name: 'Opening Sygilant main platform' })).toBeDisabled()
@@ -22,19 +22,39 @@ describe('Sygilant launcher', () => {
   })
 
   it('uses the production transparent Sygilant wordmark asset', () => {
-    render(<SygilantLauncher launch={vi.fn()} submit={vi.fn()} />)
+    render(<SygilantLauncher isOfficialOrigin={() => true} launch={vi.fn()} submit={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'Open Sygilant main platform' })).toHaveClass('syg-launcher', 'syg-launcher--sygilant')
     expect(document.querySelectorAll('img[src="/branding/sygilant-horizontal-transparent.png"]')).toHaveLength(2)
   })
 
   it('shows accessible failure feedback and never navigates on error', async () => {
     const submit = vi.fn()
-    render(<SygilantLauncher launch={vi.fn().mockRejectedValue(new Error('Secure handoff is unavailable.'))} submit={submit} />)
+    render(<SygilantLauncher isOfficialOrigin={() => true} launch={vi.fn().mockRejectedValue(new Error('Secure handoff is unavailable.'))} submit={submit} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Sygilant main platform' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Secure handoff is unavailable.')
     expect(submit).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Open Sygilant main platform' })).toBeEnabled()
+  })
+
+  it('returns unofficial hosts to the canonical SygShift workspace before creating a handoff', async () => {
+    const launch = vi.fn()
+    const recoverOfficialOrigin = vi.fn()
+    render(
+      <SygilantLauncher
+        isOfficialOrigin={() => false}
+        launch={launch}
+        recoverOfficialOrigin={recoverOfficialOrigin}
+        submit={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Sygilant main platform' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('official SygShift address')
+    expect(recoverOfficialOrigin).toHaveBeenCalledOnce()
+    expect(launch).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Opening Sygilant main platform' })).toBeDisabled()
   })
 })

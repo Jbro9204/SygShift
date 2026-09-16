@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getSupabaseClient } from '../lib/supabase'
 import { clearSharedIdentitySession, setSharedIdentitySession } from '../lib/sharedIdentitySession'
-import { launchSygilantPlatform, submitSygilantPlatformLaunch, SYGILANT_LAUNCH_ENDPOINT } from './platformLaunch'
+import {
+  isOfficialSygShiftOrigin,
+  launchSygilantPlatform,
+  OFFICIAL_SYGSHIFT_ORIGIN,
+  submitSygilantPlatformLaunch,
+  SYGILANT_LAUNCH_ENDPOINT,
+} from './platformLaunch'
 
 vi.mock('../lib/supabase', () => ({
   getSupabaseClient: vi.fn(),
@@ -22,6 +28,14 @@ describe('Sygilant platform launch boundary', () => {
         }),
       },
     } as unknown as ReturnType<typeof getSupabaseClient>)
+  })
+
+  it('recognizes only the canonical SygShift browser origin', () => {
+    expect(OFFICIAL_SYGSHIFT_ORIGIN).toBe('https://app.sygilant.us')
+    expect(isOfficialSygShiftOrigin('https://app.sygilant.us')).toBe(true)
+    expect(isOfficialSygShiftOrigin('https://sygshift.sygilant.workers.dev')).toBe(false)
+    expect(isOfficialSygShiftOrigin('https://preview.sygilant.pages.dev')).toBe(false)
+    expect(isOfficialSygShiftOrigin('https://app.sygilant.us.evil.example')).toBe(false)
   })
 
   it('requests a launch from the same-origin protected endpoint without placing credentials in the URL', async () => {

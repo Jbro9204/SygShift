@@ -3,6 +3,7 @@ import { getSupabaseClient } from '../lib/supabase'
 import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 
 export const SYGILANT_LAUNCH_ENDPOINT = '/api/v1/apps/sygilant/launch'
+export const OFFICIAL_SYGSHIFT_ORIGIN = 'https://app.sygilant.us'
 
 const sygilantLaunchResponseSchema = z.object({
   launch: z.object({
@@ -16,6 +17,14 @@ const sygilantLaunchResponseSchema = z.object({
 })
 
 export type SygilantPlatformLaunch = z.infer<typeof sygilantLaunchResponseSchema>['launch']
+
+export function isOfficialSygShiftOrigin(origin = window.location.origin): boolean {
+  return origin === OFFICIAL_SYGSHIFT_ORIGIN
+}
+
+export function returnToOfficialSygShift(): void {
+  window.location.assign(`${OFFICIAL_SYGSHIFT_ORIGIN}/`)
+}
 
 function validatedSygilantApplicationUrl(value: string): string {
   const url = new URL(value)
