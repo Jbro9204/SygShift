@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 09/16/2026 - Profile and Activity Visibility
+
+- Increased SygSphere profile identities and activity indicators across desktop and mobile layouts, and enlarged User Accounts presence dots.
+- Strengthened Active, Away, and Offline contrast and made Never active a hollow shape while retaining the written status labels.
+- Preserved presence calculation, shared account behavior, permissions, MFA, attendance, payroll, timekeeping, and notification behavior; no migration or data mutation was required.
+- Verification passed the complete 264-file / 1,336-test gate and 102 responsive SygSphere, Accounts, and actual-component Time Clock browser checks.
+- Full record: `docs/changelogs/CHANGELOG_09-16-2026_PROFILE_AND_ACTIVITY_VISIBILITY.md`.
+
 ## 09/16/2026 - Shared Identity Handoff Recovery
 
 - Restricted Sygilant handoff creation to the exact official SygShift origin and added safe return-to-official recovery for stale Worker, preview, local, or copied-host pages.

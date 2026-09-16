@@ -151,6 +151,53 @@ test('lets each employee enlarge SygSphere text without scaling the rest of SygS
   await expect(page.locator('.sphere-workspace')).toHaveAttribute('data-text-size', 'large')
   await expect.poll(() => page.locator('.sphere-composer textarea').evaluate((node) => parseFloat(getComputedStyle(node).fontSize))).toBeGreaterThanOrEqual(18)
 })
+test('keeps profile pictures and activity indicators readable without clipping', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1180, height: 820 })
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}&theme=dark`)
+  await page.getByRole('textbox', { name: 'Write a message', exact: true }).fill('Presence visibility check')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await page.getByRole('button', { name: 'Conversation details', exact: true }).click()
+  await page.getByRole('button', { name: /^Members/ }).click()
+
+  const conversationAvatar = page.locator('.sphere-member > .sphere-avatar').first()
+  const presence = conversationAvatar.locator('.sphere-avatar__presence')
+  await expect(conversationAvatar).toBeVisible()
+  await expect(presence).toBeVisible()
+
+  const desktop = await conversationAvatar.evaluate((avatar) => {
+    const dot = avatar.querySelector<HTMLElement>('.sphere-avatar__presence')!
+    const avatarBox = avatar.getBoundingClientRect()
+    const dotBox = dot.getBoundingClientRect()
+    const dotStyle = getComputedStyle(dot)
+    return {
+      avatarHeight: avatarBox.height,
+      avatarWidth: avatarBox.width,
+      dotHeight: dotBox.height,
+      dotWidth: dotBox.width,
+      dotVisibleOutsideAvatar: dotBox.right > avatarBox.right || dotBox.bottom > avatarBox.bottom,
+      overflow: getComputedStyle(avatar).overflow,
+      background: dotStyle.backgroundColor,
+      borderWidth: dotStyle.borderWidth,
+    }
+  })
+  expect(desktop.avatarWidth).toBeGreaterThanOrEqual(44)
+  expect(desktop.avatarHeight).toBeGreaterThanOrEqual(44)
+  expect(desktop.dotWidth).toBeGreaterThanOrEqual(14)
+  expect(desktop.dotHeight).toBeGreaterThanOrEqual(14)
+  expect(desktop.dotVisibleOutsideAvatar).toBe(true)
+  expect(desktop.overflow).toBe('visible')
+  expect(parseFloat(desktop.borderWidth)).toBeGreaterThanOrEqual(3)
+  expect(desktop.background).not.toBe('rgba(0, 0, 0, 0)')
+
+  await page.setViewportSize({ width: 412, height: 720 })
+  const mobileMessageAvatar = page.locator('.sphere-message > .sphere-avatar').first()
+  if (await mobileMessageAvatar.count()) {
+    await expect(mobileMessageAvatar).toBeVisible()
+    const mobileWidth = await mobileMessageAvatar.evaluate((avatar) => avatar.getBoundingClientRect().width)
+    expect(mobileWidth).toBeGreaterThanOrEqual(36)
+  }
+  await page.screenshot({ path: testInfo.outputPath('sygsphere-presence-visibility.png'), fullPage: true })
+})
 test('keeps the identity, text-size, sound, and new-message controls usable at 320px', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 })
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}&theme=dark`)

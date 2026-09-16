@@ -27173,20 +27173,24 @@ button.patrol-overview-row:focus-visible {
 }
 
 .account-presence i {
-  width: 10px;
-  height: 10px;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
   flex: 0 0 auto;
   border: 2px solid var(--paper);
   border-radius: 999px;
   background: #8d887f;
-  box-shadow: 0 0 0 1px light-dark(#bdb6aa, #53585d);
+  box-shadow: 0 0 0 1px light-dark(#958d81, #8d9499);
 }
 
-.account-presence--active i { background: #2b9a68; box-shadow: 0 0 0 1px #2b9a68; }
-.account-presence--away i { background: #d49b31; box-shadow: 0 0 0 1px #d49b31; }
+.account-presence--active i { background: #1f9d68; box-shadow: 0 0 0 1px #1f9d68; }
+.account-presence--away i { background: #d48d18; box-shadow: 0 0 0 1px #d48d18; }
 .account-presence--offline i,
-.account-presence--never_active i,
-.account-presence--unknown i { background: #8d887f; }
+.account-presence--unknown i { background: #737c80; }
+.account-presence--never_active i {
+  background: var(--paper);
+  box-shadow: inset 0 0 0 2px #737c80, 0 0 0 1px light-dark(#958d81, #8d9499);
+}
 
 @media (min-width: 681px) and (max-width: 1180px) {
   .user-admin-row {

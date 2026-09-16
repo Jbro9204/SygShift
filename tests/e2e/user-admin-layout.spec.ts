@@ -68,6 +68,17 @@ test('User Accounts controls and presence remain contained at desktop and mobile
 
   await assertNoHorizontalOverflow()
   await expect(page.getByText('Active now')).toBeVisible()
+  const presenceDot = table.locator('.account-presence i')
+  await expect(presenceDot).toBeVisible()
+  const dotGeometry = await presenceDot.evaluate((dot) => {
+    const box = dot.getBoundingClientRect()
+    const style = getComputedStyle(dot)
+    return { width: box.width, height: box.height, borderWidth: style.borderWidth, background: style.backgroundColor }
+  })
+  expect(dotGeometry.width).toBeGreaterThanOrEqual(12)
+  expect(dotGeometry.height).toBeGreaterThanOrEqual(12)
+  expect(parseFloat(dotGeometry.borderWidth)).toBeGreaterThanOrEqual(2)
+  expect(dotGeometry.background).not.toBe('rgba(0, 0, 0, 0)')
 
   await page.setViewportSize({ width: 900, height: 900 })
   await assertNoHorizontalOverflow()
