@@ -6,6 +6,8 @@
 - Strengthened Active, Away, and Offline contrast and made Never active a hollow shape while retaining the written status labels.
 - Preserved presence calculation, shared account behavior, permissions, MFA, attendance, payroll, timekeeping, and notification behavior; no migration or data mutation was required.
 - Verification passed the complete 264-file / 1,336-test gate and 102 responsive SygSphere, Accounts, and actual-component Time Clock browser checks.
+- Released source `0c1b3de` as Cloudflare Worker `7904bb46-9846-4d3f-86e5-0025112b7cf0`; both origins returned healthy/ready and served the expected production assets.
+- Coordinated Sygilant source `8652736` is live as Pages deployment `64c412ac-21dd-4135-875f-ddffd67608d1`, with complete custom and immutable host postflights.
 - Full record: `docs/changelogs/CHANGELOG_09-16-2026_PROFILE_AND_ACTIVITY_VISIBILITY.md`.
 
 ## 09/16/2026 - Shared Identity Handoff Recovery

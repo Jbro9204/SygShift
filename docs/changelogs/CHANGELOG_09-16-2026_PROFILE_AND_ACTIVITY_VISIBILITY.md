@@ -30,4 +30,8 @@ Profile identities and activity states are now easier to recognize throughout Sy
 
 ## Release
 
-- Deployment evidence will be added after the production postflight completes.
+- Released source `0c1b3de` as Cloudflare Worker version `7904bb46-9846-4d3f-86e5-0025112b7cf0`.
+- The custom and Workers.dev origins returned HTTP `200` for health and readiness, with every readiness dependency reporting ready.
+- The live application served the expected `index-DSsrbdLw.css` and `index-CM6j6Qlc.js` assets, and the shipped CSS contains the enlarged shared identity contract.
+- A credential-free browser check loaded the current application and correctly returned an unauthenticated session to the sign-in screen; no employee credential or identity was fabricated for a protected workspace check.
+- Coordinated Sygilant source `8652736` is live through Pages deployment `64c412ac-21dd-4135-875f-ddffd67608d1`; its custom and immutable hosts passed the complete production postflight.
