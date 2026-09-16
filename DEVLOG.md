@@ -1,5 +1,15 @@
 # SygShift Development Log
 
+## 09/16/2026 - HR Lifecycle and Time Correction Usability
+
+- Replaced the disconnected lifecycle employee search and dropdown with visible matching results, automatic unique/exact selection, an identified selected-person card, and a safe **Change** action.
+- Repaired the magnifying-glass collision and separated the lifecycle action toolbar from the status cards on desktop and mobile.
+- Added employee name and username to pending punch-correction and missing-time status cards without changing correction data or audit history.
+- Preserved HR permissions, MFA, maker-checker approval, lifecycle eligibility, schedules, punches, payroll, and employee access; no database migration or production-data mutation was required.
+- Verification passed 266 test files / 1,341 tests, 8/8 focused responsive browser checks, and both pre- and post-release 42/42 actual-component Time Clock matrices.
+- Released source `e0b9a08` as Cloudflare Worker `6d3571ad-b3ee-44bb-89b0-71e99415db75`; both production origins returned healthy/ready and served the expected lifecycle, correction, and stylesheet assets.
+- Full record: `docs/changelogs/CHANGELOG_09-16-2026_HR_LIFECYCLE_AND_TIME_CORRECTION_USABILITY.md`.
+
 ## 09/16/2026 - Profile and Activity Visibility
 
 - Increased SygSphere profile identities and activity indicators across desktop and mobile layouts, and enlarged User Accounts presence dots.

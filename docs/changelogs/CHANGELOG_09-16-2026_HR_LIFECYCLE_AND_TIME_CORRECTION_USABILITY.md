@@ -34,4 +34,6 @@ The Employee Lifecycle case wizard now behaves like an actual employee picker, t
 ## Release
 
 - No database migration is required.
-- Production deployment details are recorded after release.
+- Released source `e0b9a08` as Cloudflare Worker version `6d3571ad-b3ee-44bb-89b0-71e99415db75`.
+- The custom and Workers.dev origins both returned HTTP `200` for health and readiness and served the expected `index-CclOMWz-.css`, `HrisStage9Page-Bafexnas.js`, and `MyTimePage-D7XcmPsz.js` assets with the new lifecycle and correction-identity markers.
+- The post-release actual-component Time Clock regression passed 42/42 desktop/mobile checks.
