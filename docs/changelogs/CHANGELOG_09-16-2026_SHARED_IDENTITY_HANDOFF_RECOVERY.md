@@ -26,9 +26,15 @@ The Sygilant button now begins shared access only from the official SygShift app
 - A fresh production build passed after the browser test run.
 - The companion Sygilant receiver passed **23 focused tests** and the complete **175-file / 824-test** quality gate.
 
-## Release status
+## Production release
 
-- Production deployment and live postflight evidence will be appended after the exact source commits are activated.
+- Application source commit: `4456691`
+- Cloudflare Worker version: `22e70f4c-2adc-411e-b6a7-35bbc1bfa3e8`
+- Rollback tag: `rollback/pre-shared-identity-handoff-recovery-20260916`
+- Both `https://app.sygilant.us/api/v1/health` and `/api/v1/ready` returned HTTP `200`; every readiness dependency passed.
+- The companion Sygilant receiver accepted the official-origin path and the narrowly bounded privacy-browser path through normal request validation, while a Workers-origin browser launch remained HTTP `403` and rendered the recovery page.
+- Sygilant's production perimeter passed 13 pages, 28 protected reads, one hostile mutation, 72 versioned assets, and 26 credential-free recovery probes.
+- A final employee-present button click still requires an already authenticated employee session; no production credential or employee identity was fabricated for postflight.
 
 ## Files
 

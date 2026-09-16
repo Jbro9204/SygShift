@@ -6,7 +6,9 @@
 - Preserved the signed one-time assertion, employee mapping, permissions, MFA, direct-login, and all workforce workflows; no migration or production-data mutation was required.
 - Verification passed 2 focused files / 11 tests, the complete 260-file / 1,327-test gate, the production build, and the required 42/42 desktop/mobile Time Clock preservation matrix.
 - Companion Sygilant verification passed 23 focused receiver tests and its complete 175-file / 824-test quality gate.
-- Production deployment evidence will be appended after activation.
+- Released source `4456691` as Cloudflare Worker `22e70f4c-2adc-411e-b6a7-35bbc1bfa3e8`; both health and readiness returned HTTP `200` with every dependency ready.
+- Live Sygilant postflight accepted the official and bounded privacy-browser origin paths, denied the Workers-origin browser path with the recovery page, and passed 13 pages, 28 protected reads, one hostile mutation, 72 assets, and 26 recovery probes.
+- No production credential or employee identity was fabricated for the remaining employee-present button click.
 - Full record: `docs/changelogs/CHANGELOG_09-16-2026_SHARED_IDENTITY_HANDOFF_RECOVERY.md`.
 
 ## 09/12/2026 - Accountability Notification Trigger Repair
