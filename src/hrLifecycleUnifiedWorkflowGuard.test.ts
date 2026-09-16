@@ -77,4 +77,15 @@ describe('unified guided HR lifecycle workflow', () => {
     expect(styles).toContain('.hr-lifecycle-wizard')
     expect(styles).toContain('@media (max-width: 760px)')
   })
+
+  it('keeps employee selection visible, automatic for a unique match, and clear of the search icon', () => {
+    expect(wizard).toContain('searchEmployees(event.target.value)')
+    expect(wizard).toContain("matches.length === 1 ? matches[0].id : ''")
+    expect(wizard).toContain('Matching employees')
+    expect(wizard).toContain('Selected employee')
+    expect(wizard).not.toContain('Choose the employee')
+    expect(styles).toContain(".modal-dialog.hr-lifecycle-wizard .hr-lifecycle-search > div > input[type='search']")
+    expect(styles).toContain('padding-left: 42px')
+    expect(styles).toContain('.page--employee-lifecycle .page-section-heading')
+  })
 })

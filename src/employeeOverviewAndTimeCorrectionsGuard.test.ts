@@ -70,6 +70,9 @@ describe('employee overview and time correction guardrails', () => {
     expect(myTimeSource).toContain('Request correction')
     expect(myTimeSource).toContain('TimeCorrectionRequestModal')
     expect(myTimeSource).toContain('Original punch remains protected')
+    expect(myTimeSource).toContain('my-time-correction-card__identity')
+    expect(myTimeSource).toContain('correction.employeeName')
+    expect(myTimeSource).toContain('request.employeeName')
   })
 
   it('keeps My Time focused on employee actions before raw punch history', () => {
@@ -104,6 +107,7 @@ describe('employee overview and time correction guardrails', () => {
     expect(cssSource).toContain('.opportunity-card__details')
     expect(cssSource).toContain('.time-correction-request-form')
     expect(cssSource).toContain('.time-event__correction-button')
+    expect(cssSource).toContain('.my-time-correction-card__identity')
     expect(cssSource).toContain('.my-time-clock-state')
     expect(cssSource).toContain('.recent-punch-day-tabs')
   })

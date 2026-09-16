@@ -52,6 +52,62 @@ test('Employee Lifecycle is guided, contained, and unmistakable', async ({ page 
   await page.screenshot({ path: testInfo.outputPath('hr-lifecycle-case.png'), fullPage: true })
 })
 
+test('Employee Lifecycle search, actions, and correction identity stay readable', async ({ page }, testInfo) => {
+  await page.goto('/')
+
+  await page.locator('#root').evaluate((root) => {
+    const fixtureRoot = root.cloneNode(false) as HTMLElement
+    root.replaceWith(fixtureRoot)
+    fixtureRoot.innerHTML = `
+      <main class="page page--hr-automation page--employee-lifecycle">
+        <section class="page-section-heading">
+          <div><p class="eyebrow">Protected workspace</p><h2>Cases and effective-date queue</h2><p>Approval never changes employment by itself. Due cases require a qualified person to complete the checklist and confirm the final action.</p></div>
+          <div class="hr-operational-heading-actions"><button class="primary-action" type="button">Start guided case</button><button class="secondary-button" type="button">Export view</button><button class="secondary-button" type="button">Refresh</button></div>
+        </section>
+        <section aria-label="Employee Lifecycle status" class="hr-automation-summary hr-automation-summary--three"><article><span>Active cases</span><strong>1</strong></article><article><span>Pending approvals</span><strong>1</strong></article><article><span>Open handoffs</span><strong>12</strong></article></section>
+        <section class="time-card"><div class="my-time-correction-list"><article class="my-time-correction-card"><div class="my-time-correction-card__identity"><span>Employee</span><div><strong>Zachary Alexander Ward</strong><small>@zward</small></div></div><span class="time-status-badge">Pending</span><strong>Missing worked time</strong><span>09/10/2026 · MPP</span><p>Missing worked time for the changed schedule.</p></article></div></section>
+      </main>
+      <dialog class="modal-dialog hr-lifecycle-wizard" open aria-labelledby="lifecycle-search-title">
+        <div class="modal-dialog__heading"><div class="modal-dialog__heading-copy"><span class="modal-dialog__eyebrow">Step 1 of 4</span><h2 id="lifecycle-search-title">Start employee lifecycle case</h2><p>One guided case coordinates approval and every required handoff.</p></div></div>
+        <form class="hr-lifecycle-wizard__body">
+          <div class="hr-lifecycle-employee-picker">
+            <label class="hr-lifecycle-search" for="employee-search"><span>Find employee</span><div><svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><input id="employee-search" type="search" role="combobox" aria-label="Find employee" aria-expanded="true" aria-controls="employee-results" value="Ernesto"></div><small>A single or exact match is selected automatically.</small></label>
+            <div aria-label="Matching employees" class="hr-lifecycle-search-results" id="employee-results" role="listbox"><button aria-selected="true" class="is-selected" role="option" type="button"><span><strong>Ernesto Munguia</strong><small>@emunguia · SYG-1058</small></span><em>Selected</em></button></div>
+            <div class="hr-lifecycle-selected-employee"><div><span>Selected employee</span><strong>Ernesto Munguia</strong><small>@emunguia · SYG-1058</small></div><button class="secondary-button secondary-button--small" type="button">Change</button></div>
+          </div>
+          <div class="modal-actions"><button class="secondary-button" type="button">Cancel</button><button class="primary-action" type="submit">Continue</button></div>
+        </form>
+      </dialog>`
+  })
+
+  const searchMetrics = await page.getByRole('combobox', { name: 'Find employee' }).evaluate((element) => {
+    const input = element as HTMLInputElement
+    const icon = input.parentElement?.querySelector('svg')
+    const inputBox = input.getBoundingClientRect()
+    const iconBox = icon?.getBoundingClientRect()
+    const paddingLeft = Number.parseFloat(getComputedStyle(input).paddingLeft)
+    return { iconRight: iconBox?.right ?? inputBox.left, paddingLeft, textStart: inputBox.left + paddingLeft }
+  })
+  expect(searchMetrics.paddingLeft).toBeGreaterThanOrEqual(40)
+  expect(searchMetrics.textStart - searchMetrics.iconRight).toBeGreaterThanOrEqual(7)
+
+  const toolbarBottom = await page.locator('.page-section-heading').evaluate((element) => element.getBoundingClientRect().bottom)
+  const summaryTop = await page.locator('.hr-automation-summary').evaluate((element) => element.getBoundingClientRect().top)
+  expect(summaryTop - toolbarBottom).toBeGreaterThanOrEqual(16)
+  const actionBoxes = await page.locator('.hr-operational-heading-actions button').evaluateAll((buttons) => buttons.map((button) => {
+    const box = button.getBoundingClientRect()
+    return { height: box.height, y: box.y }
+  }))
+  expect(actionBoxes.every((box) => box.height >= 44)).toBe(true)
+  if (!testInfo.project.name.startsWith('mobile')) expect(new Set(actionBoxes.map((box) => box.y)).size).toBe(1)
+
+  await expect(page.locator('.my-time-correction-card__identity')).toContainText('Zachary Alexander Ward')
+  await expect(page.locator('.my-time-correction-card__identity')).toContainText('@zward')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+  await page.screenshot({ path: testInfo.outputPath('hr-lifecycle-search-and-correction-identity.png'), fullPage: true })
+})
+
 for (const theme of ['light', 'dark']) {
   test(`User Accounts uses one actual searchable role list in ${theme} mode`, async ({ page }, testInfo) => {
     await page.goto(`http://127.0.0.1:${4189 + Number(process.env.PLAYWRIGHT_PORT_OFFSET ?? 0)}/tests/fixtures/roles-ui.html?theme=${theme}`)

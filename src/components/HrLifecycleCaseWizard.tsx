@@ -65,6 +65,30 @@ export function HrLifecycleCaseWizard({
     if (employee && ((value === 'rehire') !== (employee.status === 'separated'))) setEmployeeId('')
   }
 
+  function searchEmployees(value: string) {
+    setEmployeeSearch(value)
+    const query = value.trim().toLowerCase()
+    if (!query) {
+      setEmployeeId('')
+      return
+    }
+
+    const matches = options.employees.filter((employee) => {
+      const eligible = lifecycleType === 'rehire' ? employee.status === 'separated' : employee.status !== 'separated'
+      return eligible && `${employee.name} ${employee.username} ${employee.employeeNumber ?? ''}`.toLowerCase().includes(query)
+    })
+    const exactMatch = matches.find((employee) => [employee.name, employee.username, employee.employeeNumber]
+      .some((candidate) => candidate?.trim().toLowerCase() === query))
+    setEmployeeId(exactMatch?.id ?? (matches.length === 1 ? matches[0].id : ''))
+  }
+
+  function selectEmployee(nextEmployeeId: string) {
+    const employee = options.employees.find((item) => item.id === nextEmployeeId)
+    if (!employee) return
+    setEmployeeId(employee.id)
+    setEmployeeSearch(employee.name)
+  }
+
   function advance(event: FormEvent) {
     event.preventDefault()
     if (step < 3) setStep((current) => current + 1)
@@ -100,8 +124,55 @@ export function HrLifecycleCaseWizard({
               <span><strong>{choice.label}</strong><small>{choice.description}</small></span>
             </label>)}
           </fieldset>
-          <label className="hr-lifecycle-search"><span>Find employee</span><div><Search aria-hidden="true" size={17} /><input onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Search by name, username, or employee number" value={employeeSearch} /></div></label>
-          <label><span>Employee</span><select onChange={(event) => setEmployeeId(event.target.value)} required value={employeeId}><option value="">Choose the employee</option>{eligibleEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · @{employee.username} · {employee.status.replaceAll('_', ' ')}</option>)}</select></label>
+          <div className="hr-lifecycle-employee-picker">
+            <label className="hr-lifecycle-search" htmlFor="hr-lifecycle-employee-search">
+              <span>Find employee</span>
+              <div>
+                <Search aria-hidden="true" size={17} />
+                <input
+                  aria-autocomplete="list"
+                  aria-controls="hr-lifecycle-employee-results"
+                  aria-describedby="hr-lifecycle-employee-search-help"
+                  aria-expanded={Boolean(employeeSearch.trim())}
+                  autoComplete="off"
+                  data-dialog-autofocus
+                  id="hr-lifecycle-employee-search"
+                  onChange={(event) => searchEmployees(event.target.value)}
+                  placeholder="Search by name, username, or employee number"
+                  role="combobox"
+                  type="search"
+                  value={employeeSearch}
+                />
+              </div>
+              <small id="hr-lifecycle-employee-search-help">A single or exact match is selected automatically. Choose from the results when more than one person matches.</small>
+            </label>
+
+            {employeeSearch.trim() ? (
+              <div aria-label="Matching employees" className="hr-lifecycle-search-results" id="hr-lifecycle-employee-results" role="listbox">
+                {eligibleEmployees.length ? eligibleEmployees.slice(0, 8).map((employee) => (
+                  <button
+                    aria-selected={employee.id === employeeId}
+                    className={employee.id === employeeId ? 'is-selected' : ''}
+                    key={employee.id}
+                    onClick={() => selectEmployee(employee.id)}
+                    role="option"
+                    type="button"
+                  >
+                    <span><strong>{employee.name}</strong><small>@{employee.username}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</small></span>
+                    <em>{employee.id === employeeId ? 'Selected' : employee.status.replaceAll('_', ' ')}</em>
+                  </button>
+                )) : <p role="status">No eligible employee matches that search.</p>}
+                {eligibleEmployees.length > 8 ? <small>{eligibleEmployees.length - 8} more matches. Continue typing to narrow the list.</small> : null}
+              </div>
+            ) : null}
+
+            {selectedEmployee ? (
+              <div aria-live="polite" className="hr-lifecycle-selected-employee">
+                <div><span>Selected employee</span><strong>{selectedEmployee.name}</strong><small>@{selectedEmployee.username}{selectedEmployee.employeeNumber ? ` · ${selectedEmployee.employeeNumber}` : ''}</small></div>
+                <button className="secondary-button secondary-button--small" onClick={() => { setEmployeeId(''); setEmployeeSearch('') }} type="button">Change</button>
+              </div>
+            ) : null}
+          </div>
         </> : null}
 
         {step === 1 ? <>

@@ -349,6 +349,7 @@ export function MyTimePage() {
         <RecentPunchesPanel dashboard={dashboard} onRequestCorrection={setCorrectionEvent} />
         <CorrectionPanel
           corrections={reviewQuery.data?.pendingCorrections ?? []}
+          employeeUsername={dashboard.employee.username}
           loading={reviewQuery.isPending || missingTimeWorkspaceQuery.isPending}
           missingRequests={missingTimeWorkspaceQuery.data?.requests ?? []}
         />
@@ -636,12 +637,14 @@ function recentPunchDayLabel(dateKey: string, operationalToday: string): string 
   return format(new Date(`${dateKey}T12:00:00`), 'EEE MM/dd')
 }
 
-function CorrectionPanel({
+export function CorrectionPanel({
   corrections,
+  employeeUsername,
   loading,
   missingRequests,
 }: {
   corrections: PendingCorrection[]
+  employeeUsername: string
   loading: boolean
   missingRequests: TimeAdjustmentRequest[]
 }) {
@@ -663,6 +666,10 @@ function CorrectionPanel({
         <div className="my-time-correction-list">
           {corrections.map((correction) => (
             <article className="my-time-correction-card" key={correction.id}>
+              <div className="my-time-correction-card__identity">
+                <span>Employee</span>
+                <div><strong>{correction.employeeName}</strong><small>@{correction.username || employeeUsername}</small></div>
+              </div>
               <TimeStatusBadge tone="warning">Pending</TimeStatusBadge>
               <strong>{eventLabels[correction.kind]}</strong>
               <span>{formatOperationalDateTime(correction.replacementTime ?? correction.recordedAt, { includeTimeZoneName: true })}</span>
@@ -671,6 +678,10 @@ function CorrectionPanel({
           ))}
           {pendingMissingRequests.map((request) => (
             <article className="my-time-correction-card" key={request.id}>
+              <div className="my-time-correction-card__identity">
+                <span>Employee</span>
+                <div><strong>{request.employeeName}</strong><small>@{employeeUsername}</small></div>
+              </div>
               <TimeStatusBadge tone="warning">{request.status === 'under_review' ? 'Under Review' : 'Pending'}</TimeStatusBadge>
               <strong>Missing worked time</strong>
               <span>{formatUsDateKey(request.workDate)} · {request.requestedLocation ?? 'Site/Post pending'}</span>
