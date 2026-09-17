@@ -40,10 +40,12 @@ SygShift's source contract remains unchanged and secure. This release adds priva
 
 ## Release status
 
-- Source commit: pending
-- Push to `origin/main`: pending
-- Cloudflare Worker: pending
-- Health/readiness: pending
+- Source commit `de1f02f` was pushed to `origin/main` before deployment.
+- Cloudflare Worker version `17931ea9-d20b-4c00-9aa0-8cfc319616e6` was deployed from a fresh production build.
+- Primary and fallback `/api/v1/health` checks returned HTTP `200`.
+- Primary and fallback `/api/v1/ready` checks returned HTTP `200`, `ready: true`, and every dependency check passed, including shared-identity key separation.
+- Primary and fallback launch requests without a verified SygShift session returned the expected HTTP `401 authentication_required` response.
+- Primary and fallback introspection requests with an invalid consumer credential returned the expected HTTP `401 invalid_consumer_authorization` response.
 - No database migration was required.
 
 ## Remaining cross-platform acceptance

@@ -8,6 +8,7 @@
 - Added privacy-safe issue, consume, and rejection correlation logs without recording assertions, secrets, employee/authentication identifiers, or usernames.
 - Added direct fresh-success and replay-denial regression coverage while preserving HMAC signing, exact issuer/audience/destination validation, short expiry, canonical account revalidation, and one-time consumption.
 - Verification passed 4 focused files / 53 tests, the complete 267-file / 1,348-test gate, and the required 42/42 actual-component Time Clock matrix.
+- Released source `de1f02f` as Cloudflare Worker `17931ea9-d20b-4c00-9aa0-8cfc319616e6`; both production origins passed health, readiness, unauthenticated-launch denial, and invalid-consumer denial checks.
 - Production release details are recorded in `docs/changelogs/CHANGELOG_09-17-2026_SYGILANT_SOURCE_HANDOFF_DIAGNOSTICS.md`.
 
 ## 09/17/2026 - Protected Employee Conversations Workspace
