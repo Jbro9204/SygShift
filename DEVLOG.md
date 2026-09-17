@@ -8,7 +8,7 @@
 - Kept the feature separate from employee notifications, discipline, attendance points, payroll, schedules, and formal corrective action; authenticated users have no direct access to the private conversation tables.
 - Applied and recorded migration `20260917193852`; the rollback-only database regression and production postflight passed with no fixture data remaining.
 - Verification passed 267 test files / 1,347 tests, 4/4 focused responsive and accessibility checks, and the combined 46/46 Employee Conversations and actual-component Time Clock matrix.
-- Released source `60f9f88` as Cloudflare Worker `193c05a6-a217-451c-a770-f40780bea428`; both production origins returned healthy/ready and served the exact new workspace bundle.
+- Released source `60f9f88` as Cloudflare Worker `193c05a6-a217-451c-a770-f40780bea428`; rollback tag `rollback/pre-employee-conversations-20260917` points to `a711bef`; both production origins returned healthy/ready and served the exact new workspace bundle.
 - Full record: `docs/changelogs/CHANGELOG_09-17-2026_EMPLOYEE_CONVERSATIONS_WORKSPACE.md`.
 
 ## 09/16/2026 - HR Lifecycle and Time Correction Usability

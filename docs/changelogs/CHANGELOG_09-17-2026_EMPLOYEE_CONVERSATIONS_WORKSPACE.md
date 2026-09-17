@@ -56,6 +56,6 @@ This workspace intentionally does **not**:
 
 - Implementation source: `60f9f88` (`Add protected employee conversations workspace`)
 - Cloudflare Worker: `193c05a6-a217-451c-a770-f40780bea428`
+- Rollback tag: `rollback/pre-employee-conversations-20260917` → `a711bef`
 - Primary: <https://app.sygilant.us>
 - Fallback: <https://sygshift.sygilant.workers.dev>
-
