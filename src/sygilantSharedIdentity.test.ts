@@ -379,6 +379,88 @@ describe('SygShift to Sygilant protected platform launch', () => {
     })
   })
 
+  it('accepts a fresh assertion once and rejects its replay without logging identity or assertion material', async () => {
+    let consumeCount = 0
+    const infoLog = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const warnLog = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', vi.fn(async (input, init = {}) => {
+      const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {}
+      if (url.includes('/rest/v1/rpc/get_session_context')) {
+        return json({ employee_id: employeeId, has_mfa: true, permissions: ['apps.sygilant.access'], role: 'admin', username: 'jordan' })
+      }
+      if (url.includes('/auth/v1/user')) return json({ id: authUserId })
+      if (url.includes('/rest/v1/rpc/service_issue_sygilant_shared_launch')) {
+        const issued = body.target_payload as Record<string, unknown>
+        return json({ requestId: issued.requestId })
+      }
+      if (url.includes('/rest/v1/rpc/service_consume_sygilant_shared_launch')) {
+        consumeCount += 1
+        if (consumeCount > 1) {
+          return json({ message: 'The Sygilant launch assertion is invalid, expired, or already used.' }, 403)
+        }
+        const consumed = body.target_payload as Record<string, unknown>
+        return json({
+          assuranceLevel: consumed.assuranceLevel,
+          authUserId: consumed.externalSubjectId,
+          destination: consumed.destination,
+          employeeId: consumed.externalEmployeeId,
+          expiresAt: consumed.expiresAt,
+          requestId: consumed.requestId,
+          roleId: consumed.roleId,
+          username: consumed.externalUsername,
+        })
+      }
+      return json({ error: 'unhandled' }, 500)
+    }))
+
+    try {
+      const issued = await handleSygilantSharedIdentityRequest(launchRequest(), environment, apiRequestId)
+      if (!issued) throw new Error('The Sygilant launch route was not handled.')
+      const assertion = ((await issued.json()) as { launch: { assertion: string } }).launch.assertion
+      const assertionRequestId = String(decodeAssertion(assertion).requestId)
+
+      const fresh = await handleSygilantSharedIdentityRequest(introspectionRequest(assertion), environment, apiRequestId)
+      const replay = await handleSygilantSharedIdentityRequest(introspectionRequest(assertion), environment, apiRequestId)
+
+      expect(fresh?.status).toBe(200)
+      expect(replay?.status).toBe(502)
+      await expect(replay?.json()).resolves.toMatchObject({ error: 'shared_identity_upstream_rejected' })
+      expect(consumeCount).toBe(2)
+
+      const issueEntry = infoLog.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find((entry) => entry.event === 'sygilant_shared_identity_assertion_issued')
+      const consumeEntry = infoLog.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find((entry) => entry.event === 'sygilant_shared_identity_assertion_consumed')
+      const rejectionEntry = warnLog.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find((entry) => entry.event === 'sygilant_shared_identity_consume_rejected')
+
+      expect(issueEntry).toMatchObject({ assertionRequestId, requestId: apiRequestId })
+      expect(consumeEntry).toMatchObject({ assertionRequestId, requestId: apiRequestId })
+      expect(rejectionEntry).toMatchObject({
+        assertionRequestId,
+        code: 'shared_identity_upstream_rejected',
+        requestId: apiRequestId,
+        status: 502,
+      })
+
+      for (const entry of [...infoLog.mock.calls, ...warnLog.mock.calls].map(([value]) => String(value))) {
+        expect(entry).not.toContain(assertion)
+        expect(entry).not.toContain(authUserId)
+        expect(entry).not.toContain(employeeId)
+        expect(entry).not.toContain('jordan')
+      }
+    } finally {
+      infoLog.mockRestore()
+      warnLog.mockRestore()
+      errorLog.mockRestore()
+    }
+  })
+
   it.each(['revoked', 'expired', 'mismatched'])(
     'does not consume an assertion when its source auth session is %s',
     async (sourceSessionState) => {

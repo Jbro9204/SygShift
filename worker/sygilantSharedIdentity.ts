@@ -232,6 +232,14 @@ async function issueLaunch(request: Request, config: Configuration, requestId: s
       },
     }, config),
   )
+  console.info(JSON.stringify({
+    assertionRequestId: payload.requestId,
+    assuranceLevel: payload.assuranceLevel,
+    destination: payload.destination,
+    event: 'sygilant_shared_identity_assertion_issued',
+    expiresAt: payload.expiresAt,
+    requestId,
+  }))
 
   return responseJson({
     launch: {
@@ -261,13 +269,28 @@ async function introspectLaunch(request: Request, config: Configuration, request
   }
   const assertion = clean(body.assertion)
   const verified = await verifyAssertion(assertion, config)
-  const consumed = await serviceRpc<ConsumedIdentity>('service_consume_sygilant_shared_launch', {
-    target_payload: {
-      ...verified,
-      assertionHash: await sha256Hex(assertion),
-      requestContext: requestContext(request, requestId),
-    },
-  }, config)
+  let consumed: ConsumedIdentity
+  try {
+    consumed = await serviceRpc<ConsumedIdentity>('service_consume_sygilant_shared_launch', {
+      target_payload: {
+        ...verified,
+        assertionHash: await sha256Hex(assertion),
+        requestContext: requestContext(request, requestId),
+      },
+    }, config)
+  } catch (error) {
+    const failure = error instanceof SharedLaunchError
+      ? error
+      : new SharedLaunchError('sygilant_shared_identity_unavailable', 503, 'Sygilant shared access is temporarily unavailable.')
+    console.warn(JSON.stringify({
+      assertionRequestId: verified.requestId,
+      code: failure.code,
+      event: 'sygilant_shared_identity_consume_rejected',
+      requestId,
+      status: failure.status,
+    }))
+    throw error
+  }
   if (
     consumed.authUserId !== verified.externalSubjectId
     || consumed.employeeId !== verified.externalEmployeeId
@@ -279,6 +302,14 @@ async function introspectLaunch(request: Request, config: Configuration, request
   ) {
     throw new SharedLaunchError('sygilant_launch_identity_mismatch', 403, 'The Sygilant launch identity could not be verified.')
   }
+  console.info(JSON.stringify({
+    assertionRequestId: verified.requestId,
+    assuranceLevel: consumed.assuranceLevel,
+    destination: consumed.destination,
+    event: 'sygilant_shared_identity_assertion_consumed',
+    expiresAt: consumed.expiresAt,
+    requestId,
+  }))
 
   return responseJson({
     identity: {
