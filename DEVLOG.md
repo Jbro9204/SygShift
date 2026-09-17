@@ -1,5 +1,16 @@
 # SygShift Development Log
 
+## 09/17/2026 - Protected Employee Conversations Workspace
+
+- Added a guided Employee Conversations workspace for routine supervisor conversations, coaching, and training without granting broad confidential Employee File access.
+- Limited supervisors to active direct reports and qualified HR/operations reviewers to companywide records through dedicated view, manage, and review permissions, current MFA, and database-enforced scope checks.
+- Added review-before-save, factual-writing guidance, automatic completion for routine records, open follow-up tracking, filters, pagination, and append-only follow-up, complete, reopen, and reasoned-void history.
+- Kept the feature separate from employee notifications, discipline, attendance points, payroll, schedules, and formal corrective action; authenticated users have no direct access to the private conversation tables.
+- Applied and recorded migration `20260917193852`; the rollback-only database regression and production postflight passed with no fixture data remaining.
+- Verification passed 267 test files / 1,347 tests, 4/4 focused responsive and accessibility checks, and the combined 46/46 Employee Conversations and actual-component Time Clock matrix.
+- Released source `60f9f88` as Cloudflare Worker `193c05a6-a217-451c-a770-f40780bea428`; both production origins returned healthy/ready and served the exact new workspace bundle.
+- Full record: `docs/changelogs/CHANGELOG_09-17-2026_EMPLOYEE_CONVERSATIONS_WORKSPACE.md`.
+
 ## 09/16/2026 - HR Lifecycle and Time Correction Usability
 
 - Replaced the disconnected lifecycle employee search and dropdown with visible matching results, automatic unique/exact selection, an identified selected-person card, and a safe **Change** action.
