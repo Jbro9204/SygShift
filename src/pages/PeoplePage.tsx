@@ -1,7 +1,8 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, format } from 'date-fns'
-import { BadgeCheck, CalendarCheck2, DatabaseZap, Pencil, Search, ShieldAlert, Trash2, UsersRound } from 'lucide-react'
+import { BadgeCheck, CalendarCheck2, DatabaseZap, MessageSquareText, Pencil, Search, ShieldAlert, Trash2, UsersRound } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import {
@@ -402,6 +403,8 @@ export function PeoplePage() {
     enabled: isSupabaseConfigured,
   })
   const canManageProfile = canManageDirectoryProfile(sessionQuery.data)
+  const canOpenConversations = sessionHasPermission(sessionQuery.data, 'hr.conversations.view')
+  const canReviewAllConversations = sessionHasPermission(sessionQuery.data, 'hr.conversations.review')
   const supervisionQuery = useQuery({
     queryKey: ['supervision-workspace'],
     queryFn: getSupervisionWorkspace,
@@ -572,12 +575,20 @@ export function PeoplePage() {
                       </span>
                     </div>
                     <div role="cell">
-                      {canManageProfile ? (
-                        <button className="secondary-button secondary-button--small" onClick={() => openEmployee(employee.id)} type="button">
-                          <Pencil aria-hidden="true" size={16} />
-                          Manage Profile
-                        </button>
-                      ) : <span className="plain-value">Read only</span>}
+                      <div className="directory-actions">
+                        {canOpenConversations && (canReviewAllConversations || assignmentsByEmployee.get(employee.id)?.supervisorEmployeeId === supervisionQuery.data?.viewerEmployeeId) ? (
+                          <Link className="secondary-button secondary-button--small" to={`/employee-conversations?employeeId=${encodeURIComponent(employee.id)}`}>
+                            <MessageSquareText aria-hidden="true" size={16} />
+                            Conversations
+                          </Link>
+                        ) : null}
+                        {canManageProfile ? (
+                          <button className="secondary-button secondary-button--small" onClick={() => openEmployee(employee.id)} type="button">
+                            <Pencil aria-hidden="true" size={16} />
+                            Manage Profile
+                          </button>
+                        ) : !canManageProfile ? <span className="plain-value">Read only</span> : null}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -598,12 +609,20 @@ export function PeoplePage() {
                       <div><dt>Supervisor</dt><dd>{assignmentsByEmployee.get(employee.id)?.supervisorName ?? 'Unassigned'}</dd></div>
                       <div><dt>Contact</dt><dd><ContactSummary employee={employee} /></dd></div>
                     </dl>
-                    {canManageProfile ? (
-                      <button className="secondary-button secondary-button--small" onClick={() => openEmployee(employee.id)} type="button">
-                        <Pencil aria-hidden="true" size={16} />
-                        Manage Profile
-                      </button>
-                    ) : null}
+                    <div className="directory-actions">
+                      {canOpenConversations && (canReviewAllConversations || assignmentsByEmployee.get(employee.id)?.supervisorEmployeeId === supervisionQuery.data?.viewerEmployeeId) ? (
+                        <Link className="secondary-button secondary-button--small" to={`/employee-conversations?employeeId=${encodeURIComponent(employee.id)}`}>
+                          <MessageSquareText aria-hidden="true" size={16} />
+                          Conversations
+                        </Link>
+                      ) : null}
+                      {canManageProfile ? (
+                        <button className="secondary-button secondary-button--small" onClick={() => openEmployee(employee.id)} type="button">
+                          <Pencil aria-hidden="true" size={16} />
+                          Manage Profile
+                        </button>
+                      ) : null}
+                    </div>
                   </article>
                 ))}
               </div>

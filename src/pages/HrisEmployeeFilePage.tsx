@@ -11,6 +11,7 @@ import {
   History,
   KeyRound,
   Mail,
+  MessageSquareText,
   MoveUpRight,
   PencilLine,
   ShieldCheck,
@@ -101,6 +102,7 @@ export function HrisEmployeeFilePage() {
   const editorContext = editorContextQuery.data
   const supervisorAssignment = supervisionQuery.data?.assignments.find((assignment) => assignment.employeeId === employeeId) ?? null
   const canOpenDocumentStudio = canAccessRoute('/hr/documents', sessionQuery.data)
+  const canOpenConversations = canAccessRoute('/employee-conversations', sessionQuery.data)
   const employeeDocumentsPath = record
     ? `/hr/documents?employeeId=${encodeURIComponent(record.employeeId)}&employeeName=${encodeURIComponent(record.legalName)}`
     : '/hr/documents'
@@ -111,6 +113,7 @@ export function HrisEmployeeFilePage() {
     setEmploymentDateEditorOpen(true)
   }
   const connectedWorkspaces = [
+    { icon: MessageSquareText, label: 'Employee Conversations', path: '/employee-conversations' },
     { icon: BadgeCheck, label: 'Licensing Center', path: '/licensing' },
     { icon: CalendarCheck2, label: 'Availability', path: '/availability' },
     { icon: ClipboardCheck, label: 'Time-Off Requests', path: '/requests' },
@@ -244,6 +247,13 @@ export function HrisEmployeeFilePage() {
             <div><p className="eyebrow">Employee File</p><h1>{record.legalName}</h1><p>{record.employeeNumber || 'Employee number pending'} · @{record.username}</p></div>
             <div className="hr-file-hero__status"><span>{labels[record.status] ?? titleCase(record.status)}</span><small>{record.jobTitle || titleCase(record.primaryRole)}</small></div>
           </header>
+
+          {canOpenConversations ? (
+            <nav aria-label={`${record.legalName} employee record sections`} className="hr-file-tabs">
+              <span aria-current="page"><UserRound aria-hidden="true" />Employee File</span>
+              <Link to={`/employee-conversations?employeeId=${encodeURIComponent(record.employeeId)}`}><MessageSquareText aria-hidden="true" />Employee Conversations</Link>
+            </nav>
+          ) : null}
 
           {record.readinessSignals.length > 0 ? <section className="hr-file-alert" aria-label="Record readiness"><AlertTriangle aria-hidden="true" /><div><strong>Employee record needs attention</strong><div>{record.readinessSignals.map((signal) => <span key={signal}>{readinessLabels[signal] ?? titleCase(signal)}</span>)}</div></div></section> : <section className="hr-file-ready"><ShieldCheck aria-hidden="true" /><strong>Core employee record is ready.</strong></section>}
 

@@ -13,6 +13,7 @@ import {
   AvailabilityPageRoute,
   ClientFilesPageRoute,
   EventsPageRoute,
+  EmployeeConversationsPageRoute,
   HrisIdentityReadinessPageRoute,
   HrisAutomationPageRoute,
   HrisRecruitingPageRoute,
@@ -381,6 +382,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <PeoplePageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'employee-conversations',
+        element: (
+          <RouteSuspense>
+            <EmployeeConversationsPageRoute />
           </RouteSuspense>
         ),
       },
