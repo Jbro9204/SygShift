@@ -375,8 +375,10 @@ async function sessionContext(token: string, request: Request, config: Configura
   }
   const trustedDevice = request.headers.get('x-sygshift-trusted-device')
   const securityKey = request.headers.get('x-sygshift-security-key')
+  const sharedIdentity = request.headers.get('x-sygshift-shared-identity')
   if (trustedDevice) headers['x-sygshift-trusted-device'] = trustedDevice
   if (securityKey) headers['x-sygshift-security-key'] = securityKey
+  if (sharedIdentity) headers['x-sygshift-shared-identity'] = sharedIdentity
   const payload = await upstreamJson(`${config.supabaseUrl}/rest/v1/rpc/get_session_context`, {
     body: '{}', headers, method: 'POST',
   }) as SessionContext[] | SessionContext

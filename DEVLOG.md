@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 09/18/2026 - Sygilant Return Handoff Assurance Repair
+
+- Reproduced the reported sidebar failure against the live SygShift Worker and confirmed the protected launch returned HTTP 403 before Sygilant navigation.
+- Traced the rejection to the launch Worker dropping the existing platform shared-identity proof during its server-side `get_session_context` revalidation, even though the browser and ordinary SygShift workspace correctly recognized that proof as completed MFA.
+- Forwarded the proof through the protected revalidation boundary and added a regression proving an AAL1 platform-return session is issued as `external_mfa` without weakening permission, MFA, identity, destination, expiry, or replay controls.
+- Verification passed 4 focused files / 54 tests, the complete 267-file / 1,349-test gate, and the required 42/42 actual-component Time Clock matrix.
+- Production release evidence is recorded in `docs/changelogs/CHANGELOG_09-18-2026_SYGILANT_RETURN_HANDOFF_ASSURANCE_REPAIR.md`.
+
 ## 09/17/2026 - Sygilant Source Handoff Diagnostics
 
 - Correlated the reported fresh SygShift-to-Sygilant failure through the production launch ledger and audit history: SygShift issued, verified, and atomically consumed the assertion once in approximately 182 milliseconds.

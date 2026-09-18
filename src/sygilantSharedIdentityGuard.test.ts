@@ -39,6 +39,7 @@ describe('Sygilant reciprocal launch release guard', () => {
     expect(worker).toContain('service_issue_sygilant_shared_launch')
     expect(worker).toContain('service_consume_sygilant_shared_launch')
     expect(worker).toContain('sourceAuthSessionId: claims.session_id')
+    expect(worker).toContain("headers['x-sygshift-shared-identity'] = sharedIdentity")
     expect(worker).toContain('constantTimeEqual(signingSecret, consumerSecret)')
     expect(worker).not.toMatch(/localStorage|sessionStorage/)
   })
