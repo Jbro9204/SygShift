@@ -301,6 +301,33 @@ describe('SygShift to Sygilant protected platform launch', () => {
     expect(decodeAssertion(responseBody.launch.assertion)).toMatchObject({ assuranceLevel })
   })
 
+  it('forwards a fallback trusted-device proof during Sygilant launch revalidation', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input, init = {}) => {
+      const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {}
+      if (url.includes('/rest/v1/rpc/get_session_context')) {
+        const headers = new Headers(init.headers)
+        expect(headers.get('x-sygshift-trusted-device')).toBe('stale-browser-proof')
+        expect(headers.get('x-sygshift-trusted-device-fallback')).toBe('valid-cookie-proof')
+        return json({ employee_id: employeeId, has_mfa: true, mfa_required: true, permissions: ['apps.sygilant.access'], role: 'admin', username: 'jordan' })
+      }
+      if (url.includes('/auth/v1/user')) return json({ id: authUserId })
+      if (url.includes('/rest/v1/rpc/service_issue_sygilant_shared_launch')) {
+        return json({ requestId: (body.target_payload as Record<string, unknown>).requestId })
+      }
+      return json({ error: 'unhandled' }, 500)
+    }))
+    const request = launchRequest('https://app.sygilant.us', 'aal1')
+    request.headers.set('x-sygshift-trusted-device', 'stale-browser-proof')
+    request.headers.set('x-sygshift-trusted-device-fallback', 'valid-cookie-proof')
+
+    const response = await handleSygilantSharedIdentityRequest(request, environment, apiRequestId)
+
+    expect(response?.status).toBe(201)
+    const responseBody = await response?.json() as { launch: { assertion: string } }
+    expect(decodeAssertion(responseBody.launch.assertion)).toMatchObject({ assuranceLevel: 'trusted_device' })
+  })
+
   it('preserves platform-return MFA when revalidating the SygShift session', async () => {
     const sharedIdentityToken = 'platform-shared-identity-proof'
     vi.stubGlobal('fetch', vi.fn(async (input, init = {}) => {

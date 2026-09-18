@@ -374,9 +374,11 @@ async function sessionContext(token: string, request: Request, config: Configura
     'content-type': 'application/json',
   }
   const trustedDevice = request.headers.get('x-sygshift-trusted-device')
+  const trustedDeviceFallback = request.headers.get('x-sygshift-trusted-device-fallback')
   const securityKey = request.headers.get('x-sygshift-security-key')
   const sharedIdentity = request.headers.get('x-sygshift-shared-identity')
   if (trustedDevice) headers['x-sygshift-trusted-device'] = trustedDevice
+  if (trustedDeviceFallback) headers['x-sygshift-trusted-device-fallback'] = trustedDeviceFallback
   if (securityKey) headers['x-sygshift-security-key'] = securityKey
   if (sharedIdentity) headers['x-sygshift-shared-identity'] = sharedIdentity
   const payload = await upstreamJson(`${config.supabaseUrl}/rest/v1/rpc/get_session_context`, {
@@ -455,7 +457,7 @@ function assuranceLevel(
   if (!hasMfa) return 'aal1'
   if (claims.aal === 'aal2') return 'aal2'
   if (request.headers.get('x-sygshift-security-key')) return 'security_key'
-  if (request.headers.get('x-sygshift-trusted-device')) return 'trusted_device'
+  if (request.headers.get('x-sygshift-trusted-device') || request.headers.get('x-sygshift-trusted-device-fallback')) return 'trusted_device'
   return 'external_mfa'
 }
 

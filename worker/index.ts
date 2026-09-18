@@ -964,9 +964,11 @@ async function requireAdminMfa(
 function forwardedAssuranceHeaders(request: Request): Record<string, string> | undefined {
   const headers: Record<string, string> = {}
   const trustedDevice = request.headers.get('x-sygshift-trusted-device')
+  const trustedDeviceFallback = request.headers.get('x-sygshift-trusted-device-fallback')
   const securityKey = request.headers.get('x-sygshift-security-key')
   const sharedIdentity = request.headers.get('x-sygshift-shared-identity')
   if (trustedDevice) headers['x-sygshift-trusted-device'] = trustedDevice
+  if (trustedDeviceFallback) headers['x-sygshift-trusted-device-fallback'] = trustedDeviceFallback
   if (securityKey) headers['x-sygshift-security-key'] = securityKey
   if (sharedIdentity) headers['x-sygshift-shared-identity'] = sharedIdentity
   return Object.keys(headers).length > 0 ? headers : undefined

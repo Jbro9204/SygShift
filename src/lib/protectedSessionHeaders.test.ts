@@ -41,6 +41,25 @@ describe('protected-session request headers', () => {
     expect(headers.has('x-sygshift-shared-identity')).toBe(false)
   })
 
+  it('preserves the cookie proof as a fallback when browser storage has a stale token', () => {
+    document.cookie = 'sygshift_trusted_device=valid-cookie-token; Path=/'
+    window.localStorage.setItem('sygshift:trusted-device-token:v1', 'stale-local-token')
+
+    const headers = appendProtectedSessionHeaders({ authorization: 'Bearer access-token' })
+
+    expect(headers.get('x-sygshift-trusted-device')).toBe('stale-local-token')
+    expect(headers.get('x-sygshift-trusted-device-fallback')).toBe('valid-cookie-token')
+  })
+
+  it('does not duplicate a synchronized trusted-device proof', () => {
+    setTrustedDeviceToken('same-device-token')
+
+    const headers = appendProtectedSessionHeaders()
+
+    expect(headers.get('x-sygshift-trusted-device')).toBe('same-device-token')
+    expect(headers.has('x-sygshift-trusted-device-fallback')).toBe(false)
+  })
+
   it('attaches platform assurance to protected calls without a route-specific opt-in', () => {
     setSharedIdentitySession(
       'shared-token'.repeat(5),
@@ -59,6 +78,7 @@ describe('protected-session request headers', () => {
     const headers = appendProtectedSessionHeaders()
 
     expect(headers.has('x-sygshift-trusted-device')).toBe(false)
+    expect(headers.has('x-sygshift-trusted-device-fallback')).toBe(false)
     expect(headers.has('x-sygshift-security-key')).toBe(false)
     expect(headers.has('x-sygshift-shared-identity')).toBe(false)
   })

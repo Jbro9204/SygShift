@@ -1,6 +1,6 @@
 const TRUSTED_DEVICE_STORAGE_KEY = 'sygshift:trusted-device-token:v1'
 const TRUSTED_DEVICE_COOKIE_NAME = 'sygshift_trusted_device'
-const TRUSTED_DEVICE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
+const TRUSTED_DEVICE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
 
 function browserStorage(): Storage | null {
   if (typeof window === 'undefined') return null
@@ -60,7 +60,14 @@ function clearTrustedDeviceCookie(): void {
 }
 
 export function getTrustedDeviceToken(): string | null {
-  return browserStorage()?.getItem(TRUSTED_DEVICE_STORAGE_KEY) ?? readCookie(TRUSTED_DEVICE_COOKIE_NAME)
+  return getTrustedDeviceTokens()[0] ?? null
+}
+
+export function getTrustedDeviceTokens(): string[] {
+  const storedToken = browserStorage()?.getItem(TRUSTED_DEVICE_STORAGE_KEY) ?? null
+  const cookieToken = readCookie(TRUSTED_DEVICE_COOKIE_NAME)
+
+  return [...new Set([storedToken, cookieToken].filter((value): value is string => Boolean(value)))]
 }
 
 export function setTrustedDeviceToken(token: string): void {
