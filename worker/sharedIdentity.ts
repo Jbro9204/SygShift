@@ -159,6 +159,11 @@ export async function handleSharedIdentityRequest(
         status: failure.status,
       }))
     }
+    if (path === completionPath) {
+      const response = redirectResponse(`${callbackPath}?handoff=failed`, [clearCookie(launchCookie)], 303)
+      response.headers.set('referrer-policy', 'no-referrer')
+      return response
+    }
     const response = responseJson({ error: failure.code, detail: failure.message, requestId }, failure.status)
     return path === sessionPath || path === sessionLogoutPath
       ? clearAllSharedIdentityCookies(response)
@@ -473,23 +478,40 @@ async function introspectAssertion(assertion: string, config: SharedIdentityConf
     throw new SharedIdentityError('shared_identity_assertion_rejected', 401, 'The shared access request could not be verified.')
   }
   const identity = payload?.identity as Partial<SharedIdentity> | undefined
-  if (
-    identity?.applicationId !== 'sygshift'
-    || !isSharedIdentityDestination(identity.destination)
-    || !uuidPattern.test(identity.externalSubjectId ?? '')
-    || identity.profileId !== identity.externalSubjectId
-    || !uuidPattern.test(identity.externalEmployeeId ?? '')
-    || !/^[a-z][a-z0-9]{1,62}$/.test(identity.externalUsername ?? '')
-    || !uuidPattern.test(identity.requestId ?? '')
-    || !assuranceLevels.has(identity.assuranceLevel ?? '')
-    || !/^[a-z][a-z0-9_]{1,62}$/.test(identity.roleId ?? '')
-    || (identity.assuranceLevel === 'aal1' && identity.roleId !== 'guard')
-    || !identity.expiresAt
-    || Date.parse(identity.expiresAt) <= Date.now()
-  ) {
-    throw new SharedIdentityError('shared_identity_response_invalid', 502, 'The shared identity authority returned an invalid response.')
+  const roleId = canonicalSharedRoleId(identity?.roleId)
+  const validationFailures = sharedIdentityValidationFailures(identity, roleId)
+  if (validationFailures.length > 0) {
+    throw new SharedIdentityError(
+      'shared_identity_response_invalid',
+      502,
+      'The shared identity authority returned an invalid response.',
+      `invalid_fields:${validationFailures.join(',')}`,
+    )
   }
-  return identity as SharedIdentity
+  return { ...identity, roleId } as SharedIdentity
+}
+
+function canonicalSharedRoleId(value: unknown): string {
+  return typeof value === 'string' ? value.trim().replaceAll('-', '_') : ''
+}
+
+function sharedIdentityValidationFailures(
+  identity: Partial<SharedIdentity> | undefined,
+  roleId: string,
+): string[] {
+  const failures: string[] = []
+  if (identity?.applicationId !== 'sygshift') failures.push('applicationId')
+  if (!isSharedIdentityDestination(identity?.destination)) failures.push('destination')
+  if (!uuidPattern.test(identity?.externalSubjectId ?? '')) failures.push('externalSubjectId')
+  if (identity?.profileId !== identity?.externalSubjectId) failures.push('profileId')
+  if (!uuidPattern.test(identity?.externalEmployeeId ?? '')) failures.push('externalEmployeeId')
+  if (!/^[a-z][a-z0-9]{1,62}$/.test(identity?.externalUsername ?? '')) failures.push('externalUsername')
+  if (!uuidPattern.test(identity?.requestId ?? '')) failures.push('requestId')
+  if (!assuranceLevels.has(identity?.assuranceLevel ?? '')) failures.push('assuranceLevel')
+  if (!/^[a-z][a-z0-9_]{1,62}$/.test(roleId)) failures.push('roleId')
+  if (identity?.assuranceLevel === 'aal1' && roleId !== 'guard') failures.push('aal1Role')
+  if (!identity?.expiresAt || Date.parse(identity.expiresAt) <= Date.now()) failures.push('expiresAt')
+  return failures
 }
 
 async function loadLocalIdentity(employeeId: string, config: SharedIdentityConfiguration): Promise<LocalIdentity> {

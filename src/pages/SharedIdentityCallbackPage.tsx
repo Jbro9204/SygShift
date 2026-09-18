@@ -1,6 +1,6 @@
 import { ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { activateSharedIdentitySupabaseSession, deactivateSharedIdentitySupabaseSession } from '../lib/supabase'
 import { publishSharedIdentityBrowserEvent } from '../lib/sharedIdentityBrowserSync'
 import {
@@ -25,13 +25,18 @@ type FinalizationResponse = {
 
 export function SharedIdentityCallbackPage() {
   const [error, setError] = useState<string | null>(null)
+  const location = useLocation()
   const navigate = useNavigate()
+  const handoffFailed = new URLSearchParams(location.search).get('handoff') === 'failed'
 
   useEffect(() => {
     let active = true
     void (async () => {
       try {
         window.history.replaceState(null, '', '/auth/shared-identity/callback')
+        if (handoffFailed) {
+          throw new Error('Sygilant could not complete the shared sign-in. Return to Sygilant and try the SygShift button again.')
+        }
         const response = await fetch('/api/v1/auth/shared-identity/finalize', {
           cache: 'no-store',
           credentials: 'same-origin',
@@ -60,7 +65,7 @@ export function SharedIdentityCallbackPage() {
       }
     })()
     return () => { active = false }
-  }, [navigate])
+  }, [handoffFailed, navigate])
 
   return (
     <main className="security-page">

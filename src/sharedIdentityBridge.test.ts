@@ -285,6 +285,45 @@ describe('Sygilant to SygSphere shared session bridge', () => {
     })
   })
 
+  it.each([
+    ['recruiting-licensing', 'recruiting_licensing'],
+    ['human-resources', 'human_resources'],
+    ['human-resources-manager', 'human_resources_manager'],
+    ['operations-manager', 'operations_manager'],
+  ])('accepts the Sygilant %s role as canonical %s', async (authorityRole, localRole) => {
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      const url = String(input)
+      if (url.includes('/api/apps/sygshift/introspect')) {
+        return json({ identity: sharedIdentity('/', { roleId: authorityRole }) })
+      }
+      if (url.includes('/rest/v1/rpc/service_get_employee_login_email_target')) {
+        return json(localIdentity({ role: localRole }))
+      }
+      if (url.includes('/auth/v1/admin/generate_link')) {
+        return json({ action_link: 'https://project.supabase.co/auth/v1/verify?token=opaque&type=magiclink&redirect_to=https%3A%2F%2Fapp.sygilant.us%2Fauth%2Fshared-identity%2Fcallback' })
+      }
+      if (url.includes('/auth/v1/verify')) {
+        return json({
+          access_token: accessToken(),
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          refresh_token: 'refresh-token-value',
+          user: { id: authUserId },
+        })
+      }
+      return json({ error: 'unhandled' }, 500)
+    }))
+
+    const received = await handleSharedIdentityRequest(launchRequest({ destination: '/' }), environment, requestId)
+    const launchCookie = cookieValue(received?.headers.get('set-cookie') ?? '', '__Host-sygshift-shared-launch')
+    const completed = await handleSharedIdentityRequest(new Request(
+      'https://app.sygilant.us/api/v1/auth/shared-identity/complete',
+      { headers: { cookie: `__Host-sygshift-shared-launch=${launchCookie}` } },
+    ), environment, requestId)
+
+    expect(completed?.status).toBe(303)
+    expect(completed?.headers.get('location')).toBe('/auth/shared-identity/callback')
+  })
+
   it('rejects a cross-origin upstream redirect before forwarding protected launch credentials', async () => {
     const upstream = vi.fn().mockResolvedValue(new Response(null, {
       headers: { location: 'https://attacker.example/collect' },
@@ -299,8 +338,9 @@ describe('Sygilant to SygSphere shared session bridge', () => {
       { headers: { cookie: `__Host-sygshift-shared-launch=${launchCookie}` } },
     ), environment, requestId)
 
-    expect(completed?.status).toBe(502)
-    await expect(completed?.json()).resolves.toMatchObject({ error: 'shared_identity_upstream_redirect_rejected' })
+    expect(completed?.status).toBe(303)
+    expect(completed?.headers.get('location')).toBe('/auth/shared-identity/callback?handoff=failed')
+    expect(completed?.headers.get('set-cookie')).toContain('__Host-sygshift-shared-launch=; Max-Age=0')
     expect(upstream).toHaveBeenCalledTimes(1)
   })
 
@@ -335,18 +375,18 @@ describe('Sygilant to SygSphere shared session bridge', () => {
       'https://app.sygilant.us/api/v1/auth/shared-identity/complete',
       { headers: { cookie: `__Host-sygshift-shared-launch=${launchCookie}` } },
     ), environment, requestId)
-    expect(response?.status).toBe(403)
-    await expect(response?.json()).resolves.toMatchObject({ error: 'shared_identity_subject_mismatch' })
+    expect(response?.status).toBe(303)
+    expect(response?.headers.get('location')).toBe('/auth/shared-identity/callback?handoff=failed')
   })
 
   it.each([
-    { identityRole: 'guard', localRequiresMfa: false, localRole: 'guard', status: 303 },
-    { identityRole: 'guard', localRequiresMfa: true, localRole: 'guard', status: 403 },
-    { identityRole: 'guard', localRequiresMfa: false, localRole: 'supervisor', status: 403 },
-    { identityRole: 'admin', localRequiresMfa: false, localRole: 'guard', status: 502 },
+    { identityRole: 'guard', localRequiresMfa: false, localRole: 'guard', location: '/auth/shared-identity/callback' },
+    { identityRole: 'guard', localRequiresMfa: true, localRole: 'guard', location: '/auth/shared-identity/callback?handoff=failed' },
+    { identityRole: 'guard', localRequiresMfa: false, localRole: 'supervisor', location: '/auth/shared-identity/callback?handoff=failed' },
+    { identityRole: 'admin', localRequiresMfa: false, localRole: 'guard', location: '/auth/shared-identity/callback?handoff=failed' },
   ])(
     'enforces the reciprocal Guard-only AAL1 policy for $identityRole -> $localRole',
-    async ({ identityRole, localRequiresMfa, localRole, status }) => {
+    async ({ identityRole, localRequiresMfa, localRole, location }) => {
       vi.stubGlobal('fetch', vi.fn(async (input) => {
         const url = String(input)
         if (url.includes('/api/apps/sygshift/introspect')) {
@@ -376,8 +416,8 @@ describe('Sygilant to SygSphere shared session bridge', () => {
         { headers: { cookie: `__Host-sygshift-shared-launch=${launchCookie}` } },
       ), environment, requestId)
 
-      expect(response?.status).toBe(status)
-      if (status === 303) expect(response?.headers.get('location')).toBe('/auth/shared-identity/callback')
+      expect(response?.status).toBe(303)
+      expect(response?.headers.get('location')).toBe(location)
     },
   )
 })

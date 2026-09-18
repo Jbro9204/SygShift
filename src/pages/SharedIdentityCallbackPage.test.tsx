@@ -72,11 +72,26 @@ describe('shared identity callback', () => {
     expect(supabaseMocks.activateSharedIdentitySupabaseSession).not.toHaveBeenCalled()
     expect(getSharedIdentitySessionToken()).toBeNull()
   })
+
+  it('shows a recoverable handoff error without calling finalization again', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderCallback('/auth/shared-identity/callback?handoff=failed')
+
+    expect(await screen.findByText('SygShift could not open.')).toBeInTheDocument()
+    expect(screen.getByText(/Return to Sygilant and try the SygShift button again/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Return to Sygilant' })).toHaveAttribute('href', 'https://sygilant.us')
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/v1/auth/shared-identity/finalize',
+      expect.anything(),
+    )
+  })
 })
 
-function renderCallback() {
+function renderCallback(initialEntry = '/auth/shared-identity/callback') {
   return render(
-    <MemoryRouter initialEntries={['/auth/shared-identity/callback']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
         <Route path="/auth/shared-identity/callback" element={<SharedIdentityCallbackPage />} />
         <Route path="/" element={<p>Platform opened</p>} />
