@@ -6,6 +6,7 @@
 - Traced the rejection to the launch Worker dropping the existing platform shared-identity proof during its server-side `get_session_context` revalidation, even though the browser and ordinary SygShift workspace correctly recognized that proof as completed MFA.
 - Forwarded the proof through the protected revalidation boundary and added a regression proving an AAL1 platform-return session is issued as `external_mfa` without weakening permission, MFA, identity, destination, expiry, or replay controls.
 - Verification passed 4 focused files / 54 tests, the complete 267-file / 1,349-test gate, and the required 42/42 actual-component Time Clock matrix.
+- Released source `6e356b5` as Cloudflare Worker `a7c7a65b-bca8-42c4-bdce-e5c1fa9e0a17`; both production origins returned healthy/ready, and the same live signed-in browser path advanced from the prior HTTP 403 to authenticated Sygilant `/dashboard` without another login.
 - Production release evidence is recorded in `docs/changelogs/CHANGELOG_09-18-2026_SYGILANT_RETURN_HANDOFF_ASSURANCE_REPAIR.md`.
 
 ## 09/17/2026 - Sygilant Source Handoff Diagnostics

@@ -28,5 +28,8 @@ Employees who had entered SygShift through the approved Sygilant shared-login pa
 
 ### Release status
 
-- Source commit, Cloudflare Worker version, live health/readiness, and employee-present launch verification are recorded after production deployment.
-
+- Source commit `6e356b5` was pushed to `origin/main` before deployment. Rollback tag `rollback/pre-sygilant-return-assurance-repair-20260918` points to the prior production source `a8395bc`.
+- Cloudflare Worker version `a7c7a65b-bca8-42c4-bdce-e5c1fa9e0a17` was deployed from the fresh post-browser-test production build.
+- Primary and fallback `/api/v1/health` checks returned HTTP `200`; primary and fallback `/api/v1/ready` checks returned HTTP `200` with `ready: true`.
+- The same signed-in browser workflow that returned HTTP `403` before the repair returned HTTP `201` after deployment, Sygilant consumed the one-time assertion with HTTP `200`, and the employee reached the authenticated Sygilant `/dashboard` as the matching Jordan account without entering another username or password.
+- No remaining implementation or release blocker is known for this incident.
