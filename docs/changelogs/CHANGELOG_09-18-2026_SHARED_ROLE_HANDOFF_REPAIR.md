@@ -41,6 +41,12 @@ Recruiting & Licensing, Human Resources, Human Resources Manager, and Operations
 ### Release status
 
 - Pre-change rollback tag: `rollback/pre-shared-role-handoff-repair-20260918`.
-- Deploy Sygilant first so new assertions are canonical at their source, then deploy this SygShift consumer.
-- Public health, readiness, and one fresh employee-present multiword-role handoff remain the production
-  acceptance steps.
+- Sygilant producer revision `93609ce` was active before the consumer deployment.
+- SygShift source revision: `903cfdf` (`fix: accept canonical shared handoff roles`).
+- Cloudflare Worker version: `635c0550-d2dd-4ce5-a26a-2827d6c7e419`.
+- Custom-domain and Workers fallback health and readiness returned HTTP 200; every required shared-identity
+  binding and secret check passed.
+- A credential-free completion probe returned HTTP 303 to the recovery callback, applied
+  `Referrer-Policy: no-referrer`, and cleared the launch cookie instead of exposing raw JSON.
+- One fresh employee-present handoff by Zach or another employee with a multiword role remains the final
+  production acceptance step. Previously consumed completion URLs must not be refreshed or reused.
