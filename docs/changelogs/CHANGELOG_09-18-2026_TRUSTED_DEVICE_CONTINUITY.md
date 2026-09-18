@@ -40,4 +40,13 @@ forcing another MFA challenge and degrading SygShift-to-Sygilant switching for e
 ### Release status
 
 - Pre-change rollback tag: `rollback/pre-trusted-device-continuity-20260918` at source `ad123cf`.
-- Production migration and Cloudflare deployment are recorded below after live verification.
+- Source revision: `540c048` (`fix: preserve remembered-device continuity`).
+- Production migration `20260918152903` was applied through an isolated release workspace. A post-deployment
+  migration dry run confirmed that the shared production database is fully up to date with no pending changes.
+- Cloudflare Worker version: `501dd9da-5ead-426a-ba22-565c8aa1e1c4`.
+- Public and fallback `/api/v1/health` and `/api/v1/ready` checks returned HTTP 200; readiness reported every
+  required binding and shared-identity secret available.
+- Live browser verification passed from SygShift to Sygilant and back to SygShift without another credential or
+  MFA prompt.
+- Zach's browser must complete one post-release sign-in and remembered-device selection to replace any already
+  stale local proof. Persistence across his next-day browser restart remains the final user-specific canary.
