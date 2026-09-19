@@ -15,7 +15,8 @@
 
 - SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED is false in the worker configuration.
 - The database release gate defaults closed and cannot enable runtime unless all evidence fields are true. The protected authorization procedure still returns authorized false until a future reviewed scope-membership policy exists.
-- The Worker has no /api/comms/v1 or other communications route. No Sygilant proxy target is callable yet.
+- The Worker contains a protected `/api/comms/v1` bootstrap/connect source path. The static Worker flag remains `false`; while it is false, the path returns the shared unavailable outcome before it can authenticate, issue a ticket, open a socket, call a coordinator, or request a device. It is not deployed as an enabled feature.
+- When a future approved release opens that path, bootstrap must validate the current SygShift session, service-only authorization, scope membership, shared release evidence, and server-derived tenant before it can issue a one-use 30-second ticket. The raw ticket is returned only to the authenticated browser and must be the first TLS-protected WebSocket application frame; it is never placed in a URL or cookie. A separate HttpOnly, same-site, opaque route reference lets the Worker select the already-authorized tenant coordinator without exposing the ticket.
 - There are no communications role grants, employee overrides, provider credentials, browser media APIs, CSP relaxations, WebSockets, or customer-visible controls.
 
 ## Required evidence before protected service ingress
@@ -24,7 +25,7 @@
 2. Prove the complete two-device provider matrix, including forced closure and TCP/TLS TURN fallback.
 3. Add and negative-test a server-owned scope/membership resolver; never accept it from Sygilant or a browser.
 4. Publish SygShift’s canonical contract digest and obtain an independent Sygilant consumer compatibility result.
-5. Approve a narrow, authenticated SygShift ingress. It must call the service-only database authorization procedure, resolve the deterministic TENANT_COMMS object name on the server, and never proxy provider credentials or browser-selected identity.
+5. Apply and verify the approved assignment/room-scope authorization rule. The present database function intentionally returns `authorized: false` and `scopeMembershipVerified: false`, so a changed Worker flag alone cannot issue a ticket or open a session.
 6. Review rollback, logs, audit projection, rate limits, and emergency disable behavior before enabling any runtime or role grant.
 
 ## Quality gates

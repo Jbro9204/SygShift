@@ -27,8 +27,9 @@ describe('SygSphere Communications Stage 4/5 preparation', () => {
     expect(runtimeGateMessage()).not.toMatch(/provider|token|\d{3}/i)
   })
 
-  it('blocks either documented communications route shape before Stage 4 approval', () => {
+  it('requires the protected Communications ingress to remain behind the explicit runtime gate', () => {
     const releaseGuard = readFileSync(resolve(import.meta.dirname, '..', 'tools/validate-sygsphere-communications-stage45-gates.mjs'), 'utf8')
-    expect(releaseGuard).toContain('v1\\/communications|comms\\/v1')
+    expect(releaseGuard).toContain("url.pathname.startsWith('/api/comms/v1/')")
+    expect(releaseGuard).toContain('if (!sygsphereCommunicationsRuntimeEnabled(environment))')
   })
 })

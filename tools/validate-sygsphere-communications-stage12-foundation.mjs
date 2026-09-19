@@ -88,8 +88,23 @@ if (!/"SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED"\s*:\s*"false"/.test(workerConfi
   failures.push('The coordinator runtime flag is not explicitly disabled.')
 }
 
-if (/sygsphere-communications|\/api\/(?:v1\/communications|comms\/v1)/.test(workerEntrypoint)) {
-  failures.push('A browser-facing communications route is present before release approval.')
+if (!workerEntrypoint.includes("url.pathname.startsWith('/api/comms/v1/')")) {
+  failures.push('The protected Communications service ingress is missing.')
+}
+
+if (!workerEntrypoint.includes('if (!sygsphereCommunicationsRuntimeEnabled(environment))')) {
+  failures.push('The Communications service ingress can run before the explicit worker runtime gate.')
+}
+
+if (!coordinator.includes('issueWebSocketTicket')
+  || !coordinator.includes('consumeWebSocketTicket')
+  || !coordinator.includes('webSocketMessage')
+  || !coordinator.includes('SYGSPHERE_COMMS_WEBSOCKET_TICKET_TTL_MS')) {
+  failures.push('The coordinator is missing the staged one-use WebSocket ticket path.')
+}
+
+if (!coordinator.includes("request.headers.get('x-sygsphere-comms-route-reference')")) {
+  failures.push('The coordinator does not require the server-set opaque WebSocket route reference.')
 }
 
 if (manifest.contractVersion !== '1.0.0-draft.2' || manifest.lifecycle !== 'closed-coordinator-foundation') {
@@ -105,5 +120,5 @@ if (failures.length > 0) {
   for (const failure of failures) console.error(`- ${failure}`)
   process.exitCode = 1
 } else {
-  console.log('SygSphere Communications Stage 1/2 coordinator foundation is closed as intended.')
+  console.log('SygSphere Communications Stage 1/2 coordinator foundation and closed service ingress are prepared as intended.')
 }

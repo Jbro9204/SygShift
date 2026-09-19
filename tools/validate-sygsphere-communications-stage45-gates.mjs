@@ -28,8 +28,12 @@ if (!/"SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED"\s*:\s*"false"/.test(workerConfi
   failures.push('The coordinator runtime flag is not explicitly disabled.')
 }
 
-if (/sygsphere-communications|\/api\/(?:v1\/communications|comms\/v1)/.test(workerEntrypoint)) {
-  failures.push('A communications Worker route is present before Stage 4 approval.')
+if (!workerEntrypoint.includes("url.pathname.startsWith('/api/comms/v1/')")) {
+  failures.push('The protected Communications service ingress is missing.')
+}
+
+if (!workerEntrypoint.includes('if (!sygsphereCommunicationsRuntimeEnabled(environment))')) {
+  failures.push('The Communications service ingress can bypass the explicit runtime gate.')
 }
 
 if (failures.length > 0) {
@@ -37,5 +41,5 @@ if (failures.length > 0) {
   for (const failure of failures) console.error(`- ${failure}`)
   process.exitCode = 1
 } else {
-  console.log('SygSphere Communications Stage 4/5 release gate is closed as intended.')
+  console.log('SygSphere Communications Stage 4/5 release gate is closed while its protected ingress remains prepared.')
 }

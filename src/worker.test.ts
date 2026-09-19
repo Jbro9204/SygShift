@@ -130,6 +130,21 @@ describe('Cloudflare Worker boundary', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
   })
 
+  it('keeps the protected Communications ingress unavailable while its runtime flag is closed', async () => {
+    const assets = environment(new Response('asset'), configuredEnvironment)
+    const response = await worker.fetch(
+      new Request('https://app.sygshift.example/api/comms/v1/bootstrap', { method: 'POST' }),
+      assets,
+    )
+    const payload = await response.json() as { detail: string; error: string; requestId: string }
+
+    expect(response.status).toBe(503)
+    expect(payload.error).toBe('communications_unavailable')
+    expect(payload.detail).toContain('SygSphere messages and Dispatch')
+    expect(payload.requestId).toBe(response.headers.get('x-request-id'))
+    expect(assets.ASSETS.fetch).not.toHaveBeenCalled()
+  })
+
   it('reports production readiness without exposing secret values', async () => {
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/ready'),

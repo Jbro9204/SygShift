@@ -24,6 +24,12 @@ import type {
 } from '@simplewebauthn/server'
 import { isSecurityKeyPilotEligible, securityKeyFeatureEnabled } from './securityKeyPilot'
 import { TenantCommsDurableObject } from './comms/tenantCommsDurableObject'
+import {
+  coordinatorReleaseContextSchema,
+  stagedCommsAuthorizationContextSchema,
+  tenantCoordinatorObjectName,
+} from './comms/tenantCoordinatorCore'
+import { parseSygSphereCommsWebSocketRouteReference } from './comms/websocketTicket'
 
 export { TenantCommsDurableObject }
 
@@ -295,6 +301,14 @@ interface AccessTokenClaims {
   amr?: Array<{ method?: string, timestamp?: number }>
   exp?: number
   session_id?: string
+  sub?: string
+}
+
+interface SygSphereCommunicationsAuthorizationDecision {
+  authorized?: boolean
+  context?: unknown
+  release?: unknown
+  scopeMembershipVerified?: boolean
 }
 
 interface HrDocumentUploadMetadata {
@@ -1045,6 +1059,118 @@ async function requireAuthenticatedSession(request: Request, environment: Enviro
   }
 
   return { config, context, token }
+}
+
+const sygsphereCommunicationsRuntimeEnabled = (environment: Environment): boolean =>
+  environment.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED?.trim().toLowerCase() === 'true'
+
+const parseCookieValue = (request: Request, name: string): string | null => {
+  const cookie = request.headers.get('cookie') ?? ''
+  for (const part of cookie.split(';')) {
+    const separator = part.indexOf('=')
+    if (separator < 1) continue
+    if (part.slice(0, separator).trim() !== name) continue
+    return part.slice(separator + 1).trim() || null
+  }
+  return null
+}
+
+const communicationsRouteCookie = (tenantId: string, routeReference: string): string =>
+  `__Host-sygsphere-comms-route=${tenantId}.${routeReference}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=30`
+
+const parseCommunicationsRouteCookie = (request: Request): Readonly<{ routeReference: string, tenantId: string }> | null => {
+  const raw = parseCookieValue(request, '__Host-sygsphere-comms-route')
+  if (!raw) return null
+  const separator = raw.indexOf('.')
+  if (separator < 1 || raw.indexOf('.', separator + 1) !== -1) return null
+  const tenantId = raw.slice(0, separator)
+  const routeReference = parseSygSphereCommsWebSocketRouteReference(raw.slice(separator + 1))
+  if (!validUuid(tenantId) || !routeReference) return null
+  return { routeReference, tenantId }
+}
+
+/**
+ * The Communications endpoint remains absent from normal user workflows until
+ * its server gate is enabled. When a future controlled pilot enables it, this
+ * bootstrap mints a one-use, 30-second ticket only after authenticated
+ * identity, service-only authorization, scope approval, compatibility, and
+ * release evidence all agree. The ticket is returned to the authenticated
+ * browser but never placed in a URL or cookie; the cookie contains only an
+ * opaque routing reference so the opening WebSocket can be sent to the
+ * server-derived tenant coordinator.
+ */
+async function handleSygSphereCommunicationsApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url)
+
+  if (!sygsphereCommunicationsRuntimeEnabled(environment)) {
+    return errorJson('communications_unavailable', requestId, 503, 'Communications are not available yet. Continue using SygSphere messages and Dispatch.')
+  }
+
+  if (url.pathname === '/api/comms/v1/bootstrap') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const session = await requireAuthenticatedSession(request, environment)
+    const authUserId = accessTokenClaims(session.token)?.sub
+    if (!authUserId || !validUuid(authUserId) || !environment.TENANT_COMMS) {
+      throw new ApiError('communications_unavailable', 503, 'Communications are not available yet. Continue using SygSphere messages and Dispatch.')
+    }
+
+    const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_authorize_sygsphere_communications_command',
+      { target_auth_user_id: authUserId, target_command_kind: 'auth' },
+      session.config.serviceRoleKey,
+    )
+    const authorization = stagedCommsAuthorizationContextSchema.safeParse(decision.context)
+    const release = coordinatorReleaseContextSchema.safeParse(decision.release)
+    if (
+      decision.authorized !== true
+      || decision.scopeMembershipVerified !== true
+      || !authorization.success
+      || !release.success
+      || authorization.data.authUserId !== authUserId
+      || authorization.data.employeeId !== session.context.employee_id
+    ) {
+      throw new ApiError('communications_unavailable', 403, 'Communications are not available for this account. Continue using SygSphere messages and Dispatch.')
+    }
+
+    const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(authorization.data.tenantId))
+    const bootstrap = await coordinator.issueWebSocketTicket({
+      authorization: authorization.data,
+      release: release.data,
+      requestId,
+      scopeMembershipVerified: true,
+    })
+    return json({
+      connection: {
+        expiresAt: bootstrap.expiresAt,
+        protocolVersion: 1,
+        socketPath: '/api/comms/v1/connect',
+        ticket: bootstrap.ticket,
+      },
+      requestId,
+    }, 201, { 'set-cookie': communicationsRouteCookie(authorization.data.tenantId, bootstrap.routeReference) })
+  }
+
+  if (url.pathname === '/api/comms/v1/connect') {
+    if (request.method !== 'GET' || request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
+      return errorJson('method_not_allowed', requestId, 405)
+    }
+    const route = parseCommunicationsRouteCookie(request)
+    if (!route || !environment.TENANT_COMMS) {
+      return errorJson('communications_unavailable', requestId, 404, 'Communications connection is unavailable. Reopen Communications and try again.')
+    }
+    const headers = new Headers(request.headers)
+    headers.delete('cookie')
+    headers.set('x-sygsphere-comms-route-reference', route.routeReference)
+    const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(route.tenantId))
+    return coordinator.fetch(new Request(request, { headers }))
+  }
+
+  return errorJson('not_found', requestId, 404)
 }
 
 async function requireVerifiedOperationsSession(
@@ -7907,6 +8033,19 @@ export default {
         response = error instanceof ApiError
           ? errorJson(error.code, requestId, error.status, error.message)
           : errorJson('hr_system_rollout_failed', requestId, 503, 'The controlled HR rollout request failed.')
+      }
+    } else if (url.pathname.startsWith('/api/comms/v1/')) {
+      try {
+        response = await handleSygSphereCommunicationsApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : errorJson('communications_unavailable', requestId, 503, 'Communications are not available yet. Continue using SygSphere messages and Dispatch.')
+        }
       }
     } else if (
       url.pathname === '/api/v1/account/photo'

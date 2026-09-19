@@ -55,16 +55,24 @@ interface DurableObjectSqlStorage {
 
 interface DurableObjectStorage {
   readonly sql: DurableObjectSqlStorage
+  setAlarm(scheduledTime: number | Date): Promise<void>
 }
 
 interface DurableObjectState {
   readonly container?: ContainerRuntime
   readonly storage: DurableObjectStorage
+  acceptWebSocket(webSocket: WebSocket, tags?: string[]): void
   blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T>
+  getWebSockets(tag?: string): WebSocket[]
 }
 
 interface DurableObjectNamespace<T = unknown> {
   getByName(name: string): T
+}
+
+declare class WebSocketPair {
+  0: WebSocket
+  1: WebSocket
 }
 
 declare module 'cloudflare:workers' {

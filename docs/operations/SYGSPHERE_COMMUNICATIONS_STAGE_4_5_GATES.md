@@ -2,7 +2,7 @@
 
 ## Current state
 
-The coordinator core and dual-application gate contract are prepared. A source-only SQLite Durable Object binding is declared with a static false runtime flag, but no Worker route, WebSocket, provider adapter, media permission, CSP change, or application-shell runtime is enabled.
+The coordinator core and dual-application gate contract are prepared. A source-only SQLite Durable Object binding is declared with a static false runtime flag. A protected bootstrap/connect source path and one-use WebSocket-ticket coordinator path are present for review, but the static flag prevents authentication, ticket issuance, socket acceptance, provider access, media permission, CSP change, or application-shell runtime. No employee-facing communications capability is enabled.
 
 Run `pnpm check:sygsphere-comms-stage45` before creating a Stage 4 deployment change. The check protects the current closed state; it is not permission to open any gate.
 
