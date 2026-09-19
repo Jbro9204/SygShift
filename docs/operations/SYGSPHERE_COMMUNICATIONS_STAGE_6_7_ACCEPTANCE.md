@@ -1,6 +1,6 @@
 # SygSphere Communications — Stage 6/7 Shared UI and Push-to-Talk Acceptance
 
-**Status:** Shared presentation and interaction policy prepared. No employee-facing communications runtime is enabled.
+**Status:** Shared presentation policy and source-only view-model preparation complete. No employee-facing communications runtime is enabled.
 
 ## Shared experience rule
 
@@ -12,6 +12,8 @@ The profile is deliberately plain:
 - It always keeps SygSphere messages and Dispatch as visible fallbacks.
 - It never implies that selecting a channel, opening a dock, or viewing a notification starts a call or a transmission.
 - It never lets a browser choose a tenant, employee, permission, assignment, shift, site, or Dispatch authority.
+
+The SygShift source now includes an unmounted adapter at `src/communications/sygsphereCommunicationsSurfaceViewModel.ts`. It consumes the shared policy only to produce passive, accessible fallback view models and cannot request a device, persist state, create a connection, or render a React dock. Its only current intents are the existing SygSphere messages and Dispatch fallback.
 
 ## Stage 6 — complete shared UI acceptance
 

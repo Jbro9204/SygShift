@@ -1,10 +1,12 @@
 # SygSphere Communications — Stage 5 Shell Acceptance
 
-**Status:** Test plan only. This document does not authorize an application-shell runtime.
+**Status:** Source-only lifecycle preparation and test plan. This document does not authorize an application-shell runtime.
 
 ## Purpose
 
 When the shared communications runtime is eventually enabled, it must behave as a quiet, resilient layer in both SygShift and Sygilant. It cannot interrupt a report, form, document, schedule edit, time correction, or message draft.
+
+The SygShift source now includes a pure, unmounted lifecycle reducer at `src/communications/sygsphereCommunicationsRuntimeLifecycle.ts`. It is closed by an immutable client-release switch and the shared server-sourced gate; it neither stores communications data nor opens a connection, requests a device, or changes application state. It exists only to make future account-change, authorization-loss, and sign-out cleanup deterministic.
 
 ## Required behavior
 
