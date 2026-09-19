@@ -68,6 +68,8 @@ describe('SygSphere Communications Stage 0/1 contract guard', () => {
       'sygsphere.comms.configure',
     ]) expect(contract).toContain(`'${permission}'`)
     expect(spike).toContain("process.argv.includes('--execute-turn-credential-check')")
+    expect(spike).toContain("shared/sygsphere-communications/v1/contract-manifest.json")
+    expect(spike).toContain('contractManifest.contractVersion')
     expect(spike).toContain("COMMS_SPIKE_ENVIRONMENT === 'staging'")
     expect(spike).toContain('I_UNDERSTAND_THIS_CREATES_STAGING_TURN_CREDENTIALS')
     expect(spike).toContain('Credential material is intentionally omitted')

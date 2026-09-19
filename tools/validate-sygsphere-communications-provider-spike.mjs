@@ -1,8 +1,18 @@
 #!/usr/bin/env node
 
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const executeTurnCredentialCheck = process.argv.includes('--execute-turn-credential-check')
+const contractManifest = JSON.parse(
+  readFileSync(resolve(process.cwd(), 'shared/sygsphere-communications/v1/contract-manifest.json'), 'utf8'),
+)
+
+if (typeof contractManifest.contractVersion !== 'string' || contractManifest.contractVersion.length === 0) {
+  throw new Error('The SygSphere Communications contract manifest is unavailable.')
+}
+
 const required = [
   'COMMS_SPIKE_ENVIRONMENT',
   'COMMS_SPIKE_CONFIRM_NON_PRODUCTION',
@@ -11,7 +21,7 @@ const required = [
 ]
 const missing = required.filter((name) => !process.env[name]?.trim())
 const report = {
-  contractVersion: '1.0.0-draft.1',
+  contractVersion: contractManifest.contractVersion,
   status: 'not-executed',
   checks: {
     stagingEnvironment: process.env.COMMS_SPIKE_ENVIRONMENT === 'staging',
