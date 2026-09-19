@@ -31,10 +31,12 @@ Recorded the canonical SygShift authority map, a versioned shared communications
 ### Verification
 
 - Repository discovery verified the current identity, effective-permission, shared-session, SygSphere membership/history, private notification, cross-platform presence, Worker, and Durable Object integration points.
-- Contract guard and safe provider preflight are added for this checkpoint. Full `pnpm check`, two-device provider validation, migration testing, deployment, and production health checks remain pending the later implementation stages.
+- The safe provider preflight ran successfully with no staging secrets or explicit execution acknowledgement, returning `not-executed` as designed and making no network request.
+- `pnpm check` was attempted on 09/19/2026. It could not begin repository checks because the isolated checkpoint lacks the locked packages and this environment denied every required `registry.npmjs.org` package fetch with `EACCES`; no typecheck, lint, test, or build result is claimed.
+- The contract guard is included but could not be run for the same dependency-installation reason. Two-device provider validation, migration testing, deployment, and production health checks remain intentionally deferred to later implementation stages.
 
 ### Rollback and remaining work
 
 - Rollback checkpoint: `rollback/pre-sygsphere-communications-stage0-20260919` at `bbd43d2dff6a79a870f63897ee2ff141e7170f43`.
 - This checkpoint can be reverted without changing production data because it contains no migration or runtime enablement.
-- Remaining work: push the checkpoint, complete actual staging provider evidence, then implement additive tenant/authorization/history data changes before any coordinator or browser media runtime.
+- Remaining work: publish the checkpoint when repository network access is available, complete actual staging provider evidence, then implement additive tenant/authorization/history data changes before any coordinator or browser media runtime.
