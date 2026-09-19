@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 09/19/2026 - SygSphere Communications Stage A/B Foundation
+
+- Added a non-production Cloudflare Realtime evidence checklist; provider behavior remains unvalidated until isolated staging credentials, analytics access, and two physical devices are available.
+- Added the smallest private SygShift tenant registry, server-only tenant resolver, exact v1 communications permission catalog entries, and a service-only authorization-context bridge.
+- Preserved existing employee identity, account status, MFA, direct denials, role assignments, SygSphere messages, notifications, schedules, timekeeping, and production media state. No permission was granted and no communications runtime was enabled.
+- Created rollback tag `rollback/pre-sygsphere-communications-stageb-20260919` from `7b39ecd820f5e4c3e0a17f38e575ad651afb530a` before the additive migration.
+- Full record: `docs/changelogs/CHANGELOG_09-19-2026_SYGSPHERE_COMMUNICATIONS_STAGE_A_B_FOUNDATION.md`.
+
 ## 09/19/2026 - SygSphere Communications Stage 0/1 Checkpoint
 
 - Mapped the canonical SygShift identity, effective-permission, shared-session, SygSphere conversation/history, private Realtime invalidation, presence, notification, Worker, Durable Object, migration, and System Operations integration points.
