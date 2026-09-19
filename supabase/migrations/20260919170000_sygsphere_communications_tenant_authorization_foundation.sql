@@ -99,10 +99,6 @@ declare
   tenant_id_value uuid;
   permission_codes text[];
 begin
-  if (select auth.role()) <> 'service_role' then
-    raise insufficient_privilege using message = 'Service role required.';
-  end if;
-
   if target_auth_user_id is null then
     raise check_violation using message = 'A communications subject is required.';
   end if;

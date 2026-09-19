@@ -43,7 +43,7 @@ describe('SygSphere Communications Stage B foundation', () => {
 
   it('allows the future coordinator to derive identity only through a service-only bridge', () => {
     expect(migration).toContain('create or replace function public.service_get_sygsphere_communications_context(target_auth_user_id uuid)')
-    expect(migration).toContain("if (select auth.role()) <> 'service_role'")
+    expect(migration).not.toContain("auth.role()")
     expect(migration).toContain('private.sygsphere_comms_permissions(employee_record.id)')
     expect(migration).toContain('revoke all on function public.service_get_sygsphere_communications_context(uuid) from public, anon, authenticated')
     expect(migration).toContain('grant execute on function public.service_get_sygsphere_communications_context(uuid) to service_role')
