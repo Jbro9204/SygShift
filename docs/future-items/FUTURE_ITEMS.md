@@ -796,7 +796,7 @@ Required outcomes:
 - [x] Map current canonical authority and publish a versioned shared protocol artifact without enabling runtime features.
 - [x] Add a staging-only provider-spike preflight and two-device evidence matrix that fails closed without explicit non-production credentials.
 - [ ] Validate actual two-device audio, provider-enforced sender/receiver closure, idle rebuild, track reuse, UDP/TCP/TLS TURN, camera, screen share, revocation, and account analytics schema in isolated staging.
-- [~] Add SygShift-owned additive tenant, authorization, history, audit, and usage migrations with RLS and allow/deny regression coverage. Private tenant and server authorization foundation are recorded; history, audit, usage, and database regression evidence remain pending.
+- [~] Add SygShift-owned additive tenant, authorization, history, audit, and usage migrations with RLS and allow/deny regression coverage. Private tenant/server authorization and a rollback-only SQL regression are recorded; non-production database execution, history, audit, and usage remain pending.
 - [ ] Add the Worker/SQLite Durable Object coordinator and provider registry without exposing secrets or allowing browser-supplied authority.
 - [ ] Add a browser runtime with PTT/call focus, recovery, supported-device evidence, accessible controls, and preserved Dispatch/text-message fallback.
 - [ ] Complete independent feature flags, usage reconciliation, alerts, controlled pilot, rollback exercise, and coordinated Sygilant compatibility verification.

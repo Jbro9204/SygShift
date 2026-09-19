@@ -22,6 +22,7 @@ Added the smallest SygShift-owned tenant and server-only communications authoriz
 - Added the complete v1 communications permission vocabulary to the existing permission catalog but deliberately created **no** role grants. Guard-appropriate baseline capabilities (`use`, PTT listen/transmit, and direct call start/receive) remain usable at AAL1 when later granted; priority, monitoring, moderation, configuration, usage, and other elevated capabilities remain MFA-protected.
 - Added service-only `public.service_get_sygsphere_communications_context(uuid)` so a later coordinator derives tenant, identity, account status, and exact effective permissions on the server; browser input cannot authoritatively select an employee or tenant. Its boundary is explicit execute grants/revocations rather than the deprecated `auth.role()` helper.
 - RLS is enabled and forced for the private tenant table; all direct public, anonymous, and authenticated table/function access is revoked.
+- Added a rollback-only SQL regression that verifies the singleton, private-table denial, exact catalog/MFA split, zero role grants, service-only execution, fixed search path, canonical active-account guard, and absence of the deprecated role helper. It still requires execution against a non-production database before it is release evidence.
 
 ### Rollback and verification
 

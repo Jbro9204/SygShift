@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '..')
 const migration = readFileSync(resolve(root, 'supabase/migrations/20260919170000_sygsphere_communications_tenant_authorization_foundation.sql'), 'utf8')
+const regression = readFileSync(resolve(root, 'supabase/tests/sygsphere_communications_stage_b_foundation_regression.sql'), 'utf8')
 const contract = readFileSync(resolve(root, 'shared/sygsphere-communications/v1/contract.ts'), 'utf8')
 const manifest = JSON.parse(readFileSync(resolve(root, 'shared/sygsphere-communications/v1/contract-manifest.json'), 'utf8')) as { artifactDigestSha256: string }
 
@@ -52,5 +53,15 @@ describe('SygSphere Communications Stage B foundation', () => {
       digest.update(readFileSync(resolve(root, 'shared/sygsphere-communications/v1', file)))
     }
     expect(manifest.artifactDigestSha256).toBe(digest.digest('hex'))
+  })
+
+  it('ships a rollback-only database evidence check for the private boundary', () => {
+    expect(regression).toContain('begin;')
+    expect(regression).toContain('rollback;')
+    expect(regression).toContain('relrowsecurity and relforcerowsecurity')
+    expect(regression).toContain("not has_function_privilege('authenticated', context_function, 'execute')")
+    expect(regression).toContain("has_function_privilege('service_role', context_function, 'execute')")
+    expect(regression).toContain("position('auth.role()' in context_definition) = 0")
+    expect(regression).toContain("(select count(*) from public.access_role_permissions where permission_code like 'sygsphere.comms.%') = 0")
   })
 })
