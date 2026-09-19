@@ -6,6 +6,7 @@
 - Kept the implementation non-runnable: no Durable Object binding, Worker route, provider call, browser shell, CSP change, or media permission was introduced.
 - Created rollback tag `rollback/pre-sygsphere-communications-stage4-20260919` from the independently verified Stage A/B checkpoint.
 - The explicit controlled-database, real-device provider, coordinator review, and cross-platform compatibility gates are documented in `docs/operations/SYGSPHERE_COMMUNICATIONS_STAGE_4_5_GATES.md`.
+- Added a release-gate check that verifies this branch cannot accidentally add a coordinator binding or Worker route while the runtime is intentionally closed.
 
 ## 09/19/2026 - SygSphere Communications Stage A/B Foundation
 

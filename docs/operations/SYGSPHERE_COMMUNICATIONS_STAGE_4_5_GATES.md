@@ -4,6 +4,8 @@
 
 The coordinator core and dual-application gate contract are prepared, but no Durable Object binding, Worker route, WebSocket, media permission, CSP change, or application-shell runtime is enabled.
 
+Run `pnpm check:sygsphere-comms-stage45` before creating a Stage 4 deployment change. The check protects the current closed state; it is not permission to open any gate.
+
 ## Required before enabling Stage 4
 
 1. Apply and validate the reviewed Stage B migration through the controlled non-production database path.
