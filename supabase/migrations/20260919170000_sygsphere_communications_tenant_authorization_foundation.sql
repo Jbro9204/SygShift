@@ -47,19 +47,19 @@ insert into public.permission_catalog (
   code, category, name, description, risk_level, requires_mfa, locked, active
 )
 values
-  ('sygsphere.comms.use', 'SygSphere Communications', 'Use communications', 'Enter an authorized SygSphere communications experience.', 'high', false, true, true),
-  ('sygsphere.comms.ptt.listen', 'SygSphere Communications', 'Listen to push-to-talk', 'Receive authorized push-to-talk audio.', 'high', false, true, true),
+  ('sygsphere.comms.use', 'SygSphere Communications', 'Use communications', 'Enter an authorized SygSphere communications experience.', 'sensitive', false, true, true),
+  ('sygsphere.comms.ptt.listen', 'SygSphere Communications', 'Listen to push-to-talk', 'Receive authorized push-to-talk audio.', 'sensitive', false, true, true),
   ('sygsphere.comms.ptt.transmit', 'SygSphere Communications', 'Transmit push-to-talk', 'Transmit authorized push-to-talk audio.', 'critical', false, true, true),
   ('sygsphere.comms.ptt.priority', 'SygSphere Communications', 'Use priority push-to-talk', 'Transmit on priority push-to-talk channels.', 'critical', true, true, true),
   ('sygsphere.comms.ptt.monitor', 'SygSphere Communications', 'Monitor push-to-talk', 'Monitor authorized push-to-talk activity.', 'critical', true, true, true),
-  ('sygsphere.comms.call.start', 'SygSphere Communications', 'Start calls', 'Start authorized direct calls.', 'high', false, true, true),
-  ('sygsphere.comms.call.receive', 'SygSphere Communications', 'Receive calls', 'Receive authorized direct calls.', 'high', false, true, true),
-  ('sygsphere.comms.meeting.create', 'SygSphere Communications', 'Create meetings', 'Create authorized meetings.', 'high', true, true, true),
+  ('sygsphere.comms.call.start', 'SygSphere Communications', 'Start calls', 'Start authorized direct calls.', 'sensitive', false, true, true),
+  ('sygsphere.comms.call.receive', 'SygSphere Communications', 'Receive calls', 'Receive authorized direct calls.', 'sensitive', false, true, true),
+  ('sygsphere.comms.meeting.create', 'SygSphere Communications', 'Create meetings', 'Create authorized meetings.', 'sensitive', true, true, true),
   ('sygsphere.comms.video.publish', 'SygSphere Communications', 'Publish video', 'Publish authorized camera video.', 'critical', true, true, true),
   ('sygsphere.comms.screen.publish', 'SygSphere Communications', 'Publish screen share', 'Publish authorized screen sharing.', 'critical', true, true, true),
   ('sygsphere.comms.moderate', 'SygSphere Communications', 'Moderate communications', 'Moderate authorized communications sessions.', 'critical', true, true, true),
-  ('sygsphere.comms.history.read', 'SygSphere Communications', 'Read communications history', 'Read authorized communications history.', 'high', true, true, true),
-  ('sygsphere.comms.usage.read', 'SygSphere Communications', 'Read communications usage', 'Read authorized communications usage.', 'high', true, true, true),
+  ('sygsphere.comms.history.read', 'SygSphere Communications', 'Read communications history', 'Read authorized communications history.', 'sensitive', true, true, true),
+  ('sygsphere.comms.usage.read', 'SygSphere Communications', 'Read communications usage', 'Read authorized communications usage.', 'sensitive', true, true, true),
   ('sygsphere.comms.configure', 'SygSphere Communications', 'Configure communications', 'Configure authorized communications settings.', 'critical', true, true, true)
 on conflict (code) do update
 set category = excluded.category,

@@ -14,7 +14,9 @@
 - Added the smallest private SygShift tenant registry, server-only tenant resolver, exact v1 communications permission catalog entries, and a service-only authorization-context bridge.
 - Corrected the foundation before release: the registry now has a true one-row singleton invariant, and the approved Guard baseline communications vocabulary is AAL1-capable while elevated monitoring, moderation, configuration, and usage remain MFA-protected.
 - Preserved existing employee identity, account status, MFA, direct denials, role assignments, SygSphere messages, notifications, schedules, timekeeping, and production media state. No permission was granted and no communications runtime was enabled.
-- Passed the 4-test focused Stage B guard, complete 269-file / 1,364-test gate, strict TypeScript, zero-warning lint, both production builds, and the required 42/42 desktop/mobile actual-component Time Clock matrix. The rollback-only SQL regression is present but not yet production release evidence.
+- Passed the 4-test focused Stage B guard, complete 270-file / 1,367-test gate, strict TypeScript, zero-warning lint, both production builds, and the required 42/42 desktop/mobile actual-component Time Clock matrix.
+- Rehearsed the migration and regression inside one production-schema transaction that ended in `ROLLBACK`, corrected the catalog risk labels to the established `sensitive` / `critical` vocabulary, and verified the empty function search path using PostgreSQL's canonical representation.
+- Applied and recorded only migration `20260919170000_sygsphere_communications_tenant_authorization_foundation.sql` through an isolated migration workspace. Production postflight passed with one tenant, 14 active permissions, zero role grants, zero employee overrides, and the full rollback-only SQL regression.
 - Created rollback tag `rollback/pre-sygsphere-communications-stageb-20260919` from `7b39ecd820f5e4c3e0a17f38e575ad651afb530a` before the additive migration.
 - Full record: `docs/changelogs/CHANGELOG_09-19-2026_SYGSPHERE_COMMUNICATIONS_STAGE_A_B_FOUNDATION.md`.
 

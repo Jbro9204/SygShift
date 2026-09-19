@@ -38,6 +38,10 @@ begin
 
   assert (select count(*) from public.permission_catalog where code like 'sygsphere.comms.%' and active) = 14,
     'The exact communications permission vocabulary is incomplete.';
+  assert (select count(*) from public.permission_catalog where code like 'sygsphere.comms.%' and risk_level = 'sensitive') = 7,
+    'The communications catalog must use the established sensitive risk vocabulary.';
+  assert (select count(*) from public.permission_catalog where code like 'sygsphere.comms.%' and risk_level = 'critical') = 7,
+    'The communications catalog must keep the seven critical capabilities classified as critical.';
   assert (select count(*) from public.permission_catalog where code in (
     'sygsphere.comms.use', 'sygsphere.comms.ptt.listen', 'sygsphere.comms.ptt.transmit',
     'sygsphere.comms.call.start', 'sygsphere.comms.call.receive'
@@ -62,7 +66,7 @@ begin
     'The server-only private communications helpers lost their service-role grants.';
 
   select pg_catalog.pg_get_functiondef(context_function::oid) into context_definition;
-  assert (select prosecdef and coalesce(proconfig, array[]::text[]) @> array['search_path='] from pg_catalog.pg_proc where oid = context_function),
+  assert (select prosecdef and coalesce(proconfig, array[]::text[]) @> array['search_path=""'] from pg_catalog.pg_proc where oid = context_function),
     'The communications context function must retain SECURITY DEFINER with an empty search path.';
   assert position('auth.role()' in context_definition) = 0,
     'The deprecated auth.role() helper returned to the communications context function.';

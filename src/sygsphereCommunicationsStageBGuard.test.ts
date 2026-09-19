@@ -25,6 +25,9 @@ describe('SygSphere Communications Stage B foundation', () => {
     const permissions = [...contract.matchAll(/'((?:sygsphere\.comms\.[a-z.]+))'/g)].map((match) => match[1])
     expect(new Set(permissions).size).toBe(14)
     for (const permission of permissions) expect(migration).toContain(`'${permission}'`)
+    expect(migration).not.toContain("'high'")
+    expect(migration.match(/'sensitive'/g)).toHaveLength(7)
+    expect(migration.match(/'critical'/g)).toHaveLength(7)
     expect(migration).not.toContain("insert into public.access_role_permissions")
     for (const permission of [
       'sygsphere.comms.use',
@@ -61,7 +64,10 @@ describe('SygSphere Communications Stage B foundation', () => {
     expect(regression).toContain('relrowsecurity and relforcerowsecurity')
     expect(regression).toContain("not has_function_privilege('authenticated', context_function, 'execute')")
     expect(regression).toContain("has_function_privilege('service_role', context_function, 'execute')")
+    expect(regression).toContain("array['search_path=\"\"']")
     expect(regression).toContain("position('auth.role()' in context_definition) = 0")
+    expect(regression).toContain("risk_level = 'sensitive') = 7")
+    expect(regression).toContain("risk_level = 'critical') = 7")
     expect(regression).toContain("(select count(*) from public.access_role_permissions where permission_code like 'sygsphere.comms.%') = 0")
   })
 })
