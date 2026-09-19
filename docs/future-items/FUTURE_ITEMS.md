@@ -786,7 +786,7 @@ The first release is intentionally enrolled only for the owner account. It deriv
 
 - Priority: **High**
 - Target window: Staged non-production validation before any controlled communications pilot
-- Status: Stage 0/1 contract checkpoint and Stage B private tenant/authorization foundation recorded 09/19/2026; all runtime capability flags and role grants remain off
+- Status: Stage 0/1 contract checkpoint, Stage B private tenant/authorization foundation, and closed-by-default Stage 4/5 coordinator/integration preparation recorded 09/19/2026; all runtime capability flags and role grants remain off
 - Added: 09/19/2026
 
 Build one browser-first communications capability shared by SygSphere, SygShift, and Sygilant for assignment-scoped PTT, authorized internal calls, optional video, conversation-based meetings, and desktop screen sharing. SygShift remains the authority for identity, MFA, permissions, membership, history, notifications, tenant routing, and usage reconciliation.
@@ -797,8 +797,8 @@ Required outcomes:
 - [x] Add a staging-only provider-spike preflight and two-device evidence matrix that fails closed without explicit non-production credentials.
 - [ ] Validate actual two-device audio, provider-enforced sender/receiver closure, idle rebuild, track reuse, UDP/TCP/TLS TURN, camera, screen share, revocation, and account analytics schema in isolated staging.
 - [~] Add SygShift-owned additive tenant, authorization, history, audit, and usage migrations with RLS and allow/deny regression coverage. Private tenant/server authorization and a rollback-only SQL regression are recorded; non-production database execution, history, audit, and usage remain pending.
-- [ ] Add the Worker/SQLite Durable Object coordinator and provider registry without exposing secrets or allowing browser-supplied authority.
-- [ ] Add a browser runtime with PTT/call focus, recovery, supported-device evidence, accessible controls, and preserved Dispatch/text-message fallback.
+- [~] Add the Worker/SQLite Durable Object coordinator and provider registry without exposing secrets or allowing browser-supplied authority. Deterministic, server-derived coordinator preparation is recorded; binding, deployment, provider registry, and runtime remain gated.
+- [~] Add a browser runtime with PTT/call focus, recovery, supported-device evidence, accessible controls, and preserved Dispatch/text-message fallback. Shared closed-by-default activation gates are recorded; no browser runtime is mounted.
 - [ ] Complete independent feature flags, usage reconciliation, alerts, controlled pilot, rollback exercise, and coordinated Sygilant compatibility verification.
 
 Do not enable a call, meeting, PTT, video, or screen-sharing control until real provider evidence and authorization tests are recorded. Do not create a duplicate employee directory, conversation store, notification center, or client portal.
