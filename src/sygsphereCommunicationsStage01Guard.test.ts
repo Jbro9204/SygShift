@@ -62,7 +62,7 @@ describe('SygSphere Communications Stage 0/1 contract guard', () => {
     expect(spike).toContain("COMMS_SPIKE_ENVIRONMENT === 'staging'")
     expect(spike).toContain('I_UNDERSTAND_THIS_CREATES_STAGING_TURN_CREDENTIALS')
     expect(spike).toContain('Credential material is intentionally omitted')
-    expect(spikeRunbook).toContain('No provider session')
+    expect(spikeRunbook).toContain('two-physical-device matrix remains blocked')
     expect(spikeRunbook).toContain('Not run')
   })
 })

@@ -2,7 +2,7 @@
 
 **Stage:** 1 non-production validation
 **Contract:** `shared/sygsphere-communications/v1` / `1.0.0-draft.1`
-**Current status:** Blocked pending isolated Cloudflare Realtime credentials and two physical test devices. No provider session, TURN credential, camera, or screen capture has been created from this repository checkpoint.
+**Current status:** The isolated staging TURN preflight and disposable server-side SFU transport probe are recorded in `SYGSPHERE_COMMUNICATIONS_STAGE_A_STAGING_EVIDENCE.md`. The two-physical-device matrix remains blocked and no browser runtime, camera capture, screen capture, Worker route, or production feature is enabled.
 
 ## Safe preflight
 

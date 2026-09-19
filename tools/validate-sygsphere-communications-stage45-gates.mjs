@@ -24,7 +24,7 @@ if (/"TENANT_COMMS"|'TENANT_COMMS'/.test(workerConfiguration)) {
   failures.push('A TENANT_COMMS Durable Object binding is configured before Stage 4 approval.')
 }
 
-if (/sygsphere-communications|\/api\/v1\/communications/.test(workerEntrypoint)) {
+if (/sygsphere-communications|\/api\/(?:v1\/communications|comms\/v1)/.test(workerEntrypoint)) {
   failures.push('A communications Worker route is present before Stage 4 approval.')
 }
 

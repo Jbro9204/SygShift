@@ -43,11 +43,11 @@ SygShift owns `shared/sygsphere-communications/v1/`. Sygilant consumes the exact
 
 ## Feature state and release gate
 
-All communications feature flags remain absent or disabled. No Worker route, Durable Object binding, provider secret, database migration, or user-facing calling control is introduced by this checkpoint. The current production headers intentionally disable camera and microphone; any later change must update both `public/_headers` and `worker/index.ts` with matching security tests and only the exact reviewed provider origin.
+All communications runtime feature flags remain absent or disabled. The additive Stage B tenant/authorization migration is present but no Worker route, Durable Object binding, provider secret, or user-facing calling control is enabled. The current production headers intentionally disable camera and microphone; any later change must update both `public/_headers` and `worker/index.ts` with matching security tests and only the exact reviewed provider origin.
 
 ## Provider-spike status
 
-The provider spike is prepared by `docs/operations/SYGSPHERE_COMMUNICATIONS_PROVIDER_SPIKE.md` and `tools/validate-sygsphere-communications-provider-spike.mjs`. It is **not yet validated**: this environment has no Cloudflare account credential, Realtime SFU application, TURN key, or two isolated test devices. The tool performs no network request unless the explicit staging-only execution switch and every required secret are present.
+The provider spike is prepared by `docs/operations/SYGSPHERE_COMMUNICATIONS_PROVIDER_SPIKE.md` and `tools/validate-sygsphere-communications-provider-spike.mjs`. The Stage A staging TURN preflight and disposable server-side SFU transport probe are recorded in `docs/operations/SYGSPHERE_COMMUNICATIONS_STAGE_A_STAGING_EVIDENCE.md`; the two-device matrix remains unvalidated. The tool performs no network request unless the explicit staging-only execution switch and every required secret are present.
 
 ## Rollback
 
