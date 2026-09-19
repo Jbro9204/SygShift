@@ -4,23 +4,21 @@ set local lock_timeout = '5s';
 -- Stage B establishes the SygShift-owned communications scope only. It does
 -- not create media sessions, browser capabilities, Worker routes, or grants.
 create table if not exists private.sygsphere_tenants (
-  id uuid primary key default gen_random_uuid(),
+  singleton boolean primary key default true,
+  id uuid not null unique default gen_random_uuid(),
   tenant_key text not null unique,
   display_name text not null,
   active boolean not null default true,
   created_at timestamptz not null default clock_timestamp(),
   updated_at timestamptz not null default clock_timestamp(),
-  constraint sygsphere_tenants_key_format check (tenant_key ~ '^[a-z][a-z0-9-]{1,62}$'),
+  constraint sygsphere_tenants_singleton check (singleton),
+  constraint sygsphere_tenants_primary_key check (tenant_key = 'sygshift-primary'),
   constraint sygsphere_tenants_display_name_length check (char_length(btrim(display_name)) between 2 and 160)
 );
 
-create unique index if not exists sygsphere_tenants_single_active_primary_idx
-  on private.sygsphere_tenants ((active))
-  where tenant_key = 'sygshift-primary' and active;
-
-insert into private.sygsphere_tenants (tenant_key, display_name, active)
-values ('sygshift-primary', 'SygShift primary organization', true)
-on conflict (tenant_key) do update
+insert into private.sygsphere_tenants (singleton, tenant_key, display_name, active)
+values (true, 'sygshift-primary', 'SygShift primary organization', true)
+on conflict (singleton) do update
 set display_name = excluded.display_name,
     active = true,
     updated_at = clock_timestamp();
@@ -49,13 +47,13 @@ insert into public.permission_catalog (
   code, category, name, description, risk_level, requires_mfa, locked, active
 )
 values
-  ('sygsphere.comms.use', 'SygSphere Communications', 'Use communications', 'Enter an authorized SygSphere communications experience.', 'high', true, true, true),
-  ('sygsphere.comms.ptt.listen', 'SygSphere Communications', 'Listen to push-to-talk', 'Receive authorized push-to-talk audio.', 'high', true, true, true),
-  ('sygsphere.comms.ptt.transmit', 'SygSphere Communications', 'Transmit push-to-talk', 'Transmit authorized push-to-talk audio.', 'critical', true, true, true),
+  ('sygsphere.comms.use', 'SygSphere Communications', 'Use communications', 'Enter an authorized SygSphere communications experience.', 'high', false, true, true),
+  ('sygsphere.comms.ptt.listen', 'SygSphere Communications', 'Listen to push-to-talk', 'Receive authorized push-to-talk audio.', 'high', false, true, true),
+  ('sygsphere.comms.ptt.transmit', 'SygSphere Communications', 'Transmit push-to-talk', 'Transmit authorized push-to-talk audio.', 'critical', false, true, true),
   ('sygsphere.comms.ptt.priority', 'SygSphere Communications', 'Use priority push-to-talk', 'Transmit on priority push-to-talk channels.', 'critical', true, true, true),
   ('sygsphere.comms.ptt.monitor', 'SygSphere Communications', 'Monitor push-to-talk', 'Monitor authorized push-to-talk activity.', 'critical', true, true, true),
-  ('sygsphere.comms.call.start', 'SygSphere Communications', 'Start calls', 'Start authorized direct calls.', 'high', true, true, true),
-  ('sygsphere.comms.call.receive', 'SygSphere Communications', 'Receive calls', 'Receive authorized direct calls.', 'high', true, true, true),
+  ('sygsphere.comms.call.start', 'SygSphere Communications', 'Start calls', 'Start authorized direct calls.', 'high', false, true, true),
+  ('sygsphere.comms.call.receive', 'SygSphere Communications', 'Receive calls', 'Receive authorized direct calls.', 'high', false, true, true),
   ('sygsphere.comms.meeting.create', 'SygSphere Communications', 'Create meetings', 'Create authorized meetings.', 'high', true, true, true),
   ('sygsphere.comms.video.publish', 'SygSphere Communications', 'Publish video', 'Publish authorized camera video.', 'critical', true, true, true),
   ('sygsphere.comms.screen.publish', 'SygSphere Communications', 'Publish screen share', 'Publish authorized screen sharing.', 'critical', true, true, true),

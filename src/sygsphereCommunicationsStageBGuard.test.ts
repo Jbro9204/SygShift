@@ -11,6 +11,9 @@ const manifest = JSON.parse(readFileSync(resolve(root, 'shared/sygsphere-communi
 describe('SygSphere Communications Stage B foundation', () => {
   it('creates only a private canonical tenant and server-only resolver', () => {
     expect(migration).toContain('create table if not exists private.sygsphere_tenants')
+    expect(migration).toContain('singleton boolean primary key default true')
+    expect(migration).toContain('constraint sygsphere_tenants_singleton check (singleton)')
+    expect(migration).toContain("constraint sygsphere_tenants_primary_key check (tenant_key = 'sygshift-primary')")
     expect(migration).toContain("'sygshift-primary'")
     expect(migration).toContain('create or replace function private.current_sygsphere_tenant_id()')
     expect(migration).toContain('revoke all on table private.sygsphere_tenants from public, anon, authenticated')
@@ -22,6 +25,20 @@ describe('SygSphere Communications Stage B foundation', () => {
     expect(new Set(permissions).size).toBe(14)
     for (const permission of permissions) expect(migration).toContain(`'${permission}'`)
     expect(migration).not.toContain("insert into public.access_role_permissions")
+    for (const permission of [
+      'sygsphere.comms.use',
+      'sygsphere.comms.ptt.listen',
+      'sygsphere.comms.ptt.transmit',
+      'sygsphere.comms.call.start',
+      'sygsphere.comms.call.receive',
+    ]) expect(migration).toMatch(new RegExp(`\\('${permission.replaceAll('.', '\\.')}',[^\\n]*, false, true, true\\)`))
+    for (const permission of [
+      'sygsphere.comms.ptt.priority',
+      'sygsphere.comms.ptt.monitor',
+      'sygsphere.comms.moderate',
+      'sygsphere.comms.usage.read',
+      'sygsphere.comms.configure',
+    ]) expect(migration).toMatch(new RegExp(`\\('${permission.replaceAll('.', '\\.')}',[^\\n]*, true, true, true\\)`))
   })
 
   it('allows the future coordinator to derive identity only through a service-only bridge', () => {

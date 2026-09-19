@@ -4,6 +4,7 @@
 
 - Added a non-production Cloudflare Realtime evidence checklist; provider behavior remains unvalidated until isolated staging credentials, analytics access, and two physical devices are available.
 - Added the smallest private SygShift tenant registry, server-only tenant resolver, exact v1 communications permission catalog entries, and a service-only authorization-context bridge.
+- Corrected the foundation before release: the registry now has a true one-row singleton invariant, and the approved Guard baseline communications vocabulary is AAL1-capable while elevated monitoring, moderation, configuration, and usage remain MFA-protected.
 - Preserved existing employee identity, account status, MFA, direct denials, role assignments, SygSphere messages, notifications, schedules, timekeeping, and production media state. No permission was granted and no communications runtime was enabled.
 - Created rollback tag `rollback/pre-sygsphere-communications-stageb-20260919` from `7b39ecd820f5e4c3e0a17f38e575ad651afb530a` before the additive migration.
 - Full record: `docs/changelogs/CHANGELOG_09-19-2026_SYGSPHERE_COMMUNICATIONS_STAGE_A_B_FOUNDATION.md`.
