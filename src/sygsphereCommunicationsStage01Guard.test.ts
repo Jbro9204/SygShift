@@ -38,7 +38,7 @@ describe('SygSphere Communications Stage 0/1 contract guard', () => {
     expect(manifest.protocolVersion).toBe(1)
     expect(manifest.owner).toBe('SygShift')
     const digest = createHash('sha256')
-    for (const file of ['contract.ts', 'command-envelope.schema.json', 'event-envelope.schema.json']) {
+    for (const file of ['contract.ts', 'command-envelope.schema.json', 'event-envelope.schema.json', 'presentation-policy.ts']) {
       digest.update(readFileSync(join(root, 'shared/sygsphere-communications/v1', file)))
     }
     expect(manifest.artifactDigestSha256).toBe(digest.digest('hex'))

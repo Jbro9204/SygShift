@@ -1,5 +1,13 @@
 # SygShift Development Log
 
+## 09/19/2026 - SygSphere Communications Stage 6/7 Shared Presentation and PTT Preparation
+
+- Added a SygShift-owned shared presentation profile for exact employee-facing Communications states in SygShift and Sygilant, with plain language and the existing SygSphere messages/Dispatch fallback.
+- Added the shared PTT policy for assignment, shift, site, and Dispatch contexts. It uses a deliberate “Hold to talk” / “Release to stop” interaction and requires foreground use and server-side authorization.
+- The gate remains closed by default. This preparation cannot mount a dock, request microphone access, create a connection, transmit audio, add a Worker route, change CSP, or grant a permission.
+- Verified strict TypeScript, zero-warning lint, 271 test files / 1,370 tests, and both production builds through the complete `pnpm check` gate.
+- Full Stage 6/7 acceptance and release gates are documented in `docs/operations/SYGSPHERE_COMMUNICATIONS_STAGE_6_7_ACCEPTANCE.md`.
+
 ## 09/19/2026 - SygSphere Communications Stage 4/5 Preparation
 
 - Added a deterministic, server-derived coordinator core and the shared closed-by-default dual-application activation gate.

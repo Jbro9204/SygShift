@@ -52,7 +52,7 @@ describe('SygSphere Communications Stage B foundation', () => {
     expect(migration).toContain('revoke all on function public.service_get_sygsphere_communications_context(uuid) from public, anon, authenticated')
     expect(migration).toContain('grant execute on function public.service_get_sygsphere_communications_context(uuid) to service_role')
     const digest = createHash('sha256')
-    for (const file of ['contract.ts', 'command-envelope.schema.json', 'event-envelope.schema.json']) {
+    for (const file of ['contract.ts', 'command-envelope.schema.json', 'event-envelope.schema.json', 'presentation-policy.ts']) {
       digest.update(readFileSync(resolve(root, 'shared/sygsphere-communications/v1', file)))
     }
     expect(manifest.artifactDigestSha256).toBe(digest.digest('hex'))

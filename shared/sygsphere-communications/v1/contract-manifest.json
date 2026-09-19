@@ -3,11 +3,12 @@
   "protocolVersion": 1,
   "owner": "SygShift",
   "lifecycle": "discovery-spike",
-  "artifactDigestSha256": "a93294b1dcf07eb7fdbdf70c1d687856286ebe392baa6e9afd7d1a53f7dcbd16",
+  "artifactDigestSha256": "2e4a4f762ecb8a88ba4a4118d859dcfbaee44592f995ac85d7f82b8289d778b8",
   "artifacts": [
     "contract.ts",
     "command-envelope.schema.json",
-    "event-envelope.schema.json"
+    "event-envelope.schema.json",
+    "presentation-policy.ts"
   ],
   "authority": {
     "serverDerived": [

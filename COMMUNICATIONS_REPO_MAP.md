@@ -30,7 +30,7 @@ Stage 2 must add the smallest SygShift-owned extension: a private singleton tena
 
 ## Shared-contract ownership
 
-SygShift owns `shared/sygsphere-communications/v1/`. Sygilant consumes the exact generated artifacts and SHA-256 digest; it does not create a competing contract or schema fork. The initial compatibility revision is `1.0.0-draft.1` with `protocolVersion: 1`.
+SygShift owns `shared/sygsphere-communications/v1/`. Sygilant consumes the exact generated artifacts and SHA-256 digest; it does not create a competing contract or schema fork. The initial wire compatibility revision is `1.0.0-draft.1` with `protocolVersion: 1`. The same package also owns the `1.0.0-draft.1` shared presentation profile, including the employee-safe state wording and hold-to-talk interaction model. A changed digest requires coordinated SygShift/Sygilant compatibility evidence before either application can mount communications.
 
 ## Future implementation ownership
 
