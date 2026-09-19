@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sygsphere-communications/v1/event-envelope.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "eventId", "roomId", "roomEpoch", "roomSeq", "serverTime", "kind", "payload"],
+  "properties": {
+    "protocolVersion": { "const": 1 },
+    "eventId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "roomId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "roomEpoch": { "type": "integer", "minimum": 0 },
+    "roomSeq": { "type": "integer", "minimum": 0 },
+    "serverTime": { "type": "string", "format": "date-time" },
+    "kind": {
+      "enum": ["authenticated", "authorization.expiring", "session.revoked", "snapshot", "floor.preparing", "floor.ready", "floor.denied", "floor.revoked", "transmission.started", "transmission.ended", "call.ringing", "call.accepted", "call.ended", "call.missed", "participant.changed", "media.negotiation", "media.policy", "media.failed", "media.closed", "screen.granted", "screen.denied", "screen.revoked", "focus.granted", "focus.denied", "focus.revoked"]
+    },
+    "payload": { "type": "object" }
+  }
+}

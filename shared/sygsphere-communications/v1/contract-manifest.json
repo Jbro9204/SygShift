@@ -1,0 +1,33 @@
+{
+  "contractVersion": "1.0.0-draft.1",
+  "protocolVersion": 1,
+  "owner": "SygShift",
+  "lifecycle": "discovery-spike",
+  "artifactDigestSha256": "a93294b1dcf07eb7fdbdf70c1d687856286ebe392baa6e9afd7d1a53f7dcbd16",
+  "artifacts": [
+    "contract.ts",
+    "command-envelope.schema.json",
+    "event-envelope.schema.json"
+  ],
+  "authority": {
+    "serverDerived": [
+      "actor",
+      "tenant",
+      "effectivePermissions",
+      "conversationMembership",
+      "assignmentScope",
+      "providerSession",
+      "providerTrack"
+    ],
+    "forbiddenBrowserAuthorityFields": [
+      "actorId",
+      "employeeId",
+      "tenantId",
+      "permissionCodes",
+      "providerAppId",
+      "providerSessionId",
+      "providerTrackName",
+      "providerSecret"
+    ]
+  }
+}

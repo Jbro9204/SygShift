@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sygsphere-communications/v1/command-envelope.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "commandId", "connectionEpoch", "kind", "payload"],
+  "properties": {
+    "protocolVersion": { "const": 1 },
+    "commandId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "roomId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "expectedRoomVersion": { "type": "integer", "minimum": 0 },
+    "connectionEpoch": { "type": "integer", "minimum": 0 },
+    "kind": {
+      "enum": ["auth", "heartbeat", "resume", "snapshot.request", "floor.request", "floor.cancel", "floor.renew", "floor.release", "call.accept", "call.decline", "call.cancel", "call.end", "media.answer", "media.ready", "media.layout", "media.stop", "screen.request", "screen.release", "focus.request", "focus.release"]
+    },
+    "payload": { "type": "object" }
+  }
+}

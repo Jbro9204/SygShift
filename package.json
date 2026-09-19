@@ -34,6 +34,7 @@
     "check:hris-offboarding-self-service-reporting": "node tools/validate-hris-stage9-offboarding-self-service-reporting.mjs",
     "check:hris-payroll-integration": "node tools/validate-hris-stage10-payroll-integration-hardening.mjs",
     "check:hris-admin-baseline": "node tools/validate-hris-admin-permission-baseline.mjs",
+    "check:sygsphere-comms-spike": "node tools/validate-sygsphere-communications-provider-spike.mjs",
     "verify:access:preserved": "node tools/verify-production-access-preservation.mjs outputs/access-control/production-access-baseline-08-21-2026-before-enforcement.json outputs/access-control/production-access-baseline-08-21-2026.json",
     "verify:access:admin-baseline": "node tools/verify-production-admin-permission-baseline.mjs outputs/access-control/production-access-baseline-08-30-2026-before-admin-baseline.json outputs/access-control/production-access-baseline-08-30-2026.json",
     "preview": "pnpm build && vite preview",
