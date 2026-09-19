@@ -32,11 +32,14 @@ Recorded the canonical SygShift authority map, a versioned shared communications
 
 - Repository discovery verified the current identity, effective-permission, shared-session, SygSphere membership/history, private notification, cross-platform presence, Worker, and Durable Object integration points.
 - The safe provider preflight ran successfully with no staging secrets or explicit execution acknowledgement, returning `not-executed` as designed and making no network request.
-- `pnpm check` was attempted on 09/19/2026. It could not begin repository checks because the isolated checkpoint lacks the locked packages and this environment denied every required `registry.npmjs.org` package fetch with `EACCES`; no typecheck, lint, test, or build result is claimed.
-- The contract guard is included but could not be run for the same dependency-installation reason. Two-device provider validation, migration testing, deployment, and production health checks remain intentionally deferred to later implementation stages.
+- The exact frozen lockfile restored the checkpoint dependencies from the existing content-addressable package store without changing the lockfile.
+- The focused communications contract guard passed **1 file / 3 tests**.
+- Full `pnpm check` passed strict TypeScript, zero-warning lint, **268 test files / 1,360 tests**, and both Worker and browser production builds.
+- Actual two-device provider validation, migration testing, deployment, and production health checks remain intentionally deferred to later implementation stages. No provider result is inferred from the local contract tests.
 
 ### Rollback and remaining work
 
 - Rollback checkpoint: `rollback/pre-sygsphere-communications-stage0-20260919` at `bbd43d2dff6a79a870f63897ee2ff141e7170f43`.
 - This checkpoint can be reverted without changing production data because it contains no migration or runtime enablement.
-- Remaining work: publish the checkpoint when repository network access is available, complete actual staging provider evidence, then implement additive tenant/authorization/history data changes before any coordinator or browser media runtime.
+- Stage artifacts were committed at `fd78d65`; the initial verification record is `b7208d7`. The isolated branch is `codex/sygsphere-communications-stage01` and is published only as a reviewable checkpoint, not a production release.
+- Remaining work: complete actual staging provider evidence, then implement additive tenant/authorization/history data changes before any coordinator or browser media runtime.
