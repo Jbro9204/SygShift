@@ -11,6 +11,7 @@
 - A disabled Cloudflare Realtime registry boundary that holds no provider secret or provider session capability.
 - A forward-only, unapplied database migration for private release gates, disabled provider configuration, idempotent command history, audit history, and usage projection. Usage has explicit feature, byte-estimate, telemetry, estimate-version, and reconciliation fields; it does not claim provider billing data. The migration forces RLS and makes command/history/audit records append-only, with a service-only bounded retention exception for expired replay records.
 - Static source and focused unit gates for contracts, release conditions, coordinator persistence, disabled configuration, and the absence of a browser-facing route.
+- Corrected the shared-contract README to the same draft revision, digest, lifecycle, and six-artifact inventory published by the manifest.
 
 ## Explicitly not changed
 

@@ -4,10 +4,10 @@ This directory is the SygShift-owned, repository-neutral source of truth for Syg
 
 ## Current revision
 
-- Product-contract revision: `1.0.0-draft.1`
+- Product-contract revision: `1.0.0-draft.2`
 - Wire protocol: `1`
-- Artifact SHA-256: `a93294b1dcf07eb7fdbdf70c1d687856286ebe392baa6e9afd7d1a53f7dcbd16`
-- Lifecycle: discovery/spike checkpoint only; no production endpoint is enabled
+- Artifact SHA-256: `3ef56737b0aaa5710a1ac337a2d549a6bcfceaaa1b884c03337a84b0fb149d75`
+- Lifecycle: closed coordinator foundation; no production endpoint is enabled
 
 ## Compatibility
 
@@ -20,6 +20,7 @@ This directory is the SygShift-owned, repository-neutral source of truth for Syg
 
 - `contract.ts` is the human-readable typed contract source.
 - `contract-manifest.json` is the consumer manifest and artifact inventory.
-- `command-envelope.schema.json` and `event-envelope.schema.json` provide strict envelope validation boundaries.
+- `command-envelope.schema.json`, `command-payload.schema.json`, and `event-envelope.schema.json` provide strict validation boundaries.
+- `integration-gates.ts` and `presentation-policy.ts` are transitive shared policy artifacts and are included in the manifest digest.
 
 Before Sygilant uses a new revision, compare the manifest digest and run its adapter compatibility test against this exact artifact set.
