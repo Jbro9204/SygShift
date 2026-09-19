@@ -2,7 +2,7 @@
 
 **Checkpoint:** `bbd43d2dff6a79a870f63897ee2ff141e7170f43`
 **Recorded:** 09/19/2026
-**Scope:** Stage 0 repository discovery and Stage 1 non-production provider-spike preparation. This document does not enable communications features or claim that provider media has been validated.
+**Scope:** Stage 0 discovery, Stage B tenant authorization, and the closed Stage 1/2 coordinator foundation. This document does not enable communications features or claim that provider media has been validated.
 
 ## Authority map
 
@@ -17,8 +17,8 @@
 | Notifications | `public.employee_notifications` and the private notification delivery/outbox path, beginning with `20260906133034_employee_notification_center.sql` | Calls may create canonical invitations/outcomes through the existing delivery boundary. They must not create a parallel bell or email system. |
 | Operations scope | Existing shifts, assignments, sites/posts, Dispatch, accountability, and incidents in the SygShift database and protected Worker routes | PTT eligibility is derived from current assignment/shift policy plus explicit Dispatch or supervisor exceptions; it is never inferred from a client role label. |
 | Browser shell and cache | `src/components/AppShell.tsx`, `src/pages/SygSpherePage.tsx`, TanStack Query data adapters under `src/data/` | A later runtime is application-shell scoped so internal navigation can retain a call. Account change and sign-out must tear it down. |
-| Worker | `worker/index.ts`, `worker/sygilantSharedIdentity.ts`, `worker/sharedIdentity.ts`, and protected SygSphere file routes | The SygShift Worker owns protected `/api/comms/v1` ingress, server-only provider credentials, request validation, and routing to the coordinator. |
-| Durable Objects | `wrangler.jsonc` and `worker/index.ts` currently register `DOCUMENT_SCANNER` only | Add a separate SQLite-backed `TenantCommsDO` migration without changing the existing scanner migration. |
+| Worker | worker/index.ts, worker/sygilantSharedIdentity.ts, worker/sharedIdentity.ts, and protected SygSphere file routes | SygShift will own protected /api/comms/v1 ingress, server-only provider credentials, request validation, and coordinator routing. No communications route exists in this checkpoint. |
+| Durable Objects | wrangler.jsonc, worker/index.ts, and worker/comms/tenantCommsDurableObject.ts | A separate SQLite-backed TenantCommsDurableObject source binding is declared with the runtime flag set to false; it has no fetch handler or public ingress. The existing scanner migration is untouched. |
 | Database migration and tests | `supabase/migrations/`, `supabase/tests/`, and repository guard tests under `src/` | SygShift is the sole migration owner. Every future change is additive, forward-only, RLS-reviewed, and accompanied by allow/deny tests. |
 | System Operations | `src/pages/SystemOperationsPage.tsx` and `src/data/maintenance.ts` | Communications usage gets a separate `admin.system_metrics.view` boundary. It must not inherit `admin.maintenance.manage`. |
 
@@ -26,24 +26,24 @@
 
 No canonical `tenant_id`, `organization_id`, or platform `company_id` currently exists. `public.clients` represents operational customers and is not a tenancy authority.
 
-Stage 2 must add the smallest SygShift-owned extension: a private singleton tenant registry, recommended as `private.sygsphere_tenants`, and a server-only `private.current_sygsphere_tenant_id()` resolver. The resolver may return a tenant only after it has validated the active employee/account/session. All new communications authority, history, usage, and coordinator records will include that tenant identifier and enforce same-tenant relationships. Browser and Sygilant requests may carry an opaque route address, but never a tenant identity that is trusted for authorization.
+Stage B added the smallest SygShift-owned extension: the private singleton private.sygsphere_tenants registry and server-only private.current_sygsphere_tenant_id() resolver. The tracked, unapplied Stage 1/2 migration adds closed release-gate, disabled-provider-registry, replay, history, audit, and usage records. All communications authority and coordinator records remain tenant-addressed; browser and Sygilant requests may carry an opaque route address, but never a tenant identity trusted for authorization.
 
 ## Shared-contract ownership
 
-SygShift owns `shared/sygsphere-communications/v1/`. Sygilant consumes the exact generated artifacts and SHA-256 digest; it does not create a competing contract or schema fork. The initial wire compatibility revision is `1.0.0-draft.1` with `protocolVersion: 1`. The same package also owns the `1.0.0-draft.1` shared presentation profile, including the employee-safe state wording and hold-to-talk interaction model. A changed digest requires coordinated SygShift/Sygilant compatibility evidence before either application can mount communications.
+SygShift owns `shared/sygsphere-communications/v1/`. Sygilant consumes the exact generated artifacts and SHA-256 digest; it does not create a competing contract or schema fork. The current wire compatibility revision is `1.0.0-draft.2` with `protocolVersion: 1`. The shared inventory includes every transitively imported artifact, including the closed activation gate used by the presentation profile. The same package also owns the `1.0.0-draft.1` shared presentation profile, including the employee-safe state wording and hold-to-talk interaction model. A changed digest requires coordinated SygShift/Sygilant compatibility evidence before either application can mount communications.
 
 ## Future implementation ownership
 
 | Owner | Planned path | Responsibility |
 | --- | --- | --- |
 | SygShift database | New timestamped files in `supabase/migrations/` plus `supabase/tests/` | Tenant registry, capability catalog/projection, communications records, RLS, idempotent ingestion, audit and usage projections. |
-| SygShift Worker | `worker/comms/authorization.ts`, `contracts.ts`, `cloudflareMediaProvider.ts`, `tenantCommsDurableObject.ts`, `usageAnalytics.ts`, and `routes.ts` | Canonical authorization, provider registry, `/api/comms/v1`, coordinator ingress, server-only secrets, and usage reconciliation. |
+| SygShift Worker | worker/comms/tenantCoordinatorCore.ts, tenantCommsDurableObject.ts, and providerRegistry.ts | Closed coordinator command validation, replay/rate-limit persistence, and a disabled provider registry. A future reviewed ingress may add /api/comms/v1; no route, provider adapter, or secret binding exists now. |
 | SygShift runtime | Future shell-owned modules under `src/communications/` | Capture lifecycle, media negotiation queue, recovery, PTT/call controllers, and a bounded telemetry sampler. |
 | Sygilant | Its existing SygSphere bridge, adapter, CSP/header, and presentation layers | Consume the exact shared contract and canonical SygShift responses without becoming an identity, permission, history, or provider authority. |
 
 ## Feature state and release gate
 
-All communications runtime feature flags remain absent or disabled. The additive Stage B tenant/authorization migration is present but no Worker route, Durable Object binding, provider secret, or user-facing calling control is enabled. The current production headers intentionally disable camera and microphone; any later change must update both `public/_headers` and `worker/index.ts` with matching security tests and only the exact reviewed provider origin.
+All communications runtime feature flags remain disabled. The additive Stage B tenant/authorization migration is applied; the Stage 1/2 persistence migration is tracked but unapplied. The source-only Durable Object binding has no route or provider adapter, and SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED is statically false. The current production headers intentionally disable camera and microphone; any later change must update both public/_headers and worker/index.ts with matching security tests and only the exact reviewed provider origin.
 
 ## Provider-spike status
 
@@ -51,4 +51,4 @@ The provider spike is prepared by `docs/operations/SYGSPHERE_COMMUNICATIONS_PROV
 
 ## Rollback
 
-`rollback/pre-sygsphere-communications-stage0-20260919` identifies the source checkpoint at `bbd43d2dff6a79a870f63897ee2ff141e7170f43`. This stage changes only documentation and non-production contract/spike artifacts; rollback is a source rollback and does not delete conversation, identity, presence, notification, or operational history.
+rollback/pre-sygsphere-communications-stage0-20260919 identifies the source checkpoint at bbd43d2dff6a79a870f63897ee2ff141e7170f43. The Stage 1/2 migration is additive and has not been applied; rollback is therefore a source rollback only. It does not delete conversation, identity, presence, notification, or operational history.

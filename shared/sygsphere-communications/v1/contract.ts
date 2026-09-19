@@ -4,8 +4,9 @@
  * derives actor, tenant, room membership, permissions, and provider handles
  * from the authenticated server-side binding.
  */
+import { z } from 'zod'
 
-export const SYGSPHERE_COMMS_CONTRACT_VERSION = '1.0.0-draft.1' as const
+export const SYGSPHERE_COMMS_CONTRACT_VERSION = '1.0.0-draft.2' as const
 export const SYGSPHERE_COMMS_PROTOCOL_VERSION = 1 as const
 
 export const SYGSPHERE_COMMS_PERMISSIONS = [
@@ -105,3 +106,83 @@ export type SygSphereCommsEvent<TPayload = unknown> = Readonly<{
 
 export const isSupportedSygSphereCommsProtocol = (protocolVersion: number): protocolVersion is typeof SYGSPHERE_COMMS_PROTOCOL_VERSION =>
   protocolVersion === SYGSPHERE_COMMS_PROTOCOL_VERSION
+
+const emptyCommandPayloadSchema = z.object({}).strict()
+const uuidSchema = z.uuid()
+const roomSequenceSchema = z.number().int().min(0)
+const roomReferenceSchema = z.string().min(1).max(128)
+
+/**
+ * Every client command has a bounded, command-specific payload. These values
+ * are requests or references only: the coordinator resolves their tenant,
+ * actor, scope membership, permission, state, and provider consequences.
+ */
+export const SYGSPHERE_COMMS_COMMAND_PAYLOAD_SCHEMAS = {
+  auth: emptyCommandPayloadSchema,
+  heartbeat: emptyCommandPayloadSchema,
+  resume: z.object({ lastSeenRoomSeq: roomSequenceSchema.optional() }).strict(),
+  'snapshot.request': z.object({ sinceRoomSeq: roomSequenceSchema.optional() }).strict(),
+  'floor.request': z.object({
+    channelReference: roomReferenceSchema,
+    clientIntentId: uuidSchema,
+  }).strict(),
+  'floor.cancel': z.object({ transmissionRequestId: uuidSchema }).strict(),
+  'floor.renew': z.object({ transmissionRequestId: uuidSchema }).strict(),
+  'floor.release': z.object({ transmissionRequestId: uuidSchema }).strict(),
+  'call.accept': z.object({ invitationId: uuidSchema }).strict(),
+  'call.decline': z.object({ invitationId: uuidSchema }).strict(),
+  'call.cancel': z.object({ callId: uuidSchema }).strict(),
+  'call.end': z.object({ callId: uuidSchema }).strict(),
+  'media.answer': z.object({
+    negotiationId: uuidSchema,
+    answer: z.string().min(1).max(65_536),
+  }).strict(),
+  'media.ready': z.object({
+    callId: uuidSchema,
+    inputKind: z.enum(['audio', 'video']),
+  }).strict(),
+  'media.layout': z.object({
+    callId: uuidSchema,
+    layout: z.enum(['speaker', 'grid']),
+  }).strict(),
+  'media.stop': z.object({
+    callId: uuidSchema,
+    trackKind: z.enum(['audio', 'video', 'screen']),
+  }).strict(),
+  'screen.request': z.object({ callId: uuidSchema }).strict(),
+  'screen.release': z.object({ callId: uuidSchema }).strict(),
+  'focus.request': z.object({ callId: uuidSchema }).strict(),
+  'focus.release': z.object({ callId: uuidSchema }).strict(),
+} as const satisfies Record<SygSphereCommsCommandKind, z.ZodType>
+
+export const sygsphereCommsCommandEnvelopeSchema = z.object({
+  protocolVersion: z.literal(SYGSPHERE_COMMS_PROTOCOL_VERSION),
+  commandId: uuidSchema,
+  roomId: roomReferenceSchema.optional(),
+  expectedRoomVersion: roomSequenceSchema.optional(),
+  connectionEpoch: roomSequenceSchema,
+  kind: z.enum(SYGSPHERE_COMMS_COMMAND_KINDS),
+  payload: z.unknown(),
+}).strict()
+
+export type ValidatedSygSphereCommsCommand = Readonly<{
+  protocolVersion: typeof SYGSPHERE_COMMS_PROTOCOL_VERSION
+  commandId: string
+  roomId?: string
+  expectedRoomVersion?: number
+  connectionEpoch: number
+  kind: SygSphereCommsCommandKind
+  payload: Record<string, unknown>
+}>
+
+/**
+ * Parse transport input before coordinator authorization. The parse never
+ * treats payload data as authority and intentionally excludes all identity,
+ * tenancy, permission, and provider fields from every payload schema.
+ */
+export const parseSygSphereCommsCommand = (input: unknown): ValidatedSygSphereCommsCommand => {
+  const envelope = sygsphereCommsCommandEnvelopeSchema.parse(input)
+  const payloadSchema = SYGSPHERE_COMMS_COMMAND_PAYLOAD_SCHEMAS[envelope.kind]
+  const payload = payloadSchema.parse(envelope.payload) as Record<string, unknown>
+  return { ...envelope, payload }
+}

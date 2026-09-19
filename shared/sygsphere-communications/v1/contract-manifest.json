@@ -1,13 +1,15 @@
 {
-  "contractVersion": "1.0.0-draft.1",
+  "contractVersion": "1.0.0-draft.2",
   "protocolVersion": 1,
   "owner": "SygShift",
-  "lifecycle": "discovery-spike",
-  "artifactDigestSha256": "2e4a4f762ecb8a88ba4a4118d859dcfbaee44592f995ac85d7f82b8289d778b8",
+  "lifecycle": "closed-coordinator-foundation",
+  "artifactDigestSha256": "3ef56737b0aaa5710a1ac337a2d549a6bcfceaaa1b884c03337a84b0fb149d75",
   "artifacts": [
     "contract.ts",
     "command-envelope.schema.json",
+    "command-payload.schema.json",
     "event-envelope.schema.json",
+    "integration-gates.ts",
     "presentation-policy.ts"
   ],
   "authority": {
@@ -17,6 +19,9 @@
       "effectivePermissions",
       "conversationMembership",
       "assignmentScope",
+      "featureGate",
+      "commandReplayState",
+      "rateLimitState",
       "providerSession",
       "providerTrack"
     ],
@@ -25,6 +30,10 @@
       "employeeId",
       "tenantId",
       "permissionCodes",
+      "featureGateEnabled",
+      "coordinatorObjectName",
+      "rateLimitKey",
+      "commandReplayStatus",
       "providerAppId",
       "providerSessionId",
       "providerTrackName",

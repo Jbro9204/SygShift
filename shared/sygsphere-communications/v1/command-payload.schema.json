@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sygsphere-communications/v1/command-payload.schema.json",
+  "$defs": {
+    "empty": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "resume": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lastSeenRoomSeq": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "snapshotRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sinceRoomSeq": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "floorRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channelReference", "clientIntentId"],
+      "properties": {
+        "channelReference": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientIntentId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "transmissionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transmissionRequestId"],
+      "properties": {
+        "transmissionRequestId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "invitation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invitationId"],
+      "properties": {
+        "invitationId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "call": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["callId"],
+      "properties": {
+        "callId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "mediaAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["negotiationId", "answer"],
+      "properties": {
+        "negotiationId": { "type": "string", "format": "uuid" },
+        "answer": { "type": "string", "minLength": 1, "maxLength": 65536 }
+      }
+    },
+    "mediaReady": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["callId", "inputKind"],
+      "properties": {
+        "callId": { "type": "string", "format": "uuid" },
+        "inputKind": { "enum": ["audio", "video"] }
+      }
+    },
+    "mediaLayout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["callId", "layout"],
+      "properties": {
+        "callId": { "type": "string", "format": "uuid" },
+        "layout": { "enum": ["speaker", "grid"] }
+      }
+    },
+    "mediaStop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["callId", "trackKind"],
+      "properties": {
+        "callId": { "type": "string", "format": "uuid" },
+        "trackKind": { "enum": ["audio", "video", "screen"] }
+      }
+    }
+  }
+}

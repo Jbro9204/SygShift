@@ -11,6 +11,7 @@ const manifest = JSON.parse(readFileSync(join(root, 'shared/sygsphere-communicat
   protocolVersion: number
   owner: string
   artifactDigestSha256: string
+  artifacts: string[]
   authority: { forbiddenBrowserAuthorityFields: string[] }
 }
 const commandSchema = JSON.parse(readFileSync(join(root, 'shared/sygsphere-communications/v1/command-envelope.schema.json'), 'utf8')) as {
@@ -34,11 +35,19 @@ describe('SygSphere Communications Stage 0/1 contract guard', () => {
   })
 
   it('uses a strict versioned envelope without browser-supplied authority', () => {
-    expect(manifest.contractVersion).toBe('1.0.0-draft.1')
+    expect(manifest.contractVersion).toBe('1.0.0-draft.2')
     expect(manifest.protocolVersion).toBe(1)
     expect(manifest.owner).toBe('SygShift')
     const digest = createHash('sha256')
-    for (const file of ['contract.ts', 'command-envelope.schema.json', 'event-envelope.schema.json', 'presentation-policy.ts']) {
+    expect(manifest.artifacts).toEqual([
+      'contract.ts',
+      'command-envelope.schema.json',
+      'command-payload.schema.json',
+      'event-envelope.schema.json',
+      'integration-gates.ts',
+      'presentation-policy.ts',
+    ])
+    for (const file of manifest.artifacts) {
       digest.update(readFileSync(join(root, 'shared/sygsphere-communications/v1', file)))
     }
     expect(manifest.artifactDigestSha256).toBe(digest.digest('hex'))
@@ -47,7 +56,7 @@ describe('SygSphere Communications Stage 0/1 contract guard', () => {
     expect(commandSchema.properties).not.toHaveProperty('tenantId')
     expect(commandSchema.properties).not.toHaveProperty('employeeId')
     expect(manifest.authority.forbiddenBrowserAuthorityFields).toEqual(expect.arrayContaining(['tenantId', 'providerSecret']))
-    expect(contract).toContain("SYGSPHERE_COMMS_CONTRACT_VERSION = '1.0.0-draft.1'")
+    expect(contract).toContain("SYGSPHERE_COMMS_CONTRACT_VERSION = '1.0.0-draft.2'")
   })
 
   it('defines the least-privilege communications capability set and a disabled-by-default provider spike', () => {

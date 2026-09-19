@@ -20,8 +20,12 @@ if (!gateContract.includes('coordinatorDeploymentApproved: false')) {
   failures.push('The coordinator deployment gate is not explicitly closed.')
 }
 
-if (/"TENANT_COMMS"|'TENANT_COMMS'/.test(workerConfiguration)) {
-  failures.push('A TENANT_COMMS Durable Object binding is configured before Stage 4 approval.')
+if (!/"TENANT_COMMS"\s*,\s*\n\s*"class_name"\s*:\s*"TenantCommsDurableObject"/.test(workerConfiguration)) {
+  failures.push('The closed coordinator Durable Object binding is missing.')
+}
+
+if (!/"SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED"\s*:\s*"false"/.test(workerConfiguration)) {
+  failures.push('The coordinator runtime flag is not explicitly disabled.')
 }
 
 if (/sygsphere-communications|\/api\/(?:v1\/communications|comms\/v1)/.test(workerEntrypoint)) {

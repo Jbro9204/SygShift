@@ -35,6 +35,7 @@
     "check:hris-payroll-integration": "node tools/validate-hris-stage10-payroll-integration-hardening.mjs",
     "check:hris-admin-baseline": "node tools/validate-hris-admin-permission-baseline.mjs",
     "check:sygsphere-comms-spike": "node tools/validate-sygsphere-communications-provider-spike.mjs",
+    "check:sygsphere-comms-stage12": "node tools/validate-sygsphere-communications-stage12-foundation.mjs",
     "check:sygsphere-comms-stage45": "node tools/validate-sygsphere-communications-stage45-gates.mjs",
     "check:sygsphere-comms-stage67": "node tools/validate-sygsphere-communications-stage67-gates.mjs",
     "verify:access:preserved": "node tools/verify-production-access-preservation.mjs outputs/access-control/production-access-baseline-08-21-2026-before-enforcement.json outputs/access-control/production-access-baseline-08-21-2026.json",

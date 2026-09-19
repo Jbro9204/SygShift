@@ -23,6 +23,9 @@ import type {
   WebAuthnCredential,
 } from '@simplewebauthn/server'
 import { isSecurityKeyPilotEligible, securityKeyFeatureEnabled } from './securityKeyPilot'
+import { TenantCommsDurableObject } from './comms/tenantCommsDurableObject'
+
+export { TenantCommsDurableObject }
 
 interface WorkerScheduledController {
   cron: string

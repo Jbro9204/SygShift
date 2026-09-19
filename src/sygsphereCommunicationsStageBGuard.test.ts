@@ -7,7 +7,10 @@ const root = resolve(import.meta.dirname, '..')
 const migration = readFileSync(resolve(root, 'supabase/migrations/20260919170000_sygsphere_communications_tenant_authorization_foundation.sql'), 'utf8')
 const regression = readFileSync(resolve(root, 'supabase/tests/sygsphere_communications_stage_b_foundation_regression.sql'), 'utf8')
 const contract = readFileSync(resolve(root, 'shared/sygsphere-communications/v1/contract.ts'), 'utf8')
-const manifest = JSON.parse(readFileSync(resolve(root, 'shared/sygsphere-communications/v1/contract-manifest.json'), 'utf8')) as { artifactDigestSha256: string }
+const manifest = JSON.parse(readFileSync(resolve(root, 'shared/sygsphere-communications/v1/contract-manifest.json'), 'utf8')) as {
+  artifactDigestSha256: string
+  artifacts: string[]
+}
 
 describe('SygSphere Communications Stage B foundation', () => {
   it('creates only a private canonical tenant and server-only resolver', () => {
@@ -52,7 +55,7 @@ describe('SygSphere Communications Stage B foundation', () => {
     expect(migration).toContain('revoke all on function public.service_get_sygsphere_communications_context(uuid) from public, anon, authenticated')
     expect(migration).toContain('grant execute on function public.service_get_sygsphere_communications_context(uuid) to service_role')
     const digest = createHash('sha256')
-    for (const file of ['contract.ts', 'command-envelope.schema.json', 'event-envelope.schema.json', 'presentation-policy.ts']) {
+    for (const file of manifest.artifacts) {
       digest.update(readFileSync(resolve(root, 'shared/sygsphere-communications/v1', file)))
     }
     expect(manifest.artifactDigestSha256).toBe(digest.digest('hex'))

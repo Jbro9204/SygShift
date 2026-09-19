@@ -14,5 +14,27 @@
       "enum": ["auth", "heartbeat", "resume", "snapshot.request", "floor.request", "floor.cancel", "floor.renew", "floor.release", "call.accept", "call.decline", "call.cancel", "call.end", "media.answer", "media.ready", "media.layout", "media.stop", "screen.request", "screen.release", "focus.request", "focus.release"]
     },
     "payload": { "type": "object" }
-  }
+  },
+  "oneOf": [
+    { "properties": { "kind": { "const": "auth" }, "payload": { "$ref": "command-payload.schema.json#/$defs/empty" } } },
+    { "properties": { "kind": { "const": "heartbeat" }, "payload": { "$ref": "command-payload.schema.json#/$defs/empty" } } },
+    { "properties": { "kind": { "const": "resume" }, "payload": { "$ref": "command-payload.schema.json#/$defs/resume" } } },
+    { "properties": { "kind": { "const": "snapshot.request" }, "payload": { "$ref": "command-payload.schema.json#/$defs/snapshotRequest" } } },
+    { "properties": { "kind": { "const": "floor.request" }, "payload": { "$ref": "command-payload.schema.json#/$defs/floorRequest" } } },
+    { "properties": { "kind": { "const": "floor.cancel" }, "payload": { "$ref": "command-payload.schema.json#/$defs/transmissionRequest" } } },
+    { "properties": { "kind": { "const": "floor.renew" }, "payload": { "$ref": "command-payload.schema.json#/$defs/transmissionRequest" } } },
+    { "properties": { "kind": { "const": "floor.release" }, "payload": { "$ref": "command-payload.schema.json#/$defs/transmissionRequest" } } },
+    { "properties": { "kind": { "const": "call.accept" }, "payload": { "$ref": "command-payload.schema.json#/$defs/invitation" } } },
+    { "properties": { "kind": { "const": "call.decline" }, "payload": { "$ref": "command-payload.schema.json#/$defs/invitation" } } },
+    { "properties": { "kind": { "const": "call.cancel" }, "payload": { "$ref": "command-payload.schema.json#/$defs/call" } } },
+    { "properties": { "kind": { "const": "call.end" }, "payload": { "$ref": "command-payload.schema.json#/$defs/call" } } },
+    { "properties": { "kind": { "const": "media.answer" }, "payload": { "$ref": "command-payload.schema.json#/$defs/mediaAnswer" } } },
+    { "properties": { "kind": { "const": "media.ready" }, "payload": { "$ref": "command-payload.schema.json#/$defs/mediaReady" } } },
+    { "properties": { "kind": { "const": "media.layout" }, "payload": { "$ref": "command-payload.schema.json#/$defs/mediaLayout" } } },
+    { "properties": { "kind": { "const": "media.stop" }, "payload": { "$ref": "command-payload.schema.json#/$defs/mediaStop" } } },
+    { "properties": { "kind": { "const": "screen.request" }, "payload": { "$ref": "command-payload.schema.json#/$defs/call" } } },
+    { "properties": { "kind": { "const": "screen.release" }, "payload": { "$ref": "command-payload.schema.json#/$defs/call" } } },
+    { "properties": { "kind": { "const": "focus.request" }, "payload": { "$ref": "command-payload.schema.json#/$defs/call" } } },
+    { "properties": { "kind": { "const": "focus.release" }, "payload": { "$ref": "command-payload.schema.json#/$defs/call" } } }
+  ]
 }

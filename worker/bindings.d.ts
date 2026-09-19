@@ -45,8 +45,22 @@ interface ContainerRuntime {
   ): Promise<ContainerExecProcess>
 }
 
+interface DurableObjectSqlCursor<Row = unknown> {
+  toArray(): Row[]
+}
+
+interface DurableObjectSqlStorage {
+  exec<Row = unknown>(query: string, ...bindings: unknown[]): DurableObjectSqlCursor<Row>
+}
+
+interface DurableObjectStorage {
+  readonly sql: DurableObjectSqlStorage
+}
+
 interface DurableObjectState {
   readonly container?: ContainerRuntime
+  readonly storage: DurableObjectStorage
+  blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T>
 }
 
 interface DurableObjectNamespace<T = unknown> {

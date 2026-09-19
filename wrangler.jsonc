@@ -24,6 +24,10 @@
       {
         "name": "DOCUMENT_SCANNER",
         "class_name": "DocumentScannerContainer"
+      },
+      {
+        "name": "TENANT_COMMS",
+        "class_name": "TenantCommsDurableObject"
       }
     ]
   },
@@ -31,6 +35,10 @@
     {
       "tag": "v1-document-scanner-container",
       "new_sqlite_classes": ["DocumentScannerContainer"]
+    },
+    {
+      "tag": "v2-sygsphere-communications-coordinator",
+      "new_sqlite_classes": ["TenantCommsDurableObject"]
     }
   ],
   "containers": [
@@ -90,6 +98,7 @@
     "SYGILANT_SHARED_IDENTITY_TOKEN_TTL_SECONDS": "60",
     "SYGSHIFT_DOCUMENT_PIPELINE_ENABLED": "true",
     "SYGSHIFT_SYGSPHERE_RESUMABLE_UPLOADS_ENABLED": "true",
+    "SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED": "false",
     "SYGSHIFT_HR_AUTOMATION_ENABLED": "false",
     "SYGSHIFT_HR_RECRUITING_ENABLED": "true",
     "SYGSHIFT_HR_ONBOARDING_ENABLED": "true",
