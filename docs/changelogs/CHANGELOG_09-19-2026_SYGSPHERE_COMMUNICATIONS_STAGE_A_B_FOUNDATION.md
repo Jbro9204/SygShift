@@ -27,5 +27,7 @@ Added the smallest SygShift-owned tenant and server-only communications authoriz
 ### Rollback and verification
 
 - Rollback checkpoint: `rollback/pre-sygsphere-communications-stageb-20260919`, created from `7b39ecd820f5e4c3e0a17f38e575ad651afb530a`.
-- `pnpm check:sygsphere-comms-spike` passed in safe `not-executed` mode. Focused Stage B guard execution is recorded separately with the release result; no database migration or provider run is claimed from local static checks.
+- `pnpm check:sygsphere-comms-spike` passed in safe `not-executed` mode when staging secrets were absent; the separately controlled provider run returned `turn-credential-validated` with two credential-bearing ICE entries while omitting those credentials from recorded output.
+- The focused Stage B guard passed 4 tests. The complete repository gate passed strict TypeScript, zero-warning lint, 269 test files / 1,364 tests, and both production builds.
+- The required actual-component Time Clock preservation matrix passed all 42 desktop/mobile checks.
 - This change is an additive, reviewable migration only. Apply it only through the normal tested migration release path after the SQL regression is run against a non-production database.

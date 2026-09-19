@@ -2,10 +2,11 @@
 
 ## 09/19/2026 - SygSphere Communications Stage A/B Foundation
 
-- Added a non-production Cloudflare Realtime evidence checklist; provider behavior remains unvalidated until isolated staging credentials, analytics access, and two physical devices are available.
+- Added a non-production Cloudflare Realtime evidence checklist and recorded successful staging TURN credential issuance plus SFU HTTP `201` offer acceptance and browser WebRTC transport. Real-device media behavior remains unvalidated until the two-device matrix is completed.
 - Added the smallest private SygShift tenant registry, server-only tenant resolver, exact v1 communications permission catalog entries, and a service-only authorization-context bridge.
 - Corrected the foundation before release: the registry now has a true one-row singleton invariant, and the approved Guard baseline communications vocabulary is AAL1-capable while elevated monitoring, moderation, configuration, and usage remain MFA-protected.
 - Preserved existing employee identity, account status, MFA, direct denials, role assignments, SygSphere messages, notifications, schedules, timekeeping, and production media state. No permission was granted and no communications runtime was enabled.
+- Passed the 4-test focused Stage B guard, complete 269-file / 1,364-test gate, strict TypeScript, zero-warning lint, both production builds, and the required 42/42 desktop/mobile actual-component Time Clock matrix. The rollback-only SQL regression is present but not yet production release evidence.
 - Created rollback tag `rollback/pre-sygsphere-communications-stageb-20260919` from `7b39ecd820f5e4c3e0a17f38e575ad651afb530a` before the additive migration.
 - Full record: `docs/changelogs/CHANGELOG_09-19-2026_SYGSPHERE_COMMUNICATIONS_STAGE_A_B_FOUNDATION.md`.
 
