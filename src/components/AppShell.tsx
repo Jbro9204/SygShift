@@ -47,6 +47,7 @@ import { HeaderNotificationButton } from './HeaderNotificationButton'
 import { LiveNotifications } from './LiveNotifications'
 import { PlatformPresenceReporter } from './PlatformPresenceReporter'
 import { RequiredActionsCheckpointNotice } from './RequiredActionsCheckpointNotice'
+import { SygSphereCommunicationsRuntime } from './SygSphereCommunicationsRuntime'
 import { clearPushSession } from '../data/pushNotifications'
 import { completedSignInRecordKind, isSygSpherePath, requiresSecurityCheckpoint, sharedIdentityScopeAllowsPath } from '../lib/securityCheckpoint'
 import {
@@ -1007,6 +1008,7 @@ export function AppShell() {
 
         <WorkspaceAlertStrip entries={workspaceAlerts} />
         {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive ? <LiveNotifications key={sessionContext.employeeId} employeeId={sessionContext.employeeId} username={sessionContext.username} /> : null}
+        {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive ? <SygSphereCommunicationsRuntime enabled={sessionContext.permissions.includes('sygsphere.comms.use')} /> : null}
         {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive && sharedIdentityScopeAllowsPath('/tasks', sharedIdentityScope) ? <SygTasksAlarmHost employeeId={sessionContext.employeeId} /> : null}
 
         <main id="main-content" tabIndex={-1}>

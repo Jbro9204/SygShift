@@ -65,11 +65,26 @@ export const coordinatorReleaseContextSchema = z.object({
 
 export type CoordinatorReleaseContext = z.infer<typeof coordinatorReleaseContextSchema>
 
+/**
+ * A direct-call scope is resolved only by the service-only database function.
+ * It contains no browser-chosen authority: the conversation and recipient are
+ * verified from the active SygSphere membership before this reaches the DO.
+ */
+export const directConversationCommandScopeSchema = z.object({
+  kind: z.literal('direct_conversation'),
+  conversationReference: z.uuid(),
+  recipientEmployeeId: z.uuid(),
+}).strict()
+
+export type DirectConversationCommandScope = z.infer<typeof directConversationCommandScopeSchema>
+
 const coordinatorInvocationSchema = z.object({
   authorization: stagedCommsAuthorizationContextSchema,
   command: z.unknown(),
   release: coordinatorReleaseContextSchema,
   requestId: z.uuid(),
+  scope: directConversationCommandScopeSchema.nullish(),
+  connectionRouteReference: z.uuid().optional(),
 }).strict()
 
 export type AuthorizedCoordinatorCommand = Readonly<{
@@ -78,6 +93,8 @@ export type AuthorizedCoordinatorCommand = Readonly<{
   requiredPermission: string
   release: CoordinatorReleaseContext
   requestId: string
+  scope: DirectConversationCommandScope | null
+  connectionRouteReference: string | null
 }>
 
 export const tenantCoordinatorObjectName = (tenantId: string): string => {
@@ -107,8 +124,15 @@ export const authorizeCoordinatorCommand = (input: unknown): AuthorizedCoordinat
   const authorization = authorizeCoordinatorSession(invocation.authorization)
   const command = parseSygSphereCommsCommand(invocation.command)
   const requiredPermission = coordinatorPermissionForCommand(command.kind)
+  const scope = invocation.scope ?? null
 
   if (!authorization.permissions.includes(requiredPermission)) {
+    throw new Error('Communications are not available for this account.')
+  }
+  if (command.kind === 'call.request' && (!scope || scope.conversationReference !== command.payload.conversationReference)) {
+    throw new Error('Communications are not available for this account.')
+  }
+  if (command.kind !== 'call.request' && scope !== null) {
     throw new Error('Communications are not available for this account.')
   }
 
@@ -118,6 +142,8 @@ export const authorizeCoordinatorCommand = (input: unknown): AuthorizedCoordinat
     requiredPermission,
     release: invocation.release,
     requestId: invocation.requestId,
+    scope,
+    connectionRouteReference: invocation.connectionRouteReference ?? null,
   }
 }
 

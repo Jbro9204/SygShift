@@ -103,7 +103,8 @@ describe('Cloudflare Worker boundary', () => {
     expect(response.headers.get('x-request-id')).toMatch(/^[a-f0-9-]{36}$/)
     expect(response.headers.get('content-security-policy')).toContain("default-src 'self'")
     expect(response.headers.get('strict-transport-security')).toContain('max-age=63072000')
-    expect(response.headers.get('permissions-policy')).toContain('camera=()')
+    expect(response.headers.get('permissions-policy')).toContain('camera=(self)')
+    expect(response.headers.get('permissions-policy')).toContain('microphone=(self)')
   })
 
   it('returns method guidance without reflecting request details', async () => {

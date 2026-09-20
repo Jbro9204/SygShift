@@ -81,6 +81,18 @@
       "name": "EMAIL"
     }
   ],
+  "secrets_store_secrets": [
+    {
+      "binding": "SYGSHIFT_COMMS_REALTIME_APP_SECRET",
+      "store_id": "f487e37a3dcd4c2a87462032c948d979",
+      "secret_name": "SYGSPHERE_REALTIME_APP_SECRET"
+    },
+    {
+      "binding": "SYGSHIFT_COMMS_TURN_API_TOKEN",
+      "store_id": "f487e37a3dcd4c2a87462032c948d979",
+      "secret_name": "SYGSPHERE_TURN_API_TOKEN"
+    }
+  ],
   "vars": {
     "SYGSHIFT_PUBLIC_APP_URL": "https://app.sygilant.us",
     "SYGSHIFT_EMAIL_FROM": "scheduling@sygilant.us",
@@ -98,7 +110,9 @@
     "SYGILANT_SHARED_IDENTITY_TOKEN_TTL_SECONDS": "60",
     "SYGSHIFT_DOCUMENT_PIPELINE_ENABLED": "true",
     "SYGSHIFT_SYGSPHERE_RESUMABLE_UPLOADS_ENABLED": "true",
-    "SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED": "false",
+    "SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED": "true",
+    "SYGSHIFT_COMMS_REALTIME_APP_ID": "643a90a9acbeacb7b85d3da18ddf1bb7",
+    "SYGSHIFT_COMMS_TURN_KEY_ID": "f800b6bc2cb66e5a406f62496758abdb",
     "SYGSHIFT_HR_AUTOMATION_ENABLED": "false",
     "SYGSHIFT_HR_RECRUITING_ENABLED": "true",
     "SYGSHIFT_HR_ONBOARDING_ENABLED": "true",

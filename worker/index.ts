@@ -26,11 +26,13 @@ import { isSecurityKeyPilotEligible, securityKeyFeatureEnabled } from './securit
 import { TenantCommsDurableObject } from './comms/tenantCommsDurableObject'
 import {
   coordinatorReleaseContextSchema,
+  directConversationCommandScopeSchema,
   stagedCommsAuthorizationContextSchema,
   tenantCoordinatorObjectName,
 } from './comms/tenantCoordinatorCore'
 import { parseSygSphereCommsWebSocketRouteReference } from './comms/websocketTicket'
 import { buildSygSphereCommsUsageResponse } from './comms/usageContract'
+import { parseSygSphereCommsCommand } from '../shared/sygsphere-communications/v1/contract'
 
 export { TenantCommsDurableObject }
 
@@ -309,6 +311,7 @@ interface SygSphereCommunicationsAuthorizationDecision {
   authorized?: boolean
   context?: unknown
   release?: unknown
+  scope?: unknown
   scopeMembershipVerified?: boolean
 }
 
@@ -549,6 +552,7 @@ interface MaintenanceStatusPayload {
 }
 
 const maxJsonBodyBytes = 4096
+const maxCommsSessionDescriptionBytes = 70 * 1024
 const maxWebAuthnBodyBytes = 64 * 1024
 const maxHrDocumentBytes = 25 * 1024 * 1024
 const maxHrDocumentMetadataBytes = 16 * 1024
@@ -600,7 +604,10 @@ const contentSecurityPolicy = [
 const baseSecurityHeaders = {
   'cross-origin-opener-policy': 'same-origin',
   'cross-origin-resource-policy': 'same-origin',
-  'permissions-policy': 'camera=(), microphone=(), geolocation=(self), payment=(), usb=()',
+  // Media permission remains user-initiated in the Communications surface.
+  // This header merely allows that protected feature to request a device; it
+  // does not grant camera or microphone access automatically.
+  'permissions-policy': 'camera=(self), microphone=(self), geolocation=(self), payment=(), usb=()',
   'referrer-policy': 'no-referrer',
   'x-content-type-options': 'nosniff',
   'x-frame-options': 'SAMEORIGIN',
@@ -1065,6 +1072,32 @@ async function requireAuthenticatedSession(request: Request, environment: Enviro
 const sygsphereCommunicationsRuntimeEnabled = (environment: Environment): boolean =>
   environment.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED?.trim().toLowerCase() === 'true'
 
+/* Sygilant and SygShift are separate origins, but are the two approved
+ * SygSphere applications.  Keep this exact allow-list local to the narrow
+ * communications API instead of turning the Worker into a general CORS
+ * relay.  Cookie-bearing requests must never use a wildcard origin. */
+const trustedCommunicationsOrigins = new Set([
+  'https://app.sygilant.us',
+  'https://sygilant.us',
+])
+
+const trustedCommunicationsOrigin = (request: Request): string | null => {
+  const origin = request.headers.get('origin')
+  return origin && trustedCommunicationsOrigins.has(origin) ? origin : null
+}
+
+const communicationsCorsHeaders = (request: Request): HeadersInit => {
+  const origin = trustedCommunicationsOrigin(request)
+  return origin ? {
+    'access-control-allow-credentials': 'true',
+    'access-control-allow-headers': 'authorization, content-type, x-sygshift-shared-identity, x-sygshift-security-key, x-sygshift-trusted-device, x-sygshift-trusted-device-fallback',
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
+    'access-control-allow-origin': origin,
+    'access-control-max-age': '300',
+    vary: 'Origin',
+  } : {}
+}
+
 const parseCookieValue = (request: Request, name: string): string | null => {
   const cookie = request.headers.get('cookie') ?? ''
   for (const part of cookie.split(';')) {
@@ -1106,6 +1139,12 @@ async function handleSygSphereCommunicationsApi(
   requestId: string,
 ): Promise<Response> {
   const url = new URL(request.url)
+
+  if (request.method === 'OPTIONS') {
+    const origin = trustedCommunicationsOrigin(request)
+    if (!origin) return errorJson('method_not_allowed', requestId, 405)
+    return new Response(null, { headers: communicationsCorsHeaders(request), status: 204 })
+  }
 
   if (!sygsphereCommunicationsRuntimeEnabled(environment)) {
     return errorJson('communications_unavailable', requestId, 503, 'Communications are not available yet. Continue using SygSphere messages and Dispatch.')
@@ -1160,6 +1199,10 @@ async function handleSygSphereCommunicationsApi(
     if (request.method !== 'GET' || request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
       return errorJson('method_not_allowed', requestId, 405)
     }
+    const origin = request.headers.get('origin')
+    if (origin && !trustedCommunicationsOrigins.has(origin)) {
+      return errorJson('communications_unavailable', requestId, 403, 'Communications connection is unavailable. Reopen Communications and try again.')
+    }
     const route = parseCommunicationsRouteCookie(request)
     if (!route || !environment.TENANT_COMMS) {
       return errorJson('communications_unavailable', requestId, 404, 'Communications connection is unavailable. Reopen Communications and try again.')
@@ -1204,6 +1247,232 @@ async function handleSygSphereCommunicationsApi(
     })
     return json({ refreshedConnections, requestId }, 200, {
       'set-cookie': communicationsRouteCookie(route.tenantId, route.routeReference),
+    })
+  }
+
+  /**
+   * Browser commands travel through this protected Worker boundary rather
+   * than directly to the tenant DO. The Worker resolves active SygSphere
+   * membership server-side and forwards only the resulting scope reference.
+   * A socket is used for delivery, never as a browser authority channel.
+   */
+  if (url.pathname === '/api/comms/v1/commands') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const session = await requireAuthenticatedSession(request, environment)
+    const authUserId = accessTokenClaims(session.token)?.sub
+    const route = parseCommunicationsRouteCookie(request)
+    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS) {
+      throw new ApiError('communications_unavailable', 403, 'Communications are not available for this account. Continue using SygSphere messages and Dispatch.')
+    }
+
+    let command: ReturnType<typeof parseSygSphereCommsCommand>
+    try {
+      command = parseSygSphereCommsCommand((await readJsonBodyWithin(request, maxJsonBodyBytes)).command)
+    } catch {
+      throw new ApiError('invalid_communications_command', 422, 'That communications action could not be understood. Reopen Communications and try again.')
+    }
+
+    const conversationReference = command.kind === 'call.request' || command.kind === 'meeting.create'
+      ? command.payload.conversationReference
+      : null
+    const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_resolve_sygsphere_communications_command_scope',
+      {
+        target_auth_user_id: authUserId,
+        target_command_kind: command.kind,
+        target_conversation_reference: conversationReference,
+      },
+      session.config.serviceRoleKey,
+    )
+    const authorization = stagedCommsAuthorizationContextSchema.safeParse(decision.context)
+    const release = coordinatorReleaseContextSchema.safeParse(decision.release)
+    const scope = decision.scope === null || decision.scope === undefined
+      ? null
+      : directConversationCommandScopeSchema.safeParse(decision.scope)
+    if (
+      decision.authorized !== true || decision.scopeMembershipVerified !== true
+      || !authorization.success || !release.success
+      || authorization.data.authUserId !== authUserId
+      || authorization.data.employeeId !== session.context.employee_id
+      || authorization.data.tenantId !== route.tenantId
+      || (command.kind === 'call.request' && (!scope || !scope.success))
+      || (command.kind !== 'call.request' && scope !== null)
+    ) {
+      throw new ApiError('communications_unavailable', 403, 'Communications are not available for this action. Continue using SygSphere messages and Dispatch.')
+    }
+
+    const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(authorization.data.tenantId))
+    const outcome = await coordinator.dispatch({
+      authorization: authorization.data,
+      command,
+      connectionRouteReference: route.routeReference,
+      release: release.data,
+      requestId,
+      scope: scope && scope.success ? scope.data : null,
+    })
+    return json({ outcome: outcome.outcome, requestId }, 202, {
+      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
+    })
+  }
+
+  const directCallMatch = /^\/api\/comms\/v1\/calls\/([0-9a-f-]{36})$/i.exec(url.pathname)
+  if (directCallMatch) {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    const callId = directCallMatch[1]
+    if (!callId || !validUuid(callId)) return errorJson('not_found', requestId, 404)
+    const session = await requireAuthenticatedSession(request, environment)
+    const authUserId = accessTokenClaims(session.token)?.sub
+    const route = parseCommunicationsRouteCookie(request)
+    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS) {
+      throw new ApiError('communications_unavailable', 403, 'Communications are not available for this call. Please reopen SygSphere and try again.')
+    }
+    const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_resolve_sygsphere_communications_command_scope',
+      { target_auth_user_id: authUserId, target_command_kind: 'media.answer', target_conversation_reference: null },
+      session.config.serviceRoleKey,
+    )
+    const authorization = stagedCommsAuthorizationContextSchema.safeParse(decision.context)
+    const release = coordinatorReleaseContextSchema.safeParse(decision.release)
+    if (
+      decision.authorized !== true || decision.scopeMembershipVerified !== true
+      || !authorization.success || !release.success
+      || authorization.data.authUserId !== authUserId || authorization.data.employeeId !== session.context.employee_id
+      || authorization.data.tenantId !== route.tenantId
+    ) {
+      throw new ApiError('communications_unavailable', 403, 'Communications are not available for this call. Please reopen SygSphere and try again.')
+    }
+    const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(authorization.data.tenantId))
+    const call = await coordinator.getDirectCallContext({
+      authorization: authorization.data,
+      callId,
+      connectionRouteReference: route.routeReference,
+      requestId,
+    })
+    if (call.outcome !== 'accepted' || !call.conversationReference) {
+      throw new ApiError('communications_unavailable', 403, 'This call is no longer available. Please reopen SygSphere and try again.')
+    }
+    return json({ conversationReference: call.conversationReference, requestId }, 200, {
+      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
+    })
+  }
+
+  if (url.pathname === '/api/comms/v1/media/prepare') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const session = await requireAuthenticatedSession(request, environment)
+    const authUserId = accessTokenClaims(session.token)?.sub
+    const route = parseCommunicationsRouteCookie(request)
+    let body: Record<string, unknown>
+    try { body = await readJsonBodyWithin(request, maxJsonBodyBytes) } catch (error) {
+      if (error instanceof ApiError) throw error
+      throw new ApiError('invalid_communications_media', 422, 'Audio setup could not be understood. Please try the call again.')
+    }
+    const callId = typeof body.callId === 'string' && validUuid(body.callId) ? body.callId : null
+    const conversationReference = typeof body.conversationReference === 'string' && validUuid(body.conversationReference)
+      ? body.conversationReference
+      : null
+    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS || !callId || !conversationReference) {
+      throw new ApiError('invalid_communications_media', 422, 'Audio setup could not be understood. Please try the call again.')
+    }
+    const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_resolve_sygsphere_communications_command_scope',
+      { target_auth_user_id: authUserId, target_command_kind: 'media.ready', target_conversation_reference: conversationReference },
+      session.config.serviceRoleKey,
+    )
+    const authorization = stagedCommsAuthorizationContextSchema.safeParse(decision.context)
+    const release = coordinatorReleaseContextSchema.safeParse(decision.release)
+    const scope = decision.scope === null || decision.scope === undefined ? null : directConversationCommandScopeSchema.safeParse(decision.scope)
+    if (
+      decision.authorized !== true || decision.scopeMembershipVerified !== true || !authorization.success || !release.success || !scope?.success
+      || authorization.data.authUserId !== authUserId || authorization.data.employeeId !== session.context.employee_id
+      || authorization.data.tenantId !== route.tenantId || scope.data.conversationReference !== conversationReference
+    ) {
+      throw new ApiError('communications_unavailable', 403, 'Audio is not available for this call. Please reopen SygSphere and try again.')
+    }
+    const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(authorization.data.tenantId))
+    const preparation = await coordinator.prepareDirectAudio({
+      authorization: authorization.data,
+      callId,
+      connectionRouteReference: route.routeReference,
+      conversationReference,
+      release: release.data,
+      requestId,
+    })
+    if (preparation.outcome !== 'accepted' || !preparation.iceServers) {
+      throw new ApiError('communications_unavailable', 503, 'Audio is temporarily unavailable. Please try the call again.')
+    }
+    return json({ iceServers: preparation.iceServers, requestId }, 200, {
+      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
+    })
+  }
+
+  /**
+   * A browser may offer only its own microphone SDP. The Worker re-checks the
+   * current employee, active direct-conversation membership, route cookie,
+   * release state, and tenant before the coordinator receives it. Provider
+   * credentials and Cloudflare session identifiers never cross this boundary.
+   */
+  if (url.pathname === '/api/comms/v1/media/direct-audio') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const session = await requireAuthenticatedSession(request, environment)
+    const authUserId = accessTokenClaims(session.token)?.sub
+    const route = parseCommunicationsRouteCookie(request)
+    let body: Record<string, unknown>
+    try {
+      body = await readJsonBodyWithin(request, maxCommsSessionDescriptionBytes)
+    } catch (error) {
+      if (error instanceof ApiError) throw error
+      throw new ApiError('invalid_communications_media', 422, 'Audio setup could not be understood. Please try the call again.')
+    }
+    const callId = typeof body.callId === 'string' && validUuid(body.callId) ? body.callId : null
+    const conversationReference = typeof body.conversationReference === 'string' && validUuid(body.conversationReference)
+      ? body.conversationReference
+      : null
+    const offer = typeof body.offer === 'string' && body.offer.length > 0 && body.offer.length <= 65_536
+      ? body.offer
+      : null
+    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS || !callId || !conversationReference || !offer) {
+      throw new ApiError('invalid_communications_media', 422, 'Audio setup could not be understood. Please try the call again.')
+    }
+    const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_resolve_sygsphere_communications_command_scope',
+      {
+        target_auth_user_id: authUserId,
+        target_command_kind: 'media.ready',
+        target_conversation_reference: conversationReference,
+      },
+      session.config.serviceRoleKey,
+    )
+    const authorization = stagedCommsAuthorizationContextSchema.safeParse(decision.context)
+    const release = coordinatorReleaseContextSchema.safeParse(decision.release)
+    const scope = decision.scope === null || decision.scope === undefined
+      ? null
+      : directConversationCommandScopeSchema.safeParse(decision.scope)
+    if (
+      decision.authorized !== true || decision.scopeMembershipVerified !== true
+      || !authorization.success || !release.success || !scope?.success
+      || authorization.data.authUserId !== authUserId
+      || authorization.data.employeeId !== session.context.employee_id
+      || authorization.data.tenantId !== route.tenantId
+      || scope.data.conversationReference !== conversationReference
+    ) {
+      throw new ApiError('communications_unavailable', 403, 'Audio is not available for this call. Please reopen SygSphere and try again.')
+    }
+    const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(authorization.data.tenantId))
+    const outcome = await coordinator.startDirectAudio({
+      authorization: authorization.data,
+      callId,
+      connectionRouteReference: route.routeReference,
+      conversationReference,
+      offer,
+      release: release.data,
+      requestId,
+    })
+    return json({ outcome: outcome.outcome, requestId }, 202, {
+      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
     })
   }
 
@@ -7968,6 +8237,14 @@ export function secureResponse(request: Request, response: Response, requestId: 
 
   for (const [name, value] of Object.entries(baseSecurityHeaders)) headers.set(name, value)
   headers.set('x-request-id', requestId)
+
+  if (url.pathname.startsWith('/api/comms/v1/')) {
+    for (const [name, value] of Object.entries(communicationsCorsHeaders(request))) headers.set(name, value)
+    /* This API is intentionally consumable by the other first-party app,
+     * while files, HR records, and every other Worker resource remain
+     * same-origin only. */
+    headers.set('cross-origin-resource-policy', 'same-site')
+  }
 
   if (!isLocalDevelopment(url.hostname)) {
     headers.set('content-security-policy', contentSecurityPolicy)

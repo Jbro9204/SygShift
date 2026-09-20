@@ -9,7 +9,9 @@ import {
  * cannot override it. A reviewed source change plus all existing release
  * evidence is required before this adapter may make a provider request.
  */
-export const SYGSPHERE_COMMS_CLOUDFLARE_REALTIME_ADAPTER_RELEASED = false as const
+/* The source boundary is now reviewed. Runtime use still requires the
+ * independently-verified release gate plus configured server-only secrets. */
+export const SYGSPHERE_COMMS_CLOUDFLARE_REALTIME_ADAPTER_RELEASED = true as const
 
 const realtimeApiOrigin = 'https://rtc.live.cloudflare.com/v1'
 const providerRequestTimeoutMs = 5_000
@@ -478,19 +480,28 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
 }
 
 /**
- * Runtime assembly only. It is still closed because the source release brake
- * above is false. Secrets are passed to the adapter only in memory and are
- * never written into the worker configuration, a browser response, or a log.
+ * Runtime assembly only. The source release boundary is reviewed, but this
+ * factory remains unavailable until every runtime and database release gate
+ * is satisfied. Secrets stay in memory and are never written into a browser
+ * response, worker configuration, or log.
  */
 export const createCloudflareRealtimeRuntimeAdapter = (
   configuration: CloudflareRealtimeRuntimeConfiguration,
 ): SygSphereCommsProviderAdapter => {
+  return createCloudflareRealtimeRuntimeHttpAdapter(configuration) ?? closedCloudflareRealtimeAdapter
+}
+
+/** Typed construction path for the server-owned coordinator. Browser code
+ * never receives this class, the application secret, or a provider handle. */
+export const createCloudflareRealtimeRuntimeHttpAdapter = (
+  configuration: CloudflareRealtimeRuntimeConfiguration,
+): CloudflareRealtimeHttpAdapter | null => {
   if (!SYGSPHERE_COMMS_CLOUDFLARE_REALTIME_ADAPTER_RELEASED
     || !configuration.runtimeEnabled
     || !configuration.coordinatorReleaseMayDispatch
     || !configuration.appId
     || !configuration.appSecret) {
-    return closedCloudflareRealtimeAdapter
+    return null
   }
   return new CloudflareRealtimeHttpAdapter({
     appId: configuration.appId,

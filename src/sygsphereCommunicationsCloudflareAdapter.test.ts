@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   CloudflareRealtimeHttpAdapter,
-  closedCloudflareRealtimeAdapter,
   createCloudflareRealtimeRuntimeAdapter,
 } from '../worker/comms/cloudflareRealtimeAdapter'
 import {
@@ -30,14 +29,14 @@ const testAdapter = (fetchImplementation: typeof fetch): CloudflareRealtimeHttpA
 })
 
 describe('SygSphere Communications Cloudflare Realtime adapter', () => {
-  it('keeps runtime construction closed even when an environment is incorrectly marked ready', async () => {
+  it('constructs the concrete adapter only when the independent runtime and release gates agree', async () => {
     const runtime = createCloudflareRealtimeRuntimeAdapter({
       appId: 'app-1',
       appSecret: 'server-only-app-secret',
       coordinatorReleaseMayDispatch: true,
       runtimeEnabled: true,
     })
-    expect(runtime).toBe(closedCloudflareRealtimeAdapter)
+    expect(runtime).toBeInstanceOf(CloudflareRealtimeHttpAdapter)
     await expect(runtime.execute({ operation: 'create_session', requestId: 'request-1', roomId: 'room-1', tenantId: 'tenant-1' }))
       .resolves.toEqual({ outcome: 'provider_unavailable', requestId: 'request-1' })
   })
