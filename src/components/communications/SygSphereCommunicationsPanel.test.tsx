@@ -105,6 +105,23 @@ describe("SygSphere communications panel", () => {
     expect(refreshed.onPttPressEnd).toHaveBeenCalledTimes(1);
   });
 
+  it("clears a held control when the coordinator denies the floor", () => {
+    const props = base();
+    const view = render(<SygSphereCommunicationsPanel {...props} />);
+    const button = screen.getByRole("button", { name: /hold to talk/i });
+    fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+    expect(screen.getByRole("button", { name: /checking channel/i })).not.toHaveClass("is-transmitting");
+
+    view.rerender(<SygSphereCommunicationsPanel {...props} pttState="requesting" />);
+    view.rerender(<SygSphereCommunicationsPanel {...props} pttState="denied" />);
+
+    const denied = screen.getByRole("button", { name: /channel unavailable/i });
+    expect(props.onPttPressEnd).toHaveBeenCalledTimes(1);
+    expect(denied).toHaveAttribute("aria-pressed", "false");
+    expect(denied).not.toHaveClass("is-transmitting");
+    expect(screen.queryByText(/talking now/i)).not.toBeInTheDocument();
+  });
+
   it("releases when the pointer ends outside the control", () => {
     const props = base();
     render(<SygSphereCommunicationsPanel {...props} />);
