@@ -1412,7 +1412,8 @@ async function handleSygSphereCommunicationsApi(
     const transmissionRequestId = typeof body.transmissionRequestId === 'string' && validUuid(body.transmissionRequestId) ? body.transmissionRequestId : null
     const channelReference = typeof body.channelReference === 'string' && validUuid(body.channelReference) ? body.channelReference : null
     const offer = typeof body.offer === 'string' && body.offer.length > 0 && body.offer.length <= 65_536 ? body.offer : null
-    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS || !transmissionRequestId || !offer || (publisher && !channelReference)) {
+    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS || !transmissionRequestId
+      || (publisher && (!offer || !channelReference))) {
       throw new ApiError('invalid_communications_media', 422, 'Push-to-talk audio could not be understood. Please release and hold again.')
     }
     const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
@@ -1451,7 +1452,6 @@ async function handleSygSphereCommunicationsApi(
       : await coordinator.startPttListen({
         authorization: authorization.data,
         connectionRouteReference: route.routeReference,
-        offer,
         release: release.data,
         requestId,
         transmissionRequestId,
@@ -1461,8 +1461,8 @@ async function handleSygSphereCommunicationsApi(
     })
   }
 
-  /** A subscriber acknowledges only after it has applied the coordinator's
-   * SDP answer.  This protected path is intentionally separate from the
+  /** A subscriber acknowledges only after it has applied the provider's
+   * SDP offer and returned its answer. This protected path is intentionally separate from the
    * delivery WebSocket so a browser cannot forge floor readiness. */
   if (url.pathname === '/api/comms/v1/ptt/listener-ready') {
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)

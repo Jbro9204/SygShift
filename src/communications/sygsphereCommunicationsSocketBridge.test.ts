@@ -185,6 +185,7 @@ describe("SygSphere communications protected socket bridge", () => {
       iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
       requestId: "d285bf11-15f6-4efe-b60f-4ab891637342",
     }));
+    const sendCommand = vi.fn(async () => acceptedCommand());
     const startPtt = vi.fn(async () => acceptedCommand());
     const peer = createFakeRtcPeer("connecting");
     const bridge = createBridge({
@@ -192,6 +193,7 @@ describe("SygSphere communications protected socket bridge", () => {
       bootstrap: vi.fn(async () => validBootstrap(ticket)),
       createRtcPeer: () => peer,
       preparePtt,
+      sendCommand,
       socket,
       startPtt,
     });
@@ -219,6 +221,7 @@ describe("SygSphere communications protected socket bridge", () => {
       expect.objectContaining({ mode: "listener", transmissionRequestId: "4896f7c0-7143-48f9-9978-d1f6a342186f" }),
       expect.any(AbortSignal),
     ));
+    expect((startPtt.mock.calls as unknown as Array<[string, Record<string, unknown>]>)[0]?.[1]).not.toHaveProperty("offer");
     expect(acknowledgePttListenerReady).not.toHaveBeenCalled();
 
     socket.message(JSON.stringify({
@@ -227,7 +230,7 @@ describe("SygSphere communications protected socket bridge", () => {
       payload: {
         callId: "4896f7c0-7143-48f9-9978-d1f6a342186f",
         description: "v=0\r\n",
-        descriptionType: "answer",
+        descriptionType: "offer",
         direction: "subscribe",
         expiresAt: "2026-09-19T21:00:31.000Z",
         generation: 1,
@@ -249,7 +252,24 @@ describe("SygSphere communications protected socket bridge", () => {
       roomSeq: 2,
       serverTime: "2026-09-19T21:00:02.000Z",
     }));
-    await vi.waitFor(() => expect(peer.setRemoteDescription).toHaveBeenCalledWith({ sdp: "v=0\r\n", type: "answer" }));
+    await vi.waitFor(() => expect(peer.setRemoteDescription).toHaveBeenCalledWith({ sdp: "v=0\r\n", type: "offer" }));
+    await vi.waitFor(() => expect(peer.createAnswer).toHaveBeenCalledTimes(1));
+    expect(peer.createOffer).not.toHaveBeenCalled();
+    expect(peer.addTransceiver).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(sendCommand).toHaveBeenCalledWith(
+      "access-token",
+      expect.objectContaining({
+        kind: "media.answer",
+        payload: expect.objectContaining({
+          answer: "v=0\r\n",
+          generation: 1,
+          negotiationId: "d285bf11-15f6-4efe-b60f-5bd86765f451",
+          peerHandle: "peer-listener",
+        }),
+        roomId: "ptt:4896f7c0-7143-48f9-9978-d1f6a342186f",
+      }),
+      expect.any(AbortSignal),
+    ));
     expect(acknowledgePttListenerReady).not.toHaveBeenCalled();
     peer.setConnectionState("connected");
     await vi.waitFor(() => expect(acknowledgePttListenerReady).toHaveBeenCalledWith(
@@ -282,7 +302,7 @@ describe("SygSphere communications protected socket bridge", () => {
 
     startPttListener(socket, transmissionRequestId);
     await vi.waitFor(() => expect(startPtt).toHaveBeenCalledTimes(1));
-    answerPttListener(socket, transmissionRequestId);
+    offerPttListener(socket, transmissionRequestId);
     await vi.waitFor(() => expect(peer.setRemoteDescription).toHaveBeenCalledTimes(1));
     peer.setConnectionState("failed");
 
@@ -294,6 +314,46 @@ describe("SygSphere communications protected socket bridge", () => {
       expect.any(AbortSignal),
     );
     expect(socket.closedWith).toBeNull();
+  });
+
+  it("ignores a delayed PTT provider offer after the floor is revoked", async () => {
+    const socket = new FakeSocket();
+    const transmissionRequestId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+    const peer = createFakeRtcPeer("connecting");
+    const peerTransport = createFakePeerTransport();
+    const sendCommand = vi.fn(async () => acceptedCommand());
+    const bridge = createBridge({
+      bootstrap: vi.fn(async () => validBootstrap(ticket)),
+      createPeerTransport: peerTransport.factory,
+      createRtcPeer: () => peer,
+      sendCommand,
+      socket,
+    });
+    const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+    await socketCreated(socket);
+    socket.open();
+    socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+    await connection;
+
+    startPttListener(socket, transmissionRequestId);
+    await vi.waitFor(() => expect(peer.createOffer).not.toHaveBeenCalled());
+    socket.message(JSON.stringify({
+      eventId: "be15ea6d-e3e1-42f1-b376-e12943a361b6",
+      kind: "floor.revoked",
+      payload: { reason: "expired", transmissionRequestId },
+      protocolVersion: 1,
+      roomEpoch: 1,
+      roomId: `ptt:${transmissionRequestId}`,
+      roomSeq: 2,
+      serverTime: "2026-09-19T21:00:02.000Z",
+    }));
+    await vi.waitFor(() => expect(peer.close).toHaveBeenCalledTimes(1));
+    offerPttListener(socket, transmissionRequestId);
+    await Promise.resolve();
+
+    expect(peer.setRemoteDescription).not.toHaveBeenCalled();
+    expect(sendCommand).not.toHaveBeenCalled();
+    expect(peerTransport.handleNegotiation).not.toHaveBeenCalled();
   });
 
   it("cancels an in-flight PTT publisher before it can send stale audio", async () => {
@@ -339,12 +399,13 @@ describe("SygSphere communications protected socket bridge", () => {
     const socket = new FakeSocket();
     const transmissionRequestId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
     const peer = createFakeRtcPeer("connecting");
-    let resolveOffer!: () => void;
-    vi.mocked(peer.createOffer).mockImplementationOnce(() => new Promise<void>((resolve) => { resolveOffer = resolve; }));
+    let resolveStart!: (value: unknown) => void;
+    const startPtt = vi.fn(() => new Promise<unknown>((resolve) => { resolveStart = resolve; }));
     const bridge = createBridge({
       bootstrap: vi.fn(async () => validBootstrap(ticket)),
       createRtcPeer: () => peer,
       socket,
+      startPtt,
     });
     const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
     await socketCreated(socket);
@@ -353,24 +414,27 @@ describe("SygSphere communications protected socket bridge", () => {
     const { session } = await connection;
 
     startPttListener(socket, transmissionRequestId);
-    await vi.waitFor(() => expect(peer.createOffer).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(startPtt).toHaveBeenCalledTimes(1));
     startPttListener(socket, transmissionRequestId);
     await Promise.resolve();
-    expect(peer.createOffer).toHaveBeenCalledTimes(1);
+    expect(startPtt).toHaveBeenCalledTimes(1);
+    expect(peer.createOffer).not.toHaveBeenCalled();
 
-    resolveOffer();
+    resolveStart(acceptedCommand());
     session.close("test_complete");
     await vi.waitFor(() => expect(peer.close).toHaveBeenCalledTimes(1));
   });
 
-  it("cleans a listener that is disposed before ICE setup can finish", async () => {
+  it("cleans a listener that is disposed before the provider offer arrives", async () => {
     const socket = new FakeSocket();
     const transmissionRequestId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
-    const peer = createFakeRtcPeer("connecting", "gathering");
+    const peer = createFakeRtcPeer("connecting");
+    const startPtt = vi.fn(async () => acceptedCommand());
     const bridge = createBridge({
       bootstrap: vi.fn(async () => validBootstrap(ticket)),
       createRtcPeer: () => peer,
       socket,
+      startPtt,
     });
     const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
     await socketCreated(socket);
@@ -379,7 +443,7 @@ describe("SygSphere communications protected socket bridge", () => {
     const { session } = await connection;
 
     startPttListener(socket, transmissionRequestId);
-    await vi.waitFor(() => expect(peer.setLocalDescription).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(startPtt).toHaveBeenCalledTimes(1));
     session.close("test_complete");
 
     await vi.waitFor(() => expect(peer.close).toHaveBeenCalledTimes(1));
@@ -489,6 +553,53 @@ describe("SygSphere communications protected socket bridge", () => {
     await vi.waitFor(() => expect(onCallMediaConnection).toHaveBeenLastCalledWith({ callId, roomId: `call:${callId}`, state: "connected" }));
     peer.setConnectionState("closed");
     await vi.waitFor(() => expect(onCallMediaConnection).toHaveBeenLastCalledWith({ callId, roomId: `call:${callId}`, state: "failed" }));
+  });
+
+  it("answers a remote direct-call subscription on its existing protected peer", async () => {
+    const socket = new FakeSocket();
+    const callId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+    const peer = createFakeRtcPeer("connecting");
+    const peerTransport = createFakePeerTransport();
+    const sendCommand = vi.fn(async () => acceptedCommand());
+    const bridge = createBridge({
+      bootstrap: vi.fn(async () => validBootstrap(ticket)),
+      createPeerTransport: peerTransport.factory,
+      createRtcPeer: () => peer,
+      sendCommand,
+      socket,
+    });
+    const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+    await socketCreated(socket);
+    socket.open();
+    socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+    const { session } = await connection;
+
+    await session.publish({
+      kind: "call_audio",
+      roomId: `call:${callId}`,
+      stream: { getAudioTracks: () => [{} as MediaStreamTrack] } as unknown as MediaStream,
+    });
+    answerDirectCall(socket, callId);
+    await vi.waitFor(() => expect(peer.setRemoteDescription).toHaveBeenCalledTimes(1));
+
+    offerDirectCall(socket, callId);
+    await vi.waitFor(() => expect(peer.setRemoteDescription).toHaveBeenLastCalledWith({ sdp: "v=0\r\n", type: "offer" }));
+    await vi.waitFor(() => expect(peer.createAnswer).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(sendCommand).toHaveBeenCalledWith(
+      "access-token",
+      expect.objectContaining({
+        kind: "media.answer",
+        payload: expect.objectContaining({
+          generation: 1,
+          negotiationId: "d285bf11-15f6-4efe-b60f-5bd86765f451",
+          peerHandle: "peer-listener",
+        }),
+        roomId: `call:${callId}`,
+      }),
+      expect.any(AbortSignal),
+    ));
+    expect(peerTransport.handleNegotiation).not.toHaveBeenCalled();
+    expect(peer.createOffer).toHaveBeenCalledTimes(1);
   });
 
   it("fails and closes a direct-call peer that never reaches browser media connection", async () => {
@@ -793,14 +904,14 @@ function startPttListener(socket: FakeSocket, transmissionRequestId: string) {
   }));
 }
 
-function answerPttListener(socket: FakeSocket, transmissionRequestId: string, expiresAt = "2026-09-19T21:00:30.000Z") {
+function offerPttListener(socket: FakeSocket, transmissionRequestId: string, expiresAt = "2026-09-19T21:00:30.000Z") {
   socket.message(JSON.stringify({
     eventId: "73f004e3-34e3-48b2-9bca-7be78c4f04a6",
     kind: "media.negotiation",
     payload: {
       callId: transmissionRequestId,
       description: "v=0\r\n",
-      descriptionType: "answer",
+      descriptionType: "offer",
       direction: "subscribe",
       expiresAt,
       generation: 1,
@@ -851,6 +962,37 @@ function answerDirectCall(socket: FakeSocket, callId: string) {
     roomId: `call:${callId}`,
     roomSeq: 1,
     serverTime: "2026-09-19T21:00:02.000Z",
+  }));
+}
+
+function offerDirectCall(socket: FakeSocket, callId: string) {
+  socket.message(JSON.stringify({
+    eventId: "73f004e3-34e3-48b2-9bca-7be78c4f04a6",
+    kind: "media.negotiation",
+    payload: {
+      callId,
+      description: "v=0\r\n",
+      descriptionType: "offer",
+      direction: "subscribe",
+      expiresAt: "2026-09-19T21:00:30.000Z",
+      generation: 1,
+      iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
+      negotiationId: "d285bf11-15f6-4efe-b60f-5bd86765f451",
+      peerHandle: "peer-listener",
+      trackBindings: [{
+        mediaKind: "audio",
+        participantConnectionId: "58f2be04-75dc-4cb9-a7da-7c3d6daa20b4",
+        publicationKind: "call_audio",
+        role: "remote",
+        trackReference: "remote-call-audio",
+        transceiverMid: "0",
+      }],
+    },
+    protocolVersion: 1,
+    roomEpoch: 1,
+    roomId: `call:${callId}`,
+    roomSeq: 2,
+    serverTime: "2026-09-19T21:00:03.000Z",
   }));
 }
 
@@ -928,6 +1070,7 @@ function createFakeRtcPeer(
     addTrack: vi.fn(),
     addTransceiver: vi.fn(),
     close: vi.fn(),
+    createAnswer: vi.fn(async () => ({ sdp: "v=0\r\n", type: "answer" as const })),
     createOffer: vi.fn(async () => ({ sdp: "v=0\r\n", type: "offer" as const })),
     setLocalDescription: vi.fn(async (description: RTCSessionDescriptionInit) => { peer.localDescription = description; }),
     setRemoteDescription: vi.fn(async () => undefined),

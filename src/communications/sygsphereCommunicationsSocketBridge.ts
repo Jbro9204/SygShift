@@ -403,6 +403,7 @@ type PttListenerReadiness = {
   acknowledged: boolean;
   connectionListener: EventListener;
   connectionTimeout: ReturnType<typeof setTimeout> | null;
+  negotiationInFlight: boolean;
   peer: RTCPeerConnection;
   remoteDescriptionApplied: boolean;
   setupAbortController: AbortController;
@@ -467,6 +468,11 @@ function createSession({
     timeout: ReturnType<typeof setTimeout> | null;
   }>>();
   const directPeers = new Map<string, RTCPeerConnection>();
+  const directRemoteBindings = new Map<string, Readonly<{
+    participantConnectionId: string | null;
+    trackReference: string;
+  }>>();
+  const directNegotiationsInFlight = new Map<string, RTCPeerConnection>();
   const meetingPeers = new Map<string, MeetingPeerState>();
   const requireOpen = () => {
     if (closed || socket.readyState !== 1) throw new Error("Communications are reconnecting.");
@@ -476,7 +482,10 @@ function createSession({
     const command = parseSygSphereCommsCommand({ ...input, connectionEpoch });
     socket.send(JSON.stringify(command));
   };
-  const sendCommand = async (input: Parameters<CommunicationsCoordinatorSession["send"]>[0]) => {
+  const sendCommand = async (
+    input: Parameters<CommunicationsCoordinatorSession["send"]>[0],
+    signal: AbortSignal = AbortSignal.timeout(10_000),
+  ) => {
     requireOpen();
     const command = parseSygSphereCommsCommand({ ...input, connectionEpoch });
     if (command.kind === "heartbeat" || command.kind === "snapshot.request") {
@@ -488,7 +497,7 @@ function createSession({
     const response = commandResponseSchema.parse(await dependencies.sendCommand(
       accessToken,
       command,
-      AbortSignal.timeout(10_000),
+      signal,
     ));
     if (response.outcome !== "accepted") {
       throw new Error(commandOutcomeMessage(response.outcome, command.kind));
@@ -647,6 +656,8 @@ function createSession({
   };
   const closeDirectPeer = (callId: string) => {
     const peer = directPeers.get(callId);
+    directRemoteBindings.delete(callId);
+    if (directNegotiationsInFlight.get(callId) === peer) directNegotiationsInFlight.delete(callId);
     if (!peer) return;
     stopObservingCallMediaConnection(peer);
     peer.close();
@@ -834,6 +845,19 @@ function createSession({
       AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
     ));
     const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
+    peer.addEventListener("track", (trackEvent) => {
+      const stream = trackEvent.streams[0] ?? dependencies.createStream([trackEvent.track]);
+      const binding = directRemoteBindings.get(input.callId);
+      onRemoteTrack({
+        callId: input.callId,
+        mediaKind: "audio",
+        participantConnectionId: binding?.participantConnectionId ?? null,
+        publicationKind: "call_audio",
+        roomId: `call:${input.callId}`,
+        stream,
+        trackReference: binding?.trackReference ?? `call:${input.callId}:audio`,
+      });
+    });
     for (const track of input.stream.getAudioTracks()) peer.addTrack(track, input.stream);
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
@@ -1019,6 +1043,7 @@ function createSession({
         acknowledged: false,
         connectionListener,
         connectionTimeout: null,
+        negotiationInFlight: false,
         peer,
         remoteDescriptionApplied: false,
         setupAbortController: setup.abortController,
@@ -1032,7 +1057,6 @@ function createSession({
       }
       pttListenerReadiness.set(transmissionRequestId, readiness);
       peer.addEventListener("connectionstatechange", connectionListener);
-      peer.addTransceiver("audio", { direction: "recvonly" });
       peer.addEventListener("track", (trackEvent) => {
         const stream = trackEvent.streams[0] ?? dependencies.createStream([trackEvent.track]);
         onRemoteTrack({
@@ -1045,18 +1069,10 @@ function createSession({
           trackReference: `ptt:${transmissionRequestId}:audio`,
         });
       });
-      const offer = await peer.createOffer();
-      if (closed || pttListenerReadiness.get(transmissionRequestId) !== readiness || setup.abortController.signal.aborted) return;
-      await peer.setLocalDescription(offer);
-      if (closed || pttListenerReadiness.get(transmissionRequestId) !== readiness || setup.abortController.signal.aborted) return;
-      await waitForPeerIce(peer, dependencies, readiness.setupAbortController.signal);
-      if (closed || pttListenerReadiness.get(transmissionRequestId) !== readiness || setup.abortController.signal.aborted) return;
-      const localDescription = peer.localDescription;
-      if (!localDescription?.sdp || localDescription.type !== "offer") throw new Error("Push-to-talk listener offer was unavailable.");
       pttPeers.set(transmissionRequestId, { peer, publication: "listener", roomId, transmissionRequestId });
       const response = commandResponseSchema.parse(await dependencies.startPtt(
         accessToken,
-        { mode: "listener", offer: localDescription.sdp, transmissionRequestId },
+        { mode: "listener", transmissionRequestId },
         AbortSignal.any([setup.abortController.signal, AbortSignal.timeout(pttMediaRequestTimeoutMilliseconds)]),
       ));
       if (pttListenerReadiness.get(transmissionRequestId) !== readiness || setup.abortController.signal.aborted) return;
@@ -1196,16 +1212,47 @@ function createSession({
   const handleEvent = async (event: SygSphereCommsEvent) => {
     if (event.kind === "media.negotiation") {
       const payload = SYGSPHERE_COMMS_EVENT_PAYLOAD_SCHEMAS["media.negotiation"].parse(event.payload);
-      const pttPeer = pttPeers.get(payload.callId);
-      if (pttPeer && pttPeer.roomId === event.roomId && payload.descriptionType === "answer") {
+      // PTT has an exact, protected peer for every room. Consume every PTT
+      // negotiation here so a delayed offer cannot fall through to the
+      // generic transport and resurrect a released/expired listener.
+      if (event.roomId === `ptt:${payload.callId}`) {
+        const pttPeer = pttPeers.get(payload.callId);
+        if (!pttPeer || pttPeer.roomId !== event.roomId) return;
         if (pttPeer.publication === "listener") {
+          if (payload.direction !== "subscribe" || payload.descriptionType !== "offer") return;
+          const readiness = pttListenerReadiness.get(payload.callId);
+          if (
+            !readiness
+            || readiness.peer !== pttPeer.peer
+            || readiness.remoteDescriptionApplied
+            || readiness.negotiationInFlight
+          ) return;
+          readiness.negotiationInFlight = true;
           try {
-            await pttPeer.peer.setRemoteDescription({ sdp: payload.description, type: "answer" });
-            const readiness = pttListenerReadiness.get(payload.callId);
-            if (!readiness || readiness.peer !== pttPeer.peer) {
-              closePttPeer(payload.callId);
-              return;
-            }
+            await pttPeer.peer.setRemoteDescription({ sdp: payload.description, type: "offer" });
+            if (pttListenerReadiness.get(payload.callId) !== readiness || readiness.setupAbortController.signal.aborted) return;
+            const answer = await pttPeer.peer.createAnswer();
+            if (pttListenerReadiness.get(payload.callId) !== readiness || readiness.setupAbortController.signal.aborted) return;
+            await pttPeer.peer.setLocalDescription(answer);
+            if (pttListenerReadiness.get(payload.callId) !== readiness || readiness.setupAbortController.signal.aborted) return;
+            await waitForPeerIce(pttPeer.peer, dependencies, readiness.setupAbortController.signal);
+            if (pttListenerReadiness.get(payload.callId) !== readiness || readiness.setupAbortController.signal.aborted) return;
+            const localDescription = pttPeer.peer.localDescription;
+            if (!localDescription?.sdp || localDescription.type !== "answer") throw new Error("Push-to-talk listener answer was unavailable.");
+            await sendCommand({
+              commandId: crypto.randomUUID(),
+              connectionEpoch,
+              kind: "media.answer",
+              payload: {
+                answer: localDescription.sdp,
+                generation: payload.generation,
+                negotiationId: payload.negotiationId,
+                peerHandle: payload.peerHandle,
+              },
+              protocolVersion: SYGSPHERE_COMMS_PROTOCOL_VERSION,
+              roomId: event.roomId,
+            }, AbortSignal.any([readiness.setupAbortController.signal, AbortSignal.timeout(pttMediaRequestTimeoutMilliseconds)]));
+            if (pttListenerReadiness.get(payload.callId) !== readiness || readiness.setupAbortController.signal.aborted) return;
             readiness.remoteDescriptionApplied = true;
             const offerExpiresAt = Date.parse(payload.expiresAt);
             const remainingOfferLifetime = Number.isFinite(offerExpiresAt)
@@ -1219,9 +1266,12 @@ function createSession({
             void acknowledgePttListenerWhenConnected(payload.callId);
           } catch {
             closePttPeer(payload.callId, { reportListenerFailure: true });
+          } finally {
+            if (pttListenerReadiness.get(payload.callId) === readiness) readiness.negotiationInFlight = false;
           }
           return;
         }
+        if (payload.direction !== "publish" || payload.descriptionType !== "answer") return;
         try {
           await pttPeer.peer.setRemoteDescription({ sdp: payload.description, type: "answer" });
           armPttPublisherConnectionTimeout(payload.callId, pttPeer.peer);
@@ -1231,14 +1281,58 @@ function createSession({
         }
         return;
       }
-      const directPeer = directPeers.get(payload.callId);
-      if (directPeer && event.roomId === `call:${payload.callId}` && payload.descriptionType === "answer" && payload.direction === "publish") {
+      if (event.roomId === `call:${payload.callId}`) {
+        const directPeer = directPeers.get(payload.callId);
+        // A closed direct call must never be recreated by a delayed provider
+        // offer through the generic peer transport.
+        if (!directPeer) return;
+        if (payload.direction === "publish" && payload.descriptionType === "answer") {
+          try {
+            await directPeer.setRemoteDescription({ sdp: payload.description, type: "answer" });
+            armCallMediaConnectionTimeout(directPeer);
+          } catch {
+            closeDirectPeer(payload.callId);
+            onCallMediaConnection({ callId: payload.callId, roomId: event.roomId, state: "failed" });
+          }
+          return;
+        }
+        if (payload.direction !== "subscribe" || payload.descriptionType !== "offer" || directNegotiationsInFlight.has(payload.callId)) return;
+        directNegotiationsInFlight.set(payload.callId, directPeer);
         try {
-          await directPeer.setRemoteDescription({ sdp: payload.description, type: "answer" });
-          armCallMediaConnectionTimeout(directPeer);
+          const binding = payload.trackBindings.find((item) => item.mediaKind === "audio" && item.publicationKind === "call_audio" && item.role === "remote");
+          directRemoteBindings.set(payload.callId, {
+            participantConnectionId: binding?.participantConnectionId ?? null,
+            trackReference: binding?.trackReference ?? `call:${payload.callId}:audio`,
+          });
+          await directPeer.setRemoteDescription({ sdp: payload.description, type: "offer" });
+          if (directPeers.get(payload.callId) !== directPeer) return;
+          const answer = await directPeer.createAnswer();
+          if (directPeers.get(payload.callId) !== directPeer) return;
+          await directPeer.setLocalDescription(answer);
+          if (directPeers.get(payload.callId) !== directPeer) return;
+          await waitForPeerIce(directPeer, dependencies);
+          if (directPeers.get(payload.callId) !== directPeer) return;
+          const localDescription = directPeer.localDescription;
+          if (!localDescription?.sdp || localDescription.type !== "answer") throw new Error("Direct-call listener answer was unavailable.");
+          await sendCommand({
+            commandId: crypto.randomUUID(),
+            connectionEpoch,
+            kind: "media.answer",
+            payload: {
+              answer: localDescription.sdp,
+              generation: payload.generation,
+              negotiationId: payload.negotiationId,
+              peerHandle: payload.peerHandle,
+            },
+            protocolVersion: SYGSPHERE_COMMS_PROTOCOL_VERSION,
+            roomId: event.roomId,
+          }, AbortSignal.timeout(mediaRequestTimeoutMilliseconds));
+          if (directPeers.get(payload.callId) === directPeer) armCallMediaConnectionTimeout(directPeer);
         } catch {
           closeDirectPeer(payload.callId);
           onCallMediaConnection({ callId: payload.callId, roomId: event.roomId, state: "failed" });
+        } finally {
+          if (directNegotiationsInFlight.get(payload.callId) === directPeer) directNegotiationsInFlight.delete(payload.callId);
         }
         return;
       }

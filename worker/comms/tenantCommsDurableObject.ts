@@ -246,9 +246,12 @@ const pttAudioStartSchema = z.object({
   transmissionRequestId: z.uuid(),
 }).strict()
 
-const pttListenStartSchema = pttAudioStartSchema.omit({ channelReference: true })
+// A remote Cloudflare subscription is provider-offer driven. Unlike a
+// publisher, a listener must never supply browser SDP when it asks the
+// coordinator to create the remote track.
+const pttListenStartSchema = pttAudioStartSchema.omit({ channelReference: true, offer: true })
 const pttAudioPreparationSchema = pttAudioStartSchema.omit({ offer: true })
-const pttListenPreparationSchema = pttListenStartSchema.omit({ offer: true })
+const pttListenPreparationSchema = pttListenStartSchema
 const pttListenerReadySchema = pttListenPreparationSchema
 const pttListenerFailedSchema = pttListenPreparationSchema
 
@@ -313,11 +316,13 @@ const commandReplayRetentionMilliseconds = 86_400_000
 const maximumRecordsPurgedPerDispatch = 50
 const maximumWebSocketFrameBytes = 4_096
 const directCallRingingMilliseconds = 45_000
-// PTT preparation spans a protected TURN request, browser ICE gathering, and
-// up to three bounded SFU calls. Forty-five seconds permits that normal path
-// without letting a client retain a floor indefinitely.
-const pttPreparingMilliseconds = 45_000
-const pttMaximumPreparationLifetimeMilliseconds = 120_000
+// PTT preparation spans protected TURN, browser ICE, provider publication,
+// remote subscription, and the listener's mandatory provider renegotiation.
+// The coordinator renews this only while it independently verifies the exact
+// live reservation; the hard cap still prevents a client from retaining a
+// channel indefinitely during a failed setup.
+const pttPreparingMilliseconds = 60_000
+const pttMaximumPreparationLifetimeMilliseconds = 180_000
 const pttLeaseMilliseconds = 6_000
 
 /**
@@ -1257,12 +1262,13 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     callId: string
     connectionId: string
     employeeId: string
+    expiresAtMs?: number
     generation: number
     peerHandle: string
     sessionId: string
   }>, now: number): Readonly<{ expiresAt: string, negotiationId: string }> {
     const negotiationId = crypto.randomUUID()
-    const expiresAtMs = now + 30_000
+    const expiresAtMs = input.expiresAtMs ?? now + 30_000
     this.ctx.storage.sql.exec(
       `insert into coordinator_media_negotiations (
         negotiation_id, call_id, employee_id, connection_id, session_id,
@@ -1299,7 +1305,11 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
         trackName: input.source.track_id,
       }],
     })
-    if (providerResult.outcome !== 'accepted' || !providerResult.value.sessionDescription) {
+    if (
+      providerResult.outcome !== 'accepted'
+      || providerResult.value.requiresImmediateRenegotiation !== true
+      || providerResult.value.sessionDescription?.type !== 'offer'
+    ) {
       this.sendCoordinatorEvent(input.destination.connection_id, `call:${input.callId}`, 'media.failed', {
         callId: input.callId,
         operation: 'subscribe',
@@ -1485,6 +1495,10 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     if (!negotiation || negotiation.completed_at_ms !== null || negotiation.expires_at_ms < now
       || negotiation.employee_id !== caller.authorization.employeeId || negotiation.connection_id !== caller.connectionId
       || negotiation.peer_handle !== peerHandle || negotiation.generation !== generation) return 'invalid_state'
+    // A PTT listener answer may only arrive through its own room. This keeps a
+    // valid coordinator-issued negotiation from being replayed through an
+    // unrelated call or meeting envelope.
+    if (this.pttTransmission(negotiation.call_id) && authorized.command.roomId !== `ptt:${negotiation.call_id}`) return 'invalid_state'
     const media = this.mediaSession(negotiation.call_id, caller.authorization.employeeId)
     const session = media ? this.parseProviderSession(media) : null
     const adapter = await this.providerAdapter(authorized.release)
@@ -2411,6 +2425,18 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       || current.requester_connection_id !== row.requester_connection_id
       || current.created_at_ms !== row.created_at_ms
     ) return null
+    // Once the publisher has created its source marker, keep that marker in
+    // step with the bounded server reservation while listener setup makes
+    // verified progress. Otherwise a valid slow listener can answer its own
+    // fresh provider offer after the source marker's original short deadline.
+    this.ctx.storage.sql.exec(
+      `update coordinator_ptt_media_negotiations
+       set expires_at_ms = ?
+       where transmission_request_id = ? and expires_at_ms < ?`,
+      current.lease_expires_at_ms,
+      current.transmission_request_id,
+      current.lease_expires_at_ms,
+    )
     this.scheduleNextSocketTicketExpiry()
     return current
   }
@@ -2440,7 +2466,12 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       || row.requester_connection_id !== caller.connectionId
       || this.mediaSession(input.transmissionRequestId, caller.authorization.employeeId)
     ) return null
-    return row
+    // Each provider operation has its own bounded network wait. Refreshing
+    // the server-owned preparation lease after the exact reservation has been
+    // re-verified prevents a legal slow provider sequence from expiring in
+    // the gap between two successful operations; the absolute cap remains
+    // anchored to the original floor reservation.
+    return this.extendPttPreparationLease(row, input.now)
   }
 
   /** Revalidates the exact selected listener and the live publisher source
@@ -2485,7 +2516,9 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       || source.track_id !== input.sourceTrackId
       || sourceSession.id !== input.sourceSessionId
     ) return null
-    return row
+    return row.state === 'preparing'
+      ? this.extendPttPreparationLease(row, input.now)
+      : row
   }
 
   /** A successful provider request can return after its floor has ended. The
@@ -2659,6 +2692,13 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     // local participant has reported an unrecoverable setup failure.
     this.ctx.storage.sql.exec(
       'delete from coordinator_call_media_sessions where call_id = ? and connection_id = ?',
+      transmissionRequestId,
+      connectionId,
+    )
+    // A late browser answer must never complete a listener negotiation after
+    // that listener has been removed from the current floor reservation.
+    this.ctx.storage.sql.exec(
+      'delete from coordinator_media_negotiations where call_id = ? and connection_id = ?',
       transmissionRequestId,
       connectionId,
     )
@@ -3096,12 +3136,20 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     const pending = activateProviderSession(createProviderSession(created.value.sessionId, caller.authorization.tenantId))
     const subscription = await adapter.subscribeTracks({
       session: pending,
-      sessionDescription: { sdp: parsed.offer, type: 'offer' },
       tenantId: caller.authorization.tenantId,
       tracks: [{ location: 'remote', sessionId: sourceSession.id, trackName: source.track_id }],
     })
     const remoteTrack = subscription.outcome === 'accepted' ? subscription.value.tracks[0] : null
-    if (subscription.outcome !== 'accepted' || !remoteTrack?.mid || !subscription.value.sessionDescription) {
+    // Cloudflare remote-track subscription is server-offer driven. The
+    // browser answers this provider-issued offer through the protected generic
+    // media.answer command below; accepting any other response would strand
+    // the listener in a negotiation the provider cannot complete.
+    if (
+      subscription.outcome !== 'accepted'
+      || subscription.value.requiresImmediateRenegotiation !== true
+      || !remoteTrack?.mid
+      || subscription.value.sessionDescription?.type !== 'offer'
+    ) {
       return providerUnavailable()
     }
     const session = registerProviderTrack(pending, { id: source.track_id, kind: 'audio', mid: remoteTrack.mid, state: 'active' })
@@ -3121,17 +3169,26 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       await this.closeStalePttTrack({ adapter, mid: remoteTrack.mid, session, trackId: source.track_id })
       return invalidAfterProviderWait()
     }
-    const negotiationExpiresAtMs = Math.min(current.lease_expires_at_ms, now + pttPreparingMilliseconds)
+    const peerHandle = `peer:${session.id}`
+    const negotiation = this.registerMediaNegotiation({
+      callId: parsed.transmissionRequestId,
+      connectionId: caller.connectionId,
+      employeeId: caller.authorization.employeeId,
+      expiresAtMs: Math.min(current.lease_expires_at_ms, now + pttPreparingMilliseconds),
+      generation: 1,
+      peerHandle,
+      sessionId: session.id,
+    }, now)
     this.sendCoordinatorEvent(caller.connectionId, `ptt:${parsed.transmissionRequestId}`, 'media.negotiation', {
       callId: parsed.transmissionRequestId,
       description: subscription.value.sessionDescription.sdp,
       descriptionType: subscription.value.sessionDescription.type,
       direction: 'subscribe',
-      expiresAt: new Date(negotiationExpiresAtMs).toISOString(),
+      expiresAt: negotiation.expiresAt,
       generation: 1,
       iceServers: ice.value.iceServers,
-      negotiationId: crypto.randomUUID(),
-      peerHandle: `peer:${session.id}`,
+      negotiationId: negotiation.negotiationId,
+      peerHandle,
       trackBindings: [{
         mediaKind: 'audio',
         participantConnectionId: source.connection_id,
@@ -3214,9 +3271,13 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     const now = Date.now()
     const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
     const row = this.pttTransmission(parsed.transmissionRequestId)
+    const listenerMedia = caller
+      ? this.mediaSession(parsed.transmissionRequestId, caller.authorization.employeeId)
+      : null
+    const listenerSession = listenerMedia ? this.parseProviderSession(listenerMedia) : null
     if (!caller || !row || !['preparing', 'ready'].includes(row.state) || row.lease_expires_at_ms <= now
       || !this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId).includes(caller.connectionId)
-      || !this.mediaSession(parsed.transmissionRequestId, caller.authorization.employeeId)) {
+      || !listenerMedia || !listenerSession || listenerMedia.connection_id !== caller.connectionId) {
       return { outcome: 'invalid_state', requestId: parsed.requestId }
     }
     const negotiation = this.ctx.storage.sql.exec<{ expires_at_ms: number, negotiation_id: string }>(
@@ -3228,6 +3289,23 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       await this.closeFailedPttPreparation(row, parsed.release, 'listener')
       return { outcome: 'invalid_state', requestId: parsed.requestId }
     }
+    // The source/publisher marker above proves the transmission began. This
+    // separate row proves this exact listener has returned an answer that the
+    // provider accepted for its own session before it can unlock the floor.
+    const listenerNegotiation = this.ctx.storage.sql.exec<CoordinatorMediaNegotiationRow>(
+      `select negotiation_id, call_id, employee_id, connection_id, session_id,
+              peer_handle, generation, expires_at_ms, completed_at_ms
+       from coordinator_media_negotiations
+       where call_id = ? and employee_id = ? and connection_id = ? and session_id = ?
+         and completed_at_ms is not null and expires_at_ms > ?
+       limit 1`,
+      parsed.transmissionRequestId,
+      caller.authorization.employeeId,
+      caller.connectionId,
+      listenerSession.id,
+      now,
+    ).toArray()[0]
+    if (!listenerNegotiation) return { outcome: 'invalid_state', requestId: parsed.requestId }
     this.ctx.storage.sql.exec(
       `update coordinator_ptt_listener_requirements set ready_at_ms = ?
        where transmission_request_id = ? and connection_id = ? and ready_at_ms is null`,

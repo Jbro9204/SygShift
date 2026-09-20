@@ -123,6 +123,7 @@ describe('SygSphere Communications PTT lifecycle', () => {
     const coordinator = readFileSync(resolve(import.meta.dirname, '..', 'worker', 'comms', 'tenantCommsDurableObject.ts'), 'utf8')
     const publisher = coordinator.slice(coordinator.indexOf('async startPttAudio'), coordinator.indexOf('async preparePttAudio'))
     const listener = coordinator.slice(coordinator.indexOf('async startPttListen'), coordinator.indexOf('async preparePttListen'))
+    const directRemoteSubscription = coordinator.slice(coordinator.indexOf('private async sendRemoteAudioSubscription'), coordinator.indexOf('/** The app shell uses this only to learn'))
     const listenerPreparation = coordinator.slice(coordinator.indexOf('async preparePttListen'), coordinator.indexOf('async acknowledgePttListenerReady'))
     const floorCommands = coordinator.slice(coordinator.indexOf('private async dispatchFloorCommand'), coordinator.indexOf('async startPttAudio'))
     const coordinatorDispatch = coordinator.slice(coordinator.indexOf('async dispatch'), coordinator.lastIndexOf('\n}'))
@@ -139,6 +140,19 @@ describe('SygSphere Communications PTT lifecycle', () => {
     expect(listener).toContain('this.pttListenerReservationIsCurrent')
     expect(listener).toContain('await this.closeStalePttTrack')
     expect(listener.lastIndexOf('this.pttListenerReservationIsCurrent')).toBeLessThan(listener.indexOf('this.claimPttMediaSession'))
+    // Remote subscriptions are provider-offer driven. A listener must not
+    // supply a browser offer, and its exact provider offer/answer exchange is
+    // persisted before listener-ready can ever unlock a floor.
+    expect(listener).not.toContain('sessionDescription: { sdp: parsed.offer')
+    expect(listener).toContain("subscription.value.requiresImmediateRenegotiation !== true")
+    expect(listener).toContain("subscription.value.sessionDescription?.type !== 'offer'")
+    expect(listener).toContain('this.registerMediaNegotiation({')
+    expect(listener).toContain('negotiationId: negotiation.negotiationId')
+    expect(directRemoteSubscription).toContain('providerResult.value.requiresImmediateRenegotiation !== true')
+    expect(directRemoteSubscription).toContain("providerResult.value.sessionDescription?.type !== 'offer'")
+    const listenerReady = coordinator.slice(coordinator.indexOf('async acknowledgePttListenerReady'), coordinator.indexOf('async reportPttListenerFailure'))
+    expect(listenerReady).toContain('completed_at_ms is not null')
+    expect(listenerReady).toContain('listenerMedia.connection_id !== caller.connectionId')
     expect(coordinator).toContain('on conflict (call_id, employee_id) do nothing')
 
     // An alarm may arrive late. New protected commands, direct media setup,
@@ -169,6 +183,10 @@ describe('SygSphere Communications PTT lifecycle', () => {
     expect(coordinator).toContain("this.closePttTransmission(current, parsed.release, 'unavailable')")
 
     const worker = readFileSync(resolve(import.meta.dirname, '..', 'worker', 'index.ts'), 'utf8')
+    const listenerStartRoute = worker.slice(worker.indexOf("'/api/comms/v1/ptt/audio'"), worker.indexOf("'/api/comms/v1/ptt/listener-ready'"))
+    expect(listenerStartRoute).toContain('publisher && (!offer || !channelReference)')
+    const listenerStartCall = listenerStartRoute.slice(listenerStartRoute.indexOf(': await coordinator.startPttListen'), listenerStartRoute.indexOf('return json({ outcome: started.outcome'))
+    expect(listenerStartCall).not.toContain('offer,')
     const listenerFailureRoute = worker.slice(worker.indexOf("'/api/comms/v1/ptt/listener-failed'"), worker.indexOf("'/api/comms/v1/ptt/listener-failed'") + 4_500)
     expect(listenerFailureRoute).toContain("target_command_kind: 'ptt.listen'")
     expect(listenerFailureRoute).toContain('coordinator.reportPttListenerFailure')
