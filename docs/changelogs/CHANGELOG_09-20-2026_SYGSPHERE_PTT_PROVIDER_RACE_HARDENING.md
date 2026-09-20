@@ -33,4 +33,15 @@ behavior is unchanged. No schema migration, credential, or permission change was
 
 ## Production release
 
-The release version and live health/readiness verification are appended after deployment.
+- Released source commit `a04dd85` as SygShift Cloudflare Worker version **466**
+  (`9af54b63-7d94-4ff4-b569-6b6a74003230`).
+- Both first-party SygShift health and readiness endpoints returned HTTP `200` after release.
+- The Communications bootstrap CORS preflight returned HTTP `204` with the exact approved origin,
+  credentials enabled, and `Vary: Origin`; an anonymous bootstrap request remained HTTP `401`.
+- Rollback point: `rollback/pre-sygsphere-ptt-reliability-completion-20260920`.
+
+## Remaining acceptance
+
+Physical PTT reception still requires two separately authorized employee accounts on two devices. This
+release confirms the application and coordinator lifecycle; it does not substitute for testing the actual
+microphone, speaker, browser permission, and network conditions of those devices.

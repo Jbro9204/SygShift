@@ -7,8 +7,13 @@
   results overwriting an incoming call.
 - Hardened the authoritative PTT coordinator against provider timing races: preparation leases remain
   bounded by the server, every provider return is revalidated, and stale tracks are closed before storage.
-- Verified strict TypeScript, zero-warning lint, production build, and **109 focused communications/Worker
-  tests**. Release detail is recorded in
+- Verified strict TypeScript, zero-warning lint, production build, and **110 focused communications/Worker
+  tests**. Released source commit `a04dd85` as Cloudflare Worker version **466**
+  (`9af54b63-7d94-4ff4-b569-6b6a74003230`) after both first-party health/readiness checks returned HTTP
+  `200`, the exact-origin Communications preflight returned HTTP `204` with credentials and `Vary: Origin`,
+  and an anonymous bootstrap remained HTTP `401`. Rollback point:
+  `rollback/pre-sygsphere-ptt-reliability-completion-20260920`. Physical PTT reception remains a required
+  two-authorized-device acceptance check. Release detail is recorded in
   `docs/changelogs/CHANGELOG_09-20-2026_SYGSPHERE_PTT_MICROPHONE_SETUP_RECOVERY.md` and
   `docs/changelogs/CHANGELOG_09-20-2026_SYGSPHERE_PTT_PROVIDER_RACE_HARDENING.md`.
 

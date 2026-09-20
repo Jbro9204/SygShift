@@ -53,8 +53,16 @@ No database migration was required.
 - Focused PTT UI, controller, media, socket bridge, lifecycle, and Worker suite passed: **6 files / 110 tests**.
 - `pnpm typecheck` passed.
 - `pnpm lint` passed with zero warnings.
-- Production build passed. Deployment and live verification are recorded in the release update appended after
-  the source repair is published.
+- Production build passed.
+
+## Production release
+
+- Released source commit `a04dd85` as SygShift Cloudflare Worker version **466**
+  (`9af54b63-7d94-4ff4-b569-6b6a74003230`).
+- Both first-party SygShift health and readiness endpoints returned HTTP `200` after release.
+- The Communications bootstrap CORS preflight returned HTTP `204` with the exact approved origin,
+  credentials enabled, and `Vary: Origin`; an anonymous bootstrap request remained HTTP `401`.
+- Rollback point: `rollback/pre-sygsphere-ptt-reliability-completion-20260920`.
 
 ## Remaining acceptance
 
