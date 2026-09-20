@@ -91,6 +91,20 @@ export type CloudflareProviderFailure = Readonly<{
   reconciliationRequired: boolean
 }>
 
+/**
+ * Server-only diagnostic vocabulary.  It intentionally excludes response
+ * bodies, URLs, session IDs, track IDs, SDP, and credentials, so a live
+ * failure can be investigated without copying provider or employee data into
+ * the Worker logs.
+ */
+export type CloudflareProviderDiagnostic = Readonly<{
+  event: 'sygsphere_communications_provider_failure'
+  failureClass: 'configuration' | 'http' | 'invalid_response' | 'timeout' | 'transport'
+  httpStatus?: number
+  operation: 'session_create' | 'session_inspect' | 'session_renegotiate' | 'track_close' | 'track_publish' | 'track_subscribe' | 'track_update' | 'turn_credentials'
+  outcome: CloudflareProviderFailure['outcome']
+}>
+
 export type CloudflareProviderSuccess<T> = Readonly<{
   outcome: 'accepted'
   value: T
@@ -102,6 +116,8 @@ export type CloudflareRealtimeAdapterConfiguration = Readonly<{
   appId: string
   /** Server-only App secret. It is never returned, logged, or persisted. */
   appSecret: string
+  /** Optional test hook. Runtime defaults to a sanitized Worker log entry. */
+  diagnosticLogger?: (diagnostic: CloudflareProviderDiagnostic) => void
   fetchImplementation?: ProviderFetch
   /** Allows isolated mock tests only; runtime construction is separately gated. */
   mayCallProvider: boolean
@@ -310,13 +326,36 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
       && hasText(this.configuration.appSecret, 512)
   }
 
+  private reportFailure(
+    operation: CloudflareProviderDiagnostic['operation'],
+    failure: CloudflareProviderFailure,
+    failureClass: CloudflareProviderDiagnostic['failureClass'],
+    httpStatus?: number,
+  ): CloudflareProviderFailure {
+    const diagnostic: CloudflareProviderDiagnostic = {
+      event: 'sygsphere_communications_provider_failure',
+      failureClass,
+      ...(httpStatus === undefined ? {} : { httpStatus }),
+      operation,
+      outcome: failure.outcome,
+    }
+    try {
+      if (this.configuration.diagnosticLogger) this.configuration.diagnosticLogger(diagnostic)
+      else console.warn(JSON.stringify(diagnostic))
+    } catch {
+      // Observability must never alter a media lifecycle outcome.
+    }
+    return failure
+  }
+
   private async request(
+    operation: CloudflareProviderDiagnostic['operation'],
     path: string,
     init: Readonly<{ body?: Readonly<Record<string, unknown>>, method: 'GET' | 'POST' | 'PUT' }>,
     token = this.configuration.appSecret,
   ): Promise<CloudflareProviderResult<unknown>> {
     if (!this.isConfigured() || !hasText(token, 512)) {
-      return { outcome: 'provider_unavailable', reconciliationRequired: false }
+      return this.reportFailure(operation, { outcome: 'provider_unavailable', reconciliationRequired: false }, 'configuration')
     }
     try {
       const response = await (this.configuration.fetchImplementation ?? fetch)(path, {
@@ -330,15 +369,15 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
         redirect: 'error',
         signal: AbortSignal.timeout(providerRequestTimeoutMs),
       })
-      if (!response.ok) return { outcome: 'provider_rejected', reconciliationRequired: false }
+      if (!response.ok) return this.reportFailure(operation, { outcome: 'provider_rejected', reconciliationRequired: false }, 'http', response.status)
       const body = await boundedJson(response)
       return body === null || hasProviderError(body)
-        ? { outcome: 'provider_rejected', reconciliationRequired: false }
+        ? this.reportFailure(operation, { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
         : { outcome: 'accepted', value: body }
     } catch (error) {
       return isProviderTimeout(error)
-        ? { outcome: 'ambiguous_timeout', reconciliationRequired: true }
-        : { outcome: 'provider_unavailable', reconciliationRequired: false }
+        ? this.reportFailure(operation, { outcome: 'ambiguous_timeout', reconciliationRequired: true }, 'timeout')
+        : this.reportFailure(operation, { outcome: 'provider_unavailable', reconciliationRequired: false }, 'transport')
     }
   }
 
@@ -348,14 +387,14 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
   }>>> {
     if (!isSafeReference(input.tenantId)) return { outcome: 'provider_rejected', reconciliationRequired: false }
     if (input.sessionDescription !== undefined && !isSessionDescription(input.sessionDescription)) return { outcome: 'provider_rejected', reconciliationRequired: false }
-    const result = await this.request(safeProviderPath('apps', this.configuration.appId, 'sessions', 'new'), {
+    const result = await this.request('session_create', safeProviderPath('apps', this.configuration.appId, 'sessions', 'new'), {
       body: input.sessionDescription === undefined ? {} : { sessionDescription: input.sessionDescription }, method: 'POST',
     })
     if (result.outcome !== 'accepted') return result
     const body = result.value
-    if (!body || typeof body !== 'object') return { outcome: 'provider_rejected', reconciliationRequired: false }
+    if (!body || typeof body !== 'object') return this.reportFailure('session_create', { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
     const sessionId = (body as { sessionId?: unknown }).sessionId
-    if (typeof sessionId !== 'string' || !isSafeReference(sessionId)) return { outcome: 'provider_rejected', reconciliationRequired: false }
+    if (typeof sessionId !== 'string' || !isSafeReference(sessionId)) return this.reportFailure('session_create', { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
     const sessionDescription = typedSessionDescription(body) ?? undefined
     return { outcome: 'accepted', value: { sessionDescription, sessionId } }
   }
@@ -375,7 +414,8 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     if (operation === 'subscribe' && input.tracks.some((track) => track.location !== 'remote' || !track.sessionId)) return { outcome: 'provider_rejected', reconciliationRequired: false }
     if (input.sessionDescription !== undefined && !isSessionDescription(input.sessionDescription)) return { outcome: 'provider_rejected', reconciliationRequired: false }
 
-    const result = await this.request(safeProviderPath('apps', this.configuration.appId, 'sessions', input.session.id, 'tracks', 'new'), {
+    const diagnosticOperation = operation === 'publish' ? 'track_publish' : 'track_subscribe'
+    const result = await this.request(diagnosticOperation, safeProviderPath('apps', this.configuration.appId, 'sessions', input.session.id, 'tracks', 'new'), {
       body: {
         ...(input.sessionDescription === undefined ? {} : { sessionDescription: input.sessionDescription }),
         tracks: input.tracks,
@@ -384,10 +424,10 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     })
     if (result.outcome !== 'accepted') return result
     const tracks = typedTrackResponses(result.value, input.tracks)
-    if (!tracks) return { outcome: 'provider_rejected', reconciliationRequired: false }
+    if (!tracks) return this.reportFailure(diagnosticOperation, { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
     const requiresImmediateRenegotiation = (result.value as { requiresImmediateRenegotiation?: unknown }).requiresImmediateRenegotiation
     if (requiresImmediateRenegotiation !== undefined && typeof requiresImmediateRenegotiation !== 'boolean') {
-      return { outcome: 'provider_rejected', reconciliationRequired: false }
+      return this.reportFailure(diagnosticOperation, { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
     }
     return {
       outcome: 'accepted',
@@ -410,7 +450,7 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     if (!providerSessionMayMutate(input.session, input.tenantId) || input.tracks.length === 0 || input.tracks.length > 16 || !hasUniqueTrackNames(input.tracks) || input.tracks.some((track) => !isCloudflareTrack(track))) {
       return { outcome: 'provider_rejected', reconciliationRequired: false }
     }
-    const result = await this.request(safeProviderPath('apps', this.configuration.appId, 'sessions', input.session.id, 'tracks', 'update'), {
+    const result = await this.request('track_update', safeProviderPath('apps', this.configuration.appId, 'sessions', input.session.id, 'tracks', 'update'), {
       body: {
         ...(input.sessionDescription === undefined ? {} : { sessionDescription: input.sessionDescription }),
         tracks: input.tracks,
@@ -419,10 +459,10 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     })
     if (result.outcome !== 'accepted') return result
     const tracks = typedTrackResponses(result.value, input.tracks)
-    if (!tracks) return { outcome: 'provider_rejected', reconciliationRequired: false }
+    if (!tracks) return this.reportFailure('track_update', { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
     const requiresImmediateRenegotiation = (result.value as { requiresImmediateRenegotiation?: unknown }).requiresImmediateRenegotiation
     if (requiresImmediateRenegotiation !== undefined && typeof requiresImmediateRenegotiation !== 'boolean') {
-      return { outcome: 'provider_rejected', reconciliationRequired: false }
+      return this.reportFailure('track_update', { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
     }
     return { outcome: 'accepted', value: { requiresImmediateRenegotiation: requiresImmediateRenegotiation === true, tracks } }
   }
@@ -433,7 +473,7 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     if (!providerSessionMayMutate(input.session, input.tenantId) || !isSessionDescription(input.sessionDescription)) {
       return { outcome: 'provider_rejected', reconciliationRequired: false }
     }
-    const result = await this.request(safeProviderPath('apps', this.configuration.appId, 'sessions', input.session.id, 'renegotiate'), {
+    const result = await this.request('session_renegotiate', safeProviderPath('apps', this.configuration.appId, 'sessions', input.session.id, 'renegotiate'), {
       body: { sessionDescription: input.sessionDescription }, method: 'PUT',
     })
     if (result.outcome !== 'accepted') return result
@@ -446,13 +486,13 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     if (input.tracks.length === 0 || input.tracks.length > 16 || input.tracks.some((track) => !providerTrackMayMutate(input.session, input.tenantId, track.trackId, track.mid))) {
       return { outcome: 'provider_rejected', reconciliationRequired: false }
     }
-    const result = await this.request(safeProviderPath('apps', this.configuration.appId, 'sessions', input.session.id, 'tracks', 'close'), {
+    const result = await this.request('track_close', safeProviderPath('apps', this.configuration.appId, 'sessions', input.session.id, 'tracks', 'close'), {
       body: { force: true, tracks: input.tracks.map((track) => ({ mid: track.mid })) }, method: 'PUT',
     })
     if (result.outcome !== 'accepted') return result
     const requiresImmediateRenegotiation = (result.value as { requiresImmediateRenegotiation?: unknown }).requiresImmediateRenegotiation
     if (requiresImmediateRenegotiation !== undefined && typeof requiresImmediateRenegotiation !== 'boolean') {
-      return { outcome: 'provider_rejected', reconciliationRequired: false }
+      return this.reportFailure('track_close', { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
     }
     return { outcome: 'accepted', value: { requiresImmediateRenegotiation: requiresImmediateRenegotiation === true } }
   }
@@ -461,13 +501,13 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     tracks: readonly CloudflareRealtimeTrackResponse[]
   }>>> {
     if (!providerSessionMayMutate(input.session, input.tenantId)) return { outcome: 'provider_rejected', reconciliationRequired: false }
-    const result = await this.request(safeProviderPath('apps', this.configuration.appId, 'sessions', input.session.id), { method: 'GET' })
+    const result = await this.request('session_inspect', safeProviderPath('apps', this.configuration.appId, 'sessions', input.session.id), { method: 'GET' })
     if (result.outcome !== 'accepted') return result
     const tracks = typedTrackResponses(result.value, [...input.session.tracks.values()].filter((track) => track.mid).map((track) => ({
       location: 'local' as const, mid: track.mid, trackName: track.id,
     })))
     return tracks === null
-      ? { outcome: 'provider_rejected', reconciliationRequired: false }
+      ? this.reportFailure('session_inspect', { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
       : { outcome: 'accepted', value: { tracks } }
   }
 
@@ -475,9 +515,10 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     iceServers: readonly CloudflareIceServer[]
   }>>> {
     if (!this.configuration.turnKeyId || !this.configuration.turnApiToken || !Number.isInteger(ttlSeconds) || ttlSeconds < minimumTurnCredentialTtlSeconds || ttlSeconds > maximumTurnCredentialTtlSeconds) {
-      return { outcome: 'provider_unavailable', reconciliationRequired: false }
+      return this.reportFailure('turn_credentials', { outcome: 'provider_unavailable', reconciliationRequired: false }, 'configuration')
     }
     const result = await this.request(
+      'turn_credentials',
       safeProviderPath('turn', 'keys', this.configuration.turnKeyId, 'credentials', 'generate-ice-servers'),
       { body: { ttl: ttlSeconds }, method: 'POST' },
       this.configuration.turnApiToken,
@@ -485,7 +526,7 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     if (result.outcome !== 'accepted') return result
     const iceServers = typedIceServers(result.value)
     return iceServers === null
-      ? { outcome: 'provider_rejected', reconciliationRequired: false }
+      ? this.reportFailure('turn_credentials', { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
       : { outcome: 'accepted', value: { iceServers } }
   }
 }

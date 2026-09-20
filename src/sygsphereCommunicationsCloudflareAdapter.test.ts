@@ -157,6 +157,46 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
       .resolves.toEqual({ outcome: 'ambiguous_timeout', reconciliationRequired: true })
   })
 
+  it('emits only sanitized server-side failure diagnostics', async () => {
+    const diagnosticLogger = vi.fn()
+    const adapter = new CloudflareRealtimeHttpAdapter({
+      appId: 'app-1',
+      appSecret: 'server-only-app-secret',
+      diagnosticLogger,
+      fetchImplementation: vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ errorCode: 'provider-detail-must-not-leak' }, 401)),
+      mayCallProvider: true,
+      turnApiToken: 'server-only-turn-token',
+      turnKeyId: 'turn-key-1',
+    })
+
+    await expect(adapter.createSession({ tenantId: 'tenant-1' }))
+      .resolves.toEqual({ outcome: 'provider_rejected', reconciliationRequired: false })
+    expect(diagnosticLogger).toHaveBeenCalledWith({
+      event: 'sygsphere_communications_provider_failure',
+      failureClass: 'http',
+      httpStatus: 401,
+      operation: 'session_create',
+      outcome: 'provider_rejected',
+    })
+    const logged = JSON.stringify(diagnosticLogger.mock.calls)
+    expect(logged).not.toContain('server-only-app-secret')
+    expect(logged).not.toContain('server-only-turn-token')
+    expect(logged).not.toContain('provider-detail-must-not-leak')
+    expect(logged).not.toContain('tenant-1')
+
+    const unavailable = new CloudflareRealtimeHttpAdapter({
+      appId: 'app-1', appSecret: 'server-only-app-secret', diagnosticLogger, mayCallProvider: true,
+    })
+    await expect(unavailable.generateIceServers(300))
+      .resolves.toEqual({ outcome: 'provider_unavailable', reconciliationRequired: false })
+    expect(diagnosticLogger).toHaveBeenLastCalledWith({
+      event: 'sygsphere_communications_provider_failure',
+      failureClass: 'configuration',
+      operation: 'turn_credentials',
+      outcome: 'provider_unavailable',
+    })
+  })
+
   it('generates short-lived TURN credentials server-side and filters browser-blocked port 53 URLs', async () => {
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
       iceServers: [{
