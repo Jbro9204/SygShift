@@ -2698,3 +2698,13 @@ pnpm exec wrangler deploy --keep-vars
 - Released SygShift source `c223a6a` as Worker `05b5f5ee-2baa-42c4-9e3c-dae51b7169d1` and Sygilant source
   `adba2df` as Pages deployment `90bd6482-9813-4a09-9805-c5b8e03cad16`.
 - Physical two-account/device audible reception remains the final controlled acceptance step.
+
+## 09/20/2026 - SygSphere SFU Response and Stuck-Floor Repair
+
+- Corrected the shared Cloudflare Realtime parser to accept documented successful track responses that omit
+  the optional location field instead of misclassifying valid SFU answers as provider failures.
+- Added provider/browser timing headroom, authoritative failed-media floor cleanup, provider-race protection,
+  disconnect cleanup, and call-state truthfulness across PTT, direct calls, and meetings.
+- Passed 291 files / 1,509 SygShift tests, strict TypeScript, zero-warning lint, both production builds, and
+  both Communications activation gates. The paired Sygilant quality gate passed 196 files / 926 tests.
+- Production identifiers and physical two-account/device audible acceptance remain pending at this checkpoint.

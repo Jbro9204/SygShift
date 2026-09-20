@@ -413,7 +413,12 @@ export function SygSphereCommunicationsWorkspace({
       && runtime.browser.screenCapture.available
       && permissions.has("sygsphere.comms.screen.publish"),
   };
-  const call: CommunicationsPanelCall | null = runtime.state.call && (runtime.state.call.kind === "meeting" || runtime.state.call.status !== "ringing") ? {
+  // Never leave an active-call shell mounted after the control session has
+  // failed or been revoked. The reducer also tears it down, but this keeps a
+  // future stale event from advertising a connected voice session.
+  const call: CommunicationsPanelCall | null = runtime.state.connection === "ready"
+    && runtime.state.call
+    && (runtime.state.call.kind === "meeting" || runtime.state.call.status !== "ringing") ? {
     callId: runtime.state.call.callId,
     displayName: runtime.state.call.kind === "meeting" ? "Team meeting" : "Private team call",
     kind: runtime.state.call.kind,

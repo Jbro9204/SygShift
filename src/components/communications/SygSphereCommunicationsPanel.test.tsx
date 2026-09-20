@@ -170,6 +170,15 @@ describe("SygSphere communications panel", () => {
     expect(screen.getByText(/camera and screen sharing remain off/i)).toBeVisible();
   });
 
+  it("does not call a connecting media path connected", () => {
+    render(<SygSphereCommunicationsPanel
+      {...base()}
+      call={{ callId: "call-a", displayName: "Dispatch", kind: "direct", status: "connecting" }}
+    />);
+    expect(screen.getByText("Securing voice connection")).toBeVisible();
+    expect(screen.queryByText("Voice call connected")).not.toBeInTheDocument();
+  });
+
   it("prioritizes an authorized shared screen in the active call stage", () => {
     const sharedScreen = {} as MediaStream;
     render(<SygSphereCommunicationsPanel

@@ -81,6 +81,16 @@ describe("SygSphere communications runtime state", () => {
       event: event("focus.granted", { callId: "call-a" }, 3),
     });
     expect(state.floor).toBeNull();
+    expect(state.call?.status).toBe("connecting");
+    state = reduceCommunicationsRuntime(state, {
+      type: "event.received",
+      event: event("media.negotiation", {
+        callId: "call-a",
+        descriptionType: "answer",
+        direction: "publish",
+        trackBindings: [{ publicationKind: "call_audio", role: "local" }],
+      }, 4),
+    });
     expect(state.call?.status).toBe("active");
   });
 
@@ -110,6 +120,46 @@ describe("SygSphere communications runtime state", () => {
     state = reduceCommunicationsRuntime(state, { type: "connection.lost", recoverable: true, reason: "offline" });
     expect(state.call).toBeNull();
     expect(state.connection).toBe("reconnecting");
+  });
+
+  it("fails closed when a provider media operation fails while keeping a healthy control session retryable", () => {
+    let state = reduceCommunicationsRuntime(createCommunicationsRuntimeState("employee-a"), {
+      type: "connection.ready",
+      authorizationExpiresAt: "2026-09-19T14:01:00.000Z",
+    });
+    state = reduceCommunicationsRuntime(state, {
+      type: "event.received",
+      event: event("call.requested", { callId: "call-a" }, 1),
+    });
+    state = reduceCommunicationsRuntime(state, {
+      type: "event.received",
+      event: event("media.failed", { callId: "call-a", operation: "publish", retryAllowed: true }, 2),
+    });
+
+    expect(state.connection).toBe("ready");
+    expect(state.call).toBeNull();
+    expect(state.cameraActive).toBe(false);
+    expect(state.screenActive).toBe(false);
+    expect(state.lastError).toBe("Voice could not connect. Try again.");
+  });
+
+  it("clears a matching expired media session without tearing down an unrelated call", () => {
+    let state = reduceCommunicationsRuntime(createCommunicationsRuntimeState("employee-a"), {
+      type: "event.received",
+      event: event("call.requested", { callId: "call-a" }, 1),
+    });
+    const unrelated = reduceCommunicationsRuntime(state, {
+      type: "event.received",
+      event: event("media.closed", { callId: "call-b", generation: 1, reason: "expired" }, 1, "room-b"),
+    });
+    expect(unrelated.call?.callId).toBe("call-a");
+
+    state = reduceCommunicationsRuntime(state, {
+      type: "event.received",
+      event: event("media.closed", { callId: "call-a", generation: 1, reason: "expired" }, 2),
+    });
+    expect(state.call).toBeNull();
+    expect(state.lastError).toBe("The voice connection expired. Try again.");
   });
 
   it("rejects unknown event fields before state processing", () => {

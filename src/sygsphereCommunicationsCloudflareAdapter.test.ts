@@ -67,7 +67,7 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
       requiresImmediateRenegotiation: true,
       sessionDescription: answer,
-      tracks: [{ location: 'local', mid: '0', trackName: 'audio-1' }],
+      tracks: [{ mid: '0', trackName: 'audio-1' }],
     }))
     const adapter = testAdapter(fetchImplementation)
     const rejected = await adapter.publishTracks({
@@ -90,7 +90,7 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
 
   it('uses the server-owned remote source for subscriptions and requires an explicit renegotiation response', async () => {
     const fetchImplementation = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse({ tracks: [{ location: 'remote', mid: '1', sessionId: 'publisher-session-1', trackName: 'remote-audio-1' }] }))
+      .mockResolvedValueOnce(jsonResponse({ tracks: [{ mid: '1', sessionId: 'publisher-session-1', trackName: 'remote-audio-1' }] }))
       .mockResolvedValueOnce(jsonResponse({ sessionDescription: answer }))
     const adapter = testAdapter(fetchImplementation)
     await expect(adapter.subscribeTracks({
@@ -105,10 +105,10 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     const fetchImplementation = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({
         requiresImmediateRenegotiation: false,
-        tracks: [{ location: 'local', mid: '0', trackName: 'audio-1' }],
+        tracks: [{ mid: '0', trackName: 'audio-1' }],
       }))
       .mockResolvedValueOnce(jsonResponse({
-        tracks: [{ location: 'local', mid: '0', trackName: 'audio-1' }],
+        tracks: [{ mid: '0', trackName: 'audio-1' }],
       }))
     const adapter = testAdapter(fetchImplementation)
     await expect(adapter.updateTracks({
@@ -120,6 +120,20 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
       .resolves.toMatchObject({ outcome: 'accepted', value: { tracks: [{ mid: '0', trackName: 'audio-1' }] } })
     expect(String(fetchImplementation.mock.calls[1]?.[0])).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1')
     expect(fetchImplementation.mock.calls[1]?.[1]).toMatchObject({ method: 'GET' })
+  })
+
+  it('fails closed before calling the provider when location-less responses could make track matching ambiguous', async () => {
+    const fetchImplementation = vi.fn<typeof fetch>()
+    const adapter = testAdapter(fetchImplementation)
+    await expect(adapter.updateTracks({
+      session: sessionWithAudio(),
+      tenantId: 'tenant-1',
+      tracks: [
+        { kind: 'audio', location: 'local', mid: '0', trackName: 'shared-audio' },
+        { kind: 'audio', location: 'remote', mid: '1', sessionId: 'publisher-session-1', trackName: 'shared-audio' },
+      ],
+    })).resolves.toEqual({ outcome: 'provider_rejected', reconciliationRequired: false })
+    expect(fetchImplementation).not.toHaveBeenCalled()
   })
 
   it('force-closes only registered active track/MID pairs through the provider endpoint', async () => {

@@ -57,6 +57,7 @@ export type CommunicationsRuntimeAction =
   | Readonly<{ type: "floor.failed"; reason: string }>
   | Readonly<{ type: "ptt.microphone.prepared" }>
   | Readonly<{ type: "ptt.microphone.failed"; reason: string }>
+  | Readonly<{ type: "call.local.ended"; callId: string }>
   | Readonly<{ type: "meeting.dismissed"; meetingId: string }>
   | Readonly<{ type: "local.media.failed"; reason: string }>
   | Readonly<{ type: "event.received"; event: SygSphereCommsEvent }>
@@ -138,6 +139,10 @@ export function reduceCommunicationsRuntime(
       return { ...state, lastError: null };
     case "ptt.microphone.failed":
       return { ...state, lastError: action.reason };
+    case "call.local.ended":
+      return state.call?.callId === action.callId
+        ? clearCallState(state, null)
+        : state;
     case "meeting.dismissed":
       return state.call?.kind === "meeting" && state.call.callId === action.meetingId && state.call.status === "ringing"
         ? { ...state, call: null }
@@ -267,14 +272,17 @@ function reduceServerEvent(
       };
     }
     case "media.negotiation": {
-      const descriptionType = stringValue(payload.descriptionType);
-      const direction = stringValue(payload.direction);
-      return state.call?.roomId === event.roomId
+      const call = state.call;
+      return call && isCurrentCallEvent(state, event, stringValue(payload.callId))
         ? {
           ...next,
           call: {
-            ...state.call,
-            status: descriptionType === "answer" && direction === "publish" ? "active" : "connecting",
+            ...call,
+            // A focus or meeting-membership grant authorizes an attempt, but
+            // it does not mean the provider accepted the audio. Only the
+            // successfully-applied local call-audio answer may claim an
+            // active call in the UI.
+            status: isEstablishedLocalCallAudio(payload) ? "active" : call.status,
           },
         }
         : next;
@@ -301,24 +309,45 @@ function reduceServerEvent(
           invitationId: null,
           kind: "meeting",
           roomId: event.roomId,
-          status: event.kind === "meeting.joined" ? "active" : invited ? "ringing" : "connecting",
+          // Joining a meeting only begins its media attempt. Keep the
+          // workspace visibly connecting until its audio negotiation has
+          // completed successfully.
+          status: invited ? "ringing" : "connecting",
         },
         floor: null,
         microphoneMutedByModerator: false,
       };
     }
     case "focus.granted":
-      return state.call?.roomId === event.roomId
-        ? { ...next, call: { ...state.call, status: "active" }, floor: null }
+      return isCurrentCallEvent(state, event, stringValue(payload.callId))
+        ? { ...next, floor: null }
         : next;
     case "call.ended":
     case "call.missed":
-    case "meeting.ended":
-      return { ...next, call: null, cameraActive: false, screenActive: false };
+    case "meeting.ended": {
+      const callId = stringValue(payload.callId) ?? stringValue(payload.meetingId);
+      return isCurrentCallEvent(state, event, callId)
+        ? clearCallState(next, terminalCallMessage(stringValue(payload.reason)))
+        : next;
+    }
     case "media.failed":
-      return { ...next, cameraActive: false, connection: "failed", lastError: stringValue(payload.reason) ?? "Media connection failed." };
+      return clearMatchingMediaState(
+        state,
+        next,
+        event,
+        stringValue(payload.callId),
+        payload.retryAllowed === true
+          ? "Voice could not connect. Try again."
+          : "Voice service is temporarily unavailable. Try again in a moment.",
+      );
     case "media.closed":
-      return { ...next, cameraActive: false, screenActive: false };
+      return clearMatchingMediaState(
+        state,
+        next,
+        event,
+        stringValue(payload.callId),
+        terminalCallMessage(stringValue(payload.reason)),
+      );
     case "camera.granted":
       return { ...next, cameraActive: true };
     case "camera.denied":
@@ -331,11 +360,85 @@ function reduceServerEvent(
       return { ...next, screenActive: false, lastError: stringValue(payload.reason) };
     case "focus.denied":
     case "focus.revoked":
-      return { ...next, call: null, cameraActive: false, floor: null, screenActive: false, lastError: stringValue(payload.reason) };
+      return isCurrentCallEvent(state, event, stringValue(payload.callId))
+        ? clearCallState(next, terminalCallMessage(stringValue(payload.reason)) ?? "Voice access is no longer available. Try again.")
+        : next;
     case "snapshot":
       return next;
   }
   return next;
+}
+
+function isCurrentCallEvent(
+  state: CommunicationsRuntimeState,
+  event: SygSphereCommsEvent,
+  callId: string | null,
+): boolean {
+  return state.call?.roomId === event.roomId && state.call.callId === callId;
+}
+
+function isEstablishedLocalCallAudio(payload: Record<string, unknown>): boolean {
+  if (payload.descriptionType !== "answer" || payload.direction !== "publish") return false;
+  const bindings = payload.trackBindings;
+  return Array.isArray(bindings) && bindings.some((binding) => (
+    binding
+    && typeof binding === "object"
+    && (binding as Record<string, unknown>).publicationKind === "call_audio"
+    && (binding as Record<string, unknown>).role === "local"
+  ));
+}
+
+function clearMatchingMediaState(
+  state: CommunicationsRuntimeState,
+  next: CommunicationsRuntimeState,
+  event: SygSphereCommsEvent,
+  callId: string | null,
+  message: string | null,
+): CommunicationsRuntimeState {
+  const clearsCall = isCurrentCallEvent(state, event, callId);
+  const clearsFloor = state.floor?.roomId === event.roomId
+    && (state.floor.requestId === callId || !state.call);
+  if (!clearsCall && !clearsFloor) return next;
+  return {
+    ...next,
+    ...(clearsCall ? {
+      call: null,
+      cameraActive: false,
+      microphoneMutedByModerator: false,
+      screenActive: false,
+    } : {}),
+    ...(clearsFloor ? { floor: null } : {}),
+    lastError: message,
+  };
+}
+
+function clearCallState(state: CommunicationsRuntimeState, message: string | null): CommunicationsRuntimeState {
+  return {
+    ...state,
+    call: null,
+    cameraActive: false,
+    floor: null,
+    lastError: message,
+    microphoneMutedByModerator: false,
+    screenActive: false,
+  };
+}
+
+function terminalCallMessage(reason: string | null): string | null {
+  switch (reason) {
+    case "expired":
+      return "The voice connection expired. Try again.";
+    case "unavailable":
+      return "Voice service is temporarily unavailable. Try again in a moment.";
+    case "network_lost":
+      return "The voice connection was lost. Try again.";
+    case "authorization_changed":
+      return "Voice access changed. Reopen Communications and try again.";
+    case "moderated":
+      return "You were removed from this voice session.";
+    default:
+      return null;
+  }
 }
 
 function resetState(

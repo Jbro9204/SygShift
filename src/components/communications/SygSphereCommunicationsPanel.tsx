@@ -99,6 +99,7 @@ export function SygSphereCommunicationsPanel({
     enabled: pttEnabled,
     onRelease: onPttPressEnd,
     onStart: () => selectedChannel && onPttPressStart(selectedChannel.id),
+    status: pttState,
   });
 
   return (
@@ -117,7 +118,7 @@ export function SygSphereCommunicationsPanel({
                   {...ptt.handlers}
                   aria-describedby="sphere-comms-ptt-help"
                   aria-pressed={ptt.pressed}
-                  className={`sphere-comms-ptt${ptt.pressed || pttState === "transmitting" ? " is-transmitting" : ""}`}
+                  className={`sphere-comms-ptt${pttState === "transmitting" ? " is-transmitting" : ""}`}
                   disabled={!pttEnabled}
                   type="button"
                 >
@@ -207,7 +208,7 @@ function ActiveCallControls({
         <span className={call.status === "active" ? "is-live" : undefined}><Phone size={21} /></span>
         <div><small>{call.kind === "meeting" ? "Team meeting" : "Private call"}</small><strong>{call.displayName}</strong><p>{call.status === "active" ? "Connected" : "Connecting securely…"}</p></div>
       </div>
-      <RemoteMediaStage tracks={remoteMedia} />
+      <RemoteMediaStage status={call.status} tracks={remoteMedia} />
       <div className="sphere-comms-active__controls">
         <button aria-pressed={microphoneMuted} disabled={microphoneMutedByModerator} onClick={() => onMicrophoneMuteChange(!microphoneMuted)} type="button">
           {microphoneMuted ? <MicOff size={19} /> : <Mic size={19} />}<span>{microphoneMutedByModerator ? "Muted by moderator" : microphoneMuted ? "Unmute" : "Mute"}</span>
@@ -222,7 +223,10 @@ function ActiveCallControls({
   );
 }
 
-function RemoteMediaStage({ tracks }: { tracks: readonly CommunicationsRemoteTrack[] }) {
+function RemoteMediaStage({ status, tracks }: {
+  status: CommunicationsPanelCall["status"];
+  tracks: readonly CommunicationsRemoteTrack[];
+}) {
   const screens = tracks.filter((track) => track.mediaKind === "screen");
   const cameras = tracks.filter((track) => track.mediaKind === "video");
   return (
@@ -234,7 +238,7 @@ function RemoteMediaStage({ tracks }: { tracks: readonly CommunicationsRemoteTra
         </div>
       )}
       {screens.length === 0 && cameras.length === 0 && (
-        <div className="sphere-comms-media-stage__voice"><Phone size={25} /><div><strong>Voice call connected</strong><span>Camera and screen sharing remain off until someone chooses them.</span></div></div>
+        <div className="sphere-comms-media-stage__voice"><Phone size={25} /><div><strong>{status === "active" ? "Voice call connected" : "Securing voice connection"}</strong><span>{status === "active" ? "Camera and screen sharing remain off until someone chooses them." : "Voice controls will be available when the secure media path is ready."}</span></div></div>
       )}
     </section>
   );
@@ -273,20 +277,34 @@ function ConnectionStatus({ state }: { state: CommunicationsConnectionState }) {
 }
 
 function pttLabel(state: SygSphereCommunicationsPanelProps["pttState"], pressed: boolean): string {
-  if (pressed || state === "transmitting") return "Talking now — release to stop";
+  // A held button means the person asked for the floor. The coordinator is
+  // the source of truth for whether audio is actually live.
+  if (state === "transmitting") return "Talking now — release to stop";
   if (state === "releasing") return "Releasing…";
   if (state === "permission_needed") return "Hold to allow microphone";
   if (state === "requesting") return "Preparing your channel…";
+  if (pressed) return "Checking channel…";
   if (state === "reconnecting") return "Reconnecting…";
   if (state === "denied") return "Channel unavailable";
   return "Hold to talk";
 }
 
-function useHoldToTalk({ enabled, onRelease, onStart }: { enabled: boolean; onRelease: () => void; onStart: () => void }) {
+function useHoldToTalk({
+  enabled,
+  onRelease,
+  onStart,
+  status,
+}: {
+  enabled: boolean;
+  onRelease: () => void;
+  onStart: () => void;
+  status: SygSphereCommunicationsPanelProps["pttState"];
+}) {
   const [pressed, setPressed] = useState(false);
   const enabledRef = useRef(enabled);
   const onReleaseRef = useRef(onRelease);
   const onStartRef = useRef(onStart);
+  const previousStatusRef = useRef(status);
   const pressedRef = useRef(false);
   enabledRef.current = enabled;
   onReleaseRef.current = onRelease;
@@ -322,6 +340,16 @@ function useHoldToTalk({ enabled, onRelease, onStart }: { enabled: boolean; onRe
       document.removeEventListener("visibilitychange", stopWhenHidden);
     };
   }, [release]);
+
+  useEffect(() => {
+    const wasAwaitingAuthority = ["requesting", "transmitting", "releasing"].includes(previousStatusRef.current);
+    const noLongerHoldingAuthority = ["ready", "denied", "reconnecting"].includes(status);
+    previousStatusRef.current = status;
+    // A server rejection or expiry can arrive while the pointer is still
+    // down. Clear the local pressed state immediately. The controller's
+    // release action is deliberately safe when the floor no longer exists.
+    if (pressedRef.current && wasAwaitingAuthority && noLongerHoldingAuthority) release();
+  }, [release, status]);
 
   return {
     handlers: {

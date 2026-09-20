@@ -786,7 +786,7 @@ The first release is intentionally enrolled only for the owner account. It deriv
 
 - Priority: **Pilot acceptance**
 - Target window: Complete the controlled two-person device ceremony before wider employee rollout
-- Status: Shared runtime and the production media-preparation reliability repair are operational in SygShift and Sygilant. The compact conversation-first voice experience, global authorized audio playback, first-ready-listener PTT flow, plain-language recovery, responsive layout, 13-pixel minimum compact text, and final PTT contrast correction are deployed and technically verified. Physical two-person audio/video acceptance remains open.
+- Status: Shared runtime and the SFU response/stuck-floor repair are technically verified in SygShift and Sygilant. The compact conversation-first voice experience, global authorized audio playback, first-ready-listener PTT flow, plain-language recovery, responsive layout, 13-pixel minimum compact text, and final PTT contrast correction remain in place. Coordinated deployment and physical two-person audio/video acceptance remain open.
 - Added: 09/19/2026
 
 Build one browser-first communications capability shared by SygSphere, SygShift, and Sygilant for assignment-scoped PTT, authorized internal calls, optional video, conversation-based meetings, and desktop screen sharing. SygShift remains the authority for identity, MFA, permissions, membership, history, notifications, tenant routing, and usage reconciliation.
@@ -800,6 +800,7 @@ Required outcomes:
 - [x] Deploy the Worker/SQLite Durable Object coordinator and provider registry without exposing secrets or accepting browser-supplied authority.
 - [x] Mount the shared browser runtime with PTT/call focus, recovery, accessible controls, and preserved Dispatch/text-message fallback in both applications.
 - [~] Complete the controlled physical pilot and reconcile observed SFU/TURN usage with the protected allowance meter. Independent feature flags, alerts, rollback points, and coordinated Sygilant compatibility verification are complete.
+- [ ] After the transport ceremony passes, add authorized speaker/output-device selection where the browser supports it and an in-app playback-volume control with clear fallback on unsupported mobile browsers.
 
 Production controls remain permission-scoped and server-authoritative. Do not expand the pilot or claim physical audio/video acceptance until two simultaneously connected employee devices complete the recorded ceremony.
 

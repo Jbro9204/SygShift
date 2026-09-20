@@ -14,7 +14,9 @@ import {
 export const SYGSPHERE_COMMS_CLOUDFLARE_REALTIME_ADAPTER_RELEASED = true as const
 
 const realtimeApiOrigin = 'https://rtc.live.cloudflare.com/v1'
-const providerRequestTimeoutMs = 5_000
+// Cloudflare SFU operations may wait up to five seconds for a peer to reach a
+// connected state. Allow network and Worker overhead around that provider wait.
+const providerRequestTimeoutMs = 15_000
 const maximumProviderResponseBytes = 131_072
 const minimumTurnCredentialTtlSeconds = 60
 const maximumTurnCredentialTtlSeconds = 86_400
@@ -173,8 +175,15 @@ const isCloudflareTrack = (value: unknown): value is CloudflareRealtimeTrack => 
     && (candidate.location === 'local' || typeof candidate.sessionId === 'string')
 }
 
+/**
+ * Cloudflare's successful track responses may omit `location`.  We therefore
+ * cannot safely correlate two requested tracks that share a name even when
+ * their requested locations differ: either response could otherwise satisfy
+ * both requests.  Reject that ambiguous server-owned request before it reaches
+ * the provider.
+ */
 const hasUniqueTrackNames = (tracks: readonly CloudflareRealtimeTrack[]): boolean =>
-  new Set(tracks.map((track) => `${track.location}:${track.trackName}`)).size === tracks.length
+  new Set(tracks.map((track) => track.trackName)).size === tracks.length
 
 const isProviderTimeout = (error: unknown): boolean =>
   error instanceof DOMException
@@ -241,11 +250,13 @@ const typedTrackResponses = (
     const matching = tracks.find((item) => {
       if (!item || typeof item !== 'object') return false
       const candidate = item as Partial<CloudflareRealtimeTrackResponse> & { errorCode?: unknown }
-      return candidate.trackName === request.trackName && candidate.location === request.location
+      return candidate.trackName === request.trackName
+        && (candidate.location === undefined || candidate.location === request.location)
     })
     if (!matching || typeof matching !== 'object') return null
     const candidate = matching as Partial<CloudflareRealtimeTrackResponse> & { errorCode?: unknown }
     if (typeof candidate.errorCode === 'string' || typeof candidate.mid !== 'string' || !isSafeReference(candidate.mid, 64)) return null
+    if (candidate.location !== undefined && candidate.location !== request.location) return null
     if (candidate.sessionId !== undefined && (typeof candidate.sessionId !== 'string' || !isSafeReference(candidate.sessionId))) return null
     responses.push({ location: request.location, mid: candidate.mid, sessionId: candidate.sessionId, trackName: request.trackName })
   }

@@ -304,12 +304,14 @@ export class SygSphereCommunicationsController {
   async leaveMeeting(meetingId: string): Promise<void> {
     const roomId = this.state.call?.callId === meetingId ? this.state.call.roomId : undefined;
     await this.releaseCallMedia(meetingId, "meeting", roomId);
+    this.update({ type: "call.local.ended", callId: meetingId });
     await this.send("meeting.leave", { meetingId }, roomId);
   }
 
   async endMeeting(meetingId: string): Promise<void> {
     const roomId = this.state.call?.callId === meetingId ? this.state.call.roomId : undefined;
     await this.releaseCallMedia(meetingId, "meeting", roomId);
+    this.update({ type: "call.local.ended", callId: meetingId });
     await this.send("meeting.end", { meetingId }, roomId);
   }
 
@@ -325,6 +327,7 @@ export class SygSphereCommunicationsController {
   async endCall(callId: string): Promise<void> {
     const roomId = this.state.call?.callId === callId ? this.state.call.roomId : undefined;
     await this.releaseCallMedia(callId, "call", roomId);
+    this.update({ type: "call.local.ended", callId });
     await this.send("call.end", { callId }, roomId).catch(() => undefined);
   }
 
@@ -403,6 +406,8 @@ export class SygSphereCommunicationsController {
 
   private handleMediaFailure(generation: number, error: unknown): void {
     if (generation !== this.connectGeneration) return;
+    const floor = this.state.floor;
+    const call = this.state.call;
     this.clearFloorLeaseTimers();
     this.media.stopAll();
     this.pendingCallAudio.clear();
@@ -414,6 +419,25 @@ export class SygSphereCommunicationsController {
       type: "local.media.failed",
       reason: mediaFailureMessage(error),
     });
+    if (floor) {
+      const commandKind = floor.status === "requesting" || floor.status === "preparing"
+        ? "floor.cancel"
+        : "floor.release";
+      void Promise.allSettled([
+        this.coordinator?.stopPublication("ptt", floor.roomId ?? undefined),
+        this.send(commandKind, { transmissionRequestId: floor.requestId }, floor.roomId ?? undefined),
+      ]);
+    }
+    if (call) {
+      const ownerKind = call.kind === "meeting" ? "meeting" : "call";
+      void this.releaseCallMedia(call.callId, ownerKind, call.roomId)
+        .then(() => this.send(
+          call.kind === "meeting" ? "meeting.leave" : "call.end",
+          call.kind === "meeting" ? { meetingId: call.callId } : { callId: call.callId },
+          call.roomId,
+        ))
+        .catch(() => undefined);
+    }
   }
 
   private scheduleReconnect(accountKey: string, generation: number, attempt: number): void {
@@ -494,7 +518,6 @@ export class SygSphereCommunicationsController {
         }
         this.pendingCallAudio.set(call.callId, stream);
       }
-      this.media.setMicrophoneMuted({ kind: "call", sessionId: call.callId }, false);
       await this.coordinator?.publish({ kind: "call_audio", roomId: call.roomId, stream });
     }
 
@@ -508,10 +531,9 @@ export class SygSphereCommunicationsController {
       }
     }
 
-    if (event.kind === "focus.granted") {
+    if (event.kind === "media.negotiation") {
       const call = this.state.call;
-      const stream = call ? this.pendingCallAudio.get(call.callId) : null;
-      if (call && stream) {
+      if (call?.status === "active" && isEstablishedLocalCallAudio(event.payload, call.callId)) {
         this.media.setMicrophoneMuted({
           kind: call.kind === "meeting" ? "meeting" : "call",
           sessionId: call.callId,
@@ -572,7 +594,7 @@ export class SygSphereCommunicationsController {
       await this.coordinator?.stopPublication("camera", event.roomId).catch(() => undefined);
     }
 
-    if (["session.revoked", "focus.revoked", "call.ended", "call.missed", "meeting.ended", "media.failed"].includes(event.kind)) {
+    if (["session.revoked", "focus.revoked", "call.ended", "call.missed", "meeting.ended", "media.closed", "media.failed"].includes(event.kind)) {
       this.media.stopAll();
       this.pendingCallAudio.clear();
       this.pendingCamera = null;
@@ -698,6 +720,23 @@ function stringPayload(payload: unknown, key: string): string | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const value = (payload as Record<string, unknown>)[key];
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function isEstablishedLocalCallAudio(payload: unknown, callId: string): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const record = payload as Record<string, unknown>;
+  if (
+    record.callId !== callId
+    || record.descriptionType !== "answer"
+    || record.direction !== "publish"
+    || !Array.isArray(record.trackBindings)
+  ) return false;
+  return record.trackBindings.some((binding) => (
+    binding
+    && typeof binding === "object"
+    && (binding as Record<string, unknown>).publicationKind === "call_audio"
+    && (binding as Record<string, unknown>).role === "local"
+  ));
 }
 
 function safeError(error: unknown): string {

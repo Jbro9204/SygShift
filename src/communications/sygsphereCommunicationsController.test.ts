@@ -182,6 +182,8 @@ describe("SygSphere communications controller", () => {
 
     await vi.waitFor(() => expect(test.controller.snapshot.floor).toBeNull());
     expect(test.media.stopAll).toHaveBeenCalled();
+    await vi.waitFor(() => expect(vi.mocked(test.session.send).mock.calls.some(([command]) => command.kind === "floor.cancel")).toBe(true));
+    expect(test.session.stopPublication).toHaveBeenCalledWith("ptt", "room-a");
     expect(test.controller.snapshot.connection).toBe("ready");
     expect(test.controller.snapshot.lastError).toMatch(/Use messages or Dispatch/);
   });
@@ -393,10 +395,16 @@ describe("SygSphere communications controller", () => {
     await test.onEvent()(event("call.ringing", { callId: "4896f7c0-7143-48f9-9978-d1f6a342186f", invitationId: "d285bf11-15f6-4efe-b60f-4ab891637342" }, 1));
     await test.controller.answerCall("4896f7c0-7143-48f9-9978-d1f6a342186f", "d285bf11-15f6-4efe-b60f-4ab891637342");
     await test.onEvent()(event("focus.granted", { callId: "4896f7c0-7143-48f9-9978-d1f6a342186f" }, 2));
+    await test.onEvent()(event("media.negotiation", {
+      callId: "4896f7c0-7143-48f9-9978-d1f6a342186f",
+      descriptionType: "answer",
+      direction: "publish",
+      trackBindings: [{ publicationKind: "call_audio", role: "local" }],
+    }, 3));
     await test.controller.setCameraEnabled("4896f7c0-7143-48f9-9978-d1f6a342186f", true);
     expect(test.session.send).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "camera.request" }));
     expect(test.session.publish).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "camera" }));
-    await test.onEvent()(event("camera.granted", { callId: "4896f7c0-7143-48f9-9978-d1f6a342186f" }, 3));
+    await test.onEvent()(event("camera.granted", { callId: "4896f7c0-7143-48f9-9978-d1f6a342186f" }, 4));
     expect(test.session.publish).toHaveBeenCalledWith(expect.objectContaining({ kind: "camera", roomId: "room-a" }));
   });
 
@@ -408,6 +416,12 @@ describe("SygSphere communications controller", () => {
     await test.onEvent()(event("call.ringing", { callId, invitationId }, 1));
     await test.controller.answerCall(callId, invitationId);
     await test.onEvent()(event("focus.granted", { callId }, 2));
+    await test.onEvent()(event("media.negotiation", {
+      callId,
+      descriptionType: "answer",
+      direction: "publish",
+      trackBindings: [{ publicationKind: "call_audio", role: "local" }],
+    }, 3));
 
     expect(test.controller.setCallMicrophoneMuted(callId, true)).toBe(true);
     expect(test.media.setMicrophoneMuted).toHaveBeenCalledWith({ kind: "call", sessionId: callId }, true);
@@ -432,6 +446,13 @@ describe("SygSphere communications controller", () => {
       invitationId: "d285bf11-15f6-4efe-b60f-4ab891637342",
     }, 2));
     expect(test.session.publish).toHaveBeenCalledWith({ kind: "call_audio", roomId: "room-a", stream: test.microphone });
+    expect(test.media.setMicrophoneMuted).not.toHaveBeenCalledWith({ kind: "call", sessionId: callId }, false);
+    await test.onEvent()(event("media.negotiation", {
+      callId,
+      descriptionType: "answer",
+      direction: "publish",
+      trackBindings: [{ publicationKind: "call_audio", role: "local" }],
+    }, 3));
     expect(test.media.setMicrophoneMuted).toHaveBeenCalledWith({ kind: "call", sessionId: callId }, false);
   });
 

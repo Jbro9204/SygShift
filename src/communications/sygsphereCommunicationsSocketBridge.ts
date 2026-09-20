@@ -24,6 +24,7 @@ import {
 const socketPath = "/api/comms/v1/connect";
 const openingTimeoutMilliseconds = 5_000;
 const iceGatheringTimeoutMilliseconds = 10_000;
+const mediaRequestTimeoutMilliseconds = 20_000;
 const heartbeatMilliseconds = 15_000;
 const authorizationRefreshMilliseconds = 45_000;
 const bootstrapSchema = z.object({
@@ -512,7 +513,7 @@ function createSession({
       accessToken,
       input.meetingId,
       { mediaKind: input.mediaKind },
-      AbortSignal.timeout(10_000),
+      AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
     ));
     const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
     const tracks = input.mediaKind === "audio" ? input.stream.getAudioTracks() : input.stream.getVideoTracks();
@@ -532,7 +533,7 @@ function createSession({
         input.meetingId,
         "publish",
         { mediaKind: input.mediaKind, offer: localDescription.sdp },
-        AbortSignal.timeout(10_000),
+        AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
       ));
       if (response.outcome !== "accepted") throw new Error(commandOutcomeMessage(response.outcome));
     } catch (error) {
@@ -555,7 +556,7 @@ function createSession({
         accessToken,
         input.meetingId,
         { mediaKind: input.mediaKind, sourceConnectionId: input.sourceConnectionId },
-        AbortSignal.timeout(10_000),
+        AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
       ));
       const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
       peer.addTransceiver(input.mediaKind === "audio" ? "audio" : "video", { direction: "recvonly" });
@@ -585,7 +586,7 @@ function createSession({
         input.meetingId,
         "subscribe",
         { mediaKind: input.mediaKind, offer: localDescription.sdp, sourceConnectionId: input.sourceConnectionId },
-        AbortSignal.timeout(10_000),
+        AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
       ));
       if (response.outcome !== "accepted") closeMeetingPeers((item) => item.meetingId === input.meetingId && item.role === "listener" && item.sourceConnectionId === input.sourceConnectionId && item.mediaKind === input.mediaKind);
     } catch {
@@ -600,7 +601,7 @@ function createSession({
       accessToken,
       meetingId,
       { mediaKind },
-      AbortSignal.timeout(10_000),
+      AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
     ));
     if (response.outcome !== "accepted") throw new Error(commandOutcomeMessage(response.outcome));
   };
@@ -611,12 +612,12 @@ function createSession({
     const context = directCallContextSchema.parse(await dependencies.getDirectCallContext(
       accessToken,
       input.callId,
-      AbortSignal.timeout(10_000),
+      AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
     ));
     const preparation = pttPreparationSchema.parse(await dependencies.prepareDirectAudio(
       accessToken,
       { callId: input.callId, conversationReference: context.conversationReference },
-      AbortSignal.timeout(10_000),
+      AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
     ));
     const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
     for (const track of input.stream.getAudioTracks()) peer.addTrack(track, input.stream);
@@ -633,7 +634,7 @@ function createSession({
       const response = commandResponseSchema.parse(await dependencies.startDirectAudio(
         accessToken,
         { callId: input.callId, conversationReference: context.conversationReference, offer: localDescription.sdp },
-        AbortSignal.timeout(10_000),
+        AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
       ));
       if (response.outcome !== "accepted") throw new Error(commandOutcomeMessage(response.outcome));
     } catch (error) {
@@ -653,7 +654,7 @@ function createSession({
     const preparation = pttPreparationSchema.parse(await dependencies.preparePtt(
       accessToken,
       { channelReference: input.channelReference, mode: "publisher", transmissionRequestId: input.transmissionRequestId },
-      AbortSignal.timeout(10_000),
+      AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
     ));
     const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
     for (const track of input.stream.getAudioTracks()) peer.addTrack(track, input.stream);
@@ -679,7 +680,7 @@ function createSession({
           offer: localDescription.sdp,
           transmissionRequestId: input.transmissionRequestId,
         },
-        AbortSignal.timeout(10_000),
+        AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
       ));
       if (response.outcome !== "accepted") throw new Error(commandOutcomeMessage(response.outcome));
     } catch (error) {
@@ -694,7 +695,7 @@ function createSession({
     const preparation = pttPreparationSchema.parse(await dependencies.preparePtt(
       accessToken,
       { mode: "listener", transmissionRequestId },
-      AbortSignal.timeout(10_000),
+      AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
     ));
     const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
     peer.addTransceiver("audio", { direction: "recvonly" });
@@ -723,7 +724,7 @@ function createSession({
       const response = commandResponseSchema.parse(await dependencies.startPtt(
         accessToken,
         { mode: "listener", offer: localDescription.sdp, transmissionRequestId },
-        AbortSignal.timeout(10_000),
+        AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
       ));
       if (response.outcome !== "accepted") closePttPeer(transmissionRequestId);
     } catch {
@@ -865,7 +866,7 @@ function createSession({
           const response = commandResponseSchema.parse(await dependencies.acknowledgePttListenerReady(
             accessToken,
             { transmissionRequestId: payload.callId },
-            AbortSignal.timeout(10_000),
+            AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
           ));
           if (response.outcome !== "accepted") closePttPeer(payload.callId);
         }
