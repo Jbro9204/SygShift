@@ -6,7 +6,7 @@
  */
 import { z } from 'zod'
 
-export const SYGSPHERE_COMMS_CONTRACT_VERSION = '1.0.0-draft.4' as const
+export const SYGSPHERE_COMMS_CONTRACT_VERSION = '1.0.0-draft.6' as const
 export const SYGSPHERE_COMMS_PROTOCOL_VERSION = 1 as const
 
 export const SYGSPHERE_COMMS_PERMISSIONS = [
@@ -85,6 +85,8 @@ export const SYGSPHERE_COMMS_EVENT_KINDS = [
   'participant.changed',
   'participant.removed',
   'participant.muted',
+  'media.source.available',
+  'media.source.unavailable',
   'media.negotiation',
   'media.policy',
   'media.failed',
@@ -252,12 +254,33 @@ export const SYGSPHERE_COMMS_EVENT_PAYLOAD_SCHEMAS = {
   'call.accepted': z.object({ callId: callReferenceSchema, invitationId: z.uuid() }).strict(),
   'call.ended': z.object({ callId: callReferenceSchema, reason: eventReasonSchema }).strict(),
   'call.missed': z.object({ callId: callReferenceSchema, reason: z.enum(['declined', 'expired', 'cancelled']) }).strict(),
-  'meeting.created': z.object({ meetingId: meetingReferenceSchema }).strict(),
+  'meeting.created': z.object({
+    hostConnectionId: participantConnectionReferenceSchema,
+    invited: z.boolean(),
+    meetingId: meetingReferenceSchema,
+  }).strict(),
   'meeting.joined': z.object({ meetingId: meetingReferenceSchema, participantConnectionId: participantConnectionReferenceSchema }).strict(),
   'meeting.ended': z.object({ meetingId: meetingReferenceSchema, reason: eventReasonSchema }).strict(),
   'participant.changed': z.object({ meetingId: meetingReferenceSchema, participantConnectionId: participantConnectionReferenceSchema, state: z.enum(['joined', 'left']) }).strict(),
   'participant.removed': z.object({ meetingId: meetingReferenceSchema, participantConnectionId: participantConnectionReferenceSchema }).strict(),
-  'participant.muted': z.object({ meetingId: meetingReferenceSchema, participantConnectionId: participantConnectionReferenceSchema }).strict(),
+  'participant.muted': z.object({
+    meetingId: meetingReferenceSchema,
+    participantConnectionId: participantConnectionReferenceSchema,
+    self: z.boolean().optional(),
+  }).strict(),
+  'media.source.available': z.object({
+    callId: callReferenceSchema,
+    mediaKind: mediaKindSchema,
+    participantConnectionId: participantConnectionReferenceSchema,
+    trackReference: opaqueTrackReferenceSchema,
+  }).strict(),
+  'media.source.unavailable': z.object({
+    callId: callReferenceSchema,
+    mediaKind: mediaKindSchema,
+    participantConnectionId: participantConnectionReferenceSchema,
+    reason: eventReasonSchema,
+    trackReference: opaqueTrackReferenceSchema,
+  }).strict(),
   'media.negotiation': z.object({
     callId: callReferenceSchema,
     description: boundedSessionDescriptionSchema,

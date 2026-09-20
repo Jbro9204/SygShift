@@ -79,10 +79,11 @@ describe("SygSphere communications protected socket bridge", () => {
     expect(rejectedSocket.closedWith?.code).toBe(1008);
   });
 
-  it("validates outbound commands and forwards only canonical server events", async () => {
+  it("validates outbound commands, sends mutations through the protected HTTP boundary, and forwards only canonical server events", async () => {
     const socket = new FakeSocket();
     const onEvent = vi.fn();
-    const bridge = createBridge({ bootstrap: vi.fn(async () => validBootstrap(ticket)), socket });
+    const sendCommand = vi.fn(async () => acceptedCommand());
+    const bridge = createBridge({ bootstrap: vi.fn(async () => validBootstrap(ticket)), sendCommand, socket });
     const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent });
     await socketCreated(socket);
     socket.open();
@@ -99,7 +100,14 @@ describe("SygSphere communications protected socket bridge", () => {
       },
       protocolVersion: 1,
     });
-    expect(JSON.parse(socket.sent.at(-1) ?? "null")).toMatchObject({ connectionEpoch: 1, kind: "floor.request" });
+    expect(sendCommand).toHaveBeenCalledWith(
+      "access-token",
+      expect.objectContaining({ connectionEpoch: 1, kind: "floor.request" }),
+      expect.any(AbortSignal),
+    );
+    expect(socket.sent.map((item) => JSON.parse(item))).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "floor.request" }),
+    ]));
 
     socket.message(JSON.stringify({
       eventId: "8d2f99e1-0915-4517-88e0-c344ba284df8",
@@ -170,12 +178,164 @@ describe("SygSphere communications protected socket bridge", () => {
     await vi.waitFor(() => expect(onEvent).toHaveBeenCalledTimes(1));
   });
 
-  it("converts peer transport answers and readiness into validated socket commands", async () => {
+  it("acknowledges a PTT listener only after the coordinator answer was applied", async () => {
+    const socket = new FakeSocket();
+    const acknowledgePttListenerReady = vi.fn(async () => acceptedCommand());
+    const preparePtt = vi.fn(async () => ({
+      iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
+      requestId: "d285bf11-15f6-4efe-b60f-4ab891637342",
+    }));
+    const startPtt = vi.fn(async () => acceptedCommand());
+    const peer = createFakeRtcPeer();
+    const bridge = createBridge({
+      acknowledgePttListenerReady,
+      bootstrap: vi.fn(async () => validBootstrap(ticket)),
+      createRtcPeer: () => peer,
+      preparePtt,
+      socket,
+      startPtt,
+    });
+    const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+    await socketCreated(socket);
+    socket.open();
+    socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+    await connection;
+
+    socket.message(JSON.stringify({
+      eventId: "8d2f99e1-0915-4517-88e0-c344ba284df8",
+      kind: "transmission.started",
+      payload: {
+        scope: "dispatch",
+        transmissionRequestId: "4896f7c0-7143-48f9-9978-d1f6a342186f",
+      },
+      protocolVersion: 1,
+      roomEpoch: 1,
+      roomId: "ptt:4896f7c0-7143-48f9-9978-d1f6a342186f",
+      roomSeq: 1,
+      serverTime: "2026-09-19T21:00:01.000Z",
+    }));
+    await vi.waitFor(() => expect(startPtt).toHaveBeenCalledWith(
+      "access-token",
+      expect.objectContaining({ mode: "listener", transmissionRequestId: "4896f7c0-7143-48f9-9978-d1f6a342186f" }),
+      expect.any(AbortSignal),
+    ));
+    expect(acknowledgePttListenerReady).not.toHaveBeenCalled();
+
+    socket.message(JSON.stringify({
+      eventId: "73f004e3-34e3-48b2-9bca-7be78c4f04a6",
+      kind: "media.negotiation",
+      payload: {
+        callId: "4896f7c0-7143-48f9-9978-d1f6a342186f",
+        description: "v=0\r\n",
+        descriptionType: "answer",
+        direction: "subscribe",
+        expiresAt: "2026-09-19T21:00:31.000Z",
+        generation: 1,
+        iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
+        negotiationId: "d285bf11-15f6-4efe-b60f-5bd86765f451",
+        peerHandle: "peer-listener",
+        trackBindings: [{
+          mediaKind: "audio",
+          participantConnectionId: "58f2be04-75dc-4cb9-a7da-7c3d6daa20b4",
+          publicationKind: "ptt",
+          role: "remote",
+          trackReference: "track-1",
+          transceiverMid: "0",
+        }],
+      },
+      protocolVersion: 1,
+      roomEpoch: 1,
+      roomId: "ptt:4896f7c0-7143-48f9-9978-d1f6a342186f",
+      roomSeq: 2,
+      serverTime: "2026-09-19T21:00:02.000Z",
+    }));
+    await vi.waitFor(() => expect(peer.setRemoteDescription).toHaveBeenCalledWith({ sdp: "v=0\r\n", type: "answer" }));
+    await vi.waitFor(() => expect(acknowledgePttListenerReady).toHaveBeenCalledWith(
+      "access-token",
+      { transmissionRequestId: "4896f7c0-7143-48f9-9978-d1f6a342186f" },
+      expect.any(AbortSignal),
+    ));
+  });
+
+  it("negotiates a meeting audio publication through the protected provider boundary", async () => {
+    const socket = new FakeSocket();
+    const meetingId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+    const prepareMeetingMedia = vi.fn(async () => ({
+      iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
+      requestId: "d285bf11-15f6-4efe-b60f-5bd86765f451",
+    }));
+    const startMeetingMedia = vi.fn(async () => acceptedCommand());
+    const peer = createFakeRtcPeer();
+    const bridge = createBridge({
+      bootstrap: vi.fn(async () => validBootstrap(ticket)),
+      createRtcPeer: () => peer,
+      prepareMeetingMedia,
+      socket,
+      startMeetingMedia,
+    });
+    const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+    await socketCreated(socket);
+    socket.open();
+    socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+    const { session } = await connection;
+    const audioTrack = {} as MediaStreamTrack;
+    await session.publish({
+      kind: "call_audio",
+      roomId: `meeting:${meetingId}`,
+      stream: { getAudioTracks: () => [audioTrack], getVideoTracks: () => [] } as unknown as MediaStream,
+    });
+    expect(prepareMeetingMedia).toHaveBeenCalledWith(
+      "access-token",
+      meetingId,
+      { mediaKind: "audio" },
+      expect.any(AbortSignal),
+    );
+    expect(startMeetingMedia).toHaveBeenCalledWith(
+      "access-token",
+      meetingId,
+      "publish",
+      expect.objectContaining({ mediaKind: "audio", offer: "v=0\r\n" }),
+      expect.any(AbortSignal),
+    );
+
+    socket.message(JSON.stringify({
+      eventId: "73f004e3-34e3-48b2-9bca-7be78c4f04a6",
+      kind: "media.negotiation",
+      payload: {
+        callId: meetingId,
+        description: "v=0\r\n",
+        descriptionType: "answer",
+        direction: "publish",
+        expiresAt: "2026-09-19T21:00:31.000Z",
+        generation: 1,
+        iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
+        negotiationId: "d285bf11-15f6-4efe-b60f-5bd86765f451",
+        peerHandle: "peer-publisher",
+        trackBindings: [{
+          mediaKind: "audio",
+          publicationKind: "call_audio",
+          role: "local",
+          trackReference: "meeting-audio",
+          transceiverMid: "0",
+        }],
+      },
+      protocolVersion: 1,
+      roomEpoch: 1,
+      roomId: `meeting:${meetingId}`,
+      roomSeq: 1,
+      serverTime: "2026-09-19T21:00:02.000Z",
+    }));
+    await vi.waitFor(() => expect(peer.setRemoteDescription).toHaveBeenCalledWith({ sdp: "v=0\r\n", type: "answer" }));
+  });
+
+  it("converts peer transport answers and readiness into validated protected commands", async () => {
     const socket = new FakeSocket();
     const peerTransport = createFakePeerTransport();
+    const sendCommand = vi.fn(async () => acceptedCommand());
     const bridge = createBridge({
       bootstrap: vi.fn(async () => validBootstrap(ticket)),
       createPeerTransport: peerTransport.factory,
+      sendCommand,
       socket,
     });
     const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
@@ -200,7 +360,7 @@ describe("SygSphere communications protected socket bridge", () => {
       roomId: "room-1",
     });
 
-    expect(socket.sent.map((item) => JSON.parse(item))).toEqual(expect.arrayContaining([
+    expect((sendCommand.mock.calls as unknown as Array<[string, unknown, AbortSignal]>).map(([, command]) => command)).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "media.answer", payload: expect.objectContaining({ generation: 2, peerHandle: "peer-1" }), roomId: "room-1" }),
       expect.objectContaining({ kind: "media.ready", payload: expect.objectContaining({ inputKind: "audio", peerHandle: "peer-1" }), roomId: "room-1" }),
     ]));
@@ -358,19 +518,29 @@ async function socketCreated(socket: FakeSocket) {
   await vi.waitFor(() => expect(socket.url).not.toBe(""));
 }
 
-function createBridge({ bootstrap, createPeerTransport, peerTransport, refreshAuthorization, socket, sockets }: {
+function createBridge({ acknowledgePttListenerReady, bootstrap, createPeerTransport, createRtcPeer, peerTransport, prepareMeetingMedia, preparePtt, refreshAuthorization, sendCommand, socket, sockets, startMeetingMedia, startPtt }: {
+  acknowledgePttListenerReady?: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
   bootstrap: (accessToken: string, signal: AbortSignal) => Promise<unknown>;
   createPeerTransport?: SygSphereCommunicationsPeerTransportFactory;
+  createRtcPeer?: (configuration: RTCConfiguration) => RTCPeerConnection;
   peerTransport?: SygSphereCommunicationsPeerTransportAdapter;
+  prepareMeetingMedia?: (accessToken: string, meetingId: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
+  preparePtt?: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
   refreshAuthorization?: (accessToken: string, signal: AbortSignal) => Promise<unknown>;
+  sendCommand?: (accessToken: string, command: unknown, signal: AbortSignal) => Promise<unknown>;
   socket?: FakeSocket;
   sockets?: FakeSocket[];
+  startMeetingMedia?: (accessToken: string, meetingId: string, operation: "publish" | "subscribe", input: unknown, signal: AbortSignal) => Promise<unknown>;
+  startPtt?: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
 }) {
   let index = 0;
   return new SygSphereCommunicationsSocketBridge(() => "access-token", {
+    acknowledgePttListenerReady: acknowledgePttListenerReady ?? vi.fn(async () => acceptedCommand()),
     bootstrap,
     clearTimer: (timer) => clearTimeout(timer),
     createPeerTransport: createPeerTransport ?? (() => peerTransport ?? createFakePeerTransport().adapter),
+    createRtcPeer: createRtcPeer ?? (() => createFakeRtcPeer()),
+    createStream: (tracks) => ({ getTracks: () => tracks } as unknown as MediaStream),
     createSocket: (url) => {
       const selected = sockets?.[index++] ?? socket;
       if (!selected) throw new Error("No test socket configured.");
@@ -379,12 +549,49 @@ function createBridge({ bootstrap, createPeerTransport, peerTransport, refreshAu
     },
     location: () => ({ origin: "https://sygilant.us", protocol: "https:" }),
     now: () => Date.parse("2026-09-19T21:00:00.000Z"),
+    getDirectCallContext: vi.fn(async () => ({ conversationReference: "4896f7c0-7143-48f9-9978-d1f6a342186f", requestId: "d285bf11-15f6-4efe-b60f-5bd86765f451" })),
+    prepareDirectAudio: vi.fn(async () => ({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], requestId: "d285bf11-15f6-4efe-b60f-5bd86765f451" })),
+    prepareMeetingMedia: prepareMeetingMedia ?? vi.fn(async () => ({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], requestId: "d285bf11-15f6-4efe-b60f-5bd86765f451" })),
+    preparePtt: preparePtt ?? vi.fn(async () => ({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], requestId: "d285bf11-15f6-4efe-b60f-5bd86765f451" })),
     refreshAuthorization: refreshAuthorization ?? vi.fn(async () => ({
       refreshedConnections: 1,
       requestId: "d285bf11-15f6-4efe-b60f-4ab891637342",
     })),
+    sendCommand: sendCommand ?? vi.fn(async () => acceptedCommand()),
     setTimer: (callback, delay) => setTimeout(callback, delay),
+    startDirectAudio: vi.fn(async () => acceptedCommand()),
+    startMeetingMedia: startMeetingMedia ?? vi.fn(async () => acceptedCommand()),
+    startPtt: startPtt ?? vi.fn(async () => acceptedCommand()),
+    stopMeetingMedia: vi.fn(async () => acceptedCommand()),
   });
+}
+
+function createFakeRtcPeer(): RTCPeerConnection {
+  const listeners = new Map<string, Array<(event: Event) => void>>();
+  const peer = {
+    iceGatheringState: "complete",
+    localDescription: null as RTCSessionDescriptionInit | null,
+    addEventListener: (type: string, listener: (event: Event) => void) => {
+      listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+    },
+    removeEventListener: (type: string, listener: (event: Event) => void) => {
+      listeners.set(type, (listeners.get(type) ?? []).filter((item) => item !== listener));
+    },
+    addTrack: vi.fn(),
+    addTransceiver: vi.fn(),
+    close: vi.fn(),
+    createOffer: vi.fn(async () => ({ sdp: "v=0\r\n", type: "offer" as const })),
+    setLocalDescription: vi.fn(async (description: RTCSessionDescriptionInit) => { peer.localDescription = description; }),
+    setRemoteDescription: vi.fn(async () => undefined),
+  };
+  return peer as unknown as RTCPeerConnection;
+}
+
+function acceptedCommand() {
+  return {
+    outcome: "accepted",
+    requestId: "d285bf11-15f6-4efe-b60f-4ab891637342",
+  };
 }
 
 function createFakePeerTransport() {

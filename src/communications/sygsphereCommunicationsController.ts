@@ -15,7 +15,13 @@ export type CommunicationsPublicationKind = "ptt" | "call_audio" | "camera" | "s
 
 export interface CommunicationsCoordinatorSession {
   close(reason: string): void;
-  publish(input: Readonly<{ kind: CommunicationsPublicationKind; roomId: string; stream: MediaStream }>): Promise<void>;
+  publish(input: Readonly<{
+    channelReference?: string;
+    kind: CommunicationsPublicationKind;
+    roomId: string;
+    stream: MediaStream;
+    transmissionRequestId?: string;
+  }>): Promise<void>;
   send(input: Readonly<{
     commandId: string;
     connectionEpoch: number;
@@ -69,6 +75,7 @@ export class SygSphereCommunicationsController {
   private listeners = new Set<StateListener>();
   private pendingCamera: Readonly<{ callId: string; stream: MediaStream }> | null = null;
   private pendingCallAudio = new Map<string, MediaStream>();
+  private pendingCreatedMeetingId: string | null = null;
   private pendingPttAudio: MediaStream | null = null;
   private pendingFloorRenewalCommandId: string | null = null;
   private pendingScreen: Readonly<{ callId: string; stream: MediaStream }> | null = null;
@@ -147,6 +154,7 @@ export class SygSphereCommunicationsController {
     this.clearFloorLeaseTimers();
     this.coordinator?.close(reason);
     this.coordinator = null;
+    this.pendingCreatedMeetingId = null;
     this.pendingCallAudio.clear();
     this.pendingCamera = null;
     this.pendingPttAudio = null;
@@ -196,7 +204,6 @@ export class SygSphereCommunicationsController {
         return;
       }
       this.pendingCallAudio.set(callId, stream);
-      await this.coordinator.publish({ kind: "call_audio", roomId: this.state.call.roomId, stream });
       await this.send("call.accept", { invitationId }, this.state.call.roomId);
     } catch (error) {
       this.pendingCallAudio.delete(callId);
@@ -213,10 +220,17 @@ export class SygSphereCommunicationsController {
   }
 
   async createMeeting(conversationReference: string): Promise<void> {
-    await this.send("meeting.create", {
-      clientIntentId: crypto.randomUUID(),
-      conversationReference,
-    });
+    const meetingId = crypto.randomUUID();
+    this.pendingCreatedMeetingId = meetingId;
+    try {
+      await this.send("meeting.create", {
+        clientIntentId: meetingId,
+        conversationReference,
+      });
+    } catch (error) {
+      if (this.pendingCreatedMeetingId === meetingId) this.pendingCreatedMeetingId = null;
+      throw error;
+    }
   }
 
   async joinMeeting(meetingId: string): Promise<void> {
@@ -224,13 +238,21 @@ export class SygSphereCommunicationsController {
       const stream = await this.media.acquireMicrophone({ kind: "meeting", sessionId: meetingId });
       this.pendingCallAudio.set(meetingId, stream);
       const roomId = this.state.call?.callId === meetingId ? this.state.call.roomId : undefined;
-      if (roomId) await this.coordinator?.publish({ kind: "call_audio", roomId, stream });
       await this.send("meeting.join", { meetingId }, roomId);
     } catch (error) {
       this.pendingCallAudio.delete(meetingId);
       this.media.releaseAudioFocus({ kind: "meeting", sessionId: meetingId });
       throw error;
     }
+  }
+
+  async answerMeeting(meetingId: string): Promise<void> {
+    if (this.state.call?.kind !== "meeting" || this.state.call.callId !== meetingId || this.state.call.status !== "ringing") return;
+    await this.joinMeeting(meetingId);
+  }
+
+  dismissMeetingInvitation(meetingId: string): void {
+    this.update({ type: "meeting.dismissed", meetingId });
   }
 
   async leaveMeeting(meetingId: string): Promise<void> {
@@ -388,7 +410,13 @@ export class SygSphereCommunicationsController {
       const floor = this.state.floor;
       const stream = this.pendingPttAudio;
       if (floor?.roomId === event.roomId && floor.status === "preparing" && stream) {
-        await this.coordinator?.publish({ kind: "ptt", roomId: event.roomId, stream });
+        await this.coordinator?.publish({
+          channelReference: floor.channelReference,
+          kind: "ptt",
+          roomId: event.roomId,
+          stream,
+          transmissionRequestId: floor.requestId,
+        });
       }
     }
 
@@ -405,13 +433,33 @@ export class SygSphereCommunicationsController {
           return;
         }
         this.pendingCallAudio.set(call.callId, stream);
-        await this.coordinator?.publish({ kind: "call_audio", roomId: call.roomId, stream });
       }
+    }
+
+    if (event.kind === "call.accepted") {
+      const call = this.state.call;
+      if (call?.kind !== "direct") return;
+      let stream = this.pendingCallAudio.get(call.callId);
+      if (!stream) {
+        stream = await this.media.acquireMicrophone({ kind: "call", sessionId: call.callId });
+        if (this.state.call?.callId !== call.callId || this.state.call.kind !== "direct") {
+          this.media.releaseAudioFocus({ kind: "call", sessionId: call.callId });
+          return;
+        }
+        this.pendingCallAudio.set(call.callId, stream);
+      }
+      this.media.setMicrophoneMuted({ kind: "call", sessionId: call.callId }, false);
+      await this.coordinator?.publish({ kind: "call_audio", roomId: call.roomId, stream });
     }
 
     if (event.kind === "meeting.created") {
       const call = this.state.call;
-      if (call?.kind === "meeting" && call.status === "connecting") await this.joinMeeting(call.callId);
+      const invited = typeof event.payload === "object" && event.payload !== null
+        && (event.payload as Record<string, unknown>).invited === true;
+      if (call?.kind === "meeting" && call.status === "connecting" && !invited) {
+        this.pendingCreatedMeetingId = null;
+        await this.joinMeeting(call.callId);
+      }
     }
 
     if (event.kind === "focus.granted") {
@@ -431,6 +479,18 @@ export class SygSphereCommunicationsController {
       if (call?.kind === "meeting" && stream) {
         await this.coordinator?.publish({ kind: "call_audio", roomId: call.roomId, stream });
       }
+    }
+
+    if (event.kind === "participant.muted" && this.state.microphoneMutedByModerator) {
+      const call = this.state.call;
+      if (call?.kind === "meeting" && call.roomId === event.roomId) {
+        this.media.setMicrophoneMuted({ kind: "meeting", sessionId: call.callId }, true);
+      }
+    }
+
+    if (event.kind === "media.source.unavailable") {
+      const trackReference = stringPayload(event.payload, "trackReference");
+      if (trackReference && this.remoteMedia.delete(trackReference)) this.emitRemoteMedia();
     }
 
     if (event.kind === "screen.granted") {
@@ -478,7 +538,10 @@ export class SygSphereCommunicationsController {
   }
 
   private handleRemoteTrack(generation: number, track: CommunicationsRemoteTrack): void {
-    if (generation !== this.connectGeneration || this.state.call?.roomId !== track.roomId) return;
+    if (
+      generation !== this.connectGeneration
+      || (track.publicationKind !== "ptt" && this.state.call?.roomId !== track.roomId)
+    ) return;
     this.remoteMedia.set(track.trackReference, track);
     for (const mediaTrack of track.stream.getTracks()) {
       mediaTrack.addEventListener("ended", () => {

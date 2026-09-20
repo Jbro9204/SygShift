@@ -4,10 +4,10 @@ This directory is the SygShift-owned, repository-neutral source of truth for Syg
 
 ## Current revision
 
-- Product-contract revision: `1.0.0-draft.4`
+- Product-contract revision: `1.0.0-draft.6`
 - Wire protocol: `1`
-- Artifact SHA-256: `75ae3317cd4f7b5cb737b922dbf27fe2aa6cc80faf9d74e00893f06e8691bbc9`
-- Lifecycle: closed coordinator foundation; no production endpoint is enabled
+- Artifact SHA-256: `b56f9eb1e5684c0de332d973dd8b65e43530ea7be2c295fb83399612e68f6e76`
+- Lifecycle: operational shared runtime; all media commands remain server-authorized and feature-gated
 
 ## Compatibility
 

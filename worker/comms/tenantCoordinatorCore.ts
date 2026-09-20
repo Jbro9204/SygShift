@@ -78,12 +78,29 @@ export const directConversationCommandScopeSchema = z.object({
 
 export type DirectConversationCommandScope = z.infer<typeof directConversationCommandScopeSchema>
 
+/** A PTT room is an existing, server-owned SygSphere channel.  The Worker
+ * expands the current active members before a request reaches the coordinator,
+ * so the browser can never choose a listener or widen a channel. */
+export const channelConversationCommandScopeSchema = z.object({
+  kind: z.literal('channel_conversation'),
+  channelReference: z.uuid(),
+  participantEmployeeIds: z.array(z.uuid()).min(1).max(50),
+  scope: z.enum(['assignment', 'shift', 'site', 'dispatch']),
+}).strict()
+
+export type ChannelConversationCommandScope = z.infer<typeof channelConversationCommandScopeSchema>
+export const communicationsCommandScopeSchema = z.union([
+  directConversationCommandScopeSchema,
+  channelConversationCommandScopeSchema,
+])
+export type CommunicationsCommandScope = z.infer<typeof communicationsCommandScopeSchema>
+
 const coordinatorInvocationSchema = z.object({
   authorization: stagedCommsAuthorizationContextSchema,
   command: z.unknown(),
   release: coordinatorReleaseContextSchema,
   requestId: z.uuid(),
-  scope: directConversationCommandScopeSchema.nullish(),
+  scope: communicationsCommandScopeSchema.nullish(),
   connectionRouteReference: z.uuid().optional(),
 }).strict()
 
@@ -93,7 +110,7 @@ export type AuthorizedCoordinatorCommand = Readonly<{
   requiredPermission: string
   release: CoordinatorReleaseContext
   requestId: string
-  scope: DirectConversationCommandScope | null
+  scope: CommunicationsCommandScope | null
   connectionRouteReference: string | null
 }>
 
@@ -129,10 +146,21 @@ export const authorizeCoordinatorCommand = (input: unknown): AuthorizedCoordinat
   if (!authorization.permissions.includes(requiredPermission)) {
     throw new Error('Communications are not available for this account.')
   }
-  if (command.kind === 'call.request' && (!scope || scope.conversationReference !== command.payload.conversationReference)) {
+  if (command.kind === 'call.request' && (!scope || scope.kind !== 'direct_conversation' || scope.conversationReference !== command.payload.conversationReference)) {
     throw new Error('Communications are not available for this account.')
   }
-  if (command.kind !== 'call.request' && scope !== null) {
+  if (command.kind === 'floor.request' || command.kind === 'meeting.create') {
+    const conversationReference = command.kind === 'floor.request'
+      ? command.payload.channelReference
+      : command.payload.conversationReference
+    if (
+      !scope
+      || scope.kind !== 'channel_conversation'
+      || scope.channelReference !== conversationReference
+      || !scope.participantEmployeeIds.includes(authorization.employeeId)
+    ) throw new Error('Communications are not available for this account.')
+  }
+  if (!['call.request', 'floor.request', 'meeting.create'].includes(command.kind) && scope !== null) {
     throw new Error('Communications are not available for this account.')
   }
 

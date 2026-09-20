@@ -39,6 +39,7 @@ export type CommunicationsRuntimeState = Readonly<{
   connectionEpoch: number;
   floor: CommunicationsFloorState | null;
   lastError: string | null;
+  microphoneMutedByModerator: boolean;
   roomVersions: Readonly<Record<string, Readonly<{ epoch: number; sequence: number }>>>;
   screenActive: boolean;
   sessionGeneration: number;
@@ -54,6 +55,7 @@ export type CommunicationsRuntimeAction =
   | Readonly<{ type: "floor.requested"; channelReference: string; requestId: string }>
   | Readonly<{ type: "floor.release.requested" }>
   | Readonly<{ type: "floor.failed"; reason: string }>
+  | Readonly<{ type: "meeting.dismissed"; meetingId: string }>
   | Readonly<{ type: "local.media.failed"; reason: string }>
   | Readonly<{ type: "event.received"; event: SygSphereCommsEvent }>
   | Readonly<{ type: "session.ended" }>;
@@ -127,6 +129,10 @@ export function reduceCommunicationsRuntime(
       return state.floor ? { ...state, floor: { ...state.floor, status: "releasing" } } : state;
     case "floor.failed":
       return { ...state, floor: null, lastError: action.reason };
+    case "meeting.dismissed":
+      return state.call?.kind === "meeting" && state.call.callId === action.meetingId && state.call.status === "ringing"
+        ? { ...state, call: null }
+        : state;
     case "local.media.failed":
       return {
         ...state,
@@ -141,6 +147,7 @@ export function reduceCommunicationsRuntime(
     case "session.ended":
       return resetState(null, state.sessionGeneration + 1, "unavailable");
   }
+  return state;
 }
 
 function reduceServerEvent(
@@ -221,6 +228,7 @@ function reduceServerEvent(
           roomId: event.roomId,
           status: "ringing",
         },
+        microphoneMutedByModerator: false,
       };
     }
     case "call.requested": {
@@ -230,6 +238,7 @@ function reduceServerEvent(
         ...next,
         call: { callId, invitationId: null, kind: "direct", roomId: event.roomId, status: "connecting" },
         floor: null,
+        microphoneMutedByModerator: false,
       };
     }
     case "call.accepted": {
@@ -245,21 +254,37 @@ function reduceServerEvent(
           status: "connecting",
         },
         floor: null,
+        microphoneMutedByModerator: false,
       };
     }
-    case "media.negotiation":
+    case "media.negotiation": {
+      const descriptionType = stringValue(payload.descriptionType);
+      const direction = stringValue(payload.direction);
       return state.call?.roomId === event.roomId
-        ? { ...next, call: { ...state.call, status: "connecting" } }
+        ? {
+          ...next,
+          call: {
+            ...state.call,
+            status: descriptionType === "answer" && direction === "publish" ? "active" : "connecting",
+          },
+        }
         : next;
+    }
     case "participant.changed":
     case "participant.removed":
-    case "participant.muted":
     case "media.policy":
+    case "media.source.available":
+    case "media.source.unavailable":
       return next;
+    case "participant.muted":
+      return payload.self === true && state.call?.kind === "meeting" && state.call.roomId === event.roomId
+        ? { ...next, microphoneMutedByModerator: true, lastError: "A meeting moderator muted your microphone." }
+        : next;
     case "meeting.created":
     case "meeting.joined": {
       const meetingId = stringValue(payload.meetingId);
       if (!meetingId) return next;
+      const invited = event.kind === "meeting.created" && payload.invited === true;
       return {
         ...next,
         call: {
@@ -267,9 +292,10 @@ function reduceServerEvent(
           invitationId: null,
           kind: "meeting",
           roomId: event.roomId,
-          status: event.kind === "meeting.joined" ? "active" : "connecting",
+          status: event.kind === "meeting.joined" ? "active" : invited ? "ringing" : "connecting",
         },
         floor: null,
+        microphoneMutedByModerator: false,
       };
     }
     case "focus.granted":
@@ -300,6 +326,7 @@ function reduceServerEvent(
     case "snapshot":
       return next;
   }
+  return next;
 }
 
 function resetState(
@@ -316,6 +343,7 @@ function resetState(
     connectionEpoch: 0,
     floor: null,
     lastError: null,
+    microphoneMutedByModerator: false,
     roomVersions: {},
     screenActive: false,
     sessionGeneration,

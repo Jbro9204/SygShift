@@ -44,6 +44,7 @@ interface SygSphereCommunicationsPanelProps {
   channels: readonly CommunicationsChannelOption[];
   connection: CommunicationsConnectionState;
   microphoneMuted: boolean;
+  microphoneMutedByModerator: boolean;
   onAnswer: (callId: string) => void;
   onCameraChange: (enabled: boolean) => void;
   onChannelChange: (channelId: string) => void;
@@ -67,6 +68,7 @@ export function SygSphereCommunicationsPanel({
   channels,
   connection,
   microphoneMuted,
+  microphoneMutedByModerator,
   onAnswer,
   onCameraChange,
   onChannelChange,
@@ -83,6 +85,7 @@ export function SygSphereCommunicationsPanel({
   selectedChannelId,
 }: SygSphereCommunicationsPanelProps) {
   const selectedChannel = channels.find((channel) => channel.id === selectedChannelId) ?? channels[0] ?? null;
+  const pttAudio = remoteMedia.filter((track) => track.publicationKind === "ptt" && track.mediaKind === "audio");
   const pttEnabled = capabilities.ptt && connection === "ready" && Boolean(selectedChannel) && !call && pttState !== "denied";
   const ptt = useHoldToTalk({
     enabled: pttEnabled,
@@ -116,6 +119,7 @@ export function SygSphereCommunicationsPanel({
           cameraEnabled={cameraEnabled}
           capabilities={capabilities}
           microphoneMuted={microphoneMuted}
+          microphoneMutedByModerator={microphoneMutedByModerator}
           onCameraChange={onCameraChange}
           onEndCall={onEndCall}
           onMicrophoneMuteChange={onMicrophoneMuteChange}
@@ -127,7 +131,7 @@ export function SygSphereCommunicationsPanel({
           <section className="sphere-comms-radio" aria-labelledby="sphere-comms-radio-title">
             <div>
               <span className="sphere-comms-panel__eyebrow"><Radio size={15} /> Push to talk</span>
-              <h3 id="sphere-comms-radio-title">Your assigned channel</h3>
+              <h3 id="sphere-comms-radio-title">Team channel</h3>
             </div>
             <label>
               <span>Channel</span>
@@ -154,6 +158,7 @@ export function SygSphereCommunicationsPanel({
               <small>{selectedChannel?.scopeLabel ?? "Dispatch can assign the correct channel."}</small>
             </button>
             <p id="sphere-comms-ptt-help">Press and hold while speaking. Release to stop. This works only while Sygilant is open in the foreground.</p>
+            {pttAudio.map((track) => <RemoteMediaElement kind="audio" key={track.trackReference} label="Live team radio" stream={track.stream} />)}
           </section>
 
           <section className="sphere-comms-actions" aria-labelledby="sphere-comms-actions-title">
@@ -177,12 +182,13 @@ function ActiveCallControls({
   cameraEnabled,
   capabilities,
   microphoneMuted,
+  microphoneMutedByModerator,
   onCameraChange,
   onEndCall,
   onMicrophoneMuteChange,
   onScreenShare,
   remoteMedia,
-}: Pick<SygSphereCommunicationsPanelProps, "cameraEnabled" | "capabilities" | "microphoneMuted" | "onCameraChange" | "onEndCall" | "onMicrophoneMuteChange" | "onScreenShare"> & { call: CommunicationsPanelCall; remoteMedia: readonly CommunicationsRemoteTrack[] }) {
+}: Pick<SygSphereCommunicationsPanelProps, "cameraEnabled" | "capabilities" | "microphoneMuted" | "microphoneMutedByModerator" | "onCameraChange" | "onEndCall" | "onMicrophoneMuteChange" | "onScreenShare"> & { call: CommunicationsPanelCall; remoteMedia: readonly CommunicationsRemoteTrack[] }) {
   return (
     <section aria-label="Active call controls" className="sphere-comms-active">
       <div className="sphere-comms-active__identity">
@@ -191,8 +197,8 @@ function ActiveCallControls({
       </div>
       <RemoteMediaStage tracks={remoteMedia} />
       <div className="sphere-comms-active__controls">
-        <button aria-pressed={microphoneMuted} onClick={() => onMicrophoneMuteChange(!microphoneMuted)} type="button">
-          {microphoneMuted ? <MicOff size={19} /> : <Mic size={19} />}<span>{microphoneMuted ? "Unmute" : "Mute"}</span>
+        <button aria-pressed={microphoneMuted} disabled={microphoneMutedByModerator} onClick={() => onMicrophoneMuteChange(!microphoneMuted)} type="button">
+          {microphoneMuted ? <MicOff size={19} /> : <Mic size={19} />}<span>{microphoneMutedByModerator ? "Muted by moderator" : microphoneMuted ? "Unmute" : "Mute"}</span>
         </button>
         <button aria-pressed={cameraEnabled} disabled={!capabilities.camera} onClick={() => onCameraChange(!cameraEnabled)} type="button">
           {cameraEnabled ? <Video size={19} /> : <VideoOff size={19} />}<span>{cameraEnabled ? "Stop camera" : "Camera"}</span>

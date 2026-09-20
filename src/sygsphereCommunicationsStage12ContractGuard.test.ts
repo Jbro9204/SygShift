@@ -23,14 +23,14 @@ const command = {
   connectionEpoch: 0,
   kind: 'floor.request',
   payload: {
-    channelReference: 'assignment:00000000-0000-4000-8000-000000000002',
+    channelReference: '00000000-0000-4000-8000-000000000002',
     clientIntentId: '00000000-0000-4000-8000-000000000003',
   },
 } as const
 
 describe('SygSphere Communications Stage 1/2 command contract', () => {
-  it('uses the draft-4 schema revision for every defined command kind', () => {
-    expect(SYGSPHERE_COMMS_CONTRACT_VERSION).toBe('1.0.0-draft.4')
+  it('uses the draft-6 schema revision for every defined command kind', () => {
+    expect(SYGSPHERE_COMMS_CONTRACT_VERSION).toBe('1.0.0-draft.6')
     expect(Object.keys(SYGSPHERE_COMMS_COMMAND_PAYLOAD_SCHEMAS)).toHaveLength(29)
     expect(parseSygSphereCommsCommand(command)).toEqual(command)
   })
@@ -62,6 +62,37 @@ describe('SygSphere Communications Stage 1/2 command contract', () => {
       ...mediaEvent,
       payload: { ...mediaEvent.payload, providerSecret: 'never' },
     })).toThrow()
+  })
+
+  it('requires server-issued meeting invitation and media-source lifecycle fields', () => {
+    const event = {
+      protocolVersion: 1,
+      eventId: '00000000-0000-4000-8000-000000000041',
+      roomId: 'meeting:00000000-0000-4000-8000-000000000042',
+      roomEpoch: 0,
+      roomSeq: 1,
+      serverTime: '2026-09-20T20:00:00.000Z',
+      kind: 'meeting.created' as const,
+      payload: {
+        hostConnectionId: '00000000-0000-4000-8000-000000000043',
+        invited: true,
+        meetingId: '00000000-0000-4000-8000-000000000042',
+      },
+    }
+    expect(parseSygSphereCommsEvent(event)).toEqual(event)
+    expect(() => parseSygSphereCommsEvent({ ...event, payload: { meetingId: event.payload.meetingId } })).toThrow()
+    expect(parseSygSphereCommsEvent({
+      ...event,
+      eventId: '00000000-0000-4000-8000-000000000044',
+      kind: 'media.source.unavailable',
+      payload: {
+        callId: event.payload.meetingId,
+        mediaKind: 'audio',
+        participantConnectionId: event.payload.hostConnectionId,
+        reason: 'moderated',
+        trackReference: 'meeting-track:server-issued',
+      },
+    })).toMatchObject({ kind: 'media.source.unavailable' })
   })
 
   it('fences browser media answers and readiness to the server-issued peer and generation', () => {
@@ -172,6 +203,12 @@ describe('SygSphere Communications Stage 1/2 command contract', () => {
         canUseCommunications: true,
       },
       command,
+      scope: {
+        kind: 'channel_conversation',
+        channelReference: '00000000-0000-4000-8000-000000000002',
+        participantEmployeeIds: ['00000000-0000-4000-8000-000000000011'],
+        scope: 'dispatch',
+      },
       release: {
         databaseFoundationApplied: true,
         commandSchemasVerified: true,
@@ -191,6 +228,12 @@ describe('SygSphere Communications Stage 1/2 command contract', () => {
         permissions: ['sygsphere.comms.use'],
       },
       command,
+      scope: {
+        kind: 'channel_conversation',
+        channelReference: '00000000-0000-4000-8000-000000000002',
+        participantEmployeeIds: ['00000000-0000-4000-8000-000000000011'],
+        scope: 'dispatch',
+      },
       release: authorized.release,
       requestId: '00000000-0000-4000-8000-000000000014',
     })).toThrow('Communications are not available for this account.')

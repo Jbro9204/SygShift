@@ -229,10 +229,12 @@ export function SygSphereCommunicationsRuntimeProvider({
         <IncomingCommunicationsCallNotice
           audioBlocked={audioBlocked}
           onAnswer={() => void run((activeController) => {
+            if (incomingCall.kind === "meeting") return activeController.answerMeeting(incomingCall.callId);
             if (!incomingCall.invitationId) throw new Error("This call invitation is no longer available.");
             return activeController.answerCall(incomingCall.callId, incomingCall.invitationId);
           })}
           onDecline={() => void run((activeController) => {
+            if (incomingCall.kind === "meeting") return activeController.dismissMeetingInvitation(incomingCall.callId);
             if (!incomingCall.invitationId) throw new Error("This call invitation is no longer available.");
             return activeController.declineCall(incomingCall.invitationId);
           })}
@@ -301,9 +303,10 @@ export function SygSphereCommunicationsWorkspace({
   }, [channels, conversation, selectedChannelId]);
 
   useEffect(() => {
-    if (!runtime.state.call || runtime.state.call.status !== "active") setMicrophoneMuted(true);
+    if (runtime.state.microphoneMutedByModerator) setMicrophoneMuted(true);
+    else if (!runtime.state.call || runtime.state.call.status !== "active") setMicrophoneMuted(true);
     else setMicrophoneMuted(false);
-  }, [runtime.state.call]);
+  }, [runtime.state.call, runtime.state.microphoneMutedByModerator]);
 
   const capabilities: CommunicationsPanelCapabilities = {
     call: Boolean(
@@ -312,7 +315,9 @@ export function SygSphereCommunicationsWorkspace({
       && !runtime.state.call
       && permissions.has("sygsphere.comms.call.start"),
     ),
-    camera: runtime.browser.cameraCapture.available && permissions.has("sygsphere.comms.video.publish"),
+    camera: runtime.state.call?.kind === "meeting"
+      && runtime.browser.cameraCapture.available
+      && permissions.has("sygsphere.comms.video.publish"),
     meeting: Boolean(
       conversation
       && conversation.kind !== "direct"
@@ -324,9 +329,11 @@ export function SygSphereCommunicationsWorkspace({
       && permissions.has("sygsphere.comms.ptt.transmit")
       && !runtime.state.call
       && channels.length > 0,
-    screen: runtime.browser.screenCapture.available && permissions.has("sygsphere.comms.screen.publish"),
+    screen: runtime.state.call?.kind === "meeting"
+      && runtime.browser.screenCapture.available
+      && permissions.has("sygsphere.comms.screen.publish"),
   };
-  const call: CommunicationsPanelCall | null = runtime.state.call && runtime.state.call.status !== "ringing" ? {
+  const call: CommunicationsPanelCall | null = runtime.state.call && (runtime.state.call.kind === "meeting" || runtime.state.call.status !== "ringing") ? {
     callId: runtime.state.call.callId,
     displayName: runtime.state.call.kind === "meeting" ? "Team meeting" : "Private team call",
     kind: runtime.state.call.kind,
@@ -343,7 +350,9 @@ export function SygSphereCommunicationsWorkspace({
         channels={channels}
         connection={runtime.state.connection}
         microphoneMuted={microphoneMuted}
+        microphoneMutedByModerator={runtime.state.microphoneMutedByModerator}
         onAnswer={(callId) => void runtime.run((controller) => {
+          if (runtime.state.call?.kind === "meeting" && runtime.state.call.callId === callId) return controller.answerMeeting(callId);
           const invitationId = runtime.state.call?.callId === callId ? runtime.state.call.invitationId : null;
           if (!invitationId) throw new Error("This call invitation is no longer available.");
           return controller.answerCall(callId, invitationId);
@@ -354,6 +363,7 @@ export function SygSphereCommunicationsWorkspace({
         })}
         onChannelChange={setSelectedChannelId}
         onDecline={(callId) => void runtime.run((controller) => {
+          if (runtime.state.call?.kind === "meeting" && runtime.state.call.callId === callId) return controller.dismissMeetingInvitation(callId);
           const invitationId = runtime.state.call?.callId === callId ? runtime.state.call.invitationId : null;
           if (!invitationId) throw new Error("This call invitation is no longer available.");
           return controller.declineCall(invitationId);
@@ -362,7 +372,7 @@ export function SygSphereCommunicationsWorkspace({
           ? controller.leaveMeeting(callId)
           : controller.endCall(callId))}
         onMicrophoneMuteChange={(muted) => {
-          if (!runtime.controller || !runtime.state.call) return;
+          if (!runtime.controller || !runtime.state.call || runtime.state.microphoneMutedByModerator) return;
           if (runtime.controller.setCallMicrophoneMuted(runtime.state.call.callId, muted)) setMicrophoneMuted(muted);
         }}
         onPttPressEnd={() => void runtime.run((controller) => controller.releaseToTalk())}

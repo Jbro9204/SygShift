@@ -25,6 +25,8 @@ import type {
 import { isSecurityKeyPilotEligible, securityKeyFeatureEnabled } from './securityKeyPilot'
 import { TenantCommsDurableObject } from './comms/tenantCommsDurableObject'
 import {
+  channelConversationCommandScopeSchema,
+  communicationsCommandScopeSchema,
   coordinatorReleaseContextSchema,
   directConversationCommandScopeSchema,
   stagedCommsAuthorizationContextSchema,
@@ -1272,9 +1274,11 @@ async function handleSygSphereCommunicationsApi(
       throw new ApiError('invalid_communications_command', 422, 'That communications action could not be understood. Reopen Communications and try again.')
     }
 
-    const conversationReference = command.kind === 'call.request' || command.kind === 'meeting.create'
-      ? command.payload.conversationReference
-      : null
+    const conversationReference = command.kind === 'floor.request'
+      ? command.payload.channelReference
+      : command.kind === 'call.request' || command.kind === 'meeting.create'
+        ? command.payload.conversationReference
+        : null
     const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
       { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
       'service_resolve_sygsphere_communications_command_scope',
@@ -1289,15 +1293,23 @@ async function handleSygSphereCommunicationsApi(
     const release = coordinatorReleaseContextSchema.safeParse(decision.release)
     const scope = decision.scope === null || decision.scope === undefined
       ? null
-      : directConversationCommandScopeSchema.safeParse(decision.scope)
+      : communicationsCommandScopeSchema.safeParse(decision.scope)
     if (
       decision.authorized !== true || decision.scopeMembershipVerified !== true
       || !authorization.success || !release.success
       || authorization.data.authUserId !== authUserId
       || authorization.data.employeeId !== session.context.employee_id
       || authorization.data.tenantId !== route.tenantId
-      || (command.kind === 'call.request' && (!scope || !scope.success))
-      || (command.kind !== 'call.request' && scope !== null)
+      || (command.kind === 'call.request' && (!scope || !scope.success || scope.data.kind !== 'direct_conversation'))
+      || (command.kind === 'floor.request' && (
+        !scope || !scope.success || scope.data.kind !== 'channel_conversation'
+        || scope.data.channelReference !== command.payload.channelReference
+      ))
+      || (command.kind === 'meeting.create' && (
+        !scope || !scope.success || scope.data.kind !== 'channel_conversation'
+        || scope.data.channelReference !== command.payload.conversationReference
+      ))
+      || (!['call.request', 'floor.request', 'meeting.create'].includes(command.kind) && scope !== null)
     ) {
       throw new ApiError('communications_unavailable', 403, 'Communications are not available for this action. Continue using SygSphere messages and Dispatch.')
     }
@@ -1312,6 +1324,254 @@ async function handleSygSphereCommunicationsApi(
       scope: scope && scope.success ? scope.data : null,
     })
     return json({ outcome: outcome.outcome, requestId }, 202, {
+      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
+    })
+  }
+
+  /** PTT media setup is a separate, protected offer path.  A caller can only
+   * prepare its own reserved floor; a listener can only prepare an active
+   * transmission whose server-stored channel membership includes them. */
+  if (url.pathname === '/api/comms/v1/ptt/prepare') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const session = await requireAuthenticatedSession(request, environment)
+    const authUserId = accessTokenClaims(session.token)?.sub
+    const route = parseCommunicationsRouteCookie(request)
+    let body: Record<string, unknown>
+    try { body = await readJsonBodyWithin(request, maxJsonBodyBytes) } catch (error) {
+      if (error instanceof ApiError) throw error
+      throw new ApiError('invalid_communications_media', 422, 'Push-to-talk setup could not be understood. Please try again.')
+    }
+    const transmissionRequestId = typeof body.transmissionRequestId === 'string' && validUuid(body.transmissionRequestId) ? body.transmissionRequestId : null
+    const mode = body.mode === 'publisher' || body.mode === 'listener' ? body.mode : null
+    const channelReference = typeof body.channelReference === 'string' && validUuid(body.channelReference) ? body.channelReference : null
+    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS || !transmissionRequestId || !mode || (mode === 'publisher' && !channelReference)) {
+      throw new ApiError('invalid_communications_media', 422, 'Push-to-talk setup could not be understood. Please try again.')
+    }
+    const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_resolve_sygsphere_communications_command_scope',
+      {
+        target_auth_user_id: authUserId,
+        target_command_kind: mode === 'publisher' ? 'floor.request' : 'ptt.listen',
+        target_conversation_reference: mode === 'publisher' ? channelReference : null,
+      },
+      session.config.serviceRoleKey,
+    )
+    const authorization = stagedCommsAuthorizationContextSchema.safeParse(decision.context)
+    const release = coordinatorReleaseContextSchema.safeParse(decision.release)
+    const scope = decision.scope === null || decision.scope === undefined ? null : channelConversationCommandScopeSchema.safeParse(decision.scope)
+    if (
+      decision.authorized !== true || decision.scopeMembershipVerified !== true || !authorization.success || !release.success
+      || authorization.data.authUserId !== authUserId || authorization.data.employeeId !== session.context.employee_id
+      || authorization.data.tenantId !== route.tenantId
+      || (mode === 'publisher' && (!scope?.success || scope.data.channelReference !== channelReference))
+      || (mode === 'listener' && scope !== null)
+    ) {
+      throw new ApiError('communications_unavailable', 403, 'Push-to-talk is not available for this channel. Continue using SygSphere messages and Dispatch.')
+    }
+    const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(authorization.data.tenantId))
+    const preparation = mode === 'publisher'
+      ? await coordinator.preparePttAudio({
+        authorization: authorization.data,
+        channelReference,
+        connectionRouteReference: route.routeReference,
+        release: release.data,
+        requestId,
+        transmissionRequestId,
+      })
+      : await coordinator.preparePttListen({
+        authorization: authorization.data,
+        connectionRouteReference: route.routeReference,
+        release: release.data,
+        requestId,
+        transmissionRequestId,
+      })
+    if (preparation.outcome !== 'accepted' || !preparation.iceServers) {
+      throw new ApiError('communications_unavailable', 503, 'Push-to-talk is temporarily unavailable. Please release and hold again.')
+    }
+    return json({ iceServers: preparation.iceServers, requestId }, 200, {
+      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
+    })
+  }
+
+  if (url.pathname === '/api/comms/v1/ptt/audio' || url.pathname === '/api/comms/v1/ptt/listen') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const session = await requireAuthenticatedSession(request, environment)
+    const authUserId = accessTokenClaims(session.token)?.sub
+    const route = parseCommunicationsRouteCookie(request)
+    let body: Record<string, unknown>
+    try { body = await readJsonBodyWithin(request, maxCommsSessionDescriptionBytes) } catch (error) {
+      if (error instanceof ApiError) throw error
+      throw new ApiError('invalid_communications_media', 422, 'Push-to-talk audio could not be understood. Please release and hold again.')
+    }
+    const publisher = url.pathname === '/api/comms/v1/ptt/audio'
+    const transmissionRequestId = typeof body.transmissionRequestId === 'string' && validUuid(body.transmissionRequestId) ? body.transmissionRequestId : null
+    const channelReference = typeof body.channelReference === 'string' && validUuid(body.channelReference) ? body.channelReference : null
+    const offer = typeof body.offer === 'string' && body.offer.length > 0 && body.offer.length <= 65_536 ? body.offer : null
+    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS || !transmissionRequestId || !offer || (publisher && !channelReference)) {
+      throw new ApiError('invalid_communications_media', 422, 'Push-to-talk audio could not be understood. Please release and hold again.')
+    }
+    const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_resolve_sygsphere_communications_command_scope',
+      {
+        target_auth_user_id: authUserId,
+        target_command_kind: publisher ? 'floor.request' : 'ptt.listen',
+        target_conversation_reference: publisher ? channelReference : null,
+      },
+      session.config.serviceRoleKey,
+    )
+    const authorization = stagedCommsAuthorizationContextSchema.safeParse(decision.context)
+    const release = coordinatorReleaseContextSchema.safeParse(decision.release)
+    const scope = decision.scope === null || decision.scope === undefined ? null : channelConversationCommandScopeSchema.safeParse(decision.scope)
+    if (
+      decision.authorized !== true || decision.scopeMembershipVerified !== true || !authorization.success || !release.success
+      || authorization.data.authUserId !== authUserId || authorization.data.employeeId !== session.context.employee_id
+      || authorization.data.tenantId !== route.tenantId
+      || (publisher && (!scope?.success || scope.data.channelReference !== channelReference))
+      || (!publisher && scope !== null)
+    ) {
+      throw new ApiError('communications_unavailable', 403, 'Push-to-talk is not available for this channel. Continue using SygSphere messages and Dispatch.')
+    }
+    const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(authorization.data.tenantId))
+    const started = publisher
+      ? await coordinator.startPttAudio({
+        authorization: authorization.data,
+        channelReference,
+        connectionRouteReference: route.routeReference,
+        offer,
+        release: release.data,
+        requestId,
+        transmissionRequestId,
+      })
+      : await coordinator.startPttListen({
+        authorization: authorization.data,
+        connectionRouteReference: route.routeReference,
+        offer,
+        release: release.data,
+        requestId,
+        transmissionRequestId,
+      })
+    return json({ outcome: started.outcome, requestId }, 202, {
+      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
+    })
+  }
+
+  /** A subscriber acknowledges only after it has applied the coordinator's
+   * SDP answer.  This protected path is intentionally separate from the
+   * delivery WebSocket so a browser cannot forge floor readiness. */
+  if (url.pathname === '/api/comms/v1/ptt/listener-ready') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const session = await requireAuthenticatedSession(request, environment)
+    const authUserId = accessTokenClaims(session.token)?.sub
+    const route = parseCommunicationsRouteCookie(request)
+    let body: Record<string, unknown>
+    try { body = await readJsonBodyWithin(request, maxJsonBodyBytes) } catch (error) {
+      if (error instanceof ApiError) throw error
+      throw new ApiError('invalid_communications_media', 422, 'Push-to-talk readiness could not be understood. Please try again.')
+    }
+    const transmissionRequestId = typeof body.transmissionRequestId === 'string' && validUuid(body.transmissionRequestId) ? body.transmissionRequestId : null
+    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS || !transmissionRequestId) {
+      throw new ApiError('invalid_communications_media', 422, 'Push-to-talk readiness could not be understood. Please try again.')
+    }
+    const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_resolve_sygsphere_communications_command_scope',
+      { target_auth_user_id: authUserId, target_command_kind: 'ptt.listen', target_conversation_reference: null },
+      session.config.serviceRoleKey,
+    )
+    const authorization = stagedCommsAuthorizationContextSchema.safeParse(decision.context)
+    const release = coordinatorReleaseContextSchema.safeParse(decision.release)
+    if (
+      decision.authorized !== true || decision.scopeMembershipVerified !== true || !authorization.success || !release.success
+      || authorization.data.authUserId !== authUserId || authorization.data.employeeId !== session.context.employee_id
+      || authorization.data.tenantId !== route.tenantId || (decision.scope !== null && decision.scope !== undefined)
+    ) {
+      throw new ApiError('communications_unavailable', 403, 'Push-to-talk is not available for this channel. Continue using SygSphere messages and Dispatch.')
+    }
+    const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(authorization.data.tenantId))
+    const acknowledged = await coordinator.acknowledgePttListenerReady({
+      authorization: authorization.data,
+      connectionRouteReference: route.routeReference,
+      release: release.data,
+      requestId,
+      transmissionRequestId,
+    })
+    return json({ outcome: acknowledged.outcome, requestId }, 202, {
+      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
+    })
+  }
+
+  /** Meeting media uses the same protected, server-owned session boundary as
+   * PTT.  A browser supplies only its SDP offer and never a recipient list,
+   * provider handle, or authority to publish camera/screen. */
+  const meetingMediaMatch = /^\/api\/comms\/v1\/meetings\/([0-9a-f-]{36})\/media\/(prepare|publish|subscribe|stop)$/i.exec(url.pathname)
+  if (meetingMediaMatch) {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const meetingId = meetingMediaMatch[1]
+    const operation = meetingMediaMatch[2]
+    if (!meetingId || !validUuid(meetingId) || !operation) return errorJson('not_found', requestId, 404)
+    const session = await requireAuthenticatedSession(request, environment)
+    const authUserId = accessTokenClaims(session.token)?.sub
+    const route = parseCommunicationsRouteCookie(request)
+    let body: Record<string, unknown>
+    try { body = await readJsonBodyWithin(request, operation === 'prepare' || operation === 'stop' ? maxJsonBodyBytes : maxCommsSessionDescriptionBytes) } catch (error) {
+      if (error instanceof ApiError) throw error
+      throw new ApiError('invalid_communications_media', 422, 'Meeting media could not be understood. Please try again.')
+    }
+    const mediaKind = body.mediaKind === 'audio' || body.mediaKind === 'video' || body.mediaKind === 'screen' ? body.mediaKind : null
+    const sourceConnectionId = typeof body.sourceConnectionId === 'string' && validUuid(body.sourceConnectionId) ? body.sourceConnectionId : null
+    const offer = typeof body.offer === 'string' && body.offer.length > 0 && body.offer.length <= 65_536 ? body.offer : null
+    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS || !mediaKind
+      || ((operation === 'publish' || operation === 'subscribe') && !offer)
+      || (operation === 'subscribe' && !sourceConnectionId)) {
+      throw new ApiError('invalid_communications_media', 422, 'Meeting media could not be understood. Please try again.')
+    }
+    const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_resolve_sygsphere_communications_command_scope',
+      { target_auth_user_id: authUserId, target_command_kind: 'meeting.join', target_conversation_reference: null },
+      session.config.serviceRoleKey,
+    )
+    const authorization = stagedCommsAuthorizationContextSchema.safeParse(decision.context)
+    const release = coordinatorReleaseContextSchema.safeParse(decision.release)
+    if (
+      decision.authorized !== true || decision.scopeMembershipVerified !== true || !authorization.success || !release.success
+      || authorization.data.authUserId !== authUserId || authorization.data.employeeId !== session.context.employee_id
+      || authorization.data.tenantId !== route.tenantId || (decision.scope !== null && decision.scope !== undefined)
+    ) {
+      throw new ApiError('communications_unavailable', 403, 'Meeting media is not available for this session. Continue using SygSphere messages and Dispatch.')
+    }
+    const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(authorization.data.tenantId))
+    const base = {
+      authorization: authorization.data,
+      connectionRouteReference: route.routeReference,
+      mediaKind,
+      meetingId,
+      release: release.data,
+      requestId,
+    }
+    if (operation === 'prepare') {
+      const prepared = await coordinator.prepareMeetingMedia({ ...base, ...(sourceConnectionId ? { sourceConnectionId } : {}) })
+      if (prepared.outcome !== 'accepted' || !prepared.iceServers) {
+        throw new ApiError('communications_unavailable', 503, 'Meeting media is temporarily unavailable. Continue with messages or Dispatch and try again.')
+      }
+      return json({ iceServers: prepared.iceServers, requestId }, 200, {
+        'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
+      })
+    }
+    if (operation === 'stop') {
+      const stopped = await coordinator.stopMeetingMedia(base)
+      return json({ outcome: stopped.outcome, requestId }, 202, {
+        'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
+      })
+    }
+    const started = await coordinator.startMeetingMedia({
+      ...base,
+      offer: offer!,
+      ...(operation === 'subscribe' && sourceConnectionId ? { sourceConnectionId } : {}),
+    })
+    return json({ outcome: started.outcome, requestId }, 202, {
       'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
     })
   }

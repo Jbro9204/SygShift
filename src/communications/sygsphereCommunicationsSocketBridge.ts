@@ -44,6 +44,17 @@ const commandOutcomeSchema = z.object({
   outcome: z.string().min(1).max(64),
   protocolVersion: z.literal(SYGSPHERE_COMMS_PROTOCOL_VERSION),
 }).strict();
+const commandResponseSchema = z.object({
+  outcome: z.enum([
+    "accepted",
+    "invalid_state",
+    "recipient_unavailable",
+    "rate_limited",
+    "runtime_disabled",
+    "provider_unavailable",
+  ]),
+  requestId: z.uuid(),
+}).strict();
 const heartbeatAcknowledgementSchema = z.object({
   connectionEpoch: z.number().int().nonnegative(),
   correlationId: z.uuid(),
@@ -59,6 +70,18 @@ const unavailableSnapshotSchema = z.object({
 }).strict();
 const authorizationRefreshSchema = z.object({
   refreshedConnections: z.literal(1),
+  requestId: z.uuid(),
+}).strict();
+const pttPreparationSchema = z.object({
+  iceServers: z.array(z.object({
+    credential: z.string().min(1).max(512).optional(),
+    urls: z.union([z.string().min(1).max(256), z.array(z.string().min(1).max(256)).min(1).max(8)]),
+    username: z.string().min(1).max(256).optional(),
+  }).strict()).min(1).max(4),
+  requestId: z.uuid(),
+}).strict();
+const directCallContextSchema = z.object({
+  conversationReference: z.uuid(),
   requestId: z.uuid(),
 }).strict();
 
@@ -89,17 +112,34 @@ export type SygSphereCommunicationsPeerTransportFactory = (input: Readonly<{
 }>) => SygSphereCommunicationsPeerTransportAdapter;
 
 type SocketBridgeDependencies = Readonly<{
+  acknowledgePttListenerReady: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
   bootstrap: (accessToken: string, signal: AbortSignal) => Promise<unknown>;
   createPeerTransport: SygSphereCommunicationsPeerTransportFactory;
   createSocket: (url: string) => CommunicationsWebSocket;
+  getDirectCallContext: (accessToken: string, callId: string, signal: AbortSignal) => Promise<unknown>;
   location: () => Readonly<{ origin: string; protocol: string }>;
   now: () => number;
+  prepareDirectAudio: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
+  prepareMeetingMedia: (accessToken: string, meetingId: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
+  preparePtt: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
   refreshAuthorization: (accessToken: string, signal: AbortSignal) => Promise<unknown>;
+  sendCommand: (accessToken: string, command: unknown, signal: AbortSignal) => Promise<unknown>;
+  startPtt: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
+  startDirectAudio: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
+  startMeetingMedia: (accessToken: string, meetingId: string, operation: "publish" | "subscribe", input: unknown, signal: AbortSignal) => Promise<unknown>;
+  stopMeetingMedia: (accessToken: string, meetingId: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
+  createRtcPeer: (configuration: RTCConfiguration) => RTCPeerConnection;
+  createStream: (tracks: MediaStreamTrack[]) => MediaStream;
   setTimer: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>;
   clearTimer: (timer: ReturnType<typeof setTimeout>) => void;
 }>;
 
 const defaultDependencies: SocketBridgeDependencies = {
+  acknowledgePttListenerReady: (accessToken, input, signal) => sygSphereCommunicationsApiRequest<unknown>(
+    "/api/comms/v1/ptt/listener-ready",
+    accessToken,
+    { body: JSON.stringify(input), headers: { "content-type": "application/json" }, method: "POST", signal },
+  ),
   bootstrap: (accessToken, signal) => sygSphereCommunicationsApiRequest<BootstrapPayload>(
     "/api/comms/v1/bootstrap",
     accessToken,
@@ -117,13 +157,72 @@ const defaultDependencies: SocketBridgeDependencies = {
     ...input,
     setTimer: (callback, delay) => setTimeout(callback, delay),
   }),
+  createRtcPeer: (configuration) => new RTCPeerConnection(configuration),
+  createStream: (tracks) => new MediaStream(tracks),
   createSocket: (url) => new WebSocket(url),
+  getDirectCallContext: (accessToken, callId, signal) => sygSphereCommunicationsApiRequest<unknown>(
+    `/api/comms/v1/calls/${encodeURIComponent(callId)}`,
+    accessToken,
+    { signal },
+  ),
   location: () => window.location,
   now: () => Date.now(),
+  prepareDirectAudio: (accessToken, input, signal) => sygSphereCommunicationsApiRequest<unknown>(
+    "/api/comms/v1/media/prepare",
+    accessToken,
+    { body: JSON.stringify(input), headers: { "content-type": "application/json" }, method: "POST", signal },
+  ),
+  prepareMeetingMedia: (accessToken, meetingId, input, signal) => sygSphereCommunicationsApiRequest<unknown>(
+    `/api/comms/v1/meetings/${encodeURIComponent(meetingId)}/media/prepare`,
+    accessToken,
+    { body: JSON.stringify(input), headers: { "content-type": "application/json" }, method: "POST", signal },
+  ),
+  preparePtt: (accessToken, input, signal) => sygSphereCommunicationsApiRequest<unknown>(
+    "/api/comms/v1/ptt/prepare",
+    accessToken,
+    { body: JSON.stringify(input), headers: { "content-type": "application/json" }, method: "POST", signal },
+  ),
   refreshAuthorization: (accessToken, signal) => sygSphereCommunicationsApiRequest<unknown>(
     "/api/comms/v1/authorization/refresh",
     accessToken,
     { body: JSON.stringify({}), method: "POST", signal },
+  ),
+  sendCommand: (accessToken, command, signal) => sygSphereCommunicationsApiRequest<unknown>(
+    "/api/comms/v1/commands",
+    accessToken,
+    {
+      body: JSON.stringify({ command }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+      signal,
+    },
+  ),
+  startPtt: (accessToken, input, signal) => sygSphereCommunicationsApiRequest<unknown>(
+    input && typeof input === "object" && "mode" in input && (input as { mode?: unknown }).mode === "listener"
+      ? "/api/comms/v1/ptt/listen"
+      : "/api/comms/v1/ptt/audio",
+    accessToken,
+    {
+      body: JSON.stringify(input),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+      signal,
+    },
+  ),
+  startDirectAudio: (accessToken, input, signal) => sygSphereCommunicationsApiRequest<unknown>(
+    "/api/comms/v1/media/direct-audio",
+    accessToken,
+    { body: JSON.stringify(input), headers: { "content-type": "application/json" }, method: "POST", signal },
+  ),
+  startMeetingMedia: (accessToken, meetingId, operation, input, signal) => sygSphereCommunicationsApiRequest<unknown>(
+    `/api/comms/v1/meetings/${encodeURIComponent(meetingId)}/media/${operation}`,
+    accessToken,
+    { body: JSON.stringify(input), headers: { "content-type": "application/json" }, method: "POST", signal },
+  ),
+  stopMeetingMedia: (accessToken, meetingId, input, signal) => sygSphereCommunicationsApiRequest<unknown>(
+    `/api/comms/v1/meetings/${encodeURIComponent(meetingId)}/media/stop`,
+    accessToken,
+    { body: JSON.stringify(input), headers: { "content-type": "application/json" }, method: "POST", signal },
   ),
   setTimer: (callback, delay) => setTimeout(callback, delay),
   clearTimer: (timer) => clearTimeout(timer),
@@ -270,6 +369,23 @@ export class SygSphereCommunicationsSocketBridge implements CommunicationsCoordi
   }
 }
 
+type PttPeerState = Readonly<{
+  peer: RTCPeerConnection;
+  publication: "listener" | "publisher";
+  roomId: string;
+  transmissionRequestId: string;
+}>;
+
+type MeetingMediaKind = "audio" | "screen" | "video";
+type MeetingPeerState = Readonly<{
+  mediaKind: MeetingMediaKind;
+  meetingId: string;
+  peer: RTCPeerConnection;
+  role: "listener" | "publisher";
+  roomId: string;
+  sourceConnectionId: string;
+}>;
+
 function createSession({
   connectionEpoch,
   dependencies,
@@ -279,7 +395,7 @@ function createSession({
   socket,
 }: Readonly<{
   connectionEpoch: number;
-  dependencies: Pick<SocketBridgeDependencies, "clearTimer" | "createPeerTransport" | "now" | "refreshAuthorization" | "setTimer">;
+  dependencies: Pick<SocketBridgeDependencies, "acknowledgePttListenerReady" | "clearTimer" | "createPeerTransport" | "createRtcPeer" | "createStream" | "getDirectCallContext" | "now" | "prepareDirectAudio" | "prepareMeetingMedia" | "preparePtt" | "refreshAuthorization" | "sendCommand" | "setTimer" | "startDirectAudio" | "startMeetingMedia" | "startPtt" | "stopMeetingMedia">;
   getAccessToken: () => string | null;
   onRemoteTrack: (track: CommunicationsRemoteTrack) => void;
   setIntentionalClose: () => void;
@@ -294,13 +410,34 @@ function createSession({
   let authorizationRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   let authorizationRefreshTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   let authorizationRefreshController: AbortController | null = null;
+  const pttPeers = new Map<string, PttPeerState>();
+  const directPeers = new Map<string, RTCPeerConnection>();
+  const meetingPeers = new Map<string, MeetingPeerState>();
   const requireOpen = () => {
     if (closed || socket.readyState !== 1) throw new Error("Communications are reconnecting.");
   };
-  const sendCommand = (input: Parameters<CommunicationsCoordinatorSession["send"]>[0]) => {
+  const sendSocketControlFrame = (input: Parameters<CommunicationsCoordinatorSession["send"]>[0]) => {
     requireOpen();
     const command = parseSygSphereCommsCommand({ ...input, connectionEpoch });
     socket.send(JSON.stringify(command));
+  };
+  const sendCommand = async (input: Parameters<CommunicationsCoordinatorSession["send"]>[0]) => {
+    requireOpen();
+    const command = parseSygSphereCommsCommand({ ...input, connectionEpoch });
+    if (command.kind === "heartbeat" || command.kind === "snapshot.request") {
+      socket.send(JSON.stringify(command));
+      return;
+    }
+    const accessToken = getAccessToken()?.trim();
+    if (!accessToken) throw new Error("Your session is no longer valid. Sign in and try again.");
+    const response = commandResponseSchema.parse(await dependencies.sendCommand(
+      accessToken,
+      command,
+      AbortSignal.timeout(10_000),
+    ));
+    if (response.outcome !== "accepted") {
+      throw new Error(commandOutcomeMessage(response.outcome));
+    }
   };
   const peerTransport = dependencies.createPeerTransport({
     onAnswer: async (input) => sendCommand({
@@ -332,6 +469,265 @@ function createSession({
     }),
     onRemoteTrack,
   });
+  const closePttPeer = (transmissionRequestId: string) => {
+    const current = pttPeers.get(transmissionRequestId);
+    if (!current) return;
+    current.peer.close();
+    pttPeers.delete(transmissionRequestId);
+  };
+  const closeDirectPeer = (callId: string) => {
+    const peer = directPeers.get(callId);
+    if (!peer) return;
+    peer.close();
+    directPeers.delete(callId);
+  };
+  const meetingPeerKey = (meetingId: string, role: MeetingPeerState["role"], sourceConnectionId: string, mediaKind: MeetingMediaKind) =>
+    `${meetingId}:${role}:${sourceConnectionId}:${mediaKind}`;
+  const closeMeetingPeers = (predicate: (peer: MeetingPeerState) => boolean) => {
+    for (const [key, peer] of meetingPeers) {
+      if (!predicate(peer)) continue;
+      peer.peer.close();
+      meetingPeers.delete(key);
+    }
+  };
+  const meetingPublicationKind = (mediaKind: MeetingMediaKind): CommunicationsPublicationKind =>
+    mediaKind === "audio" ? "call_audio" : mediaKind === "video" ? "camera" : "screen";
+  const meetingMediaKind = (kind: CommunicationsPublicationKind): MeetingMediaKind | null =>
+    kind === "call_audio" ? "audio" : kind === "camera" ? "video" : kind === "screen" ? "screen" : null;
+  const startMeetingPublisher = async (input: Readonly<{
+    mediaKind: MeetingMediaKind;
+    meetingId: string;
+    roomId: string;
+    stream: MediaStream;
+  }>) => {
+    const accessToken = getAccessToken()?.trim();
+    if (!accessToken) throw new Error("Your session is no longer valid. Sign in and try again.");
+    const key = meetingPeerKey(input.meetingId, "publisher", "self", input.mediaKind);
+    const prior = meetingPeers.get(key);
+    prior?.peer.close();
+    meetingPeers.delete(key);
+    const preparation = pttPreparationSchema.parse(await dependencies.prepareMeetingMedia(
+      accessToken,
+      input.meetingId,
+      { mediaKind: input.mediaKind },
+      AbortSignal.timeout(10_000),
+    ));
+    const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
+    const tracks = input.mediaKind === "audio" ? input.stream.getAudioTracks() : input.stream.getVideoTracks();
+    for (const track of tracks) peer.addTrack(track, input.stream);
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    await waitForPeerIce(peer, dependencies);
+    const localDescription = peer.localDescription;
+    if (!localDescription?.sdp || localDescription.type !== "offer") {
+      peer.close();
+      throw new Error("Communications could not prepare meeting media.");
+    }
+    meetingPeers.set(key, { mediaKind: input.mediaKind, meetingId: input.meetingId, peer, role: "publisher", roomId: input.roomId, sourceConnectionId: "self" });
+    try {
+      const response = commandResponseSchema.parse(await dependencies.startMeetingMedia(
+        accessToken,
+        input.meetingId,
+        "publish",
+        { mediaKind: input.mediaKind, offer: localDescription.sdp },
+        AbortSignal.timeout(10_000),
+      ));
+      if (response.outcome !== "accepted") throw new Error(commandOutcomeMessage(response.outcome));
+    } catch (error) {
+      closeMeetingPeers((item) => item.meetingId === input.meetingId && item.role === "publisher" && item.mediaKind === input.mediaKind);
+      throw error;
+    }
+  };
+  const startMeetingListener = async (input: Readonly<{
+    mediaKind: MeetingMediaKind;
+    meetingId: string;
+    roomId: string;
+    sourceConnectionId: string;
+  }>) => {
+    const key = meetingPeerKey(input.meetingId, "listener", input.sourceConnectionId, input.mediaKind);
+    if (meetingPeers.has(key) || closed || socket.readyState !== 1) return;
+    const accessToken = getAccessToken()?.trim();
+    if (!accessToken) return;
+    try {
+      const preparation = pttPreparationSchema.parse(await dependencies.prepareMeetingMedia(
+        accessToken,
+        input.meetingId,
+        { mediaKind: input.mediaKind, sourceConnectionId: input.sourceConnectionId },
+        AbortSignal.timeout(10_000),
+      ));
+      const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
+      peer.addTransceiver(input.mediaKind === "audio" ? "audio" : "video", { direction: "recvonly" });
+      peer.addEventListener("track", (trackEvent) => {
+        const stream = trackEvent.streams[0] ?? dependencies.createStream([trackEvent.track]);
+        onRemoteTrack({
+          callId: input.meetingId,
+          mediaKind: input.mediaKind === "audio" ? "audio" : "video",
+          participantConnectionId: input.sourceConnectionId,
+          publicationKind: meetingPublicationKind(input.mediaKind),
+          roomId: input.roomId,
+          stream,
+          trackReference: `meeting:${input.meetingId}:${input.sourceConnectionId}:${input.mediaKind}`,
+        });
+      });
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      await waitForPeerIce(peer, dependencies);
+      const localDescription = peer.localDescription;
+      if (!localDescription?.sdp || localDescription.type !== "offer") {
+        peer.close();
+        return;
+      }
+      meetingPeers.set(key, { mediaKind: input.mediaKind, meetingId: input.meetingId, peer, role: "listener", roomId: input.roomId, sourceConnectionId: input.sourceConnectionId });
+      const response = commandResponseSchema.parse(await dependencies.startMeetingMedia(
+        accessToken,
+        input.meetingId,
+        "subscribe",
+        { mediaKind: input.mediaKind, offer: localDescription.sdp, sourceConnectionId: input.sourceConnectionId },
+        AbortSignal.timeout(10_000),
+      ));
+      if (response.outcome !== "accepted") closeMeetingPeers((item) => item.meetingId === input.meetingId && item.role === "listener" && item.sourceConnectionId === input.sourceConnectionId && item.mediaKind === input.mediaKind);
+    } catch {
+      closeMeetingPeers((item) => item.meetingId === input.meetingId && item.role === "listener" && item.sourceConnectionId === input.sourceConnectionId && item.mediaKind === input.mediaKind);
+    }
+  };
+  const stopMeetingPublisher = async (meetingId: string, mediaKind: MeetingMediaKind) => {
+    closeMeetingPeers((item) => item.meetingId === meetingId && item.role === "publisher" && item.mediaKind === mediaKind);
+    const accessToken = getAccessToken()?.trim();
+    if (!accessToken) return;
+    const response = commandResponseSchema.parse(await dependencies.stopMeetingMedia(
+      accessToken,
+      meetingId,
+      { mediaKind },
+      AbortSignal.timeout(10_000),
+    ));
+    if (response.outcome !== "accepted") throw new Error(commandOutcomeMessage(response.outcome));
+  };
+  const startDirectCallAudio = async (input: Readonly<{ callId: string; stream: MediaStream }>) => {
+    const accessToken = getAccessToken()?.trim();
+    if (!accessToken) throw new Error("Your session is no longer valid. Sign in and try again.");
+    closeDirectPeer(input.callId);
+    const context = directCallContextSchema.parse(await dependencies.getDirectCallContext(
+      accessToken,
+      input.callId,
+      AbortSignal.timeout(10_000),
+    ));
+    const preparation = pttPreparationSchema.parse(await dependencies.prepareDirectAudio(
+      accessToken,
+      { callId: input.callId, conversationReference: context.conversationReference },
+      AbortSignal.timeout(10_000),
+    ));
+    const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
+    for (const track of input.stream.getAudioTracks()) peer.addTrack(track, input.stream);
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    await waitForPeerIce(peer, dependencies);
+    const localDescription = peer.localDescription;
+    if (!localDescription?.sdp || localDescription.type !== "offer") {
+      peer.close();
+      throw new Error("Communications could not prepare direct-call audio.");
+    }
+    directPeers.set(input.callId, peer);
+    try {
+      const response = commandResponseSchema.parse(await dependencies.startDirectAudio(
+        accessToken,
+        { callId: input.callId, conversationReference: context.conversationReference, offer: localDescription.sdp },
+        AbortSignal.timeout(10_000),
+      ));
+      if (response.outcome !== "accepted") throw new Error(commandOutcomeMessage(response.outcome));
+    } catch (error) {
+      closeDirectPeer(input.callId);
+      throw error;
+    }
+  };
+  const startPttPublisher = async (input: Readonly<{
+    channelReference: string;
+    roomId: string;
+    stream: MediaStream;
+    transmissionRequestId: string;
+  }>) => {
+    const accessToken = getAccessToken()?.trim();
+    if (!accessToken) throw new Error("Your session is no longer valid. Sign in and try again.");
+    closePttPeer(input.transmissionRequestId);
+    const preparation = pttPreparationSchema.parse(await dependencies.preparePtt(
+      accessToken,
+      { channelReference: input.channelReference, mode: "publisher", transmissionRequestId: input.transmissionRequestId },
+      AbortSignal.timeout(10_000),
+    ));
+    const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
+    for (const track of input.stream.getAudioTracks()) peer.addTrack(track, input.stream);
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    await waitForPeerIce(peer, dependencies);
+    const localDescription = peer.localDescription;
+    if (!localDescription?.sdp || localDescription.type !== "offer") {
+      peer.close();
+      throw new Error("Communications could not prepare push-to-talk audio.");
+    }
+    pttPeers.set(input.transmissionRequestId, {
+      peer,
+      publication: "publisher",
+      roomId: input.roomId,
+      transmissionRequestId: input.transmissionRequestId,
+    });
+    try {
+      const response = commandResponseSchema.parse(await dependencies.startPtt(
+        accessToken,
+        {
+          channelReference: input.channelReference,
+          offer: localDescription.sdp,
+          transmissionRequestId: input.transmissionRequestId,
+        },
+        AbortSignal.timeout(10_000),
+      ));
+      if (response.outcome !== "accepted") throw new Error(commandOutcomeMessage(response.outcome));
+    } catch (error) {
+      closePttPeer(input.transmissionRequestId);
+      throw error;
+    }
+  };
+  const startPttListener = async (transmissionRequestId: string, roomId: string) => {
+    if (pttPeers.has(transmissionRequestId)) return;
+    const accessToken = getAccessToken()?.trim();
+    if (!accessToken || closed || socket.readyState !== 1) return;
+    const preparation = pttPreparationSchema.parse(await dependencies.preparePtt(
+      accessToken,
+      { mode: "listener", transmissionRequestId },
+      AbortSignal.timeout(10_000),
+    ));
+    const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
+    peer.addTransceiver("audio", { direction: "recvonly" });
+    peer.addEventListener("track", (trackEvent) => {
+      const stream = trackEvent.streams[0] ?? dependencies.createStream([trackEvent.track]);
+      onRemoteTrack({
+        callId: transmissionRequestId,
+        mediaKind: "audio",
+        participantConnectionId: null,
+        publicationKind: "ptt",
+        roomId,
+        stream,
+        trackReference: `ptt:${transmissionRequestId}:audio`,
+      });
+    });
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    await waitForPeerIce(peer, dependencies);
+    const localDescription = peer.localDescription;
+    if (!localDescription?.sdp || localDescription.type !== "offer") {
+      peer.close();
+      return;
+    }
+    pttPeers.set(transmissionRequestId, { peer, publication: "listener", roomId, transmissionRequestId });
+    try {
+      const response = commandResponseSchema.parse(await dependencies.startPtt(
+        accessToken,
+        { mode: "listener", offer: localDescription.sdp, transmissionRequestId },
+        AbortSignal.timeout(10_000),
+      ));
+      if (response.outcome !== "accepted") closePttPeer(transmissionRequestId);
+    } catch {
+      closePttPeer(transmissionRequestId);
+    }
+  };
   const dispose = () => {
     closed = true;
     if (heartbeatTimer) dependencies.clearTimer(heartbeatTimer);
@@ -339,6 +735,9 @@ function createSession({
     if (authorizationRefreshTimeoutTimer) dependencies.clearTimer(authorizationRefreshTimeoutTimer);
     authorizationRefreshController?.abort("communications_session_ended");
     peerTransport.closeAll();
+    for (const transmissionRequestId of [...pttPeers.keys()]) closePttPeer(transmissionRequestId);
+    for (const callId of [...directPeers.keys()]) closeDirectPeer(callId);
+    closeMeetingPeers(() => true);
     heartbeatTimer = null;
     authorizationRefreshTimer = null;
     authorizationRefreshTimeoutTimer = null;
@@ -349,7 +748,7 @@ function createSession({
     heartbeatTimer = dependencies.setTimer(() => {
       heartbeatTimer = null;
       try {
-        sendCommand(systemCommand("heartbeat", connectionEpoch));
+        sendSocketControlFrame(systemCommand("heartbeat", connectionEpoch));
         scheduleHeartbeat();
       } catch {
         dispose();
@@ -398,31 +797,180 @@ function createSession({
     },
     async publish(input) {
       requireOpen();
+      if (input.kind === "ptt") {
+        if (!input.channelReference || !input.transmissionRequestId) {
+          throw new Error("Push-to-talk could not verify its authorized channel.");
+        }
+        await startPttPublisher({
+          channelReference: input.channelReference,
+          roomId: input.roomId,
+          stream: input.stream,
+          transmissionRequestId: input.transmissionRequestId,
+        });
+        return;
+      }
+      if (input.kind === "call_audio" && input.roomId.startsWith("call:")) {
+        await startDirectCallAudio({ callId: input.roomId.slice("call:".length), stream: input.stream });
+        return;
+      }
+      if (input.roomId.startsWith("meeting:")) {
+        const mediaKind = meetingMediaKind(input.kind);
+        if (!mediaKind) throw new Error("That meeting publication is not available.");
+        await startMeetingPublisher({
+          mediaKind,
+          meetingId: input.roomId.slice("meeting:".length),
+          roomId: input.roomId,
+          stream: input.stream,
+        });
+        return;
+      }
       peerTransport.registerPublication(input.roomId, input.kind, input.stream);
     },
     async send(input) {
-      sendCommand(input);
+      await sendCommand(input);
     },
     async stopPublication(kind, roomId) {
       if (closed) return;
       requireOpen();
+      if (kind === "ptt" && roomId?.startsWith("ptt:")) {
+        closePttPeer(roomId.slice("ptt:".length));
+        return;
+      }
+      if (kind === "call_audio" && roomId?.startsWith("call:")) {
+        closeDirectPeer(roomId.slice("call:".length));
+        return;
+      }
+      if (roomId?.startsWith("meeting:")) {
+        const mediaKind = meetingMediaKind(kind);
+        if (mediaKind) await stopMeetingPublisher(roomId.slice("meeting:".length), mediaKind).catch(() => undefined);
+        return;
+      }
       if (roomId) await peerTransport.removePublication(roomId, kind);
     },
   };
   const handleEvent = async (event: SygSphereCommsEvent) => {
     if (event.kind === "media.negotiation") {
       const payload = SYGSPHERE_COMMS_EVENT_PAYLOAD_SCHEMAS["media.negotiation"].parse(event.payload);
+      const pttPeer = pttPeers.get(payload.callId);
+      if (pttPeer && pttPeer.roomId === event.roomId && payload.descriptionType === "answer") {
+        await pttPeer.peer.setRemoteDescription({ sdp: payload.description, type: "answer" });
+        if (pttPeer.publication === "listener") {
+          const accessToken = getAccessToken()?.trim();
+          if (!accessToken) {
+            closePttPeer(payload.callId);
+            return;
+          }
+          const response = commandResponseSchema.parse(await dependencies.acknowledgePttListenerReady(
+            accessToken,
+            { transmissionRequestId: payload.callId },
+            AbortSignal.timeout(10_000),
+          ));
+          if (response.outcome !== "accepted") closePttPeer(payload.callId);
+        }
+        return;
+      }
+      const directPeer = directPeers.get(payload.callId);
+      if (directPeer && event.roomId === `call:${payload.callId}` && payload.descriptionType === "answer" && payload.direction === "publish") {
+        await directPeer.setRemoteDescription({ sdp: payload.description, type: "answer" });
+        return;
+      }
+      if (event.roomId === `meeting:${payload.callId}` && payload.descriptionType === "answer") {
+        const binding = payload.trackBindings[0];
+        const mediaKind = binding?.publicationKind === "call_audio"
+          ? "audio"
+          : binding?.publicationKind === "camera"
+            ? "video"
+            : binding?.publicationKind === "screen"
+              ? "screen"
+              : null;
+        if (mediaKind) {
+          const meetingPeer = payload.direction === "subscribe" && binding?.participantConnectionId
+            ? meetingPeers.get(meetingPeerKey(payload.callId, "listener", binding.participantConnectionId, mediaKind))
+            : [...meetingPeers.values()].find((item) => item.meetingId === payload.callId && item.role === "publisher" && item.mediaKind === mediaKind);
+          if (meetingPeer) {
+            await meetingPeer.peer.setRemoteDescription({ sdp: payload.description, type: "answer" });
+            return;
+          }
+        }
+      }
       await peerTransport.handleNegotiation(event.roomId, payload);
       return;
+    }
+    if (event.kind === "transmission.started") {
+      const payload = SYGSPHERE_COMMS_EVENT_PAYLOAD_SCHEMAS["transmission.started"].parse(event.payload);
+      void startPttListener(payload.transmissionRequestId, event.roomId).catch(() => undefined);
+      return;
+    }
+    if (event.kind === "media.source.available" && event.roomId.startsWith("meeting:")) {
+      const payload = SYGSPHERE_COMMS_EVENT_PAYLOAD_SCHEMAS["media.source.available"].parse(event.payload);
+      void startMeetingListener({
+        mediaKind: payload.mediaKind,
+        meetingId: payload.callId,
+        roomId: event.roomId,
+        sourceConnectionId: payload.participantConnectionId,
+      });
+      return;
+    }
+    if (event.kind === "media.source.unavailable" && event.roomId.startsWith("meeting:")) {
+      const payload = SYGSPHERE_COMMS_EVENT_PAYLOAD_SCHEMAS["media.source.unavailable"].parse(event.payload);
+      closeMeetingPeers((item) => item.meetingId === payload.callId
+        && item.role === "listener"
+        && item.sourceConnectionId === payload.participantConnectionId
+        && item.mediaKind === payload.mediaKind);
+      return;
+    }
+    if (["transmission.ended", "floor.revoked", "media.closed"].includes(event.kind) && event.roomId.startsWith("ptt:")) {
+      closePttPeer(event.roomId.slice("ptt:".length));
+    }
+    if (["call.ended", "call.missed", "media.closed"].includes(event.kind) && event.roomId.startsWith("call:")) {
+      closeDirectPeer(event.roomId.slice("call:".length));
+    }
+    if (event.roomId.startsWith("meeting:")) {
+      const meetingId = event.roomId.slice("meeting:".length);
+      if (["meeting.ended", "media.closed"].includes(event.kind)) closeMeetingPeers((item) => item.meetingId === meetingId);
+      const eventPayload = event.payload as Record<string, unknown>;
+      if (event.kind === "participant.removed" || (event.kind === "participant.changed" && eventPayload.state === "left")) {
+        const participantConnectionId = typeof eventPayload.participantConnectionId === "string" ? eventPayload.participantConnectionId : null;
+        if (participantConnectionId) closeMeetingPeers((item) => item.meetingId === meetingId && item.sourceConnectionId === participantConnectionId);
+      }
     }
     if (["media.closed", "media.failed", "call.ended", "call.missed", "meeting.ended", "session.revoked"].includes(event.kind)) {
       peerTransport.closeRoom(event.roomId);
     }
   };
-  sendCommand(systemCommand("snapshot.request", connectionEpoch));
+  sendSocketControlFrame(systemCommand("snapshot.request", connectionEpoch));
   scheduleHeartbeat();
   scheduleAuthorizationRefresh();
   return { dispose, handleEvent, session };
+}
+
+function commandOutcomeMessage(outcome: string): string {
+  if (outcome === "recipient_unavailable") return "That person is not available for Communications right now.";
+  if (outcome === "rate_limited") return "Please wait a moment before trying Communications again.";
+  if (outcome === "runtime_disabled" || outcome === "provider_unavailable") {
+    return "Communications is temporarily unavailable. Use messages or Dispatch and try again.";
+  }
+  return "Communications could not complete that action. Reopen Communications and try again.";
+}
+
+function waitForPeerIce(
+  peer: RTCPeerConnection,
+  dependencies: Pick<SocketBridgeDependencies, "clearTimer" | "setTimer">,
+): Promise<void> {
+  if (peer.iceGatheringState === "complete") return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const complete = () => {
+      if (peer.iceGatheringState !== "complete") return;
+      dependencies.clearTimer(timer);
+      peer.removeEventListener("icegatheringstatechange", complete);
+      resolve();
+    };
+    const timer = dependencies.setTimer(() => {
+      peer.removeEventListener("icegatheringstatechange", complete);
+      reject(new Error("Communications could not prepare push-to-talk audio in time."));
+    }, 5_000);
+    peer.addEventListener("icegatheringstatechange", complete);
+  });
 }
 
 function systemCommand(kind: "heartbeat" | "snapshot.request", connectionEpoch: number) {

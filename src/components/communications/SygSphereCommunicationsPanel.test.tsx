@@ -28,6 +28,7 @@ const base = () => ({
   channels: [{ id: "dispatch", label: "Dispatch", scopeLabel: "Your Dispatch channel" }],
   connection: "ready" as const,
   microphoneMuted: false,
+  microphoneMutedByModerator: false,
   pttState: "ready" as const,
   selectedChannelId: "dispatch",
 });

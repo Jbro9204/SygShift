@@ -136,8 +136,8 @@ if (!coordinator.includes("request.headers.get('x-sygsphere-comms-route-referenc
   failures.push('The coordinator does not require the server-set opaque WebSocket route reference.')
 }
 
-if (manifest.contractVersion !== '1.0.0-draft.4' || manifest.lifecycle !== 'closed-coordinator-foundation') {
-  failures.push('The shared contract manifest does not identify the closed coordinator foundation.')
+if (manifest.contractVersion !== '1.0.0-draft.6' || manifest.lifecycle !== 'operational-shared-runtime') {
+  failures.push('The shared contract manifest does not identify the operational shared runtime.')
 }
 
 for (const artifact of ['integration-gates.ts', 'presentation-policy.ts', 'command-payload.schema.json', 'event-payload.schema.json']) {

@@ -35,6 +35,23 @@ import {
   type ServerCallLifecycle,
 } from './callLifecycle'
 import {
+  grantServerPttFloor,
+  prepareServerPttFloor,
+  recordServerPttListenerReady,
+  recordServerPttMediaNegotiation,
+  startServerPttTransmission,
+} from './pttLifecycle'
+import {
+  createServerMeeting,
+  endServerMeeting,
+  grantServerMeetingMedia,
+  joinServerMeeting,
+  leaveServerMeeting,
+  muteServerMeetingParticipant,
+  removeServerMeetingParticipant,
+  type ServerMeeting,
+} from './meetingLifecycle'
+import {
   SYGSPHERE_COMMS_WEBSOCKET_TICKET_TTL_MS,
   createSygSphereCommsWebSocketTicket,
   digestSygSphereCommsTicket,
@@ -104,6 +121,44 @@ type CoordinatorMediaNegotiationRow = {
   negotiation_id: string
   peer_handle: string
   session_id: string
+}
+
+type CoordinatorPttTransmissionRow = {
+  channel_reference: string
+  lease_expires_at_ms: number
+  recipient_employee_ids_json: string
+  requester_connection_id: string
+  requester_employee_id: string
+  scope: 'assignment' | 'shift' | 'site' | 'dispatch'
+  state: 'ended' | 'preparing' | 'ready'
+  transmission_request_id: string
+}
+
+type CoordinatorMeetingRow = {
+  allowed_employee_ids_json: string
+  conversation_reference: string
+  host_connection_id: string
+  meeting_id: string
+  max_participants: 5 | 10 | 20 | 50
+  scope: 'assignment' | 'shift' | 'site' | 'dispatch'
+  state: 'active' | 'ended'
+}
+
+type CoordinatorMeetingParticipantRow = {
+  connection_id: string
+  employee_id: string
+  muted: 0 | 1
+}
+
+type CoordinatorMeetingMediaSessionRow = {
+  connection_id: string
+  created_at_ms: number
+  media_kind: 'audio' | 'screen' | 'video'
+  meeting_id: string
+  session_json: string
+  source_connection_id: string
+  track_id: string
+  updated_at_ms: number
 }
 
 type HibernatableWebSocket = WebSocket & {
@@ -177,6 +232,34 @@ const directAudioStartSchema = z.object({
 
 const directAudioPreparationSchema = directAudioStartSchema.omit({ offer: true })
 
+const pttAudioStartSchema = z.object({
+  authorization: stagedCommsAuthorizationContextSchema,
+  channelReference: z.uuid(),
+  connectionRouteReference: z.uuid(),
+  offer: z.string().min(1).max(65_536),
+  release: coordinatorReleaseContextSchema,
+  requestId: z.uuid(),
+  transmissionRequestId: z.uuid(),
+}).strict()
+
+const pttListenStartSchema = pttAudioStartSchema.omit({ channelReference: true })
+const pttAudioPreparationSchema = pttAudioStartSchema.omit({ offer: true })
+const pttListenPreparationSchema = pttListenStartSchema.omit({ offer: true })
+const pttListenerReadySchema = pttListenPreparationSchema
+
+const meetingMediaKindSchema = z.enum(['audio', 'screen', 'video'])
+const meetingMediaPreparationSchema = z.object({
+  authorization: stagedCommsAuthorizationContextSchema,
+  connectionRouteReference: z.uuid(),
+  mediaKind: meetingMediaKindSchema,
+  meetingId: z.uuid(),
+  release: coordinatorReleaseContextSchema,
+  requestId: z.uuid(),
+  sourceConnectionId: z.uuid().optional(),
+}).strict()
+const meetingMediaStartSchema = meetingMediaPreparationSchema.extend({ offer: z.string().min(1).max(65_536) }).strict()
+const meetingMediaStopSchema = meetingMediaPreparationSchema.omit({ sourceConnectionId: true })
+
 const directCallContextSchema = z.object({
   authorization: stagedCommsAuthorizationContextSchema,
   callId: z.uuid(),
@@ -225,6 +308,8 @@ const commandReplayRetentionMilliseconds = 86_400_000
 const maximumRecordsPurgedPerDispatch = 50
 const maximumWebSocketFrameBytes = 4_096
 const directCallRingingMilliseconds = 45_000
+const pttPreparingMilliseconds = 10_000
+const pttLeaseMilliseconds = 6_000
 
 const runtimeEnabled = (value: string | undefined): boolean => value?.trim().toLowerCase() === 'true'
 
@@ -388,6 +473,85 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
         );
         create index if not exists coordinator_media_negotiations_expiry_idx
           on coordinator_media_negotiations (expires_at_ms);
+        create table if not exists coordinator_ptt_transmissions (
+          transmission_request_id text primary key,
+          channel_reference text not null,
+          requester_employee_id text not null,
+          requester_connection_id text not null,
+          recipient_employee_ids_json text not null,
+          scope text not null check (scope in ('assignment', 'shift', 'site', 'dispatch')),
+          state text not null check (state in ('preparing', 'ready', 'ended')),
+          lease_expires_at_ms integer not null,
+          created_at_ms integer not null,
+          updated_at_ms integer not null
+        );
+        create unique index if not exists coordinator_ptt_one_active_floor_per_channel_idx
+          on coordinator_ptt_transmissions (channel_reference)
+          where state in ('preparing', 'ready');
+        create index if not exists coordinator_ptt_transmissions_expiry_idx
+          on coordinator_ptt_transmissions (state, lease_expires_at_ms);
+        create table if not exists coordinator_ptt_listener_requirements (
+          transmission_request_id text not null,
+          connection_id text not null,
+          employee_id text not null,
+          ready_at_ms integer,
+          primary key (transmission_request_id, connection_id)
+        );
+        create index if not exists coordinator_ptt_listener_requirements_ready_idx
+          on coordinator_ptt_listener_requirements (transmission_request_id, ready_at_ms);
+        create table if not exists coordinator_ptt_media_negotiations (
+          transmission_request_id text primary key,
+          negotiation_id text not null,
+          source_ready_at_ms integer not null,
+          expires_at_ms integer not null
+        );
+        create table if not exists coordinator_meetings (
+          meeting_id text primary key,
+          conversation_reference text not null,
+          host_connection_id text not null,
+          allowed_employee_ids_json text not null,
+          scope text not null check (scope in ('assignment', 'shift', 'site', 'dispatch')),
+          max_participants integer not null check (max_participants in (5, 10, 20, 50)),
+          state text not null check (state in ('active', 'ended')),
+          created_at_ms integer not null,
+          updated_at_ms integer not null
+        );
+        create table if not exists coordinator_meeting_participants (
+          meeting_id text not null,
+          connection_id text not null,
+          employee_id text not null,
+          muted integer not null check (muted in (0, 1)),
+          joined_at_ms integer not null,
+          primary key (meeting_id, connection_id)
+        );
+        create index if not exists coordinator_meeting_participants_employee_idx
+          on coordinator_meeting_participants (meeting_id, employee_id, joined_at_ms desc);
+        create table if not exists coordinator_meeting_muted_employees (
+          meeting_id text not null,
+          employee_id text not null,
+          muted_at_ms integer not null,
+          primary key (meeting_id, employee_id)
+        );
+        create table if not exists coordinator_meeting_media_grants (
+          meeting_id text not null,
+          connection_id text not null,
+          media_kind text not null check (media_kind in ('screen', 'video')),
+          granted_at_ms integer not null,
+          primary key (meeting_id, connection_id, media_kind)
+        );
+        create table if not exists coordinator_meeting_media_sessions (
+          meeting_id text not null,
+          connection_id text not null,
+          source_connection_id text not null,
+          media_kind text not null check (media_kind in ('audio', 'screen', 'video')),
+          session_json text not null,
+          track_id text not null,
+          created_at_ms integer not null,
+          updated_at_ms integer not null,
+          primary key (meeting_id, connection_id, source_connection_id, media_kind)
+        );
+        create index if not exists coordinator_meeting_media_sessions_source_idx
+          on coordinator_meeting_media_sessions (meeting_id, source_connection_id, media_kind, updated_at_ms desc);
       `)
     })
   }
@@ -404,7 +568,13 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
          where state = 'ringing' order by expires_at_ms asc limit 1`,
       )
       .toArray()[0]
-    const nextExpiry = [next?.expires_at_ms, nextCall?.expires_at_ms]
+    const nextPtt = this.ctx.storage.sql
+      .exec<CoordinatorNextExpiryRow>(
+        `select lease_expires_at_ms as expires_at_ms from coordinator_ptt_transmissions
+         where state in ('preparing', 'ready') order by lease_expires_at_ms asc limit 1`,
+      )
+      .toArray()[0]
+    const nextExpiry = [next?.expires_at_ms, nextCall?.expires_at_ms, nextPtt?.expires_at_ms]
       .filter((value): value is number => typeof value === 'number')
       .sort((left, right) => left - right)[0]
     if (nextExpiry !== undefined) void this.ctx.storage.setAlarm(nextExpiry)
@@ -675,6 +845,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       }
     }
     await this.expireRingingCalls(now)
+    await this.expirePttTransmissions(now)
     this.scheduleNextSocketTicketExpiry()
   }
 
@@ -1241,7 +1412,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
 
     if (authorized.command.kind === 'call.request') {
       const scope = authorized.scope
-      if (!scope) return 'invalid_state'
+      if (!scope || scope.kind !== 'direct_conversation') return 'invalid_state'
       const recipient = this.activeSocketForEmployee(scope.recipientEmployeeId)
       if (!recipient || recipient.connectionId === caller.connectionId) return 'recipient_unavailable'
       const created = createServerCall({
@@ -1340,6 +1511,1176 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     return 'invalid_state'
   }
 
+  private meetingById(meetingId: string): CoordinatorMeetingRow | null {
+    return this.ctx.storage.sql.exec<CoordinatorMeetingRow>(
+      `select meeting_id, conversation_reference, host_connection_id,
+              allowed_employee_ids_json, scope, max_participants, state
+       from coordinator_meetings where meeting_id = ? limit 1`,
+      meetingId,
+    ).toArray()[0] ?? null
+  }
+
+  private meetingParticipantRows(meetingId: string): readonly CoordinatorMeetingParticipantRow[] {
+    return this.ctx.storage.sql.exec<CoordinatorMeetingParticipantRow>(
+      `select connection_id, employee_id, muted
+       from coordinator_meeting_participants where meeting_id = ? order by joined_at_ms asc`,
+      meetingId,
+    ).toArray()
+  }
+
+  private isMeetingEmployeeMuted(meetingId: string, employeeId: string): boolean {
+    return this.ctx.storage.sql.exec<{ employee_id: string }>(
+      `select employee_id from coordinator_meeting_muted_employees
+       where meeting_id = ? and employee_id = ? limit 1`,
+      meetingId,
+      employeeId,
+    ).toArray().length === 1
+  }
+
+  private meetingParticipantEmployeeId(meetingId: string, connectionId: string): string | null {
+    return this.ctx.storage.sql.exec<{ employee_id: string }>(
+      `select employee_id from coordinator_meeting_participants
+       where meeting_id = ? and connection_id = ? limit 1`,
+      meetingId,
+      connectionId,
+    ).toArray()[0]?.employee_id ?? null
+  }
+
+  private meetingAllowedEmployeeIds(row: CoordinatorMeetingRow): readonly string[] {
+    try {
+      const parsed = z.array(z.uuid()).min(1).max(50).safeParse(JSON.parse(row.allowed_employee_ids_json))
+      return parsed.success ? parsed.data : []
+    } catch {
+      return []
+    }
+  }
+
+  private storedMeeting(row: CoordinatorMeetingRow): ServerMeeting | null {
+    const allowed = this.meetingAllowedEmployeeIds(row)
+    if (!allowed.length) return null
+    const participants = new Map(this.meetingParticipantRows(row.meeting_id).map((participant) => [
+      participant.connection_id,
+      {
+        connectionId: participant.connection_id,
+        muted: participant.muted === 1 || this.isMeetingEmployeeMuted(row.meeting_id, participant.employee_id),
+      },
+    ]))
+    return {
+      hostConnectionId: row.host_connection_id,
+      maxParticipants: row.max_participants,
+      meetingId: row.meeting_id,
+      participants,
+      state: row.state,
+    }
+  }
+
+  private sendMeetingEvent(
+    connectionIds: readonly string[],
+    meetingId: string,
+    kind: Extract<SygSphereCommsEventKind, 'meeting.created' | 'meeting.joined' | 'meeting.ended' | 'participant.changed' | 'participant.removed' | 'participant.muted' | 'camera.granted' | 'camera.denied' | 'camera.revoked' | 'screen.granted' | 'screen.denied' | 'screen.revoked' | 'focus.granted' | 'focus.denied' | 'focus.revoked'>,
+    payload: Record<string, unknown>,
+  ): void {
+    for (const connectionId of new Set(connectionIds)) this.sendCoordinatorEvent(connectionId, `meeting:${meetingId}`, kind, payload)
+  }
+
+  private meetingParticipantConnectionIds(meetingId: string): readonly string[] {
+    return this.meetingParticipantRows(meetingId).map((participant) => participant.connection_id)
+  }
+
+  private async dispatchMeetingCommand(
+    authorized: AuthorizedCoordinatorCommand,
+    now: number,
+  ): Promise<TenantCommsCoordinatorResult['outcome']> {
+    const routeReference = authorized.connectionRouteReference
+    if (!routeReference) return 'invalid_state'
+    const caller = this.activeSocketForRoute(routeReference, authorized.authorization)
+    if (!caller) return 'invalid_state'
+
+    if (authorized.command.kind === 'meeting.create') {
+      const scope = authorized.scope
+      if (!scope || scope.kind !== 'channel_conversation') return 'invalid_state'
+      const clientIntentId: unknown = (authorized.command.payload as Record<string, unknown>).clientIntentId
+      if (typeof clientIntentId !== 'string') return 'invalid_state'
+      const meetingId: string = clientIntentId
+      if (this.meetingById(meetingId)) return 'accepted'
+      const created = createServerMeeting({ hostConnectionId: caller.connectionId, maxParticipants: 50, meetingId })
+      this.ctx.storage.sql.exec(
+        `insert into coordinator_meetings (
+          meeting_id, conversation_reference, host_connection_id,
+          allowed_employee_ids_json, scope, max_participants, state, created_at_ms, updated_at_ms
+        ) values (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+        meetingId,
+        scope.channelReference,
+        caller.connectionId,
+        JSON.stringify(scope.participantEmployeeIds),
+        scope.scope,
+        created.state.maxParticipants,
+        now,
+        now,
+      )
+      this.ctx.storage.sql.exec(
+        `insert into coordinator_meeting_participants (
+          meeting_id, connection_id, employee_id, muted, joined_at_ms
+        ) values (?, ?, ?, 0, ?)`,
+        meetingId,
+        caller.connectionId,
+        caller.authorization.employeeId,
+        now,
+      )
+      this.sendMeetingEvent([caller.connectionId], meetingId, 'meeting.created', {
+        hostConnectionId: caller.connectionId,
+        invited: false,
+        meetingId,
+      })
+      const invited = new Set(scope.participantEmployeeIds)
+      for (const webSocket of this.ctx.getWebSockets()) {
+        const attachment = socketAttachment(webSocket)
+        if (
+          attachment?.phase !== 'authenticated'
+          || attachment.connectionId === caller.connectionId
+          || attachment.authorization.tenantId !== caller.authorization.tenantId
+          || !invited.has(attachment.authorization.employeeId)
+        ) continue
+        this.sendMeetingEvent([attachment.connectionId], meetingId, 'meeting.created', {
+          hostConnectionId: caller.connectionId,
+          invited: true,
+          meetingId,
+        })
+      }
+      return 'accepted'
+    }
+
+    const commandPayload = authorized.command.payload as Record<string, unknown>
+    const meetingId = typeof commandPayload.meetingId === 'string'
+      ? commandPayload.meetingId
+      : typeof commandPayload.callId === 'string'
+        ? commandPayload.callId
+        : null
+    if (!meetingId) return 'invalid_state'
+    const row = this.meetingById(meetingId)
+    const meeting = row ? this.storedMeeting(row) : null
+    if (!row || !meeting || row.state !== 'active') return 'invalid_state'
+    const allowedEmployees = this.meetingAllowedEmployeeIds(row)
+    const callerIsAllowed = allowedEmployees.includes(caller.authorization.employeeId)
+    const existingParticipant = meeting.participants.get(caller.connectionId)
+
+    if (authorized.command.kind === 'meeting.join') {
+      const joined = joinServerMeeting(meeting, { coordinatorAuthorized: callerIsAllowed, participantConnectionId: caller.connectionId })
+      if (!callerIsAllowed) return 'invalid_state'
+      if (joined.event) {
+        this.ctx.storage.sql.exec(
+          `insert into coordinator_meeting_participants (
+            meeting_id, connection_id, employee_id, muted, joined_at_ms
+          ) values (?, ?, ?, 0, ?)`,
+          meetingId,
+          caller.connectionId,
+          caller.authorization.employeeId,
+          now,
+        )
+        this.ctx.storage.sql.exec('update coordinator_meetings set updated_at_ms = ? where meeting_id = ?', now, meetingId)
+        const otherConnections = [...meeting.participants.keys()]
+        this.sendMeetingEvent(otherConnections, meetingId, 'participant.changed', {
+          meetingId,
+          participantConnectionId: caller.connectionId,
+          state: 'joined',
+        })
+        for (const participantConnectionId of otherConnections) {
+          this.sendMeetingEvent([caller.connectionId], meetingId, 'participant.changed', {
+            meetingId,
+            participantConnectionId,
+            state: 'joined',
+          })
+        }
+        for (const source of this.meetingMediaSourceRows(meetingId)) {
+          if (source.source_connection_id === caller.connectionId) continue
+          this.sendCoordinatorEvent(caller.connectionId, `meeting:${meetingId}`, 'media.source.available', {
+            callId: meetingId,
+            mediaKind: source.media_kind,
+            participantConnectionId: source.source_connection_id,
+            trackReference: source.track_id,
+          })
+        }
+      } else if (!existingParticipant) return 'invalid_state'
+      this.sendMeetingEvent([caller.connectionId], meetingId, 'meeting.joined', { meetingId, participantConnectionId: caller.connectionId })
+      return 'accepted'
+    }
+
+    if (!existingParticipant) return 'invalid_state'
+
+    if (authorized.command.kind === 'meeting.leave') {
+      if (caller.connectionId === row.host_connection_id) {
+        const ended = endServerMeeting(meeting, { coordinatorMayModerate: true, reason: 'ended' })
+        if (!ended.event) return 'invalid_state'
+        const participantConnections = this.meetingParticipantConnectionIds(meetingId)
+        for (const connectionId of participantConnections) await this.closeMeetingMediaForParticipant(meetingId, connectionId, authorized.release, 'ended')
+        this.ctx.storage.sql.exec('update coordinator_meetings set state = \'ended\', updated_at_ms = ? where meeting_id = ?', now, meetingId)
+        this.ctx.storage.sql.exec('delete from coordinator_meeting_muted_employees where meeting_id = ?', meetingId)
+        this.sendMeetingEvent(participantConnections, meetingId, 'meeting.ended', ended.event.payload)
+        return 'accepted'
+      }
+      const left = leaveServerMeeting(meeting, caller.connectionId)
+      if (!left.event) return 'invalid_state'
+      await this.closeMeetingMediaForParticipant(meetingId, caller.connectionId, authorized.release, 'ended')
+      this.ctx.storage.sql.exec('delete from coordinator_meeting_participants where meeting_id = ? and connection_id = ?', meetingId, caller.connectionId)
+      this.ctx.storage.sql.exec('update coordinator_meetings set updated_at_ms = ? where meeting_id = ?', now, meetingId)
+      this.sendMeetingEvent(this.meetingParticipantConnectionIds(meetingId), meetingId, 'participant.changed', left.event.payload)
+      return 'accepted'
+    }
+
+    if (authorized.command.kind === 'meeting.end') {
+      const mayEnd = caller.connectionId === row.host_connection_id || authorized.authorization.permissions.includes('sygsphere.comms.moderate')
+      const ended = endServerMeeting(meeting, { coordinatorMayModerate: mayEnd, reason: 'ended' })
+      if (!ended.event) return 'invalid_state'
+      const participantConnections = this.meetingParticipantConnectionIds(meetingId)
+      for (const connectionId of participantConnections) await this.closeMeetingMediaForParticipant(meetingId, connectionId, authorized.release, 'ended')
+      this.ctx.storage.sql.exec('update coordinator_meetings set state = \'ended\', updated_at_ms = ? where meeting_id = ?', now, meetingId)
+      this.ctx.storage.sql.exec('delete from coordinator_meeting_muted_employees where meeting_id = ?', meetingId)
+      this.sendMeetingEvent(participantConnections, meetingId, 'meeting.ended', ended.event.payload)
+      return 'accepted'
+    }
+
+    if (authorized.command.kind === 'participant.remove' || authorized.command.kind === 'participant.mute') {
+      const targetConnectionId = typeof commandPayload.participantConnectionId === 'string'
+        ? commandPayload.participantConnectionId
+        : null
+      if (!targetConnectionId) return 'invalid_state'
+      const moderationAllowed = authorized.authorization.permissions.includes('sygsphere.comms.moderate')
+      const changed = authorized.command.kind === 'participant.remove'
+        ? removeServerMeetingParticipant(meeting, { coordinatorMayModerate: moderationAllowed, participantConnectionId: targetConnectionId })
+        : muteServerMeetingParticipant(meeting, { coordinatorMayModerate: moderationAllowed, participantConnectionId: targetConnectionId })
+      if (!changed.event) return 'invalid_state'
+      if (authorized.command.kind === 'participant.remove') {
+        await this.closeMeetingMediaForParticipant(meetingId, targetConnectionId, authorized.release, 'moderated')
+        this.ctx.storage.sql.exec('delete from coordinator_meeting_participants where meeting_id = ? and connection_id = ?', meetingId, targetConnectionId)
+      } else {
+        const targetEmployeeId = this.meetingParticipantEmployeeId(meetingId, targetConnectionId)
+        if (!targetEmployeeId) return 'invalid_state'
+        await this.closeMeetingPublishedMedia(meetingId, targetConnectionId, authorized.release, 'moderated')
+        this.ctx.storage.sql.exec('update coordinator_meeting_participants set muted = 1 where meeting_id = ? and connection_id = ?', meetingId, targetConnectionId)
+        this.ctx.storage.sql.exec(
+          `insert into coordinator_meeting_muted_employees (meeting_id, employee_id, muted_at_ms)
+           values (?, ?, ?)
+           on conflict (meeting_id, employee_id) do update set muted_at_ms = excluded.muted_at_ms`,
+          meetingId,
+          targetEmployeeId,
+          now,
+        )
+        this.sendCoordinatorEvent(targetConnectionId, `meeting:${meetingId}`, 'media.closed', {
+          callId: meetingId,
+          generation: 1,
+          reason: 'moderated',
+        })
+      }
+      this.sendMeetingEvent(this.meetingParticipantConnectionIds(meetingId), meetingId, changed.event.kind, changed.event.payload)
+      if (authorized.command.kind === 'participant.mute') {
+        this.sendMeetingEvent([targetConnectionId], meetingId, 'participant.muted', {
+          ...changed.event.payload,
+          self: true,
+        })
+      }
+      return 'accepted'
+    }
+
+    if (authorized.command.kind === 'camera.request' || authorized.command.kind === 'screen.request') {
+      const kind = authorized.command.kind === 'camera.request' ? 'camera' : 'screen'
+      const granted = grantServerMeetingMedia({
+        callId: meetingId,
+        coordinatorAuthorized: true,
+        deviceSupported: true,
+        generation: 1,
+        kind,
+        meeting,
+        participantConnectionId: caller.connectionId,
+        trackReference: `meeting:${meetingId}:${caller.connectionId}:${kind}`,
+      })
+      const grantedEvent = 'event' in granted ? granted.event : granted
+      if ('event' in granted) {
+        this.ctx.storage.sql.exec(
+          `insert into coordinator_meeting_media_grants (meeting_id, connection_id, media_kind, granted_at_ms)
+           values (?, ?, ?, ?)
+           on conflict (meeting_id, connection_id, media_kind) do update set granted_at_ms = excluded.granted_at_ms`,
+          meetingId,
+          caller.connectionId,
+          kind === 'camera' ? 'video' : 'screen',
+          now,
+        )
+      }
+      this.sendMeetingEvent([caller.connectionId], meetingId, grantedEvent.kind, grantedEvent.payload)
+      return 'event' in granted ? 'accepted' : 'recipient_unavailable'
+    }
+
+    if (authorized.command.kind === 'camera.release' || authorized.command.kind === 'screen.release') {
+      const kind = authorized.command.kind === 'camera.release' ? 'camera' : 'screen'
+      const mediaKind = kind === 'camera' ? 'video' : 'screen'
+      const rows = this.ctx.storage.sql.exec<CoordinatorMeetingMediaSessionRow>(
+        `select meeting_id, connection_id, source_connection_id, media_kind,
+                session_json, track_id, created_at_ms, updated_at_ms
+         from coordinator_meeting_media_sessions
+         where meeting_id = ? and connection_id = ? and source_connection_id = ? and media_kind = ?`,
+        meetingId,
+        caller.connectionId,
+        caller.connectionId,
+        mediaKind,
+      ).toArray()
+      await this.closeMeetingMediaRows(rows, authorized.release, 'ended')
+      this.ctx.storage.sql.exec('delete from coordinator_meeting_media_grants where meeting_id = ? and connection_id = ? and media_kind = ?', meetingId, caller.connectionId, mediaKind)
+      return 'accepted'
+    }
+
+    if (authorized.command.kind === 'focus.request') {
+      this.sendMeetingEvent([caller.connectionId], meetingId, 'focus.granted', { callId: meetingId, focusReference: `focus:${meetingId}:${caller.connectionId}` })
+      return 'accepted'
+    }
+    if (authorized.command.kind === 'focus.release') {
+      this.sendMeetingEvent([caller.connectionId], meetingId, 'focus.revoked', { callId: meetingId, focusReference: `focus:${meetingId}:${caller.connectionId}`, reason: 'ended' })
+      return 'accepted'
+    }
+    return 'invalid_state'
+  }
+
+  private meetingMediaSession(
+    meetingId: string,
+    connectionId: string,
+    sourceConnectionId: string,
+    mediaKind: CoordinatorMeetingMediaSessionRow['media_kind'],
+  ): CoordinatorMeetingMediaSessionRow | null {
+    return this.ctx.storage.sql.exec<CoordinatorMeetingMediaSessionRow>(
+      `select meeting_id, connection_id, source_connection_id, media_kind,
+              session_json, track_id, created_at_ms, updated_at_ms
+       from coordinator_meeting_media_sessions
+       where meeting_id = ? and connection_id = ? and source_connection_id = ? and media_kind = ? limit 1`,
+      meetingId,
+      connectionId,
+      sourceConnectionId,
+      mediaKind,
+    ).toArray()[0] ?? null
+  }
+
+  private meetingMediaSourceRows(meetingId: string): readonly CoordinatorMeetingMediaSessionRow[] {
+    return this.ctx.storage.sql.exec<CoordinatorMeetingMediaSessionRow>(
+      `select meeting_id, connection_id, source_connection_id, media_kind,
+              session_json, track_id, created_at_ms, updated_at_ms
+       from coordinator_meeting_media_sessions
+       where meeting_id = ? and connection_id = source_connection_id
+       order by created_at_ms asc`,
+      meetingId,
+    ).toArray()
+  }
+
+  private persistMeetingMediaSession(row: Readonly<{
+    connectionId: string
+    mediaKind: CoordinatorMeetingMediaSessionRow['media_kind']
+    meetingId: string
+    session: ProviderSession
+    sourceConnectionId: string
+    trackId: string
+  }>, now: number): void {
+    this.ctx.storage.sql.exec(
+      `insert into coordinator_meeting_media_sessions (
+        meeting_id, connection_id, source_connection_id, media_kind,
+        session_json, track_id, created_at_ms, updated_at_ms
+      ) values (?, ?, ?, ?, ?, ?, ?, ?)
+       on conflict (meeting_id, connection_id, source_connection_id, media_kind)
+       do update set session_json = excluded.session_json, track_id = excluded.track_id, updated_at_ms = excluded.updated_at_ms`,
+      row.meetingId,
+      row.connectionId,
+      row.sourceConnectionId,
+      row.mediaKind,
+      JSON.stringify({ id: row.session.id, state: row.session.state, tenantId: row.session.tenantId, tracks: [...row.session.tracks.values()] }),
+      row.trackId,
+      now,
+      now,
+    )
+  }
+
+  private meetingMediaPublicationKind(mediaKind: CoordinatorMeetingMediaSessionRow['media_kind']): 'call_audio' | 'camera' | 'screen' {
+    return mediaKind === 'audio' ? 'call_audio' : mediaKind === 'video' ? 'camera' : 'screen'
+  }
+
+  private meetingMediaMayPublish(
+    meetingId: string,
+    connectionId: string,
+    mediaKind: CoordinatorMeetingMediaSessionRow['media_kind'],
+  ): boolean {
+    const meetingRow = this.meetingById(meetingId)
+    const participant = meetingRow ? this.storedMeeting(meetingRow)?.participants.get(connectionId) : null
+    if (!participant || participant.muted) return false
+    if (mediaKind === 'audio') return true
+    return this.ctx.storage.sql.exec<{ granted_at_ms: number }>(
+      `select granted_at_ms from coordinator_meeting_media_grants
+       where meeting_id = ? and connection_id = ? and media_kind = ? limit 1`,
+      meetingId,
+      connectionId,
+      mediaKind,
+    ).toArray().length === 1
+  }
+
+  private async closeMeetingMediaRows(
+    rows: readonly CoordinatorMeetingMediaSessionRow[],
+    release: CoordinatorReleaseContext,
+    reason: 'ended' | 'moderated' | 'unavailable',
+  ): Promise<void> {
+    const adapter = await this.providerAdapter(release)
+    for (const row of rows) {
+      let storedSession: unknown = null
+      try {
+        storedSession = JSON.parse(row.session_json)
+      } catch {
+        // Bad persisted media metadata must never prevent a moderator, cleanup,
+        // or expiry path from removing the isolated session record.
+      }
+      const session = storedProviderSessionSchema.safeParse(storedSession)
+      const track = session.success ? session.data.tracks.find((candidate) => candidate.id === row.track_id) : null
+      if (adapter && session.success && track?.mid) {
+        await adapter.forceCloseTracks({
+          session: { id: session.data.id, state: session.data.state, tenantId: session.data.tenantId, tracks: new Map(session.data.tracks.map((candidate) => [candidate.id, candidate])) },
+          tenantId: session.data.tenantId,
+          tracks: [{ mid: track.mid, trackId: track.id }],
+        }).catch(() => undefined)
+      }
+      this.ctx.storage.sql.exec(
+        `delete from coordinator_meeting_media_sessions
+         where meeting_id = ? and connection_id = ? and source_connection_id = ? and media_kind = ?`,
+        row.meeting_id,
+        row.connection_id,
+        row.source_connection_id,
+        row.media_kind,
+      )
+      if (row.connection_id === row.source_connection_id) {
+        const participantConnectionIds = this.meetingParticipantConnectionIds(row.meeting_id)
+        for (const participantConnectionId of participantConnectionIds) {
+          this.sendCoordinatorEvent(participantConnectionId, `meeting:${row.meeting_id}`, 'media.source.unavailable', {
+            callId: row.meeting_id,
+            mediaKind: row.media_kind,
+            participantConnectionId: row.source_connection_id,
+            reason,
+            trackReference: row.track_id,
+          })
+        }
+      }
+      if (row.connection_id === row.source_connection_id && row.media_kind !== 'audio') {
+        this.sendMeetingEvent(this.meetingParticipantConnectionIds(row.meeting_id), row.meeting_id, `${row.media_kind === 'video' ? 'camera' : 'screen'}.revoked` as 'camera.revoked' | 'screen.revoked', {
+          callId: row.meeting_id,
+          reason,
+          trackReference: row.track_id,
+        })
+      }
+    }
+  }
+
+  private async closeMeetingMediaForParticipant(
+    meetingId: string,
+    connectionId: string,
+    release: CoordinatorReleaseContext,
+    reason: 'ended' | 'moderated' | 'unavailable',
+  ): Promise<void> {
+    const rows = this.ctx.storage.sql.exec<CoordinatorMeetingMediaSessionRow>(
+      `select meeting_id, connection_id, source_connection_id, media_kind,
+              session_json, track_id, created_at_ms, updated_at_ms
+       from coordinator_meeting_media_sessions
+       where meeting_id = ? and (connection_id = ? or source_connection_id = ?)`,
+      meetingId,
+      connectionId,
+      connectionId,
+    ).toArray()
+    await this.closeMeetingMediaRows(rows, release, reason)
+    this.ctx.storage.sql.exec('delete from coordinator_meeting_media_grants where meeting_id = ? and connection_id = ?', meetingId, connectionId)
+  }
+
+  private async closeMeetingPublishedMedia(
+    meetingId: string,
+    connectionId: string,
+    release: CoordinatorReleaseContext,
+    reason: 'ended' | 'moderated' | 'unavailable',
+  ): Promise<void> {
+    const rows = this.ctx.storage.sql.exec<CoordinatorMeetingMediaSessionRow>(
+      `select meeting_id, connection_id, source_connection_id, media_kind,
+              session_json, track_id, created_at_ms, updated_at_ms
+       from coordinator_meeting_media_sessions
+       where meeting_id = ? and connection_id = ? and source_connection_id = ?`,
+      meetingId,
+      connectionId,
+      connectionId,
+    ).toArray()
+    await this.closeMeetingMediaRows(rows, release, reason)
+  }
+
+  async prepareMeetingMedia(input: unknown): Promise<TenantCommsDirectAudioPreparation> {
+    await this.initialization
+    const parsed = meetingMediaPreparationSchema.parse(input)
+    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+      return { outcome: 'runtime_disabled', requestId: parsed.requestId }
+    }
+    const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
+    const row = this.meetingById(parsed.meetingId)
+    const meeting = row ? this.storedMeeting(row) : null
+    const sourceConnectionId = parsed.sourceConnectionId ?? caller?.connectionId
+    if (!caller || !row || !meeting || row.state !== 'active' || !sourceConnectionId
+      || !meeting.participants.has(caller.connectionId)
+      || (parsed.sourceConnectionId === undefined && !this.meetingMediaMayPublish(parsed.meetingId, caller.connectionId, parsed.mediaKind))
+      || (parsed.sourceConnectionId !== undefined && (!meeting.participants.has(sourceConnectionId)
+        || !this.meetingMediaSession(parsed.meetingId, sourceConnectionId, sourceConnectionId, parsed.mediaKind)))) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
+    const adapter = await this.providerAdapter(parsed.release)
+    if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    const ice = await adapter.generateIceServers(300)
+    return ice.outcome === 'accepted'
+      ? { iceServers: ice.value.iceServers, outcome: 'accepted', requestId: parsed.requestId }
+      : { outcome: 'provider_unavailable', requestId: parsed.requestId }
+  }
+
+  async startMeetingMedia(input: unknown): Promise<TenantCommsCoordinatorResult> {
+    await this.initialization
+    const parsed = meetingMediaStartSchema.parse(input)
+    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+      return { outcome: 'runtime_disabled', requestId: parsed.requestId }
+    }
+    const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
+    const row = this.meetingById(parsed.meetingId)
+    const meeting = row ? this.storedMeeting(row) : null
+    if (!caller || !row || !meeting || row.state !== 'active' || !meeting.participants.has(caller.connectionId)) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
+    const subscriber = parsed.sourceConnectionId !== undefined
+    const sourceConnectionId = parsed.sourceConnectionId ?? caller.connectionId
+    const source = subscriber ? this.meetingMediaSession(parsed.meetingId, sourceConnectionId, sourceConnectionId, parsed.mediaKind) : null
+    if (
+      (subscriber && (!source || !meeting.participants.has(sourceConnectionId)))
+      || (!subscriber && (!this.meetingMediaMayPublish(parsed.meetingId, caller.connectionId, parsed.mediaKind)
+        || this.meetingMediaSession(parsed.meetingId, caller.connectionId, caller.connectionId, parsed.mediaKind)))
+      || (subscriber && this.meetingMediaSession(parsed.meetingId, caller.connectionId, sourceConnectionId, parsed.mediaKind))
+    ) return { outcome: 'invalid_state', requestId: parsed.requestId }
+    const adapter = await this.providerAdapter(parsed.release)
+    if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    const ice = await adapter.generateIceServers(300)
+    const created = await adapter.createSession({ tenantId: caller.authorization.tenantId })
+    if (ice.outcome !== 'accepted' || created.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    const pending = activateProviderSession(createProviderSession(created.value.sessionId, caller.authorization.tenantId))
+    const trackId = `meeting-${parsed.meetingId}-${sourceConnectionId}-${parsed.mediaKind}`
+    const result = subscriber
+      ? await adapter.subscribeTracks({
+        session: pending,
+        sessionDescription: { sdp: parsed.offer, type: 'offer' },
+        tenantId: caller.authorization.tenantId,
+        tracks: [{
+          kind: parsed.mediaKind === 'audio' ? 'audio' : 'video',
+          location: 'remote',
+          sessionId: storedProviderSessionSchema.parse(JSON.parse(source!.session_json)).id,
+          trackName: source!.track_id,
+        }],
+      })
+      : await adapter.publishTracks({
+        session: pending,
+        sessionDescription: { sdp: parsed.offer, type: 'offer' },
+        tenantId: caller.authorization.tenantId,
+        tracks: [{ kind: parsed.mediaKind === 'audio' ? 'audio' : 'video', location: 'local', trackName: trackId }],
+      })
+    const providerTrack = result.outcome === 'accepted' ? result.value.tracks[0] : null
+    if (result.outcome !== 'accepted' || !providerTrack?.mid || !result.value.sessionDescription) {
+      return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    }
+    const registered = registerProviderTrack(pending, {
+      id: subscriber ? source!.track_id : trackId,
+      kind: parsed.mediaKind === 'audio' ? 'audio' : parsed.mediaKind === 'video' ? 'video' : 'screen',
+      mid: providerTrack.mid,
+      state: 'active',
+    })
+    const now = Date.now()
+    this.persistMeetingMediaSession({
+      connectionId: caller.connectionId,
+      mediaKind: parsed.mediaKind,
+      meetingId: parsed.meetingId,
+      session: registered,
+      sourceConnectionId,
+      trackId: subscriber ? source!.track_id : trackId,
+    }, now)
+    this.sendCoordinatorEvent(caller.connectionId, `meeting:${parsed.meetingId}`, 'media.negotiation', {
+      callId: parsed.meetingId,
+      description: result.value.sessionDescription.sdp,
+      descriptionType: result.value.sessionDescription.type,
+      direction: subscriber ? 'subscribe' : 'publish',
+      expiresAt: new Date(now + 30_000).toISOString(),
+      generation: 1,
+      iceServers: ice.value.iceServers,
+      negotiationId: crypto.randomUUID(),
+      peerHandle: `peer:${registered.id}`,
+      trackBindings: [{
+        mediaKind: parsed.mediaKind === 'audio' ? 'audio' : 'video',
+        participantConnectionId: subscriber ? sourceConnectionId : undefined,
+        publicationKind: this.meetingMediaPublicationKind(parsed.mediaKind),
+        role: subscriber ? 'remote' : 'local',
+        trackReference: subscriber ? source!.track_id : trackId,
+        transceiverMid: providerTrack.mid,
+      }],
+    })
+    if (!subscriber) {
+      const others = this.meetingParticipantConnectionIds(parsed.meetingId).filter((connectionId) => connectionId !== caller.connectionId)
+      for (const connectionId of others) {
+        this.sendCoordinatorEvent(connectionId, `meeting:${parsed.meetingId}`, 'media.source.available', {
+          callId: parsed.meetingId,
+          mediaKind: parsed.mediaKind,
+          participantConnectionId: caller.connectionId,
+          trackReference: trackId,
+        })
+      }
+    }
+    return { outcome: 'accepted', requestId: parsed.requestId }
+  }
+
+  async stopMeetingMedia(input: unknown): Promise<TenantCommsCoordinatorResult> {
+    await this.initialization
+    const parsed = meetingMediaStopSchema.parse(input)
+    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+      return { outcome: 'runtime_disabled', requestId: parsed.requestId }
+    }
+    const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
+    const row = this.meetingById(parsed.meetingId)
+    const meeting = row ? this.storedMeeting(row) : null
+    if (!caller || !row || !meeting || !meeting.participants.has(caller.connectionId)) return { outcome: 'invalid_state', requestId: parsed.requestId }
+    const rows = this.ctx.storage.sql.exec<CoordinatorMeetingMediaSessionRow>(
+      `select meeting_id, connection_id, source_connection_id, media_kind,
+              session_json, track_id, created_at_ms, updated_at_ms
+       from coordinator_meeting_media_sessions
+       where meeting_id = ? and connection_id = ? and source_connection_id = ? and media_kind = ?`,
+      parsed.meetingId,
+      caller.connectionId,
+      caller.connectionId,
+      parsed.mediaKind,
+    ).toArray()
+    await this.closeMeetingMediaRows(rows, parsed.release, 'ended')
+    return { outcome: 'accepted', requestId: parsed.requestId }
+  }
+
+  private pttTransmission(transmissionRequestId: string): CoordinatorPttTransmissionRow | null {
+    return this.ctx.storage.sql.exec<CoordinatorPttTransmissionRow>(
+      `select transmission_request_id, channel_reference, requester_employee_id,
+              requester_connection_id, recipient_employee_ids_json, scope, state,
+              lease_expires_at_ms
+       from coordinator_ptt_transmissions where transmission_request_id = ? limit 1`,
+      transmissionRequestId,
+    ).toArray()[0] ?? null
+  }
+
+  private pttRecipients(row: CoordinatorPttTransmissionRow): readonly string[] {
+    try {
+      const parsed = z.array(z.uuid()).min(1).max(50).safeParse(JSON.parse(row.recipient_employee_ids_json))
+      return parsed.success ? parsed.data : []
+    } catch {
+      return []
+    }
+  }
+
+  private pttRequiredListenerConnectionIds(transmissionRequestId: string): readonly string[] {
+    return this.ctx.storage.sql.exec<{ connection_id: string }>(
+      `select connection_id from coordinator_ptt_listener_requirements
+       where transmission_request_id = ? order by connection_id asc`,
+      transmissionRequestId,
+    ).toArray().map((row) => row.connection_id)
+  }
+
+  private pttReadyListenerConnectionIds(transmissionRequestId: string): readonly string[] {
+    return this.ctx.storage.sql.exec<{ connection_id: string }>(
+      `select connection_id from coordinator_ptt_listener_requirements
+       where transmission_request_id = ? and ready_at_ms is not null order by connection_id asc`,
+      transmissionRequestId,
+    ).toArray().map((row) => row.connection_id)
+  }
+
+  /** One current, authorized Communications connection per channel member is
+   * required before a PTT floor can be granted.  We deliberately do not wake
+   * inactive accounts or trust client-provided recipients. */
+  private activePttListeners(
+    scope: Extract<NonNullable<AuthorizedCoordinatorCommand['scope']>, { kind: 'channel_conversation' }>,
+    caller: AuthenticatedSocketAttachment,
+  ): readonly AuthenticatedSocketAttachment[] {
+    const permittedEmployees = new Set(scope.participantEmployeeIds)
+    const newestByEmployee = new Map<string, AuthenticatedSocketAttachment>()
+    for (const webSocket of this.ctx.getWebSockets()) {
+      const attachment = socketAttachment(webSocket)
+      if (
+        attachment?.phase !== 'authenticated'
+        || attachment.authorization.tenantId !== caller.authorization.tenantId
+        || attachment.authorization.employeeId === caller.authorization.employeeId
+        || !permittedEmployees.has(attachment.authorization.employeeId)
+        || !attachment.authorization.permissions.includes('sygsphere.comms.ptt.listen')
+      ) continue
+      const prior = newestByEmployee.get(attachment.authorization.employeeId)
+      if (!prior || attachment.openedAtMs > prior.openedAtMs) newestByEmployee.set(attachment.authorization.employeeId, attachment)
+    }
+    return [...newestByEmployee.values()].sort((left, right) => left.connectionId.localeCompare(right.connectionId))
+  }
+
+  private sendPttConnectionEvent(
+    connectionIds: readonly string[],
+    transmissionRequestId: string,
+    kind: Extract<SygSphereCommsEventKind, 'transmission.started' | 'transmission.ended'>,
+    payload: Record<string, unknown>,
+  ): void {
+    for (const connectionId of new Set(connectionIds)) {
+      this.sendCoordinatorEvent(connectionId, `ptt:${transmissionRequestId}`, kind, payload)
+    }
+  }
+
+  private sendPttEvent(
+    employeeIds: readonly string[],
+    transmissionRequestId: string,
+    kind: Extract<SygSphereCommsEventKind, 'floor.preparing' | 'floor.ready' | 'floor.renewed' | 'floor.denied' | 'floor.revoked' | 'transmission.started' | 'transmission.ended'>,
+    payload: Record<string, unknown>,
+  ): void {
+    const roomId = `ptt:${transmissionRequestId}`
+    const allowed = new Set(employeeIds)
+    const delivered = new Set<string>()
+    for (const webSocket of this.ctx.getWebSockets()) {
+      const attachment = socketAttachment(webSocket)
+      if (attachment?.phase !== 'authenticated' || !allowed.has(attachment.authorization.employeeId)) continue
+      if (delivered.has(attachment.connectionId)) continue
+      delivered.add(attachment.connectionId)
+      this.sendCoordinatorEvent(attachment.connectionId, roomId, kind, payload)
+    }
+  }
+
+  private async closePttMedia(
+    transmissionRequestId: string,
+    release: CoordinatorReleaseContext,
+    reason: 'cancelled' | 'ended' | 'expired',
+  ): Promise<void> {
+    const rows = this.ctx.storage.sql.exec<CoordinatorCallMediaSessionRow>(
+      `select call_id, employee_id, connection_id, session_json, track_id, created_at_ms, updated_at_ms
+       from coordinator_call_media_sessions where call_id = ?`,
+      transmissionRequestId,
+    ).toArray()
+    const adapter = await this.providerAdapter(release)
+    for (const row of rows) {
+      const session = this.parseProviderSession(row)
+      const track = session?.tracks.get(row.track_id)
+      if (adapter && session && track?.mid) {
+        await adapter.forceCloseTracks({
+          session,
+          tenantId: session.tenantId,
+          tracks: [{ mid: track.mid, trackId: track.id }],
+        }).catch(() => undefined)
+      }
+      this.sendCoordinatorEvent(row.connection_id, `ptt:${transmissionRequestId}`, 'media.closed', {
+        callId: transmissionRequestId,
+        generation: 1,
+        reason,
+      })
+    }
+    this.ctx.storage.sql.exec('delete from coordinator_media_negotiations where call_id = ?', transmissionRequestId)
+    this.ctx.storage.sql.exec('delete from coordinator_call_media_sessions where call_id = ?', transmissionRequestId)
+  }
+
+  private async closePttTransmission(
+    row: CoordinatorPttTransmissionRow,
+    release: CoordinatorReleaseContext,
+    reason: 'cancelled' | 'ended' | 'expired',
+  ): Promise<void> {
+    if (row.state === 'ended') return
+    this.ctx.storage.sql.exec(
+      `update coordinator_ptt_transmissions set state = 'ended', updated_at_ms = ?
+       where transmission_request_id = ? and state in ('preparing', 'ready')`,
+      Date.now(),
+      row.transmission_request_id,
+    )
+    await this.closePttMedia(row.transmission_request_id, release, reason)
+    this.ctx.storage.sql.exec('delete from coordinator_ptt_listener_requirements where transmission_request_id = ?', row.transmission_request_id)
+    this.ctx.storage.sql.exec('delete from coordinator_ptt_media_negotiations where transmission_request_id = ?', row.transmission_request_id)
+    this.sendPttEvent(this.pttRecipients(row), row.transmission_request_id, 'transmission.ended', {
+      reason,
+      transmissionRequestId: row.transmission_request_id,
+    })
+  }
+
+  private async dispatchFloorCommand(
+    authorized: AuthorizedCoordinatorCommand,
+    now: number,
+  ): Promise<TenantCommsCoordinatorResult['outcome']> {
+    const routeReference = authorized.connectionRouteReference
+    if (!routeReference) return 'invalid_state'
+    const caller = this.activeSocketForRoute(routeReference, authorized.authorization)
+    if (!caller) return 'invalid_state'
+
+    if (authorized.command.kind === 'floor.request') {
+      if (!authorized.scope || authorized.scope.kind !== 'channel_conversation') return 'invalid_state'
+      const scope = authorized.scope
+      const commandPayload = authorized.command.payload as Record<string, unknown>
+      const transmissionRequestId = typeof commandPayload.clientIntentId === 'string' ? commandPayload.clientIntentId : null
+      if (!transmissionRequestId) return 'invalid_state'
+      const listeners = this.activePttListeners(scope, caller)
+      if (!listeners.length) {
+        this.sendPttEvent([caller.authorization.employeeId], transmissionRequestId, 'floor.denied', {
+          reason: 'unavailable',
+          transmissionRequestId,
+        })
+        return 'recipient_unavailable'
+      }
+      const active = this.ctx.storage.sql.exec<CoordinatorPttTransmissionRow>(
+        `select transmission_request_id, channel_reference, requester_employee_id,
+                requester_connection_id, recipient_employee_ids_json, scope, state,
+                lease_expires_at_ms
+         from coordinator_ptt_transmissions
+         where channel_reference = ? and state in ('preparing', 'ready') limit 1`,
+        scope.channelReference,
+      ).toArray()[0]
+      if (active) {
+        this.sendPttEvent([caller.authorization.employeeId], transmissionRequestId, 'floor.denied', {
+          reason: 'channel_busy',
+          transmissionRequestId,
+        })
+        return 'recipient_unavailable'
+      }
+      try {
+        this.ctx.storage.sql.exec(
+          `insert into coordinator_ptt_transmissions (
+            transmission_request_id, channel_reference, requester_employee_id,
+            requester_connection_id, recipient_employee_ids_json, scope, state,
+            lease_expires_at_ms, created_at_ms, updated_at_ms
+          ) values (?, ?, ?, ?, ?, ?, 'preparing', ?, ?, ?)`,
+          transmissionRequestId,
+          scope.channelReference,
+          caller.authorization.employeeId,
+          caller.connectionId,
+          JSON.stringify(scope.participantEmployeeIds),
+          scope.scope,
+          now + pttPreparingMilliseconds,
+          now,
+          now,
+        )
+      } catch {
+        this.sendPttEvent([caller.authorization.employeeId], transmissionRequestId, 'floor.denied', {
+          reason: 'channel_busy',
+          transmissionRequestId,
+        })
+        return 'recipient_unavailable'
+      }
+      for (const listener of listeners) {
+        this.ctx.storage.sql.exec(
+          `insert into coordinator_ptt_listener_requirements (
+            transmission_request_id, connection_id, employee_id, ready_at_ms
+          ) values (?, ?, ?, null)`,
+          transmissionRequestId,
+          listener.connectionId,
+          listener.authorization.employeeId,
+        )
+      }
+      this.sendPttEvent([caller.authorization.employeeId], transmissionRequestId, 'floor.preparing', {
+        scope: scope.scope,
+        transmissionRequestId,
+      })
+      this.scheduleNextSocketTicketExpiry()
+      return 'accepted'
+    }
+
+    const commandPayload = authorized.command.payload as Record<string, unknown>
+    const transmissionRequestId = typeof commandPayload.transmissionRequestId === 'string' ? commandPayload.transmissionRequestId : null
+    if (!transmissionRequestId) return 'invalid_state'
+    const row = this.pttTransmission(transmissionRequestId)
+    if (!row || row.requester_employee_id !== caller.authorization.employeeId || row.requester_connection_id !== caller.connectionId) {
+      return 'invalid_state'
+    }
+    if (authorized.command.kind === 'floor.renew') {
+      if (row.state !== 'ready' || row.lease_expires_at_ms <= now) return 'invalid_state'
+      const leaseExpiresAtMs = now + pttLeaseMilliseconds
+      this.ctx.storage.sql.exec(
+        `update coordinator_ptt_transmissions set lease_expires_at_ms = ?, updated_at_ms = ?
+         where transmission_request_id = ? and state = 'ready'`,
+        leaseExpiresAtMs,
+        now,
+        transmissionRequestId,
+      )
+      this.sendPttEvent([caller.authorization.employeeId], transmissionRequestId, 'floor.renewed', {
+        commandId: authorized.command.commandId,
+        generation: 1,
+        leaseExpiresAt: new Date(leaseExpiresAtMs).toISOString(),
+        transmissionRequestId,
+      })
+      this.scheduleNextSocketTicketExpiry()
+      return 'accepted'
+    }
+    await this.closePttTransmission(row, authorized.release, authorized.command.kind === 'floor.cancel' ? 'cancelled' : 'ended')
+    this.scheduleNextSocketTicketExpiry()
+    return 'accepted'
+  }
+
+  async startPttAudio(input: unknown): Promise<TenantCommsCoordinatorResult> {
+    await this.initialization
+    const parsed = pttAudioStartSchema.parse(input)
+    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+      return { outcome: 'runtime_disabled', requestId: parsed.requestId }
+    }
+    const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
+    const row = this.pttTransmission(parsed.transmissionRequestId)
+    if (!caller || !row || row.state !== 'preparing' || row.lease_expires_at_ms <= Date.now()
+      || row.channel_reference !== parsed.channelReference
+      || row.requester_employee_id !== caller.authorization.employeeId
+      || row.requester_connection_id !== caller.connectionId
+      || this.mediaSession(parsed.transmissionRequestId, caller.authorization.employeeId)) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
+    const adapter = await this.providerAdapter(parsed.release)
+    if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    const ice = await adapter.generateIceServers(300)
+    const created = await adapter.createSession({ tenantId: caller.authorization.tenantId })
+    if (ice.outcome !== 'accepted' || created.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    const pending = activateProviderSession(createProviderSession(created.value.sessionId, caller.authorization.tenantId))
+    const trackId = `ptt-${parsed.transmissionRequestId}-audio-${caller.authorization.employeeId}`
+    const publication = await adapter.publishTracks({
+      session: pending,
+      sessionDescription: { sdp: parsed.offer, type: 'offer' },
+      tenantId: caller.authorization.tenantId,
+      tracks: [{ kind: 'audio', location: 'local', trackName: trackId }],
+    })
+    const localTrack = publication.outcome === 'accepted' ? publication.value.tracks[0] : null
+    if (publication.outcome !== 'accepted' || !localTrack?.mid || !publication.value.sessionDescription) {
+      return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    }
+    const session = registerProviderTrack(pending, { id: trackId, kind: 'audio', mid: localTrack.mid, state: 'active' })
+    const now = Date.now()
+    this.persistProviderSession({
+      callId: parsed.transmissionRequestId,
+      connectionId: caller.connectionId,
+      employeeId: caller.authorization.employeeId,
+      session,
+      trackId,
+    }, now)
+    const negotiationId = crypto.randomUUID()
+    this.ctx.storage.sql.exec(
+      `insert into coordinator_ptt_media_negotiations (
+        transmission_request_id, negotiation_id, source_ready_at_ms, expires_at_ms
+      ) values (?, ?, ?, ?)
+       on conflict (transmission_request_id) do nothing`,
+      parsed.transmissionRequestId,
+      negotiationId,
+      now,
+      now + pttPreparingMilliseconds,
+    )
+    this.sendCoordinatorEvent(caller.connectionId, `ptt:${parsed.transmissionRequestId}`, 'media.negotiation', {
+      callId: parsed.transmissionRequestId,
+      description: publication.value.sessionDescription.sdp,
+      descriptionType: publication.value.sessionDescription.type,
+      direction: 'publish',
+      expiresAt: new Date(now + 30_000).toISOString(),
+      generation: 1,
+      iceServers: ice.value.iceServers,
+      negotiationId,
+      peerHandle: `peer:${session.id}`,
+      trackBindings: [{
+        mediaKind: 'audio',
+        publicationKind: 'ptt',
+        role: 'local',
+        trackReference: trackId,
+        transceiverMid: localTrack.mid,
+      }],
+    })
+    const active = this.pttTransmission(parsed.transmissionRequestId)
+    if (active) {
+      this.sendPttConnectionEvent(this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId), parsed.transmissionRequestId, 'transmission.started', {
+        scope: active.scope,
+        transmissionRequestId: parsed.transmissionRequestId,
+      })
+    }
+    this.scheduleNextSocketTicketExpiry()
+    return { outcome: 'accepted', requestId: parsed.requestId }
+  }
+
+  async preparePttAudio(input: unknown): Promise<TenantCommsDirectAudioPreparation> {
+    await this.initialization
+    const parsed = pttAudioPreparationSchema.parse(input)
+    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+      return { outcome: 'runtime_disabled', requestId: parsed.requestId }
+    }
+    const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
+    const row = this.pttTransmission(parsed.transmissionRequestId)
+    if (!caller || !row || row.state !== 'preparing' || row.lease_expires_at_ms <= Date.now()
+      || row.channel_reference !== parsed.channelReference
+      || row.requester_employee_id !== caller.authorization.employeeId
+      || row.requester_connection_id !== caller.connectionId) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
+    const adapter = await this.providerAdapter(parsed.release)
+    if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    const ice = await adapter.generateIceServers(300)
+    return ice.outcome === 'accepted'
+      ? { iceServers: ice.value.iceServers, outcome: 'accepted', requestId: parsed.requestId }
+      : { outcome: 'provider_unavailable', requestId: parsed.requestId }
+  }
+
+  async startPttListen(input: unknown): Promise<TenantCommsCoordinatorResult> {
+    await this.initialization
+    const parsed = pttListenStartSchema.parse(input)
+    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+      return { outcome: 'runtime_disabled', requestId: parsed.requestId }
+    }
+    const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
+    const row = this.pttTransmission(parsed.transmissionRequestId)
+    if (!caller || !row || row.state !== 'preparing' || row.lease_expires_at_ms <= Date.now()
+      || !this.pttRecipients(row).includes(caller.authorization.employeeId)
+      || caller.authorization.employeeId === row.requester_employee_id
+      || !this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId).includes(caller.connectionId)
+      || this.mediaSession(parsed.transmissionRequestId, caller.authorization.employeeId)) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
+    const source = this.mediaSession(parsed.transmissionRequestId, row.requester_employee_id)
+    const sourceSession = source ? this.parseProviderSession(source) : null
+    const adapter = await this.providerAdapter(parsed.release)
+    if (!source || !sourceSession || !adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    const ice = await adapter.generateIceServers(300)
+    const created = await adapter.createSession({ tenantId: caller.authorization.tenantId })
+    if (ice.outcome !== 'accepted' || created.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    const pending = activateProviderSession(createProviderSession(created.value.sessionId, caller.authorization.tenantId))
+    const subscription = await adapter.subscribeTracks({
+      session: pending,
+      sessionDescription: { sdp: parsed.offer, type: 'offer' },
+      tenantId: caller.authorization.tenantId,
+      tracks: [{ location: 'remote', sessionId: sourceSession.id, trackName: source.track_id }],
+    })
+    const remoteTrack = subscription.outcome === 'accepted' ? subscription.value.tracks[0] : null
+    if (subscription.outcome !== 'accepted' || !remoteTrack?.mid || !subscription.value.sessionDescription) {
+      return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    }
+    const session = registerProviderTrack(pending, { id: source.track_id, kind: 'audio', mid: remoteTrack.mid, state: 'active' })
+    const now = Date.now()
+    this.persistProviderSession({
+      callId: parsed.transmissionRequestId,
+      connectionId: caller.connectionId,
+      employeeId: caller.authorization.employeeId,
+      session,
+      trackId: source.track_id,
+    }, now)
+    this.sendCoordinatorEvent(caller.connectionId, `ptt:${parsed.transmissionRequestId}`, 'media.negotiation', {
+      callId: parsed.transmissionRequestId,
+      description: subscription.value.sessionDescription.sdp,
+      descriptionType: subscription.value.sessionDescription.type,
+      direction: 'subscribe',
+      expiresAt: new Date(now + 30_000).toISOString(),
+      generation: 1,
+      iceServers: ice.value.iceServers,
+      negotiationId: crypto.randomUUID(),
+      peerHandle: `peer:${session.id}`,
+      trackBindings: [{
+        mediaKind: 'audio',
+        participantConnectionId: source.connection_id,
+        publicationKind: 'ptt',
+        role: 'remote',
+        trackReference: source.track_id,
+        transceiverMid: remoteTrack.mid,
+      }],
+    })
+    return { outcome: 'accepted', requestId: parsed.requestId }
+  }
+
+  async preparePttListen(input: unknown): Promise<TenantCommsDirectAudioPreparation> {
+    await this.initialization
+    const parsed = pttListenPreparationSchema.parse(input)
+    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+      return { outcome: 'runtime_disabled', requestId: parsed.requestId }
+    }
+    const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
+    const row = this.pttTransmission(parsed.transmissionRequestId)
+    if (!caller || !row || row.state !== 'preparing' || row.lease_expires_at_ms <= Date.now()
+      || !this.pttRecipients(row).includes(caller.authorization.employeeId)
+      || caller.authorization.employeeId === row.requester_employee_id) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
+    const adapter = await this.providerAdapter(parsed.release)
+    if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    const ice = await adapter.generateIceServers(300)
+    return ice.outcome === 'accepted'
+      ? { iceServers: ice.value.iceServers, outcome: 'accepted', requestId: parsed.requestId }
+      : { outcome: 'provider_unavailable', requestId: parsed.requestId }
+  }
+
+  /** A listener acknowledgement is accepted only from the exact current
+   * channel connection selected at floor reservation.  The grant happens
+   * once, after every selected listener has completed its own subscriber SDP
+   * negotiation; this is the last server-side interlock before mic enable. */
+  async acknowledgePttListenerReady(input: unknown): Promise<TenantCommsCoordinatorResult> {
+    await this.initialization
+    const parsed = pttListenerReadySchema.parse(input)
+    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+      return { outcome: 'runtime_disabled', requestId: parsed.requestId }
+    }
+    const now = Date.now()
+    const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
+    const row = this.pttTransmission(parsed.transmissionRequestId)
+    if (!caller || !row || row.state !== 'preparing' || row.lease_expires_at_ms <= now
+      || !this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId).includes(caller.connectionId)
+      || !this.mediaSession(parsed.transmissionRequestId, caller.authorization.employeeId)) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
+    const negotiation = this.ctx.storage.sql.exec<{ expires_at_ms: number, negotiation_id: string }>(
+      `select negotiation_id, expires_at_ms from coordinator_ptt_media_negotiations
+       where transmission_request_id = ? limit 1`,
+      parsed.transmissionRequestId,
+    ).toArray()[0]
+    if (!negotiation || negotiation.expires_at_ms <= now) return { outcome: 'invalid_state', requestId: parsed.requestId }
+    this.ctx.storage.sql.exec(
+      `update coordinator_ptt_listener_requirements set ready_at_ms = ?
+       where transmission_request_id = ? and connection_id = ? and ready_at_ms is null`,
+      now,
+      parsed.transmissionRequestId,
+      caller.connectionId,
+    )
+    const requiredListeners = this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId)
+    let lifecycle = prepareServerPttFloor({
+      callId: parsed.transmissionRequestId,
+      generation: 1,
+      requiredListenerConnectionIds: requiredListeners,
+      scope: row.scope,
+      transmissionRequestId: parsed.transmissionRequestId,
+    }).state
+    lifecycle = recordServerPttMediaNegotiation(lifecycle, { generation: 1, negotiationId: negotiation.negotiation_id })
+    for (const listenerConnectionId of this.pttReadyListenerConnectionIds(parsed.transmissionRequestId)) {
+      lifecycle = recordServerPttListenerReady(lifecycle, {
+        generation: 1,
+        listenerConnectionId,
+        negotiationId: negotiation.negotiation_id,
+      })
+    }
+    const grant = grantServerPttFloor(lifecycle, { leaseDurationMs: pttLeaseMilliseconds, nowMs: now })
+    if (!grant) return { outcome: 'accepted', requestId: parsed.requestId }
+    const active = startServerPttTransmission(grant.state, now)
+    if (active.stage !== 'transmitting' || active.leaseExpiresAtMs === null) return { outcome: 'invalid_state', requestId: parsed.requestId }
+    this.ctx.storage.sql.exec(
+      `update coordinator_ptt_transmissions set state = 'ready', lease_expires_at_ms = ?, updated_at_ms = ?
+       where transmission_request_id = ? and state = 'preparing'`,
+      active.leaseExpiresAtMs,
+      now,
+      parsed.transmissionRequestId,
+    )
+    this.sendPttEvent([row.requester_employee_id], parsed.transmissionRequestId, 'floor.ready', grant.event.payload)
+    this.scheduleNextSocketTicketExpiry()
+    return { outcome: 'accepted', requestId: parsed.requestId }
+  }
+
+  private async expirePttTransmissions(now: number): Promise<void> {
+    const rows = this.ctx.storage.sql.exec<CoordinatorPttTransmissionRow>(
+      `select transmission_request_id, channel_reference, requester_employee_id,
+              requester_connection_id, recipient_employee_ids_json, scope, state,
+              lease_expires_at_ms
+       from coordinator_ptt_transmissions
+       where state in ('preparing', 'ready') and lease_expires_at_ms <= ?
+       order by lease_expires_at_ms asc limit ?`,
+      now,
+      maximumRecordsPurgedPerDispatch,
+    ).toArray()
+    for (const row of rows) {
+      await this.closePttTransmission(row, {
+        databaseFoundationApplied: true,
+        commandSchemasVerified: true,
+        providerPhysicalDeviceEvidenceComplete: true,
+        coordinatorDeploymentApproved: true,
+        sharedCompatibilityVerified: true,
+        runtimeEnabled: runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED),
+      }, 'expired')
+      this.sendPttEvent([row.requester_employee_id], row.transmission_request_id, 'floor.revoked', {
+        reason: 'expired',
+        transmissionRequestId: row.transmission_request_id,
+      })
+    }
+  }
+
   async dispatch(input: unknown): Promise<TenantCommsCoordinatorResult> {
     await this.initialization
     const authorized = authorizeCoordinatorCommand(input)
@@ -1383,8 +2724,12 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
 
     const outcome = ['call.request', 'call.accept', 'call.decline', 'call.cancel', 'call.end'].includes(authorized.command.kind)
       ? await this.dispatchCallCommand(authorized, now)
-      : authorized.command.kind === 'media.answer'
-        ? await this.dispatchMediaAnswer(authorized, now)
+      : ['floor.request', 'floor.cancel', 'floor.renew', 'floor.release'].includes(authorized.command.kind)
+        ? await this.dispatchFloorCommand(authorized, now)
+        : ['meeting.create', 'meeting.join', 'meeting.leave', 'meeting.end', 'participant.remove', 'participant.mute', 'camera.request', 'camera.release', 'screen.request', 'screen.release', 'focus.request', 'focus.release'].includes(authorized.command.kind)
+          ? await this.dispatchMeetingCommand(authorized, now)
+        : authorized.command.kind === 'media.answer'
+          ? await this.dispatchMediaAnswer(authorized, now)
         : closedProviderOutcome(closedSygSphereCommsProviderRegistry)
     const result: TenantCommsCoordinatorResult = { outcome, requestId: authorized.requestId }
     return this.recordResult(commandId, result, now)

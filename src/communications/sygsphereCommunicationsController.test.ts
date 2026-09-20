@@ -84,7 +84,13 @@ describe("SygSphere communications controller", () => {
       scope: "dispatch",
       transmissionRequestId: floorCommand.payload.clientIntentId,
     }, 1));
-    expect(test.session.publish).toHaveBeenCalledWith({ kind: "ptt", roomId: "room-a", stream: test.microphone });
+    expect(test.session.publish).toHaveBeenCalledWith(expect.objectContaining({
+      channelReference: "dispatch",
+      kind: "ptt",
+      roomId: "room-a",
+      stream: test.microphone,
+      transmissionRequestId: floorCommand.payload.clientIntentId,
+    }));
     expect(test.media.setMicrophoneMuted).not.toHaveBeenCalledWith(expect.anything(), false);
     await test.onEvent()(event("floor.ready", {
       expiresAt: new Date(Date.now() + 6_000).toISOString(),
@@ -245,7 +251,7 @@ describe("SygSphere communications controller", () => {
     expect(test.controller.setCallMicrophoneMuted("4896f7c0-7143-48f9-9978-d1f6a3421870", false)).toBe(false);
   });
 
-  it("prepares the caller microphone after the authorized call is created", async () => {
+  it("prepares the caller microphone after the call is accepted, not while it is still ringing", async () => {
     const test = harness();
     const callId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
     await test.controller.start("employee-a");
@@ -257,8 +263,13 @@ describe("SygSphere communications controller", () => {
     }, 1));
 
     expect(test.media.acquireMicrophone).toHaveBeenCalledWith({ kind: "call", sessionId: callId });
+    expect(test.session.publish).not.toHaveBeenCalled();
+    await test.onEvent()(event("call.accepted", {
+      callId,
+      invitationId: "d285bf11-15f6-4efe-b60f-4ab891637342",
+    }, 2));
     expect(test.session.publish).toHaveBeenCalledWith({ kind: "call_audio", roomId: "room-a", stream: test.microphone });
-    expect(test.media.setMicrophoneMuted).not.toHaveBeenCalledWith(expect.anything(), false);
+    expect(test.media.setMicrophoneMuted).toHaveBeenCalledWith({ kind: "call", sessionId: callId }, false);
   });
 
   it("automatically joins a meeting created by the current employee", async () => {
