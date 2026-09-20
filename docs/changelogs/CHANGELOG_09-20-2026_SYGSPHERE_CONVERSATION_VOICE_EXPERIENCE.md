@@ -37,10 +37,20 @@ secondary control inside the selected conversation in both SygShift and Sygilant
 - SygShift: `rollback/pre-sygsphere-conversation-voice-repair-20260920`
 - Sygilant: `rollback/pre-sygsphere-conversation-voice-repair-20260920`
 
-## Release Status
+## Production Release
 
-Source is accepted for production deployment. Deployment identifiers and live postflight evidence will be
-recorded after both applications are active.
+- SygShift source: `ab6a596`
+- SygShift Worker: `44579962-45c2-4b6a-bd4b-d67c0ad9513d`
+- Sygilant source: `f0c7eed`
+- Sygilant Pages: `105f574b-ae06-4f10-ae5d-78395909a41f`
+- SygShift health and readiness returned HTTP `200`; both production SygSphere routes and the immutable Pages
+  deployment returned HTTP `200`.
+- Sygilant production verification passed 13 pages, 28 protected reads, one hostile mutation rejection, and
+  80 versioned assets.
+- Anonymous communications bootstrap returned HTTP `401` as required.
+- Authenticated live inspection confirmed Ready state, the compact channel PTT bar in SygShift, the compact
+  private Call bar in Sygilant, readable light/dark presentation, visible message history, and a reachable
+  composer.
 
 ## Remaining Acceptance
 
