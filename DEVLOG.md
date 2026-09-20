@@ -1,5 +1,19 @@
 # SygShift Development Log
 
+## 09/20/2026 - SygSphere Worker-Origin PTT Recovery
+
+- Repaired the strict Communications origin boundary that had rejected the exact official SygShift Worker
+  launch address before its PTT WebSocket could prepare. The boundary now admits that one named
+  first-party address, while retaining the existing custom origins and denying all other origins.
+- Hardened PTT preparation for real device/network timing: an authorized channel can begin after one
+  listener is ready, remaining listeners can join during the renewable floor lease, and the browser and
+  server preparation windows no longer prematurely expire at five or ten seconds.
+- Preserved server-owned membership, role/MFA authorization, microphone enablement, lease expiry, audit,
+  provider cleanup, messages, schedules, payroll, and employee records. No database migration was needed.
+- Focused Worker/controller/socket/PTT tests passed **4 files / 80 tests**; strict TypeScript,
+  zero-warning lint, and production build passed. Release details:
+  `docs/changelogs/CHANGELOG_09-20-2026_SYGSPHERE_WORKER_ORIGIN_PTT_RECOVERY.md`.
+
 ## 09/19/2026 - SygSphere Communications Stage 6/7 Shared Presentation and PTT Preparation
 
 - Added a SygShift-owned shared presentation profile for exact employee-facing Communications states in SygShift and Sygilant, with plain language and the existing SygSphere messages/Dispatch fallback.
