@@ -2724,9 +2724,10 @@ pnpm exec wrangler deploy --keep-vars
   granted and ready; denial, expiry, or media failure clears the held state and releases the floor.
 - Ignored stale camera and screen-share events from an older call and added a direct regression for the supplied
   false **Talking now** plus coordinator-denial sequence.
-- Passed strict TypeScript, zero-warning lint, both production builds, **291 test files / 1,519 tests**, and the
+- Passed strict TypeScript, zero-warning lint, both production builds, **291 test files / 1,521 tests**, and the
   paired Sygilant quality gate with **198 test files / 945 tests**.
-- Released SygShift code `c2c42ca` as Worker `8fb7a981-7237-4d23-a1d4-6cc5198e6e26` and Sygilant code
+- Released SygShift lifecycle code `c2c42ca` plus sanitized provider diagnostics `211a3dd` as Worker
+  `ab53a0c9-99be-4748-8e42-8ee143780e31` and Sygilant code
   `3eef2c1` as accepted Pages deployment `a1c18caf-a8a8-4daa-87d2-99a4443c15dc`.
 - The final 102-check desktop/mobile SygSphere plus mandatory Time Clock matrix, Sygilant production verifier,
   health/readiness, authorization perimeter, exact CORS, hostile-origin denial, and byte-identical asset

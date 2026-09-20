@@ -40,7 +40,7 @@ always release a server-reserved PTT floor.
 
 ## Verification
 
-- Full SygShift gate passed: strict TypeScript, zero-warning lint, **291 test files / 1,519 tests**, and both
+- Full SygShift gate passed: strict TypeScript, zero-warning lint, **291 test files / 1,521 tests**, and both
   production builds.
 - Communications Stage 5/6 and Stage 6/7 activation gates passed.
 - Paired Sygilant gate passed: source and database contracts, UI/readability checks, lint, strict TypeScript,
@@ -65,12 +65,14 @@ always release a server-reserved PTT floor.
   versioned assets.
 - Rollback points: `rollback/pre-sygsphere-sfu-response-repair-20260920` and
   `rollback/pre-sygilant-sfu-response-repair-20260920`.
-- Superseding lifecycle code: SygShift `c2c42ca` and Sygilant `3eef2c1`.
-- Final SygShift Worker: `8fb7a981-7237-4d23-a1d4-6cc5198e6e26`; accepted Sygilant Pages deployment:
+- Superseding lifecycle code: SygShift `c2c42ca`, provider diagnostics `211a3dd`, and Sygilant `3eef2c1`.
+- Final SygShift Worker: `ab53a0c9-99be-4748-8e42-8ee143780e31`; accepted Sygilant Pages deployment:
   `a1c18caf-a8a8-4daa-87d2-99a4443c15dc`.
 - Final postflight returned HTTP 200 for both applications, both SygSphere routes, health, and readiness;
   anonymous bootstrap remained HTTP 401; approved-origin CORS returned exact-origin credentials; hostile
   origin received no grant; and live entry assets matched the final local builds byte-for-byte.
+- Provider failures now emit only operation, outcome, failure class, and optional HTTP status. Credentials,
+  URLs, SDP, sessions, tracks, and employee data are excluded.
 
 ## Follow-up
 
