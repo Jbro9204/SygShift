@@ -13,6 +13,8 @@ import {
 import {
   extendServerPttPreparationLease,
   nextServerPttLeaseGeneration,
+  readSygSphereCommsSecret,
+  sygsphereCommsSetupUnavailableDiagnostic,
 } from '../worker/comms/tenantCommsDurableObject'
 
 const callId = '11111111-1111-4111-8111-111111111111'
@@ -94,6 +96,28 @@ describe('SygSphere Communications PTT lifecycle', () => {
     expect(nextServerPttLeaseGeneration(Number.MAX_SAFE_INTEGER)).toBeNull()
   })
 
+  it('classifies protected setup failures without ever retaining or logging a secret value', async () => {
+    await expect(readSygSphereCommsSecret('server-only-app-secret')).resolves.toEqual({
+      outcome: 'available',
+      value: 'server-only-app-secret',
+    })
+    await expect(readSygSphereCommsSecret('   ')).resolves.toEqual({ outcome: 'missing' })
+    await expect(readSygSphereCommsSecret(undefined)).resolves.toEqual({ outcome: 'missing' })
+    await expect(readSygSphereCommsSecret({
+      get: async () => { throw new Error('provider binding detail must stay private') },
+    })).resolves.toEqual({ outcome: 'read_failed' })
+
+    const diagnostic = sygsphereCommsSetupUnavailableDiagnostic('app_secret_read_failed', 'ptt_prepare_publisher')
+    expect(diagnostic).toEqual({
+      event: 'sygsphere_communications_setup_unavailable',
+      operation: 'ptt_prepare_publisher',
+      stage: 'app_secret_read_failed',
+    })
+    const serialized = JSON.stringify(diagnostic)
+    expect(serialized).not.toContain('server-only-app-secret')
+    expect(serialized).not.toContain('provider binding detail must stay private')
+  })
+
   it('guards provider returns with exact publisher/listener revalidation and cleans stale tracks before they can be stored', () => {
     const coordinator = readFileSync(resolve(import.meta.dirname, '..', 'worker', 'comms', 'tenantCommsDurableObject.ts'), 'utf8')
     const publisher = coordinator.slice(coordinator.indexOf('async startPttAudio'), coordinator.indexOf('async preparePttAudio'))
@@ -104,13 +128,13 @@ describe('SygSphere Communications PTT lifecycle', () => {
     const socketClose = coordinator.slice(coordinator.indexOf('async webSocketClose'), coordinator.indexOf('async alarm'))
 
     expect(publisher).toContain('this.extendPttPreparationLease(row, requestedAtMs)')
-    expect(publisher.indexOf('this.extendPttPreparationLease(row, requestedAtMs)')).toBeLessThan(publisher.indexOf('await this.providerAdapter(parsed.release)'))
+    expect(publisher.indexOf('this.extendPttPreparationLease(row, requestedAtMs)')).toBeLessThan(publisher.indexOf('await this.providerAdapter(parsed.release,'))
     expect(publisher).toContain('this.pttPublisherReservationIsCurrent')
     expect(publisher).toContain('await this.closeStalePttTrack')
     expect(publisher.lastIndexOf('this.pttPublisherReservationIsCurrent')).toBeLessThan(publisher.indexOf('this.claimPttMediaSession'))
 
     expect(listener).toContain('this.extendPttPreparationLease(row, requestedAtMs)')
-    expect(listener.indexOf('this.extendPttPreparationLease(row, requestedAtMs)')).toBeLessThan(listener.indexOf('await this.providerAdapter(parsed.release)'))
+    expect(listener.indexOf('this.extendPttPreparationLease(row, requestedAtMs)')).toBeLessThan(listener.indexOf('await this.providerAdapter(parsed.release,'))
     expect(listener).toContain('this.pttListenerReservationIsCurrent')
     expect(listener).toContain('await this.closeStalePttTrack')
     expect(listener.lastIndexOf('this.pttListenerReservationIsCurrent')).toBeLessThan(listener.indexOf('this.claimPttMediaSession'))
@@ -134,6 +158,9 @@ describe('SygSphere Communications PTT lifecycle', () => {
     expect(listenerPreparation).toContain("this.closeFailedPttPreparation(row, parsed.release, 'listener')")
     expect(coordinator).toContain("current.state !== 'preparing'")
     expect(coordinator).toContain("role === 'listener' && this.pttReadyListenerConnectionIds(current.transmission_request_id).length > 0")
-    expect(coordinator).toContain('secret-binding retrieval failure')
+    expect(coordinator).toContain("'app_secret_read_failed'")
+    expect(coordinator).toContain("'turn_token_read_failed'")
+    expect(coordinator).toContain("'ptt_prepare_publisher'")
+    expect(coordinator).toContain("'ptt_start_listener'")
   })
 })

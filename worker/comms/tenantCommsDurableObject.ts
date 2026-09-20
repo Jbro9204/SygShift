@@ -370,9 +370,77 @@ export const nextServerPttLeaseGeneration = (currentGeneration: number): number 
 
 const runtimeEnabled = (value: string | undefined): boolean => value?.trim().toLowerCase() === 'true'
 
-const secretValue = async (value: SecretsStoreSecretBinding | string | undefined): Promise<string | undefined> => {
-  if (typeof value === 'string') return value
-  try { return value ? await value.get() : undefined } catch { return undefined }
+/**
+ * These diagnostics are deliberately narrower than the provider diagnostics.
+ * They identify a setup boundary that failed before Cloudflare can receive a
+ * request, without placing employee data, provider handles, configuration
+ * names, exception text, or credentials in production logs.
+ */
+export type SygSphereCommsSetupUnavailableStage =
+  | 'runtime_flag_disabled'
+  | 'release_gate_not_ready'
+  | 'app_secret_read_failed'
+  | 'app_secret_missing'
+  | 'turn_token_read_failed'
+  | 'turn_token_missing'
+  | 'adapter_construction_rejected'
+
+export type SygSphereCommsSetupOperation =
+  | 'direct_media'
+  | 'meeting_media'
+  | 'other_media'
+  | 'ptt_listener_ready'
+  | 'ptt_prepare_listener'
+  | 'ptt_prepare_publisher'
+  | 'ptt_start_listener'
+  | 'ptt_start_publisher'
+
+export type SygSphereCommsSetupUnavailableDiagnostic = Readonly<{
+  event: 'sygsphere_communications_setup_unavailable'
+  operation: SygSphereCommsSetupOperation
+  stage: SygSphereCommsSetupUnavailableStage
+}>
+
+type SecretValueReadResult =
+  | Readonly<{ outcome: 'available', value: string }>
+  | Readonly<{ outcome: 'missing' }>
+  | Readonly<{ outcome: 'read_failed' }>
+
+export const readSygSphereCommsSecret = async (
+  value: SecretsStoreSecretBinding | string | undefined,
+): Promise<SecretValueReadResult> => {
+  if (typeof value === 'string') return value.trim().length > 0
+    ? { outcome: 'available', value }
+    : { outcome: 'missing' }
+  if (!value) return { outcome: 'missing' }
+  try {
+    const resolved = await value.get()
+    return resolved.trim().length > 0
+      ? { outcome: 'available', value: resolved }
+      : { outcome: 'missing' }
+  } catch {
+    return { outcome: 'read_failed' }
+  }
+}
+
+export const sygsphereCommsSetupUnavailableDiagnostic = (
+  stage: SygSphereCommsSetupUnavailableStage,
+  operation: SygSphereCommsSetupOperation,
+): SygSphereCommsSetupUnavailableDiagnostic => ({
+  event: 'sygsphere_communications_setup_unavailable',
+  operation,
+  stage,
+})
+
+const reportSygSphereCommsSetupUnavailable = (
+  stage: SygSphereCommsSetupUnavailableStage,
+  operation: SygSphereCommsSetupOperation,
+): void => {
+  try {
+    console.warn(JSON.stringify(sygsphereCommsSetupUnavailableDiagnostic(stage, operation)))
+  } catch {
+    // Observability must never change a protected communications outcome.
+  }
 }
 
 const textEncoder = new TextEncoder()
@@ -1068,24 +1136,62 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     )
   }
 
-  private async providerAdapter(release: CoordinatorReleaseContext): Promise<CloudflareRealtimeHttpAdapter | null> {
+  private pttRuntimeMayPrepare(
+    release: CoordinatorReleaseContext,
+    operation: SygSphereCommsSetupOperation,
+  ): boolean {
+    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED)) {
+      reportSygSphereCommsSetupUnavailable('runtime_flag_disabled', operation)
+      return false
+    }
+    if (!coordinatorRuntimeMayDispatch(release)) {
+      reportSygSphereCommsSetupUnavailable('release_gate_not_ready', operation)
+      return false
+    }
+    return true
+  }
+
+  private async providerAdapter(
+    release: CoordinatorReleaseContext,
+    operation: SygSphereCommsSetupOperation = 'other_media',
+  ): Promise<CloudflareRealtimeHttpAdapter | null> {
     try {
-      const [appSecret, turnApiToken] = await Promise.all([
-        secretValue(this.env.SYGSHIFT_COMMS_REALTIME_APP_SECRET),
-        secretValue(this.env.SYGSHIFT_COMMS_TURN_API_TOKEN),
+      const [appSecretResult, turnApiTokenResult] = await Promise.all([
+        readSygSphereCommsSecret(this.env.SYGSHIFT_COMMS_REALTIME_APP_SECRET),
+        readSygSphereCommsSecret(this.env.SYGSHIFT_COMMS_TURN_API_TOKEN),
       ])
-      return createCloudflareRealtimeRuntimeHttpAdapter({
+      if (appSecretResult.outcome !== 'available') {
+        reportSygSphereCommsSetupUnavailable(
+          appSecretResult.outcome === 'read_failed' ? 'app_secret_read_failed' : 'app_secret_missing',
+          operation,
+        )
+        return null
+      }
+      if (turnApiTokenResult.outcome !== 'available') {
+        reportSygSphereCommsSetupUnavailable(
+          turnApiTokenResult.outcome === 'read_failed' ? 'turn_token_read_failed' : 'turn_token_missing',
+          operation,
+        )
+        return null
+      }
+      if (!this.env.SYGSHIFT_COMMS_REALTIME_APP_ID || !this.env.SYGSHIFT_COMMS_TURN_KEY_ID) {
+        reportSygSphereCommsSetupUnavailable('adapter_construction_rejected', operation)
+        return null
+      }
+      const adapter = createCloudflareRealtimeRuntimeHttpAdapter({
         appId: this.env.SYGSHIFT_COMMS_REALTIME_APP_ID,
-        appSecret,
+        appSecret: appSecretResult.value,
         coordinatorReleaseMayDispatch: coordinatorRuntimeMayDispatch(release),
         runtimeEnabled: runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED),
-        turnApiToken,
+        turnApiToken: turnApiTokenResult.value,
         turnKeyId: this.env.SYGSHIFT_COMMS_TURN_KEY_ID,
       })
+      if (!adapter) reportSygSphereCommsSetupUnavailable('adapter_construction_rejected', operation)
+      return adapter
     } catch {
-      // A secret-binding retrieval failure is indistinguishable from an
-      // unavailable provider to a caller. Returning null lets every typed
-      // media setup path close its reservation rather than strand a floor.
+      // No raw exception text can reach logs or an employee. The operation is
+      // enough to correlate a broken setup path with provider diagnostics.
+      reportSygSphereCommsSetupUnavailable('adapter_construction_rejected', operation)
       return null
     }
   }
@@ -2724,7 +2830,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
   async startPttAudio(input: unknown): Promise<TenantCommsCoordinatorResult> {
     await this.initialization
     const parsed = pttAudioStartSchema.parse(input)
-    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+    if (!this.pttRuntimeMayPrepare(parsed.release, 'ptt_start_publisher')) {
       return { outcome: 'runtime_disabled', requestId: parsed.requestId }
     }
     await this.expirePttTransmissions(Date.now(), parsed.release)
@@ -2752,7 +2858,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       await this.expirePttTransmissions(Date.now(), parsed.release)
       return { outcome: 'invalid_state', requestId: parsed.requestId }
     }
-    const adapter = await this.providerAdapter(parsed.release)
+    const adapter = await this.providerAdapter(parsed.release, 'ptt_start_publisher')
     if (!adapter) return providerUnavailable()
     const publisherInput = {
       authorization: parsed.authorization,
@@ -2847,7 +2953,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
   async preparePttAudio(input: unknown): Promise<TenantCommsDirectAudioPreparation> {
     await this.initialization
     const parsed = pttAudioPreparationSchema.parse(input)
-    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+    if (!this.pttRuntimeMayPrepare(parsed.release, 'ptt_prepare_publisher')) {
       return { outcome: 'runtime_disabled', requestId: parsed.requestId }
     }
     await this.expirePttTransmissions(Date.now(), parsed.release)
@@ -2867,7 +2973,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       await this.closeFailedPttPreparation(row, parsed.release, 'publisher')
       return { outcome: 'provider_unavailable', requestId: parsed.requestId }
     }
-    const adapter = await this.providerAdapter(parsed.release)
+    const adapter = await this.providerAdapter(parsed.release, 'ptt_prepare_publisher')
     if (!adapter) return providerUnavailable()
     const ice = await adapter.generateIceServers(300)
     if (ice.outcome !== 'accepted') return providerUnavailable()
@@ -2887,7 +2993,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
   async startPttListen(input: unknown): Promise<TenantCommsCoordinatorResult> {
     await this.initialization
     const parsed = pttListenStartSchema.parse(input)
-    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+    if (!this.pttRuntimeMayPrepare(parsed.release, 'ptt_start_listener')) {
       return { outcome: 'runtime_disabled', requestId: parsed.requestId }
     }
     await this.expirePttTransmissions(Date.now(), parsed.release)
@@ -2930,7 +3036,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       sourceTrackId: source.track_id,
       transmissionRequestId: parsed.transmissionRequestId,
     }
-    const adapter = await this.providerAdapter(parsed.release)
+    const adapter = await this.providerAdapter(parsed.release, 'ptt_start_listener')
     if (!adapter) return providerUnavailable()
     if (!this.pttListenerReservationIsCurrent({ ...listenerInput, now: Date.now() })) {
       return invalidAfterProviderWait()
@@ -2999,7 +3105,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
   async preparePttListen(input: unknown): Promise<TenantCommsDirectAudioPreparation> {
     await this.initialization
     const parsed = pttListenPreparationSchema.parse(input)
-    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+    if (!this.pttRuntimeMayPrepare(parsed.release, 'ptt_prepare_listener')) {
       return { outcome: 'runtime_disabled', requestId: parsed.requestId }
     }
     // Direct preparation calls are not routed through dispatch(), so they
@@ -3038,7 +3144,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       sourceTrackId: source.track_id,
       transmissionRequestId: parsed.transmissionRequestId,
     }
-    const adapter = await this.providerAdapter(parsed.release)
+    const adapter = await this.providerAdapter(parsed.release, 'ptt_prepare_listener')
     if (!adapter) return providerUnavailable()
     if (!this.pttListenerReservationIsCurrent({ ...listenerInput, now: Date.now() })) {
       return invalidAfterProviderWait()
@@ -3059,7 +3165,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
   async acknowledgePttListenerReady(input: unknown): Promise<TenantCommsCoordinatorResult> {
     await this.initialization
     const parsed = pttListenerReadySchema.parse(input)
-    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+    if (!this.pttRuntimeMayPrepare(parsed.release, 'ptt_listener_ready')) {
       return { outcome: 'runtime_disabled', requestId: parsed.requestId }
     }
     await this.expirePttTransmissions(Date.now(), parsed.release)
