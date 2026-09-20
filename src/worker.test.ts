@@ -4,6 +4,7 @@ import worker, {
   buildLoginInstructionsEmail,
   buildWelcomeEmail,
   protectedMaintenanceWindow,
+  secureResponse,
   validateSuppliedTemporaryPassword,
 } from '../worker'
 
@@ -105,6 +106,21 @@ describe('Cloudflare Worker boundary', () => {
     expect(response.headers.get('strict-transport-security')).toContain('max-age=63072000')
     expect(response.headers.get('permissions-policy')).toContain('camera=(self)')
     expect(response.headers.get('permissions-policy')).toContain('microphone=(self)')
+  })
+
+  it('passes a Communications WebSocket upgrade response through without trying to reconstruct status 101', () => {
+    const upgrade = {
+      body: null,
+      headers: new Headers({ upgrade: 'websocket' }),
+      status: 101,
+      statusText: 'Switching Protocols',
+    } as unknown as Response
+
+    expect(secureResponse(
+      new Request('https://app.sygilant.us/api/comms/v1/connect'),
+      upgrade,
+      crypto.randomUUID(),
+    )).toBe(upgrade)
   })
 
   it('returns method guidance without reflecting request details', async () => {

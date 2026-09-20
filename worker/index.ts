@@ -8232,6 +8232,13 @@ async function purgeExpiredSygSphereUploads(environment: Environment): Promise<{
 }
 
 export function secureResponse(request: Request, response: Response, requestId: string): Response {
+  // A WebSocket upgrade is a protocol response (101), not an ordinary Fetch
+  // Response. Cloudflare permits returning the coordinator's upgrade response
+  // directly, but the standard Response constructor rejects status 101. Do
+  // not clone or decorate it; origin validation already occurred before the
+  // handoff and the coordinator owns the completed upgrade.
+  if (response.status === 101) return response
+
   const headers = new Headers(response.headers)
   const url = new URL(request.url)
 
