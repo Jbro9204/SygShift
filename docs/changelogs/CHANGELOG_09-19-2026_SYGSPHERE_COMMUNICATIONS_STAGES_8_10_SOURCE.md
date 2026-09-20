@@ -17,6 +17,7 @@
 
 - TypeScript typecheck and lint pass.
 - Focused mocked unit coverage passes for provider endpoints, response validation, force-close fencing, timeout reconciliation, TURN filtering, call lifecycle, PTT order/expiry, meeting moderation/media policy, and outbox retry/deadline behavior.
+- Independent full SygShift verification passed: TypeScript, Oxlint with deny-warnings, Worker and client production builds, and **283 test files / 1,420 tests**.
 - The shared protocol remains exactly `1.0.0-draft.4` / protocol `1`; no contract artifact or Sygilant compatibility target changed in this checkpoint.
 
 ## Still required before any activation
