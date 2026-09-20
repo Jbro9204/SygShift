@@ -142,6 +142,13 @@ export function SygSphereCommunicationsRuntimeProvider({
     };
   }, [controller]);
 
+  // An old channel-level setup error must not remain above a different live
+  // call. The controller also matches terminal events by transmission ID;
+  // this protects locally-caught action errors from the same misleading UI.
+  useEffect(() => {
+    if (state.call) setLastActionError(null);
+  }, [state.call]);
+
   useEffect(() => {
     if (!controller || !enabled || !employeeId) {
       accessTokenRef.current = null;
@@ -425,6 +432,8 @@ export function SygSphereCommunicationsWorkspace({
     status: runtime.state.call.status,
   } : null;
   const pttState = communicationsPttState(runtime.state, runtime.browser.audioCapture.available);
+  const visibleRuntimeError = runtime.lastActionError
+    ?? (runtime.state.call ? null : runtime.state.lastError);
 
   return (
     <div className="sphere-comms-workspace">
@@ -496,9 +505,9 @@ export function SygSphereCommunicationsWorkspace({
         remoteMedia={runtime.remoteMedia}
         selectedChannelId={selectedChannelId}
       />
-      {runtime.lastActionError || runtime.state.lastError ? (
+      {visibleRuntimeError ? (
         <div className="sphere-comms-workspace__notice" role="alert">
-          <span>{runtime.lastActionError ?? publicRuntimeStateError(runtime.state.lastError)}</span>
+          <span>{runtime.lastActionError ?? publicRuntimeStateError(visibleRuntimeError)}</span>
           {runtime.state.connection === "failed" && runtime.state.accountKey ? (
             <button onClick={() => void runtime.run((controller) => controller.start(runtime.state.accountKey!))} type="button">
               Reconnect communications
@@ -522,7 +531,8 @@ function communicationsPttState(
   if (state.connection === "authorizing" || state.connection === "connecting" || state.connection === "reconnecting") return "reconnecting";
   if (state.floor?.status === "requesting" || state.floor?.status === "preparing") return "requesting";
   if (state.floor?.status === "releasing") return "releasing";
-  if (state.floor?.status === "ready" || state.floor?.status === "transmitting") return "transmitting";
+  if (state.floor?.status === "ready") return "requesting";
+  if (state.floor?.status === "transmitting") return "transmitting";
   return "ready";
 }
 

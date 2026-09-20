@@ -250,6 +250,7 @@ const pttListenStartSchema = pttAudioStartSchema.omit({ channelReference: true }
 const pttAudioPreparationSchema = pttAudioStartSchema.omit({ offer: true })
 const pttListenPreparationSchema = pttListenStartSchema.omit({ offer: true })
 const pttListenerReadySchema = pttListenPreparationSchema
+const pttListenerFailedSchema = pttListenPreparationSchema
 
 const meetingMediaKindSchema = z.enum(['audio', 'screen', 'video'])
 const meetingMediaPreparationSchema = z.object({
@@ -312,12 +313,11 @@ const commandReplayRetentionMilliseconds = 86_400_000
 const maximumRecordsPurgedPerDispatch = 50
 const maximumWebSocketFrameBytes = 4_096
 const directCallRingingMilliseconds = 45_000
-const pttPreparingMilliseconds = 30_000
-// A PTT reservation starts with 30 seconds, but server-side media setup can
-// include TURN credentials plus several provider round trips. A controlled
-// extension gives those operations a chance to finish without allowing a
-// browser to keep a channel reservation alive indefinitely.
-const pttMaximumPreparationLifetimeMilliseconds = pttPreparingMilliseconds * 2
+// PTT preparation spans a protected TURN request, browser ICE gathering, and
+// up to three bounded SFU calls. Forty-five seconds permits that normal path
+// without letting a client retain a floor indefinitely.
+const pttPreparingMilliseconds = 45_000
+const pttMaximumPreparationLifetimeMilliseconds = 120_000
 const pttLeaseMilliseconds = 6_000
 
 /**
@@ -389,6 +389,7 @@ export type SygSphereCommsSetupOperation =
   | 'direct_media'
   | 'meeting_media'
   | 'other_media'
+  | 'ptt_listener_failed'
   | 'ptt_listener_ready'
   | 'ptt_prepare_listener'
   | 'ptt_prepare_publisher'
@@ -2639,6 +2640,47 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     this.ctx.storage.sql.exec('delete from coordinator_call_media_sessions where call_id = ?', transmissionRequestId)
   }
 
+  /** Remove one selected listener's server media before any provider cleanup
+   * can await. A failed browser receiver must not remain an implicit required
+   * listener and hold an otherwise-unused channel floor until its lease ends. */
+  private async closePttListenerMedia(
+    transmissionRequestId: string,
+    connectionId: string,
+    release: CoordinatorReleaseContext,
+  ): Promise<void> {
+    const rows = this.ctx.storage.sql.exec<CoordinatorCallMediaSessionRow>(
+      `select call_id, employee_id, connection_id, session_json, track_id, created_at_ms, updated_at_ms
+       from coordinator_call_media_sessions
+       where call_id = ? and connection_id = ?`,
+      transmissionRequestId,
+      connectionId,
+    ).toArray()
+    // A late provider completion can no longer claim this listener after the
+    // local participant has reported an unrecoverable setup failure.
+    this.ctx.storage.sql.exec(
+      'delete from coordinator_call_media_sessions where call_id = ? and connection_id = ?',
+      transmissionRequestId,
+      connectionId,
+    )
+    const adapter = await this.providerAdapter(release, 'ptt_listener_failed')
+    for (const row of rows) {
+      const session = this.parseProviderSession(row)
+      const track = session?.tracks.get(row.track_id)
+      if (adapter && session && track?.mid) {
+        await adapter.forceCloseTracks({
+          session,
+          tenantId: session.tenantId,
+          tracks: [{ mid: track.mid, trackId: track.id }],
+        }).catch(() => undefined)
+      }
+      this.sendCoordinatorEvent(row.connection_id, `ptt:${transmissionRequestId}`, 'media.closed', {
+        callId: transmissionRequestId,
+        generation: 1,
+        reason: 'unavailable',
+      })
+    }
+  }
+
   private async closePttTransmission(
     row: CoordinatorPttTransmissionRow,
     release: CoordinatorReleaseContext,
@@ -3222,6 +3264,54 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       parsed.transmissionRequestId,
     )
     this.sendPttEvent([row.requester_employee_id], parsed.transmissionRequestId, 'floor.ready', grant.event.payload)
+    this.scheduleNextSocketTicketExpiry()
+    return { outcome: 'accepted', requestId: parsed.requestId }
+  }
+
+  /** A browser may fail before it can apply a subscriber answer or before its
+   * connection-state deadline. Only the exact currently-selected listener can
+   * report that condition, and only while the floor is still preparing. The
+   * browser supplies no cancellation reason or participant authority. */
+  async reportPttListenerFailure(input: unknown): Promise<TenantCommsCoordinatorResult> {
+    await this.initialization
+    const parsed = pttListenerFailedSchema.parse(input)
+    if (!this.pttRuntimeMayPrepare(parsed.release, 'ptt_listener_failed')) {
+      return { outcome: 'runtime_disabled', requestId: parsed.requestId }
+    }
+    await this.expirePttTransmissions(Date.now(), parsed.release)
+    const now = Date.now()
+    const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
+    const row = this.pttTransmission(parsed.transmissionRequestId)
+    if (
+      !caller
+      || !row
+      || row.state !== 'preparing'
+      || row.lease_expires_at_ms <= now
+      || caller.authorization.employeeId === row.requester_employee_id
+      || !this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId).includes(caller.connectionId)
+      || this.pttReadyListenerConnectionIds(parsed.transmissionRequestId).includes(caller.connectionId)
+    ) return { outcome: 'invalid_state', requestId: parsed.requestId }
+
+    this.ctx.storage.sql.exec(
+      `delete from coordinator_ptt_listener_requirements
+       where transmission_request_id = ? and connection_id = ? and ready_at_ms is null`,
+      parsed.transmissionRequestId,
+      caller.connectionId,
+    )
+    const current = this.pttTransmission(parsed.transmissionRequestId)
+    if (!current || current.state !== 'preparing') return { outcome: 'invalid_state', requestId: parsed.requestId }
+
+    if (this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId).length === 0) {
+      if (await this.closePttTransmission(current, parsed.release, 'unavailable')) {
+        this.sendPttEvent([current.requester_employee_id], current.transmission_request_id, 'floor.revoked', {
+          reason: 'unavailable',
+          transmissionRequestId: current.transmission_request_id,
+        })
+      }
+      return { outcome: 'accepted', requestId: parsed.requestId }
+    }
+
+    await this.closePttListenerMedia(parsed.transmissionRequestId, caller.connectionId, parsed.release)
     this.scheduleNextSocketTicketExpiry()
     return { outcome: 'accepted', requestId: parsed.requestId }
   }

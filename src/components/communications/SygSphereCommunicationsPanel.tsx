@@ -269,7 +269,7 @@ function ConnectionStatus({ state }: { state: CommunicationsConnectionState }) {
     unavailable: ["Not available", "Use messages or Dispatch"],
     authorizing: ["Checking access", "One moment"],
     connecting: ["Connecting", "One moment"],
-    ready: ["Ready", "Voice and video available"],
+    ready: ["Ready", "Messaging and voice controls ready"],
     reconnecting: ["Reconnecting", "Do not speak yet"],
     denied: ["Access unavailable", "Use messages or Dispatch"],
     failed: ["Connection unavailable", "Use messages or Dispatch"],

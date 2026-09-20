@@ -263,12 +263,14 @@ describe("SygSphere communications protected socket bridge", () => {
     const socket = new FakeSocket();
     const transmissionRequestId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
     const acknowledgePttListenerReady = vi.fn(async () => acceptedCommand());
+    const reportPttListenerFailure = vi.fn(async () => acceptedCommand());
     const startPtt = vi.fn(async () => acceptedCommand());
     const peer = createFakeRtcPeer("connecting");
     const bridge = createBridge({
       acknowledgePttListenerReady,
       bootstrap: vi.fn(async () => validBootstrap(ticket)),
       createRtcPeer: () => peer,
+      reportPttListenerFailure,
       socket,
       startPtt,
     });
@@ -286,7 +288,51 @@ describe("SygSphere communications protected socket bridge", () => {
 
     await vi.waitFor(() => expect(peer.close).toHaveBeenCalledTimes(1));
     expect(acknowledgePttListenerReady).not.toHaveBeenCalled();
+    expect(reportPttListenerFailure).toHaveBeenCalledWith(
+      "access-token",
+      { transmissionRequestId },
+      expect.any(AbortSignal),
+    );
     expect(socket.closedWith).toBeNull();
+  });
+
+  it("cancels an in-flight PTT publisher before it can send stale audio", async () => {
+    const socket = new FakeSocket();
+    const transmissionRequestId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+    let resolvePreparation!: (value: unknown) => void;
+    const preparePtt = vi.fn(() => new Promise<unknown>((resolve) => { resolvePreparation = resolve; }));
+    const startPtt = vi.fn(async () => acceptedCommand());
+    const peer = createFakeRtcPeer("connecting");
+    const bridge = createBridge({
+      bootstrap: vi.fn(async () => validBootstrap(ticket)),
+      createRtcPeer: () => peer,
+      preparePtt,
+      socket,
+      startPtt,
+    });
+    const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+    await socketCreated(socket);
+    socket.open();
+    socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+    const { session } = await connection;
+
+    const publish = session.publish({
+      channelReference: "dispatch",
+      kind: "ptt",
+      roomId: `ptt:${transmissionRequestId}`,
+      stream: { getAudioTracks: () => [{} as MediaStreamTrack] } as unknown as MediaStream,
+      transmissionRequestId,
+    });
+    await vi.waitFor(() => expect(preparePtt).toHaveBeenCalledTimes(1));
+    await session.stopPublication("ptt", `ptt:${transmissionRequestId}`);
+    resolvePreparation({
+      iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
+      requestId: "d285bf11-15f6-4efe-b60f-5bd86765f451",
+    });
+    await publish;
+
+    expect(peer.createOffer).not.toHaveBeenCalled();
+    expect(startPtt).not.toHaveBeenCalled();
   });
 
   it("does not create a duplicate PTT listener while the first listener is still preparing", async () => {
@@ -808,7 +854,7 @@ function answerDirectCall(socket: FakeSocket, callId: string) {
   }));
 }
 
-function createBridge({ acknowledgePttListenerReady, bootstrap, createPeerTransport, createRtcPeer, now, peerTransport, prepareMeetingMedia, preparePtt, refreshAuthorization, sendCommand, socket, sockets, startDirectAudio, startMeetingMedia, startPtt }: {
+function createBridge({ acknowledgePttListenerReady, bootstrap, createPeerTransport, createRtcPeer, now, peerTransport, prepareMeetingMedia, preparePtt, refreshAuthorization, reportPttListenerFailure, sendCommand, socket, sockets, startDirectAudio, startMeetingMedia, startPtt }: {
   acknowledgePttListenerReady?: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
   bootstrap: (accessToken: string, signal: AbortSignal) => Promise<unknown>;
   createPeerTransport?: SygSphereCommunicationsPeerTransportFactory;
@@ -818,6 +864,7 @@ function createBridge({ acknowledgePttListenerReady, bootstrap, createPeerTransp
   prepareMeetingMedia?: (accessToken: string, meetingId: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
   preparePtt?: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
   refreshAuthorization?: (accessToken: string, signal: AbortSignal) => Promise<unknown>;
+  reportPttListenerFailure?: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
   sendCommand?: (accessToken: string, command: unknown, signal: AbortSignal) => Promise<unknown>;
   socket?: FakeSocket;
   sockets?: FakeSocket[];
@@ -828,6 +875,7 @@ function createBridge({ acknowledgePttListenerReady, bootstrap, createPeerTransp
   let index = 0;
   return new SygSphereCommunicationsSocketBridge(() => "access-token", {
     acknowledgePttListenerReady: acknowledgePttListenerReady ?? vi.fn(async () => acceptedCommand()),
+    reportPttListenerFailure: reportPttListenerFailure ?? vi.fn(async () => acceptedCommand()),
     bootstrap,
     clearTimer: (timer) => clearTimeout(timer),
     createPeerTransport: createPeerTransport ?? (() => peerTransport ?? createFakePeerTransport().adapter),

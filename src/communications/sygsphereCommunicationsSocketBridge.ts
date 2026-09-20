@@ -11,6 +11,7 @@ import type {
   CommunicationsCallMediaConnection,
   CommunicationsCoordinatorBridge,
   CommunicationsCoordinatorSession,
+  CommunicationsPttMediaConnection,
   CommunicationsPublicationKind,
 } from "./sygsphereCommunicationsController";
 import { parseSygSphereCommunicationsEvent } from "./sygsphereCommunicationsState";
@@ -27,7 +28,12 @@ const openingTimeoutMilliseconds = 5_000;
 const iceGatheringTimeoutMilliseconds = 10_000;
 const mediaRequestTimeoutMilliseconds = 20_000;
 const mediaConnectionTimeoutMilliseconds = 20_000;
-const pttListenerConnectionTimeoutMilliseconds = 10_000;
+// PTT preparation can legitimately include protected TURN acquisition, ICE
+// gathering, and a bounded SFU exchange. It needs a longer independent
+// deadline than direct-call actions, but remains finite and cancellable.
+const pttMediaRequestTimeoutMilliseconds = 55_000;
+const pttMediaConnectionTimeoutMilliseconds = 25_000;
+const pttListenerConnectionTimeoutMilliseconds = 20_000;
 const heartbeatMilliseconds = 15_000;
 const authorizationRefreshMilliseconds = 45_000;
 const bootstrapSchema = z.object({
@@ -118,6 +124,7 @@ export type SygSphereCommunicationsPeerTransportFactory = (input: Readonly<{
 }>) => SygSphereCommunicationsPeerTransportAdapter;
 
 type SocketBridgeDependencies = Readonly<{
+  reportPttListenerFailure: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
   acknowledgePttListenerReady: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
   bootstrap: (accessToken: string, signal: AbortSignal) => Promise<unknown>;
   createPeerTransport: SygSphereCommunicationsPeerTransportFactory;
@@ -141,6 +148,11 @@ type SocketBridgeDependencies = Readonly<{
 }>;
 
 const defaultDependencies: SocketBridgeDependencies = {
+  reportPttListenerFailure: (accessToken, input, signal) => sygSphereCommunicationsApiRequest<unknown>(
+    "/api/comms/v1/ptt/listener-failed",
+    accessToken,
+    { body: JSON.stringify(input), headers: { "content-type": "application/json" }, method: "POST", signal },
+  ),
   acknowledgePttListenerReady: (accessToken, input, signal) => sygSphereCommunicationsApiRequest<unknown>(
     "/api/comms/v1/ptt/listener-ready",
     accessToken,
@@ -252,6 +264,7 @@ export class SygSphereCommunicationsSocketBridge implements CommunicationsCoordi
     onDisconnect,
     onEvent,
     onCallMediaConnection = () => undefined,
+    onPttMediaConnection = () => undefined,
     onRemoteTrack = () => undefined,
   }: Parameters<CommunicationsCoordinatorBridge["connect"]>[0]): Promise<Readonly<{
     authorizationExpiresAt: string | null;
@@ -330,6 +343,7 @@ export class SygSphereCommunicationsSocketBridge implements CommunicationsCoordi
             dependencies: this.dependencies,
             getAccessToken: this.getAccessToken,
             onCallMediaConnection,
+            onPttMediaConnection,
             onRemoteTrack,
             socket,
             setIntentionalClose: () => { intentionalClose = true; },
@@ -394,6 +408,16 @@ type PttListenerReadiness = {
   setupAbortController: AbortController;
 };
 
+type PttPublisherAttempt = Readonly<{
+  abortController: AbortController;
+  roomId: string;
+}>;
+
+type PttListenerSetup = Readonly<{
+  abortController: AbortController;
+  roomId: string;
+}>;
+
 type MeetingMediaKind = "audio" | "screen" | "video";
 type MeetingPeerState = Readonly<{
   mediaKind: MeetingMediaKind;
@@ -409,14 +433,16 @@ function createSession({
   dependencies,
   getAccessToken,
   onCallMediaConnection,
+  onPttMediaConnection,
   onRemoteTrack,
   setIntentionalClose,
   socket,
 }: Readonly<{
   connectionEpoch: number;
-  dependencies: Pick<SocketBridgeDependencies, "acknowledgePttListenerReady" | "clearTimer" | "createPeerTransport" | "createRtcPeer" | "createStream" | "getDirectCallContext" | "now" | "prepareDirectAudio" | "prepareMeetingMedia" | "preparePtt" | "refreshAuthorization" | "sendCommand" | "setTimer" | "startDirectAudio" | "startMeetingMedia" | "startPtt" | "stopMeetingMedia">;
+  dependencies: Pick<SocketBridgeDependencies, "acknowledgePttListenerReady" | "clearTimer" | "createPeerTransport" | "createRtcPeer" | "createStream" | "getDirectCallContext" | "now" | "prepareDirectAudio" | "prepareMeetingMedia" | "preparePtt" | "refreshAuthorization" | "reportPttListenerFailure" | "sendCommand" | "setTimer" | "startDirectAudio" | "startMeetingMedia" | "startPtt" | "stopMeetingMedia">;
   getAccessToken: () => string | null;
   onCallMediaConnection: (connection: CommunicationsCallMediaConnection) => void;
+  onPttMediaConnection: (connection: CommunicationsPttMediaConnection) => void;
   onRemoteTrack: (track: CommunicationsRemoteTrack) => void;
   setIntentionalClose: () => void;
   socket: CommunicationsWebSocket;
@@ -432,6 +458,14 @@ function createSession({
   let authorizationRefreshController: AbortController | null = null;
   const pttPeers = new Map<string, PttPeerState>();
   const pttListenerReadiness = new Map<string, PttListenerReadiness>();
+  const pttListenerSetups = new Map<string, PttListenerSetup>();
+  const pttPublisherAttempts = new Map<string, PttPublisherAttempt>();
+  const pttPublisherObservations = new Map<string, Readonly<{
+    listener: EventListener;
+    peer: RTCPeerConnection;
+    roomId: string;
+    timeout: ReturnType<typeof setTimeout> | null;
+  }>>();
   const directPeers = new Map<string, RTCPeerConnection>();
   const meetingPeers = new Map<string, MeetingPeerState>();
   const requireOpen = () => {
@@ -557,8 +591,40 @@ function createSession({
     // provider request above.
     armCallMediaConnectionTimeout(peer);
   };
-  const closePttPeer = (transmissionRequestId: string) => {
+  const reportPttListenerFailure = (transmissionRequestId: string) => {
+    if (closed || socket.readyState !== 1) return;
+    const accessToken = getAccessToken()?.trim();
+    if (!accessToken) return;
+    // This is deliberately best-effort. The protected endpoint owns all
+    // membership and state checks, and a transient reporting failure still
+    // falls back to the server's bounded preparation lease.
+    void dependencies.reportPttListenerFailure(
+      accessToken,
+      { transmissionRequestId },
+      AbortSignal.timeout(10_000),
+    ).catch(() => undefined);
+  };
+  const stopObservingPttPublisher = (transmissionRequestId: string, peer?: RTCPeerConnection) => {
+    const observation = pttPublisherObservations.get(transmissionRequestId);
+    if (!observation || (peer && observation.peer !== peer)) return;
+    if (observation.timeout) dependencies.clearTimer(observation.timeout);
+    observation.peer.removeEventListener("connectionstatechange", observation.listener);
+    pttPublisherObservations.delete(transmissionRequestId);
+  };
+  const closePttPeer = (transmissionRequestId: string, options: Readonly<{ reportListenerFailure?: boolean }> = {}) => {
+    const publisherAttempt = pttPublisherAttempts.get(transmissionRequestId);
+    if (publisherAttempt) {
+      publisherAttempt.abortController.abort("ptt_publication_closed");
+      pttPublisherAttempts.delete(transmissionRequestId);
+    }
+    const listenerSetup = pttListenerSetups.get(transmissionRequestId);
+    if (listenerSetup) {
+      listenerSetup.abortController.abort("ptt_listener_closed");
+      pttListenerSetups.delete(transmissionRequestId);
+    }
     const readiness = pttListenerReadiness.get(transmissionRequestId);
+    const shouldReportListenerFailure = options.reportListenerFailure === true
+      && (listenerSetup !== undefined || (readiness !== undefined && !readiness.acknowledged));
     if (readiness) {
       if (readiness.connectionTimeout) dependencies.clearTimer(readiness.connectionTimeout);
       readiness.setupAbortController.abort();
@@ -571,10 +637,13 @@ function createSession({
     // leave a hidden WebRTC connection or a stale listener acknowledgement.
     if (!current) {
       readiness?.peer.close();
+      if (shouldReportListenerFailure) reportPttListenerFailure(transmissionRequestId);
       return;
     }
+    if (current.publication === "publisher") stopObservingPttPublisher(transmissionRequestId, current.peer);
     current.peer.close();
     pttPeers.delete(transmissionRequestId);
+    if (shouldReportListenerFailure) reportPttListenerFailure(transmissionRequestId);
   };
   const closeDirectPeer = (callId: string) => {
     const peer = directPeers.get(callId);
@@ -582,6 +651,47 @@ function createSession({
     stopObservingCallMediaConnection(peer);
     peer.close();
     directPeers.delete(callId);
+  };
+  const armPttPublisherConnectionTimeout = (transmissionRequestId: string, peer: RTCPeerConnection) => {
+    const observation = pttPublisherObservations.get(transmissionRequestId);
+    if (!observation || observation.peer !== peer || peer.connectionState === "connected") return;
+    if (observation.timeout) dependencies.clearTimer(observation.timeout);
+    const timeout = dependencies.setTimer(() => {
+      const current = pttPublisherObservations.get(transmissionRequestId);
+      if (!current || current.peer !== peer || peer.connectionState === "connected") return;
+      stopObservingPttPublisher(transmissionRequestId, peer);
+      closePttPeer(transmissionRequestId);
+      onPttMediaConnection({ roomId: current.roomId, state: "failed", transmissionRequestId });
+    }, pttMediaConnectionTimeoutMilliseconds);
+    pttPublisherObservations.set(transmissionRequestId, { ...observation, timeout });
+  };
+  const observePttPublisherConnection = (transmissionRequestId: string, roomId: string, peer: RTCPeerConnection) => {
+    let connectedReported = false;
+    let failedReported = false;
+    const report = () => {
+      const observation = pttPublisherObservations.get(transmissionRequestId);
+      if (closed || !observation || observation.peer !== peer) return;
+      if (peer.connectionState === "connected" && !connectedReported) {
+        connectedReported = true;
+        if (observation.timeout) {
+          dependencies.clearTimer(observation.timeout);
+          pttPublisherObservations.set(transmissionRequestId, { ...observation, timeout: null });
+        }
+        onPttMediaConnection({ roomId, state: "connected", transmissionRequestId });
+        return;
+      }
+      if ((peer.connectionState === "failed" || peer.connectionState === "closed") && !failedReported) {
+        failedReported = true;
+        stopObservingPttPublisher(transmissionRequestId, peer);
+        closePttPeer(transmissionRequestId);
+        onPttMediaConnection({ roomId, state: "failed", transmissionRequestId });
+      }
+    };
+    const listener: EventListener = () => report();
+    pttPublisherObservations.set(transmissionRequestId, { listener, peer, roomId, timeout: null });
+    peer.addEventListener("connectionstatechange", listener);
+    report();
+    armPttPublisherConnectionTimeout(transmissionRequestId, peer);
   };
   const meetingPeerKey = (meetingId: string, role: MeetingPeerState["role"], sourceConnectionId: string, mediaKind: MeetingMediaKind) =>
     `${meetingId}:${role}:${sourceConnectionId}:${mediaKind}`;
@@ -756,28 +866,41 @@ function createSession({
     const accessToken = getAccessToken()?.trim();
     if (!accessToken) throw new Error("Your session is no longer valid. Sign in and try again.");
     closePttPeer(input.transmissionRequestId);
-    const preparation = pttPreparationSchema.parse(await dependencies.preparePtt(
-      accessToken,
-      { channelReference: input.channelReference, mode: "publisher", transmissionRequestId: input.transmissionRequestId },
-      AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
-    ));
-    const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
-    for (const track of input.stream.getAudioTracks()) peer.addTrack(track, input.stream);
-    const offer = await peer.createOffer();
-    await peer.setLocalDescription(offer);
-    await waitForPeerIce(peer, dependencies);
-    const localDescription = peer.localDescription;
-    if (!localDescription?.sdp || localDescription.type !== "offer") {
-      peer.close();
-      throw new Error("Communications could not prepare push-to-talk audio.");
-    }
-    pttPeers.set(input.transmissionRequestId, {
-      peer,
-      publication: "publisher",
+    const attempt: PttPublisherAttempt = {
+      abortController: new AbortController(),
       roomId: input.roomId,
-      transmissionRequestId: input.transmissionRequestId,
-    });
+    };
+    pttPublisherAttempts.set(input.transmissionRequestId, attempt);
+    const attemptIsCurrent = () => !closed
+      && socket.readyState === 1
+      && pttPublisherAttempts.get(input.transmissionRequestId) === attempt
+      && !attempt.abortController.signal.aborted;
+    let peer: RTCPeerConnection | null = null;
     try {
+      const preparation = pttPreparationSchema.parse(await dependencies.preparePtt(
+        accessToken,
+        { channelReference: input.channelReference, mode: "publisher", transmissionRequestId: input.transmissionRequestId },
+        AbortSignal.any([attempt.abortController.signal, AbortSignal.timeout(pttMediaRequestTimeoutMilliseconds)]),
+      ));
+      if (!attemptIsCurrent()) return;
+      peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
+      for (const track of input.stream.getAudioTracks()) peer.addTrack(track, input.stream);
+      const offer = await peer.createOffer();
+      if (!attemptIsCurrent()) return;
+      await peer.setLocalDescription(offer);
+      if (!attemptIsCurrent()) return;
+      await waitForPeerIce(peer, dependencies, attempt.abortController.signal);
+      if (!attemptIsCurrent()) return;
+      const localDescription = peer.localDescription;
+      if (!localDescription?.sdp || localDescription.type !== "offer") {
+        throw new Error("Communications could not prepare push-to-talk audio.");
+      }
+      pttPeers.set(input.transmissionRequestId, {
+        peer,
+        publication: "publisher",
+        roomId: input.roomId,
+        transmissionRequestId: input.transmissionRequestId,
+      });
       const response = commandResponseSchema.parse(await dependencies.startPtt(
         accessToken,
         {
@@ -785,12 +908,23 @@ function createSession({
           offer: localDescription.sdp,
           transmissionRequestId: input.transmissionRequestId,
         },
-        AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
+        AbortSignal.any([attempt.abortController.signal, AbortSignal.timeout(pttMediaRequestTimeoutMilliseconds)]),
       ));
+      if (!attemptIsCurrent()) return;
       if (response.outcome !== "accepted") throw new Error(commandOutcomeMessage(response.outcome));
+      observePttPublisherConnection(input.transmissionRequestId, input.roomId, peer);
     } catch (error) {
+      if (!attemptIsCurrent()) return;
       closePttPeer(input.transmissionRequestId);
       throw error;
+    } finally {
+      if (pttPublisherAttempts.get(input.transmissionRequestId) === attempt) {
+        pttPublisherAttempts.delete(input.transmissionRequestId);
+      }
+      // A release can happen between a local await and the server response.
+      // The attempt is no longer current in that case, and its unregistered
+      // peer must not survive to deliver stale audio.
+      if (!attemptIsCurrent() && peer && pttPeers.get(input.transmissionRequestId)?.peer !== peer) peer.close();
     }
   };
   const armPttListenerConnectionTimeout = (
@@ -802,7 +936,7 @@ function createSession({
     if (readiness.connectionTimeout) dependencies.clearTimer(readiness.connectionTimeout);
     readiness.connectionTimeout = dependencies.setTimer(() => {
       if (pttListenerReadiness.get(transmissionRequestId) !== readiness || readiness.acknowledged) return;
-      closePttPeer(transmissionRequestId);
+      closePttPeer(transmissionRequestId, { reportListenerFailure: true });
     }, timeoutMilliseconds);
   };
   const acknowledgePttListenerWhenConnected = async (transmissionRequestId: string) => {
@@ -833,7 +967,7 @@ function createSession({
       const current = pttListenerReadiness.get(transmissionRequestId);
       if (current !== readiness || pttPeers.get(transmissionRequestId)?.peer !== readiness.peer) return;
       if (response.outcome !== "accepted") {
-        closePttPeer(transmissionRequestId);
+        closePttPeer(transmissionRequestId, { reportListenerFailure: true });
         return;
       }
       readiness.acknowledged = true;
@@ -841,45 +975,63 @@ function createSession({
       readiness.connectionTimeout = null;
       readiness.peer.removeEventListener("connectionstatechange", readiness.connectionListener);
     } catch {
-      closePttPeer(transmissionRequestId);
+      closePttPeer(transmissionRequestId, { reportListenerFailure: true });
     } finally {
       const current = pttListenerReadiness.get(transmissionRequestId);
       if (current === readiness) readiness.acknowledgementInFlight = false;
     }
   };
   const startPttListener = async (transmissionRequestId: string, roomId: string) => {
-    if (pttPeers.has(transmissionRequestId) || pttListenerReadiness.has(transmissionRequestId)) return;
+    if (pttPeers.has(transmissionRequestId) || pttListenerReadiness.has(transmissionRequestId) || pttListenerSetups.has(transmissionRequestId)) return;
     const accessToken = getAccessToken()?.trim();
     if (!accessToken || closed || socket.readyState !== 1) return;
-    const preparation = pttPreparationSchema.parse(await dependencies.preparePtt(
-      accessToken,
-      { mode: "listener", transmissionRequestId },
-      AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
-    ));
-    // A duplicate transmission event can arrive while the protected setup
-    // request is in flight. Re-check after that await before creating a second
-    // receiver for the same server-owned transmission.
-    if (closed || pttPeers.has(transmissionRequestId) || pttListenerReadiness.has(transmissionRequestId)) return;
-    const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
-    const connectionListener: EventListener = () => {
-      if (peer.connectionState === "failed" || peer.connectionState === "closed") {
-        closePttPeer(transmissionRequestId);
+    const setup: PttListenerSetup = { abortController: new AbortController(), roomId };
+    pttListenerSetups.set(transmissionRequestId, setup);
+    const setupIsCurrent = () => !closed
+      && socket.readyState === 1
+      && pttListenerSetups.get(transmissionRequestId) === setup
+      && !setup.abortController.signal.aborted;
+    let peer: RTCPeerConnection | null = null;
+    try {
+      const preparation = pttPreparationSchema.parse(await dependencies.preparePtt(
+        accessToken,
+        { mode: "listener", transmissionRequestId },
+        AbortSignal.any([setup.abortController.signal, AbortSignal.timeout(pttMediaRequestTimeoutMilliseconds)]),
+      ));
+      // A duplicate transmission event can arrive while the protected setup
+      // request is in flight. Re-check after that await before creating a
+      // receiver or issuing any server-side SDP command.
+      if (!setupIsCurrent()) return;
+      peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
+      const connectionListener: EventListener = () => {
+        if (peer?.connectionState === "failed" || peer?.connectionState === "closed") {
+          closePttPeer(transmissionRequestId, { reportListenerFailure: true });
+          return;
+        }
+        if (peer?.connectionState === "disconnected") {
+          const readiness = pttListenerReadiness.get(transmissionRequestId);
+          if (readiness) armPttListenerConnectionTimeout(transmissionRequestId, readiness);
+        }
+        void acknowledgePttListenerWhenConnected(transmissionRequestId);
+      };
+      const readiness: PttListenerReadiness = {
+        acknowledgementInFlight: false,
+        acknowledged: false,
+        connectionListener,
+        connectionTimeout: null,
+        peer,
+        remoteDescriptionApplied: false,
+        setupAbortController: setup.abortController,
+      };
+      // From this point forward readiness owns the same abort controller. The
+      // pre-peer map is only needed to cancel the protected preparation call.
+      pttListenerSetups.delete(transmissionRequestId);
+      if (closed || setup.abortController.signal.aborted) {
+        peer.close();
         return;
       }
-      void acknowledgePttListenerWhenConnected(transmissionRequestId);
-    };
-    const readiness: PttListenerReadiness = {
-      acknowledgementInFlight: false,
-      acknowledged: false,
-      connectionListener,
-      connectionTimeout: null,
-      peer,
-      remoteDescriptionApplied: false,
-      setupAbortController: new AbortController(),
-    };
-    pttListenerReadiness.set(transmissionRequestId, readiness);
-    peer.addEventListener("connectionstatechange", connectionListener);
-    try {
+      pttListenerReadiness.set(transmissionRequestId, readiness);
+      peer.addEventListener("connectionstatechange", connectionListener);
       peer.addTransceiver("audio", { direction: "recvonly" });
       peer.addEventListener("track", (trackEvent) => {
         const stream = trackEvent.streams[0] ?? dependencies.createStream([trackEvent.track]);
@@ -894,23 +1046,28 @@ function createSession({
         });
       });
       const offer = await peer.createOffer();
-      if (closed || pttListenerReadiness.get(transmissionRequestId) !== readiness) return;
+      if (closed || pttListenerReadiness.get(transmissionRequestId) !== readiness || setup.abortController.signal.aborted) return;
       await peer.setLocalDescription(offer);
-      if (closed || pttListenerReadiness.get(transmissionRequestId) !== readiness) return;
+      if (closed || pttListenerReadiness.get(transmissionRequestId) !== readiness || setup.abortController.signal.aborted) return;
       await waitForPeerIce(peer, dependencies, readiness.setupAbortController.signal);
-      if (closed || pttListenerReadiness.get(transmissionRequestId) !== readiness) return;
+      if (closed || pttListenerReadiness.get(transmissionRequestId) !== readiness || setup.abortController.signal.aborted) return;
       const localDescription = peer.localDescription;
-      if (!localDescription?.sdp || localDescription.type !== "offer") return;
+      if (!localDescription?.sdp || localDescription.type !== "offer") throw new Error("Push-to-talk listener offer was unavailable.");
       pttPeers.set(transmissionRequestId, { peer, publication: "listener", roomId, transmissionRequestId });
       const response = commandResponseSchema.parse(await dependencies.startPtt(
         accessToken,
         { mode: "listener", offer: localDescription.sdp, transmissionRequestId },
-        AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
+        AbortSignal.any([setup.abortController.signal, AbortSignal.timeout(pttMediaRequestTimeoutMilliseconds)]),
       ));
-      if (response.outcome !== "accepted") closePttPeer(transmissionRequestId);
+      if (pttListenerReadiness.get(transmissionRequestId) !== readiness || setup.abortController.signal.aborted) return;
+      if (response.outcome !== "accepted") closePttPeer(transmissionRequestId, { reportListenerFailure: true });
       else armPttListenerConnectionTimeout(transmissionRequestId, readiness);
     } catch {
-      closePttPeer(transmissionRequestId);
+      if (setupIsCurrent() || pttListenerReadiness.has(transmissionRequestId)) {
+        closePttPeer(transmissionRequestId, { reportListenerFailure: true });
+      } else {
+        peer?.close();
+      }
     }
   };
   const dispose = () => {
@@ -922,6 +1079,8 @@ function createSession({
     peerTransport.closeAll();
     for (const transmissionRequestId of [...pttPeers.keys()]) closePttPeer(transmissionRequestId);
     for (const transmissionRequestId of [...pttListenerReadiness.keys()]) closePttPeer(transmissionRequestId);
+    for (const transmissionRequestId of [...pttListenerSetups.keys()]) closePttPeer(transmissionRequestId);
+    for (const transmissionRequestId of [...pttPublisherAttempts.keys()]) closePttPeer(transmissionRequestId);
     for (const callId of [...directPeers.keys()]) closeDirectPeer(callId);
     closeMeetingPeers(() => true);
     heartbeatTimer = null;
@@ -1059,14 +1218,16 @@ function createSession({
             );
             void acknowledgePttListenerWhenConnected(payload.callId);
           } catch {
-            closePttPeer(payload.callId);
+            closePttPeer(payload.callId, { reportListenerFailure: true });
           }
           return;
         }
         try {
           await pttPeer.peer.setRemoteDescription({ sdp: payload.description, type: "answer" });
+          armPttPublisherConnectionTimeout(payload.callId, pttPeer.peer);
         } catch {
           closePttPeer(payload.callId);
+          onPttMediaConnection({ roomId: event.roomId, state: "failed", transmissionRequestId: payload.callId });
         }
         return;
       }
@@ -1136,7 +1297,7 @@ function createSession({
         && item.mediaKind === payload.mediaKind);
       return;
     }
-    if (["transmission.ended", "floor.revoked", "media.closed"].includes(event.kind) && event.roomId.startsWith("ptt:")) {
+    if (["transmission.ended", "floor.denied", "floor.revoked", "media.closed"].includes(event.kind) && event.roomId.startsWith("ptt:")) {
       closePttPeer(event.roomId.slice("ptt:".length));
     }
     if (["call.ended", "call.missed", "media.closed"].includes(event.kind) && event.roomId.startsWith("call:")) {

@@ -77,14 +77,15 @@ describe('SygSphere Communications PTT lifecycle', () => {
     const lease = (nowMs: number, currentLeaseExpiresAtMs: number) => extendServerPttPreparationLease({
       createdAtMs: 10_000,
       currentLeaseExpiresAtMs,
-      maximumPreparationLifetimeMs: 60_000,
+      maximumPreparationLifetimeMs: 120_000,
       nowMs,
       setupExtensionMs: 30_000,
     })
 
     expect(lease(39_000, 40_000)).toBe(69_000)
-    expect(lease(69_000, 70_000)).toBe(70_000)
-    expect(lease(70_000, 70_000)).toBeNull()
+    expect(lease(69_000, 70_000)).toBe(99_000)
+    expect(lease(129_000, 130_000)).toBe(130_000)
+    expect(lease(130_000, 130_000)).toBeNull()
     expect(lease(40_000, 40_000)).toBeNull()
   })
 
@@ -162,5 +163,15 @@ describe('SygSphere Communications PTT lifecycle', () => {
     expect(coordinator).toContain("'turn_token_read_failed'")
     expect(coordinator).toContain("'ptt_prepare_publisher'")
     expect(coordinator).toContain("'ptt_start_listener'")
+    expect(coordinator).toContain('async reportPttListenerFailure')
+    expect(coordinator).toContain("row.state !== 'preparing'")
+    expect(coordinator).toContain('delete from coordinator_ptt_listener_requirements')
+    expect(coordinator).toContain("this.closePttTransmission(current, parsed.release, 'unavailable')")
+
+    const worker = readFileSync(resolve(import.meta.dirname, '..', 'worker', 'index.ts'), 'utf8')
+    const listenerFailureRoute = worker.slice(worker.indexOf("'/api/comms/v1/ptt/listener-failed'"), worker.indexOf("'/api/comms/v1/ptt/listener-failed'") + 4_500)
+    expect(listenerFailureRoute).toContain("target_command_kind: 'ptt.listen'")
+    expect(listenerFailureRoute).toContain('coordinator.reportPttListenerFailure')
+    expect(listenerFailureRoute).not.toContain('reason: body')
   })
 })

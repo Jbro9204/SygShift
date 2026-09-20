@@ -1506,6 +1506,52 @@ async function handleSygSphereCommunicationsApi(
     })
   }
 
+  /** A selected listener can report an unrecoverable local setup failure only
+   * while its server-owned floor is still preparing. This removes that exact
+   * listener requirement; it never accepts a browser-provided reason, channel
+   * membership, or authority to terminate another participant's media. */
+  if (url.pathname === '/api/comms/v1/ptt/listener-failed') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const session = await requireAuthenticatedSession(request, environment)
+    const authUserId = accessTokenClaims(session.token)?.sub
+    const route = parseCommunicationsRouteCookie(request)
+    let body: Record<string, unknown>
+    try { body = await readJsonBodyWithin(request, maxJsonBodyBytes) } catch (error) {
+      if (error instanceof ApiError) throw error
+      throw new ApiError('invalid_communications_media', 422, 'Push-to-talk setup could not be understood. Please try again.')
+    }
+    const transmissionRequestId = typeof body.transmissionRequestId === 'string' && validUuid(body.transmissionRequestId) ? body.transmissionRequestId : null
+    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS || !transmissionRequestId) {
+      throw new ApiError('invalid_communications_media', 422, 'Push-to-talk setup could not be understood. Please try again.')
+    }
+    const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_resolve_sygsphere_communications_command_scope',
+      { target_auth_user_id: authUserId, target_command_kind: 'ptt.listen', target_conversation_reference: null },
+      session.config.serviceRoleKey,
+    )
+    const authorization = stagedCommsAuthorizationContextSchema.safeParse(decision.context)
+    const release = coordinatorReleaseContextSchema.safeParse(decision.release)
+    if (
+      decision.authorized !== true || decision.scopeMembershipVerified !== true || !authorization.success || !release.success
+      || authorization.data.authUserId !== authUserId || authorization.data.employeeId !== session.context.employee_id
+      || authorization.data.tenantId !== route.tenantId || (decision.scope !== null && decision.scope !== undefined)
+    ) {
+      throw new ApiError('communications_unavailable', 403, 'Push-to-talk is not available for this channel. Continue using SygSphere messages and Dispatch.')
+    }
+    const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(authorization.data.tenantId))
+    const reported = await coordinator.reportPttListenerFailure({
+      authorization: authorization.data,
+      connectionRouteReference: route.routeReference,
+      release: release.data,
+      requestId,
+      transmissionRequestId,
+    })
+    return json({ outcome: reported.outcome, requestId }, 202, {
+      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
+    })
+  }
+
   /** Meeting media uses the same protected, server-owned session boundary as
    * PTT.  A browser supplies only its SDP offer and never a recipient list,
    * provider handle, or authority to publish camera/screen. */

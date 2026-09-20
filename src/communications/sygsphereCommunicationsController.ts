@@ -8,6 +8,7 @@ import type { CommunicationsRemoteTrack } from "./sygsphereCommunicationsPeerTra
 import {
   createCommunicationsRuntimeState,
   reduceCommunicationsRuntime,
+  type CommunicationsFloorState,
   type CommunicationsRuntimeState,
 } from "./sygsphereCommunicationsState";
 
@@ -19,6 +20,14 @@ export type CommunicationsCallMediaConnection = Readonly<{
   callId: string;
   roomId: string;
   state: CommunicationsCallMediaConnectionState;
+}>;
+
+export type CommunicationsPttMediaConnectionState = "connected" | "failed";
+
+export type CommunicationsPttMediaConnection = Readonly<{
+  roomId: string;
+  state: CommunicationsPttMediaConnectionState;
+  transmissionRequestId: string;
 }>;
 
 export interface CommunicationsCoordinatorSession {
@@ -48,6 +57,7 @@ export interface CommunicationsCoordinatorBridge {
     onDisconnect: (reason: string, recoverable: boolean) => void;
     onEvent: (event: SygSphereCommsEvent) => void;
     onCallMediaConnection?: (connection: CommunicationsCallMediaConnection) => void;
+    onPttMediaConnection?: (connection: CommunicationsPttMediaConnection) => void;
     onRemoteTrack?: (track: CommunicationsRemoteTrack) => void;
   }>): Promise<Readonly<{
     authorizationExpiresAt: string | null;
@@ -141,6 +151,7 @@ export class SygSphereCommunicationsController {
           void this.handleEvent(generation, event).catch((error) => this.handleMediaFailure(generation, error));
         },
         onCallMediaConnection: (connection) => this.handleCallMediaConnection(generation, connection),
+        onPttMediaConnection: (connection) => this.handlePttMediaConnection(generation, connection),
         onRemoteTrack: (track) => this.handleRemoteTrack(generation, track),
       });
       if (generation !== this.connectGeneration) {
@@ -242,17 +253,14 @@ export class SygSphereCommunicationsController {
   async releaseToTalk(): Promise<void> {
     const floor = this.state.floor;
     if (!floor) return;
-    this.clearFloorLeaseTimers();
     this.update({ type: "floor.release.requested" });
-    this.pendingPttAudio = null;
-    this.media.releaseAudioFocus({ kind: "ptt", sessionId: floor.requestId });
-    await this.coordinator?.stopPublication("ptt", floor.roomId ?? undefined).catch(() => undefined);
-    const kind = floor.status === "requesting" || floor.status === "preparing" ? "floor.cancel" : "floor.release";
-    await this.send(kind, { transmissionRequestId: floor.requestId }, floor.roomId ?? undefined).catch(() => undefined);
+    await this.cancelActivePtt(floor);
   }
 
   async answerCall(callId: string, invitationId: string): Promise<void> {
     if (!this.coordinator || this.state.call?.callId !== callId) return;
+    const floor = this.state.floor;
+    if (floor) await this.cancelActivePtt(floor);
     try {
       const stream = await this.media.acquireMicrophone({ kind: "call", sessionId: callId });
       if (this.state.call?.callId !== callId || this.state.call.status !== "ringing") {
@@ -269,6 +277,8 @@ export class SygSphereCommunicationsController {
   }
 
   async startCall(conversationReference: string): Promise<void> {
+    const floor = this.state.floor;
+    if (floor) await this.cancelActivePtt(floor);
     await this.send("call.request", {
       clientIntentId: crypto.randomUUID(),
       conversationReference,
@@ -276,6 +286,8 @@ export class SygSphereCommunicationsController {
   }
 
   async createMeeting(conversationReference: string): Promise<void> {
+    const floor = this.state.floor;
+    if (floor) await this.cancelActivePtt(floor);
     const meetingId = crypto.randomUUID();
     this.pendingCreatedMeetingId = meetingId;
     try {
@@ -290,6 +302,8 @@ export class SygSphereCommunicationsController {
   }
 
   async joinMeeting(meetingId: string): Promise<void> {
+    const floor = this.state.floor;
+    if (floor) await this.cancelActivePtt(floor);
     try {
       const stream = await this.media.acquireMicrophone({ kind: "meeting", sessionId: meetingId });
       this.pendingCallAudio.set(meetingId, stream);
@@ -400,6 +414,32 @@ export class SygSphereCommunicationsController {
     ]);
   }
 
+  /** Stop local PTT first, then make both server-side cancellation paths
+   * best-effort. The synthetic room ID is deliberate: it lets the bridge
+   * abort an in-flight browser setup even before `floor.preparing` supplies a
+   * real room ID. */
+  private async cancelActivePtt(floor: CommunicationsFloorState): Promise<void> {
+    this.clearFloorLeaseTimers();
+    this.pendingPttAudio = null;
+    this.media.releaseAudioFocus({ kind: "ptt", sessionId: floor.requestId });
+    const commandKind = floor.status === "requesting" || floor.status === "preparing"
+      ? "floor.cancel"
+      : "floor.release";
+    const stopRoomId = floor.roomId ?? `ptt:${floor.requestId}`;
+    await Promise.allSettled([
+      this.coordinator?.stopPublication("ptt", stopRoomId),
+      this.send(commandKind, { transmissionRequestId: floor.requestId }, floor.roomId ?? undefined),
+    ]);
+  }
+
+  private beginPttTransmissionIfReady(): void {
+    const floor = this.state.floor;
+    const stream = this.pendingPttAudio;
+    if (!floor || !stream || !floor.mediaConnected || floor.status !== "transmitting") return;
+    this.media.setMicrophoneMuted({ kind: "ptt", sessionId: floor.requestId }, false);
+    this.armFloorLease(floor.requestId);
+  }
+
   private handleDisconnect(generation: number, accountKey: string, reason: string, recoverable: boolean): void {
     if (generation !== this.connectGeneration) return;
     this.coordinator = null;
@@ -429,15 +469,7 @@ export class SygSphereCommunicationsController {
       type: "local.media.failed",
       reason: mediaFailureMessage(error),
     });
-    if (floor) {
-      const commandKind = floor.status === "requesting" || floor.status === "preparing"
-        ? "floor.cancel"
-        : "floor.release";
-      void Promise.allSettled([
-        this.coordinator?.stopPublication("ptt", floor.roomId ?? undefined),
-        this.send(commandKind, { transmissionRequestId: floor.requestId }, floor.roomId ?? undefined),
-      ]);
-    }
+    if (floor) void this.cancelActivePtt(floor);
     if (call) {
       const ownerKind = call.kind === "meeting" ? "meeting" : "call";
       void this.releaseCallMedia(call.callId, ownerKind, call.roomId)
@@ -471,6 +503,30 @@ export class SygSphereCommunicationsController {
     }, false);
   }
 
+  private handlePttMediaConnection(generation: number, connection: CommunicationsPttMediaConnection): void {
+    if (generation !== this.connectGeneration) return;
+    const floor = this.state.floor;
+    if (!floor || floor.requestId !== connection.transmissionRequestId || floor.roomId !== connection.roomId) return;
+    if (connection.state === "failed") {
+      void this.cancelActivePtt(floor).finally(() => {
+        if (this.state.floor?.requestId !== connection.transmissionRequestId) return;
+        this.update({
+          type: "ptt.media.failed",
+          requestId: connection.transmissionRequestId,
+          roomId: connection.roomId,
+          reason: "The push-to-talk voice connection could not be established. Release and hold again to retry.",
+        });
+      });
+      return;
+    }
+    this.update({
+      type: "ptt.media.connected",
+      requestId: connection.transmissionRequestId,
+      roomId: connection.roomId,
+    });
+    this.beginPttTransmissionIfReady();
+  }
+
   private scheduleReconnect(accountKey: string, generation: number, attempt: number): void {
     if (generation !== this.connectGeneration) return;
     const delay = reconnectDelaysMilliseconds[attempt];
@@ -498,13 +554,15 @@ export class SygSphereCommunicationsController {
     this.update({ type: "event.received", event });
     if (this.state === before) return;
 
+    // Direct calls and meetings take exclusive microphone focus. Preserve the
+    // floor snapshot because their reducer transition clears it before the
+    // protected cancellation command can be sent.
+    if (["call.requested", "call.accepted", "meeting.created", "meeting.joined"].includes(event.kind) && priorFloor) {
+      await this.cancelActivePtt(priorFloor);
+    }
+
     if (event.kind === "floor.ready") {
-      const floor = this.state.floor;
-      const stream = this.pendingPttAudio;
-      if (floor?.roomId === event.roomId && floor.status === "ready" && stream) {
-        this.media.setMicrophoneMuted({ kind: "ptt", sessionId: floor.requestId }, false);
-        this.armFloorLease(floor.requestId);
-      }
+      this.beginPttTransmissionIfReady();
     }
 
     if (event.kind === "floor.preparing") {
@@ -596,11 +654,10 @@ export class SygSphereCommunicationsController {
       }
     }
 
-    if (["floor.denied", "floor.revoked", "transmission.ended"].includes(event.kind) && priorFloor) {
-      this.clearFloorLeaseTimers();
-      this.pendingPttAudio = null;
-      this.media.releaseAudioFocus({ kind: "ptt", sessionId: priorFloor.requestId });
-      await this.coordinator?.stopPublication("ptt", event.roomId).catch(() => undefined);
+    if (["floor.denied", "floor.revoked", "transmission.ended"].includes(event.kind)
+      && priorFloor
+      && matchesPttFloorEvent(priorFloor, event)) {
+      await this.cancelActivePtt(priorFloor);
     }
 
     if (["screen.denied", "screen.revoked"].includes(event.kind)) {
@@ -697,11 +754,7 @@ export class SygSphereCommunicationsController {
   private expireFloorLease(requestId: string, reason: string): void {
     const floor = this.state.floor;
     if (!floor || floor.requestId !== requestId) return;
-    this.clearFloorLeaseTimers();
-    this.pendingPttAudio = null;
-    this.media.releaseAudioFocus({ kind: "ptt", sessionId: requestId });
-    void this.coordinator?.stopPublication("ptt", floor.roomId ?? undefined).catch(() => undefined);
-    void this.send("floor.release", { transmissionRequestId: requestId }, floor.roomId ?? undefined).catch(() => undefined);
+    void this.cancelActivePtt(floor);
     this.update({ type: "floor.failed", reason: `${reason} Release and hold again to retry.` });
   }
 
@@ -741,6 +794,11 @@ function stringPayload(payload: unknown, key: string): string | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const value = (payload as Record<string, unknown>)[key];
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function matchesPttFloorEvent(floor: CommunicationsFloorState, event: SygSphereCommsEvent): boolean {
+  const requestId = stringPayload(event.payload, "transmissionRequestId");
+  return requestId === floor.requestId && (!floor.roomId || floor.roomId === event.roomId);
 }
 
 function safeError(error: unknown): string {

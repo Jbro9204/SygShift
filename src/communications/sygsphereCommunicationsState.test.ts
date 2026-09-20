@@ -58,6 +58,51 @@ describe("SygSphere communications runtime state", () => {
     expect(state.floor).toBeNull();
   });
 
+  it("keeps PTT muted until both the floor grant and matching browser connection arrive", () => {
+    let state = reduceCommunicationsRuntime(createCommunicationsRuntimeState("employee-a"), {
+      type: "connection.ready",
+      authorizationExpiresAt: "2026-09-19T14:01:00.000Z",
+    });
+    state = reduceCommunicationsRuntime(state, {
+      type: "floor.requested",
+      channelReference: "dispatch",
+      requestId: "request-a",
+    });
+    state = reduceCommunicationsRuntime(state, {
+      type: "event.received",
+      event: event("floor.preparing", { transmissionRequestId: "request-a" }, 1, "ptt:request-a"),
+    });
+    state = reduceCommunicationsRuntime(state, {
+      type: "event.received",
+      event: event("floor.ready", { expiresAt: "2026-09-19T14:00:06.000Z", transmissionRequestId: "request-a" }, 2, "ptt:request-a"),
+    });
+    expect(state.floor).toMatchObject({ mediaConnected: false, status: "ready" });
+    state = reduceCommunicationsRuntime(state, {
+      type: "ptt.media.connected",
+      requestId: "request-a",
+      roomId: "ptt:request-a",
+    });
+    expect(state.floor).toMatchObject({ mediaConnected: true, status: "transmitting" });
+  });
+
+  it("ignores an old PTT terminal event while a newer floor is active", () => {
+    let state = reduceCommunicationsRuntime(createCommunicationsRuntimeState("employee-a"), {
+      type: "connection.ready",
+      authorizationExpiresAt: "2026-09-19T14:01:00.000Z",
+    });
+    state = reduceCommunicationsRuntime(state, {
+      type: "floor.requested",
+      channelReference: "dispatch",
+      requestId: "request-b",
+    });
+    const next = reduceCommunicationsRuntime(state, {
+      type: "event.received",
+      event: event("floor.revoked", { reason: "expired", transmissionRequestId: "request-a" }, 1, "ptt:request-a"),
+    });
+    expect(next.floor?.requestId).toBe("request-b");
+    expect(next.lastError).toBeNull();
+  });
+
   it("drops PTT state when a private call receives focus and waits for the browser media connection", () => {
     let state = reduceCommunicationsRuntime(createCommunicationsRuntimeState("employee-a"), {
       type: "connection.ready",

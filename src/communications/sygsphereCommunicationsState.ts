@@ -17,6 +17,9 @@ export type CommunicationsFloorState = Readonly<{
   channelReference: string;
   leaseExpiresAt: string | null;
   leaseGeneration: number | null;
+  /** The SFU peer is connected in this browser. A server floor grant alone
+   * must never unmute a microphone. */
+  mediaConnected: boolean;
   requestId: string;
   roomId: string | null;
   status: "requesting" | "preparing" | "ready" | "transmitting" | "releasing";
@@ -55,6 +58,8 @@ export type CommunicationsRuntimeAction =
   | Readonly<{ type: "floor.requested"; channelReference: string; requestId: string }>
   | Readonly<{ type: "floor.release.requested" }>
   | Readonly<{ type: "floor.failed"; reason: string }>
+  | Readonly<{ type: "ptt.media.connected"; requestId: string; roomId: string }>
+  | Readonly<{ type: "ptt.media.failed"; requestId: string; roomId?: string; reason: string }>
   | Readonly<{ type: "ptt.microphone.prepared" }>
   | Readonly<{ type: "ptt.microphone.failed"; reason: string }>
   | Readonly<{ type: "call.media.connected"; callId: string; roomId: string }>
@@ -124,6 +129,7 @@ export function reduceCommunicationsRuntime(
           channelReference: action.channelReference,
           leaseExpiresAt: null,
           leaseGeneration: null,
+          mediaConnected: false,
           requestId: action.requestId,
           roomId: null,
           status: "requesting",
@@ -134,6 +140,23 @@ export function reduceCommunicationsRuntime(
       return state.floor ? { ...state, floor: null } : state;
     case "floor.failed":
       return { ...state, floor: null, lastError: action.reason };
+    case "ptt.media.connected":
+      return state.floor?.requestId === action.requestId && state.floor.roomId === action.roomId
+        ? {
+          ...state,
+          floor: {
+            ...state.floor,
+            mediaConnected: true,
+            status: state.floor.status === "ready" ? "transmitting" : state.floor.status,
+          },
+          lastError: null,
+        }
+        : state;
+    case "ptt.media.failed":
+      return state.floor?.requestId === action.requestId
+        && (!action.roomId || !state.floor.roomId || state.floor.roomId === action.roomId)
+        ? { ...state, floor: null, lastError: action.reason }
+        : state;
     // A microphone setup probe is intentionally independent of calls, camera,
     // and screen media. Never use the broader local.media.failed transition
     // here: a browser permission result may arrive after a call invitation.
@@ -220,7 +243,7 @@ function reduceServerEvent(
           ...state.floor,
           leaseExpiresAt: stringValue(payload.expiresAt),
           roomId: event.roomId,
-          status: "ready",
+          status: state.floor.mediaConnected ? "transmitting" : "ready",
         },
       };
     }
@@ -232,14 +255,29 @@ function reduceServerEvent(
       if (state.floor.leaseGeneration !== null && generation <= state.floor.leaseGeneration) return next;
       return { ...next, floor: { ...state.floor, leaseExpiresAt, leaseGeneration: generation } };
     }
-    case "transmission.started":
-      return state.floor?.roomId === event.roomId && state.floor.status !== "releasing"
-        ? { ...next, floor: { ...state.floor, status: "transmitting" } }
+    case "transmission.started": {
+      const requestId = stringValue(payload.transmissionRequestId);
+      return state.floor?.roomId === event.roomId
+        && state.floor.requestId === requestId
+        && state.floor.status !== "releasing"
+        ? {
+          ...next,
+          floor: {
+            ...state.floor,
+            status: state.floor.mediaConnected ? "transmitting" : "ready",
+          },
+        }
         : next;
+    }
     case "floor.denied":
     case "floor.revoked":
-    case "transmission.ended":
-      return { ...next, floor: null, lastError: stringValue(payload.reason) };
+    case "transmission.ended": {
+      const requestId = stringValue(payload.transmissionRequestId);
+      return state.floor?.requestId === requestId
+        && (!state.floor.roomId || state.floor.roomId === event.roomId)
+        ? { ...next, floor: null, lastError: stringValue(payload.reason) }
+        : next;
+    }
     case "call.ringing": {
       const callId = stringValue(payload.callId);
       if (!callId) return next;

@@ -18,6 +18,7 @@ function harness() {
   let onEvent!: (value: SygSphereCommsEvent) => void;
   let onDisconnect!: (reason: string, recoverable: boolean) => void;
   let onCallMediaConnection!: NonNullable<Parameters<CommunicationsCoordinatorBridge["connect"]>[0]["onCallMediaConnection"]>;
+  let onPttMediaConnection!: NonNullable<Parameters<CommunicationsCoordinatorBridge["connect"]>[0]["onPttMediaConnection"]>;
   let onRemoteTrack!: NonNullable<Parameters<CommunicationsCoordinatorBridge["connect"]>[0]["onRemoteTrack"]>;
   const session: CommunicationsCoordinatorSession = {
     close: vi.fn(),
@@ -30,6 +31,7 @@ function harness() {
       onEvent = input.onEvent;
       onDisconnect = input.onDisconnect;
       onCallMediaConnection = input.onCallMediaConnection ?? (() => undefined);
+      onPttMediaConnection = input.onPttMediaConnection ?? (() => undefined);
       onRemoteTrack = input.onRemoteTrack ?? (() => undefined);
       return {
         authorizationExpiresAt: "2026-09-19T14:01:00.000Z",
@@ -57,6 +59,7 @@ function harness() {
     media,
     microphone,
     onCallMediaConnection: () => onCallMediaConnection,
+    onPttMediaConnection: () => onPttMediaConnection,
     onDisconnect: () => onDisconnect,
     onEvent: () => onEvent,
     onRemoteTrack: () => onRemoteTrack,
@@ -82,27 +85,34 @@ describe("SygSphere communications controller", () => {
     await test.controller.start("employee-a");
     await test.controller.holdToTalk("dispatch");
     const floorCommand = vi.mocked(test.session.send).mock.calls[0][0];
+    const floorRequestId = String(floorCommand.payload.clientIntentId);
     expect(floorCommand.kind).toBe("floor.request");
     expect(test.session.publish).not.toHaveBeenCalled();
     await test.onEvent()(event("floor.preparing", {
       scope: "dispatch",
-      transmissionRequestId: floorCommand.payload.clientIntentId,
+      transmissionRequestId: floorRequestId,
     }, 1));
     expect(test.session.publish).toHaveBeenCalledWith(expect.objectContaining({
       channelReference: "dispatch",
       kind: "ptt",
       roomId: "room-a",
       stream: test.microphone,
-      transmissionRequestId: floorCommand.payload.clientIntentId,
+      transmissionRequestId: floorRequestId,
     }));
     expect(test.media.setMicrophoneMuted).not.toHaveBeenCalledWith(expect.anything(), false);
     await test.onEvent()(event("floor.ready", {
       expiresAt: new Date(Date.now() + 6_000).toISOString(),
-      transmissionRequestId: floorCommand.payload.clientIntentId,
+      transmissionRequestId: floorRequestId,
     }, 2));
+    expect(test.media.setMicrophoneMuted).not.toHaveBeenCalledWith(expect.anything(), false);
+    test.onPttMediaConnection()({
+      roomId: "room-a",
+      state: "connected",
+      transmissionRequestId: floorRequestId,
+    });
     expect(test.media.setMicrophoneMuted).toHaveBeenCalledWith({
       kind: "ptt",
-      sessionId: floorCommand.payload.clientIntentId,
+      sessionId: floorRequestId,
     }, false);
   });
 
@@ -215,7 +225,7 @@ describe("SygSphere communications controller", () => {
       const test = harness();
       await test.controller.start("employee-a");
       await test.controller.holdToTalk("dispatch");
-      const requestId = vi.mocked(test.session.send).mock.calls[0][0].payload.clientIntentId;
+      const requestId = String(vi.mocked(test.session.send).mock.calls[0][0].payload.clientIntentId);
       test.onEvent()(event("floor.preparing", {
         scope: "dispatch",
         transmissionRequestId: requestId,
@@ -226,6 +236,7 @@ describe("SygSphere communications controller", () => {
         transmissionRequestId: requestId,
       }, 2));
       await Promise.resolve();
+      test.onPttMediaConnection()({ roomId: "room-a", state: "connected", transmissionRequestId: requestId });
       await Promise.resolve();
       await vi.advanceTimersByTimeAsync(2_000);
 
@@ -257,7 +268,7 @@ describe("SygSphere communications controller", () => {
       const test = harness();
       await test.controller.start("employee-a");
       await test.controller.holdToTalk("dispatch");
-      const requestId = vi.mocked(test.session.send).mock.calls[0][0].payload.clientIntentId;
+      const requestId = String(vi.mocked(test.session.send).mock.calls[0][0].payload.clientIntentId);
       test.onEvent()(event("floor.preparing", {
         scope: "dispatch",
         transmissionRequestId: requestId,
@@ -268,6 +279,7 @@ describe("SygSphere communications controller", () => {
         transmissionRequestId: requestId,
       }, 2));
       await Promise.resolve();
+      test.onPttMediaConnection()({ roomId: "room-a", state: "connected", transmissionRequestId: requestId });
       await Promise.resolve();
       await vi.advanceTimersByTimeAsync(6_000);
 
@@ -387,9 +399,10 @@ describe("SygSphere communications controller", () => {
     const test = harness();
     await test.controller.start("employee-a");
     await test.controller.holdToTalk("dispatch");
-    await test.onEvent()(event("floor.denied", { reason: "busy" }, 1));
+    const requestId = vi.mocked(test.session.send).mock.calls[0][0].payload.clientIntentId;
+    await test.onEvent()(event("floor.denied", { reason: "busy", transmissionRequestId: requestId }, 1));
     expect(test.media.releaseAudioFocus).toHaveBeenCalled();
-    expect(test.session.stopPublication).toHaveBeenCalledWith("ptt", "room-a");
+    expect(test.session.stopPublication).toHaveBeenCalledWith("ptt", `ptt:${requestId}`);
   });
 
   it("publishes camera media only after the matching coordinator grant", async () => {
