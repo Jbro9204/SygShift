@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const worker = readFileSync(resolve(import.meta.dirname, '..', 'worker/index.ts'), 'utf8')
+const coordinator = readFileSync(resolve(import.meta.dirname, '..', 'worker/comms/tenantCommsDurableObject.ts'), 'utf8')
 
 describe('SygSphere Communications per-tab routing', () => {
   it('returns a route-only handle at bootstrap and never uses a shared routing cookie', () => {
@@ -16,6 +17,14 @@ describe('SygSphere Communications per-tab routing', () => {
     expect(worker).toContain("const communicationsRouteWebSocketProtocolPrefix = 'sygsphere-comms-route.'")
     expect(worker).toContain('parseCommunicationsRouteWebSocketProtocol(request)')
     expect(worker).toContain('parseCommunicationsRouteHeader(request)')
+  })
+
+  it('selects only the validated route protocol in the WebSocket handshake', () => {
+    expect(worker).toContain('const selectedCommunicationsRouteWebSocketProtocol')
+    expect(worker).toContain("headers.set('sec-websocket-protocol', selectedCommunicationsRouteWebSocketProtocol(route))")
+    expect(coordinator).toContain("headers: { 'sec-websocket-protocol': selectedProtocol }")
+    expect(coordinator).toContain("selectedProtocol.includes(',')")
+    expect(coordinator).not.toContain("headers: { 'sec-websocket-protocol': request.headers.get")
   })
 
   it('keeps the one-use ticket out of the route-handle implementation', () => {

@@ -892,6 +892,23 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
     const routeReference = parseSygSphereCommsWebSocketRouteReference(request.headers.get('x-sygsphere-comms-route-reference'))
     if (!routeReference) return new Response('Communications connection unavailable.', { status: 404 })
+    // The Worker has already parsed the browser offer and replaced it with the
+    // one canonical route protocol. Echo that selected protocol in the 101
+    // response: without it, browsers reject the opening socket before the
+    // one-use ticket can authenticate.
+    const selectedProtocol = request.headers.get('sec-websocket-protocol')
+    const selectedProtocolPrefix = 'sygsphere-comms-route.'
+    const selectedProtocolSuffix = `.${routeReference}`
+    const selectedTenantId = selectedProtocol?.startsWith(selectedProtocolPrefix)
+      && selectedProtocol.endsWith(selectedProtocolSuffix)
+      ? selectedProtocol.slice(selectedProtocolPrefix.length, -selectedProtocolSuffix.length)
+      : null
+    if (
+      !selectedProtocol
+      || selectedProtocol.includes(',')
+      || !selectedTenantId
+      || !z.uuid().safeParse(selectedTenantId).success
+    ) return new Response('Communications connection unavailable.', { status: 404 })
 
     const pending = this.ctx.storage.sql
       .exec<CoordinatorSocketTicketRow>(
@@ -909,7 +926,11 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     server.serializeAttachment({ phase: 'opening', routeReference, openedAtMs: Date.now() } satisfies OpeningSocketAttachment)
     this.ctx.acceptWebSocket(server, [`comms-route:${routeReference}`])
     this.scheduleNextSocketTicketExpiry()
-    return new Response(null, { status: 101, webSocket: client } as unknown as ResponseInit)
+    return new Response(null, {
+      headers: { 'sec-websocket-protocol': selectedProtocol },
+      status: 101,
+      webSocket: client,
+    } as unknown as ResponseInit)
   }
 
   async webSocketMessage(webSocket: WebSocket, message: ArrayBuffer | string): Promise<void> {

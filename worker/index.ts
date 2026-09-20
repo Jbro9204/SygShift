@@ -1144,6 +1144,13 @@ const parseCommunicationsRouteWebSocketProtocol = (request: Request): Communicat
   return parseCommunicationsRouteHandle(candidates[0].slice(communicationsRouteWebSocketProtocolPrefix.length))
 }
 
+/* The browser requires the server to select an offered WebSocket subprotocol.
+ * Rebuild it from the validated route instead of reflecting the request value,
+ * so an additional untrusted protocol can never reach the coordinator or the
+ * handshake response. */
+const selectedCommunicationsRouteWebSocketProtocol = (route: CommunicationsRoute): string =>
+  `${communicationsRouteWebSocketProtocolPrefix}${route.tenantId}.${route.routeReference}`
+
 /**
  * The Communications endpoint remains absent from normal user workflows until
  * its server gate is enabled. When a future controlled pilot enables it, this
@@ -1232,6 +1239,7 @@ async function handleSygSphereCommunicationsApi(
     const headers = new Headers(request.headers)
     headers.delete('cookie')
     headers.set('x-sygsphere-comms-route-reference', route.routeReference)
+    headers.set('sec-websocket-protocol', selectedCommunicationsRouteWebSocketProtocol(route))
     const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(route.tenantId))
     return coordinator.fetch(new Request(request, { headers }))
   }
