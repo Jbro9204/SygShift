@@ -82,18 +82,23 @@
     "mediaAnswer": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["negotiationId", "answer"],
+      "required": ["negotiationId", "peerHandle", "generation", "answer"],
       "properties": {
         "negotiationId": { "type": "string", "format": "uuid" },
+        "peerHandle": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "generation": { "type": "integer", "minimum": 0 },
         "answer": { "type": "string", "minLength": 1, "maxLength": 65536 }
       }
     },
     "mediaReady": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["callId", "inputKind"],
+      "required": ["callId", "negotiationId", "peerHandle", "generation", "inputKind"],
       "properties": {
         "callId": { "type": "string", "format": "uuid" },
+        "negotiationId": { "type": "string", "format": "uuid" },
+        "peerHandle": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "generation": { "type": "integer", "minimum": 0 },
         "inputKind": { "enum": ["audio", "video"] }
       }
     },
@@ -109,9 +114,11 @@
     "mediaStop": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["callId", "trackKind"],
+      "required": ["callId", "generation", "trackReference", "trackKind"],
       "properties": {
         "callId": { "type": "string", "format": "uuid" },
+        "generation": { "type": "integer", "minimum": 0 },
+        "trackReference": { "type": "string", "minLength": 1, "maxLength": 128 },
         "trackKind": { "enum": ["audio", "video", "screen"] }
       }
     }

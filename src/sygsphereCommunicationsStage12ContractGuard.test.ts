@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   parseSygSphereCommsCommand,
+  parseSygSphereCommsEvent,
   SYGSPHERE_COMMS_COMMAND_PAYLOAD_SCHEMAS,
   SYGSPHERE_COMMS_CONTRACT_VERSION,
 } from '../shared/sygsphere-communications/v1/contract'
@@ -28,10 +29,79 @@ const command = {
 } as const
 
 describe('SygSphere Communications Stage 1/2 command contract', () => {
-  it('uses the draft-3 schema revision for every defined command kind', () => {
-    expect(SYGSPHERE_COMMS_CONTRACT_VERSION).toBe('1.0.0-draft.3')
+  it('uses the draft-4 schema revision for every defined command kind', () => {
+    expect(SYGSPHERE_COMMS_CONTRACT_VERSION).toBe('1.0.0-draft.4')
     expect(Object.keys(SYGSPHERE_COMMS_COMMAND_PAYLOAD_SCHEMAS)).toHaveLength(29)
     expect(parseSygSphereCommsCommand(command)).toEqual(command)
+  })
+
+  it('uses a strict server-to-browser negotiation envelope with no provider-shaped authority', () => {
+    const mediaEvent = {
+      protocolVersion: 1,
+      eventId: '00000000-0000-4000-8000-000000000021',
+      roomId: 'conversation:00000000-0000-4000-8000-000000000022',
+      roomEpoch: 1,
+      roomSeq: 1,
+      serverTime: '2026-09-19T20:00:00.000Z',
+      kind: 'media.negotiation' as const,
+      payload: {
+        callId: '00000000-0000-4000-8000-000000000023',
+        description: 'v=0',
+        descriptionType: 'offer' as const,
+        expiresAt: '2026-09-19T20:01:00.000Z',
+        generation: 1,
+        iceServers: [{ urls: ['turns:turn.example.test:443?transport=tcp'], username: 'short-lived', credential: 'short-lived' }],
+        negotiationId: '00000000-0000-4000-8000-000000000024',
+        peerHandle: 'peer:server-issued',
+        direction: 'duplex',
+        trackBindings: [{ trackReference: 'track:server-issued', transceiverMid: 'm0', mediaKind: 'audio', role: 'local', publicationKind: 'call_audio' }],
+      },
+    }
+    expect(parseSygSphereCommsEvent(mediaEvent)).toEqual(mediaEvent)
+    expect(() => parseSygSphereCommsEvent({
+      ...mediaEvent,
+      payload: { ...mediaEvent.payload, providerSecret: 'never' },
+    })).toThrow()
+  })
+
+  it('fences browser media answers and readiness to the server-issued peer and generation', () => {
+    const mediaAnswer = {
+      ...command,
+      kind: 'media.answer' as const,
+      payload: {
+        negotiationId: '00000000-0000-4000-8000-000000000025',
+        peerHandle: 'peer:server-issued',
+        generation: 1,
+        answer: 'v=0',
+      },
+    }
+    expect(parseSygSphereCommsCommand(mediaAnswer)).toEqual(mediaAnswer)
+    expect(() => parseSygSphereCommsCommand({
+      ...mediaAnswer,
+      payload: { ...mediaAnswer.payload, transceiverMid: 'browser-chosen' },
+    })).toThrow()
+    expect(() => parseSygSphereCommsCommand({
+      ...mediaAnswer,
+      payload: { negotiationId: mediaAnswer.payload.negotiationId, answer: mediaAnswer.payload.answer },
+    })).toThrow()
+  })
+
+  it('requires an authoritative correlated lease acknowledgement before PTT renewal remains active', () => {
+    expect(parseSygSphereCommsEvent({
+      protocolVersion: 1,
+      eventId: '00000000-0000-4000-8000-000000000031',
+      roomId: 'assignment:00000000-0000-4000-8000-000000000032',
+      roomEpoch: 1,
+      roomSeq: 2,
+      serverTime: '2026-09-19T20:00:00.000Z',
+      kind: 'floor.renewed',
+      payload: {
+        commandId: '00000000-0000-4000-8000-000000000033',
+        generation: 2,
+        leaseExpiresAt: '2026-09-19T20:00:06.000Z',
+        transmissionRequestId: '00000000-0000-4000-8000-000000000034',
+      },
+    })).toMatchObject({ kind: 'floor.renewed' })
   })
 
   it('rejects malformed identifiers and unknown payload fields before authorization', () => {
@@ -88,6 +158,8 @@ describe('SygSphere Communications Stage 1/2 command contract', () => {
     expect(migration).toContain("'participant.remove' then 'sygsphere.comms.moderate'")
     expect(migration).toContain("'camera.request' then 'sygsphere.comms.video.publish'")
     expect(migration).toContain("('1.0.0-draft.2', '1.0.0-draft.3')")
+    const draft4Migration = readFileSync(resolve(import.meta.dirname, '..', 'supabase/migrations/20260919210000_sygsphere_communications_recovery_and_reconciliation_foundation.sql'), 'utf8')
+    expect(draft4Migration).toContain("'1.0.0-draft.4'")
   })
 
   it('derives command authority on the server and keeps the coordinator closed without every release proof', () => {

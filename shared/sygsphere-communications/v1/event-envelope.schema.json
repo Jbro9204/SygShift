@@ -12,8 +12,11 @@
     "roomSeq": { "type": "integer", "minimum": 0 },
     "serverTime": { "type": "string", "format": "date-time" },
     "kind": {
-      "enum": ["authenticated", "authorization.expiring", "session.revoked", "snapshot", "floor.preparing", "floor.ready", "floor.denied", "floor.revoked", "transmission.started", "transmission.ended", "call.ringing", "call.requested", "call.accepted", "call.ended", "call.missed", "meeting.created", "meeting.joined", "meeting.ended", "participant.changed", "participant.removed", "participant.muted", "media.negotiation", "media.policy", "media.failed", "media.closed", "camera.granted", "camera.denied", "camera.revoked", "screen.granted", "screen.denied", "screen.revoked", "focus.granted", "focus.denied", "focus.revoked"]
+      "enum": ["authenticated", "authorization.expiring", "session.revoked", "snapshot", "floor.preparing", "floor.ready", "floor.renewed", "floor.denied", "floor.revoked", "transmission.started", "transmission.ended", "call.ringing", "call.requested", "call.accepted", "call.ended", "call.missed", "meeting.created", "meeting.joined", "meeting.ended", "participant.changed", "participant.removed", "participant.muted", "media.negotiation", "media.policy", "media.failed", "media.closed", "camera.granted", "camera.denied", "camera.revoked", "screen.granted", "screen.denied", "screen.revoked", "focus.granted", "focus.denied", "focus.revoked"]
     },
     "payload": { "type": "object" }
-  }
+  },
+  "allOf": [
+    { "$ref": "event-payload.schema.json" }
+  ]
 }

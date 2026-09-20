@@ -1,13 +1,14 @@
 # SygSphere Communications Stage 1/2 Closed Coordinator Foundation
 
-**Contract:** 1.0.0-draft.3 / protocol 1
+**Contract:** 1.0.0-draft.4 / protocol 1
 **State:** Source complete and closed by default; not deployed and not exposed to browsers.
 
 ## What exists
 
-- Command-specific Zod and JSON schemas for all 28 protocol commands. Commands reject browser-supplied tenant, actor, permission, feature-gate, replay, and provider authority.
+- Command-specific Zod and JSON schemas for all 29 protocol commands and 35 event kinds. Commands and events reject browser-supplied tenant, actor, permission, feature-gate, replay, provider, and track authority.
+- Strict event payload schemas fence every media negotiation with a server-issued peer handle, opaque track bindings, direction, generation, expiry, and receiver MID. A remote track is rendered only when its browser receiver MID matches an authorized binding for the current generation. PTT renewal receives a correlated authoritative lease-expiry event; a missing or expired acknowledgement must stop transmission rather than extending a local guess.
 - A server-only authorization shape which derives the authenticated account, employee, tenant, permissions, and required permission for each command. Room or assignment membership is intentionally not yet considered satisfied.
-- A separately versioned SQLite Durable Object coordinator with persisted idempotency and rate-window state. It exposes no fetch handler, socket, or browser route.
+- A separately versioned SQLite Durable Object coordinator with persisted idempotency and rate-window state. Its protected ingress remains disabled before authentication, ticket issue, socket upgrade, device request, or provider activity.
 - A provider registry that is statically disabled and contains no endpoint, credential, application identifier, session, or media operation.
 - A forward-only, **unapplied** Supabase migration for private release-gate, provider-registry, command-ledger, history, audit, and daily-usage records. Daily usage reserves a feature key, estimated received bytes, telemetry status, estimate version, and reconciliation metadata so a later 1,000 GB / $0.05 estimate can be reported honestly as unavailable, estimated, or reconciled. Every relation has forced RLS; command/history/audit ledgers are append-only, with only a service-only, 30-day, bounded retention procedure for expired command replay records.
 
@@ -17,7 +18,7 @@
 - The database release gate defaults closed and cannot enable runtime unless all evidence fields are true. The protected authorization procedure still returns authorized false until a future reviewed scope-membership policy exists.
 - The Worker contains a protected `/api/comms/v1` bootstrap/connect source path. The static Worker flag remains `false`; while it is false, the path returns the shared unavailable outcome before it can authenticate, issue a ticket, open a socket, call a coordinator, or request a device. It is not deployed as an enabled feature.
 - When a future approved release opens that path, bootstrap must validate the current SygShift session, service-only authorization, scope membership, shared release evidence, and server-derived tenant before it can issue a one-use 30-second ticket. The raw ticket is returned only to the authenticated browser and must be the first TLS-protected WebSocket application frame; it is never placed in a URL or cookie. A separate HttpOnly, same-site, opaque route reference lets the Worker select the already-authorized tenant coordinator without exposing the ticket.
-- There are no communications role grants, employee overrides, provider credentials, browser media APIs, CSP relaxations, WebSockets, or customer-visible controls.
+- There are no communications role grants, employee overrides, provider credentials, browser media APIs, CSP relaxations, enabled WebSockets, or customer-visible controls.
 
 ## Required evidence before protected service ingress
 

@@ -1,14 +1,15 @@
 {
-  "contractVersion": "1.0.0-draft.3",
+  "contractVersion": "1.0.0-draft.4",
   "protocolVersion": 1,
   "owner": "SygShift",
   "lifecycle": "closed-coordinator-foundation",
-  "artifactDigestSha256": "770202cde701818d64b24e3751c7292c6963c8a7209e3555095f602bfd137e1f",
+  "artifactDigestSha256": "75ae3317cd4f7b5cb737b922dbf27fe2aa6cc80faf9d74e00893f06e8691bbc9",
   "artifacts": [
     "contract.ts",
     "command-envelope.schema.json",
     "command-payload.schema.json",
     "event-envelope.schema.json",
+    "event-payload.schema.json",
     "integration-gates.ts",
     "presentation-policy.ts"
   ],
