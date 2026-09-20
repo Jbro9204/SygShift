@@ -2707,4 +2707,23 @@ pnpm exec wrangler deploy --keep-vars
   disconnect cleanup, and call-state truthfulness across PTT, direct calls, and meetings.
 - Passed 291 files / 1,509 SygShift tests, strict TypeScript, zero-warning lint, both production builds, and
   both Communications activation gates. The paired Sygilant quality gate passed 196 files / 926 tests.
-- Production identifiers and physical two-account/device audible acceptance remain pending at this checkpoint.
+- The complete desktop/mobile browser matrix passed 348 checks with 12 intentional project skips, including
+  SygSphere and the mandatory Time Clock preservation workflow.
+- Released SygShift `f2ab608` as Worker `71fd9f73-631c-4012-9c6d-a4aece5b79f0` and Sygilant `a560455` as
+  Pages deployment `3418c578-ed19-4f85-a8b2-10ad82c9d93b`. Health/readiness, exact assets, protected bootstrap,
+  exact-origin CORS, hostile-origin denial, and the Sygilant live production verifier passed.
+- Physical two-account/device audible acceptance remains open.
+
+## 09/20/2026 - SygSphere Browser Connection Lifecycle Hardening
+
+- Stopped treating successful SDP exchange as a connected call. PTT listeners, direct calls, and meetings now
+  become active only after the browser peer connection reports `connected`.
+- Added bounded connecting, reconnecting, and failed handling with deterministic call/floor cleanup that does
+  not take messaging offline.
+- Made the PTT display coordinator-authoritative: pointer-down shows **Checking channel** until the channel is
+  granted and ready; denial, expiry, or media failure clears the held state and releases the floor.
+- Ignored stale camera and screen-share events from an older call and added a direct regression for the supplied
+  false **Talking now** plus coordinator-denial sequence.
+- Passed strict TypeScript, zero-warning lint, both production builds, **291 test files / 1,519 tests**, and the
+  paired Sygilant quality gate with **198 test files / 945 tests**.
+- Release candidates: SygShift `c2c42ca` and Sygilant `3eef2c1`; coordinated production postflight follows.
