@@ -391,6 +391,7 @@
 }
 
 .sphere-comms-panel__controls .sphere-comms-ptt svg { color: currentColor; }
+.sphere-comms-panel__controls .sphere-comms-ptt small { color: currentColor; opacity: 0.76; }
 .sphere-comms-panel__controls .sphere-comms-ptt.is-transmitting {
   color: #fff;
   border-color: color-mix(in srgb, var(--sy-danger) 72%, #000);
