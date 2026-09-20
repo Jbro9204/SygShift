@@ -77,6 +77,13 @@ const webSocketTicketIssueSchema = z.object({
   scopeMembershipVerified: z.literal(true),
 }).strict()
 
+const webSocketAuthorizationRefreshSchema = z.object({
+  authorization: stagedCommsAuthorizationContextSchema,
+  release: coordinatorReleaseContextSchema,
+  routeReference: z.uuid(),
+  scopeMembershipVerified: z.literal(true),
+}).strict()
+
 export type TenantCommsWebSocketBootstrap = Readonly<{
   expiresAt: string
   routeReference: string
@@ -260,6 +267,35 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
   }
 
+  /** The Worker calls this only after re-reading the authenticated server
+   * context. A refresh can update a matching active socket, never move a
+   * connection between actors or tenants. */
+  async refreshWebSocketAuthorization(input: unknown): Promise<number> {
+    await this.initialization
+    const parsed = webSocketAuthorizationRefreshSchema.parse(input)
+    const authorization = authorizeCoordinatorSession(parsed.authorization)
+    if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
+      return 0
+    }
+    let refreshed = 0
+    for (const webSocket of this.ctx.getWebSockets(`comms-route:${parsed.routeReference}`)) {
+      const attachment = socketAttachment(webSocket)
+      if (
+        attachment?.phase !== 'authenticated'
+        || attachment.authorization.tenantId !== authorization.tenantId
+        || attachment.authorization.employeeId !== authorization.employeeId
+        || attachment.authorization.authUserId !== authorization.authUserId
+      ) continue
+      ;(webSocket as HibernatableWebSocket).serializeAttachment({
+        ...attachment,
+        authorization,
+        release: parsed.release,
+      } satisfies AuthenticatedSocketAttachment)
+      refreshed += 1
+    }
+    return refreshed
+  }
+
   private async consumeWebSocketTicket(
     routeReference: string,
     ticket: string,
@@ -393,6 +429,30 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       return
     }
 
+    if (command.kind === 'heartbeat') {
+      webSocket.send(jsonSocketMessage({
+        connectionEpoch: command.connectionEpoch,
+        correlationId: crypto.randomUUID(),
+        kind: 'heartbeat.ack',
+        protocolVersion: 1,
+        serverTime: new Date().toISOString(),
+      }))
+      return
+    }
+
+    if (command.kind === 'resume' || command.kind === 'snapshot.request') {
+      // No browser-supplied room reference may become a restored room. Until
+      // the server-owned room-state coordinator records a snapshot, recovery
+      // is explicit and safe rather than pretending an old call is active.
+      webSocket.send(jsonSocketMessage({
+        correlationId: crypto.randomUUID(),
+        kind: 'snapshot',
+        protocolVersion: 1,
+        status: 'unavailable',
+      }))
+      return
+    }
+
     try {
       const result = await this.dispatch({
         authorization: attachment.authorization,
@@ -400,9 +460,21 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
         release: attachment.release,
         requestId: crypto.randomUUID(),
       })
-      webSocket.send(jsonSocketMessage({ kind: 'command.outcome', outcome: result.outcome, protocolVersion: 1 }))
+      webSocket.send(jsonSocketMessage({
+        commandId: command.commandId,
+        correlationId: crypto.randomUUID(),
+        kind: 'command.outcome',
+        outcome: result.outcome,
+        protocolVersion: 1,
+      }))
     } catch {
-      webSocket.send(jsonSocketMessage({ kind: 'command.outcome', outcome: 'unavailable', protocolVersion: 1 }))
+      webSocket.send(jsonSocketMessage({
+        commandId: command.commandId,
+        correlationId: crypto.randomUUID(),
+        kind: 'command.outcome',
+        outcome: 'unavailable',
+        protocolVersion: 1,
+      }))
     }
   }
 

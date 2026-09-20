@@ -30,6 +30,7 @@ import {
   tenantCoordinatorObjectName,
 } from './comms/tenantCoordinatorCore'
 import { parseSygSphereCommsWebSocketRouteReference } from './comms/websocketTicket'
+import { buildSygSphereCommsUsageResponse } from './comms/usageContract'
 
 export { TenantCommsDurableObject }
 
@@ -1168,6 +1169,59 @@ async function handleSygSphereCommunicationsApi(
     headers.set('x-sygsphere-comms-route-reference', route.routeReference)
     const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(route.tenantId))
     return coordinator.fetch(new Request(request, { headers }))
+  }
+
+  if (url.pathname === '/api/comms/v1/authorization/refresh') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const session = await requireAuthenticatedSession(request, environment)
+    const authUserId = accessTokenClaims(session.token)?.sub
+    const route = parseCommunicationsRouteCookie(request)
+    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS) {
+      throw new ApiError('communications_unavailable', 403, 'Communications are not available for this account. Continue using SygSphere messages and Dispatch.')
+    }
+    const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_authorize_sygsphere_communications_command',
+      { target_auth_user_id: authUserId, target_command_kind: 'auth' },
+      session.config.serviceRoleKey,
+    )
+    const authorization = stagedCommsAuthorizationContextSchema.safeParse(decision.context)
+    const release = coordinatorReleaseContextSchema.safeParse(decision.release)
+    if (
+      decision.authorized !== true || decision.scopeMembershipVerified !== true
+      || !authorization.success || !release.success
+      || authorization.data.authUserId !== authUserId || authorization.data.employeeId !== session.context.employee_id
+      || authorization.data.tenantId !== route.tenantId
+    ) {
+      throw new ApiError('communications_unavailable', 403, 'Communications are not available for this account. Continue using SygSphere messages and Dispatch.')
+    }
+    const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(route.tenantId))
+    const refreshedConnections = await coordinator.refreshWebSocketAuthorization({
+      authorization: authorization.data,
+      release: release.data,
+      routeReference: route.routeReference,
+      scopeMembershipVerified: true,
+    })
+    return json({ refreshedConnections, requestId })
+  }
+
+  if (url.pathname === '/api/comms/v1/usage') {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    const session = await requireAuthenticatedSession(request, environment)
+    requireSessionPermission(session.context, 'sygsphere.comms.usage.read')
+    const now = new Date()
+    const periodStartsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
+    const periodEndsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString()
+    return json({
+      ...buildSygSphereCommsUsageResponse({
+        periodEndsAt,
+        periodStartsAt,
+        receivedBytes: null,
+        reconciliationAsOf: null,
+        telemetryStatus: 'unavailable',
+      }),
+      requestId,
+    })
   }
 
   return errorJson('not_found', requestId, 404)
