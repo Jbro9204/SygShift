@@ -12,6 +12,8 @@ import {
   completeCanonicalOutboxDelivery,
   createCanonicalRoomState,
   enqueueCanonicalOutbox,
+  nextCanonicalOutboxDeadline,
+  reclaimExpiredCanonicalOutboxDeliveries,
   rebuildCanonicalRoomState,
   recoverCanonicalRoom,
 } from '../worker/comms/roomRecovery'
@@ -62,6 +64,24 @@ describe('SygSphere Communications recovery and media boundaries', () => {
     expect(claimCanonicalOutboxDelivery(claimed.state, 'connection-a', 'lease-2').delivery).toBeNull()
     expect(completeCanonicalOutboxDelivery(claimed.state, appended.event.eventId, 'connection-a', 'wrong-lease')).toEqual(claimed.state)
     expect(completeCanonicalOutboxDelivery(claimed.state, appended.event.eventId, 'connection-a', 'lease-1').outbox[0]).toMatchObject({ state: 'delivered', leaseId: null })
+  })
+
+  it('reclaims only expired leases, exposes the next deadline, and stops after the bounded retry count', () => {
+    const appended = appendCanonicalRoomEvent(room(), event('event-1'))
+    const queued = enqueueCanonicalOutbox(appended.state, appended.event.eventId, ['connection-a'])
+    const claimed = claimCanonicalOutboxDelivery(queued, 'connection-a', 'lease-1', 1_000)
+    expect(nextCanonicalOutboxDeadline(claimed.state)).toBe(1_000)
+    expect(reclaimExpiredCanonicalOutboxDeliveries(claimed.state, 999)).toEqual(claimed.state)
+    const reclaimed = reclaimExpiredCanonicalOutboxDeliveries(claimed.state, 1_000)
+    expect(reclaimed.outbox[0]).toMatchObject({ attempts: 1, leaseExpiresAtMs: null, leaseId: null, state: 'pending' })
+
+    let exhausted = reclaimed
+    for (let attempt = 2; attempt <= 17; attempt += 1) {
+      const next = claimCanonicalOutboxDelivery(exhausted, 'connection-a', `lease-${attempt}`, attempt * 1_000)
+      exhausted = reclaimExpiredCanonicalOutboxDeliveries(next.state, attempt * 1_000)
+    }
+    expect(exhausted.outbox[0]).toMatchObject({ attempts: 16, state: 'expired' })
+    expect(nextCanonicalOutboxDeadline(exhausted)).toBeNull()
   })
 
   it('keeps negotiation opaque, expires stale answers, and force-closes every active media kind', () => {

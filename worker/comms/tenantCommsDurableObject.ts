@@ -13,6 +13,7 @@ import {
   closedSygSphereCommsProviderRegistry,
   closedProviderOutcome,
 } from './providerRegistry'
+import { createCloudflareRealtimeRuntimeAdapter } from './cloudflareRealtimeAdapter'
 import {
   SYGSPHERE_COMMS_WEBSOCKET_TICKET_TTL_MS,
   createSygSphereCommsWebSocketTicket,
@@ -91,6 +92,11 @@ export type TenantCommsWebSocketBootstrap = Readonly<{
 }>
 
 type CoordinatorEnvironment = Env & Readonly<{
+  /** Optional Worker secrets; never place values in wrangler.jsonc or logs. */
+  SYGSHIFT_COMMS_REALTIME_APP_ID?: string
+  SYGSHIFT_COMMS_REALTIME_APP_SECRET?: string
+  SYGSHIFT_COMMS_TURN_API_TOKEN?: string
+  SYGSHIFT_COMMS_TURN_KEY_ID?: string
   SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED?: string
 }>
 
@@ -574,8 +580,27 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       return { outcome: 'rate_limited', requestId: authorized.requestId }
     }
 
+    const provider = createCloudflareRealtimeRuntimeAdapter({
+      appId: this.env.SYGSHIFT_COMMS_REALTIME_APP_ID,
+      appSecret: this.env.SYGSHIFT_COMMS_REALTIME_APP_SECRET,
+      coordinatorReleaseMayDispatch: coordinatorRuntimeMayDispatch(authorized.release),
+      runtimeEnabled: runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED),
+      turnApiToken: this.env.SYGSHIFT_COMMS_TURN_API_TOKEN,
+      turnKeyId: this.env.SYGSHIFT_COMMS_TURN_KEY_ID,
+    })
+    // Generic command dispatch stays intentionally unavailable. The typed
+    // methods on the source-gated adapter require a future server coordinator
+    // to resolve membership, registry state, and media generations first.
+    const providerOutcome = await provider.execute({
+      operation: 'create_session',
+      requestId: authorized.requestId,
+      roomId: authorized.command.roomId ?? `unresolved:${authorized.command.kind}`,
+      tenantId: authorized.authorization.tenantId,
+    })
     const result: TenantCommsCoordinatorResult = {
-      outcome: closedProviderOutcome(closedSygSphereCommsProviderRegistry),
+      outcome: providerOutcome.outcome === 'provider_unavailable'
+        ? closedProviderOutcome(closedSygSphereCommsProviderRegistry)
+        : 'provider_unavailable',
       requestId: authorized.requestId,
     }
     this.ctx.storage.sql.exec(

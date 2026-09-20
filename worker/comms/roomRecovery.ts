@@ -16,6 +16,7 @@ export type CanonicalOutboxDelivery = Readonly<{
   attempts: number
   eventId: string
   leaseId: string | null
+  leaseExpiresAtMs: number | null
   recipientConnectionId: string
   state: 'pending' | 'in_flight' | 'delivered' | 'expired'
 }>
@@ -35,6 +36,7 @@ export type CanonicalRoomRecovery =
   | Readonly<{ mode: 'unavailable' }>
 
 const maximumRetainedEvents = 256
+const maximumOutboxDeliveryAttempts = 16
 const forbiddenPayloadKeys = new Set(['actorid', 'employeeid', 'tenantid', 'permissioncodes', 'providersecret', 'providertrack', 'sdp', 'token'])
 
 const isSafeFiniteInteger = (value: number): boolean => Number.isSafeInteger(value) && value >= 0
@@ -122,7 +124,7 @@ export const enqueueCanonicalOutbox = (
   const existing = new Set(state.outbox.map((item) => `${item.eventId}:${item.recipientConnectionId}`))
   const additions = recipients
     .filter((recipientConnectionId) => !existing.has(`${eventId}:${recipientConnectionId}`))
-    .map((recipientConnectionId) => ({ attempts: 0, eventId, leaseId: null, recipientConnectionId, state: 'pending' as const }))
+    .map((recipientConnectionId) => ({ attempts: 0, eventId, leaseId: null, leaseExpiresAtMs: null, recipientConnectionId, state: 'pending' as const }))
   return additions.length ? { ...state, outbox: [...state.outbox, ...additions] } : state
 }
 
@@ -131,12 +133,24 @@ export const claimCanonicalOutboxDelivery = (
   state: CanonicalRoomState,
   recipientConnectionId: string,
   leaseId: string,
+  leaseExpiresAtMs = Number.MAX_SAFE_INTEGER,
 ): Readonly<{ delivery: CanonicalOutboxDelivery | null; state: CanonicalRoomState }> => {
-  if (!leaseId.trim()) throw new Error('The outbox lease is invalid.')
+  if (!leaseId.trim() || !Number.isSafeInteger(leaseExpiresAtMs) || leaseExpiresAtMs <= 0) throw new Error('The outbox lease is invalid.')
   const index = state.outbox.findIndex((item) => item.recipientConnectionId === recipientConnectionId && item.state === 'pending')
   if (index < 0) return { delivery: null, state }
   const current = state.outbox[index]
-  const delivery: CanonicalOutboxDelivery = { ...current, attempts: current.attempts + 1, leaseId, state: 'in_flight' }
+  if (current.attempts >= maximumOutboxDeliveryAttempts) {
+    const outbox = [...state.outbox]
+    outbox[index] = { ...current, leaseExpiresAtMs: null, state: 'expired' }
+    return { delivery: null, state: { ...state, outbox } }
+  }
+  const delivery: CanonicalOutboxDelivery = {
+    ...current,
+    attempts: current.attempts + 1,
+    leaseExpiresAtMs,
+    leaseId,
+    state: 'in_flight',
+  }
   const outbox = [...state.outbox]
   outbox[index] = delivery
   return { delivery, state: { ...state, outbox } }
@@ -153,8 +167,37 @@ export const completeCanonicalOutboxDelivery = (
   const current = state.outbox[index]
   if (current.state !== 'in_flight' || current.leaseId !== leaseId) return state
   const outbox = [...state.outbox]
-  outbox[index] = { ...current, leaseId: null, state: 'delivered' }
+  outbox[index] = { ...current, leaseExpiresAtMs: null, leaseId: null, state: 'delivered' }
   return { ...state, outbox }
+}
+
+/**
+ * A retry may reclaim only an expired lease, and delivery stops permanently at
+ * the same bounded attempt count enforced by the private persistence schema.
+ */
+export const reclaimExpiredCanonicalOutboxDeliveries = (
+  state: CanonicalRoomState,
+  nowMs: number,
+): CanonicalRoomState => {
+  if (!Number.isSafeInteger(nowMs) || nowMs <= 0) throw new Error('The outbox recovery time is invalid.')
+  let changed = false
+  const outbox = state.outbox.map((item) => {
+    if (item.state !== 'in_flight' || item.leaseExpiresAtMs === null || item.leaseExpiresAtMs > nowMs) return item
+    changed = true
+    return item.attempts >= maximumOutboxDeliveryAttempts
+      ? { ...item, leaseExpiresAtMs: null, leaseId: null, state: 'expired' as const }
+      : { ...item, leaseExpiresAtMs: null, leaseId: null, state: 'pending' as const }
+  })
+  return changed ? { ...state, outbox } : state
+}
+
+/** Lets the coordinator set a single Durable Object alarm for safe retries. */
+export const nextCanonicalOutboxDeadline = (state: CanonicalRoomState): number | null => {
+  const deadlines = state.outbox
+    .filter((item) => item.state === 'in_flight' && item.leaseExpiresAtMs !== null)
+    .map((item) => item.leaseExpiresAtMs as number)
+    .filter((deadline) => Number.isSafeInteger(deadline) && deadline > 0)
+  return deadlines.length ? Math.min(...deadlines) : null
 }
 
 /** A coordinator restart rebuilds only contiguous, tenant/room-matching events. */

@@ -4,6 +4,8 @@ export type ProviderSessionState = 'pending' | 'active' | 'closing' | 'closed'
 export type ProviderTrack = Readonly<{
   id: string
   kind: ProviderTrackKind
+  /** The provider transceiver reference is server-owned and never browser supplied. */
+  mid?: string
   state: 'active' | 'closed'
 }>
 
@@ -47,4 +49,26 @@ export const closeProviderSession = (session: ProviderSession): ProviderSession 
   if (session.state === 'closed') return session
   const tracks = new Map([...session.tracks].map(([id, track]) => [id, { ...track, state: 'closed' as const }]))
   return { ...session, state: 'closed', tracks }
+}
+
+/**
+ * A provider mutation may proceed only for the exact tenant-owned active
+ * session resolved by the coordinator. This is intentionally a small pure
+ * boundary so the HTTP adapter cannot be given a browser-shaped session id.
+ */
+export const providerSessionMayMutate = (session: ProviderSession, tenantId: string): boolean =>
+  session.tenantId === tenantId
+  && session.state === 'active'
+  && session.id.trim().length > 0
+
+/** A forced close is additionally fenced to a registered, active track/MID. */
+export const providerTrackMayMutate = (
+  session: ProviderSession,
+  tenantId: string,
+  trackId: string,
+  mid: string,
+): boolean => {
+  if (!providerSessionMayMutate(session, tenantId)) return false
+  const track = session.tracks.get(trackId)
+  return Boolean(track && track.state === 'active' && track.mid === mid)
 }

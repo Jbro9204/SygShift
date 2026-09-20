@@ -2,6 +2,14 @@
 
 **Status:** Required before any employee is given interactive communications access. This is an acceptance record, not evidence that a call, PTT, video, meeting, or screen share has been enabled.
 
+## Source checkpoint — September 19, 2026
+
+The closed source now contains a server-only provider adapter, PTT/call/meeting
+state machines, generation and lease fencing, and mocked unit coverage. That
+does **not** change any `Not run` result below: physical provider behavior,
+devices, browsers, networks, accessibility, tenant isolation, and recovery are
+accepted only from evidence against the exact release being considered.
+
 ## Release principle
 
 The Communications feature remains a protected, opt-in pilot capability until every applicable row below has a recorded pass. A visual green state, a provider dashboard entry, or a successful desktop-only demonstration is not enough. The pilot must prove that people can communicate without exposing another tenant, interrupting normal SygShift/Sygilant work, or losing the existing SygSphere and Dispatch fallbacks.
