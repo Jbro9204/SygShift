@@ -293,7 +293,7 @@ type CoordinatorEnvironment = Omit<Env, 'SYGSHIFT_COMMS_REALTIME_APP_SECRET' | '
 }>
 
 export type TenantCommsCoordinatorResult = Readonly<{
-  outcome: 'accepted' | 'invalid_state' | 'recipient_unavailable' | 'runtime_disabled' | 'rate_limited' | 'provider_unavailable'
+  outcome: 'accepted' | 'channel_busy' | 'invalid_state' | 'recipient_unavailable' | 'runtime_disabled' | 'rate_limited' | 'provider_unavailable'
   requestId: string
 }>
 
@@ -449,6 +449,63 @@ const reportSygSphereCommsSetupUnavailable = (
   }
 }
 
+/**
+ * Availability is intentionally recorded as a small fixed vocabulary. It is
+ * useful to operators investigating a failed call or PTT request, but never
+ * identifies a person, tenant, socket, permission, or channel in logs or in
+ * the response returned to the browser.
+ */
+export type SygSphereCommsAvailabilityOperation = 'direct_call_request' | 'ptt_floor_request'
+
+export type SygSphereCommsAvailabilityReason =
+  | 'channel_busy'
+  | 'no_listener_connected'
+  | 'no_listener_eligible'
+  | 'recipient_not_connected'
+  | 'recipient_not_eligible'
+
+export type SygSphereCommsAvailabilityDiagnostic = Readonly<{
+  event: 'sygsphere_communications_availability_unavailable'
+  operation: SygSphereCommsAvailabilityOperation
+  reason: SygSphereCommsAvailabilityReason
+}>
+
+export const sygsphereCommsAvailabilityDiagnostic = (
+  operation: SygSphereCommsAvailabilityOperation,
+  reason: SygSphereCommsAvailabilityReason,
+): SygSphereCommsAvailabilityDiagnostic => ({
+  event: 'sygsphere_communications_availability_unavailable',
+  operation,
+  reason,
+})
+
+const reportSygSphereCommsAvailability = (
+  operation: SygSphereCommsAvailabilityOperation,
+  reason: SygSphereCommsAvailabilityReason,
+): void => {
+  try {
+    console.warn(JSON.stringify(sygsphereCommsAvailabilityDiagnostic(operation, reason)))
+  } catch {
+    // Observability must never change a protected communications outcome.
+  }
+}
+
+export const resolveSygSphereCommsDirectAvailabilityReason = (
+  hasConnectedRecipient: boolean,
+  hasEligibleRecipient: boolean,
+): Extract<SygSphereCommsAvailabilityReason, 'recipient_not_connected' | 'recipient_not_eligible'> | null => {
+  if (hasEligibleRecipient) return null
+  return hasConnectedRecipient ? 'recipient_not_eligible' : 'recipient_not_connected'
+}
+
+export const resolveSygSphereCommsPttAvailabilityReason = (
+  hasConnectedListener: boolean,
+  hasEligibleListener: boolean,
+): Extract<SygSphereCommsAvailabilityReason, 'no_listener_connected' | 'no_listener_eligible'> | null => {
+  if (hasEligibleListener) return null
+  return hasConnectedListener ? 'no_listener_eligible' : 'no_listener_connected'
+}
+
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
 
@@ -500,7 +557,7 @@ const parseStoredCoordinatorResult = (value: string): TenantCommsCoordinatorResu
       typeof parsed === 'object'
       && parsed !== null
       && typeof (parsed as { outcome?: unknown }).outcome === 'string'
-      && ['accepted', 'invalid_state', 'recipient_unavailable', 'runtime_disabled', 'rate_limited', 'provider_unavailable'].includes((parsed as { outcome: string }).outcome)
+      && ['accepted', 'channel_busy', 'invalid_state', 'recipient_unavailable', 'runtime_disabled', 'rate_limited', 'provider_unavailable'].includes((parsed as { outcome: string }).outcome)
       && typeof (parsed as { requestId?: unknown }).requestId === 'string'
     ) {
       return parsed as TenantCommsCoordinatorResult
@@ -722,8 +779,9 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
 
   /**
    * Called only from the protected server bootstrap. The opaque route
-   * reference is an HttpOnly same-site routing cookie, while the raw ticket
-   * is delivered to the already-authenticated browser and must be supplied
+   * reference is carried by the calling tab and validated at the Worker
+   * boundary, while the raw ticket is delivered to the already-authenticated
+   * browser and must be supplied
    * only in the first WebSocket application frame.
    */
   async issueWebSocketTicket(input: unknown): Promise<TenantCommsWebSocketBootstrap> {
@@ -1058,14 +1116,40 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     return null
   }
 
-  private activeSocketForEmployee(employeeId: string): AuthenticatedSocketAttachment | null {
-    let newest: AuthenticatedSocketAttachment | null = null
+  /** Direct-call delivery must be resolved from a current, same-tenant
+   * authenticated socket. The coordinator never treats a browser-provided
+   * recipient list, a cross-tenant socket, or a caller's own connection as a
+   * recipient. */
+  private directRecipientAvailability(
+    employeeId: string,
+    caller: AuthenticatedSocketAttachment,
+  ): Readonly<{
+    recipient: AuthenticatedSocketAttachment | null
+    unavailableReason: Extract<SygSphereCommsAvailabilityReason, 'recipient_not_connected' | 'recipient_not_eligible'> | null
+  }> {
+    let hasConnectedRecipient = false
+    let newestEligibleRecipient: AuthenticatedSocketAttachment | null = null
     for (const webSocket of this.ctx.getWebSockets()) {
       const attachment = socketAttachment(webSocket)
-      if (attachment?.phase !== 'authenticated' || attachment.authorization.employeeId !== employeeId) continue
-      if (newest === null || attachment.openedAtMs > newest.openedAtMs) newest = attachment
+      if (
+        attachment?.phase !== 'authenticated'
+        || attachment.authorization.tenantId !== caller.authorization.tenantId
+        || attachment.authorization.employeeId !== employeeId
+        || attachment.connectionId === caller.connectionId
+      ) continue
+      hasConnectedRecipient = true
+      if (!attachment.authorization.permissions.includes('sygsphere.comms.call.receive')) continue
+      if (newestEligibleRecipient === null || attachment.openedAtMs > newestEligibleRecipient.openedAtMs) {
+        newestEligibleRecipient = attachment
+      }
     }
-    return newest
+    return {
+      recipient: newestEligibleRecipient,
+      unavailableReason: resolveSygSphereCommsDirectAvailabilityReason(
+        hasConnectedRecipient,
+        newestEligibleRecipient !== null,
+      ),
+    }
   }
 
   private nextRoomSequence(roomId: string): number {
@@ -1631,8 +1715,15 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     if (authorized.command.kind === 'call.request') {
       const scope = authorized.scope
       if (!scope || scope.kind !== 'direct_conversation') return 'invalid_state'
-      const recipient = this.activeSocketForEmployee(scope.recipientEmployeeId)
-      if (!recipient || recipient.connectionId === caller.connectionId) return 'recipient_unavailable'
+      const recipientAvailability = this.directRecipientAvailability(scope.recipientEmployeeId, caller)
+      const recipient = recipientAvailability.recipient
+      if (!recipient) {
+        reportSygSphereCommsAvailability(
+          'direct_call_request',
+          recipientAvailability.unavailableReason ?? 'recipient_not_connected',
+        )
+        return 'recipient_unavailable'
+      }
       const created = createServerCall({
         callId: crypto.randomUUID(),
         expiresAtMs: now + directCallRingingMilliseconds,
@@ -2595,9 +2686,13 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
   private activePttListeners(
     scope: Extract<NonNullable<AuthorizedCoordinatorCommand['scope']>, { kind: 'channel_conversation' }>,
     caller: AuthenticatedSocketAttachment,
-  ): readonly AuthenticatedSocketAttachment[] {
+  ): Readonly<{
+    listeners: readonly AuthenticatedSocketAttachment[]
+    unavailableReason: Extract<SygSphereCommsAvailabilityReason, 'no_listener_connected' | 'no_listener_eligible'> | null
+  }> {
     const permittedEmployees = new Set(scope.participantEmployeeIds)
     const newestByEmployee = new Map<string, AuthenticatedSocketAttachment>()
+    let hasConnectedListener = false
     for (const webSocket of this.ctx.getWebSockets()) {
       const attachment = socketAttachment(webSocket)
       if (
@@ -2605,12 +2700,17 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
         || attachment.authorization.tenantId !== caller.authorization.tenantId
         || attachment.authorization.employeeId === caller.authorization.employeeId
         || !permittedEmployees.has(attachment.authorization.employeeId)
-        || !attachment.authorization.permissions.includes('sygsphere.comms.ptt.listen')
       ) continue
+      hasConnectedListener = true
+      if (!attachment.authorization.permissions.includes('sygsphere.comms.ptt.listen')) continue
       const prior = newestByEmployee.get(attachment.authorization.employeeId)
       if (!prior || attachment.openedAtMs > prior.openedAtMs) newestByEmployee.set(attachment.authorization.employeeId, attachment)
     }
-    return [...newestByEmployee.values()].sort((left, right) => left.connectionId.localeCompare(right.connectionId))
+    const listeners = [...newestByEmployee.values()].sort((left, right) => left.connectionId.localeCompare(right.connectionId))
+    return {
+      listeners,
+      unavailableReason: resolveSygSphereCommsPttAvailabilityReason(hasConnectedListener, listeners.length > 0),
+    }
   }
 
   private sendPttConnectionEvent(
@@ -2799,8 +2899,13 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       const commandPayload = authorized.command.payload as Record<string, unknown>
       const transmissionRequestId = typeof commandPayload.clientIntentId === 'string' ? commandPayload.clientIntentId : null
       if (!transmissionRequestId) return 'invalid_state'
-      const listeners = this.activePttListeners(scope, caller)
+      const listenerAvailability = this.activePttListeners(scope, caller)
+      const listeners = listenerAvailability.listeners
       if (!listeners.length) {
+        reportSygSphereCommsAvailability(
+          'ptt_floor_request',
+          listenerAvailability.unavailableReason ?? 'no_listener_connected',
+        )
         this.sendPttEvent([caller.authorization.employeeId], transmissionRequestId, 'floor.denied', {
           reason: 'unavailable',
           transmissionRequestId,
@@ -2816,11 +2921,12 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
         scope.channelReference,
       ).toArray()[0]
       if (active) {
+        reportSygSphereCommsAvailability('ptt_floor_request', 'channel_busy')
         this.sendPttEvent([caller.authorization.employeeId], transmissionRequestId, 'floor.denied', {
           reason: 'channel_busy',
           transmissionRequestId,
         })
-        return 'recipient_unavailable'
+        return 'channel_busy'
       }
       try {
         this.ctx.storage.sql.exec(
@@ -2840,11 +2946,12 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
           now,
         )
       } catch {
+        reportSygSphereCommsAvailability('ptt_floor_request', 'channel_busy')
         this.sendPttEvent([caller.authorization.employeeId], transmissionRequestId, 'floor.denied', {
           reason: 'channel_busy',
           transmissionRequestId,
         })
-        return 'recipient_unavailable'
+        return 'channel_busy'
       }
       for (const listener of listeners) {
         this.ctx.storage.sql.exec(

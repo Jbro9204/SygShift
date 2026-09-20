@@ -6,7 +6,7 @@ import {
   type SygSphereCommsCommandKind,
   type SygSphereCommsEvent,
 } from "../../shared/sygsphere-communications/v1/contract";
-import { sygSphereCommunicationsApiRequest } from "../data/sygsphereCommunications";
+import { setSygSphereCommunicationsRouteHandle, sygSphereCommunicationsApiRequest } from "../data/sygsphereCommunications";
 import type {
   CommunicationsCallMediaConnection,
   CommunicationsCoordinatorBridge,
@@ -40,6 +40,7 @@ const bootstrapSchema = z.object({
   connection: z.object({
     expiresAt: z.iso.datetime(),
     protocolVersion: z.literal(SYGSPHERE_COMMS_PROTOCOL_VERSION),
+    routeHandle: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
     socketPath: z.literal(socketPath),
     ticket: z.string().regex(/^[A-Za-z0-9_-]{43,128}$/),
   }).strict(),
@@ -61,6 +62,7 @@ const commandResponseSchema = z.object({
     "accepted",
     "invalid_state",
     "recipient_unavailable",
+    "channel_busy",
     "rate_limited",
     "runtime_disabled",
     "provider_unavailable",
@@ -128,7 +130,7 @@ type SocketBridgeDependencies = Readonly<{
   acknowledgePttListenerReady: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
   bootstrap: (accessToken: string, signal: AbortSignal) => Promise<unknown>;
   createPeerTransport: SygSphereCommunicationsPeerTransportFactory;
-  createSocket: (url: string) => CommunicationsWebSocket;
+  createSocket: (url: string, protocols?: string | string[]) => CommunicationsWebSocket;
   getDirectCallContext: (accessToken: string, callId: string, signal: AbortSignal) => Promise<unknown>;
   location: () => Readonly<{ origin: string; protocol: string }>;
   now: () => number;
@@ -177,7 +179,7 @@ const defaultDependencies: SocketBridgeDependencies = {
   }),
   createRtcPeer: (configuration) => new RTCPeerConnection(configuration),
   createStream: (tracks) => new MediaStream(tracks),
-  createSocket: (url) => new WebSocket(url),
+  createSocket: (url, protocols) => new WebSocket(url, protocols),
   getDirectCallContext: (accessToken, callId, signal) => sygSphereCommunicationsApiRequest<unknown>(
     `/api/comms/v1/calls/${encodeURIComponent(callId)}`,
     accessToken,
@@ -279,6 +281,7 @@ export class SygSphereCommunicationsSocketBridge implements CommunicationsCoordi
       accessToken,
       AbortSignal.timeout(10_000),
     ));
+    setSygSphereCommunicationsRouteHandle(bootstrap.connection.routeHandle);
     let ticket: string | null = bootstrap.connection.ticket;
     const expiresAt = Date.parse(bootstrap.connection.expiresAt);
     if (!Number.isFinite(expiresAt) || expiresAt <= this.dependencies.now()) {
@@ -287,7 +290,7 @@ export class SygSphereCommunicationsSocketBridge implements CommunicationsCoordi
     }
 
     const controlUrl = sameOriginSocketUrl(bootstrap.connection.socketPath, this.dependencies.location());
-    const socket = this.dependencies.createSocket(controlUrl);
+    const socket = this.dependencies.createSocket(controlUrl, [`sygsphere-comms-route.${bootstrap.connection.routeHandle}`]);
     const connectionEpoch = ++this.connectionEpoch;
 
     return new Promise((resolve, reject) => {
@@ -1418,9 +1421,10 @@ function createSession({
 
 function commandOutcomeMessage(outcome: string, commandKind?: SygSphereCommsCommandKind): string {
   if (outcome === "recipient_unavailable" && commandKind === "floor.request") {
-    return "No one else is online in this channel right now.";
+    return "No other authorized team member is connected to this channel right now.";
   }
-  if (outcome === "recipient_unavailable") return "That person is not available for Communications right now.";
+  if (outcome === "recipient_unavailable") return "That person is not connected to Communications right now. Ask them to keep SygSphere open, then try again.";
+  if (outcome === "channel_busy") return "Someone else is speaking in this channel. Try again when they finish.";
   if (outcome === "rate_limited") return "Please wait a moment before trying Communications again.";
   if (outcome === "runtime_disabled" || outcome === "provider_unavailable") {
     return "Communications is temporarily unavailable. Use messages or Dispatch and try again.";

@@ -3,10 +3,19 @@ import { parseSygSphereCommsCommand, parseSygSphereCommsEvent, type ValidatedSyg
 import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 import { getSupabaseClient } from '../lib/supabase'
 
+const communicationsRouteHeaderName = 'x-sygsphere-comms-route-reference'
+const communicationsRouteHandleSchema = z.string().regex(
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+)
+// Module state is per JavaScript tab. This deliberately never enters a URL,
+// cookie, local storage, or a cross-app browser cache.
+let activeCommunicationsRouteHandle: string | null = null
+
 const communicationsBootstrapSchema = z.object({
   connection: z.object({
     expiresAt: z.iso.datetime(),
     protocolVersion: z.literal(1),
+    routeHandle: communicationsRouteHandleSchema,
     socketPath: z.literal('/api/comms/v1/connect'),
     ticket: z.string().min(32).max(512),
   }).strict(),
@@ -14,7 +23,7 @@ const communicationsBootstrapSchema = z.object({
 }).strict()
 
 const communicationsCommandResponseSchema = z.object({
-  outcome: z.enum(['accepted', 'invalid_state', 'recipient_unavailable', 'rate_limited', 'runtime_disabled', 'provider_unavailable']),
+  outcome: z.enum(['accepted', 'invalid_state', 'recipient_unavailable', 'channel_busy', 'rate_limited', 'runtime_disabled', 'provider_unavailable']),
   requestId: z.uuid(),
 }).strict()
 
@@ -36,6 +45,18 @@ export type SygSphereCommunicationsBootstrap = z.infer<typeof communicationsBoot
 export type SygSphereCommunicationsCommandOutcome = z.infer<typeof communicationsCommandResponseSchema>['outcome']
 export type SygSphereDirectAudioIceServer = RTCIceServer
 
+export function setSygSphereCommunicationsRouteHandle(routeHandle: string | null): void {
+  activeCommunicationsRouteHandle = routeHandle === null ? null : communicationsRouteHandleSchema.parse(routeHandle)
+}
+
+function appendCommunicationsRouteHeader(path: string, headers: Headers): void {
+  // Bootstrap establishes a fresh route. Every later mutation/refresh is
+  // explicitly routed to that tab's server-side connection.
+  if (path !== '/api/comms/v1/bootstrap' && activeCommunicationsRouteHandle) {
+    headers.set(communicationsRouteHeaderName, activeCommunicationsRouteHandle)
+  }
+}
+
 function employeeSafeCommunicationsMessage(status: number): string {
   if (status === 401 || status === 403) return 'Communications is not available for this account.'
   if (status === 429) return 'Please wait a moment before trying Communications again.'
@@ -48,6 +69,7 @@ async function communicationsRequest(path: string, init: RequestInit = {}): Prom
   const headers = appendProtectedSessionHeaders(init.headers, { includeSharedIdentity: true })
   headers.set('accept', 'application/json')
   headers.set('authorization', `Bearer ${data.session.access_token}`)
+  appendCommunicationsRouteHeader(path, headers)
   return fetch(path, {
     ...init,
     cache: 'no-store',
@@ -76,6 +98,7 @@ export async function sygSphereCommunicationsApiRequest<T>(
   const headers = appendProtectedSessionHeaders(init.headers, { includeSharedIdentity: true })
   headers.set('accept', 'application/json')
   headers.set('authorization', `Bearer ${accessToken}`)
+  appendCommunicationsRouteHeader(path, headers)
   const response = await fetch(path, {
     ...init,
     cache: 'no-store',
@@ -89,7 +112,9 @@ export async function sygSphereCommunicationsApiRequest<T>(
  * short-lived and supplied only in the first WebSocket frame, never a URL. */
 export async function bootstrapSygSphereCommunications(): Promise<SygSphereCommunicationsBootstrap> {
   const response = await communicationsRequest('/api/comms/v1/bootstrap', { method: 'POST' })
-  return communicationsBootstrapSchema.parse(await communicationsJson(response))
+  const bootstrap = communicationsBootstrapSchema.parse(await communicationsJson(response))
+  setSygSphereCommunicationsRouteHandle(bootstrap.connection.routeHandle)
+  return bootstrap
 }
 
 /** Every command crosses the Worker authorization boundary. The WebSocket is
@@ -146,7 +171,7 @@ export function openSygSphereCommunicationsSocket(
 ): WebSocket {
   const endpoint = new URL(bootstrap.connection.socketPath, window.location.origin)
   endpoint.protocol = endpoint.protocol === 'https:' ? 'wss:' : 'ws:'
-  const socket = new WebSocket(endpoint)
+  const socket = new WebSocket(endpoint, [`sygsphere-comms-route.${bootstrap.connection.routeHandle}`])
   socket.addEventListener('open', () => {
     socket.send(JSON.stringify({ kind: 'auth', protocolVersion: 1, ticket: bootstrap.connection.ticket }))
     handlers.onOpen?.()

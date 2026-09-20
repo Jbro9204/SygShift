@@ -269,7 +269,10 @@ function ConnectionStatus({ state }: { state: CommunicationsConnectionState }) {
     unavailable: ["Not available", "Use messages or Dispatch"],
     authorizing: ["Checking access", "One moment"],
     connecting: ["Connecting", "One moment"],
-    ready: ["Ready", "Messaging and voice controls ready"],
+    // Socket readiness means the secure control path is connected. Media
+    // availability is confirmed only when a voice action is negotiated, so
+    // never promise that audio is already live here.
+    ready: ["Communications connected", "Messages and call controls are connected"],
     reconnecting: ["Reconnecting", "Do not speak yet"],
     denied: ["Access unavailable", "Use messages or Dispatch"],
     failed: ["Connection unavailable", "Use messages or Dispatch"],

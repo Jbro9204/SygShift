@@ -1096,7 +1096,7 @@ const communicationsCorsHeaders = (request: Request): HeadersInit => {
   const origin = trustedCommunicationsOrigin(request)
   return origin ? {
     'access-control-allow-credentials': 'true',
-    'access-control-allow-headers': 'authorization, content-type, x-sygshift-shared-identity, x-sygshift-security-key, x-sygshift-trusted-device, x-sygshift-trusted-device-fallback',
+    'access-control-allow-headers': 'authorization, content-type, x-sygshift-shared-identity, x-sygshift-security-key, x-sygshift-trusted-device, x-sygshift-trusted-device-fallback, x-sygsphere-comms-route-reference',
     'access-control-allow-methods': 'GET, POST, OPTIONS',
     'access-control-allow-origin': origin,
     'access-control-max-age': '300',
@@ -1104,22 +1104,21 @@ const communicationsCorsHeaders = (request: Request): HeadersInit => {
   } : {}
 }
 
-const parseCookieValue = (request: Request, name: string): string | null => {
-  const cookie = request.headers.get('cookie') ?? ''
-  for (const part of cookie.split(';')) {
-    const separator = part.indexOf('=')
-    if (separator < 1) continue
-    if (part.slice(0, separator).trim() !== name) continue
-    return part.slice(separator + 1).trim() || null
-  }
-  return null
-}
+const communicationsRouteHeaderName = 'x-sygsphere-comms-route-reference'
+const communicationsRouteWebSocketProtocolPrefix = 'sygsphere-comms-route.'
 
-const communicationsRouteCookie = (tenantId: string, routeReference: string): string =>
-  `__Host-sygsphere-comms-route=${tenantId}.${routeReference}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=90`
+type CommunicationsRoute = Readonly<{ routeReference: string, tenantId: string }>
 
-const parseCommunicationsRouteCookie = (request: Request): Readonly<{ routeReference: string, tenantId: string }> | null => {
-  const raw = parseCookieValue(request, '__Host-sygsphere-comms-route')
+/**
+ * A route handle contains only the server-generated tenant route and opaque
+ * route reference. It is not a ticket, is held in the current browser tab's
+ * memory, and is always checked again against the authenticated identity by
+ * the tenant coordinator before it can perform an action.
+ */
+const communicationsRouteHandle = (tenantId: string, routeReference: string): string =>
+  `${tenantId}.${routeReference}`
+
+const parseCommunicationsRouteHandle = (raw: string | null): CommunicationsRoute | null => {
   if (!raw) return null
   const separator = raw.indexOf('.')
   if (separator < 1 || raw.indexOf('.', separator + 1) !== -1) return null
@@ -1129,15 +1128,31 @@ const parseCommunicationsRouteCookie = (request: Request): Readonly<{ routeRefer
   return { routeReference, tenantId }
 }
 
+const parseCommunicationsRouteHeader = (request: Request): CommunicationsRoute | null =>
+  parseCommunicationsRouteHandle(request.headers.get(communicationsRouteHeaderName))
+
+/* Browsers do not permit an application to attach arbitrary WebSocket
+ * headers. The standard subprotocol offer is the only non-URL, per-socket
+ * carrier available at connection time. It contains the same opaque route
+ * handle, never the one-use ticket or an identity proof. */
+const parseCommunicationsRouteWebSocketProtocol = (request: Request): CommunicationsRoute | null => {
+  const candidates = (request.headers.get('sec-websocket-protocol') ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.startsWith(communicationsRouteWebSocketProtocolPrefix))
+  if (candidates.length !== 1) return null
+  return parseCommunicationsRouteHandle(candidates[0].slice(communicationsRouteWebSocketProtocolPrefix.length))
+}
+
 /**
  * The Communications endpoint remains absent from normal user workflows until
  * its server gate is enabled. When a future controlled pilot enables it, this
  * bootstrap mints a one-use, 30-second ticket only after authenticated
  * identity, service-only authorization, scope approval, compatibility, and
  * release evidence all agree. The ticket is returned to the authenticated
- * browser but never placed in a URL or cookie; the cookie contains only an
- * opaque routing reference so the opening WebSocket can be sent to the
- * server-derived tenant coordinator.
+ * browser but never placed in a URL or cookie. A per-tab opaque route handle
+ * selects the server-derived tenant coordinator; it is checked again against
+ * the authenticated identity before it can affect any protected action.
  */
 async function handleSygSphereCommunicationsApi(
   request: Request,
@@ -1194,11 +1209,12 @@ async function handleSygSphereCommunicationsApi(
       connection: {
         expiresAt: bootstrap.expiresAt,
         protocolVersion: 1,
+        routeHandle: communicationsRouteHandle(authorization.data.tenantId, bootstrap.routeReference),
         socketPath: '/api/comms/v1/connect',
         ticket: bootstrap.ticket,
       },
       requestId,
-    }, 201, { 'set-cookie': communicationsRouteCookie(authorization.data.tenantId, bootstrap.routeReference) })
+    }, 201)
   }
 
   if (url.pathname === '/api/comms/v1/connect') {
@@ -1209,7 +1225,7 @@ async function handleSygSphereCommunicationsApi(
     if (origin && !trustedCommunicationsOrigins.has(origin)) {
       return errorJson('communications_unavailable', requestId, 403, 'Communications connection is unavailable. Reopen Communications and try again.')
     }
-    const route = parseCommunicationsRouteCookie(request)
+    const route = parseCommunicationsRouteWebSocketProtocol(request)
     if (!route || !environment.TENANT_COMMS) {
       return errorJson('communications_unavailable', requestId, 404, 'Communications connection is unavailable. Reopen Communications and try again.')
     }
@@ -1224,7 +1240,7 @@ async function handleSygSphereCommunicationsApi(
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
     const session = await requireAuthenticatedSession(request, environment)
     const authUserId = accessTokenClaims(session.token)?.sub
-    const route = parseCommunicationsRouteCookie(request)
+    const route = parseCommunicationsRouteHeader(request)
     if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS) {
       throw new ApiError('communications_unavailable', 403, 'Communications are not available for this account. Continue using SygSphere messages and Dispatch.')
     }
@@ -1251,9 +1267,7 @@ async function handleSygSphereCommunicationsApi(
       routeReference: route.routeReference,
       scopeMembershipVerified: true,
     })
-    return json({ refreshedConnections, requestId }, 200, {
-      'set-cookie': communicationsRouteCookie(route.tenantId, route.routeReference),
-    })
+    return json({ refreshedConnections, requestId }, 200)
   }
 
   /**
@@ -1266,7 +1280,7 @@ async function handleSygSphereCommunicationsApi(
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
     const session = await requireAuthenticatedSession(request, environment)
     const authUserId = accessTokenClaims(session.token)?.sub
-    const route = parseCommunicationsRouteCookie(request)
+    const route = parseCommunicationsRouteHeader(request)
     if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS) {
       throw new ApiError('communications_unavailable', 403, 'Communications are not available for this account. Continue using SygSphere messages and Dispatch.')
     }
@@ -1327,9 +1341,7 @@ async function handleSygSphereCommunicationsApi(
       requestId,
       scope: scope && scope.success ? scope.data : null,
     })
-    return json({ outcome: outcome.outcome, requestId }, 202, {
-      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
-    })
+    return json({ outcome: outcome.outcome, requestId }, 202)
   }
 
   /** PTT media setup is a separate, protected offer path.  A caller can only
@@ -1339,7 +1351,7 @@ async function handleSygSphereCommunicationsApi(
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
     const session = await requireAuthenticatedSession(request, environment)
     const authUserId = accessTokenClaims(session.token)?.sub
-    const route = parseCommunicationsRouteCookie(request)
+    const route = parseCommunicationsRouteHeader(request)
     let body: Record<string, unknown>
     try { body = await readJsonBodyWithin(request, maxJsonBodyBytes) } catch (error) {
       if (error instanceof ApiError) throw error
@@ -1393,16 +1405,14 @@ async function handleSygSphereCommunicationsApi(
     if (preparation.outcome !== 'accepted' || !preparation.iceServers) {
       throw new ApiError('communications_unavailable', 503, 'Push-to-talk is temporarily unavailable. Please release and hold again.')
     }
-    return json({ iceServers: preparation.iceServers, requestId }, 200, {
-      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
-    })
+    return json({ iceServers: preparation.iceServers, requestId }, 200)
   }
 
   if (url.pathname === '/api/comms/v1/ptt/audio' || url.pathname === '/api/comms/v1/ptt/listen') {
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
     const session = await requireAuthenticatedSession(request, environment)
     const authUserId = accessTokenClaims(session.token)?.sub
-    const route = parseCommunicationsRouteCookie(request)
+    const route = parseCommunicationsRouteHeader(request)
     let body: Record<string, unknown>
     try { body = await readJsonBodyWithin(request, maxCommsSessionDescriptionBytes) } catch (error) {
       if (error instanceof ApiError) throw error
@@ -1456,9 +1466,7 @@ async function handleSygSphereCommunicationsApi(
         requestId,
         transmissionRequestId,
       })
-    return json({ outcome: started.outcome, requestId }, 202, {
-      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
-    })
+    return json({ outcome: started.outcome, requestId }, 202)
   }
 
   /** A subscriber acknowledges only after it has applied the provider's
@@ -1468,7 +1476,7 @@ async function handleSygSphereCommunicationsApi(
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
     const session = await requireAuthenticatedSession(request, environment)
     const authUserId = accessTokenClaims(session.token)?.sub
-    const route = parseCommunicationsRouteCookie(request)
+    const route = parseCommunicationsRouteHeader(request)
     let body: Record<string, unknown>
     try { body = await readJsonBodyWithin(request, maxJsonBodyBytes) } catch (error) {
       if (error instanceof ApiError) throw error
@@ -1501,9 +1509,7 @@ async function handleSygSphereCommunicationsApi(
       requestId,
       transmissionRequestId,
     })
-    return json({ outcome: acknowledged.outcome, requestId }, 202, {
-      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
-    })
+    return json({ outcome: acknowledged.outcome, requestId }, 202)
   }
 
   /** A selected listener can report an unrecoverable local setup failure only
@@ -1514,7 +1520,7 @@ async function handleSygSphereCommunicationsApi(
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
     const session = await requireAuthenticatedSession(request, environment)
     const authUserId = accessTokenClaims(session.token)?.sub
-    const route = parseCommunicationsRouteCookie(request)
+    const route = parseCommunicationsRouteHeader(request)
     let body: Record<string, unknown>
     try { body = await readJsonBodyWithin(request, maxJsonBodyBytes) } catch (error) {
       if (error instanceof ApiError) throw error
@@ -1547,9 +1553,7 @@ async function handleSygSphereCommunicationsApi(
       requestId,
       transmissionRequestId,
     })
-    return json({ outcome: reported.outcome, requestId }, 202, {
-      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
-    })
+    return json({ outcome: reported.outcome, requestId }, 202)
   }
 
   /** Meeting media uses the same protected, server-owned session boundary as
@@ -1563,7 +1567,7 @@ async function handleSygSphereCommunicationsApi(
     if (!meetingId || !validUuid(meetingId) || !operation) return errorJson('not_found', requestId, 404)
     const session = await requireAuthenticatedSession(request, environment)
     const authUserId = accessTokenClaims(session.token)?.sub
-    const route = parseCommunicationsRouteCookie(request)
+    const route = parseCommunicationsRouteHeader(request)
     let body: Record<string, unknown>
     try { body = await readJsonBodyWithin(request, operation === 'prepare' || operation === 'stop' ? maxJsonBodyBytes : maxCommsSessionDescriptionBytes) } catch (error) {
       if (error instanceof ApiError) throw error
@@ -1606,24 +1610,18 @@ async function handleSygSphereCommunicationsApi(
       if (prepared.outcome !== 'accepted' || !prepared.iceServers) {
         throw new ApiError('communications_unavailable', 503, 'Meeting media is temporarily unavailable. Continue with messages or Dispatch and try again.')
       }
-      return json({ iceServers: prepared.iceServers, requestId }, 200, {
-        'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
-      })
+      return json({ iceServers: prepared.iceServers, requestId }, 200)
     }
     if (operation === 'stop') {
       const stopped = await coordinator.stopMeetingMedia(base)
-      return json({ outcome: stopped.outcome, requestId }, 202, {
-        'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
-      })
+      return json({ outcome: stopped.outcome, requestId }, 202)
     }
     const started = await coordinator.startMeetingMedia({
       ...base,
       offer: offer!,
       ...(operation === 'subscribe' && sourceConnectionId ? { sourceConnectionId } : {}),
     })
-    return json({ outcome: started.outcome, requestId }, 202, {
-      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
-    })
+    return json({ outcome: started.outcome, requestId }, 202)
   }
 
   const directCallMatch = /^\/api\/comms\/v1\/calls\/([0-9a-f-]{36})$/i.exec(url.pathname)
@@ -1633,7 +1631,7 @@ async function handleSygSphereCommunicationsApi(
     if (!callId || !validUuid(callId)) return errorJson('not_found', requestId, 404)
     const session = await requireAuthenticatedSession(request, environment)
     const authUserId = accessTokenClaims(session.token)?.sub
-    const route = parseCommunicationsRouteCookie(request)
+    const route = parseCommunicationsRouteHeader(request)
     if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS) {
       throw new ApiError('communications_unavailable', 403, 'Communications are not available for this call. Please reopen SygSphere and try again.')
     }
@@ -1663,16 +1661,14 @@ async function handleSygSphereCommunicationsApi(
     if (call.outcome !== 'accepted' || !call.conversationReference) {
       throw new ApiError('communications_unavailable', 403, 'This call is no longer available. Please reopen SygSphere and try again.')
     }
-    return json({ conversationReference: call.conversationReference, requestId }, 200, {
-      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
-    })
+    return json({ conversationReference: call.conversationReference, requestId }, 200)
   }
 
   if (url.pathname === '/api/comms/v1/media/prepare') {
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
     const session = await requireAuthenticatedSession(request, environment)
     const authUserId = accessTokenClaims(session.token)?.sub
-    const route = parseCommunicationsRouteCookie(request)
+    const route = parseCommunicationsRouteHeader(request)
     let body: Record<string, unknown>
     try { body = await readJsonBodyWithin(request, maxJsonBodyBytes) } catch (error) {
       if (error instanceof ApiError) throw error
@@ -1713,14 +1709,13 @@ async function handleSygSphereCommunicationsApi(
     if (preparation.outcome !== 'accepted' || !preparation.iceServers) {
       throw new ApiError('communications_unavailable', 503, 'Audio is temporarily unavailable. Please try the call again.')
     }
-    return json({ iceServers: preparation.iceServers, requestId }, 200, {
-      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
-    })
+    return json({ iceServers: preparation.iceServers, requestId }, 200)
   }
 
   /**
    * A browser may offer only its own microphone SDP. The Worker re-checks the
-   * current employee, active direct-conversation membership, route cookie,
+   * current employee, active direct-conversation membership, per-tab route
+   * handle,
    * release state, and tenant before the coordinator receives it. Provider
    * credentials and Cloudflare session identifiers never cross this boundary.
    */
@@ -1728,7 +1723,7 @@ async function handleSygSphereCommunicationsApi(
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
     const session = await requireAuthenticatedSession(request, environment)
     const authUserId = accessTokenClaims(session.token)?.sub
-    const route = parseCommunicationsRouteCookie(request)
+    const route = parseCommunicationsRouteHeader(request)
     let body: Record<string, unknown>
     try {
       body = await readJsonBodyWithin(request, maxCommsSessionDescriptionBytes)
@@ -1781,9 +1776,7 @@ async function handleSygSphereCommunicationsApi(
       release: release.data,
       requestId,
     })
-    return json({ outcome: outcome.outcome, requestId }, 202, {
-      'set-cookie': communicationsRouteCookie(authorization.data.tenantId, route.routeReference),
-    })
+    return json({ outcome: outcome.outcome, requestId }, 202)
   }
 
   if (url.pathname === '/api/comms/v1/usage') {

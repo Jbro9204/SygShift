@@ -4,16 +4,23 @@ import { resolve } from 'node:path'
 
 const worker = readFileSync(resolve(import.meta.dirname, '..', 'worker/index.ts'), 'utf8')
 
-describe('SygSphere Communications routing-cookie lifetime', () => {
-  it('keeps a route-only cookie available for the first 45-second authorization refresh', () => {
-    expect(worker).toContain('Max-Age=90')
-    expect(worker).toContain("url.pathname === '/api/comms/v1/authorization/refresh'")
-    expect(worker).toContain("'set-cookie': communicationsRouteCookie(route.tenantId, route.routeReference)")
+describe('SygSphere Communications per-tab routing', () => {
+  it('returns a route-only handle at bootstrap and never uses a shared routing cookie', () => {
+    expect(worker).toContain('routeHandle: communicationsRouteHandle(authorization.data.tenantId, bootstrap.routeReference)')
+    expect(worker).not.toContain('__Host-sygsphere-comms-route')
+    expect(worker).not.toContain('communicationsRouteCookie(')
   })
 
-  it('does not place the raw one-use ticket in the routing cookie', () => {
-    const cookieDefinition = worker.match(/const communicationsRouteCookie[\s\S]*?\n\nconst parseCommunicationsRouteCookie/u)?.[0] ?? ''
-    expect(cookieDefinition).toContain('${tenantId}.${routeReference}')
-    expect(cookieDefinition).not.toContain('ticket')
+  it('requires the per-tab handle on protected HTTP actions and the socket upgrade', () => {
+    expect(worker).toContain("const communicationsRouteHeaderName = 'x-sygsphere-comms-route-reference'")
+    expect(worker).toContain("const communicationsRouteWebSocketProtocolPrefix = 'sygsphere-comms-route.'")
+    expect(worker).toContain('parseCommunicationsRouteWebSocketProtocol(request)')
+    expect(worker).toContain('parseCommunicationsRouteHeader(request)')
+  })
+
+  it('keeps the one-use ticket out of the route-handle implementation', () => {
+    const routeDefinition = worker.match(/const communicationsRouteHandle[\s\S]*?\n\nconst parseCommunicationsRouteHandle/u)?.[0] ?? ''
+    expect(routeDefinition).toContain('${tenantId}.${routeReference}')
+    expect(routeDefinition).not.toContain('ticket')
   })
 })

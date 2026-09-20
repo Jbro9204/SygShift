@@ -84,22 +84,28 @@ export function SygSphereCommunicationsRuntimeProvider({
     [],
   );
   const controller = useMemo(() => {
-    if (!SYGSPHERE_COMMS_CLIENT_RUNTIME_RELEASED || !browser.controlTransport.available || !browser.webRtcMedia.available) {
+    // A connected Communications control session is what makes a teammate
+    // reachable for an incoming call and visible to an authorized PTT
+    // channel. Do not hide that session merely because this device cannot
+    // capture media. Capture remains explicitly gated when a person starts
+    // talking, answers, turns on a camera, or shares a screen.
+    if (!SYGSPHERE_COMMS_CLIENT_RUNTIME_RELEASED || !browser.controlTransport.available) {
       return null;
     }
     const mediaDevices = typeof navigator === "undefined" ? null : navigator.mediaDevices;
-    if (!mediaDevices?.getUserMedia) return null;
     const captureDevices = {
-      getDisplayMedia: typeof mediaDevices.getDisplayMedia === "function"
+      getDisplayMedia: typeof mediaDevices?.getDisplayMedia === "function"
         ? mediaDevices.getDisplayMedia.bind(mediaDevices)
         : async () => { throw new DOMException("Screen sharing is not supported on this device.", "NotSupportedError"); },
-      getUserMedia: mediaDevices.getUserMedia.bind(mediaDevices),
+      getUserMedia: typeof mediaDevices?.getUserMedia === "function"
+        ? mediaDevices.getUserMedia.bind(mediaDevices)
+        : async () => { throw new DOMException("Microphone and camera capture are not supported on this device.", "NotSupportedError"); },
     };
     return new SygSphereCommunicationsController(
       new SygSphereCommunicationsSocketBridge(() => accessTokenRef.current),
       new SygSphereCommunicationsMedia(captureDevices),
     );
-  }, [browser.controlTransport.available, browser.webRtcMedia.available]);
+  }, [browser.controlTransport.available]);
 
   useEffect(() => {
     const sound = new Audio(incomingCallSound);
@@ -399,6 +405,8 @@ export function SygSphereCommunicationsWorkspace({
       conversation?.kind === "direct"
       && !conversation.archived
       && !runtime.state.call
+      && runtime.browser.audioCapture.available
+      && runtime.browser.webRtcMedia.available
       && permissions.has("sygsphere.comms.call.start"),
     ),
     camera: runtime.state.call?.kind === "meeting"
@@ -409,10 +417,12 @@ export function SygSphereCommunicationsWorkspace({
       && conversation.kind !== "direct"
       && !conversation.archived
       && !runtime.state.call
+      && runtime.browser.webRtcMedia.available
       && permissions.has("sygsphere.comms.meeting.create"),
     ),
     ptt: conversation.kind === "channel"
       && runtime.browser.audioCapture.available
+      && runtime.browser.webRtcMedia.available
       && permissions.has("sygsphere.comms.ptt.transmit")
       && !runtime.state.call
       && Boolean(selectedChannelId),

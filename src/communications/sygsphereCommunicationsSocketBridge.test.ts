@@ -18,6 +18,7 @@ describe("SygSphere communications protected socket bridge", () => {
     await socketCreated(socket);
     expect(socket.url).toBe("wss://sygilant.us/api/comms/v1/connect");
     expect(socket.url).not.toContain(ticket);
+    expect(socket.protocols).toEqual(["sygsphere-comms-route.11111111-1111-4111-8111-111111111111.22222222-2222-4222-8222-222222222222"]);
     socket.open();
     expect(socket.sent).toEqual([JSON.stringify({ kind: "auth", protocolVersion: 1, ticket })]);
     socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
@@ -882,7 +883,13 @@ describe("SygSphere communications protected socket bridge", () => {
 
 function validBootstrap(value: string) {
   return {
-    connection: { expiresAt, protocolVersion: 1, socketPath: "/api/comms/v1/connect", ticket: value },
+    connection: {
+      expiresAt,
+      protocolVersion: 1,
+      routeHandle: "11111111-1111-4111-8111-111111111111.22222222-2222-4222-8222-222222222222",
+      socketPath: "/api/comms/v1/connect",
+      ticket: value,
+    },
     requestId: "d285bf11-15f6-4efe-b60f-4ab891637342",
   };
 }
@@ -1023,10 +1030,11 @@ function createBridge({ acknowledgePttListenerReady, bootstrap, createPeerTransp
     createPeerTransport: createPeerTransport ?? (() => peerTransport ?? createFakePeerTransport().adapter),
     createRtcPeer: createRtcPeer ?? (() => createFakeRtcPeer()),
     createStream: (tracks) => ({ getTracks: () => tracks } as unknown as MediaStream),
-    createSocket: (url) => {
+    createSocket: (url, protocols) => {
       const selected = sockets?.[index++] ?? socket;
       if (!selected) throw new Error("No test socket configured.");
       selected.url = url;
+      selected.protocols = protocols;
       return selected;
     },
     location: () => ({ origin: "https://sygilant.us", protocol: "https:" }),
@@ -1116,6 +1124,7 @@ class FakeSocket {
   readyState = 0;
   sent: string[] = [];
   url = "";
+  protocols: string | string[] | undefined;
   closedWith: { code?: number; reason?: string } | null = null;
   private listeners = new Map<string, Array<(event: never) => void>>();
 
