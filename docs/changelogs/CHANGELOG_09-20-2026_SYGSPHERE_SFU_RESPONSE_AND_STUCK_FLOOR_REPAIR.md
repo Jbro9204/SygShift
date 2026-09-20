@@ -47,6 +47,8 @@ always release a server-reserved PTT floor.
   **198 test files / 945 tests**, Cloudflare package validation, and production build.
 - The complete SygShift desktop/mobile browser matrix passed **348 checks** with **12 intentional project
   skips**, including SygSphere and the mandatory real Time Clock workflow preservation suite.
+- After lifecycle hardening, the focused desktop/mobile SygSphere plus mandatory Time Clock matrix passed all
+  **102 checks** against the final build.
 - Physical microphone-to-speaker acceptance still requires two separately authenticated employee accounts on
   two devices. Automated tests do not claim that audible ceremony occurred.
 
@@ -63,8 +65,12 @@ always release a server-reserved PTT floor.
   versioned assets.
 - Rollback points: `rollback/pre-sygsphere-sfu-response-repair-20260920` and
   `rollback/pre-sygilant-sfu-response-repair-20260920`.
-- Superseding lifecycle source candidates: SygShift `c2c42ca` and Sygilant `3eef2c1`. Their coordinated
-  production identifiers and final postflight are recorded after deployment.
+- Superseding lifecycle code: SygShift `c2c42ca` and Sygilant `3eef2c1`.
+- Final SygShift Worker: `8fb7a981-7237-4d23-a1d4-6cc5198e6e26`; accepted Sygilant Pages deployment:
+  `a1c18caf-a8a8-4daa-87d2-99a4443c15dc`.
+- Final postflight returned HTTP 200 for both applications, both SygSphere routes, health, and readiness;
+  anonymous bootstrap remained HTTP 401; approved-origin CORS returned exact-origin credentials; hostile
+  origin received no grant; and live entry assets matched the final local builds byte-for-byte.
 
 ## Follow-up
 

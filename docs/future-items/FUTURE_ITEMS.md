@@ -786,7 +786,7 @@ The first release is intentionally enrolled only for the owner account. It deriv
 
 - Priority: **Pilot acceptance**
 - Target window: Complete the controlled two-person device ceremony before wider employee rollout
-- Status: Shared runtime and the SFU response/stuck-floor repair are deployed. Browser connection lifecycle hardening now waits for a real peer connection before showing PTT/call success, clears denied or expired held states, and prevents stale call-media events from altering the current conversation. Full SygShift and Sygilant source gates pass; coordinated redeployment and physical two-person audio/video acceptance remain open.
+- Status: Shared runtime, SFU response/stuck-floor repair, and browser connection lifecycle hardening are deployed in both products. A real peer connection is required before PTT/call success appears; denied or expired held states clear; stale call-media events cannot alter the current conversation. Full source, browser, production, perimeter, and exact-asset gates pass. Physical two-person audio/video acceptance remains open.
 - Added: 09/19/2026
 
 Build one browser-first communications capability shared by SygSphere, SygShift, and Sygilant for assignment-scoped PTT, authorized internal calls, optional video, conversation-based meetings, and desktop screen sharing. SygShift remains the authority for identity, MFA, permissions, membership, history, notifications, tenant routing, and usage reconciliation.

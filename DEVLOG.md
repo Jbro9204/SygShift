@@ -2726,4 +2726,8 @@ pnpm exec wrangler deploy --keep-vars
   false **Talking now** plus coordinator-denial sequence.
 - Passed strict TypeScript, zero-warning lint, both production builds, **291 test files / 1,519 tests**, and the
   paired Sygilant quality gate with **198 test files / 945 tests**.
-- Release candidates: SygShift `c2c42ca` and Sygilant `3eef2c1`; coordinated production postflight follows.
+- Released SygShift code `c2c42ca` as Worker `8fb7a981-7237-4d23-a1d4-6cc5198e6e26` and Sygilant code
+  `3eef2c1` as accepted Pages deployment `a1c18caf-a8a8-4daa-87d2-99a4443c15dc`.
+- The final 102-check desktop/mobile SygSphere plus mandatory Time Clock matrix, Sygilant production verifier,
+  health/readiness, authorization perimeter, exact CORS, hostile-origin denial, and byte-identical asset
+  checks passed. Physical two-device audible acceptance remains open.
