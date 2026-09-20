@@ -2663,6 +2663,8 @@ pnpm exec wrangler deploy --keep-vars
   eligible to join, preventing a stale background device from blocking the channel.
 - Added the exact Worker origin to the narrow CORS boundary, increased browser ICE tolerance, and replaced the
   generic preparation error with actionable guidance in both products.
+- Corrected the compact Communications typography to the 13-pixel readability floor and retained complete PTT
+  instructions for assistive technology without expanding the conversation-first voice bar.
 - Passed 291 files / 1,491 SygShift tests, 194 files / 912 Sygilant tests, all release gates and builds, and the
   102/102 desktop/mobile SygSphere plus Time Clock browser matrix.
 - Released SygShift source `c223a6a` as Worker `05b5f5ee-2baa-42c4-9e3c-dae51b7169d1` and Sygilant source

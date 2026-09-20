@@ -17,6 +17,9 @@ first ready recipient from hearing a transmission.
   wildcard or weakening hostile-origin denial.
 - Replaced the generic media-preparation failure with actionable timeout, device, permission, and temporary
   service guidance.
+- Raised compact Communications labels, statuses, notices, and call controls to the required 13-pixel minimum.
+  The redundant PTT instruction remains available to assistive technology while the visible hold/release button
+  keeps voice secondary and the conversation workspace compact.
 - Preserved server-owned permission, membership, microphone, provider, replay, and renewable-floor controls.
 
 ## Verification
@@ -25,6 +28,8 @@ first ready recipient from hearing a transmission.
   build, and **291 files / 1,491 tests**.
 - The desktop/mobile browser matrix passed **102/102** checks: **60** SygSphere checks and the mandatory
   **42** Time Clock preservation checks.
+- The readability, platform-legibility, and focused compact-voice layout gates passed after the final visual
+  correction; GitHub's previously failing small-text contract is now satisfied locally.
 - Sygilant passed lint, all Communications release contracts, Cloudflare package validation, production build,
   and **194 files / 912 tests**.
 - Production health and readiness returned HTTP `200` on the custom and Worker origins. All SygSphere routes

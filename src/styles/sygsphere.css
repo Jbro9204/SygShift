@@ -208,4 +208,4 @@ body:has(.sidebar--open) .sphere-mobile-launcher{display:none!important}
 }
 /* Persistent Communications call controls share the established SygSphere
    surfaces, radii, and mobile-safe spacing. */
-.sphere-call-control{display:flex;align-items:center;gap:8px;position:relative}.sphere-chat-header .sphere-call-control>button{margin-left:0}.sphere-call-control>span{position:absolute;right:0;top:calc(100% + 6px);z-index:7;width:min(270px,70vw);padding:7px 9px;border:1px solid var(--sp-border);border-radius:8px;background:var(--sp-panel);box-shadow:0 3px 14px #0002;color:var(--sp-muted);font-size:11px;line-height:1.35}
+.sphere-call-control{display:flex;align-items:center;gap:8px;position:relative}.sphere-chat-header .sphere-call-control>button{margin-left:0}.sphere-call-control>span{position:absolute;right:0;top:calc(100% + 6px);z-index:7;width:min(270px,70vw);padding:7px 9px;border:1px solid var(--sp-border);border-radius:8px;background:var(--sp-panel);box-shadow:0 3px 14px #0002;color:var(--sp-muted);font-size:13px;line-height:1.35}.sphere-call-toast__actions button{font-size:13px}

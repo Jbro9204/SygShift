@@ -331,7 +331,7 @@
   max-width: 180px;
   overflow: hidden;
   color: var(--sy-muted);
-  font-size: 0.72rem;
+  font-size: 0.8125rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -345,7 +345,7 @@
 }
 
 .sphere-comms-panel__bar .sphere-comms-status small { display: none; }
-.sphere-comms-panel__bar .sphere-comms-status strong { font-size: 0.76rem; }
+.sphere-comms-panel__bar .sphere-comms-status strong { font-size: 0.8125rem; }
 
 .sphere-comms-panel__controls {
   display: flex;
@@ -373,8 +373,8 @@
 }
 
 .sphere-comms-panel__controls > button > span { display: grid; gap: 1px; }
-.sphere-comms-panel__controls > button strong { font-size: 0.8rem; line-height: 1.2; }
-.sphere-comms-panel__controls > button small { color: var(--sy-muted); font-size: 0.68rem; line-height: 1.2; }
+.sphere-comms-panel__controls > button strong { font-size: 0.8125rem; line-height: 1.2; }
+.sphere-comms-panel__controls > button small { color: var(--sy-muted); font-size: 0.8125rem; line-height: 1.2; }
 .sphere-comms-panel__controls > button svg { flex: 0 0 auto; color: var(--sy-brass-bright); }
 .sphere-comms-panel__controls > button:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -406,17 +406,21 @@
 }
 
 .sphere-comms-panel__hint {
-  margin: -3px 14px 8px;
-  color: var(--sy-muted);
-  font-size: 0.7rem;
-  line-height: 1.35;
-  text-align: right;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .sphere-main > .sphere-comms-workspace .sphere-comms-workspace__notice {
   margin: 0 14px 10px;
   padding: 8px 10px;
-  font-size: 0.78rem;
+  font-size: 0.8125rem;
 }
 
 .sphere-main > .sphere-comms-workspace .sphere-comms-incoming { margin: 0 14px 12px; }
@@ -450,8 +454,8 @@
 .sphere-comms-live-audio > span { display: grid; width: 38px; height: 38px; place-items: center; color: #8b661d; border-radius: 50%; background: #f3ead6; }
 .sphere-comms-live-audio > div { display: grid; min-width: 0; gap: 2px; }
 .sphere-comms-live-audio strong { font-size: 0.82rem; }
-.sphere-comms-live-audio small { overflow: hidden; color: #505854; font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
-.sphere-comms-live-audio button { min-height: 36px; padding: 0 10px; color: #765514; border: 1px solid #cab272; border-radius: 9px; background: #fff8e7; font: inherit; font-size: 0.74rem; font-weight: 720; cursor: pointer; }
+.sphere-comms-live-audio small { overflow: hidden; color: #505854; font-size: 0.8125rem; text-overflow: ellipsis; white-space: nowrap; }
+.sphere-comms-live-audio button { min-height: 36px; padding: 0 10px; color: #765514; border: 1px solid #cab272; border-radius: 9px; background: #fff8e7; font: inherit; font-size: 0.8125rem; font-weight: 720; cursor: pointer; }
 .sphere-comms-live-audio audio { display: none; }
 [data-theme="dark"] .sphere-comms-live-audio { color: #f1f3ed; border-color: #d1ae64; background: #121b1e; }
 [data-theme="dark"] .sphere-comms-live-audio > span { color: #edc774; background: #293027; }
@@ -466,15 +470,15 @@
   .sphere-comms-panel__controls { flex: 1; justify-content: flex-end; }
   .sphere-comms-panel__controls > button { min-height: 40px; padding: 6px 9px; }
   .sphere-comms-panel__controls > button small { display: none; }
-  .sphere-comms-panel__hint { margin: -1px 9px 7px; font-size: 0.66rem; }
+  .sphere-comms-panel__hint { margin: -1px; }
   .sphere-main > .sphere-comms-workspace .sphere-comms-active { flex-direction: column; }
   .sphere-main > .sphere-comms-workspace .sphere-comms-media-stage { width: 100%; min-width: 0; }
   .sphere-comms-live-audio { right: 14px; bottom: max(14px, env(safe-area-inset-bottom)); left: 14px; width: auto; }
 }
 
 @media (max-width: 390px) {
-  .sphere-comms-panel__identity > span { font-size: 0.76rem; }
-  .sphere-comms-panel__controls > button strong { font-size: 0.74rem; }
+  .sphere-comms-panel__identity > span { font-size: 0.8125rem; }
+  .sphere-comms-panel__controls > button strong { font-size: 0.8125rem; }
   .sphere-comms-panel__controls > button { gap: 6px; padding-inline: 8px; }
 }
 

@@ -786,7 +786,7 @@ The first release is intentionally enrolled only for the owner account. It deriv
 
 - Priority: **Pilot acceptance**
 - Target window: Complete the controlled two-person device ceremony before wider employee rollout
-- Status: Shared runtime and the production media-preparation reliability repair are operational in SygShift and Sygilant. The compact conversation-first voice experience, global authorized audio playback, first-ready-listener PTT flow, plain-language recovery, responsive layout, and final PTT contrast correction are deployed and technically verified. Physical two-person audio/video acceptance remains open.
+- Status: Shared runtime and the production media-preparation reliability repair are operational in SygShift and Sygilant. The compact conversation-first voice experience, global authorized audio playback, first-ready-listener PTT flow, plain-language recovery, responsive layout, 13-pixel minimum compact text, and final PTT contrast correction are deployed and technically verified. Physical two-person audio/video acceptance remains open.
 - Added: 09/19/2026
 
 Build one browser-first communications capability shared by SygSphere, SygShift, and Sygilant for assignment-scoped PTT, authorized internal calls, optional video, conversation-based meetings, and desktop screen sharing. SygShift remains the authority for identity, MFA, permissions, membership, history, notifications, tenant routing, and usage reconciliation.
