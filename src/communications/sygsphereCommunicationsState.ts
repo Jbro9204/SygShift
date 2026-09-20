@@ -126,7 +126,7 @@ export function reduceCommunicationsRuntime(
         lastError: null,
       };
     case "floor.release.requested":
-      return state.floor ? { ...state, floor: { ...state.floor, status: "releasing" } } : state;
+      return state.floor ? { ...state, floor: null } : state;
     case "floor.failed":
       return { ...state, floor: null, lastError: action.reason };
     case "meeting.dismissed":

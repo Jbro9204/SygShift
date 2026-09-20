@@ -2286,7 +2286,10 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     await this.closePttMedia(row.transmission_request_id, release, reason)
     this.ctx.storage.sql.exec('delete from coordinator_ptt_listener_requirements where transmission_request_id = ?', row.transmission_request_id)
     this.ctx.storage.sql.exec('delete from coordinator_ptt_media_negotiations where transmission_request_id = ?', row.transmission_request_id)
-    this.sendPttEvent(this.pttRecipients(row), row.transmission_request_id, 'transmission.ended', {
+    // The requester must receive the authoritative end event too. Without it,
+    // their browser can remain visually stuck in the releasing state even though
+    // the server has already closed the floor and media sessions.
+    this.sendPttEvent([row.requester_employee_id, ...this.pttRecipients(row)], row.transmission_request_id, 'transmission.ended', {
       reason,
       transmissionRequestId: row.transmission_request_id,
     })

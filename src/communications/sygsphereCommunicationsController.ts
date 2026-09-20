@@ -165,7 +165,7 @@ export class SygSphereCommunicationsController {
   }
 
   async holdToTalk(channelReference: string): Promise<void> {
-    if (!this.coordinator || this.state.connection !== "ready" || this.state.call) return;
+    if (!this.coordinator || this.state.connection !== "ready" || this.state.call || hasActiveFloor(this.state)) return;
     const requestId = crypto.randomUUID();
     this.update({ type: "floor.requested", channelReference, requestId });
     try {
@@ -657,4 +657,8 @@ function stringPayload(payload: unknown, key: string): string | null {
 function safeError(error: unknown): string {
   if (error instanceof DOMException && error.name === "NotAllowedError") return "Microphone or camera permission was not granted.";
   return "Communications could not be prepared. Use messages or Dispatch and try again.";
+}
+
+function hasActiveFloor(state: CommunicationsRuntimeState): boolean {
+  return state.floor !== null;
 }

@@ -52,6 +52,22 @@ describe("SygSphere communications panel", () => {
     expect(props.onPttPressEnd).toHaveBeenCalledTimes(1);
   });
 
+  it("releases when the pointer ends outside the control", () => {
+    const props = base();
+    render(<SygSphereCommunicationsPanel {...props} />);
+    const button = screen.getByRole("button", { name: /hold to talk/i });
+    fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+    fireEvent.pointerUp(window, { pointerId: 1 });
+    expect(props.onPttPressEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a distinct, non-transmitting state while the release is confirmed", () => {
+    render(<SygSphereCommunicationsPanel {...base()} pttState="releasing" />);
+    const button = screen.getByRole("button", { name: /releasing/i });
+    expect(button).toBeDisabled();
+    expect(button).not.toHaveClass("is-transmitting");
+  });
+
   it("supports keyboard hold and release without repeated starts", () => {
     const props = base();
     render(<SygSphereCommunicationsPanel {...props} />);

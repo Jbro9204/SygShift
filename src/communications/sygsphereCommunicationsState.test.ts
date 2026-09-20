@@ -55,7 +55,7 @@ describe("SygSphere communications runtime state", () => {
         transmissionRequestId: "request-a",
       }, 1),
     });
-    expect(state.floor?.status).toBe("releasing");
+    expect(state.floor).toBeNull();
   });
 
   it("drops PTT state when a private call receives focus", () => {

@@ -418,11 +418,12 @@ function useCommunicationsRuntime(): CommunicationsRuntimeContextValue {
 function communicationsPttState(
   state: CommunicationsRuntimeState,
   audioCaptureAvailable: boolean,
-): "permission_needed" | "ready" | "requesting" | "transmitting" | "reconnecting" | "denied" {
+): "permission_needed" | "ready" | "requesting" | "transmitting" | "releasing" | "reconnecting" | "denied" {
   if (!audioCaptureAvailable || ["unavailable", "denied", "failed"].includes(state.connection)) return "denied";
   if (state.connection === "authorizing" || state.connection === "connecting" || state.connection === "reconnecting") return "reconnecting";
   if (state.floor?.status === "requesting" || state.floor?.status === "preparing") return "requesting";
-  if (state.floor?.status === "ready" || state.floor?.status === "transmitting" || state.floor?.status === "releasing") return "transmitting";
+  if (state.floor?.status === "releasing") return "releasing";
+  if (state.floor?.status === "ready" || state.floor?.status === "transmitting") return "transmitting";
   return "ready";
 }
 

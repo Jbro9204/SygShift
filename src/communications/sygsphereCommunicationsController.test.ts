@@ -116,6 +116,39 @@ describe("SygSphere communications controller", () => {
     expect(test.media.releaseAudioFocus).toHaveBeenCalled();
   });
 
+  it("returns PTT to idle immediately and remains idle when the server confirms release", async () => {
+    const test = harness();
+    await test.controller.start("employee-a");
+    await test.controller.holdToTalk("dispatch");
+    const requestId = vi.mocked(test.session.send).mock.calls[0][0].payload.clientIntentId;
+    await test.onEvent()(event("floor.preparing", { transmissionRequestId: requestId }, 1));
+    await test.onEvent()(event("floor.ready", {
+      expiresAt: new Date(Date.now() + 6_000).toISOString(),
+      transmissionRequestId: requestId,
+    }, 2));
+
+    await test.controller.releaseToTalk();
+    expect(test.controller.snapshot.floor).toBeNull();
+    expect(vi.mocked(test.session.send).mock.calls.some(([command]) => command.kind === "floor.release")).toBe(true);
+
+    await test.onEvent()(event("transmission.ended", { reason: "ended", transmissionRequestId: requestId }, 3));
+    expect(test.controller.snapshot.floor).toBeNull();
+  });
+
+  it("clears local PTT immediately and blocks overlapping floor requests", async () => {
+    const test = harness();
+    await test.controller.start("employee-a");
+    await test.controller.holdToTalk("dispatch");
+    await test.controller.holdToTalk("dispatch");
+    expect(vi.mocked(test.session.send).mock.calls.filter(([command]) => command.kind === "floor.request")).toHaveLength(1);
+
+    await test.controller.releaseToTalk();
+
+    expect(test.controller.snapshot.floor).toBeNull();
+    expect(test.media.releaseAudioFocus).toHaveBeenCalled();
+    expect(vi.mocked(test.session.send).mock.calls.some(([command]) => command.kind === "floor.cancel")).toBe(true);
+  });
+
   it("fails closed and stops capture when a media publication is rejected", async () => {
     const test = harness();
     vi.mocked(test.session.publish).mockRejectedValueOnce(new Error("Media provider unavailable."));

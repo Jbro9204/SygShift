@@ -56,7 +56,7 @@ interface SygSphereCommunicationsPanelProps {
   onScreenShare: () => void;
   onStartCall: () => void;
   onStartMeeting: () => void;
-  pttState: "permission_needed" | "ready" | "requesting" | "transmitting" | "reconnecting" | "denied";
+  pttState: "permission_needed" | "ready" | "requesting" | "transmitting" | "releasing" | "reconnecting" | "denied";
   remoteMedia?: readonly CommunicationsRemoteTrack[];
   selectedChannelId: string;
 }
@@ -86,7 +86,8 @@ export function SygSphereCommunicationsPanel({
 }: SygSphereCommunicationsPanelProps) {
   const selectedChannel = channels.find((channel) => channel.id === selectedChannelId) ?? channels[0] ?? null;
   const pttAudio = remoteMedia.filter((track) => track.publicationKind === "ptt" && track.mediaKind === "audio");
-  const pttEnabled = capabilities.ptt && connection === "ready" && Boolean(selectedChannel) && !call && pttState !== "denied";
+  const pttEnabled = capabilities.ptt && connection === "ready" && Boolean(selectedChannel) && !call
+    && pttState !== "denied" && pttState !== "releasing";
   const ptt = useHoldToTalk({
     enabled: pttEnabled,
     onRelease: onPttPressEnd,
@@ -264,6 +265,7 @@ function ConnectionStatus({ state }: { state: CommunicationsConnectionState }) {
 
 function pttLabel(state: SygSphereCommunicationsPanelProps["pttState"], pressed: boolean): string {
   if (pressed || state === "transmitting") return "Talking now — release to stop";
+  if (state === "releasing") return "Releasing…";
   if (state === "permission_needed") return "Hold to allow microphone";
   if (state === "requesting") return "Preparing your channel…";
   if (state === "reconnecting") return "Reconnecting…";
@@ -290,10 +292,18 @@ function useHoldToTalk({ enabled, onRelease, onStart }: { enabled: boolean; onRe
   useEffect(() => {
     const stopWhenHidden = () => { if (document.visibilityState === "hidden") release(); };
     window.addEventListener("blur", release);
+    window.addEventListener("pointercancel", release, true);
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("touchcancel", release, true);
+    window.addEventListener("touchend", release, true);
     document.addEventListener("visibilitychange", stopWhenHidden);
     return () => {
       release();
       window.removeEventListener("blur", release);
+      window.removeEventListener("pointercancel", release, true);
+      window.removeEventListener("pointerup", release, true);
+      window.removeEventListener("touchcancel", release, true);
+      window.removeEventListener("touchend", release, true);
       document.removeEventListener("visibilitychange", stopWhenHidden);
     };
   }, [release]);
@@ -311,7 +321,11 @@ function useHoldToTalk({ enabled, onRelease, onStart }: { enabled: boolean; onRe
       onPointerCancel: release,
       onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
         if (event.button !== 0) return;
-        event.currentTarget.setPointerCapture?.(event.pointerId);
+        try {
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+        } catch {
+          // The window-level release fallback handles browsers that decline capture.
+        }
         start();
       },
       onPointerUp: release,
