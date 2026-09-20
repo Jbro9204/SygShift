@@ -3,6 +3,7 @@ import {
   parseSygSphereCommsCommand,
   SYGSPHERE_COMMS_EVENT_PAYLOAD_SCHEMAS,
   SYGSPHERE_COMMS_PROTOCOL_VERSION,
+  type SygSphereCommsCommandKind,
   type SygSphereCommsEvent,
 } from "../../shared/sygsphere-communications/v1/contract";
 import { sygSphereCommunicationsApiRequest } from "../data/sygsphereCommunications";
@@ -22,6 +23,7 @@ import {
 
 const socketPath = "/api/comms/v1/connect";
 const openingTimeoutMilliseconds = 5_000;
+const iceGatheringTimeoutMilliseconds = 10_000;
 const heartbeatMilliseconds = 15_000;
 const authorizationRefreshMilliseconds = 45_000;
 const bootstrapSchema = z.object({
@@ -436,7 +438,7 @@ function createSession({
       AbortSignal.timeout(10_000),
     ));
     if (response.outcome !== "accepted") {
-      throw new Error(commandOutcomeMessage(response.outcome));
+      throw new Error(commandOutcomeMessage(response.outcome, command.kind));
     }
   };
   const peerTransport = dependencies.createPeerTransport({
@@ -944,7 +946,10 @@ function createSession({
   return { dispose, handleEvent, session };
 }
 
-function commandOutcomeMessage(outcome: string): string {
+function commandOutcomeMessage(outcome: string, commandKind?: SygSphereCommsCommandKind): string {
+  if (outcome === "recipient_unavailable" && commandKind === "floor.request") {
+    return "No one else is online in this channel right now.";
+  }
   if (outcome === "recipient_unavailable") return "That person is not available for Communications right now.";
   if (outcome === "rate_limited") return "Please wait a moment before trying Communications again.";
   if (outcome === "runtime_disabled" || outcome === "provider_unavailable") {
@@ -968,7 +973,7 @@ function waitForPeerIce(
     const timer = dependencies.setTimer(() => {
       peer.removeEventListener("icegatheringstatechange", complete);
       reject(new Error("Communications could not prepare push-to-talk audio in time."));
-    }, 5_000);
+    }, iceGatheringTimeoutMilliseconds);
     peer.addEventListener("icegatheringstatechange", complete);
   });
 }

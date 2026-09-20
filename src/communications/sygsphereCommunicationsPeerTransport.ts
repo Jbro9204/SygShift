@@ -56,7 +56,7 @@ type PeerTransportDependencies = Readonly<{
   setTimer: (callback: () => void, delay: number) => Timer;
 }>;
 
-const iceGatheringTimeoutMilliseconds = 5_000;
+const iceGatheringTimeoutMilliseconds = 10_000;
 
 const defaultDependencies: PeerTransportDependencies = {
   clearTimer: (timer) => clearTimeout(timer),

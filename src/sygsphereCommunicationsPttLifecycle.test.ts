@@ -17,7 +17,7 @@ const listenerTwo = '55555555-5555-4555-8555-555555555555'
 const renewCommandId = '66666666-6666-4666-8666-666666666666'
 
 describe('SygSphere Communications PTT lifecycle', () => {
-  it('negotiates detached media before granting a floor, then waits for every required listener', () => {
+  it('negotiates detached media before granting a floor to the first authorized ready listener', () => {
     const prepared = prepareServerPttFloor({
       callId, generation: 7, requiredListenerConnectionIds: [listenerOne, listenerTwo], scope: 'site', transmissionRequestId,
     })
@@ -28,8 +28,10 @@ describe('SygSphere Communications PTT lifecycle', () => {
     const negotiating = recordServerPttMediaNegotiation(prepared.state, { generation: 7, negotiationId })
     expect(recordServerPttListenerReady(negotiating, { generation: 6, listenerConnectionId: listenerOne, negotiationId })).toEqual(negotiating)
     const firstListener = recordServerPttListenerReady(negotiating, { generation: 7, listenerConnectionId: listenerOne, negotiationId })
-    expect(grantServerPttFloor(firstListener, { leaseDurationMs: 10_000, nowMs: 10_000 })).toBeNull()
+    const firstGrant = grantServerPttFloor(firstListener, { leaseDurationMs: 10_000, nowMs: 10_000 })
+    expect(firstGrant).toMatchObject({ state: { stage: 'floor_granted' } })
     const listenersReady = recordServerPttListenerReady(firstListener, { generation: 7, listenerConnectionId: listenerTwo, negotiationId })
+    expect(listenersReady.readyListeners).toEqual(new Set([listenerOne, listenerTwo]))
     const grant = grantServerPttFloor(listenersReady, { leaseDurationMs: 10_000, nowMs: 10_000 })
     expect(grant).toMatchObject({
       event: { kind: 'floor.ready', payload: { scope: 'site', transmissionRequestId } },

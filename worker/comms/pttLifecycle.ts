@@ -1,8 +1,9 @@
 /**
  * Server-owned PTT lifecycle. The microphone never becomes enabled merely
  * because a floor was requested: media negotiation starts while it is detached
- * or disabled, every required listener proves readiness, then the coordinator
- * grants the floor and begins the renewable transmission lease.
+ * or disabled, at least one authorized listener proves readiness, then the
+ * coordinator grants the floor and begins the renewable transmission lease.
+ * Other authorized listeners may finish subscribing while that lease is active.
  */
 export type PttScope = 'assignment' | 'dispatch' | 'shift' | 'site'
 export type PttLifecycleStage = 'awaiting_listeners' | 'ended' | 'floor_granted' | 'negotiating' | 'preparing' | 'transmitting'
@@ -119,16 +120,15 @@ export const recordServerPttListenerReady = (
   state: ServerPttLifecycle,
   input: Readonly<{ generation: number, listenerConnectionId: string, negotiationId: string }>,
 ): ServerPttLifecycle => {
-  if (state.stage !== 'negotiating' || input.generation !== state.generation || state.negotiationId !== input.negotiationId || !state.requiredListeners.has(input.listenerConnectionId)) {
+  if ((state.stage !== 'negotiating' && state.stage !== 'awaiting_listeners') || input.generation !== state.generation || state.negotiationId !== input.negotiationId || !state.requiredListeners.has(input.listenerConnectionId)) {
     return state
   }
   const readyListeners = immutableSet([...state.readyListeners, input.listenerConnectionId])
-  const allReady = [...state.requiredListeners].every((listener) => readyListeners.has(listener))
-  return { ...state, readyListeners, stage: allReady ? 'awaiting_listeners' : 'negotiating' }
+  return { ...state, readyListeners, stage: readyListeners.size > 0 ? 'awaiting_listeners' : 'negotiating' }
 }
 
 /**
- * Only after every required listener is media-ready may audio be enabled. A
+ * Only after an authorized listener is media-ready may audio be enabled. A
  * stale or duplicate grant cannot revive a closed or expired transmission.
  */
 export const grantServerPttFloor = (

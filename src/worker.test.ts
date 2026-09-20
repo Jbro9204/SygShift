@@ -162,6 +162,21 @@ describe('Cloudflare Worker boundary', () => {
     expect(assets.ASSETS.fetch).not.toHaveBeenCalled()
   })
 
+  it('permits the exact first-party Worker origin through the narrow Communications CORS boundary', async () => {
+    const response = await worker.fetch(
+      new Request('https://app.sygilant.us/api/comms/v1/bootstrap', {
+        headers: { origin: 'https://sygshift.sygilant.workers.dev' },
+        method: 'OPTIONS',
+      }),
+      environment(),
+    )
+
+    expect(response.status).toBe(204)
+    expect(response.headers.get('access-control-allow-origin')).toBe('https://sygshift.sygilant.workers.dev')
+    expect(response.headers.get('access-control-allow-credentials')).toBe('true')
+    expect(response.headers.get('vary')).toBe('Origin')
+  })
+
   it('reports production readiness without exposing secret values', async () => {
     const response = await worker.fetch(
       new Request('https://app.sygshift.example/api/v1/ready'),

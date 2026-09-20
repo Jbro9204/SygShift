@@ -308,7 +308,7 @@ const commandReplayRetentionMilliseconds = 86_400_000
 const maximumRecordsPurgedPerDispatch = 50
 const maximumWebSocketFrameBytes = 4_096
 const directCallRingingMilliseconds = 45_000
-const pttPreparingMilliseconds = 10_000
+const pttPreparingMilliseconds = 30_000
 const pttLeaseMilliseconds = 6_000
 
 const runtimeEnabled = (value: string | undefined): boolean => value?.trim().toLowerCase() === 'true'
@@ -2440,6 +2440,19 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
     const session = registerProviderTrack(pending, { id: trackId, kind: 'audio', mid: localTrack.mid, state: 'active' })
     const now = Date.now()
+    const current = this.pttTransmission(parsed.transmissionRequestId)
+    if (!current || current.state !== 'preparing' || current.lease_expires_at_ms <= now
+      || current.requester_employee_id !== caller.authorization.employeeId
+      || current.requester_connection_id !== caller.connectionId) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
+    this.ctx.storage.sql.exec(
+      `update coordinator_ptt_transmissions set lease_expires_at_ms = ?, updated_at_ms = ?
+       where transmission_request_id = ? and state = 'preparing'`,
+      now + pttPreparingMilliseconds,
+      now,
+      parsed.transmissionRequestId,
+    )
     this.persistProviderSession({
       callId: parsed.transmissionRequestId,
       connectionId: caller.connectionId,
@@ -2517,7 +2530,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
     const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
     const row = this.pttTransmission(parsed.transmissionRequestId)
-    if (!caller || !row || row.state !== 'preparing' || row.lease_expires_at_ms <= Date.now()
+    if (!caller || !row || !['preparing', 'ready'].includes(row.state) || row.lease_expires_at_ms <= Date.now()
       || !this.pttRecipients(row).includes(caller.authorization.employeeId)
       || caller.authorization.employeeId === row.requester_employee_id
       || !this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId).includes(caller.connectionId)
@@ -2581,7 +2594,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
     const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
     const row = this.pttTransmission(parsed.transmissionRequestId)
-    if (!caller || !row || row.state !== 'preparing' || row.lease_expires_at_ms <= Date.now()
+    if (!caller || !row || !['preparing', 'ready'].includes(row.state) || row.lease_expires_at_ms <= Date.now()
       || !this.pttRecipients(row).includes(caller.authorization.employeeId)
       || caller.authorization.employeeId === row.requester_employee_id) {
       return { outcome: 'invalid_state', requestId: parsed.requestId }
@@ -2596,8 +2609,9 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
 
   /** A listener acknowledgement is accepted only from the exact current
    * channel connection selected at floor reservation.  The grant happens
-   * once, after every selected listener has completed its own subscriber SDP
-   * negotiation; this is the last server-side interlock before mic enable. */
+   * once, after the first selected listener has completed its own subscriber
+   * SDP negotiation. Other selected listeners can finish joining while the
+   * renewable floor is active. */
   async acknowledgePttListenerReady(input: unknown): Promise<TenantCommsCoordinatorResult> {
     await this.initialization
     const parsed = pttListenerReadySchema.parse(input)
@@ -2607,7 +2621,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     const now = Date.now()
     const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
     const row = this.pttTransmission(parsed.transmissionRequestId)
-    if (!caller || !row || row.state !== 'preparing' || row.lease_expires_at_ms <= now
+    if (!caller || !row || !['preparing', 'ready'].includes(row.state) || row.lease_expires_at_ms <= now
       || !this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId).includes(caller.connectionId)
       || !this.mediaSession(parsed.transmissionRequestId, caller.authorization.employeeId)) {
       return { outcome: 'invalid_state', requestId: parsed.requestId }
@@ -2625,6 +2639,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       parsed.transmissionRequestId,
       caller.connectionId,
     )
+    if (row.state === 'ready') return { outcome: 'accepted', requestId: parsed.requestId }
     const requiredListeners = this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId)
     let lifecycle = prepareServerPttFloor({
       callId: parsed.transmissionRequestId,

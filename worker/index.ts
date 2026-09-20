@@ -1081,6 +1081,10 @@ const sygsphereCommunicationsRuntimeEnabled = (environment: Environment): boolea
 const trustedCommunicationsOrigins = new Set([
   'https://app.sygilant.us',
   'https://sygilant.us',
+  // The Worker hostname is also a first-party SygShift launch surface. Keep
+  // this exact value (rather than a workers.dev wildcard) so its WebSocket
+  // origin can complete the same protected PTT handshake as the custom host.
+  'https://sygshift.sygilant.workers.dev',
 ])
 
 const trustedCommunicationsOrigin = (request: Request): string | null => {

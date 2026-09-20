@@ -366,7 +366,7 @@ export class SygSphereCommunicationsController {
     this.clearRemoteMedia();
     this.update({
       type: "local.media.failed",
-      reason: `${safeError(error)} Use messages or Dispatch while media reconnects.`,
+      reason: mediaFailureMessage(error),
     });
   }
 
@@ -655,8 +655,32 @@ function stringPayload(payload: unknown, key: string): string | null {
 }
 
 function safeError(error: unknown): string {
-  if (error instanceof DOMException && error.name === "NotAllowedError") return "Microphone or camera permission was not granted.";
+  if (error instanceof DOMException) {
+    if (error.name === "NotAllowedError") return "Microphone or camera permission was not granted.";
+    if (error.name === "NotFoundError") return "No microphone was found. Connect a microphone and try again.";
+    if (error.name === "NotReadableError") return "The microphone is being used by another app. Close that app and try again.";
+    if (error.name === "AbortError") return "Voice setup was interrupted. Release the control and try again.";
+  }
+  if (error instanceof Error) {
+    if (error.message === "No one else is online in this channel right now.") return error.message;
+    if (error.message === "That person is not available for Communications right now.") return error.message;
+    if (error.message === "Please wait a moment before trying Communications again.") return error.message;
+    if (error.message === "Your session is no longer valid. Sign in and try again.") return error.message;
+    if (error.message.includes("in time") || error.message.includes("timed out")) {
+      return "Voice setup took too long. Release the control and try again.";
+    }
+    if (error.message.startsWith("Communications is temporarily unavailable.")) {
+      return "Voice service is temporarily unavailable. Try again in a moment.";
+    }
+  }
   return "Communications could not be prepared. Use messages or Dispatch and try again.";
+}
+
+function mediaFailureMessage(error: unknown): string {
+  const message = safeError(error);
+  return /messages|Dispatch/i.test(message)
+    ? message
+    : `${message} Use messages or Dispatch while voice reconnects.`;
 }
 
 function hasActiveFloor(state: CommunicationsRuntimeState): boolean {

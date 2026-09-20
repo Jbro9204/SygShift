@@ -166,6 +166,23 @@ describe("SygSphere communications controller", () => {
     expect(test.controller.snapshot.lastError).toMatch(/Use messages or Dispatch/);
   });
 
+  it("preserves an actionable timeout message when media preparation is slow", async () => {
+    const test = harness();
+    vi.mocked(test.session.publish).mockRejectedValueOnce(new Error("Communications media negotiation timed out."));
+    await test.controller.start("employee-a");
+    await test.controller.holdToTalk("dispatch");
+    const requestId = vi.mocked(test.session.send).mock.calls[0][0].payload.clientIntentId;
+    test.onEvent()(event("floor.preparing", {
+      scope: "dispatch",
+      transmissionRequestId: requestId,
+    }, 1));
+
+    await vi.waitFor(() => expect(test.controller.snapshot.floor).toBeNull());
+    expect(test.controller.snapshot.lastError).toBe(
+      "Voice setup took too long. Release the control and try again. Use messages or Dispatch while voice reconnects.",
+    );
+  });
+
   it("renews PTT every two seconds and accepts only the correlated authoritative lease", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-19T21:00:00.000Z"));
