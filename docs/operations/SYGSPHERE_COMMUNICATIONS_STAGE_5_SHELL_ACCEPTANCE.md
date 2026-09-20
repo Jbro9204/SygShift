@@ -1,12 +1,12 @@
 # SygSphere Communications — Stage 5 Shell Acceptance
 
-**Status:** Source-only lifecycle preparation and test plan. This document does not authorize an application-shell runtime.
+**Status:** Application-shell runtime implemented and automatically verified. Physical multi-user acceptance remains tracked separately.
 
 ## Purpose
 
-When the shared communications runtime is eventually enabled, it must behave as a quiet, resilient layer in both SygShift and Sygilant. It cannot interrupt a report, form, document, schedule edit, time correction, or message draft.
+The shared communications runtime must behave as a quiet, resilient layer in both SygShift and Sygilant. It cannot interrupt a report, form, document, schedule edit, time correction, or message draft.
 
-The SygShift source now includes a pure, unmounted lifecycle reducer at `src/communications/sygsphereCommunicationsRuntimeLifecycle.ts`. It is closed by an immutable client-release switch and the shared server-sourced gate; it neither stores communications data nor opens a connection, requests a device, or changes application state. It exists only to make future account-change, authorization-loss, and sign-out cleanup deterministic.
+SygShift now mounts one authenticated provider in `AppShell`. The pure lifecycle reducer still makes account-change, authorization-loss, and sign-out cleanup deterministic, while the reviewed runtime owns the protected control channel and user-initiated media. The client switch records source release, but the Worker and database gates remain authoritative for every operation.
 
 ## Required behavior
 
@@ -37,7 +37,8 @@ Before an enabled Stage 5 build can be approved, test all items below on SygShif
 
 Store the two-application results with the shared contract revision, coordinator release ID, test account roles, devices/browsers, timestamps, known limitations, and rollback result. A passing desktop-only demonstration is not sufficient.
 
-## Explicit non-goals before acceptance
+## Current safety boundary
 
-- Do not show a communications dock, request media permissions, add CSP media sources, or persist active-call browser state.
-- Do not change existing SygSphere messages, Dispatch, notifications, forms, employee files, scheduling, timekeeping, payroll, or HR workflows.
+- Device permission is requested only after the employee starts the related action. No page load, message selection, channel selection, or incoming notice starts capture.
+- Existing SygSphere messages, Dispatch, notifications, forms, employee files, scheduling, timekeeping, payroll, and HR workflows remain independent fallbacks.
+- Recording and transcription are not enabled.

@@ -19,11 +19,13 @@ const otherwiseOpenGate = {
   sharedCompatibilityVerified: true,
 } as const
 
-describe('SygSphere Communications Stage 5/6 source-only readiness', () => {
-  it('keeps the browser runtime closed even if a future server gate is supplied', () => {
-    expect(SYGSPHERE_COMMS_CLIENT_RUNTIME_RELEASED).toBe(false)
-    expect(mayRunSygSphereCommunicationsClient(otherwiseOpenGate)).toBe(false)
-    expect(effectiveSygSphereCommunicationsClientGate(otherwiseOpenGate)).toBe(closedCommunicationsRuntimeGate)
+describe('SygSphere Communications Stage 5/6 runtime lifecycle', () => {
+  it('runs only when the reviewed source release and server gate are both open', () => {
+    expect(SYGSPHERE_COMMS_CLIENT_RUNTIME_RELEASED).toBe(true)
+    expect(mayRunSygSphereCommunicationsClient(otherwiseOpenGate)).toBe(true)
+    expect(effectiveSygSphereCommunicationsClientGate(otherwiseOpenGate)).toBe(otherwiseOpenGate)
+    expect(mayRunSygSphereCommunicationsClient(closedCommunicationsRuntimeGate)).toBe(false)
+    expect(effectiveSygSphereCommunicationsClientGate(closedCommunicationsRuntimeGate)).toBe(closedCommunicationsRuntimeGate)
   })
 
   it('clears all transient communications state on account change, authorization loss, and sign-out', () => {
@@ -57,14 +59,20 @@ describe('SygSphere Communications Stage 5/6 source-only readiness', () => {
     })
   })
 
-  it('rejects a requested interactive state while the browser release remains closed', () => {
+  it('accepts a requested interactive state only while the server gate is open', () => {
     const initial = createSygSphereCommunicationsRuntimeState('account-a')
     const requested = reduceSygSphereCommunicationsRuntime(initial, {
       type: 'surface.requested',
       surfaceState: 'active',
     }, otherwiseOpenGate)
 
-    expect(requested).toEqual(initial)
+    expect(requested).toEqual({ ...initial, surfaceState: 'active' })
+
+    const rejected = reduceSygSphereCommunicationsRuntime(initial, {
+      type: 'surface.requested',
+      surfaceState: 'active',
+    }, closedCommunicationsRuntimeGate)
+    expect(rejected).toEqual(initial)
   })
 
   it('offers only the normal messages and Dispatch fallback without a device request', () => {

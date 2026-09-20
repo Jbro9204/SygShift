@@ -1,11 +1,11 @@
 /**
- * Stage 5 source-only lifecycle preparation for the future SygSphere
- * Communications host. This module is deliberately pure: it does not mount a
+ * Shared lifecycle controls for the released SygSphere Communications host.
+ * This module is deliberately pure: it does not mount a
  * React surface, persist state, open a socket, or ask the browser for media.
  *
- * A later, separately approved release must explicitly change the immutable
- * client-release switch below after the server-side gate, provider evidence,
- * and pilot acceptance are all complete. A browser cannot turn it on.
+ * The immutable client-release switch below records the reviewed source
+ * release. The browser still cannot activate the runtime by itself: every
+ * operation must pass the server-owned authorization and release gates.
  */
 import {
   closedCommunicationsRuntimeGate,
@@ -14,7 +14,7 @@ import {
 } from '../../shared/sygsphere-communications/v1/integration-gates'
 import { type SygSphereCommsSurfaceState } from '../../shared/sygsphere-communications/v1/presentation-policy'
 
-export const SYGSPHERE_COMMS_CLIENT_RUNTIME_RELEASED = false as const
+export const SYGSPHERE_COMMS_CLIENT_RUNTIME_RELEASED = true as const
 
 export type SygSphereCommunicationsRuntimeState = Readonly<{
   /**
@@ -47,8 +47,7 @@ const unavailableState = (
 })
 
 /**
- * A browser can only ever prepare a passive fallback unless this source-level
- * release switch and every server-sourced activation gate are true.
+ * The source release and every server-sourced activation gate must be true.
  */
 export const mayRunSygSphereCommunicationsClient = (
   gate: SygSphereCommsActivationGate,

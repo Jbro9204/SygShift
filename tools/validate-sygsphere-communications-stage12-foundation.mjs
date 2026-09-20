@@ -8,6 +8,9 @@ const coordinator = readWorkspaceFile('worker/comms/tenantCommsDurableObject.ts'
 const providerRegistry = readWorkspaceFile('worker/comms/providerRegistry.ts')
 const workerConfiguration = readWorkspaceFile('wrangler.jsonc')
 const workerEntrypoint = readWorkspaceFile('worker/index.ts')
+const cloudflareAdapter = readWorkspaceFile('worker/comms/cloudflareRealtimeAdapter.ts')
+const roleDefaults = readWorkspaceFile('supabase/migrations/20260919220000_sygsphere_communications_role_defaults.sql')
+const mediaScope = readWorkspaceFile('supabase/migrations/20260919223000_sygsphere_communications_media_scope.sql')
 const manifest = JSON.parse(readWorkspaceFile('shared/sygsphere-communications/v1/contract-manifest.json'))
 
 for (const relation of [
@@ -84,8 +87,34 @@ if (!/"TENANT_COMMS"\s*,\s*\n\s*"class_name"\s*:\s*"TenantCommsDurableObject"/.t
   failures.push('The source-only coordinator Durable Object binding is missing.')
 }
 
-if (!/"SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED"\s*:\s*"false"/.test(workerConfiguration)) {
-  failures.push('The coordinator runtime flag is not explicitly disabled.')
+if (!/"SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED"\s*:\s*"true"/.test(workerConfiguration)) {
+  failures.push('The coordinator runtime flag is not explicitly enabled.')
+}
+
+if (!cloudflareAdapter.includes('SYGSPHERE_COMMS_CLOUDFLARE_REALTIME_ADAPTER_RELEASED = true as const')) {
+  failures.push('The reviewed Cloudflare Realtime adapter is not released.')
+}
+
+for (const requiredConfiguration of [
+  'SYGSHIFT_COMMS_REALTIME_APP_SECRET',
+  'SYGSHIFT_COMMS_TURN_API_TOKEN',
+  'SYGSHIFT_COMMS_REALTIME_APP_ID',
+  'SYGSHIFT_COMMS_TURN_KEY_ID',
+]) {
+  if (!workerConfiguration.includes(requiredConfiguration)) failures.push(`The Worker configuration is missing ${requiredConfiguration}.`)
+}
+
+for (const roleCode of [
+  'system_guard', 'system_admin', 'custom_chief', 'system_dispatcher',
+  'human_resources_employee', 'human_resources', 'operations_manager',
+  'system_recruiting_licensing', 'system_scheduler', 'system_supervisor',
+]) {
+  if (!roleDefaults.includes(`'${roleCode}'`)) failures.push(`Communications defaults omit ${roleCode}.`)
+}
+
+if (!mediaScope.includes('service_resolve_sygsphere_communications_command_scope')
+  || !mediaScope.includes("'runtimeEnabled', gate_record.runtime_enabled")) {
+  failures.push('The protected media-command scope resolver is missing its runtime gate.')
 }
 
 if (!workerEntrypoint.includes("url.pathname.startsWith('/api/comms/v1/')")) {
@@ -120,5 +149,5 @@ if (failures.length > 0) {
   for (const failure of failures) console.error(`- ${failure}`)
   process.exitCode = 1
 } else {
-  console.log('SygSphere Communications Stage 1/2 coordinator foundation and closed service ingress are prepared as intended.')
+  console.log('SygSphere Communications Stage 1/2 protected coordinator ingress and live provider requirements are satisfied.')
 }

@@ -7,6 +7,7 @@ const failures = []
 const gateContract = readWorkspaceFile('shared/sygsphere-communications/v1/integration-gates.ts')
 const workerConfiguration = readWorkspaceFile('wrangler.jsonc')
 const workerEntrypoint = readWorkspaceFile('worker/index.ts')
+const cloudflareAdapter = readWorkspaceFile('worker/comms/cloudflareRealtimeAdapter.ts')
 
 if (!gateContract.includes('closedCommunicationsRuntimeGate')) {
   failures.push('The closed-by-default communications runtime gate is missing.')
@@ -24,8 +25,16 @@ if (!/"TENANT_COMMS"\s*,\s*\n\s*"class_name"\s*:\s*"TenantCommsDurableObject"/.t
   failures.push('The closed coordinator Durable Object binding is missing.')
 }
 
-if (!/"SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED"\s*:\s*"false"/.test(workerConfiguration)) {
-  failures.push('The coordinator runtime flag is not explicitly disabled.')
+if (!/"SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED"\s*:\s*"true"/.test(workerConfiguration)) {
+  failures.push('The coordinator runtime flag is not explicitly enabled.')
+}
+
+if (!cloudflareAdapter.includes('SYGSPHERE_COMMS_CLOUDFLARE_REALTIME_ADAPTER_RELEASED = true as const')) {
+  failures.push('The reviewed Cloudflare Realtime adapter release boundary remains closed.')
+}
+
+for (const binding of ['SYGSHIFT_COMMS_REALTIME_APP_SECRET', 'SYGSHIFT_COMMS_TURN_API_TOKEN']) {
+  if (!workerConfiguration.includes(binding)) failures.push(`The server-only ${binding} binding is missing.`)
 }
 
 if (!workerEntrypoint.includes("url.pathname.startsWith('/api/comms/v1/')")) {
@@ -41,5 +50,5 @@ if (failures.length > 0) {
   for (const failure of failures) console.error(`- ${failure}`)
   process.exitCode = 1
 } else {
-  console.log('SygSphere Communications Stage 4/5 release gate is closed while its protected ingress remains prepared.')
+  console.log('SygSphere Communications Stage 4/5 protected ingress and live provider release controls are prepared.')
 }

@@ -65,6 +65,26 @@ async function communicationsJson(response: Response): Promise<unknown> {
   }
 }
 
+/** Shared browser-runtime request path. Access tokens stay in memory and every
+ * response passes through the same employee-safe error boundary as the rest
+ * of the SygShift communications client. */
+export async function sygSphereCommunicationsApiRequest<T>(
+  path: string,
+  accessToken: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const headers = appendProtectedSessionHeaders(init.headers, { includeSharedIdentity: true })
+  headers.set('accept', 'application/json')
+  headers.set('authorization', `Bearer ${accessToken}`)
+  const response = await fetch(path, {
+    ...init,
+    cache: 'no-store',
+    credentials: 'same-origin',
+    headers,
+  })
+  return await communicationsJson(response) as T
+}
+
 /** Opens an authenticated server-owned delivery channel. The ticket is
  * short-lived and supplied only in the first WebSocket frame, never a URL. */
 export async function bootstrapSygSphereCommunications(): Promise<SygSphereCommunicationsBootstrap> {

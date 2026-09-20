@@ -1,6 +1,6 @@
 # SygSphere Communications — Stage 6/7 Shared UI and Push-to-Talk Acceptance
 
-**Status:** Shared presentation policy and source-only view-model preparation complete. No employee-facing communications runtime is enabled.
+**Status:** Shared presentation policy and employee-facing workspace implemented. Physical two-user and restrictive-network acceptance remains open.
 
 ## Shared experience rule
 
@@ -13,7 +13,7 @@ The profile is deliberately plain:
 - It never implies that selecting a channel, opening a dock, or viewing a notification starts a call or a transmission.
 - It never lets a browser choose a tenant, employee, permission, assignment, shift, site, or Dispatch authority.
 
-The SygShift source now includes an unmounted adapter at `src/communications/sygsphereCommunicationsSurfaceViewModel.ts`. It consumes the shared policy only to produce passive, accessible fallback view models and cannot request a device, persist state, create a connection, or render a React dock. Its only current intents are the existing SygSphere messages and Dispatch fallback.
+SygShift consumes the shared policy in a mounted workspace and a global incoming-call host. Browser media and WebSocket use is isolated to reviewed communications modules; protected operations still derive tenant, role, conversation, assignment, and recipient authority on the server. SygSphere messages and Dispatch remain available when interactive communication is denied or unavailable.
 
 ## Stage 6 — complete shared UI acceptance
 
@@ -64,7 +64,7 @@ All prior Stage 4/5 gates remain mandatory. In addition, an interactive Stage 6/
 5. Rendered desktop, tablet, and phone checks for every state above, including keyboard, touch, screen reader, reduced-motion, long text, and tenant-isolation checks.
 6. A controlled, revocable feature flag and a tested rollback path before any pilot account receives access.
 
-## Explicit non-goals in this preparation
+## Current non-goals
 
-- No React dock, incoming-call modal, device chooser, microphone request, media permission, CSP/Permissions-Policy change, browser media API, Worker route, Durable Object binding, WebSocket, provider secret, feature flag, role grant, or employee transmission is enabled.
-- No call, video, meeting, screen-share, usage, notification, or history record is created by this work.
+- No recording, transcription, automatic camera, automatic screen capture, hidden background capture, or browser-selected authorization scope is enabled.
+- Provider credentials remain server-only and no raw provider, WebRTC, database, token, or numeric diagnostic is shown to an employee.

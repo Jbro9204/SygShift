@@ -4,53 +4,48 @@ import { resolve } from 'node:path'
 const root = process.cwd()
 const readWorkspaceFile = (relativePath) => readFileSync(resolve(root, relativePath), 'utf8')
 const lifecycle = readWorkspaceFile('src/communications/sygsphereCommunicationsRuntimeLifecycle.ts')
-const viewModel = readWorkspaceFile('src/communications/sygsphereCommunicationsSurfaceViewModel.ts')
 const appShell = readWorkspaceFile('src/components/AppShell.tsx')
-const stage5Acceptance = readWorkspaceFile('docs/operations/SYGSPHERE_COMMUNICATIONS_STAGE_5_SHELL_ACCEPTANCE.md')
-const stage67Acceptance = readWorkspaceFile('docs/operations/SYGSPHERE_COMMUNICATIONS_STAGE_6_7_ACCEPTANCE.md')
+const runtime = readWorkspaceFile('src/components/communications/SygSphereCommunicationsRuntime.tsx')
+const panel = readWorkspaceFile('src/components/communications/SygSphereCommunicationsPanel.tsx')
+const media = readWorkspaceFile('src/communications/sygsphereCommunicationsMedia.ts')
+const peerTransport = readWorkspaceFile('src/communications/sygsphereCommunicationsPeerTransport.ts')
+const socketBridge = readWorkspaceFile('src/communications/sygsphereCommunicationsSocketBridge.ts')
 
 const failures = []
-const closedRuntimePatterns = [
-  /SYGSPHERE_COMMS_CLIENT_RUNTIME_RELEASED\s*=\s*false\s+as\s+const/,
-  /closedCommunicationsRuntimeGate/,
-  /requestsDevicePermission:\s*false/,
-  /isInteractive:\s*false/,
-]
-const liveBrowserPatterns = [
-  /getUserMedia/,
-  /mediaDevices/,
-  /RTCPeerConnection/,
-  /new\s+WebSocket\s*\(/,
-  /EventSource/,
-  /localStorage/,
-  /sessionStorage/,
-  /fetch\s*\(/,
-]
 
-for (const pattern of closedRuntimePatterns) {
-  if (!pattern.test(`${lifecycle}\n${viewModel}`)) {
-    failures.push(`Readiness source is missing required closed-runtime control: ${pattern}`)
-  }
+if (!/SYGSPHERE_COMMS_CLIENT_RUNTIME_RELEASED\s*=\s*true\s+as\s+const/.test(lifecycle)) {
+  failures.push('The reviewed client runtime release boundary is not enabled.')
 }
 
-for (const pattern of liveBrowserPatterns) {
-  if (pattern.test(`${lifecycle}\n${viewModel}`)) {
-    failures.push(`Readiness source cannot use live browser capability: ${pattern}`)
-  }
+for (const requirement of [
+  'SygSphereCommunicationsRuntimeProvider',
+  'sygsphere.comms.use',
+  'requiredActionCheckpointActive',
+]) {
+  if (!appShell.includes(requirement)) failures.push(`AppShell is missing ${requirement}.`)
 }
 
-if (/sygsphereCommunicationsRuntimeLifecycle|sygsphereCommunicationsSurfaceViewModel/.test(appShell)) {
-  failures.push('AppShell cannot mount the Stage 5/6 communications readiness source.')
+if (!runtime.includes('SygSphereCommunicationsWorkspace')
+  || !runtime.includes('SygSphereCommunicationsPanel')
+  || !runtime.includes('Incoming SygSphere call')) {
+  failures.push('The global runtime does not mount the workspace, control panel, and incoming-call experience.')
 }
 
-if (!/source-only lifecycle/i.test(stage5Acceptance) || !/source-only view-model/i.test(stage67Acceptance)) {
-  failures.push('Stage 5/6 acceptance documentation does not describe the closed source-only preparation.')
+if (!media.includes('getUserMedia') || !media.includes('getDisplayMedia')) {
+  failures.push('The dedicated browser media controller does not support microphone, camera, and screen capture.')
+}
+
+if (!peerTransport.includes('RTCPeerConnection')) failures.push('The dedicated WebRTC peer transport is missing.')
+if (!socketBridge.includes('new WebSocket')) failures.push('The protected control-channel bridge is missing.')
+
+for (const control of ['Hold to talk', 'Call a coworker', 'Start a meeting', 'Camera', 'Share screen']) {
+  if (!panel.includes(control)) failures.push(`The communications panel is missing the ${control} control.`)
 }
 
 if (failures.length > 0) {
-  console.error('SygSphere Communications Stage 5/6 readiness gate failed:')
+  console.error('SygSphere Communications Stage 5/6 activation gate failed:')
   for (const failure of failures) console.error(`- ${failure}`)
   process.exitCode = 1
 } else {
-  console.log('SygSphere Communications Stage 5/6 readiness source remains closed and unmounted as intended.')
+  console.log('SygSphere Communications Stage 5/6 client runtime, media transports, and workspace controls are activated.')
 }

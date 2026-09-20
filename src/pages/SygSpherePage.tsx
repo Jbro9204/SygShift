@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ALargeSmall, ArrowLeft, Bell, BellOff, Bookmark, Check, ChevronDown, Download, Eye, Hash, Info, MessageCircle, Paperclip, Phone, Plus, Search, Send, Smile, Users, X } from 'lucide-react'
+import { ALargeSmall, ArrowLeft, Bell, BellOff, Bookmark, Check, ChevronDown, Download, Eye, Hash, Info, MessageCircle, Paperclip, Plus, Search, Send, Smile, Users, X } from 'lucide-react'
 import { getSessionContext } from '../data/auth'
 import { readSphereDraft, sphereActiveMentions, sphereCanPreview, sphereConversation, sphereCreate, sphereDirectory, sphereDownload, sphereDraftKey, sphereFiles, sphereInbox, sphereMessage, sphereMessageParts, sphereMessages, spherePath, spherePersonMentionLabel, spherePhoto, spherePreferences, spherePreview, sphereRequest, sphereResolveTypedMentions, sphereRetryUpload, sphereSearch, sphereSend, sphereUpload, sphereUploadStatus, SphereUploadError, writeSphereDraft, type SphereConversation, type SphereDraft, type SphereFile, type SphereMention, type SphereMessage, type SpherePerson, type SpherePreview, type SphereTextSize } from '../data/sygsphere'
 import { ModalDialog } from '../components/ModalDialog'
 import { SecurePdfViewer } from '../components/SecurePdfViewer'
+import { SygSphereCommunicationsWorkspace } from '../components/communications/SygSphereCommunicationsRuntime'
 import '../styles/sygsphere.css'
 import { platformPresenceLabels, type PlatformPresenceStatus } from '../data/platformPresence'
-import { directCallEndCommand, directCallRequestCommand, sendSygSphereCommunicationsCommand } from '../data/sygsphereCommunications'
-import { SYGSPHERE_COMMS_EVENT, SYGSPHERE_COMMS_RUNTIME_EVENT } from '../components/SygSphereCommunicationsRuntime'
 
 const reactions = ['👍', '❤️', '✅', '🎉', '👀', '🙏']
 function ErrorNotice({ error }: { error: unknown }) { return error ? <p className="sphere-error" role="alert">{error instanceof Error ? error.message : 'This request could not be completed. Please try again.'}</p> : null }
@@ -98,51 +97,6 @@ function personMatchesMentionQuery(person: SpherePerson, query: string) {
     .some((value) => value?.toLocaleLowerCase().includes(needle))
 }
 
-function DirectCallControl({ conversation }: { conversation: SphereConversation }) {
-  const [runtime, setRuntime] = useState<'ready' | 'unavailable'>(() => document.documentElement.dataset.sygsphereCommunications === 'ready' ? 'ready' : 'unavailable')
-  const [callId, setCallId] = useState<string | null>(null)
-  const [notice, setNotice] = useState('')
-  const [pending, setPending] = useState(false)
-  useEffect(() => {
-    const status = (event: Event) => setRuntime((event as CustomEvent<{ state?: 'ready' | 'unavailable' }>).detail?.state === 'ready' ? 'ready' : 'unavailable')
-    const call = (event: Event) => {
-      const detail = (event as CustomEvent<{ kind?: string, payload?: { callId?: string } }>).detail
-      if (detail?.kind === 'call.requested') setCallId(detail.payload?.callId ?? null)
-      if ((detail?.kind === 'call.ended' || detail?.kind === 'call.missed') && detail.payload?.callId === callId) {
-        setCallId(null)
-        setNotice(detail.kind === 'call.missed' ? 'The call was not answered.' : 'Call ended.')
-      }
-    }
-    window.addEventListener(SYGSPHERE_COMMS_RUNTIME_EVENT, status)
-    window.addEventListener(SYGSPHERE_COMMS_EVENT, call)
-    return () => {
-      window.removeEventListener(SYGSPHERE_COMMS_RUNTIME_EVENT, status)
-      window.removeEventListener(SYGSPHERE_COMMS_EVENT, call)
-    }
-  }, [callId])
-  const start = async () => {
-    setPending(true); setNotice('')
-    try {
-      const outcome = await sendSygSphereCommunicationsCommand(directCallRequestCommand(conversation.id, 0))
-      if (outcome === 'recipient_unavailable') setNotice(`${conversation.name} is not available for a SygSphere call right now.`)
-      else if (outcome !== 'accepted') setNotice('The call could not be started. Please try again.')
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'The call could not be started. Please try again.')
-    } finally { setPending(false) }
-  }
-  const cancel = async () => {
-    if (!callId) return
-    setPending(true)
-    try { await sendSygSphereCommunicationsCommand(directCallEndCommand('call.cancel', callId, 0)); setCallId(null) }
-    catch { setNotice('The call is still ringing. Try again in a moment.') }
-    finally { setPending(false) }
-  }
-  return <div className="sphere-call-control">
-    {callId ? <button type="button" onClick={() => void cancel()} disabled={pending} title="Cancel call"><Phone size={17} /> Calling…</button> : <button type="button" onClick={() => void start()} disabled={runtime !== 'ready' || pending} title={runtime === 'ready' ? `Call ${conversation.name}` : 'Communications is connecting'}><Phone size={17} /> Call</button>}
-    {notice ? <span role="status">{notice}</span> : null}
-  </div>
-}
-
 export function SygSpherePage() {
   const session = useQuery({ queryKey: ['sygsphere', 'session'], queryFn: getSessionContext, staleTime: 60000 })
   if (session.isError) return <section className="sphere-workspace"><ErrorNotice error={session.error} /></section>
@@ -184,6 +138,7 @@ export function SphereWorkspace({ employeeId }: { employeeId: string }) {
       <button type="button" aria-label={inbox.data?.soundEnabled ? 'Mute SygSphere sounds' : 'Enable SygSphere sounds'} title="Messaging sounds only" disabled={preferences.isPending} onClick={() => preferences.mutate(!inbox.data?.soundEnabled)}>{inbox.data?.soundEnabled ? <Bell size={19} /> : <BellOff size={19} />}</button>
       <button aria-label="New message" className="sphere-primary sphere-new-message" title="Start a new conversation" type="button" onClick={() => setNewOpen(true)}><Plus size={19} /><span className="sphere-new-message__label sphere-new-message__label--full">New message</span><span aria-hidden="true" className="sphere-new-message__label sphere-new-message__label--short">New</span></button></div></header>
     <ErrorNotice error={preferences.error || updateTextSize.error} />
+    <SygSphereCommunicationsWorkspace conversation={conversation} conversations={inbox.data?.conversations ?? []} />
     <div className="sphere-layout">
       <nav className="sphere-conversations" aria-label="SygSphere conversations">
         <div className="sphere-tabs"><button type="button" aria-pressed={view === 'chats'} onClick={() => { setView('chats'); navigate('/sygsphere') }}><MessageCircle size={16} /> Chats</button><button type="button" aria-pressed={view === 'saved'} onClick={() => setView('saved')}><Bookmark size={16} /> Saved</button><button type="button" aria-pressed={view === 'search'} onClick={() => setView('search')}><Search size={16} /> Search</button></div>
@@ -201,7 +156,7 @@ export function SphereWorkspace({ employeeId }: { employeeId: string }) {
       {view !== 'chats' ? <div className="sphere-main"><header className="sphere-chat-header"><button className="sphere-mobile-back" type="button" aria-label="Back to chats" onClick={() => setView('chats')}><ArrowLeft size={19} /></button><h2>{view === 'saved' ? 'Saved messages' : 'Search messages'}</h2></header>{view === 'search' ? <form className="sphere-search-form" onSubmit={(event) => { event.preventDefault(); setSearchQuery(search.trim()) }}><label className="sphere-search"><Search size={18} /><input aria-label="Search message history" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search words or an exact phrase…" /></label><button type="submit" className="sphere-primary" disabled={search.trim().length < 2}>Search</button></form> : null}
         <SphereResults employeeId={employeeId} query={searchQuery} saved={view === 'saved'} onOpen={(message) => { setView('chats'); navigate(spherePath(message.conversationId, message.id, message.parentId)) }} />
       </div> : conversation ? <>
-        <div className="sphere-main"><header className="sphere-chat-header"><button className="sphere-mobile-back" aria-label="Back to conversations" type="button" onClick={() => { navigate('/sygsphere'); try { localStorage.removeItem(`sygsphere.last:${employeeId}`) } catch { /* Optional preference. */ } }}><ArrowLeft size={20} /></button><div><h2>{conversation.kind === 'channel' ? '# ' : ''}{conversation.name}</h2><p>{conversation.archived ? 'Archived · Read-only' : conversation.kind === 'direct' ? 'Direct conversation' : conversation.kind === 'channel' ? 'Private team channel' : 'Group conversation'}</p></div>{conversation.kind === 'direct' && !conversation.archived ? <DirectCallControl conversation={conversation} /> : null}<button type="button" aria-label="Conversation details" aria-pressed={details} onClick={() => setDetails(!details)}><Info size={20} /></button></header>
+        <div className="sphere-main"><header className="sphere-chat-header"><button className="sphere-mobile-back" aria-label="Back to conversations" type="button" onClick={() => { navigate('/sygsphere'); try { localStorage.removeItem(`sygsphere.last:${employeeId}`) } catch { /* Optional preference. */ } }}><ArrowLeft size={20} /></button><div><h2>{conversation.kind === 'channel' ? '# ' : ''}{conversation.name}</h2><p>{conversation.archived ? 'Archived · Read-only' : conversation.kind === 'direct' ? 'Direct conversation' : conversation.kind === 'channel' ? 'Private team channel' : 'Group conversation'}</p></div><button type="button" aria-label="Conversation details" aria-pressed={details} onClick={() => setDetails(!details)}><Info size={20} /></button></header>
           <ConversationMessages key={conversation.id} employeeId={employeeId} conversation={conversation} allowRead={!threadId} focusId={threadId ? null : focusId} onThread={(message) => navigate(spherePath(conversation.id, undefined, message.id))} />
         </div>
         {threadId ? <aside className="sphere-detail sphere-thread"><header className="sphere-chat-header"><h2>Thread</h2><button type="button" aria-label="Close thread" onClick={() => navigate(spherePath(conversation.id))}><X size={20} /></button></header><ConversationMessages key={`${conversation.id}:${threadId}`} employeeId={employeeId} conversation={conversation} parentId={threadId} focusId={focusId} onThread={() => undefined} /></aside> : details ? <SphereDetails employeeId={employeeId} conversation={conversation} onClose={() => setDetails(false)} /> : null}

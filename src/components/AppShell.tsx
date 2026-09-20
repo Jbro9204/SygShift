@@ -47,7 +47,7 @@ import { HeaderNotificationButton } from './HeaderNotificationButton'
 import { LiveNotifications } from './LiveNotifications'
 import { PlatformPresenceReporter } from './PlatformPresenceReporter'
 import { RequiredActionsCheckpointNotice } from './RequiredActionsCheckpointNotice'
-import { SygSphereCommunicationsRuntime } from './SygSphereCommunicationsRuntime'
+import { SygSphereCommunicationsRuntimeProvider } from './communications/SygSphereCommunicationsRuntime'
 import { clearPushSession } from '../data/pushNotifications'
 import { completedSignInRecordKind, isSygSpherePath, requiresSecurityCheckpoint, sharedIdentityScopeAllowsPath } from '../lib/securityCheckpoint'
 import {
@@ -797,7 +797,16 @@ export function AppShell() {
   }
 
   return (
-    <div className={`app-shell${sidebarCollapsed && !compactNavigation ? ' app-shell--sidebar-collapsed' : ''}${compactNavigation ? ' app-shell--compact-navigation' : ''}${isSygSpherePath(location.pathname) ? ' app-shell--sygsphere' : ''}${requiredActionCheckpointActive ? ' app-shell--required-actions' : ''}`}>
+    <SygSphereCommunicationsRuntimeProvider
+      employeeId={sessionContext?.employeeId ?? null}
+      enabled={Boolean(
+        sessionContext?.permissions.includes('sygsphere.comms.use')
+        && !needsSecurityCheckpoint
+        && !requiredActionCheckpointActive,
+      )}
+      permissions={sessionContext?.permissions ?? []}
+    >
+      <div className={`app-shell${sidebarCollapsed && !compactNavigation ? ' app-shell--sidebar-collapsed' : ''}${compactNavigation ? ' app-shell--compact-navigation' : ''}${isSygSpherePath(location.pathname) ? ' app-shell--sygsphere' : ''}${requiredActionCheckpointActive ? ' app-shell--required-actions' : ''}`}>
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
@@ -1008,7 +1017,6 @@ export function AppShell() {
 
         <WorkspaceAlertStrip entries={workspaceAlerts} />
         {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive ? <LiveNotifications key={sessionContext.employeeId} employeeId={sessionContext.employeeId} username={sessionContext.username} /> : null}
-        {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive ? <SygSphereCommunicationsRuntime enabled={sessionContext.permissions.includes('sygsphere.comms.use')} /> : null}
         {sessionContext && !needsSecurityCheckpoint && !requiredActionCheckpointActive && sharedIdentityScopeAllowsPath('/tasks', sharedIdentityScope) ? <SygTasksAlarmHost employeeId={sessionContext.employeeId} /> : null}
 
         <main id="main-content" tabIndex={-1}>
@@ -1016,6 +1024,7 @@ export function AppShell() {
           {unavailableRouteWindow ? <MaintenanceUnavailablePanel window={unavailableRouteWindow} /> : <Outlet />}
         </main>
       </div>
-    </div>
+      </div>
+    </SygSphereCommunicationsRuntimeProvider>
   )
 }

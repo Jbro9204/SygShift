@@ -2605,3 +2605,12 @@ pnpm exec wrangler deploy --keep-vars
 - Verification passed 260 files / 1,325 tests, the full 336-pass desktop/mobile browser matrix with 12 intentional skips, database advisors, exact live assets, signed-out access checks, and the post-release 42/42 Time Clock matrix.
 - Released source `6cca7ff` as Cloudflare Worker `676b05a2-7039-4587-81ca-032fef31a0ab`; both production origins passed health and readiness.
 - See `docs/changelogs/CHANGELOG_09-15-2026_LICENSING_CREDENTIAL_REMOVAL.md` for complete behavior, preservation, verification, and rollback evidence.
+## 09/19/2026 - SygSphere Full Communications Workspace
+
+- Replaced the call-only SygShift client with the full shared SygSphere runtime: PTT, direct calls, meetings, camera, screen sharing, remote media, incoming-call handling, reconnect guidance, and safe fallbacks.
+- Mounted the runtime once at the authenticated application shell and added the complete controls to the SygSphere workspace without coupling it to reports, schedules, timekeeping, HR, documents, or message persistence.
+- Activated and validated the reviewed Cloudflare Realtime boundary, Worker runtime flag, SFU/TURN bindings, protected scope resolver, and baseline communications permissions for all ten canonical employee roles.
+- Production migration history matches the communications chain through `20260920030635`.
+- Verification passed 291 files / 1,479 tests, strict TypeScript, zero-warning lint, both production builds, the Worker package dry run, and all communications activation validators.
+- Deployed Cloudflare Worker version `075b5606-a51e-403f-9cb0-a3571c3bc380`; production health, SygSphere routing, signed-out authorization, and exact application-asset checks passed.
+- Created rollback checkpoint `rollback-sygsphere-full-workspace-20260919`; physical two-user/device acceptance remains explicitly open in the pilot record.
