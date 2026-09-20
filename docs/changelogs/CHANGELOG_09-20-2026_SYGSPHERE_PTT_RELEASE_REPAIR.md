@@ -22,3 +22,14 @@ Production acceptance identified a real release-state defect: after a user relea
 ## Safety preserved
 
 This repair does not broaden any role, channel, or media access. The server still derives members and listeners from the authorized channel, keeps the microphone muted until readiness is confirmed, and closes media on release or lease expiry.
+
+## Production release
+
+- SygShift source: `7fda16c`
+- SygShift Worker: `8ed25f22-1e2d-4b52-9806-10f1d40ecbe0`
+- Sygilant source: `d33bc87` (`c5f453d` contains the application repair; the later commit aligns the live policy check)
+- Sygilant Pages: `4ffd83c5-48ef-41c5-8b6a-32dc84bc3bea`
+- SygShift rollback: `rollback/pre-sygsphere-ptt-release-repair-20260920` at `33476d5`
+- Sygilant rollback: `rollback/pre-sygsphere-ptt-release-repair-20260920` at `c4369f9`
+
+Production health and readiness return success, both SygSphere routes load the repaired bundles, and an anonymous communications bootstrap is denied. Final physical audible-reception acceptance still requires two simultaneously connected employee devices.

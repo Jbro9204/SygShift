@@ -784,9 +784,9 @@ The first release is intentionally enrolled only for the owner account. It deriv
 
 ### SygSphere Communications
 
-- Priority: **High**
-- Target window: Staged non-production validation before any controlled communications pilot
-- Status: Stage 0/1 contract checkpoint, production-recorded Stage B private tenant/authorization foundation, tracked-but-unapplied closed Stage 1/2 coordinator/persistence foundation, closed-by-default Stage 4/5 integration preparation, and shared Stage 6/7 presentation/PTT policy preparation recorded 09/19/2026; all runtime capability flags and role grants remain off
+- Priority: **Pilot acceptance**
+- Target window: Complete the controlled two-person device ceremony before wider employee rollout
+- Status: Shared production runtime is operational in SygShift and Sygilant. PTT, direct calls, meetings, camera, and user-initiated screen sharing are enabled behind canonical permissions. The 09/20 PTT release repair is deployed; physical two-person audio/video acceptance remains open.
 - Added: 09/19/2026
 
 Build one browser-first communications capability shared by SygSphere, SygShift, and Sygilant for assignment-scoped PTT, authorized internal calls, optional video, conversation-based meetings, and desktop screen sharing. SygShift remains the authority for identity, MFA, permissions, membership, history, notifications, tenant routing, and usage reconciliation.
@@ -795,13 +795,13 @@ Required outcomes:
 
 - [x] Map current canonical authority and publish a versioned shared protocol artifact without enabling runtime features.
 - [x] Add a staging-only provider-spike preflight and two-device evidence matrix that fails closed without explicit non-production credentials.
-- [ ] Validate actual two-device audio, provider-enforced sender/receiver closure, idle rebuild, track reuse, UDP/TCP/TLS TURN, camera, screen share, revocation, and account analytics schema in isolated staging.
-- [~] Add SygShift-owned additive tenant, authorization, history, audit, and usage migrations with RLS and allow/deny regression coverage. The private tenant/server authorization migration is applied and its production rollback-only regression passes; the closed history/audit/usage/replay migration and regression are tracked but not applied, while role grants and runtime activation remain pending.
-- [~] Add the Worker/SQLite Durable Object coordinator and provider registry without exposing secrets or allowing browser-supplied authority. Command-specific validation, a source-only SQLite coordinator binding, replay/rate-limit storage, and a disabled provider registry are recorded; deployment, ingress, provider adapter, and runtime remain gated.
-- [~] Add a browser runtime with PTT/call focus, recovery, supported-device evidence, accessible controls, and preserved Dispatch/text-message fallback. The shared state/copy and hold-to-talk presentation policy are recorded; no browser runtime is mounted.
-- [ ] Complete independent feature flags, usage reconciliation, alerts, controlled pilot, rollback exercise, and coordinated Sygilant compatibility verification.
+- [~] Complete the physical two-device audio, camera, screen-share, UDP/TCP/TLS TURN, reconnect, release, and revocation ceremony. Automated provider, sender/receiver, idle-rebuild, authorization, and recovery coverage is complete.
+- [x] Add SygShift-owned additive tenant, authorization, history, audit, usage, and replay controls with RLS and allow/deny regression coverage.
+- [x] Deploy the Worker/SQLite Durable Object coordinator and provider registry without exposing secrets or accepting browser-supplied authority.
+- [x] Mount the shared browser runtime with PTT/call focus, recovery, accessible controls, and preserved Dispatch/text-message fallback in both applications.
+- [~] Complete the controlled physical pilot and reconcile observed SFU/TURN usage with the protected allowance meter. Independent feature flags, alerts, rollback points, and coordinated Sygilant compatibility verification are complete.
 
-Do not enable a call, meeting, PTT, video, or screen-sharing control until real provider evidence and authorization tests are recorded. Do not create a duplicate employee directory, conversation store, notification center, or client portal.
+Production controls remain permission-scoped and server-authoritative. Do not expand the pilot or claim physical audio/video acceptance until two simultaneously connected employee devices complete the recorded ceremony.
 
 ## Recruiting & External Integrations
 

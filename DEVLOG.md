@@ -2614,3 +2614,11 @@ pnpm exec wrangler deploy --keep-vars
 - Verification passed 291 files / 1,479 tests, strict TypeScript, zero-warning lint, both production builds, the Worker package dry run, and all communications activation validators.
 - Deployed Cloudflare Worker version `075b5606-a51e-403f-9cb0-a3571c3bc380`; production health, SygSphere routing, signed-out authorization, and exact application-asset checks passed.
 - Created rollback checkpoint `rollback-sygsphere-full-workspace-20260919`; physical two-user/device acceptance remains explicitly open in the pilot record.
+
+## 09/20/2026 - SygSphere PTT Release Repair
+
+- Repaired requester end-event delivery and immediate local floor cleanup so releasing PTT cannot leave the employee visually transmitting.
+- Added overlapping-request prevention plus window-level pointer and touch release fallbacks.
+- Passed 18 communications files / 111 tests, full typecheck, lint, and production build; the paired Sygilant suite passed 192 files / 905 tests plus its production release gates.
+- Released SygShift source `7fda16c` as Worker `8ed25f22-1e2d-4b52-9806-10f1d40ecbe0` and Sygilant source `d33bc87` as Pages deployment `4ffd83c5-48ef-41c5-8b6a-32dc84bc3bea`.
+- Updated the active queue to retain only the controlled physical two-device and usage-reconciliation acceptance work.
