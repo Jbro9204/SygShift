@@ -13,6 +13,9 @@
 - Focused Worker/controller/socket/PTT tests passed **4 files / 80 tests**; strict TypeScript,
   zero-warning lint, and production build passed. Release details:
   `docs/changelogs/CHANGELOG_09-20-2026_SYGSPHERE_WORKER_ORIGIN_PTT_RECOVERY.md`.
+- Released as Cloudflare Worker version **463** (`e5232327-7048-4207-a14a-58a167059b6c`) after both
+  first-party origins returned health HTTP `200`, readiness HTTP `200`, the Worker-origin preflight returned
+  exact-origin HTTP `204`, and anonymous Communications bootstrap remained HTTP `401`.
 
 ## 09/19/2026 - SygSphere Communications Stage 6/7 Shared Presentation and PTT Preparation
 
@@ -2651,3 +2654,17 @@ pnpm exec wrangler deploy --keep-vars
   `f0c7eed` as Pages deployment `105f574b-ae06-4f10-ae5d-78395909a41f`. Health, readiness, protected-route,
   exact-asset, authenticated Ready-state, and light/dark live visual checks passed.
 - Physical two-account/device media acceptance remains deliberately open.
+
+## 09/20/2026 - SygSphere Media Preparation Reliability
+
+- Extended and refreshed the protected PTT preparation lease so TURN, ICE, SFU publication, and listener setup
+  can complete under real network conditions.
+- Allowed the first authorized ready listener to open the floor while keeping additional selected listeners
+  eligible to join, preventing a stale background device from blocking the channel.
+- Added the exact Worker origin to the narrow CORS boundary, increased browser ICE tolerance, and replaced the
+  generic preparation error with actionable guidance in both products.
+- Passed 291 files / 1,491 SygShift tests, 194 files / 912 Sygilant tests, all release gates and builds, and the
+  102/102 desktop/mobile SygSphere plus Time Clock browser matrix.
+- Released SygShift source `c223a6a` as Worker `05b5f5ee-2baa-42c4-9e3c-dae51b7169d1` and Sygilant source
+  `adba2df` as Pages deployment `90bd6482-9813-4a09-9805-c5b8e03cad16`.
+- Physical two-account/device audible reception remains the final controlled acceptance step.

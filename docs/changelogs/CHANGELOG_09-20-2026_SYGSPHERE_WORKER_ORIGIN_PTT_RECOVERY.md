@@ -51,8 +51,13 @@ No database migration or employee, schedule, payroll, message, or account-record
 ## Git and deployment status
 
 - Source repair commit: `c223a6a` (`fix: harden SygSphere media preparation`).
-- Push, Cloudflare deployment, and production health/readiness verification are recorded in the release
-  update immediately following this prepared change record.
+- Release record commit: `d6830f4`; pushed to `origin/main`.
+- Cloudflare Worker deployed as version **463** (`e5232327-7048-4207-a14a-58a167059b6c`) at 100% traffic.
+- Both the custom application host and the official Worker host returned health HTTP `200`; readiness returned
+  HTTP `200` with all configured checks ready.
+- The official Worker-origin Communications preflight now returns HTTP `204`, its exact
+  `Access-Control-Allow-Origin` value, credentials enabled, and `Vary: Origin`.
+- An anonymous Communications bootstrap still returns HTTP `401`; the repair did not make PTT public.
 
 ## Remaining acceptance
 
