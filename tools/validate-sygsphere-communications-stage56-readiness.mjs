@@ -38,8 +38,18 @@ if (!media.includes('getUserMedia') || !media.includes('getDisplayMedia')) {
 if (!peerTransport.includes('RTCPeerConnection')) failures.push('The dedicated WebRTC peer transport is missing.')
 if (!socketBridge.includes('new WebSocket')) failures.push('The protected control-channel bridge is missing.')
 
-for (const control of ['Hold to talk', 'Call a coworker', 'Start a meeting', 'Camera', 'Share screen']) {
-  if (!panel.includes(control)) failures.push(`The communications panel is missing the ${control} control.`)
+for (const [control, evidence] of [
+  ['Hold to talk', 'Hold to talk'],
+  ['conversation-scoped private Call', 'Private voice'],
+  ['conversation-scoped Meet', 'Voice or video'],
+  ['Camera', 'Camera'],
+  ['Share screen', 'Share screen'],
+]) {
+  if (!panel.includes(evidence)) failures.push(`The communications panel is missing the ${control} control.`)
+}
+
+if (!panel.includes('conversationKind === "channel"') || !panel.includes('conversationKind === "direct"')) {
+  failures.push('Voice controls are not scoped to the selected channel or direct conversation.')
 }
 
 if (failures.length > 0) {

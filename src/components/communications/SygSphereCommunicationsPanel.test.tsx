@@ -9,7 +9,6 @@ afterEach(cleanup);
 const actions = () => ({
   onAnswer: vi.fn(),
   onCameraChange: vi.fn(),
-  onChannelChange: vi.fn(),
   onDecline: vi.fn(),
   onEndCall: vi.fn(),
   onMicrophoneMuteChange: vi.fn(),
@@ -27,6 +26,8 @@ const base = () => ({
   capabilities: { call: true, camera: true, meeting: true, ptt: true, screen: true },
   channels: [{ id: "dispatch", label: "Dispatch", scopeLabel: "Your Dispatch channel" }],
   connection: "ready" as const,
+  conversationKind: "channel" as const,
+  conversationName: "Dispatch",
   microphoneMuted: false,
   microphoneMutedByModerator: false,
   pttState: "ready" as const,
@@ -34,12 +35,19 @@ const base = () => ({
 });
 
 describe("SygSphere communications panel", () => {
-  it("makes the primary Guard workflow explicit", () => {
+  it("keeps channel voice secondary to the selected chat", () => {
     render(<SygSphereCommunicationsPanel {...base()} />);
     expect(screen.getByRole("button", { name: /hold to talk/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /call a coworker/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /start a meeting/i })).toBeEnabled();
-    expect(screen.getByText(/camera and screen sharing are always off/i)).toBeVisible();
+    expect(screen.getByRole("button", { name: /meet\s*voice or video/i })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /private voice/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Dispatch")).toBeVisible();
+  });
+
+  it("offers a private call only inside a direct conversation", () => {
+    render(<SygSphereCommunicationsPanel {...base()} conversationKind="direct" conversationName="Taylor Reed" />);
+    expect(screen.getByRole("button", { name: /call\s*private voice/i })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /hold to talk/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /meet\s*voice or video/i })).not.toBeInTheDocument();
   });
 
   it("starts on press and releases on pointer release", () => {
@@ -91,8 +99,10 @@ describe("SygSphere communications panel", () => {
   it("disables controls that the server did not authorize", () => {
     render(<SygSphereCommunicationsPanel {...base()} capabilities={{ call: false, camera: false, meeting: false, ptt: false, screen: false }} />);
     expect(screen.getByRole("button", { name: /hold to talk/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /call a coworker/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /start a meeting/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /meet\s*voice or video/i })).toBeDisabled();
+    cleanup();
+    render(<SygSphereCommunicationsPanel {...base()} conversationKind="direct" capabilities={{ call: false, camera: false, meeting: false, ptt: false, screen: false }} />);
+    expect(screen.getByRole("button", { name: /call\s*private voice/i })).toBeDisabled();
   });
 
   it("shows a clear voice state instead of an empty black media area", () => {

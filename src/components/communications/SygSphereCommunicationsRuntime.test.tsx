@@ -1,8 +1,13 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { IncomingCommunicationsCallNotice } from "./SygSphereCommunicationsRuntime";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { GlobalCommunicationsAudio, IncomingCommunicationsCallNotice } from "./SygSphereCommunicationsRuntime";
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("IncomingCommunicationsCallNotice", () => {
   it("keeps incoming calls actionable outside the SygSphere page", () => {
@@ -37,5 +42,42 @@ describe("IncomingCommunicationsCallNotice", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /enable sound/i }));
     expect(onEnableSound).toHaveBeenCalledOnce();
+  });
+});
+
+describe("GlobalCommunicationsAudio", () => {
+  const radioTrack = () => ({
+    callId: "ptt-a",
+    mediaKind: "audio" as const,
+    participantConnectionId: "connection-a",
+    publicationKind: "ptt" as const,
+    roomId: "room-a",
+    stream: {} as MediaStream,
+    trackReference: "track-a",
+  });
+
+  it("plays incoming PTT audio independently of the open page", async () => {
+    Object.defineProperty(HTMLMediaElement.prototype, "srcObject", { configurable: true, writable: true, value: null });
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+
+    render(<GlobalCommunicationsAudio tracks={[radioTrack()]} />);
+
+    expect(screen.getByText("Live team radio")).toBeVisible();
+    expect(screen.getByLabelText("Live team radio audio")).toBeInTheDocument();
+    await waitFor(() => expect(play).toHaveBeenCalled());
+  });
+
+  it("offers a one-tap recovery when browser autoplay is blocked", async () => {
+    Object.defineProperty(HTMLMediaElement.prototype, "srcObject", { configurable: true, writable: true, value: null });
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play")
+      .mockRejectedValueOnce(new DOMException("Blocked", "NotAllowedError"))
+      .mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+
+    render(<GlobalCommunicationsAudio tracks={[radioTrack()]} />);
+    const retry = await screen.findByRole("button", { name: /play audio/i });
+    fireEvent.click(retry);
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(2));
   });
 });

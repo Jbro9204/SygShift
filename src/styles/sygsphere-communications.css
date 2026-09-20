@@ -285,3 +285,201 @@
 @media (prefers-reduced-motion: reduce) {
   .sphere-comms-ptt { transition: none; }
 }
+
+/* Conversation-first controls: messaging remains the primary workspace while
+   voice is immediately available in the conversation that owns it. */
+.sphere-main > .sphere-comms-workspace {
+  display: block;
+  flex: 0 0 auto;
+  margin: 0;
+  border-bottom: 1px solid var(--sy-line);
+}
+
+.sphere-comms-panel {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--sy-surface-raised) 94%, var(--sy-brass) 6%);
+  box-shadow: none;
+}
+
+.sphere-comms-panel__bar {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+}
+
+.sphere-comms-panel__identity {
+  display: grid;
+  min-width: 110px;
+  gap: 2px;
+}
+
+.sphere-comms-panel__identity > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sy-ink);
+  font-size: 0.82rem;
+  font-weight: 780;
+}
+
+.sphere-comms-panel__identity > span svg { color: var(--sy-brass-bright); }
+.sphere-comms-panel__identity small {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--sy-muted);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sphere-comms-panel__bar .sphere-comms-status {
+  min-width: 0;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+}
+
+.sphere-comms-panel__bar .sphere-comms-status small { display: none; }
+.sphere-comms-panel__bar .sphere-comms-status strong { font-size: 0.76rem; }
+
+.sphere-comms-panel__controls {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.sphere-comms-panel__controls > button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 11px;
+  color: var(--sy-ink);
+  border: 1px solid var(--sy-line);
+  border-radius: 10px;
+  background: var(--sy-surface-raised);
+  box-shadow: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sphere-comms-panel__controls > button > span { display: grid; gap: 1px; }
+.sphere-comms-panel__controls > button strong { font-size: 0.8rem; line-height: 1.2; }
+.sphere-comms-panel__controls > button small { color: var(--sy-muted); font-size: 0.68rem; line-height: 1.2; }
+.sphere-comms-panel__controls > button svg { flex: 0 0 auto; color: var(--sy-brass-bright); }
+.sphere-comms-panel__controls > button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sphere-comms-panel__controls .sphere-comms-ptt {
+  width: auto;
+  min-height: 42px;
+  place-items: initial;
+  align-content: initial;
+  touch-action: none;
+  user-select: none;
+  color: #151813;
+  border-color: color-mix(in srgb, var(--sy-brass) 70%, #000);
+  background: linear-gradient(145deg, var(--sy-brass-bright), var(--sy-brass));
+}
+
+.sphere-comms-panel__controls .sphere-comms-ptt svg { color: currentColor; }
+.sphere-comms-panel__controls .sphere-comms-ptt.is-transmitting {
+  color: #fff;
+  border-color: color-mix(in srgb, var(--sy-danger) 72%, #000);
+  background: linear-gradient(145deg, #ba433c, #7d2926);
+  transform: none;
+}
+
+.sphere-comms-panel__controls .sphere-comms-ptt:disabled {
+  color: var(--sy-muted);
+  border-color: var(--sy-line);
+  background: var(--sy-surface-raised);
+}
+
+.sphere-comms-panel__hint {
+  margin: -3px 14px 8px;
+  color: var(--sy-muted);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.sphere-main > .sphere-comms-workspace .sphere-comms-workspace__notice {
+  margin: 0 14px 10px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+}
+
+.sphere-main > .sphere-comms-workspace .sphere-comms-incoming { margin: 0 14px 12px; }
+.sphere-main > .sphere-comms-workspace .sphere-comms-active {
+  align-items: flex-start;
+  gap: 14px;
+  padding: 10px 14px 12px;
+}
+.sphere-main > .sphere-comms-workspace .sphere-comms-active__identity > span { width: 40px; height: 40px; }
+.sphere-main > .sphere-comms-workspace .sphere-comms-active__controls button { min-width: 64px; min-height: 50px; }
+.sphere-main > .sphere-comms-workspace .sphere-comms-media-stage { min-width: min(360px, 38vw); }
+
+.sphere-comms-live-audio {
+  position: fixed;
+  z-index: 1490;
+  right: 22px;
+  bottom: 22px;
+  display: grid;
+  width: min(340px, calc(100vw - 28px));
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  color: #17201f;
+  border: 1px solid #9a7429;
+  border-radius: 13px;
+  background: #fffdf8;
+  box-shadow: 0 14px 38px rgba(8, 15, 15, 0.24);
+  font-family: inherit;
+}
+.sphere-comms-live-audio > span { display: grid; width: 38px; height: 38px; place-items: center; color: #8b661d; border-radius: 50%; background: #f3ead6; }
+.sphere-comms-live-audio > div { display: grid; min-width: 0; gap: 2px; }
+.sphere-comms-live-audio strong { font-size: 0.82rem; }
+.sphere-comms-live-audio small { overflow: hidden; color: #505854; font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
+.sphere-comms-live-audio button { min-height: 36px; padding: 0 10px; color: #765514; border: 1px solid #cab272; border-radius: 9px; background: #fff8e7; font: inherit; font-size: 0.74rem; font-weight: 720; cursor: pointer; }
+.sphere-comms-live-audio audio { display: none; }
+[data-theme="dark"] .sphere-comms-live-audio { color: #f1f3ed; border-color: #d1ae64; background: #121b1e; }
+[data-theme="dark"] .sphere-comms-live-audio > span { color: #edc774; background: #293027; }
+[data-theme="dark"] .sphere-comms-live-audio small { color: #bdc6c2; }
+[data-theme="dark"] .sphere-comms-live-audio button { color: #edc774; border-color: #6e5c32; background: #201f19; }
+
+@media (max-width: 720px) {
+  .sphere-comms-panel__bar { min-height: 54px; padding: 6px 9px; }
+  .sphere-comms-panel__identity { min-width: 0; }
+  .sphere-comms-panel__identity small,
+  .sphere-comms-panel__bar .sphere-comms-status { display: none; }
+  .sphere-comms-panel__controls { flex: 1; justify-content: flex-end; }
+  .sphere-comms-panel__controls > button { min-height: 40px; padding: 6px 9px; }
+  .sphere-comms-panel__controls > button small { display: none; }
+  .sphere-comms-panel__hint { margin: -1px 9px 7px; font-size: 0.66rem; }
+  .sphere-main > .sphere-comms-workspace .sphere-comms-active { flex-direction: column; }
+  .sphere-main > .sphere-comms-workspace .sphere-comms-media-stage { width: 100%; min-width: 0; }
+  .sphere-comms-live-audio { right: 14px; bottom: max(14px, env(safe-area-inset-bottom)); left: 14px; width: auto; }
+}
+
+@media (max-width: 390px) {
+  .sphere-comms-panel__identity > span { font-size: 0.76rem; }
+  .sphere-comms-panel__controls > button strong { font-size: 0.74rem; }
+  .sphere-comms-panel__controls > button { gap: 6px; padding-inline: 8px; }
+}
+
+@media (max-height: 760px) and (min-width: 621px) {
+  .sphere-comms-panel__bar { min-height: 50px; padding-block: 4px; }
+  .sphere-comms-panel__hint { display: none; }
+  .sphere-main > .sphere-message-list { min-height: 80px; }
+  .sphere-main > .sphere-composer { margin-bottom: 10px; }
+}

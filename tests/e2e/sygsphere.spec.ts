@@ -60,6 +60,31 @@ test('keeps a completed PDF frame visible while resize, zoom, and rotation rende
   expect(audit.hiddenChanges).toBe(0)
   expect(audit.blankFrames).toBe(0)
 })
+test('keeps voice secondary and integrated into the selected chat', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}&theme=dark`)
+
+  const main = page.locator('.sphere-main')
+  const header = main.locator(':scope > .sphere-chat-header')
+  const voice = main.locator(':scope > .sphere-comms-workspace')
+  const messages = main.locator(':scope > .sphere-message-list')
+  await expect(voice).toBeVisible()
+  await expect(voice.locator('.sphere-comms-ptt')).toBeVisible()
+  await expect(voice.getByRole('button', { name: /meet\s*voice or video/i })).toBeVisible()
+
+  const desktop = await Promise.all([header, voice, messages].map((item) => item.boundingBox()))
+  expect(desktop.every(Boolean)).toBe(true)
+  expect(desktop[1]!.y).toBeGreaterThanOrEqual(desktop[0]!.y + desktop[0]!.height - 1)
+  expect(desktop[1]!.height).toBeLessThanOrEqual(92)
+  expect(desktop[2]!.y).toBeGreaterThanOrEqual(desktop[1]!.y + desktop[1]!.height - 1)
+
+  await page.setViewportSize({ width: 320, height: 568 })
+  await expect(voice).toBeVisible()
+  const mobile = await voice.evaluate((node) => ({ height: node.getBoundingClientRect().height, overflow: node.scrollWidth - node.clientWidth }))
+  expect(mobile.height).toBeLessThanOrEqual(90)
+  expect(mobile.overflow).toBeLessThanOrEqual(1)
+  await page.screenshot({ path: testInfo.outputPath('sygsphere-conversation-voice.png'), fullPage: true })
+})
 test('creates a group using the real rounded form and sends a message', async ({ page }) => {
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
   await page.getByRole('button', { name: 'New message', exact: true }).click()

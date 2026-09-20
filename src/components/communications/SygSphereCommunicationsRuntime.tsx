@@ -221,10 +221,18 @@ export function SygSphereCommunicationsRuntimeProvider({
     run,
     state,
   }), [browser, controller, lastActionError, permissions, remoteMedia, run, state]);
+  const remoteAudio = useMemo(
+    () => remoteMedia.filter((track) => track.mediaKind === "audio"),
+    [remoteMedia],
+  );
 
   return (
     <CommunicationsRuntimeContext.Provider value={value}>
       {children}
+      {remoteAudio.length > 0 && typeof document !== "undefined" ? createPortal(
+        <GlobalCommunicationsAudio tracks={remoteAudio} />,
+        document.body,
+      ) : null}
       {incomingCall && typeof document !== "undefined" ? createPortal(
         <IncomingCommunicationsCallNotice
           audioBlocked={audioBlocked}
@@ -244,6 +252,74 @@ export function SygSphereCommunicationsRuntimeProvider({
       ) : null}
     </CommunicationsRuntimeContext.Provider>
   );
+}
+
+export function GlobalCommunicationsAudio({
+  tracks,
+}: {
+  tracks: readonly CommunicationsRemoteTrack[];
+}) {
+  const container = useRef<HTMLDivElement | null>(null);
+  const [blocked, setBlocked] = useState(false);
+  const isRadio = tracks.some((track) => track.publicationKind === "ptt");
+  const handleBlocked = useCallback(() => setBlocked(true), []);
+  const handlePlaying = useCallback(() => setBlocked(false), []);
+
+  const retryPlayback = useCallback(async () => {
+    const elements = Array.from(container.current?.querySelectorAll("audio") ?? []);
+    const results = await Promise.allSettled(elements.map((element) => element.play()));
+    setBlocked(results.some((result) => result.status === "rejected"));
+  }, []);
+
+  return (
+    <aside aria-live="polite" className="sphere-comms-live-audio" ref={container} role="status">
+      <span aria-hidden="true"><Volume2 size={18} /></span>
+      <div>
+        <strong>{isRadio ? "Live team radio" : "Secure call audio"}</strong>
+        <small>{blocked ? "Your browser paused audio." : isRadio ? "Listening to the selected channel" : "Audio is connected"}</small>
+      </div>
+      {blocked ? <button onClick={() => void retryPlayback()} type="button">Play audio</button> : null}
+      {tracks.map((track) => (
+        <GlobalRemoteAudio
+          key={track.trackReference}
+          label={track.publicationKind === "ptt" ? "Live team radio audio" : "Secure call audio"}
+          onBlocked={handleBlocked}
+          onPlaying={handlePlaying}
+          stream={track.stream}
+        />
+      ))}
+    </aside>
+  );
+}
+
+function GlobalRemoteAudio({
+  label,
+  onBlocked,
+  onPlaying,
+  stream,
+}: {
+  label: string;
+  onBlocked: () => void;
+  onPlaying: () => void;
+  stream: MediaStream;
+}) {
+  const element = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    const audio = element.current;
+    if (!audio) return;
+    audio.srcObject = stream;
+    const playback = audio.play();
+    if (playback && typeof playback.then === "function") {
+      void playback.then(onPlaying).catch(onBlocked);
+    }
+    return () => {
+      audio.pause();
+      audio.srcObject = null;
+    };
+  }, [onBlocked, onPlaying, stream]);
+
+  return <audio aria-label={label} autoPlay ref={element} />;
 }
 
 export function IncomingCommunicationsCallNotice({
@@ -285,28 +361,24 @@ export function SygSphereCommunicationsWorkspace({
   conversations: readonly SphereConversation[];
 }) {
   const runtime = useCommunicationsRuntime();
-  const [selectedChannelId, setSelectedChannelId] = useState("");
   const [microphoneMuted, setMicrophoneMuted] = useState(true);
   const permissions = useMemo(() => new Set(runtime.permissions), [runtime.permissions]);
   const channels = useMemo(() => conversations
     .filter((item) => item.kind === "channel" && !item.archived)
     .map((item) => ({ id: item.id, label: item.name, scopeLabel: "Authorized team channel" })), [conversations]);
 
-  useEffect(() => {
-    if (conversation?.kind === "channel" && channels.some((channel) => channel.id === conversation.id)) {
-      setSelectedChannelId(conversation.id);
-      return;
-    }
-    if (!channels.some((channel) => channel.id === selectedChannelId)) {
-      setSelectedChannelId(channels[0]?.id ?? "");
-    }
-  }, [channels, conversation, selectedChannelId]);
+  const selectedChannelId = conversation?.kind === "channel"
+    && channels.some((channel) => channel.id === conversation.id)
+    ? conversation.id
+    : "";
 
   useEffect(() => {
     if (runtime.state.microphoneMutedByModerator) setMicrophoneMuted(true);
     else if (!runtime.state.call || runtime.state.call.status !== "active") setMicrophoneMuted(true);
     else setMicrophoneMuted(false);
   }, [runtime.state.call, runtime.state.microphoneMutedByModerator]);
+
+  if (!conversation) return null;
 
   const capabilities: CommunicationsPanelCapabilities = {
     call: Boolean(
@@ -325,10 +397,11 @@ export function SygSphereCommunicationsWorkspace({
       && !runtime.state.call
       && permissions.has("sygsphere.comms.meeting.create"),
     ),
-    ptt: runtime.browser.audioCapture.available
+    ptt: conversation.kind === "channel"
+      && runtime.browser.audioCapture.available
       && permissions.has("sygsphere.comms.ptt.transmit")
       && !runtime.state.call
-      && channels.length > 0,
+      && Boolean(selectedChannelId),
     screen: runtime.state.call?.kind === "meeting"
       && runtime.browser.screenCapture.available
       && permissions.has("sygsphere.comms.screen.publish"),
@@ -349,6 +422,8 @@ export function SygSphereCommunicationsWorkspace({
         capabilities={capabilities}
         channels={channels}
         connection={runtime.state.connection}
+        conversationKind={conversation.kind}
+        conversationName={conversation.name}
         microphoneMuted={microphoneMuted}
         microphoneMutedByModerator={runtime.state.microphoneMutedByModerator}
         onAnswer={(callId) => void runtime.run((controller) => {
@@ -361,7 +436,6 @@ export function SygSphereCommunicationsWorkspace({
           if (!runtime.state.call) return;
           return controller.setCameraEnabled(runtime.state.call.callId, enabled);
         })}
-        onChannelChange={setSelectedChannelId}
         onDecline={(callId) => void runtime.run((controller) => {
           if (runtime.state.call?.kind === "meeting" && runtime.state.call.callId === callId) return controller.dismissMeetingInvitation(callId);
           const invitationId = runtime.state.call?.callId === callId ? runtime.state.call.invitationId : null;
@@ -399,7 +473,7 @@ export function SygSphereCommunicationsWorkspace({
       />
       {runtime.lastActionError || runtime.state.lastError ? (
         <div className="sphere-comms-workspace__notice" role="alert">
-          <span>{runtime.lastActionError ?? runtime.state.lastError}</span>
+          <span>{runtime.lastActionError ?? publicRuntimeStateError(runtime.state.lastError)}</span>
           {runtime.state.connection === "failed" && runtime.state.accountKey ? (
             <button onClick={() => void runtime.run((controller) => controller.start(runtime.state.accountKey!))} type="button">
               Reconnect communications
@@ -435,4 +509,15 @@ function publicCommunicationsError(error: unknown): string {
     return error.message;
   }
   return "Communications could not complete that action. Continue with messages or Dispatch and try again.";
+}
+
+function publicRuntimeStateError(error: string | null): string {
+  if (!error) return "Communications could not complete that action. Continue with messages or Dispatch and try again.";
+  if (["unavailable", "recipient_unavailable", "no_listener"].includes(error)) {
+    return "No other authorized team member is available in this voice channel right now.";
+  }
+  if (["channel_busy", "floor_busy"].includes(error)) return "Someone else is speaking in this channel. Try again when they finish.";
+  if (["expired", "ticket_expired", "room_expired"].includes(error)) return "The voice connection expired. Try again.";
+  if (/^[a-z0-9_.-]+$/i.test(error)) return "Communications could not complete that action. Continue with messages or Dispatch and try again.";
+  return error;
 }

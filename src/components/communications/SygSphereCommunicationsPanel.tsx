@@ -6,7 +6,6 @@ import {
   PhoneOff,
   Radio,
   ShieldCheck,
-  Users,
   Video,
   VideoOff,
   WifiOff,
@@ -43,11 +42,12 @@ interface SygSphereCommunicationsPanelProps {
   capabilities: CommunicationsPanelCapabilities;
   channels: readonly CommunicationsChannelOption[];
   connection: CommunicationsConnectionState;
+  conversationKind: "channel" | "direct" | "group";
+  conversationName: string;
   microphoneMuted: boolean;
   microphoneMutedByModerator: boolean;
   onAnswer: (callId: string) => void;
   onCameraChange: (enabled: boolean) => void;
-  onChannelChange: (channelId: string) => void;
   onDecline: (callId: string) => void;
   onEndCall: (callId: string) => void;
   onMicrophoneMuteChange: (muted: boolean) => void;
@@ -67,11 +67,12 @@ export function SygSphereCommunicationsPanel({
   capabilities,
   channels,
   connection,
+  conversationKind,
+  conversationName,
   microphoneMuted,
   microphoneMutedByModerator,
   onAnswer,
   onCameraChange,
-  onChannelChange,
   onDecline,
   onEndCall,
   onMicrophoneMuteChange,
@@ -85,7 +86,6 @@ export function SygSphereCommunicationsPanel({
   selectedChannelId,
 }: SygSphereCommunicationsPanelProps) {
   const selectedChannel = channels.find((channel) => channel.id === selectedChannelId) ?? channels[0] ?? null;
-  const pttAudio = remoteMedia.filter((track) => track.publicationKind === "ptt" && track.mediaKind === "audio");
   const pttEnabled = capabilities.ptt && connection === "ready" && Boolean(selectedChannel) && !call
     && pttState !== "denied" && pttState !== "releasing";
   const ptt = useHoldToTalk({
@@ -96,14 +96,43 @@ export function SygSphereCommunicationsPanel({
 
   return (
     <section aria-label="SygSphere voice and video" className="sphere-comms-panel">
-      <header className="sphere-comms-panel__header">
-        <div>
-          <span className="sphere-comms-panel__eyebrow"><ShieldCheck size={15} /> Secure team communications</span>
-          <h2>Talk with your team</h2>
-          <p>Messages stay available while voice and video controls use the same authorized workspace.</p>
+      <div className="sphere-comms-panel__bar">
+        <div className="sphere-comms-panel__identity">
+          <span><ShieldCheck size={16} /> Voice</span>
+          <small>{conversationName}</small>
         </div>
         <ConnectionStatus state={connection} />
-      </header>
+        {!call ? (
+          <div className="sphere-comms-panel__controls">
+            {conversationKind === "channel" ? (
+              <button
+                {...ptt.handlers}
+                aria-describedby="sphere-comms-ptt-help"
+                aria-pressed={ptt.pressed}
+                className={`sphere-comms-ptt${ptt.pressed || pttState === "transmitting" ? " is-transmitting" : ""}`}
+                disabled={!pttEnabled}
+                type="button"
+              >
+                <Radio size={19} />
+                <span><strong>{pttLabel(pttState, ptt.pressed)}</strong><small>{selectedChannel?.scopeLabel ?? "Channel voice unavailable"}</small></span>
+              </button>
+            ) : null}
+            {conversationKind === "direct" ? (
+              <button disabled={!capabilities.call || connection !== "ready"} onClick={onStartCall} type="button">
+                <Phone size={18} /><span><strong>Call</strong><small>Private voice</small></span>
+              </button>
+            ) : (
+              <button disabled={!capabilities.meeting || connection !== "ready"} onClick={onStartMeeting} type="button">
+                <Video size={18} /><span><strong>Meet</strong><small>Voice or video</small></span>
+              </button>
+            )}
+          </div>
+        ) : null}
+      </div>
+
+      {conversationKind === "channel" && !call ? (
+        <p className="sphere-comms-panel__hint" id="sphere-comms-ptt-help">Hold Push to talk while speaking. Release when finished.</p>
+      ) : null}
 
       {call?.status === "ringing" ? (
         <section aria-live="assertive" className="sphere-comms-incoming">
@@ -127,53 +156,7 @@ export function SygSphereCommunicationsPanel({
           onScreenShare={onScreenShare}
           remoteMedia={remoteMedia}
         />
-      ) : (
-        <div className="sphere-comms-panel__body">
-          <section className="sphere-comms-radio" aria-labelledby="sphere-comms-radio-title">
-            <div>
-              <span className="sphere-comms-panel__eyebrow"><Radio size={15} /> Push to talk</span>
-              <h3 id="sphere-comms-radio-title">Team channel</h3>
-            </div>
-            <label>
-              <span>Channel</span>
-              <select
-                aria-label="Push-to-talk channel"
-                disabled={!capabilities.ptt || connection !== "ready" || channels.length === 0}
-                onChange={(event) => onChannelChange(event.target.value)}
-                value={selectedChannel?.id ?? ""}
-              >
-                {channels.length === 0 ? <option value="">No channel assigned</option> : null}
-                {channels.map((channel) => <option key={channel.id} value={channel.id}>{channel.label}</option>)}
-              </select>
-            </label>
-            <button
-              {...ptt.handlers}
-              aria-describedby="sphere-comms-ptt-help"
-              aria-pressed={ptt.pressed}
-              className={`sphere-comms-ptt${ptt.pressed || pttState === "transmitting" ? " is-transmitting" : ""}`}
-              disabled={!pttEnabled}
-              type="button"
-            >
-              <Radio size={30} />
-              <strong>{pttLabel(pttState, ptt.pressed)}</strong>
-              <small>{selectedChannel?.scopeLabel ?? "Dispatch can assign the correct channel."}</small>
-            </button>
-            <p id="sphere-comms-ptt-help">Press and hold while speaking. Release to stop. This works only while Sygilant is open in the foreground.</p>
-            {pttAudio.map((track) => <RemoteMediaElement kind="audio" key={track.trackReference} label="Live team radio" stream={track.stream} />)}
-          </section>
-
-          <section className="sphere-comms-actions" aria-labelledby="sphere-comms-actions-title">
-            <div><span className="sphere-comms-panel__eyebrow"><Users size={15} /> Calls and meetings</span><h3 id="sphere-comms-actions-title">Choose what you need</h3></div>
-            <button disabled={!capabilities.call || connection !== "ready"} onClick={onStartCall} type="button">
-              <span><Phone size={20} /></span><strong>Call a coworker</strong><small>Start a private voice call</small>
-            </button>
-            <button disabled={!capabilities.meeting || connection !== "ready"} onClick={onStartMeeting} type="button">
-              <span><Video size={20} /></span><strong>Start a meeting</strong><small>Invite an authorized team conversation</small>
-            </button>
-            <p>Camera and screen sharing are always off until you choose them.</p>
-          </section>
-        </div>
-      )}
+      ) : null}
     </section>
   );
 }
@@ -212,12 +195,10 @@ function ActiveCallControls({
 }
 
 function RemoteMediaStage({ tracks }: { tracks: readonly CommunicationsRemoteTrack[] }) {
-  const audio = tracks.filter((track) => track.mediaKind === "audio");
   const screens = tracks.filter((track) => track.mediaKind === "screen");
   const cameras = tracks.filter((track) => track.mediaKind === "video");
   return (
     <section aria-label="Call media" className="sphere-comms-media-stage">
-      {audio.map((track) => <RemoteMediaElement kind="audio" key={track.trackReference} label="Team audio" stream={track.stream} />)}
       {screens.map((track) => <RemoteMediaElement featured kind="video" key={track.trackReference} label="Shared screen" stream={track.stream} />)}
       {cameras.length > 0 && (
         <div className="sphere-comms-media-stage__grid">

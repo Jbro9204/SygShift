@@ -2622,3 +2622,16 @@ pnpm exec wrangler deploy --keep-vars
 - Passed 18 communications files / 111 tests, full typecheck, lint, and production build; the paired Sygilant suite passed 192 files / 905 tests plus its production release gates.
 - Released SygShift source `7fda16c` as Worker `8ed25f22-1e2d-4b52-9806-10f1d40ecbe0` and Sygilant source `d33bc87` as Pages deployment `4ffd83c5-48ef-41c5-8b6a-32dc84bc3bea`.
 - Updated the active queue to retain only the controlled physical two-device and usage-reconciliation acceptance work.
+
+## 09/20/2026 - SygSphere Conversation Voice Experience
+
+- Replaced the oversized communications dashboard with a compact voice bar inside the selected SygSphere
+  conversation in both applications.
+- Bound PTT to the open channel, private calls to the open direct conversation, and meetings to the open channel
+  or group while preserving server-authoritative permissions and membership.
+- Moved authorized incoming audio playback to the authenticated shell and added one-tap autoplay recovery so
+  receiving audio does not depend on the SygSphere page being open.
+- Passed 291 files / 1,489 tests, the 60/60 responsive SygSphere browser matrix, the 42/42 mandatory Time Clock
+  matrix, both production builds, and paired communications/UI release contracts.
+- Production deployment and live postflight follow the source checkpoint. Physical two-account/device media
+  acceptance remains deliberately open.
