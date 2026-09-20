@@ -10,7 +10,10 @@ import {
   renewServerPttFloor,
   startServerPttTransmission,
 } from '../worker/comms/pttLifecycle'
-import { extendServerPttPreparationLease } from '../worker/comms/tenantCommsDurableObject'
+import {
+  extendServerPttPreparationLease,
+  nextServerPttLeaseGeneration,
+} from '../worker/comms/tenantCommsDurableObject'
 
 const callId = '11111111-1111-4111-8111-111111111111'
 const transmissionRequestId = '22222222-2222-4222-8222-222222222222'
@@ -83,10 +86,22 @@ describe('SygSphere Communications PTT lifecycle', () => {
     expect(lease(40_000, 40_000)).toBeNull()
   })
 
+  it('assigns an increasing, server-owned generation to every accepted floor renewal', () => {
+    expect(nextServerPttLeaseGeneration(0)).toBe(1)
+    expect(nextServerPttLeaseGeneration(1)).toBe(2)
+    expect(nextServerPttLeaseGeneration(99)).toBe(100)
+    expect(nextServerPttLeaseGeneration(-1)).toBeNull()
+    expect(nextServerPttLeaseGeneration(Number.MAX_SAFE_INTEGER)).toBeNull()
+  })
+
   it('guards provider returns with exact publisher/listener revalidation and cleans stale tracks before they can be stored', () => {
     const coordinator = readFileSync(resolve(import.meta.dirname, '..', 'worker', 'comms', 'tenantCommsDurableObject.ts'), 'utf8')
     const publisher = coordinator.slice(coordinator.indexOf('async startPttAudio'), coordinator.indexOf('async preparePttAudio'))
     const listener = coordinator.slice(coordinator.indexOf('async startPttListen'), coordinator.indexOf('async preparePttListen'))
+    const listenerPreparation = coordinator.slice(coordinator.indexOf('async preparePttListen'), coordinator.indexOf('async acknowledgePttListenerReady'))
+    const floorCommands = coordinator.slice(coordinator.indexOf('private async dispatchFloorCommand'), coordinator.indexOf('async startPttAudio'))
+    const coordinatorDispatch = coordinator.slice(coordinator.indexOf('async dispatch'), coordinator.lastIndexOf('\n}'))
+    const socketClose = coordinator.slice(coordinator.indexOf('async webSocketClose'), coordinator.indexOf('async alarm'))
 
     expect(publisher).toContain('this.extendPttPreparationLease(row, requestedAtMs)')
     expect(publisher.indexOf('this.extendPttPreparationLease(row, requestedAtMs)')).toBeLessThan(publisher.indexOf('await this.providerAdapter(parsed.release)'))
@@ -100,5 +115,25 @@ describe('SygSphere Communications PTT lifecycle', () => {
     expect(listener).toContain('await this.closeStalePttTrack')
     expect(listener.lastIndexOf('this.pttListenerReservationIsCurrent')).toBeLessThan(listener.indexOf('this.claimPttMediaSession'))
     expect(coordinator).toContain('on conflict (call_id, employee_id) do nothing')
+
+    // An alarm may arrive late. New protected commands, direct media setup,
+    // and the owning socket's close path must all release stale floors before
+    // they can block another authorized transmitter.
+    expect(coordinator).toContain('lease_generation integer not null default 0')
+    expect(coordinator).toContain("pragma table_info('coordinator_ptt_transmissions')")
+    expect(coordinatorDispatch).toContain('await this.expirePttTransmissions(now, authorized.release)')
+    expect(socketClose).toContain("await this.closePttTransmission(floor, attachment.release, 'network_lost')")
+    expect(floorCommands).toContain('lease_generation = ?')
+    expect(floorCommands).toContain('generation: renewed.lease_generation')
+    expect(listenerPreparation).toContain('await this.expirePttTransmissions(Date.now(), parsed.release)')
+
+    // Any provider failure before the floor is ready tears down the exact
+    // preparation reservation. A later listener cannot close an active floor.
+    expect(publisher).toContain("this.closeFailedPttPreparation(row, parsed.release, 'publisher')")
+    expect(listener).toContain("this.closeFailedPttPreparation(row, parsed.release, 'listener')")
+    expect(listenerPreparation).toContain("this.closeFailedPttPreparation(row, parsed.release, 'listener')")
+    expect(coordinator).toContain("current.state !== 'preparing'")
+    expect(coordinator).toContain("role === 'listener' && this.pttReadyListenerConnectionIds(current.transmission_request_id).length > 0")
+    expect(coordinator).toContain('secret-binding retrieval failure')
   })
 })
