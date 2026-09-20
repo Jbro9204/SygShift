@@ -13,6 +13,14 @@ import {
 
 export type CommunicationsPublicationKind = "ptt" | "call_audio" | "camera" | "screen";
 
+export type CommunicationsCallMediaConnectionState = "connected" | "reconnecting" | "failed";
+
+export type CommunicationsCallMediaConnection = Readonly<{
+  callId: string;
+  roomId: string;
+  state: CommunicationsCallMediaConnectionState;
+}>;
+
 export interface CommunicationsCoordinatorSession {
   close(reason: string): void;
   publish(input: Readonly<{
@@ -39,6 +47,7 @@ export interface CommunicationsCoordinatorBridge {
     accountKey: string;
     onDisconnect: (reason: string, recoverable: boolean) => void;
     onEvent: (event: SygSphereCommsEvent) => void;
+    onCallMediaConnection?: (connection: CommunicationsCallMediaConnection) => void;
     onRemoteTrack?: (track: CommunicationsRemoteTrack) => void;
   }>): Promise<Readonly<{
     authorizationExpiresAt: string | null;
@@ -131,6 +140,7 @@ export class SygSphereCommunicationsController {
         onEvent: (event) => {
           void this.handleEvent(generation, event).catch((error) => this.handleMediaFailure(generation, error));
         },
+        onCallMediaConnection: (connection) => this.handleCallMediaConnection(generation, connection),
         onRemoteTrack: (track) => this.handleRemoteTrack(generation, track),
       });
       if (generation !== this.connectGeneration) {
@@ -440,6 +450,27 @@ export class SygSphereCommunicationsController {
     }
   }
 
+  private handleCallMediaConnection(generation: number, connection: CommunicationsCallMediaConnection): void {
+    if (generation !== this.connectGeneration) return;
+    const call = this.state.call;
+    if (!call || call.callId !== connection.callId || call.roomId !== connection.roomId) return;
+    if (connection.state === "failed") {
+      this.handleMediaFailure(generation, new Error("The secure voice connection could not be established."));
+      return;
+    }
+    if (connection.state === "reconnecting") {
+      this.update({ type: "call.media.reconnecting", callId: connection.callId, roomId: connection.roomId });
+      return;
+    }
+    this.update({ type: "call.media.connected", callId: connection.callId, roomId: connection.roomId });
+    const activeCall = this.state.call;
+    if (!activeCall || activeCall.status !== "active" || this.state.microphoneMutedByModerator) return;
+    this.media.setMicrophoneMuted({
+      kind: activeCall.kind === "meeting" ? "meeting" : "call",
+      sessionId: activeCall.callId,
+    }, false);
+  }
+
   private scheduleReconnect(accountKey: string, generation: number, attempt: number): void {
     if (generation !== this.connectGeneration) return;
     const delay = reconnectDelaysMilliseconds[attempt];
@@ -528,16 +559,6 @@ export class SygSphereCommunicationsController {
       if (call?.kind === "meeting" && call.status === "connecting" && !invited) {
         this.pendingCreatedMeetingId = null;
         await this.joinMeeting(call.callId);
-      }
-    }
-
-    if (event.kind === "media.negotiation") {
-      const call = this.state.call;
-      if (call?.status === "active" && isEstablishedLocalCallAudio(event.payload, call.callId)) {
-        this.media.setMicrophoneMuted({
-          kind: call.kind === "meeting" ? "meeting" : "call",
-          sessionId: call.callId,
-        }, false);
       }
     }
 
@@ -720,23 +741,6 @@ function stringPayload(payload: unknown, key: string): string | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const value = (payload as Record<string, unknown>)[key];
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function isEstablishedLocalCallAudio(payload: unknown, callId: string): boolean {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
-  const record = payload as Record<string, unknown>;
-  if (
-    record.callId !== callId
-    || record.descriptionType !== "answer"
-    || record.direction !== "publish"
-    || !Array.isArray(record.trackBindings)
-  ) return false;
-  return record.trackBindings.some((binding) => (
-    binding
-    && typeof binding === "object"
-    && (binding as Record<string, unknown>).publicationKind === "call_audio"
-    && (binding as Record<string, unknown>).role === "local"
-  ));
 }
 
 function safeError(error: unknown): string {

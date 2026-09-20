@@ -17,6 +17,7 @@ const event = (kind: SygSphereCommsEvent["kind"], payload: Record<string, unknow
 function harness() {
   let onEvent!: (value: SygSphereCommsEvent) => void;
   let onDisconnect!: (reason: string, recoverable: boolean) => void;
+  let onCallMediaConnection!: NonNullable<Parameters<CommunicationsCoordinatorBridge["connect"]>[0]["onCallMediaConnection"]>;
   let onRemoteTrack!: NonNullable<Parameters<CommunicationsCoordinatorBridge["connect"]>[0]["onRemoteTrack"]>;
   const session: CommunicationsCoordinatorSession = {
     close: vi.fn(),
@@ -28,6 +29,7 @@ function harness() {
     connect: vi.fn(async (input) => {
       onEvent = input.onEvent;
       onDisconnect = input.onDisconnect;
+      onCallMediaConnection = input.onCallMediaConnection ?? (() => undefined);
       onRemoteTrack = input.onRemoteTrack ?? (() => undefined);
       return {
         authorizationExpiresAt: "2026-09-19T14:01:00.000Z",
@@ -54,6 +56,7 @@ function harness() {
     controller,
     media,
     microphone,
+    onCallMediaConnection: () => onCallMediaConnection,
     onDisconnect: () => onDisconnect,
     onEvent: () => onEvent,
     onRemoteTrack: () => onRemoteTrack,
@@ -401,6 +404,11 @@ describe("SygSphere communications controller", () => {
       direction: "publish",
       trackBindings: [{ publicationKind: "call_audio", role: "local" }],
     }, 3));
+    test.onCallMediaConnection()({
+      callId: "4896f7c0-7143-48f9-9978-d1f6a342186f",
+      roomId: "room-a",
+      state: "connected",
+    });
     await test.controller.setCameraEnabled("4896f7c0-7143-48f9-9978-d1f6a342186f", true);
     expect(test.session.send).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "camera.request" }));
     expect(test.session.publish).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "camera" }));
@@ -422,6 +430,7 @@ describe("SygSphere communications controller", () => {
       direction: "publish",
       trackBindings: [{ publicationKind: "call_audio", role: "local" }],
     }, 3));
+    test.onCallMediaConnection()({ callId, roomId: "room-a", state: "connected" });
 
     expect(test.controller.setCallMicrophoneMuted(callId, true)).toBe(true);
     expect(test.media.setMicrophoneMuted).toHaveBeenCalledWith({ kind: "call", sessionId: callId }, true);
@@ -453,7 +462,25 @@ describe("SygSphere communications controller", () => {
       direction: "publish",
       trackBindings: [{ publicationKind: "call_audio", role: "local" }],
     }, 3));
+    expect(test.media.setMicrophoneMuted).not.toHaveBeenCalledWith({ kind: "call", sessionId: callId }, false);
+    test.onCallMediaConnection()({ callId, roomId: "room-a", state: "connected" });
     expect(test.media.setMicrophoneMuted).toHaveBeenCalledWith({ kind: "call", sessionId: callId }, false);
+  });
+
+  it("clears a connecting call when the browser reports that its media connection failed", async () => {
+    const test = harness();
+    const callId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+    await test.controller.start("employee-a");
+    await test.controller.startCall("conversation-a");
+    await test.onEvent()(event("call.requested", {
+      callId,
+      invitationId: "d285bf11-15f6-4efe-b60f-4ab891637342",
+    }, 1));
+
+    test.onCallMediaConnection()({ callId, roomId: "room-a", state: "failed" });
+
+    expect(test.controller.snapshot.call).toBeNull();
+    expect(test.controller.snapshot.lastError).toBe("Communications could not be prepared. Use messages or Dispatch and try again.");
   });
 
   it("automatically joins a meeting created by the current employee", async () => {

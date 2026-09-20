@@ -25,7 +25,7 @@ export type CommunicationsPanelCall = Readonly<{
   callId: string;
   displayName: string;
   kind: "direct" | "meeting";
-  status: "ringing" | "connecting" | "active";
+  status: "ringing" | "connecting" | "reconnecting" | "active";
 }>;
 
 export type CommunicationsPanelCapabilities = Readonly<{
@@ -202,21 +202,22 @@ function ActiveCallControls({
   onScreenShare,
   remoteMedia,
 }: Pick<SygSphereCommunicationsPanelProps, "cameraEnabled" | "capabilities" | "microphoneMuted" | "microphoneMutedByModerator" | "onCameraChange" | "onEndCall" | "onMicrophoneMuteChange" | "onScreenShare"> & { call: CommunicationsPanelCall; remoteMedia: readonly CommunicationsRemoteTrack[] }) {
+  const mediaControlsReady = call.status === "active";
   return (
     <section aria-label="Active call controls" className="sphere-comms-active">
       <div className="sphere-comms-active__identity">
         <span className={call.status === "active" ? "is-live" : undefined}><Phone size={21} /></span>
-        <div><small>{call.kind === "meeting" ? "Team meeting" : "Private call"}</small><strong>{call.displayName}</strong><p>{call.status === "active" ? "Connected" : "Connecting securely…"}</p></div>
+        <div><small>{call.kind === "meeting" ? "Team meeting" : "Private call"}</small><strong>{call.displayName}</strong><p>{call.status === "active" ? "Connected" : call.status === "reconnecting" ? "Reconnecting securely…" : "Connecting securely…"}</p></div>
       </div>
       <RemoteMediaStage status={call.status} tracks={remoteMedia} />
       <div className="sphere-comms-active__controls">
-        <button aria-pressed={microphoneMuted} disabled={microphoneMutedByModerator} onClick={() => onMicrophoneMuteChange(!microphoneMuted)} type="button">
+        <button aria-pressed={microphoneMuted} disabled={!mediaControlsReady || microphoneMutedByModerator} onClick={() => onMicrophoneMuteChange(!microphoneMuted)} type="button">
           {microphoneMuted ? <MicOff size={19} /> : <Mic size={19} />}<span>{microphoneMutedByModerator ? "Muted by moderator" : microphoneMuted ? "Unmute" : "Mute"}</span>
         </button>
-        <button aria-pressed={cameraEnabled} disabled={!capabilities.camera} onClick={() => onCameraChange(!cameraEnabled)} type="button">
+        <button aria-pressed={cameraEnabled} disabled={!mediaControlsReady || !capabilities.camera} onClick={() => onCameraChange(!cameraEnabled)} type="button">
           {cameraEnabled ? <Video size={19} /> : <VideoOff size={19} />}<span>{cameraEnabled ? "Stop camera" : "Camera"}</span>
         </button>
-        <button disabled={!capabilities.screen} onClick={onScreenShare} type="button"><MonitorUp size={19} /><span>Share screen</span></button>
+        <button disabled={!mediaControlsReady || !capabilities.screen} onClick={onScreenShare} type="button"><MonitorUp size={19} /><span>Share screen</span></button>
         <button className="is-end" onClick={() => onEndCall(call.callId)} type="button"><PhoneOff size={19} /><span>End</span></button>
       </div>
     </section>
@@ -238,7 +239,7 @@ function RemoteMediaStage({ status, tracks }: {
         </div>
       )}
       {screens.length === 0 && cameras.length === 0 && (
-        <div className="sphere-comms-media-stage__voice"><Phone size={25} /><div><strong>{status === "active" ? "Voice call connected" : "Securing voice connection"}</strong><span>{status === "active" ? "Camera and screen sharing remain off until someone chooses them." : "Voice controls will be available when the secure media path is ready."}</span></div></div>
+        <div className="sphere-comms-media-stage__voice"><Phone size={25} /><div><strong>{status === "active" ? "Voice call connected" : status === "reconnecting" ? "Reconnecting voice" : "Securing voice connection"}</strong><span>{status === "active" ? "Camera and screen sharing remain off until someone chooses them." : status === "reconnecting" ? "Voice controls will return when the secure media path reconnects." : "Voice controls will be available when the secure media path is ready."}</span></div></div>
       )}
     </section>
   );

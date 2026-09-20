@@ -177,6 +177,10 @@ describe("SygSphere communications panel", () => {
     />);
     expect(screen.getByText("Securing voice connection")).toBeVisible();
     expect(screen.queryByText("Voice call connected")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^mute$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^camera$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /share screen/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^end$/i })).toBeEnabled();
   });
 
   it("prioritizes an authorized shared screen in the active call stage", () => {

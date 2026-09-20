@@ -58,7 +58,7 @@ describe("SygSphere communications runtime state", () => {
     expect(state.floor).toBeNull();
   });
 
-  it("drops PTT state when a private call receives focus", () => {
+  it("drops PTT state when a private call receives focus and waits for the browser media connection", () => {
     let state = reduceCommunicationsRuntime(createCommunicationsRuntimeState("employee-a"), {
       type: "connection.ready",
       authorizationExpiresAt: "2026-09-19T14:01:00.000Z",
@@ -90,6 +90,12 @@ describe("SygSphere communications runtime state", () => {
         direction: "publish",
         trackBindings: [{ publicationKind: "call_audio", role: "local" }],
       }, 4),
+    });
+    expect(state.call?.status).toBe("connecting");
+    state = reduceCommunicationsRuntime(state, {
+      type: "call.media.connected",
+      callId: "call-a",
+      roomId: "room-a",
     });
     expect(state.call?.status).toBe("active");
   });
@@ -141,6 +147,46 @@ describe("SygSphere communications runtime state", () => {
     expect(state.cameraActive).toBe(false);
     expect(state.screenActive).toBe(false);
     expect(state.lastError).toBe("Voice could not connect. Try again.");
+  });
+
+  it("shows call-media reconnecting state and ignores late camera or screen events from another call", () => {
+    let state = reduceCommunicationsRuntime(createCommunicationsRuntimeState("employee-a"), {
+      type: "event.received",
+      event: event("call.requested", { callId: "call-a" }, 1),
+    });
+    state = reduceCommunicationsRuntime(state, {
+      type: "call.media.connected",
+      callId: "call-a",
+      roomId: "room-a",
+    });
+    state = reduceCommunicationsRuntime(state, {
+      type: "call.media.reconnecting",
+      callId: "call-a",
+      roomId: "room-a",
+    });
+    expect(state.call?.status).toBe("reconnecting");
+    state = reduceCommunicationsRuntime(state, {
+      type: "call.media.connected",
+      callId: "call-a",
+      roomId: "room-a",
+    });
+    expect(state.call?.status).toBe("active");
+
+    const staleGrant = reduceCommunicationsRuntime(state, {
+      type: "event.received",
+      event: event("camera.granted", { callId: "call-b" }, 1, "room-b"),
+    });
+    expect(staleGrant.cameraActive).toBe(false);
+    state = reduceCommunicationsRuntime(staleGrant, {
+      type: "event.received",
+      event: event("camera.granted", { callId: "call-a" }, 2),
+    });
+    expect(state.cameraActive).toBe(true);
+    state = reduceCommunicationsRuntime(state, {
+      type: "event.received",
+      event: event("screen.granted", { callId: "call-b" }, 2, "room-b"),
+    });
+    expect(state.screenActive).toBe(false);
   });
 
   it("clears a matching expired media session without tearing down an unrelated call", () => {

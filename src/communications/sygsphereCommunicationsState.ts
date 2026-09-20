@@ -27,7 +27,7 @@ export type CommunicationsCallState = Readonly<{
   invitationId: string | null;
   kind: "direct" | "meeting";
   roomId: string;
-  status: "ringing" | "connecting" | "active";
+  status: "ringing" | "connecting" | "reconnecting" | "active";
 }>;
 
 export type CommunicationsRuntimeState = Readonly<{
@@ -57,6 +57,8 @@ export type CommunicationsRuntimeAction =
   | Readonly<{ type: "floor.failed"; reason: string }>
   | Readonly<{ type: "ptt.microphone.prepared" }>
   | Readonly<{ type: "ptt.microphone.failed"; reason: string }>
+  | Readonly<{ type: "call.media.connected"; callId: string; roomId: string }>
+  | Readonly<{ type: "call.media.reconnecting"; callId: string; roomId: string }>
   | Readonly<{ type: "call.local.ended"; callId: string }>
   | Readonly<{ type: "meeting.dismissed"; meetingId: string }>
   | Readonly<{ type: "local.media.failed"; reason: string }>
@@ -139,6 +141,14 @@ export function reduceCommunicationsRuntime(
       return { ...state, lastError: null };
     case "ptt.microphone.failed":
       return { ...state, lastError: action.reason };
+    case "call.media.connected":
+      return state.call?.callId === action.callId && state.call.roomId === action.roomId
+        ? { ...state, call: { ...state.call, status: "active" }, lastError: null }
+        : state;
+    case "call.media.reconnecting":
+      return state.call?.callId === action.callId && state.call.roomId === action.roomId
+        ? { ...state, call: { ...state.call, status: "reconnecting" } }
+        : state;
     case "call.local.ended":
       return state.call?.callId === action.callId
         ? clearCallState(state, null)
@@ -242,6 +252,7 @@ function reduceServerEvent(
           roomId: event.roomId,
           status: "ringing",
         },
+        lastError: null,
         microphoneMutedByModerator: false,
       };
     }
@@ -252,6 +263,7 @@ function reduceServerEvent(
         ...next,
         call: { callId, invitationId: null, kind: "direct", roomId: event.roomId, status: "connecting" },
         floor: null,
+        lastError: null,
         microphoneMutedByModerator: false,
       };
     }
@@ -268,25 +280,15 @@ function reduceServerEvent(
           status: "connecting",
         },
         floor: null,
+        lastError: null,
         microphoneMutedByModerator: false,
       };
     }
-    case "media.negotiation": {
-      const call = state.call;
-      return call && isCurrentCallEvent(state, event, stringValue(payload.callId))
-        ? {
-          ...next,
-          call: {
-            ...call,
-            // A focus or meeting-membership grant authorizes an attempt, but
-            // it does not mean the provider accepted the audio. Only the
-            // successfully-applied local call-audio answer may claim an
-            // active call in the UI.
-            status: isEstablishedLocalCallAudio(payload) ? "active" : call.status,
-          },
-        }
-        : next;
-    }
+    case "media.negotiation":
+      // An SDP answer advances negotiation, but it is not yet a live audio
+      // path. The browser promotes this call only after its peer connection
+      // reaches `connected`.
+      return next;
     case "participant.changed":
     case "participant.removed":
     case "media.policy":
@@ -315,6 +317,7 @@ function reduceServerEvent(
           status: invited ? "ringing" : "connecting",
         },
         floor: null,
+        lastError: null,
         microphoneMutedByModerator: false,
       };
     }
@@ -349,15 +352,23 @@ function reduceServerEvent(
         terminalCallMessage(stringValue(payload.reason)),
       );
     case "camera.granted":
-      return { ...next, cameraActive: true };
+      return isCurrentCallEvent(state, event, stringValue(payload.callId))
+        ? { ...next, cameraActive: true }
+        : next;
     case "camera.denied":
     case "camera.revoked":
-      return { ...next, cameraActive: false, lastError: stringValue(payload.reason) };
+      return isCurrentCallEvent(state, event, stringValue(payload.callId))
+        ? { ...next, cameraActive: false, lastError: stringValue(payload.reason) }
+        : next;
     case "screen.granted":
-      return { ...next, screenActive: true };
+      return isCurrentCallEvent(state, event, stringValue(payload.callId))
+        ? { ...next, screenActive: true }
+        : next;
     case "screen.denied":
     case "screen.revoked":
-      return { ...next, screenActive: false, lastError: stringValue(payload.reason) };
+      return isCurrentCallEvent(state, event, stringValue(payload.callId))
+        ? { ...next, screenActive: false, lastError: stringValue(payload.reason) }
+        : next;
     case "focus.denied":
     case "focus.revoked":
       return isCurrentCallEvent(state, event, stringValue(payload.callId))
@@ -375,17 +386,6 @@ function isCurrentCallEvent(
   callId: string | null,
 ): boolean {
   return state.call?.roomId === event.roomId && state.call.callId === callId;
-}
-
-function isEstablishedLocalCallAudio(payload: Record<string, unknown>): boolean {
-  if (payload.descriptionType !== "answer" || payload.direction !== "publish") return false;
-  const bindings = payload.trackBindings;
-  return Array.isArray(bindings) && bindings.some((binding) => (
-    binding
-    && typeof binding === "object"
-    && (binding as Record<string, unknown>).publicationKind === "call_audio"
-    && (binding as Record<string, unknown>).role === "local"
-  ));
 }
 
 function clearMatchingMediaState(
