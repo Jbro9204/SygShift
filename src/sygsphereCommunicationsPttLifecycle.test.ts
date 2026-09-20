@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import {
   endServerPttTransmission,
   grantServerPttFloor,
@@ -8,6 +10,7 @@ import {
   renewServerPttFloor,
   startServerPttTransmission,
 } from '../worker/comms/pttLifecycle'
+import { extendServerPttPreparationLease } from '../worker/comms/tenantCommsDurableObject'
 
 const callId = '11111111-1111-4111-8111-111111111111'
 const transmissionRequestId = '22222222-2222-4222-8222-222222222222'
@@ -63,5 +66,39 @@ describe('SygSphere Communications PTT lifecycle', () => {
     })
     expect(startServerPttTransmission(active, 15_000).stage).toBe('ended')
     expect(endServerPttTransmission(active).stage).toBe('ended')
+  })
+
+  it('bounds server-owned setup extensions from the original reservation and never revives an expired preparation', () => {
+    const lease = (nowMs: number, currentLeaseExpiresAtMs: number) => extendServerPttPreparationLease({
+      createdAtMs: 10_000,
+      currentLeaseExpiresAtMs,
+      maximumPreparationLifetimeMs: 60_000,
+      nowMs,
+      setupExtensionMs: 30_000,
+    })
+
+    expect(lease(39_000, 40_000)).toBe(69_000)
+    expect(lease(69_000, 70_000)).toBe(70_000)
+    expect(lease(70_000, 70_000)).toBeNull()
+    expect(lease(40_000, 40_000)).toBeNull()
+  })
+
+  it('guards provider returns with exact publisher/listener revalidation and cleans stale tracks before they can be stored', () => {
+    const coordinator = readFileSync(resolve(import.meta.dirname, '..', 'worker', 'comms', 'tenantCommsDurableObject.ts'), 'utf8')
+    const publisher = coordinator.slice(coordinator.indexOf('async startPttAudio'), coordinator.indexOf('async preparePttAudio'))
+    const listener = coordinator.slice(coordinator.indexOf('async startPttListen'), coordinator.indexOf('async preparePttListen'))
+
+    expect(publisher).toContain('this.extendPttPreparationLease(row, requestedAtMs)')
+    expect(publisher.indexOf('this.extendPttPreparationLease(row, requestedAtMs)')).toBeLessThan(publisher.indexOf('await this.providerAdapter(parsed.release)'))
+    expect(publisher).toContain('this.pttPublisherReservationIsCurrent')
+    expect(publisher).toContain('await this.closeStalePttTrack')
+    expect(publisher.lastIndexOf('this.pttPublisherReservationIsCurrent')).toBeLessThan(publisher.indexOf('this.claimPttMediaSession'))
+
+    expect(listener).toContain('this.extendPttPreparationLease(row, requestedAtMs)')
+    expect(listener.indexOf('this.extendPttPreparationLease(row, requestedAtMs)')).toBeLessThan(listener.indexOf('await this.providerAdapter(parsed.release)'))
+    expect(listener).toContain('this.pttListenerReservationIsCurrent')
+    expect(listener).toContain('await this.closeStalePttTrack')
+    expect(listener.lastIndexOf('this.pttListenerReservationIsCurrent')).toBeLessThan(listener.indexOf('this.claimPttMediaSession'))
+    expect(coordinator).toContain('on conflict (call_id, employee_id) do nothing')
   })
 })

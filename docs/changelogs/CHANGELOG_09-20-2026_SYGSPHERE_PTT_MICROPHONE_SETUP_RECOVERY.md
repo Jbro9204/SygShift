@@ -22,6 +22,10 @@ Two client lifecycle paths could cancel microphone capture before it completed:
   authorizes a PTT transmission.
 - Retained **Hold to talk** only after that setup succeeds, so the control is now a real hold gesture rather
   than a permission prompt.
+- Locks the setup action while the browser prompt is open, supports **Escape** to cancel a keyboard-held
+  transmission, and clears a previous setup error when a retry succeeds.
+- Keeps microphone setup isolated from calls: a late permission result from an older setup attempt cannot
+  clear, replace, or show an error over a newer incoming call or account/session change.
 - Stabilized the PTT handler lifecycle across normal chat/runtime re-renders so it cannot self-release while
   microphone capture is starting.
 - Treats an intentional early release as a silent cancellation. Genuine permission, missing-device, in-use,
@@ -46,11 +50,11 @@ No database migration was required.
 
 ## Verification
 
-- Focused PTT UI, controller, media, socket bridge, lifecycle, and Worker suite passed: **6 files / 102 tests**.
+- Focused PTT UI, controller, media, socket bridge, lifecycle, and Worker suite passed: **6 files / 110 tests**.
 - `pnpm typecheck` passed.
 - `pnpm lint` passed with zero warnings.
-- Production build, deployment, and live verification are recorded in the release update appended after the
-  source repair is published.
+- Production build passed. Deployment and live verification are recorded in the release update appended after
+  the source repair is published.
 
 ## Remaining acceptance
 

@@ -1,5 +1,17 @@
 # SygShift Development Log
 
+## 09/20/2026 - SygSphere PTT Reliability Completion
+
+- Completed the first-use browser microphone repair with a normal **Set up microphone** action, a visible
+  in-progress state, retry recovery, keyboard Escape cancellation, and protection against late permission
+  results overwriting an incoming call.
+- Hardened the authoritative PTT coordinator against provider timing races: preparation leases remain
+  bounded by the server, every provider return is revalidated, and stale tracks are closed before storage.
+- Verified strict TypeScript, zero-warning lint, production build, and **109 focused communications/Worker
+  tests**. Release detail is recorded in
+  `docs/changelogs/CHANGELOG_09-20-2026_SYGSPHERE_PTT_MICROPHONE_SETUP_RECOVERY.md` and
+  `docs/changelogs/CHANGELOG_09-20-2026_SYGSPHERE_PTT_PROVIDER_RACE_HARDENING.md`.
+
 ## 09/20/2026 - SygSphere PTT Microphone Setup Recovery
 
 - Replaced the broken first-time hold-to-talk permission interaction with a simple **Set up microphone**

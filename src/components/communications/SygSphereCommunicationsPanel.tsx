@@ -47,6 +47,7 @@ interface SygSphereCommunicationsPanelProps {
   microphoneMuted: boolean;
   microphoneMutedByModerator: boolean;
   microphonePrepared: boolean;
+  microphoneSetupInProgress: boolean;
   onAnswer: (callId: string) => void;
   onCameraChange: (enabled: boolean) => void;
   onDecline: (callId: string) => void;
@@ -74,6 +75,7 @@ export function SygSphereCommunicationsPanel({
   microphoneMuted,
   microphoneMutedByModerator,
   microphonePrepared,
+  microphoneSetupInProgress,
   onAnswer,
   onCameraChange,
   onDecline,
@@ -126,12 +128,16 @@ export function SygSphereCommunicationsPanel({
                 <button
                   aria-describedby="sphere-comms-ptt-help"
                   className="sphere-comms-ptt is-setup"
-                  disabled={!pttAvailable}
+                  aria-busy={microphoneSetupInProgress}
+                  disabled={!pttAvailable || microphoneSetupInProgress}
                   onClick={onPrepareMicrophone}
                   type="button"
                 >
                   <Mic size={19} />
-                  <span><strong>Set up microphone</strong><small>One-time secure setup</small></span>
+                  <span>
+                    <strong>{microphoneSetupInProgress ? "Setting up microphone…" : "Set up microphone"}</strong>
+                    <small>{microphoneSetupInProgress ? "Waiting for browser permission" : "One-time secure setup"}</small>
+                  </span>
                 </button>
               )
             ) : null}
@@ -321,6 +327,7 @@ function useHoldToTalk({ enabled, onRelease, onStart }: { enabled: boolean; onRe
     handlers: {
       onBlur: release,
       onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
+        if (event.key === "Escape") { event.preventDefault(); release(); return; }
         if ((event.key === " " || event.key === "Enter") && !event.repeat) { event.preventDefault(); start(); }
       },
       onKeyUp: (event: React.KeyboardEvent<HTMLButtonElement>) => {

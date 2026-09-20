@@ -296,6 +296,24 @@ describe("SygSphere communications controller", () => {
     expect(test.controller.snapshot.floor).toBeNull();
   });
 
+  it("coalesces repeated microphone setup requests into one browser probe", async () => {
+    const test = harness();
+    let resolvePreparation!: () => void;
+    vi.mocked(test.media.prepareMicrophone).mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolvePreparation = resolve;
+    }));
+    await test.controller.start("employee-a");
+
+    const first = test.controller.preparePttMicrophone();
+    const second = test.controller.preparePttMicrophone();
+    expect(test.media.prepareMicrophone).toHaveBeenCalledTimes(1);
+    resolvePreparation();
+
+    await expect(first).resolves.toBe(true);
+    await expect(second).resolves.toBe(true);
+    expect(test.controller.snapshot.lastError).toBeNull();
+  });
+
   it("shows the ordinary microphone permission guidance when PTT setup is declined", async () => {
     const test = harness();
     vi.mocked(test.media.prepareMicrophone).mockRejectedValueOnce(new DOMException("denied", "NotAllowedError"));
@@ -305,6 +323,59 @@ describe("SygSphere communications controller", () => {
 
     expect(test.controller.snapshot.connection).toBe("ready");
     expect(test.controller.snapshot.lastError).toBe("Microphone or camera permission was not granted.");
+  });
+
+  it("clears a prior setup error after a successful retry", async () => {
+    const test = harness();
+    vi.mocked(test.media.prepareMicrophone)
+      .mockRejectedValueOnce(new DOMException("denied", "NotAllowedError"))
+      .mockResolvedValueOnce(undefined);
+    await test.controller.start("employee-a");
+
+    await expect(test.controller.preparePttMicrophone()).resolves.toBe(false);
+    expect(test.controller.snapshot.lastError).toBe("Microphone or camera permission was not granted.");
+    await expect(test.controller.preparePttMicrophone()).resolves.toBe(true);
+    expect(test.controller.snapshot.lastError).toBeNull();
+  });
+
+  it("does not let a late setup failure disrupt an incoming call", async () => {
+    const test = harness();
+    let rejectPreparation!: (reason?: unknown) => void;
+    vi.mocked(test.media.prepareMicrophone).mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+      rejectPreparation = reject;
+    }));
+    const callId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+    const invitationId = "d285bf11-15f6-4efe-b60f-4ab891637342";
+    await test.controller.start("employee-a");
+
+    const preparing = test.controller.preparePttMicrophone();
+    await test.onEvent()(event("call.ringing", { callId, invitationId }, 1));
+    rejectPreparation(new DOMException("denied", "NotAllowedError"));
+
+    await expect(preparing).resolves.toBe(false);
+    expect(test.controller.snapshot.call).toMatchObject({ callId, status: "ringing" });
+    expect(test.controller.snapshot.lastError).toBeNull();
+  });
+
+  it("does not let a stale setup prompt block microphone setup after an account change", async () => {
+    const test = harness();
+    let resolveOldSetup!: () => void;
+    vi.mocked(test.media.prepareMicrophone)
+      .mockImplementationOnce(() => new Promise<void>((resolve) => {
+        resolveOldSetup = resolve;
+      }))
+      .mockResolvedValueOnce(undefined);
+    await test.controller.start("employee-a");
+
+    const staleSetup = test.controller.preparePttMicrophone();
+    await Promise.resolve();
+    test.controller.stop("account_changed");
+    await test.controller.start("employee-b");
+
+    await expect(test.controller.preparePttMicrophone()).resolves.toBe(true);
+    resolveOldSetup();
+    await expect(staleSetup).resolves.toBe(false);
+    expect(test.media.prepareMicrophone).toHaveBeenCalledTimes(2);
   });
 
   it("releases local PTT capture when the coordinator denies the floor", async () => {

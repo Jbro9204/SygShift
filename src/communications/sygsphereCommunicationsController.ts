@@ -77,6 +77,7 @@ export class SygSphereCommunicationsController {
   private pendingCallAudio = new Map<string, MediaStream>();
   private pendingCreatedMeetingId: string | null = null;
   private pendingPttAudio: MediaStream | null = null;
+  private pendingPttMicrophoneSetup: Promise<boolean> | null = null;
   private pendingFloorRenewalCommandId: string | null = null;
   private pendingScreen: Readonly<{ callId: string; stream: MediaStream }> | null = null;
   private readonly remoteMedia = new Map<string, CommunicationsRemoteTrack>();
@@ -158,6 +159,9 @@ export class SygSphereCommunicationsController {
     this.pendingCallAudio.clear();
     this.pendingCamera = null;
     this.pendingPttAudio = null;
+    // A permission prompt cannot be programmatically dismissed, but a new
+    // account/session must never be blocked behind its eventual result.
+    this.pendingPttMicrophoneSetup = null;
     this.pendingScreen = null;
     this.clearRemoteMedia();
     this.media.stopAll();
@@ -188,14 +192,41 @@ export class SygSphereCommunicationsController {
   }
 
   async preparePttMicrophone(): Promise<boolean> {
+    if (this.pendingPttMicrophoneSetup) return this.pendingPttMicrophoneSetup;
     if (!this.coordinator || this.state.connection !== "ready" || this.state.call || hasActiveFloor(this.state)) return false;
+    const accountKey = this.state.accountKey;
+    const generation = this.connectGeneration;
+    const setup = this.preparePttMicrophoneForCurrentSession(accountKey, generation);
+    this.pendingPttMicrophoneSetup = setup;
+    try {
+      return await setup;
+    } finally {
+      if (this.pendingPttMicrophoneSetup === setup) this.pendingPttMicrophoneSetup = null;
+    }
+  }
+
+  private async preparePttMicrophoneForCurrentSession(accountKey: string | null, generation: number): Promise<boolean> {
     try {
       await this.media.prepareMicrophone();
+      if (!this.pttMicrophoneSetupIsCurrent(accountKey, generation)) return false;
+      this.update({ type: "ptt.microphone.prepared" });
       return true;
     } catch (error) {
-      this.update({ type: "local.media.failed", reason: safeError(error) });
+      // A call or account change that happens while the browser permission
+      // prompt is open owns the UI state. Do not allow its late result to
+      // overwrite that newer state or display a stale error.
+      if (!this.pttMicrophoneSetupIsCurrent(accountKey, generation)) return false;
+      this.update({ type: "ptt.microphone.failed", reason: safeError(error) });
       return false;
     }
+  }
+
+  private pttMicrophoneSetupIsCurrent(accountKey: string | null, generation: number): boolean {
+    return generation === this.connectGeneration
+      && this.state.accountKey === accountKey
+      && this.state.connection === "ready"
+      && !this.state.call
+      && !hasActiveFloor(this.state);
   }
 
   async releaseToTalk(): Promise<void> {

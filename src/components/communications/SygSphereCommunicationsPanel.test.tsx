@@ -32,6 +32,7 @@ const base = () => ({
   microphoneMuted: false,
   microphoneMutedByModerator: false,
   microphonePrepared: true,
+  microphoneSetupInProgress: false,
   pttState: "ready" as const,
   selectedChannelId: "dispatch",
 });
@@ -71,6 +72,16 @@ describe("SygSphere communications panel", () => {
     fireEvent.click(screen.getByRole("button", { name: /set up microphone/i }));
     expect(props.onPrepareMicrophone).toHaveBeenCalledTimes(1);
     expect(props.onPttPressStart).not.toHaveBeenCalled();
+  });
+
+  it("locks the microphone setup action while the browser prompt is pending", () => {
+    const props = base();
+    render(<SygSphereCommunicationsPanel {...props} microphonePrepared={false} microphoneSetupInProgress />);
+
+    const button = screen.getByRole("button", { name: /setting up microphone/i });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText(/waiting for browser permission/i)).toBeVisible();
   });
 
   it("does not release PTT when the runtime refreshes control callbacks during preparation", () => {
@@ -117,6 +128,17 @@ describe("SygSphere communications panel", () => {
     fireEvent.keyDown(button, { key: " ", repeat: false });
     fireEvent.keyDown(button, { key: " ", repeat: true });
     fireEvent.keyUp(button, { key: " " });
+    expect(props.onPttPressStart).toHaveBeenCalledTimes(1);
+    expect(props.onPttPressEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets keyboard users cancel a held PTT control with Escape", () => {
+    const props = base();
+    render(<SygSphereCommunicationsPanel {...props} />);
+    const button = screen.getByRole("button", { name: /hold to talk/i });
+    fireEvent.keyDown(button, { key: " ", repeat: false });
+    fireEvent.keyDown(button, { key: "Escape" });
+
     expect(props.onPttPressStart).toHaveBeenCalledTimes(1);
     expect(props.onPttPressEnd).toHaveBeenCalledTimes(1);
   });

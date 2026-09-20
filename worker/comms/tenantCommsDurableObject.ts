@@ -125,6 +125,7 @@ type CoordinatorMediaNegotiationRow = {
 
 type CoordinatorPttTransmissionRow = {
   channel_reference: string
+  created_at_ms: number
   lease_expires_at_ms: number
   recipient_employee_ids_json: string
   requester_connection_id: string
@@ -309,7 +310,48 @@ const maximumRecordsPurgedPerDispatch = 50
 const maximumWebSocketFrameBytes = 4_096
 const directCallRingingMilliseconds = 45_000
 const pttPreparingMilliseconds = 30_000
+// A PTT reservation starts with 30 seconds, but server-side media setup can
+// include TURN credentials plus several provider round trips. A controlled
+// extension gives those operations a chance to finish without allowing a
+// browser to keep a channel reservation alive indefinitely.
+const pttMaximumPreparationLifetimeMilliseconds = pttPreparingMilliseconds * 2
 const pttLeaseMilliseconds = 6_000
+
+/**
+ * Extends a still-valid server reservation without ever reviving an expired
+ * one or exceeding its original absolute preparation deadline. Every input is
+ * supplied by coordinator storage or server constants; browsers never choose
+ * either duration.
+ */
+export const extendServerPttPreparationLease = (input: Readonly<{
+  createdAtMs: number
+  currentLeaseExpiresAtMs: number
+  maximumPreparationLifetimeMs: number
+  nowMs: number
+  setupExtensionMs: number
+}>): number | null => {
+  if (
+    !Number.isSafeInteger(input.createdAtMs)
+    || !Number.isSafeInteger(input.currentLeaseExpiresAtMs)
+    || !Number.isSafeInteger(input.maximumPreparationLifetimeMs)
+    || !Number.isSafeInteger(input.nowMs)
+    || !Number.isSafeInteger(input.setupExtensionMs)
+    || input.createdAtMs <= 0
+    || input.maximumPreparationLifetimeMs <= 0
+    || input.setupExtensionMs <= 0
+    || input.currentLeaseExpiresAtMs <= input.nowMs
+  ) return null
+
+  const absoluteDeadlineMs = input.createdAtMs + input.maximumPreparationLifetimeMs
+  const requestedDeadlineMs = input.nowMs + input.setupExtensionMs
+  if (!Number.isSafeInteger(absoluteDeadlineMs) || !Number.isSafeInteger(requestedDeadlineMs) || input.nowMs >= absoluteDeadlineMs) return null
+
+  const extendedLeaseExpiresAtMs = Math.min(
+    absoluteDeadlineMs,
+    Math.max(input.currentLeaseExpiresAtMs, requestedDeadlineMs),
+  )
+  return extendedLeaseExpiresAtMs > input.nowMs ? extendedLeaseExpiresAtMs : null
+}
 
 const runtimeEnabled = (value: string | undefined): boolean => value?.trim().toLowerCase() === 'true'
 
@@ -890,6 +932,17 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
         && attachment.authorization.employeeId === authorization.employeeId
         && attachment.authorization.authUserId === authorization.authUserId
       ) return attachment
+    }
+    return null
+  }
+
+  /** A PTT source must remain the exact authenticated browser connection that
+   * reserved the floor. Employee identity alone is not sufficient after a
+   * reconnect because the prior connection may already be stale. */
+  private activeSocketByConnectionId(connectionId: string): AuthenticatedSocketAttachment | null {
+    for (const webSocket of this.ctx.getWebSockets()) {
+      const attachment = socketAttachment(webSocket)
+      if (attachment?.phase === 'authenticated' && attachment.connectionId === connectionId) return attachment
     }
     return null
   }
@@ -2156,10 +2209,175 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     return this.ctx.storage.sql.exec<CoordinatorPttTransmissionRow>(
       `select transmission_request_id, channel_reference, requester_employee_id,
               requester_connection_id, recipient_employee_ids_json, scope, state,
-              lease_expires_at_ms
+              lease_expires_at_ms, created_at_ms
        from coordinator_ptt_transmissions where transmission_request_id = ? limit 1`,
       transmissionRequestId,
     ).toArray()[0] ?? null
+  }
+
+  /**
+   * Only the coordinator may extend a floor that is still preparing. The
+   * extension is capped from the original reservation timestamp, so retries
+   * cannot turn a transient provider delay into a permanently busy channel.
+   */
+  private extendPttPreparationLease(row: CoordinatorPttTransmissionRow, now: number): CoordinatorPttTransmissionRow | null {
+    if (row.state !== 'preparing') return null
+    const leaseExpiresAtMs = extendServerPttPreparationLease({
+      createdAtMs: row.created_at_ms,
+      currentLeaseExpiresAtMs: row.lease_expires_at_ms,
+      maximumPreparationLifetimeMs: pttMaximumPreparationLifetimeMilliseconds,
+      nowMs: now,
+      setupExtensionMs: pttPreparingMilliseconds,
+    })
+    if (leaseExpiresAtMs === null) return null
+
+    if (leaseExpiresAtMs > row.lease_expires_at_ms) {
+      this.ctx.storage.sql.exec(
+        `update coordinator_ptt_transmissions
+         set lease_expires_at_ms = ?, updated_at_ms = ?
+         where transmission_request_id = ? and state = 'preparing'
+           and channel_reference = ? and requester_employee_id = ?
+           and requester_connection_id = ? and created_at_ms = ?
+           and lease_expires_at_ms > ?`,
+        leaseExpiresAtMs,
+        now,
+        row.transmission_request_id,
+        row.channel_reference,
+        row.requester_employee_id,
+        row.requester_connection_id,
+        row.created_at_ms,
+        now,
+      )
+    }
+
+    const current = this.pttTransmission(row.transmission_request_id)
+    if (
+      !current
+      || current.state !== 'preparing'
+      || current.lease_expires_at_ms <= now
+      || current.channel_reference !== row.channel_reference
+      || current.requester_employee_id !== row.requester_employee_id
+      || current.requester_connection_id !== row.requester_connection_id
+      || current.created_at_ms !== row.created_at_ms
+    ) return null
+    this.scheduleNextSocketTicketExpiry()
+    return current
+  }
+
+  /** Revalidates the exact publisher connection after a provider await. A
+   * route match alone is insufficient: a reconnect receives a new connection
+   * ID and may not inherit a reserved floor or a prior provider track. */
+  private pttPublisherReservationIsCurrent(input: Readonly<{
+    authorization: StagedCommsAuthorizationContext
+    channelReference: string
+    connectionId: string
+    connectionRouteReference: string
+    now: number
+    transmissionRequestId: string
+  }>): CoordinatorPttTransmissionRow | null {
+    const caller = this.activeSocketForRoute(input.connectionRouteReference, input.authorization)
+    const row = this.pttTransmission(input.transmissionRequestId)
+    if (
+      !caller
+      || caller.connectionId !== input.connectionId
+      || !input.authorization.permissions.includes('sygsphere.comms.ptt.transmit')
+      || !row
+      || row.state !== 'preparing'
+      || row.lease_expires_at_ms <= input.now
+      || row.channel_reference !== input.channelReference
+      || row.requester_employee_id !== caller.authorization.employeeId
+      || row.requester_connection_id !== caller.connectionId
+      || this.mediaSession(input.transmissionRequestId, caller.authorization.employeeId)
+    ) return null
+    return row
+  }
+
+  /** Revalidates the exact selected listener and the live publisher source
+   * after subscriber-provider I/O. This prevents a late response from being
+   * persisted when a listener reconnects, is removed, or the source changes. */
+  private pttListenerReservationIsCurrent(input: Readonly<{
+    authorization: StagedCommsAuthorizationContext
+    connectionId: string
+    connectionRouteReference: string
+    now: number
+    sourceConnectionId: string
+    sourceSessionId: string
+    sourceTrackId: string
+    transmissionRequestId: string
+  }>): CoordinatorPttTransmissionRow | null {
+    const caller = this.activeSocketForRoute(input.connectionRouteReference, input.authorization)
+    const row = this.pttTransmission(input.transmissionRequestId)
+    if (
+      !caller
+      || caller.connectionId !== input.connectionId
+      || !input.authorization.permissions.includes('sygsphere.comms.ptt.listen')
+      || !row
+      || !['preparing', 'ready'].includes(row.state)
+      || row.lease_expires_at_ms <= input.now
+      || caller.authorization.employeeId === row.requester_employee_id
+      || !this.pttRecipients(row).includes(caller.authorization.employeeId)
+      || !this.pttRequiredListenerConnectionIds(input.transmissionRequestId).includes(caller.connectionId)
+      || this.mediaSession(input.transmissionRequestId, caller.authorization.employeeId)
+    ) return null
+
+    const sourceSocket = this.activeSocketByConnectionId(row.requester_connection_id)
+    const source = this.mediaSession(input.transmissionRequestId, row.requester_employee_id)
+    const sourceSession = source ? this.parseProviderSession(source) : null
+    if (
+      !sourceSocket
+      || sourceSocket.authorization.tenantId !== caller.authorization.tenantId
+      || sourceSocket.authorization.employeeId !== row.requester_employee_id
+      || !source
+      || !sourceSession
+      || source.connection_id !== row.requester_connection_id
+      || source.connection_id !== input.sourceConnectionId
+      || source.track_id !== input.sourceTrackId
+      || sourceSession.id !== input.sourceSessionId
+    ) return null
+    return row
+  }
+
+  /** A successful provider request can return after its floor has ended. The
+   * track was never persisted, so clean it up directly rather than invoking a
+   * broader call teardown that could affect a newer transmission. */
+  private async closeStalePttTrack(input: Readonly<{
+    adapter: CloudflareRealtimeHttpAdapter
+    mid: string
+    session: ProviderSession
+    trackId: string
+  }>): Promise<void> {
+    await input.adapter.forceCloseTracks({
+      session: input.session,
+      tenantId: input.session.tenantId,
+      tracks: [{ mid: input.mid, trackId: input.trackId }],
+    }).catch(() => undefined)
+  }
+
+  /** PTT sessions are write-once for a floor participant. A late concurrent
+   * provider response must not overwrite a newer session for that connection. */
+  private claimPttMediaSession(
+    input: Readonly<{ callId: string, connectionId: string, employeeId: string, session: ProviderSession, trackId: string }>,
+    now: number,
+  ): boolean {
+    this.ctx.storage.sql.exec(
+      `insert into coordinator_call_media_sessions (
+        call_id, employee_id, connection_id, session_json, track_id, created_at_ms, updated_at_ms
+      ) values (?, ?, ?, ?, ?, ?, ?)
+      on conflict (call_id, employee_id) do nothing`,
+      input.callId,
+      input.employeeId,
+      input.connectionId,
+      this.serializeProviderSession(input.session),
+      input.trackId,
+      now,
+      now,
+    )
+    const stored = this.mediaSession(input.callId, input.employeeId)
+    const storedSession = stored ? this.parseProviderSession(stored) : null
+    return stored !== null
+      && stored.connection_id === input.connectionId
+      && stored.track_id === input.trackId
+      && storedSession?.id === input.session.id
   }
 
   private pttRecipients(row: CoordinatorPttTransmissionRow): readonly string[] {
@@ -2321,7 +2539,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       const active = this.ctx.storage.sql.exec<CoordinatorPttTransmissionRow>(
         `select transmission_request_id, channel_reference, requester_employee_id,
                 requester_connection_id, recipient_employee_ids_json, scope, state,
-                lease_expires_at_ms
+                lease_expires_at_ms, created_at_ms
          from coordinator_ptt_transmissions
          where channel_reference = ? and state in ('preparing', 'ready') limit 1`,
         scope.channelReference,
@@ -2412,20 +2630,44 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
       return { outcome: 'runtime_disabled', requestId: parsed.requestId }
     }
+    const requestedAtMs = Date.now()
     const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
     const row = this.pttTransmission(parsed.transmissionRequestId)
-    if (!caller || !row || row.state !== 'preparing' || row.lease_expires_at_ms <= Date.now()
+    if (!caller || !row || row.state !== 'preparing' || row.lease_expires_at_ms <= requestedAtMs
       || row.channel_reference !== parsed.channelReference
       || row.requester_employee_id !== caller.authorization.employeeId
       || row.requester_connection_id !== caller.connectionId
       || this.mediaSession(parsed.transmissionRequestId, caller.authorization.employeeId)) {
       return { outcome: 'invalid_state', requestId: parsed.requestId }
     }
+
+    // Keep the floor reserved through the server-owned setup sequence, but
+    // never past the reservation's fixed absolute preparation deadline.
+    if (!this.extendPttPreparationLease(row, requestedAtMs)) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
     const adapter = await this.providerAdapter(parsed.release)
     if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    const publisherInput = {
+      authorization: parsed.authorization,
+      channelReference: parsed.channelReference,
+      connectionId: caller.connectionId,
+      connectionRouteReference: parsed.connectionRouteReference,
+      transmissionRequestId: parsed.transmissionRequestId,
+    }
+    if (!this.pttPublisherReservationIsCurrent({ ...publisherInput, now: Date.now() })) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
     const ice = await adapter.generateIceServers(300)
+    if (ice.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    if (!this.pttPublisherReservationIsCurrent({ ...publisherInput, now: Date.now() })) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
     const created = await adapter.createSession({ tenantId: caller.authorization.tenantId })
-    if (ice.outcome !== 'accepted' || created.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    if (created.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    if (!this.pttPublisherReservationIsCurrent({ ...publisherInput, now: Date.now() })) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
     const pending = activateProviderSession(createProviderSession(created.value.sessionId, caller.authorization.tenantId))
     const trackId = `ptt-${parsed.transmissionRequestId}-audio-${caller.authorization.employeeId}`
     const publication = await adapter.publishTracks({
@@ -2440,27 +2682,23 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
     const session = registerProviderTrack(pending, { id: trackId, kind: 'audio', mid: localTrack.mid, state: 'active' })
     const now = Date.now()
-    const current = this.pttTransmission(parsed.transmissionRequestId)
-    if (!current || current.state !== 'preparing' || current.lease_expires_at_ms <= now
-      || current.requester_employee_id !== caller.authorization.employeeId
-      || current.requester_connection_id !== caller.connectionId) {
+    const current = this.pttPublisherReservationIsCurrent({ ...publisherInput, now })
+    if (!current) {
+      await this.closeStalePttTrack({ adapter, mid: localTrack.mid, session, trackId })
       return { outcome: 'invalid_state', requestId: parsed.requestId }
     }
-    this.ctx.storage.sql.exec(
-      `update coordinator_ptt_transmissions set lease_expires_at_ms = ?, updated_at_ms = ?
-       where transmission_request_id = ? and state = 'preparing'`,
-      now + pttPreparingMilliseconds,
-      now,
-      parsed.transmissionRequestId,
-    )
-    this.persistProviderSession({
+    if (!this.claimPttMediaSession({
       callId: parsed.transmissionRequestId,
       connectionId: caller.connectionId,
       employeeId: caller.authorization.employeeId,
       session,
       trackId,
-    }, now)
+    }, now)) {
+      await this.closeStalePttTrack({ adapter, mid: localTrack.mid, session, trackId })
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
     const negotiationId = crypto.randomUUID()
+    const negotiationExpiresAtMs = Math.min(current.lease_expires_at_ms, now + pttPreparingMilliseconds)
     this.ctx.storage.sql.exec(
       `insert into coordinator_ptt_media_negotiations (
         transmission_request_id, negotiation_id, source_ready_at_ms, expires_at_ms
@@ -2469,14 +2707,14 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       parsed.transmissionRequestId,
       negotiationId,
       now,
-      now + pttPreparingMilliseconds,
+      negotiationExpiresAtMs,
     )
     this.sendCoordinatorEvent(caller.connectionId, `ptt:${parsed.transmissionRequestId}`, 'media.negotiation', {
       callId: parsed.transmissionRequestId,
       description: publication.value.sessionDescription.sdp,
       descriptionType: publication.value.sessionDescription.type,
       direction: 'publish',
-      expiresAt: new Date(now + 30_000).toISOString(),
+      expiresAt: new Date(negotiationExpiresAtMs).toISOString(),
       generation: 1,
       iceServers: ice.value.iceServers,
       negotiationId,
@@ -2506,20 +2744,33 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
       return { outcome: 'runtime_disabled', requestId: parsed.requestId }
     }
+    const requestedAtMs = Date.now()
     const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
     const row = this.pttTransmission(parsed.transmissionRequestId)
-    if (!caller || !row || row.state !== 'preparing' || row.lease_expires_at_ms <= Date.now()
+    if (!caller || !row || row.state !== 'preparing' || row.lease_expires_at_ms <= requestedAtMs
       || row.channel_reference !== parsed.channelReference
       || row.requester_employee_id !== caller.authorization.employeeId
       || row.requester_connection_id !== caller.connectionId) {
       return { outcome: 'invalid_state', requestId: parsed.requestId }
     }
+    if (!this.extendPttPreparationLease(row, requestedAtMs)) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
     const adapter = await this.providerAdapter(parsed.release)
     if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
     const ice = await adapter.generateIceServers(300)
-    return ice.outcome === 'accepted'
+    if (ice.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    const current = this.pttPublisherReservationIsCurrent({
+      authorization: parsed.authorization,
+      channelReference: parsed.channelReference,
+      connectionId: caller.connectionId,
+      connectionRouteReference: parsed.connectionRouteReference,
+      now: Date.now(),
+      transmissionRequestId: parsed.transmissionRequestId,
+    })
+    return current
       ? { iceServers: ice.value.iceServers, outcome: 'accepted', requestId: parsed.requestId }
-      : { outcome: 'provider_unavailable', requestId: parsed.requestId }
+      : { outcome: 'invalid_state', requestId: parsed.requestId }
   }
 
   async startPttListen(input: unknown): Promise<TenantCommsCoordinatorResult> {
@@ -2528,22 +2779,51 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
       return { outcome: 'runtime_disabled', requestId: parsed.requestId }
     }
+    const requestedAtMs = Date.now()
     const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
     const row = this.pttTransmission(parsed.transmissionRequestId)
-    if (!caller || !row || !['preparing', 'ready'].includes(row.state) || row.lease_expires_at_ms <= Date.now()
+    if (!caller || !row || !['preparing', 'ready'].includes(row.state) || row.lease_expires_at_ms <= requestedAtMs
       || !this.pttRecipients(row).includes(caller.authorization.employeeId)
       || caller.authorization.employeeId === row.requester_employee_id
       || !this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId).includes(caller.connectionId)
       || this.mediaSession(parsed.transmissionRequestId, caller.authorization.employeeId)) {
       return { outcome: 'invalid_state', requestId: parsed.requestId }
     }
-    const source = this.mediaSession(parsed.transmissionRequestId, row.requester_employee_id)
+
+    // Do not lengthen an already-ready transmit lease. Only the detached setup
+    // phase receives the bounded server-owned extension.
+    const setupRow = row.state === 'preparing'
+      ? this.extendPttPreparationLease(row, requestedAtMs)
+      : row
+    if (!setupRow) return { outcome: 'invalid_state', requestId: parsed.requestId }
+
+    const source = this.mediaSession(parsed.transmissionRequestId, setupRow.requester_employee_id)
     const sourceSession = source ? this.parseProviderSession(source) : null
+    if (!source || !sourceSession) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    const listenerInput = {
+      authorization: parsed.authorization,
+      connectionId: caller.connectionId,
+      connectionRouteReference: parsed.connectionRouteReference,
+      sourceConnectionId: source.connection_id,
+      sourceSessionId: sourceSession.id,
+      sourceTrackId: source.track_id,
+      transmissionRequestId: parsed.transmissionRequestId,
+    }
     const adapter = await this.providerAdapter(parsed.release)
-    if (!source || !sourceSession || !adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    if (!this.pttListenerReservationIsCurrent({ ...listenerInput, now: Date.now() })) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
     const ice = await adapter.generateIceServers(300)
+    if (ice.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    if (!this.pttListenerReservationIsCurrent({ ...listenerInput, now: Date.now() })) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
     const created = await adapter.createSession({ tenantId: caller.authorization.tenantId })
-    if (ice.outcome !== 'accepted' || created.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    if (created.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    if (!this.pttListenerReservationIsCurrent({ ...listenerInput, now: Date.now() })) {
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
     const pending = activateProviderSession(createProviderSession(created.value.sessionId, caller.authorization.tenantId))
     const subscription = await adapter.subscribeTracks({
       session: pending,
@@ -2557,19 +2837,28 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
     const session = registerProviderTrack(pending, { id: source.track_id, kind: 'audio', mid: remoteTrack.mid, state: 'active' })
     const now = Date.now()
-    this.persistProviderSession({
+    const current = this.pttListenerReservationIsCurrent({ ...listenerInput, now })
+    if (!current) {
+      await this.closeStalePttTrack({ adapter, mid: remoteTrack.mid, session, trackId: source.track_id })
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
+    if (!this.claimPttMediaSession({
       callId: parsed.transmissionRequestId,
       connectionId: caller.connectionId,
       employeeId: caller.authorization.employeeId,
       session,
       trackId: source.track_id,
-    }, now)
+    }, now)) {
+      await this.closeStalePttTrack({ adapter, mid: remoteTrack.mid, session, trackId: source.track_id })
+      return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
+    const negotiationExpiresAtMs = Math.min(current.lease_expires_at_ms, now + pttPreparingMilliseconds)
     this.sendCoordinatorEvent(caller.connectionId, `ptt:${parsed.transmissionRequestId}`, 'media.negotiation', {
       callId: parsed.transmissionRequestId,
       description: subscription.value.sessionDescription.sdp,
       descriptionType: subscription.value.sessionDescription.type,
       direction: 'subscribe',
-      expiresAt: new Date(now + 30_000).toISOString(),
+      expiresAt: new Date(negotiationExpiresAtMs).toISOString(),
       generation: 1,
       iceServers: ice.value.iceServers,
       negotiationId: crypto.randomUUID(),
@@ -2592,19 +2881,38 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     if (!runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED) || !coordinatorRuntimeMayDispatch(parsed.release)) {
       return { outcome: 'runtime_disabled', requestId: parsed.requestId }
     }
+    const requestedAtMs = Date.now()
     const caller = this.activeSocketForRoute(parsed.connectionRouteReference, parsed.authorization)
     const row = this.pttTransmission(parsed.transmissionRequestId)
-    if (!caller || !row || !['preparing', 'ready'].includes(row.state) || row.lease_expires_at_ms <= Date.now()
+    if (!caller || !row || !['preparing', 'ready'].includes(row.state) || row.lease_expires_at_ms <= requestedAtMs
       || !this.pttRecipients(row).includes(caller.authorization.employeeId)
-      || caller.authorization.employeeId === row.requester_employee_id) {
+      || caller.authorization.employeeId === row.requester_employee_id
+      || !this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId).includes(caller.connectionId)) {
       return { outcome: 'invalid_state', requestId: parsed.requestId }
+    }
+    const setupRow = row.state === 'preparing'
+      ? this.extendPttPreparationLease(row, requestedAtMs)
+      : row
+    if (!setupRow) return { outcome: 'invalid_state', requestId: parsed.requestId }
+    const source = this.mediaSession(parsed.transmissionRequestId, setupRow.requester_employee_id)
+    const sourceSession = source ? this.parseProviderSession(source) : null
+    if (!source || !sourceSession) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    const listenerInput = {
+      authorization: parsed.authorization,
+      connectionId: caller.connectionId,
+      connectionRouteReference: parsed.connectionRouteReference,
+      sourceConnectionId: source.connection_id,
+      sourceSessionId: sourceSession.id,
+      sourceTrackId: source.track_id,
+      transmissionRequestId: parsed.transmissionRequestId,
     }
     const adapter = await this.providerAdapter(parsed.release)
     if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
     const ice = await adapter.generateIceServers(300)
-    return ice.outcome === 'accepted'
+    if (ice.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    return this.pttListenerReservationIsCurrent({ ...listenerInput, now: Date.now() })
       ? { iceServers: ice.value.iceServers, outcome: 'accepted', requestId: parsed.requestId }
-      : { outcome: 'provider_unavailable', requestId: parsed.requestId }
+      : { outcome: 'invalid_state', requestId: parsed.requestId }
   }
 
   /** A listener acknowledgement is accepted only from the exact current
@@ -2676,7 +2984,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     const rows = this.ctx.storage.sql.exec<CoordinatorPttTransmissionRow>(
       `select transmission_request_id, channel_reference, requester_employee_id,
               requester_connection_id, recipient_employee_ids_json, scope, state,
-              lease_expires_at_ms
+              lease_expires_at_ms, created_at_ms
        from coordinator_ptt_transmissions
        where state in ('preparing', 'ready') and lease_expires_at_ms <= ?
        order by lease_expires_at_ms asc limit ?`,

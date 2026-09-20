@@ -55,6 +55,8 @@ export type CommunicationsRuntimeAction =
   | Readonly<{ type: "floor.requested"; channelReference: string; requestId: string }>
   | Readonly<{ type: "floor.release.requested" }>
   | Readonly<{ type: "floor.failed"; reason: string }>
+  | Readonly<{ type: "ptt.microphone.prepared" }>
+  | Readonly<{ type: "ptt.microphone.failed"; reason: string }>
   | Readonly<{ type: "meeting.dismissed"; meetingId: string }>
   | Readonly<{ type: "local.media.failed"; reason: string }>
   | Readonly<{ type: "event.received"; event: SygSphereCommsEvent }>
@@ -129,6 +131,13 @@ export function reduceCommunicationsRuntime(
       return state.floor ? { ...state, floor: null } : state;
     case "floor.failed":
       return { ...state, floor: null, lastError: action.reason };
+    // A microphone setup probe is intentionally independent of calls, camera,
+    // and screen media. Never use the broader local.media.failed transition
+    // here: a browser permission result may arrive after a call invitation.
+    case "ptt.microphone.prepared":
+      return { ...state, lastError: null };
+    case "ptt.microphone.failed":
+      return { ...state, lastError: action.reason };
     case "meeting.dismissed":
       return state.call?.kind === "meeting" && state.call.callId === action.meetingId && state.call.status === "ringing"
         ? { ...state, call: null }
