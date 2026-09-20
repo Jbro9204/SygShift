@@ -11,7 +11,7 @@
     "expectedRoomVersion": { "type": "integer", "minimum": 0 },
     "connectionEpoch": { "type": "integer", "minimum": 0 },
     "kind": {
-      "enum": ["auth", "heartbeat", "resume", "snapshot.request", "floor.request", "floor.cancel", "floor.renew", "floor.release", "call.accept", "call.decline", "call.cancel", "call.end", "media.answer", "media.ready", "media.layout", "media.stop", "screen.request", "screen.release", "focus.request", "focus.release"]
+      "enum": ["auth", "heartbeat", "resume", "snapshot.request", "floor.request", "floor.cancel", "floor.renew", "floor.release", "call.request", "call.accept", "call.decline", "call.cancel", "call.end", "meeting.create", "meeting.join", "meeting.leave", "meeting.end", "participant.remove", "participant.mute", "media.answer", "media.ready", "media.layout", "media.stop", "camera.request", "camera.release", "screen.request", "screen.release", "focus.request", "focus.release"]
     },
     "payload": { "type": "object" }
   },
@@ -24,14 +24,23 @@
     { "properties": { "kind": { "const": "floor.cancel" }, "payload": { "$ref": "command-payload.schema.json#/$defs/transmissionRequest" } } },
     { "properties": { "kind": { "const": "floor.renew" }, "payload": { "$ref": "command-payload.schema.json#/$defs/transmissionRequest" } } },
     { "properties": { "kind": { "const": "floor.release" }, "payload": { "$ref": "command-payload.schema.json#/$defs/transmissionRequest" } } },
+    { "properties": { "kind": { "const": "call.request" }, "payload": { "$ref": "command-payload.schema.json#/$defs/conversationIntent" } } },
     { "properties": { "kind": { "const": "call.accept" }, "payload": { "$ref": "command-payload.schema.json#/$defs/invitation" } } },
     { "properties": { "kind": { "const": "call.decline" }, "payload": { "$ref": "command-payload.schema.json#/$defs/invitation" } } },
     { "properties": { "kind": { "const": "call.cancel" }, "payload": { "$ref": "command-payload.schema.json#/$defs/call" } } },
     { "properties": { "kind": { "const": "call.end" }, "payload": { "$ref": "command-payload.schema.json#/$defs/call" } } },
+    { "properties": { "kind": { "const": "meeting.create" }, "payload": { "$ref": "command-payload.schema.json#/$defs/conversationIntent" } } },
+    { "properties": { "kind": { "const": "meeting.join" }, "payload": { "$ref": "command-payload.schema.json#/$defs/meeting" } } },
+    { "properties": { "kind": { "const": "meeting.leave" }, "payload": { "$ref": "command-payload.schema.json#/$defs/meeting" } } },
+    { "properties": { "kind": { "const": "meeting.end" }, "payload": { "$ref": "command-payload.schema.json#/$defs/meeting" } } },
+    { "properties": { "kind": { "const": "participant.remove" }, "payload": { "$ref": "command-payload.schema.json#/$defs/participantModeration" } } },
+    { "properties": { "kind": { "const": "participant.mute" }, "payload": { "$ref": "command-payload.schema.json#/$defs/participantModeration" } } },
     { "properties": { "kind": { "const": "media.answer" }, "payload": { "$ref": "command-payload.schema.json#/$defs/mediaAnswer" } } },
     { "properties": { "kind": { "const": "media.ready" }, "payload": { "$ref": "command-payload.schema.json#/$defs/mediaReady" } } },
     { "properties": { "kind": { "const": "media.layout" }, "payload": { "$ref": "command-payload.schema.json#/$defs/mediaLayout" } } },
     { "properties": { "kind": { "const": "media.stop" }, "payload": { "$ref": "command-payload.schema.json#/$defs/mediaStop" } } },
+    { "properties": { "kind": { "const": "camera.request" }, "payload": { "$ref": "command-payload.schema.json#/$defs/call" } } },
+    { "properties": { "kind": { "const": "camera.release" }, "payload": { "$ref": "command-payload.schema.json#/$defs/call" } } },
     { "properties": { "kind": { "const": "screen.request" }, "payload": { "$ref": "command-payload.schema.json#/$defs/call" } } },
     { "properties": { "kind": { "const": "screen.release" }, "payload": { "$ref": "command-payload.schema.json#/$defs/call" } } },
     { "properties": { "kind": { "const": "focus.request" }, "payload": { "$ref": "command-payload.schema.json#/$defs/call" } } },

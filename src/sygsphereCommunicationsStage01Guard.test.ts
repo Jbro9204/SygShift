@@ -35,7 +35,7 @@ describe('SygSphere Communications Stage 0/1 contract guard', () => {
   })
 
   it('uses a strict versioned envelope without browser-supplied authority', () => {
-    expect(manifest.contractVersion).toBe('1.0.0-draft.2')
+    expect(manifest.contractVersion).toBe('1.0.0-draft.3')
     expect(manifest.protocolVersion).toBe(1)
     expect(manifest.owner).toBe('SygShift')
     const digest = createHash('sha256')
@@ -56,7 +56,7 @@ describe('SygSphere Communications Stage 0/1 contract guard', () => {
     expect(commandSchema.properties).not.toHaveProperty('tenantId')
     expect(commandSchema.properties).not.toHaveProperty('employeeId')
     expect(manifest.authority.forbiddenBrowserAuthorityFields).toEqual(expect.arrayContaining(['tenantId', 'providerSecret']))
-    expect(contract).toContain("SYGSPHERE_COMMS_CONTRACT_VERSION = '1.0.0-draft.2'")
+    expect(contract).toContain("SYGSPHERE_COMMS_CONTRACT_VERSION = '1.0.0-draft.3'")
   })
 
   it('defines the least-privilege communications capability set and a disabled-by-default provider spike', () => {

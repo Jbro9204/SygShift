@@ -1,7 +1,7 @@
 # SygSphere Communications Provider Spike
 
 **Stage:** 1 non-production validation
-**Contract:** `shared/sygsphere-communications/v1` / `1.0.0-draft.2`
+**Contract:** `shared/sygsphere-communications/v1` / `1.0.0-draft.3`
 **Current status:** The isolated staging TURN preflight and disposable server-side SFU transport probe are recorded in `SYGSPHERE_COMMUNICATIONS_STAGE_A_STAGING_EVIDENCE.md`. The two-physical-device matrix remains blocked and no browser runtime, camera capture, screen capture, Worker route, or production feature is enabled.
 
 ## Safe preflight

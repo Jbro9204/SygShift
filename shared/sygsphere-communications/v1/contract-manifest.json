@@ -1,9 +1,9 @@
 {
-  "contractVersion": "1.0.0-draft.2",
+  "contractVersion": "1.0.0-draft.3",
   "protocolVersion": 1,
   "owner": "SygShift",
   "lifecycle": "closed-coordinator-foundation",
-  "artifactDigestSha256": "3ef56737b0aaa5710a1ac337a2d549a6bcfceaaa1b884c03337a84b0fb149d75",
+  "artifactDigestSha256": "770202cde701818d64b24e3751c7292c6963c8a7209e3555095f602bfd137e1f",
   "artifacts": [
     "contract.ts",
     "command-envelope.schema.json",

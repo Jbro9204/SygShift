@@ -45,12 +45,38 @@
         "invitationId": { "type": "string", "format": "uuid" }
       }
     },
+    "conversationIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conversationReference", "clientIntentId"],
+      "properties": {
+        "conversationReference": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "clientIntentId": { "type": "string", "format": "uuid" }
+      }
+    },
     "call": {
       "type": "object",
       "additionalProperties": false,
       "required": ["callId"],
       "properties": {
         "callId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "meeting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["meetingId"],
+      "properties": {
+        "meetingId": { "type": "string", "format": "uuid" }
+      }
+    },
+    "participantModeration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["meetingId", "participantConnectionId"],
+      "properties": {
+        "meetingId": { "type": "string", "format": "uuid" },
+        "participantConnectionId": { "type": "string", "format": "uuid" }
       }
     },
     "mediaAnswer": {

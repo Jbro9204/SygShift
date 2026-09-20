@@ -107,7 +107,7 @@ if (!coordinator.includes("request.headers.get('x-sygsphere-comms-route-referenc
   failures.push('The coordinator does not require the server-set opaque WebSocket route reference.')
 }
 
-if (manifest.contractVersion !== '1.0.0-draft.2' || manifest.lifecycle !== 'closed-coordinator-foundation') {
+if (manifest.contractVersion !== '1.0.0-draft.3' || manifest.lifecycle !== 'closed-coordinator-foundation') {
   failures.push('The shared contract manifest does not identify the closed coordinator foundation.')
 }
 

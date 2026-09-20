@@ -1,11 +1,11 @@
 # SygSphere Communications Stage 1/2 Closed Coordinator Foundation
 
-**Contract:** 1.0.0-draft.2 / protocol 1
+**Contract:** 1.0.0-draft.3 / protocol 1
 **State:** Source complete and closed by default; not deployed and not exposed to browsers.
 
 ## What exists
 
-- Command-specific Zod and JSON schemas for all 20 protocol commands. Commands reject browser-supplied tenant, actor, permission, feature-gate, replay, and provider authority.
+- Command-specific Zod and JSON schemas for all 28 protocol commands. Commands reject browser-supplied tenant, actor, permission, feature-gate, replay, and provider authority.
 - A server-only authorization shape which derives the authenticated account, employee, tenant, permissions, and required permission for each command. Room or assignment membership is intentionally not yet considered satisfied.
 - A separately versioned SQLite Durable Object coordinator with persisted idempotency and rate-window state. It exposes no fetch handler, socket, or browser route.
 - A provider registry that is statically disabled and contains no endpoint, credential, application identifier, session, or media operation.
