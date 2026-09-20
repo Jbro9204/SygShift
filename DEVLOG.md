@@ -1,5 +1,16 @@
 # SygShift Development Log
 
+## 09/20/2026 - SygSphere PTT Microphone Setup Recovery
+
+- Replaced the broken first-time hold-to-talk permission interaction with a simple **Set up microphone**
+  click followed by the existing **Hold to talk** control. The preflight stops its probe stream immediately
+  and cannot create, publish, or authorize a PTT transmission.
+- Eliminated false PTT release during ordinary SygSphere re-renders and suppressed an expected early-release
+  cancellation that had been incorrectly shown as a red voice failure.
+- Focused panel/controller/media/socket/PTT/Worker coverage passed **6 files / 102 tests**, along with
+  strict TypeScript and zero-warning lint. Full release details:
+  `docs/changelogs/CHANGELOG_09-20-2026_SYGSPHERE_PTT_MICROPHONE_SETUP_RECOVERY.md`.
+
 ## 09/20/2026 - SygSphere Worker-Origin PTT Recovery
 
 - Repaired the strict Communications origin boundary that had rejected the exact official SygShift Worker

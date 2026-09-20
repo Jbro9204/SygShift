@@ -46,11 +46,13 @@ interface SygSphereCommunicationsPanelProps {
   conversationName: string;
   microphoneMuted: boolean;
   microphoneMutedByModerator: boolean;
+  microphonePrepared: boolean;
   onAnswer: (callId: string) => void;
   onCameraChange: (enabled: boolean) => void;
   onDecline: (callId: string) => void;
   onEndCall: (callId: string) => void;
   onMicrophoneMuteChange: (muted: boolean) => void;
+  onPrepareMicrophone: () => void;
   onPttPressEnd: () => void;
   onPttPressStart: (channelId: string) => void;
   onScreenShare: () => void;
@@ -71,11 +73,13 @@ export function SygSphereCommunicationsPanel({
   conversationName,
   microphoneMuted,
   microphoneMutedByModerator,
+  microphonePrepared,
   onAnswer,
   onCameraChange,
   onDecline,
   onEndCall,
   onMicrophoneMuteChange,
+  onPrepareMicrophone,
   onPttPressEnd,
   onPttPressStart,
   onScreenShare,
@@ -86,8 +90,9 @@ export function SygSphereCommunicationsPanel({
   selectedChannelId,
 }: SygSphereCommunicationsPanelProps) {
   const selectedChannel = channels.find((channel) => channel.id === selectedChannelId) ?? channels[0] ?? null;
-  const pttEnabled = capabilities.ptt && connection === "ready" && Boolean(selectedChannel) && !call
+  const pttAvailable = capabilities.ptt && connection === "ready" && Boolean(selectedChannel) && !call
     && pttState !== "denied" && pttState !== "releasing";
+  const pttEnabled = pttAvailable && microphonePrepared;
   const ptt = useHoldToTalk({
     enabled: pttEnabled,
     onRelease: onPttPressEnd,
@@ -105,17 +110,30 @@ export function SygSphereCommunicationsPanel({
         {!call ? (
           <div className="sphere-comms-panel__controls">
             {conversationKind === "channel" ? (
-              <button
-                {...ptt.handlers}
-                aria-describedby="sphere-comms-ptt-help"
-                aria-pressed={ptt.pressed}
-                className={`sphere-comms-ptt${ptt.pressed || pttState === "transmitting" ? " is-transmitting" : ""}`}
-                disabled={!pttEnabled}
-                type="button"
-              >
-                <Radio size={19} />
-                <span><strong>{pttLabel(pttState, ptt.pressed)}</strong><small>{selectedChannel?.scopeLabel ?? "Channel voice unavailable"}</small></span>
-              </button>
+              microphonePrepared ? (
+                <button
+                  {...ptt.handlers}
+                  aria-describedby="sphere-comms-ptt-help"
+                  aria-pressed={ptt.pressed}
+                  className={`sphere-comms-ptt${ptt.pressed || pttState === "transmitting" ? " is-transmitting" : ""}`}
+                  disabled={!pttEnabled}
+                  type="button"
+                >
+                  <Radio size={19} />
+                  <span><strong>{pttLabel(pttState, ptt.pressed)}</strong><small>{selectedChannel?.scopeLabel ?? "Channel voice unavailable"}</small></span>
+                </button>
+              ) : (
+                <button
+                  aria-describedby="sphere-comms-ptt-help"
+                  className="sphere-comms-ptt is-setup"
+                  disabled={!pttAvailable}
+                  onClick={onPrepareMicrophone}
+                  type="button"
+                >
+                  <Mic size={19} />
+                  <span><strong>Set up microphone</strong><small>One-time secure setup</small></span>
+                </button>
+              )
             ) : null}
             {conversationKind === "direct" ? (
               <button disabled={!capabilities.call || connection !== "ready"} onClick={onStartCall} type="button">
@@ -131,7 +149,11 @@ export function SygSphereCommunicationsPanel({
       </div>
 
       {conversationKind === "channel" && !call ? (
-        <p className="sphere-comms-panel__hint" id="sphere-comms-ptt-help">Hold Push to talk while speaking. Release when finished.</p>
+        <p className="sphere-comms-panel__hint" id="sphere-comms-ptt-help">
+          {microphonePrepared
+            ? "Hold Push to talk while speaking. Release when finished."
+            : "Set up your microphone once, then press and hold to talk while speaking."}
+        </p>
       ) : null}
 
       {call?.status === "ringing" ? (
@@ -256,19 +278,25 @@ function pttLabel(state: SygSphereCommunicationsPanelProps["pttState"], pressed:
 
 function useHoldToTalk({ enabled, onRelease, onStart }: { enabled: boolean; onRelease: () => void; onStart: () => void }) {
   const [pressed, setPressed] = useState(false);
+  const enabledRef = useRef(enabled);
+  const onReleaseRef = useRef(onRelease);
+  const onStartRef = useRef(onStart);
   const pressedRef = useRef(false);
+  enabledRef.current = enabled;
+  onReleaseRef.current = onRelease;
+  onStartRef.current = onStart;
   const start = useCallback(() => {
-    if (!enabled || pressedRef.current) return;
+    if (!enabledRef.current || pressedRef.current) return;
     pressedRef.current = true;
     setPressed(true);
-    onStart();
-  }, [enabled, onStart]);
+    onStartRef.current();
+  }, []);
   const release = useCallback(() => {
     if (!pressedRef.current) return;
     pressedRef.current = false;
     setPressed(false);
-    onRelease();
-  }, [onRelease]);
+    onReleaseRef.current();
+  }, []);
 
   useEffect(() => {
     const stopWhenHidden = () => { if (document.visibilityState === "hidden") release(); };

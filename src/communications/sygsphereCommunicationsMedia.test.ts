@@ -33,6 +33,21 @@ describe("SygSphere communications media ownership", () => {
     expect(devices.getUserMedia).toHaveBeenCalledTimes(1);
   });
 
+  it("releases the one-time microphone setup probe before push-to-talk begins", async () => {
+    const microphoneTrack = track("audio");
+    const devices = {
+      getDisplayMedia: vi.fn(),
+      getUserMedia: vi.fn().mockResolvedValue(stream(microphoneTrack)),
+    } as unknown as CommunicationsMediaDevices;
+    const media = new SygSphereCommunicationsMedia(devices);
+
+    await media.prepareMicrophone();
+
+    expect(microphoneTrack.stop).toHaveBeenCalledTimes(1);
+    expect(media.activeSources).toEqual([]);
+    expect(media.currentAudioOwner).toBeNull();
+  });
+
   it("stops old microphone capture before moving from PTT to a private call", async () => {
     const pttTrack = track("audio");
     const callTrack = track("audio");

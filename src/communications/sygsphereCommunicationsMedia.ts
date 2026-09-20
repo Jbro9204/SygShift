@@ -56,6 +56,24 @@ export class SygSphereCommunicationsMedia {
     return stream;
   }
 
+  /**
+   * Opens the browser's microphone permission prompt from a normal click,
+   * then immediately releases the probe stream. Push-to-talk can therefore
+   * remain a true press-and-hold interaction instead of competing with the
+   * permission prompt for the same pointer gesture.
+   */
+  async prepareMicrophone(): Promise<void> {
+    const stream = await this.mediaDevices.getUserMedia({
+      audio: {
+        autoGainControl: true,
+        echoCancellation: true,
+        noiseSuppression: true,
+      },
+      video: false,
+    });
+    stopStream(stream);
+  }
+
   setMicrophoneMuted(owner: CommunicationsAudioOwner, muted: boolean): boolean {
     if (!sameOwner(this.audioOwner, owner)) return false;
     const stream = this.sources.get("microphone");

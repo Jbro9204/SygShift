@@ -177,9 +177,24 @@ export class SygSphereCommunicationsController {
       this.pendingPttAudio = stream;
       await this.send("floor.request", { channelReference, clientIntentId: requestId });
     } catch (error) {
+      // Releasing a hold-to-talk control while the browser is still opening the
+      // microphone is an expected cancellation, not a voice failure. The
+      // release path has already stopped the source and cleared this floor.
+      if (this.state.floor?.requestId !== requestId) return;
       this.pendingPttAudio = null;
       this.media.releaseAudioFocus({ kind: "ptt", sessionId: requestId });
       this.update({ type: "floor.failed", reason: safeError(error) });
+    }
+  }
+
+  async preparePttMicrophone(): Promise<boolean> {
+    if (!this.coordinator || this.state.connection !== "ready" || this.state.call || hasActiveFloor(this.state)) return false;
+    try {
+      await this.media.prepareMicrophone();
+      return true;
+    } catch (error) {
+      this.update({ type: "local.media.failed", reason: safeError(error) });
+      return false;
     }
   }
 

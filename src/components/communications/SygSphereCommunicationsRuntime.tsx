@@ -362,6 +362,7 @@ export function SygSphereCommunicationsWorkspace({
 }) {
   const runtime = useCommunicationsRuntime();
   const [microphoneMuted, setMicrophoneMuted] = useState(true);
+  const [pttMicrophonePrepared, setPttMicrophonePrepared] = useState(false);
   const permissions = useMemo(() => new Set(runtime.permissions), [runtime.permissions]);
   const channels = useMemo(() => conversations
     .filter((item) => item.kind === "channel" && !item.archived)
@@ -377,6 +378,10 @@ export function SygSphereCommunicationsWorkspace({
     else if (!runtime.state.call || runtime.state.call.status !== "active") setMicrophoneMuted(true);
     else setMicrophoneMuted(false);
   }, [runtime.state.call, runtime.state.microphoneMutedByModerator]);
+
+  useEffect(() => {
+    setPttMicrophonePrepared(false);
+  }, [runtime.state.accountKey]);
 
   if (!conversation) return null;
 
@@ -426,6 +431,7 @@ export function SygSphereCommunicationsWorkspace({
         conversationName={conversation.name}
         microphoneMuted={microphoneMuted}
         microphoneMutedByModerator={runtime.state.microphoneMutedByModerator}
+        microphonePrepared={pttMicrophonePrepared}
         onAnswer={(callId) => void runtime.run((controller) => {
           if (runtime.state.call?.kind === "meeting" && runtime.state.call.callId === callId) return controller.answerMeeting(callId);
           const invitationId = runtime.state.call?.callId === callId ? runtime.state.call.invitationId : null;
@@ -449,6 +455,9 @@ export function SygSphereCommunicationsWorkspace({
           if (!runtime.controller || !runtime.state.call || runtime.state.microphoneMutedByModerator) return;
           if (runtime.controller.setCallMicrophoneMuted(runtime.state.call.callId, muted)) setMicrophoneMuted(muted);
         }}
+        onPrepareMicrophone={() => void runtime.run(async (controller) => {
+          if (await controller.preparePttMicrophone()) setPttMicrophonePrepared(true);
+        })}
         onPttPressEnd={() => void runtime.run((controller) => controller.releaseToTalk())}
         onPttPressStart={(channelId) => void runtime.run((controller) => controller.holdToTalk(channelId))}
         onScreenShare={() => void runtime.run((controller) => {

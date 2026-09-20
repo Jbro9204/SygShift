@@ -42,6 +42,7 @@ function harness() {
     acquireCamera: vi.fn().mockResolvedValue({} as MediaStream),
     acquireMicrophone: vi.fn().mockResolvedValue(microphone),
     acquireScreen: vi.fn().mockResolvedValue(screen),
+    prepareMicrophone: vi.fn().mockResolvedValue(undefined),
     releaseAudioFocus: vi.fn(),
     setMicrophoneMuted: vi.fn().mockReturnValue(true),
     stopAll: vi.fn(),
@@ -114,6 +115,25 @@ describe("SygSphere communications controller", () => {
     }, 1));
     expect(test.session.publish).not.toHaveBeenCalled();
     expect(test.media.releaseAudioFocus).toHaveBeenCalled();
+  });
+
+  it("treats a release during microphone preparation as an expected cancellation", async () => {
+    const test = harness();
+    let rejectMicrophone!: (reason?: unknown) => void;
+    vi.mocked(test.media.acquireMicrophone).mockImplementationOnce(() => new Promise<MediaStream>((_resolve, reject) => {
+      rejectMicrophone = reject;
+    }));
+
+    await test.controller.start("employee-a");
+    const holding = test.controller.holdToTalk("dispatch");
+    await Promise.resolve();
+    await test.controller.releaseToTalk();
+    rejectMicrophone(new DOMException("capture cancelled", "AbortError"));
+    await holding;
+
+    expect(test.controller.snapshot.floor).toBeNull();
+    expect(test.controller.snapshot.lastError).toBeNull();
+    expect(vi.mocked(test.session.send).mock.calls.some(([command]) => command.kind === "floor.cancel")).toBe(true);
   });
 
   it("returns PTT to idle immediately and remains idle when the server confirms release", async () => {
@@ -262,6 +282,28 @@ describe("SygSphere communications controller", () => {
     await test.controller.holdToTalk("dispatch");
     expect(test.controller.snapshot.connection).toBe("ready");
     expect(test.controller.snapshot.floor).toBeNull();
+    expect(test.controller.snapshot.lastError).toBe("Microphone or camera permission was not granted.");
+  });
+
+  it("preflights microphone permission on a normal click before PTT starts", async () => {
+    const test = harness();
+    await test.controller.start("employee-a");
+
+    await expect(test.controller.preparePttMicrophone()).resolves.toBe(true);
+
+    expect(test.media.prepareMicrophone).toHaveBeenCalledTimes(1);
+    expect(test.session.send).not.toHaveBeenCalled();
+    expect(test.controller.snapshot.floor).toBeNull();
+  });
+
+  it("shows the ordinary microphone permission guidance when PTT setup is declined", async () => {
+    const test = harness();
+    vi.mocked(test.media.prepareMicrophone).mockRejectedValueOnce(new DOMException("denied", "NotAllowedError"));
+    await test.controller.start("employee-a");
+
+    await expect(test.controller.preparePttMicrophone()).resolves.toBe(false);
+
+    expect(test.controller.snapshot.connection).toBe("ready");
     expect(test.controller.snapshot.lastError).toBe("Microphone or camera permission was not granted.");
   });
 

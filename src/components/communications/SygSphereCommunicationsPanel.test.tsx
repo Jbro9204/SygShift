@@ -12,6 +12,7 @@ const actions = () => ({
   onDecline: vi.fn(),
   onEndCall: vi.fn(),
   onMicrophoneMuteChange: vi.fn(),
+  onPrepareMicrophone: vi.fn(),
   onPttPressEnd: vi.fn(),
   onPttPressStart: vi.fn(),
   onScreenShare: vi.fn(),
@@ -30,6 +31,7 @@ const base = () => ({
   conversationName: "Dispatch",
   microphoneMuted: false,
   microphoneMutedByModerator: false,
+  microphonePrepared: true,
   pttState: "ready" as const,
   selectedChannelId: "dispatch",
 });
@@ -58,6 +60,38 @@ describe("SygSphere communications panel", () => {
     expect(props.onPttPressStart).toHaveBeenCalledWith("dispatch");
     fireEvent.pointerUp(button, { pointerId: 1 });
     expect(props.onPttPressEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a simple microphone setup click before showing the hold-to-talk control", () => {
+    const props = base();
+    render(<SygSphereCommunicationsPanel {...props} microphonePrepared={false} />);
+
+    expect(screen.getByRole("button", { name: /set up microphone/i })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /hold to talk/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /set up microphone/i }));
+    expect(props.onPrepareMicrophone).toHaveBeenCalledTimes(1);
+    expect(props.onPttPressStart).not.toHaveBeenCalled();
+  });
+
+  it("does not release PTT when the runtime refreshes control callbacks during preparation", () => {
+    const initial = base();
+    const view = render(<SygSphereCommunicationsPanel {...initial} />);
+    const button = screen.getByRole("button", { name: /hold to talk/i });
+    fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+    expect(initial.onPttPressStart).toHaveBeenCalledWith("dispatch");
+
+    const refreshed = {
+      ...initial,
+      onPttPressEnd: vi.fn(),
+      onPttPressStart: vi.fn(),
+      pttState: "requesting" as const,
+    };
+    view.rerender(<SygSphereCommunicationsPanel {...refreshed} />);
+
+    expect(initial.onPttPressEnd).not.toHaveBeenCalled();
+    expect(refreshed.onPttPressEnd).not.toHaveBeenCalled();
+    fireEvent.pointerUp(button, { pointerId: 1 });
+    expect(refreshed.onPttPressEnd).toHaveBeenCalledTimes(1);
   });
 
   it("releases when the pointer ends outside the control", () => {
