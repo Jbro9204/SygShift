@@ -1077,7 +1077,7 @@ const parseCookieValue = (request: Request, name: string): string | null => {
 }
 
 const communicationsRouteCookie = (tenantId: string, routeReference: string): string =>
-  `__Host-sygsphere-comms-route=${tenantId}.${routeReference}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=30`
+  `__Host-sygsphere-comms-route=${tenantId}.${routeReference}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=90`
 
 const parseCommunicationsRouteCookie = (request: Request): Readonly<{ routeReference: string, tenantId: string }> | null => {
   const raw = parseCookieValue(request, '__Host-sygsphere-comms-route')
@@ -1202,7 +1202,9 @@ async function handleSygSphereCommunicationsApi(
       routeReference: route.routeReference,
       scopeMembershipVerified: true,
     })
-    return json({ refreshedConnections, requestId })
+    return json({ refreshedConnections, requestId }, 200, {
+      'set-cookie': communicationsRouteCookie(route.tenantId, route.routeReference),
+    })
   }
 
   if (url.pathname === '/api/comms/v1/usage') {
