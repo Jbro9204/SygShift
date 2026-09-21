@@ -103,6 +103,7 @@ export type CloudflareProviderDiagnostic = Readonly<{
   httpStatus?: number
   operation: 'session_create' | 'session_inspect' | 'session_renegotiate' | 'track_close' | 'track_publish' | 'track_subscribe' | 'track_update' | 'turn_credentials'
   outcome: CloudflareProviderFailure['outcome']
+  requestInitializationCause?: CloudflareProviderRequestInitializationCause
   transportCause?: CloudflareProviderTransportCause
 }>
 
@@ -115,6 +116,16 @@ export type CloudflareProviderTransportCause =
   | 'network_connection_lost'
   | 'other'
   | 'type_error'
+
+/**
+ * A closed diagnostic vocabulary for failures that happen before an outbound
+ * provider request exists. It deliberately says nothing about a secret value,
+ * header content, URL, request body, or provider response.
+ */
+export type CloudflareProviderRequestInitializationCause =
+  | 'abort_signal'
+  | 'authorization_header'
+  | 'request_constructor'
 
 export type CloudflareProviderSuccess<T> = Readonly<{
   outcome: 'accepted'
@@ -364,6 +375,7 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     failureClass: CloudflareProviderDiagnostic['failureClass'],
     httpStatus?: number,
     transportCause?: CloudflareProviderTransportCause,
+    requestInitializationCause?: CloudflareProviderRequestInitializationCause,
   ): CloudflareProviderFailure {
     const diagnostic: CloudflareProviderDiagnostic = {
       event: 'sygsphere_communications_provider_failure',
@@ -371,6 +383,7 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
       ...(httpStatus === undefined ? {} : { httpStatus }),
       operation,
       outcome: failure.outcome,
+      ...(requestInitializationCause === undefined ? {} : { requestInitializationCause }),
       ...(transportCause === undefined ? {} : { transportCause }),
     }
     try {
@@ -391,21 +404,56 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     if (!this.isConfigured() || !hasText(token, 512)) {
       return this.reportFailure(operation, { outcome: 'provider_unavailable', reconciliationRequired: false }, 'configuration')
     }
+
+    let signal: AbortSignal
+    try {
+      signal = AbortSignal.timeout(providerRequestTimeoutMs)
+    } catch {
+      return this.reportFailure(
+        operation,
+        { outcome: 'provider_unavailable', reconciliationRequired: false },
+        'request_initialization',
+        undefined,
+        undefined,
+        'abort_signal',
+      )
+    }
+
+    let headers: Headers
+    try {
+      headers = new Headers()
+      headers.set('accept', 'application/json')
+      headers.set('authorization', `Bearer ${token}`)
+      if (init.body !== undefined) headers.set('content-type', 'application/json')
+    } catch {
+      return this.reportFailure(
+        operation,
+        { outcome: 'provider_unavailable', reconciliationRequired: false },
+        'request_initialization',
+        undefined,
+        undefined,
+        'authorization_header',
+      )
+    }
+
     let request: Request
     try {
       request = new Request(path, {
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
-        headers: {
-          accept: 'application/json',
-          authorization: `Bearer ${token}`,
-          ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
-        },
+        headers,
         method: init.method,
         redirect: 'error',
-        signal: AbortSignal.timeout(providerRequestTimeoutMs),
+        signal,
       })
     } catch {
-      return this.reportFailure(operation, { outcome: 'provider_unavailable', reconciliationRequired: false }, 'request_initialization')
+      return this.reportFailure(
+        operation,
+        { outcome: 'provider_unavailable', reconciliationRequired: false },
+        'request_initialization',
+        undefined,
+        undefined,
+        'request_constructor',
+      )
     }
     try {
       const response = await (this.configuration.fetchImplementation ?? fetch)(request)

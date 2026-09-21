@@ -200,11 +200,82 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
       failureClass: 'request_initialization',
       operation: 'session_create',
       outcome: 'provider_unavailable',
+      requestInitializationCause: 'authorization_header',
     })
     const logged = JSON.stringify(diagnosticLogger.mock.calls)
     expect(logged).not.toContain('must-not-leak')
     expect(logged).not.toContain('tenant-1')
     expect(logged).not.toContain('rtc.live.cloudflare.com')
+  })
+
+  it('classifies a timeout-signal construction failure without retaining error details', async () => {
+    const diagnosticLogger = vi.fn()
+    const fetchImplementation = vi.fn<typeof fetch>()
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => {
+      throw new Error('timeout implementation detail must not leak')
+    })
+    try {
+      const adapter = new CloudflareRealtimeHttpAdapter({
+        appId: 'app-1',
+        appSecret: 'server-only-app-secret',
+        diagnosticLogger,
+        fetchImplementation,
+        mayCallProvider: true,
+      })
+
+      await expect(adapter.createSession({ tenantId: 'tenant-1' }))
+        .resolves.toEqual({ outcome: 'provider_unavailable', reconciliationRequired: false })
+      expect(fetchImplementation).not.toHaveBeenCalled()
+      expect(diagnosticLogger).toHaveBeenCalledWith({
+        event: 'sygsphere_communications_provider_failure',
+        failureClass: 'request_initialization',
+        operation: 'session_create',
+        outcome: 'provider_unavailable',
+        requestInitializationCause: 'abort_signal',
+      })
+      const logged = JSON.stringify(diagnosticLogger.mock.calls)
+      expect(logged).not.toContain('timeout implementation detail')
+      expect(logged).not.toContain('server-only-app-secret')
+      expect(logged).not.toContain('tenant-1')
+    } finally {
+      timeout.mockRestore()
+    }
+  })
+
+  it('classifies a Request constructor failure without retaining request data', async () => {
+    const diagnosticLogger = vi.fn()
+    const fetchImplementation = vi.fn<typeof fetch>()
+    vi.stubGlobal('Request', class {
+      constructor() {
+        throw new Error('request implementation detail must not leak')
+      }
+    })
+    try {
+      const adapter = new CloudflareRealtimeHttpAdapter({
+        appId: 'app-1',
+        appSecret: 'server-only-app-secret',
+        diagnosticLogger,
+        fetchImplementation,
+        mayCallProvider: true,
+      })
+
+      await expect(adapter.createSession({ tenantId: 'tenant-1' }))
+        .resolves.toEqual({ outcome: 'provider_unavailable', reconciliationRequired: false })
+      expect(fetchImplementation).not.toHaveBeenCalled()
+      expect(diagnosticLogger).toHaveBeenCalledWith({
+        event: 'sygsphere_communications_provider_failure',
+        failureClass: 'request_initialization',
+        operation: 'session_create',
+        outcome: 'provider_unavailable',
+        requestInitializationCause: 'request_constructor',
+      })
+      const logged = JSON.stringify(diagnosticLogger.mock.calls)
+      expect(logged).not.toContain('request implementation detail')
+      expect(logged).not.toContain('server-only-app-secret')
+      expect(logged).not.toContain('tenant-1')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('maps known Worker subrequest failures to a fixed diagnostic value without exposing exception data', async () => {
