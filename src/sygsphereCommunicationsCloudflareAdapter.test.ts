@@ -58,7 +58,7 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     expect(fetchImplementation).not.toHaveBeenCalled()
   })
 
-  it('creates sessions only from server-owned input and calls the documented provider endpoint', async () => {
+  it('creates an empty session POST even when a caller supplies a legacy session description', async () => {
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ sessionDescription: answer, sessionId: 'provider-session-1' }))
     const result = await testAdapter(fetchImplementation).createSession({ sessionDescription: offer, tenantId: 'tenant-1' })
 
@@ -68,7 +68,19 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     expect(request.method).toBe('POST')
     expect(request.redirect).toBe('manual')
     expect(request.headers.get('authorization')).toBe('Bearer server-only-app-secret')
-    await expect(requestJson(request)).resolves.toEqual({ sessionDescription: offer })
+    expect(request.headers.get('content-type')).toBeNull()
+    await expect(request.clone().text()).resolves.toBe('')
+  })
+
+  it('sends an empty POST without a JSON content type when creating a bare session', async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ sessionId: 'provider-session-1' }, 201))
+    const result = await testAdapter(fetchImplementation).createSession({ tenantId: 'tenant-1' })
+
+    expect(result).toEqual({ outcome: 'accepted', value: { sessionDescription: undefined, sessionId: 'provider-session-1' } })
+    const request = asRequest(fetchImplementation.mock.calls[0]?.[0])
+    expect(request.method).toBe('POST')
+    expect(request.headers.get('content-type')).toBeNull()
+    await expect(request.clone().text()).resolves.toBe('')
   })
 
   it('requires an active tenant-owned registry session and validates every returned track binding', async () => {

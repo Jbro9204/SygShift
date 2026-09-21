@@ -160,6 +160,11 @@ export type CloudflareRealtimeRuntimeConfiguration = Readonly<{
 export type CloudflareCreateSessionRequest = Readonly<{
   /** Resolved by the coordinator, not transported from the browser. */
   tenantId: string
+  /**
+   * Compatibility-only input retained for callers on the legacy shape. The
+   * Realtime new-session endpoint requires an empty POST, so it is never
+   * transported to the provider.
+   */
   sessionDescription?: ProviderSessionDescription
 }>
 
@@ -521,10 +526,11 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     sessionId: string
   }>>> {
     if (!isSafeReference(input.tenantId)) return { outcome: 'provider_rejected', reconciliationRequired: false }
-    if (input.sessionDescription !== undefined && !isSessionDescription(input.sessionDescription)) return { outcome: 'provider_rejected', reconciliationRequired: false }
-    const result = await this.request('session_create', safeProviderPath('apps', this.configuration.appId, 'sessions', 'new'), {
-      body: input.sessionDescription === undefined ? {} : { sessionDescription: input.sessionDescription }, method: 'POST',
-    })
+    const result = await this.request(
+      'session_create',
+      safeProviderPath('apps', this.configuration.appId, 'sessions', 'new'),
+      { method: 'POST' },
+    )
     if (result.outcome !== 'accepted') return result
     const body = result.value
     if (!body || typeof body !== 'object') return this.reportFailure('session_create', { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
