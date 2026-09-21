@@ -431,6 +431,12 @@ type MeetingPeerState = Readonly<{
   sourceConnectionId: string;
 }>;
 
+type MeetingMediaObservation = Readonly<{
+  key: string;
+  listener: EventListener;
+  timeout: ReturnType<typeof setTimeout> | null;
+}>;
+
 /**
  * Cloudflare Realtime associates a named local publication with the browser
  * transceiver identified in the offer.  A MID is assigned only after the
@@ -719,13 +725,72 @@ function createSession({
   };
   const meetingPeerKey = (meetingId: string, role: MeetingPeerState["role"], sourceConnectionId: string, mediaKind: MeetingMediaKind) =>
     `${meetingId}:${role}:${sourceConnectionId}:${mediaKind}`;
+  const meetingMediaObservations = new Map<RTCPeerConnection, MeetingMediaObservation>();
+  const stopObservingMeetingMediaConnection = (peer: RTCPeerConnection) => {
+    const observation = meetingMediaObservations.get(peer);
+    if (!observation) return;
+    if (observation.timeout) dependencies.clearTimer(observation.timeout);
+    peer.removeEventListener("connectionstatechange", observation.listener);
+    meetingMediaObservations.delete(peer);
+  };
   const closeMeetingPeers = (predicate: (peer: MeetingPeerState) => boolean) => {
     for (const [key, peer] of meetingPeers) {
       if (!predicate(peer)) continue;
       stopObservingCallMediaConnection(peer.peer);
+      stopObservingMeetingMediaConnection(peer.peer);
       peer.peer.close();
       meetingPeers.delete(key);
     }
+  };
+  const armMeetingMediaConnectionTimeout = (peer: RTCPeerConnection) => {
+    const observation = meetingMediaObservations.get(peer);
+    if (!observation || peer.connectionState === "connected") return;
+    if (observation.timeout) dependencies.clearTimer(observation.timeout);
+    const timeout = dependencies.setTimer(() => {
+      const current = meetingMediaObservations.get(peer);
+      if (!current || peer.connectionState === "connected") return;
+      stopObservingMeetingMediaConnection(peer);
+      closeMeetingPeers((item) => meetingPeerKey(
+        item.meetingId,
+        item.role,
+        item.sourceConnectionId,
+        item.mediaKind,
+      ) === current.key && item.peer === peer);
+    }, mediaConnectionTimeoutMilliseconds);
+    meetingMediaObservations.set(peer, { ...observation, timeout });
+  };
+  const observeMeetingMediaConnection = (key: string, peer: RTCPeerConnection) => {
+    let failedReported = false;
+    const report = () => {
+      if (closed || !meetingMediaObservations.has(peer)) return;
+      if (peer.connectionState === "connected") {
+        const observation = meetingMediaObservations.get(peer);
+        if (observation?.timeout) {
+          dependencies.clearTimer(observation.timeout);
+          meetingMediaObservations.set(peer, { ...observation, timeout: null });
+        }
+        return;
+      }
+      if (peer.connectionState === "disconnected") {
+        armMeetingMediaConnectionTimeout(peer);
+        return;
+      }
+      if ((peer.connectionState === "failed" || peer.connectionState === "closed") && !failedReported) {
+        failedReported = true;
+        stopObservingMeetingMediaConnection(peer);
+        closeMeetingPeers((item) => meetingPeerKey(
+          item.meetingId,
+          item.role,
+          item.sourceConnectionId,
+          item.mediaKind,
+        ) === key && item.peer === peer);
+      }
+    };
+    const listener: EventListener = () => report();
+    meetingMediaObservations.set(peer, { key, listener, timeout: null });
+    peer.addEventListener("connectionstatechange", listener);
+    report();
+    armMeetingMediaConnectionTimeout(peer);
   };
   const meetingPublicationKind = (mediaKind: MeetingMediaKind): CommunicationsPublicationKind =>
     mediaKind === "audio" ? "call_audio" : mediaKind === "video" ? "camera" : "screen";
@@ -743,6 +808,7 @@ function createSession({
     const prior = meetingPeers.get(key);
     if (prior) {
       stopObservingCallMediaConnection(prior.peer);
+      stopObservingMeetingMediaConnection(prior.peer);
       prior.peer.close();
     }
     meetingPeers.delete(key);
@@ -786,7 +852,11 @@ function createSession({
         AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
       ));
       if (response.outcome !== "accepted") throw new Error(commandOutcomeMessage(response.outcome));
-      if (input.mediaKind === "audio") observeCallMediaConnection(peer, input.meetingId, input.roomId);
+      if (input.mediaKind === "audio") {
+        observeCallMediaConnection(peer, input.meetingId, input.roomId);
+      } else if (meetingPeers.get(key)?.peer === peer) {
+        observeMeetingMediaConnection(key, peer);
+      }
     } catch (error) {
       closeMeetingPeers((item) => item.meetingId === input.meetingId && item.role === "publisher" && item.mediaKind === input.mediaKind);
       throw error;
@@ -840,7 +910,11 @@ function createSession({
         { mediaKind: input.mediaKind, offer: localDescription.sdp, sourceConnectionId: input.sourceConnectionId },
         AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
       ));
-      if (response.outcome !== "accepted") closeMeetingPeers((item) => item.meetingId === input.meetingId && item.role === "listener" && item.sourceConnectionId === input.sourceConnectionId && item.mediaKind === input.mediaKind);
+      if (response.outcome !== "accepted") {
+        closeMeetingPeers((item) => item.meetingId === input.meetingId && item.role === "listener" && item.sourceConnectionId === input.sourceConnectionId && item.mediaKind === input.mediaKind);
+      } else if (meetingPeers.get(key)?.peer === peer) {
+        observeMeetingMediaConnection(key, peer);
+      }
     } catch {
       closeMeetingPeers((item) => item.meetingId === input.meetingId && item.role === "listener" && item.sourceConnectionId === input.sourceConnectionId && item.mediaKind === input.mediaKind);
     }
@@ -1402,6 +1476,8 @@ function createSession({
               await meetingPeer.peer.setRemoteDescription({ sdp: payload.description, type: "answer" });
               if (meetingPeer.role === "publisher" && meetingPeer.mediaKind === "audio") {
                 armCallMediaConnectionTimeout(meetingPeer.peer);
+              } else {
+                armMeetingMediaConnectionTimeout(meetingPeer.peer);
               }
             } catch {
               closeMeetingPeers((item) => item.peer === meetingPeer.peer);

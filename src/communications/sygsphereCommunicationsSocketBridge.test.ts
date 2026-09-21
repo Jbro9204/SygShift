@@ -521,6 +521,87 @@ describe("SygSphere communications protected socket bridge", () => {
     await vi.waitFor(() => expect(peer.setRemoteDescription).toHaveBeenCalledWith({ sdp: "v=0\r\n", type: "answer" }));
   });
 
+  it("re-arms and closes a video meeting publisher that does not connect", async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeSocket();
+      const meetingId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+      const peer = createFakeRtcPeer("connecting");
+      const bridge = createBridge({
+        bootstrap: vi.fn(async () => validBootstrap(ticket)),
+        createRtcPeer: () => peer,
+        socket,
+      });
+      const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+      await socketCreated(socket);
+      socket.open();
+      socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+      const { session } = await connection;
+
+      await session.publish({
+        kind: "camera",
+        roomId: `meeting:${meetingId}`,
+        stream: {
+          getAudioTracks: () => [],
+          getVideoTracks: () => [{} as MediaStreamTrack],
+        } as unknown as MediaStream,
+      });
+      await vi.advanceTimersByTimeAsync(19_000);
+      answerMeetingMedia(socket, meetingId, "video", "publish");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(peer.setRemoteDescription).toHaveBeenCalledWith({ sdp: "v=0\r\n", type: "answer" });
+
+      await vi.advanceTimersByTimeAsync(19_999);
+      expect(peer.close).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(peer.close).toHaveBeenCalledTimes(1);
+      session.close("test_complete");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("closes a meeting listener that never connects after its provider answer", async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeSocket();
+      const meetingId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+      const participantConnectionId = "58f2be04-75dc-4cb9-a7da-7c3d6daa20b4";
+      const peer = createFakeRtcPeer("connecting");
+      const startMeetingMedia = vi.fn(async () => acceptedCommand());
+      const bridge = createBridge({
+        bootstrap: vi.fn(async () => validBootstrap(ticket)),
+        createRtcPeer: () => peer,
+        socket,
+        startMeetingMedia,
+      });
+      const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+      await socketCreated(socket);
+      socket.open();
+      socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+      const { session } = await connection;
+
+      announceMeetingSource(socket, meetingId, participantConnectionId, "video");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(startMeetingMedia).toHaveBeenCalledWith(
+        "access-token",
+        meetingId,
+        "subscribe",
+        expect.objectContaining({ mediaKind: "video", sourceConnectionId: participantConnectionId }),
+        expect.any(AbortSignal),
+      );
+      answerMeetingMedia(socket, meetingId, "video", "subscribe", participantConnectionId, 2);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(peer.setRemoteDescription).toHaveBeenCalledWith({ sdp: "v=0\r\n", type: "answer" });
+
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(peer.close).toHaveBeenCalledTimes(1);
+      session.close("test_complete");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reports direct-call media only after the browser connects, and safely tracks reconnects and closure", async () => {
     const socket = new FakeSocket();
     const callId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
@@ -743,6 +824,106 @@ describe("SygSphere communications protected socket bridge", () => {
     ));
     expect(peerTransport.handleNegotiation).not.toHaveBeenCalled();
     expect(peer.createOffer).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers a direct-call subscription while ICE gathering continues", async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeSocket();
+      const callId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+      const peer = createFakeRtcPeer("connecting", "gathering");
+      const sendCommand = vi.fn(async () => acceptedCommand());
+      const bridge = createBridge({
+        bootstrap: vi.fn(async () => validBootstrap(ticket)),
+        createRtcPeer: () => peer,
+        sendCommand,
+        socket,
+      });
+      const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+      await socketCreated(socket);
+      socket.open();
+      socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+      const { session } = await connection;
+
+      await session.publish({
+        kind: "call_audio",
+        roomId: `call:${callId}`,
+        stream: { getAudioTracks: () => [{} as MediaStreamTrack] } as unknown as MediaStream,
+      });
+      answerDirectCall(socket, callId);
+      await vi.advanceTimersByTimeAsync(0);
+      offerDirectCall(socket, callId);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(sendCommand).toHaveBeenCalledWith(
+        "access-token",
+        expect.objectContaining({
+          kind: "media.answer",
+          payload: expect.objectContaining({
+            generation: 1,
+            negotiationId: "d285bf11-15f6-4efe-b60f-5bd86765f451",
+            peerHandle: "peer-listener",
+          }),
+          roomId: `call:${callId}`,
+        }),
+        expect.any(AbortSignal),
+      );
+      expect(peer.close).not.toHaveBeenCalled();
+      session.close("test_complete");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("answers a PTT listener while ICE gathering continues", async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeSocket();
+      const transmissionRequestId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+      const peer = createFakeRtcPeer("connecting", "gathering");
+      const sendCommand = vi.fn(async () => acceptedCommand());
+      const startPtt = vi.fn(async () => acceptedCommand());
+      const bridge = createBridge({
+        bootstrap: vi.fn(async () => validBootstrap(ticket)),
+        createRtcPeer: () => peer,
+        sendCommand,
+        socket,
+        startPtt,
+      });
+      const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+      await socketCreated(socket);
+      socket.open();
+      socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+      const { session } = await connection;
+
+      startPttListener(socket, transmissionRequestId);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(startPtt).toHaveBeenCalledWith(
+        "access-token",
+        expect.objectContaining({ mode: "listener", transmissionRequestId }),
+        expect.any(AbortSignal),
+      );
+      offerPttListener(socket, transmissionRequestId);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(sendCommand).toHaveBeenCalledWith(
+        "access-token",
+        expect.objectContaining({
+          kind: "media.answer",
+          payload: expect.objectContaining({
+            generation: 1,
+            negotiationId: "d285bf11-15f6-4efe-b60f-5bd86765f451",
+            peerHandle: "peer-listener",
+          }),
+          roomId: `ptt:${transmissionRequestId}`,
+        }),
+        expect.any(AbortSignal),
+      );
+      expect(peer.close).not.toHaveBeenCalled();
+      session.close("test_complete");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("fails and closes a direct-call peer that never reaches browser media connection", async () => {
@@ -1070,6 +1251,68 @@ function validBootstrap(value: string) {
 
 async function socketCreated(socket: FakeSocket) {
   await vi.waitFor(() => expect(socket.url).not.toBe(""));
+}
+
+function announceMeetingSource(
+  socket: FakeSocket,
+  meetingId: string,
+  participantConnectionId: string,
+  mediaKind: "audio" | "screen" | "video",
+) {
+  socket.message(JSON.stringify({
+    eventId: "8d2f99e1-0915-4517-88e0-c344ba284df8",
+    kind: "media.source.available",
+    payload: {
+      callId: meetingId,
+      mediaKind,
+      participantConnectionId,
+      trackReference: `meeting-${mediaKind}-track`,
+    },
+    protocolVersion: 1,
+    roomEpoch: 1,
+    roomId: `meeting:${meetingId}`,
+    roomSeq: 1,
+    serverTime: "2026-09-19T21:00:01.000Z",
+  }));
+}
+
+function answerMeetingMedia(
+  socket: FakeSocket,
+  meetingId: string,
+  mediaKind: "audio" | "screen" | "video",
+  direction: "publish" | "subscribe",
+  participantConnectionId?: string,
+  roomSeq = 1,
+) {
+  const publicationKind = mediaKind === "audio" ? "call_audio" : mediaKind === "video" ? "camera" : "screen";
+  socket.message(JSON.stringify({
+    eventId: "73f004e3-34e3-48b2-9bca-7be78c4f04a6",
+    kind: "media.negotiation",
+    payload: {
+      callId: meetingId,
+      description: "v=0\r\n",
+      descriptionType: "answer",
+      direction,
+      expiresAt: "2026-09-19T21:00:30.000Z",
+      generation: 1,
+      iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
+      negotiationId: "d285bf11-15f6-4efe-b60f-5bd86765f451",
+      peerHandle: direction === "publish" ? "peer-publisher" : "peer-listener",
+      trackBindings: [{
+        mediaKind,
+        ...(participantConnectionId ? { participantConnectionId } : {}),
+        publicationKind,
+        role: direction === "publish" ? "local" : "remote",
+        trackReference: `meeting-${mediaKind}-track`,
+        transceiverMid: "0",
+      }],
+    },
+    protocolVersion: 1,
+    roomEpoch: 1,
+    roomId: `meeting:${meetingId}`,
+    roomSeq,
+    serverTime: "2026-09-19T21:00:02.000Z",
+  }));
 }
 
 function startPttListener(socket: FakeSocket, transmissionRequestId: string) {
