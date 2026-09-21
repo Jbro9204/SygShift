@@ -36,6 +36,7 @@ import {
 } from './callLifecycle'
 import {
   grantServerPttFloor,
+  isolateServerPttListenerFailure,
   prepareServerPttFloor,
   recordServerPttListenerReady,
   recordServerPttMediaNegotiation,
@@ -2879,14 +2880,12 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     return true
   }
 
-  /** A provider setup failure must not leave a preparing row holding the
-   * channel. A late secondary listener cannot tear down an already-ready
-   * transmission, and a concurrent publisher that has already registered its
-   * source remains authoritative. */
-  private async closeFailedPttPreparation(
+  /** A publisher setup failure cannot leave a preparing row holding the
+   * channel. Once its source exists, a concurrent listener is authoritative
+   * for the in-progress floor and may complete its own negotiation. */
+  private async closeFailedPttPublisherPreparation(
     row: CoordinatorPttTransmissionRow,
     release: CoordinatorReleaseContext,
-    role: 'listener' | 'publisher',
   ): Promise<void> {
     const current = this.pttTransmission(row.transmission_request_id)
     if (
@@ -2895,8 +2894,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       || current.created_at_ms !== row.created_at_ms
       || current.requester_connection_id !== row.requester_connection_id
       || current.channel_reference !== row.channel_reference
-      || (role === 'publisher' && this.mediaSession(current.transmission_request_id, current.requester_employee_id))
-      || (role === 'listener' && this.pttReadyListenerConnectionIds(current.transmission_request_id).length > 0)
+      || this.mediaSession(current.transmission_request_id, current.requester_employee_id)
     ) return
 
     const reason: PttCloseReason = current.lease_expires_at_ms <= Date.now() ? 'expired' : 'unavailable'
@@ -2906,6 +2904,63 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
         transmissionRequestId: current.transmission_request_id,
       })
     }
+  }
+
+  /**
+   * Server-side listener setup fails for the same environmental reasons as a
+   * browser-side receiver can fail. Remove only that exact unready listener;
+   * another selected listener is still allowed to negotiate and unlock the
+   * floor. The final failed listener closes the preparation cleanly.
+   */
+  private async isolateFailedPttListener(
+    row: CoordinatorPttTransmissionRow,
+    caller: AuthenticatedSocketAttachment,
+    release: CoordinatorReleaseContext,
+  ): Promise<boolean> {
+    const current = this.pttTransmission(row.transmission_request_id)
+    if (
+      !current
+      || !['preparing', 'ready'].includes(current.state)
+      || current.created_at_ms !== row.created_at_ms
+      || current.requester_connection_id !== row.requester_connection_id
+      || current.channel_reference !== row.channel_reference
+      || caller.authorization.employeeId === current.requester_employee_id
+      || !caller.authorization.permissions.includes('sygsphere.comms.ptt.listen')
+    ) return false
+
+    const isolation = isolateServerPttListenerFailure({
+      failedListenerConnectionId: caller.connectionId,
+      readyListenerConnectionIds: this.pttReadyListenerConnectionIds(current.transmission_request_id),
+      requiredListenerConnectionIds: this.pttRequiredListenerConnectionIds(current.transmission_request_id),
+    })
+    if (!isolation) return false
+
+    // This exact connection is the only row that may be removed. A late or
+    // duplicate failure report cannot remove a newly-selected listener.
+    this.ctx.storage.sql.exec(
+      `delete from coordinator_ptt_listener_requirements
+       where transmission_request_id = ? and connection_id = ? and ready_at_ms is null`,
+      current.transmission_request_id,
+      caller.connectionId,
+    )
+    const remainingListenerConnectionIds = this.pttRequiredListenerConnectionIds(current.transmission_request_id)
+    if (
+      current.state === 'preparing'
+      && isolation.shouldClosePreparingFloor
+      && remainingListenerConnectionIds.length === 0
+    ) {
+      if (await this.closePttTransmission(current, release, 'unavailable')) {
+        this.sendPttEvent([current.requester_employee_id], current.transmission_request_id, 'floor.revoked', {
+          reason: 'unavailable',
+          transmissionRequestId: current.transmission_request_id,
+        })
+      }
+      return true
+    }
+
+    await this.closePttListenerMedia(current.transmission_request_id, caller.connectionId, release)
+    this.scheduleNextSocketTicketExpiry()
+    return true
   }
 
   private async dispatchFloorCommand(
@@ -3064,7 +3119,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       return { outcome: 'invalid_state', requestId: parsed.requestId }
     }
     const providerUnavailable = async (): Promise<TenantCommsCoordinatorResult> => {
-      await this.closeFailedPttPreparation(row, parsed.release, 'publisher')
+      await this.closeFailedPttPublisherPreparation(row, parsed.release)
       return { outcome: 'provider_unavailable', requestId: parsed.requestId }
     }
     const invalidAfterProviderWait = async (): Promise<TenantCommsCoordinatorResult> => {
@@ -3183,7 +3238,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       return { outcome: 'invalid_state', requestId: parsed.requestId }
     }
     const providerUnavailable = async (): Promise<TenantCommsDirectAudioPreparation> => {
-      await this.closeFailedPttPreparation(row, parsed.release, 'publisher')
+      await this.closeFailedPttPublisherPreparation(row, parsed.release)
       return { outcome: 'provider_unavailable', requestId: parsed.requestId }
     }
     const adapter = await this.providerAdapter(parsed.release, 'ptt_prepare_publisher')
@@ -3229,7 +3284,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     if (!setupRow) return { outcome: 'invalid_state', requestId: parsed.requestId }
 
     const providerUnavailable = async (): Promise<TenantCommsCoordinatorResult> => {
-      await this.closeFailedPttPreparation(row, parsed.release, 'listener')
+      await this.isolateFailedPttListener(row, caller, parsed.release)
       return { outcome: 'provider_unavailable', requestId: parsed.requestId }
     }
     const invalidAfterProviderWait = async (): Promise<TenantCommsCoordinatorResult> => {
@@ -3355,7 +3410,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       : row
     if (!setupRow) return { outcome: 'invalid_state', requestId: parsed.requestId }
     const providerUnavailable = async (): Promise<TenantCommsDirectAudioPreparation> => {
-      await this.closeFailedPttPreparation(row, parsed.release, 'listener')
+      await this.isolateFailedPttListener(row, caller, parsed.release)
       return { outcome: 'provider_unavailable', requestId: parsed.requestId }
     }
     const invalidAfterProviderWait = async (): Promise<TenantCommsDirectAudioPreparation> => {
@@ -3417,7 +3472,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       parsed.transmissionRequestId,
     ).toArray()[0]
     if (!negotiation || negotiation.expires_at_ms <= now) {
-      await this.closeFailedPttPreparation(row, parsed.release, 'listener')
+      await this.isolateFailedPttListener(row, caller, parsed.release)
       return { outcome: 'invalid_state', requestId: parsed.requestId }
     }
     // The source/publisher marker above proves the transmission began. This
@@ -3501,28 +3556,9 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       || this.pttReadyListenerConnectionIds(parsed.transmissionRequestId).includes(caller.connectionId)
     ) return { outcome: 'invalid_state', requestId: parsed.requestId }
 
-    this.ctx.storage.sql.exec(
-      `delete from coordinator_ptt_listener_requirements
-       where transmission_request_id = ? and connection_id = ? and ready_at_ms is null`,
-      parsed.transmissionRequestId,
-      caller.connectionId,
-    )
-    const current = this.pttTransmission(parsed.transmissionRequestId)
-    if (!current || current.state !== 'preparing') return { outcome: 'invalid_state', requestId: parsed.requestId }
-
-    if (this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId).length === 0) {
-      if (await this.closePttTransmission(current, parsed.release, 'unavailable')) {
-        this.sendPttEvent([current.requester_employee_id], current.transmission_request_id, 'floor.revoked', {
-          reason: 'unavailable',
-          transmissionRequestId: current.transmission_request_id,
-        })
-      }
-      return { outcome: 'accepted', requestId: parsed.requestId }
-    }
-
-    await this.closePttListenerMedia(parsed.transmissionRequestId, caller.connectionId, parsed.release)
-    this.scheduleNextSocketTicketExpiry()
-    return { outcome: 'accepted', requestId: parsed.requestId }
+    return await this.isolateFailedPttListener(row, caller, parsed.release)
+      ? { outcome: 'accepted', requestId: parsed.requestId }
+      : { outcome: 'invalid_state', requestId: parsed.requestId }
   }
 
   private async expirePttTransmissions(

@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import {
   endServerPttTransmission,
   grantServerPttFloor,
+  isolateServerPttListenerFailure,
   prepareServerPttFloor,
   recordServerPttListenerReady,
   recordServerPttMediaNegotiation,
@@ -45,6 +46,35 @@ describe('SygSphere Communications PTT lifecycle', () => {
       event: { kind: 'floor.ready', payload: { scope: 'site', transmissionRequestId } },
       state: { stage: 'floor_granted' },
     })
+  })
+
+  it('isolates one failed listener while another can still unlock the floor, and closes only after the last listener fails', () => {
+    const prepared = prepareServerPttFloor({
+      callId, generation: 7, requiredListenerConnectionIds: [listenerOne, listenerTwo], scope: 'site', transmissionRequestId,
+    })
+    const firstFailure = isolateServerPttListenerFailure({
+      failedListenerConnectionId: listenerOne,
+      readyListenerConnectionIds: [],
+      requiredListenerConnectionIds: prepared.state.requiredListeners,
+    })
+    expect(firstFailure).not.toBeNull()
+    if (!firstFailure) throw new Error('First listener isolation unexpectedly failed.')
+    expect([...firstFailure.remainingListenerConnectionIds]).toEqual([listenerTwo])
+    expect(firstFailure.shouldClosePreparingFloor).toBe(false)
+
+    const remaining = { ...prepared.state, requiredListeners: firstFailure.remainingListenerConnectionIds }
+    const negotiating = recordServerPttMediaNegotiation(remaining, { generation: 7, negotiationId })
+    const secondReady = recordServerPttListenerReady(negotiating, { generation: 7, listenerConnectionId: listenerTwo, negotiationId })
+    expect(grantServerPttFloor(secondReady, { leaseDurationMs: 10_000, nowMs: 10_000 })).not.toBeNull()
+
+    const lastFailure = isolateServerPttListenerFailure({
+      failedListenerConnectionId: listenerTwo,
+      readyListenerConnectionIds: [],
+      requiredListenerConnectionIds: [listenerTwo],
+    })
+    expect(lastFailure).not.toBeNull()
+    expect(lastFailure?.remainingListenerConnectionIds.size).toBe(0)
+    expect(lastFailure?.shouldClosePreparingFloor).toBe(true)
   })
 
   it('allows transmission and renewal only after a correlated ready grant, and expires safely without an acknowledgement', () => {
@@ -172,13 +202,17 @@ describe('SygSphere Communications PTT lifecycle', () => {
     expect(floorCommands).toContain('generation: renewed.lease_generation')
     expect(listenerPreparation).toContain('await this.expirePttTransmissions(Date.now(), parsed.release)')
 
-    // Any provider failure before the floor is ready tears down the exact
-    // preparation reservation. A later listener cannot close an active floor.
-    expect(publisher).toContain("this.closeFailedPttPreparation(row, parsed.release, 'publisher')")
-    expect(listener).toContain("this.closeFailedPttPreparation(row, parsed.release, 'listener')")
-    expect(listenerPreparation).toContain("this.closeFailedPttPreparation(row, parsed.release, 'listener')")
-    expect(coordinator).toContain("current.state !== 'preparing'")
-    expect(coordinator).toContain("role === 'listener' && this.pttReadyListenerConnectionIds(current.transmission_request_id).length > 0")
+    // A publisher failure closes the setup, while a server-side listener
+    // failure has the same per-listener isolation behavior as a browser-side
+    // receiver failure. One failed receiver cannot starve another selected
+    // listener from reaching floor-ready.
+    expect(publisher).toContain('this.closeFailedPttPublisherPreparation(row, parsed.release)')
+    expect(listener).toContain('this.isolateFailedPttListener(row, caller, parsed.release)')
+    expect(listenerPreparation).toContain('this.isolateFailedPttListener(row, caller, parsed.release)')
+    expect(listenerReady).toContain('this.isolateFailedPttListener(row, caller, parsed.release)')
+    expect(coordinator).toContain('private async isolateFailedPttListener(')
+    expect(coordinator).toContain('isolateServerPttListenerFailure({')
+    expect(coordinator).toContain('remainingListenerConnectionIds.length === 0')
     expect(coordinator).toContain("'app_secret_read_failed'")
     expect(coordinator).toContain("'turn_token_read_failed'")
     expect(coordinator).toContain("'ptt_prepare_publisher'")
@@ -186,7 +220,7 @@ describe('SygSphere Communications PTT lifecycle', () => {
     expect(coordinator).toContain('async reportPttListenerFailure')
     expect(coordinator).toContain("row.state !== 'preparing'")
     expect(coordinator).toContain('delete from coordinator_ptt_listener_requirements')
-    expect(coordinator).toContain("this.closePttTransmission(current, parsed.release, 'unavailable')")
+    expect(coordinator).toContain("this.closePttTransmission(current, release, 'unavailable')")
 
     const worker = readFileSync(resolve(import.meta.dirname, '..', 'worker', 'index.ts'), 'utf8')
     const listenerStartRoute = worker.slice(worker.indexOf("'/api/comms/v1/ptt/audio'"), worker.indexOf("'/api/comms/v1/ptt/listener-ready'"))

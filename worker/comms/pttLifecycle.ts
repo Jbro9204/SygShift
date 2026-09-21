@@ -53,6 +53,35 @@ export type PttFloorRenewal = Readonly<{
   state: ServerPttLifecycle
 }>
 
+/**
+ * A receiver that cannot finish setup must not consume the entire channel
+ * floor when another selected receiver can still prove readiness. The
+ * coordinator owns the durable rows; this pure policy keeps its per-listener
+ * removal decision aligned with the lifecycle tests.
+ */
+export const isolateServerPttListenerFailure = (input: Readonly<{
+  failedListenerConnectionId: string
+  readyListenerConnectionIds: Iterable<string>
+  requiredListenerConnectionIds: Iterable<string>
+}>): Readonly<{
+  remainingListenerConnectionIds: ReadonlySet<string>
+  shouldClosePreparingFloor: boolean
+}> | null => {
+  if (!validUuid(input.failedListenerConnectionId)) return null
+  const requiredListeners = immutableSet(input.requiredListenerConnectionIds)
+  const readyListeners = immutableSet(input.readyListenerConnectionIds)
+  // A ready receiver has already unlocked the floor. Its later media loss is
+  // handled by normal transmission teardown, not setup-failure isolation.
+  if (!requiredListeners.has(input.failedListenerConnectionId) || readyListeners.has(input.failedListenerConnectionId)) return null
+  const remainingListenerConnectionIds = immutableSet(
+    [...requiredListeners].filter((connectionId) => connectionId !== input.failedListenerConnectionId),
+  )
+  return {
+    remainingListenerConnectionIds,
+    shouldClosePreparingFloor: remainingListenerConnectionIds.size === 0,
+  }
+}
+
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const maximumListeners = 100
 
