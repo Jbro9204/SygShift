@@ -72,6 +72,12 @@ type CoordinatorRateWindowRow = {
   request_count: number
 }
 
+type CoordinatorProviderSmokeProbeRow = {
+  completed_at_ms: number | null
+  started_at_ms: number
+  state: 'completed' | 'running'
+}
+
 type CoordinatorCommandRow = {
   command_id: string
 }
@@ -203,6 +209,15 @@ const webSocketAuthorizationRefreshSchema = z.object({
   scopeMembershipVerified: z.literal(true),
 }).strict()
 
+/* This input is server-derived by the Worker after its separate MFA and
+ * administrative-permission check. It intentionally has no browser-selected
+ * identifiers, provider settings, or credentials. */
+const providerSmokeProbeSchema = z.object({
+  authorization: stagedCommsAuthorizationContextSchema,
+  release: coordinatorReleaseContextSchema,
+  requestId: z.uuid(),
+}).strict()
+
 const storedServerCallLifecycleSchema = z.object({
   callId: z.uuid(),
   expiresAtMs: z.number().int().positive(),
@@ -282,6 +297,44 @@ export type TenantCommsWebSocketBootstrap = Readonly<{
   routeReference: string
   ticket: string
 }>
+
+export type TenantCommsProviderSmokeProbeChecks = Readonly<{
+  emptySfuSession: boolean
+  turnCredentials: boolean
+}>
+
+export type TenantCommsProviderSmokeProbeResult = Readonly<{
+  checks: TenantCommsProviderSmokeProbeChecks
+  outcome: 'failed' | 'passed' | 'rate_limited' | 'runtime_unavailable'
+}>
+
+type ProviderSmokeAdapter = Pick<CloudflareRealtimeHttpAdapter, 'createSession' | 'generateIceServers'>
+
+const providerSmokeTurnCredentialTtlSeconds = 60
+const providerSmokeProbeMinimumIntervalMs = 5 * 60 * 1000
+const providerSmokeProbeStaleInFlightMs = 90 * 1000
+
+const failedProviderSmokeProbeChecks = (): TenantCommsProviderSmokeProbeChecks => ({
+  emptySfuSession: false,
+  turnCredentials: false,
+})
+
+/* The adapter validates both provider responses before it returns accepted.
+ * This helper intentionally discards every provider value, including TURN
+ * usernames/passwords, ICE URLs, and the disposable SFU session identifier. */
+export const runSygSphereProviderSmokeProbe = async (
+  adapter: ProviderSmokeAdapter,
+  tenantId: string,
+): Promise<TenantCommsProviderSmokeProbeChecks> => {
+  const [turn, session] = await Promise.all([
+    adapter.generateIceServers(providerSmokeTurnCredentialTtlSeconds),
+    adapter.createSession({ tenantId }),
+  ])
+  return {
+    emptySfuSession: session.outcome === 'accepted' && session.value.sessionId.length > 0,
+    turnCredentials: turn.outcome === 'accepted' && turn.value.iceServers.length > 0,
+  }
+}
 
 type SecretsStoreSecretBinding = Readonly<{ get: () => Promise<string> }>
 
@@ -396,6 +449,7 @@ export type SygSphereCommsSetupOperation =
   | 'direct_media'
   | 'meeting_media'
   | 'other_media'
+  | 'provider_smoke'
   | 'ptt_listener_failed'
   | 'ptt_listener_ready'
   | 'ptt_prepare_listener'
@@ -743,6 +797,19 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
         );
         create index if not exists coordinator_meeting_media_sessions_source_idx
           on coordinator_meeting_media_sessions (meeting_id, source_connection_id, media_kind, updated_at_ms desc);
+        /* One singleton row per tenant coordinator is a durable, secret-free
+         * audit record and prevents concurrent or repeatedly-triggered
+         * infrastructure probes. */
+        create table if not exists coordinator_provider_smoke_probe (
+          singleton integer primary key check (singleton = 1),
+          state text not null check (state in ('running', 'completed')),
+          request_id text not null,
+          started_at_ms integer not null,
+          completed_at_ms integer,
+          outcome text check (outcome in ('passed', 'failed')),
+          turn_credentials_valid integer check (turn_credentials_valid in (0, 1)),
+          empty_sfu_session_valid integer check (empty_sfu_session_valid in (0, 1))
+        );
       `)
       const pttTransmissionColumns = this.ctx.storage.sql
         .exec<{ name: string }>("pragma table_info('coordinator_ptt_transmissions')")
@@ -777,6 +844,80 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       .filter((value): value is number => typeof value === 'number')
       .sort((left, right) => left - right)[0]
     if (nextExpiry !== undefined) void this.ctx.storage.setAlarm(nextExpiry)
+  }
+
+  /**
+   * A deliberately short-lived administrative diagnostic. The Worker has
+   * already authenticated MFA and `admin.security.manage` before it can call
+   * this RPC. This method never creates a call, room, track, socket, or media
+   * flow; it only proves that this coordinator can read its current provider
+   * bindings and that the provider accepts them.
+   */
+  async runProviderSmokeProbe(input: unknown): Promise<TenantCommsProviderSmokeProbeResult> {
+    await this.initialization
+    const parsed = providerSmokeProbeSchema.parse(input)
+    if (!this.pttRuntimeMayPrepare(parsed.release, 'provider_smoke')) {
+      return { checks: failedProviderSmokeProbeChecks(), outcome: 'runtime_unavailable' }
+    }
+
+    const now = Date.now()
+    const previous = this.ctx.storage.sql
+      .exec<CoordinatorProviderSmokeProbeRow>(
+        `select state, started_at_ms, completed_at_ms
+         from coordinator_provider_smoke_probe where singleton = 1`,
+      )
+      .toArray()[0]
+    const isInFlight = previous?.state === 'running'
+      && now - previous.started_at_ms < providerSmokeProbeStaleInFlightMs
+    const isCoolingDown = previous?.state === 'completed'
+      && previous.completed_at_ms !== null
+      && now - previous.completed_at_ms < providerSmokeProbeMinimumIntervalMs
+    if (isInFlight || isCoolingDown) {
+      return { checks: failedProviderSmokeProbeChecks(), outcome: 'rate_limited' }
+    }
+
+    /* Reserve first, then perform network I/O. A concurrent request observes
+     * the reservation and cannot create a second set of credentials/session. */
+    this.ctx.storage.sql.exec(
+      `insert into coordinator_provider_smoke_probe (
+        singleton, state, request_id, started_at_ms, completed_at_ms,
+        outcome, turn_credentials_valid, empty_sfu_session_valid
+      ) values (1, 'running', ?, ?, null, null, null, null)
+      on conflict (singleton) do update set
+        state = excluded.state,
+        request_id = excluded.request_id,
+        started_at_ms = excluded.started_at_ms,
+        completed_at_ms = null,
+        outcome = null,
+        turn_credentials_valid = null,
+        empty_sfu_session_valid = null`,
+      parsed.requestId,
+      now,
+    )
+
+    let checks = failedProviderSmokeProbeChecks()
+    try {
+      const adapter = await this.providerAdapter(parsed.release, 'provider_smoke')
+      if (adapter) checks = await runSygSphereProviderSmokeProbe(adapter, parsed.authorization.tenantId)
+    } catch {
+      // Provider failures are intentionally normalized. Raw provider errors,
+      // credentials, session IDs, and endpoint details never enter the audit
+      // record, Worker response, or browser.
+      checks = failedProviderSmokeProbeChecks()
+    }
+    const outcome = checks.turnCredentials && checks.emptySfuSession ? 'passed' : 'failed'
+    this.ctx.storage.sql.exec(
+      `update coordinator_provider_smoke_probe
+       set state = 'completed', completed_at_ms = ?, outcome = ?,
+         turn_credentials_valid = ?, empty_sfu_session_valid = ?
+       where singleton = 1 and request_id = ?`,
+      Date.now(),
+      outcome,
+      checks.turnCredentials ? 1 : 0,
+      checks.emptySfuSession ? 1 : 0,
+      parsed.requestId,
+    )
+    return { checks, outcome }
   }
 
   /**

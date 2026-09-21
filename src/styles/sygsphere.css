@@ -20,6 +20,7 @@ body:has(.sidebar--open) .sphere-mobile-launcher{display:none!important}
 .sphere-workspace input::placeholder,.sphere-workspace textarea::placeholder,.sphere-modal input::placeholder{color:var(--sp-muted);font-weight:400;opacity:.9}
 .sphere-topbar{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:18px 22px;border-bottom:1px solid var(--sp-border);background:var(--sp-panel)}
 .sphere-topbar>div{display:flex;align-items:center;gap:12px}.sphere-topbar img{width:40px;height:34px;object-fit:contain}.sphere-topbar h1{margin:0;font-size:23px;letter-spacing:-.6px}.sphere-topbar h1 span{display:block;color:var(--sp-muted);font-size:12px;letter-spacing:.2px;font-weight:400}
+.sphere-provider-smoke-control{display:inline-flex;align-items:center;gap:7px}.sphere-provider-smoke-control small{max-width:178px;color:var(--sp-muted);font-size:10px;line-height:1.25}
 .sphere-layout{display:flex;flex:1;min-height:0;min-width:0}.sphere-conversations{width:265px;flex-shrink:0;display:flex;flex-direction:column;padding:16px 12px 10px;background:var(--sp-panel);border-right:1px solid var(--sp-border);min-height:0}
 .sphere-tabs{display:flex;gap:5px;padding-bottom:14px;flex-shrink:0}.sphere-tabs button{flex:1;font-size:12px;padding:8px 6px;background:transparent;border-color:transparent;min-height:38px}.sphere-tabs button[aria-pressed="true"]{color:var(--sp-text);background:var(--sp-accent);border-color:var(--sp-gold)}
 .sphere-search{display:flex;align-items:center;gap:8px;border:1px solid var(--sp-border);border-radius:11px;background:var(--sp-bg);padding:0 12px;margin:0 0 14px;color:var(--sp-muted)}.sphere-workspace .sphere-search input{border:0;background:transparent;padding:10px 0;min-height:42px;font-size:13px}
@@ -47,6 +48,7 @@ body:has(.sidebar--open) .sphere-mobile-launcher{display:none!important}
   .sphere-topbar>div{gap:6px;min-width:0}
   .sphere-topbar>div:last-child{width:auto;flex:0 0 auto;justify-content:flex-end}
   .sphere-topbar button{font-size:12px;padding:7px}
+  .sphere-provider-smoke-control small{display:none}
   .sphere-workspace .sphere-text-size select{width:96px;max-width:96px;min-height:40px;padding:7px 24px 7px 8px;font-size:12px}
   .sphere-workspace .sphere-new-message{width:62px;min-width:62px;min-height:40px;padding:7px 9px}
   .sphere-new-message__label--full{display:none}

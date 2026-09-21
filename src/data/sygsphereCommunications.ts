@@ -41,9 +41,18 @@ const directAudioPreparationResponseSchema = z.object({
   requestId: z.uuid(),
 }).strict()
 
+const providerSmokeProbeResponseSchema = z.object({
+  checks: z.object({
+    emptySfuSession: z.boolean(),
+    turnCredentials: z.boolean(),
+  }).strict(),
+  outcome: z.enum(['failed', 'passed', 'rate_limited', 'runtime_unavailable']),
+}).strict()
+
 export type SygSphereCommunicationsBootstrap = z.infer<typeof communicationsBootstrapSchema>
 export type SygSphereCommunicationsCommandOutcome = z.infer<typeof communicationsCommandResponseSchema>['outcome']
 export type SygSphereDirectAudioIceServer = RTCIceServer
+export type SygSphereProviderSmokeProbeResult = z.infer<typeof providerSmokeProbeResponseSchema>
 
 export function setSygSphereCommunicationsRouteHandle(routeHandle: string | null): void {
   activeCommunicationsRouteHandle = routeHandle === null ? null : communicationsRouteHandleSchema.parse(routeHandle)
@@ -135,6 +144,17 @@ export async function sendSygSphereCommunicationsCommand(input: unknown): Promis
 export async function refreshSygSphereCommunicationsAuthorization(): Promise<void> {
   const response = await communicationsRequest('/api/comms/v1/authorization/refresh', { method: 'POST' })
   await communicationsJson(response)
+}
+
+/* A temporary, hidden-by-default infrastructure control. The server still
+ * requires MFA plus admin.security.manage; this browser helper merely keeps
+ * the authenticated session token in memory instead of copying it anywhere. */
+export async function runSygSphereProviderSmokeProbe(): Promise<SygSphereProviderSmokeProbeResult> {
+  const response = await communicationsRequest('/api/comms/v1/internal/provider-smoke', { method: 'POST' })
+  const payload = await response.json().catch(() => null)
+  const parsed = providerSmokeProbeResponseSchema.safeParse(payload)
+  if (!parsed.success) throw new Error('The protected voice-provider check could not be completed.')
+  return parsed.data
 }
 
 export async function getSygSphereDirectCallContext(callId: string): Promise<{ conversationReference: string }> {

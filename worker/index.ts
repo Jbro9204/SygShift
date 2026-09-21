@@ -1074,6 +1074,22 @@ async function requireAuthenticatedSession(request: Request, environment: Enviro
 const sygsphereCommunicationsRuntimeEnabled = (environment: Environment): boolean =>
   environment.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED?.trim().toLowerCase() === 'true'
 
+/* This diagnostic is deliberately separate from employee Communications
+ * access. It is an administrative infrastructure check, so it requires both
+ * a verified MFA session and the existing critical security permission. */
+async function requireSygSphereProviderProbeAdmin(
+  request: Request,
+  environment: Environment,
+): Promise<Awaited<ReturnType<typeof requireVerifiedOperationsSession>>> {
+  const session = await requireVerifiedOperationsSession(
+    request,
+    environment,
+    'communications_provider_probe_mfa_required',
+  )
+  requireSessionPermission(session.context, 'admin.security.manage')
+  return session
+}
+
 /* Sygilant and SygShift are separate origins, but are the two approved
  * SygSphere applications.  Keep this exact allow-list local to the narrow
  * communications API instead of turning the Worker into a general CORS
@@ -1176,6 +1192,48 @@ async function handleSygSphereCommunicationsApi(
 
   if (!sygsphereCommunicationsRuntimeEnabled(environment)) {
     return errorJson('communications_unavailable', requestId, 503, 'Communications are not available yet. Continue using SygSphere messages and Dispatch.')
+  }
+
+  /* Temporary, hidden-by-default production credential validation. It neither
+   * accepts a request body nor uses browser-provided tenancy, provider, or
+   * media data. The DO stores a single short audit record and cooldown. */
+  if (url.pathname === '/api/comms/v1/internal/provider-smoke') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    const session = await requireSygSphereProviderProbeAdmin(request, environment)
+    const authUserId = accessTokenClaims(session.token)?.sub
+    if (!authUserId || !validUuid(authUserId) || !environment.TENANT_COMMS) {
+      throw new ApiError('communications_provider_probe_unavailable', 503, 'The protected communications check is unavailable.')
+    }
+    const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_resolve_sygsphere_communications_command_scope',
+      {
+        target_auth_user_id: authUserId,
+        target_command_kind: 'auth',
+        target_conversation_reference: null,
+      },
+      session.config.serviceRoleKey,
+    )
+    const authorization = stagedCommsAuthorizationContextSchema.safeParse(decision.context)
+    const release = coordinatorReleaseContextSchema.safeParse(decision.release)
+    if (
+      !authorization.success
+      || !release.success
+      || authorization.data.authUserId !== authUserId
+      || authorization.data.employeeId !== session.context.employee_id
+    ) {
+      throw new ApiError('communications_provider_probe_unavailable', 503, 'The protected communications check is unavailable.')
+    }
+    const coordinator = environment.TENANT_COMMS.getByName(tenantCoordinatorObjectName(authorization.data.tenantId))
+    const result = await coordinator.runProviderSmokeProbe({
+      authorization: authorization.data,
+      release: release.data,
+      requestId,
+    })
+    return json(
+      { checks: result.checks, outcome: result.outcome },
+      result.outcome === 'passed' ? 200 : result.outcome === 'rate_limited' ? 429 : 503,
+    )
   }
 
   if (url.pathname === '/api/comms/v1/bootstrap') {

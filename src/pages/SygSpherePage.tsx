@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ALargeSmall, ArrowLeft, Bell, BellOff, Bookmark, Check, ChevronDown, Download, Eye, Hash, Info, MessageCircle, Paperclip, Plus, Search, Send, Smile, Users, X } from 'lucide-react'
 import { getSessionContext } from '../data/auth'
 import { readSphereDraft, sphereActiveMentions, sphereCanPreview, sphereConversation, sphereCreate, sphereDirectory, sphereDownload, sphereDraftKey, sphereFiles, sphereInbox, sphereMessage, sphereMessageParts, sphereMessages, spherePath, spherePersonMentionLabel, spherePhoto, spherePreferences, spherePreview, sphereRequest, sphereResolveTypedMentions, sphereRetryUpload, sphereSearch, sphereSend, sphereUpload, sphereUploadStatus, SphereUploadError, writeSphereDraft, type SphereConversation, type SphereDraft, type SphereFile, type SphereMention, type SphereMessage, type SpherePerson, type SpherePreview, type SphereTextSize } from '../data/sygsphere'
+import { runSygSphereProviderSmokeProbe } from '../data/sygsphereCommunications'
 import { ModalDialog } from '../components/ModalDialog'
 import { SecurePdfViewer } from '../components/SecurePdfViewer'
 import { SygSphereCommunicationsWorkspace } from '../components/communications/SygSphereCommunicationsRuntime'
@@ -98,13 +99,37 @@ function personMatchesMentionQuery(person: SpherePerson, query: string) {
 }
 
 export function SygSpherePage() {
+  const [params] = useSearchParams()
   const session = useQuery({ queryKey: ['sygsphere', 'session'], queryFn: getSessionContext, staleTime: 60000 })
   if (session.isError) return <section className="sphere-workspace"><ErrorNotice error={session.error} /></section>
   if (!session.data) return <section className="sphere-workspace"><p role="status">Opening SygSphere…</p></section>
-  return <SphereWorkspace employeeId={session.data.employeeId} />
+  return <SphereWorkspace
+    employeeId={session.data.employeeId}
+    providerSmokeEnabled={params.get('providerSmoke') === '1'
+      && session.data.hasMfa
+      && session.data.permissions.includes('admin.security.manage')}
+  />
 }
 
-export function SphereWorkspace({ employeeId }: { employeeId: string }) {
+function ProviderSmokeControl() {
+  const probe = useMutation({ mutationFn: runSygSphereProviderSmokeProbe })
+  const result = probe.data
+  const status = result?.outcome === 'passed'
+    ? 'Voice provider verified.'
+    : result?.outcome === 'rate_limited'
+      ? 'A secure provider check ran recently. Please wait before running it again.'
+      : result
+        ? 'Voice provider could not be validated.'
+        : probe.isError
+          ? 'The protected voice-provider check could not be completed.'
+          : null
+  return <span className="sphere-provider-smoke-control">
+    <button disabled={probe.isPending} onClick={() => probe.mutate()} title="Temporary administrator diagnostic" type="button">Test voice provider</button>
+    {status ? <small aria-live="polite">{status}</small> : null}
+  </span>
+}
+
+export function SphereWorkspace({ employeeId, providerSmokeEnabled = false }: { employeeId: string; providerSmokeEnabled?: boolean }) {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -136,7 +161,7 @@ export function SphereWorkspace({ employeeId }: { employeeId: string }) {
     <header className="sphere-topbar"><div><img src="/branding/sygsphere-emblem.png" alt="" /><h1>SygSphere<span>Your team, connected.</span></h1></div><div>
       <label className="sphere-text-size"><ALargeSmall size={19} /><span className="sr-only">Message text size</span><select aria-label="Message text size" value={textPreference.data?.textSize ?? 'comfortable'} disabled={textPreference.isPending || updateTextSize.isPending} onChange={(event) => updateTextSize.mutate(event.target.value as SphereTextSize)}><option value="comfortable">Normal</option><option value="large">Large</option><option value="extra_large">Extra large</option></select></label>
       <button type="button" aria-label={inbox.data?.soundEnabled ? 'Mute SygSphere sounds' : 'Enable SygSphere sounds'} title="Messaging sounds only" disabled={preferences.isPending} onClick={() => preferences.mutate(!inbox.data?.soundEnabled)}>{inbox.data?.soundEnabled ? <Bell size={19} /> : <BellOff size={19} />}</button>
-      <button aria-label="New message" className="sphere-primary sphere-new-message" title="Start a new conversation" type="button" onClick={() => setNewOpen(true)}><Plus size={19} /><span className="sphere-new-message__label sphere-new-message__label--full">New message</span><span aria-hidden="true" className="sphere-new-message__label sphere-new-message__label--short">New</span></button></div></header>
+      {providerSmokeEnabled ? <ProviderSmokeControl /> : null}<button aria-label="New message" className="sphere-primary sphere-new-message" title="Start a new conversation" type="button" onClick={() => setNewOpen(true)}><Plus size={19} /><span className="sphere-new-message__label sphere-new-message__label--full">New message</span><span aria-hidden="true" className="sphere-new-message__label sphere-new-message__label--short">New</span></button></div></header>
     <ErrorNotice error={preferences.error || updateTextSize.error} />
     <div className="sphere-layout">
       <nav className="sphere-conversations" aria-label="SygSphere conversations">

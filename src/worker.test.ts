@@ -162,6 +162,58 @@ describe('Cloudflare Worker boundary', () => {
     expect(assets.ASSETS.fetch).not.toHaveBeenCalled()
   })
 
+  it('keeps the internal provider smoke probe behind an authenticated MFA administrator boundary', async () => {
+    const runtimeEnvironment = environment(new Response('asset'), {
+      ...configuredEnvironment,
+      SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED: 'true',
+    })
+    const unauthenticated = await worker.fetch(
+      new Request('https://app.sygshift.example/api/comms/v1/internal/provider-smoke', { method: 'POST' }),
+      runtimeEnvironment,
+    )
+    expect(unauthenticated.status).toBe(401)
+    expect((await unauthenticated.json() as { error: string }).error).toBe('auth_required')
+
+    const authUserId = '20000000-0000-4000-8000-000000000001'
+    const token = `header.${btoa(JSON.stringify({ sub: authUserId })).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')}.signature`
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      employee_id: '10000000-0000-4000-8000-000000000001',
+      has_mfa: false,
+      permissions: ['admin.security.manage'],
+    }), { headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const withoutMfa = await worker.fetch(
+        new Request('https://app.sygshift.example/api/comms/v1/internal/provider-smoke', {
+          headers: { authorization: `Bearer ${token}` },
+          method: 'POST',
+        }),
+        runtimeEnvironment,
+      )
+      expect(withoutMfa.status).toBe(403)
+      expect((await withoutMfa.json() as { error: string }).error).toBe('communications_provider_probe_mfa_required')
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+        employee_id: '10000000-0000-4000-8000-000000000001',
+        has_mfa: true,
+        permissions: [],
+      }), { headers: { 'content-type': 'application/json' } }))
+      const withoutSecurityPermission = await worker.fetch(
+        new Request('https://app.sygshift.example/api/comms/v1/internal/provider-smoke', {
+          headers: { authorization: `Bearer ${token}` },
+          method: 'POST',
+        }),
+        runtimeEnvironment,
+      )
+      expect(withoutSecurityPermission.status).toBe(403)
+      expect((await withoutSecurityPermission.json() as { error: string }).error).toBe('permission_required')
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('permits the exact first-party Worker origin through the narrow Communications CORS boundary', async () => {
     const response = await worker.fetch(
       new Request('https://app.sygilant.us/api/comms/v1/bootstrap', {
