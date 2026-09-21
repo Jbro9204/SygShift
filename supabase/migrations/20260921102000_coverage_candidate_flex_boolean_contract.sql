@@ -103,7 +103,7 @@ begin
     from pg_proc procedure
     where procedure.oid = 'private.shift_coverage_candidate_payload(uuid,uuid)'::regprocedure
       and procedure.prosecdef
-      and procedure.proconfig @> array['search_path=']
+      and coalesce(procedure.proconfig, array[]::text[]) @> array['search_path=""']
   ) then
     raise exception 'Coverage candidate helper must remain security definer with an empty search path.';
   end if;
