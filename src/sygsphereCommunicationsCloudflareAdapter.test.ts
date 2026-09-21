@@ -66,7 +66,7 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     const request = asRequest(fetchImplementation.mock.calls[0]?.[0])
     expect(request.url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/new')
     expect(request.method).toBe('POST')
-    expect(request.redirect).toBe('error')
+    expect(request.redirect).toBe('manual')
     expect(request.headers.get('authorization')).toBe('Bearer server-only-app-secret')
     await expect(requestJson(request)).resolves.toEqual({ sessionDescription: offer })
   })
@@ -309,13 +309,42 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     }
   })
 
-  it('classifies redirect-mode Request construction failures without retaining request data', async () => {
+  it('uses manual redirect handling and rejects a provider 3xx without following it', async () => {
+    const diagnosticLogger = vi.fn()
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, {
+      headers: { location: 'https://redirect-target.invalid/should-not-receive-credentials' },
+      status: 302,
+    }))
+    const adapter = new CloudflareRealtimeHttpAdapter({
+      appId: 'app-1',
+      appSecret: 'server-only-app-secret',
+      diagnosticLogger,
+      fetchImplementation,
+      mayCallProvider: true,
+    })
+
+    await expect(adapter.createSession({ tenantId: 'tenant-1' }))
+      .resolves.toEqual({ outcome: 'provider_rejected', reconciliationRequired: false })
+
+    const request = asRequest(fetchImplementation.mock.calls[0]?.[0])
+    expect(request.redirect).toBe('manual')
+    expect(fetchImplementation).toHaveBeenCalledTimes(1)
+    expect(diagnosticLogger).toHaveBeenCalledWith({
+      event: 'sygsphere_communications_provider_failure',
+      failureClass: 'http',
+      httpStatus: 302,
+      operation: 'session_create',
+      outcome: 'provider_rejected',
+    })
+  })
+
+  it('classifies manual redirect-mode Request construction failures without retaining request data', async () => {
     const diagnosticLogger = vi.fn()
     const fetchImplementation = vi.fn<typeof fetch>()
     const nativeRequest = Request
     vi.stubGlobal('Request', class {
       constructor(input: RequestInfo | URL, init?: RequestInit) {
-        if (init?.redirect === 'error') throw new Error('redirect implementation detail must not leak')
+        if (init?.redirect === 'manual') throw new Error('redirect implementation detail must not leak')
         return new nativeRequest(input, init)
       }
     })

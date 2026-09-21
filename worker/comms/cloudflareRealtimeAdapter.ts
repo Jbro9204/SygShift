@@ -449,7 +449,13 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
       )
     }
 
-    const redirectRequestInit: RequestInit = { ...coreRequestInit, redirect: 'error' }
+    /*
+     * Keep provider redirects observable instead of following them. This
+     * prevents an Authorization header from being sent to a redirect target,
+     * while retaining a supported Workers request mode. The normal
+     * `!response.ok` handling below rejects every returned 3xx response.
+     */
+    const redirectRequestInit: RequestInit = { ...coreRequestInit, redirect: 'manual' }
     try {
       new Request(path, redirectRequestInit)
     } catch {
