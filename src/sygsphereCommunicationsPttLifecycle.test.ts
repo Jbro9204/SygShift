@@ -302,8 +302,12 @@ describe('SygSphere Communications PTT lifecycle', () => {
     // metadata and emit only a sanitized operator diagnostic before freeing
     // the blocked browser media slot.
     expect(coordinator).toContain('maximumMediaTeardownAttempts = 5')
+    expect(coordinator).toContain('maximumMediaTeardownRecoveryRecords = 100')
     expect(coordinator).toContain('coordinator_media_teardown_recoveries')
     expect(coordinator).toContain('insert or ignore into coordinator_media_teardown_recoveries')
+    expect(coordinator).toContain('private trimMediaTeardownRecoveryRecords(): void')
+    expect(coordinator).toContain('this.trimMediaTeardownRecoveryRecords()')
+    expect(coordinator).toContain('order by recorded_at_ms desc, recovery_id desc')
     expect(coordinator).toContain('reportSygSphereCommsMediaTeardownRecovery(input.mediaType)')
     expect(coordinator).toContain('teardown_attempt_count = ?')
     expect(coordinator).toContain('unique (session_json, track_id)')

@@ -400,6 +400,9 @@ const pttLeaseMilliseconds = 6_000
 // the coordinator rather than pretending that the track was removed.
 const mediaTeardownRetryMilliseconds = 30_000
 const maximumMediaTeardownAttempts = 5
+// Recovery records retain opaque provider metadata for operator follow-up, so
+// keep a finite, per-tenant history even if a provider stays unavailable.
+const maximumMediaTeardownRecoveryRecords = 100
 
 /**
  * Extends a still-valid server reservation without ever reviving an expired
@@ -1724,7 +1727,23 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       input.attemptCount,
       input.now,
     )
+    this.trimMediaTeardownRecoveryRecords()
     reportSygSphereCommsMediaTeardownRecovery(input.mediaType)
+  }
+
+  /** Recovery metadata is server-only, but it must not be allowed to grow
+   * without bound. Preserve the newest deterministic set for operator follow-
+   * up and discard only older, already-recorded recovery entries. */
+  private trimMediaTeardownRecoveryRecords(): void {
+    this.ctx.storage.sql.exec(
+      `delete from coordinator_media_teardown_recoveries
+       where recovery_id not in (
+         select recovery_id from coordinator_media_teardown_recoveries
+         order by recorded_at_ms desc, recovery_id desc
+         limit ?
+       )`,
+      maximumMediaTeardownRecoveryRecords,
+    )
   }
 
   private deferCallMediaTeardown(row: CoordinatorCallMediaSessionRow, now: number): void {
