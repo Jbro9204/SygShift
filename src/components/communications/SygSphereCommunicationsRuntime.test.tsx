@@ -2,7 +2,60 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GlobalCommunicationsAudio, IncomingCommunicationsCallNotice } from "./SygSphereCommunicationsRuntime";
+
+const runtime = vi.hoisted(() => ({
+  authListener: null as null | ((event: string, session: { access_token: string } | null) => void),
+  getSession: vi.fn(),
+  getToken: null as null | (() => string | null),
+  onAuthStateChange: vi.fn(),
+  start: vi.fn(),
+  stop: vi.fn(),
+  unsubscribe: vi.fn(),
+}));
+
+vi.mock("../../lib/supabase", () => ({
+  getSupabaseClient: () => ({
+    auth: {
+      getSession: runtime.getSession,
+      onAuthStateChange: runtime.onAuthStateChange,
+    },
+  }),
+}));
+
+vi.mock("../../communications/sygsphereCommunicationsSocketBridge", () => ({
+  SygSphereCommunicationsSocketBridge: class {
+    constructor(getToken: () => string | null) {
+      runtime.getToken = getToken;
+    }
+  },
+}));
+
+vi.mock("../../communications/sygsphereCommunicationsController", () => ({
+  SygSphereCommunicationsController: class {
+    start = runtime.start;
+    stop = runtime.stop;
+    subscribe = vi.fn(() => () => undefined);
+    subscribeRemoteMedia = vi.fn(() => () => undefined);
+  },
+}));
+
+vi.mock("../../communications/sygsphereCommunicationsBrowserCapabilities", () => ({
+  assessCommunicationsBrowserCapabilities: () => ({
+    audioCapture: { available: true, detail: "available" },
+    cameraCapture: { available: true, detail: "available" },
+    controlTransport: { available: true, detail: "available" },
+    foregroundOnly: true,
+    screenCapture: { available: true, detail: "available" },
+    webRtcMedia: { available: true, detail: "available" },
+  }),
+  readCommunicationsBrowserEnvironment: () => ({}),
+}));
+
+import {
+  GlobalCommunicationsAudio,
+  IncomingCommunicationsCallNotice,
+  SygSphereCommunicationsRuntimeProvider,
+} from "./SygSphereCommunicationsRuntime";
 
 const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
 const originalSetSinkId = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "setSinkId");
@@ -10,10 +63,44 @@ const originalSetSinkId = Object.getOwnPropertyDescriptor(HTMLMediaElement.proto
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  runtime.authListener = null;
+  runtime.getToken = null;
+  runtime.getSession.mockReset();
+  runtime.onAuthStateChange.mockReset();
+  runtime.start.mockReset();
+  runtime.stop.mockReset();
+  runtime.unsubscribe.mockReset();
   if (originalMediaDevices) Object.defineProperty(navigator, "mediaDevices", originalMediaDevices);
   else Reflect.deleteProperty(navigator, "mediaDevices");
   if (originalSetSinkId) Object.defineProperty(HTMLMediaElement.prototype, "setSinkId", originalSetSinkId);
   else Reflect.deleteProperty(HTMLMediaElement.prototype, "setSinkId");
+});
+
+describe("SygSphereCommunicationsRuntimeProvider", () => {
+  it("uses the latest Supabase token for the long-lived Communications bridge without restarting it", async () => {
+    runtime.getSession.mockResolvedValue({
+      data: { session: { access_token: "initial-access-token" } },
+      error: null,
+    });
+    runtime.onAuthStateChange.mockImplementation((listener) => {
+      runtime.authListener = listener;
+      return { data: { subscription: { unsubscribe: runtime.unsubscribe } } };
+    });
+
+    render(
+      <SygSphereCommunicationsRuntimeProvider employeeId="employee-a" enabled permissions={[]}>
+        <div>Workspace</div>
+      </SygSphereCommunicationsRuntimeProvider>,
+    );
+
+    await waitFor(() => expect(runtime.start).toHaveBeenCalledWith("employee-a"));
+    expect(runtime.getToken?.()).toBe("initial-access-token");
+
+    runtime.authListener?.("TOKEN_REFRESHED", { access_token: "refreshed-access-token" });
+
+    expect(runtime.getToken?.()).toBe("refreshed-access-token");
+    expect(runtime.start).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("IncomingCommunicationsCallNotice", () => {

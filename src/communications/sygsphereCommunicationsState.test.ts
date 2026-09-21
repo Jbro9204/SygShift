@@ -37,7 +37,7 @@ describe("SygSphere communications runtime state", () => {
     expect(stale.call?.status).toBe("ringing");
   });
 
-  it("does not activate a late floor grant after release", () => {
+  it("holds a release in progress until the protected cancellation is acknowledged", () => {
     let state = reduceCommunicationsRuntime(createCommunicationsRuntimeState("employee-a"), {
       type: "connection.ready",
       authorizationExpiresAt: "2026-09-19T14:01:00.000Z",
@@ -48,6 +48,7 @@ describe("SygSphere communications runtime state", () => {
       requestId: "request-a",
     });
     state = reduceCommunicationsRuntime(state, { type: "floor.release.requested" });
+    expect(state.floor).toMatchObject({ requestId: "request-a", status: "releasing" });
     state = reduceCommunicationsRuntime(state, {
       type: "event.received",
       event: event("floor.ready", {
@@ -55,6 +56,8 @@ describe("SygSphere communications runtime state", () => {
         transmissionRequestId: "request-a",
       }, 1),
     });
+    expect(state.floor).toMatchObject({ requestId: "request-a", status: "releasing" });
+    state = reduceCommunicationsRuntime(state, { type: "floor.release.confirmed", requestId: "request-a" });
     expect(state.floor).toBeNull();
   });
 

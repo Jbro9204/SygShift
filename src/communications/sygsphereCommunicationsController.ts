@@ -204,8 +204,9 @@ export class SygSphereCommunicationsController {
     } catch (error) {
       // Releasing a hold-to-talk control while the browser is still opening the
       // microphone is an expected cancellation, not a voice failure. The
-      // release path has already stopped the source and cleared this floor.
-      if (this.state.floor?.requestId !== requestId) return;
+      // release path has already stopped the source and retained this floor
+      // until the protected cancellation is acknowledged.
+      if (this.state.floor?.requestId !== requestId || this.state.floor.status === "releasing") return;
       this.pendingPttAudio = null;
       this.media.releaseAudioFocus({ kind: "ptt", sessionId: requestId });
       this.update({ type: "floor.failed", reason: safeError(error) });
@@ -252,9 +253,22 @@ export class SygSphereCommunicationsController {
 
   async releaseToTalk(): Promise<void> {
     const floor = this.state.floor;
-    if (!floor) return;
+    if (!floor || floor.status === "releasing") return;
     this.update({ type: "floor.release.requested" });
-    await this.cancelActivePtt(floor);
+    const releaseConfirmed = await this.cancelActivePtt(floor);
+    if (this.state.floor?.requestId !== floor.requestId || this.state.floor.status !== "releasing") return;
+    if (releaseConfirmed) {
+      this.update({ type: "floor.release.confirmed", requestId: floor.requestId });
+      return;
+    }
+    // A rejected control command is not safe to leave as a permanently
+    // disabled hold control. Capture is already stopped above, so return to a
+    // visible, retriable terminal state and tell the user not to immediately
+    // compete with any server-side cleanup that may still be finishing.
+    this.update({
+      type: "floor.failed",
+      reason: "Push-to-talk release could not be confirmed. Wait a moment, then hold again.",
+    });
   }
 
   async answerCall(callId: string, invitationId: string): Promise<void> {
@@ -418,7 +432,7 @@ export class SygSphereCommunicationsController {
    * best-effort. The synthetic room ID is deliberate: it lets the bridge
    * abort an in-flight browser setup even before `floor.preparing` supplies a
    * real room ID. */
-  private async cancelActivePtt(floor: CommunicationsFloorState): Promise<void> {
+  private async cancelActivePtt(floor: CommunicationsFloorState): Promise<boolean> {
     this.clearFloorLeaseTimers();
     this.pendingPttAudio = null;
     this.media.releaseAudioFocus({ kind: "ptt", sessionId: floor.requestId });
@@ -426,10 +440,14 @@ export class SygSphereCommunicationsController {
       ? "floor.cancel"
       : "floor.release";
     const stopRoomId = floor.roomId ?? `ptt:${floor.requestId}`;
-    await Promise.allSettled([
+    const [, releaseResult] = await Promise.allSettled([
       this.coordinator?.stopPublication("ptt", stopRoomId),
       this.send(commandKind, { transmissionRequestId: floor.requestId }, floor.roomId ?? undefined),
     ]);
+    // The command outcome is the server acknowledgement that matters for a
+    // new hold. Local media may be stopped immediately, but a new request must
+    // not overtake an unacknowledged server-side release.
+    return releaseResult.status === "fulfilled";
   }
 
   private beginPttTransmissionIfReady(): void {
@@ -579,8 +597,9 @@ export class SygSphereCommunicationsController {
       }
     }
 
-    if (event.kind === "floor.renewed" && this.state.floor) {
-      this.armFloorLease(this.state.floor.requestId);
+    const renewedFloor = this.state.floor;
+    if (event.kind === "floor.renewed" && renewedFloor && renewedFloor.status !== "releasing") {
+      this.armFloorLease(renewedFloor.requestId);
     }
 
     if (event.kind === "call.requested") {

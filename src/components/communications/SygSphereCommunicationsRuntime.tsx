@@ -162,19 +162,51 @@ export function SygSphereCommunicationsRuntimeProvider({
       return;
     }
     let cancelled = false;
+    let started = false;
     setLastActionError(null);
-    void getSupabaseClient().auth.getSession().then(({ data, error }) => {
-      if (cancelled || error || !data.session?.access_token) {
-        if (!cancelled) setLastActionError("Your secure SygSphere session is unavailable. Sign in again.");
+    const startCurrentSession = (accessToken: string) => {
+      if (cancelled || started) return;
+      started = true;
+      accessTokenRef.current = accessToken;
+      void controller.start(employeeId).catch(() => {
+        if (!cancelled) setLastActionError("Communications could not open. Continue with messages or Dispatch and try again.");
+      });
+    };
+    const updateCurrentSession = (session: { access_token: string } | null) => {
+      if (cancelled) return;
+      const accessToken = session?.access_token || null;
+      accessTokenRef.current = accessToken;
+      if (!accessToken) {
+        const wasStarted = started;
+        started = false;
+        controller.stop("signed_out");
+        if (wasStarted) setLastActionError("Your secure SygSphere session is unavailable. Sign in again.");
         return;
       }
-      accessTokenRef.current = data.session.access_token;
-      return controller.start(employeeId);
+      startCurrentSession(accessToken);
+    };
+    const auth = getSupabaseClient().auth;
+    const { data: { subscription } } = auth.onAuthStateChange((_event, session) => {
+      // Supabase rotates access tokens in the background. The bridge reads this
+      // ref for every protected refresh, so do not restart an active voice
+      // session merely because its JWT was refreshed.
+      updateCurrentSession(session);
+    });
+    void auth.getSession().then(({ data, error }) => {
+      if (cancelled) return;
+      if (error || !data.session?.access_token) {
+        if (!accessTokenRef.current) setLastActionError("Your secure SygSphere session is unavailable. Sign in again.");
+        return;
+      }
+      updateCurrentSession(data.session);
     }).catch(() => {
-      if (!cancelled) setLastActionError("Communications could not open. Continue with messages or Dispatch and try again.");
+      if (!cancelled && !accessTokenRef.current) {
+        setLastActionError("Communications could not open. Continue with messages or Dispatch and try again.");
+      }
     });
     return () => {
       cancelled = true;
+      subscription.unsubscribe();
       accessTokenRef.current = null;
       controller.stop("account_changed");
     };

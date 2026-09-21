@@ -820,6 +820,38 @@ describe("SygSphere communications protected socket bridge", () => {
     }
   });
 
+  it("uses the latest browser token when scheduled authorization renewal runs", async () => {
+    vi.useFakeTimers();
+    try {
+      let accessToken = "initial-access-token";
+      const socket = new FakeSocket();
+      const refreshAuthorization = vi.fn(async () => ({
+        refreshedConnections: 1,
+        requestId: "d285bf11-15f6-4efe-b60f-4ab891637342",
+      }));
+      const bridge = createBridge({
+        bootstrap: vi.fn(async () => validBootstrap(ticket)),
+        getAccessToken: () => accessToken,
+        refreshAuthorization,
+        socket,
+      });
+      const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+      await Promise.resolve();
+      await Promise.resolve();
+      socket.open();
+      socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+      await connection;
+
+      accessToken = "refreshed-access-token";
+      await vi.advanceTimersByTimeAsync(45_000);
+
+      expect(refreshAuthorization).toHaveBeenCalledWith("refreshed-access-token", expect.any(AbortSignal));
+      expect(socket.closedWith).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("closes the socket when authorization renewal fails or refreshes no connection", async () => {
     vi.useFakeTimers();
     try {
@@ -1003,11 +1035,12 @@ function offerDirectCall(socket: FakeSocket, callId: string) {
   }));
 }
 
-function createBridge({ acknowledgePttListenerReady, bootstrap, createPeerTransport, createRtcPeer, now, peerTransport, prepareMeetingMedia, preparePtt, refreshAuthorization, reportPttListenerFailure, sendCommand, socket, sockets, startDirectAudio, startMeetingMedia, startPtt }: {
+function createBridge({ acknowledgePttListenerReady, bootstrap, createPeerTransport, createRtcPeer, getAccessToken, now, peerTransport, prepareMeetingMedia, preparePtt, refreshAuthorization, reportPttListenerFailure, sendCommand, socket, sockets, startDirectAudio, startMeetingMedia, startPtt }: {
   acknowledgePttListenerReady?: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
   bootstrap: (accessToken: string, signal: AbortSignal) => Promise<unknown>;
   createPeerTransport?: SygSphereCommunicationsPeerTransportFactory;
   createRtcPeer?: (configuration: RTCConfiguration) => RTCPeerConnection;
+  getAccessToken?: () => string | null;
   now?: () => number;
   peerTransport?: SygSphereCommunicationsPeerTransportAdapter;
   prepareMeetingMedia?: (accessToken: string, meetingId: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
@@ -1022,7 +1055,7 @@ function createBridge({ acknowledgePttListenerReady, bootstrap, createPeerTransp
   startPtt?: (accessToken: string, input: unknown, signal: AbortSignal) => Promise<unknown>;
 }) {
   let index = 0;
-  return new SygSphereCommunicationsSocketBridge(() => "access-token", {
+  return new SygSphereCommunicationsSocketBridge(getAccessToken ?? (() => "access-token"), {
     acknowledgePttListenerReady: acknowledgePttListenerReady ?? vi.fn(async () => acceptedCommand()),
     reportPttListenerFailure: reportPttListenerFailure ?? vi.fn(async () => acceptedCommand()),
     bootstrap,

@@ -57,6 +57,7 @@ export type CommunicationsRuntimeAction =
   | Readonly<{ type: "authorization.lost"; reason?: string }>
   | Readonly<{ type: "floor.requested"; channelReference: string; requestId: string }>
   | Readonly<{ type: "floor.release.requested" }>
+  | Readonly<{ type: "floor.release.confirmed"; requestId: string }>
   | Readonly<{ type: "floor.failed"; reason: string }>
   | Readonly<{ type: "ptt.media.connected"; requestId: string; roomId: string }>
   | Readonly<{ type: "ptt.media.failed"; requestId: string; roomId?: string; reason: string }>
@@ -137,7 +138,16 @@ export function reduceCommunicationsRuntime(
         lastError: null,
       };
     case "floor.release.requested":
-      return state.floor ? { ...state, floor: null } : state;
+      // Preserve the request until the protected cancel/release command has
+      // been accepted. Clearing it here lets a second press race the first
+      // release on the server and appear as a false "channel busy" result.
+      return state.floor && state.floor.status !== "releasing"
+        ? { ...state, floor: { ...state.floor, status: "releasing" } }
+        : state;
+    case "floor.release.confirmed":
+      return state.floor?.requestId === action.requestId && state.floor.status === "releasing"
+        ? { ...state, floor: null }
+        : state;
     case "floor.failed":
       return { ...state, floor: null, lastError: action.reason };
     case "ptt.media.connected":
@@ -248,7 +258,11 @@ function reduceServerEvent(
       };
     }
     case "floor.renewed": {
-      if (!state.floor || stringValue(payload.transmissionRequestId) !== state.floor.requestId) return next;
+      if (
+        !state.floor
+        || state.floor.status === "releasing"
+        || stringValue(payload.transmissionRequestId) !== state.floor.requestId
+      ) return next;
       const generation = numberValue(payload.generation);
       const leaseExpiresAt = stringValue(payload.leaseExpiresAt);
       if (generation === null || leaseExpiresAt === null) return next;

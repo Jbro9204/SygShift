@@ -149,23 +149,40 @@ describe("SygSphere communications controller", () => {
     expect(vi.mocked(test.session.send).mock.calls.some(([command]) => command.kind === "floor.cancel")).toBe(true);
   });
 
-  it("returns PTT to idle immediately and remains idle when the server confirms release", async () => {
+  it("keeps PTT releasing until the server accepts the cancellation and blocks a fast re-press", async () => {
     const test = harness();
     await test.controller.start("employee-a");
     await test.controller.holdToTalk("dispatch");
-    const requestId = vi.mocked(test.session.send).mock.calls[0][0].payload.clientIntentId;
-    await test.onEvent()(event("floor.preparing", { transmissionRequestId: requestId }, 1));
-    await test.onEvent()(event("floor.ready", {
-      expiresAt: new Date(Date.now() + 6_000).toISOString(),
-      transmissionRequestId: requestId,
-    }, 2));
+    let resolveCancellation!: () => void;
+    const cancellation = new Promise<void>((resolve) => { resolveCancellation = resolve; });
+    vi.mocked(test.session.send).mockImplementation((command) => command.kind === "floor.cancel"
+      ? cancellation
+      : Promise.resolve());
+
+    const release = test.controller.releaseToTalk();
+    await vi.waitFor(() => expect(vi.mocked(test.session.send).mock.calls.some(([command]) => command.kind === "floor.cancel")).toBe(true));
+    expect(test.controller.snapshot.floor?.status).toBe("releasing");
+    await test.controller.holdToTalk("dispatch");
+    expect(vi.mocked(test.session.send).mock.calls.filter(([command]) => command.kind === "floor.request")).toHaveLength(1);
+
+    resolveCancellation();
+    await release;
+    expect(test.controller.snapshot.floor).toBeNull();
+  });
+
+  it("returns to a clear retry state when PTT cancellation cannot be confirmed", async () => {
+    const test = harness();
+    await test.controller.start("employee-a");
+    await test.controller.holdToTalk("dispatch");
+    vi.mocked(test.session.send).mockImplementation((command) => command.kind === "floor.cancel"
+      ? Promise.reject(new Error("control unavailable"))
+      : Promise.resolve());
 
     await test.controller.releaseToTalk();
-    expect(test.controller.snapshot.floor).toBeNull();
-    expect(vi.mocked(test.session.send).mock.calls.some(([command]) => command.kind === "floor.release")).toBe(true);
 
-    await test.onEvent()(event("transmission.ended", { reason: "ended", transmissionRequestId: requestId }, 3));
     expect(test.controller.snapshot.floor).toBeNull();
+    expect(test.controller.snapshot.lastError).toMatch(/release could not be confirmed/i);
+    expect(test.media.releaseAudioFocus).toHaveBeenCalled();
   });
 
   it("clears local PTT immediately and blocks overlapping floor requests", async () => {
