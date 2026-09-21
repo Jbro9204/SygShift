@@ -38,6 +38,14 @@ const base = () => ({
 });
 
 describe("SygSphere communications panel", () => {
+  it("does not present a control connection as a live voice connection", () => {
+    render(<SygSphereCommunicationsPanel {...base()} />);
+
+    expect(screen.getByText("Messaging connected")).toBeVisible();
+    expect(screen.getByText("Voice connects only after a call or PTT begins")).toBeVisible();
+    expect(screen.queryByText("Communications connected")).not.toBeInTheDocument();
+  });
+
   it("keeps channel voice secondary to the selected chat", () => {
     render(<SygSphereCommunicationsPanel {...base()} />);
     expect(screen.getByRole("button", { name: /hold to talk/i })).toBeEnabled();
