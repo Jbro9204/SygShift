@@ -432,6 +432,17 @@ type MeetingPeerState = Readonly<{
   sourceConnectionId: string;
 }>;
 
+/**
+ * Cloudflare Realtime associates a named local publication with the browser
+ * transceiver identified in the offer.  A MID is assigned only after the
+ * browser has set its local description, so resolve it at that boundary and
+ * fail closed rather than sending an ambiguous publication request.
+ */
+const localPublisherTransceiverMid = (peer: RTCPeerConnection, track: MediaStreamTrack): string | null => {
+  const mid = peer.getTransceivers().find((transceiver) => transceiver.sender.track === track)?.mid;
+  return typeof mid === "string" && /^[A-Za-z0-9._:-]{1,64}$/.test(mid) ? mid : null;
+};
+
 function createSession({
   connectionEpoch,
   dependencies,
@@ -744,12 +755,22 @@ function createSession({
     ));
     const peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
     const tracks = input.mediaKind === "audio" ? input.stream.getAudioTracks() : input.stream.getVideoTracks();
-    for (const track of tracks) peer.addTrack(track, input.stream);
+    const localTrack = tracks[0];
+    if (!localTrack) {
+      peer.close();
+      throw new Error("Communications could not prepare meeting media.");
+    }
+    peer.addTrack(localTrack, input.stream);
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
     await waitForPeerIce(peer, dependencies);
     const localDescription = peer.localDescription;
     if (!localDescription?.sdp || localDescription.type !== "offer") {
+      peer.close();
+      throw new Error("Communications could not prepare meeting media.");
+    }
+    const transceiverMid = localPublisherTransceiverMid(peer, localTrack);
+    if (!transceiverMid) {
       peer.close();
       throw new Error("Communications could not prepare meeting media.");
     }
@@ -759,7 +780,7 @@ function createSession({
         accessToken,
         input.meetingId,
         "publish",
-        { mediaKind: input.mediaKind, offer: localDescription.sdp },
+        { mediaKind: input.mediaKind, offer: localDescription.sdp, transceiverMid },
         AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
       ));
       if (response.outcome !== "accepted") throw new Error(commandOutcomeMessage(response.outcome));
@@ -861,7 +882,13 @@ function createSession({
         trackReference: binding?.trackReference ?? `call:${input.callId}:audio`,
       });
     });
-    for (const track of input.stream.getAudioTracks()) peer.addTrack(track, input.stream);
+    const audioTracks = input.stream.getAudioTracks();
+    const localTrack = audioTracks[0];
+    if (!localTrack) {
+      peer.close();
+      throw new Error("Communications could not prepare direct-call audio.");
+    }
+    peer.addTrack(localTrack, input.stream);
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
     await waitForPeerIce(peer, dependencies);
@@ -870,11 +897,16 @@ function createSession({
       peer.close();
       throw new Error("Communications could not prepare direct-call audio.");
     }
+    const transceiverMid = localPublisherTransceiverMid(peer, localTrack);
+    if (!transceiverMid) {
+      peer.close();
+      throw new Error("Communications could not prepare direct-call audio.");
+    }
     directPeers.set(input.callId, peer);
     try {
       const response = commandResponseSchema.parse(await dependencies.startDirectAudio(
         accessToken,
-        { callId: input.callId, conversationReference: context.conversationReference, offer: localDescription.sdp },
+        { callId: input.callId, conversationReference: context.conversationReference, offer: localDescription.sdp, transceiverMid },
         AbortSignal.timeout(mediaRequestTimeoutMilliseconds),
       ));
       if (response.outcome !== "accepted") throw new Error(commandOutcomeMessage(response.outcome));
@@ -911,7 +943,10 @@ function createSession({
       ));
       if (!attemptIsCurrent()) return;
       peer = dependencies.createRtcPeer({ iceServers: preparation.iceServers });
-      for (const track of input.stream.getAudioTracks()) peer.addTrack(track, input.stream);
+      const audioTracks = input.stream.getAudioTracks();
+      const localTrack = audioTracks[0];
+      if (!localTrack) throw new Error("Communications could not prepare push-to-talk audio.");
+      peer.addTrack(localTrack, input.stream);
       const offer = await peer.createOffer();
       if (!attemptIsCurrent()) return;
       await peer.setLocalDescription(offer);
@@ -922,6 +957,8 @@ function createSession({
       if (!localDescription?.sdp || localDescription.type !== "offer") {
         throw new Error("Communications could not prepare push-to-talk audio.");
       }
+      const transceiverMid = localPublisherTransceiverMid(peer, localTrack);
+      if (!transceiverMid) throw new Error("Communications could not prepare push-to-talk audio.");
       pttPeers.set(input.transmissionRequestId, {
         peer,
         publication: "publisher",
@@ -933,6 +970,7 @@ function createSession({
         {
           channelReference: input.channelReference,
           offer: localDescription.sdp,
+          transceiverMid,
           transmissionRequestId: input.transmissionRequestId,
         },
         AbortSignal.any([attempt.abortController.signal, AbortSignal.timeout(pttMediaRequestTimeoutMilliseconds)]),

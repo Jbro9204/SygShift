@@ -487,7 +487,7 @@ describe("SygSphere communications protected socket bridge", () => {
       "access-token",
       meetingId,
       "publish",
-      expect.objectContaining({ mediaKind: "audio", offer: "v=0\r\n" }),
+      expect.objectContaining({ mediaKind: "audio", offer: "v=0\r\n", transceiverMid: "0" }),
       expect.any(AbortSignal),
     );
 
@@ -526,10 +526,12 @@ describe("SygSphere communications protected socket bridge", () => {
     const callId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
     const peer = createFakeRtcPeer("connecting");
     const onCallMediaConnection = vi.fn();
+    const startDirectAudio = vi.fn(async () => acceptedCommand());
     const bridge = createBridge({
       bootstrap: vi.fn(async () => validBootstrap(ticket)),
       createRtcPeer: () => peer,
       socket,
+      startDirectAudio,
     });
     const connection = bridge.connect({ accountKey: "employee-session", onCallMediaConnection, onDisconnect: vi.fn(), onEvent: vi.fn() });
     await socketCreated(socket);
@@ -542,6 +544,11 @@ describe("SygSphere communications protected socket bridge", () => {
       roomId: `call:${callId}`,
       stream: { getAudioTracks: () => [{} as MediaStreamTrack] } as unknown as MediaStream,
     });
+    expect(startDirectAudio).toHaveBeenCalledWith(
+      "access-token",
+      expect.objectContaining({ callId, offer: "v=0\r\n", transceiverMid: "0" }),
+      expect.any(AbortSignal),
+    );
     answerDirectCall(socket, callId);
     await vi.waitFor(() => expect(peer.setRemoteDescription).toHaveBeenCalledTimes(1));
     expect(onCallMediaConnection).not.toHaveBeenCalled();
@@ -554,6 +561,61 @@ describe("SygSphere communications protected socket bridge", () => {
     await vi.waitFor(() => expect(onCallMediaConnection).toHaveBeenLastCalledWith({ callId, roomId: `call:${callId}`, state: "connected" }));
     peer.setConnectionState("closed");
     await vi.waitFor(() => expect(onCallMediaConnection).toHaveBeenLastCalledWith({ callId, roomId: `call:${callId}`, state: "failed" }));
+  });
+
+  it("fails closed before sending a direct-call offer without a local transceiver MID", async () => {
+    const socket = new FakeSocket();
+    const callId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+    const peer = createFakeRtcPeer("connecting", "complete", null);
+    const startDirectAudio = vi.fn(async () => acceptedCommand());
+    const bridge = createBridge({
+      bootstrap: vi.fn(async () => validBootstrap(ticket)),
+      createRtcPeer: () => peer,
+      socket,
+      startDirectAudio,
+    });
+    const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+    await socketCreated(socket);
+    socket.open();
+    socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+    const { session } = await connection;
+
+    await expect(session.publish({
+      kind: "call_audio",
+      roomId: `call:${callId}`,
+      stream: { getAudioTracks: () => [{} as MediaStreamTrack] } as unknown as MediaStream,
+    })).rejects.toThrow("could not prepare direct-call audio");
+    expect(startDirectAudio).not.toHaveBeenCalled();
+    expect(peer.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends the browser transceiver MID with a PTT publisher offer", async () => {
+    const socket = new FakeSocket();
+    const transmissionRequestId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+    const startPtt = vi.fn(async () => acceptedCommand());
+    const bridge = createBridge({
+      bootstrap: vi.fn(async () => validBootstrap(ticket)),
+      socket,
+      startPtt,
+    });
+    const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+    await socketCreated(socket);
+    socket.open();
+    socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+    const { session } = await connection;
+
+    await session.publish({
+      channelReference: "dispatch",
+      kind: "ptt",
+      roomId: `ptt:${transmissionRequestId}`,
+      stream: { getAudioTracks: () => [{} as MediaStreamTrack] } as unknown as MediaStream,
+      transmissionRequestId,
+    });
+    expect(startPtt).toHaveBeenCalledWith(
+      "access-token",
+      expect.objectContaining({ offer: "v=0\r\n", transceiverMid: "0", transmissionRequestId }),
+      expect.any(AbortSignal),
+    );
   });
 
   it("answers a remote direct-call subscription on its existing protected peer", async () => {
@@ -1096,8 +1158,10 @@ type FakeRtcPeer = RTCPeerConnection & Readonly<{
 function createFakeRtcPeer(
   initialConnectionState: RTCPeerConnectionState = "connected",
   initialIceGatheringState: RTCIceGatheringState = "complete",
+  localTransceiverMid: string | null = "0",
 ): FakeRtcPeer {
   const listeners = new Map<string, Array<(event: Event) => void>>();
+  const transceivers: RTCRtpTransceiver[] = [];
   const peer = {
     connectionState: initialConnectionState,
     iceGatheringState: initialIceGatheringState,
@@ -1108,11 +1172,14 @@ function createFakeRtcPeer(
     removeEventListener: (type: string, listener: (event: Event) => void) => {
       listeners.set(type, (listeners.get(type) ?? []).filter((item) => item !== listener));
     },
-    addTrack: vi.fn(),
+    addTrack: vi.fn((track: MediaStreamTrack) => {
+      transceivers.push({ mid: localTransceiverMid, sender: { track } } as unknown as RTCRtpTransceiver);
+    }),
     addTransceiver: vi.fn(),
     close: vi.fn(),
     createAnswer: vi.fn(async () => ({ sdp: "v=0\r\n", type: "answer" as const })),
     createOffer: vi.fn(async () => ({ sdp: "v=0\r\n", type: "offer" as const })),
+    getTransceivers: vi.fn(() => transceivers),
     setLocalDescription: vi.fn(async (description: RTCSessionDescriptionInit) => { peer.localDescription = description; }),
     setRemoteDescription: vi.fn(async () => undefined),
   };
