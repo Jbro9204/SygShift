@@ -99,11 +99,22 @@ export type CloudflareProviderFailure = Readonly<{
  */
 export type CloudflareProviderDiagnostic = Readonly<{
   event: 'sygsphere_communications_provider_failure'
-  failureClass: 'configuration' | 'http' | 'invalid_response' | 'timeout' | 'transport'
+  failureClass: 'configuration' | 'http' | 'invalid_response' | 'request_initialization' | 'timeout' | 'transport'
   httpStatus?: number
   operation: 'session_create' | 'session_inspect' | 'session_renegotiate' | 'track_close' | 'track_publish' | 'track_subscribe' | 'track_update' | 'turn_credentials'
   outcome: CloudflareProviderFailure['outcome']
+  transportCause?: CloudflareProviderTransportCause
 }>
+
+/**
+ * Closed, server-only classification for a rejected provider fetch. It is
+ * deliberately not an error message, provider response, URL, or identifier.
+ */
+export type CloudflareProviderTransportCause =
+  | 'cloudflare_subrequest'
+  | 'network_connection_lost'
+  | 'other'
+  | 'type_error'
 
 export type CloudflareProviderSuccess<T> = Readonly<{
   outcome: 'accepted'
@@ -208,6 +219,27 @@ const isProviderTimeout = (error: unknown): boolean =>
       && error !== null
       && 'name' in error
       && ((error as { name?: unknown }).name === 'AbortError' || (error as { name?: unknown }).name === 'TimeoutError')
+
+/**
+ * Map only documented Worker transport signatures to a fixed vocabulary.
+ * The original exception is intentionally never returned, stored, or logged:
+ * it can contain credentials, paths, provider payloads, or tenant details.
+ */
+const classifyProviderTransport = (error: unknown): CloudflareProviderTransportCause => {
+  const name = typeof error === 'object' && error !== null && 'name' in error
+    ? (error as { name?: unknown }).name
+    : undefined
+  const message = error instanceof Error ? error.message.toLowerCase() : ''
+  if (
+    message.includes('cloudflare-owned ip')
+    || message.includes('another worker')
+    || message.includes('global_fetch_strictly_public')
+    || message.includes('error 1024')
+    || message.includes('error 1042')
+  ) return 'cloudflare_subrequest'
+  if (message.includes('network connection lost')) return 'network_connection_lost'
+  return name === 'TypeError' ? 'type_error' : 'other'
+}
 
 const boundedJson = async (response: Response): Promise<unknown | null> => {
   const contentLength = Number.parseInt(response.headers.get('content-length') ?? '', 10)
@@ -331,6 +363,7 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     failure: CloudflareProviderFailure,
     failureClass: CloudflareProviderDiagnostic['failureClass'],
     httpStatus?: number,
+    transportCause?: CloudflareProviderTransportCause,
   ): CloudflareProviderFailure {
     const diagnostic: CloudflareProviderDiagnostic = {
       event: 'sygsphere_communications_provider_failure',
@@ -338,6 +371,7 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
       ...(httpStatus === undefined ? {} : { httpStatus }),
       operation,
       outcome: failure.outcome,
+      ...(transportCause === undefined ? {} : { transportCause }),
     }
     try {
       if (this.configuration.diagnosticLogger) this.configuration.diagnosticLogger(diagnostic)
@@ -357,8 +391,9 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     if (!this.isConfigured() || !hasText(token, 512)) {
       return this.reportFailure(operation, { outcome: 'provider_unavailable', reconciliationRequired: false }, 'configuration')
     }
+    let request: Request
     try {
-      const response = await (this.configuration.fetchImplementation ?? fetch)(path, {
+      request = new Request(path, {
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
         headers: {
           accept: 'application/json',
@@ -369,6 +404,11 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
         redirect: 'error',
         signal: AbortSignal.timeout(providerRequestTimeoutMs),
       })
+    } catch {
+      return this.reportFailure(operation, { outcome: 'provider_unavailable', reconciliationRequired: false }, 'request_initialization')
+    }
+    try {
+      const response = await (this.configuration.fetchImplementation ?? fetch)(request)
       if (!response.ok) return this.reportFailure(operation, { outcome: 'provider_rejected', reconciliationRequired: false }, 'http', response.status)
       const body = await boundedJson(response)
       return body === null || hasProviderError(body)
@@ -377,7 +417,13 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     } catch (error) {
       return isProviderTimeout(error)
         ? this.reportFailure(operation, { outcome: 'ambiguous_timeout', reconciliationRequired: true }, 'timeout')
-        : this.reportFailure(operation, { outcome: 'provider_unavailable', reconciliationRequired: false }, 'transport')
+        : this.reportFailure(
+          operation,
+          { outcome: 'provider_unavailable', reconciliationRequired: false },
+          'transport',
+          undefined,
+          classifyProviderTransport(error),
+        )
     }
   }
 

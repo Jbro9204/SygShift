@@ -19,6 +19,13 @@ const jsonResponse = (body: unknown, status = 200): Response => new Response(JSO
   status,
 })
 
+const asRequest = (value: unknown): Request => {
+  expect(value).toBeInstanceOf(Request)
+  return value as Request
+}
+
+const requestJson = async (request: Request): Promise<unknown> => JSON.parse(await request.clone().text())
+
 const testAdapter = (fetchImplementation: typeof fetch): CloudflareRealtimeHttpAdapter => new CloudflareRealtimeHttpAdapter({
   appId: 'app-1',
   appSecret: 'server-only-app-secret',
@@ -56,11 +63,12 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     const result = await testAdapter(fetchImplementation).createSession({ sessionDescription: offer, tenantId: 'tenant-1' })
 
     expect(result).toEqual({ outcome: 'accepted', value: { sessionDescription: answer, sessionId: 'provider-session-1' } })
-    const [url, init] = fetchImplementation.mock.calls[0] ?? []
-    expect(String(url)).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/new')
-    expect(init).toMatchObject({ method: 'POST', redirect: 'error' })
-    expect(new Headers(init?.headers).get('authorization')).toBe('Bearer server-only-app-secret')
-    expect(JSON.parse(String(init?.body))).toEqual({ sessionDescription: offer })
+    const request = asRequest(fetchImplementation.mock.calls[0]?.[0])
+    expect(request.url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/new')
+    expect(request.method).toBe('POST')
+    expect(request.redirect).toBe('error')
+    expect(request.headers.get('authorization')).toBe('Bearer server-only-app-secret')
+    await expect(requestJson(request)).resolves.toEqual({ sessionDescription: offer })
   })
 
   it('requires an active tenant-owned registry session and validates every returned track binding', async () => {
@@ -80,7 +88,7 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
       session: session(), sessionDescription: offer, tenantId: 'tenant-1', tracks: [{ kind: 'audio', location: 'local', trackName: 'audio-1' }],
     })
     expect(accepted).toMatchObject({ outcome: 'accepted', value: { requiresImmediateRenegotiation: true, tracks: [{ mid: '0', trackName: 'audio-1' }] } })
-    expect(String(fetchImplementation.mock.calls[0]?.[0])).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1/tracks/new')
+    expect(asRequest(fetchImplementation.mock.calls[0]?.[0]).url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1/tracks/new')
 
     fetchImplementation.mockResolvedValueOnce(jsonResponse({ tracks: [{ location: 'local', trackName: 'audio-1' }] }))
     await expect(adapter.updateTracks({
@@ -107,12 +115,12 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
         tracks: [{ mid: '1', trackName: 'remote-audio-1' }],
       },
     })
-    expect(JSON.parse(String(fetchImplementation.mock.calls[0]?.[1]?.body))).toEqual({
+    await expect(requestJson(asRequest(fetchImplementation.mock.calls[0]?.[0]))).resolves.toEqual({
       tracks: [{ kind: 'audio', location: 'remote', sessionId: 'publisher-session-1', trackName: 'remote-audio-1' }],
     })
     await expect(adapter.renegotiate({ session: session(), sessionDescription: answer, tenantId: 'tenant-1' }))
       .resolves.toEqual({ outcome: 'accepted', value: { sessionDescription: answer } })
-    expect(String(fetchImplementation.mock.calls[1]?.[0])).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1/renegotiate')
+    expect(asRequest(fetchImplementation.mock.calls[1]?.[0]).url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1/renegotiate')
   })
 
   it('updates and inspects only the coordinator-owned provider session', async () => {
@@ -128,12 +136,13 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     await expect(adapter.updateTracks({
       session: sessionWithAudio(), tenantId: 'tenant-1', tracks: [{ kind: 'audio', location: 'local', mid: '0', trackName: 'audio-1' }],
     })).resolves.toMatchObject({ outcome: 'accepted', value: { tracks: [{ mid: '0', trackName: 'audio-1' }] } })
-    expect(String(fetchImplementation.mock.calls[0]?.[0])).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1/tracks/update')
+    expect(asRequest(fetchImplementation.mock.calls[0]?.[0]).url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1/tracks/update')
 
     await expect(adapter.inspectSession({ session: sessionWithAudio(), tenantId: 'tenant-1' }))
       .resolves.toMatchObject({ outcome: 'accepted', value: { tracks: [{ mid: '0', trackName: 'audio-1' }] } })
-    expect(String(fetchImplementation.mock.calls[1]?.[0])).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1')
-    expect(fetchImplementation.mock.calls[1]?.[1]).toMatchObject({ method: 'GET' })
+    const inspectRequest = asRequest(fetchImplementation.mock.calls[1]?.[0])
+    expect(inspectRequest.url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1')
+    expect(inspectRequest.method).toBe('GET')
   })
 
   it('fails closed before calling the provider when location-less responses could make track matching ambiguous', async () => {
@@ -159,9 +168,9 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
 
     await expect(adapter.forceCloseTracks({ session: sessionWithAudio(), tenantId: 'tenant-1', tracks: [{ mid: '0', trackId: 'audio-1' }] }))
       .resolves.toEqual({ outcome: 'accepted', value: { requiresImmediateRenegotiation: false } })
-    const [url, init] = fetchImplementation.mock.calls[0] ?? []
-    expect(String(url)).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1/tracks/close')
-    expect(JSON.parse(String(init?.body))).toEqual({ force: true, tracks: [{ mid: '0' }] })
+    const request = asRequest(fetchImplementation.mock.calls[0]?.[0])
+    expect(request.url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1/tracks/close')
+    await expect(requestJson(request)).resolves.toEqual({ force: true, tracks: [{ mid: '0' }] })
   })
 
   it('returns an ambiguous outcome after a timeout so the coordinator must inspect before retrying', async () => {
@@ -169,6 +178,64 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     const fetchImplementation = vi.fn<typeof fetch>().mockRejectedValue(timeout)
     await expect(testAdapter(fetchImplementation).renegotiate({ session: session(), sessionDescription: answer, tenantId: 'tenant-1' }))
       .resolves.toEqual({ outcome: 'ambiguous_timeout', reconciliationRequired: true })
+  })
+
+  it('keeps request construction failures separate from transport failures without logging request data', async () => {
+    const diagnosticLogger = vi.fn()
+    const unsafeOnlyForRequestConstructionTest = 'server-only-app-secret\u0000must-not-leak'
+    const fetchImplementation = vi.fn<typeof fetch>()
+    const adapter = new CloudflareRealtimeHttpAdapter({
+      appId: 'app-1',
+      appSecret: unsafeOnlyForRequestConstructionTest,
+      diagnosticLogger,
+      fetchImplementation,
+      mayCallProvider: true,
+    })
+
+    await expect(adapter.createSession({ tenantId: 'tenant-1' }))
+      .resolves.toEqual({ outcome: 'provider_unavailable', reconciliationRequired: false })
+    expect(fetchImplementation).not.toHaveBeenCalled()
+    expect(diagnosticLogger).toHaveBeenCalledWith({
+      event: 'sygsphere_communications_provider_failure',
+      failureClass: 'request_initialization',
+      operation: 'session_create',
+      outcome: 'provider_unavailable',
+    })
+    const logged = JSON.stringify(diagnosticLogger.mock.calls)
+    expect(logged).not.toContain('must-not-leak')
+    expect(logged).not.toContain('tenant-1')
+    expect(logged).not.toContain('rtc.live.cloudflare.com')
+  })
+
+  it('maps known Worker subrequest failures to a fixed diagnostic value without exposing exception data', async () => {
+    const diagnosticLogger = vi.fn()
+    const rawFailure = new Error('Worker cannot make a subrequest to a Cloudflare-owned IP address; url=https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/provider-session-9 Authorization: Bearer confidential-token body={"employee":"employee-123"}')
+    const fetchImplementation = vi.fn<typeof fetch>().mockRejectedValue(rawFailure)
+    const adapter = new CloudflareRealtimeHttpAdapter({
+      appId: 'app-1',
+      appSecret: 'server-only-app-secret',
+      diagnosticLogger,
+      fetchImplementation,
+      mayCallProvider: true,
+    })
+
+    await expect(adapter.createSession({ tenantId: 'tenant-1' }))
+      .resolves.toEqual({ outcome: 'provider_unavailable', reconciliationRequired: false })
+    expect(diagnosticLogger).toHaveBeenCalledWith({
+      event: 'sygsphere_communications_provider_failure',
+      failureClass: 'transport',
+      operation: 'session_create',
+      outcome: 'provider_unavailable',
+      transportCause: 'cloudflare_subrequest',
+    })
+    const logged = JSON.stringify(diagnosticLogger.mock.calls)
+    expect(logged).not.toContain('confidential-token')
+    expect(logged).not.toContain('employee-123')
+    expect(logged).not.toContain('provider-session-9')
+    expect(logged).not.toContain('Authorization')
+    expect(logged).not.toContain('rtc.live.cloudflare.com')
+    expect(logged).not.toContain('tenant-1')
+    expect(logged).not.toContain('Cloudflare-owned IP')
   })
 
   it('emits only sanitized server-side failure diagnostics', async () => {
@@ -230,9 +297,9 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
         }],
       },
     })
-    const [url, init] = fetchImplementation.mock.calls[0] ?? []
-    expect(String(url)).toBe('https://rtc.live.cloudflare.com/v1/turn/keys/turn-key-1/credentials/generate-ice-servers')
-    expect(new Headers(init?.headers).get('authorization')).toBe('Bearer server-only-turn-token')
-    expect(String(url)).not.toContain('server-only-turn-token')
+    const request = asRequest(fetchImplementation.mock.calls[0]?.[0])
+    expect(request.url).toBe('https://rtc.live.cloudflare.com/v1/turn/keys/turn-key-1/credentials/generate-ice-servers')
+    expect(request.headers.get('authorization')).toBe('Bearer server-only-turn-token')
+    expect(request.url).not.toContain('server-only-turn-token')
   })
 })
