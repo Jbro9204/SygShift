@@ -46,7 +46,7 @@ describe('enterprise Client Files release guard', () => {
     expect(read('src/pages/ClientFilesPage.tsx')).toContain('Rows')
     expect(read('src/pages/ClientFilesPage.tsx')).toContain('View all ${data.contacts.length} contacts')
     expect(read('src/pages/ClientFilesPage.tsx')).toContain('Complete the Client Directory')
-    expect(read('src/pages/ReportsPage.tsx')).toContain('Client Portfolio &amp; Activity')
+    expect(read('src/pages/ReportsPage.tsx')).toContain('title="Client Portfolio & Activity"')
     expect(migration).toContain('create table private.client_import_rows')
     expect(exportHardening).toContain('limit 10000')
   })

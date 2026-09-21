@@ -5591,24 +5591,47 @@
 }
 
 .reports-report-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .reports-report-card {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 1.1rem;
+  min-height: 15rem;
+  border-top: 0.25rem solid var(--gold);
   background: var(--paper);
+  box-shadow: 0 0.45rem 1.2rem rgb(0 0 0 / 5%);
 }
 
-.reports-report-card p {
-  max-width: 48rem;
+.reports-report-card__copy {
+  display: grid;
+  align-content: start;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.reports-report-card__copy .eyebrow,
+.reports-report-card__copy h3,
+.reports-report-card__copy p {
   margin: 0;
 }
 
-.reports-report-card .secondary-button {
-  flex: 0 0 auto;
+.reports-report-card__copy h3 {
+  font-size: 1.08rem;
+  line-height: 1.25;
+}
+
+.reports-report-card__copy p:not(.eyebrow) {
+  max-width: 48rem;
+  line-height: 1.55;
+}
+
+.reports-report-card__action {
+  width: 100%;
+  min-height: 2.8rem;
+  justify-content: center;
 }
 
 .reports-workspace-heading {
@@ -6275,6 +6298,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .reports-report-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .reports-result-summary {
     grid-template-columns: repeat(3, minmax(7rem, 1fr));
   }
@@ -6365,6 +6392,10 @@
 
   .reports-report-card--overtime .primary-action {
     width: 100%;
+  }
+
+  .reports-report-card {
+    min-height: 0;
   }
 
   .reports-licensing-credential-list dl {
@@ -36679,9 +36710,35 @@ button.patrol-overview-row:focus-visible {
 .attendance-report-pagination { flex: 0 0 auto; min-height: 0; height: auto; align-self: start; padding-block: 12px; flex-wrap: wrap; }
 .attendance-report-pagination label { display: flex; align-items: center; gap: 8px; }
 .attendance-report-pagination select { width: auto; min-height: 40px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); }
+.page--reports .short-notice-controls { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+.short-notice-controls .reports-range { max-width: 42rem; }
+.short-notice-filter-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.short-notice-controls input, .short-notice-controls select { width: 100%; min-width: 0; min-height: 44px; }
+.short-notice-rule { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 12px; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--gold) 52%, var(--line)); border-left: 4px solid var(--gold); border-radius: 12px; background: var(--gold-pale); }
+.short-notice-rule > svg { margin-top: 1px; color: light-dark(#8c5d12, #e0b65a); }
+.short-notice-rule > div { display: grid; gap: 4px; }
+.short-notice-rule span { color: var(--muted); line-height: 1.5; }
+.short-notice-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 16px; }
+.short-notice-results { display: grid; gap: 16px; }
+.short-notice-export-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.short-notice-summary { grid-template-columns: .75fr 1.15fr 1fr 1.2fr 1.25fr 1fr; }
+.short-notice-summary dd { display: grid; gap: 3px; }
+.short-notice-summary dd small { color: var(--muted); font-size: .76rem; font-weight: 600; }
+.short-notice-row--late { border-left-color: #a63a32; }
+.short-notice-detail-grid__wide { grid-column: 1 / -1; }
+.short-notice-caution { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; border: 1px solid light-dark(#d7a29d, #82443e); border-radius: 11px; background: light-dark(#fff3f1, #3d201e); color: light-dark(#7e2923, #ffc5bd); line-height: 1.5; }
+.short-notice-caution > svg { flex: 0 0 auto; margin-top: 1px; }
+@media (max-width: 1100px) {
+  .short-notice-filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .short-notice-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .short-notice-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (max-width: 720px) {
   .attendance-report-controls .reports-filter-row { grid-template-columns: minmax(0, 1fr); }
   .my-time-period-picker select { font-size: 14px; }
+  .short-notice-filter-row, .short-notice-metrics, .short-notice-summary { grid-template-columns: minmax(0, 1fr); }
+  .short-notice-export-actions, .short-notice-export-actions > button { width: 100%; }
+  .short-notice-rule { grid-template-columns: minmax(0, 1fr); }
 }
 /* Support intake and conversation share the application control language. */
 .modal-dialog--support .support-form,
