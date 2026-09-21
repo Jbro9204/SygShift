@@ -15,6 +15,7 @@ import {
   extendServerPttPreparationLease,
   nextServerPttLeaseGeneration,
   readSygSphereCommsSecret,
+  sygsphereCommsMediaTeardownRecoveryDiagnostic,
   sygsphereCommsSetupUnavailableDiagnostic,
 } from '../worker/comms/tenantCommsDurableObject'
 
@@ -172,13 +173,13 @@ describe('SygSphere Communications PTT lifecycle', () => {
     expect(publisher).toContain('this.extendPttPreparationLease(row, requestedAtMs)')
     expect(publisher.indexOf('this.extendPttPreparationLease(row, requestedAtMs)')).toBeLessThan(publisher.indexOf('await this.providerAdapter(parsed.release,'))
     expect(publisher).toContain('this.pttPublisherReservationIsCurrent')
-    expect(publisher).toContain('await this.closeStalePttTrack')
+    expect(publisher).toContain('await this.closeUnpersistedProviderTrack')
     expect(publisher.lastIndexOf('this.pttPublisherReservationIsCurrent')).toBeLessThan(publisher.indexOf('this.claimPttMediaSession'))
 
     expect(listener).toContain('this.extendPttPreparationLease(row, requestedAtMs)')
     expect(listener.indexOf('this.extendPttPreparationLease(row, requestedAtMs)')).toBeLessThan(listener.indexOf('await this.providerAdapter(parsed.release,'))
     expect(listener).toContain('this.pttListenerReservationIsCurrent')
-    expect(listener).toContain('await this.closeStalePttTrack')
+    expect(listener).toContain('await this.closeUnpersistedProviderTrack')
     expect(listener.lastIndexOf('this.pttListenerReservationIsCurrent')).toBeLessThan(listener.indexOf('this.claimPttMediaSession'))
     // Remote subscriptions are provider-offer driven. A listener must not
     // supply a browser offer, and its exact provider offer/answer exchange is
@@ -264,5 +265,77 @@ describe('SygSphere Communications PTT lifecycle', () => {
     expect(pttStartRoute).toContain('publisher && (!offer || !channelReference || !transceiverMid)')
     expect(meetingStartRoute).toContain("operation === 'publish' && !transceiverMid")
     expect(directStartRoute).toContain('!offer || !transceiverMid')
+  })
+
+  it('retains failed provider closes for alarm reconciliation instead of deleting media records as stopped', () => {
+    const coordinator = readFileSync(resolve(import.meta.dirname, '..', 'worker', 'comms', 'tenantCommsDurableObject.ts'), 'utf8')
+    const directClose = coordinator.slice(coordinator.indexOf('private async closeDirectCallMedia'), coordinator.indexOf('private async reconcilePendingMediaTeardowns'))
+    const pendingReconciliation = coordinator.slice(coordinator.indexOf('private async reconcilePendingMediaTeardowns'), coordinator.indexOf('private async expireRingingCalls'))
+    const meetingClose = coordinator.slice(coordinator.indexOf('private async closeMeetingMediaRows'), coordinator.indexOf('private async closeMeetingMediaForParticipant'))
+    const pttClose = coordinator.slice(coordinator.indexOf('private async closePttMedia'), coordinator.indexOf('private async closePttTransmission'))
+    const alarm = coordinator.slice(coordinator.indexOf('async alarm'), coordinator.indexOf('private purgeExpiredState'))
+
+    expect(coordinator).toContain('teardown_retry_at_ms integer')
+    expect(coordinator).toContain("track_location text check (track_location in ('local', 'remote'))")
+    expect(coordinator).toContain('teardown_attempt_count integer not null default 0')
+    expect(coordinator).toContain("alter table coordinator_call_media_sessions add column teardown_retry_at_ms integer")
+    expect(coordinator).toContain("alter table coordinator_meeting_media_sessions add column teardown_retry_at_ms integer")
+    expect(coordinator).toContain('alter table coordinator_call_media_sessions add column track_location text check')
+    expect(coordinator).toContain('alter table coordinator_meeting_media_sessions add column track_location text check')
+    expect(coordinator).toContain("alter table coordinator_call_media_sessions add column teardown_attempt_count integer not null default 0")
+    expect(coordinator).toContain("alter table coordinator_meeting_media_sessions add column teardown_attempt_count integer not null default 0")
+    expect(coordinator).toContain('private async forceCloseProviderTrack(')
+    expect(coordinator).toContain('await adapter.inspectTrackPresence({')
+    expect(coordinator).toContain('if (!trackLocation) return false')
+    expect(directClose).toContain('this.deleteCallMediaSession(row)')
+    expect(directClose).toContain('this.deferCallMediaTeardown(row, now)')
+    expect(pttClose).toContain('this.deleteCallMediaSession(row)')
+    expect(pttClose).toContain('this.deferCallMediaTeardown(row, now)')
+    expect(meetingClose).toContain('this.deleteMeetingMediaSession(row)')
+    expect(meetingClose).toContain('this.deferMeetingMediaTeardown(row, now)')
+    expect(pendingReconciliation).toContain('where teardown_retry_at_ms is not null and teardown_retry_at_ms <= ?')
+    expect(pendingReconciliation).toContain('this.forceCloseProviderTrack(adapter')
+    expect(alarm).toContain('await this.reconcilePendingMediaTeardowns')
+
+    // A provider close is not documented as universally idempotent. After a
+    // bounded number of unconfirmed attempts, preserve server-only recovery
+    // metadata and emit only a sanitized operator diagnostic before freeing
+    // the blocked browser media slot.
+    expect(coordinator).toContain('maximumMediaTeardownAttempts = 5')
+    expect(coordinator).toContain('coordinator_media_teardown_recoveries')
+    expect(coordinator).toContain('insert or ignore into coordinator_media_teardown_recoveries')
+    expect(coordinator).toContain('reportSygSphereCommsMediaTeardownRecovery(input.mediaType)')
+    expect(coordinator).toContain('teardown_attempt_count = ?')
+    expect(coordinator).toContain('unique (session_json, track_id)')
+    expect(sygsphereCommsMediaTeardownRecoveryDiagnostic('meeting')).toEqual({
+      event: 'sygsphere_communications_media_teardown_recovery_required',
+      mediaType: 'meeting',
+    })
+  })
+
+  it('never overwrites a pending teardown with a newer direct, PTT, or meeting provider session', () => {
+    const coordinator = readFileSync(resolve(import.meta.dirname, '..', 'worker', 'comms', 'tenantCommsDurableObject.ts'), 'utf8')
+    const directPersistence = coordinator.slice(coordinator.indexOf('private persistProviderSession'), coordinator.indexOf('private async forceCloseProviderTrack'))
+    const meetingPersistence = coordinator.slice(coordinator.indexOf('private persistMeetingMediaSession'), coordinator.indexOf('private deleteMeetingMediaSession'))
+    const directPublisher = coordinator.slice(coordinator.indexOf('async startDirectAudio'), coordinator.indexOf('private async dispatchMediaAnswer'))
+    const pttClaim = coordinator.slice(coordinator.indexOf('private claimPttMediaSession'), coordinator.indexOf('private pttRecipients'))
+    const meetingPublisher = coordinator.slice(coordinator.indexOf('async startMeetingMedia'), coordinator.indexOf('async stopMeetingMedia'))
+
+    // A coordinator row is write-once for the session slot. Pending cleanup
+    // therefore retains its original provider session/MID until confirmed.
+    expect(directPersistence).toContain('on conflict (call_id, employee_id) do nothing')
+    expect(meetingPersistence).toContain('on conflict (meeting_id, connection_id, source_connection_id, media_kind) do nothing')
+    expect(pttClaim).toContain('if (this.hasPendingCallMediaTeardown(input.callId, input.employeeId)) return false')
+    expect(directPublisher).toContain('this.hasPendingCallMediaTeardown(parsed.callId, caller.authorization.employeeId)')
+    expect(meetingPublisher).toContain('const mediaSlotPending = this.hasPendingMeetingMediaTeardown(')
+    expect(meetingPublisher).toContain('await this.closeUnpersistedProviderTrack({')
+
+    // Existing Durable Object databases receive both retry columns and use
+    // indexed due-time queries before the alarm retries an opaque close.
+    expect(coordinator).toContain("pragma table_info('coordinator_call_media_sessions')")
+    expect(coordinator).toContain("pragma table_info('coordinator_meeting_media_sessions')")
+    expect(coordinator).toContain('coordinator_call_media_sessions_teardown_retry_idx')
+    expect(coordinator).toContain('coordinator_meeting_media_sessions_teardown_retry_idx')
+    expect(coordinator).toContain('where teardown_retry_at_ms is not null order by teardown_retry_at_ms asc limit 1')
   })
 })

@@ -114,8 +114,11 @@ type CoordinatorCallMediaSessionRow = {
   connection_id: string
   created_at_ms: number
   employee_id: string
+  teardown_attempt_count: number
   session_json: string
+  teardown_retry_at_ms: number | null
   track_id: string
+  track_location: 'local' | 'remote' | null
   updated_at_ms: number
 }
 
@@ -167,9 +170,12 @@ type CoordinatorMeetingMediaSessionRow = {
   created_at_ms: number
   media_kind: 'audio' | 'screen' | 'video'
   meeting_id: string
+  teardown_attempt_count: number
   session_json: string
   source_connection_id: string
+  teardown_retry_at_ms: number | null
   track_id: string
+  track_location: 'local' | 'remote' | null
   updated_at_ms: number
 }
 
@@ -389,6 +395,11 @@ const directCallRingingMilliseconds = 45_000
 const pttPreparingMilliseconds = 60_000
 const pttMaximumPreparationLifetimeMilliseconds = 180_000
 const pttLeaseMilliseconds = 6_000
+// Browser media is stopped by the lifecycle immediately. If the provider does
+// not confirm the server-side close, retain the opaque record and retry from
+// the coordinator rather than pretending that the track was removed.
+const mediaTeardownRetryMilliseconds = 30_000
+const maximumMediaTeardownAttempts = 5
 
 /**
  * Extends a still-valid server reservation without ever reviving an expired
@@ -560,6 +571,33 @@ const reportSygSphereCommsAvailability = (
   }
 }
 
+/**
+ * A bounded fallback for an unconfirmed provider teardown. The diagnostic is
+ * operator-visible but intentionally carries no tenant, employee, room,
+ * session, track, credential, or provider-response detail.
+ */
+export type SygSphereCommsMediaTeardownRecoveryDiagnostic = Readonly<{
+  event: 'sygsphere_communications_media_teardown_recovery_required'
+  mediaType: 'call' | 'meeting'
+}>
+
+export const sygsphereCommsMediaTeardownRecoveryDiagnostic = (
+  mediaType: SygSphereCommsMediaTeardownRecoveryDiagnostic['mediaType'],
+): SygSphereCommsMediaTeardownRecoveryDiagnostic => ({
+  event: 'sygsphere_communications_media_teardown_recovery_required',
+  mediaType,
+})
+
+const reportSygSphereCommsMediaTeardownRecovery = (
+  mediaType: SygSphereCommsMediaTeardownRecoveryDiagnostic['mediaType'],
+): void => {
+  try {
+    console.warn(JSON.stringify(sygsphereCommsMediaTeardownRecoveryDiagnostic(mediaType)))
+  } catch {
+    // Recovery reporting must never hold a browser media lifecycle open.
+  }
+}
+
 export const resolveSygSphereCommsDirectAvailabilityReason = (
   hasConnectedRecipient: boolean,
   hasEligibleRecipient: boolean,
@@ -712,8 +750,11 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
           connection_id text not null,
           session_json text not null,
           track_id text not null,
+          track_location text check (track_location in ('local', 'remote')),
           created_at_ms integer not null,
           updated_at_ms integer not null,
+          teardown_retry_at_ms integer,
+          teardown_attempt_count integer not null default 0 check (teardown_attempt_count >= 0),
           primary key (call_id, employee_id)
         );
         create index if not exists coordinator_call_media_sessions_connection_idx
@@ -805,12 +846,28 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
           media_kind text not null check (media_kind in ('audio', 'screen', 'video')),
           session_json text not null,
           track_id text not null,
+          track_location text check (track_location in ('local', 'remote')),
           created_at_ms integer not null,
           updated_at_ms integer not null,
+          teardown_retry_at_ms integer,
+          teardown_attempt_count integer not null default 0 check (teardown_attempt_count >= 0),
           primary key (meeting_id, connection_id, source_connection_id, media_kind)
         );
         create index if not exists coordinator_meeting_media_sessions_source_idx
           on coordinator_meeting_media_sessions (meeting_id, source_connection_id, media_kind, updated_at_ms desc);
+        /* A bounded teardown fallback frees a future browser media slot while
+         * retaining opaque provider metadata for operator recovery. */
+        create table if not exists coordinator_media_teardown_recoveries (
+          recovery_id text primary key,
+          media_type text not null check (media_type in ('call', 'meeting')),
+          session_json text not null,
+          track_id text not null,
+          failed_attempt_count integer not null check (failed_attempt_count > 0),
+          recorded_at_ms integer not null,
+          unique (session_json, track_id)
+        );
+        create index if not exists coordinator_media_teardown_recoveries_recorded_idx
+          on coordinator_media_teardown_recoveries (recorded_at_ms desc);
         /* One singleton row per tenant coordinator is a durable, secret-free
          * audit record and prevents concurrent or repeatedly-triggered
          * infrastructure probes. */
@@ -833,6 +890,50 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
           'alter table coordinator_ptt_transmissions add column lease_generation integer not null default 0',
         )
       }
+      const callMediaColumns = this.ctx.storage.sql
+        .exec<{ name: string }>("pragma table_info('coordinator_call_media_sessions')")
+        .toArray()
+      if (!callMediaColumns.some((column) => column.name === 'teardown_retry_at_ms')) {
+        this.ctx.storage.sql.exec(
+          'alter table coordinator_call_media_sessions add column teardown_retry_at_ms integer',
+        )
+      }
+      if (!callMediaColumns.some((column) => column.name === 'track_location')) {
+        // Legacy rows have no safely recoverable direction. Keep it null so a
+        // failed close remains pending rather than assuming a local track.
+        this.ctx.storage.sql.exec(
+          'alter table coordinator_call_media_sessions add column track_location text check (track_location in (\'local\', \'remote\'))',
+        )
+      }
+      if (!callMediaColumns.some((column) => column.name === 'teardown_attempt_count')) {
+        this.ctx.storage.sql.exec(
+          'alter table coordinator_call_media_sessions add column teardown_attempt_count integer not null default 0',
+        )
+      }
+      const meetingMediaColumns = this.ctx.storage.sql
+        .exec<{ name: string }>("pragma table_info('coordinator_meeting_media_sessions')")
+        .toArray()
+      if (!meetingMediaColumns.some((column) => column.name === 'teardown_retry_at_ms')) {
+        this.ctx.storage.sql.exec(
+          'alter table coordinator_meeting_media_sessions add column teardown_retry_at_ms integer',
+        )
+      }
+      if (!meetingMediaColumns.some((column) => column.name === 'track_location')) {
+        this.ctx.storage.sql.exec(
+          'alter table coordinator_meeting_media_sessions add column track_location text check (track_location in (\'local\', \'remote\'))',
+        )
+      }
+      if (!meetingMediaColumns.some((column) => column.name === 'teardown_attempt_count')) {
+        this.ctx.storage.sql.exec(
+          'alter table coordinator_meeting_media_sessions add column teardown_attempt_count integer not null default 0',
+        )
+      }
+      this.ctx.storage.sql.exec(`
+        create index if not exists coordinator_call_media_sessions_teardown_retry_idx
+          on coordinator_call_media_sessions (teardown_retry_at_ms);
+        create index if not exists coordinator_meeting_media_sessions_teardown_retry_idx
+          on coordinator_meeting_media_sessions (teardown_retry_at_ms);
+      `)
     })
   }
 
@@ -854,7 +955,25 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
          where state in ('preparing', 'ready') order by lease_expires_at_ms asc limit 1`,
       )
       .toArray()[0]
-    const nextExpiry = [next?.expires_at_ms, nextCall?.expires_at_ms, nextPtt?.expires_at_ms]
+    const nextCallMediaTeardown = this.ctx.storage.sql
+      .exec<CoordinatorNextExpiryRow>(
+        `select teardown_retry_at_ms as expires_at_ms from coordinator_call_media_sessions
+         where teardown_retry_at_ms is not null order by teardown_retry_at_ms asc limit 1`,
+      )
+      .toArray()[0]
+    const nextMeetingMediaTeardown = this.ctx.storage.sql
+      .exec<CoordinatorNextExpiryRow>(
+        `select teardown_retry_at_ms as expires_at_ms from coordinator_meeting_media_sessions
+         where teardown_retry_at_ms is not null order by teardown_retry_at_ms asc limit 1`,
+      )
+      .toArray()[0]
+    const nextExpiry = [
+      next?.expires_at_ms,
+      nextCall?.expires_at_ms,
+      nextPtt?.expires_at_ms,
+      nextCallMediaTeardown?.expires_at_ms,
+      nextMeetingMediaTeardown?.expires_at_ms,
+    ]
       .filter((value): value is number => typeof value === 'number')
       .sort((left, right) => left - right)[0]
     if (nextExpiry !== undefined) void this.ctx.storage.setAlarm(nextExpiry)
@@ -1235,6 +1354,14 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
     await this.expireRingingCalls(now)
     await this.expirePttTransmissions(now)
+    await this.reconcilePendingMediaTeardowns({
+      databaseFoundationApplied: true,
+      commandSchemasVerified: true,
+      providerPhysicalDeviceEvidenceComplete: true,
+      coordinatorDeploymentApproved: true,
+      sharedCompatibilityVerified: true,
+      runtimeEnabled: runtimeEnabled(this.env.SYGSHIFT_SYGSPHERE_COMMS_RUNTIME_ENABLED),
+    }, now)
     this.scheduleNextSocketTicketExpiry()
   }
 
@@ -1464,9 +1591,9 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
   }
 
-  private parseProviderSession(row: CoordinatorCallMediaSessionRow): ProviderSession | null {
+  private providerSessionFromJson(sessionJson: string): ProviderSession | null {
     try {
-      const parsed = storedProviderSessionSchema.safeParse(JSON.parse(row.session_json))
+      const parsed = storedProviderSessionSchema.safeParse(JSON.parse(sessionJson))
       if (!parsed.success || parsed.data.state !== 'active') return null
       return {
         id: parsed.data.id,
@@ -1479,6 +1606,10 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
   }
 
+  private parseProviderSession(row: CoordinatorCallMediaSessionRow): ProviderSession | null {
+    return this.providerSessionFromJson(row.session_json)
+  }
+
   private serializeProviderSession(session: ProviderSession): string {
     return JSON.stringify({
       id: session.id,
@@ -1489,32 +1620,161 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
   }
 
   private persistProviderSession(
-    input: Readonly<{ callId: string, connectionId: string, employeeId: string, session: ProviderSession, trackId: string }>,
+    input: Readonly<{
+      callId: string
+      connectionId: string
+      employeeId: string
+      session: ProviderSession
+      trackId: string
+      trackLocation: 'local' | 'remote'
+    }>,
     now: number,
-  ): void {
+  ): boolean {
+    const sessionJson = this.serializeProviderSession(input.session)
     this.ctx.storage.sql.exec(
       `insert into coordinator_call_media_sessions (
-        call_id, employee_id, connection_id, session_json, track_id, created_at_ms, updated_at_ms
-      ) values (?, ?, ?, ?, ?, ?, ?)
-      on conflict (call_id, employee_id) do update set
-        connection_id = excluded.connection_id,
-        session_json = excluded.session_json,
-        track_id = excluded.track_id,
-        updated_at_ms = excluded.updated_at_ms`,
+        call_id, employee_id, connection_id, session_json, track_id, track_location,
+        created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, null, 0)
+      on conflict (call_id, employee_id) do nothing`,
       input.callId,
       input.employeeId,
       input.connectionId,
-      this.serializeProviderSession(input.session),
+      sessionJson,
       input.trackId,
+      input.trackLocation,
       now,
       now,
     )
+    const stored = this.mediaSession(input.callId, input.employeeId)
+    return stored !== null
+      && stored.connection_id === input.connectionId
+      && stored.track_id === input.trackId
+      && stored.session_json === sessionJson
+  }
+
+  /** A server close is authoritative only after the provider confirms it.
+   * Failed/ambiguous closes are retained without browser-visible details and
+   * reconciled by the coordinator alarm. */
+  private async forceCloseProviderTrack(
+    adapter: CloudflareRealtimeHttpAdapter | null,
+    session: ProviderSession | null,
+    trackId: string,
+    trackLocation: 'local' | 'remote' | null,
+  ): Promise<boolean> {
+    const track = session?.tracks.get(trackId)
+    if (!adapter || !session || !track?.mid) return false
+    try {
+      const result = await adapter.forceCloseTracks({
+        session,
+        tenantId: session.tenantId,
+        tracks: [{ mid: track.mid, trackId: track.id }],
+      })
+      if (result.outcome === 'accepted') return true
+      // Cloudflare does not document a blanket idempotent-close response. A
+      // rejected/timed-out close is considered complete only when a separate,
+      // successful session inspection proves this exact stored track is gone.
+      // Pre-direction durable rows came from before this guard existed. They
+      // may be remote subscriptions, so their failed close remains pending
+      // until bounded recovery rather than being guessed to be local.
+      if (!trackLocation) return false
+      const inspection = await adapter.inspectTrackPresence({
+        location: trackLocation,
+        mid: track.mid,
+        session,
+        tenantId: session.tenantId,
+        trackId: track.id,
+      })
+      return inspection.outcome === 'accepted' && inspection.value.present === false
+    } catch {
+      return false
+    }
+  }
+
+  private deleteCallMediaSession(row: CoordinatorCallMediaSessionRow): void {
+    this.ctx.storage.sql.exec(
+      `delete from coordinator_call_media_sessions
+       where call_id = ? and employee_id = ? and connection_id = ? and track_id = ? and session_json = ?`,
+      row.call_id,
+      row.employee_id,
+      row.connection_id,
+      row.track_id,
+      row.session_json,
+    )
+  }
+
+  /** Keep opaque provider metadata server-side if bounded reconciliation
+   * cannot confirm a close. This frees the browser media slot without claiming
+   * that the provider accepted the teardown. */
+  private recordMediaTeardownRecovery(input: Readonly<{
+    attemptCount: number
+    mediaType: 'call' | 'meeting'
+    now: number
+    sessionJson: string
+    trackId: string
+  }>): void {
+    this.ctx.storage.sql.exec(
+      `insert or ignore into coordinator_media_teardown_recoveries (
+        recovery_id, media_type, session_json, track_id, failed_attempt_count, recorded_at_ms
+      ) values (?, ?, ?, ?, ?, ?)`,
+      crypto.randomUUID(),
+      input.mediaType,
+      input.sessionJson,
+      input.trackId,
+      input.attemptCount,
+      input.now,
+    )
+    reportSygSphereCommsMediaTeardownRecovery(input.mediaType)
+  }
+
+  private deferCallMediaTeardown(row: CoordinatorCallMediaSessionRow, now: number): void {
+    const attemptCount = row.teardown_attempt_count + 1
+    if (attemptCount >= maximumMediaTeardownAttempts) {
+      this.recordMediaTeardownRecovery({
+        attemptCount,
+        mediaType: 'call',
+        now,
+        sessionJson: row.session_json,
+        trackId: row.track_id,
+      })
+      this.deleteCallMediaSession(row)
+      return
+    }
+    this.ctx.storage.sql.exec(
+      `update coordinator_call_media_sessions
+       set teardown_retry_at_ms = ?, teardown_attempt_count = ?, updated_at_ms = ?
+       where call_id = ? and employee_id = ? and connection_id = ? and track_id = ?
+         and session_json = ? and teardown_attempt_count = ?`,
+      now + mediaTeardownRetryMilliseconds,
+      attemptCount,
+      now,
+      row.call_id,
+      row.employee_id,
+      row.connection_id,
+      row.track_id,
+      row.session_json,
+      row.teardown_attempt_count,
+    )
+  }
+
+  /** Pending provider cleanup is not an active browser session, but it must
+   * still reserve its key so a newer session can never overwrite the opaque
+   * provider metadata needed for reconciliation. */
+  private hasPendingCallMediaTeardown(callId: string, employeeId: string): boolean {
+    return this.ctx.storage.sql.exec<{ call_id: string }>(
+      `select call_id from coordinator_call_media_sessions
+       where call_id = ? and employee_id = ? and teardown_retry_at_ms is not null limit 1`,
+      callId,
+      employeeId,
+    ).toArray().length === 1
   }
 
   private mediaSession(callId: string, employeeId: string): CoordinatorCallMediaSessionRow | null {
     return this.ctx.storage.sql.exec<CoordinatorCallMediaSessionRow>(
-      `select call_id, employee_id, connection_id, session_json, track_id, created_at_ms, updated_at_ms
-       from coordinator_call_media_sessions where call_id = ? and employee_id = ? limit 1`,
+      `select call_id, employee_id, connection_id, session_json, track_id,
+              track_location, created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
+       from coordinator_call_media_sessions
+       where call_id = ? and employee_id = ? and teardown_retry_at_ms is null limit 1`,
       callId,
       employeeId,
     ).toArray()[0] ?? null
@@ -1677,7 +1937,8 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     if (!caller || !callRow || !lifecycle || lifecycle.state !== 'accepted'
       || callRow.conversation_reference !== parsed.conversationReference
       || (callRow.requester_employee_id !== caller.authorization.employeeId && callRow.recipient_employee_id !== caller.authorization.employeeId)
-      || this.mediaSession(parsed.callId, caller.authorization.employeeId)) {
+      || this.mediaSession(parsed.callId, caller.authorization.employeeId)
+      || this.hasPendingCallMediaTeardown(parsed.callId, caller.authorization.employeeId)) {
       return { outcome: 'invalid_state', requestId: parsed.requestId }
     }
     const adapter = await this.providerAdapter(parsed.release)
@@ -1700,13 +1961,17 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
     const session = registerProviderTrack(pending, { id: trackId, kind: 'audio', mid: localTrack.mid, state: 'active' })
     const now = Date.now()
-    this.persistProviderSession({
+    if (!this.persistProviderSession({
       callId: parsed.callId,
       connectionId: caller.connectionId,
       employeeId: caller.authorization.employeeId,
       session,
       trackId,
-    }, now)
+      trackLocation: 'local',
+    }, now)) {
+      await this.closeUnpersistedProviderTrack({ adapter, mid: localTrack.mid, session, trackId })
+      return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    }
     const peerHandle = `peer:${session.id}`
     this.sendCoordinatorEvent(caller.connectionId, `call:${parsed.callId}`, 'media.negotiation', {
       callId: parsed.callId,
@@ -1733,10 +1998,10 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     const otherSession = other ? this.parseProviderSession(other) : null
     if (other && otherSession) {
       await this.sendRemoteAudioSubscription({ adapter, callId: parsed.callId, destination: other, destinationSession: otherSession, iceServers: ice.value.iceServers, now, source: {
-        call_id: parsed.callId, connection_id: caller.connectionId, created_at_ms: now, employee_id: caller.authorization.employeeId, session_json: this.serializeProviderSession(session), track_id: trackId, updated_at_ms: now,
+        call_id: parsed.callId, connection_id: caller.connectionId, created_at_ms: now, employee_id: caller.authorization.employeeId, session_json: this.serializeProviderSession(session), teardown_attempt_count: 0, teardown_retry_at_ms: null, track_id: trackId, track_location: 'local', updated_at_ms: now,
       }, sourceSession: session })
       await this.sendRemoteAudioSubscription({ adapter, callId: parsed.callId, destination: {
-        call_id: parsed.callId, connection_id: caller.connectionId, created_at_ms: now, employee_id: caller.authorization.employeeId, session_json: this.serializeProviderSession(session), track_id: trackId, updated_at_ms: now,
+        call_id: parsed.callId, connection_id: caller.connectionId, created_at_ms: now, employee_id: caller.authorization.employeeId, session_json: this.serializeProviderSession(session), teardown_attempt_count: 0, teardown_retry_at_ms: null, track_id: trackId, track_location: 'local', updated_at_ms: now,
       }, destinationSession: session, iceServers: ice.value.iceServers, now, source: other, sourceSession: otherSession })
     }
     return { outcome: 'accepted', requestId: parsed.requestId }
@@ -1788,21 +2053,16 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
    */
   private async closeDirectCallMedia(callId: string, release: CoordinatorReleaseContext, reason: 'cancelled' | 'declined' | 'ended' | 'expired'): Promise<void> {
     const rows = this.ctx.storage.sql.exec<CoordinatorCallMediaSessionRow>(
-      `select call_id, employee_id, connection_id, session_json, track_id, created_at_ms, updated_at_ms
+      `select call_id, employee_id, connection_id, session_json, track_id,
+              track_location, created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
        from coordinator_call_media_sessions where call_id = ?`,
       callId,
     ).toArray()
     const adapter = await this.providerAdapter(release)
+    const now = Date.now()
     for (const row of rows) {
-      const session = this.parseProviderSession(row)
-      const track = session?.tracks.get(row.track_id)
-      if (adapter && session && track?.mid) {
-        await adapter.forceCloseTracks({
-          session,
-          tenantId: session.tenantId,
-          tracks: [{ mid: track.mid, trackId: track.id }],
-        }).catch(() => undefined)
-      }
+      if (await this.forceCloseProviderTrack(adapter, this.parseProviderSession(row), row.track_id, row.track_location)) this.deleteCallMediaSession(row)
+      else this.deferCallMediaTeardown(row, now)
       this.sendCoordinatorEvent(row.connection_id, `call:${callId}`, 'media.closed', {
         callId,
         generation: 1,
@@ -1810,7 +2070,49 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       })
     }
     this.ctx.storage.sql.exec('delete from coordinator_media_negotiations where call_id = ?', callId)
-    this.ctx.storage.sql.exec('delete from coordinator_call_media_sessions where call_id = ?', callId)
+    this.scheduleNextSocketTicketExpiry()
+  }
+
+  /**
+   * A terminal call, PTT floor, or meeting action has already told the browser
+   * to stop. This retry path has no user-visible side effects: it only clears
+   * an opaque row after the provider confirms the corresponding track closed.
+   */
+  private async reconcilePendingMediaTeardowns(
+    release: CoordinatorReleaseContext,
+    now: number,
+  ): Promise<void> {
+    const callRows = this.ctx.storage.sql.exec<CoordinatorCallMediaSessionRow>(
+      `select call_id, employee_id, connection_id, session_json, track_id,
+              track_location, created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
+       from coordinator_call_media_sessions
+       where teardown_retry_at_ms is not null and teardown_retry_at_ms <= ?
+       order by teardown_retry_at_ms asc limit ?`,
+      now,
+      maximumRecordsPurgedPerDispatch,
+    ).toArray()
+    const meetingRows = this.ctx.storage.sql.exec<CoordinatorMeetingMediaSessionRow>(
+      `select meeting_id, connection_id, source_connection_id, media_kind,
+              session_json, track_id, track_location,
+              created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
+       from coordinator_meeting_media_sessions
+       where teardown_retry_at_ms is not null and teardown_retry_at_ms <= ?
+       order by teardown_retry_at_ms asc limit ?`,
+      now,
+      maximumRecordsPurgedPerDispatch,
+    ).toArray()
+    if (callRows.length === 0 && meetingRows.length === 0) return
+
+    const adapter = await this.providerAdapter(release)
+    for (const row of callRows) {
+      if (await this.forceCloseProviderTrack(adapter, this.parseProviderSession(row), row.track_id, row.track_location)) this.deleteCallMediaSession(row)
+      else this.deferCallMediaTeardown(row, now)
+    }
+    for (const row of meetingRows) {
+      if (await this.forceCloseProviderTrack(adapter, this.providerSessionFromJson(row.session_json), row.track_id, row.track_location)) this.deleteMeetingMediaSession(row)
+      else this.deferMeetingMediaTeardown(row, now)
+    }
+    this.scheduleNextSocketTicketExpiry()
   }
 
   private async expireRingingCalls(now: number): Promise<void> {
@@ -2305,7 +2607,8 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       const mediaKind = kind === 'camera' ? 'video' : 'screen'
       const rows = this.ctx.storage.sql.exec<CoordinatorMeetingMediaSessionRow>(
         `select meeting_id, connection_id, source_connection_id, media_kind,
-                session_json, track_id, created_at_ms, updated_at_ms
+                session_json, track_id, track_location,
+                created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
          from coordinator_meeting_media_sessions
          where meeting_id = ? and connection_id = ? and source_connection_id = ? and media_kind = ?`,
         meetingId,
@@ -2337,9 +2640,11 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
   ): CoordinatorMeetingMediaSessionRow | null {
     return this.ctx.storage.sql.exec<CoordinatorMeetingMediaSessionRow>(
       `select meeting_id, connection_id, source_connection_id, media_kind,
-              session_json, track_id, created_at_ms, updated_at_ms
+              session_json, track_id, track_location,
+              created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
        from coordinator_meeting_media_sessions
-       where meeting_id = ? and connection_id = ? and source_connection_id = ? and media_kind = ? limit 1`,
+       where meeting_id = ? and connection_id = ? and source_connection_id = ? and media_kind = ?
+         and teardown_retry_at_ms is null limit 1`,
       meetingId,
       connectionId,
       sourceConnectionId,
@@ -2347,12 +2652,30 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     ).toArray()[0] ?? null
   }
 
+  private hasPendingMeetingMediaTeardown(
+    meetingId: string,
+    connectionId: string,
+    sourceConnectionId: string,
+    mediaKind: CoordinatorMeetingMediaSessionRow['media_kind'],
+  ): boolean {
+    return this.ctx.storage.sql.exec<{ meeting_id: string }>(
+      `select meeting_id from coordinator_meeting_media_sessions
+       where meeting_id = ? and connection_id = ? and source_connection_id = ? and media_kind = ?
+         and teardown_retry_at_ms is not null limit 1`,
+      meetingId,
+      connectionId,
+      sourceConnectionId,
+      mediaKind,
+    ).toArray().length === 1
+  }
+
   private meetingMediaSourceRows(meetingId: string): readonly CoordinatorMeetingMediaSessionRow[] {
     return this.ctx.storage.sql.exec<CoordinatorMeetingMediaSessionRow>(
       `select meeting_id, connection_id, source_connection_id, media_kind,
-              session_json, track_id, created_at_ms, updated_at_ms
+              session_json, track_id, track_location,
+              created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
        from coordinator_meeting_media_sessions
-       where meeting_id = ? and connection_id = source_connection_id
+       where meeting_id = ? and connection_id = source_connection_id and teardown_retry_at_ms is null
        order by created_at_ms asc`,
       meetingId,
     ).toArray()
@@ -2365,22 +2688,79 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     session: ProviderSession
     sourceConnectionId: string
     trackId: string
-  }>, now: number): void {
+    trackLocation: 'local' | 'remote'
+  }>, now: number): boolean {
+    const sessionJson = this.serializeProviderSession(row.session)
     this.ctx.storage.sql.exec(
       `insert into coordinator_meeting_media_sessions (
         meeting_id, connection_id, source_connection_id, media_kind,
-        session_json, track_id, created_at_ms, updated_at_ms
-      ) values (?, ?, ?, ?, ?, ?, ?, ?)
-       on conflict (meeting_id, connection_id, source_connection_id, media_kind)
-       do update set session_json = excluded.session_json, track_id = excluded.track_id, updated_at_ms = excluded.updated_at_ms`,
+        session_json, track_id, track_location,
+        created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, 0)
+       on conflict (meeting_id, connection_id, source_connection_id, media_kind) do nothing`,
       row.meetingId,
       row.connectionId,
       row.sourceConnectionId,
       row.mediaKind,
-      JSON.stringify({ id: row.session.id, state: row.session.state, tenantId: row.session.tenantId, tracks: [...row.session.tracks.values()] }),
+      sessionJson,
       row.trackId,
+      row.trackLocation,
       now,
       now,
+    )
+    const stored = this.meetingMediaSession(
+      row.meetingId,
+      row.connectionId,
+      row.sourceConnectionId,
+      row.mediaKind,
+    )
+    return stored !== null
+      && stored.track_id === row.trackId
+      && stored.session_json === sessionJson
+  }
+
+  private deleteMeetingMediaSession(row: CoordinatorMeetingMediaSessionRow): void {
+    this.ctx.storage.sql.exec(
+      `delete from coordinator_meeting_media_sessions
+       where meeting_id = ? and connection_id = ? and source_connection_id = ?
+         and media_kind = ? and track_id = ? and session_json = ?`,
+      row.meeting_id,
+      row.connection_id,
+      row.source_connection_id,
+      row.media_kind,
+      row.track_id,
+      row.session_json,
+    )
+  }
+
+  private deferMeetingMediaTeardown(row: CoordinatorMeetingMediaSessionRow, now: number): void {
+    const attemptCount = row.teardown_attempt_count + 1
+    if (attemptCount >= maximumMediaTeardownAttempts) {
+      this.recordMediaTeardownRecovery({
+        attemptCount,
+        mediaType: 'meeting',
+        now,
+        sessionJson: row.session_json,
+        trackId: row.track_id,
+      })
+      this.deleteMeetingMediaSession(row)
+      return
+    }
+    this.ctx.storage.sql.exec(
+      `update coordinator_meeting_media_sessions
+       set teardown_retry_at_ms = ?, teardown_attempt_count = ?, updated_at_ms = ?
+       where meeting_id = ? and connection_id = ? and source_connection_id = ?
+         and media_kind = ? and track_id = ? and session_json = ? and teardown_attempt_count = ?`,
+      now + mediaTeardownRetryMilliseconds,
+      attemptCount,
+      now,
+      row.meeting_id,
+      row.connection_id,
+      row.source_connection_id,
+      row.media_kind,
+      row.track_id,
+      row.session_json,
+      row.teardown_attempt_count,
     )
   }
 
@@ -2412,31 +2792,10 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     reason: 'ended' | 'moderated' | 'unavailable',
   ): Promise<void> {
     const adapter = await this.providerAdapter(release)
+    const now = Date.now()
     for (const row of rows) {
-      let storedSession: unknown = null
-      try {
-        storedSession = JSON.parse(row.session_json)
-      } catch {
-        // Bad persisted media metadata must never prevent a moderator, cleanup,
-        // or expiry path from removing the isolated session record.
-      }
-      const session = storedProviderSessionSchema.safeParse(storedSession)
-      const track = session.success ? session.data.tracks.find((candidate) => candidate.id === row.track_id) : null
-      if (adapter && session.success && track?.mid) {
-        await adapter.forceCloseTracks({
-          session: { id: session.data.id, state: session.data.state, tenantId: session.data.tenantId, tracks: new Map(session.data.tracks.map((candidate) => [candidate.id, candidate])) },
-          tenantId: session.data.tenantId,
-          tracks: [{ mid: track.mid, trackId: track.id }],
-        }).catch(() => undefined)
-      }
-      this.ctx.storage.sql.exec(
-        `delete from coordinator_meeting_media_sessions
-         where meeting_id = ? and connection_id = ? and source_connection_id = ? and media_kind = ?`,
-        row.meeting_id,
-        row.connection_id,
-        row.source_connection_id,
-        row.media_kind,
-      )
+      if (await this.forceCloseProviderTrack(adapter, this.providerSessionFromJson(row.session_json), row.track_id, row.track_location)) this.deleteMeetingMediaSession(row)
+      else this.deferMeetingMediaTeardown(row, now)
       if (row.connection_id === row.source_connection_id) {
         const participantConnectionIds = this.meetingParticipantConnectionIds(row.meeting_id)
         for (const participantConnectionId of participantConnectionIds) {
@@ -2457,6 +2816,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
         })
       }
     }
+    this.scheduleNextSocketTicketExpiry()
   }
 
   private async closeMeetingMediaForParticipant(
@@ -2467,7 +2827,8 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
   ): Promise<void> {
     const rows = this.ctx.storage.sql.exec<CoordinatorMeetingMediaSessionRow>(
       `select meeting_id, connection_id, source_connection_id, media_kind,
-              session_json, track_id, created_at_ms, updated_at_ms
+              session_json, track_id, track_location,
+              created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
        from coordinator_meeting_media_sessions
        where meeting_id = ? and (connection_id = ? or source_connection_id = ?)`,
       meetingId,
@@ -2486,7 +2847,8 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
   ): Promise<void> {
     const rows = this.ctx.storage.sql.exec<CoordinatorMeetingMediaSessionRow>(
       `select meeting_id, connection_id, source_connection_id, media_kind,
-              session_json, track_id, created_at_ms, updated_at_ms
+              session_json, track_id, track_location,
+              created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
        from coordinator_meeting_media_sessions
        where meeting_id = ? and connection_id = ? and source_connection_id = ?`,
       meetingId,
@@ -2508,7 +2870,15 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     const sourceConnectionId = parsed.sourceConnectionId ?? caller?.connectionId
     if (!caller || !row || !meeting || row.state !== 'active' || !sourceConnectionId
       || !meeting.participants.has(caller.connectionId)
-      || (parsed.sourceConnectionId === undefined && !this.meetingMediaMayPublish(parsed.meetingId, caller.connectionId, parsed.mediaKind))
+      || (parsed.sourceConnectionId === undefined && (
+        !this.meetingMediaMayPublish(parsed.meetingId, caller.connectionId, parsed.mediaKind)
+        || this.hasPendingMeetingMediaTeardown(
+          parsed.meetingId,
+          caller.connectionId,
+          caller.connectionId,
+          parsed.mediaKind,
+        )
+      ))
       || (parsed.sourceConnectionId !== undefined && (!meeting.participants.has(sourceConnectionId)
         || !this.meetingMediaSession(parsed.meetingId, sourceConnectionId, sourceConnectionId, parsed.mediaKind)))) {
       return { outcome: 'invalid_state', requestId: parsed.requestId }
@@ -2536,12 +2906,19 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     const subscriber = parsed.sourceConnectionId !== undefined
     const sourceConnectionId = parsed.sourceConnectionId ?? caller.connectionId
     const source = subscriber ? this.meetingMediaSession(parsed.meetingId, sourceConnectionId, sourceConnectionId, parsed.mediaKind) : null
+    const mediaSlotPending = this.hasPendingMeetingMediaTeardown(
+      parsed.meetingId,
+      caller.connectionId,
+      sourceConnectionId,
+      parsed.mediaKind,
+    )
     if (
       (subscriber && (!source || !meeting.participants.has(sourceConnectionId)))
       || (!subscriber && (!this.meetingMediaMayPublish(parsed.meetingId, caller.connectionId, parsed.mediaKind)
         || !parsed.transceiverMid
         || this.meetingMediaSession(parsed.meetingId, caller.connectionId, caller.connectionId, parsed.mediaKind)))
       || (subscriber && this.meetingMediaSession(parsed.meetingId, caller.connectionId, sourceConnectionId, parsed.mediaKind))
+      || mediaSlotPending
     ) return { outcome: 'invalid_state', requestId: parsed.requestId }
     const adapter = await this.providerAdapter(parsed.release)
     if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
@@ -2579,14 +2956,23 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       state: 'active',
     })
     const now = Date.now()
-    this.persistMeetingMediaSession({
+    if (!this.persistMeetingMediaSession({
       connectionId: caller.connectionId,
       mediaKind: parsed.mediaKind,
       meetingId: parsed.meetingId,
       session: registered,
       sourceConnectionId,
       trackId: subscriber ? source!.track_id : trackId,
-    }, now)
+      trackLocation: subscriber ? 'remote' : 'local',
+    }, now)) {
+      await this.closeUnpersistedProviderTrack({
+        adapter,
+        mid: providerTrack.mid,
+        session: registered,
+        trackId: subscriber ? source!.track_id : trackId,
+      })
+      return { outcome: 'provider_unavailable', requestId: parsed.requestId }
+    }
     this.sendCoordinatorEvent(caller.connectionId, `meeting:${parsed.meetingId}`, 'media.negotiation', {
       callId: parsed.meetingId,
       description: result.value.sessionDescription.sdp,
@@ -2632,7 +3018,8 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     if (!caller || !row || !meeting || !meeting.participants.has(caller.connectionId)) return { outcome: 'invalid_state', requestId: parsed.requestId }
     const rows = this.ctx.storage.sql.exec<CoordinatorMeetingMediaSessionRow>(
       `select meeting_id, connection_id, source_connection_id, media_kind,
-              session_json, track_id, created_at_ms, updated_at_ms
+              session_json, track_id, track_location,
+              created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
        from coordinator_meeting_media_sessions
        where meeting_id = ? and connection_id = ? and source_connection_id = ? and media_kind = ?`,
       parsed.meetingId,
@@ -2739,6 +3126,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       || row.requester_employee_id !== caller.authorization.employeeId
       || row.requester_connection_id !== caller.connectionId
       || this.mediaSession(input.transmissionRequestId, caller.authorization.employeeId)
+      || this.hasPendingCallMediaTeardown(input.transmissionRequestId, caller.authorization.employeeId)
     ) return null
     // Each provider operation has its own bounded network wait. Refreshing
     // the server-owned preparation lease after the exact reservation has been
@@ -2774,6 +3162,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       || !this.pttRecipients(row).includes(caller.authorization.employeeId)
       || !this.pttRequiredListenerConnectionIds(input.transmissionRequestId).includes(caller.connectionId)
       || this.mediaSession(input.transmissionRequestId, caller.authorization.employeeId)
+      || this.hasPendingCallMediaTeardown(input.transmissionRequestId, caller.authorization.employeeId)
     ) return null
 
     const sourceSocket = this.activeSocketByConnectionId(row.requester_connection_id)
@@ -2795,10 +3184,10 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       : row
   }
 
-  /** A successful provider request can return after its floor has ended. The
-   * track was never persisted, so clean it up directly rather than invoking a
-   * broader call teardown that could affect a newer transmission. */
-  private async closeStalePttTrack(input: Readonly<{
+  /** A successful provider request can return after its coordinator slot is
+   * no longer eligible to persist it. Its track was never stored, so close
+   * only this exact provider track rather than touching a newer session. */
+  private async closeUnpersistedProviderTrack(input: Readonly<{
     adapter: CloudflareRealtimeHttpAdapter
     mid: string
     session: ProviderSession
@@ -2814,19 +3203,29 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
   /** PTT sessions are write-once for a floor participant. A late concurrent
    * provider response must not overwrite a newer session for that connection. */
   private claimPttMediaSession(
-    input: Readonly<{ callId: string, connectionId: string, employeeId: string, session: ProviderSession, trackId: string }>,
+    input: Readonly<{
+      callId: string
+      connectionId: string
+      employeeId: string
+      session: ProviderSession
+      trackId: string
+      trackLocation: 'local' | 'remote'
+    }>,
     now: number,
   ): boolean {
+    if (this.hasPendingCallMediaTeardown(input.callId, input.employeeId)) return false
     this.ctx.storage.sql.exec(
       `insert into coordinator_call_media_sessions (
-        call_id, employee_id, connection_id, session_json, track_id, created_at_ms, updated_at_ms
-      ) values (?, ?, ?, ?, ?, ?, ?)
+        call_id, employee_id, connection_id, session_json, track_id, track_location,
+        created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, null, 0)
       on conflict (call_id, employee_id) do nothing`,
       input.callId,
       input.employeeId,
       input.connectionId,
       this.serializeProviderSession(input.session),
       input.trackId,
+      input.trackLocation,
       now,
       now,
     )
@@ -2931,21 +3330,16 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     reason: PttCloseReason,
   ): Promise<void> {
     const rows = this.ctx.storage.sql.exec<CoordinatorCallMediaSessionRow>(
-      `select call_id, employee_id, connection_id, session_json, track_id, created_at_ms, updated_at_ms
+      `select call_id, employee_id, connection_id, session_json, track_id,
+              track_location, created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
        from coordinator_call_media_sessions where call_id = ?`,
       transmissionRequestId,
     ).toArray()
     const adapter = await this.providerAdapter(release)
+    const now = Date.now()
     for (const row of rows) {
-      const session = this.parseProviderSession(row)
-      const track = session?.tracks.get(row.track_id)
-      if (adapter && session && track?.mid) {
-        await adapter.forceCloseTracks({
-          session,
-          tenantId: session.tenantId,
-          tracks: [{ mid: track.mid, trackId: track.id }],
-        }).catch(() => undefined)
-      }
+      if (await this.forceCloseProviderTrack(adapter, this.parseProviderSession(row), row.track_id, row.track_location)) this.deleteCallMediaSession(row)
+      else this.deferCallMediaTeardown(row, now)
       this.sendCoordinatorEvent(row.connection_id, `ptt:${transmissionRequestId}`, 'media.closed', {
         callId: transmissionRequestId,
         generation: 1,
@@ -2953,7 +3347,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       })
     }
     this.ctx.storage.sql.exec('delete from coordinator_media_negotiations where call_id = ?', transmissionRequestId)
-    this.ctx.storage.sql.exec('delete from coordinator_call_media_sessions where call_id = ?', transmissionRequestId)
+    this.scheduleNextSocketTicketExpiry()
   }
 
   /** Remove one selected listener's server media before any provider cleanup
@@ -2965,19 +3359,13 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     release: CoordinatorReleaseContext,
   ): Promise<void> {
     const rows = this.ctx.storage.sql.exec<CoordinatorCallMediaSessionRow>(
-      `select call_id, employee_id, connection_id, session_json, track_id, created_at_ms, updated_at_ms
+      `select call_id, employee_id, connection_id, session_json, track_id,
+              track_location, created_at_ms, updated_at_ms, teardown_retry_at_ms, teardown_attempt_count
        from coordinator_call_media_sessions
        where call_id = ? and connection_id = ?`,
       transmissionRequestId,
       connectionId,
     ).toArray()
-    // A late provider completion can no longer claim this listener after the
-    // local participant has reported an unrecoverable setup failure.
-    this.ctx.storage.sql.exec(
-      'delete from coordinator_call_media_sessions where call_id = ? and connection_id = ?',
-      transmissionRequestId,
-      connectionId,
-    )
     // A late browser answer must never complete a listener negotiation after
     // that listener has been removed from the current floor reservation.
     this.ctx.storage.sql.exec(
@@ -2986,22 +3374,17 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       connectionId,
     )
     const adapter = await this.providerAdapter(release, 'ptt_listener_failed')
+    const now = Date.now()
     for (const row of rows) {
-      const session = this.parseProviderSession(row)
-      const track = session?.tracks.get(row.track_id)
-      if (adapter && session && track?.mid) {
-        await adapter.forceCloseTracks({
-          session,
-          tenantId: session.tenantId,
-          tracks: [{ mid: track.mid, trackId: track.id }],
-        }).catch(() => undefined)
-      }
+      if (await this.forceCloseProviderTrack(adapter, this.parseProviderSession(row), row.track_id, row.track_location)) this.deleteCallMediaSession(row)
+      else this.deferCallMediaTeardown(row, now)
       this.sendCoordinatorEvent(row.connection_id, `ptt:${transmissionRequestId}`, 'media.closed', {
         callId: transmissionRequestId,
         generation: 1,
         reason: 'unavailable',
       })
     }
+    this.scheduleNextSocketTicketExpiry()
   }
 
   private async closePttTransmission(
@@ -3267,7 +3650,8 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       || row.channel_reference !== parsed.channelReference
       || row.requester_employee_id !== caller.authorization.employeeId
       || row.requester_connection_id !== caller.connectionId
-      || this.mediaSession(parsed.transmissionRequestId, caller.authorization.employeeId)) {
+      || this.mediaSession(parsed.transmissionRequestId, caller.authorization.employeeId)
+      || this.hasPendingCallMediaTeardown(parsed.transmissionRequestId, caller.authorization.employeeId)) {
       return { outcome: 'invalid_state', requestId: parsed.requestId }
     }
 
@@ -3322,7 +3706,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     const now = Date.now()
     const current = this.pttPublisherReservationIsCurrent({ ...publisherInput, now })
     if (!current) {
-      await this.closeStalePttTrack({ adapter, mid: localTrack.mid, session, trackId })
+      await this.closeUnpersistedProviderTrack({ adapter, mid: localTrack.mid, session, trackId })
       return invalidAfterProviderWait()
     }
     if (!this.claimPttMediaSession({
@@ -3331,8 +3715,9 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       employeeId: caller.authorization.employeeId,
       session,
       trackId,
+      trackLocation: 'local',
     }, now)) {
-      await this.closeStalePttTrack({ adapter, mid: localTrack.mid, session, trackId })
+      await this.closeUnpersistedProviderTrack({ adapter, mid: localTrack.mid, session, trackId })
       return invalidAfterProviderWait()
     }
     const negotiationId = crypto.randomUUID()
@@ -3430,7 +3815,8 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       || !this.pttRecipients(row).includes(caller.authorization.employeeId)
       || caller.authorization.employeeId === row.requester_employee_id
       || !this.pttRequiredListenerConnectionIds(parsed.transmissionRequestId).includes(caller.connectionId)
-      || this.mediaSession(parsed.transmissionRequestId, caller.authorization.employeeId)) {
+      || this.mediaSession(parsed.transmissionRequestId, caller.authorization.employeeId)
+      || this.hasPendingCallMediaTeardown(parsed.transmissionRequestId, caller.authorization.employeeId)) {
       return { outcome: 'invalid_state', requestId: parsed.requestId }
     }
 
@@ -3500,7 +3886,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     const now = Date.now()
     const current = this.pttListenerReservationIsCurrent({ ...listenerInput, now })
     if (!current) {
-      await this.closeStalePttTrack({ adapter, mid: remoteTrack.mid, session, trackId: source.track_id })
+      await this.closeUnpersistedProviderTrack({ adapter, mid: remoteTrack.mid, session, trackId: source.track_id })
       return invalidAfterProviderWait()
     }
     if (!this.claimPttMediaSession({
@@ -3509,8 +3895,9 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       employeeId: caller.authorization.employeeId,
       session,
       trackId: source.track_id,
+      trackLocation: 'remote',
     }, now)) {
-      await this.closeStalePttTrack({ adapter, mid: remoteTrack.mid, session, trackId: source.track_id })
+      await this.closeUnpersistedProviderTrack({ adapter, mid: remoteTrack.mid, session, trackId: source.track_id })
       return invalidAfterProviderWait()
     }
     const peerHandle = `peer:${session.id}`

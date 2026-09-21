@@ -181,6 +181,19 @@ export type CloudflareCloseTracksRequest = Readonly<{
   tracks: readonly Readonly<{ mid: string, trackId: string }>[]
 }>
 
+/** A server-only inspection used only after a close result is ambiguous or
+ * rejected. It can prove absence from a validated provider session response,
+ * but it never returns provider identifiers to a browser. */
+export type CloudflareTrackPresenceInspection = Readonly<{
+  /** The stored provider track direction. A remote response must never be
+   * treated as though it were a local browser publication. */
+  location: 'local' | 'remote'
+  mid: string
+  session: ProviderSession
+  tenantId: string
+  trackId: string
+}>
+
 export type CloudflareRenegotiateRequest = Readonly<{
   session: ProviderSession
   sessionDescription: ProviderSessionDescription
@@ -190,6 +203,9 @@ export type CloudflareRenegotiateRequest = Readonly<{
 export type CloudflareSessionInspection = Readonly<{
   session: ProviderSession
   tenantId: string
+  /** The coordinator must supply the stored direction for every track it
+   * inspects. ProviderTrack intentionally does not infer this detail. */
+  trackLocations: ReadonlyMap<string, 'local' | 'remote'>
 }>
 
 const hasText = (value: string, maximum = 128): boolean => value.trim().length > 0 && value.length <= maximum
@@ -322,10 +338,39 @@ const typedTrackResponses = (
     const candidate = matching as Partial<CloudflareRealtimeTrackResponse> & { errorCode?: unknown }
     if (typeof candidate.errorCode === 'string' || typeof candidate.mid !== 'string' || !isSafeReference(candidate.mid, 64)) return null
     if (candidate.location !== undefined && candidate.location !== request.location) return null
+    // A local publisher's MID identifies the exact browser transceiver that
+    // produced the SDP offer. Never accept a response that rebinds this
+    // coordinator-owned track name to another browser transceiver.
+    if (request.location === 'local' && request.mid !== undefined && candidate.mid !== request.mid) return null
     if (candidate.sessionId !== undefined && (typeof candidate.sessionId !== 'string' || !isSafeReference(candidate.sessionId))) return null
     responses.push({ location: request.location, mid: candidate.mid, sessionId: candidate.sessionId, trackName: request.trackName })
   }
   return responses
+}
+
+/** A successful session inspection is useful only when every returned track
+ * has the two server-issued references needed to identify it. This parser is
+ * deliberately separate from mutation response validation: it proves whether
+ * a specific stored track is still present, never exposes those references. */
+const typedSessionTrackMetadata = (
+  body: unknown,
+): readonly Readonly<{ location: 'local' | 'remote', mid: string, trackName: string }>[] | null => {
+  if (!body || typeof body !== 'object' || !Array.isArray((body as { tracks?: unknown }).tracks) || hasProviderError(body)) return null
+  const tracks: Readonly<{ location: 'local' | 'remote', mid: string, trackName: string }>[] = []
+  for (const item of (body as { tracks: unknown[] }).tracks) {
+    if (!item || typeof item !== 'object') return null
+    const candidate = item as { location?: unknown, mid?: unknown, trackName?: unknown }
+    if (
+      (candidate.location !== 'local' && candidate.location !== 'remote')
+      ||
+      typeof candidate.mid !== 'string'
+      || !isSafeReference(candidate.mid, 64)
+      || typeof candidate.trackName !== 'string'
+      || !isSafeReference(candidate.trackName)
+    ) return null
+    tracks.push({ location: candidate.location, mid: candidate.mid, trackName: candidate.trackName })
+  }
+  return tracks
 }
 
 /* A forced close may succeed for one requested track and fail for another.
@@ -666,15 +711,57 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
     return { outcome: 'accepted', value: { requiresImmediateRenegotiation: requiresImmediateRenegotiation === true } }
   }
 
+  /**
+   * A rejected or timed-out close is not evidence that media remains live.
+   * Before retrying it indefinitely, the coordinator can use a successful,
+   * fully validated GET response to prove the exact stored MID/name is absent.
+   */
+  async inspectTrackPresence(input: CloudflareTrackPresenceInspection): Promise<CloudflareProviderResult<Readonly<{
+    present: boolean
+  }>>> {
+    if (!providerTrackMayMutate(input.session, input.tenantId, input.trackId, input.mid)) {
+      return { outcome: 'provider_rejected', reconciliationRequired: false }
+    }
+    const result = await this.request('session_inspect', safeProviderPath('apps', this.configuration.appId, 'sessions', input.session.id), { method: 'GET' })
+    if (result.outcome !== 'accepted') return result
+    const tracks = typedSessionTrackMetadata(result.value)
+    if (!tracks) return this.reportFailure('session_inspect', { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
+    const matchingTrack = tracks.find((track) => track.mid === input.mid || track.trackName === input.trackId)
+    // A response that reuses one of the stored references with a different
+    // direction cannot prove anything about the prior remote/local track.
+    // Keep the coordinator record pending instead of clearing it.
+    if (matchingTrack && matchingTrack.location !== input.location) {
+      return this.reportFailure('session_inspect', { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
+    }
+    return {
+      outcome: 'accepted',
+      value: {
+        // A match on either stable server-side reference means the prior track
+        // is not conclusively gone. Both must be absent before local cleanup.
+        present: Boolean(matchingTrack),
+      },
+    }
+  }
+
   async inspectSession(input: CloudflareSessionInspection): Promise<CloudflareProviderResult<Readonly<{
     tracks: readonly CloudflareRealtimeTrackResponse[]
   }>>> {
     if (!providerSessionMayMutate(input.session, input.tenantId)) return { outcome: 'provider_rejected', reconciliationRequired: false }
+    const requested: CloudflareRealtimeTrack[] = []
+    for (const track of input.session.tracks.values()) {
+      if (!track.mid) continue
+      const location = input.trackLocations.get(track.id)
+      // Do not normalize stored subscriber tracks to local. A caller without
+      // a complete, server-owned direction map must treat the inspection as
+      // inconclusive rather than inventing a browser publication direction.
+      if (location !== 'local' && location !== 'remote') {
+        return { outcome: 'provider_rejected', reconciliationRequired: false }
+      }
+      requested.push({ location, mid: track.mid, trackName: track.id })
+    }
     const result = await this.request('session_inspect', safeProviderPath('apps', this.configuration.appId, 'sessions', input.session.id), { method: 'GET' })
     if (result.outcome !== 'accepted') return result
-    const tracks = typedTrackResponses(result.value, [...input.session.tracks.values()].filter((track) => track.mid).map((track) => ({
-      location: 'local' as const, mid: track.mid, trackName: track.id,
-    })))
+    const tracks = typedTrackResponses(result.value, requested)
     return tracks === null
       ? this.reportFailure('session_inspect', { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')
       : { outcome: 'accepted', value: { tracks } }

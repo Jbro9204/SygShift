@@ -112,6 +112,23 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     })).resolves.toEqual({ outcome: 'provider_rejected', reconciliationRequired: false })
   })
 
+  it('rejects a local provider response whose MID does not match the browser offer transceiver', async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      requiresImmediateRenegotiation: true,
+      sessionDescription: answer,
+      tracks: [{ mid: '1', trackName: 'audio-1' }],
+    }))
+    const result = await testAdapter(fetchImplementation).publishTracks({
+      session: session(),
+      sessionDescription: offer,
+      tenantId: 'tenant-1',
+      tracks: [{ kind: 'audio', location: 'local', mid: '0', trackName: 'audio-1' }],
+    })
+
+    expect(result).toEqual({ outcome: 'provider_rejected', reconciliationRequired: false })
+    expect(fetchImplementation).toHaveBeenCalledTimes(1)
+  })
+
   it('uses the server-owned remote source for subscriptions and requires an explicit renegotiation response', async () => {
     const fetchImplementation = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({
@@ -154,11 +171,27 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     })).resolves.toMatchObject({ outcome: 'accepted', value: { tracks: [{ mid: '0', trackName: 'audio-1' }] } })
     expect(asRequest(fetchImplementation.mock.calls[0]?.[0]).url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1/tracks/update')
 
-    await expect(adapter.inspectSession({ session: sessionWithAudio(), tenantId: 'tenant-1' }))
+    await expect(adapter.inspectSession({
+      session: sessionWithAudio(),
+      tenantId: 'tenant-1',
+      trackLocations: new Map([['audio-1', 'local']]),
+    }))
       .resolves.toMatchObject({ outcome: 'accepted', value: { tracks: [{ mid: '0', trackName: 'audio-1' }] } })
     const inspectRequest = asRequest(fetchImplementation.mock.calls[1]?.[0])
     expect(inspectRequest.url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1')
     expect(inspectRequest.method).toBe('GET')
+  })
+
+  it('treats an inspection without stored local/remote directions as inconclusive', async () => {
+    const fetchImplementation = vi.fn<typeof fetch>()
+    const adapter = testAdapter(fetchImplementation)
+
+    await expect(adapter.inspectSession({
+      session: sessionWithAudio(),
+      tenantId: 'tenant-1',
+      trackLocations: new Map(),
+    })).resolves.toEqual({ outcome: 'provider_rejected', reconciliationRequired: false })
+    expect(fetchImplementation).not.toHaveBeenCalled()
   })
 
   it('fails closed before calling the provider when location-less responses could make track matching ambiguous', async () => {
@@ -187,6 +220,32 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     const request = asRequest(fetchImplementation.mock.calls[0]?.[0])
     expect(request.url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1/tracks/close')
     await expect(requestJson(request)).resolves.toEqual({ force: true, tracks: [{ mid: '0' }] })
+  })
+
+  it('proves a track absent only from a validated inspection with its stored direction', async () => {
+    const fetchImplementation = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ tracks: [] }))
+      .mockResolvedValueOnce(jsonResponse({ tracks: [{ location: 'local', mid: '0', trackName: 'audio-1' }] }))
+    const adapter = testAdapter(fetchImplementation)
+
+    await expect(adapter.inspectTrackPresence({
+      location: 'local',
+      mid: '0',
+      session: sessionWithAudio(),
+      tenantId: 'tenant-1',
+      trackId: 'audio-1',
+    })).resolves.toEqual({ outcome: 'accepted', value: { present: false } })
+    expect(asRequest(fetchImplementation.mock.calls[0]?.[0]).method).toBe('GET')
+
+    // A remote subscription cannot be cleared from a conflicting local
+    // provider record: it remains pending for retry/recovery instead.
+    await expect(adapter.inspectTrackPresence({
+      location: 'remote',
+      mid: '0',
+      session: sessionWithAudio(),
+      tenantId: 'tenant-1',
+      trackId: 'audio-1',
+    })).resolves.toEqual({ outcome: 'provider_rejected', reconciliationRequired: false })
   })
 
   it('fails closed and requires reconciliation when a close response reports a per-track error', async () => {
