@@ -1,63 +1,67 @@
-+# Support Ticket Email Redesign
+# Support Ticket Email and Notification Repair
 
 Date: 09/21/2026
 
 ## Outcome
 
-Prepared a compact, information-rich SygShift support-ticket email that lets an authorized recipient understand the request and its urgency from a phone or desktop inbox without opening the application first.
+Repaired support-ticket delivery so authorized Administrators and route handlers receive both in-app notifications and email jobs. Ticket notifications now contain enough safe context to understand the request and its urgency before opening the protected ticket workspace.
 
-The implementation is isolated on `codex/ticket-email-redesign-20260921`. It does not alter or interrupt the active SygSphere communications worktree and has not been deployed to production.
+## Root cause
+
+The recipient function treated Administrators as a fallback. When any non-Admin employee qualified for a ticket route, Administrators were excluded from both the notification center and email queue even though they could still open the Support Tickets workspace.
+
+## Notification experience
+
+- Administrators, employees with the active System Admin role, and active handlers with the complete ticket and route permission set now receive the work.
+- Notification titles include the ticket number, lifecycle event, and safe subject.
+- Notification details include submitter, employee number, priority, status, category, subcategory, route, reported impact, and a useful summary.
+- Every notification links directly to the exact protected ticket.
+- Existing read, acknowledged, and dismissed states remain unchanged when notification details are refreshed.
+- Recent open tickets that missed an authorized recipient under the old routing rule are restored through a bounded 14-day backfill without duplicating existing event-recipient jobs.
+- The existing Realtime trigger and polling fallback continue to surface new inbox records without adding another notification system.
 
 ## Email experience
 
-- Replaced the oversized ticket-email masthead with a compact SygShift header so the ticket information begins above the mobile fold.
-- Added clear lifecycle wording for new tickets, replies, status changes, assignments, and other updates.
-- Added a concise email subject containing the ticket number, lifecycle event, priority, and safe ticket subject.
-- Added a structured summary containing:
-  - ticket number and subject;
-  - priority and current status;
-  - employee name and employee number;
-  - submission date and time in the Colorado operating time zone;
-  - category and subcategory;
-  - authorized routing destination;
-  - reported impact, affected headcount, and important date when supplied;
-  - affected page;
-  - friendly browser, device, and viewport context for technical requests; and
-  - a direct **Open ticket** action tied to the exact permission-protected ticket.
-- Applied the same structured presentation to the complete support-ticket lifecycle rather than only the initial opened email.
-- Preserved a complete plain-text alternative for email clients that do not render HTML.
+- Email subjects identify the ticket number, lifecycle event, priority, and safe subject.
+- The email body carries the same useful operational context as the in-app notification.
+- The complete ticket lifecycle supports new-ticket, reply, status, assignment, and update wording.
+- A protected direct link opens the exact ticket after the normal authorization check.
+- Plain-text delivery remains supported, and the prepared Worker presentation adds a compact mobile-friendly HTML layout when it is integrated with the active Worker line.
 
 ## Privacy and security
 
-- Recipient selection, exact permission routing, idempotency, retry behavior, delivery history, and the final authorization recheck remain unchanged.
-- The protected claim RPC remains executable only by the service role.
-- Confidential HR or workplace tickets replace the subject and description with protected wording before the content leaves PostgreSQL.
-- Confidential emails omit impact, source-page, and technical-context details.
-- All dynamic values are bounded and HTML-escaped by the Worker.
-- The direct link is constructed by the Worker from the validated support-ticket UUID and the configured trusted SygShift origin.
+- Final recipient authorization is rechecked against the current ticket before an inbox record is written or an email job is claimed.
+- Confidential HR or workplace tickets use protected wording and omit sensitive subject, summary, impact, source-page, and technical-context details.
 - Internal notes remain excluded from employee email delivery.
+- Database synchronization functions remain in the private schema and are revoked from public, anonymous, and authenticated browser roles.
+- Ticket workflow state, access rules, retries, idempotency, and delivery history remain intact.
 
 ## Files
 
 - `supabase/migrations/20260921182231_support_ticket_email_redesign.sql`
+- `supabase/migrations/20260921185816_support_ticket_notification_detail.sql`
 - `supabase/tests/support_ticket_email_redesign_regression.sql`
+- `supabase/tests/support_ticket_notification_detail_regression.sql`
 - `worker/index.ts`
 - `src/worker.test.ts`
 - `src/supportTicketEmailRedesign.test.ts`
+- `src/supportTicketNotificationDetail.test.ts`
 
 ## Verification
 
-- Focused Worker and email-contract tests: 48/48 passed.
-- Full `pnpm check`: 292 test files / 1,528 tests passed, along with TypeScript, zero-warning application lint, and both production builds.
+- Focused ticket email and notification tests: 3 files / 52 tests passed.
+- Full `pnpm check`: 293 test files / 1,532 tests passed, plus TypeScript, zero-warning application lint, and both production builds.
 - Mandatory actual-component Time Clock workflow: 42/42 desktop and mobile checks passed.
-- Rendered email inspection passed at 390-pixel phone width and 900-pixel desktop width.
-- Long content, HTML escaping, direct-ticket routing, priority presentation, device context, and confidential redaction have explicit automated coverage.
-- `git diff --check` passed.
+- Production database migration dry run listed only the two asserted ticket migrations.
+- Both migrations applied successfully to the linked production database.
+- The next production email-processing cycle delivered 2 restored ticket notifications with 0 failures and 0 suppressions.
+- Database security and performance advisors reported no new ticket-specific error finding.
 
 ## Release status
 
-- Migration: prepared, not applied.
-- Cloudflare Worker: prepared, not deployed.
-- Production data and delivery queues: unchanged.
-- Active SygSphere communications task: untouched.
+- Notification and email routing repair: live in the production database.
+- Detailed in-app notification content: live.
+- Restored email jobs: processed successfully by the active production Worker.
+- Cloudflare application deployment: intentionally not performed, so the separate active SygSphere Worker release was not overwritten.
+- Compact custom email HTML presentation: committed on the isolated branch and retained for safe integration with the active Worker line.
 

@@ -1,5 +1,16 @@
 # SygShift Development Log
 
+## 09/21/2026 - Support Ticket Notification and Delivery Repair
+
+- Repaired ticket recipient routing that had treated Administrators as a fallback and silently omitted them whenever another non-Admin route handler qualified.
+- Restored in-app ticket notifications for Administrators, active System Admin role holders, and handlers with the full ticket plus route permission set.
+- Expanded notification titles and bodies with ticket number, event, submitter, employee number, priority, status, category, route, impact, summary, and the protected direct-ticket action.
+- Preserved confidential-ticket redaction, the final authorization recheck, idempotency, existing read/acknowledged/dismissed state, and private-schema browser restrictions.
+- Applied the two asserted production database migrations after a clean dry run. The next Worker cycle delivered 2 restored ticket emails with 0 failures and 0 suppressions.
+- Verified 3 focused files / 52 tests, full `pnpm check` at 293 files / 1,532 tests, and 42/42 mandatory desktop/mobile Time Clock checks.
+- Did not deploy Cloudflare application code, preserving the separate active SygSphere Worker release. Release detail:
+  `docs/changelogs/CHANGELOG_09-21-2026_SUPPORT_TICKET_EMAIL_REDESIGN.md`.
+
 ## 09/21/2026 - Coverage Review Boolean Contract Repair
 
 - Repaired the coverage candidate contract so optional employee classification
