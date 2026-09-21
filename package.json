@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && pnpm check:static-assets",
     "typecheck": "tsc -b --pretty false",
     "lint": "oxlint src worker --deny-warnings",
     "test": "vitest run",
@@ -39,6 +39,7 @@
     "check:sygsphere-comms-stage45": "node tools/validate-sygsphere-communications-stage45-gates.mjs",
     "check:sygsphere-comms-stage56": "node tools/validate-sygsphere-communications-stage56-readiness.mjs",
     "check:sygsphere-comms-stage67": "node tools/validate-sygsphere-communications-stage67-gates.mjs",
+    "check:static-assets": "node tools/validate-static-asset-contract.mjs",
     "verify:access:preserved": "node tools/verify-production-access-preservation.mjs outputs/access-control/production-access-baseline-08-21-2026-before-enforcement.json outputs/access-control/production-access-baseline-08-21-2026.json",
     "verify:access:admin-baseline": "node tools/verify-production-admin-permission-baseline.mjs outputs/access-control/production-access-baseline-08-30-2026-before-admin-baseline.json outputs/access-control/production-access-baseline-08-30-2026.json",
     "preview": "pnpm build && vite preview",
