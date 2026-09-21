@@ -10,6 +10,10 @@
 - Verified 291 test files / 1,523 tests, strict TypeScript, zero-warning lint,
   both production builds, and 44/44 coverage-layout plus actual-component Time
   Clock checks across desktop and mobile.
+- Applied the single asserted migration and released source commit `2f16dec`
+  as Cloudflare Worker version
+  `387d975e-026f-4abd-a91f-a2fe6b5c5d51`; both origins passed health,
+  readiness, Requests HTTP, and exact Requests-bundle verification.
 - Release detail:
   `docs/changelogs/CHANGELOG_09-21-2026_COVERAGE_REVIEW_BOOLEAN_CONTRACT.md`.
 

@@ -39,10 +39,23 @@ candidate-data contract.
   `20260921102000_coverage_candidate_flex_boolean_contract.sql`.
 - The migration contains transactional assertions for security-definer search
   path hardening and the non-null JSON boolean contract.
+- The first production attempt safely rolled back because its search-path
+  assertion did not use PostgreSQL's canonical empty-path spelling. The
+  corrected assertion passed, the single migration applied, and version
+  `20260921102000` is recorded in the production ledger.
+- Both production origins returned health `ok`, readiness `true`, and HTTP
+  200 for Requests.
+- The deployed Requests bundle matches the verified local production build
+  byte-for-byte on both origins (SHA-256
+  `2832EB829ED69A6568DD9603B2CDA8E132258B69F7CE3E7179360BD7D27C7E02`).
 
 ## Production references
 
 - Database migration:
   `20260921102000_coverage_candidate_flex_boolean_contract.sql`
+- Source commits: `b494e5c`, `2f16dec`
+- Cloudflare Worker version:
+  `387d975e-026f-4abd-a91f-a2fe6b5c5d51`
+- Rollback tag: `rollback/pre-coverage-review-contract-20260921`
 - Primary URL: `https://app.sygilant.us`
 - Fallback URL: `https://sygshift.sygilant.workers.dev`
