@@ -524,7 +524,12 @@ export class SygSphereCommunicationsController {
   private handlePttMediaConnection(generation: number, connection: CommunicationsPttMediaConnection): void {
     if (generation !== this.connectGeneration) return;
     const floor = this.state.floor;
-    if (!floor || floor.requestId !== connection.transmissionRequestId || floor.roomId !== connection.roomId) return;
+    if (
+      !floor
+      || floor.status === "releasing"
+      || floor.requestId !== connection.transmissionRequestId
+      || floor.roomId !== connection.roomId
+    ) return;
     if (connection.state === "failed") {
       void this.cancelActivePtt(floor).finally(() => {
         if (this.state.floor?.requestId !== connection.transmissionRequestId) return;
@@ -675,6 +680,7 @@ export class SygSphereCommunicationsController {
 
     if (["floor.denied", "floor.revoked", "transmission.ended"].includes(event.kind)
       && priorFloor
+      && priorFloor.status !== "releasing"
       && matchesPttFloorEvent(priorFloor, event)) {
       await this.cancelActivePtt(priorFloor);
     }

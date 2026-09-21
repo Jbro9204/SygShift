@@ -123,7 +123,9 @@ export function reduceCommunicationsRuntime(
         lastError: action.reason ?? null,
       };
     case "floor.requested":
-      if (state.connection !== "ready" || state.call) return state;
+      // Keep the reducer aligned with the controller's active-floor guard.
+      // A stale callback must never replace a release still being confirmed.
+      if (state.connection !== "ready" || state.call || state.floor) return state;
       return {
         ...state,
         floor: {
@@ -151,7 +153,9 @@ export function reduceCommunicationsRuntime(
     case "floor.failed":
       return { ...state, floor: null, lastError: action.reason };
     case "ptt.media.connected":
-      return state.floor?.requestId === action.requestId && state.floor.roomId === action.roomId
+      return state.floor?.status !== "releasing"
+        && state.floor?.requestId === action.requestId
+        && state.floor.roomId === action.roomId
         ? {
           ...state,
           floor: {

@@ -185,6 +185,28 @@ describe("SygSphere communications controller", () => {
     expect(test.media.releaseAudioFocus).toHaveBeenCalled();
   });
 
+  it("does not let a delayed PTT media failure replace the release confirmation state", async () => {
+    const test = harness();
+    await test.controller.start("employee-a");
+    await test.controller.holdToTalk("dispatch");
+    const requestId = String(vi.mocked(test.session.send).mock.calls[0][0].payload.clientIntentId);
+    await test.onEvent()(event("floor.preparing", { transmissionRequestId: requestId }, 1));
+    let resolveCancellation!: () => void;
+    const cancellation = new Promise<void>((resolve) => { resolveCancellation = resolve; });
+    vi.mocked(test.session.send).mockImplementation((command) => command.kind === "floor.cancel"
+      ? cancellation
+      : Promise.resolve());
+
+    const release = test.controller.releaseToTalk();
+    await vi.waitFor(() => expect(test.controller.snapshot.floor?.status).toBe("releasing"));
+    test.onPttMediaConnection()({ roomId: "room-a", state: "failed", transmissionRequestId: requestId });
+    expect(test.controller.snapshot.floor?.status).toBe("releasing");
+
+    resolveCancellation();
+    await release;
+    expect(test.controller.snapshot.floor).toBeNull();
+  });
+
   it("clears local PTT immediately and blocks overlapping floor requests", async () => {
     const test = harness();
     await test.controller.start("employee-a");

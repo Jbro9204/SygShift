@@ -49,6 +49,12 @@ describe("SygSphere communications runtime state", () => {
     });
     state = reduceCommunicationsRuntime(state, { type: "floor.release.requested" });
     expect(state.floor).toMatchObject({ requestId: "request-a", status: "releasing" });
+    const stalePress = reduceCommunicationsRuntime(state, {
+      type: "floor.requested",
+      channelReference: "dispatch",
+      requestId: "request-b",
+    });
+    expect(stalePress.floor).toMatchObject({ requestId: "request-a", status: "releasing" });
     state = reduceCommunicationsRuntime(state, {
       type: "event.received",
       event: event("floor.ready", {

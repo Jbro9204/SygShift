@@ -18,6 +18,7 @@ import {
   type CloudflareIceServer,
   type CloudflareRealtimeHttpAdapter,
 } from './cloudflareRealtimeAdapter'
+import { SYGSPHERE_COMMS_TURN_CREDENTIAL_TTL_SECONDS } from './turnCredentialPolicy'
 import {
   activateProviderSession,
   createProviderSession,
@@ -1499,7 +1500,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
     const adapter = await this.providerAdapter(parsed.release)
     if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
-    const ice = await adapter.generateIceServers(300)
+    const ice = await adapter.generateIceServers(SYGSPHERE_COMMS_TURN_CREDENTIAL_TTL_SECONDS)
     return ice.outcome === 'accepted'
       ? { iceServers: ice.value.iceServers, outcome: 'accepted', requestId: parsed.requestId }
       : { outcome: 'provider_unavailable', requestId: parsed.requestId }
@@ -1525,7 +1526,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
     const adapter = await this.providerAdapter(parsed.release)
     if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
-    const ice = await adapter.generateIceServers(300)
+    const ice = await adapter.generateIceServers(SYGSPHERE_COMMS_TURN_CREDENTIAL_TTL_SECONDS)
     if (ice.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
     const created = await adapter.createSession({ tenantId: caller.authorization.tenantId })
     if (created.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
@@ -2358,7 +2359,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
     const adapter = await this.providerAdapter(parsed.release)
     if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
-    const ice = await adapter.generateIceServers(300)
+    const ice = await adapter.generateIceServers(SYGSPHERE_COMMS_TURN_CREDENTIAL_TTL_SECONDS)
     return ice.outcome === 'accepted'
       ? { iceServers: ice.value.iceServers, outcome: 'accepted', requestId: parsed.requestId }
       : { outcome: 'provider_unavailable', requestId: parsed.requestId }
@@ -2387,7 +2388,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     ) return { outcome: 'invalid_state', requestId: parsed.requestId }
     const adapter = await this.providerAdapter(parsed.release)
     if (!adapter) return { outcome: 'provider_unavailable', requestId: parsed.requestId }
-    const ice = await adapter.generateIceServers(300)
+    const ice = await adapter.generateIceServers(SYGSPHERE_COMMS_TURN_CREDENTIAL_TTL_SECONDS)
     const created = await adapter.createSession({ tenantId: caller.authorization.tenantId })
     if (ice.outcome !== 'accepted' || created.outcome !== 'accepted') return { outcome: 'provider_unavailable', requestId: parsed.requestId }
     const pending = activateProviderSession(createProviderSession(created.value.sessionId, caller.authorization.tenantId))
@@ -3138,7 +3139,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     if (!this.pttPublisherReservationIsCurrent({ ...publisherInput, now: Date.now() })) {
       return invalidAfterProviderWait()
     }
-    const ice = await adapter.generateIceServers(300)
+    const ice = await adapter.generateIceServers(SYGSPHERE_COMMS_TURN_CREDENTIAL_TTL_SECONDS)
     if (ice.outcome !== 'accepted') return providerUnavailable()
     if (!this.pttPublisherReservationIsCurrent({ ...publisherInput, now: Date.now() })) {
       return invalidAfterProviderWait()
@@ -3243,7 +3244,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     }
     const adapter = await this.providerAdapter(parsed.release, 'ptt_prepare_publisher')
     if (!adapter) return providerUnavailable()
-    const ice = await adapter.generateIceServers(300)
+    const ice = await adapter.generateIceServers(SYGSPHERE_COMMS_TURN_CREDENTIAL_TTL_SECONDS)
     if (ice.outcome !== 'accepted') return providerUnavailable()
     const current = this.pttPublisherReservationIsCurrent({
       authorization: parsed.authorization,
@@ -3309,7 +3310,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     if (!this.pttListenerReservationIsCurrent({ ...listenerInput, now: Date.now() })) {
       return invalidAfterProviderWait()
     }
-    const ice = await adapter.generateIceServers(300)
+    const ice = await adapter.generateIceServers(SYGSPHERE_COMMS_TURN_CREDENTIAL_TTL_SECONDS)
     if (ice.outcome !== 'accepted') return providerUnavailable()
     if (!this.pttListenerReservationIsCurrent({ ...listenerInput, now: Date.now() })) {
       return invalidAfterProviderWait()
@@ -3434,7 +3435,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     if (!this.pttListenerReservationIsCurrent({ ...listenerInput, now: Date.now() })) {
       return invalidAfterProviderWait()
     }
-    const ice = await adapter.generateIceServers(300)
+    const ice = await adapter.generateIceServers(SYGSPHERE_COMMS_TURN_CREDENTIAL_TTL_SECONDS)
     if (ice.outcome !== 'accepted') return providerUnavailable()
     if (!this.pttListenerReservationIsCurrent({ ...listenerInput, now: Date.now() })) {
       return invalidAfterProviderWait()
