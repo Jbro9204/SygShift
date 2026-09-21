@@ -132,6 +132,16 @@ describe('SygSphere Communications PTT lifecycle', () => {
       outcome: 'available',
       value: 'server-only-app-secret',
     })
+    await expect(readSygSphereCommsSecret('  server-only-app-secret\n')).resolves.toEqual({
+      outcome: 'available',
+      value: 'server-only-app-secret',
+    })
+    await expect(readSygSphereCommsSecret({
+      get: async () => '  server-only-turn-token\r\n',
+    })).resolves.toEqual({
+      outcome: 'available',
+      value: 'server-only-turn-token',
+    })
     await expect(readSygSphereCommsSecret('   ')).resolves.toEqual({ outcome: 'missing' })
     await expect(readSygSphereCommsSecret(undefined)).resolves.toEqual({ outcome: 'missing' })
     await expect(readSygSphereCommsSecret({

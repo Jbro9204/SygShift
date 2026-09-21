@@ -471,14 +471,18 @@ type SecretValueReadResult =
 export const readSygSphereCommsSecret = async (
   value: SecretsStoreSecretBinding | string | undefined,
 ): Promise<SecretValueReadResult> => {
-  if (typeof value === 'string') return value.trim().length > 0
-    ? { outcome: 'available', value }
+  if (typeof value === 'string') {
+    const normalized = value.trim()
+    return normalized.length > 0
+    ? { outcome: 'available', value: normalized }
     : { outcome: 'missing' }
+  }
   if (!value) return { outcome: 'missing' }
   try {
     const resolved = await value.get()
-    return resolved.trim().length > 0
-      ? { outcome: 'available', value: resolved }
+    const normalized = resolved.trim()
+    return normalized.length > 0
+      ? { outcome: 'available', value: normalized }
       : { outcome: 'missing' }
   } catch {
     return { outcome: 'read_failed' }
