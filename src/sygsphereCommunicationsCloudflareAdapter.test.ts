@@ -231,7 +231,7 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
         failureClass: 'request_initialization',
         operation: 'session_create',
         outcome: 'provider_unavailable',
-        requestInitializationCause: 'abort_signal',
+        requestInitializationCause: 'request_signal',
       })
       const logged = JSON.stringify(diagnosticLogger.mock.calls)
       expect(logged).not.toContain('timeout implementation detail')
@@ -273,7 +273,7 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     expect(logged).not.toContain('rtc.live.cloudflare.com')
   })
 
-  it('classifies a Request constructor failure without retaining request data', async () => {
+  it('classifies a core Request construction failure without retaining request data', async () => {
     const diagnosticLogger = vi.fn()
     const fetchImplementation = vi.fn<typeof fetch>()
     vi.stubGlobal('Request', class {
@@ -298,10 +298,86 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
         failureClass: 'request_initialization',
         operation: 'session_create',
         outcome: 'provider_unavailable',
-        requestInitializationCause: 'request_constructor',
+        requestInitializationCause: 'request_core',
       })
       const logged = JSON.stringify(diagnosticLogger.mock.calls)
       expect(logged).not.toContain('request implementation detail')
+      expect(logged).not.toContain('server-only-app-secret')
+      expect(logged).not.toContain('tenant-1')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('classifies redirect-mode Request construction failures without retaining request data', async () => {
+    const diagnosticLogger = vi.fn()
+    const fetchImplementation = vi.fn<typeof fetch>()
+    const nativeRequest = Request
+    vi.stubGlobal('Request', class {
+      constructor(input: RequestInfo | URL, init?: RequestInit) {
+        if (init?.redirect === 'error') throw new Error('redirect implementation detail must not leak')
+        return new nativeRequest(input, init)
+      }
+    })
+    try {
+      const adapter = new CloudflareRealtimeHttpAdapter({
+        appId: 'app-1',
+        appSecret: 'server-only-app-secret',
+        diagnosticLogger,
+        fetchImplementation,
+        mayCallProvider: true,
+      })
+
+      await expect(adapter.createSession({ tenantId: 'tenant-1' }))
+        .resolves.toEqual({ outcome: 'provider_unavailable', reconciliationRequired: false })
+      expect(fetchImplementation).not.toHaveBeenCalled()
+      expect(diagnosticLogger).toHaveBeenCalledWith({
+        event: 'sygsphere_communications_provider_failure',
+        failureClass: 'request_initialization',
+        operation: 'session_create',
+        outcome: 'provider_unavailable',
+        requestInitializationCause: 'redirect_mode',
+      })
+      const logged = JSON.stringify(diagnosticLogger.mock.calls)
+      expect(logged).not.toContain('redirect implementation detail')
+      expect(logged).not.toContain('server-only-app-secret')
+      expect(logged).not.toContain('tenant-1')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('classifies signal-bound Request construction failures without retaining request data', async () => {
+    const diagnosticLogger = vi.fn()
+    const fetchImplementation = vi.fn<typeof fetch>()
+    const nativeRequest = Request
+    vi.stubGlobal('Request', class {
+      constructor(input: RequestInfo | URL, init?: RequestInit) {
+        if (init?.signal) throw new Error('signal implementation detail must not leak')
+        return new nativeRequest(input, init)
+      }
+    })
+    try {
+      const adapter = new CloudflareRealtimeHttpAdapter({
+        appId: 'app-1',
+        appSecret: 'server-only-app-secret',
+        diagnosticLogger,
+        fetchImplementation,
+        mayCallProvider: true,
+      })
+
+      await expect(adapter.createSession({ tenantId: 'tenant-1' }))
+        .resolves.toEqual({ outcome: 'provider_unavailable', reconciliationRequired: false })
+      expect(fetchImplementation).not.toHaveBeenCalled()
+      expect(diagnosticLogger).toHaveBeenCalledWith({
+        event: 'sygsphere_communications_provider_failure',
+        failureClass: 'request_initialization',
+        operation: 'session_create',
+        outcome: 'provider_unavailable',
+        requestInitializationCause: 'request_signal',
+      })
+      const logged = JSON.stringify(diagnosticLogger.mock.calls)
+      expect(logged).not.toContain('signal implementation detail')
       expect(logged).not.toContain('server-only-app-secret')
       expect(logged).not.toContain('tenant-1')
     } finally {

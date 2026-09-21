@@ -123,9 +123,10 @@ export type CloudflareProviderTransportCause =
  * header content, URL, request body, or provider response.
  */
 export type CloudflareProviderRequestInitializationCause =
-  | 'abort_signal'
   | 'authorization_header'
-  | 'request_constructor'
+  | 'redirect_mode'
+  | 'request_core'
+  | 'request_signal'
 
 export type CloudflareProviderSuccess<T> = Readonly<{
   outcome: 'accepted'
@@ -405,20 +406,6 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
       return this.reportFailure(operation, { outcome: 'provider_unavailable', reconciliationRequired: false }, 'configuration')
     }
 
-    let signal: AbortSignal
-    try {
-      signal = AbortSignal.timeout(providerRequestTimeoutMs)
-    } catch {
-      return this.reportFailure(
-        operation,
-        { outcome: 'provider_unavailable', reconciliationRequired: false },
-        'request_initialization',
-        undefined,
-        undefined,
-        'abort_signal',
-      )
-    }
-
     let headers: Headers
     try {
       headers = new Headers()
@@ -436,15 +423,21 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
       )
     }
 
-    let request: Request
+    const coreRequestInit: RequestInit = {
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      headers,
+      method: init.method,
+    }
+
+    /*
+     * Construct the same final request in deliberately isolated stages. This
+     * does not issue a provider request until the final construction succeeds;
+     * it only lets server-side diagnostics distinguish a Worker runtime
+     * incompatibility from a provider rejection without retaining any request
+     * material in logs.
+     */
     try {
-      request = new Request(path, {
-        body: init.body === undefined ? undefined : JSON.stringify(init.body),
-        headers,
-        method: init.method,
-        redirect: 'error',
-        signal,
-      })
+      new Request(path, coreRequestInit)
     } catch {
       return this.reportFailure(
         operation,
@@ -452,7 +445,49 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
         'request_initialization',
         undefined,
         undefined,
-        'request_constructor',
+        'request_core',
+      )
+    }
+
+    const redirectRequestInit: RequestInit = { ...coreRequestInit, redirect: 'error' }
+    try {
+      new Request(path, redirectRequestInit)
+    } catch {
+      return this.reportFailure(
+        operation,
+        { outcome: 'provider_unavailable', reconciliationRequired: false },
+        'request_initialization',
+        undefined,
+        undefined,
+        'redirect_mode',
+      )
+    }
+
+    let signal: AbortSignal
+    try {
+      signal = AbortSignal.timeout(providerRequestTimeoutMs)
+    } catch {
+      return this.reportFailure(
+        operation,
+        { outcome: 'provider_unavailable', reconciliationRequired: false },
+        'request_initialization',
+        undefined,
+        undefined,
+        'request_signal',
+      )
+    }
+
+    let request: Request
+    try {
+      request = new Request(path, { ...redirectRequestInit, signal })
+    } catch {
+      return this.reportFailure(
+        operation,
+        { outcome: 'provider_unavailable', reconciliationRequired: false },
+        'request_initialization',
+        undefined,
+        undefined,
+        'request_signal',
       )
     }
     try {
