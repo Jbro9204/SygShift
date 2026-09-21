@@ -1,5 +1,23 @@
 # SygShift Development Log
 
+## 09/21/2026 - HR Short-Notice Call-Out Report and Report Library Alignment
+
+- Added a protected HR report for call-outs received less than four hours
+  before scheduled start. Exactly four hours remains compliant; after-start
+  and no-call/no-show records are distinctly classified.
+- Added complete search/filter/detail workflows, current coverage and HR review
+  context, audited Excel/PDF exports, and direct operational follow-through.
+- Standardized the entire Reports library on one uniform, responsive card
+  structure without changing report visibility or destinations.
+- Verified 299 test files / 1,596 tests, strict TypeScript, zero-warning lint,
+  production builds, 50/50 desktop/mobile report and Time Clock browser checks,
+  and a rollback-only production database boundary regression.
+- Applied migration `20260921193740` and released source `b63d035` as Cloudflare
+  Worker `bf9dfd7d-e577-45cf-800e-9b82b208b23a`. Both production origins passed
+  health, readiness, Reports routing, and exact Reports-bundle verification.
+- Release detail:
+  `docs/changelogs/CHANGELOG_09-21-2026_HR_SHORT_NOTICE_CALL_OUT_REPORT.md`.
+
 ## 09/21/2026 - Coverage Review Boolean Contract Repair
 
 - Repaired the coverage candidate contract so optional employee classification
