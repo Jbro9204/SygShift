@@ -1211,6 +1211,79 @@ describe('Cloudflare Worker boundary', () => {
     expect(html).toContain('A shift is available.<br>Please review it.')
   })
 
+  it('renders support ticket emails as compact, actionable mobile summaries', () => {
+    const html = brandedEmailHtml({
+      subject: '[TKT-000251] New ticket · High · File upload fails',
+      text: 'A new support ticket requires review.',
+      supportTicket: {
+        ticketNumber: 'TKT-000251',
+        eventLabel: 'New support ticket',
+        subject: 'File upload fails <again>',
+        preview: 'The PDF upload never completes on desktop or mobile.',
+        submittedBy: 'Michael Hinz',
+        employeeNumber: 'SYG-1008',
+        category: 'technical',
+        subcategory: 'file_upload',
+        priority: 'high',
+        status: 'new',
+        createdAt: '2026-09-21T20:11:00Z',
+        confidential: false,
+        routeLabel: 'System maintenance',
+        impact: { affectedPeople: 3, unableToWork: true, upcomingShiftAffected: true },
+        sourcePath: '/sygsphere',
+        technicalContext: {
+          userAgent: 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/140.0 Safari/537.36',
+          viewport: '390x844',
+        },
+      },
+    }, 'https://app.sygilant.us/', {
+      notificationType: 'support_ticket_opened',
+      relatedRecordType: 'support_ticket',
+      relatedRecordId: '7c2d51e7-f0b0-4abc-bac7-965ec84937e4',
+    })
+
+    expect(html).toContain('width="190"')
+    expect(html).toContain('New support ticket · TKT-000251')
+    expect(html).toContain('File upload fails &lt;again&gt;')
+    expect(html).not.toContain('File upload fails <again>')
+    expect(html).toContain('Michael Hinz (SYG-1008)')
+    expect(html).toContain('Employee unable to work')
+    expect(html).toContain('3 people affected')
+    expect(html).toContain('Chrome · Windows · 390x844 viewport')
+    expect(html).toContain('https://app.sygilant.us/support?ticket=7c2d51e7-f0b0-4abc-bac7-965ec84937e4')
+    expect(html).toContain('Open ticket')
+  })
+
+  it('keeps confidential support details out of rich ticket email content', () => {
+    const html = brandedEmailHtml({
+      subject: '[TKT-000252] Private support ticket',
+      text: 'Protected details are available only inside SygShift.',
+      supportTicket: {
+        ticketNumber: 'TKT-000252',
+        eventLabel: 'New support ticket',
+        subject: 'Private HR or workplace concern',
+        preview: 'Protected details are available only inside SygShift.',
+        submittedBy: 'Employee Name',
+        employeeNumber: null,
+        category: 'human_resources',
+        subcategory: 'private_concern',
+        priority: 'high',
+        status: 'new',
+        createdAt: '2026-09-21T20:11:00Z',
+        confidential: true,
+        routeLabel: 'Manage employee records',
+        impact: {},
+        sourcePath: null,
+        technicalContext: {},
+      },
+    })
+
+    expect(html).toContain('Private ticket: protected details are intentionally available only after signing in to SygShift.')
+    expect(html).toContain('Protected details are available only inside SygShift.')
+    expect(html).not.toContain('Affected page')
+    expect(html).not.toContain('Device</td>')
+  })
+
   it('builds personalized welcome email content without login credentials', () => {
     const message = buildWelcomeEmail({
       authEmail: 'lhill@accounts.sygshift.invalid',

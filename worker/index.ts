@@ -504,7 +504,27 @@ interface NotificationJob {
     subject: string
     text: string
     html?: string
+    supportTicket?: unknown
   }
+}
+
+interface SupportTicketEmailContext {
+  ticketNumber: string
+  eventLabel: string
+  subject: string
+  preview: string
+  submittedBy: string
+  employeeNumber: string | null
+  category: string
+  subcategory: string
+  priority: string
+  status: string
+  createdAt: string
+  confidential: boolean
+  routeLabel: string
+  impact: Record<string, unknown>
+  sourcePath: string | null
+  technicalContext: Record<string, unknown>
 }
 
 interface EmailAuditContext {
@@ -880,7 +900,7 @@ async function sendAuditedEmail(
     try {
       await environment.EMAIL.send({
         from: { email: fromEmail, name: environment.SYGSHIFT_EMAIL_FROM_NAME?.trim() || 'SygShift' },
-        html: brandedEmailHtml(message, environment.SYGSHIFT_PUBLIC_APP_URL),
+        html: brandedEmailHtml(message, environment.SYGSHIFT_PUBLIC_APP_URL, context),
         replyTo,
         subject: message.subject,
         text: message.text,
@@ -7782,6 +7802,211 @@ function textToHtml(value: string): string {
     .join('')
 }
 
+function recordOrEmpty(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function boundedString(record: Record<string, unknown>, key: string, maximum = 1000): string {
+  const value = record[key]
+  return typeof value === 'string' ? value.trim().slice(0, maximum) : ''
+}
+
+function normalizeSupportTicketEmailContext(value: unknown): SupportTicketEmailContext | null {
+  const context = recordOrEmpty(value)
+  const ticketNumber = boundedString(context, 'ticketNumber', 32)
+  const eventLabel = boundedString(context, 'eventLabel', 80)
+  const subject = boundedString(context, 'subject', 160)
+  const submittedBy = boundedString(context, 'submittedBy', 200)
+  const createdAt = boundedString(context, 'createdAt', 80)
+  if (!ticketNumber || !eventLabel || !subject || !submittedBy || !createdAt) return null
+
+  return {
+    category: boundedString(context, 'category', 80),
+    confidential: context.confidential === true,
+    createdAt,
+    employeeNumber: boundedString(context, 'employeeNumber', 80) || null,
+    eventLabel,
+    impact: recordOrEmpty(context.impact),
+    preview: boundedString(context, 'preview', 700),
+    priority: boundedString(context, 'priority', 40) || 'normal',
+    routeLabel: boundedString(context, 'routeLabel', 160),
+    sourcePath: boundedString(context, 'sourcePath', 500) || null,
+    status: boundedString(context, 'status', 60) || 'new',
+    subcategory: boundedString(context, 'subcategory', 120),
+    subject,
+    submittedBy,
+    technicalContext: recordOrEmpty(context.technicalContext),
+    ticketNumber,
+  }
+}
+
+function humanizeSupportValue(value: string): string {
+  return value
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function formatSupportTicketDateTime(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    month: '2-digit',
+    timeZone: 'America/Denver',
+    timeZoneName: 'short',
+    year: 'numeric',
+  }).format(date)
+}
+
+function supportImpactLabels(impact: Record<string, unknown>): string[] {
+  const labels: string[] = []
+  if (impact.immediateSafety === true) labels.push('Immediate safety concern')
+  if (impact.unableToWork === true) labels.push('Employee unable to work')
+  if (impact.upcomingShiftAffected === true) labels.push('Upcoming shift may be affected')
+  if (impact.payAffected === true) labels.push('Pay may be affected')
+  const affectedPeople = typeof impact.affectedPeople === 'number' ? impact.affectedPeople : Number(impact.affectedPeople)
+  if (Number.isInteger(affectedPeople) && affectedPeople > 1 && affectedPeople <= 999) {
+    labels.push(`${affectedPeople} people affected`)
+  }
+  const deadline = typeof impact.deadline === 'string' ? impact.deadline.trim() : ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(deadline)) labels.push(`Important date: ${formatDate(deadline)}`)
+  return labels
+}
+
+function supportDeviceLabel(technicalContext: Record<string, unknown>): string | null {
+  const userAgent = boundedString(technicalContext, 'userAgent', 500)
+  const viewport = boundedString(technicalContext, 'viewport', 40)
+  if (!userAgent && !viewport) return null
+
+  const browser = userAgent.includes('Edg/')
+    ? 'Microsoft Edge'
+    : userAgent.includes('Firefox/')
+      ? 'Firefox'
+      : userAgent.includes('Chrome/')
+        ? 'Chrome'
+        : userAgent.includes('Safari/')
+          ? 'Safari'
+          : 'Browser'
+  const device = /Android/i.test(userAgent)
+    ? 'Android'
+    : /iPhone|iPad|iPod/i.test(userAgent)
+      ? 'iPhone/iPad'
+      : /Windows/i.test(userAgent)
+        ? 'Windows'
+        : /Macintosh|Mac OS X/i.test(userAgent)
+          ? 'Mac'
+          : null
+  return [browser, device, viewport ? `${viewport} viewport` : null].filter(Boolean).join(' · ')
+}
+
+function supportPriorityColors(priority: string): { background: string; border: string; color: string } {
+  switch (priority.toLowerCase()) {
+    case 'urgent': return { background: '#fde8e6', border: '#cf4d44', color: '#872a24' }
+    case 'high': return { background: '#fff0dc', border: '#cb7a20', color: '#7d470c' }
+    case 'low': return { background: '#f0f1f2', border: '#92979d', color: '#454a50' }
+    default: return { background: '#fff5dc', border: '#d6a338', color: '#6e4d0c' }
+  }
+}
+
+function supportTicketEmailHtml(
+  message: NotificationJob['message'],
+  ticket: SupportTicketEmailContext,
+  appUrl: string,
+  auditContext?: EmailAuditContext,
+): string {
+  const normalizedAppUrl = appUrl.replace(/\/+$/, '')
+  const ticketId = auditContext?.relatedRecordType === 'support_ticket' && auditContext.relatedRecordId && validUuid(auditContext.relatedRecordId)
+    ? auditContext.relatedRecordId
+    : null
+  const actionUrl = ticketId
+    ? `${normalizedAppUrl}/support?ticket=${encodeURIComponent(ticketId)}`
+    : `${normalizedAppUrl}/support`
+  const logoUrl = `${normalizedAppUrl}/brand/sygshift-email-logo.png`
+  const priorityColors = supportPriorityColors(ticket.priority)
+  const impactLabels = supportImpactLabels(ticket.impact)
+  const deviceLabel = supportDeviceLabel(ticket.technicalContext)
+  const submittedBy = ticket.employeeNumber
+    ? `${ticket.submittedBy} (${ticket.employeeNumber})`
+    : ticket.submittedBy
+  const details = [
+    ['Submitted by', submittedBy],
+    ['Created', formatSupportTicketDateTime(ticket.createdAt)],
+    ['Category', [humanizeSupportValue(ticket.category), humanizeSupportValue(ticket.subcategory)].filter(Boolean).join(' · ')],
+    ['Status', humanizeSupportValue(ticket.status)],
+    ['Routed to', ticket.routeLabel],
+    ...(ticket.sourcePath ? [['Affected page', ticket.sourcePath]] : []),
+    ...(deviceLabel ? [['Device', deviceLabel]] : []),
+  ].filter((detail) => detail[1])
+  const detailRows = details.map(([label, value], index) => `
+                  <tr>
+                    <td style="width:34%; padding:${index === 0 ? '0' : '10px'} 10px 10px 0; border-bottom:1px solid #e6dfd2; color:#746b5f; font-size:12px; line-height:1.45; font-weight:700; text-transform:uppercase; letter-spacing:.45px; vertical-align:top;">${escapeHtml(label)}</td>
+                    <td style="padding:${index === 0 ? '0' : '10px'} 0 10px 10px; border-bottom:1px solid #e6dfd2; color:#211d18; font-size:14px; line-height:1.45; font-weight:700; vertical-align:top;">${escapeHtml(value)}</td>
+                  </tr>`).join('')
+  const impactHtml = impactLabels.length > 0
+    ? `<div style="margin-top:18px; padding:14px 16px; border:1px solid #e2c57e; border-radius:10px; background:#fff8e8;">
+                  <div style="margin-bottom:7px; color:#76520e; font-size:11px; line-height:1.3; font-weight:800; letter-spacing:1px; text-transform:uppercase;">Reported impact</div>
+                  <div style="color:#31291e; font-size:14px; line-height:1.55;">${impactLabels.map((label) => `• ${escapeHtml(label)}`).join('<br>')}</div>
+                </div>`
+    : ''
+  const confidentialHtml = ticket.confidential
+    ? `<div style="margin:0 0 18px; padding:12px 14px; border:1px solid #c99a3e; border-radius:10px; background:#fff7e5; color:#5f4310; font-size:13px; line-height:1.5; font-weight:700;">
+                  Private ticket: protected details are intentionally available only after signing in to SygShift.
+                </div>`
+    : ''
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeHtml(message.subject)}</title>
+  </head>
+  <body style="margin:0; padding:0; background:#f3f0ea; color:#1b1814; font-family:Arial, Helvetica, sans-serif; -webkit-text-size-adjust:100%;">
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">${escapeHtml(`${ticket.ticketNumber} · ${ticket.eventLabel} · ${ticket.subject}`).slice(0, 180)}</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse; background:#f3f0ea;">
+      <tr>
+        <td align="center" style="padding:14px 10px 42px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%; max-width:640px; border-collapse:collapse; table-layout:fixed;">
+            <tr>
+              <td align="center" style="padding:15px 16px 13px; background:#0a0908; border-radius:14px 14px 0 0; border-bottom:3px solid #d6b15f;">
+                <img src="${escapeHtml(logoUrl)}" width="190" alt="SygShift" style="display:block; width:190px; max-width:72%; height:auto; margin:0 auto; border:0;">
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:22px 20px 8px; background:#fffdf8; border-left:1px solid #e4ddcf; border-right:1px solid #e4ddcf; word-break:break-word;">
+                <div style="color:#7b5a1e; font-size:11px; line-height:1.4; letter-spacing:1.2px; text-transform:uppercase; font-weight:800;">${escapeHtml(ticket.eventLabel)} · ${escapeHtml(ticket.ticketNumber)}</div>
+                <h1 style="margin:7px 0 12px; color:#181511; font-size:24px; line-height:1.2; font-weight:800; letter-spacing:-.02em;">${escapeHtml(ticket.subject)}</h1>
+                <span style="display:inline-block; padding:6px 10px; border:1px solid ${priorityColors.border}; border-radius:999px; background:${priorityColors.background}; color:${priorityColors.color}; font-size:12px; line-height:1; font-weight:800; text-transform:uppercase; letter-spacing:.45px;">${escapeHtml(ticket.priority)} priority</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 20px 22px; background:#fffdf8; border-left:1px solid #e4ddcf; border-right:1px solid #e4ddcf;">
+                ${confidentialHtml}
+                <div style="padding:15px 16px; border-left:4px solid #c9952f; border-radius:8px; background:#f8f4ec; color:#2c271f; font-size:15px; line-height:1.55;">${escapeHtml(ticket.preview).replaceAll('\n', '<br>')}</div>
+                ${impactHtml}
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:20px; width:100%; border-collapse:collapse;">${detailRows}
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:4px 20px 30px; background:#fffdf8; border:1px solid #e4ddcf; border-top:0; border-radius:0 0 14px 14px;">
+                <a href="${escapeHtml(actionUrl)}" style="display:inline-block; padding:13px 20px; color:#11100e; background:#d6b15f; border:1px solid #b88721; border-radius:10px; font-size:15px; line-height:1; font-weight:800; text-decoration:none;">Open ticket</a>
+                <p style="margin:16px 0 0; color:#756e64; font-size:12px; line-height:1.5;">Ticket details remain permission-protected. Sign in to SygShift to reply, assign, or update the record.</p>
+                <p style="margin:10px 0 0; color:#8a8378; font-size:11px; line-height:1.45; word-break:break-all;">${escapeHtml(actionUrl)}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+}
+
 function formatDate(value: string): string {
   const date = new Date(`${value}T12:00:00`)
   if (Number.isNaN(date.getTime())) return value
@@ -7818,7 +8043,14 @@ function attendanceEventLabel(eventType: AttendanceReportPayload['eventType']): 
   return eventType === 'called_in_sick' ? 'called in sick' : 'reported a call-off'
 }
 
-export function brandedEmailHtml(message: NotificationJob['message'], appUrl = defaultAppUrl): string {
+export function brandedEmailHtml(
+  message: NotificationJob['message'],
+  appUrl = defaultAppUrl,
+  auditContext?: EmailAuditContext,
+): string {
+  const supportTicket = normalizeSupportTicketEmailContext(message.supportTicket)
+  if (supportTicket) return supportTicketEmailHtml(message, supportTicket, appUrl, auditContext)
+
   const normalizedAppUrl = appUrl.replace(/\/+$/, '')
   const body = message.html?.trim() || textToHtml(message.text)
   const title = escapeHtml(message.subject)

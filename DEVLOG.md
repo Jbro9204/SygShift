@@ -2749,3 +2749,17 @@ pnpm exec wrangler deploy --keep-vars
 - The final 102-check desktop/mobile SygSphere plus mandatory Time Clock matrix, Sygilant production verifier,
   health/readiness, authorization perimeter, exact CORS, hostile-origin denial, and byte-identical asset
   checks passed. Physical two-device audible acceptance remains open.
+
+## 09/21/2026 - Support Ticket Email Redesign Prepared
+
+- Replaced the generic support-ticket email body with a compact, information-rich ticket summary for opened,
+  reply, status, assignment, and update events.
+- Added priority, employee, category, status, routing, impact, affected-page, and friendly technical-device
+  context plus an exact permission-protected ticket action.
+- Kept confidential HR/workplace subjects, descriptions, impact, source-page, and technical details redacted
+  before Worker delivery; existing permission routing, final access recheck, audit history, and service-only
+  claim access remain unchanged.
+- Passed 292 files / 1,528 tests, TypeScript, zero-warning application lint, both production builds, 48 focused
+  Worker/email checks, rendered phone and desktop inspection, and the 42/42 mandatory Time Clock matrix.
+- The isolated branch is prepared but its migration and Worker have not been released, so the active SygSphere
+  communications task and production remain untouched.
