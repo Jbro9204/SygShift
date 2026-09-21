@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useIsMutating, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, BellRing, ChevronDown, ChevronsLeft, ChevronsRight, FileClock, Home, LogOut, Megaphone, Menu, Moon, ShieldAlert, ShieldCheck, Sun, X } from 'lucide-react'
@@ -338,6 +338,23 @@ export function AppShell() {
   const completedSignInKind = passwordRecoverySession
     ? null
     : completedSignInRecordKind(sessionContext, location.pathname, sharedIdentityScope)
+  // Required actions deliberately keep the application UI and every outbound
+  // communications control unavailable. The global runtime remains connected,
+  // however, so an already-authorized employee can still receive a direct call
+  // or listen to an authorized PTT channel while completing that checkpoint.
+  const communicationsRuntimeEnabled = Boolean(
+    sessionContext?.permissions.includes('sygsphere.comms.use')
+    && !needsSecurityCheckpoint,
+  )
+  const withCommunicationsRuntime = (content: ReactNode) => (
+    <SygSphereCommunicationsRuntimeProvider
+      employeeId={sessionContext?.employeeId ?? null}
+      enabled={communicationsRuntimeEnabled}
+      permissions={sessionContext?.permissions ?? []}
+    >
+      {content}
+    </SygSphereCommunicationsRuntimeProvider>
+  )
 
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return
@@ -760,7 +777,7 @@ export function AppShell() {
   }
 
   if (isSupabaseConfigured && sessionContext && !needsSecurityCheckpoint && requiredActionQuery.isPending) {
-    return (
+    return withCommunicationsRuntime(
       <main className="security-page">
         <section className="security-card security-card--compact" role="status">
           <ShieldCheck aria-hidden="true" size={36} />
@@ -772,7 +789,7 @@ export function AppShell() {
   }
 
   if (isSupabaseConfigured && sessionContext && !needsSecurityCheckpoint && requiredActionQuery.isError && !checkpointAllowsLocation(location.pathname, location.search)) {
-    return (
+    return withCommunicationsRuntime(
       <main className="security-page">
         <section className="security-card" role="alert">
           <ShieldAlert aria-hidden="true" size={36} />
@@ -789,23 +806,14 @@ export function AppShell() {
   }
 
   if (isSupabaseConfigured && requiredActionCheckpointActive && !checkpointAllowsLocation(location.pathname, location.search)) {
-    return <Navigate to="/actions?checkpoint=required" replace state={{ from: location }} />
+    return withCommunicationsRuntime(<Navigate to="/actions?checkpoint=required" replace state={{ from: location }} />)
   }
 
   if (isSupabaseConfigured && lacksRouteAccess) {
-    return <Navigate to={resolveAuthorizedLandingRoute(sessionContext)} replace />
+    return withCommunicationsRuntime(<Navigate to={resolveAuthorizedLandingRoute(sessionContext)} replace />)
   }
 
-  return (
-    <SygSphereCommunicationsRuntimeProvider
-      employeeId={sessionContext?.employeeId ?? null}
-      enabled={Boolean(
-        sessionContext?.permissions.includes('sygsphere.comms.use')
-        && !needsSecurityCheckpoint
-        && !requiredActionCheckpointActive,
-      )}
-      permissions={sessionContext?.permissions ?? []}
-    >
+  return withCommunicationsRuntime(
       <div className={`app-shell${sidebarCollapsed && !compactNavigation ? ' app-shell--sidebar-collapsed' : ''}${compactNavigation ? ' app-shell--compact-navigation' : ''}${isSygSpherePath(location.pathname) ? ' app-shell--sygsphere' : ''}${requiredActionCheckpointActive ? ' app-shell--required-actions' : ''}`}>
       <a className="skip-link" href="#main-content">
         Skip to main content
@@ -1025,6 +1033,5 @@ export function AppShell() {
         </main>
       </div>
       </div>
-    </SygSphereCommunicationsRuntimeProvider>
   )
 }
