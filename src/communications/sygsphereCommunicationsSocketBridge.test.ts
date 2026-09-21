@@ -1112,6 +1112,86 @@ describe("SygSphere communications protected socket bridge", () => {
     }
   });
 
+  it("retires a stale control socket after two unanswered heartbeat intervals so the controller can reconnect", async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeSocket();
+      const onDisconnect = vi.fn();
+      const bridge = createBridge({ bootstrap: vi.fn(async () => validBootstrap(ticket)), socket });
+      const connection = bridge.connect({ accountKey: "employee-session", onDisconnect, onEvent: vi.fn() });
+      await Promise.resolve();
+      await Promise.resolve();
+      socket.open();
+      socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+      await connection;
+
+      await vi.advanceTimersByTimeAsync(45_000);
+
+      expect(socket.sent.map((frame) => JSON.parse(frame).kind)).toEqual([
+        "auth",
+        "snapshot.request",
+        "heartbeat",
+        "heartbeat",
+      ]);
+      expect(socket.closedWith).toMatchObject({ code: 1011 });
+      expect(onDisconnect).toHaveBeenCalledOnce();
+      expect(onDisconnect).toHaveBeenCalledWith("Communications stopped responding. Reconnecting.", true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ignores a heartbeat acknowledgement from a different connection epoch", async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeSocket();
+      const onDisconnect = vi.fn();
+      const bridge = createBridge({ bootstrap: vi.fn(async () => validBootstrap(ticket)), socket });
+      const connection = bridge.connect({ accountKey: "employee-session", onDisconnect, onEvent: vi.fn() });
+      await Promise.resolve();
+      await Promise.resolve();
+      socket.open();
+      socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+      await connection;
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      socket.message(heartbeatAcknowledgement(2));
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      // The wrong-epoch acknowledgement above must not hide a dead socket.
+      expect(socket.closedWith).toMatchObject({ code: 1011 });
+      expect(onDisconnect).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not force a reconnect while matching heartbeat acknowledgements continue to arrive", async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeSocket();
+      const onDisconnect = vi.fn();
+      const bridge = createBridge({ bootstrap: vi.fn(async () => validBootstrap(ticket)), socket });
+      const connection = bridge.connect({ accountKey: "employee-session", onDisconnect, onEvent: vi.fn() });
+      await Promise.resolve();
+      await Promise.resolve();
+      socket.open();
+      socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+      const { session } = await connection;
+
+      for (let heartbeat = 0; heartbeat < 4; heartbeat += 1) {
+        await vi.advanceTimersByTimeAsync(15_000);
+        socket.message(heartbeatAcknowledgement(1));
+      }
+
+      expect(socket.closedWith).toBeNull();
+      expect(onDisconnect).not.toHaveBeenCalled();
+      session.close("test_complete");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("renews authorization every 45 seconds while the connection remains active", async () => {
     vi.useFakeTimers();
     try {
@@ -1132,10 +1212,10 @@ describe("SygSphere communications protected socket bridge", () => {
       socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
       await connection;
 
-      await vi.advanceTimersByTimeAsync(45_000);
+      for (let heartbeat = 0; heartbeat < 3; heartbeat += 1) await advanceHealthyHeartbeat(socket);
       expect(refreshAuthorization).toHaveBeenCalledTimes(1);
       expect(refreshAuthorization).toHaveBeenCalledWith("access-token", expect.any(AbortSignal));
-      await vi.advanceTimersByTimeAsync(45_000);
+      for (let heartbeat = 0; heartbeat < 3; heartbeat += 1) await advanceHealthyHeartbeat(socket);
       expect(refreshAuthorization).toHaveBeenCalledTimes(2);
       expect(socket.closedWith).toBeNull();
     } finally {
@@ -1166,7 +1246,7 @@ describe("SygSphere communications protected socket bridge", () => {
       await connection;
 
       accessToken = "refreshed-access-token";
-      await vi.advanceTimersByTimeAsync(45_000);
+      for (let heartbeat = 0; heartbeat < 3; heartbeat += 1) await advanceHealthyHeartbeat(socket);
 
       expect(refreshAuthorization).toHaveBeenCalledWith("refreshed-access-token", expect.any(AbortSignal));
       expect(socket.closedWith).toBeNull();
@@ -1197,7 +1277,7 @@ describe("SygSphere communications protected socket bridge", () => {
         socket.open();
         socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
         await connection;
-        await vi.advanceTimersByTimeAsync(45_000);
+        for (let heartbeat = 0; heartbeat < 3; heartbeat += 1) await advanceHealthyHeartbeat(socket);
         expect(socket.closedWith).toEqual({ code: 1008, reason: "Communications authorization expired." });
       }
     } finally {
@@ -1225,7 +1305,7 @@ describe("SygSphere communications protected socket bridge", () => {
       socket.open();
       socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
       const { session } = await connection;
-      await vi.advanceTimersByTimeAsync(45_000);
+      for (let heartbeat = 0; heartbeat < 3; heartbeat += 1) await advanceHealthyHeartbeat(socket);
       expect(observed.refreshSignal).toBeDefined();
       expect(observed.refreshSignal?.aborted).toBe(false);
       session.close("logout");
@@ -1247,6 +1327,21 @@ function validBootstrap(value: string) {
     },
     requestId: "d285bf11-15f6-4efe-b60f-4ab891637342",
   };
+}
+
+function heartbeatAcknowledgement(connectionEpoch: number) {
+  return JSON.stringify({
+    connectionEpoch,
+    correlationId: "58f2be04-75dc-4cb9-a7da-7c3d6daa20b4",
+    kind: "heartbeat.ack",
+    protocolVersion: 1,
+    serverTime: "2026-09-19T21:00:15.000Z",
+  });
+}
+
+async function advanceHealthyHeartbeat(socket: FakeSocket, connectionEpoch = 1) {
+  await vi.advanceTimersByTimeAsync(15_000);
+  socket.message(heartbeatAcknowledgement(connectionEpoch));
 }
 
 async function socketCreated(socket: FakeSocket) {

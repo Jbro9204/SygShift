@@ -8,6 +8,7 @@ const runtime = vi.hoisted(() => ({
   getSession: vi.fn(),
   getToken: null as null | (() => string | null),
   onAuthStateChange: vi.fn(),
+  stateListener: null as null | ((state: unknown) => void),
   start: vi.fn(),
   stop: vi.fn(),
   unsubscribe: vi.fn(),
@@ -34,7 +35,10 @@ vi.mock("../../communications/sygsphereCommunicationsController", () => ({
   SygSphereCommunicationsController: class {
     start = runtime.start;
     stop = runtime.stop;
-    subscribe = vi.fn(() => () => undefined);
+    subscribe = vi.fn((listener: (state: unknown) => void) => {
+      runtime.stateListener = listener;
+      return () => { runtime.stateListener = null; };
+    });
     subscribeRemoteMedia = vi.fn(() => () => undefined);
   },
 }));
@@ -52,10 +56,12 @@ vi.mock("../../communications/sygsphereCommunicationsBrowserCapabilities", () =>
 }));
 
 import {
+  GlobalCommunicationsConnectionNotice,
   GlobalCommunicationsAudio,
   IncomingCommunicationsCallNotice,
   SygSphereCommunicationsRuntimeProvider,
 } from "./SygSphereCommunicationsRuntime";
+import { createCommunicationsRuntimeState } from "../../communications/sygsphereCommunicationsState";
 
 const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
 const originalSetSinkId = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "setSinkId");
@@ -65,6 +71,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   runtime.authListener = null;
   runtime.getToken = null;
+  runtime.stateListener = null;
   runtime.getSession.mockReset();
   runtime.onAuthStateChange.mockReset();
   runtime.start.mockReset();
@@ -100,6 +107,46 @@ describe("SygSphereCommunicationsRuntimeProvider", () => {
 
     expect(runtime.getToken?.()).toBe("refreshed-access-token");
     expect(runtime.start).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a failed global voice runtime visible and recoverable outside a selected conversation", async () => {
+    runtime.getSession.mockResolvedValue({
+      data: { session: { access_token: "initial-access-token" } },
+      error: null,
+    });
+    runtime.onAuthStateChange.mockImplementation(() => ({
+      data: { subscription: { unsubscribe: runtime.unsubscribe } },
+    }));
+
+    render(
+      <SygSphereCommunicationsRuntimeProvider employeeId="employee-a" enabled permissions={[]}>
+        <div>Scheduling workspace</div>
+      </SygSphereCommunicationsRuntimeProvider>,
+    );
+
+    await waitFor(() => expect(runtime.start).toHaveBeenCalledWith("employee-a"));
+    runtime.stateListener?.({
+      ...createCommunicationsRuntimeState("employee-a"),
+      connection: "failed",
+      lastError: "private provider session 123",
+    });
+
+    const status = await screen.findByRole("status", { name: "SygSphere voice status" });
+    expect(status).toHaveTextContent("SygSphere voice is unavailable");
+    expect(status).not.toHaveTextContent("private provider session 123");
+    expect(screen.getByText("Scheduling workspace")).toBeVisible();
+    runtime.start.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: /reconnect voice/i }));
+    expect(runtime.start).toHaveBeenCalledWith("employee-a");
+  });
+});
+
+describe("GlobalCommunicationsConnectionNotice", () => {
+  it("shows a compact passive status while a healthy session is reconnecting", () => {
+    render(<GlobalCommunicationsConnectionNotice connection="reconnecting" />);
+
+    expect(screen.getByRole("status", { name: "SygSphere voice status" })).toHaveTextContent("SygSphere voice is reconnecting");
+    expect(screen.queryByRole("button", { name: /reconnect voice/i })).not.toBeInTheDocument();
   });
 });
 

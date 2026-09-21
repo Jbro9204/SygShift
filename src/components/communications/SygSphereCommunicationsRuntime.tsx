@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { MonitorSpeaker, Phone, PhoneOff, Volume2, VolumeX } from "lucide-react";
+import { MonitorSpeaker, Phone, PhoneOff, Radio, RefreshCw, Volume2, VolumeX } from "lucide-react";
 import type { SphereConversation } from "../../data/sygsphere";
 import { getSupabaseClient } from "../../lib/supabase";
 import {
@@ -270,10 +270,23 @@ export function SygSphereCommunicationsRuntimeProvider({
     () => remoteMedia.filter((track) => track.mediaKind === "audio"),
     [remoteMedia],
   );
+  const globalVoiceConnection = enabled
+    && controller
+    && state.accountKey
+    && (state.connection === "reconnecting" || state.connection === "failed")
+    ? state.connection
+    : null;
 
   return (
     <CommunicationsRuntimeContext.Provider value={value}>
       {children}
+      {globalVoiceConnection && typeof document !== "undefined" ? createPortal(
+        <GlobalCommunicationsConnectionNotice
+          connection={globalVoiceConnection}
+          onReconnect={globalVoiceConnection === "failed" ? () => void run((activeController) => activeController.start(state.accountKey!)) : undefined}
+        />,
+        document.body,
+      ) : null}
       {remoteAudio.length > 0 && typeof document !== "undefined" ? createPortal(
         <GlobalCommunicationsAudio tracks={remoteAudio} />,
         document.body,
@@ -296,6 +309,35 @@ export function SygSphereCommunicationsRuntimeProvider({
         document.body,
       ) : null}
     </CommunicationsRuntimeContext.Provider>
+  );
+}
+
+/**
+ * The runtime is intentionally mounted outside the selected SygSphere
+ * conversation. When its secure control connection is lost, expose a compact
+ * recovery affordance in that same global layer instead of leaving a person
+ * looking at a green presence dot with no explanation. It carries no error,
+ * identity, or provider detail.
+ */
+export function GlobalCommunicationsConnectionNotice({
+  connection,
+  onReconnect,
+}: {
+  connection: "failed" | "reconnecting";
+  onReconnect?: () => void;
+}) {
+  const failed = connection === "failed";
+  return (
+    <aside aria-label="SygSphere voice status" aria-live="polite" className="sphere-comms-runtime-status" role="status">
+      <span aria-hidden="true">{failed ? <Radio size={18} /> : <RefreshCw size={18} />}</span>
+      <div>
+        <strong>{failed ? "SygSphere voice is unavailable" : "SygSphere voice is reconnecting"}</strong>
+        <small>{failed ? "Messages remain available while voice reconnects." : "Messages remain available while the secure voice connection returns."}</small>
+      </div>
+      {failed && onReconnect ? (
+        <button onClick={onReconnect} type="button"><RefreshCw size={16} /> Reconnect voice</button>
+      ) : null}
+    </aside>
   );
 }
 

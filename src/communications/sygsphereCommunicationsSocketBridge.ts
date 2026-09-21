@@ -34,6 +34,11 @@ const pttMediaRequestTimeoutMilliseconds = 55_000;
 const pttMediaConnectionTimeoutMilliseconds = 25_000;
 const pttListenerConnectionTimeoutMilliseconds = 20_000;
 const heartbeatMilliseconds = 15_000;
+// A control socket can remain superficially open after a network path has
+// gone stale. Two full unanswered heartbeat intervals are enough evidence to
+// retire that socket, while allowing a transient delayed acknowledgement to
+// arrive without disrupting an otherwise healthy session.
+const heartbeatMissedAcknowledgementLimit = 2;
 const authorizationRefreshMilliseconds = 45_000;
 const bootstrapSchema = z.object({
   connection: z.object({
@@ -296,8 +301,24 @@ export class SygSphereCommunicationsSocketBridge implements CommunicationsCoordi
       let authenticated = false;
       let disposeSession: () => void = () => undefined;
       let handleSessionEvent: (event: SygSphereCommsEvent) => Promise<void> = async () => undefined;
+      let handleHeartbeatAcknowledgement: (payload: z.infer<typeof heartbeatAcknowledgementSchema>) => void = () => undefined;
       let intentionalClose = false;
+      let disconnectReported = false;
       let settled = false;
+      const reportDisconnect = (reason: string, recoverable: boolean) => {
+        if (!authenticated || intentionalClose || disconnectReported) return;
+        disconnectReported = true;
+        onDisconnect(reason, recoverable);
+      };
+      const closeForHeartbeatLivenessFailure = () => {
+        // Report before calling `close()`: a browser that is already in a
+        // broken networking state may not dispatch its close event promptly.
+        // The one-shot reporter below prevents a later close event from
+        // scheduling a second reconnect.
+        disposeSession();
+        reportDisconnect("Communications stopped responding. Reconnecting.", true);
+        if (socket.readyState < 2) socket.close(1011, "Communications connection unavailable.");
+      };
       const failOpening = (message: string) => {
         if (settled) return;
         settled = true;
@@ -345,6 +366,7 @@ export class SygSphereCommunicationsSocketBridge implements CommunicationsCoordi
             dependencies: this.dependencies,
             getAccessToken: this.getAccessToken,
             onCallMediaConnection,
+            onHeartbeatLivenessFailure: closeForHeartbeatLivenessFailure,
             onPttMediaConnection,
             onRemoteTrack,
             socket,
@@ -352,6 +374,7 @@ export class SygSphereCommunicationsSocketBridge implements CommunicationsCoordi
           });
           disposeSession = connected.dispose;
           handleSessionEvent = connected.handleEvent;
+          handleHeartbeatAcknowledgement = connected.handleHeartbeatAcknowledgement;
           resolve({
             authorizationExpiresAt: null,
             connectionEpoch,
@@ -359,11 +382,12 @@ export class SygSphereCommunicationsSocketBridge implements CommunicationsCoordi
           });
           return;
         }
-        if (
-          commandOutcomeSchema.safeParse(payload).success
-          || heartbeatAcknowledgementSchema.safeParse(payload).success
-          || unavailableSnapshotSchema.safeParse(payload).success
-        ) return;
+        if (commandOutcomeSchema.safeParse(payload).success || unavailableSnapshotSchema.safeParse(payload).success) return;
+        const heartbeatAcknowledgement = heartbeatAcknowledgementSchema.safeParse(payload);
+        if (heartbeatAcknowledgement.success) {
+          handleHeartbeatAcknowledgement(heartbeatAcknowledgement.data);
+          return;
+        }
         try {
           const communicationsEvent = parseSygSphereCommunicationsEvent(payload);
           void handleSessionEvent(communicationsEvent)
@@ -387,7 +411,7 @@ export class SygSphereCommunicationsSocketBridge implements CommunicationsCoordi
           failOpening("Communications could not verify this connection.");
           return;
         }
-        if (!intentionalClose) onDisconnect(publicCloseReason(event), isRecoverableClose(event.code));
+        reportDisconnect(publicCloseReason(event), isRecoverableClose(event.code));
       });
     });
   }
@@ -453,6 +477,7 @@ function createSession({
   dependencies,
   getAccessToken,
   onCallMediaConnection,
+  onHeartbeatLivenessFailure,
   onPttMediaConnection,
   onRemoteTrack,
   setIntentionalClose,
@@ -462,17 +487,21 @@ function createSession({
   dependencies: Pick<SocketBridgeDependencies, "acknowledgePttListenerReady" | "clearTimer" | "createPeerTransport" | "createRtcPeer" | "createStream" | "getDirectCallContext" | "now" | "prepareDirectAudio" | "prepareMeetingMedia" | "preparePtt" | "refreshAuthorization" | "reportPttListenerFailure" | "sendCommand" | "setTimer" | "startDirectAudio" | "startMeetingMedia" | "startPtt" | "stopMeetingMedia">;
   getAccessToken: () => string | null;
   onCallMediaConnection: (connection: CommunicationsCallMediaConnection) => void;
+  onHeartbeatLivenessFailure: () => void;
   onPttMediaConnection: (connection: CommunicationsPttMediaConnection) => void;
   onRemoteTrack: (track: CommunicationsRemoteTrack) => void;
   setIntentionalClose: () => void;
   socket: CommunicationsWebSocket;
 }>): Readonly<{
   dispose: () => void;
+  handleHeartbeatAcknowledgement: (payload: z.infer<typeof heartbeatAcknowledgementSchema>) => void;
   handleEvent: (event: SygSphereCommsEvent) => Promise<void>;
   session: CommunicationsCoordinatorSession;
 }> {
   let closed = false;
   let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+  let heartbeatAwaitingAcknowledgement = false;
+  let heartbeatMissedAcknowledgements = 0;
   let authorizationRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   let authorizationRefreshTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   let authorizationRefreshController: AbortController | null = null;
@@ -1224,12 +1253,29 @@ function createSession({
     authorizationRefreshTimeoutTimer = null;
     authorizationRefreshController = null;
   };
+  const handleHeartbeatAcknowledgement = (payload: z.infer<typeof heartbeatAcknowledgementSchema>) => {
+    // The server creates the acknowledgement correlation ID, so the stable
+    // browser-visible match is the current connection epoch. Never let a
+    // delayed acknowledgement from another control session keep this one
+    // alive.
+    if (closed || payload.connectionEpoch !== connectionEpoch) return;
+    heartbeatAwaitingAcknowledgement = false;
+    heartbeatMissedAcknowledgements = 0;
+  };
   const scheduleHeartbeat = () => {
     if (closed) return;
     heartbeatTimer = dependencies.setTimer(() => {
       heartbeatTimer = null;
+      if (heartbeatAwaitingAcknowledgement) {
+        heartbeatMissedAcknowledgements += 1;
+        if (heartbeatMissedAcknowledgements >= heartbeatMissedAcknowledgementLimit) {
+          onHeartbeatLivenessFailure();
+          return;
+        }
+      }
       try {
         sendSocketControlFrame(systemCommand("heartbeat", connectionEpoch));
+        heartbeatAwaitingAcknowledgement = true;
         scheduleHeartbeat();
       } catch {
         dispose();
@@ -1537,7 +1583,7 @@ function createSession({
   sendSocketControlFrame(systemCommand("snapshot.request", connectionEpoch));
   scheduleHeartbeat();
   scheduleAuthorizationRefresh();
-  return { dispose, handleEvent, session };
+  return { dispose, handleEvent, handleHeartbeatAcknowledgement, session };
 }
 
 function commandOutcomeMessage(outcome: string, commandKind?: SygSphereCommsCommandKind): string {

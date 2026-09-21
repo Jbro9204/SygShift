@@ -831,7 +831,7 @@ function safeError(error: unknown): string {
     if (error.name === "NotAllowedError") return "Microphone or camera permission was not granted.";
     if (error.name === "NotFoundError") return "No microphone was found. Connect a microphone and try again.";
     if (error.name === "NotReadableError") return "The microphone is being used by another app. Close that app and try again.";
-    if (error.name === "AbortError") return "Voice setup was interrupted. Release the control and try again.";
+    if (error.name === "AbortError") return "Voice setup was interrupted. Try again.";
   }
   if (error instanceof Error) {
     if (error.message === "No one else is online in this channel right now.") return error.message;
@@ -839,7 +839,10 @@ function safeError(error: unknown): string {
     if (error.message === "Please wait a moment before trying Communications again.") return error.message;
     if (error.message === "Your session is no longer valid. Sign in and try again.") return error.message;
     if (error.message.includes("in time") || error.message.includes("timed out")) {
-      return "Voice setup took too long. Release the control and try again.";
+      // This path is shared by push-to-talk, direct calls, and meetings. Do
+      // not tell a caller or meeting participant to release a control they
+      // never held.
+      return "Voice setup took too long. Try again.";
     }
     if (error.message.startsWith("Communications is temporarily unavailable.")) {
       return "Voice service is temporarily unavailable. Try again in a moment.";

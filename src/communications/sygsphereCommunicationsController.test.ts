@@ -253,7 +253,7 @@ describe("SygSphere communications controller", () => {
 
     await vi.waitFor(() => expect(test.controller.snapshot.floor).toBeNull());
     expect(test.controller.snapshot.lastError).toBe(
-      "Voice setup took too long. Release the control and try again. Use messages or Dispatch while voice reconnects.",
+      "Voice setup took too long. Try again. Use messages or Dispatch while voice reconnects.",
     );
   });
 
@@ -533,6 +533,28 @@ describe("SygSphere communications controller", () => {
 
     expect(test.controller.snapshot.call).toBeNull();
     expect(test.controller.snapshot.lastError).toBe("Communications could not be prepared. Use messages or Dispatch and try again.");
+  });
+
+  it("keeps a direct-call setup timeout actionable without PTT-only instructions", async () => {
+    const test = harness();
+    const callId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+    vi.mocked(test.session.publish).mockRejectedValueOnce(new Error("Communications media negotiation timed out."));
+    await test.controller.start("employee-a");
+    await test.controller.startCall("conversation-a");
+    await test.onEvent()(event("call.requested", {
+      callId,
+      invitationId: "d285bf11-15f6-4efe-b60f-4ab891637342",
+    }, 1));
+    await test.onEvent()(event("call.accepted", {
+      callId,
+      invitationId: "d285bf11-15f6-4efe-b60f-4ab891637342",
+    }, 2));
+
+    await vi.waitFor(() => expect(test.controller.snapshot.call).toBeNull());
+    expect(test.controller.snapshot.lastError).toBe(
+      "Voice setup took too long. Try again. Use messages or Dispatch while voice reconnects.",
+    );
+    expect(test.controller.snapshot.lastError).not.toMatch(/release the control/i);
   });
 
   it("automatically joins a meeting created by the current employee", async () => {

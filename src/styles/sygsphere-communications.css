@@ -433,6 +433,34 @@
 .sphere-main > .sphere-comms-workspace .sphere-comms-active__controls button { min-width: 64px; min-height: 50px; }
 .sphere-main > .sphere-comms-workspace .sphere-comms-media-stage { min-width: min(360px, 38vw); }
 
+.sphere-comms-runtime-status {
+  position: fixed;
+  z-index: 1485;
+  right: 22px;
+  bottom: 94px;
+  display: grid;
+  width: min(356px, calc(100vw - 28px));
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  color: #17201f;
+  border: 1px solid #c08a2b;
+  border-radius: 13px;
+  background: #fffdf8;
+  box-shadow: 0 14px 38px rgba(8, 15, 15, 0.24);
+  font-family: inherit;
+}
+.sphere-comms-runtime-status > span { display: grid; width: 38px; height: 38px; place-items: center; color: #8b661d; border-radius: 50%; background: #f3ead6; }
+.sphere-comms-runtime-status > div { display: grid; min-width: 0; gap: 2px; }
+.sphere-comms-runtime-status strong { font-size: 0.82rem; }
+.sphere-comms-runtime-status small { color: #505854; font-size: 0.8125rem; line-height: 1.35; }
+.sphere-comms-runtime-status button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 10px; color: #765514; border: 1px solid #cab272; border-radius: 9px; background: #fff8e7; font: inherit; font-size: 0.8125rem; font-weight: 720; cursor: pointer; white-space: nowrap; }
+[data-theme="dark"] .sphere-comms-runtime-status { color: #f1f3ed; border-color: #d1ae64; background: #121b1e; }
+[data-theme="dark"] .sphere-comms-runtime-status > span { color: #edc774; background: #293027; }
+[data-theme="dark"] .sphere-comms-runtime-status small { color: #bdc6c2; }
+[data-theme="dark"] .sphere-comms-runtime-status button { color: #edc774; border-color: #6e5c32; background: #201f19; }
+
 .sphere-comms-live-audio {
   position: fixed;
   z-index: 1490;
@@ -512,6 +540,7 @@
   .sphere-comms-panel__hint { margin: -1px; }
   .sphere-main > .sphere-comms-workspace .sphere-comms-active { flex-direction: column; }
   .sphere-main > .sphere-comms-workspace .sphere-comms-media-stage { width: 100%; min-width: 0; }
+  .sphere-comms-runtime-status { right: 14px; bottom: max(86px, calc(14px + env(safe-area-inset-bottom))); left: 14px; width: auto; }
   .sphere-comms-live-audio { right: 14px; bottom: max(14px, env(safe-area-inset-bottom)); left: 14px; width: auto; }
 }
 
