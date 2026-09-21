@@ -328,6 +328,31 @@ const typedTrackResponses = (
   return responses
 }
 
+/* A forced close may succeed for one requested track and fail for another.
+ * The provider allows the response to omit `tracks` on a full success; if it
+ * supplies track results, require every requested MID to be acknowledged and
+ * reject any per-track provider error so the caller can reconcile safely. */
+const closeTrackResponsesAreAccepted = (
+  body: unknown,
+  requested: readonly Readonly<{ mid: string }>[],
+): boolean => {
+  if (!body || typeof body !== 'object') return false
+  const source = (body as { tracks?: unknown }).tracks
+  if (source === undefined) return true
+  if (!Array.isArray(source)) return false
+  return source.every((item) => {
+    if (!item || typeof item !== 'object') return false
+    const candidate = item as { errorCode?: unknown, errorDescription?: unknown }
+    return candidate.errorCode === undefined && candidate.errorDescription === undefined
+  }) && requested.every((requestedTrack) => source.some((item) => {
+    if (!item || typeof item !== 'object') return false
+    const candidate = item as { errorCode?: unknown, errorDescription?: unknown, mid?: unknown }
+    return candidate.mid === requestedTrack.mid
+      && candidate.errorCode === undefined
+      && candidate.errorDescription === undefined
+  }))
+}
+
 const typedSessionDescription = (body: unknown): ProviderSessionDescription | null => {
   if (!body || typeof body !== 'object') return null
   const description = (body as { sessionDescription?: unknown }).sessionDescription
@@ -631,6 +656,9 @@ export class CloudflareRealtimeHttpAdapter implements SygSphereCommsProviderAdap
       body: { force: true, tracks: input.tracks.map((track) => ({ mid: track.mid })) }, method: 'PUT',
     })
     if (result.outcome !== 'accepted') return result
+    if (!closeTrackResponsesAreAccepted(result.value, input.tracks)) {
+      return this.reportFailure('track_close', { outcome: 'provider_rejected', reconciliationRequired: true }, 'invalid_response')
+    }
     const requiresImmediateRenegotiation = (result.value as { requiresImmediateRenegotiation?: unknown }).requiresImmediateRenegotiation
     if (requiresImmediateRenegotiation !== undefined && typeof requiresImmediateRenegotiation !== 'boolean') {
       return this.reportFailure('track_close', { outcome: 'provider_rejected', reconciliationRequired: false }, 'invalid_response')

@@ -1488,8 +1488,9 @@ async function handleSygSphereCommunicationsApi(
     const transmissionRequestId = typeof body.transmissionRequestId === 'string' && validUuid(body.transmissionRequestId) ? body.transmissionRequestId : null
     const channelReference = typeof body.channelReference === 'string' && validUuid(body.channelReference) ? body.channelReference : null
     const offer = typeof body.offer === 'string' && body.offer.length > 0 && body.offer.length <= 65_536 ? body.offer : null
+    const transceiverMid = validSygSphereTransceiverMid(body.transceiverMid) ? body.transceiverMid : null
     if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS || !transmissionRequestId
-      || (publisher && (!offer || !channelReference))) {
+      || (publisher && (!offer || !channelReference || !transceiverMid))) {
       throw new ApiError('invalid_communications_media', 422, 'Push-to-talk audio could not be understood. Please release and hold again.')
     }
     const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
@@ -1523,6 +1524,7 @@ async function handleSygSphereCommunicationsApi(
         offer,
         release: release.data,
         requestId,
+        transceiverMid,
         transmissionRequestId,
       })
       : await coordinator.startPttListen({
@@ -1623,8 +1625,9 @@ async function handleSygSphereCommunicationsApi(
   }
 
   /** Meeting media uses the same protected, server-owned session boundary as
-   * PTT.  A browser supplies only its SDP offer and never a recipient list,
-   * provider handle, or authority to publish camera/screen. */
+   * PTT. A browser supplies only its SDP offer and bounded local-transceiver
+   * MID, never a recipient list, provider handle, or authority to publish
+   * camera/screen. */
   const meetingMediaMatch = /^\/api\/comms\/v1\/meetings\/([0-9a-f-]{36})\/media\/(prepare|publish|subscribe|stop)$/i.exec(url.pathname)
   if (meetingMediaMatch) {
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
@@ -1642,8 +1645,10 @@ async function handleSygSphereCommunicationsApi(
     const mediaKind = body.mediaKind === 'audio' || body.mediaKind === 'video' || body.mediaKind === 'screen' ? body.mediaKind : null
     const sourceConnectionId = typeof body.sourceConnectionId === 'string' && validUuid(body.sourceConnectionId) ? body.sourceConnectionId : null
     const offer = typeof body.offer === 'string' && body.offer.length > 0 && body.offer.length <= 65_536 ? body.offer : null
+    const transceiverMid = validSygSphereTransceiverMid(body.transceiverMid) ? body.transceiverMid : null
     if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS || !mediaKind
       || ((operation === 'publish' || operation === 'subscribe') && !offer)
+      || (operation === 'publish' && !transceiverMid)
       || (operation === 'subscribe' && !sourceConnectionId)) {
       throw new ApiError('invalid_communications_media', 422, 'Meeting media could not be understood. Please try again.')
     }
@@ -1686,6 +1691,7 @@ async function handleSygSphereCommunicationsApi(
       ...base,
       offer: offer!,
       ...(operation === 'subscribe' && sourceConnectionId ? { sourceConnectionId } : {}),
+      ...(operation === 'publish' && transceiverMid ? { transceiverMid } : {}),
     })
     return json({ outcome: started.outcome, requestId }, 202)
   }
@@ -1779,9 +1785,9 @@ async function handleSygSphereCommunicationsApi(
   }
 
   /**
-   * A browser may offer only its own microphone SDP. The Worker re-checks the
-   * current employee, active direct-conversation membership, per-tab route
-   * handle,
+   * A browser may offer only its own microphone SDP and bounded local-
+   * transceiver MID. The Worker re-checks the current employee, active direct-
+   * conversation membership, per-tab route handle,
    * release state, and tenant before the coordinator receives it. Provider
    * credentials and Cloudflare session identifiers never cross this boundary.
    */
@@ -1804,7 +1810,8 @@ async function handleSygSphereCommunicationsApi(
     const offer = typeof body.offer === 'string' && body.offer.length > 0 && body.offer.length <= 65_536
       ? body.offer
       : null
-    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS || !callId || !conversationReference || !offer) {
+    const transceiverMid = validSygSphereTransceiverMid(body.transceiverMid) ? body.transceiverMid : null
+    if (!authUserId || !validUuid(authUserId) || !route || !environment.TENANT_COMMS || !callId || !conversationReference || !offer || !transceiverMid) {
       throw new ApiError('invalid_communications_media', 422, 'Audio setup could not be understood. Please try the call again.')
     }
     const decision = await callRpc<SygSphereCommunicationsAuthorizationDecision>(
@@ -1841,6 +1848,7 @@ async function handleSygSphereCommunicationsApi(
       offer,
       release: release.data,
       requestId,
+      transceiverMid,
     })
     return json({ outcome: outcome.outcome, requestId }, 202)
   }
@@ -2357,6 +2365,14 @@ export function recentAuthenticatorMfa(
 
 function validUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+/** Browser-provided only to bind its new local SDP transceiver. */
+function validSygSphereTransceiverMid(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= 64
+    && /^[A-Za-z0-9._:-]+$/.test(value)
 }
 
 function requiredText(value: unknown, field: string, maximumLength: number): string {

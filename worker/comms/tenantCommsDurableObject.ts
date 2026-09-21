@@ -241,6 +241,10 @@ const storedProviderSessionSchema = z.object({
   tracks: z.array(storedProviderTrackSchema).max(16),
 }).strict()
 
+/* The browser identifies only the local transceiver in its own SDP offer.
+ * It is never accepted as a provider session, track, or tenant identifier. */
+const transceiverMidSchema = z.string().min(1).max(64).regex(/^[A-Za-z0-9._:-]+$/)
+
 const directAudioStartSchema = z.object({
   authorization: stagedCommsAuthorizationContextSchema,
   callId: z.uuid(),
@@ -249,9 +253,10 @@ const directAudioStartSchema = z.object({
   offer: z.string().min(1).max(65_536),
   release: coordinatorReleaseContextSchema,
   requestId: z.uuid(),
+  transceiverMid: transceiverMidSchema,
 }).strict()
 
-const directAudioPreparationSchema = directAudioStartSchema.omit({ offer: true })
+const directAudioPreparationSchema = directAudioStartSchema.omit({ offer: true, transceiverMid: true })
 
 const pttAudioStartSchema = z.object({
   authorization: stagedCommsAuthorizationContextSchema,
@@ -260,14 +265,15 @@ const pttAudioStartSchema = z.object({
   offer: z.string().min(1).max(65_536),
   release: coordinatorReleaseContextSchema,
   requestId: z.uuid(),
+  transceiverMid: transceiverMidSchema,
   transmissionRequestId: z.uuid(),
 }).strict()
 
 // A remote Cloudflare subscription is provider-offer driven. Unlike a
 // publisher, a listener must never supply browser SDP when it asks the
 // coordinator to create the remote track.
-const pttListenStartSchema = pttAudioStartSchema.omit({ channelReference: true, offer: true })
-const pttAudioPreparationSchema = pttAudioStartSchema.omit({ offer: true })
+const pttListenStartSchema = pttAudioStartSchema.omit({ channelReference: true, offer: true, transceiverMid: true })
+const pttAudioPreparationSchema = pttAudioStartSchema.omit({ offer: true, transceiverMid: true })
 const pttListenPreparationSchema = pttListenStartSchema
 const pttListenerReadySchema = pttListenPreparationSchema
 const pttListenerFailedSchema = pttListenPreparationSchema
@@ -282,7 +288,11 @@ const meetingMediaPreparationSchema = z.object({
   requestId: z.uuid(),
   sourceConnectionId: z.uuid().optional(),
 }).strict()
-const meetingMediaStartSchema = meetingMediaPreparationSchema.extend({ offer: z.string().min(1).max(65_536) }).strict()
+const meetingMediaStartSchema = meetingMediaPreparationSchema.extend({
+  offer: z.string().min(1).max(65_536),
+  // Subscribers do not publish a browser track and therefore do not supply a MID.
+  transceiverMid: transceiverMidSchema.optional(),
+}).strict()
 const meetingMediaStopSchema = meetingMediaPreparationSchema.omit({ sourceConnectionId: true })
 
 const directCallContextSchema = z.object({
@@ -1652,8 +1662,9 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
   }
 
   /** Starts the first media negotiation for an already accepted direct call.
-   * The browser supplies only its own SDP offer; this coordinator resolves the
-   * exact call, connection, recipient, provider session, and track names. */
+   * The browser supplies its own SDP offer plus the bounded local-transceiver
+   * MID; this coordinator resolves the exact call, connection, recipient,
+   * provider session, and track names. */
   async startDirectAudio(input: unknown): Promise<TenantCommsCoordinatorResult> {
     await this.initialization
     const parsed = directAudioStartSchema.parse(input)
@@ -1681,7 +1692,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       session: pending,
       sessionDescription: { sdp: parsed.offer, type: 'offer' },
       tenantId: caller.authorization.tenantId,
-      tracks: [{ kind: 'audio', location: 'local', trackName: trackId }],
+      tracks: [{ kind: 'audio', location: 'local', mid: parsed.transceiverMid, trackName: trackId }],
     })
     const localTrack = publication.outcome === 'accepted' ? publication.value.tracks[0] : null
     if (publication.outcome !== 'accepted' || !localTrack?.mid || !publication.value.sessionDescription) {
@@ -2528,6 +2539,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     if (
       (subscriber && (!source || !meeting.participants.has(sourceConnectionId)))
       || (!subscriber && (!this.meetingMediaMayPublish(parsed.meetingId, caller.connectionId, parsed.mediaKind)
+        || !parsed.transceiverMid
         || this.meetingMediaSession(parsed.meetingId, caller.connectionId, caller.connectionId, parsed.mediaKind)))
       || (subscriber && this.meetingMediaSession(parsed.meetingId, caller.connectionId, sourceConnectionId, parsed.mediaKind))
     ) return { outcome: 'invalid_state', requestId: parsed.requestId }
@@ -2554,7 +2566,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
         session: pending,
         sessionDescription: { sdp: parsed.offer, type: 'offer' },
         tenantId: caller.authorization.tenantId,
-        tracks: [{ kind: parsed.mediaKind === 'audio' ? 'audio' : 'video', location: 'local', trackName: trackId }],
+        tracks: [{ kind: parsed.mediaKind === 'audio' ? 'audio' : 'video', location: 'local', mid: parsed.transceiverMid!, trackName: trackId }],
       })
     const providerTrack = result.outcome === 'accepted' ? result.value.tracks[0] : null
     if (result.outcome !== 'accepted' || !providerTrack?.mid || !result.value.sessionDescription) {
@@ -3300,7 +3312,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       session: pending,
       sessionDescription: { sdp: parsed.offer, type: 'offer' },
       tenantId: caller.authorization.tenantId,
-      tracks: [{ kind: 'audio', location: 'local', trackName: trackId }],
+      tracks: [{ kind: 'audio', location: 'local', mid: parsed.transceiverMid, trackName: trackId }],
     })
     const localTrack = publication.outcome === 'accepted' ? publication.value.tracks[0] : null
     if (publication.outcome !== 'accepted' || !localTrack?.mid || !publication.value.sessionDescription) {

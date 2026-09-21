@@ -97,10 +97,14 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     expect(fetchImplementation).not.toHaveBeenCalled()
 
     const accepted = await adapter.publishTracks({
-      session: session(), sessionDescription: offer, tenantId: 'tenant-1', tracks: [{ kind: 'audio', location: 'local', trackName: 'audio-1' }],
+      session: session(), sessionDescription: offer, tenantId: 'tenant-1', tracks: [{ kind: 'audio', location: 'local', mid: '0', trackName: 'audio-1' }],
     })
     expect(accepted).toMatchObject({ outcome: 'accepted', value: { requiresImmediateRenegotiation: true, tracks: [{ mid: '0', trackName: 'audio-1' }] } })
     expect(asRequest(fetchImplementation.mock.calls[0]?.[0]).url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1/tracks/new')
+    await expect(requestJson(asRequest(fetchImplementation.mock.calls[0]?.[0]))).resolves.toEqual({
+      sessionDescription: offer,
+      tracks: [{ kind: 'audio', location: 'local', mid: '0', trackName: 'audio-1' }],
+    })
 
     fetchImplementation.mockResolvedValueOnce(jsonResponse({ tracks: [{ location: 'local', trackName: 'audio-1' }] }))
     await expect(adapter.updateTracks({
@@ -183,6 +187,29 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     const request = asRequest(fetchImplementation.mock.calls[0]?.[0])
     expect(request.url).toBe('https://rtc.live.cloudflare.com/v1/apps/app-1/sessions/session-1/tracks/close')
     await expect(requestJson(request)).resolves.toEqual({ force: true, tracks: [{ mid: '0' }] })
+  })
+
+  it('fails closed and requires reconciliation when a close response reports a per-track error', async () => {
+    const diagnosticLogger = vi.fn()
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      tracks: [{ errorCode: 'track_not_found', mid: '0' }],
+    }))
+    const adapter = new CloudflareRealtimeHttpAdapter({
+      appId: 'app-1',
+      appSecret: 'server-only-app-secret',
+      diagnosticLogger,
+      fetchImplementation,
+      mayCallProvider: true,
+    })
+
+    await expect(adapter.forceCloseTracks({ session: sessionWithAudio(), tenantId: 'tenant-1', tracks: [{ mid: '0', trackId: 'audio-1' }] }))
+      .resolves.toEqual({ outcome: 'provider_rejected', reconciliationRequired: true })
+    expect(diagnosticLogger).toHaveBeenCalledWith({
+      event: 'sygsphere_communications_provider_failure',
+      failureClass: 'invalid_response',
+      operation: 'track_close',
+      outcome: 'provider_rejected',
+    })
   })
 
   it('returns an ambiguous outcome after a timeout so the coordinator must inspect before retrying', async () => {

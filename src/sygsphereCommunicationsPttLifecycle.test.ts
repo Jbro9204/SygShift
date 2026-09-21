@@ -234,12 +234,35 @@ describe('SygSphere Communications PTT lifecycle', () => {
 
     const worker = readFileSync(resolve(import.meta.dirname, '..', 'worker', 'index.ts'), 'utf8')
     const listenerStartRoute = worker.slice(worker.indexOf("'/api/comms/v1/ptt/audio'"), worker.indexOf("'/api/comms/v1/ptt/listener-ready'"))
-    expect(listenerStartRoute).toContain('publisher && (!offer || !channelReference)')
+    expect(listenerStartRoute).toContain('publisher && (!offer || !channelReference || !transceiverMid)')
     const listenerStartCall = listenerStartRoute.slice(listenerStartRoute.indexOf(': await coordinator.startPttListen'), listenerStartRoute.indexOf('return json({ outcome: started.outcome'))
     expect(listenerStartCall).not.toContain('offer,')
     const listenerFailureRoute = worker.slice(worker.indexOf("'/api/comms/v1/ptt/listener-failed'"), worker.indexOf("'/api/comms/v1/ptt/listener-failed'") + 4_500)
     expect(listenerFailureRoute).toContain("target_command_kind: 'ptt.listen'")
     expect(listenerFailureRoute).toContain('coordinator.reportPttListenerFailure')
     expect(listenerFailureRoute).not.toContain('reason: body')
+  })
+
+  it('requires a bounded browser transceiver MID and forwards it for every local SFU publication', () => {
+    const coordinator = readFileSync(resolve(import.meta.dirname, '..', 'worker', 'comms', 'tenantCommsDurableObject.ts'), 'utf8')
+    const directPublisher = coordinator.slice(coordinator.indexOf('async startDirectAudio'), coordinator.indexOf('private async closeDirectCallMedia'))
+    const meetingPublisher = coordinator.slice(coordinator.indexOf('async startMeetingMedia'), coordinator.indexOf('async stopMeetingMedia'))
+    const pttPublisher = coordinator.slice(coordinator.indexOf('async startPttAudio'), coordinator.indexOf('async preparePttAudio'))
+
+    expect(coordinator).toContain("const transceiverMidSchema = z.string().min(1).max(64).regex(/^[A-Za-z0-9._:-]+$/)")
+    for (const publisher of [directPublisher, meetingPublisher, pttPublisher]) {
+      expect(publisher).toContain('mid: parsed.transceiverMid')
+    }
+
+    const worker = readFileSync(resolve(import.meta.dirname, '..', 'worker', 'index.ts'), 'utf8')
+    const pttStartRoute = worker.slice(worker.indexOf("'/api/comms/v1/ptt/audio'"), worker.indexOf("'/api/comms/v1/ptt/listener-ready'"))
+    const meetingStartRoute = worker.slice(worker.indexOf('const meetingMediaMatch'), worker.indexOf('const directCallMatch'))
+    const directStartRoute = worker.slice(worker.indexOf("'/api/comms/v1/media/direct-audio'"), worker.indexOf("'/api/comms/v1/usage'"))
+    for (const route of [pttStartRoute, meetingStartRoute, directStartRoute]) {
+      expect(route).toContain('const transceiverMid = validSygSphereTransceiverMid(body.transceiverMid) ? body.transceiverMid : null')
+    }
+    expect(pttStartRoute).toContain('publisher && (!offer || !channelReference || !transceiverMid)')
+    expect(meetingStartRoute).toContain("operation === 'publish' && !transceiverMid")
+    expect(directStartRoute).toContain('!offer || !transceiverMid')
   })
 })
