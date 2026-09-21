@@ -1,5 +1,18 @@
 # SygShift Development Log
 
+## 09/21/2026 - Coverage Review Boolean Contract Repair
+
+- Repaired the coverage candidate contract so optional employee classification
+  data cannot return a null `isFlex` value and disable the entire manager
+  coverage review.
+- Added a rollout-safe browser normalizer for existing payloads and replaced
+  raw validation or database output with concise recovery guidance.
+- Verified 291 test files / 1,523 tests, strict TypeScript, zero-warning lint,
+  both production builds, and 44/44 coverage-layout plus actual-component Time
+  Clock checks across desktop and mobile.
+- Release detail:
+  `docs/changelogs/CHANGELOG_09-21-2026_COVERAGE_REVIEW_BOOLEAN_CONTRACT.md`.
+
 ## 09/20/2026 - SygSphere PTT Reliability Completion
 
 - Completed the first-use browser microphone repair with a normal **Set up microphone** action, a visible

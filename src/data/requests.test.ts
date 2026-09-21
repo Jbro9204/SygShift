@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   employeeName,
+  parseCallOffCoverageWorkspace,
   parseRequestCenterPayload,
   parseRequestCenterRecords,
   requestShiftLocation,
@@ -72,5 +73,56 @@ describe('request center contracts', () => {
       callOffs: [],
       upcomingAssignments: [],
     })).toThrow()
+  })
+
+  it('normalizes a legacy null Flex flag without rejecting the coverage worklist', () => {
+    const parsed = parseCallOffCoverageWorkspace({
+      callOff: {
+        id: '70000000-0000-4000-8000-000000000001',
+        employeeId: employee.id,
+        employeeName: 'Alex Rivera',
+        reason: null,
+        reportedAt: '2099-07-01T12:00:00.000Z',
+        replacementNeeded: true,
+      },
+      shift: {
+        id: shift.id,
+        startsAt: shift.starts_at,
+        endsAt: shift.ends_at,
+        timeZone: shift.time_zone,
+        title: 'Main entrance',
+        location: 'North Campus',
+        requiresArmed: false,
+        isOpen: false,
+      },
+      coverageCase: null,
+      candidates: [{
+        id: '80000000-0000-4000-8000-000000000001',
+        name: 'Regular Guard',
+        employeeNumber: 'SYG-1008',
+        employmentType: 'hourly',
+        workClassification: null,
+        isFlex: null,
+        available: true,
+        noOverlap: true,
+        armedReady: true,
+        overtimeMinutes: 0,
+        requiresOvertimeApproval: false,
+        eligible: true,
+        recommended: true,
+        blockReason: null,
+      }],
+      actions: [],
+      attendancePolicy: { pointsActive: false, message: 'No point policy is active.' },
+      patrolFallback: { available: true, message: 'Dispatch can review this site.' },
+    })
+
+    expect(parsed.candidates).toHaveLength(1)
+    expect(parsed.candidates[0].isFlex).toBe(false)
+  })
+
+  it('replaces malformed coverage payload details with a safe user message', () => {
+    expect(() => parseCallOffCoverageWorkspace({ candidates: [] }))
+      .toThrow('The coverage details could not be verified. Refresh and try again.')
   })
 })

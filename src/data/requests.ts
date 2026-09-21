@@ -89,7 +89,10 @@ const coverageCandidateSchema = z.object({
   employeeNumber: z.string().nullable(),
   employmentType: z.enum(['hourly', 'salary', 'flex']),
   workClassification: z.string().nullable(),
-  isFlex: z.boolean(),
+  // Older coverage payloads could return SQL null when a non-Flex employee had
+  // no work classification. Derive the safe boolean from the authoritative
+  // employment fields so a single legacy row cannot take down the worklist.
+  isFlex: z.boolean().nullable().optional(),
   available: z.boolean(),
   noOverlap: z.boolean(),
   armedReady: z.boolean(),
@@ -98,7 +101,12 @@ const coverageCandidateSchema = z.object({
   eligible: z.boolean(),
   recommended: z.boolean(),
   blockReason: z.string().nullable(),
-})
+}).transform((candidate) => ({
+  ...candidate,
+  isFlex: candidate.isFlex
+    ?? (candidate.employmentType === 'flex'
+      || candidate.workClassification?.trim().toLowerCase() === 'flex'),
+}))
 
 const coverageWorkspaceSchema = z.object({
   callOff: z.object({
@@ -158,6 +166,14 @@ const coverageResolutionSchema = z.object({
 export type CallOffCoverageWorkspace = z.infer<typeof coverageWorkspaceSchema>
 export type CallOffCoverageCandidate = z.infer<typeof coverageCandidateSchema>
 export type CallOffCoverageMode = z.infer<typeof coverageModeSchema>
+
+export function parseCallOffCoverageWorkspace(input: unknown): CallOffCoverageWorkspace {
+  const parsed = coverageWorkspaceSchema.safeParse(input)
+  if (!parsed.success) {
+    throw new Error('The coverage details could not be verified. Refresh and try again.')
+  }
+  return parsed.data
+}
 
 export interface RequestCenter {
   employeeId: string
@@ -549,8 +565,10 @@ export async function getCallOffCoverageWorkspace(callOffId: string): Promise<Ca
   const { data, error } = await getSupabaseClient().rpc('get_call_off_coverage_workspace', {
     target_call_off_id: callOffId,
   })
-  if (error) throw new Error(error.message || 'The coverage review could not be loaded.')
-  return coverageWorkspaceSchema.parse(data)
+  if (error) {
+    throw new Error('The coverage review could not be loaded. Refresh and confirm your secure session is current.')
+  }
+  return parseCallOffCoverageWorkspace(data)
 }
 
 export async function resolveCallOffCoverage(input: {
