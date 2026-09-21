@@ -98,7 +98,7 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
       .mockResolvedValueOnce(jsonResponse({ sessionDescription: answer }))
     const adapter = testAdapter(fetchImplementation)
     await expect(adapter.subscribeTracks({
-      session: session(), tenantId: 'tenant-1', tracks: [{ location: 'remote', sessionId: 'publisher-session-1', trackName: 'remote-audio-1' }],
+      session: session(), tenantId: 'tenant-1', tracks: [{ kind: 'audio', location: 'remote', sessionId: 'publisher-session-1', trackName: 'remote-audio-1' }],
     })).resolves.toMatchObject({
       outcome: 'accepted',
       value: {
@@ -108,7 +108,7 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
       },
     })
     expect(JSON.parse(String(fetchImplementation.mock.calls[0]?.[1]?.body))).toEqual({
-      tracks: [{ location: 'remote', sessionId: 'publisher-session-1', trackName: 'remote-audio-1' }],
+      tracks: [{ kind: 'audio', location: 'remote', sessionId: 'publisher-session-1', trackName: 'remote-audio-1' }],
     })
     await expect(adapter.renegotiate({ session: session(), sessionDescription: answer, tenantId: 'tenant-1' }))
       .resolves.toEqual({ outcome: 'accepted', value: { sessionDescription: answer } })

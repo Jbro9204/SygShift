@@ -1405,6 +1405,9 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
       session: input.destinationSession,
       tenantId: input.destinationSession.tenantId,
       tracks: [{
+        // Cloudflare requires this hint whenever its SFU generates the offer
+        // for a remote subscription.
+        kind: 'audio',
         location: 'remote',
         sessionId: input.sourceSession.id,
         trackName: input.source.track_id,
@@ -3265,7 +3268,7 @@ export class TenantCommsDurableObject extends DurableObject<CoordinatorEnvironme
     const subscription = await adapter.subscribeTracks({
       session: pending,
       tenantId: caller.authorization.tenantId,
-      tracks: [{ location: 'remote', sessionId: sourceSession.id, trackName: source.track_id }],
+      tracks: [{ kind: 'audio', location: 'remote', sessionId: sourceSession.id, trackName: source.track_id }],
     })
     const remoteTrack = subscription.outcome === 'accepted' ? subscription.value.tracks[0] : null
     // Cloudflare remote-track subscription is server-offer driven. The

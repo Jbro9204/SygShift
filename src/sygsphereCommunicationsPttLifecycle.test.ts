@@ -144,6 +144,12 @@ describe('SygSphere Communications PTT lifecycle', () => {
     // supply a browser offer, and its exact provider offer/answer exchange is
     // persisted before listener-ready can ever unlock a floor.
     expect(listener).not.toContain('sessionDescription: { sdp: parsed.offer')
+    // A remote subscription causes Cloudflare to generate the offer. Its
+    // track kind is therefore mandatory and must be included in the exact
+    // provider request for both PTT and direct voice.
+    expect(listener).toContain("tracks: [{ kind: 'audio', location: 'remote', sessionId: sourceSession.id, trackName: source.track_id }]")
+    expect(directRemoteSubscription).toContain("kind: 'audio'")
+    expect(directRemoteSubscription).toContain("location: 'remote'")
     expect(listener).toContain("subscription.value.requiresImmediateRenegotiation !== true")
     expect(listener).toContain("subscription.value.sessionDescription?.type !== 'offer'")
     expect(listener).toContain('this.registerMediaNegotiation({')
