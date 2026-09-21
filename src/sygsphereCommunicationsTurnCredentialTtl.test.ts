@@ -39,6 +39,8 @@ describe('SygSphere Communications TURN credential lifetime', () => {
       expect(methodBody(operation), `${operation} must use the server-owned TURN credential lifetime.`).toContain(issuance)
     }
 
-    expect(coordinator.match(/adapter\.generateIceServers\(/g)).toHaveLength(8)
+    // The protected provider smoke probe deliberately requests a short-lived
+    // disposable credential, so count only live media issuance paths here.
+    expect(coordinator.match(/adapter\.generateIceServers\(SYGSPHERE_COMMS_TURN_CREDENTIAL_TTL_SECONDS\)/g)).toHaveLength(8)
   })
 })
