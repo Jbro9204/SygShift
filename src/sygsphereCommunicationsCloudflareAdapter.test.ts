@@ -242,6 +242,37 @@ describe('SygSphere Communications Cloudflare Realtime adapter', () => {
     }
   })
 
+  it('classifies a malformed TURN authorization token without retaining token content', async () => {
+    const diagnosticLogger = vi.fn()
+    const fetchImplementation = vi.fn<typeof fetch>()
+    const unsafeOnlyForTurnHeaderTest = 'server-only-turn-token\u0000must-not-leak'
+    const adapter = new CloudflareRealtimeHttpAdapter({
+      appId: 'app-1',
+      appSecret: 'server-only-app-secret',
+      diagnosticLogger,
+      fetchImplementation,
+      mayCallProvider: true,
+      turnApiToken: unsafeOnlyForTurnHeaderTest,
+      turnKeyId: 'turn-key-1',
+    })
+
+    await expect(adapter.generateIceServers(60))
+      .resolves.toEqual({ outcome: 'provider_unavailable', reconciliationRequired: false })
+    expect(fetchImplementation).not.toHaveBeenCalled()
+    expect(diagnosticLogger).toHaveBeenCalledWith({
+      event: 'sygsphere_communications_provider_failure',
+      failureClass: 'request_initialization',
+      operation: 'turn_credentials',
+      outcome: 'provider_unavailable',
+      requestInitializationCause: 'authorization_header',
+    })
+    const logged = JSON.stringify(diagnosticLogger.mock.calls)
+    expect(logged).not.toContain('must-not-leak')
+    expect(logged).not.toContain('server-only-turn-token')
+    expect(logged).not.toContain('turn-key-1')
+    expect(logged).not.toContain('rtc.live.cloudflare.com')
+  })
+
   it('classifies a Request constructor failure without retaining request data', async () => {
     const diagnosticLogger = vi.fn()
     const fetchImplementation = vi.fn<typeof fetch>()
