@@ -563,6 +563,45 @@ describe("SygSphere communications protected socket bridge", () => {
     await vi.waitFor(() => expect(onCallMediaConnection).toHaveBeenLastCalledWith({ callId, roomId: `call:${callId}`, state: "failed" }));
   });
 
+  it("submits a direct-call offer without waiting for full ICE gathering", async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeSocket();
+      const callId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+      const peer = createFakeRtcPeer("connecting", "gathering");
+      const startDirectAudio = vi.fn(async () => acceptedCommand());
+      const bridge = createBridge({
+        bootstrap: vi.fn(async () => validBootstrap(ticket)),
+        createRtcPeer: () => peer,
+        socket,
+        startDirectAudio,
+      });
+      const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+      await socketCreated(socket);
+      socket.open();
+      socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+      const { session } = await connection;
+
+      const publishing = session.publish({
+        kind: "call_audio",
+        roomId: `call:${callId}`,
+        stream: { getAudioTracks: () => [{} as MediaStreamTrack] } as unknown as MediaStream,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await expect(publishing).resolves.toBeUndefined();
+      expect(startDirectAudio).toHaveBeenCalledWith(
+        "access-token",
+        expect.objectContaining({ callId, offer: "v=0\r\n", transceiverMid: "0" }),
+        expect.any(AbortSignal),
+      );
+      session.close("test_complete");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("fails closed before sending a direct-call offer without a local transceiver MID", async () => {
     const socket = new FakeSocket();
     const callId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
@@ -616,6 +655,47 @@ describe("SygSphere communications protected socket bridge", () => {
       expect.objectContaining({ offer: "v=0\r\n", transceiverMid: "0", transmissionRequestId }),
       expect.any(AbortSignal),
     );
+  });
+
+  it("submits a PTT offer without waiting for full ICE gathering", async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeSocket();
+      const transmissionRequestId = "4896f7c0-7143-48f9-9978-d1f6a342186f";
+      const peer = createFakeRtcPeer("connecting", "gathering");
+      const startPtt = vi.fn(async () => acceptedCommand());
+      const bridge = createBridge({
+        bootstrap: vi.fn(async () => validBootstrap(ticket)),
+        createRtcPeer: () => peer,
+        socket,
+        startPtt,
+      });
+      const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+      await socketCreated(socket);
+      socket.open();
+      socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+      const { session } = await connection;
+
+      const publishing = session.publish({
+        channelReference: "dispatch",
+        kind: "ptt",
+        roomId: `ptt:${transmissionRequestId}`,
+        stream: { getAudioTracks: () => [{} as MediaStreamTrack] } as unknown as MediaStream,
+        transmissionRequestId,
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await expect(publishing).resolves.toBeUndefined();
+      expect(startPtt).toHaveBeenCalledWith(
+        "access-token",
+        expect.objectContaining({ offer: "v=0\r\n", transceiverMid: "0", transmissionRequestId }),
+        expect.any(AbortSignal),
+      );
+      session.close("test_complete");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("answers a remote direct-call subscription on its existing protected peer", async () => {

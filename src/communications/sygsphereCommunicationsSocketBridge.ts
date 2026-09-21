@@ -25,7 +25,6 @@ import {
 
 const socketPath = "/api/comms/v1/connect";
 const openingTimeoutMilliseconds = 5_000;
-const iceGatheringTimeoutMilliseconds = 10_000;
 const mediaRequestTimeoutMilliseconds = 20_000;
 const mediaConnectionTimeoutMilliseconds = 20_000;
 // PTT preparation can legitimately include protected TURN acquisition, ICE
@@ -763,7 +762,10 @@ function createSession({
     peer.addTrack(localTrack, input.stream);
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
-    await waitForPeerIce(peer, dependencies);
+    // Cloudflare Realtime accepts the SDP exchange before ICE connectivity.
+    // Do not hold an actual call hostage to every configured ICE route
+    // finishing candidate gathering; the browser continues that work after it
+    // receives the provider answer.
     const localDescription = peer.localDescription;
     if (!localDescription?.sdp || localDescription.type !== "offer") {
       peer.close();
@@ -823,7 +825,8 @@ function createSession({
       });
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
-      await waitForPeerIce(peer, dependencies);
+      // See the publisher path above: full ICE gathering is not a prerequisite
+      // for Cloudflare's SDP exchange.
       const localDescription = peer.localDescription;
       if (!localDescription?.sdp || localDescription.type !== "offer") {
         peer.close();
@@ -891,7 +894,8 @@ function createSession({
     peer.addTrack(localTrack, input.stream);
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
-    await waitForPeerIce(peer, dependencies);
+    // See the publisher path above: full ICE gathering is not a prerequisite
+    // for Cloudflare's SDP exchange.
     const localDescription = peer.localDescription;
     if (!localDescription?.sdp || localDescription.type !== "offer") {
       peer.close();
@@ -951,7 +955,8 @@ function createSession({
       if (!attemptIsCurrent()) return;
       await peer.setLocalDescription(offer);
       if (!attemptIsCurrent()) return;
-      await waitForPeerIce(peer, dependencies, attempt.abortController.signal);
+      // The request cancellation guard remains active. ICE candidate gathering
+      // continues after the provider receives this local description.
       if (!attemptIsCurrent()) return;
       const localDescription = peer.localDescription;
       if (!localDescription?.sdp || localDescription.type !== "offer") {
@@ -1276,7 +1281,8 @@ function createSession({
             if (pttListenerReadiness.get(payload.callId) !== readiness || readiness.setupAbortController.signal.aborted) return;
             await pttPeer.peer.setLocalDescription(answer);
             if (pttListenerReadiness.get(payload.callId) !== readiness || readiness.setupAbortController.signal.aborted) return;
-            await waitForPeerIce(pttPeer.peer, dependencies, readiness.setupAbortController.signal);
+            // Cloudflare's remote-subscription answer is safe to send before
+            // every local ICE route reports completion.
             if (pttListenerReadiness.get(payload.callId) !== readiness || readiness.setupAbortController.signal.aborted) return;
             const localDescription = pttPeer.peer.localDescription;
             if (!localDescription?.sdp || localDescription.type !== "answer") throw new Error("Push-to-talk listener answer was unavailable.");
@@ -1351,7 +1357,8 @@ function createSession({
           if (directPeers.get(payload.callId) !== directPeer) return;
           await directPeer.setLocalDescription(answer);
           if (directPeers.get(payload.callId) !== directPeer) return;
-          await waitForPeerIce(directPeer, dependencies);
+          // Cloudflare's remote-subscription answer is safe to send before
+          // every local ICE route reports completion.
           if (directPeers.get(payload.callId) !== directPeer) return;
           const localDescription = directPeer.localDescription;
           if (!localDescription?.sdp || localDescription.type !== "answer") throw new Error("Direct-call listener answer was unavailable.");
@@ -1468,43 +1475,6 @@ function commandOutcomeMessage(outcome: string, commandKind?: SygSphereCommsComm
     return "Communications is temporarily unavailable. Use messages or Dispatch and try again.";
   }
   return "Communications could not complete that action. Reopen Communications and try again.";
-}
-
-function waitForPeerIce(
-  peer: RTCPeerConnection,
-  dependencies: Pick<SocketBridgeDependencies, "clearTimer" | "setTimer">,
-  abortSignal?: AbortSignal,
-): Promise<void> {
-  if (abortSignal?.aborted) return Promise.reject(new Error("Communications media setup was cancelled."));
-  if (peer.iceGatheringState === "complete") return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const cleanup = () => {
-      dependencies.clearTimer(timer);
-      peer.removeEventListener("icegatheringstatechange", complete);
-      abortSignal?.removeEventListener("abort", abort);
-    };
-    const complete = () => {
-      if (peer.iceGatheringState !== "complete" || settled) return;
-      settled = true;
-      cleanup();
-      resolve();
-    };
-    const timer = dependencies.setTimer(() => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(new Error("Communications could not prepare push-to-talk audio in time."));
-    }, iceGatheringTimeoutMilliseconds);
-    const abort = () => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(new Error("Communications media setup was cancelled."));
-    };
-    peer.addEventListener("icegatheringstatechange", complete);
-    abortSignal?.addEventListener("abort", abort, { once: true });
-  });
 }
 
 function systemCommand(kind: "heartbeat" | "snapshot.request", connectionEpoch: number) {
