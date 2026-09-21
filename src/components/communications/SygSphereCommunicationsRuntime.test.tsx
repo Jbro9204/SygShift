@@ -4,9 +4,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GlobalCommunicationsAudio, IncomingCommunicationsCallNotice } from "./SygSphereCommunicationsRuntime";
 
+const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+const originalSetSinkId = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "setSinkId");
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  if (originalMediaDevices) Object.defineProperty(navigator, "mediaDevices", originalMediaDevices);
+  else Reflect.deleteProperty(navigator, "mediaDevices");
+  if (originalSetSinkId) Object.defineProperty(HTMLMediaElement.prototype, "setSinkId", originalSetSinkId);
+  else Reflect.deleteProperty(HTMLMediaElement.prototype, "setSinkId");
 });
 
 describe("IncomingCommunicationsCallNotice", () => {
@@ -79,5 +86,52 @@ describe("GlobalCommunicationsAudio", () => {
     const retry = await screen.findByRole("button", { name: /play audio/i });
     fireEvent.click(retry);
     await waitFor(() => expect(play).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps receive-audio controls compact while applying speaker, volume, and mute choices", async () => {
+    Object.defineProperty(HTMLMediaElement.prototype, "srcObject", { configurable: true, writable: true, value: null });
+    const setSinkId = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLMediaElement.prototype, "setSinkId", { configurable: true, value: setSinkId });
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        addEventListener: vi.fn(),
+        enumerateDevices: vi.fn().mockResolvedValue([
+          { deviceId: "speaker-a", kind: "audiooutput", label: "Truck speaker" },
+        ]),
+        removeEventListener: vi.fn(),
+      },
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+
+    render(<GlobalCommunicationsAudio tracks={[radioTrack()]} />);
+    fireEvent.click(screen.getByRole("button", { name: /audio controls/i }));
+
+    const output = await screen.findByLabelText("Speaker output");
+    expect(screen.getByRole("button", { name: "Mute speaker" })).toHaveAttribute("aria-pressed", "false");
+    fireEvent.change(output, { target: { value: "speaker-a" } });
+    await waitFor(() => expect(setSinkId).toHaveBeenLastCalledWith("speaker-a"));
+
+    const audio = screen.getByLabelText("Live team radio audio") as HTMLAudioElement;
+    fireEvent.change(screen.getByRole("slider", { name: "Receive volume" }), { target: { value: "35" } });
+    await waitFor(() => expect(audio.volume).toBeCloseTo(0.35));
+
+    fireEvent.click(screen.getByRole("button", { name: "Mute speaker" }));
+    await waitFor(() => expect(audio.muted).toBe(true));
+    expect(screen.getByRole("button", { name: "Unmute speaker" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("keeps playback usable on browsers that cannot select a speaker", async () => {
+    Object.defineProperty(HTMLMediaElement.prototype, "srcObject", { configurable: true, writable: true, value: null });
+    Object.defineProperty(HTMLMediaElement.prototype, "setSinkId", { configurable: true, value: undefined });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+
+    render(<GlobalCommunicationsAudio tracks={[radioTrack()]} />);
+    fireEvent.click(screen.getByRole("button", { name: /audio controls/i }));
+
+    expect(screen.getByText("This browser uses your device's default speaker.")).toBeVisible();
+    expect(screen.queryByLabelText("Speaker output")).not.toBeInTheDocument();
   });
 });

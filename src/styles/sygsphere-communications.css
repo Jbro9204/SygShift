@@ -457,10 +457,49 @@
 .sphere-comms-live-audio small { overflow: hidden; color: #505854; font-size: 0.8125rem; text-overflow: ellipsis; white-space: nowrap; }
 .sphere-comms-live-audio button { min-height: 36px; padding: 0 10px; color: #765514; border: 1px solid #cab272; border-radius: 9px; background: #fff8e7; font: inherit; font-size: 0.8125rem; font-weight: 720; cursor: pointer; }
 .sphere-comms-live-audio audio { display: none; }
+.sphere-comms-live-audio__actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 7px; }
+.sphere-comms-live-audio__settings-trigger { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.sphere-comms-live-audio__settings {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid #d5c28c;
+  border-radius: 10px;
+  background: #fff9ec;
+}
+.sphere-comms-live-audio__settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
+.sphere-comms-live-audio__settings-heading strong { font-size: 0.8125rem; }
+.sphere-comms-live-audio__settings-heading button { display: inline-flex; align-items: center; gap: 5px; }
+.sphere-comms-live-audio__volume,
+.sphere-comms-live-audio__output { display: grid; gap: 6px; color: #505854; font-size: 0.8125rem; font-weight: 690; }
+.sphere-comms-live-audio__volume > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sphere-comms-live-audio__volume output { color: #17201f; font-weight: 780; }
+.sphere-comms-live-audio__volume input { width: 100%; accent-color: #a7791f; }
+.sphere-comms-live-audio__output select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 9px;
+  color: #17201f;
+  border: 1px solid #cab272;
+  border-radius: 8px;
+  background: #fffdf8;
+  font: inherit;
+}
+.sphere-comms-live-audio__support,
+.sphere-comms-live-audio__error { margin: 0; color: #505854; font-size: 0.78rem; line-height: 1.4; }
+.sphere-comms-live-audio__error { color: #9f332e; font-weight: 680; }
 [data-theme="dark"] .sphere-comms-live-audio { color: #f1f3ed; border-color: #d1ae64; background: #121b1e; }
 [data-theme="dark"] .sphere-comms-live-audio > span { color: #edc774; background: #293027; }
 [data-theme="dark"] .sphere-comms-live-audio small { color: #bdc6c2; }
 [data-theme="dark"] .sphere-comms-live-audio button { color: #edc774; border-color: #6e5c32; background: #201f19; }
+[data-theme="dark"] .sphere-comms-live-audio__settings { border-color: #6e5c32; background: #201f19; }
+[data-theme="dark"] .sphere-comms-live-audio__volume,
+[data-theme="dark"] .sphere-comms-live-audio__output,
+[data-theme="dark"] .sphere-comms-live-audio__support { color: #bdc6c2; }
+[data-theme="dark"] .sphere-comms-live-audio__volume output { color: #f1f3ed; }
+[data-theme="dark"] .sphere-comms-live-audio__output select { color: #f1f3ed; border-color: #6e5c32; background: #121b1e; }
+[data-theme="dark"] .sphere-comms-live-audio__error { color: #ffc2bc; }
 
 @media (max-width: 720px) {
   .sphere-comms-panel__bar { min-height: 54px; padding: 6px 9px; }

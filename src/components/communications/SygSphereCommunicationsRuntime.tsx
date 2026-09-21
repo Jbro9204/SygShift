@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { Phone, PhoneOff, Volume2 } from "lucide-react";
+import { MonitorSpeaker, Phone, PhoneOff, Volume2, VolumeX } from "lucide-react";
 import type { SphereConversation } from "../../data/sygsphere";
 import { getSupabaseClient } from "../../lib/supabase";
 import {
@@ -274,24 +274,142 @@ export function GlobalCommunicationsAudio({
 }) {
   const container = useRef<HTMLDivElement | null>(null);
   const [blocked, setBlocked] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [outputDevices, setOutputDevices] = useState<readonly AudioOutputDevice[]>([]);
+  const [outputError, setOutputError] = useState<string | null>(null);
+  const [outputId, setOutputId] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [switchingOutput, setSwitchingOutput] = useState(false);
+  const [volume, setVolume] = useState(0.8);
   const isRadio = tracks.some((track) => track.publicationKind === "ptt");
+  const supportsOutputSelection = supportsAudioOutputSelection();
   const handleBlocked = useCallback(() => setBlocked(true), []);
   const handlePlaying = useCallback(() => setBlocked(false), []);
+  const audioElements = useCallback(
+    () => Array.from(container.current?.querySelectorAll<HTMLAudioElement>("audio") ?? []),
+    [],
+  );
+
+  const refreshOutputDevices = useCallback(async () => {
+    const mediaDevices = typeof navigator === "undefined" ? undefined : navigator.mediaDevices;
+    if (!supportsOutputSelection || !mediaDevices?.enumerateDevices) return;
+    try {
+      const devices = await mediaDevices.enumerateDevices();
+      setOutputDevices(devices
+        .filter((device) => device.kind === "audiooutput")
+        .map((device) => ({ deviceId: device.deviceId, label: device.label })));
+      setOutputError(null);
+    } catch {
+      setOutputError("We could not read your speaker list. Your device's default speaker is still being used.");
+    }
+  }, [supportsOutputSelection]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    void refreshOutputDevices();
+    const mediaDevices = typeof navigator === "undefined" ? undefined : navigator.mediaDevices;
+    if (!mediaDevices?.addEventListener) return;
+    mediaDevices.addEventListener("devicechange", refreshOutputDevices);
+    return () => mediaDevices.removeEventListener("devicechange", refreshOutputDevices);
+  }, [refreshOutputDevices, settingsOpen]);
+
+  useEffect(() => {
+    const elements = audioElements();
+    for (const element of elements) {
+      element.muted = muted;
+      element.volume = volume;
+    }
+    if (!outputId || !supportsOutputSelection) return;
+    void Promise.all(elements.map((element) => setAudioOutput(element, outputId))).catch(() => {
+      setOutputError("We could not switch the speaker. Your device's default speaker is still being used.");
+    });
+  }, [audioElements, muted, outputId, supportsOutputSelection, tracks, volume]);
+
+  const changeOutput = useCallback(async (nextOutputId: string) => {
+    if (!supportsOutputSelection) return;
+    setSwitchingOutput(true);
+    try {
+      await Promise.all(audioElements().map((element) => setAudioOutput(element, nextOutputId)));
+      setOutputId(nextOutputId);
+      setOutputError(null);
+    } catch {
+      setOutputError("We could not switch the speaker. Your device's default speaker is still being used.");
+    } finally {
+      setSwitchingOutput(false);
+    }
+  }, [audioElements, supportsOutputSelection]);
 
   const retryPlayback = useCallback(async () => {
-    const elements = Array.from(container.current?.querySelectorAll("audio") ?? []);
-    const results = await Promise.allSettled(elements.map((element) => element.play()));
+    const results = await Promise.allSettled(audioElements().map((element) => element.play()));
     setBlocked(results.some((result) => result.status === "rejected"));
-  }, []);
+  }, [audioElements]);
 
   return (
     <aside aria-live="polite" className="sphere-comms-live-audio" ref={container} role="status">
-      <span aria-hidden="true"><Volume2 size={18} /></span>
+      <span aria-hidden="true">{muted ? <VolumeX size={18} /> : <Volume2 size={18} />}</span>
       <div>
         <strong>{isRadio ? "Live team radio" : "Secure call audio"}</strong>
-        <small>{blocked ? "Your browser paused audio." : isRadio ? "Listening to the selected channel" : "Audio is connected"}</small>
+        <small>{muted ? "Speaker muted" : blocked ? "Your browser paused audio." : isRadio ? "Listening to the selected channel" : "Audio is connected"}</small>
       </div>
-      {blocked ? <button onClick={() => void retryPlayback()} type="button">Play audio</button> : null}
+      <div className="sphere-comms-live-audio__actions">
+        <button
+          aria-controls="sygsphere-receive-audio-settings"
+          aria-expanded={settingsOpen}
+          className="sphere-comms-live-audio__settings-trigger"
+          onClick={() => setSettingsOpen((open) => !open)}
+          type="button"
+        >
+          <MonitorSpeaker size={17} /><span>Audio controls</span>
+        </button>
+        {blocked ? <button onClick={() => void retryPlayback()} type="button">Play audio</button> : null}
+      </div>
+      {settingsOpen ? (
+        <section aria-label="Receive audio settings" className="sphere-comms-live-audio__settings" id="sygsphere-receive-audio-settings">
+          <div className="sphere-comms-live-audio__settings-heading">
+            <strong>Speaker and volume</strong>
+            <button
+              aria-pressed={muted}
+              onClick={() => setMuted((current) => !current)}
+              type="button"
+            >
+              {muted ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              {muted ? "Unmute speaker" : "Mute speaker"}
+            </button>
+          </div>
+          <div className="sphere-comms-live-audio__volume">
+            <span><label htmlFor="sygsphere-receive-volume">Receive volume</label><output>{Math.round(volume * 100)}%</output></span>
+            <input
+              aria-valuetext={`${Math.round(volume * 100)}%`}
+              id="sygsphere-receive-volume"
+              max="100"
+              min="0"
+              onChange={(event) => setVolume(Number(event.target.value) / 100)}
+              step="1"
+              type="range"
+              value={Math.round(volume * 100)}
+            />
+          </div>
+          {supportsOutputSelection ? (
+            <label className="sphere-comms-live-audio__output">
+              <span>Speaker output</span>
+              <select
+                aria-label="Speaker output"
+                disabled={switchingOutput}
+                onChange={(event) => void changeOutput(event.target.value)}
+                value={outputId}
+              >
+                <option value="">System default speaker</option>
+                {outputDevices.map((device, index) => (
+                  <option key={device.deviceId} value={device.deviceId}>{device.label || `Speaker ${index + 1}`}</option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p className="sphere-comms-live-audio__support">This browser uses your device's default speaker.</p>
+          )}
+          {outputError ? <p className="sphere-comms-live-audio__error" role="alert">{outputError}</p> : null}
+        </section>
+      ) : null}
       {tracks.map((track) => (
         <GlobalRemoteAudio
           key={track.trackReference}
@@ -303,6 +421,26 @@ export function GlobalCommunicationsAudio({
       ))}
     </aside>
   );
+}
+
+type AudioOutputDevice = Readonly<{
+  deviceId: string;
+  label: string;
+}>;
+
+type AudioOutputCapableElement = HTMLAudioElement & {
+  setSinkId?: (sinkId: string) => Promise<void>;
+};
+
+function supportsAudioOutputSelection(): boolean {
+  if (typeof document === "undefined") return false;
+  return typeof (document.createElement("audio") as AudioOutputCapableElement).setSinkId === "function";
+}
+
+async function setAudioOutput(element: HTMLAudioElement, outputId: string): Promise<void> {
+  const capableElement = element as AudioOutputCapableElement;
+  if (!capableElement.setSinkId) throw new Error("Audio output selection is unavailable.");
+  await capableElement.setSinkId(outputId);
 }
 
 function GlobalRemoteAudio({
