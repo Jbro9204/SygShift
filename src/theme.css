@@ -212,49 +212,19 @@ html[data-theme='dark'] .user-profile-control:focus-visible {
   border-color: #73551f;
 }
 
-html[data-theme='dark'] .operational-time-zone-strip {
-  background: transparent;
+html[data-theme='dark'] .user-system-time {
   border-color: #30343a;
-  box-shadow: none;
 }
 
-html[data-theme='dark'] .operational-clock {
-  color: #ede8df;
-}
-
-html[data-theme='dark'] .operational-clock__dial {
-  fill: #15191d;
-  stroke: #897f70;
-}
-
-html[data-theme='dark'] .operational-clock__marker {
-  stroke: #ada598;
-}
-
-html[data-theme='dark'] .operational-clock__hand--hour {
-  stroke: #f6f1e7;
-}
-
-html[data-theme='dark'] .operational-clock__hand--minute {
-  stroke: #d7d0c4;
-}
-
-html[data-theme='dark'] .operational-clock__pin {
-  stroke: #15191d;
-}
-
-html[data-theme='dark'] .operational-clock__digital,
-html[data-theme='dark'] .operational-clock__zone {
+html[data-theme='dark'] .user-system-time__time,
+html[data-theme='dark'] .user-system-time__zone {
   color: #f5f1e8;
 }
 
-html[data-theme='dark'] .operational-clock small {
-  color: #b7afa3;
-}
-
-html[data-theme='dark'] .operational-clock em {
+html[data-theme='dark'] .user-system-time em {
   color: #f9ddb0;
-  background: transparent;
+  background: #342817;
+  border-color: #73551f;
 }
 
 html[data-theme='dark'] .workspace :where(

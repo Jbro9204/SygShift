@@ -13,31 +13,42 @@ describe('OperationalTimeHeader', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders one accessible row with all four server-synchronized U.S. clocks', () => {
-    render(<OperationalTimeHeader accountControls={<button type="button">My Account</button>} serverTimestamp="2026-07-03T18:45:00.000Z" />)
+  it('renders only the signed-in user system time without analog or alternate-zone clocks', () => {
+    const view = render(
+      <OperationalTimeHeader
+        accountControls={<button type="button">My Account</button>}
+        serverTimestamp="2026-07-03T18:45:00.000Z"
+        timeZone="America/Chicago"
+      />,
+    )
 
-    const region = screen.getByRole('region', { name: 'United States operational time zones' })
+    const region = screen.getByRole('region', { name: /System time for Central: 1:45 PM \(13:45\), CDT/ })
     expect(region).not.toHaveAttribute('aria-live')
-    expect(screen.getByLabelText(/Eastern time: 2:45 PM \(14:45\), EDT/)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Central time: 1:45 PM \(13:45\), CDT/)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Mountain time: 12:45 PM, MDT.*SygShift system time/)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Pacific time: 11:45 AM, PDT/)).toBeInTheDocument()
-    expect(screen.queryByText('Mountain Time is the operational default')).not.toBeInTheDocument()
+    expect(screen.getByText('Central · CDT')).toBeInTheDocument()
     expect(screen.getByText('System time')).toBeInTheDocument()
-    expect(region.querySelectorAll('.operational-clock--default')).toHaveLength(0)
+    expect(view.container.querySelectorAll('.user-system-time')).toHaveLength(1)
+    expect(view.container.querySelector('.operational-clock__face')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Pacific ·/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Mountain ·/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Eastern ·/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'My Account' })).toBeInTheDocument()
     expect(vi.getTimerCount()).toBe(1)
   })
 
-  it('updates all analog clocks from one timer and clears it when unmounted', () => {
+  it('updates the one server-synchronized digital time and clears its timer when unmounted', () => {
     const clearInterval = vi.spyOn(window, 'clearInterval')
-    const view = render(<OperationalTimeHeader accountControls={null} serverTimestamp="2026-07-03T18:45:00.000Z" />)
-    const firstSecondHand = view.container.querySelector<SVGLineElement>('.operational-clock__hand--second')
-    const initialTransform = firstSecondHand?.style.transform
+    const view = render(
+      <OperationalTimeHeader
+        accountControls={null}
+        serverTimestamp="2026-07-03T18:45:00.000Z"
+        timeZone="America/Denver"
+      />,
+    )
+    expect(screen.getByText('12:45 PM')).toBeInTheDocument()
 
-    act(() => vi.advanceTimersByTime(1_000))
+    act(() => vi.advanceTimersByTime(60_000))
 
-    expect(firstSecondHand?.style.transform).not.toBe(initialTransform)
+    expect(screen.getByText('12:46 PM')).toBeInTheDocument()
     view.unmount()
     expect(clearInterval).toHaveBeenCalledTimes(1)
     expect(vi.getTimerCount()).toBe(0)

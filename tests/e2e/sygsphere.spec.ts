@@ -255,24 +255,20 @@ test('keeps the mobile composer and Send control usable inside the full SygShift
   const input = page.getByRole('textbox', { name: 'Write a message', exact: true })
   const send = page.getByRole('button', { name: 'Send', exact: true })
   await input.evaluate((element) => element.blur())
-  await expect(page.locator('.operational-clock')).toHaveCount(4)
+  await expect(page.locator('.user-system-time')).toHaveCount(1)
+  await expect(page.locator('.operational-clock')).toHaveCount(0)
   await expect(send).toBeInViewport()
-  const initialClockClearance = await page.evaluate(() => {
+  const menuOverlapsSystemTimeContent = await page.evaluate(() => {
     const menu = document.querySelector<HTMLElement>('.mobile-menu-button')!.getBoundingClientRect()
-    const firstClock = document.querySelector<HTMLElement>('.operational-clock')!.getBoundingClientRect()
-    return Math.round(firstClock.left - menu.right)
+    const systemTime = document.querySelector<HTMLElement>('.user-system-time__time')!.getBoundingClientRect()
+    return !(
+      systemTime.right <= menu.left
+      || systemTime.left >= menu.right
+      || systemTime.bottom <= menu.top
+      || systemTime.top >= menu.bottom
+    )
   })
-  expect(initialClockClearance).toBeGreaterThanOrEqual(2)
-  const clocksReachable = await page.locator('.operational-time-zone-strip').evaluate((strip) => {
-    const lastClock = strip.querySelector<HTMLElement>('.operational-clock:last-child')!
-    strip.scrollLeft = strip.scrollWidth
-    const stripBox = strip.getBoundingClientRect()
-    const clockBox = lastClock.getBoundingClientRect()
-    const reachable = clockBox.left >= stripBox.left - 1 && clockBox.right <= stripBox.right + 1
-    strip.scrollLeft = 0
-    return reachable
-  })
-  expect(clocksReachable).toBe(true)
+  expect(menuOverlapsSystemTimeContent).toBe(false)
   await input.fill('Mobile send remains reachable')
   await expect(send).toBeVisible()
   const geometry = await page.evaluate(() => {
@@ -317,7 +313,8 @@ for (const viewport of [
     const input = page.getByRole('textbox', { name: 'Write a message', exact: true })
     const send = page.getByRole('button', { name: 'Send', exact: true })
     await input.evaluate((element) => element.blur())
-    await expect(page.locator('.operational-clock')).toHaveCount(4)
+    await expect(page.locator('.user-system-time')).toHaveCount(1)
+    await expect(page.locator('.operational-clock')).toHaveCount(0)
     await expect(page.locator('.sphere-conversations')).toBeVisible()
     await expect(page.locator('.sphere-main')).toBeVisible()
     await expect(input).toBeVisible()
@@ -356,14 +353,14 @@ test('keeps Send above a mobile keyboard-sized viewport while composing', async 
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
   const input = page.getByRole('textbox', { name: 'Write a message', exact: true })
   await input.fill('Keyboard-safe message')
-  await expect(page.locator('.operational-time-zone-strip')).toBeHidden()
+  await expect(page.locator('.user-system-time')).toBeHidden()
   await expect(page.locator('.workspace-alert-strip')).toBeHidden()
   const send = page.getByRole('button', { name: 'Send', exact: true })
   await expect(send).toBeInViewport()
   await send.click()
   await expect(page.locator('.sphere-message__body').filter({ hasText: 'Keyboard-safe message' })).toBeVisible()
   await input.evaluate((element) => element.blur())
-  await expect(page.locator('.operational-time-zone-strip')).toBeVisible()
+  await expect(page.locator('.user-system-time')).toBeVisible()
   await expect(page.locator('.workspace-alert-strip')).toBeVisible()
 })
 test('keeps the mobile composer compact and grows it only for multiline work', async ({ page }) => {

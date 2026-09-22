@@ -7,28 +7,6 @@ async function installHeaderFixture(page: import('@playwright/test').Page, colla
   await page.locator('#root').evaluate((root, sidebarCollapsed) => {
     const fixtureRoot = root.cloneNode(false) as HTMLElement
     root.replaceWith(fixtureRoot)
-    const clocks = [
-      ['Pacific', 'PDT'],
-      ['Mountain', 'MDT'],
-      ['Central', 'CDT'],
-      ['Eastern', 'EDT'],
-    ].map(([name, abbreviation]) => `
-      <article aria-label="${name} time" class="operational-clock">
-        <svg aria-hidden="true" class="operational-clock__face" viewBox="0 0 64 64">
-          <circle class="operational-clock__dial" cx="32" cy="32" r="29"></circle>
-          <line class="operational-clock__marker" x1="32" x2="32" y1="6" y2="11"></line>
-          <line class="operational-clock__hand operational-clock__hand--hour" x1="32" x2="32" y1="32" y2="18"></line>
-          <line class="operational-clock__hand operational-clock__hand--minute" x1="32" x2="32" y1="34" y2="12"></line>
-          <line class="operational-clock__hand operational-clock__hand--second" x1="32" x2="32" y1="36" y2="10"></line>
-          <circle class="operational-clock__pin" cx="32" cy="32" r="2.5"></circle>
-        </svg>
-        <span class="operational-clock__details">
-          <strong class="operational-clock__digital">11:59 PM (23:59)</strong>
-          <span class="operational-clock__zone">${name} · ${abbreviation}</span>
-          <em ${name === 'Mountain' ? '' : 'aria-hidden="true"'}>${name === 'Mountain' ? 'System time' : '&nbsp;'}</em>
-        </span>
-      </article>`).join('')
-
     fixtureRoot.innerHTML = `
       <div class="app-shell${sidebarCollapsed ? ' app-shell--sidebar-collapsed' : ''}">
         <button class="mobile-menu-button" type="button" aria-label="Open navigation">☰</button>
@@ -36,7 +14,11 @@ async function installHeaderFixture(page: import('@playwright/test').Page, colla
         <div class="workspace">
           <header class="topbar">
             <div class="topbar-date"><span>Monday, 09/01/2026</span></div>
-            <section aria-label="United States operational time zones" class="operational-time-zone-strip"><div class="operational-time-zone-grid">${clocks}</div></section>
+            <section aria-label="System time for Central: 11:59 PM (23:59), CDT" class="user-system-time">
+              <strong class="user-system-time__time">11:59 PM (23:59)</strong>
+              <span class="user-system-time__zone">Central · CDT</span>
+              <em>System time</em>
+            </section>
             <div class="user-menu">
               <div aria-label="Appearance" class="theme-switcher" role="group">
                 <button aria-label="Use light mode" aria-pressed="true" class="theme-switcher__button" type="button"><span>☀</span></button>
@@ -52,7 +34,7 @@ async function installHeaderFixture(page: import('@playwright/test').Page, colla
           </header>
           <section aria-label="Workspace alerts" class="workspace-alert-strip workspace-alert-strip--urgent">
             <div class="workspace-alert-strip__icon">!</div>
-            <div class="workspace-alert-strip__copy"><strong>Operational alert</strong><div class="workspace-alert-strip__ticker"><span>This alert remains fully readable beneath the clocks and wraps cleanly when space is limited.</span></div></div>
+            <div class="workspace-alert-strip__copy"><strong>Operational alert</strong><div class="workspace-alert-strip__ticker"><span>This alert remains fully readable beneath the system time and wraps cleanly when space is limited.</span></div></div>
             <div class="workspace-alert-strip__position">2/2</div>
             <a class="workspace-alert-strip__action" href="#review">Review alert</a>
           </section>
@@ -63,89 +45,46 @@ async function installHeaderFixture(page: import('@playwright/test').Page, colla
 }
 
 for (const width of widths) {
-  test(`global header stays contained and ordered at ${width}px`, async ({ page }, testInfo) => {
+  test(`global header keeps one contained system-time display at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: width <= 768 ? 900 : 1000 })
     await page.goto('/')
     await installHeaderFixture(page, false)
 
-    const clocks = page.locator('.operational-clock')
-    await expect(clocks).toHaveCount(4)
-    for (const clock of await clocks.all()) await expect(clock).toBeVisible()
-    await expect(page.locator('.operational-clock__zone')).toHaveText([
-      'Pacific · PDT',
-      'Mountain · MDT',
-      'Central · CDT',
-      'Eastern · EDT',
-    ])
+    const systemTime = page.locator('.user-system-time')
+    await expect(systemTime).toHaveCount(1)
+    await expect(systemTime).toBeVisible()
+    await expect(page.locator('.operational-clock')).toHaveCount(0)
+    await expect(page.locator('.user-system-time__time')).toHaveText('11:59 PM (23:59)')
+    await expect(page.locator('.user-system-time__zone')).toHaveText('Central · CDT')
+    if (width > 360) await expect(page.getByText('System time', { exact: true })).toBeVisible()
 
-    const gridColumns = await page.locator('.operational-time-zone-grid').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
-    expect(gridColumns).toBe(width <= 900 ? 2 : 4)
-
-    const clockBottom = await page.locator('.operational-time-zone-strip').evaluate((element) => element.getBoundingClientRect().bottom)
+    const headerBottom = await page.locator('.topbar').evaluate((element) => element.getBoundingClientRect().bottom)
     const alertTop = await page.locator('.workspace-alert-strip').evaluate((element) => element.getBoundingClientRect().top)
     const alertBottom = await page.locator('.workspace-alert-strip').evaluate((element) => element.getBoundingClientRect().bottom)
     const contentTop = await page.locator('#main-content').evaluate((element) => element.getBoundingClientRect().top)
-    expect(alertTop - clockBottom).toBeGreaterThanOrEqual(width <= 680 ? 12 : 14)
+    expect(alertTop - headerBottom).toBeGreaterThanOrEqual(width <= 680 ? 12 : 14)
     expect(contentTop).toBeGreaterThanOrEqual(alertBottom)
 
-    const clippedDigitalTimes = await page.locator('.operational-clock__digital').evaluateAll((elements) => elements.filter((element) => element.scrollWidth > element.clientWidth + 1).length)
-    expect(clippedDigitalTimes).toBe(0)
-    const clippedZoneLabels = await page.locator('.operational-clock__zone').evaluateAll((elements) => elements.filter((element) => element.scrollWidth > element.clientWidth + 1).length)
-    expect(clippedZoneLabels).toBe(0)
-    const clockTextSize = await page.locator('.operational-clock__digital').first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
-    const zoneTextSize = await page.locator('.operational-clock__zone').first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
-    const clockFaceSize = await page.locator('.operational-clock__face').first().evaluate((element) => element.getBoundingClientRect().width)
-    expect(clockTextSize).toBeGreaterThanOrEqual(width <= 680 ? 13 : 15)
-    expect(zoneTextSize).toBeGreaterThanOrEqual(width <= 680 ? 12.5 : 13)
-    expect(clockFaceSize).toBeGreaterThanOrEqual(width <= 680 ? 35 : width <= 1500 ? 40 : 44)
-    await expect(page.locator('.operational-clock--default')).toHaveCount(0)
-    const clockVisuals = await clocks.evaluateAll((elements) => elements.map((element) => {
-      const box = element.getBoundingClientRect()
-      const style = getComputedStyle(element)
-      const dial = element.querySelector<SVGCircleElement>('.operational-clock__dial')!
-      const dialStyle = getComputedStyle(dial)
-      return {
-        background: style.backgroundColor,
-        borderColor: style.borderColor,
-        borderRadius: style.borderRadius,
-        dialFill: dialStyle.fill,
-        dialStroke: dialStyle.stroke,
-        height: box.height,
-        padding: style.padding,
-        width: box.width,
-      }
-    }))
-    for (const visual of clockVisuals.slice(1)) {
-      expect(Math.abs(visual.width - clockVisuals[0].width)).toBeLessThanOrEqual(1)
-      expect(Math.abs(visual.height - clockVisuals[0].height)).toBeLessThanOrEqual(1)
-      expect(visual.background).toBe(clockVisuals[0].background)
-      expect(visual.borderColor).toBe(clockVisuals[0].borderColor)
-      expect(visual.borderRadius).toBe(clockVisuals[0].borderRadius)
-      expect(visual.dialFill).toBe(clockVisuals[0].dialFill)
-      expect(visual.dialStroke).toBe(clockVisuals[0].dialStroke)
-      expect(visual.padding).toBe(clockVisuals[0].padding)
-    }
-    const clockBoxes = await clocks.evaluateAll((elements) => elements.map((element) => {
-      const box = element.getBoundingClientRect()
-      return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }
-    }))
-    const stripBox = await page.locator('.operational-time-zone-strip').evaluate((element) => {
-      const box = element.getBoundingClientRect()
-      return { left: box.left, right: box.right }
+    const clippedTime = await page.locator('.user-system-time__time').evaluate((element) => element.scrollWidth > element.clientWidth + 1)
+    const clippedZone = await page.locator('.user-system-time__zone').evaluate((element) => element.scrollWidth > element.clientWidth + 1)
+    expect(clippedTime).toBe(false)
+    expect(clippedZone).toBe(false)
+    const timeTextSize = await page.locator('.user-system-time__time').evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+    const zoneTextSize = await page.locator('.user-system-time__zone').evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))
+    expect(timeTextSize).toBeGreaterThanOrEqual(width <= 680 ? 13 : 16)
+    expect(zoneTextSize).toBeGreaterThanOrEqual(width <= 680 ? 12 : 13)
+
+    const containment = await page.evaluate(() => {
+      const header = document.querySelector<HTMLElement>('.topbar')!.getBoundingClientRect()
+      const time = document.querySelector<HTMLElement>('.user-system-time')!.getBoundingClientRect()
+      return { headerLeft: header.left, headerRight: header.right, timeLeft: time.left, timeRight: time.right }
     })
-    for (const box of clockBoxes) {
-      expect(box.left).toBeGreaterThanOrEqual(stripBox.left - 1)
-      expect(box.right).toBeLessThanOrEqual(stripBox.right + 1)
-    }
-    for (let index = 1; index < clockBoxes.length; index += 1) {
-      const previous = clockBoxes[index - 1], current = clockBoxes[index]
-      if (current.top < previous.bottom) expect(current.left - previous.right).toBeGreaterThanOrEqual(1)
-    }
+    expect(containment.timeLeft).toBeGreaterThanOrEqual(containment.headerLeft - 1)
+    expect(containment.timeRight).toBeLessThanOrEqual(containment.headerRight + 1)
+
     const alertCopyClipped = await page.locator('.workspace-alert-strip__ticker').evaluate((element) => element.scrollWidth > element.clientWidth + 1)
     expect(alertCopyClipped).toBe(false)
-    const viewportWidth = page.viewportSize()!.width
-    const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
-    expect(documentWidth).toBeLessThanOrEqual(viewportWidth)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
     await expect(page.getByRole('button', { name: 'Use light mode' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Use dark mode' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Open My Account for Jordan Brown' })).toBeVisible()
@@ -156,23 +95,23 @@ for (const width of widths) {
   })
 }
 
-test('1024px collapsed sidebar preserves the four-clock desktop row', async ({ page }, testInfo) => {
+test('1024px collapsed sidebar preserves the single system-time display', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1024, height: 1000 })
   await page.goto('/')
   await installHeaderFixture(page, true)
-  const gridColumns = await page.locator('.operational-time-zone-grid').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
-  expect(gridColumns).toBe(4)
+  await expect(page.locator('.user-system-time')).toHaveCount(1)
+  await expect(page.locator('.operational-clock')).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024)
   await page.screenshot({ path: testInfo.outputPath('global-header-1024-collapsed.png'), fullPage: true })
 })
 
-test('reduced motion removes the second hand without hiding clock information', async ({ page }) => {
+test('reduced motion keeps the digital system time and has no analog animation', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.setViewportSize({ width: 1024, height: 900 })
   await page.goto('/')
   await installHeaderFixture(page, false)
-  await expect(page.locator('.operational-clock__hand--second').first()).toHaveCSS('visibility', 'hidden')
-  await expect(page.locator('.operational-clock__digital').first()).toBeVisible()
+  await expect(page.locator('.user-system-time__time')).toBeVisible()
+  await expect(page.locator('.operational-clock__hand')).toHaveCount(0)
 })
 
 test('the integrated global header has no detectable accessibility violations', async ({ page }) => {
@@ -199,7 +138,6 @@ test('light and dark selections expose state without relying on color', async ({
   })
   const canvasColor = await page.locator('html').evaluate((element) => getComputedStyle(element).backgroundColor)
   expect(canvasColor).toBe('rgb(13, 16, 19)')
-
 
   const accessibility = await new AxeBuilder({ page }).analyze()
   expect(accessibility.violations).toEqual([])

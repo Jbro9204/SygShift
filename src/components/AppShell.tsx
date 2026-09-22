@@ -31,6 +31,7 @@ import {
   isSupabaseConfigured,
 } from '../lib/supabase'
 import { lastCompletedPayrollWeek } from '../lib/time'
+import { personalDisplayTimeZone } from '../lib/usTimeZones'
 import { MaintenanceNotice, MaintenanceUnavailablePanel } from './MaintenanceNotice'
 import { getMaintenanceStatus, maintenanceFeatureForPath } from '../data/maintenance'
 import { deriveSystemServiceStatus, getSystemReadiness } from '../data/systemStatus'
@@ -999,6 +1000,7 @@ export function AppShell() {
             </div>
           )}
           serverTimestamp={maintenanceStatusQuery.data?.serverTime}
+          timeZone={personalDisplayTimeZone(sessionContext?.timeZone ?? 'America/Denver')}
         />
 
         {authMessage ? (

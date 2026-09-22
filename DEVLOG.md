@@ -1,5 +1,20 @@
 # SygShift Development Log
 
+## 09/22/2026 - Single User System-Time Header
+
+- Removed the four-zone analog clock strip from the authenticated application
+  shell and replaced it with one compact digital system-time display.
+- The display remains anchored to trusted server time while using the viewer's
+  supported browser time zone, with the employee profile time zone as fallback.
+- Updated the date in the same header to use that personal display time zone and
+  preserved the appearance controls, account menu, notifications, alert strip,
+  SygSphere composer behavior, and all Time Clock workflows.
+- Verified the complete 301-file / 1,604-test repository gate, the 22-check
+  desktop/mobile header matrix, 10 affected SygSphere layout checks, and the
+  mandatory 42-check desktop/mobile Time Clock workflow.
+- No database migration or production-record change was required. Release
+  detail: `docs/changelogs/CHANGELOG_09-22-2026_SINGLE_USER_SYSTEM_TIME_HEADER.md`.
+
 ## 09/21/2026 - HR Short-Notice Call-Out Report and Report Library Alignment
 
 - Added a protected HR report for call-outs received less than four hours

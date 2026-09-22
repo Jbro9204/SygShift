@@ -11946,118 +11946,42 @@ a.home-metric-card:focus-visible {
   color: var(--muted);
 }
 
-.operational-time-zone-strip {
+.user-system-time {
+  display: flex;
   min-width: 0;
-  overflow-x: auto;
-  padding-right: clamp(7px, 0.8vw, 11px);
-  border-right: 1px solid var(--line);
-  scrollbar-width: none;
-}
-
-.operational-time-zone-strip::-webkit-scrollbar {
-  display: none;
-}
-
-.operational-time-zone-grid {
-  display: grid;
-  min-width: 700px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-height: 46px;
   align-items: center;
-  gap: clamp(4px, 0.5vw, 8px);
-}
-
-.operational-clock {
-  position: relative;
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  width: min(100%, 178px);
-  min-width: 0;
-  min-height: 68px;
-  align-items: center;
-  justify-self: center;
-  gap: 8px;
-  padding: 7px 8px;
+  justify-self: start;
+  gap: 9px;
+  padding: 0 clamp(8px, 1vw, 14px);
   color: light-dark(#282620, #f5f1e8);
-  border: 1px solid transparent;
-  border-radius: 10px;
+  border-right: 1px solid var(--line);
   text-align: left;
+  white-space: nowrap;
 }
 
-.operational-clock__face {
-  width: 44px;
-  height: 44px;
-  overflow: visible;
-}
-
-.operational-clock__dial {
-  fill: #fffefb;
-  stroke: light-dark(#b6aa96, #b9b2a7);
-  stroke-width: 1.5;
-}
-
-.operational-clock__marker,
-.operational-clock__hand {
-  transform-origin: 32px 32px;
-  stroke-linecap: round;
-}
-
-.operational-clock__marker {
-  stroke: light-dark(#777064, #b9b2a7);
-  stroke-width: 1.2;
-}
-
-.operational-clock__hand--hour {
-  stroke: light-dark(#2a2823, #f5f1e8);
-  stroke-width: 3.5;
-}
-
-.operational-clock__hand--minute {
-  stroke: light-dark(#3d3932, #f5f1e8);
-  stroke-width: 2.4;
-}
-
-.operational-clock__hand--second {
-  stroke: light-dark(#bd7a13, #e0b65a);
-  stroke-width: 1.25;
-}
-
-.operational-clock__pin {
-  fill: light-dark(#c48a2e, #e0b65a);
-  stroke: #fffdf8;
-  stroke-width: 1;
-}
-
-.operational-clock__details {
-  display: grid;
-  min-width: 0;
-  align-content: center;
-  justify-items: start;
-  gap: 1px;
-}
-
-.operational-clock__digital {
+.user-system-time__time {
   color: light-dark(#181713, #f5f1e8);
-  font-size: 15px;
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
   font-weight: 900;
   letter-spacing: -0.02em;
   line-height: 1.2;
-  white-space: nowrap;
 }
 
-.operational-clock__zone {
+.user-system-time__zone {
   color: light-dark(#5b5245, #b9b2a7);
   font-size: 13px;
   font-weight: 850;
   line-height: 1.25;
-  white-space: nowrap;
 }
 
-.operational-clock em {
-  margin-top: 1px;
-  padding: 0;
+.user-system-time em {
+  padding: 3px 7px;
   color: light-dark(#735018, #e0b65a);
-  background: transparent;
+  background: light-dark(#fff4d9, #342817);
+  border: 1px solid light-dark(#e9c981, #73551f);
+  border-radius: 999px;
   font-size: 9px;
   font-style: normal;
   font-weight: 900;
@@ -12246,10 +12170,6 @@ a.home-metric-card:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .operational-clock__hand--second {
-    visibility: hidden;
-  }
-
   .header-notification--urgent {
     animation: none;
   }
@@ -12257,10 +12177,10 @@ a.home-metric-card:focus-visible {
 
 @media (max-width: 1500px) {
   .topbar {
-    grid-template-columns: minmax(0, 1fr) max-content;
+    grid-template-columns: max-content minmax(170px, 1fr) max-content;
     min-height: 0;
-    gap: 6px 8px;
-    padding: 7px 16px 8px;
+    gap: 8px;
+    padding: 7px 16px;
   }
 
   .topbar .user-profile-control__copy {
@@ -12274,39 +12194,12 @@ a.home-metric-card:focus-visible {
   }
 
   .topbar .user-menu {
-    grid-column: 2;
+    grid-column: 3;
     justify-content: flex-end;
   }
 
-  .operational-time-zone-strip {
-    grid-row: 2;
-    grid-column: 1 / -1;
-    width: 100%;
-    overflow-x: visible;
-    padding: 6px 0 0;
-    border-top: 1px solid var(--line);
-    border-right: 0;
-  }
-
-  .operational-time-zone-grid {
-    min-width: 0;
-  }
-
-  .operational-clock {
-    grid-template-columns: 40px minmax(0, 1fr);
-    width: min(100%, 172px);
-    gap: 7px;
-    padding-right: 7px;
-    padding-left: 7px;
-  }
-
-  .operational-clock__face {
-    width: 40px;
-    height: 40px;
-  }
-
   .payroll-export-reminder {
-    top: 124px;
+    top: 78px;
   }
 }
 
@@ -19367,18 +19260,15 @@ a.home-metric-card:focus-visible {
     justify-content: flex-end;
   }
 
-  .operational-time-zone-strip {
+  .user-system-time {
     grid-row: 2;
     grid-column: 1 / -1;
     width: 100%;
-    overflow-x: visible;
+    min-height: 38px;
+    justify-self: stretch;
     padding: 6px 0 0;
     border-top: 1px solid var(--line);
     border-right: 0;
-  }
-
-  .operational-time-zone-grid {
-    min-width: 0;
   }
 
   .payroll-export-reminder {
@@ -19534,18 +19424,10 @@ a.home-metric-card:focus-visible {
     padding: 7px 10px 8px 78px;
   }
 
-  .operational-time-zone-strip {
+  .user-system-time {
     width: calc(100% + 68px);
     margin-left: -68px;
-  }
-
-  .operational-time-zone-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px 6px;
-  }
-
-  .operational-clock {
-    min-height: 58px;
+    padding-left: 68px;
   }
 
   .payroll-export-reminder {
@@ -19609,43 +19491,29 @@ a.home-metric-card:focus-visible {
     justify-content: flex-end;
   }
 
-  .operational-time-zone-strip {
+  .user-system-time {
     grid-row: 2;
     grid-column: 1 / -1;
     width: calc(100% + 60px);
     margin-left: -60px;
-    overflow-x: visible;
-    padding: 6px 0 0;
+    min-height: 38px;
+    justify-self: stretch;
+    padding: 6px 0 0 60px;
     border-top: 1px solid var(--line);
     border-right: 0;
   }
 
-  .operational-time-zone-grid {
-    min-width: 0;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px 6px;
-  }
-
-  .operational-clock {
-    width: 100%;
-    grid-template-columns: 35px minmax(0, 1fr);
-    min-height: 58px;
-    justify-self: stretch;
-    gap: 3px;
-    padding: 4px 2px;
-  }
-
-  .operational-clock__face {
-    width: 35px;
-    height: 35px;
-  }
-
-  .operational-clock__digital {
+  .user-system-time__time {
     font-size: 13px;
   }
 
-  .operational-clock em {
-    display: none;
+  .user-system-time__zone {
+    font-size: 12px;
+  }
+
+  .user-system-time em {
+    padding: 2px 6px;
+    font-size: 8.5px;
   }
 
   .payroll-export-reminder {
@@ -38539,5 +38407,16 @@ button.document-workbench__template-control.is-signature img {
   .coverage-workflow__actions button,
   .coverage-complete button {
     width: 100%;
+  }
+}
+
+@media (max-width: 360px) {
+  .user-system-time {
+    gap: 6px;
+    padding-right: 4px;
+  }
+
+  .user-system-time em {
+    display: none;
   }
 }
