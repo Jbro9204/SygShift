@@ -435,52 +435,51 @@ test('keeps the mobile composer compact and grows it only for multiline work', a
   expect(grownHeight).toBeLessThanOrEqual(106)
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeInViewport()
 })
-test('shares an ordinary mobile attachment through the same-origin upload', async ({ page }) => {
+test('queues an ordinary mobile attachment without blocking on its security scan', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 640 })
   let uploadCount = 0
-  await page.route('**/api/v1/sygsphere/files/**', async (route) => {
-    if (route.request().method() !== 'PUT') return route.continue()
+  await page.route('**/api/v1/sygsphere/uploads', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue()
     uploadCount += 1
-    const fileId = new URL(route.request().url()).pathname.split('/').at(-1)
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: fileId, messageId: '30000000-0000-4000-8000-000000000002', state: 'clean' }) })
+    const request = route.request().postDataJSON() as { fileId: string }
+    await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ uploadId: request.fileId, state: 'scanning' }) })
   })
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
   await page.locator('input[type="file"]').setInputFiles({ name: 'mobile-photo.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })
   await page.getByRole('button', { name: 'Share file', exact: true }).click()
-  await expect(page.getByText('Your file has been shared.')).toBeVisible()
+  await expect(page.getByText('Your file was uploaded and will appear automatically when it is ready.')).toBeVisible()
   expect(uploadCount).toBe(1)
 })
-test('transfers a normal desktop PDF through SygShift before reporting it shared', async ({ page }) => {
-  let uploadedBytes: Buffer | null = null
-  await page.route('**/api/v1/sygsphere/files/**', async (route) => {
-    if (route.request().method() !== 'PUT') return route.continue()
-    uploadedBytes = route.request().postDataBuffer()
-    const fileId = new URL(route.request().url()).pathname.split('/').at(-1)
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: fileId, messageId: '30000000-0000-4000-8000-000000000006', state: 'clean' }) })
+test('queues a normal desktop PDF before reporting the background security check', async ({ page }) => {
+  let authorization: { filename?: string; mimeType?: string; sizeBytes?: number } | null = null
+  await page.route('**/api/v1/sygsphere/uploads', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue()
+    authorization = route.request().postDataJSON()
+    await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ uploadId: (authorization as { fileId: string }).fileId, state: 'scanning' }) })
   })
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
   await page.locator('input[type="file"]').setInputFiles({ name: 'desktop-report.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\n%%EOF') })
   await page.getByRole('button', { name: 'Share file', exact: true }).click()
-  await expect(page.getByText('Your file has been shared.')).toBeVisible()
-  expect(uploadedBytes?.toString()).toBe('%PDF-1.7\n%%EOF')
+  await expect(page.getByText('Your file was uploaded and will appear automatically when it is ready.')).toBeVisible()
+  expect(authorization).toMatchObject({ filename: 'desktop-report.pdf', mimeType: 'application/pdf', sizeBytes: 14 })
 })
-test('retries the retained mobile file when its first transfer does not reach storage', async ({ page }) => {
+test('retries a mobile attachment when its first queued-upload authorization fails', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 640 })
   let uploadAttempts = 0
-  await page.route('**/api/v1/sygsphere/files/**', async (route) => {
-    if (route.request().method() !== 'PUT') return route.continue()
+  await page.route('**/api/v1/sygsphere/uploads', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue()
     uploadAttempts += 1
-    const fileId = new URL(route.request().url()).pathname.split('/').at(-1)
+    const request = route.request().postDataJSON() as { fileId: string }
     await route.fulfill(uploadAttempts === 1
-      ? { status: 503, contentType: 'application/json', headers: { 'x-request-id': '30000000-0000-4000-8000-000000000003' }, body: JSON.stringify({ detail: 'The file could not be stored.', error: 'sygsphere_file_error' }) }
-      : { status: 200, contentType: 'application/json', body: JSON.stringify({ id: fileId, messageId: '30000000-0000-4000-8000-000000000004', state: 'clean' }) })
+      ? { status: 503, contentType: 'application/json', headers: { 'x-request-id': '30000000-0000-4000-8000-000000000003' }, body: JSON.stringify({ detail: 'The protected upload could not be authorized.', error: 'sygsphere_upload_authorization_failed' }) }
+      : { status: 202, contentType: 'application/json', body: JSON.stringify({ uploadId: request.fileId, state: 'scanning' }) })
   })
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
   await page.locator('input[type="file"]').setInputFiles({ name: 'mobile-resume.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })
   await page.getByRole('button', { name: 'Share file', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Retry upload', exact: true })).toBeEnabled({ timeout: 10_000 })
   await page.getByRole('button', { name: 'Retry upload', exact: true }).click()
-  await expect(page.getByText('Your file has been shared.')).toBeVisible()
+  await expect(page.getByText('Your file was uploaded and will appear automatically when it is ready.')).toBeVisible()
   expect(uploadAttempts).toBe(2)
 })
 test('keeps drafts over reload, retains a failed send and retries successfully', async ({ page }) => {

@@ -18,12 +18,14 @@ import { CoverageWorkflowDialog } from "../pages/RequestsPage";
 import { canAccessRoute } from "../app/accessPolicy";
 import {
   createAccountabilityOccurrence,
+  getAccountabilityEventReconciliation,
   getAccountabilityWorkspace,
   reviewAccountabilityOccurrence,
   reclassifyAccountabilityOccurrence,
   type AccountabilityDecision,
   type AccountabilityEvent,
   type AccountabilityEventType,
+  type AccountabilityReconciliation,
   type AccountabilityWorkspace,
 } from "../data/accountability";
 import { getSessionContext } from "../data/auth";
@@ -824,7 +826,14 @@ function OccurrenceReviewDialog({
     onSuccess: async () => { await onSaved(); onClose() },
   });
   const state = accountabilityDisplayState(event);
-  const actualEmployee = event.reconciliation?.actualEmployees.find(
+  const reconciliationQuery = useQuery({
+    enabled: Boolean(event.shiftId),
+    initialData: event.reconciliation ?? undefined,
+    queryFn: () => getAccountabilityEventReconciliation(event.id),
+    queryKey: ["accountability-event-reconciliation", event.id],
+  });
+  const reconciliation = reconciliationQuery.data ?? event.reconciliation;
+  const actualEmployee = reconciliation?.actualEmployees.find(
     (employee) => employee.employeeId === event.employeeId,
   );
 
@@ -913,11 +922,31 @@ function OccurrenceReviewDialog({
             }}
           />
         ) : null}
-        {event.reconciliation ? (
+        {reconciliation ? (
           <ReconciliationContext
             event={event}
             actualEmployee={actualEmployee}
+            reconciliation={reconciliation}
           />
+        ) : reconciliationQuery.isPending && event.shiftId ? (
+          <TimeAlertCard
+            icon={CalendarClock}
+            title="Loading scheduled shift context"
+            tone="neutral"
+          >
+            <p>Loading the original schedule, recorded time, and coverage comparison.</p>
+          </TimeAlertCard>
+        ) : reconciliationQuery.isError && event.shiftId ? (
+          <TimeAlertCard
+            icon={AlertTriangle}
+            title="Scheduled shift context unavailable"
+            tone="warning"
+          >
+            <p>{reconciliationQuery.error.message}</p>
+            <TimeButton onClick={() => void reconciliationQuery.refetch()} variant="secondary">
+              Retry context
+            </TimeButton>
+          </TimeAlertCard>
         ) : (
           <TimeAlertCard
             icon={CalendarClock}
@@ -1045,16 +1074,16 @@ function OccurrenceReviewDialog({
 function ReconciliationContext({
   event,
   actualEmployee,
+  reconciliation,
 }: {
   event: AccountabilityEvent;
+  reconciliation: AccountabilityReconciliation;
   actualEmployee:
     | NonNullable<
         AccountabilityEvent["reconciliation"]
       >["actualEmployees"][number]
     | undefined;
 }) {
-  const reconciliation = event.reconciliation;
-  if (!reconciliation) return null;
   return (
     <>
       <section className="accountability-context-grid">

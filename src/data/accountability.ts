@@ -198,6 +198,7 @@ const reviewResultSchema = z.object({
 
 export type AccountabilityWorkspace = z.infer<typeof workspaceSchema>
 export type AccountabilityEvent = z.infer<typeof eventSchema>
+export type AccountabilityReconciliation = z.infer<typeof reconciliationSchema>
 export type AccountabilityEventType = z.infer<typeof eventTypeSchema>
 export type AccountabilityDecision = z.infer<typeof decisionSchema>
 
@@ -207,6 +208,7 @@ export type AttendanceReport = z.infer<typeof attendanceReportSchema>
 export function parseAccountabilityWorkspacePayload(data: unknown): AccountabilityWorkspace {
   const result = workspaceSchema.safeParse(data)
   if (!result.success) {
+    console.error('Accountability workspace response validation failed', result.error.issues.map(({ code, message, path }) => ({ code, message, path })))
     throw new Error('Accountability information could not be loaded. Refresh the page and try again.')
   }
   return result.data
@@ -242,6 +244,14 @@ export async function getAccountabilityWorkspace(input: { fromDate: string; thro
   }), 'hr')
   if (error) throw accountabilityOperationError('The Accountability Tracker could not be loaded. Refresh the page and try again.')
   return parseAccountabilityWorkspacePayload(data)
+}
+
+export async function getAccountabilityEventReconciliation(eventId: string): Promise<AccountabilityReconciliation | null> {
+  const { data, error } = await supabaseWithIdentityVerification(() => getSupabaseClient().rpc('get_accountability_event_reconciliation', {
+    target_event_id: eventId,
+  }), 'hr')
+  if (error) throw accountabilityOperationError('The scheduled shift context could not be loaded. Retry from this review window.')
+  return reconciliationSchema.nullable().parse(data)
 }
 
 export async function createAccountabilityOccurrence(input: {
