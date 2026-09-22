@@ -553,6 +553,12 @@
 @media (max-height: 760px) and (min-width: 621px) {
   .sphere-comms-panel__bar { min-height: 50px; padding-block: 4px; }
   .sphere-comms-panel__hint { display: none; }
-  .sphere-main > .sphere-message-list { min-height: 80px; }
+  .sphere-main > .sphere-message-list { min-height: 0; }
   .sphere-main > .sphere-composer { margin-bottom: 10px; }
+}
+
+@media (max-height: 500px) and (min-width: 621px) {
+  .sphere-comms-panel__bar { min-height: 44px; padding-block: 2px; }
+  .sphere-comms-panel__controls > button,
+  .sphere-comms-panel__controls .sphere-comms-ptt { min-height: 36px; padding-block: 3px; }
 }

@@ -348,6 +348,66 @@ for (const viewport of [
     await page.screenshot({ path: testInfo.outputPath(`sygsphere-${viewport.label}.png`), fullPage: true })
   })
 }
+
+for (const viewport of [
+  { label: 'short 1024-pixel laptop', width: 1024, height: 600, minimumMessageHeight: 190 },
+  { label: 'short 800-pixel laptop', width: 800, height: 600, minimumMessageHeight: 175 },
+  { label: 'high-zoom laptop', width: 700, height: 500, minimumMessageHeight: 125 },
+  { label: 'very-high-zoom laptop', width: 683, height: 384, minimumMessageHeight: 70 },
+  { label: 'narrow phone', width: 390, height: 667, minimumMessageHeight: 220 },
+  { label: 'small phone with keyboard-height viewport', width: 320, height: 480, minimumMessageHeight: 55 },
+]) {
+  test(`keeps the chat pane usable without a dead area on a ${viewport.label}`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
+    await page.getByLabel('Message text size').selectOption('extra_large')
+
+    const geometry = await page.evaluate(() => {
+      const sphere = document.querySelector<HTMLElement>('.sphere-workspace')!
+      const main = document.querySelector<HTMLElement>('.sphere-main')!
+      const messages = main.querySelector<HTMLElement>(':scope > .sphere-message-list')!
+      const composer = main.querySelector<HTMLElement>(':scope > .sphere-composer')!
+      const typing = main.querySelector<HTMLElement>(':scope > .sphere-typing')!
+      const messageBox = messages.getBoundingClientRect()
+      const composerBox = composer.getBoundingClientRect()
+      const sphereBox = sphere.getBoundingClientRect()
+      return {
+        composerBottom: composerBox.bottom,
+        composerTop: composerBox.top,
+        documentHeightOverflow: document.documentElement.scrollHeight - window.innerHeight,
+        documentWidthOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        mainOverflow: main.scrollHeight - main.clientHeight,
+        messageBottom: messageBox.bottom,
+        messageHeight: messageBox.height,
+        messageOverflow: getComputedStyle(messages).overflowY,
+        sphereBottom: sphereBox.bottom,
+        sphereHeight: sphereBox.height,
+        unusedBottomSpace: sphereBox.bottom - composerBox.bottom,
+        typingHeight: typing.getBoundingClientRect().height,
+      }
+    })
+
+    expect(geometry.documentHeightOverflow).toBeLessThanOrEqual(1)
+    expect(geometry.documentWidthOverflow).toBeLessThanOrEqual(1)
+    expect(geometry.mainOverflow).toBeLessThanOrEqual(1)
+    expect(Math.round(geometry.sphereBottom)).toBe(viewport.height)
+    expect(geometry.sphereHeight).toBeGreaterThan(0)
+    expect(geometry.messageHeight).toBeGreaterThanOrEqual(viewport.minimumMessageHeight)
+    expect(geometry.messageBottom).toBeLessThanOrEqual(geometry.composerTop + 1)
+    expect(geometry.composerBottom).toBeLessThanOrEqual(geometry.sphereBottom)
+    expect(geometry.unusedBottomSpace).toBeGreaterThanOrEqual(0)
+    expect(geometry.unusedBottomSpace).toBeLessThanOrEqual(20)
+    expect(geometry.typingHeight).toBe(0)
+    expect(geometry.messageOverflow).toBe('auto')
+    await expect(page.getByRole('textbox', { name: 'Write a message', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeInViewport()
+
+    if (viewport.width <= 760) {
+      await expect(page.locator('.sphere-conversations')).toBeHidden()
+      await expect(page.getByRole('button', { name: 'Back to conversations' })).toBeVisible()
+    }
+  })
+}
 test('keeps Send above a mobile keyboard-sized viewport while composing', async ({ page }) => {
   await page.setViewportSize({ width: 412, height: 480 })
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
