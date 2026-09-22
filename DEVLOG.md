@@ -13,7 +13,10 @@
   desktop/mobile header matrix, 10 affected SygSphere layout checks, and the
   mandatory 42-check desktop/mobile Time Clock workflow.
 - No database migration or production-record change was required. Release
-  detail: `docs/changelogs/CHANGELOG_09-22-2026_SINGLE_USER_SYSTEM_TIME_HEADER.md`.
+  commit `48a034d` was deployed as Cloudflare Worker
+  `d8c7bd86-35f1-4e5e-a771-62badf13e826`; both production origins passed
+  health, readiness, and exact live-bundle verification. Release detail:
+  `docs/changelogs/CHANGELOG_09-22-2026_SINGLE_USER_SYSTEM_TIME_HEADER.md`.
 
 ## 09/21/2026 - HR Short-Notice Call-Out Report and Report Library Alignment
 

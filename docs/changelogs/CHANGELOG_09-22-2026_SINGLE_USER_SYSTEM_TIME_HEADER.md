@@ -1,7 +1,7 @@
 # Single User System-Time Header
 
 Date: 09/22/2026
-Status: Production release prepared
+Status: Released to production
 
 ## Outcome
 
@@ -56,5 +56,11 @@ analog clock cards and their scrolling/responsive strip have been removed.
 ## Release references
 
 - Database migration: none
-- Source commit: recorded after release
-- Cloudflare Worker version: recorded after release
+- Source commit: `48a034d`
+- Cloudflare Worker version: `d8c7bd86-35f1-4e5e-a771-62badf13e826`
+- Rollback tag: `rollback/pre-single-user-system-time-header-20260922`
+- Production verification: both the custom domain and Worker origin returned
+  healthy/ready; the live HTML referenced `index-B3pvhMFu.js`, whose bundle
+  contains the single system-time presentation and no four-zone region label.
+  The live stylesheet contains `.user-system-time` and no `.operational-clock`
+  selector.
