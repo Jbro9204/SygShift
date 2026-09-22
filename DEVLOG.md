@@ -2801,3 +2801,11 @@ pnpm exec wrangler deploy --keep-vars
 - Passed the full 301-file / 1,604-test quality gate, the 114-check SygSphere plus Time Clock Chromium matrix, and 9 focused Firefox checks.
 - Released source `e5abd45` as Worker `6f2a4ae7-3dd3-4658-9f4e-845876b4b79f`; custom-domain and Worker-origin health/readiness plus exact live assets passed.
 - No database, messages, permissions, notifications, voice behavior, employee records, schedules, timekeeping, or payroll workflows changed.
+
+# 09/22/2026 - Accountability and SygSphere Upload Reliability
+
+- Restored the production Accountability Tracker by moving its expensive schedule-versus-time reconciliation from the initial list query to the individual occurrence review. The live list query fell from about 9.7 seconds to about 0.12 seconds without rewriting operational records.
+- Routed all SygSphere attachments through protected resumable storage and the background security-scan queue so a cold scanner no longer holds the share dialog open until the browser request fails.
+- Preserved scan-before-share, authorization, recent MFA, retry, recovery, immutable schedule context, and action-history controls.
+- Passed 303 test files / 1,607 tests, 6 focused desktop/mobile upload checks, the 42-check mandatory Time Clock matrix, production builds, health/readiness checks, and byte-identical asset verification.
+- Released source `224dd3c` as Worker `4522090e-cc28-4a36-ae7c-d4d7fc874292`; applied only migration `20260922174500_accountability_lazy_reconciliation.sql` because unrelated remote migration history is owned by other active work.
