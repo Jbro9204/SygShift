@@ -2792,3 +2792,12 @@ pnpm exec wrangler deploy --keep-vars
 - Added durable CALL OFF and COVERAGE schedule markers, excluded called-off employees from active staffing counts, and blocked clock-in against the original called-off occurrence while preserving the original schedule record.
 - Added Supabase Realtime schedule refresh and portable `.ics` calendar downloads for team and personal schedule views.
 - Added forward migration `20260922145137_structured_late_arrival_and_coverage_markers.sql`, rollback-only database regression coverage, calendar tests, and source guardrails.
+
+# 09/22/2026 - SygSphere Responsive Viewport Repair
+
+- Repaired height and overflow ownership so SygSphere uses the available screen without a dead area below the chat or a composer pushed outside the viewport.
+- Added compact short-screen and high-zoom behavior plus a focused one-column conversation layout through 760 CSS pixels while preserving readable text and all messaging controls.
+- Added regression coverage for 1024x600 and 800x600 laptops, 700x500 and 683x384 zoomed layouts, and 390x667 and 320x480 phones.
+- Passed the full 301-file / 1,604-test quality gate, the 114-check SygSphere plus Time Clock Chromium matrix, and 9 focused Firefox checks.
+- Released source `e5abd45` as Worker `6f2a4ae7-3dd3-4658-9f4e-845876b4b79f`; custom-domain and Worker-origin health/readiness plus exact live assets passed.
+- No database, messages, permissions, notifications, voice behavior, employee records, schedules, timekeeping, or payroll workflows changed.
