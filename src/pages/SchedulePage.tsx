@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
-import { AlertCircle, BellRing, CalendarDays, ChevronLeft, ChevronRight, Copy, DatabaseZap, Edit3, MapPin, Maximize2, MoveHorizontal, Plus, Search, Send, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
+import { AlertCircle, BellRing, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Copy, DatabaseZap, Edit3, MapPin, Maximize2, MoveHorizontal, Plus, Search, Send, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
@@ -47,11 +47,12 @@ import {
 import { processNotificationBatch } from '../data/operations'
 import { parseImportedScheduleNote, sourceReferenceLabel } from '../data/sourceNotes'
 import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
-import { isSupabaseConfigured } from '../lib/supabase'
+import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { formatDualClockTime, formatDualTime, operationalToday } from '../lib/time'
 import { continentalUsTimeZoneLabel, personalDisplayTimeZone } from '../lib/usTimeZones'
 import { scheduleTeamViewPermissions } from '../app/accessPolicy'
 import { scheduledOvertimePreviewBlocksSave } from '../scheduleDraftEdit'
+import { downloadScheduleCalendar } from '../schedule/calendar'
 
 interface OpenShiftFormState {
   mode: 'post' | 'event'
@@ -429,6 +430,15 @@ function employeeOwnsShift(shift: ScheduleShift, employeeId: string | null | und
   return shift.assignments.some((assignment) => assignment.employee.id === employeeId)
 }
 
+function operationalAssignmentCount(shift: ScheduleShift): number {
+  if (shift.coverage?.marker !== 'call_off') return shift.assignments.length
+  return shift.assignments.filter((assignment) => assignment.employee.id !== shift.coverage?.absentEmployeeId).length
+}
+
+function operationalOpenSlots(shift: ScheduleShift): number {
+  return Math.max(shift.headcount_required - operationalAssignmentCount(shift), 0)
+}
+
 function cleanOperationalShiftNotes(notes: string | null | undefined): string | null {
   const text = notes?.trim()
   if (!text) return null
@@ -579,7 +589,7 @@ function ShiftCard({
 }) {
   const title = shiftPostLabel(shift)
   const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? null
-  const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
+  const openSlots = operationalOpenSlots(shift)
   const source = parseImportedScheduleNote(shift.notes)
   const sourceReference = sourceReferenceLabel(source)
   const showSourceReview = source.reviewNeeded || (openSlots > 0 && Boolean(source.assignee))
@@ -609,17 +619,20 @@ function ShiftCard({
         <strong>{shiftTimeRange(shift)}</strong>
         {dispatchCoverageLabel(shift) ? <span className="shift-tag shift-tag--dispatch">{dispatchCoverageLabel(shift)}</span> : null}
         {shift.is_overtime ? <span className="shift-tag shift-tag--overtime">OT</span> : null}
+        {shift.coverage?.marker === 'call_off' ? <span className="shift-tag shift-tag--call-off">CALL OFF</span> : null}
+        {shift.coverage?.marker === 'coverage' ? <span className="shift-tag shift-tag--coverage">COVERAGE</span> : null}
       </div>
       <span className="shift-card__title">{title}</span>
       {compact && location ? <small className="shift-card__location">{location}</small> : null}
       <div className="shift-card__people">
         {shift.assignments.length > 0
           ? shift.assignments.map((assignment) => (
-              <span key={assignment.id}>{assignmentName(assignment)}</span>
+              <span key={assignment.id}>{assignmentName(assignment)}{shift.coverage?.marker === 'call_off' && assignment.employee.id === shift.coverage.absentEmployeeId ? ' · Called off' : ''}</span>
             ))
           : <span className="shift-card__unassigned">No one assigned</span>}
       </div>
       <div className="shift-card__footer">
+        {shift.coverage?.marker === 'call_off' && !shift.coverage.replacementEmployeeName ? <span className="shift-tag shift-tag--open">Replacement needed</span> : null}
         {shift.work_type === 'training' ? <span className="shift-tag shift-tag--training">Paid training</span> : null}
         {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review needed</span> : null}
         <span className={shift.requires_armed ? 'shift-tag shift-tag--armed' : 'shift-tag'}>
@@ -810,6 +823,8 @@ function EmployeePersonalSchedulePanel({
                           <div className="employee-shift-card__time">
                             <strong>{shiftTimeRange(shift, timeZone)}</strong>
                             {shift.is_overtime ? <span>Overtime</span> : null}
+                            {shift.coverage?.marker === 'call_off' ? <span>Call off</span> : null}
+                            {shift.coverage?.marker === 'coverage' ? <span>Coverage</span> : null}
                           </div>
                           <h3>{shiftPostLabel(shift)}</h3>
                           <p className="employee-shift-card__location">
@@ -1354,7 +1369,7 @@ function SchedulerShiftModal({
   suggestion: StaffingSuggestion | undefined
 }) {
   const source = parseImportedScheduleNote(shift.notes)
-  const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
+  const openSlots = operationalOpenSlots(shift)
   const title = shiftPostLabel(shift)
   const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? 'Unassigned location'
   const sourceReference = sourceReferenceLabel(source)
@@ -1440,7 +1455,7 @@ function SchedulerShiftModal({
           <article>
             <span>Coverage</span>
             <strong>{openSlots ? `${openSlots} open` : 'Covered'}</strong>
-            <small>{shift.assignments.length} assigned / {shift.headcount_required} needed</small>
+            <small>{operationalAssignmentCount(shift)} active / {shift.headcount_required} needed</small>
           </article>
           <article>
             <span>Requirement</span>
@@ -1763,7 +1778,7 @@ function EmployeeWeekDialog({
 }) {
   const shifts = [...row.shifts].sort((left, right) => left.starts_at.localeCompare(right.starts_at))
   const totalHours = shifts.reduce((total, shift) => total + shiftDurationHours(shift), 0)
-  const openSlots = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+  const openSlots = shifts.reduce((total, shift) => total + operationalOpenSlots(shift), 0)
   const armedCount = shifts.filter((shift) => shift.requires_armed).length
   const reviewCount = shifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
   const daysToShow = workDays.length > 0 ? workDays : Array.from({ length: 7 }, (_, index) => addDays(weekStart, index))
@@ -1836,7 +1851,7 @@ function EmployeeWeekDialog({
                     const location = shift.post?.site.name ?? shift.event?.location_name ?? shift.event?.site?.name ?? 'Location not set'
                     const postOrEvent = shiftPostLabel(shift)
                     const assignedNames = shift.assignments.map(assignmentName)
-                    const openCount = Math.max(shift.headcount_required - shift.assignments.length, 0)
+                    const openCount = operationalOpenSlots(shift)
 
                     return (
                       <article
@@ -1873,6 +1888,8 @@ function EmployeeWeekDialog({
                         </dl>
                         <div className="employee-week-shift__chips">
                           {dispatchCoverageLabel(shift) ? <span className="shift-tag shift-tag--dispatch">{dispatchCoverageLabel(shift)}</span> : null}
+                          {shift.coverage?.marker === 'call_off' ? <span className="shift-tag shift-tag--call-off">CALL OFF</span> : null}
+                          {shift.coverage?.marker === 'coverage' ? <span className="shift-tag shift-tag--coverage">COVERAGE</span> : null}
                           {shift.requires_armed ? <span className="shift-tag shift-tag--armed">Armed</span> : <span className="shift-tag">Unarmed</span>}
                           {shift.is_overtime ? <span className="shift-tag shift-tag--overtime">OT</span> : null}
                           {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review needed</span> : null}
@@ -2186,6 +2203,22 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     queryFn: () => getWeeklySchedule(weekKey),
     enabled: isSupabaseConfigured,
   })
+  useEffect(() => {
+    if (!isSupabaseConfigured) return
+    const client = getSupabaseClient()
+    const refresh = () => {
+      void queryClient.invalidateQueries({ queryKey: ['weekly-schedule'] })
+      void queryClient.invalidateQueries({ queryKey: ['personal-schedule-range'] })
+    }
+    const channel = client
+      .channel(`schedule-live:${weekKey}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shifts' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shift_assignments' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shift_coverage_cases' }, refresh)
+      .subscribe()
+    return () => { void client.removeChannel(channel) }
+  }, [queryClient, weekKey])
   const importedPreviewQuery = useQuery({
     queryKey: ['imported-schedule-preview', weekKey],
     queryFn: () => getImportedSchedulePreview(weekKey),
@@ -2810,8 +2843,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const focusedEmployeeId = scheduleView === 'employee' && employeeFilter !== 'all' ? employeeFilter : null
   const scheduleSummary = useMemo(() => {
     const shifts = rows.flatMap((row) => row.shifts)
-    const assigned = shifts.reduce((total, shift) => total + shift.assignments.length, 0)
-    const open = shifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+    const assigned = shifts.reduce((total, shift) => total + operationalAssignmentCount(shift), 0)
+    const open = shifts.reduce((total, shift) => total + operationalOpenSlots(shift), 0)
     return {
       assigned,
       employees: employeeRows.length,
@@ -2826,7 +2859,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     const shifts = activeRows.flatMap((row) => row.shifts)
     const actionableShifts = shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
     return {
-      open: actionableShifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0),
+      open: actionableShifts.reduce((total, shift) => total + operationalOpenSlots(shift), 0),
       review: actionableShifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length,
       shifts: shifts.length,
     }
@@ -2837,7 +2870,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       .filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
       .map((shift) => {
         const suggestion = suggestionsByShift.get(shift.id)
-        const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
+        const openSlots = operationalOpenSlots(shift)
         return {
           openSlots,
           shift,
@@ -2878,7 +2911,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       .filter((shift) => shiftOperationalDate(shift) === dayKey)
       .sort((left, right) => left.starts_at.localeCompare(right.starts_at))
     const actionableShifts = shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
-    const openSlots = actionableShifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+    const openSlots = actionableShifts.reduce((total, shift) => total + operationalOpenSlots(shift), 0)
     const reviewCount = actionableShifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
     return { day, dayKey, openSlots, reviewCount, shifts }
   }), [currentOperationalDateKey, focusedEmployeeId, schedulerWorkDays, visibleEmployeeRows, visibleRows])
@@ -2899,7 +2932,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       lanes.set(id, lane)
     }
 
-    const openSlots = actionableShifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+    const openSlots = actionableShifts.reduce((total, shift) => total + operationalOpenSlots(shift), 0)
     const reviewCount = actionableShifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
     const status: SchedulerCoverageGroup['status'] = shifts.length === 0
       ? 'empty'
@@ -2928,7 +2961,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const schedulerLocationSummaries = useMemo(() => rows.map((row) => {
     const shifts = row.shifts
     const actionableShifts = shifts.filter((shift) => shiftOperationalDate(shift) >= currentOperationalDateKey)
-    const openSlots = actionableShifts.reduce((total, shift) => total + Math.max(shift.headcount_required - shift.assignments.length, 0), 0)
+    const openSlots = actionableShifts.reduce((total, shift) => total + operationalOpenSlots(shift), 0)
     const reviewCount = actionableShifts.filter((shift) => parseImportedScheduleNote(shift.notes).reviewNeeded).length
     const status: SchedulerCoverageGroup['status'] = shifts.length === 0
       ? 'empty'
@@ -3215,12 +3248,23 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 : 'A readable weekly view for permanent sites, one-time events, patrol, and dispatch coverage.'}
           </p>
         </div>
-        {canBuildSchedule && !isSchedulerHome ? (
+        {scheduleQuery.data || employeePersonalScheduleShifts.length > 0 ? (
           <div className="schedule-intro__actions">
-            <Link className="primary-action" to="/scheduler">
-              <Edit3 aria-hidden="true" size={19} />
-              Open Scheduler
-            </Link>
+            {canBuildSchedule && !isSchedulerHome ? <Link className="primary-action" to="/scheduler"><Edit3 aria-hidden="true" size={19} />Open Scheduler</Link> : null}
+            <button
+              className="secondary-button"
+              onClick={() => {
+                if (employeeOnlySchedule) {
+                  downloadScheduleCalendar({ revision: scheduleQuery.data?.revision ?? 1, shifts: employeePersonalScheduleShifts, week_starts_on: weekKey }, { calendarName: 'My SygShift Schedule', filename: `my-sygshift-schedule-${weekKey}.ics` })
+                  return
+                }
+                if (scheduleQuery.data) downloadScheduleCalendar(scheduleQuery.data, { calendarName: 'SygShift Team Schedule' })
+              }}
+              type="button"
+            >
+              <CalendarPlus aria-hidden="true" size={19} />
+              Add to calendar
+            </button>
           </div>
         ) : null}
       </section>
@@ -4072,7 +4116,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             {selectedSchedulerDay.shifts.length ? (
               <div className="scheduler-day-modal__list">
                 {selectedSchedulerDay.shifts.map((shift) => {
-                  const openSlots = Math.max(shift.headcount_required - shift.assignments.length, 0)
+                  const openSlots = operationalOpenSlots(shift)
                   const source = parseImportedScheduleNote(shift.notes)
                   return (
                     <article className="scheduler-day-modal__shift" key={shift.id}>
@@ -4088,6 +4132,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                         <div>
                           {dispatchCoverageLabel(shift) ? <span className="shift-tag shift-tag--dispatch">{dispatchCoverageLabel(shift)}</span> : null}
                           {shift.requires_armed ? <span className="shift-tag shift-tag--armed">Armed</span> : <span className="shift-tag">Unarmed</span>}
+                          {shift.coverage?.marker === 'call_off' ? <span className="shift-tag shift-tag--call-off">CALL OFF</span> : null}
+                          {shift.coverage?.marker === 'coverage' ? <span className="shift-tag shift-tag--coverage">COVERAGE</span> : null}
                           {openSlots ? <span className="shift-tag shift-tag--open">{openSlots} open</span> : <span className="shift-tag shift-tag--covered">Covered</span>}
                           {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review</span> : null}
                         </div>

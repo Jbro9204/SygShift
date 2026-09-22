@@ -16591,6 +16591,18 @@ a.home-metric-card:focus-visible {
   border-color: light-dark(#d8ad54, #a67a27);
 }
 
+.shift-tag--call-off {
+  color: light-dark(#8d2d25, #ffc5bd);
+  background: light-dark(#f9e3df, #481f1d);
+  border-color: light-dark(#dfaba5, #a84a42);
+}
+
+.shift-tag--coverage {
+  color: light-dark(#226044, #bdebd3);
+  background: light-dark(#e5f1ea, #183b2d);
+  border-color: light-dark(#b9d7c6, #39785a);
+}
+
 .shift-tag--open {
   color: light-dark(#804626, #ffc5bd);
   background: light-dark(#f7e9df, #342817);

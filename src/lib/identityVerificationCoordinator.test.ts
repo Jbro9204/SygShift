@@ -5,6 +5,7 @@ import {
   fetchWithIdentityVerification,
   responseRequiresIdentityVerification,
   subscribeToIdentityVerification,
+  supabaseWithIdentityVerification,
 } from './identityVerificationCoordinator'
 
 function jsonResponse(status: number, error?: string): Response {
@@ -67,6 +68,38 @@ describe('identity verification coordinator', () => {
 
     await expect(responsePromise).resolves.toMatchObject({ ok: false, status: 403 })
     expect(makeRequest).toHaveBeenCalledTimes(1)
+    unsubscribe()
+  })
+
+  it('retries a protected Supabase RPC after identity verification', async () => {
+    const makeRequest = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: { code: '42501', message: 'Accountability workspace permission with MFA is required.' } })
+      .mockResolvedValueOnce({ data: { ok: true }, error: null })
+    let verificationRequested!: () => void
+    const requested = new Promise<void>((resolve) => { verificationRequested = resolve })
+    const unsubscribe = subscribeToIdentityVerification((required) => { if (required) verificationRequested() })
+
+    const resultPromise = supabaseWithIdentityVerification(makeRequest, 'hr')
+    await requested
+    completeIdentityVerification('authenticator')
+
+    await expect(resultPromise).resolves.toEqual({ data: { ok: true }, error: null })
+    expect(makeRequest).toHaveBeenCalledTimes(2)
+    unsubscribe()
+  })
+
+  it('does not turn an ordinary Supabase permission denial into an MFA prompt', async () => {
+    const contexts: string[] = []
+    const unsubscribe = subscribeToIdentityVerification((required, context) => {
+      if (required) contexts.push(context)
+    })
+    const result = await supabaseWithIdentityVerification(async () => ({
+      data: null,
+      error: { code: '42501', message: 'You do not have permission to view this workspace.' },
+    }), 'hr')
+
+    expect(result.error?.code).toBe('42501')
+    expect(contexts).toEqual([])
     unsubscribe()
   })
 })

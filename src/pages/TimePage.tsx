@@ -656,8 +656,8 @@ export function TimeMaintenanceWorkbench({
     [employeeId, overviewReviewQuery.data?.pendingCorrections],
   )
   const selectedScheduledMinutes = selectedAttendanceSummary?.scheduledMinutes ?? 0
-  const selectedWorkedMinutes = selectedPayrollSummary?.paidMinutes ?? 0
-  const selectedDifferenceMinutes = selectedWorkedMinutes - selectedScheduledMinutes
+  const selectedWorkedMinutes = selectedPayrollSummary?.paidMinutes
+  const selectedDifferenceMinutes = selectedWorkedMinutes === undefined ? null : selectedWorkedMinutes - selectedScheduledMinutes
   const selectedNeedsAttention = (selectedPayrollSummary?.exceptionCount ?? 0) + selectedPendingCorrections
   const visibleEvents = showOverview ? [] : events
   const overviewEventCount = overviewRows.reduce((total, row) => total + row.eventCount, 0)
@@ -804,10 +804,10 @@ export function TimeMaintenanceWorkbench({
             ) : (
               <>
                 <article><span>Scheduled</span><strong>{payrollHours(selectedScheduledMinutes)} hr</strong><small>Published schedule in this range</small></article>
-                <article><span>Worked</span><strong>{payrollHours(selectedWorkedMinutes)} hr</strong><small>Paid time from completed punches</small></article>
-                <article className={selectedDifferenceMinutes !== 0 ? 'import-metric--attention' : ''}>
+                <article><span>Worked</span><strong>{selectedWorkedMinutes === undefined ? '—' : `${payrollHours(selectedWorkedMinutes)} hr`}</strong><small>{overviewReviewQuery.isPending ? 'Loading verified payroll total…' : overviewReviewQuery.isError ? 'Verified payroll total unavailable' : 'Paid time from completed punches'}</small></article>
+                <article className={selectedDifferenceMinutes !== null && selectedDifferenceMinutes !== 0 ? 'import-metric--attention' : ''}>
                   <span>Worked vs schedule</span>
-                  <strong>{selectedDifferenceMinutes > 0 ? '+' : ''}{payrollHours(selectedDifferenceMinutes)} hr</strong>
+                  <strong>{selectedDifferenceMinutes === null ? '—' : `${selectedDifferenceMinutes > 0 ? '+' : ''}${payrollHours(selectedDifferenceMinutes)} hr`}</strong>
                   <small>Punch-based worked time minus scheduled coverage. Clocked-out gaps stay unpaid.</small>
                 </article>
                 <article className={selectedNeedsAttention ? 'import-metric--attention time-maintenance-attention' : ''}>
@@ -827,7 +827,14 @@ export function TimeMaintenanceWorkbench({
             )}
           </section>
 
-          {!showOverview ? (
+          {!showOverview && overviewReviewQuery.isError ? (
+            <DataStatePanel icon={ShieldAlert} title="Verified payroll total unavailable" tone="error">
+              <p>{overviewReviewQuery.error.message}</p>
+              <button className="secondary-button" onClick={() => void overviewReviewQuery.refetch()} type="button">Try again</button>
+            </DataStatePanel>
+          ) : null}
+
+          {!showOverview && overviewReviewQuery.isSuccess ? (
             <details className="time-maintenance-breakdown">
               <summary>View hours breakdown</summary>
               <div className="time-maintenance-breakdown__grid">

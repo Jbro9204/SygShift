@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
+import { supabaseWithIdentityVerification } from '../lib/identityVerificationCoordinator'
 
 const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary', 'flex'])
@@ -129,6 +130,9 @@ const eventSchema = z.object({
   reviewedAt: z.string().nullable(),
   reviewedByName: z.string().nullable(),
   decisionNote: z.string().nullable(),
+  reportedLateMinutes: z.number().int().positive().nullable().optional(),
+  expectedArrivalAt: z.string().nullable().optional(),
+  actualArrivalAt: z.string().nullable().optional(),
   reviewable: z.boolean(),
   actionHistory: z.array(actionHistorySchema),
   // A damaged nested reconciliation must not take down the employee, event,
@@ -171,6 +175,9 @@ const createResultSchema = z.object({
   createdAt: z.string(),
   callOffId: z.string().uuid().nullable(),
   coverageRequired: z.boolean(),
+  reportedLateMinutes: z.number().int().positive().nullable().optional(),
+  expectedArrivalAt: z.string().nullable().optional(),
+  actualArrivalAt: z.string().nullable().optional(),
 })
 
 const reclassifyResultSchema = z.object({
@@ -213,26 +220,26 @@ function accountabilityOperationError(message: string): Error {
 }
 
 export async function getAttendanceReport(input: { fromDate: string; throughDate: string; export?: boolean }): Promise<AttendanceReport> {
-  const { data, error } = await getSupabaseClient().rpc('get_attendance_report', {
+  const { data, error } = await supabaseWithIdentityVerification(() => getSupabaseClient().rpc('get_attendance_report', {
     target_from_date: input.fromDate, target_through_date: input.throughDate, target_export: input.export ?? false,
-  })
+  }), 'hr')
   if (error) throw accountabilityOperationError('The attendance report could not be loaded. Refresh the page and try again.')
   return attendanceReportSchema.parse(data)
 }
 
 export async function reclassifyAccountabilityOccurrence(input: { eventId: string; eventType: AccountabilityEventType; reason: string }) {
-  const { data, error } = await getSupabaseClient().rpc('reclassify_attendance_accountability_event', {
+  const { data, error } = await supabaseWithIdentityVerification(() => getSupabaseClient().rpc('reclassify_attendance_accountability_event', {
     target_event_id: input.eventId, target_event_type: input.eventType, target_reason: input.reason,
-  })
+  }), 'hr')
   if (error) throw accountabilityOperationError('The occurrence type could not be updated. Your reason is still here; please try again.')
   return reclassifyResultSchema.parse(data)
 }
 
 export async function getAccountabilityWorkspace(input: { fromDate: string; throughDate: string }): Promise<AccountabilityWorkspace> {
-  const { data, error } = await getSupabaseClient().rpc('get_accountability_workspace', {
+  const { data, error } = await supabaseWithIdentityVerification(() => getSupabaseClient().rpc('get_accountability_workspace_v2', {
     target_from_date: input.fromDate,
     target_through_date: input.throughDate,
-  })
+  }), 'hr')
   if (error) throw accountabilityOperationError('The Accountability Tracker could not be loaded. Refresh the page and try again.')
   return parseAccountabilityWorkspacePayload(data)
 }
@@ -243,14 +250,16 @@ export async function createAccountabilityOccurrence(input: {
   eventType: AccountabilityEventType
   operationalDate: string | null
   note: string
+  reportedLateMinutes?: number | null
 }) {
-  const { data, error } = await getSupabaseClient().rpc('create_attendance_accountability_event', {
+  const { data, error } = await supabaseWithIdentityVerification(() => getSupabaseClient().rpc('create_attendance_accountability_event_v2', {
     target_employee_id: input.employeeId,
     target_event_type: input.eventType,
     target_note: input.note,
     target_operational_date: input.operationalDate,
     target_shift_id: input.shiftId,
-  })
+    target_reported_late_minutes: input.reportedLateMinutes ?? null,
+  }), 'hr')
   if (error) throw accountabilityOperationError('The occurrence could not be recorded. Your entries are still here; please try again.')
   return createResultSchema.parse(data)
 }
@@ -260,11 +269,11 @@ export async function reviewAccountabilityOccurrence(input: {
   action: AccountabilityDecision
   reason: string
 }) {
-  const { data, error } = await getSupabaseClient().rpc('review_attendance_accountability_event', {
+  const { data, error } = await supabaseWithIdentityVerification(() => getSupabaseClient().rpc('review_attendance_accountability_event', {
     target_action: input.action,
     target_event_id: input.eventId,
     target_reason: input.reason,
-  })
+  }), 'hr')
   if (error) throw accountabilityOperationError('The accountability decision could not be saved. Your reason is still here; please try again.')
   return reviewResultSchema.parse(data)
 }

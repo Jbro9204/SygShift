@@ -2767,3 +2767,10 @@ pnpm exec wrangler deploy --keep-vars
 - The final 102-check desktop/mobile SygSphere plus mandatory Time Clock matrix, Sygilant production verifier,
   health/readiness, authorization perimeter, exact CORS, hostile-origin denial, and byte-identical asset
   checks passed. Physical two-device audible acceptance remains open.
+# 09/22/2026 - Attendance Coordination Repair
+
+- Repaired protected Accountability and employee-detail payroll reads so recent identity verification is requested and the original operation is retried instead of failing or displaying a false zero-hour total.
+- Added structured late-arrival delays with expected/actual arrival evidence and a live operations alert that resolves automatically when the employee clocks in.
+- Added durable CALL OFF and COVERAGE schedule markers, excluded called-off employees from active staffing counts, and blocked clock-in against the original called-off occurrence while preserving the original schedule record.
+- Added Supabase Realtime schedule refresh and portable `.ics` calendar downloads for team and personal schedule views.
+- Added forward migration `20260922145137_structured_late_arrival_and_coverage_markers.sql`, rollback-only database regression coverage, calendar tests, and source guardrails.

@@ -156,3 +156,35 @@ export async function fetchWithIdentityVerification(
 
   return makeRequest()
 }
+
+type SupabaseOperationResult = {
+  error: { code?: string | null; message?: string | null } | null
+}
+
+function supabaseResultRequiresIdentityVerification(result: SupabaseOperationResult): boolean {
+  if (!result.error) return false
+  const message = result.error.message?.trim().toLowerCase() ?? ''
+  return result.error.code === '42501' && /\b(mfa|identity verification|recent verification)\b/.test(message)
+}
+
+/**
+ * Retries a protected Supabase RPC once after the shared identity checkpoint.
+ * This keeps direct database workflows aligned with protected Worker requests
+ * without weakening database permissions or turning authorization failures into
+ * verification prompts.
+ */
+export async function supabaseWithIdentityVerification<T extends SupabaseOperationResult>(
+  makeRequest: () => PromiseLike<T>,
+  context: IdentityVerificationContext = 'general',
+): Promise<T> {
+  const result = await makeRequest()
+  if (!supabaseResultRequiresIdentityVerification(result)) return result
+
+  try {
+    await requestIdentityVerification(context)
+  } catch {
+    return result
+  }
+
+  return makeRequest()
+}

@@ -45,6 +45,17 @@ const eventSchema = z.object({
   }).nullable(),
 })
 
+const shiftCoverageStatusSchema = z.object({
+  shiftId: z.string().uuid(),
+  marker: z.enum(['call_off', 'coverage']),
+  coverageCaseId: z.string().uuid(),
+  coverageStatus: z.string(),
+  absentEmployeeId: z.string().uuid(),
+  absentEmployeeName: z.string(),
+  replacementEmployeeId: z.string().uuid().nullable(),
+  replacementEmployeeName: z.string().nullable(),
+})
+
 const shiftSchema = z.object({
   id: z.string().uuid(),
   starts_at: z.string(),
@@ -60,6 +71,7 @@ const shiftSchema = z.object({
   post: postSchema.nullable(),
   event: eventSchema.nullable(),
   assignments: z.array(assignmentSchema),
+  coverage: shiftCoverageStatusSchema.nullable().optional(),
 })
 
 const scheduleSchema = z.object({
@@ -404,10 +416,11 @@ export interface EmployeeScheduleRow {
 }
 
 export async function getWeeklySchedule(weekStartsOn: string): Promise<WeeklySchedule | null> {
-  const [scheduleResult, workTypeResult, assignmentTypeResult] = await Promise.all([
+  const [scheduleResult, workTypeResult, assignmentTypeResult, coverageResult] = await Promise.all([
     getSupabaseClient().rpc('get_weekly_schedule_payload', { target_week_starts_on: weekStartsOn }),
     getSupabaseClient().rpc('get_shift_work_type_map', { target_week_starts_on: weekStartsOn }),
     getSupabaseClient().rpc('get_shift_assignment_type_map', { target_week_starts_on: weekStartsOn }),
+    getSupabaseClient().rpc('get_shift_coverage_status_map', { target_week_starts_on: weekStartsOn }),
   ])
   const { data, error } = scheduleResult
 
@@ -419,12 +432,15 @@ export async function getWeeklySchedule(weekStartsOn: string): Promise<WeeklySch
   const workTypeByShift = new Map(workTypes.map((item) => [item.shiftId, item.workType]))
   const assignmentTypes = assignmentTypeResult.error ? [] : shiftAssignmentTypeMapSchema.parse(assignmentTypeResult.data ?? [])
   const assignmentTypeByShift = new Map(assignmentTypes.map((item) => [item.shiftId, item.assignmentType]))
+  const coverageItems = coverageResult.error ? [] : z.array(shiftCoverageStatusSchema).parse(coverageResult.data ?? [])
+  const coverageByShift = new Map(coverageItems.map((item) => [item.shiftId, item]))
   return {
     ...schedule,
     shifts: schedule.shifts.map((shift) => ({
       ...shift,
       work_type: workTypeByShift.get(shift.id) ?? shift.work_type,
       assignment_type: assignmentTypeByShift.get(shift.id) ?? shift.assignment_type,
+      coverage: coverageByShift.get(shift.id) ?? null,
       assignments: shift.assignments.filter((assignment) => assignment.status !== 'canceled'),
     })),
   }

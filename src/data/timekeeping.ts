@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { fetchWithIdentityVerification } from '../lib/identityVerificationCoordinator'
+import { fetchWithIdentityVerification, supabaseWithIdentityVerification } from '../lib/identityVerificationCoordinator'
 import { getSupabaseClient } from '../lib/supabase'
 import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 
@@ -1243,14 +1243,14 @@ export async function getTimekeepingReview(input: {
   throughDate: string
 }): Promise<TimekeepingReview> {
   const [reviewResult, workTypeResult] = await Promise.all([
-    getSupabaseClient().rpc('get_timekeeping_review', {
+    supabaseWithIdentityVerification(() => getSupabaseClient().rpc('get_timekeeping_review', {
       target_from_date: input.fromDate,
       target_through_date: input.throughDate,
-    }),
-    getSupabaseClient().rpc('get_time_work_type_map', {
+    }), 'general'),
+    supabaseWithIdentityVerification(() => getSupabaseClient().rpc('get_time_work_type_map', {
       target_from_date: input.fromDate,
       target_through_date: input.throughDate,
-    }),
+    }), 'general'),
   ])
   const { data, error } = reviewResult
   if (error) throw new Error(error.message || 'Supervisor time review could not be loaded.')
