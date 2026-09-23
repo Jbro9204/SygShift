@@ -77,7 +77,21 @@ describe("SygSphere communications protected socket bridge", () => {
     rejectedSocket.open();
     rejectedSocket.message(JSON.stringify({ kind: "command.outcome", outcome: "unavailable", protocolVersion: 1 }));
     await expect(connection).rejects.toThrow("verify");
-    expect(rejectedSocket.closedWith?.code).toBe(1008);
+    expect(rejectedSocket.closedWith?.code).toBe(4501);
+  });
+
+  it("closes malformed authenticated frames with a browser-valid protocol code", async () => {
+    const socket = new FakeSocket();
+    const bridge = createBridge({ bootstrap: vi.fn(async () => validBootstrap(ticket)), socket });
+    const connection = bridge.connect({ accountKey: "employee-session", onDisconnect: vi.fn(), onEvent: vi.fn() });
+    await socketCreated(socket);
+    socket.open();
+    socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
+    await connection;
+
+    socket.message("not json");
+
+    expect(socket.closedWith).toEqual({ code: 4400, reason: "Communications connection unavailable." });
   });
 
   it("validates outbound commands, sends mutations through the protected HTTP boundary, and forwards only canonical server events", async () => {
@@ -1133,7 +1147,7 @@ describe("SygSphere communications protected socket bridge", () => {
         "heartbeat",
         "heartbeat",
       ]);
-      expect(socket.closedWith).toMatchObject({ code: 1011 });
+      expect(socket.closedWith).toMatchObject({ code: 4501 });
       expect(onDisconnect).toHaveBeenCalledOnce();
       expect(onDisconnect).toHaveBeenCalledWith("Communications stopped responding. Reconnecting.", true);
     } finally {
@@ -1159,7 +1173,7 @@ describe("SygSphere communications protected socket bridge", () => {
       await vi.advanceTimersByTimeAsync(30_000);
 
       // The wrong-epoch acknowledgement above must not hide a dead socket.
-      expect(socket.closedWith).toMatchObject({ code: 1011 });
+      expect(socket.closedWith).toMatchObject({ code: 4501 });
       expect(onDisconnect).toHaveBeenCalledOnce();
     } finally {
       vi.useRealTimers();
@@ -1278,7 +1292,7 @@ describe("SygSphere communications protected socket bridge", () => {
         socket.message(JSON.stringify({ kind: "authenticated", protocolVersion: 1 }));
         await connection;
         for (let heartbeat = 0; heartbeat < 3; heartbeat += 1) await advanceHealthyHeartbeat(socket);
-        expect(socket.closedWith).toEqual({ code: 1008, reason: "Communications authorization expired." });
+        expect(socket.closedWith).toEqual({ code: 4403, reason: "Communications authorization expired." });
       }
     } finally {
       vi.useRealTimers();
@@ -1651,6 +1665,9 @@ class FakeSocket {
   }
 
   close(code?: number, reason?: string) {
+    if (code !== undefined && code !== 1000 && (code < 3000 || code > 4999)) {
+      throw new DOMException("Invalid browser WebSocket close code.", "InvalidAccessError");
+    }
     this.readyState = 3;
     this.closedWith = { code, reason };
   }

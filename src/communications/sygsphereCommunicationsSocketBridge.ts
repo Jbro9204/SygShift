@@ -24,6 +24,10 @@ import {
 } from "./sygsphereCommunicationsPeerTransport";
 
 const socketPath = "/api/comms/v1/connect";
+// Browsers may send only 1000 or application close codes in the 3000-4999 range.
+const invalidProtocolCloseCode = 4400;
+const authorizationCloseCode = 4403;
+const transientFailureCloseCode = 4501;
 const openingTimeoutMilliseconds = 5_000;
 const mediaRequestTimeoutMilliseconds = 20_000;
 const mediaConnectionTimeoutMilliseconds = 20_000;
@@ -317,14 +321,14 @@ export class SygSphereCommunicationsSocketBridge implements CommunicationsCoordi
         // scheduling a second reconnect.
         disposeSession();
         reportDisconnect("Communications stopped responding. Reconnecting.", true);
-        if (socket.readyState < 2) socket.close(1011, "Communications connection unavailable.");
+        if (socket.readyState < 2) socket.close(transientFailureCloseCode, "Communications connection unavailable.");
       };
       const failOpening = (message: string) => {
         if (settled) return;
         settled = true;
         ticket = null;
         this.dependencies.clearTimer(openingTimer);
-        if (socket.readyState < 2) socket.close(1008, "Communications connection unavailable.");
+        if (socket.readyState < 2) socket.close(transientFailureCloseCode, "Communications connection unavailable.");
         reject(new Error(message));
       };
       const openingTimer = this.dependencies.setTimer(
@@ -350,7 +354,7 @@ export class SygSphereCommunicationsSocketBridge implements CommunicationsCoordi
         const payload = parseSocketMessage(event.data);
         if (!payload) {
           failOpening("Communications returned an invalid response.");
-          if (authenticated) socket.close(1008, "Communications connection unavailable.");
+          if (authenticated) socket.close(invalidProtocolCloseCode, "Communications connection unavailable.");
           return;
         }
         if (!authenticated) {
@@ -393,10 +397,10 @@ export class SygSphereCommunicationsSocketBridge implements CommunicationsCoordi
           void handleSessionEvent(communicationsEvent)
             .then(() => onEvent(communicationsEvent))
             .catch(() => {
-              if (socket.readyState < 2) socket.close(1011, "Communications media unavailable.");
+              if (socket.readyState < 2) socket.close(transientFailureCloseCode, "Communications media unavailable.");
             });
         } catch {
-          socket.close(1008, "Communications connection unavailable.");
+          socket.close(invalidProtocolCloseCode, "Communications connection unavailable.");
         }
       });
 
@@ -1279,7 +1283,7 @@ function createSession({
         scheduleHeartbeat();
       } catch {
         dispose();
-        if (socket.readyState < 2) socket.close(1011, "Communications connection unavailable.");
+        if (socket.readyState < 2) socket.close(transientFailureCloseCode, "Communications connection unavailable.");
       }
     }, heartbeatMilliseconds);
   };
@@ -1290,7 +1294,7 @@ function createSession({
       const accessToken = getAccessToken()?.trim();
       if (!accessToken) {
         dispose();
-        if (socket.readyState < 2) socket.close(1008, "Communications authorization expired.");
+        if (socket.readyState < 2) socket.close(authorizationCloseCode, "Communications authorization expired.");
         return;
       }
       const refreshController = new AbortController();
@@ -1305,7 +1309,7 @@ function createSession({
         .catch(() => {
           if (closed) return;
           dispose();
-          if (socket.readyState < 2) socket.close(1008, "Communications authorization expired.");
+          if (socket.readyState < 2) socket.close(authorizationCloseCode, "Communications authorization expired.");
         })
         .finally(() => {
           if (authorizationRefreshController !== refreshController) return;
@@ -1631,10 +1635,11 @@ function parseSocketMessage(value: unknown): unknown | null {
 }
 
 function publicCloseReason(event: CloseEvent): string {
-  if (event.code === 1008) return "Communications authorization changed. Reopen Communications and try again.";
+  if (event.code === 1008 || event.code === authorizationCloseCode) return "Communications authorization changed. Reopen Communications and try again.";
+  if (event.code === invalidProtocolCloseCode) return "Communications returned an invalid response. Reopen Communications and try again.";
   return "Communications disconnected. Reconnecting requires a fresh secure connection.";
 }
 
 function isRecoverableClose(code: number): boolean {
-  return ![1008, 4401, 4403].includes(code);
+  return ![1008, 4401, invalidProtocolCloseCode, authorizationCloseCode].includes(code);
 }
