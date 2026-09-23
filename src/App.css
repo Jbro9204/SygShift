@@ -13809,10 +13809,7 @@ a.home-metric-card:focus-visible {
 
 .schedule-builder-coverage-mix {
   display: grid;
-  grid-template-columns: minmax(190px, 0.8fr) minmax(260px, 1fr) minmax(
-      320px,
-      1.4fr
-    );
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
   margin: 16px 0;
@@ -13860,6 +13857,7 @@ a.home-metric-card:focus-visible {
 }
 
 .schedule-builder-coverage-mix p {
+  grid-column: 1 / -1;
   margin: 0;
   color: light-dark(#62594d, #b9b2a7);
   font-size: 14px;
@@ -34122,6 +34120,17 @@ button.patrol-overview-row:focus-visible {
   .schedule-builder--modal .form-grid,
   .site-editor-form .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .schedule-builder--modal .panel-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .schedule-builder--modal .status-pill {
+    align-self: flex-start;
+    max-width: 100%;
+    white-space: normal;
   }
 
   .schedule-builder-coverage-mix {
