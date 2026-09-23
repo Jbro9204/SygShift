@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSupervisorCoveragePlan, createSupervisorOpenShift, getScheduledOvertimeCreatePreview, getScheduleBuilderOptions, removeScheduleDraftShift, resolveScheduleReviewShift, updateScheduleDraftShift } from './schedule'
+import { createSupervisorCoveragePlan, createSupervisorOpenShift, getScheduledOvertimeCreatePreview, getScheduleBuilderOptions, getScheduleClientOptions, removeScheduleDraftShift, resolveScheduleReviewShift, updateScheduleDraftShift } from './schedule'
 
 const rpc = vi.fn()
 
@@ -93,6 +93,20 @@ describe('schedule builder data contract', () => {
       ],
     })
     expect(rpc).toHaveBeenCalledWith('get_schedule_builder_options')
+  })
+
+  it('includes active clients without posts in schedule setup', async () => {
+    const client = {
+      id: '10000000-0000-4000-8000-000000000010',
+      client_number: 'CLI-1222',
+      name: 'T.Client',
+      site_ids: ['20000000-0000-4000-8000-000000000010'],
+      active_post_count: 0,
+    }
+    rpc.mockResolvedValueOnce({ data: [client], error: null })
+
+    await expect(getScheduleClientOptions()).resolves.toEqual([client])
+    expect(rpc).toHaveBeenCalledWith('get_schedule_client_options')
   })
 
   it('normalizes event shift input before creating a published opening', async () => {

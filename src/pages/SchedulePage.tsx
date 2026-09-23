@@ -22,6 +22,7 @@ import {
   getConcurrentDispatchOverlapPreview,
   getImportedSchedulePreview,
   getScheduleBuilderOptions,
+  getScheduleClientOptions,
   getScheduledOvertimeCreatePreview,
   getScheduledOvertimePreview,
   getScheduledOvertimeUpdatePreview,
@@ -2166,6 +2167,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const [employeeFilter, setEmployeeFilter] = useState('all')
   const [reviewOnly, setReviewOnly] = useState(false)
   const [builderOpen, setBuilderOpen] = useState(false)
+  const [selectedBuilderClientId, setSelectedBuilderClientId] = useState('')
   const [resolvingShift, setResolvingShift] = useState<ScheduleShift | null>(null)
   const [shiftEditor, setShiftEditor] = useState<ShiftEditorState | null>(null)
   const [removingShift, setRemovingShift] = useState<ScheduleShift | null>(null)
@@ -2275,6 +2277,15 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     queryFn: getScheduleBuilderOptions,
     enabled: isSupabaseConfigured && canBuildSchedule && (canUseScheduler || scheduleView === 'employee'),
   })
+  const clientOptionsQuery = useQuery({
+    queryKey: ['schedule-client-options'],
+    queryFn: getScheduleClientOptions,
+    enabled: isSupabaseConfigured && canEditScheduler && builderOpen,
+  })
+  const selectedBuilderClient = clientOptionsQuery.data?.find((client) => client.id === selectedBuilderClientId)
+  const visibleBuilderPosts = selectedBuilderClientId
+    ? (builderOptionsQuery.data?.posts ?? []).filter((post) => selectedBuilderClient?.site_ids.includes(post.site.id))
+    : (builderOptionsQuery.data?.posts ?? [])
   const staffingSuggestionsQuery = useQuery({
     queryKey: ['schedule-staffing-suggestions', scheduleQuery.data?.id],
     queryFn: () => getScheduleStaffingSuggestions(scheduleQuery.data!.id),
@@ -3585,6 +3596,23 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               </label>
 
               {openShiftForm.mode === 'post' ? (
+                <>
+                <label>
+                  Client
+                  <select
+                    disabled={clientOptionsQuery.isPending}
+                    onChange={(event) => {
+                      setSelectedBuilderClientId(event.target.value)
+                      updateOpenShiftForm({ postId: '' })
+                    }}
+                    value={selectedBuilderClientId}
+                  >
+                    <option value="">All active client sites</option>
+                    {clientOptionsQuery.data?.map((client) => (
+                      <option key={client.id} value={client.id}>{client.name} ({client.client_number})</option>
+                    ))}
+                  </select>
+                </label>
                 <label>
                   Site and post
                   <select
@@ -3606,13 +3634,20 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                     value={openShiftForm.postId}
                   >
                     <option value="">Choose a site/post</option>
-                    {builderOptionsQuery.data?.posts.map((post) => (
+                    {visibleBuilderPosts.map((post) => (
                       <option key={post.id} value={post.id}>
                         {post.site.code ? `${post.site.code} - ` : ''}{post.site.name} / {post.name}
                       </option>
                     ))}
                   </select>
                 </label>
+                {selectedBuilderClient && selectedBuilderClient.active_post_count === 0 && (
+                  <p className="schedule-builder-client-guidance" role="status">
+                    This client is active but has no schedulable post. Add its location in Sygilant if needed, then create or activate a post in <Link to="/sites">Sites &amp; Posts</Link> and return here.
+                  </p>
+                )}
+                {clientOptionsQuery.isError && <p className="schedule-builder-client-guidance is-error" role="alert">Client filtering is unavailable right now. The site and post picker still works.</p>}
+                </>
               ) : (
                 <label>
                   Event name

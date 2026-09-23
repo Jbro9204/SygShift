@@ -13790,6 +13790,23 @@ a.home-metric-card:focus-visible {
   gap: 15px;
 }
 
+.schedule-builder-client-guidance {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid light-dark(#d6c398, #82683b);
+  border-radius: 10px;
+  color: light-dark(#44351b, #f0d9a6);
+  background: light-dark(#fffaf0, #30281c);
+  line-height: 1.5;
+}
+
+.schedule-builder-client-guidance.is-error {
+  border-color: light-dark(#d7aba6, #85514c);
+  color: light-dark(#813a33, #ffcbc4);
+  background: light-dark(#fff4f2, #322321);
+}
+
 .schedule-builder-coverage-mix {
   display: grid;
   grid-template-columns: minmax(190px, 0.8fr) minmax(260px, 1fr) minmax(

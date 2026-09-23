@@ -114,6 +114,14 @@ const builderOptionsSchema = z.object({
   })),
 })
 
+const scheduleClientOptionsSchema = z.array(z.object({
+  id: z.string().uuid(),
+  client_number: z.string(),
+  name: z.string(),
+  site_ids: z.array(z.string().uuid()),
+  active_post_count: z.number().int().nonnegative(),
+}))
+
 const createOpenShiftResultSchema = z.object({
   schedule_id: z.string().uuid(),
   schedule_revision: z.number().int().positive(),
@@ -233,6 +241,7 @@ const copyScheduleWeekResultSchema = z.object({
 })
 
 export type ScheduleBuilderOptions = z.infer<typeof builderOptionsSchema>
+export type ScheduleClientOption = z.infer<typeof scheduleClientOptionsSchema>[number]
 export type ScheduleBuilderPost = z.infer<typeof builderPostSchema>
 export type ScheduleBuilderEmployee = ScheduleBuilderOptions['employees'][number]
 export type CreateOpenShiftResult = z.infer<typeof createOpenShiftResultSchema>
@@ -454,6 +463,12 @@ export async function getScheduleBuilderOptions(): Promise<ScheduleBuilderOption
     ...options,
     employees: [...options.employees].sort(compareScheduleBuilderEmployeesByFirstName),
   }
+}
+
+export async function getScheduleClientOptions(): Promise<ScheduleClientOption[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_schedule_client_options')
+  if (error) throw new Error('Active clients could not be loaded for scheduling.')
+  return scheduleClientOptionsSchema.parse(data)
 }
 
 export async function getImportedSchedulePreview(weekStartsOn: string): Promise<ImportedSchedulePreview | null> {
