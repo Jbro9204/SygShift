@@ -1,5 +1,30 @@
 # SygShift Development Log
 
+## 09/23/2026 - Call-Off Coverage Candidate Directory
+
+- Repaired the **Coverage already found** workflow so Dispatch can select from
+  every qualified employee instead of seeing only the first 12 Flex-first
+  results.
+- Added a searchable, grouped employee directory with **Recommended Flex**,
+  **Available employees**, **Overtime approval required**, and an optional
+  **Unavailable for this shift** review group.
+- Added employee numbers, work classifications, conflict status, projected
+  overtime, eligibility explanations, candidate counts, and a required
+  overtime-approval acknowledgment before an overtime candidate can advance.
+- Preserved the existing server-side qualification, armed-credential,
+  overlapping-shift, overtime, assignment, audit, and original-call-off-history
+  safeguards. No database migration or production-record rewrite was required.
+- Verified the complete 304-file / 1,612-test repository gate, 4/4 focused
+  desktop/mobile coverage layouts, and the mandatory 42/42 desktop/mobile Time
+  Clock workflow. A read-only production walkthrough displayed 18 eligible
+  employees across the Flex, available, and overtime groups and kept 13
+  unavailable employees behind the review toggle.
+- Released source commit `f9d1520` as Cloudflare Worker
+  `1cb6a07b-ef71-4945-b81a-200c7beeb012`; both production origins passed
+  health, readiness, Requests routing, and exact live-bundle verification.
+  Release detail:
+  `docs/changelogs/CHANGELOG_09-23-2026_CALL_OFF_COVERAGE_CANDIDATE_DIRECTORY.md`.
+
 ## 09/22/2026 - Single User System-Time Header
 
 - Removed the four-zone analog clock strip from the authenticated application
