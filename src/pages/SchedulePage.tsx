@@ -3641,7 +3641,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                     ))}
                   </select>
                 </label>
-                {selectedBuilderClient && selectedBuilderClient.active_post_count === 0 && (
+                {selectedBuilderClient && visibleBuilderPosts.length === 0 && (
                   <p className="schedule-builder-client-guidance" role="status">
                     This client is active but has no schedulable post. Add its location in Sygilant if needed, then create or activate a post in <Link to="/sites">Sites &amp; Posts</Link> and return here.
                   </p>
