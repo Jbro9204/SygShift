@@ -2492,7 +2492,7 @@ export async function waitForPrivateStorageObjectHead(
   return response ?? new Response(null, { status: 404 })
 }
 
-async function deletePrivateStorageObject(
+export async function deletePrivateStorageObject(
   config: { serviceRoleKey: string, url: string },
   bucket: string,
   objectKey: string,
@@ -2504,7 +2504,13 @@ async function deletePrivateStorageObject(
     },
     method: 'DELETE',
   })
-  if (!response.ok && response.status !== 404) throw new Error('Quarantined storage cleanup failed.')
+  if (response.ok || response.status === 404) return
+  if (response.status === 400) {
+    const error = await response.clone().json().catch(() => null) as { code?: string } | null
+    // Storage's legacy API returns HTTP 400 for an already-absent object.
+    if (error?.code === 'NoSuchKey') return
+  }
+  throw new Error('Quarantined storage cleanup failed.')
 }
 
 async function storePrivateStorageObject(

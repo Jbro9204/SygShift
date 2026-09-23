@@ -2,7 +2,7 @@
 // protected SygSphere streaming/preview boundary is exercised by the normal test command.
 import '../worker/sygsphereFiles.test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { validateSygSphereResumableFile, validateSygSphereUploadIntent, waitForPrivateStorageObjectHead } from '../worker/index'
+import { deletePrivateStorageObject, validateSygSphereResumableFile, validateSygSphereUploadIntent, waitForPrivateStorageObjectHead } from '../worker/index'
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
@@ -62,5 +62,21 @@ describe('SygSphere larger-file validation', () => {
 
     expect(response.status).toBe(404)
     expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('treats only an already-missing storage key as completed cleanup', async () => {
+    const config = { serviceRoleKey: 'service-role-test', url: 'https://project.supabase.co' }
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(
+      JSON.stringify({ code: 'NoSuchKey', message: 'Object not found' }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    )).mockResolvedValueOnce(new Response(
+      JSON.stringify({ code: 'NoSuchBucket', message: 'Bucket not found' }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(deletePrivateStorageObject(config, 'sygsphere-files', 'conversation/missing')).resolves.toBeUndefined()
+    await expect(deletePrivateStorageObject(config, 'sygsphere-files', 'conversation/other')).rejects.toThrow('cleanup failed')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })
