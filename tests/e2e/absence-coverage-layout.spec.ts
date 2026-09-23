@@ -103,3 +103,71 @@ test('guided absence coverage stays readable and contained on desktop and mobile
   else expect(geometry.choiceColumns, JSON.stringify(geometry)).toBeGreaterThanOrEqual(2)
   await page.screenshot({ path: testInfo.outputPath('absence-coverage-workflow.png'), fullPage: true })
 })
+
+test('coverage picker exposes Flex and other available employees without clipping', async ({ page }, testInfo) => {
+  const flexRows = Array.from({ length: 15 }, (_, index) => `
+    <label><input name="replacement" type="radio"><span><strong>Flex Guard ${index + 1}</strong><small>SYG-F${index + 1} · Flex · No shift conflict · No projected overtime</small></span></label>
+  `).join('')
+
+  await page.setContent(`
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <dialog class="modal-dialog modal-dialog--coverage-workflow" open role="dialog" aria-labelledby="coverage-picker-title">
+      <div class="modal-dialog__heading"><div class="modal-dialog__heading-copy"><h2 id="coverage-picker-title">Handle an employee absence</h2><p>Choose the employee who agreed to cover this shift.</p></div><button class="modal-close" aria-label="Close dialog">×</button></div>
+      <div class="coverage-workflow">
+        <section class="coverage-panel">
+          <div class="coverage-candidate-picker">
+            <label><span>Find the guard</span><div class="coverage-search"><span aria-hidden="true">⌕</span><input placeholder="Name or employee number"></div></label>
+            <div class="coverage-candidate-summary"><span><strong>16</strong> eligible for this shift</span><button class="coverage-unavailable-toggle">Show unavailable (3)</button></div>
+            <div aria-label="Qualified coverage employees" class="coverage-candidate-list" role="radiogroup">
+              <section aria-labelledby="flex-heading" class="coverage-candidate-group" role="group"><div class="coverage-candidate-group__heading"><div><h3 id="flex-heading">Recommended Flex</h3><p>Available Flex employees with no shift conflict and no projected overtime.</p></div><span>15</span></div><div class="coverage-candidate-group__options">${flexRows}</div></section>
+              <section aria-labelledby="available-heading" class="coverage-candidate-group" role="group"><div class="coverage-candidate-group__heading"><div><h3 id="available-heading">Available employees</h3><p>Other qualified employees who are not scheduled during this coverage window.</p></div><span>1</span></div><div class="coverage-candidate-group__options"><label id="regular-guard"><input name="replacement" type="radio"><span><strong>Regular Available Guard</strong><small>SYG-R101 · hourly · No shift conflict · No projected overtime</small></span></label></div></section>
+            </div>
+          </div>
+        </section>
+        <div class="coverage-workflow__actions"><button class="secondary-button">Back</button><button class="primary-action">Continue</button></div>
+      </div>
+    </dialog>
+  `)
+  await page.addStyleTag({ path: 'src/index.css' })
+  await page.addStyleTag({ path: 'src/App.css' })
+  await page.locator('.modal-dialog--coverage-workflow').evaluate((element) => {
+    const dialog = element as HTMLDialogElement
+    dialog.close()
+    dialog.showModal()
+  })
+  await page.locator('#regular-guard').scrollIntoViewIfNeeded()
+
+  const geometry = await page.evaluate(() => {
+    const dialog = document.querySelector<HTMLDialogElement>('.modal-dialog--coverage-workflow')!
+    const list = document.querySelector<HTMLElement>('.coverage-candidate-list')!
+    const regularGuard = document.querySelector<HTMLElement>('#regular-guard')!
+    const dialogBox = dialog.getBoundingClientRect()
+    const regularBox = regularGuard.getBoundingClientRect()
+    return {
+      documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      dialogLeft: dialogBox.left,
+      dialogRight: dialogBox.right,
+      dialogWidth: dialogBox.width,
+      viewportWidth: window.innerWidth,
+      listOverflow: getComputedStyle(list).overflowY,
+      listHeight: list.getBoundingClientRect().height,
+      listScrollHeight: list.scrollHeight,
+      regularWithinDialog: regularBox.left >= dialogBox.left && regularBox.right <= dialogBox.right,
+      optionCount: document.querySelectorAll('.coverage-candidate-group__options > label').length,
+      searchFontSize: Number.parseFloat(getComputedStyle(document.querySelector<HTMLInputElement>('.coverage-search input')!).fontSize),
+    }
+  })
+
+  expect(geometry.documentOverflow).toBeLessThanOrEqual(1)
+  expect(geometry.dialogLeft).toBeGreaterThanOrEqual(0)
+  expect(geometry.dialogRight).toBeLessThanOrEqual(geometry.viewportWidth + 1)
+  expect(geometry.dialogWidth).toBeLessThanOrEqual(geometry.viewportWidth)
+  expect(geometry.optionCount).toBe(16)
+  expect(geometry.listScrollHeight).toBeGreaterThan(geometry.listHeight)
+  expect(geometry.listOverflow).toBe('auto')
+  expect(geometry.regularWithinDialog).toBe(true)
+  expect(geometry.searchFontSize).toBeGreaterThanOrEqual(16)
+  await expect(page.getByRole('heading', { name: 'Available employees' })).toBeVisible()
+  await expect(page.getByText('Regular Available Guard')).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('coverage-candidate-picker.png'), fullPage: true })
+})

@@ -149,4 +149,73 @@ describe('Requests absence coverage workflow', () => {
     ))
     expect(await screen.findByText('Replacement assigned and original schedule preserved.')).toBeVisible()
   })
+
+  it('shows every qualified non-Flex employee after the Flex recommendations', async () => {
+    const baseWorkspace = coverageWorkspace()
+    const flexCandidates = Array.from({ length: 15 }, (_, index) => ({
+      ...baseWorkspace.candidates[0],
+      id: `70000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      name: `Flex Guard ${String(index + 1).padStart(2, '0')}`,
+      employeeNumber: `SYG-F${index + 1}`,
+    }))
+    dataMocks.getCallOffCoverageWorkspace.mockResolvedValue({
+      ...baseWorkspace,
+      candidates: [
+        ...flexCandidates,
+        {
+          ...baseWorkspace.candidates[0],
+          id: '70000000-0000-4000-8000-000000000101',
+          name: 'Regular Available Guard',
+          employeeNumber: 'SYG-R101',
+          employmentType: 'hourly',
+          workClassification: null,
+          isFlex: false,
+        },
+      ],
+    })
+
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Review coverage' }))
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await user.click(screen.getByText('Coverage already found'))
+
+    expect(screen.getByRole('heading', { name: 'Recommended Flex' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Available employees' })).toBeVisible()
+    expect(screen.getByText('Regular Available Guard')).toBeVisible()
+    expect(screen.getByText('SYG-R101 · hourly · No shift conflict · No projected overtime')).toBeVisible()
+    expect(screen.getByText('16', { selector: '.coverage-candidate-summary strong' })).toBeVisible()
+    expect(screen.getByText(/eligible for this shift/, { selector: '.coverage-candidate-summary span' })).toBeVisible()
+  })
+
+  it('requires acknowledgement before continuing with an overtime candidate', async () => {
+    const baseWorkspace = coverageWorkspace()
+    dataMocks.getCallOffCoverageWorkspace.mockResolvedValue({
+      ...baseWorkspace,
+      candidates: [{
+        ...baseWorkspace.candidates[0],
+        id: '70000000-0000-4000-8000-000000000201',
+        name: 'Qualified Overtime Guard',
+        employeeNumber: 'SYG-OT1',
+        overtimeMinutes: 150,
+        requiresOvertimeApproval: true,
+        recommended: false,
+        blockReason: 'This assignment would create scheduled overtime.',
+      }],
+    })
+
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Review coverage' }))
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await user.click(screen.getByText('Coverage already found'))
+    await user.click(screen.getByText('Qualified Overtime Guard'))
+
+    const continueButton = screen.getByRole('button', { name: 'Continue' })
+    expect(continueButton).toBeDisabled()
+    await user.click(screen.getByText('Overtime is approved for this replacement'))
+    expect(continueButton).toBeEnabled()
+  })
 })

@@ -39,6 +39,7 @@ import {
 } from '../data/requests'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTimeRange } from '../lib/time'
+import { buildCoverageCandidateDirectory } from './coverageCandidates'
 
 type RequestAction =
   | { kind: 'withdraw-time-off'; requestId: string }
@@ -362,6 +363,7 @@ export function CoverageWorkflowDialog({
   const [mode, setMode] = useState<CallOffCoverageMode>(initialMode)
   const [replacementEmployeeId, setReplacementEmployeeId] = useState('')
   const [search, setSearch] = useState('')
+  const [showUnavailable, setShowUnavailable] = useState(false)
   const [title, setTitle] = useState('Open shift available')
   const [body, setBody] = useState('A qualified guard is needed for this opening. Review the shift details and request it if you are available.')
   const [reason, setReason] = useState('')
@@ -393,12 +395,15 @@ export function CoverageWorkflowDialog({
   })
 
   const workspace = workspaceQuery.data
-  const normalizedSearch = search.trim().toLowerCase()
-  const candidates = workspace?.candidates.filter((candidate) => !normalizedSearch
-    || `${candidate.name} ${candidate.employeeNumber ?? ''}`.toLowerCase().includes(normalizedSearch)) ?? []
+  const candidateDirectory = useMemo(
+    () => buildCoverageCandidateDirectory(workspace?.candidates ?? [], search, showUnavailable),
+    [search, showUnavailable, workspace?.candidates],
+  )
   const selectedCandidate = workspace?.candidates.find((candidate) => candidate.id === replacementEmployeeId) ?? null
   const completed = workspace?.coverageCase?.status === 'assigned' || workspace?.coverageCase?.status === 'no_replacement' || workspace?.coverageCase?.status === 'closed'
-  const canContinueFromChoice = mode !== 'assigned_guard' || Boolean(replacementEmployeeId)
+  const selectedCandidateReady = Boolean(selectedCandidate?.eligible)
+    && (!selectedCandidate?.requiresOvertimeApproval || allowOvertime)
+  const canContinueFromChoice = mode !== 'assigned_guard' || selectedCandidateReady
   const canSave = reason.trim().length >= 8
     && canContinueFromChoice
     && (mode !== 'open_pool' || (title.trim().length > 0 && body.trim().length > 0))
@@ -466,9 +471,19 @@ export function CoverageWorkflowDialog({
 
             {mode === 'assigned_guard' ? <div className="coverage-candidate-picker">
               <label><span>Find the guard</span><div className="coverage-search"><Search aria-hidden="true" size={19} /><input onChange={(event) => setSearch(event.target.value)} placeholder="Name or employee number" value={search} /></div></label>
-              <div className="coverage-candidate-list" role="list">
-                {candidates.slice(0, 12).map((candidate) => <label className={replacementEmployeeId === candidate.id ? 'is-selected' : ''} key={candidate.id}><input checked={replacementEmployeeId === candidate.id} disabled={!candidate.eligible} name="replacement-employee" onChange={() => { setReplacementEmployeeId(candidate.id); setAllowOvertime(false) }} type="radio" /><span><strong>{candidate.name}</strong><small>{candidate.isFlex ? 'Flex guard' : candidate.employmentType} · {candidate.requiresOvertimeApproval ? `${Math.round(candidate.overtimeMinutes / 60 * 10) / 10} overtime hr` : 'No scheduled overtime'}</small>{candidate.blockReason ? <em>{candidate.blockReason}</em> : null}</span></label>)}
-                {candidates.length === 0 ? <p>No guards match that search.</p> : null}
+              <div className="coverage-candidate-summary" aria-live="polite">
+                <span><strong>{candidateDirectory.availableCount}</strong> eligible for this shift{candidateDirectory.overtimeCount > 0 ? ` · ${candidateDirectory.overtimeCount} require overtime approval` : ''}</span>
+                {candidateDirectory.unavailableCount > 0 && !search.trim() ? <button aria-expanded={showUnavailable} className="coverage-unavailable-toggle" onClick={() => setShowUnavailable((current) => !current)} type="button">{showUnavailable ? 'Hide unavailable' : `Show unavailable (${candidateDirectory.unavailableCount})`}</button> : null}
+              </div>
+              <div aria-label="Qualified coverage employees" className="coverage-candidate-list" role="radiogroup">
+                {candidateDirectory.sections.map((section) => <section aria-labelledby={`coverage-candidate-${section.key}`} className="coverage-candidate-group" key={section.key} role="group">
+                  <div className="coverage-candidate-group__heading"><div><h3 id={`coverage-candidate-${section.key}`}>{section.label}</h3><p>{section.description}</p></div><span>{section.candidates.length}</span></div>
+                  <div className="coverage-candidate-group__options">
+                    {section.candidates.map((candidate) => <label className={replacementEmployeeId === candidate.id ? 'is-selected' : ''} key={candidate.id}><input checked={replacementEmployeeId === candidate.id} disabled={!candidate.eligible} name="replacement-employee" onChange={() => { setReplacementEmployeeId(candidate.id); setAllowOvertime(false) }} type="radio" /><span><strong>{candidate.name}</strong><small>{candidate.employeeNumber ? `${candidate.employeeNumber} · ` : ''}{candidate.isFlex ? 'Flex' : candidate.workClassification || candidate.employmentType} · {candidate.noOverlap ? 'No shift conflict' : 'Schedule conflict'}{candidate.requiresOvertimeApproval ? ` · ${Math.round(candidate.overtimeMinutes / 60 * 10) / 10} projected overtime hr` : ' · No projected overtime'}</small>{candidate.blockReason ? <em>{candidate.blockReason}</em> : null}</span></label>)}
+                  </div>
+                </section>)}
+                {candidateDirectory.matchingCount === 0 ? <p className="coverage-candidate-empty">No employees match that search.</p> : null}
+                {candidateDirectory.matchingCount > 0 && candidateDirectory.sections.length === 0 ? <p className="coverage-candidate-empty">No eligible employees are available. Show unavailable employees to review the conflicts.</p> : null}
               </div>
               {selectedCandidate?.requiresOvertimeApproval ? <label className="coverage-overtime-confirm"><input checked={allowOvertime} onChange={(event) => setAllowOvertime(event.target.checked)} type="checkbox" /><span><strong>Overtime is approved for this replacement</strong><small>Required before SygShift can assign this guard.</small></span></label> : null}
             </div> : null}

@@ -38168,7 +38168,7 @@ button.document-workbench__template-control.is-signature img {
 }
 
 .coverage-choice-grid > label,
-.coverage-candidate-list > label,
+.coverage-candidate-group__options > label,
 .coverage-overtime-confirm {
   display: grid;
   min-width: 0;
@@ -38187,14 +38187,14 @@ button.document-workbench__template-control.is-signature img {
 }
 
 .coverage-choice-grid > label.is-selected,
-.coverage-candidate-list > label.is-selected {
+.coverage-candidate-group__options > label.is-selected {
   background: light-dark(#fff8e9, #2a2317);
   border-color: light-dark(#c9922f, #b58532);
   box-shadow: 0 0 0 3px rgb(190 139 48 / 12%);
 }
 
 .coverage-choice-grid input,
-.coverage-candidate-list input,
+.coverage-candidate-group__options input,
 .coverage-overtime-confirm input {
   width: 19px;
   height: 19px;
@@ -38203,7 +38203,7 @@ button.document-workbench__template-control.is-signature img {
 }
 
 .coverage-choice-grid label > span,
-.coverage-candidate-list label > span,
+.coverage-candidate-group__options label > span,
 .coverage-overtime-confirm > span {
   display: grid;
   min-width: 0;
@@ -38211,7 +38211,7 @@ button.document-workbench__template-control.is-signature img {
 }
 
 .coverage-choice-grid small,
-.coverage-candidate-list small,
+.coverage-candidate-group__options small,
 .coverage-overtime-confirm small,
 .coverage-review label small {
   color: light-dark(#6f685e, #b8b1a6);
@@ -38220,7 +38220,7 @@ button.document-workbench__template-control.is-signature img {
 }
 
 .coverage-choice-grid em,
-.coverage-candidate-list em {
+.coverage-candidate-group__options em {
   color: light-dark(#8b3f35, #ffb8af);
   font-size: 12px;
   font-style: normal;
@@ -38284,20 +38284,112 @@ button.document-workbench__template-control.is-signature img {
 
 .coverage-candidate-list {
   display: grid;
-  max-height: 280px;
-  gap: 8px;
+  max-height: 390px;
+  gap: 14px;
   overflow: auto;
-  padding: 3px;
+  padding: 3px 7px 3px 3px;
 }
 
-.coverage-candidate-list > label {
+.coverage-candidate-summary,
+.coverage-candidate-group__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.coverage-candidate-summary {
+  min-height: 38px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.coverage-candidate-summary strong {
+  color: var(--ink);
+}
+
+.coverage-unavailable-toggle {
+  min-height: 36px;
+  padding: 7px 11px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid light-dark(#d4ccbf, #444b51);
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 800;
+}
+
+.coverage-unavailable-toggle:hover {
+  border-color: var(--gold-dark);
+}
+
+.coverage-candidate-group,
+.coverage-candidate-group__options {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.coverage-candidate-group__heading {
+  position: sticky;
+  z-index: 1;
+  top: -3px;
+  padding: 9px 2px 7px;
+  background: light-dark(#fff, #171b1f);
+  border-bottom: 1px solid light-dark(#e5ded2, #353b40);
+}
+
+.coverage-candidate-group__heading h3,
+.coverage-candidate-group__heading p {
+  margin: 0;
+}
+
+.coverage-candidate-group__heading h3 {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.coverage-candidate-group__heading p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.coverage-candidate-group__heading > span {
+  display: inline-flex;
+  min-width: 30px;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: light-dark(#725115, #f0cb7c);
+  background: light-dark(#fff5df, #332817);
+  border: 1px solid light-dark(#e7c989, #6b5326);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.coverage-candidate-group__options > label {
   grid-template-columns: auto minmax(0, 1fr);
   padding: 12px 13px;
 }
 
-.coverage-candidate-list > label:has(input:disabled) {
+.coverage-candidate-group__options > label:has(input:disabled) {
   cursor: not-allowed;
   opacity: .72;
+}
+
+.coverage-candidate-empty {
+  margin: 0;
+  padding: 18px;
+  color: var(--muted);
+  background: light-dark(#faf8f4, #11161a);
+  border: 1px dashed light-dark(#cfc7bb, #454c52);
+  border-radius: 12px;
+  text-align: center;
 }
 
 .coverage-overtime-confirm {
@@ -38402,6 +38494,15 @@ button.document-workbench__template-control.is-signature img {
   .coverage-workflow__actions {
     margin: 0 -16px -16px;
     padding: 12px 16px 16px;
+  }
+
+  .coverage-candidate-summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .coverage-unavailable-toggle {
+    width: 100%;
   }
 
   .coverage-workflow__actions button,
