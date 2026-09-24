@@ -381,6 +381,13 @@ interface LicensingDocumentUploadMetadata {
   originalFilename: string
 }
 
+interface LicensingSubmissionDocumentUploadMetadata {
+  declaredMimeType: string
+  idempotencyKey: string
+  originalFilename: string
+  submissionId: string
+}
+
 interface LicensingDocumentUploadOperation {
   bucket: string
   documentId: string
@@ -3039,6 +3046,41 @@ function parseLicensingDocumentMetadata(request: Request): LicensingDocumentUplo
   }
 }
 
+function parseLicensingSubmissionDocumentMetadata(request: Request): LicensingSubmissionDocumentUploadMetadata {
+  const encoded = request.headers.get('x-sygshift-licensing-submission-document-metadata')?.trim() ?? ''
+  if (!encoded || encoded.length > Math.ceil(maxHrDocumentMetadataBytes * 4 / 3) + 16) {
+    throw new ApiError('invalid_licensing_document_metadata', 422, 'Licensing submission document metadata is required.')
+  }
+
+  let payload: unknown
+  try {
+    const raw = decodeBase64Url(encoded)
+    if (raw.byteLength > maxHrDocumentMetadataBytes) throw new Error('metadata too large')
+    payload = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw))
+  } catch {
+    throw new ApiError('invalid_licensing_document_metadata', 422, 'Licensing submission document metadata is invalid.')
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new ApiError('invalid_licensing_document_metadata', 422, 'Licensing submission document metadata must be a JSON object.')
+  }
+  const data = payload as Record<string, unknown>
+  const submissionId = requiredText(data.submissionId, 'Submission', 36)
+  const idempotencyKey = requiredText(data.idempotencyKey, 'Upload request ID', 36)
+  if (!validUuid(submissionId) || !validUuid(idempotencyKey)) {
+    throw new ApiError('invalid_licensing_document_metadata', 422, 'Submission or upload request identifiers are invalid.')
+  }
+  const declaredMimeType = normalizedMimeType(requiredText(data.declaredMimeType, 'File type', 160))
+  if (!['application/pdf', 'image/png', 'image/jpeg', 'image/webp'].includes(declaredMimeType)) {
+    throw new ApiError('licensing_document_type_not_allowed', 400, 'Upload a PDF, PNG, JPEG, or WebP licensing document.')
+  }
+  return {
+    declaredMimeType,
+    idempotencyKey,
+    originalFilename: requiredText(data.originalFilename, 'File name', 255),
+    submissionId,
+  }
+}
+
 async function storeLicensingDocument(
   config: { serviceRoleKey: string, url: string },
   operation: LicensingDocumentUploadOperation,
@@ -3153,6 +3195,124 @@ async function handleLicensingDocumentUpload(
   }
 }
 
+async function handleLicensingSubmissionDocumentUpload(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+  submissionId: string,
+): Promise<Response> {
+  if (request.method !== 'PUT') return errorJson('method_not_allowed', requestId, 405)
+  if (!validUuid(submissionId)) throw new ApiError('invalid_submission_id', 422, 'The submission identifier is invalid.')
+  const session = await requireAuthenticatedSession(request, environment)
+  await requireMaintenanceWriteAccess(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'licensing',
+  )
+  const metadata = parseLicensingSubmissionDocumentMetadata(request)
+  if (metadata.submissionId !== submissionId) {
+    throw new ApiError('submission_document_mismatch', 422, 'The submission upload target does not match the document metadata.')
+  }
+  const bodyMimeType = normalizedMimeType(request.headers.get('content-type') ?? '')
+  if (bodyMimeType !== metadata.declaredMimeType) {
+    throw new ApiError('document_type_mismatch', 400, 'The upload content type does not match the document metadata.')
+  }
+  const bytes = await readHrDocumentBody(request)
+  const validated = validateHrDocumentFile(bytes, metadata.originalFilename, metadata.declaredMimeType)
+  if (!['application/pdf', 'image/png', 'image/jpeg', 'image/webp'].includes(validated.detectedMimeType)) {
+    throw new ApiError('licensing_document_type_not_allowed', 400, 'Upload a PDF, PNG, JPEG, or WebP licensing document.')
+  }
+  const checksum = await sha256BytesHex(bytes)
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  const operation = await callRpc<LicensingDocumentUploadOperation>(
+    serviceConfig,
+    'service_prepare_licensing_submission_document_upload',
+    {
+      target_actor_id: session.context.employee_id,
+      target_byte_size: bytes.byteLength,
+      target_content_type: validated.detectedMimeType,
+      target_extension: validated.extension,
+      target_original_filename: validated.sanitizedFilename,
+      target_sha256_checksum: checksum,
+      target_submission_id: submissionId,
+      target_upload_request_id: metadata.idempotencyKey,
+    },
+    session.config.serviceRoleKey,
+  )
+
+  if (operation.state === 'stored') return json({ documentId: operation.documentId, requestId, state: 'stored' })
+  if (operation.state !== 'pending') {
+    throw new ApiError('licensing_document_upload_unavailable', 409, 'This licensing document upload cannot be retried.')
+  }
+
+  try {
+    await storeLicensingDocument(serviceConfig, operation, bytes, validated.detectedMimeType, checksum)
+    const completed = await callRpc<Record<string, unknown>>(
+      serviceConfig,
+      'service_complete_licensing_document_upload',
+      {
+        target_actor_id: session.context.employee_id,
+        target_document_id: operation.documentId,
+        target_request_id: requestId,
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...completed, requestId }, 201)
+  } catch (error) {
+    await deletePrivateStorageObject(serviceConfig, operation.bucket, operation.objectKey).catch(() => undefined)
+    await callRpc(
+      serviceConfig,
+      'service_fail_licensing_document_upload',
+      {
+        target_actor_id: session.context.employee_id,
+        target_document_id: operation.documentId,
+        target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Protected upload failed.',
+      },
+      session.config.serviceRoleKey,
+    ).catch(() => undefined)
+    throw new ApiError('licensing_document_storage_failed', 502, 'The licensing document could not be stored. No incomplete document was released.')
+  }
+}
+
+async function handleLicensingSubmissionDocumentRemoval(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+  submissionId: string,
+  documentId: string,
+): Promise<Response> {
+  if (request.method !== 'DELETE') return errorJson('method_not_allowed', requestId, 405)
+  if (!validUuid(submissionId) || !validUuid(documentId)) {
+    throw new ApiError('invalid_licensing_document_id', 422, 'The submission or document identifier is invalid.')
+  }
+  const session = await requireAuthenticatedSession(request, environment)
+  await requireMaintenanceWriteAccess(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'licensing',
+  )
+  const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  const target = await callRpc<{ bucket: string; documentId: string; objectKey: string; state: string }>(
+    serviceConfig,
+    'service_remove_licensing_submission_document',
+    {
+      target_actor_id: session.context.employee_id,
+      target_document_id: documentId,
+      target_request_id: requestId,
+      target_submission_id: submissionId,
+    },
+    session.config.serviceRoleKey,
+  )
+  await deletePrivateStorageObject(serviceConfig, target.bucket, target.objectKey).catch((error) => {
+    console.warn(JSON.stringify({
+      documentId,
+      event: 'licensing_submission_document_cleanup_deferred',
+      reason: error instanceof Error ? error.message : 'unknown_error',
+      requestId,
+      submissionId,
+    }))
+  })
+  return json({ documentId: target.documentId, requestId, state: target.state })
+}
+
 async function handleLicensingCredentialDocuments(
   request: Request,
   environment: Environment,
@@ -3162,8 +3322,9 @@ async function handleLicensingCredentialDocuments(
   if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
   if (!validUuid(credentialId)) throw new ApiError('invalid_credential_id', 422, 'The credential identifier is invalid.')
   const session = await requireAuthenticatedSession(request, environment)
-  const mfa = await requireRecentDocumentMfa(request, session)
-  requireAnySessionPermission(session.context, ['licensing.view', 'licensing.manage', 'directory.edit_credentials'])
+  const elevatedAccess = ['licensing.view', 'licensing.manage', 'directory.edit_credentials']
+    .some((permission) => (session.context.permissions ?? []).includes(permission))
+  const mfa = elevatedAccess ? await requireRecentDocumentMfa(request, session) : null
   const url = new URL(request.url)
   const requestedPage = Number.parseInt(url.searchParams.get('page') ?? '1', 10)
   const requestedPageSize = Number.parseInt(url.searchParams.get('pageSize') ?? '5', 10)
@@ -3175,8 +3336,8 @@ async function handleLicensingCredentialDocuments(
     {
       target_actor_id: session.context.employee_id,
       target_credential_id: credentialId,
-      target_mfa_method: mfa.method,
-      target_mfa_verified_at: mfa.verifiedAt,
+      target_mfa_method: mfa?.method ?? null,
+      target_mfa_verified_at: mfa?.verifiedAt ?? null,
       target_page: page,
       target_page_size: pageSize,
     },
@@ -3194,8 +3355,9 @@ async function handleLicensingDocumentAccess(
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
   if (!validUuid(documentId)) throw new ApiError('invalid_document_id', 422, 'The licensing document identifier is invalid.')
   const session = await requireAuthenticatedSession(request, environment)
-  const mfa = await requireRecentDocumentMfa(request, session)
-  requireAnySessionPermission(session.context, ['licensing.view', 'licensing.manage', 'directory.edit_credentials'])
+  const elevatedAccess = ['licensing.view', 'licensing.manage', 'directory.edit_credentials']
+    .some((permission) => (session.context.permissions ?? []).includes(permission))
+  const mfa = elevatedAccess ? await requireRecentDocumentMfa(request, session) : null
   const body = await readJsonBody(request)
   const action = requiredText(body.action, 'Document action', 20)
   if (!['preview', 'download'].includes(action)) {
@@ -3212,8 +3374,8 @@ async function handleLicensingDocumentAccess(
       target_action: action,
       target_actor_id: session.context.employee_id,
       target_document_id: documentId,
-      target_mfa_method: mfa.method,
-      target_mfa_verified_at: mfa.verifiedAt,
+      target_mfa_method: mfa?.method ?? null,
+      target_mfa_verified_at: mfa?.verifiedAt ?? null,
       target_reason: reason,
       target_request_id: requestId,
     },
@@ -3245,6 +3407,14 @@ async function handleLicensingDocumentsApi(
     return request.method === 'GET'
       ? handleLicensingCredentialDocuments(request, environment, requestId, uploadCredentialId)
       : handleLicensingDocumentUpload(request, environment, requestId, uploadCredentialId)
+  }
+  const uploadSubmissionId = url.pathname.match(/^\/api\/v1\/licensing\/submissions\/([0-9a-f-]{36})\/documents$/i)?.[1]
+  if (uploadSubmissionId) {
+    return handleLicensingSubmissionDocumentUpload(request, environment, requestId, uploadSubmissionId)
+  }
+  const removeSubmissionDocument = url.pathname.match(/^\/api\/v1\/licensing\/submissions\/([0-9a-f-]{36})\/documents\/([0-9a-f-]{36})$/i)
+  if (removeSubmissionDocument) {
+    return handleLicensingSubmissionDocumentRemoval(request, environment, requestId, removeSubmissionDocument[1], removeSubmissionDocument[2])
   }
   const accessDocumentId = url.pathname.match(/^\/api\/v1\/licensing\/documents\/([0-9a-f-]{36})\/content$/i)?.[1]
   if (accessDocumentId) return handleLicensingDocumentAccess(request, environment, requestId, accessDocumentId)

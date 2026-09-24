@@ -94,9 +94,9 @@ describe('central access policy', () => {
     expect(canAccessRoute('/time/operations', exceptionReviewer)).toBe(false)
   })
 
-  it('makes credential-editor access to the Licensing Center functional without granting broader licensing management', () => {
+  it('makes the employee-owned Licensing Center route available without granting management functions', () => {
     expect(canAccessRoute('/licensing', session(['directory.edit_credentials']))).toBe(true)
-    expect(canAccessRoute('/licensing', session([]))).toBe(false)
+    expect(canAccessRoute('/licensing', session([]))).toBe(true)
   })
 
   it('opens Reports from every supported effective report capability, including additive roles', () => {

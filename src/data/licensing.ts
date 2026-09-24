@@ -53,6 +53,99 @@ const licensingDocumentUploadResultSchema = z.object({
   uploadedAt: z.string().optional(),
 })
 
+const licensingSubmissionStatusSchema = z.enum([
+  'draft',
+  'pending_review',
+  'correction_required',
+  'rejected',
+  'approved',
+  'withdrawn',
+])
+
+const licensingSubmissionKindSchema = z.enum(['new', 'renewal', 'correction', 'renewal_in_progress'])
+
+const licensingSubmissionDocumentSchema = licensingCredentialDocumentSchema.extend({
+  uploadState: z.string().optional(),
+})
+
+const licensingSubmissionEventSchema = z.object({
+  id: z.string().uuid(),
+  eventType: z.string(),
+  actorName: z.string().nullable(),
+  details: z.record(z.string(), z.unknown()).default({}),
+  createdAt: z.string(),
+})
+
+const licensingSubmissionSchema = z.object({
+  id: z.string().uuid(),
+  credentialTypeId: z.string().uuid(),
+  credentialId: z.string().uuid().nullable(),
+  credentialName: z.string(),
+  submissionKind: licensingSubmissionKindSchema,
+  status: licensingSubmissionStatusSchema,
+  credentialNumber: z.string().nullable(),
+  issuingAuthority: z.string().nullable(),
+  issueDate: z.string().nullable(),
+  expirationDate: z.string().nullable(),
+  employeeMessage: z.string(),
+  submittedAt: z.string().nullable(),
+  revisionNumber: z.number().int().nonnegative(),
+  reviewedAt: z.string().nullable(),
+  decisionReason: z.string().nullable(),
+  documents: z.array(licensingSubmissionDocumentSchema),
+  events: z.array(licensingSubmissionEventSchema),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+
+const myCredentialTypeSchema = z.object({
+  id: z.string().uuid(),
+  code: z.string(),
+  name: z.string(),
+  category: z.string(),
+  description: z.string().nullable(),
+  issuingAuthority: z.string().nullable(),
+  expirationRequired: z.boolean(),
+  warningDays: z.array(z.number().int()),
+  renewalInstructions: z.string().nullable(),
+  employeeInstructions: z.string().nullable(),
+  required: z.boolean(),
+})
+
+const licensingReviewItemSchema = licensingSubmissionSchema.extend({
+  employeeId: z.string().uuid(),
+  employeeName: z.string(),
+  employeeNumber: z.string().nullable(),
+  username: z.string(),
+  reviewedByName: z.string().nullable(),
+})
+
+const licensingSubmissionWorklistSchema = z.object({
+  serverTimestamp: z.string(),
+  currentEmployeeId: z.string().uuid(),
+  canReview: z.boolean(),
+  items: z.array(licensingReviewItemSchema),
+  pagination: z.object({
+    page: z.number().int().positive(),
+    pageSize: z.union([z.literal(5), z.literal(10), z.literal(20)]),
+    totalCount: z.number().int().nonnegative(),
+    totalPages: z.number().int().nonnegative(),
+  }),
+  summary: z.object({
+    pendingReview: z.number().int().nonnegative(),
+    correctionRequired: z.number().int().nonnegative(),
+    approved: z.number().int().nonnegative(),
+    rejected: z.number().int().nonnegative(),
+  }),
+})
+
+const licensingSubmissionReviewResultSchema = z.object({
+  submissionId: z.string().uuid(),
+  status: licensingSubmissionStatusSchema,
+  credentialId: z.string().uuid().nullable(),
+  reviewedAt: z.string(),
+})
+
 const credentialTypeSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),
@@ -181,6 +274,31 @@ const licensingCenterSchema = z.object({
   removedCredentials: z.array(removedLicensingCredentialSchema).default([]),
 })
 
+const myLicensingProfileSchema = z.object({
+  serverTimestamp: z.string(),
+  employee: z.object({
+    employeeId: z.string().uuid(),
+    employeeNumber: z.string().nullable(),
+    displayName: z.string(),
+    jobTitle: z.string().nullable(),
+    employmentStatus: employeeStatusSchema,
+  }),
+  credentialTypes: z.array(myCredentialTypeSchema),
+  credentials: z.array(licensingCredentialSchema.extend({
+    description: z.string().nullable(),
+    renewalInstructions: z.string().nullable(),
+    employeeInstructions: z.string().nullable(),
+    expirationRequired: z.boolean(),
+  })),
+  submissions: z.array(licensingSubmissionSchema),
+  summary: z.object({
+    current: z.number().int().nonnegative(),
+    attention: z.number().int().nonnegative(),
+    pending: z.number().int().nonnegative(),
+    correctionRequired: z.number().int().nonnegative(),
+  }),
+})
+
 const licensingCredentialLifecycleResultSchema = z.object({
   credentialId: z.string().uuid(),
   employeeId: z.string().uuid(),
@@ -203,6 +321,13 @@ export type LicensingEmployee = z.infer<typeof licensingEmployeeSchema>
 export type LicensingCenter = z.infer<typeof licensingCenterSchema>
 export type RemovedLicensingCredential = z.infer<typeof removedLicensingCredentialSchema>
 export type LicensingCredentialRemovalReason = z.infer<typeof licensingCredentialRemovalReasonSchema>
+export type LicensingSubmissionStatus = z.infer<typeof licensingSubmissionStatusSchema>
+export type LicensingSubmissionKind = z.infer<typeof licensingSubmissionKindSchema>
+export type LicensingSubmission = z.infer<typeof licensingSubmissionSchema>
+export type LicensingReviewItem = z.infer<typeof licensingReviewItemSchema>
+export type LicensingSubmissionWorklist = z.infer<typeof licensingSubmissionWorklistSchema>
+export type MyLicensingProfile = z.infer<typeof myLicensingProfileSchema>
+export type MyCredentialType = z.infer<typeof myCredentialTypeSchema>
 
 export interface LicensingEmployeeInput {
   employeeId?: string | null
@@ -256,6 +381,18 @@ export interface LicensingStatusExportAuditInput {
   employmentStatus: EmployeeStatus | 'all'
   licenseStatus: 'all' | 'current' | 'expiring' | 'expired' | 'not_licensed' | 'pending' | 'restricted'
   search?: string | null
+}
+
+export interface LicensingSubmissionInput {
+  submissionId: string
+  credentialTypeId: string
+  credentialId?: string | null
+  submissionKind: LicensingSubmissionKind
+  credentialNumber?: string | null
+  issuingAuthority?: string | null
+  issueDate?: string | null
+  expirationDate?: string | null
+  employeeMessage: string
 }
 
 const licensingStatusExportAuditSchema = z.object({
@@ -412,6 +549,74 @@ export async function recordLicensingCommunication(input: LicensingCommunication
   return licensingCenterSchema.parse(data)
 }
 
+export async function getMyLicensingProfile(): Promise<MyLicensingProfile> {
+  const { data, error } = await getSupabaseClient().rpc('get_my_licensing_profile')
+  if (error) throw new Error(error.message || 'Your licensing profile could not be loaded.')
+  return myLicensingProfileSchema.parse(data)
+}
+
+export async function saveMyLicensingSubmission(input: LicensingSubmissionInput): Promise<MyLicensingProfile> {
+  const { data, error } = await getSupabaseClient().rpc('save_my_licensing_submission', {
+    target_credential_id: input.credentialId ?? null,
+    target_credential_number: cleanOptional(input.credentialNumber),
+    target_credential_type_id: input.credentialTypeId,
+    target_employee_message: input.employeeMessage.trim(),
+    target_expiration_date: cleanOptional(input.expirationDate),
+    target_issue_date: cleanOptional(input.issueDate),
+    target_issuing_authority: cleanOptional(input.issuingAuthority),
+    target_submission_id: input.submissionId,
+    target_submission_kind: input.submissionKind,
+  })
+  if (error) throw new Error(error.message || 'Your licensing submission could not be saved.')
+  return myLicensingProfileSchema.parse(data)
+}
+
+export async function submitMyLicensingSubmission(submissionId: string): Promise<MyLicensingProfile> {
+  const { data, error } = await getSupabaseClient().rpc('submit_my_licensing_submission', {
+    target_submission_id: submissionId,
+  })
+  if (error) throw new Error(error.message || 'Your licensing submission could not be sent for review.')
+  return myLicensingProfileSchema.parse(data)
+}
+
+export async function withdrawMyLicensingSubmission(submissionId: string): Promise<MyLicensingProfile> {
+  const { data, error } = await getSupabaseClient().rpc('withdraw_my_licensing_submission', {
+    target_submission_id: submissionId,
+  })
+  if (error) throw new Error(error.message || 'Your licensing submission could not be withdrawn.')
+  return myLicensingProfileSchema.parse(data)
+}
+
+export async function getLicensingSubmissionWorklist(input: {
+  status?: LicensingSubmissionStatus | 'all'
+  search?: string
+  page?: number
+  pageSize?: 5 | 10 | 20
+} = {}): Promise<LicensingSubmissionWorklist> {
+  const { data, error } = await getSupabaseClient().rpc('get_licensing_submission_worklist', {
+    target_page: input.page ?? 1,
+    target_page_size: input.pageSize ?? 10,
+    target_search: cleanOptional(input.search),
+    target_status: input.status ?? 'pending_review',
+  })
+  if (error) throw new Error(error.message || 'Employee licensing submissions could not be loaded.')
+  return licensingSubmissionWorklistSchema.parse(data)
+}
+
+export async function reviewLicensingSubmission(input: {
+  submissionId: string
+  decision: 'approve' | 'request_correction' | 'reject'
+  reason?: string | null
+}) {
+  const { data, error } = await getSupabaseClient().rpc('review_licensing_submission', {
+    target_decision: input.decision,
+    target_reason: cleanOptional(input.reason),
+    target_submission_id: input.submissionId,
+  })
+  if (error) throw new Error(error.message || 'The licensing submission decision could not be saved.')
+  return licensingSubmissionReviewResultSchema.parse(data)
+}
+
 async function licensingApiHeaders(contentType?: string): Promise<Headers> {
   const { data, error } = await getSupabaseClient().auth.getSession()
   if (error || !data.session?.access_token) throw new Error('Your secure licensing session is not available.')
@@ -520,6 +725,60 @@ export async function uploadCredentialDocument(
     request.addEventListener('abort', () => reject(new Error('The upload was canceled. No incomplete document was released.')))
     request.send(input.file)
   })
+}
+
+export async function uploadLicensingSubmissionDocument(
+  input: { submissionId: string; file: File; idempotencyKey: string },
+  onProgress: (percent: number) => void,
+): Promise<z.infer<typeof licensingDocumentUploadResultSchema>> {
+  const declaredMimeType = licensingDocumentMimeType(input.file)
+  const headers = await licensingApiHeaders(declaredMimeType)
+  headers.set('x-sygshift-licensing-submission-document-metadata', encodeLicensingDocumentMetadata({
+    declaredMimeType,
+    idempotencyKey: input.idempotencyKey,
+    originalFilename: input.file.name,
+    submissionId: input.submissionId,
+  }))
+
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    request.open('PUT', `/api/v1/licensing/submissions/${encodeURIComponent(input.submissionId)}/documents`)
+    headers.forEach((value, key) => request.setRequestHeader(key, value))
+    request.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)))
+    })
+    request.addEventListener('load', () => {
+      let payload: unknown = null
+      try { payload = request.responseText ? JSON.parse(request.responseText) : null } catch { /* handled below */ }
+      if (request.status >= 200 && request.status < 300) {
+        onProgress(100)
+        try { resolve(licensingDocumentUploadResultSchema.parse(payload)) } catch { reject(new Error('The document was stored but its confirmation was invalid.')) }
+        return
+      }
+      const detail = payload && typeof payload === 'object' && 'detail' in payload
+        ? (payload as { detail?: unknown }).detail
+        : null
+      const code = payload && typeof payload === 'object' && 'error' in payload && typeof (payload as { error?: unknown }).error === 'string'
+        ? (payload as { error: string }).error
+        : null
+      reject(new LicensingApiError(
+        typeof detail === 'string' ? detail : 'The licensing document could not be uploaded.',
+        code,
+      ))
+    })
+    request.addEventListener('error', () => reject(new Error('The upload connection was interrupted. You can retry safely.')))
+    request.addEventListener('abort', () => reject(new Error('The upload was canceled. No incomplete document was released.')))
+    request.send(input.file)
+  })
+}
+
+export async function removeLicensingSubmissionDocument(submissionId: string, documentId: string): Promise<void> {
+  const response = await fetch(`/api/v1/licensing/submissions/${encodeURIComponent(submissionId)}/documents/${encodeURIComponent(documentId)}`, {
+    cache: 'no-store',
+    headers: await licensingApiHeaders(),
+    method: 'DELETE',
+  })
+  if (!response.ok) throw await licensingApiError(response, 'The licensing document could not be removed.')
 }
 
 export async function getLicensingDocumentBlob(

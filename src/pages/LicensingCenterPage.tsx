@@ -27,6 +27,7 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import { IdentityVerificationModal } from '../components/IdentityVerificationModal'
 import { ModalDialog } from '../components/ModalDialog'
 import { SecurePdfViewer } from '../components/SecurePdfViewer'
+import { LicensingSubmissionReviewQueue, MyLicensingWorkspace } from '../components/LicensingSelfServiceWorkspace'
 import { getSessionContext } from '../data/auth'
 import {
   archiveLicensingCredential,
@@ -1285,7 +1286,7 @@ function EmployeeLicensingProfile({
   )
 }
 
-export function LicensingCenterPage() {
+function LicensingManagementCenter() {
   const [summaryFilter, setSummaryFilter] = useState<SummaryFilter>('all')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -1460,6 +1461,8 @@ export function LicensingCenterPage() {
         </div>
       </section>
 
+      <LicensingSubmissionReviewQueue />
+
       <section className="licensing-priority-grid" aria-label="Priority licensing work">
         {([
           { count: needsActionCount, helper: 'Expired, missing, rejected, or ineligible', key: 'needsAction' as const, label: 'Needs action', tone: 'red' as const },
@@ -1631,5 +1634,46 @@ export function LicensingCenterPage() {
         />
       ) : null}
     </div>
+  )
+}
+
+const licensingManagementPermissions = [
+  'licensing.view',
+  'licensing.manage',
+  'licensing.configure',
+  'licensing.communicate',
+  'directory.edit_credentials',
+] as const
+
+export function LicensingCenterPage() {
+  const [workspace, setWorkspace] = useState<'management' | 'mine'>('management')
+  const sessionQuery = useQuery({
+    enabled: isSupabaseConfigured,
+    queryFn: getSessionContext,
+    queryKey: ['session-context'],
+  })
+  const canManageLicensing = Boolean(sessionQuery.data?.permissions.some((permission) => (
+    licensingManagementPermissions.includes(permission as typeof licensingManagementPermissions[number])
+  )))
+
+  if (!isSupabaseConfigured) {
+    return <LicensingManagementCenter />
+  }
+  if (sessionQuery.isPending) {
+    return <div className="page page--licensing"><DataStatePanel icon={ShieldAlert} title="Loading Licensing Center"><p>Checking your employee profile and authorized licensing workspace.</p></DataStatePanel></div>
+  }
+  if (sessionQuery.isError) {
+    return <div className="page page--licensing"><DataStatePanel icon={ShieldAlert} title="Licensing Center unavailable" tone="error"><p>{sessionQuery.error instanceof Error ? sessionQuery.error.message : 'Your secure session could not be loaded.'}</p></DataStatePanel></div>
+  }
+  if (!canManageLicensing) return <div className="page page--licensing"><MyLicensingWorkspace /></div>
+
+  return (
+    <>
+      <div className="licensing-workspace-switch" role="tablist" aria-label="Licensing Center workspace">
+        <button aria-selected={workspace === 'management'} className={workspace === 'management' ? 'is-active' : ''} onClick={() => setWorkspace('management')} role="tab" type="button">Team Licensing Center</button>
+        <button aria-selected={workspace === 'mine'} className={workspace === 'mine' ? 'is-active' : ''} onClick={() => setWorkspace('mine')} role="tab" type="button">My Licenses & Credentials</button>
+      </div>
+      {workspace === 'management' ? <LicensingManagementCenter /> : <div className="page page--licensing"><MyLicensingWorkspace /></div>}
+    </>
   )
 }

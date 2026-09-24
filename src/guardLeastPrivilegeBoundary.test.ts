@@ -61,7 +61,6 @@ describe('Guard least-privilege boundary', () => {
       '/payroll/export',
       '/payroll/rules',
       '/people',
-      '/licensing',
       '/sites',
       '/patrol',
       '/announcements',
@@ -110,8 +109,8 @@ describe('Guard least-privilege boundary', () => {
     expect(migration).toContain("'shift_pool.view'")
   })
 
-  it('keeps credential-editor Licensing Center access behind a dedicated MFA permission', () => {
+  it('opens employee-owned licensing self-service without widening management permissions', () => {
     expect(canAccessRoute('/licensing', { permissions: ['directory.edit_credentials'] })).toBe(true)
-    expect(canAccessRoute('/licensing', guardSession)).toBe(false)
+    expect(canAccessRoute('/licensing', guardSession)).toBe(true)
   })
 })
