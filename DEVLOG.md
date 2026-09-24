@@ -2844,3 +2844,19 @@ pnpm exec wrangler deploy --keep-vars
 - Passed 305 files / 1,615 tests, the focused Stage 6 validator, 4/4 desktop/mobile layout checks, the 42/42 actual-component Time Clock matrix, production builds, health/readiness, signed-out authorization, and byte-identical live asset checks.
 - Released source `118f04c` as Cloudflare Worker `7719f206-1c8b-40f0-8fed-de8363b309e3`; rollback checkpoint is `rollback/pre-onboarding-account-activity-20260924`.
 - See `docs/changelogs/CHANGELOG_09-24-2026_ONBOARDING_AND_ACCOUNT_ACTIVITY_REPORT.md` for the complete workflow, security, verification, and release record.
+
+# 09/24/2026 - Report PDF Layout and Rendering Repair
+
+- Rebuilt the User Account & Sign-In Activity PDF with measured column fitting,
+  clean two-line employee rows, separators below each row, repeated page
+  headings, and page-numbered footers.
+- Added a shared compatibility-safe report PDF layer and applied it to the
+  account, short-notice attendance, and patrol PDF exporters.
+- Reduced each report page to two stable font resources and disabled PDF object
+  streams for reliable rendering across viewers.
+- Passed 306 files / 1,617 tests, focused multi-page PDF rendering and font
+  resource checks, and the 42/42 desktop/mobile Time Clock matrix.
+- Released source `1df96ae` as Cloudflare Worker
+  `e29f8937-d62f-40a9-9c54-b78aba44ed5d`; both production origins passed
+  health, readiness, route, and exact-asset verification.
+- See `docs/changelogs/CHANGELOG_09-24-2026_REPORT_PDF_LAYOUT_REPAIR.md`.
