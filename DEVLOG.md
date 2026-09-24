@@ -2834,3 +2834,13 @@ pnpm exec wrangler deploy --keep-vars
 - Preserved scan-before-share, authorization, recent MFA, retry, recovery, immutable schedule context, and action-history controls.
 - Passed 303 test files / 1,607 tests, 6 focused desktop/mobile upload checks, the 42-check mandatory Time Clock matrix, production builds, health/readiness checks, and byte-identical asset verification.
 - Released source `224dd3c` as Worker `4522090e-cc28-4a36-ae7c-d4d7fc874292`; applied only migration `20260922174500_accountability_lazy_reconciliation.sql` because unrelated remote migration history is owned by other active work.
+
+# 09/24/2026 - Onboarding and User Account Activity Report
+
+- Repaired pre-hire onboarding transaction ambiguity and replaced the creation dialog with a guided, responsive four-step workflow that supports both new pre-hires and existing employees without duplicating identity records.
+- Added account-readiness status to onboarding cases and a protected User Account & Sign-In Activity report with login, MFA, role, session, trusted-device, and security-exception filters plus audited Excel/PDF exports.
+- Restricted the report baseline to Admin and Human Resources Manager through exact permissions enforced across navigation, routes, Worker endpoints, service functions, and database privileges.
+- Applied exact migrations `20260924154218` and `20260924160323`; a production rollback transaction verified real employee, profile, case, task, readiness, and report behavior without retaining fixture data.
+- Passed 305 files / 1,615 tests, the focused Stage 6 validator, 4/4 desktop/mobile layout checks, the 42/42 actual-component Time Clock matrix, production builds, health/readiness, signed-out authorization, and byte-identical live asset checks.
+- Released source `118f04c` as Cloudflare Worker `7719f206-1c8b-40f0-8fed-de8363b309e3`; rollback checkpoint is `rollback/pre-onboarding-account-activity-20260924`.
+- See `docs/changelogs/CHANGELOG_09-24-2026_ONBOARDING_AND_ACCOUNT_ACTIVITY_REPORT.md` for the complete workflow, security, verification, and release record.
