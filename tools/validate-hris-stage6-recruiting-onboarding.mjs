@@ -14,6 +14,7 @@ const router = read('src/app/router.tsx')
 const navigation = read('src/app/navigation.ts')
 const recruitingData = read('src/data/hrRecruiting.ts')
 const onboardingData = read('src/data/hrOnboarding.ts')
+const pagination = read('src/components/HrPagination.tsx')
 const recruitingPage = read('src/pages/HrisRecruitingPage.tsx')
 const onboardingPage = read('src/pages/HrisOnboardingPage.tsx')
 const recruiting = read('supabase/migrations/20260831010000_hris_stage6_recruiting_foundation.sql')
@@ -21,10 +22,9 @@ const conversion = read('supabase/migrations/20260831020000_hris_stage6_candidat
 const onboarding = read('supabase/migrations/20260831030000_hris_stage6_onboarding_foundation.sql')
 const onboardingProvisioning = read('supabase/migrations/20260831230000_hris_onboarding_account_provisioning.sql')
 
-requireText(wrangler, '"SYGSHIFT_HR_RECRUITING_ENABLED": "false"', 'Recruiting release flag must default off.')
+requireText(wrangler, '"SYGSHIFT_HR_RECRUITING_ENABLED": "true"', 'Recruiting release flag must remain enabled for the approved production release.')
 requireText(wrangler, '"SYGSHIFT_HR_ONBOARDING_ENABLED": "true"', 'Onboarding release flag must be enabled for the approved production release.')
-requireText(worker, "requireVerifiedOperationsSession(request, environment, 'hr_recruiting_mfa_required')", 'Recruiting must require a verified MFA session.')
-requireText(worker, "requireVerifiedOperationsSession(request, environment, 'hr_onboarding_mfa_required')", 'Onboarding must require a verified MFA session.')
+requireText(worker, 'const session = await requireRecentHrSession(request, environment)', 'Recruiting and onboarding must use the unified recent-HR-MFA session boundary.')
 for (const permission of ['hr.recruiting.view', 'hr.recruiting.manage', 'hr.recruiting.approve']) {
   requireText(recruiting, `'${permission}'`, `Recruiting permission ${permission} is missing.`)
 }
@@ -81,9 +81,10 @@ requireText(recruitingData, '/api/v1/hr/recruiting/conversions/', 'Candidate con
 requireText(onboardingData, '/api/v1/hr/onboarding/cases/', 'Onboarding case client is missing.')
 
 for (const page of [recruitingPage, onboardingPage]) {
-  for (const size of ['<option value="5">5</option>', '<option value="10">10</option>', '<option value="20">20</option>']) {
-    requireText(page, size, 'Compact 5/10/20 list controls are missing.')
-  }
+  requireText(page, '<HrPagination', 'The shared compact list controls are missing.')
+}
+for (const size of ['<option value="5">5</option>', '<option value="10">10</option>', '<option value="20">20</option>']) {
+  requireText(pagination, size, 'Compact 5/10/20 list controls are missing.')
 }
 requireText(recruitingPage, 'remains inactive until its controlled release is approved', 'Dormant recruiting release state is not explained safely.')
 requireText(onboardingProvisioning, 'service_hr_onboarding_create_prehire', 'Controlled pre-hire provisioning is missing.')

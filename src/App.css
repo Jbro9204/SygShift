@@ -2612,6 +2612,406 @@
   }
 }
 
+/* Onboarding repair and protected account-activity reporting */
+.modal-dialog--hr-onboarding {
+  width: min(1040px, calc(100vw - 32px));
+}
+
+.hr-onboarding-form {
+  display: grid;
+  gap: 20px;
+}
+
+.hr-onboarding-form fieldset {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+}
+
+.hr-onboarding-form fieldset > legend {
+  padding: 0 8px;
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.hr-onboarding-form label,
+.hr-onboarding-existing-search {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: .84rem;
+  font-weight: 800;
+}
+
+.hr-onboarding-form input:not([type='checkbox']),
+.hr-onboarding-form select,
+.hr-onboarding-form textarea,
+.hr-onboarding-existing-search > span:last-child {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--canvas);
+}
+
+.hr-onboarding-form input:not([type='checkbox']),
+.hr-onboarding-form select,
+.hr-onboarding-form textarea {
+  padding: 10px 13px;
+}
+
+.hr-onboarding-form textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.hr-onboarding-form input:focus,
+.hr-onboarding-form select:focus,
+.hr-onboarding-form textarea:focus {
+  outline: 3px solid color-mix(in srgb, var(--gold) 24%, transparent);
+  border-color: var(--gold);
+}
+
+.hr-onboarding-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hr-onboarding-steps li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--canvas);
+}
+
+.hr-onboarding-steps li > span {
+  display: grid;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--line) 70%, transparent);
+  font-size: .78rem;
+  font-weight: 900;
+}
+
+.hr-onboarding-steps li.is-current {
+  border-color: color-mix(in srgb, var(--gold) 68%, var(--line));
+  color: var(--ink);
+  background: var(--gold-pale);
+}
+
+.hr-onboarding-steps li.is-current > span {
+  color: #17130c;
+  background: var(--gold);
+}
+
+.hr-onboarding-mode-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hr-onboarding-mode-picker > button,
+.hr-onboarding-existing-list > button {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--ink);
+  text-align: left;
+  background: var(--canvas);
+}
+
+.hr-onboarding-mode-picker > button > span,
+.hr-onboarding-existing-list > button > span:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.hr-onboarding-mode-picker small,
+.hr-onboarding-existing-list small,
+.hr-onboarding-checks small {
+  color: var(--muted);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.hr-onboarding-mode-picker > button.is-selected,
+.hr-onboarding-existing-list > button.is-selected {
+  border-color: var(--gold);
+  box-shadow: inset 4px 0 0 var(--gold);
+  background: var(--gold-pale);
+}
+
+.hr-onboarding-existing-picker,
+.hr-onboarding-existing-list {
+  display: grid;
+  gap: 10px;
+}
+
+.hr-onboarding-existing-search > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 13px;
+}
+
+.hr-onboarding-existing-search input {
+  min-height: 42px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+}
+
+.hr-onboarding-existing-list {
+  max-height: 260px;
+  overflow: auto;
+  padding: 2px 4px 2px 2px;
+}
+
+.hr-onboarding-existing-list > button {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hr-onboarding-existing-list > button > span:last-child {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--line) 55%, transparent);
+  font-size: .74rem;
+  font-weight: 900;
+}
+
+.hr-onboarding-step-copy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.hr-onboarding-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hr-onboarding-checks > label {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--canvas);
+}
+
+.hr-onboarding-checks input {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  accent-color: var(--gold-deep);
+}
+
+.hr-onboarding-checks label > span {
+  display: grid;
+  gap: 4px;
+}
+
+.hr-onboarding-review-grid,
+.hr-onboarding-account-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.hr-onboarding-review-grid > div,
+.hr-onboarding-account-grid > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--canvas);
+}
+
+.hr-onboarding-review-grid span,
+.hr-onboarding-account-grid span {
+  color: var(--muted);
+  font-size: .74rem;
+  font-weight: 850;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.hr-onboarding-review-grid strong,
+.hr-onboarding-account-grid strong {
+  overflow-wrap: anywhere;
+}
+
+.hr-onboarding-account-readiness {
+  display: grid;
+  gap: 12px;
+  padding: 18px var(--presentation-panel-padding);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+}
+
+.hr-onboarding-account-readiness .section-heading {
+  align-items: center;
+  margin: 0;
+  padding: 0;
+}
+
+.hr-onboarding-modal-feedback {
+  margin: 0;
+}
+
+.account-activity-controls {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.account-activity-filter-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.account-activity-controls input,
+.account-activity-controls select {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  border-radius: 12px;
+}
+
+.account-activity-rule,
+.account-activity-caution,
+.account-activity-clear {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--gold) 50%, var(--line));
+  border-left: 4px solid var(--gold);
+  border-radius: 12px;
+  background: var(--gold-pale);
+}
+
+.account-activity-rule > div {
+  display: grid;
+  gap: 4px;
+}
+
+.account-activity-rule span,
+.account-activity-caution span,
+.account-activity-clear span {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.account-activity-metrics {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.account-activity-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.account-activity-summary {
+  grid-template-columns: 1.15fr .8fr 1fr .9fr 1.15fr;
+}
+
+.account-activity-summary dd {
+  display: grid;
+  gap: 4px;
+}
+
+.account-activity-summary dd small {
+  color: var(--muted);
+  font-size: .76rem;
+  font-weight: 600;
+}
+
+.account-activity-row--attention {
+  border-left-color: #a63a32;
+}
+
+.account-activity-detail-grid__wide {
+  grid-column: 1 / -1;
+}
+
+.account-activity-caution {
+  margin-top: 14px;
+  border-color: light-dark(#d7a29d, #82443e);
+  border-left-color: #a63a32;
+  background: light-dark(#fff3f1, #3d201e);
+}
+
+.account-activity-clear {
+  margin-top: 14px;
+  border-color: light-dark(#a8ceb9, #35674d);
+  border-left-color: #2b7a55;
+  background: light-dark(#f0faf4, #193326);
+}
+
+@media (max-width: 1100px) {
+  .account-activity-filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .account-activity-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .account-activity-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .hr-onboarding-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hr-onboarding-mode-picker,
+  .hr-onboarding-checks,
+  .hr-onboarding-review-grid,
+  .hr-onboarding-account-grid,
+  .account-activity-filter-row,
+  .account-activity-metrics,
+  .account-activity-summary { grid-template-columns: minmax(0, 1fr); }
+  .hr-onboarding-form fieldset { padding: 16px; border-radius: 14px; }
+  .account-activity-export-actions,
+  .account-activity-export-actions > button { width: 100%; }
+  .account-activity-rule { display: grid; grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 440px) {
+  .hr-onboarding-steps { grid-template-columns: minmax(0, 1fr); }
+  .hr-onboarding-form { padding-right: 12px; padding-left: 12px; }
+}
+
 /* Shared presentation standards: consistent spacing, controls, and dialogs. */
 :root {
   --presentation-gutter: clamp(18px, 2.25vw, 32px);

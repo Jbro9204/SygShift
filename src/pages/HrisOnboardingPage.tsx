@@ -8,7 +8,9 @@ import {
   Mail,
   Plus,
   RefreshCw,
+  Search,
   ShieldCheck,
+  UserPlus,
   UserRoundCheck,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -19,7 +21,9 @@ import { getSessionContext } from '../data/auth'
 import {
   createHrOnboardingPrehire,
   getHrOnboardingCase,
+  getHrOnboardingOptions,
   getHrOnboardingWorkspace,
+  launchExistingHrOnboarding,
   runHrOnboardingAction,
   sendHrOnboardingWelcomePackage,
   type HrOnboardingAction,
@@ -30,6 +34,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 
 type PageSize = 5 | 10 | 20
 type Feedback = { tone: 'success' | 'error'; message: string }
+type CreateMode = 'new' | 'existing'
 type Task = HrOnboardingCase['tasks'][number]
 type PendingAction = {
   action: HrOnboardingAction
@@ -80,6 +85,11 @@ export function HrisOnboardingPage() {
   const [offset, setOffset] = useState(0)
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [createMode, setCreateMode] = useState<CreateMode>('new')
+  const [createStep, setCreateStep] = useState(1)
+  const [createFeedback, setCreateFeedback] = useState<Feedback | null>(null)
+  const [existingSearch, setExistingSearch] = useState('')
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const [prehire, setPrehire] = useState<HrOnboardingPrehireInput>(initialPrehire)
   const [createReason, setCreateReason] = useState('Create employee onboarding record.')
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
@@ -102,6 +112,11 @@ export function HrisOnboardingPage() {
     queryFn: () => getHrOnboardingCase(selectedCaseId!),
     enabled: Boolean(selectedCaseId),
   })
+  const onboardingOptionsQuery = useQuery({
+    queryKey: ['hr-onboarding-options', existingSearch],
+    queryFn: () => getHrOnboardingOptions(existingSearch),
+    enabled: showCreate && createMode === 'existing' && createStep === 1,
+  })
 
   const permissions = sessionQuery.data?.permissions ?? []
   const canManage = permissions.includes('hr.onboarding.manage')
@@ -118,21 +133,68 @@ export function HrisOnboardingPage() {
   async function submitPrehire(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setBusy(true)
-    setFeedback(null)
+    setCreateFeedback(null)
     try {
-      const result = await createHrOnboardingPrehire(prehire, createReason.trim())
+      const result = createMode === 'new'
+        ? await createHrOnboardingPrehire(prehire, createReason.trim())
+        : await launchExistingHrOnboarding(selectedEmployeeId!, {
+          positionTitle: prehire.positionTitle,
+          workState: prehire.workState,
+          employmentType: prehire.employmentType,
+          jobFamily: prehire.jobFamily,
+          startDate: prehire.startDate,
+          requiresGuardLicense: prehire.requiresGuardLicense,
+          requiresArmedCredentials: prehire.requiresArmedCredentials,
+        }, createReason.trim())
       setPrehire(initialPrehire)
       setCreateReason('Create employee onboarding record.')
       setShowCreate(false)
+      setCreateStep(1)
+      setSelectedEmployeeId(null)
       if (result.caseId) setSelectedCaseId(result.caseId)
       await refreshWorkspace(result.caseId)
       setFeedback({ tone: 'success', message: 'The employee and applicable onboarding checklist were created.' })
     } catch (error) {
-      setFeedback({ tone: 'error', message: error instanceof Error ? error.message : 'The employee could not be created.' })
+      setCreateFeedback({ tone: 'error', message: error instanceof Error ? error.message : 'The onboarding record could not be created.' })
     } finally {
       setBusy(false)
     }
   }
+
+  function openCreate() {
+    setCreateStep(1)
+    setCreateMode('new')
+    setCreateFeedback(null)
+    setExistingSearch('')
+    setSelectedEmployeeId(null)
+    setShowCreate(true)
+  }
+
+  function closeCreate() {
+    if (busy) return
+    setShowCreate(false)
+    setCreateFeedback(null)
+  }
+
+  function selectExistingEmployee(employeeId: string) {
+    const employee = onboardingOptionsQuery.data?.employees.find((item) => item.id === employeeId)
+    if (!employee) return
+    const family = employee.role === 'guard' ? 'guard' : ['dispatcher', 'scheduler', 'supervisor'].includes(employee.role) ? 'operations' : 'administration'
+    setSelectedEmployeeId(employeeId)
+    setPrehire((current) => ({
+      ...current,
+      positionTitle: employee.positionTitle ?? '',
+      role: employee.role,
+      employmentType: employee.employmentType,
+      jobFamily: family,
+      startDate: employee.hiredOn ?? '',
+      requiresGuardLicense: employee.role === 'guard',
+    }))
+  }
+
+  const canContinueCreate = createStep === 1
+    ? createMode === 'existing' ? Boolean(selectedEmployeeId) : Boolean(prehire.firstName.trim() && prehire.lastName.trim() && prehire.personalEmail.trim())
+    : createStep === 2 ? Boolean(prehire.positionTitle.trim() && prehire.startDate) : true
 
   async function submitAction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -201,7 +263,7 @@ export function HrisOnboardingPage() {
         </div>
         <div className="hr-onboarding-header-actions">
           <button className="secondary-button" onClick={() => refreshWorkspace()} type="button"><RefreshCw aria-hidden="true" size={17} />Refresh</button>
-          {canManage ? <button className="primary-action" onClick={() => setShowCreate(true)} type="button"><Plus aria-hidden="true" size={18} />New employee</button> : null}
+          {canManage ? <button className="primary-action" onClick={openCreate} type="button"><Plus aria-hidden="true" size={18} />Start onboarding</button> : null}
         </div>
       </section>
 
@@ -242,28 +304,50 @@ export function HrisOnboardingPage() {
       <HrPagination itemCount={workspace.cases.length} label="Onboarding cases" offset={offset} onOffsetChange={setOffset} onPageSizeChange={setPageSize} pageSize={pageSize} />
 
       {showCreate ? (
-        <ModalDialog busy={busy} busyLabel="Creating employee and checklist..." className="modal-dialog--hr-onboarding" description="Create the pre-hire identity and generate only the onboarding requirements that apply." onClose={() => setShowCreate(false)} title="Create onboarding record">
+        <ModalDialog busy={busy} busyLabel="Creating employee and checklist..." className="modal-dialog--hr-onboarding" description="Create a new pre-hire or safely attach onboarding to an employee already entered through another approved workspace." onClose={closeCreate} title="Start employee onboarding">
           <form className="hr-onboarding-form" onSubmit={submitPrehire}>
-            <fieldset><legend>Employee identity</legend><div className="hr-onboarding-form-grid hr-onboarding-form-grid--three">
-              <label><span>Legal first name</span><input required value={prehire.firstName} onChange={(event) => setPrehire({ ...prehire, firstName: event.target.value })} /></label>
-              <label><span>Middle name <small>Optional</small></span><input value={prehire.middleName ?? ''} onChange={(event) => setPrehire({ ...prehire, middleName: event.target.value })} /></label>
-              <label><span>Legal last name</span><input required value={prehire.lastName} onChange={(event) => setPrehire({ ...prehire, lastName: event.target.value })} /></label>
-              <label><span>Personal email</span><input required type="email" value={prehire.personalEmail} onChange={(event) => setPrehire({ ...prehire, personalEmail: event.target.value })} /></label>
-              <label><span>Mobile phone <small>Optional</small></span><input type="tel" value={prehire.mobilePhone ?? ''} onChange={(event) => setPrehire({ ...prehire, mobilePhone: event.target.value })} /></label>
-            </div></fieldset>
-            <fieldset><legend>Employment setup</legend><div className="hr-onboarding-form-grid hr-onboarding-form-grid--three">
+            <ol className="hr-onboarding-steps" aria-label="Onboarding setup progress">
+              {['Employee', 'Employment', 'Requirements', 'Review'].map((label, index) => <li aria-current={createStep === index + 1 ? 'step' : undefined} className={createStep >= index + 1 ? 'is-current' : ''} key={label}><span>{index + 1}</span><strong>{label}</strong></li>)}
+            </ol>
+            {createFeedback ? <div className={`form-feedback form-feedback--${createFeedback.tone} hr-onboarding-modal-feedback`} role="alert">{createFeedback.message}</div> : null}
+
+            {createStep === 1 ? <fieldset><legend>Who are you onboarding?</legend>
+              <div className="hr-onboarding-mode-picker" role="radiogroup" aria-label="Employee source">
+                <button aria-pressed={createMode === 'new'} className={createMode === 'new' ? 'is-selected' : ''} onClick={() => { setCreateMode('new'); setSelectedEmployeeId(null); setCreateFeedback(null) }} type="button"><UserPlus aria-hidden="true" size={21} /><span><strong>New employee</strong><small>Create one protected employee identity and onboarding case together.</small></span></button>
+                <button aria-pressed={createMode === 'existing'} className={createMode === 'existing' ? 'is-selected' : ''} onClick={() => { setCreateMode('existing'); setCreateFeedback(null) }} type="button"><UserRoundCheck aria-hidden="true" size={21} /><span><strong>Already in SygShift</strong><small>Attach onboarding without duplicating or replacing the employee record.</small></span></button>
+              </div>
+              {createMode === 'new' ? <div className="hr-onboarding-form-grid hr-onboarding-form-grid--three">
+                <label><span>Legal first name</span><input required value={prehire.firstName} onChange={(event) => setPrehire({ ...prehire, firstName: event.target.value })} /></label>
+                <label><span>Middle name <small>Optional</small></span><input value={prehire.middleName ?? ''} onChange={(event) => setPrehire({ ...prehire, middleName: event.target.value })} /></label>
+                <label><span>Legal last name</span><input required value={prehire.lastName} onChange={(event) => setPrehire({ ...prehire, lastName: event.target.value })} /></label>
+                <label><span>Personal email</span><input required type="email" value={prehire.personalEmail} onChange={(event) => setPrehire({ ...prehire, personalEmail: event.target.value })} /></label>
+                <label><span>Mobile phone <small>Optional</small></span><input type="tel" value={prehire.mobilePhone ?? ''} onChange={(event) => setPrehire({ ...prehire, mobilePhone: event.target.value })} /></label>
+              </div> : <div className="hr-onboarding-existing-picker">
+                <label className="hr-onboarding-existing-search"><span>Find an employee without an onboarding case</span><span><Search aria-hidden="true" size={18} /><input onChange={(event) => setExistingSearch(event.target.value)} placeholder="Name, employee number, username, or title" type="search" value={existingSearch} /></span></label>
+                {onboardingOptionsQuery.isPending ? <div className="compact-empty">Loading available employees…</div> : null}
+                {onboardingOptionsQuery.isError ? <div className="inline-alert" role="alert">{onboardingOptionsQuery.error.message}</div> : null}
+                {onboardingOptionsQuery.data && !onboardingOptionsQuery.data.employees.length ? <div className="compact-empty">No available employees match this search.</div> : null}
+                {onboardingOptionsQuery.data?.employees.length ? <div className="hr-onboarding-existing-list">{onboardingOptionsQuery.data.employees.map((employee) => <button aria-pressed={selectedEmployeeId === employee.id} className={selectedEmployeeId === employee.id ? 'is-selected' : ''} key={employee.id} onClick={() => selectExistingEmployee(employee.id)} type="button"><span><strong>{employee.employeeName}</strong><small>{employee.employeeNumber ?? 'No employee number'} · {employee.positionTitle ?? formatStatus(employee.role)}</small></span><span>{formatStatus(employee.status)}</span></button>)}</div> : null}
+              </div>}
+            </fieldset> : null}
+
+            {createStep === 2 ? <fieldset><legend>Employment setup</legend><div className="hr-onboarding-form-grid hr-onboarding-form-grid--three">
               <label><span>Position title</span><input required value={prehire.positionTitle} onChange={(event) => setPrehire({ ...prehire, positionTitle: event.target.value })} /></label>
               <label><span>Start date</span><input required type="date" value={prehire.startDate} onChange={(event) => setPrehire({ ...prehire, startDate: event.target.value })} /></label>
               <label><span>Work state</span><select value={prehire.workState} onChange={(event) => setPrehire({ ...prehire, workState: event.target.value as HrOnboardingPrehireInput['workState'] })}><option value="CO">Colorado</option><option value="CA">California</option><option value="AZ">Arizona</option></select></label>
               <label><span>Employment type</span><select value={prehire.employmentType} onChange={(event) => setPrehire({ ...prehire, employmentType: event.target.value as HrOnboardingPrehireInput['employmentType'] })}><option value="hourly">Hourly</option><option value="salary">Salary</option><option value="flex">Flex</option></select></label>
-              <label><span>SygShift role</span><select value={prehire.role} onChange={(event) => setPrehire({ ...prehire, role: event.target.value as HrOnboardingPrehireInput['role'] })}><option value="guard">Guard</option><option value="supervisor">Supervisor</option><option value="dispatcher">Dispatcher</option><option value="scheduler">Scheduler</option><option value="recruiting_licensing">Recruiting &amp; Licensing</option><option value="admin">Admin</option></select></label>
+              {createMode === 'new' ? <label><span>Schedule &amp; timekeeping role</span><select value={prehire.role} onChange={(event) => setPrehire({ ...prehire, role: event.target.value as HrOnboardingPrehireInput['role'] })}><option value="guard">Guard</option><option value="supervisor">Supervisor</option><option value="dispatcher">Dispatcher</option><option value="scheduler">Scheduler</option><option value="recruiting_licensing">Recruiting &amp; Licensing</option><option value="admin">Admin</option></select></label> : null}
               <label><span>Job family</span><select value={prehire.jobFamily} onChange={(event) => setPrehire({ ...prehire, jobFamily: event.target.value as HrOnboardingPrehireInput['jobFamily'] })}><option value="guard">Guard</option><option value="administration">Administration</option><option value="operations">Operations</option><option value="other">Other</option></select></label>
-            </div><div className="hr-onboarding-checks">
-              <label><input checked={prehire.requiresGuardLicense} onChange={(event) => setPrehire({ ...prehire, requiresGuardLicense: event.target.checked })} type="checkbox" /><span>Guard license requirements apply</span></label>
-              <label><input checked={prehire.requiresArmedCredentials} onChange={(event) => setPrehire({ ...prehire, requiresArmedCredentials: event.target.checked })} type="checkbox" /><span>Armed credential requirements apply</span></label>
-            </div></fieldset>
-            <label className="hr-onboarding-reason"><span>Audit reason</span><textarea required value={createReason} onChange={(event) => setCreateReason(event.target.value)} /></label>
-            <div className="modal-actions"><button className="secondary-button" onClick={() => setShowCreate(false)} type="button">Cancel</button><button className="primary-action" disabled={!createReason.trim()} type="submit">Create employee and checklist</button></div>
+            </div></fieldset> : null}
+
+            {createStep === 3 ? <fieldset><legend>Requirements that apply</legend><p className="hr-onboarding-step-copy">These selections generate only the relevant licensing and armed-credential tasks. Federal, state, payroll, policy, access, and orientation requirements remain automatic.</p><div className="hr-onboarding-checks">
+              <label><input checked={prehire.requiresGuardLicense} onChange={(event) => setPrehire({ ...prehire, requiresGuardLicense: event.target.checked })} type="checkbox" /><span><strong>Guard license requirements</strong><small>Add the state-appropriate guard credential review.</small></span></label>
+              <label><input checked={prehire.requiresArmedCredentials} onChange={(event) => setPrehire({ ...prehire, requiresArmedCredentials: event.target.checked, requiresGuardLicense: event.target.checked || prehire.requiresGuardLicense })} type="checkbox" /><span><strong>Armed credential requirements</strong><small>Add armed endorsements and required training verification.</small></span></label>
+            </div></fieldset> : null}
+
+            {createStep === 4 ? <fieldset><legend>Review and create</legend><div className="hr-onboarding-review-grid"><div><span>Employee source</span><strong>{createMode === 'new' ? 'New protected employee record' : 'Existing employee record'}</strong></div><div><span>Employee</span><strong>{createMode === 'new' ? `${prehire.firstName} ${prehire.lastName}`.trim() : onboardingOptionsQuery.data?.employees.find((employee) => employee.id === selectedEmployeeId)?.employeeName ?? 'Selected employee'}</strong></div><div><span>Position</span><strong>{prehire.positionTitle}</strong></div><div><span>Start date</span><strong>{prehire.startDate ? formatDate(prehire.startDate) : 'Not selected'}</strong></div><div><span>Work state</span><strong>{prehire.workState}</strong></div><div><span>Employment</span><strong>{formatStatus(prehire.employmentType)}</strong></div><div><span>Requirements</span><strong>{[prehire.requiresGuardLicense ? 'Guard license' : '', prehire.requiresArmedCredentials ? 'Armed credentials' : ''].filter(Boolean).join(', ') || 'Standard onboarding only'}</strong></div></div><label className="hr-onboarding-reason"><span>Audit reason</span><textarea required value={createReason} onChange={(event) => setCreateReason(event.target.value)} /></label></fieldset> : null}
+
+            <div className="modal-actions hr-onboarding-wizard-actions"><button className="secondary-button" onClick={createStep === 1 ? closeCreate : () => { setCreateStep((step) => step - 1); setCreateFeedback(null) }} type="button">{createStep === 1 ? 'Cancel' : 'Back'}</button>{createStep < 4 ? <button className="primary-action" disabled={!canContinueCreate} onClick={() => { setCreateStep((step) => step + 1); setCreateFeedback(null) }} type="button">Continue</button> : <button className="primary-action" disabled={!createReason.trim() || !canContinueCreate} type="submit">Create onboarding checklist</button>}</div>
           </form>
         </ModalDialog>
       ) : null}
@@ -274,6 +358,17 @@ export function HrisOnboardingPage() {
             <div className="hr-onboarding-case-workspace">
               <section className="hr-onboarding-case-summary">
                 <div><span>Employee</span><strong>{caseQuery.data.case.employeeNumber}</strong></div><div><span>Start date</span><strong>{formatDate(caseQuery.data.case.targetStartDate)}</strong></div><div><span>State</span><strong>{caseQuery.data.case.workState}</strong></div><div><span>Employment</span><strong>{formatStatus(caseQuery.data.case.employmentType)}</strong></div><div><span>Position</span><strong>{caseQuery.data.case.positionTitle}</strong></div><div><span>Status</span><strong>{formatStatus(caseQuery.data.case.status)}</strong></div>
+              </section>
+              <section className="hr-onboarding-account-readiness" aria-label="Account readiness">
+                <div className="section-heading"><div><p className="eyebrow">Login readiness</p><h3>Employee account</h3></div><span className="action-status">{formatStatus(caseQuery.data.accountReadiness.accountState)}</span></div>
+                <div className="hr-onboarding-account-grid">
+                  <div><span>Invitation</span><strong>{caseQuery.data.accountReadiness.invitedAt ? 'Sent' : 'Not sent'}</strong></div>
+                  <div><span>Password setup</span><strong>{caseQuery.data.accountReadiness.passwordChangedAt ? 'Completed' : 'Pending'}</strong></div>
+                  <div><span>MFA</span><strong>{caseQuery.data.accountReadiness.requiresMfa ? (caseQuery.data.accountReadiness.mfaEnrolledAt ? 'Enrolled' : 'Required — pending') : 'Not required'}</strong></div>
+                  <div><span>Completed sign-ins</span><strong>{caseQuery.data.accountReadiness.completedSignInCount}</strong></div>
+                  <div><span>Last completed sign-in</span><strong>{caseQuery.data.accountReadiness.lastCompletedSignInAt ? new Intl.DateTimeFormat('en-US', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Denver' }).format(new Date(caseQuery.data.accountReadiness.lastCompletedSignInAt)) : 'Never'}</strong></div>
+                  <div><span>Active sessions</span><strong>{caseQuery.data.accountReadiness.activeSessionCount}</strong></div>
+                </div>
               </section>
               <section className="hr-onboarding-delivery"><div><Mail aria-hidden="true" size={20} /><span>Company welcome</span><strong>{formatStatus(caseQuery.data.case.welcomeEmailStatus)}</strong></div><div><ShieldCheck aria-hidden="true" size={20} /><span>Account setup</span><strong>{formatStatus(caseQuery.data.case.accountSetupStatus)}</strong></div>{canManage ? <button className="secondary-button" onClick={sendWelcomePackage} type="button">Send welcome and login package</button> : null}</section>
               <section className="hr-onboarding-task-groups">

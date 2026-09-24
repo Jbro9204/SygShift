@@ -44,6 +44,19 @@ const onboardingCaseSchema = z.object({
     requiresGuardLicense: z.boolean(), requiresArmedCredentials: z.boolean(),
     welcomeEmailStatus: z.enum(['not_sent', 'sent', 'failed']), accountSetupStatus: z.enum(['not_sent', 'sent', 'failed']),
   }),
+  accountReadiness: z.object({
+    accountState: z.enum(['not_created', 'disabled', 'setup_incomplete', 'mfa_required', 'first_login_pending', 'ready']),
+    invitedAt: nullableText,
+    activatedAt: nullableText,
+    passwordChangedAt: nullableText,
+    firstCompletedSignInAt: nullableText,
+    lastCompletedSignInAt: nullableText,
+    completedSignInCount: z.number().int().nonnegative(),
+    completedSources: z.array(z.string()),
+    requiresMfa: z.boolean(),
+    mfaEnrolledAt: nullableText,
+    activeSessionCount: z.number().int().nonnegative(),
+  }),
   tasks: z.array(z.object({
     id: z.string().uuid(), stepCode: z.string(), title: z.string(), taskType: z.string(), responsibleGroup: z.string(),
     required: z.boolean(), dueAt: nullableText, status: z.string(), sourceStatus: z.record(z.string(), z.unknown()),
@@ -67,6 +80,22 @@ const onboardingWelcomeResultSchema = z.object({
   requestId: z.string().optional(),
 })
 
+const onboardingOptionSchema = z.object({
+  id: z.string().uuid(),
+  employeeNumber: z.string().nullable(),
+  employeeName: z.string(),
+  status: z.enum(['onboarding', 'active']),
+  positionTitle: z.string().nullable(),
+  role: z.enum(['guard', 'supervisor', 'admin', 'dispatcher', 'scheduler', 'recruiting_licensing']),
+  employmentType: z.enum(['hourly', 'salary', 'flex']),
+  hiredOn: nullableText,
+})
+
+const onboardingOptionsSchema = z.object({
+  employees: z.array(onboardingOptionSchema).max(50),
+  requestId: z.string().optional(),
+})
+
 export interface HrOnboardingPrehireInput {
   firstName: string
   middleName?: string
@@ -85,6 +114,7 @@ export interface HrOnboardingPrehireInput {
 
 export type HrOnboardingWorkspace = z.infer<typeof onboardingWorkspaceSchema>
 export type HrOnboardingCase = z.infer<typeof onboardingCaseSchema>
+export type HrOnboardingOption = z.infer<typeof onboardingOptionSchema>
 export type HrOnboardingAction =
   | 'create_template' | 'add_template_step' | 'add_step_dependency' | 'activate_template'
   | 'launch_case' | 'start_task' | 'complete_task' | 'waive_task' | 'finalize_case' | 'cancel_case'
@@ -121,6 +151,22 @@ export async function createHrOnboardingPrehire(payload: HrOnboardingPrehireInpu
     body: JSON.stringify({ payload, reason }),
   })
   if (!response.ok) throw await parseApiError(response, 'The pre-hire record could not be created.')
+  return onboardingActionResultSchema.parse(await response.json())
+}
+
+export async function getHrOnboardingOptions(search = '') {
+  const parameters = new URLSearchParams({ search: search.trim(), limit: '25' })
+  const response = await onboardingApi(`/api/v1/hr/onboarding/options?${parameters}`)
+  if (!response.ok) throw await parseApiError(response, 'Employees available for onboarding could not be loaded.')
+  return onboardingOptionsSchema.parse(await response.json())
+}
+
+export async function launchExistingHrOnboarding(employeeId: string, payload: Omit<HrOnboardingPrehireInput, 'firstName' | 'middleName' | 'lastName' | 'personalEmail' | 'mobilePhone' | 'role'>, reason: string) {
+  const response = await onboardingApi('/api/v1/hr/onboarding/existing', {
+    method: 'POST',
+    body: JSON.stringify({ employeeId, payload, reason }),
+  })
+  if (!response.ok) throw await parseApiError(response, 'The existing employee could not be added to onboarding.')
   return onboardingActionResultSchema.parse(await response.json())
 }
 

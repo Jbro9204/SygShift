@@ -5315,6 +5315,47 @@ async function handleHrOnboardingApi(
     return json({ ...result, requestId }, 201)
   }
 
+  if (url.pathname === '/api/v1/hr/onboarding/options') {
+    if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+    requireHrOnboardingRelease(environment)
+    requireSessionPermission(session.context, 'hr.onboarding.manage')
+    const search = (url.searchParams.get('search') ?? '').trim()
+    if (search.length > 120) throw new ApiError('invalid_onboarding_search', 422, 'Search must be 120 characters or fewer.')
+    const rawLimit = Number(url.searchParams.get('limit') ?? 25)
+    const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 1), 50) : 25
+    const result = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_get_hr_onboarding_options',
+      { target_actor_id: session.context.employee_id, target_search: search, target_limit: limit },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId })
+  }
+
+  if (url.pathname === '/api/v1/hr/onboarding/existing') {
+    if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+    requireHrOnboardingRelease(environment)
+    requireSessionPermission(session.context, 'hr.onboarding.manage')
+    const body = await readJsonBody(request)
+    const employeeId = requiredText(body.employeeId, 'Employee', 36)
+    if (!validUuid(employeeId)) throw new ApiError('invalid_onboarding_employee', 422, 'Choose a valid employee.')
+    const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
+      ? body.payload as Record<string, unknown>
+      : {}
+    const result = await callRpc<Record<string, unknown>>(
+      { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+      'service_hr_onboarding_launch_existing',
+      {
+        target_actor_id: session.context.employee_id,
+        target_employee_id: employeeId,
+        target_payload: payload,
+        target_reason: requiredText(body.reason, 'Audit reason', 1000),
+      },
+      session.config.serviceRoleKey,
+    )
+    return json({ ...result, requestId }, 201)
+  }
+
   if (url.pathname === '/api/v1/hr/onboarding/workspace') {
     if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
     requireSessionPermission(session.context, 'hr.onboarding.view')
@@ -5418,6 +5459,69 @@ async function handleHrOnboardingApi(
   }
 
   return errorJson('not_found', requestId, 404)
+}
+
+async function handleUserAccountActivityReportApi(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+): Promise<Response> {
+  if (request.method !== 'GET') return errorJson('method_not_allowed', requestId, 405)
+  const url = new URL(request.url)
+  if (url.pathname !== '/api/v1/reports/user-account-activity') return errorJson('not_found', requestId, 404)
+  const session = await requireRecentHrSession(request, environment)
+  requireSessionPermission(session.context, 'reports.account_activity.view')
+
+  const search = (url.searchParams.get('search') ?? '').trim()
+  if (search.length > 120) throw new ApiError('invalid_account_activity_search', 422, 'Search must be 120 characters or fewer.')
+  const employmentStatus = url.searchParams.get('employmentStatus') ?? ''
+  const accountStatus = url.searchParams.get('accountStatus') ?? ''
+  const loginStatus = url.searchParams.get('loginStatus') ?? ''
+  const mfaStatus = url.searchParams.get('mfaStatus') ?? ''
+  const role = (url.searchParams.get('role') ?? '').trim()
+  const source = url.searchParams.get('source') ?? ''
+  const allowedEmploymentStatuses = new Set(['', 'onboarding', 'active', 'leave', 'inactive', 'separated'])
+  const allowedAccountStatuses = new Set(['', 'not_created', 'active', 'disabled', 'setup_incomplete'])
+  const allowedLoginStatuses = new Set(['', 'never_signed_in', 'recent', 'stale'])
+  const allowedMfaStatuses = new Set(['', 'required_missing', 'enrolled', 'not_required'])
+  const allowedSources = new Set(['', 'native', 'platform', 'sygsphere'])
+  if (!allowedEmploymentStatuses.has(employmentStatus) || !allowedAccountStatuses.has(accountStatus)
+    || !allowedLoginStatuses.has(loginStatus) || !allowedMfaStatuses.has(mfaStatus)
+    || !allowedSources.has(source) || role.length > 80) {
+    throw new ApiError('invalid_account_activity_filters', 422, 'Choose supported account activity filters.')
+  }
+  const staleDaysValue = Number(url.searchParams.get('staleDays') ?? 30)
+  const staleDays = [7, 30, 60, 90].includes(staleDaysValue) ? staleDaysValue : 30
+  const pageSizeValue = Number(url.searchParams.get('pageSize') ?? 25)
+  const pageSize = [10, 25, 50].includes(pageSizeValue) ? pageSizeValue : 25
+  const offsetValue = Number(url.searchParams.get('offset') ?? 0)
+  const offset = Number.isInteger(offsetValue) ? Math.max(offsetValue, 0) : 0
+  const exportRequested = url.searchParams.get('export') === 'true'
+  if (exportRequested) requireSessionPermission(session.context, 'reports.account_activity.export')
+
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_get_user_account_activity_report',
+    {
+      target_actor_id: session.context.employee_id,
+      target_search: search,
+      target_employment_status: employmentStatus,
+      target_account_status: accountStatus,
+      target_login_status: loginStatus,
+      target_mfa_status: mfaStatus,
+      target_role: role,
+      target_source: source,
+      target_stale_days: staleDays,
+      target_page_size: pageSize,
+      target_offset: offset,
+      target_export: exportRequested,
+      target_mfa_method: session.mfa.method,
+      target_mfa_verified_at: session.mfa.verifiedAt,
+      target_request_id: requestId,
+    },
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
 }
 
 function disabledHrLeaveWorkspace(requestId: string): Record<string, unknown> {
@@ -8989,6 +9093,21 @@ export default {
             : errorJson('hr_stage9_request_failed', requestId, 500, 'The HR workspace request could not be completed.')
         }
       }
+    } else if (url.pathname === '/api/v1/reports/user-account-activity') {
+      try {
+        response = await handleUserAccountActivityReportApi(request, environment, requestId)
+      } catch (error) {
+        if (error instanceof Response) {
+          const payload = await error.json().catch(() => ({ error: 'auth_required' })) as { error?: string }
+          response = errorJson(payload.error ?? 'auth_required', requestId, error.status)
+        } else {
+          response = error instanceof ApiError
+            ? errorJson(error.code, requestId, error.status, error.message)
+            : error instanceof SupabaseRequestError && error.status < 500
+              ? errorJson('account_activity_report_rejected', requestId, error.status === 404 ? 404 : 422, error.message)
+              : errorJson('account_activity_report_failed', requestId, 500, 'The user account activity report could not be loaded.')
+        }
+      }
     } else if (url.pathname.startsWith('/api/v1/hr/onboarding')) {
       try {
         response = await handleHrOnboardingApi(request, environment, requestId)
@@ -8999,7 +9118,9 @@ export default {
         } else {
           response = error instanceof ApiError
             ? errorJson(error.code, requestId, error.status, error.message)
-            : errorJson('hr_onboarding_request_failed', requestId, 500, 'The Onboarding request could not be completed.')
+            : error instanceof SupabaseRequestError && error.status < 500
+              ? errorJson('hr_onboarding_rejected', requestId, error.status === 404 ? 404 : 422, error.message)
+              : errorJson('hr_onboarding_request_failed', requestId, 500, 'The Onboarding request could not be completed.')
         }
       }
     } else if (url.pathname.startsWith('/api/v1/hr/automation')) {

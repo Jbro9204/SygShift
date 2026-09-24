@@ -18,6 +18,7 @@ import { PatrolActivityReportWorkspace } from '../reports/PatrolActivityReportWo
 import { ScheduledOvertimeForecastWorkspace } from '../reports/ScheduledOvertimeForecastWorkspace'
 import { AttendanceReportWorkspace } from '../reports/AttendanceReportWorkspace'
 import { ShortNoticeCallOutReportWorkspace } from '../reports/ShortNoticeCallOutReportWorkspace'
+import { UserAccountActivityReportWorkspace } from '../reports/UserAccountActivityReportWorkspace'
 
 const pageSizes = [10, 25, 50] as const
 const rangeStorageKey = 'sygshift-reports-range'
@@ -117,6 +118,7 @@ function ReportLibrary({ from, permissions, through }: { from: string; permissio
   const canViewPatrolReport = permissions.includes('patrol.reports.view') || permissions.includes('patrol.manage')
   const canViewClientReport = permissions.includes('clients.activity.view') || permissions.includes('clients.manage')
   const canViewHrReports = permissions.includes('hr.reporting.view')
+  const canViewAccountActivityReport = permissions.includes('reports.account_activity.view')
   const reportQuery = useQuery({ queryKey: ['operations-report'], queryFn: getOperationsReport, enabled: isSupabaseConfigured && canViewOperationalSummary })
   const attentionQuery = useQuery({
     queryKey: ['reports-attention-preview', from, through],
@@ -159,6 +161,7 @@ function ReportLibrary({ from, permissions, through }: { from: string; permissio
     <section className="reports-catalog" aria-labelledby="reports-catalog-title">
       <div className="reports-section-heading"><div><p className="eyebrow">Report library</p><h2 id="reports-catalog-title">Choose one report</h2><p>Each report opens in a focused, paginated workspace.</p></div></div>
       <div className="reports-report-grid">
+        {canViewAccountActivityReport ? <ReportCatalogCard category="HR & security" description="Review employee account readiness, completed sign-ins, never-used accounts, inactive access, MFA enrollment, active sessions, assigned roles, and security exceptions." path="/reports/userAccountActivity" title="User Account & Sign-In Activity" /> : null}
         {canViewHrReports ? <ReportCatalogCard category="HR attendance" description="Identify employees who called out with less than four hours’ notice, including after-start and no-call/no-show records, coverage outcomes, repeat occurrences, and HR review status." path={`/reports/shortNoticeCallOuts?from=${from}&through=${through}`} title="Short-Notice Call-Outs" /> : null}
         {canViewTimeReports ? <ReportCatalogCard category="Workforce planning" description="See who is scheduled above 40 hours, which assignments create the total, and where qualified Flex capacity may exist." path="/reports/scheduledOvertimeForecast" title="Scheduled Overtime Forecast" /> : null}
         {canViewClientReport ? <ReportCatalogCard category="Client operations" description="Review client status, renewals, linked sites, contacts, protected documents, shifts, patrol hits, incidents, and service history." path="/clients" title="Client Portfolio & Activity" /> : null}
@@ -166,7 +169,7 @@ function ReportLibrary({ from, permissions, through }: { from: string; permissio
         {canViewLicensingReport ? <ReportCatalogCard category="Licensing & credentials" description="See who is licensed, expiring, expired, pending review, restricted, or missing a required license." path="/reports/licensingStatus" title="Guard Licensing Status" /> : null}
         {canViewTimeReports ? operationalReportDefinitions.map((definition) => <ReportCatalogCard category="Time & attendance" description={definition.description} key={definition.key} path={`/reports/${definition.key}?from=${from}&through=${through}&scope=active&sort=priority`} title={definition.title} />) : null}
       </div>
-      {!canViewLicensingReport && !canViewTimeReports && !canViewPatrolReport && !canViewClientReport && !canViewHrReports ? <div className="report-empty">No report library items are available with your current permissions.</div> : null}
+      {!canViewLicensingReport && !canViewTimeReports && !canViewPatrolReport && !canViewClientReport && !canViewHrReports && !canViewAccountActivityReport ? <div className="report-empty">No report library items are available with your current permissions.</div> : null}
     </section>
   </>
 }
@@ -239,6 +242,7 @@ export function ReportsPage() {
   const isPatrolActivityReport = reportKey === 'patrolActivity'
   const isScheduledOvertimeForecast = reportKey === 'scheduledOvertimeForecast'
   const isShortNoticeCallOutReport = reportKey === 'shortNoticeCallOuts'
+  const isUserAccountActivityReport = reportKey === 'userAccountActivity'
   const sessionQuery = useQuery({
     enabled: isSupabaseConfigured,
     queryFn: getSessionContext,
@@ -253,6 +257,8 @@ export function ReportsPage() {
   const canViewTimeReport = permissions.includes('time.reports.view')
   const canViewShortNoticeCallOutReport = permissions.includes('hr.reporting.view')
   const canExportShortNoticeCallOutReport = permissions.includes('hr.reporting.export')
+  const canViewUserAccountActivityReport = permissions.includes('reports.account_activity.view')
+  const canExportUserAccountActivityReport = permissions.includes('reports.account_activity.export')
 
   useEffect(() => {
     if (searchParams.has('from') && searchParams.has('through')) return
@@ -273,7 +279,7 @@ export function ReportsPage() {
 
   return <div className="page page--reports">
     {!reportKey ? <section className="page-intro reports-page-intro"><div><p className="eyebrow">Operations</p><h1>Reports</h1><p className="page-summary">Choose a focused operational report without loading every record into one screen.</p></div><RangeControls from={from} onChange={changeRange} through={through} /></section> : null}
-    {reportKey && !definition && !isLicensingStatusReport && !isPatrolActivityReport && !isScheduledOvertimeForecast && !isShortNoticeCallOutReport ? <DataStatePanel icon={ShieldAlert} title="Report not found" tone="error"><p>This report is not part of the approved report library.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
+    {reportKey && !definition && !isLicensingStatusReport && !isPatrolActivityReport && !isScheduledOvertimeForecast && !isShortNoticeCallOutReport && !isUserAccountActivityReport ? <DataStatePanel icon={ShieldAlert} title="Report not found" tone="error"><p>This report is not part of the approved report library.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
     {!reportKey && sessionQuery.isPending ? <DataStatePanel icon={FileBarChart} title="Verifying report access"><p>Checking your current report permissions.</p></DataStatePanel> : null}
     {!reportKey && sessionQuery.isError ? <DataStatePanel icon={ShieldAlert} title="Report access unavailable" tone="error"><p>{sessionQuery.error.message}</p></DataStatePanel> : null}
     {!reportKey && sessionQuery.isSuccess ? <ReportLibrary from={from} permissions={permissions} through={through} /> : null}
@@ -296,5 +302,9 @@ export function ReportsPage() {
     {isShortNoticeCallOutReport && sessionQuery.isError ? <DataStatePanel icon={ShieldAlert} title="HR report access unavailable" tone="error"><p>{sessionQuery.error.message}</p></DataStatePanel> : null}
     {isShortNoticeCallOutReport && sessionQuery.isSuccess && !canViewShortNoticeCallOutReport ? <DataStatePanel icon={ShieldAlert} title="HR reporting access required" tone="error"><p>This protected attendance report is limited to HR reporting users with verified MFA.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
     {isShortNoticeCallOutReport && canViewShortNoticeCallOutReport ? <ShortNoticeCallOutReportWorkspace canExport={canExportShortNoticeCallOutReport} from={from} onRangeChange={changeRange} through={through} /> : null}
+    {isUserAccountActivityReport && sessionQuery.isPending ? <DataStatePanel icon={FileBarChart} title="Verifying account report access"><p>Checking your current HR and security reporting permission.</p></DataStatePanel> : null}
+    {isUserAccountActivityReport && sessionQuery.isError ? <DataStatePanel icon={ShieldAlert} title="Account report access unavailable" tone="error"><p>{sessionQuery.error.message}</p></DataStatePanel> : null}
+    {isUserAccountActivityReport && sessionQuery.isSuccess && !canViewUserAccountActivityReport ? <DataStatePanel icon={ShieldAlert} title="Account activity report access required" tone="error"><p>This protected account report is limited to Admin and Human Resources Manager users unless access is explicitly granted.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
+    {isUserAccountActivityReport && canViewUserAccountActivityReport ? <UserAccountActivityReportWorkspace canExport={canExportUserAccountActivityReport} /> : null}
   </div>
 }

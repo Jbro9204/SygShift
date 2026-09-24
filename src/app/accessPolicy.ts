@@ -34,6 +34,7 @@ export const reportRoutePermissions = [
   'clients.activity.view',
   'clients.manage',
   'hr.reporting.view',
+  'reports.account_activity.view',
 ] as const
 
 export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = {
@@ -150,6 +151,9 @@ export function canAccessRoute(
 ): boolean {
   if (pathname === '/reports/shortNoticeCallOuts') {
     return hasEffectivePermission(session, 'hr.reporting.view')
+  }
+  if (pathname === '/reports/userAccountActivity') {
+    return hasEffectivePermission(session, 'reports.account_activity.view')
   }
   const policyKey = pathname.startsWith('/patrol/')
     ? '/patrol/:patrolTab'
