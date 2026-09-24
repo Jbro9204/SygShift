@@ -1,7 +1,7 @@
 # SygShift Licensing Center — Employee Self-Service Major Update
 
 Date: 09/24/2026  
-Status: Approved implementation scope  
+Status: Released to production  
 System: Existing SygShift Licensing Center
 
 ## Product decision
@@ -158,3 +158,10 @@ expiration process.
   server storage paths.
 - Current management Licensing functions, reports, expiration alerts, schedule
   eligibility, timekeeping, and unrelated modules continue to work.
+
+## Release record
+
+All acceptance criteria above were implemented and released on 09/24/2026.
+The complete database, authorization, responsive-design, regression, deployment,
+and production verification record is maintained in
+`docs/changelogs/CHANGELOG_09-24-2026_EMPLOYEE_LICENSING_CENTER_MAJOR_UPDATE.md`.

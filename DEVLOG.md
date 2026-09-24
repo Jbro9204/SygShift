@@ -2860,3 +2860,25 @@ pnpm exec wrangler deploy --keep-vars
   `e29f8937-d62f-40a9-9c54-b78aba44ed5d`; both production origins passed
   health, readiness, route, and exact-asset verification.
 - See `docs/changelogs/CHANGELOG_09-24-2026_REPORT_PDF_LAYOUT_REPAIR.md`.
+
+# 09/24/2026 - Existing Licensing Center Major Update
+
+- Expanded the existing Licensing Center with employee self-service for new
+  credentials, renewals, corrections, renewal-in-progress evidence, protected
+  multi-file uploads, status history, correction guidance, and secure document
+  access.
+- Preserved the established management worklist and added a searchable review
+  queue that promotes approved submissions into the canonical credential record
+  with immutable prior-version history.
+- Enforced ownership, Licensing permissions, recent MFA, service-role upload
+  boundaries, forced RLS, protected storage, scan-before-access, audit, and
+  permission-scoped notifications across the database and Worker.
+- Applied migration `20260924213024`; rollback-only production verification
+  passed and left no fixture rows.
+- Passed 307 files / 1,622 tests, strict TypeScript, zero-warning app/Worker
+  lint, production builds, and the 42/42 mandatory Time Clock matrix.
+- Released source `00f6c59` as Cloudflare Worker
+  `789b03a0-3619-4ce7-9d00-d5e1e62d2fbe`; both production origins passed
+  health, readiness, exact-asset, and authenticated Licensing workspace checks.
+- See
+  `docs/changelogs/CHANGELOG_09-24-2026_EMPLOYEE_LICENSING_CENTER_MAJOR_UPDATE.md`.
