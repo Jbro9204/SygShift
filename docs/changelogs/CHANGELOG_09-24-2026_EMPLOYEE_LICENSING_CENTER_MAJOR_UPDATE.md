@@ -27,6 +27,9 @@ review queue in the same workspace.
   that reopen the exact submission.
 - Uses responsive, rounded, consistent SygShift controls and layouts for phones,
   small laptops, high zoom, light mode, and dark mode.
+- Replaces raw `null days remaining` and negative day counts in the retained
+  management worklist with clear **No expiration on file** and **Expired _n_
+  days ago** language.
 
 ## Licensing and management experience
 
@@ -77,7 +80,7 @@ review queue in the same workspace.
 
 ## Verification
 
-- Full `pnpm check` passed: 307 test files / 1,622 tests, strict TypeScript,
+- Full `pnpm check` passed: 307 test files / 1,623 tests, strict TypeScript,
   zero-warning application/Worker lint, production builds, and static-asset
   validation.
 - Mandatory actual-component Time Clock preservation matrix passed 42/42 across
@@ -94,16 +97,16 @@ review queue in the same workspace.
 
 ## Release references
 
-- Source commit: `00f6c592ff0ef3b4bde395acb1f4ef470480c9a0`
-- Cloudflare Worker version: `789b03a0-3619-4ce7-9d00-d5e1e62d2fbe`
+- Source commit: `45e11b47a312f6b3d71760d5cae73d08a3c255ee`
+- Cloudflare Worker version: `b7ceb004-13a4-4d2f-930e-a0a7decc3827`
 - Database migration: `20260924213024`
 - Rollback tag: `rollback/pre-employee-licensing-center-major-update-20260924`
-- Verified application asset: `/assets/index-BhF8J0KG.js`
-  (`B94BE0155657E0DC879A15D4F3446B35861222C891672BFB39A83E01336193DE`)
+- Verified application asset: `/assets/index-CT5HEqlV.js`
+  (`217A33E0B397E75AACFFE83A9F86B5BE9FDF5B251E5D632B80CCAE1736C39CAD`)
 - Verified stylesheet: `/assets/index-VKZYXlD9.css`
   (`94FFE5C2AE5DA0F8EFB1157D42BB2205F879CEA3F7CC4C8CFEC29CC3E42550AE`)
-- Verified Licensing Center asset: `/assets/LicensingCenterPage-Brirj9dx.js`
-  (`DBA1BDB61A3CE992F500A312607F6F93E43E42AFD7039A925A2A6B9F08AEA363`)
+- Verified Licensing Center asset: `/assets/LicensingCenterPage-DgetXqlR.js`
+  (`819782D5815F01ADE70876215C073B8821D5276C47E8440C3D84C09B2CDDD57B`)
 
 ## Operator note
 

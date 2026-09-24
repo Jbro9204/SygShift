@@ -2875,10 +2875,12 @@ pnpm exec wrangler deploy --keep-vars
   permission-scoped notifications across the database and Worker.
 - Applied migration `20260924213024`; rollback-only production verification
   passed and left no fixture rows.
-- Passed 307 files / 1,622 tests, strict TypeScript, zero-warning app/Worker
+- Removed raw null and negative expiration-day wording from the retained team
+  worklist and replaced it with clear no-expiration and expired-day language.
+- Passed 307 files / 1,623 tests, strict TypeScript, zero-warning app/Worker
   lint, production builds, and the 42/42 mandatory Time Clock matrix.
-- Released source `00f6c59` as Cloudflare Worker
-  `789b03a0-3619-4ce7-9d00-d5e1e62d2fbe`; both production origins passed
+- Released source `45e11b4` as Cloudflare Worker
+  `b7ceb004-13a4-4d2f-930e-a0a7decc3827`; both production origins passed
   health, readiness, exact-asset, and authenticated Licensing workspace checks.
 - See
   `docs/changelogs/CHANGELOG_09-24-2026_EMPLOYEE_LICENSING_CENTER_MAJOR_UPDATE.md`.
