@@ -1,7 +1,7 @@
 # SygShift Licensing Center — Employee Self-Service Major Update
 
-Date: 09/24/2026  
-Status: Released to production  
+Date: 09/24/2026
+Status: Released to production
 System: Existing SygShift Licensing Center
 
 ## Product decision
