@@ -133,6 +133,16 @@ function formatDate(value: string | null): string {
   }).format(new Date(`${value.slice(0, 10)}T12:00:00`))
 }
 
+function formatExpirationTiming(daysRemaining: number | null): string {
+  if (daysRemaining === null) return 'Expiration timing unavailable'
+  if (daysRemaining === 0) return 'Expires today'
+  if (daysRemaining < 0) {
+    const elapsedDays = Math.abs(daysRemaining)
+    return `Expired ${elapsedDays} day${elapsedDays === 1 ? '' : 's'} ago`
+  }
+  return `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining`
+}
+
 function formatTimestamp(value: string | null): string {
   if (!value) return '—'
   return formatOperationalDateTime(value)
@@ -1556,9 +1566,9 @@ function LicensingManagementCenter() {
               ? 'No credentials on file'
               : `${credentialNames.slice(0, 2).join(', ')}${credentialNames.length > 2 ? ` +${credentialNames.length - 2} more` : ''}`
             const missingCount = employee.credentials.filter((credential) => !credential.credentialId && credential.required).length
-            const closestExpirationCredential = employee.credentials.find((credential) => (
-              credential.expirationDate === employee.closestExpirationDate
-            ))
+            const closestExpirationCredential = employee.closestExpirationDate
+              ? employee.credentials.find((credential) => credential.expirationDate === employee.closestExpirationDate)
+              : undefined
             const renewalCount = activeCredentialRenewalCount(employee.credentials)
             return (
               <div className="licensing-row licensing-row--employee-summary" key={employee.employeeId} role="row">
@@ -1574,7 +1584,7 @@ function LicensingManagementCenter() {
                   <strong>{formatDate(employee.closestExpirationDate)}</strong>
                   <span>
                     {closestExpirationCredential
-                      ? `${credentialDisplayName(closestExpirationCredential)} | ${closestExpirationCredential.daysRemaining} days remaining`
+                      ? `${credentialDisplayName(closestExpirationCredential)} | ${formatExpirationTiming(closestExpirationCredential.daysRemaining)}`
                       : 'No expiration on file'}
                   </span>
                 </div>

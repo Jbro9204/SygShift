@@ -35,6 +35,13 @@ describe('Licensing Center compact worklist', () => {
     expect(page).toContain('Armed Guard License / Endorsement')
   })
 
+  it('never exposes null or negative day-count language in the worklist', () => {
+    expect(page).toContain("if (daysRemaining === null) return 'Expiration timing unavailable'")
+    expect(page).toContain('return `Expired ${elapsedDays} day${elapsedDays === 1 ? \'\' : \'s\'} ago`')
+    expect(page).toContain('employee.closestExpirationDate')
+    expect(page).not.toContain('${closestExpirationCredential.daysRemaining} days remaining')
+  })
+
   it('has dedicated responsive styles for the worklist and full-page profile', () => {
     expect(styles).toContain('.licensing-profile-page')
     expect(styles).toContain('.licensing-credential-accordion__trigger')
