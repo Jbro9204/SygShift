@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
 import type { ShortNoticeCallOutReport, ShortNoticeCallOutRow } from '../data/shortNoticeCallOutReport'
 import type { XlsxSheet } from '../lib/xlsxWorkbook'
+import { addReportPdfFooters, addReportPdfPage, drawReportPdfText } from './pdfReportLayout'
 import { formatUsDateKey } from '../time/timeRules'
 
 export interface ShortNoticeCallOutFilters {
@@ -153,7 +154,7 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
 }
 
 function drawLines(page: PDFPage, lines: string[], x: number, y: number, font: PDFFont, size: number, color = rgb(0.18, 0.18, 0.18)) {
-  lines.forEach((line, index) => page.drawText(line, { x, y: y - index * (size + 3), font, size, color }))
+  lines.forEach((line, index) => drawReportPdfText(page, line, { x, y: y - index * (size + 3), font, size, color }))
 }
 
 export async function shortNoticeCallOutPdf(report: ShortNoticeCallOutReport, rows: ShortNoticeCallOutRow[], filterDescription: string): Promise<Uint8Array> {
@@ -166,17 +167,19 @@ export async function shortNoticeCallOutPdf(report: ShortNoticeCallOutReport, ro
   const ink = rgb(0.10, 0.11, 0.12)
   const muted = rgb(0.35, 0.34, 0.31)
   const gold = rgb(0.76, 0.53, 0.18)
-  let page = document.addPage([pageWidth, pageHeight])
-  let y = pageHeight - margin
-
-  const addHeader = () => {
-    page.drawRectangle({ x: 0, y: pageHeight - 86, width: pageWidth, height: 86, color: ink })
-    page.drawText('SYGSHIFT HR REPORTING', { x: margin, y: pageHeight - 33, font: bold, size: 9, color: gold })
-    page.drawText('Short-Notice Call-Out Report', { x: margin, y: pageHeight - 57, font: bold, size: 20, color: rgb(1, 1, 1) })
-    y = pageHeight - 112
+  const beginPage = () => addReportPdfPage({
+    bold, document, height: pageHeight, kicker: 'SygShift HR Reporting', margin, regular,
+    subtitle: 'Protected attendance and operational-notice review',
+    title: 'Short-Notice Call-Out Report', width: pageWidth,
+  })
+  let state = beginPage()
+  let page = state.page
+  let y = state.bodyTop
+  const addPage = () => {
+    state = beginPage()
+    page = state.page
+    y = state.bodyTop
   }
-  const addPage = () => { page = document.addPage([pageWidth, pageHeight]); addHeader() }
-  addHeader()
 
   drawLines(page, [`Date range: ${formatUsDateKey(report.fromDate)} - ${formatUsDateKey(report.throughDate)}`, `Filters: ${filterDescription}`], margin, y, regular, 9, muted)
   y -= 42
@@ -189,8 +192,8 @@ export async function shortNoticeCallOutPdf(report: ShortNoticeCallOutReport, ro
     const width = 100
     const x = margin + index * 105
     page.drawRectangle({ x, y: y - 42, width, height: 42, borderColor: gold, borderWidth: 1, color: rgb(0.98, 0.97, 0.94) })
-    page.drawText(label, { x: x + 8, y: y - 15, font: bold, size: 7.5, color: muted })
-    page.drawText(String(value), { x: x + 8, y: y - 34, font: bold, size: 16, color: ink })
+    drawReportPdfText(page, label, { x: x + 8, y: y - 15, font: bold, size: 7.5, color: muted })
+    drawReportPdfText(page, String(value), { x: x + 8, y: y - 34, font: bold, size: 16, color: ink })
   })
   y -= 68
   drawLines(page, wrapText(report.countingRule, regular, 8.5, pageWidth - margin * 2), margin, y, regular, 8.5, muted)
@@ -202,8 +205,8 @@ export async function shortNoticeCallOutPdf(report: ShortNoticeCallOutReport, ro
     if (y - cardHeight < 54) addPage()
     page.drawRectangle({ x: margin, y: y - cardHeight, width: pageWidth - margin * 2, height: cardHeight, borderColor: rgb(0.79, 0.76, 0.68), borderWidth: 0.8, color: rgb(1, 1, 1) })
     page.drawRectangle({ x: margin, y: y - cardHeight, width: 4, height: cardHeight, color: row.noticeMinutes < 0 ? rgb(0.65, 0.22, 0.18) : gold })
-    page.drawText(row.employeeName, { x: margin + 14, y: y - 19, font: bold, size: 11, color: ink })
-    page.drawText(`${formatUsDateKey(row.operationalDate)} | ${occurrenceTypeLabels[row.occurrenceType]} | ${formatNoticeMinutes(row.noticeMinutes)}`, { x: margin + 14, y: y - 35, font: regular, size: 8.5, color: muted })
+    drawReportPdfText(page, row.employeeName, { x: margin + 14, y: y - 19, font: bold, size: 11, color: ink })
+    drawReportPdfText(page, `${formatUsDateKey(row.operationalDate)} | ${occurrenceTypeLabels[row.occurrenceType]} | ${formatNoticeMinutes(row.noticeMinutes)}`, { x: margin + 14, y: y - 35, font: regular, size: 8.5, color: muted })
     const left = [
       `Shift: ${formatOperationalDateTime(row.scheduledStartAt, row.timeZone)}`,
       `Received: ${formatOperationalDateTime(row.callReceivedAt, row.timeZone)}`,
@@ -218,12 +221,12 @@ export async function shortNoticeCallOutPdf(report: ShortNoticeCallOutReport, ro
     ]
     drawLines(page, left, margin + 14, y - 54, regular, 8, ink)
     drawLines(page, right, 323, y - 54, regular, 8, ink)
-    page.drawText('Reason / note', { x: margin + 14, y: y - 104, font: bold, size: 7.5, color: muted })
+    drawReportPdfText(page, 'Reason / note', { x: margin + 14, y: y - 104, font: bold, size: 7.5, color: muted })
     drawLines(page, reasonLines, margin + 14, y - 116, regular, 8.5, ink)
     y -= cardHeight + 10
   }
 
-  if (!rows.length) page.drawText('No short-notice call-outs match the selected filters.', { x: margin, y, font: bold, size: 11, color: muted })
-  document.getPages().forEach((target, index) => target.drawText(`Protected HR report | Page ${index + 1} of ${document.getPageCount()}`, { x: margin, y: 24, font: regular, size: 7.5, color: muted }))
-  return document.save()
+  if (!rows.length) drawReportPdfText(page, 'No short-notice call-outs match the selected filters.', { x: margin, y, font: bold, size: 11, color: muted })
+  addReportPdfFooters(document, regular, 'Protected HR attendance report')
+  return document.save({ useObjectStreams: false })
 }

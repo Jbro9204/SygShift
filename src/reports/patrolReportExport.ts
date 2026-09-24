@@ -1,6 +1,7 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, StandardFonts } from 'pdf-lib'
 import type { PatrolReport } from '../data/patrol'
 import { downloadXlsxWorkbook, type XlsxSheet } from '../lib/xlsxWorkbook'
+import { addReportPdfFooters, addReportPdfPage, drawReportPdfText, reportPdfColors } from './pdfReportLayout'
 
 export type PatrolReportProfile = 'internal' | 'client'
 
@@ -95,18 +96,10 @@ export function downloadPatrolXlsx(report: PatrolReport, profile: PatrolReportPr
   return name
 }
 
-function clipped(value: unknown, length: number): string {
-  const text = String(value ?? '').replace(/\s+/g, ' ').trim()
-  return text.length > length ? `${text.slice(0, length - 1)}…` : text
-}
-
-export async function downloadPatrolPdf(report: PatrolReport, profile: PatrolReportProfile): Promise<string> {
+export async function patrolReportPdf(report: PatrolReport, profile: PatrolReportProfile): Promise<Uint8Array> {
   const pdf = await PDFDocument.create()
   const regular = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
-  const gold = rgb(0.79, 0.56, 0.19)
-  const charcoal = rgb(0.08, 0.09, 0.1)
-  const cream = rgb(0.97, 0.95, 0.91)
   const columns = reportColumns(profile).filter((column) => !column.label.includes('Note') && !column.label.includes('Employee ID') && !column.label.includes('Location Verification'))
   const pageWidth = 792
   const pageHeight = 612
@@ -114,27 +107,47 @@ export async function downloadPatrolPdf(report: PatrolReport, profile: PatrolRep
   const rowHeight = 24
   const usableWidth = pageWidth - margin * 2
   const columnWidth = usableWidth / columns.length
-  let page = pdf.addPage([pageWidth, pageHeight])
-  let y = pageHeight - margin
-
-  const drawHeader = () => {
-    page.drawRectangle({ x: 0, y: pageHeight - 78, width: pageWidth, height: 78, color: charcoal })
-    page.drawText('SygShift Patrol Activity', { x: margin, y: pageHeight - 39, font: bold, size: 19, color: cream })
-    page.drawText(`${profile === 'internal' ? 'Internal operational report' : 'Client-ready report'} · ${dateTime(report.generatedAt)}`, { x: margin, y: pageHeight - 58, font: regular, size: 9, color: cream })
-    y = pageHeight - 102
-    page.drawRectangle({ x: margin, y: y - 5, width: usableWidth, height: 23, color: gold })
-    columns.forEach((column, index) => page.drawText(clipped(column.label, 17), { x: margin + index * columnWidth + 4, y: y + 3, font: bold, size: 7.2, color: charcoal }))
-    y -= rowHeight
+  const beginPage = () => {
+    const state = addReportPdfPage({
+      bold, document: pdf, height: pageHeight, kicker: 'SygShift Operations Reporting', margin, regular,
+      subtitle: `${profile === 'internal' ? 'Internal operational report' : 'Client-ready report'} | Generated ${dateTime(report.generatedAt)}`,
+      title: 'Patrol Activity', width: pageWidth,
+    })
+    const headerTop = state.bodyTop
+    state.page.drawRectangle({ x: margin, y: headerTop - 22, width: usableWidth, height: 22, color: reportPdfColors.gold })
+    columns.forEach((column, index) => {
+      drawReportPdfText(state.page, column.label, {
+        x: margin + index * columnWidth + 4, y: headerTop - 14,
+        font: bold, size: 7.1, color: reportPdfColors.ink,
+        maximumWidth: columnWidth - 8,
+      })
+    })
+    return { ...state, y: headerTop - 26 }
   }
 
-  drawHeader()
-  for (const row of report.rows) {
-    if (y < margin + rowHeight) { page = pdf.addPage([pageWidth, pageHeight]); drawHeader() }
-    if (Math.round((pageHeight - y) / rowHeight) % 2 === 0) page.drawRectangle({ x: margin, y: y - 5, width: usableWidth, height: rowHeight, color: rgb(0.96, 0.95, 0.92) })
-    columns.forEach((column, index) => page.drawText(clipped(column.value(row), 19), { x: margin + index * columnWidth + 4, y: y + 3, font: regular, size: 7, color: charcoal }))
-    y -= rowHeight
-  }
-  const bytes = await pdf.save()
+  let current = beginPage()
+  report.rows.forEach((row, rowIndex) => {
+    if (current.y - rowHeight < current.bottom) current = beginPage()
+    const rowTop = current.y
+    const rowBottom = rowTop - rowHeight
+    if (rowIndex % 2 === 1) current.page.drawRectangle({ x: margin, y: rowBottom, width: usableWidth, height: rowHeight, color: reportPdfColors.soft })
+    columns.forEach((column, index) => drawReportPdfText(current.page, column.value(row), {
+      x: margin + index * columnWidth + 4, y: rowTop - 15,
+      font: regular, size: 7, color: reportPdfColors.ink,
+      maximumWidth: columnWidth - 8,
+    }))
+    current.page.drawLine({
+      start: { x: margin, y: rowBottom }, end: { x: pageWidth - margin, y: rowBottom },
+      thickness: 0.45, color: reportPdfColors.rule,
+    })
+    current.y = rowBottom
+  })
+  addReportPdfFooters(pdf, regular, profile === 'internal' ? 'Protected internal patrol report' : 'Client-ready patrol report')
+  return pdf.save({ useObjectStreams: false })
+}
+
+export async function downloadPatrolPdf(report: PatrolReport, profile: PatrolReportProfile): Promise<string> {
+  const bytes = await patrolReportPdf(report, profile)
   const name = filename(profile, 'pdf', report.generatedAt)
   downloadBlob(new Blob([bytes as BlobPart], { type: 'application/pdf' }), name)
   return name

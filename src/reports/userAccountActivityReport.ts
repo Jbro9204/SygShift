@@ -1,6 +1,7 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import { PDFDocument, StandardFonts } from 'pdf-lib'
 import type { UserAccountActivityReport, UserAccountActivityRow } from '../data/userAccountActivityReport'
 import type { XlsxSheet } from '../lib/xlsxWorkbook'
+import { addReportPdfFooters, addReportPdfPage, drawReportPdfText, reportPdfColors, type ReportPdfPage } from './pdfReportLayout'
 
 export const accountStateLabels: Record<UserAccountActivityRow['accountState'], string> = {
   not_created: 'No account',
@@ -54,10 +55,6 @@ export function userAccountActivityWorkbook(report: UserAccountActivityReport, f
   }]
 }
 
-function truncate(value: string, maximum: number): string {
-  return value.length <= maximum ? value : `${value.slice(0, Math.max(0, maximum - 1))}…`
-}
-
 export async function userAccountActivityPdf(report: UserAccountActivityReport, filterDescription: string): Promise<Uint8Array> {
   const document = await PDFDocument.create()
   const regular = await document.embedFont(StandardFonts.Helvetica)
@@ -65,58 +62,95 @@ export async function userAccountActivityPdf(report: UserAccountActivityReport, 
   const pageWidth = 792
   const pageHeight = 612
   const margin = 34
-  const ink = rgb(0.09, 0.09, 0.08)
-  const gold = rgb(0.78, 0.55, 0.20)
-  const muted = rgb(0.38, 0.36, 0.33)
-  let page = document.addPage([pageWidth, pageHeight])
-  let y = pageHeight - 34
+  const ink = reportPdfColors.ink
+  const muted = reportPdfColors.muted
+  const columnWidths = [135, 92, 86, 125, 96, 190]
+  const labels = ['Employee', 'Username', 'Account', 'Last completed sign-in', 'MFA / Sessions', 'Next action']
+  const columns = columnWidths.map((width, index) => ({
+    label: labels[index],
+    width,
+    x: margin + columnWidths.slice(0, index).reduce((total, value) => total + value, 0),
+  }))
+  const rowHeight = 28
 
-  const header = () => {
-    page.drawRectangle({ x: 0, y: pageHeight - 76, width: pageWidth, height: 76, color: ink })
-    page.drawText('SYGSHIFT HR & SECURITY REPORTING', { x: margin, y: pageHeight - 27, font: bold, size: 8, color: gold })
-    page.drawText('User Account & Sign-In Activity', { x: margin, y: pageHeight - 52, font: bold, size: 19, color: rgb(1, 1, 1) })
-    y = pageHeight - 98
+  const drawTableHeader = (state: ReportPdfPage, top: number): number => {
+    state.page.drawRectangle({ x: margin, y: top - 22, width: pageWidth - margin * 2, height: 22, color: reportPdfColors.gold })
+    for (const column of columns) {
+      drawReportPdfText(state.page, column.label, {
+        x: column.x + 4, y: top - 14, font: bold, size: 7.4, color: ink,
+        maximumWidth: column.width - 8,
+      })
+    }
+    return top - 26
   }
-  const nextPage = () => { page = document.addPage([pageWidth, pageHeight]); header() }
-  header()
-  page.drawText(`Generated ${formatAccountActivityDate(report.serverTimestamp)} · ${report.totalCount} matching employees`, { x: margin, y, font: regular, size: 9, color: muted })
-  y -= 17
-  page.drawText(truncate(filterDescription, 132), { x: margin, y, font: regular, size: 8, color: muted })
-  y -= 24
 
-  const columns = [
-    { label: 'Employee', x: margin, width: 132 },
-    { label: 'Username', x: margin + 136, width: 90 },
-    { label: 'Account', x: margin + 230, width: 86 },
-    { label: 'Last completed sign-in', x: margin + 320, width: 120 },
-    { label: 'MFA / Sessions', x: margin + 444, width: 92 },
-    { label: 'Next action', x: margin + 540, width: 170 },
-  ]
-  const drawTableHeader = () => {
-    page.drawRectangle({ x: margin, y: y - 5, width: pageWidth - margin * 2, height: 22, color: gold })
-    for (const column of columns) page.drawText(column.label, { x: column.x + 4, y: y + 2, font: bold, size: 7.5, color: ink })
-    y -= 25
+  const beginPage = (firstPage: boolean): { state: ReportPdfPage; y: number } => {
+    const state = addReportPdfPage({
+      bold, document, height: pageHeight, kicker: 'SygShift HR & Security Reporting', margin,
+      regular, subtitle: 'Protected user-access readiness and completed sign-in activity',
+      title: 'User Account & Sign-In Activity', width: pageWidth,
+    })
+    let top = state.bodyTop
+    if (firstPage) {
+      drawReportPdfText(state.page, `Generated ${formatAccountActivityDate(report.serverTimestamp)} | ${report.totalCount} matching employees`, {
+        x: margin, y: top, font: regular, size: 9, color: muted,
+        maximumWidth: pageWidth - margin * 2,
+      })
+      top -= 17
+      drawReportPdfText(state.page, filterDescription, {
+        x: margin, y: top, font: regular, size: 8, color: muted,
+        maximumWidth: pageWidth - margin * 2,
+      })
+      top -= 18
+    } else {
+      drawReportPdfText(state.page, `${report.totalCount} matching employees | Continued`, {
+        x: margin, y: top, font: regular, size: 8, color: muted,
+      })
+      top -= 18
+    }
+    return { state, y: drawTableHeader(state, top) }
   }
-  drawTableHeader()
 
-  for (const row of report.rows) {
-    if (y < 58) { nextPage(); drawTableHeader() }
-    page.drawLine({ start: { x: margin, y: y - 4 }, end: { x: pageWidth - margin, y: y - 4 }, thickness: 0.5, color: rgb(0.84, 0.81, 0.75) })
+  let current = beginPage(true)
+
+  report.rows.forEach((row, rowIndex) => {
+    if (current.y - rowHeight < current.state.bottom) current = beginPage(false)
+    const { page } = current.state
+    const rowTop = current.y
+    const rowBottom = rowTop - rowHeight
+    if (rowIndex % 2 === 1) {
+      page.drawRectangle({ x: margin, y: rowBottom, width: pageWidth - margin * 2, height: rowHeight, color: reportPdfColors.soft })
+    }
     const mfa = row.requiresMfa ? (row.mfaEnrolled ? 'Enrolled' : 'Missing') : 'Not required'
     const values = [
       `${row.employeeName}\n${row.employeeNumber ?? 'No number'}`,
       row.username,
       accountStateLabels[row.accountState],
       formatAccountActivityDate(row.lastCompletedSignInAt),
-      `${mfa} · ${row.activeSessionCount} active`,
+      `${mfa} | ${row.activeSessionCount} active`,
       row.securityException === 'none' ? row.nextAction : securityExceptionLabels[row.securityException],
     ]
     values.forEach((value, index) => {
       const lines = value.split('\n')
-      page.drawText(truncate(lines[0], Math.floor(columns[index].width / 5.1)), { x: columns[index].x + 4, y: y + 3, font: index === 0 ? bold : regular, size: 7.4, color: ink })
-      if (lines[1]) page.drawText(truncate(lines[1], Math.floor(columns[index].width / 4.9)), { x: columns[index].x + 4, y: y - 8, font: regular, size: 6.8, color: muted })
+      const font = index === 0 ? bold : regular
+      const size = index === 3 ? 6.9 : 7.3
+      drawReportPdfText(page, lines[0], {
+        x: columns[index].x + 4, y: rowTop - 12, font, size, color: ink,
+        maximumWidth: columns[index].width - 8,
+      })
+      if (lines[1]) {
+        drawReportPdfText(page, lines[1], {
+          x: columns[index].x + 4, y: rowTop - 22, font: regular, size: 6.7, color: muted,
+          maximumWidth: columns[index].width - 8,
+        })
+      }
     })
-    y -= 28
-  }
-  return document.save()
+    page.drawLine({
+      start: { x: margin, y: rowBottom }, end: { x: pageWidth - margin, y: rowBottom },
+      thickness: 0.5, color: reportPdfColors.rule,
+    })
+    current.y = rowBottom
+  })
+  addReportPdfFooters(document, regular, 'Protected HR & security report')
+  return document.save({ useObjectStreams: false })
 }
