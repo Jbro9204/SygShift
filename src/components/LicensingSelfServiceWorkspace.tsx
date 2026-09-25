@@ -31,7 +31,7 @@ import {
   submitMyLicensingSubmission,
   uploadLicensingSubmissionDocument,
   withdrawMyLicensingSubmission,
-  type LicensingCredential,
+  type MyLicensingCredential,
   type LicensingReviewItem,
   type LicensingSubmission,
   type LicensingSubmissionInput,
@@ -82,7 +82,7 @@ function statusTone(status: LicensingSubmissionStatus): 'green' | 'yellow' | 're
   return 'gray'
 }
 
-function credentialTone(credential: LicensingCredential): 'green' | 'yellow' | 'red' | 'gray' {
+function credentialTone(credential: MyLicensingCredential): 'green' | 'yellow' | 'red' | 'gray' {
   return credential.complianceColor
 }
 
@@ -178,7 +178,7 @@ function SubmissionModal({
   profile,
 }: {
   existing?: LicensingSubmission | null
-  initialCredential?: LicensingCredential | null
+  initialCredential?: MyLicensingCredential | null
   initialType?: MyCredentialType | null
   onClose: () => void
   profile: MyLicensingProfile
@@ -291,7 +291,7 @@ function SubmissionModal({
   )
 }
 
-function CredentialDocumentsModal({ credential, onClose }: { credential: LicensingCredential; onClose: () => void }) {
+function CredentialDocumentsModal({ credential, onClose }: { credential: MyLicensingCredential; onClose: () => void }) {
   const query = useQuery({
     queryFn: () => getLicensingCredentialDocuments(credential.credentialId!, 1, 20),
     queryKey: ['licensing-credential-documents', credential.credentialId, 1, 20],
@@ -308,8 +308,8 @@ function CredentialDocumentsModal({ credential, onClose }: { credential: Licensi
 
 export function MyLicensingWorkspace({ compact = false }: { compact?: boolean }) {
   const queryClient = useQueryClient()
-  const [submissionTarget, setSubmissionTarget] = useState<{ credential?: LicensingCredential | null; existing?: LicensingSubmission | null; type?: MyCredentialType | null } | null>(null)
-  const [documentCredential, setDocumentCredential] = useState<LicensingCredential | null>(null)
+  const [submissionTarget, setSubmissionTarget] = useState<{ credential?: MyLicensingCredential | null; existing?: LicensingSubmission | null; type?: MyCredentialType | null } | null>(null)
+  const [documentCredential, setDocumentCredential] = useState<MyLicensingCredential | null>(null)
   const deepLinkHandled = useRef(false)
   const profileQuery = useQuery({ queryFn: getMyLicensingProfile, queryKey: ['my-licensing-profile'] })
   const withdrawMutation = useMutation({

@@ -274,6 +274,16 @@ const licensingCenterSchema = z.object({
   removedCredentials: z.array(removedLicensingCredentialSchema).default([]),
 })
 
+const myLicensingCredentialSchema = licensingCredentialSchema.omit({
+  internalNotes: true,
+  lastEmployeeNotification: true,
+}).extend({
+  description: z.string().nullable(),
+  renewalInstructions: z.string().nullable(),
+  employeeInstructions: z.string().nullable(),
+  expirationRequired: z.boolean(),
+})
+
 const myLicensingProfileSchema = z.object({
   serverTimestamp: z.string(),
   employee: z.object({
@@ -284,12 +294,7 @@ const myLicensingProfileSchema = z.object({
     employmentStatus: employeeStatusSchema,
   }),
   credentialTypes: z.array(myCredentialTypeSchema),
-  credentials: z.array(licensingCredentialSchema.extend({
-    description: z.string().nullable(),
-    renewalInstructions: z.string().nullable(),
-    employeeInstructions: z.string().nullable(),
-    expirationRequired: z.boolean(),
-  })),
+  credentials: z.array(myLicensingCredentialSchema),
   submissions: z.array(licensingSubmissionSchema),
   summary: z.object({
     current: z.number().int().nonnegative(),
@@ -316,6 +321,7 @@ export type LicensingCredentialDocument = z.infer<typeof licensingCredentialDocu
 export type LicensingCredentialDocuments = z.infer<typeof licensingCredentialDocumentsSchema>
 export type CredentialType = z.infer<typeof credentialTypeSchema>
 export type LicensingCredential = z.infer<typeof licensingCredentialSchema>
+export type MyLicensingCredential = z.infer<typeof myLicensingCredentialSchema>
 export type LicensingRecord = z.infer<typeof licensingRecordSchema>
 export type LicensingEmployee = z.infer<typeof licensingEmployeeSchema>
 export type LicensingCenter = z.infer<typeof licensingCenterSchema>
@@ -328,6 +334,14 @@ export type LicensingReviewItem = z.infer<typeof licensingReviewItemSchema>
 export type LicensingSubmissionWorklist = z.infer<typeof licensingSubmissionWorklistSchema>
 export type MyLicensingProfile = z.infer<typeof myLicensingProfileSchema>
 export type MyCredentialType = z.infer<typeof myCredentialTypeSchema>
+
+function parseMyLicensingProfile(payload: unknown): MyLicensingProfile {
+  const parsed = myLicensingProfileSchema.safeParse(payload)
+  if (!parsed.success) {
+    throw new Error('Your licensing information could not be verified. Refresh the page and try again.')
+  }
+  return parsed.data
+}
 
 export interface LicensingEmployeeInput {
   employeeId?: string | null
@@ -552,7 +566,7 @@ export async function recordLicensingCommunication(input: LicensingCommunication
 export async function getMyLicensingProfile(): Promise<MyLicensingProfile> {
   const { data, error } = await getSupabaseClient().rpc('get_my_licensing_profile')
   if (error) throw new Error(error.message || 'Your licensing profile could not be loaded.')
-  return myLicensingProfileSchema.parse(data)
+  return parseMyLicensingProfile(data)
 }
 
 export async function saveMyLicensingSubmission(input: LicensingSubmissionInput): Promise<MyLicensingProfile> {
@@ -568,7 +582,7 @@ export async function saveMyLicensingSubmission(input: LicensingSubmissionInput)
     target_submission_kind: input.submissionKind,
   })
   if (error) throw new Error(error.message || 'Your licensing submission could not be saved.')
-  return myLicensingProfileSchema.parse(data)
+  return parseMyLicensingProfile(data)
 }
 
 export async function submitMyLicensingSubmission(submissionId: string): Promise<MyLicensingProfile> {
@@ -576,7 +590,7 @@ export async function submitMyLicensingSubmission(submissionId: string): Promise
     target_submission_id: submissionId,
   })
   if (error) throw new Error(error.message || 'Your licensing submission could not be sent for review.')
-  return myLicensingProfileSchema.parse(data)
+  return parseMyLicensingProfile(data)
 }
 
 export async function withdrawMyLicensingSubmission(submissionId: string): Promise<MyLicensingProfile> {
@@ -584,7 +598,7 @@ export async function withdrawMyLicensingSubmission(submissionId: string): Promi
     target_submission_id: submissionId,
   })
   if (error) throw new Error(error.message || 'Your licensing submission could not be withdrawn.')
-  return myLicensingProfileSchema.parse(data)
+  return parseMyLicensingProfile(data)
 }
 
 export async function getLicensingSubmissionWorklist(input: {

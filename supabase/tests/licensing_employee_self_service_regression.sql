@@ -171,6 +171,43 @@ begin
       and notification.title = 'Licensing submission approved'
   ), 'Employee receives a privacy-safe approval notification.';
 
+  update public.employee_credentials
+  set notes = 'Protected reviewer note that must never enter employee self-service.'
+  where id = fixture_credential_id;
+
+  insert into public.licensing_communications(
+    employee_id,
+    credential_id,
+    communication_type,
+    recipient_email,
+    subject,
+    body,
+    sent_by
+  ) values (
+    fixture_employee_id,
+    fixture_credential_id,
+    'regression_test',
+    'employee-self-service-regression@example.invalid',
+    'Protected communication fixture',
+    'This communication proves employee payload redaction when source data is populated.',
+    reviewer_id
+  );
+
+  perform set_config(
+    'request.jwt.claims',
+    jsonb_build_object('sub', employee_auth_id, 'role', 'authenticated', 'aal', 'aal1')::text,
+    true
+  );
+  payload := public.get_my_licensing_profile();
+  assert exists(
+    select 1 from jsonb_array_elements(payload -> 'credentials') item
+    where item ->> 'credentialId' = fixture_credential_id::text
+  ), 'Employee profile returns the approved credential.';
+  assert not exists(
+    select 1 from jsonb_array_elements(payload -> 'credentials') item
+    where item ? 'internalNotes' or item ? 'lastEmployeeNotification'
+  ), 'Employee profile omits protected notes and communication history even when source values exist.';
+
   perform set_config(
     'request.jwt.claims',
     jsonb_build_object('sub', employee_auth_id, 'role', 'service_role', 'aal', 'aal1')::text,
