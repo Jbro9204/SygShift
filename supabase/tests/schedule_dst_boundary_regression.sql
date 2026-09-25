@@ -318,11 +318,30 @@ begin
 end
 $verify_create_boundaries$;
 
+-- Model corrections made after a shift was created. Draft edits must continue
+-- using each shift's recorded basis instead of silently applying these newer
+-- employee/Site profile values to an instant calculated in the old basis.
+reset role;
+
+update public.employees
+set time_zone = 'America/Chicago', updated_at = clock_timestamp()
+where id = 'd5100000-0000-4000-8000-000000000002';
+
+update public.sites
+set time_zone = 'America/Chicago', updated_at = clock_timestamp()
+where id = 'd5300000-0000-4000-8000-000000000001';
+
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'd5200000-0000-4000-8000-000000000001';
+set local "request.jwt.claims" = '{"sub":"d5200000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal2"}';
+
 do $verify_edit_boundaries$
 declare
   target_shift_id uuid;
+  site_shift_id uuid;
   before_shift jsonb;
   after_shift jsonb;
+  site_before_shift jsonb;
   rejected boolean;
 begin
   select shift.id, to_jsonb(shift.*)
@@ -383,6 +402,52 @@ begin
     rejected := sqlerrm like '%does not exist%daylight-saving time%';
   end;
   assert rejected, 'The update overtime preview normalized a spring gap.';
+
+  perform public.scheduler_update_typed_draft_shift_v3(
+    target_shift_id,
+    date '2099-03-16', time '09:00', time '17:00',
+    2, true, false, 'Note and headcount edit after profile-zone correction', 'post',
+    'd5100000-0000-4000-8000-000000000002',
+    null, null, null, 'primary_shift'
+  );
+
+  assert (
+    select shift.starts_at = (before_shift ->> 'starts_at')::timestamptz
+      and shift.ends_at = (before_shift ->> 'ends_at')::timestamptz
+      and shift.time_zone = before_shift ->> 'time_zone'
+      and shift.time_zone_source = 'employee'
+      and shift.time_zone_employee_id = 'd5100000-0000-4000-8000-000000000002'
+      and shift.headcount_required = 2
+      and shift.notes = 'Note and headcount edit after profile-zone correction'
+    from public.shifts shift
+    where shift.id = target_shift_id
+  ), 'An ordinary edit reinterpreted Employee Time after the employee profile zone changed.';
+
+  select shift.id, to_jsonb(shift.*)
+    into site_shift_id, site_before_shift
+  from public.shifts shift
+  join public.schedules schedule on schedule.id = shift.schedule_id
+  where schedule.week_starts_on = date '2099-04-12'
+    and shift.canceled_at is null
+  limit 1;
+
+  perform public.scheduler_update_typed_draft_shift_v3(
+    site_shift_id,
+    date '2099-04-13', time '09:00', time '17:00',
+    2, true, false, 'Note and headcount edit after Site-zone correction', 'post',
+    null, null, null, null, 'primary_shift'
+  );
+
+  assert (
+    select shift.starts_at = (site_before_shift ->> 'starts_at')::timestamptz
+      and shift.ends_at = (site_before_shift ->> 'ends_at')::timestamptz
+      and shift.time_zone = site_before_shift ->> 'time_zone'
+      and shift.time_zone_source = 'site'
+      and shift.headcount_required = 2
+      and shift.notes = 'Note and headcount edit after Site-zone correction'
+    from public.shifts shift
+    where shift.id = site_shift_id
+  ), 'An ordinary edit reinterpreted Site Time after the Site zone changed.';
 
   -- Reassignment deliberately preserves the existing Employee Time source and
   -- exact instants; it must not silently reinterpret 09:00 as the new assignee's

@@ -121,6 +121,7 @@ declare
   inherited_time_zone text;
   employee_time_zone text;
   source_changed boolean := false;
+  provenance_changed boolean := false;
 begin
   if new.post_id is not null then
     select post.requires_armed, site.time_zone
@@ -145,9 +146,17 @@ begin
   if tg_op = 'UPDATE' then
     source_changed := new.post_id is distinct from old.post_id
       or new.event_id is distinct from old.event_id;
+    provenance_changed := new.time_zone_source is distinct from old.time_zone_source
+      or new.time_zone_employee_id is distinct from old.time_zone_employee_id;
   end if;
 
-  if new.time_zone_source = 'employee' then
+  if tg_op = 'UPDATE' and not source_changed and not provenance_changed then
+    -- Draft edits are interpreted in the shift's recorded basis. A later
+    -- employee-profile or Site correction must not rewrite that basis without
+    -- also converting the edited wall clock. Explicit create/copy/source-change
+    -- workflows continue through the authority-refresh branches below.
+    new.time_zone := old.time_zone;
+  elsif new.time_zone_source = 'employee' then
     select employee.time_zone
       into employee_time_zone
     from public.employees employee
@@ -2771,8 +2780,10 @@ begin
   if position('when event.site_id is null then event.time_zone' in function_definition) = 0
     or position('else site.time_zone' in function_definition) = 0
     or position('left join public.sites site on site.id = event.site_id' in function_definition) = 0
+    or position('tg_op = ''UPDATE'' and not source_changed and not provenance_changed' in function_definition) = 0
+    or position('new.time_zone := old.time_zone' in function_definition) = 0
   then
-    raise check_violation using message = 'The shift security trigger does not enforce linked-event Site Time authority.';
+    raise check_violation using message = 'The shift security trigger does not preserve recorded edit basis and linked-event Site Time authority.';
   end if;
 
   select pg_get_functiondef(
