@@ -4,6 +4,7 @@ import { CalendarClock, DatabaseZap, MapPin, Search, ShieldAlert, UsersRound } f
 import { DataStatePanel } from '../components/DataStatePanel'
 import {
   getOpenOpportunities,
+  opportunityAvailability,
   opportunityCoverageLabel,
   opportunityDescription,
   opportunityLocation,
@@ -51,7 +52,7 @@ function OpportunityCard({
   const busy = mutation.isPending && mutation.variables?.opportunityId === opportunity.id
   const source = parseImportedScheduleNote(opportunity.notes)
   const sourceReference = sourceReferenceLabel(source)
-  const guardCanRequest = canRequest && !source.reviewNeeded
+  const availability = opportunityAvailability(opportunity)
 
   return (
     <article className={source.reviewNeeded ? 'opportunity-card opportunity-card--review-needed' : 'opportunity-card'}>
@@ -98,7 +99,7 @@ function OpportunityCard({
           <UsersRound aria-hidden="true" size={19} />
           <span>{openSlots} opening{openSlots === 1 ? '' : 's'}</span>
         </div>
-        {guardCanRequest ? (
+        {canRequest ? (
           request?.status === 'pending' ? (
             <button
               className="secondary-button opportunity-action"
@@ -112,6 +113,10 @@ function OpportunityCard({
             <span className={`request-status request-status--${request.status}`}>
               {requestLabels[request.status]}
             </span>
+          ) : source.reviewNeeded ? (
+            <span className="request-status">Supervisor review required</span>
+          ) : availability !== 'open' ? (
+            <span className="request-status">{availability === 'full' ? 'No openings remain' : 'Shift already started'}</span>
           ) : (
             <button
               className="primary-action opportunity-action"
@@ -122,8 +127,6 @@ function OpportunityCard({
               {busy ? 'Requesting…' : 'Request to work'}
             </button>
           )
-        ) : canRequest && source.reviewNeeded ? (
-          <span className="request-status">Supervisor review required</span>
         ) : (
           <span className="request-status">Supervisor view</span>
         )}
@@ -146,7 +149,7 @@ function useOpportunityMutation() {
       await withdrawOpportunityRequest(id)
       return id
     },
-    onSuccess: async () => {
+    onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: ['open-opportunities'] })
     },
   })
@@ -158,6 +161,7 @@ export function EventsPage() {
     queryKey: ['open-opportunities'],
     queryFn: getOpenOpportunities,
     enabled: isSupabaseConfigured,
+    refetchInterval: 60_000,
   })
   const mutation = useOpportunityMutation()
   const opportunities = useMemo(() => {

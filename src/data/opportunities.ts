@@ -58,11 +58,13 @@ export async function getOpenOpportunities(): Promise<OpportunityContext> {
     role: z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin']),
     opportunities: z.array(opportunitySchema),
   }).parse(data)
-  const opportunities = payload.opportunities.map((item) => ({
-    ...item,
-    assignments: item.assignments.filter((assignment) => assignment.status !== 'canceled'),
-    requests: item.requests.filter((request) => request.employee_id === payload.employeeId),
-  }))
+  const opportunities = payload.opportunities
+    .map((item) => ({
+      ...item,
+      assignments: item.assignments.filter((assignment) => assignment.status !== 'canceled'),
+      requests: item.requests.filter((request) => request.employee_id === payload.employeeId),
+    }))
+    .filter((item) => payload.role !== 'guard' || Boolean(opportunityRequest(item)) || opportunityAvailability(item) === 'open')
 
   return { employeeId: payload.employeeId, role: payload.role, opportunities }
 }
@@ -72,8 +74,24 @@ export async function submitOpportunityRequest(shiftId: string): Promise<string>
     target_shift_id: shiftId,
     request_note: null,
   })
-  if (error) throw new Error('This shift could not be requested. Refresh and confirm it is still open.')
+  if (error) throw new Error(opportunityRequestError(error.message))
   return z.string().uuid().parse(data)
+}
+
+export function opportunityAvailability(opportunity: Opportunity, now = Date.now()): 'open' | 'full' | 'started' {
+  if (Date.parse(opportunity.starts_at) <= now) return 'started'
+  if (opportunity.assignments.length >= opportunity.headcount_required) return 'full'
+  return 'open'
+}
+
+export function opportunityRequestError(message: string): string {
+  if (/already.*request|shift_requests_unique|duplicate key/i.test(message)) return 'You already requested this shift. The list is refreshing.'
+  if (/openings.*filled/i.test(message)) return 'This shift has filled. The list is refreshing.'
+  if (/already started/i.test(message)) return 'This shift has already started. The list is refreshing.'
+  if (/no longer open|not available to request/i.test(message)) return 'This shift is no longer open. The list is refreshing.'
+  if (/armed qualification|credential/i.test(message)) return 'Your armed qualification could not be verified for this shift. Contact Scheduling.'
+  if (/active employee|permission denied|row.level security/i.test(message)) return 'Your account could not submit the request. Contact Scheduling for help.'
+  return 'The request could not be sent. Contact Scheduling if this continues.'
 }
 
 export async function withdrawOpportunityRequest(requestId: string): Promise<void> {

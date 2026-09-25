@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  opportunityAvailability,
   opportunityLocation,
   opportunityRequest,
+  opportunityRequestError,
   opportunityTitle,
   type Opportunity,
 } from './opportunities'
@@ -47,5 +49,18 @@ describe('open opportunity presentation', () => {
       requests: [{ ...opportunity.requests[0], status: 'withdrawn' as const }],
     }
     expect(opportunityRequest(withdrawn)?.status).toBe('withdrawn')
+  })
+
+  it('does not offer a full or already-started shift as requestable', () => {
+    const now = Date.parse('2099-07-07T13:00:00.000Z')
+    expect(opportunityAvailability(opportunity, now)).toBe('open')
+    expect(opportunityAvailability({ ...opportunity, headcount_required: 1, assignments: [{ id: opportunity.id, status: 'assigned' }] }, now)).toBe('full')
+    expect(opportunityAvailability(opportunity, Date.parse(opportunity.starts_at))).toBe('started')
+  })
+
+  it('explains known request failures without exposing raw database errors', () => {
+    expect(opportunityRequestError('All openings for this shift have been filled.')).toMatch(/filled/i)
+    expect(opportunityRequestError('new row violates row-level security policy')).toMatch(/Contact Scheduling/i)
+    expect(opportunityRequestError('duplicate key value violates unique constraint "shift_requests_unique"')).toMatch(/already requested/i)
   })
 })
