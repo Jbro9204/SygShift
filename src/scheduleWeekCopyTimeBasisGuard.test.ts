@@ -38,6 +38,7 @@ describe('schedule week-copy time-basis migration', () => {
   })
 
   it('keeps migration and regression transaction boundaries explicit', () => {
+    expect(migration).toMatch(/^begin;\r?\nset local lock_timeout = '5s';/)
     expect((migration.match(/^begin;$/gm) ?? [])).toHaveLength(1)
     expect((migration.match(/^commit;$/gm) ?? [])).toHaveLength(1)
     expect((regression.match(/^begin;$/gm) ?? [])).toHaveLength(1)

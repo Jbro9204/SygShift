@@ -1,4 +1,5 @@
 begin;
+set local lock_timeout = '5s';
 
 -- Client and Site/Post time zones are schedule authorities. Keep every supported
 -- value explicit at the database boundary so a typo cannot make schedule entry

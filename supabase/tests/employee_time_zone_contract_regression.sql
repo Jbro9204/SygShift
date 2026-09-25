@@ -354,13 +354,27 @@ begin
     raise exception 'The Colorado legacy import contract lock audit is missing.';
   end if;
 
-  if has_function_privilege(
+  if not has_function_privilege(
     'service_role',
     'public.service_request_candidate_conversion(uuid,uuid,public.app_role,public.employment_type,text,date,text)',
     'EXECUTE'
   ) then
-    raise exception 'The service role can still call the candidate-conversion signature that omits time zone.';
+    raise exception 'The rolling-release candidate-conversion signature is unavailable to the Worker service role.';
   end if;
+
+  begin
+    perform public.service_request_candidate_conversion(
+      null, null, 'guard', 'hourly', 'Guard', '2026-10-05',
+      'Rollback-only rolling-release candidate conversion rejection.'
+    );
+    raise exception 'The rolling-release candidate-conversion signature accepted a request without a time zone.';
+  exception
+    when check_violation then
+      get stacked diagnostics error_message = message_text;
+      if error_message <> 'Refresh SygShift and choose the employee time zone before requesting candidate conversion.' then
+        raise exception 'Unexpected rolling-release candidate conversion denial: %', error_message;
+      end if;
+  end;
 
   if not has_function_privilege(
     'service_role',

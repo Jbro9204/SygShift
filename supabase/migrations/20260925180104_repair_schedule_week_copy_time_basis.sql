@@ -1,4 +1,5 @@
 begin;
+set local lock_timeout = '5s';
 
 -- Copy schedule wall-clock intent rather than adding a duration to UTC. A UTC
 -- day interval moves local shifts by an hour when source and destination weeks

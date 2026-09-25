@@ -120,6 +120,19 @@ begin
     raise exception 'The Site time-zone change was not included in the audit evidence.';
   end if;
 
+  update public.clients
+  set time_zone = 'America/Phoenix'
+  where id = sample_site.client_id;
+
+  if not exists (
+    select 1
+    from public.clients client
+    where client.id = sample_site.client_id
+      and client.time_zone = 'America/Phoenix'
+  ) then
+    raise exception 'The Client constraint did not accept Arizona Time.';
+  end if;
+
   begin
     update public.sites
     set time_zone = 'UTC'

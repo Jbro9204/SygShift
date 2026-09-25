@@ -9,8 +9,18 @@ const migration = readFileSync(
   join(root, 'supabase', 'migrations', '20260925190311_enforce_client_site_time_zones.sql'),
   'utf8',
 )
+const regression = readFileSync(
+  join(root, 'supabase', 'tests', 'client_site_time_zone_contract_regression.sql'),
+  'utf8',
+)
 
 describe('Client and Site schedule-authority time-zone guard', () => {
+  it('bounds lock waits for the complete atomic migration', () => {
+    expect(migration).toMatch(/^begin;\r?\nset local lock_timeout = '5s';/)
+    expect((migration.match(/^begin;$/gm) ?? [])).toHaveLength(1)
+    expect((migration.match(/^commit;$/gm) ?? [])).toHaveLength(1)
+  })
+
   it('uses the one supported selector catalog on every Client and Site editor', () => {
     expect(clientFilesPage).toContain("import { continentalUsTimeZones } from '../lib/usTimeZones'")
     expect(sitesPage).toContain("import { continentalUsTimeZones } from '../lib/usTimeZones'")
@@ -36,5 +46,7 @@ describe('Client and Site schedule-authority time-zone guard', () => {
     expect(migration).toContain("raise check_violation using message = 'Choose Eastern, Central, Mountain, Arizona, or Pacific Time.'")
     expect(migration).toContain("'timeZone', normalized_time_zone")
     expect(migration).toContain('from public, anon')
+    expect(regression).toContain("set time_zone = 'America/Phoenix'")
+    expect(regression).toContain('The Client constraint did not accept Arizona Time.')
   })
 })

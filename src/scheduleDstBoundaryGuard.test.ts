@@ -8,6 +8,12 @@ describe('schedule DST boundary migration guardrails', () => {
   const migration = readFileSync(migrationPath, 'utf8')
   const regression = readFileSync(regressionPath, 'utf8')
 
+  it('bounds lock waits for the complete atomic migration', () => {
+    expect(migration).toMatch(/^begin;\r?\nset local lock_timeout = '5s';/)
+    expect((migration.match(/^begin;$/gm) ?? [])).toHaveLength(1)
+    expect((migration.match(/^commit;$/gm) ?? [])).toHaveLength(1)
+  })
+
   it('validates both wall clocks before every supported create and edit core', () => {
     expect(migration).toContain('private.validate_schedule_wall_clock_range')
     expect(migration).toContain('starts_at at time zone target_time_zone is distinct from entered_local_start')

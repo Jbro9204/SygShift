@@ -1048,6 +1048,34 @@ begin
 end
 $$;
 
+-- Keep the deployed seven-argument service contract during the Worker/database
+-- rolling release, but fail closed before reading or mutating candidate data.
+-- The old Worker cannot provide the employee time zone, so it must refresh
+-- before requesting a conversion rather than silently receiving a default.
+create or replace function public.service_request_candidate_conversion(
+  target_actor_id uuid,
+  target_application_id uuid,
+  target_role public.app_role,
+  target_employment_type public.employment_type,
+  target_job_title text,
+  target_start_date date,
+  target_reason text
+)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+begin
+  if (select auth.role()) <> 'service_role' then
+    raise insufficient_privilege using message = 'Service role required.';
+  end if;
+
+  raise check_violation using message = 'Refresh SygShift and choose the employee time zone before requesting candidate conversion.';
+end
+$$;
+
 create or replace function public.service_review_candidate_conversion(
   target_actor_id uuid,
   target_request_id uuid,
@@ -1185,15 +1213,18 @@ begin
 end
 $$;
 
--- The old request signature omitted time zone and may not remain a callable
--- service boundary.
+-- Preserve both service signatures through the rolling release. The legacy
+-- signature remains fail-closed until a later forward migration retires it.
 revoke all on function public.service_request_candidate_conversion(
   uuid,uuid,public.app_role,public.employment_type,text,date,text
-) from public,anon,authenticated,service_role;
+) from public,anon,authenticated;
 revoke all on function public.service_request_candidate_conversion(
   uuid,uuid,public.app_role,public.employment_type,text,date,text,text
 ) from public,anon,authenticated;
 revoke all on function public.service_review_candidate_conversion(uuid,uuid,text,text) from public,anon,authenticated;
+grant execute on function public.service_request_candidate_conversion(
+  uuid,uuid,public.app_role,public.employment_type,text,date,text
+) to service_role;
 grant execute on function public.service_request_candidate_conversion(
   uuid,uuid,public.app_role,public.employment_type,text,date,text,text
 ) to service_role;

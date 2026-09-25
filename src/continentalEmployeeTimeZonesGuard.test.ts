@@ -42,7 +42,10 @@ describe('continental employee time-zone release guard', () => {
   })
 
   it('fails closed unless the exact production repair target and identity match', () => {
+    expect(timeZoneRepairMigration).toMatch(/^begin;\r?\nset local lock_timeout = '5s';/)
     expect(timeZoneRepairMigration).toContain("raise check_violation using message = 'Misty Kimbal time-zone repair target was not found.'")
+    expect(timeZoneRepairMigration).toContain('Keep the deployed seven-argument service contract')
+    expect(timeZoneRepairMigration).toContain('Refresh SygShift and choose the employee time zone before requesting candidate conversion.')
     expect(timeZoneRepairMigration).toContain("target_employee.employee_number is distinct from 'SYG-1131'")
     expect(timeZoneRepairMigration).toContain("target_employee.username is distinct from 'mkimbal'")
     expect(timeZoneRepairMigration).toContain('lock table public.schedules in share row exclusive mode')

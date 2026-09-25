@@ -1,4 +1,5 @@
 begin;
+set local lock_timeout = '5s';
 
 -- PostgreSQL intentionally normalizes nonexistent spring-forward wall clocks
 -- when `timestamp AT TIME ZONE` is used by itself. Validate the converted
