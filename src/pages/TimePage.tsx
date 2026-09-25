@@ -90,7 +90,6 @@ import {
 } from '../time/timePermissions'
 import { applyTimeEventToCachedDashboards, refreshTimekeepingQueriesAfterPunch } from '../time/timeQuerySync'
 import { useEarlyClockInRestriction } from '../time/useEarlyClockInRestriction'
-import { dateKeyInTimeZone } from './homeModel'
 
 const actionLabels: Record<TimeEventKind, string> = {
   clock_in: 'Clock in',
@@ -2138,17 +2137,12 @@ function LiveTimekeeping() {
     queryFn: getSessionContext,
     enabled: isSupabaseConfigured,
   })
-  const employeeDisplayTimeZone = personalDisplayTimeZone(sessionQuery.data?.timeZone)
-  const employeeDate = useMemo(
-    () => dateKeyInTimeZone(new Date(), employeeDisplayTimeZone),
-    [employeeDisplayTimeZone],
-  )
   const operationalDate = useMemo(() => formatDateKey(operationalToday()), [])
   const ownTimeAllowed = canViewOwnTime(sessionQuery.data)
   const punchAllowed = canUseOwnTimeClock(sessionQuery.data)
   const dashboardQuery = useQuery({
-    queryKey: ['timekeeping-dashboard', employeeDate],
-    queryFn: () => getTimekeepingDashboard(employeeDate),
+    queryKey: ['timekeeping-dashboard', 'current'],
+    queryFn: () => getTimekeepingDashboard(),
     enabled: isSupabaseConfigured && sessionQuery.isSuccess && ownTimeAllowed,
     refetchInterval: 15_000,
   })
@@ -2240,7 +2234,7 @@ function LiveTimekeeping() {
 
       <RecentEvents events={dashboard.recentEvents} />
 
-      <MyTimeHistory dashboard={dashboard} defaultDate={employeeDate} />
+      <MyTimeHistory dashboard={dashboard} defaultDate={dashboard.operationalDate} />
 
       {canReviewPayroll ? (
         <>
