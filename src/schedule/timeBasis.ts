@@ -80,26 +80,51 @@ function sameLocalDateTime(left: LocalDateTimeParts, right: LocalDateTimeParts):
     && left.minute === right.minute
 }
 
+export function scheduleCalendarDateInTimeZone(instant: Date | string, timeZone: string): Date {
+  const parsed = typeof instant === 'string' ? new Date(instant) : instant
+  if (Number.isNaN(parsed.getTime())) throw new Error('The trusted schedule time is invalid.')
+
+  const parts = zonedParts(parsed, timeZone)
+  return new Date(parts.year, parts.month - 1, parts.day, 12)
+}
+
 export function scheduleWallClockToInstant(dateKey: string, timeValue: string, timeZone: string): string {
   const date = parseDateKey(dateKey)
   const time = parseTimeValue(timeValue)
   const desired: LocalDateTimeParts = { ...date, ...time }
   const desiredAsUtc = Date.UTC(date.year, date.month - 1, date.day, time.hour, time.minute)
-  let candidate = desiredAsUtc
+  const possibleOffsets = new Set<number>()
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const actual = zonedParts(new Date(candidate), timeZone)
-    const representedAsUtc = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute)
-    const correction = desiredAsUtc - representedAsUtc
-    if (correction === 0) break
-    candidate += correction
+  // Sample both sides of the requested local date so a daylight-saving
+  // transition contributes both of its possible UTC offsets. Deriving
+  // candidates from offsets keeps this fast while still supporting IANA
+  // zones whose offsets are not whole hours.
+  for (let sampleHours = -48; sampleHours <= 48; sampleHours += 6) {
+    const sample = desiredAsUtc + sampleHours * 60 * 60 * 1_000
+    const represented = zonedParts(new Date(sample), timeZone)
+    const representedAsUtc = Date.UTC(
+      represented.year,
+      represented.month - 1,
+      represented.day,
+      represented.hour,
+      represented.minute,
+    )
+    possibleOffsets.add(representedAsUtc - sample)
   }
 
-  if (!sameLocalDateTime(zonedParts(new Date(candidate), timeZone), desired)) {
+  const candidates = Array.from(possibleOffsets)
+    .map((offset) => desiredAsUtc - offset)
+    .filter((candidate) => sameLocalDateTime(zonedParts(new Date(candidate), timeZone), desired))
+
+  if (candidates.length === 0) {
     throw new Error('That local time does not exist in the selected time zone because of daylight-saving time. Choose another time.')
   }
 
-  return new Date(candidate).toISOString()
+  // PostgreSQL's `timestamp AT TIME ZONE` selects the standard-time (later)
+  // occurrence when the wall clock repeats during the fall-back transition.
+  // Choosing the latest matching instant keeps the preview and saved value
+  // identical instead of allowing a silent one-hour shift at publication.
+  return new Date(Math.max(...candidates)).toISOString()
 }
 
 export function scheduleWallClockRangeToInstants(

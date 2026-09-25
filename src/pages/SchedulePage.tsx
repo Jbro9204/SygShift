@@ -47,6 +47,7 @@ import {
   type WeeklySchedule,
 } from '../data/schedule'
 import { processNotificationBatch } from '../data/operations'
+import { getMaintenanceStatus } from '../data/maintenance'
 import { parseImportedScheduleNote, sourceReferenceLabel } from '../data/sourceNotes'
 import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
@@ -55,6 +56,7 @@ import { continentalUsTimeZoneLabel, personalDisplayTimeZone } from '../lib/usTi
 import { scheduleTeamViewPermissions } from '../app/accessPolicy'
 import { scheduledOvertimePreviewBlocksSave } from '../scheduleDraftEdit'
 import { downloadScheduleCalendar } from '../schedule/calendar'
+import { usePersonalScheduleDateBasis } from '../schedule/personalScheduleDate'
 import { scheduleTimeBasisLabel, scheduleWallClockRangeToInstants } from '../schedule/timeBasis'
 
 interface OpenShiftFormState {
@@ -181,17 +183,6 @@ function dateKeyToLocalDate(dateKey: string): Date {
 
 function localDateToDateKey(date: Date): string {
   return format(date, 'yyyy-MM-dd')
-}
-
-function calendarDateInTimeZone(now: Date, timeZone: string): Date {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    day: '2-digit',
-    month: '2-digit',
-    timeZone,
-    year: 'numeric',
-  }).formatToParts(now)
-  const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value)
-  return new Date(value('year'), value('month') - 1, value('day'), 12)
 }
 
 function selectedOpenShiftDateKeys(form: OpenShiftFormState, weekStartsOn: string, weekEndsOn: string): string[] {
@@ -2219,7 +2210,6 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const queryClient = useQueryClient()
   const boardScrollRef = useRef<HTMLElement | null>(null)
   const topScrollRef = useRef<HTMLDivElement | null>(null)
-  const personalWeekBasisRef = useRef<string | null>(null)
   const isSchedulerHome = mode === 'scheduler'
   const today = useMemo(() => operationalToday(), [])
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today, { weekStartsOn: 0 }))
@@ -2293,6 +2283,13 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     queryFn: getSessionContext,
     enabled: isSupabaseConfigured,
   })
+  const scheduleServerTimeQuery = useQuery({
+    enabled: isSupabaseConfigured,
+    queryFn: getMaintenanceStatus,
+    queryKey: ['maintenance-status'],
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+  })
   const canBuildSchedule = sessionHasAnyPermission(sessionQuery.data, [
       'scheduler.view',
       'scheduler.manage',
@@ -2313,21 +2310,16 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const canEditScheduler = canManageSchedule && isSchedulerHome
   const employeeOnlySchedule = sessionQuery.isSuccess && !canViewTeamSchedule && !isSchedulerHome
   const personalScheduleTimeZone = personalDisplayTimeZone(sessionQuery.data?.timeZone ?? 'America/Denver')
-  const personalScheduleToday = useMemo(
-    () => calendarDateInTimeZone(new Date(), personalScheduleTimeZone),
-    [personalScheduleTimeZone],
-  )
-  useEffect(() => {
-    if (!employeeOnlySchedule || !sessionQuery.data?.employeeId) {
-      personalWeekBasisRef.current = null
-      return
-    }
-
-    const basisKey = `${sessionQuery.data.employeeId}:${personalScheduleTimeZone}`
-    if (personalWeekBasisRef.current === basisKey) return
-    personalWeekBasisRef.current = basisKey
-    setWeekStart(startOfWeek(personalScheduleToday, { weekStartsOn: 0 }))
-  }, [employeeOnlySchedule, personalScheduleTimeZone, personalScheduleToday, sessionQuery.data?.employeeId])
+  const {
+    isReady: personalScheduleDateReady,
+    today: personalScheduleToday,
+  } = usePersonalScheduleDateBasis({
+    employeeId: sessionQuery.data?.employeeId,
+    enabled: employeeOnlySchedule,
+    onAnchorWeek: setWeekStart,
+    serverTime: scheduleServerTimeQuery.data?.serverTime,
+    timeZone: personalScheduleTimeZone,
+  })
   const employeeScheduleStart = useMemo(() => employeeScheduleDisplayStart(weekStart), [weekStart])
   const employeeScheduleDays = useMemo(
     () => Array.from({ length: employeeScheduleWeekCount(employeeScheduleRange) * 7 }, (_, index) => addDays(employeeScheduleStart, index)),
@@ -2338,7 +2330,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     [employeeScheduleDays],
   )
   const employeeScheduleRangeQuery = useQuery({
-    enabled: isSupabaseConfigured && employeeOnlySchedule,
+    enabled: isSupabaseConfigured && employeeOnlySchedule && personalScheduleDateReady,
     queryFn: async () => Promise.all(employeeScheduleWeekKeys.map((key) => getWeeklySchedule(key))),
     queryKey: ['personal-schedule-range', employeeScheduleWeekKeys.join('|')],
     retry: false,
@@ -4414,7 +4406,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         </section>
       ) : null}
 
-      {employeeOnlySchedule ? (
+      {employeeOnlySchedule && personalScheduleToday && personalScheduleDateReady ? (
         <EmployeePersonalSchedulePanel
           days={employeeScheduleDays}
           errorMessage={employeeScheduleRangeQuery.error instanceof Error ? employeeScheduleRangeQuery.error.message : null}
@@ -4429,6 +4421,16 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           timeZone={personalScheduleTimeZone}
           weekStart={weekStart}
         />
+      ) : employeeOnlySchedule ? (
+        <DataStatePanel
+          icon={scheduleServerTimeQuery.isError ? ShieldAlert : CalendarDays}
+          title={scheduleServerTimeQuery.isError ? 'Your schedule date could not be verified' : 'Setting your schedule date'}
+          tone={scheduleServerTimeQuery.isError ? 'error' : 'empty'}
+        >
+          <p>{scheduleServerTimeQuery.isError
+            ? 'SygShift could not confirm the current server time. Refresh and try again.'
+            : 'Using SygShift server time and your profile time zone.'}</p>
+        </DataStatePanel>
       ) : null}
 
       {isSchedulerHome ? (

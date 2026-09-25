@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 const schedulePage = readFileSync('src/pages/SchedulePage.tsx', 'utf8')
 const scheduleData = readFileSync('src/data/schedule.ts', 'utf8')
+const personalScheduleDate = readFileSync('src/schedule/personalScheduleDate.ts', 'utf8')
 const copyMigration = readFileSync('supabase/migrations/20260910165913_schedule_week_copy_dispatch_overlap_repair.sql', 'utf8')
 
 describe('scheduler time-basis guardrails', () => {
@@ -25,7 +26,14 @@ describe('scheduler time-basis guardrails', () => {
   })
 
   it('uses the profile-local calendar date for personal schedule week controls only', () => {
-    expect(schedulePage).toContain('calendarDateInTimeZone(new Date(), personalScheduleTimeZone)')
+    expect(schedulePage).toContain("queryKey: ['maintenance-status']")
+    expect(schedulePage).toContain('refetchInterval: 30_000')
+    expect(schedulePage).toContain('serverTime: scheduleServerTimeQuery.data?.serverTime')
+    expect(schedulePage).toContain('employeeOnlySchedule && personalScheduleDateReady')
+    expect(schedulePage).toContain('personalScheduleToday && personalScheduleDateReady')
+    expect(personalScheduleDate).toContain('scheduleCalendarDateInTimeZone(serverTime, timeZone)')
+    expect(personalScheduleDate).toContain('setAnchoredBasisKey(basisKey)')
+    expect(personalScheduleDate).not.toContain('new Date()')
     expect(schedulePage).toContain('onJumpToWeek(startOfWeek(today, { weekStartsOn: 0 }))')
     expect(schedulePage).toContain('const today = useMemo(() => operationalToday(), [])')
   })

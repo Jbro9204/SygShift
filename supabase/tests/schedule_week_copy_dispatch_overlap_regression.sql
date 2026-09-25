@@ -59,7 +59,7 @@ values
     'America/Denver',
     1,
     'post',
-    'post',
+    'site',
     'dispatch_phone_duty',
     'cd110000-0000-4000-8000-000000000001'
   ),
@@ -72,7 +72,7 @@ values
     'America/Denver',
     1,
     'post',
-    'post',
+    'site',
     'standard',
     'cd110000-0000-4000-8000-000000000001'
   );
@@ -164,7 +164,7 @@ begin
     'America/Denver',
     1,
     'post',
-    'post',
+    'site',
     'standard',
     'cd110000-0000-4000-8000-000000000001'
   );
