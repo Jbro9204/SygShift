@@ -30,6 +30,7 @@ import {
 } from '../data/workforce'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
+import { continentalUsTimeZones } from '../lib/usTimeZones'
 import {
   filterSites,
   postCountLabel,
@@ -168,11 +169,17 @@ function SiteEditorModal({
             </label>
             <label>
               <span>Time zone</span>
-              <input
+              <select
                 defaultValue={site?.time_zone ?? 'America/Denver'}
                 name="timeZone"
                 required
-              />
+              >
+                {continentalUsTimeZones.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
         </fieldset>
