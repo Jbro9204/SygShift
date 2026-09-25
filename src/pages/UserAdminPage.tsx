@@ -326,7 +326,8 @@ export function EmployeeForm({
         </label>
         <label>
           <span>Employee time zone</span>
-          <select defaultValue={employee?.timeZone ?? 'America/Denver'} disabled={!canEditThisProfile} name="timeZone">
+          <select defaultValue={employee?.timeZone ?? ''} disabled={!canEditThisProfile} name="timeZone" required>
+            {!employee ? <option disabled value="">Choose the employee's time zone</option> : null}
             {continentalUsTimeZones.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}

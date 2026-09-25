@@ -5401,6 +5401,10 @@ async function handleHrRecruitingApi(
     if (!['hourly', 'salary', 'flex'].includes(employmentType)) {
       throw new ApiError('invalid_employment_type', 422, 'Choose hourly, salary, or flex employment.')
     }
+    const employeeTimeZone = requiredText(body.timeZone, 'Employee time zone', 64)
+    if (!['America/New_York', 'America/Chicago', 'America/Denver', 'America/Phoenix', 'America/Los_Angeles'].includes(employeeTimeZone)) {
+      throw new ApiError('invalid_employee_time_zone', 422, 'Choose Eastern, Central, Mountain, Arizona, or Pacific Time.')
+    }
     const result = await callRpc<Record<string, unknown>>(
       { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
       'service_request_candidate_conversion',
@@ -5412,6 +5416,7 @@ async function handleHrRecruitingApi(
         target_reason: requiredText(body.reason, 'Audit reason', 1000),
         target_role: role,
         target_start_date: requiredText(body.startDate, 'Start date', 10),
+        target_time_zone: employeeTimeZone,
       },
       session.config.serviceRoleKey,
     )
@@ -5472,6 +5477,11 @@ async function handleHrOnboardingApi(
     const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
       ? body.payload as Record<string, unknown>
       : {}
+    const employeeTimeZone = requiredText(payload.timeZone, 'Employee time zone', 64)
+    if (!['America/New_York', 'America/Chicago', 'America/Denver', 'America/Phoenix', 'America/Los_Angeles'].includes(employeeTimeZone)) {
+      throw new ApiError('invalid_employee_time_zone', 422, 'Choose Eastern, Central, Mountain, Arizona, or Pacific Time.')
+    }
+    payload.timeZone = employeeTimeZone
     const result = await callRpc<Record<string, unknown>>(
       { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
       'service_hr_onboarding_create_prehire',

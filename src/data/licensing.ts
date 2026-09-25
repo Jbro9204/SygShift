@@ -1,10 +1,18 @@
 import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
+import type { ContinentalUsTimeZone } from '../lib/usTimeZones'
 
 const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary', 'flex'])
 const employeeStatusSchema = z.enum(['onboarding', 'active', 'leave', 'inactive', 'separated'])
+const employeeTimeZoneSchema = z.enum([
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Phoenix',
+  'America/Los_Angeles',
+])
 const credentialStatusSchema = z.enum(['pending', 'active', 'expired', 'suspended', 'revoked'])
 const renewalStatusSchema = z.enum([
   'not_started',
@@ -356,6 +364,7 @@ export interface LicensingEmployeeInput {
   companyEmail?: string | null
   mobilePhone?: string | null
   role?: AppRole
+  timeZone?: ContinentalUsTimeZone
 }
 
 export interface LicensingCredentialInput {
@@ -493,6 +502,9 @@ export async function authorizeLicensingStatusExport(input: LicensingStatusExpor
 }
 
 export async function upsertLicensingEmployee(input: LicensingEmployeeInput): Promise<LicensingCenter> {
+  const targetTimeZone = input.employeeId
+    ? null
+    : employeeTimeZoneSchema.parse(input.timeZone)
   const { data, error } = await getSupabaseClient().rpc('upsert_licensing_employee', {
     target_company_email: cleanOptional(input.companyEmail),
     target_employee_id: input.employeeId || null,
@@ -506,6 +518,7 @@ export async function upsertLicensingEmployee(input: LicensingEmployeeInput): Pr
     target_preferred_name: cleanOptional(input.preferredName),
     target_role: input.role ?? 'guard',
     target_status: input.employmentStatus,
+    target_time_zone: targetTimeZone,
   })
   if (error) throw new Error(error.message || 'Employee licensing profile could not be saved.')
   return licensingCenterSchema.parse(data)

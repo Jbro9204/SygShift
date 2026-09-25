@@ -31,7 +31,8 @@ begin
       'lastName','Regression',
       'personalEmail','onboarding-regression-20260924@example.invalid',
       'positionTitle','Regression Guard',
-      'workState','CO',
+      'workState','NC',
+      'timeZone','America/New_York',
       'role','guard',
       'employmentType','hourly',
       'jobFamily','guard',
@@ -54,8 +55,28 @@ begin
   if not exists(select 1 from private.hr_onboarding_profiles profile where profile.case_id=(result->>'caseId')::uuid) then
     raise exception 'Onboarding creation did not create the employee profile.';
   end if;
+  if not exists(
+    select 1
+    from private.hr_onboarding_profiles profile
+    join public.employees employee on employee.id = (result->>'employeeId')::uuid
+    where profile.case_id = (result->>'caseId')::uuid
+      and profile.work_state = 'NC'
+      and employee.time_zone = 'America/New_York'
+  ) then
+    raise exception 'North Carolina onboarding did not preserve the explicitly confirmed Eastern time zone.';
+  end if;
   if not exists(select 1 from private.hr_onboarding_tasks task where task.case_id=(result->>'caseId')::uuid) then
     raise exception 'Onboarding creation did not create applicable checklist tasks.';
+  end if;
+  if not exists(
+    select 1
+    from private.hr_onboarding_tasks task
+    where task.case_id = (result->>'caseId')::uuid
+      and task.step_code = 'nc_withholding'
+      and task.required
+      and task.source_requirement->'states' ? 'NC'
+  ) then
+    raise exception 'North Carolina onboarding did not create its required withholding task.';
   end if;
 
   case_payload := public.service_get_hr_onboarding_case(actor_id,(result->>'caseId')::uuid);

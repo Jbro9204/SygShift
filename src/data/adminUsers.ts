@@ -9,7 +9,7 @@ const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_li
 const employmentTypeSchema = z.enum(['hourly', 'salary', 'flex'])
 const employeeStatusSchema = z.enum(['onboarding', 'active', 'leave', 'inactive', 'separated'])
 const accountStatusSchema = z.enum(['not_created', 'active', 'disabled'])
-const employeeTimeZoneSchema = z.enum(['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles'])
+const employeeTimeZoneSchema = z.enum(['America/New_York', 'America/Chicago', 'America/Denver', 'America/Phoenix', 'America/Los_Angeles'])
 
 const credentialSchema = z.object({
   id: z.string().uuid(),
@@ -47,7 +47,7 @@ const adminUserSchema = z.object({
   displayName: z.string(),
   role: appRoleSchema,
   employmentType: employmentTypeSchema,
-  timeZone: employeeTimeZoneSchema.default('America/Denver'),
+  timeZone: employeeTimeZoneSchema,
   status: employeeStatusSchema,
   photoPath: z.string().nullable(),
   hiredOn: z.string().nullable(),
@@ -207,7 +207,7 @@ export interface EmployeeMutationInput {
   preferredName?: string | null
   role: AppRole
   employmentType: EmploymentType
-  timeZone?: EmployeeTimeZone
+  timeZone: EmployeeTimeZone
   status: EmployeeStatus
   personalEmail?: string | null
   companyEmail?: string | null
@@ -297,7 +297,7 @@ export async function getAdminUserDirectory(): Promise<AdminUserDirectory> {
 export async function createEmployee(input: EmployeeMutationInput): Promise<AdminUser> {
   const payload = {
     ...employeeRpcPayload(input),
-    target_time_zone: input.timeZone ?? 'America/Denver',
+    target_time_zone: employeeTimeZoneSchema.parse(input.timeZone),
   }
   const { data, error } = input.accessRoleIds
     ? await getSupabaseClient().rpc('admin_create_employee_with_time_zone_and_access_roles', {
@@ -312,7 +312,7 @@ export async function createEmployee(input: EmployeeMutationInput): Promise<Admi
 export async function updateEmployee(input: EmployeeMutationInput & { employeeId: string }): Promise<AdminUser> {
   const payload = {
     target_employee_id: input.employeeId,
-    target_time_zone: input.timeZone ?? 'America/Denver',
+    target_time_zone: employeeTimeZoneSchema.parse(input.timeZone),
     ...employeeRpcPayload(input),
   }
   const { data, error } = input.accessRoleIds

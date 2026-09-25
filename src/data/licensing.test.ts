@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { getMyLicensingProfile } from './licensing'
+import { getMyLicensingProfile, upsertLicensingEmployee, type LicensingEmployeeInput } from './licensing'
 
 const supabaseMock = vi.hoisted(() => ({ rpc: vi.fn() }))
 
@@ -98,5 +98,56 @@ describe('employee Licensing profile contract', () => {
     await expect(getMyLicensingProfile()).rejects.toThrow(
       'Your licensing information could not be verified. Refresh the page and try again.',
     )
+  })
+})
+
+describe('Licensing employee time-zone boundary', () => {
+  const newEmployee: LicensingEmployeeInput = {
+    employmentStatus: 'onboarding',
+    employmentType: 'hourly',
+    firstName: 'Misty',
+    lastName: 'Kimbal',
+    role: 'guard',
+    timeZone: 'America/New_York',
+  }
+
+  beforeEach(() => supabaseMock.rpc.mockReset())
+
+  it('serializes an explicitly confirmed supported zone for a new employee', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: { message: 'stop after boundary' } })
+
+    await expect(upsertLicensingEmployee(newEmployee)).rejects.toThrow('stop after boundary')
+
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('upsert_licensing_employee', expect.objectContaining({
+      target_employee_id: null,
+      target_time_zone: 'America/New_York',
+    }))
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['unsupported', 'UTC'],
+  ])('rejects a %s zone before invoking the employee RPC', async (_label, timeZone) => {
+    await expect(upsertLicensingEmployee({
+      ...newEmployee,
+      timeZone: timeZone as LicensingEmployeeInput['timeZone'],
+    })).rejects.toThrow()
+
+    expect(supabaseMock.rpc).not.toHaveBeenCalled()
+  })
+
+  it('does not send a replacement zone when editing an existing employee', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({ data: null, error: { message: 'stop after boundary' } })
+
+    await expect(upsertLicensingEmployee({
+      ...newEmployee,
+      employeeId: '30000000-0000-4000-8000-000000000001',
+      timeZone: undefined,
+    })).rejects.toThrow('stop after boundary')
+
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('upsert_licensing_employee', expect.objectContaining({
+      target_employee_id: '30000000-0000-4000-8000-000000000001',
+      target_time_zone: null,
+    }))
   })
 })

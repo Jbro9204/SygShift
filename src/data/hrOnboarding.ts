@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import { documentApiRequest, parseApiError } from './hrDocuments'
+import type { ContinentalUsTimeZone } from '../lib/usTimeZones'
 
 const nullableText = z.string().nullable()
+const employeeTimeZoneSchema = z.enum(['America/New_York', 'America/Chicago', 'America/Denver', 'America/Phoenix', 'America/Los_Angeles'])
 
 const onboardingWorkspaceSchema = z.object({
   enabled: z.boolean(),
@@ -39,7 +41,7 @@ const onboardingCaseSchema = z.object({
   case: z.object({
     id: z.string().uuid(), employeeId: z.string().uuid(), employeeNumber: z.string(), employeeName: z.string(),
     status: z.string(), targetStartDate: z.string(), templateId: z.string().uuid(), templateVersion: z.number().int().positive(),
-    workState: z.enum(['CO', 'CA', 'AZ']), employmentType: z.enum(['hourly', 'salary', 'flex']),
+    workState: z.enum(['CO', 'CA', 'AZ', 'NC']), employmentType: z.enum(['hourly', 'salary', 'flex']),
     jobFamily: z.enum(['guard', 'administration', 'operations', 'other']), positionTitle: z.string(),
     requiresGuardLicense: z.boolean(), requiresArmedCredentials: z.boolean(),
     welcomeEmailStatus: z.enum(['not_sent', 'sent', 'failed']), accountSetupStatus: z.enum(['not_sent', 'sent', 'failed']),
@@ -103,13 +105,38 @@ export interface HrOnboardingPrehireInput {
   personalEmail: string
   mobilePhone?: string
   positionTitle: string
-  workState: 'CO' | 'CA' | 'AZ'
+  workState: 'CO' | 'CA' | 'AZ' | 'NC'
+  timeZone: ContinentalUsTimeZone
   role: 'guard' | 'supervisor' | 'admin' | 'dispatcher' | 'scheduler' | 'recruiting_licensing'
   employmentType: 'hourly' | 'salary' | 'flex'
   jobFamily: 'guard' | 'administration' | 'operations' | 'other'
   startDate: string
   requiresGuardLicense: boolean
   requiresArmedCredentials: boolean
+}
+
+export function suggestedEmployeeTimeZone(
+  workState: HrOnboardingPrehireInput['workState'],
+): ContinentalUsTimeZone {
+  const suggestions: Record<HrOnboardingPrehireInput['workState'], ContinentalUsTimeZone> = {
+    AZ: 'America/Phoenix',
+    CA: 'America/Los_Angeles',
+    CO: 'America/Denver',
+    NC: 'America/New_York',
+  }
+  return suggestions[workState]
+}
+
+export function onboardingEmploymentStepReady(input: {
+  positionTitle: string
+  startDate: string
+  timeZone: string
+}, requiresTimeZoneConfirmation: boolean): boolean {
+  return Boolean(
+    input.positionTitle.trim()
+    && input.startDate
+    && (!requiresTimeZoneConfirmation || employeeTimeZoneSchema.safeParse(input.timeZone).success),
+  )
 }
 
 export type HrOnboardingWorkspace = z.infer<typeof onboardingWorkspaceSchema>
@@ -146,9 +173,13 @@ export async function runHrOnboardingAction(action: HrOnboardingAction, payload:
 }
 
 export async function createHrOnboardingPrehire(payload: HrOnboardingPrehireInput, reason: string) {
+  const validatedPayload = {
+    ...payload,
+    timeZone: employeeTimeZoneSchema.parse(payload.timeZone),
+  }
   const response = await onboardingApi('/api/v1/hr/onboarding/prehires', {
     method: 'POST',
-    body: JSON.stringify({ payload, reason }),
+    body: JSON.stringify({ payload: validatedPayload, reason }),
   })
   if (!response.ok) throw await parseApiError(response, 'The pre-hire record could not be created.')
   return onboardingActionResultSchema.parse(await response.json())
@@ -161,7 +192,7 @@ export async function getHrOnboardingOptions(search = '') {
   return onboardingOptionsSchema.parse(await response.json())
 }
 
-export async function launchExistingHrOnboarding(employeeId: string, payload: Omit<HrOnboardingPrehireInput, 'firstName' | 'middleName' | 'lastName' | 'personalEmail' | 'mobilePhone' | 'role'>, reason: string) {
+export async function launchExistingHrOnboarding(employeeId: string, payload: Omit<HrOnboardingPrehireInput, 'firstName' | 'middleName' | 'lastName' | 'personalEmail' | 'mobilePhone' | 'role' | 'timeZone'>, reason: string) {
   const response = await onboardingApi('/api/v1/hr/onboarding/existing', {
     method: 'POST',
     body: JSON.stringify({ employeeId, payload, reason }),

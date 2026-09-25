@@ -1088,13 +1088,19 @@ from (
   ) readiness
 ) review;
 
-select public.promote_import_scope(
+-- The generic promotion engine is now an internal regression-only legacy
+-- implementation. The authenticated wrapper is hard-locked to the completed
+-- production Colorado source and cannot be reused by this synthetic fixture.
+reset role;
+select private.promote_legacy_colorado_import_scope(
   '81000000-0000-4000-8000-000000000001',
   date '2099-08-02',
   date '2099-08-08',
   false,
   'Regression atomic promotion'
 ) as mapping_scope_promoted;
+
+set local role authenticated;
 
 select public.accept_import_schedule_scope(
   '81000000-0000-4000-8000-000000000001',
@@ -1103,7 +1109,8 @@ select public.accept_import_schedule_scope(
   'Regression second schedule acceptance'
 ) as second_schedule_scope_accepted;
 
-select public.promote_import_scope(
+reset role;
+select private.promote_legacy_colorado_import_scope(
   '81000000-0000-4000-8000-000000000001',
   date '2099-08-09',
   date '2099-08-15',

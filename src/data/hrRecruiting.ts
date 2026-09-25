@@ -1,5 +1,8 @@
 import { z } from 'zod'
 import { documentApiRequest, parseApiError } from './hrDocuments'
+import type { ContinentalUsTimeZone } from '../lib/usTimeZones'
+
+const employeeTimeZoneSchema = z.enum(['America/New_York', 'America/Chicago', 'America/Denver', 'America/Phoenix', 'America/Los_Angeles'])
 
 const recruitingWorkspaceSchema = z.object({
   enabled: z.boolean(),
@@ -84,11 +87,13 @@ export async function requestCandidateConversion(input: {
   employmentType: string
   jobTitle: string
   startDate: string
+  timeZone: ContinentalUsTimeZone
   reason: string
 }) {
+  const validatedInput = { ...input, timeZone: employeeTimeZoneSchema.parse(input.timeZone) }
   const response = await recruitingApi('/api/v1/hr/recruiting/conversions', {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify(validatedInput),
   })
   if (!response.ok) throw await parseApiError(response, 'The employee conversion request could not be created.')
   return conversionResultSchema.parse(await response.json())

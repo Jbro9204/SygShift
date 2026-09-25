@@ -111,15 +111,19 @@ describe('actual employee role form and RPC serialization', () => {
   it('creates employees with the same complete selection and preserves server denials', async () => {
     const input = { ...props(), employee: undefined, assignedAccessRoleIds: [] }
     render(<EmployeeForm {...input} />)
+    const timeZone = screen.getByLabelText('Employee time zone')
+    expect(timeZone).toBeRequired()
+    expect(timeZone).toHaveValue('')
     openRoles()
     fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Sample' } })
     fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Employee' } })
+    fireEvent.change(timeZone, { target: { value: 'America/New_York' } })
     fireEvent.click(screen.getByRole('checkbox', { name: 'Human Resources' }))
     fireEvent.click(screen.getByRole('button', { name: 'Create employee' }))
     fireEvent.click(screen.getByRole('button', { name: 'Confirm & save employee' }))
     const payload = input.onSubmit.mock.calls[0][0]
     await createEmployee(payload)
-    expect(rpc).toHaveBeenCalledWith('admin_create_employee_with_time_zone_and_access_roles', expect.objectContaining({ target_role: 'guard', target_access_role_ids: ['hr-role'] }))
+    expect(rpc).toHaveBeenCalledWith('admin_create_employee_with_time_zone_and_access_roles', expect.objectContaining({ target_role: 'guard', target_time_zone: 'America/New_York', target_access_role_ids: ['hr-role'] }))
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'Only an Admin can manage access roles.' } })
     await expect(updateEmployee({ ...payload, employeeId: employeeRoleTestUser.id })).rejects.toThrow('Only an Admin')
   })

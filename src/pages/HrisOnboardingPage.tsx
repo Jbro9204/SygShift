@@ -24,13 +24,16 @@ import {
   getHrOnboardingOptions,
   getHrOnboardingWorkspace,
   launchExistingHrOnboarding,
+  onboardingEmploymentStepReady,
   runHrOnboardingAction,
   sendHrOnboardingWelcomePackage,
+  suggestedEmployeeTimeZone,
   type HrOnboardingAction,
   type HrOnboardingCase,
   type HrOnboardingPrehireInput,
 } from '../data/hrOnboarding'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { continentalUsTimeZoneLabel, continentalUsTimeZones, type ContinentalUsTimeZone } from '../lib/usTimeZones'
 
 type PageSize = 5 | 10 | 20
 type Feedback = { tone: 'success' | 'error'; message: string }
@@ -43,7 +46,11 @@ type PendingAction = {
   description: string
 }
 
-const initialPrehire: HrOnboardingPrehireInput = {
+type PrehireDraft = Omit<HrOnboardingPrehireInput, 'timeZone'> & {
+  timeZone: ContinentalUsTimeZone | ''
+}
+
+const initialPrehire: PrehireDraft = {
   firstName: '',
   middleName: '',
   lastName: '',
@@ -51,6 +58,7 @@ const initialPrehire: HrOnboardingPrehireInput = {
   mobilePhone: '',
   positionTitle: '',
   workState: 'CO',
+  timeZone: '',
   role: 'guard',
   employmentType: 'hourly',
   jobFamily: 'guard',
@@ -90,7 +98,7 @@ export function HrisOnboardingPage() {
   const [createFeedback, setCreateFeedback] = useState<Feedback | null>(null)
   const [existingSearch, setExistingSearch] = useState('')
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
-  const [prehire, setPrehire] = useState<HrOnboardingPrehireInput>(initialPrehire)
+  const [prehire, setPrehire] = useState<PrehireDraft>(initialPrehire)
   const [createReason, setCreateReason] = useState('Create employee onboarding record.')
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
   const [actionReason, setActionReason] = useState('')
@@ -136,7 +144,7 @@ export function HrisOnboardingPage() {
     setCreateFeedback(null)
     try {
       const result = createMode === 'new'
-        ? await createHrOnboardingPrehire(prehire, createReason.trim())
+        ? await createHrOnboardingPrehire({ ...prehire, timeZone: prehire.timeZone as ContinentalUsTimeZone }, createReason.trim())
         : await launchExistingHrOnboarding(selectedEmployeeId!, {
           positionTitle: prehire.positionTitle,
           workState: prehire.workState,
@@ -194,7 +202,7 @@ export function HrisOnboardingPage() {
 
   const canContinueCreate = createStep === 1
     ? createMode === 'existing' ? Boolean(selectedEmployeeId) : Boolean(prehire.firstName.trim() && prehire.lastName.trim() && prehire.personalEmail.trim())
-    : createStep === 2 ? Boolean(prehire.positionTitle.trim() && prehire.startDate) : true
+    : createStep === 2 ? onboardingEmploymentStepReady(prehire, createMode === 'new') : true
 
   async function submitAction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -334,7 +342,8 @@ export function HrisOnboardingPage() {
             {createStep === 2 ? <fieldset><legend>Employment setup</legend><div className="hr-onboarding-form-grid hr-onboarding-form-grid--three">
               <label><span>Position title</span><input required value={prehire.positionTitle} onChange={(event) => setPrehire({ ...prehire, positionTitle: event.target.value })} /></label>
               <label><span>Start date</span><input required type="date" value={prehire.startDate} onChange={(event) => setPrehire({ ...prehire, startDate: event.target.value })} /></label>
-              <label><span>Work state</span><select value={prehire.workState} onChange={(event) => setPrehire({ ...prehire, workState: event.target.value as HrOnboardingPrehireInput['workState'] })}><option value="CO">Colorado</option><option value="CA">California</option><option value="AZ">Arizona</option></select></label>
+              <label><span>Work state</span><select value={prehire.workState} onChange={(event) => setPrehire({ ...prehire, workState: event.target.value as HrOnboardingPrehireInput['workState'], timeZone: createMode === 'new' ? '' : prehire.timeZone })}><option value="CO">Colorado</option><option value="CA">California</option><option value="AZ">Arizona</option><option value="NC">North Carolina</option></select></label>
+              {createMode === 'new' ? <label><span>Employee time zone</span><select required value={prehire.timeZone} onChange={(event) => setPrehire({ ...prehire, timeZone: event.target.value as ContinentalUsTimeZone })}><option disabled value="">Choose the employee's time zone</option>{continentalUsTimeZones.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><small>Suggested for {prehire.workState}: {continentalUsTimeZoneLabel(suggestedEmployeeTimeZone(prehire.workState))}. Choose the time zone to confirm it for schedules, timekeeping, notices, and calendar exports.</small></label> : null}
               <label><span>Employment type</span><select value={prehire.employmentType} onChange={(event) => setPrehire({ ...prehire, employmentType: event.target.value as HrOnboardingPrehireInput['employmentType'] })}><option value="hourly">Hourly</option><option value="salary">Salary</option><option value="flex">Flex</option></select></label>
               {createMode === 'new' ? <label><span>Schedule &amp; timekeeping role</span><select value={prehire.role} onChange={(event) => setPrehire({ ...prehire, role: event.target.value as HrOnboardingPrehireInput['role'] })}><option value="guard">Guard</option><option value="supervisor">Supervisor</option><option value="dispatcher">Dispatcher</option><option value="scheduler">Scheduler</option><option value="recruiting_licensing">Recruiting &amp; Licensing</option><option value="admin">Admin</option></select></label> : null}
               <label><span>Job family</span><select value={prehire.jobFamily} onChange={(event) => setPrehire({ ...prehire, jobFamily: event.target.value as HrOnboardingPrehireInput['jobFamily'] })}><option value="guard">Guard</option><option value="administration">Administration</option><option value="operations">Operations</option><option value="other">Other</option></select></label>
@@ -345,7 +354,7 @@ export function HrisOnboardingPage() {
               <label><input checked={prehire.requiresArmedCredentials} onChange={(event) => setPrehire({ ...prehire, requiresArmedCredentials: event.target.checked, requiresGuardLicense: event.target.checked || prehire.requiresGuardLicense })} type="checkbox" /><span><strong>Armed credential requirements</strong><small>Add armed endorsements and required training verification.</small></span></label>
             </div></fieldset> : null}
 
-            {createStep === 4 ? <fieldset><legend>Review and create</legend><div className="hr-onboarding-review-grid"><div><span>Employee source</span><strong>{createMode === 'new' ? 'New protected employee record' : 'Existing employee record'}</strong></div><div><span>Employee</span><strong>{createMode === 'new' ? `${prehire.firstName} ${prehire.lastName}`.trim() : onboardingOptionsQuery.data?.employees.find((employee) => employee.id === selectedEmployeeId)?.employeeName ?? 'Selected employee'}</strong></div><div><span>Position</span><strong>{prehire.positionTitle}</strong></div><div><span>Start date</span><strong>{prehire.startDate ? formatDate(prehire.startDate) : 'Not selected'}</strong></div><div><span>Work state</span><strong>{prehire.workState}</strong></div><div><span>Employment</span><strong>{formatStatus(prehire.employmentType)}</strong></div><div><span>Requirements</span><strong>{[prehire.requiresGuardLicense ? 'Guard license' : '', prehire.requiresArmedCredentials ? 'Armed credentials' : ''].filter(Boolean).join(', ') || 'Standard onboarding only'}</strong></div></div><label className="hr-onboarding-reason"><span>Audit reason</span><textarea required value={createReason} onChange={(event) => setCreateReason(event.target.value)} /></label></fieldset> : null}
+            {createStep === 4 ? <fieldset><legend>Review and create</legend><div className="hr-onboarding-review-grid"><div><span>Employee source</span><strong>{createMode === 'new' ? 'New protected employee record' : 'Existing employee record'}</strong></div><div><span>Employee</span><strong>{createMode === 'new' ? `${prehire.firstName} ${prehire.lastName}`.trim() : onboardingOptionsQuery.data?.employees.find((employee) => employee.id === selectedEmployeeId)?.employeeName ?? 'Selected employee'}</strong></div><div><span>Position</span><strong>{prehire.positionTitle}</strong></div><div><span>Start date</span><strong>{prehire.startDate ? formatDate(prehire.startDate) : 'Not selected'}</strong></div><div><span>Work state</span><strong>{prehire.workState}</strong></div>{createMode === 'new' ? <div><span>Employee time zone</span><strong>{prehire.timeZone ? continentalUsTimeZoneLabel(prehire.timeZone) : 'Not selected'}</strong></div> : null}<div><span>Employment</span><strong>{formatStatus(prehire.employmentType)}</strong></div><div><span>Requirements</span><strong>{[prehire.requiresGuardLicense ? 'Guard license' : '', prehire.requiresArmedCredentials ? 'Armed credentials' : ''].filter(Boolean).join(', ') || 'Standard onboarding only'}</strong></div></div><label className="hr-onboarding-reason"><span>Audit reason</span><textarea required value={createReason} onChange={(event) => setCreateReason(event.target.value)} /></label></fieldset> : null}
 
             <div className="modal-actions hr-onboarding-wizard-actions"><button className="secondary-button" onClick={createStep === 1 ? closeCreate : () => { setCreateStep((step) => step - 1); setCreateFeedback(null) }} type="button">{createStep === 1 ? 'Cancel' : 'Back'}</button>{createStep < 4 ? <button className="primary-action" disabled={!canContinueCreate} onClick={() => { setCreateStep((step) => step + 1); setCreateFeedback(null) }} type="button">Continue</button> : <button className="primary-action" disabled={!createReason.trim() || !canContinueCreate} type="submit">Create onboarding checklist</button>}</div>
           </form>

@@ -56,6 +56,7 @@ import {
 import { isSupabaseConfigured } from '../lib/supabase'
 import { formatOperationalDateTime } from '../lib/time'
 import { activeCredentialRenewalCount } from '../lib/licensingWorklist'
+import { continentalUsTimeZones, type ContinentalUsTimeZone } from '../lib/usTimeZones'
 
 type SummaryFilter =
   | 'all'
@@ -330,6 +331,7 @@ function EmployeeFormModal({
       personalEmail: value('personalEmail'),
       preferredName: value('preferredName'),
       role: employee?.role ?? 'guard',
+      timeZone: employee ? undefined : value('timeZone') as ContinentalUsTimeZone,
     })
   }
 
@@ -374,8 +376,20 @@ function EmployeeFormModal({
           <label><span>Personal email</span><input defaultValue={employee?.personalEmail ?? ''} name="personalEmail" type="email" /></label>
           <label><span>Company email</span><input defaultValue={employee?.companyEmail ?? ''} name="companyEmail" type="email" /></label>
         </div>
-        <div className="form-grid form-grid--two">
+        <div className={`form-grid ${employee ? 'form-grid--two' : 'form-grid--three'}`}>
           <label><span>Mobile phone</span><input defaultValue={employee?.mobilePhone ?? ''} name="mobilePhone" /></label>
+          {!employee ? (
+            <label>
+              <span>Employee time zone</span>
+              <select defaultValue="" name="timeZone" required>
+                <option disabled value="">Choose the employee&apos;s time zone</option>
+                {continentalUsTimeZones.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <small>Required for schedules, timekeeping, notices, and calendar exports.</small>
+            </label>
+          ) : null}
           <label><span>System role</span><input value={employee ? formatRole(employee.role) : 'Guard'} readOnly /></label>
         </div>
         <div className="modal-actions">
