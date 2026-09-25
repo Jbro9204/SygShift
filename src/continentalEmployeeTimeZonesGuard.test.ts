@@ -41,6 +41,13 @@ describe('continental employee time-zone release guard', () => {
     expect(migration).toContain("'existingTimeEventsChanged', false")
   })
 
+  it('fails closed unless the exact production repair target and identity match', () => {
+    expect(timeZoneRepairMigration).toContain("raise check_violation using message = 'Misty Kimbal time-zone repair target was not found.'")
+    expect(timeZoneRepairMigration).toContain("target_employee.employee_number is distinct from 'SYG-1131'")
+    expect(timeZoneRepairMigration).toContain("target_employee.username is distinct from 'mkimbal'")
+    expect(timeZoneRepairMigration).not.toContain('if found then')
+  })
+
   it('creates future one-person assignments from employee-local wall-clock time', () => {
     expect(migration).toContain('scheduler_create_employee_local_coverage_plan')
     expect(migration).toContain('localized_starts_at')

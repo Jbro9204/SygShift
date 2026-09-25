@@ -1477,13 +1477,18 @@ begin
   where employee.id = target_employee_id
   for update;
 
-  -- Fresh/local databases may not contain the production employee. Production
-  -- must match every identity and shift guard or the migration stops safely.
-  if found then
-    if target_employee.employee_number <> 'SYG-1131'
-      or target_employee.username <> 'mkimbal'
-      or target_employee.first_name <> 'Misty'
-      or target_employee.last_name <> 'Kimbal'
+  -- This release contains an exact production data repair. A missing target or
+  -- any identity drift must stop the transaction instead of silently recording
+  -- the migration without applying the reviewed repair.
+  if not found then
+    raise check_violation using message = 'Misty Kimbal time-zone repair target was not found.';
+  end if;
+
+    if target_employee.employee_number is distinct from 'SYG-1131'
+      or target_employee.username is distinct from 'mkimbal'
+      or target_employee.first_name is distinct from 'Misty'
+      or target_employee.last_name is distinct from 'Kimbal'
+      or target_employee.time_zone is null
       or target_employee.time_zone not in ('America/Denver','America/New_York')
     then
       raise check_violation using message = 'Misty Kimbal time-zone repair identity guard did not match.';
@@ -1626,7 +1631,6 @@ begin
         'shiftIds',(select jsonb_agg(repair.shift_id order by repair.shift_id) from employee_time_zone_repair_targets repair)
       )
     );
-  end if;
 end
 $$;
 

@@ -507,7 +507,10 @@ begin
     raise exception 'The personal timekeeping dashboard is not based on the employee profile zone.';
   end if;
 
-  if exists (select 1 from public.employees employee where employee.id = misty_id) then
+  if not exists (select 1 from public.employees employee where employee.id = misty_id) then
+    raise exception 'The exact Misty Kimbal production repair target is missing.';
+  end if;
+
     if not exists (
       select 1 from public.employees employee
       where employee.id = misty_id
@@ -625,7 +628,6 @@ begin
     ) then
       raise exception 'The exact Misty time-zone repair audit event is missing.';
     end if;
-  end if;
 end
 $$;
 
