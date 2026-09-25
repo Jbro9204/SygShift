@@ -9,7 +9,7 @@ SygShift is a workforce-operations application for client relationships, schedul
 - React and TypeScript provide the browser application.
 - Cloudflare Workers serves the application and versioned API routes.
 - Supabase provides PostgreSQL, authentication, object storage, and managed backups.
-- Operational timestamps are stored in UTC. Site coverage keeps the Site/Post operating time zone, while an employee's personal schedule is displayed in the supported continental U.S. time zone reported by the browser or, when unavailable, the employee profile.
+- Operational timestamps are stored in UTC. Site coverage keeps the Site/Post operating time zone, while employee-facing Schedule, Home, Time & Attendance, and early-clock warnings use the employee profile time zone. A browser time zone is informational only and never chooses schedule-save semantics.
 - The application is API-first so a future company hub can use the same authorization and business services without embedding this interface.
 
 ## Trust boundaries
@@ -51,21 +51,22 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 
 ## Continental U.S. schedule time zones
 
-- SygShift supports `America/New_York`, `America/Chicago`, `America/Denver`, and `America/Los_Angeles` for employee schedule display and future employee-specific assignment entry.
-- The employee profile holds the operational fallback time zone. A supported browser time zone controls personal display so an employee sees the local wall-clock time they are expected to follow.
-- Server timestamps remain authoritative UTC instants. Browser time is used only to select the presentation zone; it never authorizes an early punch or supplies the recorded punch timestamp.
+- SygShift supports `America/New_York`, `America/Chicago`, `America/Denver`, `America/Phoenix`, and `America/Los_Angeles` for employee schedule display and future employee-specific assignment entry. Arizona uses `America/Phoenix` so it does not inherit Denver daylight-saving changes.
+- The employee profile is the authoritative personal time zone. Interactive employee creation requires an explicit supported-zone choice; it must not silently infer Mountain Time from a missing value.
+- Server timestamps remain authoritative UTC instants. The browser time zone may be shown as secondary device context, but it does not control employee schedule presentation, authorize an early punch, supply a punch timestamp, or select how a scheduler entry is stored.
 - A future one-person assigned shift is entered in the selected employee's profile time zone and stored as an absolute timestamp. Open coverage, multi-person coverage, and general Site/Post operations continue to use the Site/Post time zone.
-- Existing shifts, punches, payroll assignments, and historical records are not rebased when an employee time zone is added or changed. A profile-zone correction changes presentation and future employee-specific entry only.
+- Schedule creation and editing must identify the active basis as **Employee Time** or **Site Time** and show the corresponding zone. When the two zones differ, the scheduler shows both wall-clock interpretations before save.
+- Calendar exports preserve the authoritative UTC shift instant and identify the recorded schedule-time basis. The receiving calendar remains responsible for displaying that instant in its configured zone.
+- Existing shifts, punches, payroll assignments, and historical records are not rebased when an employee time zone is added or changed. A profile-zone correction preserves `starts_at` and `ends_at`; any correction to an employee-sourced shift snapshot changes only its zone metadata through an audited, narrowly scoped repair.
 - Payroll batching remains governed by its separately versioned `America/Denver` boundary and is not changed by employee display zones.
 
 ## Global operational time header
 
-- The authenticated application uses one shared `AppShell` header across every permission-controlled workspace. The shell owns one compact integrated date, four-zone, and account bar plus maintenance notices and the existing rotating alert lane.
-- Eastern, Central, Mountain, and Pacific clocks are derived from one synchronized instant and explicit IANA zones. The display timer is anchored to the existing maintenance-status server timestamp and refreshed through that existing query; it does not make a network request every second.
-- Clock formatters are cached, daylight/standard abbreviations come from `Intl.DateTimeFormat`, and every zone computes its own calendar date for its accessible label. Mountain remains visibly identified as **SygShift system time**.
-- Header clocks are informational. Server timestamps and protected database functions remain authoritative for punches, payroll, patrol hits, audit events, and all other secured records.
+- The authenticated application uses one shared `AppShell` header across every permission-controlled workspace. The shell owns one compact date, signed-in-user system-time, and account bar plus maintenance notices and the existing rotating alert lane.
+- The single clock is derived from one synchronized server instant and the signed-in employee's supported profile zone. Its timer is anchored to the existing maintenance-status server timestamp and refreshed through that query; it does not make a network request every second.
+- The header clock is informational. Server timestamps and protected database functions remain authoritative for punches, payroll, patrol hits, audit events, and all other secured records.
 - The existing workspace alert component remains the only global alert lane. It retains its permission filtering, rotation, count, severity, and workflow links while flowing beneath the clocks with responsive wrapping.
-- Wide desktop uses one 72-pixel integrated bar. At 1280 effective pixels and below, and on common 1366-by-768 laptop viewports, the fixed 276-pixel navigation rail becomes the existing full off-canvas drawer so every module receives the full content width; the employee's saved desktop collapse preference is retained and restored when the viewport widens. Constrained desktop keeps all four clocks on a compact second row, while ordinary tablet and mobile workspaces use a two-by-two grid without hiding a zone. On compact SygSphere laptops the alert lane becomes a concise single row. On the phone-width SygSphere route, the same four clocks use one readable horizontal strip with Pacific and Mountain system time first; the remaining zones stay reachable by a direct horizontal swipe so messaging and its composer retain the usable viewport.
+- At 1280 effective pixels and below, and on common 1366-by-768 laptop viewports, the fixed navigation rail becomes the existing full off-canvas drawer so every module receives the full content width; the employee's saved desktop collapse preference is retained and restored when the viewport widens. The single clock remains readable without horizontal scrolling on constrained desktop, mobile, and the SygSphere shell.
 
 ## Identity and access control
 

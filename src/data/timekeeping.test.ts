@@ -66,6 +66,52 @@ describe('timekeeping validation', () => {
     expect(activeTimeState(dashboard.lastEvent)).toBe('off_clock')
   })
 
+  it('accepts an Eastern employee profile as the personal dashboard date basis', () => {
+    const dashboard = parseTimekeepingDashboard({
+      serverTimestamp: '2026-09-25T13:00:00.000Z',
+      operationalDate: '2026-09-25',
+      operationalTimeZone: 'America/New_York',
+      employee: {
+        id: '73000000-0000-4000-8000-000000000011',
+        username: 'mkimbal',
+        displayName: 'Misty Kimbal',
+        role: 'guard',
+        employmentType: 'hourly',
+        timeZone: 'America/New_York',
+      },
+      lastEvent: null,
+      eligibleShifts: [],
+      recentEvents: [],
+      pendingCorrectionCount: 0,
+    })
+
+    expect(dashboard.operationalTimeZone).toBe('America/New_York')
+    expect(dashboard.employee.timeZone).toBe('America/New_York')
+  })
+
+  it('accepts Arizona employee time without applying Denver daylight-saving rules', () => {
+    const dashboard = parseTimekeepingDashboard({
+      serverTimestamp: '2026-07-15T16:00:00.000Z',
+      operationalDate: '2026-07-15',
+      operationalTimeZone: 'America/Phoenix',
+      employee: {
+        id: '73000000-0000-4000-8000-000000000012',
+        username: 'azguard',
+        displayName: 'Arizona Guard',
+        role: 'guard',
+        employmentType: 'hourly',
+        timeZone: 'America/Phoenix',
+      },
+      lastEvent: null,
+      eligibleShifts: [],
+      recentEvents: [],
+      pendingCorrectionCount: 0,
+    })
+
+    expect(dashboard.operationalTimeZone).toBe('America/Phoenix')
+    expect(dashboard.employee.timeZone).toBe('America/Phoenix')
+  })
+
   it('maps the last punch to the correct employee state', () => {
     expect(activeTimeState(parseTimekeepingEvent({
       id: '73000000-0000-4000-8000-000000000002',

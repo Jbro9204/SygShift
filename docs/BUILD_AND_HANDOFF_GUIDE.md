@@ -204,6 +204,11 @@ Trust model:
 - Production dates display as two-digit month, two-digit day, and four-digit year: `MM/DD/YYYY`.
 - Where operationally useful, time displays civilian and military formats together, such as `2:00 PM (14:00)`.
 - Never derive authoritative state from the viewer's local clock when server time or the operating time zone is required.
+- Use the employee profile time zone for employee-facing Schedule, Home, Time & Attendance, and early-clock warnings. The browser/device zone may appear as secondary informational context only.
+- Interpret one-person employee-specific schedule entry in the employee profile zone. Interpret open, multi-person, and physical Site/Post coverage in the Site/Post zone. Label the basis and show both conversions when employee and site zones differ.
+- Require an explicit supported employee time zone in interactive onboarding and User Accounts creation. Do not silently substitute `America/Denver` for an omitted user choice.
+- When correcting a profile or shift-zone label, preserve the authoritative UTC `starts_at`/`ends_at` values unless an authorized scheduler explicitly chooses and confirms a wall-clock reinterpretation.
+- Calendar files retain UTC `DTSTART`/`DTEND` values so the receiving calendar can localize the same instant; include the recorded Employee/Site time-basis label rather than silently rebasing the event.
 
 ### Notifications and announcements
 

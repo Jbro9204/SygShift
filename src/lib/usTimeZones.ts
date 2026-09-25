@@ -2,6 +2,7 @@ export const continentalUsTimeZones = [
   { label: 'Eastern Time', shortLabel: 'Eastern', value: 'America/New_York' },
   { label: 'Central Time', shortLabel: 'Central', value: 'America/Chicago' },
   { label: 'Mountain Time', shortLabel: 'Mountain', value: 'America/Denver' },
+  { label: 'Arizona Time', shortLabel: 'Arizona', value: 'America/Phoenix' },
   { label: 'Pacific Time', shortLabel: 'Pacific', value: 'America/Los_Angeles' },
 ] as const
 

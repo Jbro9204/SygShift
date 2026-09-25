@@ -1,4 +1,5 @@
 import type { ScheduleShift, WeeklySchedule } from '../data/schedule'
+import { scheduleTimeBasisLabel } from './timeBasis'
 
 function escapeCalendarText(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;')
@@ -51,7 +52,7 @@ export function buildScheduleCalendar(
     const description = [
       shift.requires_armed ? 'Armed assignment' : 'Unarmed assignment',
       assignees ? `Assigned: ${assignees}` : 'Open assignment',
-      `Schedule time zone: ${shift.time_zone}`,
+      `Schedule time basis: ${scheduleTimeBasisLabel(shift.time_zone_source, shift.time_zone)}`,
       shift.notes?.trim() || null,
     ].filter(Boolean).join('\n')
     lines.push(

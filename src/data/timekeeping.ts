@@ -9,6 +9,7 @@ const assignmentStatusSchema = z.enum(['assigned', 'confirmed', 'canceled', 'com
 const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary', 'flex'])
 const workTypeSchema = z.enum(['post', 'training'])
+const employeeTimeZoneSchema = z.enum(['America/New_York', 'America/Chicago', 'America/Denver', 'America/Phoenix', 'America/Los_Angeles'])
 
 const timekeepingEmployeeSchema = z.object({
   id: z.string().uuid(),
@@ -16,7 +17,7 @@ const timekeepingEmployeeSchema = z.object({
   displayName: z.string(),
   role: appRoleSchema,
   employmentType: employmentTypeSchema,
-  timeZone: z.string().default('America/Denver'),
+  timeZone: employeeTimeZoneSchema.default('America/Denver'),
 })
 
 const timekeepingShiftSchema = z.object({
@@ -76,7 +77,7 @@ const supervisorRecordedTimeEventSchema = timekeepingEventSchema.extend({
 const timekeepingDashboardSchema = z.object({
   serverTimestamp: z.string(),
   operationalDate: z.string(),
-  operationalTimeZone: z.literal('America/Denver'),
+  operationalTimeZone: employeeTimeZoneSchema,
   employee: timekeepingEmployeeSchema,
   lastEvent: timekeepingEventSchema.nullable(),
   eligibleShifts: z.array(timekeepingShiftSchema),

@@ -13,15 +13,18 @@ describe('continental US time zones', () => {
       'America/New_York',
       'America/Chicago',
       'America/Denver',
+      'America/Phoenix',
       'America/Los_Angeles',
     ])
   })
 
   it('rejects unsupported or ambiguous zones', () => {
     expect(isContinentalUsTimeZone('America/Chicago')).toBe(true)
+    expect(isContinentalUsTimeZone('America/Phoenix')).toBe(true)
     expect(isContinentalUsTimeZone('UTC')).toBe(false)
     expect(isContinentalUsTimeZone(null)).toBe(false)
     expect(continentalUsTimeZoneLabel('America/Chicago')).toBe('Central Time')
+    expect(continentalUsTimeZoneLabel('America/Phoenix')).toBe('Arizona Time')
   })
 
   it('keeps the employee profile authoritative when the device reports another supported zone', () => {

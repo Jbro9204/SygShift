@@ -7,22 +7,28 @@ const migration = readFileSync(
   join(root, 'supabase', 'migrations', '20260901190000_continental_employee_time_zones.sql'),
   'utf8',
 )
+const timeZoneRepairMigration = readFileSync(
+  join(root, 'supabase', 'migrations', '20260925175035_explicit_employee_time_zone_and_misty_repair.sql'),
+  'utf8',
+)
 const scheduleData = readFileSync(join(root, 'src', 'data', 'schedule.ts'), 'utf8')
 const schedulePage = readFileSync(join(root, 'src', 'pages', 'SchedulePage.tsx'), 'utf8')
 const overviewPage = readFileSync(join(root, 'src', 'pages', 'OverviewPage.tsx'), 'utf8')
 const timePage = readFileSync(join(root, 'src', 'pages', 'TimePage.tsx'), 'utf8')
 
 describe('continental employee time-zone release guard', () => {
-  it('supports only the four approved continental US zones on employee profiles', () => {
+  it('supports the approved employee profile zones, including non-DST Arizona time', () => {
     for (const timeZone of [
       'America/New_York',
       'America/Chicago',
       'America/Denver',
+      'America/Phoenix',
       'America/Los_Angeles',
     ]) {
-      expect(migration).toContain(timeZone)
+      expect(`${migration}\n${timeZoneRepairMigration}`).toContain(timeZone)
     }
     expect(migration).toContain('employees_continental_us_time_zone')
+    expect(timeZoneRepairMigration).toContain('employees_continental_us_time_zone')
     expect(migration).toContain("where employee.username = 'zward'")
   })
 

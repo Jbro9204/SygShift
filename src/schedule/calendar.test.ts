@@ -7,6 +7,8 @@ const shift: ScheduleShift = {
   starts_at: '2026-09-22T14:00:00.000Z',
   ends_at: '2026-09-22T22:00:00.000Z',
   time_zone: 'America/Denver',
+  time_zone_source: 'site',
+  time_zone_employee_id: null,
   headcount_required: 1,
   requires_armed: true,
   is_open: false,
@@ -20,11 +22,34 @@ const shift: ScheduleShift = {
 describe('schedule calendar export', () => {
   it('creates an Apple and Google compatible calendar with stable shift identity', () => {
     const calendar = buildScheduleCalendar({ revision: 4, shifts: [shift], week_starts_on: '2026-09-20' })
+    const unfoldedCalendar = calendar.replace(/\r\n /g, '')
     expect(calendar).toContain('BEGIN:VCALENDAR\r\n')
     expect(calendar).toContain('UID:11111111-1111-4111-8111-111111111111@sygshift.sygilant.us')
     expect(calendar).toContain('DTSTART:20260922T140000Z')
     expect(calendar).toContain('SUMMARY:Headquarters — Lobby')
+    expect(unfoldedCalendar).toContain('Schedule time basis: Site Time — Mountain')
     expect(calendar).toContain('Bring radio\\, keys')
+  })
+
+  it('identifies employee-time exports while preserving the authoritative UTC instant', () => {
+    const employeeShift: ScheduleShift = {
+      ...shift,
+      starts_at: '2026-09-22T13:00:00.000Z',
+      ends_at: '2026-09-22T21:00:00.000Z',
+      time_zone: 'America/New_York',
+      time_zone_source: 'employee',
+      time_zone_employee_id: shift.assignments[0].employee.id,
+    }
+
+    const calendar = buildScheduleCalendar(
+      { revision: 5, shifts: [employeeShift], week_starts_on: '2026-09-20' },
+      { employeeId: shift.assignments[0].employee.id },
+    )
+    const unfoldedCalendar = calendar.replace(/\r\n /g, '')
+
+    expect(calendar).toContain('DTSTART:20260922T130000Z')
+    expect(calendar).toContain('DTEND:20260922T210000Z')
+    expect(unfoldedCalendar).toContain('Schedule time basis: Employee Time — Eastern')
   })
 
   it('limits a personal export to the signed-in employee', () => {
