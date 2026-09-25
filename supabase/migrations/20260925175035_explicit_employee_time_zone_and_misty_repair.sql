@@ -1463,7 +1463,9 @@ insert into employee_time_zone_repair_targets (shift_id, expected_starts_at, exp
   ('592930df-6dbd-486e-8525-50ede68e4644','2026-10-02 13:00:00+00','2026-10-02 21:00:00+00');
 
 lock table public.employees in row exclusive mode;
+lock table public.schedules in share row exclusive mode;
 lock table public.shifts in share row exclusive mode;
+lock table public.shift_assignments in share row exclusive mode;
 alter table public.shifts disable trigger shifts_published_immutable;
 
 do $$

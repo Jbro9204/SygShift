@@ -45,6 +45,8 @@ describe('continental employee time-zone release guard', () => {
     expect(timeZoneRepairMigration).toContain("raise check_violation using message = 'Misty Kimbal time-zone repair target was not found.'")
     expect(timeZoneRepairMigration).toContain("target_employee.employee_number is distinct from 'SYG-1131'")
     expect(timeZoneRepairMigration).toContain("target_employee.username is distinct from 'mkimbal'")
+    expect(timeZoneRepairMigration).toContain('lock table public.schedules in share row exclusive mode')
+    expect(timeZoneRepairMigration).toContain('lock table public.shift_assignments in share row exclusive mode')
     expect(timeZoneRepairMigration).not.toContain('if found then')
   })
 
