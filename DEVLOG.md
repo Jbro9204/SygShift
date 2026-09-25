@@ -1,5 +1,25 @@
 # SygShift Development Log
 
+## 09/25/2026 - Employee and Schedule Time-Zone Contract
+
+- Made the employee profile time zone authoritative for personal Schedule,
+  Home, My Time, and early clock-in views while retaining trusted server time
+  for punch creation and clock eligibility.
+- Added explicit **Employee Time** versus **Site Time** scheduling, dual-zone
+  previews, DST-safe repeated shifts, and wall-clock-preserving week copies.
+- Required a supported Eastern, Central, Mountain, Arizona, or Pacific zone at
+  employee-creation and site boundaries and retained controlled write grants.
+- Corrected Misty Kimbal's profile to Eastern and relabeled exactly 11 active
+  employee-sourced shifts without changing UTC instants or superseded history.
+- Verified 321 test files / 1,691 tests, 19/19 focused guards, the post-deploy
+  42/42 Time Clock matrix, six rollback-only production SQL regressions, live
+  scheduler/user/site UI, exact deployed bundles, and both production origins.
+- Released implementation commit `2acd642` through four targeted production
+  migrations as Cloudflare Worker `a745a1bc-c6e4-489c-9b88-e7b9b906a70e`;
+  rollback tag: `rollback/pre-employee-schedule-time-zone-contract-20260925`.
+  Release detail:
+  `docs/changelogs/CHANGELOG_09-25-2026_EMPLOYEE_AND_SCHEDULE_TIME_ZONE_CONTRACT.md`.
+
 ## 09/25/2026 - Employee Licensing Profile Contract Repair
 
 - Repaired the employee Licensing response contract that rejected valid
