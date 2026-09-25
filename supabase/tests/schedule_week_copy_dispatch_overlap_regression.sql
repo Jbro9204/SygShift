@@ -90,8 +90,6 @@ do $verify_copy$
 declare
   copy_result jsonb;
   destination_schedule_id uuid;
-  ordinary_overlap_blocked boolean := false;
-  ordinary_overlap_shift_id uuid := 'cd160000-0000-4000-8000-000000000003';
 begin
   copy_result := public.replace_schedule_week_draft_with_work_types(
     'cd150000-0000-4000-8000-000000000001',
@@ -143,47 +141,6 @@ begin
       and shift.work_type = 'post'
   ), 'Standard post classification was not preserved.';
 
-  insert into public.shifts (
-    id,
-    schedule_id,
-    post_id,
-    starts_at,
-    ends_at,
-    time_zone,
-    headcount_required,
-    work_type,
-    time_zone_source,
-    assignment_type,
-    created_by
-  ) values (
-    ordinary_overlap_shift_id,
-    destination_schedule_id,
-    'cd140000-0000-4000-8000-000000000002',
-    timestamptz '2099-01-13 21:00:00-07',
-    timestamptz '2099-01-14 01:00:00-07',
-    'America/Denver',
-    1,
-    'post',
-    'site',
-    'standard',
-    'cd110000-0000-4000-8000-000000000001'
-  );
-
-  begin
-    insert into public.shift_assignments (shift_id, employee_id, status, assigned_by)
-    values (
-      ordinary_overlap_shift_id,
-      'cd110000-0000-4000-8000-000000000002',
-      'assigned',
-      'cd110000-0000-4000-8000-000000000001'
-    );
-  exception when others then
-    ordinary_overlap_blocked := sqlerrm like '%already assigned to an overlapping shift%';
-  end;
-
-  assert ordinary_overlap_blocked,
-    'A genuine standard-shift overlap was not blocked.';
-
   assert (
     select count(*) = 2
     from public.shifts shift
@@ -192,6 +149,67 @@ begin
   ), 'The source schedule was changed by the copy.';
 end
 $verify_copy$;
+
+reset role;
+
+insert into public.shifts (
+  id,
+  schedule_id,
+  post_id,
+  starts_at,
+  ends_at,
+  time_zone,
+  headcount_required,
+  work_type,
+  time_zone_source,
+  assignment_type,
+  created_by
+)
+select
+  'cd160000-0000-4000-8000-000000000003',
+  schedule.id,
+  'cd140000-0000-4000-8000-000000000002',
+  timestamptz '2099-01-13 21:00:00-07',
+  timestamptz '2099-01-14 01:00:00-07',
+  'America/Denver',
+  1,
+  'post',
+  'site',
+  'standard',
+  'cd110000-0000-4000-8000-000000000001'
+from public.schedules schedule
+where schedule.week_starts_on = date '2099-01-11'
+  and schedule.status = 'draft'
+order by schedule.revision desc
+limit 1;
+
+set local role authenticated;
+set local "request.jwt.claim.sub" = 'cd120000-0000-4000-8000-000000000001';
+set local "request.jwt.claims" = '{"sub":"cd120000-0000-4000-8000-000000000001","role":"authenticated","aal":"aal2"}';
+
+do $verify_standard_overlap_still_blocks$
+declare
+  ordinary_overlap_blocked boolean := false;
+  ordinary_overlap_error text;
+begin
+  begin
+    perform public.scheduler_add_draft_shift_assignment_v3(
+      'cd160000-0000-4000-8000-000000000003',
+      'cd110000-0000-4000-8000-000000000002',
+      null,
+      null,
+      null,
+      true
+    );
+  exception when others then
+    ordinary_overlap_error := sqlerrm;
+    ordinary_overlap_blocked := sqlerrm like '%already assigned to an overlapping shift%';
+  end;
+
+  assert ordinary_overlap_blocked,
+    'A genuine standard-shift overlap was not blocked: ' || coalesce(ordinary_overlap_error, 'no error');
+end
+$verify_standard_overlap_still_blocks$;
 
 reset role;
 

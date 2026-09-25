@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   formatScheduleTimeZoneRange,
   scheduleCalendarDateInTimeZone,
   scheduleTimeBasisLabel,
+  runAfterScheduleWallClockPreflight,
   scheduleWallClockRangeToInstants,
+  scheduleWallClockRangesForDates,
   scheduleWallClockToInstant,
 } from './timeBasis'
 
@@ -82,6 +84,44 @@ describe('schedule time-basis contract', () => {
       '02:30',
       'America/New_York',
     )).toThrow('does not exist')
+  })
+
+  it('validates every repeated date before creation and identifies a later DST gap', () => {
+    expect(() => scheduleWallClockRangesForDates(
+      ['2026-03-07', '2026-03-08'],
+      '02:30',
+      '03:30',
+      'America/New_York',
+    )).toThrow('03/08/2026: That local time does not exist')
+  })
+
+  it('does not create an earlier repeated date when a later date is in a DST gap', async () => {
+    const createBatch = vi.fn(async (dateKeys: string[]) => dateKeys)
+
+    await expect(runAfterScheduleWallClockPreflight(
+      ['2026-03-07', '2026-03-08'],
+      '02:30',
+      '03:30',
+      'America/New_York',
+      createBatch,
+    )).rejects.toThrow('03/08/2026: That local time does not exist')
+
+    expect(createBatch).not.toHaveBeenCalled()
+  })
+
+  it('submits every validated repeated date in one batch operation', async () => {
+    const createBatch = vi.fn(async (dateKeys: string[]) => dateKeys)
+
+    await expect(runAfterScheduleWallClockPreflight(
+      ['2026-03-09', '2026-03-10'],
+      '09:00',
+      '17:00',
+      'America/New_York',
+      createBatch,
+    )).resolves.toEqual(['2026-03-09', '2026-03-10'])
+
+    expect(createBatch).toHaveBeenCalledOnce()
+    expect(createBatch).toHaveBeenCalledWith(['2026-03-09', '2026-03-10'])
   })
 
   it('matches PostgreSQL by choosing standard time when the fall-back hour repeats', () => {

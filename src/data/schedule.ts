@@ -3,6 +3,14 @@ import { getSupabaseClient } from '../lib/supabase'
 import { formatDualTimeRange } from '../lib/time'
 import { employeeScheduleDisplayName, employeeScheduleGivenName } from '../lib/employeeName'
 
+const supportedScheduleTimeZoneSchema = z.enum([
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Phoenix',
+  'America/Los_Angeles',
+])
+
 const assignedEmployeeSchema = z.object({
   id: z.string().uuid(),
   first_name: z.string(),
@@ -96,7 +104,7 @@ const builderPostSchema = z.object({
     id: z.string().uuid(),
     code: z.string().nullable(),
     name: z.string(),
-    time_zone: z.string(),
+    time_zone: supportedScheduleTimeZoneSchema,
     supports_dispatch_phone_duty: z.boolean().default(false),
   }),
 })
@@ -111,7 +119,7 @@ const builderOptionsSchema = z.object({
     employee_number: z.string().nullable(),
     role: z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin']),
     employment_type: z.enum(['hourly', 'salary', 'flex']),
-    time_zone: z.string().default('America/Denver'),
+    time_zone: supportedScheduleTimeZoneSchema,
     has_armed_guard_credential: z.boolean(),
   })),
 })
@@ -143,6 +151,13 @@ const createCoveragePlanResultSchema = z.object({
   headcount: z.number().int().positive(),
   armed_headcount: z.number().int().nonnegative(),
   unarmed_headcount: z.number().int().nonnegative(),
+})
+
+const createCoveragePlanBatchResultSchema = z.object({
+  results: z.array(createCoveragePlanResultSchema).min(1),
+  time_zone: z.string().min(1),
+  date_count: z.number().int().positive(),
+  atomic: z.literal(true),
 })
 
 const shiftWorkTypeMapSchema = z.array(z.object({
@@ -360,6 +375,11 @@ export interface CreateCoveragePlanInput {
   dispatchMode?: 'primary_shift' | 'concurrent_duty'
 }
 
+export interface CreateCoveragePlanBatchInput extends Omit<CreateCoveragePlanInput, 'shiftDate'> {
+  shiftDates: string[]
+  expectedTimeZone: string
+}
+
 export interface ScheduledOvertimeCreatePreviewInput {
   weekStartsOn: string
   employeeId: string
@@ -475,7 +495,7 @@ export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Pr
     event_name: input.mode === 'event' ? input.eventName?.trim() : null,
     event_location_name: input.mode === 'event' ? input.eventLocationName?.trim() : null,
     event_site_id: input.mode === 'event' ? input.eventSiteId ?? null : null,
-    event_time_zone: input.mode === 'event' ? input.eventTimeZone?.trim() || 'America/Denver' : null,
+    event_time_zone: input.mode === 'event' ? input.eventTimeZone?.trim() || null : null,
     event_requires_armed: input.mode === 'event' ? input.eventRequiresArmed ?? false : false,
     shift_operational_date: input.shiftDate,
     shift_start_time: input.startTime,
@@ -501,7 +521,7 @@ export async function createSupervisorCoveragePlan(input: CreateCoveragePlanInpu
     event_name: input.mode === 'event' ? input.eventName?.trim() : null,
     event_location_name: input.mode === 'event' ? input.eventLocationName?.trim() : null,
     event_site_id: input.mode === 'event' ? input.eventSiteId ?? null : null,
-    event_time_zone: input.mode === 'event' ? input.eventTimeZone?.trim() || 'America/Denver' : null,
+    event_time_zone: input.mode === 'event' ? input.eventTimeZone?.trim() || null : null,
     shift_operational_date: input.shiftDate,
     shift_start_time: input.startTime,
     shift_end_time: input.endTime,
@@ -529,6 +549,40 @@ export async function createSupervisorCoveragePlan(input: CreateCoveragePlanInpu
 
   if (error) throw new Error(error.message || 'The coverage plan could not be created.')
   return createCoveragePlanResultSchema.parse(data)
+}
+
+export async function createSupervisorCoveragePlanBatch(
+  input: CreateCoveragePlanBatchInput,
+): Promise<CreateCoveragePlanResult[]> {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_create_coverage_plan_batch_v1', {
+    target_week_starts_on: input.weekStartsOn,
+    target_post_id: input.mode === 'post' ? input.postId : null,
+    event_name: input.mode === 'event' ? input.eventName?.trim() : null,
+    event_location_name: input.mode === 'event' ? input.eventLocationName?.trim() : null,
+    event_site_id: input.mode === 'event' ? input.eventSiteId ?? null : null,
+    event_time_zone: input.mode === 'event' ? input.eventTimeZone?.trim() || null : null,
+    shift_operational_dates: input.shiftDates,
+    shift_start_time: input.startTime,
+    shift_end_time: input.endTime,
+    target_headcount: input.headcount,
+    target_armed_headcount: input.armedHeadcount,
+    target_is_overtime: input.isOvertime,
+    target_notes: input.notes?.trim() || null,
+    target_work_type: input.workType ?? 'post',
+    publish_announcement: input.publishAnnouncement,
+    target_employee_id: input.employeeId || null,
+    target_assignment_requires_armed: input.assignmentRequirement === 'armed',
+    target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
+    target_credential_override_note: input.credentialOverrideNote?.trim() || null,
+    target_overtime_override_note: input.overtimeOverrideNote?.trim() || null,
+    target_dispatch_mode: input.dispatchMode ?? 'primary_shift',
+    target_dispatch_overlap_acknowledged: false,
+    use_employee_time_zone: input.useEmployeeTimeZone ?? false,
+    expected_time_zone: input.expectedTimeZone,
+  })
+
+  if (error) throw new Error(error.message || 'The repeated coverage plan could not be created.')
+  return createCoveragePlanBatchResultSchema.parse(data).results
 }
 
 export async function ensureScheduleDraft(weekStartsOn: string): Promise<WeeklySchedule | null> {

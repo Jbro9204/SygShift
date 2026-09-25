@@ -174,9 +174,18 @@ describe('button layout guardrails', () => {
     expect(blockFor('.licensing-selected-credential__actions')).toContain('flex-wrap: wrap')
   })
 
-  it('keeps multi-day shift creation sequential to avoid duplicate schedule revisions', () => {
-    expect(schedulePage).toContain('for (const shiftDate of dates)')
+  it('keeps multi-day shift creation in one zone-bound atomic request', () => {
+    expect(schedulePage).toContain('createSupervisorCoveragePlanBatch({')
+    expect(schedulePage).toContain('expectedTimeZone: openShiftTimeBasisZone')
     expect(schedulePage).not.toContain('Promise.all(dates.map((shiftDate) => createSupervisorOpenShift')
+  })
+
+  it('requires an explicit time zone for standalone events and locks linked events to their site', () => {
+    expect(schedulePage).toContain('eventTimeZone: \'\'')
+    expect(schedulePage).toContain('Event time zone')
+    expect(schedulePage).toContain('Choose the event time zone')
+    expect(schedulePage).toContain('disabled={Boolean(selectedEventSite)}')
+    expect(schedulePage).toContain("eventTimeZone: site?.time_zone ?? ''")
   })
 
   it('keeps multi-day assigned shift retries from failing on already-created dates', () => {

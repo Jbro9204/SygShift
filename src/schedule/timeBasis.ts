@@ -8,6 +8,10 @@ export interface ScheduleWallClockRange {
   startsAt: string
 }
 
+export interface ScheduleWallClockDateRange extends ScheduleWallClockRange {
+  dateKey: string
+}
+
 type LocalDateTimeParts = {
   day: number
   hour: number
@@ -144,6 +148,34 @@ export function scheduleWallClockRangeToInstants(
   }
 
   return { startsAt, endsAt }
+}
+
+export function scheduleWallClockRangesForDates(
+  dateKeys: string[],
+  startTime: string,
+  endTime: string,
+  timeZone: string,
+): ScheduleWallClockDateRange[] {
+  return dateKeys.map((dateKey) => {
+    try {
+      return { dateKey, ...scheduleWallClockRangeToInstants(dateKey, startTime, endTime, timeZone) }
+    } catch (error) {
+      const { day, month, year } = parseDateKey(dateKey)
+      const reason = error instanceof Error ? error.message : 'The shift time could not be converted.'
+      throw new Error(`${String(month).padStart(2, '0')}/${String(day).padStart(2, '0')}/${year}: ${reason}`)
+    }
+  })
+}
+
+export async function runAfterScheduleWallClockPreflight<T>(
+  dateKeys: string[],
+  startTime: string,
+  endTime: string,
+  timeZone: string,
+  operation: (validatedDateKeys: string[]) => Promise<T>,
+): Promise<T> {
+  const ranges = scheduleWallClockRangesForDates(dateKeys, startTime, endTime, timeZone)
+  return operation(ranges.map((range) => range.dateKey))
 }
 
 export function scheduleTimeBasisLabel(source: ScheduleTimeZoneSource | null | undefined, timeZone: string): string {

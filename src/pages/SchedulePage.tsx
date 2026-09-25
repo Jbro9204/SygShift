@@ -19,7 +19,7 @@ import {
   ensureScheduleDraft,
   importedScheduleRows,
   employeeScheduleRows,
-  createSupervisorCoveragePlan,
+  createSupervisorCoveragePlanBatch,
   getConcurrentDispatchOverlapPreview,
   getImportedSchedulePreview,
   getScheduleBuilderOptions,
@@ -52,12 +52,17 @@ import { parseImportedScheduleNote, sourceReferenceLabel } from '../data/sourceN
 import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
 import { formatDualClockTime, formatDualTime, operationalToday } from '../lib/time'
-import { continentalUsTimeZoneLabel, personalDisplayTimeZone } from '../lib/usTimeZones'
+import { continentalUsTimeZoneLabel, continentalUsTimeZones, personalDisplayTimeZone } from '../lib/usTimeZones'
 import { scheduleTeamViewPermissions } from '../app/accessPolicy'
 import { scheduledOvertimePreviewBlocksSave } from '../scheduleDraftEdit'
 import { downloadScheduleCalendar } from '../schedule/calendar'
 import { usePersonalScheduleDateBasis } from '../schedule/personalScheduleDate'
-import { scheduleTimeBasisLabel, scheduleWallClockRangeToInstants } from '../schedule/timeBasis'
+import {
+  runAfterScheduleWallClockPreflight,
+  scheduleTimeBasisLabel,
+  scheduleWallClockRangeToInstants,
+  scheduleWallClockRangesForDates,
+} from '../schedule/timeBasis'
 
 interface OpenShiftFormState {
   mode: 'post' | 'event'
@@ -122,7 +127,7 @@ function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
     eventName: '',
     eventLocationName: '',
     eventSiteId: '',
-    eventTimeZone: 'America/Denver',
+    eventTimeZone: '',
     shiftDate: weekKey,
     startTime: '08:00',
     endTime: '16:00',
@@ -2374,6 +2379,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     return map
   }, [staffingSuggestionsQuery.data])
   const selectedPost = builderOptionsQuery.data?.posts.find((post) => post.id === openShiftForm.postId)
+  const selectedEventSite = availableSites.find((site) => site.id === openShiftForm.eventSiteId)
   const openShiftDateKeys = useMemo(
     () => selectedOpenShiftDateKeys(openShiftForm, weekKey, weekEndKey),
     [openShiftForm, weekEndKey, weekKey],
@@ -2409,7 +2415,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const useEmployeeLocalTime = Boolean(openShiftEmployee && openShiftHeadcount === 1)
   const openShiftSiteTimeZone = openShiftForm.mode === 'post'
     ? selectedPost?.site.time_zone ?? null
-    : openShiftForm.eventTimeZone || null
+    : selectedEventSite?.time_zone ?? (openShiftForm.eventTimeZone || null)
   const openShiftTimeBasisSource = useEmployeeLocalTime ? 'employee' as const : 'site' as const
   const openShiftTimeBasisZone = useEmployeeLocalTime
     ? openShiftEmployee?.time_zone ?? null
@@ -2421,12 +2427,12 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     try {
       return {
         error: null,
-        range: scheduleWallClockRangeToInstants(
-          openShiftForm.shiftDate,
+        range: scheduleWallClockRangesForDates(
+          openShiftDateKeys,
           openShiftForm.startTime,
           openShiftForm.endTime,
           openShiftTimeBasisZone,
-        ),
+        )[0] ?? null,
       }
     } catch (error) {
       return {
@@ -2438,6 +2444,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     openShiftForm.endTime,
     openShiftForm.shiftDate,
     openShiftForm.startTime,
+    openShiftDateKeys,
     openShiftTimeBasisZone,
   ])
   const openShiftTimePreviewRows: ScheduleTimePreviewRow[] = openShiftTimeBasisZone ? [
@@ -2500,7 +2507,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       && openShiftDateKeys.length > 0
       && Boolean(openShiftForm.startTime)
       && Boolean(openShiftForm.endTime)
-      && (openShiftForm.mode === 'event' || Boolean(openShiftForm.postId)),
+      && (openShiftForm.mode === 'event' ? Boolean(openShiftTimeBasisZone) : Boolean(openShiftForm.postId)),
     retry: false,
   })
   const openShiftOvertimePreviewPending = Boolean(openShiftForm.employeeId)
@@ -2558,9 +2565,15 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         throw new Error(`${employeeName} is already assigned during this time on ${skippedAssignedDates.map(dateKeyDisplay).join(', ')}. No new shifts were created.`)
       }
 
-      const results = []
-      for (const shiftDate of dates) {
-        results.push(await createSupervisorCoveragePlan({
+      if (!openShiftTimeBasisZone) {
+        throw new Error('The shift time zone could not be confirmed. No new shifts were created.')
+      }
+      const results = await runAfterScheduleWallClockPreflight(
+        dates,
+        openShiftForm.startTime,
+        openShiftForm.endTime,
+        openShiftTimeBasisZone,
+        async (validatedDates) => createSupervisorCoveragePlanBatch({
           weekStartsOn: weekKey,
           mode: openShiftForm.mode,
           postId: openShiftForm.postId || null,
@@ -2568,7 +2581,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           eventLocationName: openShiftForm.eventLocationName,
           eventSiteId: openShiftForm.eventSiteId || null,
           eventTimeZone: openShiftForm.eventTimeZone,
-          shiftDate,
+          shiftDates: validatedDates,
           startTime: openShiftForm.startTime,
           endTime: openShiftForm.endTime,
           headcount: openShiftHeadcount,
@@ -2583,9 +2596,10 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
           workType: openShiftForm.workType,
           useEmployeeTimeZone: useEmployeeLocalTime,
+          expectedTimeZone: openShiftTimeBasisZone,
           dispatchMode: openShiftForm.dispatchMode,
-        }))
-      }
+        }),
+      )
       return { dates, results, skippedAssignedDates }
     },
     onSuccess: async ({ results, skippedAssignedDates }) => {
@@ -3765,7 +3779,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                         const site = availableSites.find((item) => item.id === event.target.value)
                         updateOpenShiftForm({
                           eventSiteId: event.target.value,
-                          eventTimeZone: site?.time_zone ?? 'America/Denver',
+                          eventTimeZone: site?.time_zone ?? '',
                         })
                       }}
                       value={openShiftForm.eventSiteId}
@@ -3775,6 +3789,25 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                         <option key={site.id} value={site.id}>{site.name}</option>
                       ))}
                     </select>
+                  </label>
+                  <label>
+                    Event time zone
+                    <select
+                      disabled={Boolean(selectedEventSite)}
+                      onChange={(event) => updateOpenShiftForm({ eventTimeZone: event.target.value })}
+                      required
+                      value={selectedEventSite?.time_zone ?? openShiftForm.eventTimeZone}
+                    >
+                      <option value="">Choose the event time zone</option>
+                      {continentalUsTimeZones.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    <small>
+                      {selectedEventSite
+                        ? `Locked to ${selectedEventSite.name}'s time zone.`
+                        : 'Required for a standalone event so the entered clock times are saved correctly.'}
+                    </small>
                   </label>
                 </>
               ) : null}

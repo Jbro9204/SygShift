@@ -19,12 +19,19 @@ values (
 );
 
 insert into public.sites (id, code, name, time_zone)
-values (
-  'ce230000-0000-4000-8000-000000000001',
-  'COPY-TZ',
-  'Copy Time Basis Test',
-  'America/Denver'
-);
+values
+  (
+    'ce230000-0000-4000-8000-000000000001',
+    'COPY-TZ',
+    'Copy Time Basis Test',
+    'America/Denver'
+  ),
+  (
+    'ce230000-0000-4000-8000-000000000002',
+    'COPY-EVENT',
+    'Linked Event Time Authority',
+    'America/Denver'
+  );
 
 insert into public.posts (id, site_id, name, requires_armed)
 values (
@@ -34,13 +41,28 @@ values (
   false
 );
 
+insert into public.events (
+  id, name, site_id, time_zone, starts_at, ends_at, requires_armed, created_by
+)
+values (
+  'ce245000-0000-4000-8000-000000000001',
+  'Linked event with historical zone snapshot',
+  'ce230000-0000-4000-8000-000000000002',
+  'America/Denver',
+  timestamp '2099-08-16 00:00:00' at time zone 'America/Denver',
+  timestamp '2099-08-23 00:00:00' at time zone 'America/Denver',
+  false,
+  'ce210000-0000-4000-8000-000000000001'
+);
+
 insert into public.schedules (id, week_starts_on, revision, status, created_by)
 values
   ('ce250000-0000-4000-8000-000000000001', date '2099-09-06', 1, 'draft', 'ce210000-0000-4000-8000-000000000001'),
   ('ce250000-0000-4000-8000-000000000002', date '2099-10-25', 1, 'draft', 'ce210000-0000-4000-8000-000000000001'),
   ('ce250000-0000-4000-8000-000000000003', date '2099-03-01', 1, 'draft', 'ce210000-0000-4000-8000-000000000001'),
   ('ce250000-0000-4000-8000-000000000004', date '2099-03-08', 1, 'draft', 'ce210000-0000-4000-8000-000000000001'),
-  ('ce250000-0000-4000-8000-000000000005', date '2099-09-20', 1, 'draft', 'ce210000-0000-4000-8000-000000000001');
+  ('ce250000-0000-4000-8000-000000000005', date '2099-09-20', 1, 'draft', 'ce210000-0000-4000-8000-000000000001'),
+  ('ce250000-0000-4000-8000-000000000006', date '2099-08-16', 1, 'draft', 'ce210000-0000-4000-8000-000000000001');
 
 insert into public.shifts (
   id,
@@ -130,6 +152,33 @@ values
     'ce210000-0000-4000-8000-000000000001'
   );
 
+insert into public.shifts (
+  id, schedule_id, event_id, starts_at, ends_at, time_zone,
+  headcount_required, work_type, time_zone_source,
+  time_zone_employee_id, assignment_type, created_by
+)
+values (
+  'ce260000-0000-4000-8000-000000000006',
+  'ce250000-0000-4000-8000-000000000006',
+  'ce245000-0000-4000-8000-000000000001',
+  timestamp '2099-08-17 09:00:00' at time zone 'America/Denver',
+  timestamp '2099-08-17 17:00:00' at time zone 'America/Denver',
+  'America/Denver',
+  1,
+  'post',
+  'site',
+  null,
+  'standard',
+  'ce210000-0000-4000-8000-000000000001'
+);
+
+-- The linked Site is the current authority. The historical event snapshot is
+-- intentionally left at Denver so the copy must refresh from the Site row.
+update public.sites
+set time_zone = 'America/New_York',
+    updated_at = clock_timestamp()
+where id = 'ce230000-0000-4000-8000-000000000002';
+
 -- Correcting the employee profile changes the authority for future copies,
 -- but must not rewrite the historical source shift.
 update public.employees
@@ -217,6 +266,32 @@ begin
     from public.shifts shift
     where shift.id = 'ce260000-0000-4000-8000-000000000005'
   ), 'The historical source shift was changed when the employee profile was corrected.';
+
+  copy_result := public.replace_schedule_week_draft_with_work_types(
+    'ce250000-0000-4000-8000-000000000006',
+    date '2099-08-23',
+    false,
+    true
+  );
+  destination_schedule_id := (copy_result -> 'schedule' ->> 'id')::uuid;
+
+  select shift.* into copied
+  from public.shifts shift
+  where shift.schedule_id = destination_schedule_id
+    and shift.canceled_at is null;
+
+  assert copied.starts_at = timestamp '2099-08-24 09:00:00' at time zone 'America/New_York'
+    and copied.ends_at = timestamp '2099-08-24 17:00:00' at time zone 'America/New_York',
+    'A linked event did not preserve 09:00 in the current Site time zone.';
+  assert copied.time_zone = 'America/New_York'
+    and copied.time_zone_source = 'site'
+    and copied.event_id = 'ce245000-0000-4000-8000-000000000001',
+    'A linked event copy did not refresh Site Time authority.';
+  assert (
+    select event.time_zone = 'America/Denver'
+    from public.events event
+    where event.id = 'ce245000-0000-4000-8000-000000000001'
+  ), 'The week copy rewrote the historical event zone snapshot.';
 
   begin
     perform public.replace_schedule_week_draft_with_work_types(

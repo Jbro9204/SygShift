@@ -18,6 +18,11 @@ describe('scheduler time-basis guardrails', () => {
     expect(schedulePage).toContain('Reassigning it keeps the same stored start and end instant')
     expect(schedulePage).toContain('scheduleTimeBasisLabel(shift.time_zone_source, shift.time_zone)')
     expect(schedulePage).toContain('ScheduleTimeBasisPanel')
+    expect(schedulePage).toContain('scheduleWallClockRangesForDates(')
+    expect(schedulePage).toContain('runAfterScheduleWallClockPreflight(')
+    expect(schedulePage).toContain('createSupervisorCoveragePlanBatch({')
+    expect(schedulePage).toContain('expectedTimeZone: openShiftTimeBasisZone')
+    expect(schedulePage).toContain('The shift time zone could not be confirmed. No new shifts were created.')
   })
 
   it('preserves shift source authority when a schedule week is copied', () => {

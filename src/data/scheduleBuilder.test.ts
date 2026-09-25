@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSupervisorCoveragePlan, createSupervisorOpenShift, getScheduledOvertimeCreatePreview, getScheduleBuilderOptions, getWeeklySchedule, removeScheduleDraftShift, resolveScheduleReviewShift, updateScheduleDraftShift } from './schedule'
+import { createSupervisorCoveragePlan, createSupervisorCoveragePlanBatch, createSupervisorOpenShift, getScheduledOvertimeCreatePreview, getScheduleBuilderOptions, getWeeklySchedule, removeScheduleDraftShift, resolveScheduleReviewShift, updateScheduleDraftShift } from './schedule'
 
 const rpc = vi.fn()
 
@@ -136,7 +136,28 @@ describe('schedule builder data contract', () => {
     expect(rpc).toHaveBeenCalledWith('get_schedule_builder_options')
   })
 
-  it('normalizes event shift input before creating a published opening', async () => {
+  it('fails closed when a builder employee is missing an authoritative time zone', async () => {
+    rpc.mockResolvedValueOnce({
+      data: {
+        posts: [],
+        employees: [{
+          id: '70000000-0000-4000-8000-000000000001',
+          first_name: 'Jordan',
+          last_name: 'Brown',
+          preferred_name: null,
+          employee_number: 'SYG-1001',
+          role: 'admin',
+          employment_type: 'salary',
+          has_armed_guard_credential: true,
+        }],
+      },
+      error: null,
+    })
+
+    await expect(getScheduleBuilderOptions()).rejects.toThrow()
+  })
+
+  it('passes an explicit standalone-event time zone when creating a published opening', async () => {
     rpc.mockResolvedValueOnce({
       data: {
         schedule_id: '30000000-0000-4000-8000-000000000001',
@@ -156,7 +177,7 @@ describe('schedule builder data contract', () => {
       mode: 'event',
       eventName: '  Concert coverage  ',
       eventLocationName: '  Ball Arena  ',
-      eventTimeZone: '',
+      eventTimeZone: 'America/New_York',
       eventRequiresArmed: true,
       shiftDate: '2026-07-08',
       startTime: '08:00',
@@ -173,7 +194,7 @@ describe('schedule builder data contract', () => {
       event_name: 'Concert coverage',
       event_location_name: 'Ball Arena',
       event_site_id: null,
-      event_time_zone: 'America/Denver',
+      event_time_zone: 'America/New_York',
       event_requires_armed: true,
       shift_operational_date: '2026-07-08',
       shift_start_time: '08:00',
@@ -187,6 +208,32 @@ describe('schedule builder data contract', () => {
       target_credential_override_note: null,
       target_work_type: 'post',
     })
+  })
+
+  it('does not silently replace a missing standalone-event time zone with Mountain Time', async () => {
+    rpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'Choose the event time zone.' },
+    })
+
+    await expect(createSupervisorOpenShift({
+      weekStartsOn: '2026-07-05',
+      mode: 'event',
+      eventName: 'Concert coverage',
+      eventLocationName: 'East Coast venue',
+      eventTimeZone: '',
+      eventRequiresArmed: false,
+      shiftDate: '2026-07-08',
+      startTime: '09:00',
+      endTime: '17:00',
+      headcount: 1,
+      isOvertime: false,
+      publishAnnouncement: true,
+    })).rejects.toThrow('Choose the event time zone.')
+
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_typed_open_shift', expect.objectContaining({
+      event_time_zone: null,
+    }))
   })
 
   it('can create a directly assigned shift without publishing an opening announcement', async () => {
@@ -357,6 +404,112 @@ describe('schedule builder data contract', () => {
       target_notes: 'Patrol route',
       target_overtime_override_note: 'Matt approved patrol overtime.',
       target_dispatch_mode: 'primary_shift',
+    }))
+  })
+
+  it('creates a repeated series through one zone-bound atomic RPC', async () => {
+    const result = {
+      schedule_id: '30000000-0000-4000-8000-000000000001',
+      schedule_revision: 2,
+      shift_ids: ['40000000-0000-4000-8000-000000000001'],
+      armed_shift_id: null,
+      unarmed_shift_id: '40000000-0000-4000-8000-000000000001',
+      assignment_id: '80000000-0000-4000-8000-000000000001',
+      event_id: null,
+      announcement_id: null,
+      starts_at: '2026-09-01T13:00:00.000Z',
+      ends_at: '2026-09-01T21:00:00.000Z',
+      time_zone: 'America/New_York',
+      headcount: 1,
+      armed_headcount: 0,
+      unarmed_headcount: 1,
+    }
+    rpc.mockResolvedValueOnce({
+      data: {
+        results: [result, { ...result, starts_at: '2026-09-02T13:00:00.000Z', ends_at: '2026-09-02T21:00:00.000Z' }],
+        time_zone: 'America/New_York',
+        date_count: 2,
+        atomic: true,
+      },
+      error: null,
+    })
+
+    await expect(createSupervisorCoveragePlanBatch({
+      weekStartsOn: '2026-08-30',
+      mode: 'post',
+      postId: '10000000-0000-4000-8000-000000000001',
+      shiftDates: ['2026-09-01', '2026-09-02'],
+      startTime: '09:00',
+      endTime: '17:00',
+      headcount: 1,
+      armedHeadcount: 0,
+      employeeId: '70000000-0000-4000-8000-000000000001',
+      assignmentRequirement: 'unarmed',
+      isOvertime: false,
+      notes: '  Eastern assignment  ',
+      publishAnnouncement: false,
+      useEmployeeTimeZone: true,
+      expectedTimeZone: 'America/New_York',
+    })).resolves.toHaveLength(2)
+
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_coverage_plan_batch_v1', expect.objectContaining({
+      shift_operational_dates: ['2026-09-01', '2026-09-02'],
+      target_notes: 'Eastern assignment',
+      use_employee_time_zone: true,
+      expected_time_zone: 'America/New_York',
+      target_dispatch_mode: 'primary_shift',
+    }))
+  })
+
+  it('sends the chosen standalone-event zone through the atomic repeat RPC', async () => {
+    const result = {
+      schedule_id: '30000000-0000-4000-8000-000000000001',
+      schedule_revision: 2,
+      shift_ids: ['40000000-0000-4000-8000-000000000001'],
+      armed_shift_id: null,
+      unarmed_shift_id: '40000000-0000-4000-8000-000000000001',
+      assignment_id: null,
+      event_id: '50000000-0000-4000-8000-000000000001',
+      announcement_id: null,
+      starts_at: '2026-09-01T13:00:00.000Z',
+      ends_at: '2026-09-01T21:00:00.000Z',
+      time_zone: 'America/New_York',
+      headcount: 1,
+      armed_headcount: 0,
+      unarmed_headcount: 1,
+    }
+    rpc.mockResolvedValueOnce({
+      data: {
+        results: [result],
+        time_zone: 'America/New_York',
+        date_count: 1,
+        atomic: true,
+      },
+      error: null,
+    })
+
+    await createSupervisorCoveragePlanBatch({
+      weekStartsOn: '2026-08-30',
+      mode: 'event',
+      eventName: 'Eastern event',
+      eventLocationName: 'Raleigh',
+      eventTimeZone: 'America/New_York',
+      shiftDates: ['2026-09-01'],
+      startTime: '09:00',
+      endTime: '17:00',
+      headcount: 1,
+      armedHeadcount: 0,
+      assignmentRequirement: 'unarmed',
+      isOvertime: false,
+      publishAnnouncement: false,
+      expectedTimeZone: 'America/New_York',
+    })
+
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_coverage_plan_batch_v1', expect.objectContaining({
+      event_site_id: null,
+      event_time_zone: 'America/New_York',
+      expected_time_zone: 'America/New_York',
     }))
   })
 
