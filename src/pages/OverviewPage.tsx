@@ -377,7 +377,7 @@ function HomeGreeting({ displayTimeZone, mode, session }: { displayTimeZone: str
     <section className="home-greeting">
       <div>
         <p className="eyebrow">{mode === 'operations' ? 'Operations Home' : 'Basic Home'}</p>
-        <h1>Good {greetingPeriod(now)}, {greetingName(session.displayName, session.username)}.</h1>
+        <h1>Good {greetingPeriod(now, displayTimeZone)}, {greetingName(session.displayName, session.username)}.</h1>
         <p>{mode === 'operations' ? 'Lead clearly, act early, and keep the team safe.' : 'Stay alert, stay prepared, and have a safe shift.'}</p>
       </div>
       <div className="home-greeting__date" aria-label="Current local time">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ScheduleShift } from '../data/schedule'
-import { boundedHomeItems, greetingName, greetingPeriod, homeModeForPermissions, sundayWeekStart, summarizeTodayCoverage } from './homeModel'
+import { boundedHomeItems, dateKeyInTimeZone, greetingName, greetingPeriod, homeModeForPermissions, sundayWeekStart, summarizeTodayCoverage } from './homeModel'
 
 function shift(overrides: Partial<ScheduleShift> = {}): ScheduleShift {
   return {
@@ -40,6 +40,15 @@ describe('Home presentation model', () => {
   it('finds the Sunday week boundary without using the computer local time zone', () => {
     expect(sundayWeekStart('2026-08-28')).toBe('2026-08-23')
     expect(sundayWeekStart('2026-08-23')).toBe('2026-08-23')
+  })
+
+  it('derives the employee day and greeting from the requested profile zone', () => {
+    const boundary = new Date('2026-09-25T04:30:00.000Z')
+
+    expect(dateKeyInTimeZone(boundary, 'America/New_York')).toBe('2026-09-25')
+    expect(dateKeyInTimeZone(boundary, 'America/Denver')).toBe('2026-09-24')
+    expect(greetingPeriod(new Date('2026-09-25T18:30:00.000Z'), 'America/New_York')).toBe('afternoon')
+    expect(greetingPeriod(new Date('2026-09-25T18:30:00.000Z'), 'America/Los_Angeles')).toBe('morning')
   })
 
   it('caps Home previews without changing their underlying records', () => {

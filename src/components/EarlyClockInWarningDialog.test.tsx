@@ -28,7 +28,7 @@ describe('EarlyClockInWarningDialog', () => {
       calendar: 'gregory',
       locale: 'en-US',
       numberingSystem: 'latn',
-      timeZone: 'America/Chicago',
+      timeZone: 'America/Denver',
     })
     HTMLDialogElement.prototype.showModal = vi.fn(function showModal(this: HTMLDialogElement) { this.open = true })
     HTMLDialogElement.prototype.close = vi.fn(function close(this: HTMLDialogElement) { this.open = false })
@@ -52,6 +52,14 @@ describe('EarlyClockInWarningDialog', () => {
       'SygShift verified this attempt at 5:42 PM (17:42) MDT using trusted server time.',
     )
     expect(screen.getByText('Acknowledging this notice will not clock you in.')).toBeInTheDocument()
+  })
+
+  it('does not let the device zone override the employee profile zone', () => {
+    render(<EarlyClockInWarningDialog details={{ ...details, employeeTimeZone: 'America/New_York' }} onAcknowledge={vi.fn()} />)
+
+    expect(screen.getByText('Your current time · Eastern Time')).toBeInTheDocument()
+    expect(screen.getAllByText('7:55 PM (19:55) EDT').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText(/Your schedule is shown in Eastern Time/)).toBeInTheDocument()
   })
 
   it('has no alternate dismissal and ignores the native Escape cancel event', () => {

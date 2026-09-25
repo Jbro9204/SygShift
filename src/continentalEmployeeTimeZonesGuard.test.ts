@@ -45,10 +45,13 @@ describe('continental employee time-zone release guard', () => {
     expect(schedulePage).toContain('useEmployeeTimeZone: useEmployeeLocalTime')
   })
 
-  it('uses the employee or supported browser zone only for personal presentation', () => {
+  it('uses the employee profile zone for personal presentation while server time remains authoritative', () => {
     expect(schedulePage).toContain('personalDisplayTimeZone(sessionQuery.data?.timeZone')
     expect(overviewPage).toContain('personalDisplayTimeZone(session?.timeZone')
+    expect(overviewPage).toContain('greetingPeriod(now, displayTimeZone)')
     expect(timePage).toContain('personalDisplayTimeZone(dashboard.employee.timeZone)')
+    expect(timePage).toContain('dateKeyInTimeZone(new Date(), employeeDisplayTimeZone)')
+    expect(timePage).toContain("getTimekeepingDashboard(employeeDate)")
     expect(timePage).toContain('Official server time')
   })
 })

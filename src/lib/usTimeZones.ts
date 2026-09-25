@@ -24,8 +24,12 @@ export function browserContinentalUsTimeZone(): ContinentalUsTimeZone | null {
   }
 }
 
-export function personalDisplayTimeZone(profileTimeZone: string): string {
-  return browserContinentalUsTimeZone() ?? profileTimeZone
+export function personalDisplayTimeZone(
+  profileTimeZone: string | null | undefined,
+): ContinentalUsTimeZone {
+  if (isContinentalUsTimeZone(profileTimeZone)) return profileTimeZone
+
+  return browserContinentalUsTimeZone() ?? 'America/Denver'
 }
 
 export function continentalUsTimeZoneLabel(timeZone: string): string {
