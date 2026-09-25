@@ -1,5 +1,25 @@
 # SygShift Development Log
 
+## 09/25/2026 - Employee Licensing Profile Contract Repair
+
+- Repaired the employee Licensing response contract that rejected valid
+  credential rows after the database correctly removed management-only notes
+  and communication history.
+- Added one dedicated employee credential type across load, save, submit,
+  withdraw, renewal/update, and protected-document workflows while preserving
+  the stricter management contract and existing database redaction boundary.
+- Replaced raw response-validation output with concise recovery guidance and
+  added client plus rollback-only database regressions for the exact protected-
+  field omission that affected Eliot Olivarria's two-credential profile.
+- Verified 308 test files / 1,626 tests, strict TypeScript, zero-warning lint,
+  production builds, the mandatory 42/42 desktop/mobile Time Clock matrix, both
+  production origins, exact live assets, and the authenticated employee
+  Licensing workspace.
+- Released source commit `c010b0d` as Cloudflare Worker
+  `05127f91-f783-45c1-9e97-7335037ebd6b`; no database migration or employee
+  data rewrite was required. Release detail:
+  `docs/changelogs/CHANGELOG_09-25-2026_EMPLOYEE_LICENSING_PROFILE_CONTRACT_REPAIR.md`.
+
 ## 09/23/2026 - Call-Off Coverage Candidate Directory
 
 - Repaired the **Coverage already found** workflow so Dispatch can select from
