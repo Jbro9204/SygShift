@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSupervisorCoveragePlan, createSupervisorOpenShift, getScheduledOvertimeCreatePreview, getScheduleBuilderOptions, removeScheduleDraftShift, resolveScheduleReviewShift, updateScheduleDraftShift } from './schedule'
+import { createSupervisorCoveragePlan, createSupervisorOpenShift, getScheduledOvertimeCreatePreview, getScheduleBuilderOptions, getWeeklySchedule, removeScheduleDraftShift, resolveScheduleReviewShift, updateScheduleDraftShift } from './schedule'
 
 const rpc = vi.fn()
 
@@ -10,6 +10,47 @@ vi.mock('../lib/supabase', () => ({
 describe('schedule builder data contract', () => {
   beforeEach(() => {
     rpc.mockReset()
+  })
+
+  it('retains the authoritative time-zone source in weekly schedule payloads', async () => {
+    rpc
+      .mockResolvedValueOnce({
+        data: {
+          id: '30000000-0000-4000-8000-000000000001',
+          week_starts_on: '2026-09-20',
+          revision: 4,
+          status: 'draft',
+          published_at: null,
+          shifts: [{
+            id: '40000000-0000-4000-8000-000000000001',
+            starts_at: '2026-09-25T13:00:00.000Z',
+            ends_at: '2026-09-25T21:00:00.000Z',
+            time_zone: 'America/New_York',
+            time_zone_source: 'employee',
+            time_zone_employee_id: '70000000-0000-4000-8000-000000000001',
+            headcount_required: 1,
+            requires_armed: false,
+            is_open: false,
+            is_overtime: false,
+            notes: null,
+            post: null,
+            event: null,
+            assignments: [],
+          }],
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: [], error: null })
+
+    await expect(getWeeklySchedule('2026-09-20')).resolves.toMatchObject({
+      shifts: [{
+        time_zone: 'America/New_York',
+        time_zone_source: 'employee',
+        time_zone_employee_id: '70000000-0000-4000-8000-000000000001',
+      }],
+    })
   })
 
   it('loads supervisor builder options from the guarded RPC', async () => {

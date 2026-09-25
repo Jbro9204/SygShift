@@ -61,6 +61,8 @@ const shiftSchema = z.object({
   starts_at: z.string(),
   ends_at: z.string(),
   time_zone: z.string(),
+  time_zone_source: z.enum(['site', 'employee', 'explicit']).optional(),
+  time_zone_employee_id: z.string().uuid().nullable().optional(),
   headcount_required: z.number().int().positive(),
   requires_armed: z.boolean(),
   is_open: z.boolean(),

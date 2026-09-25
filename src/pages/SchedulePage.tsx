@@ -5,6 +5,7 @@ import { AlertCircle, BellRing, CalendarDays, CalendarPlus, ChevronLeft, Chevron
 import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { ScheduleTimeBasisPanel, type ScheduleTimePreviewRow } from '../components/ScheduleTimeBasisPanel'
 import {
   getAvailabilityWorkspace,
   type AvailabilityRecord,
@@ -39,6 +40,7 @@ import {
   updateScheduleDraftShift,
   type ImportedScheduleShift,
   type ScheduleBuilderEmployee,
+  type ScheduleBuilderPost,
   type ScheduledOvertimeCreatePreview,
   type ScheduleShift,
   type StaffingSuggestion,
@@ -53,6 +55,7 @@ import { continentalUsTimeZoneLabel, personalDisplayTimeZone } from '../lib/usTi
 import { scheduleTeamViewPermissions } from '../app/accessPolicy'
 import { scheduledOvertimePreviewBlocksSave } from '../scheduleDraftEdit'
 import { downloadScheduleCalendar } from '../schedule/calendar'
+import { scheduleTimeBasisLabel, scheduleWallClockRangeToInstants } from '../schedule/timeBasis'
 
 interface OpenShiftFormState {
   mode: 'post' | 'event'
@@ -178,6 +181,17 @@ function dateKeyToLocalDate(dateKey: string): Date {
 
 function localDateToDateKey(date: Date): string {
   return format(date, 'yyyy-MM-dd')
+}
+
+function calendarDateInTimeZone(now: Date, timeZone: string): Date {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone,
+    year: 'numeric',
+  }).formatToParts(now)
+  const value = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value)
+  return new Date(value('year'), value('month') - 1, value('day'), 12)
 }
 
 function selectedOpenShiftDateKeys(form: OpenShiftFormState, weekStartsOn: string, weekEndsOn: string): string[] {
@@ -676,6 +690,7 @@ function EmployeePersonalSchedulePanel({
   setRange,
   setSearch,
   shifts,
+  today,
   timeZone,
   weekStart,
 }: {
@@ -688,6 +703,7 @@ function EmployeePersonalSchedulePanel({
   setRange: (range: EmployeeScheduleRange) => void
   setSearch: (value: string) => void
   shifts: ScheduleShift[]
+  today: Date
   timeZone: string
   weekStart: Date
 }) {
@@ -750,7 +766,7 @@ function EmployeePersonalSchedulePanel({
           </button>
           <button
             className="secondary-button"
-            onClick={() => onJumpToWeek(startOfWeek(operationalToday(), { weekStartsOn: 0 }))}
+            onClick={() => onJumpToWeek(startOfWeek(today, { weekStartsOn: 0 }))}
             type="button"
           >
             This week
@@ -859,6 +875,7 @@ function EditShiftDialog({
   availabilityRecords,
   employees,
   focusEmployeeId,
+  posts,
   shift,
   suggestions,
   mutation,
@@ -868,6 +885,7 @@ function EditShiftDialog({
   availabilityRecords: AvailabilityRecord[]
   employees: ScheduleBuilderEmployee[]
   focusEmployeeId?: string | null
+  posts: ScheduleBuilderPost[]
   shift: ScheduleShift
   suggestions: StaffingSuggestion | undefined
   mutation: ReturnType<typeof useMutation<unknown, Error, {
@@ -912,6 +930,42 @@ function EditShiftDialog({
   const [credentialConfirmedResponsibility, setCredentialConfirmedResponsibility] = useState(false)
   const availabilityConflict = findAvailabilityConflict(availabilityRecords, selectedEmployeeId, shiftDate, startTime, endTime)
   const selectedEmployee = selectedBuilderEmployee(employees, selectedEmployeeId)
+  const timeBasisEmployee = selectedBuilderEmployee(employees, shift.time_zone_employee_id)
+  const shiftSiteId = shift.post?.site.id ?? shift.event?.site?.id ?? null
+  const shiftSiteTimeZone = posts.find((post) => post.site.id === shiftSiteId)?.site.time_zone
+    ?? (shift.time_zone_source === 'site' ? shift.time_zone : null)
+  const editTimePreview = useMemo(() => {
+    try {
+      return {
+        error: null,
+        range: scheduleWallClockRangeToInstants(shiftDate, startTime, endTime, shift.time_zone),
+      }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'The shift time could not be converted.',
+        range: null,
+      }
+    }
+  }, [endTime, shift.time_zone, shiftDate, startTime])
+  const editTimePreviewRows: ScheduleTimePreviewRow[] = [
+    {
+      label: scheduleTimeBasisLabel(shift.time_zone_source, shift.time_zone),
+      timeZone: shift.time_zone,
+    },
+    ...(selectedEmployee ? [{
+      label: `${builderEmployeeName(selectedEmployee)} · Employee Time`,
+      timeZone: selectedEmployee.time_zone,
+    }] : []),
+    ...(shiftSiteTimeZone ? [{
+      label: `${shift.post?.site.name ?? shift.event?.site?.name ?? 'Work location'} · Site Time`,
+      timeZone: shiftSiteTimeZone,
+    }] : []),
+  ]
+  const editTimeBasisDescription = shift.time_zone_source === 'employee'
+    ? `This block was entered in ${timeBasisEmployee ? `${builderEmployeeName(timeBasisEmployee)}'s ` : ''}Employee Time. Reassigning it keeps the same stored start and end instant; the date and time fields remain in this existing basis.`
+    : shift.time_zone_source === 'site'
+      ? 'This block was entered in Site Time. Reassigning it keeps the same stored start and end instant; the date and time fields remain in the work location’s time basis.'
+      : 'This block keeps its recorded time zone. Reassigning it preserves the same stored start and end instant; no employee or browser time zone silently reinterprets it.'
   const credentialOverrideRequired = needsArmedCredentialOverride(shift.requires_armed, selectedEmployee)
   const credentialOverrideReady = credentialOverrideComplete(
     credentialOverrideRequired,
@@ -993,6 +1047,14 @@ function EditShiftDialog({
       title={`Edit ${shift.post?.site.name ?? shift.event?.name ?? 'shift'}`}
     >
       <form className="request-form schedule-edit-form" onSubmit={submit}>
+        <ScheduleTimeBasisPanel
+          basisLabel={scheduleTimeBasisLabel(shift.time_zone_source, shift.time_zone)}
+          description={editTimeBasisDescription}
+          endsAt={editTimePreview.range?.endsAt}
+          previewError={editTimePreview.error}
+          previewRows={editTimePreviewRows}
+          startsAt={editTimePreview.range?.startsAt}
+        />
         <div className="form-grid schedule-edit-form__timing">
           <label><span>Date</span><input name="shiftDate" onChange={(event) => setShiftDate(event.target.value)} required type="date" value={shiftDate} /></label>
           <label><span>Start</span><input name="startTime" onChange={(event) => setStartTime(event.target.value)} required type="time" value={startTime} /></label>
@@ -1136,7 +1198,7 @@ function EditShiftDialog({
             Remove from draft
           </button>
           <button className="secondary-button" onClick={requestClose} type="button">Cancel</button>
-          <button className="primary-action" disabled={mutation.isPending || Boolean(availabilityConflict && !overrideNote.trim()) || !credentialOverrideReady || overtimePreviewBlocksSave || !overtimeOverrideReady} type="submit">
+          <button className="primary-action" disabled={mutation.isPending || Boolean(editTimePreview.error) || Boolean(availabilityConflict && !overrideNote.trim()) || !credentialOverrideReady || overtimePreviewBlocksSave || !overtimeOverrideReady} type="submit">
             {mutation.isPending ? 'Saving...' : 'Save draft shift'}
           </button>
         </div>
@@ -1470,6 +1532,7 @@ function SchedulerShiftModal({
           <dl className="scheduler-shift-details">
             <div><dt>Date</dt><dd>{format(new Date(`${shiftOperationalDate(shift)}T12:00:00`), 'EEEE, MM/dd/yyyy')}</dd></div>
             <div><dt>Time</dt><dd>{shiftTimeRange(shift)}</dd></div>
+            <div><dt>Time basis</dt><dd>{scheduleTimeBasisLabel(shift.time_zone_source, shift.time_zone)}</dd></div>
             <div><dt>Needed</dt><dd>{shift.headcount_required}</dd></div>
             <div><dt>Open</dt><dd>{openSlots}</dd></div>
             <div><dt>Requirement</dt><dd>{shift.requires_armed ? 'Armed credential' : 'Unarmed'}</dd></div>
@@ -2156,6 +2219,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const queryClient = useQueryClient()
   const boardScrollRef = useRef<HTMLElement | null>(null)
   const topScrollRef = useRef<HTMLDivElement | null>(null)
+  const personalWeekBasisRef = useRef<string | null>(null)
   const isSchedulerHome = mode === 'scheduler'
   const today = useMemo(() => operationalToday(), [])
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today, { weekStartsOn: 0 }))
@@ -2248,6 +2312,22 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const canUseScheduler = canBuildSchedule && isSchedulerHome
   const canEditScheduler = canManageSchedule && isSchedulerHome
   const employeeOnlySchedule = sessionQuery.isSuccess && !canViewTeamSchedule && !isSchedulerHome
+  const personalScheduleTimeZone = personalDisplayTimeZone(sessionQuery.data?.timeZone ?? 'America/Denver')
+  const personalScheduleToday = useMemo(
+    () => calendarDateInTimeZone(new Date(), personalScheduleTimeZone),
+    [personalScheduleTimeZone],
+  )
+  useEffect(() => {
+    if (!employeeOnlySchedule || !sessionQuery.data?.employeeId) {
+      personalWeekBasisRef.current = null
+      return
+    }
+
+    const basisKey = `${sessionQuery.data.employeeId}:${personalScheduleTimeZone}`
+    if (personalWeekBasisRef.current === basisKey) return
+    personalWeekBasisRef.current = basisKey
+    setWeekStart(startOfWeek(personalScheduleToday, { weekStartsOn: 0 }))
+  }, [employeeOnlySchedule, personalScheduleTimeZone, personalScheduleToday, sessionQuery.data?.employeeId])
   const employeeScheduleStart = useMemo(() => employeeScheduleDisplayStart(weekStart), [weekStart])
   const employeeScheduleDays = useMemo(
     () => Array.from({ length: employeeScheduleWeekCount(employeeScheduleRange) * 7 }, (_, index) => addDays(employeeScheduleStart, index)),
@@ -2335,6 +2415,56 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     && (openShiftUnarmedHeadcount === 0 || openShiftForm.assignmentRequirement === 'armed')
   const openShiftEmployee = selectedBuilderEmployee(builderOptionsQuery.data?.employees ?? [], openShiftForm.employeeId)
   const useEmployeeLocalTime = Boolean(openShiftEmployee && openShiftHeadcount === 1)
+  const openShiftSiteTimeZone = openShiftForm.mode === 'post'
+    ? selectedPost?.site.time_zone ?? null
+    : openShiftForm.eventTimeZone || null
+  const openShiftTimeBasisSource = useEmployeeLocalTime ? 'employee' as const : 'site' as const
+  const openShiftTimeBasisZone = useEmployeeLocalTime
+    ? openShiftEmployee?.time_zone ?? null
+    : openShiftSiteTimeZone
+  const openShiftTimePreview = useMemo(() => {
+    if (!openShiftTimeBasisZone || !openShiftForm.shiftDate || !openShiftForm.startTime || !openShiftForm.endTime) {
+      return { error: null, range: null }
+    }
+    try {
+      return {
+        error: null,
+        range: scheduleWallClockRangeToInstants(
+          openShiftForm.shiftDate,
+          openShiftForm.startTime,
+          openShiftForm.endTime,
+          openShiftTimeBasisZone,
+        ),
+      }
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'The shift time could not be converted.',
+        range: null,
+      }
+    }
+  }, [
+    openShiftForm.endTime,
+    openShiftForm.shiftDate,
+    openShiftForm.startTime,
+    openShiftTimeBasisZone,
+  ])
+  const openShiftTimePreviewRows: ScheduleTimePreviewRow[] = openShiftTimeBasisZone ? [
+    {
+      label: scheduleTimeBasisLabel(openShiftTimeBasisSource, openShiftTimeBasisZone),
+      timeZone: openShiftTimeBasisZone,
+    },
+    ...(openShiftEmployee ? [{
+      label: `${builderEmployeeName(openShiftEmployee)} · Employee Time`,
+      timeZone: openShiftEmployee.time_zone,
+    }] : []),
+    ...(openShiftSiteTimeZone ? [{
+      label: `${(selectedPost?.site.name ?? openShiftForm.eventLocationName.trim()) || 'Work location'} · Site Time`,
+      timeZone: openShiftSiteTimeZone,
+    }] : []),
+  ] : []
+  const openShiftTimeBasisDescription = useEmployeeLocalTime && openShiftEmployee
+    ? `Enter the date and times exactly as ${builderEmployeeName(openShiftEmployee)} should see them. SygShift saves the matching UTC instant while the work location remains unchanged.`
+    : 'Open and multi-person coverage uses Site Time. Employee or browser time zones do not change the saved meaning of these fields.'
   const visibleOpenShiftEmployees = useMemo(
     () => filterBuilderEmployees(builderOptionsQuery.data?.employees ?? [], openShiftEmployeeSearch, openShiftForm.employeeId),
     [builderOptionsQuery.data?.employees, openShiftEmployeeSearch, openShiftForm.employeeId],
@@ -3784,11 +3914,6 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 {visibleOpenShiftEmployees.length === 0 ? (
                   <small>No active guards match that search.</small>
                 ) : null}
-                {useEmployeeLocalTime && openShiftEmployee ? (
-                  <small>
-                    Start and end are entered in {builderEmployeeName(openShiftEmployee)}'s {continentalUsTimeZoneLabel(openShiftEmployee.time_zone)}.
-                  </small>
-                ) : null}
               </label>
               {openShiftForm.employeeId && openShiftArmedHeadcount > 0 && openShiftUnarmedHeadcount > 0 ? (
                 <label>
@@ -3808,6 +3933,19 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 </label>
               ) : null}
             </div>
+
+            {openShiftTimeBasisZone ? (
+              <ScheduleTimeBasisPanel
+                basisLabel={scheduleTimeBasisLabel(openShiftTimeBasisSource, openShiftTimeBasisZone)}
+                description={openShiftTimeBasisDescription}
+                endsAt={openShiftTimePreview.range?.endsAt}
+                previewError={openShiftTimePreview.error}
+                previewRows={openShiftTimePreviewRows}
+                startsAt={openShiftTimePreview.range?.startsAt}
+              />
+            ) : (
+              <p className="form-note">Choose a site/post or event location to confirm the shift time basis before saving.</p>
+            )}
 
             <section className="schedule-builder-coverage-mix" aria-label="Coverage qualification mix">
               <div>
@@ -3984,14 +4122,6 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               </label>
             </div>
 
-            <p className="form-note">
-              {openShiftForm.mode === 'post' && selectedPost
-                ? useEmployeeLocalTime && openShiftEmployee
-                  ? `This one-person assignment uses ${builderEmployeeName(openShiftEmployee)}'s ${continentalUsTimeZoneLabel(openShiftEmployee.time_zone)}. ${selectedPost.site.name} remains recorded as the work location.`
-                  : `${selectedPost.site.name} uses ${selectedPost.site.time_zone}. The armed and unarmed position counts above control qualification requirements for this coverage plan.`
-                : 'Times are saved in the site or event time zone. The armed and unarmed position counts above control qualification requirements.'}
-            </p>
-
             {builderMessage ? (
               <p className={createOpenShiftMutation.isError ? 'form-feedback form-feedback--error' : 'form-feedback form-feedback--success'} role="status">
                 {builderMessage}
@@ -4004,7 +4134,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               </button>
               <button
                 className="primary-action"
-                disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending || openShiftOvertimePreviewPending || openShiftOvertimePreviewFailed || openShiftDateKeys.length === 0 || Boolean(openShiftAvailabilityConflict && !openShiftForm.availabilityOverrideNote.trim()) || !openShiftCredentialOverrideReady || !openShiftOvertimeOverrideReady}
+                disabled={createOpenShiftMutation.isPending || builderOptionsQuery.isPending || Boolean(openShiftTimePreview.error) || !openShiftTimeBasisZone || openShiftOvertimePreviewPending || openShiftOvertimePreviewFailed || openShiftDateKeys.length === 0 || Boolean(openShiftAvailabilityConflict && !openShiftForm.availabilityOverrideNote.trim()) || !openShiftCredentialOverrideReady || !openShiftOvertimeOverrideReady}
                 type="submit"
               >
                 {createOpenShiftMutation.isPending
@@ -4046,6 +4176,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           mutation={updateDraftShiftMutation}
           onClose={closeShiftEditor}
           onRequestRemove={requestShiftRemoval}
+          posts={builderOptionsQuery.data?.posts ?? []}
           shift={shiftEditor.editableShift}
           suggestions={staffingSuggestionsQuery.data?.find((item) => item.shiftId === shiftEditor.editableShift?.id)}
         />
@@ -4294,7 +4425,8 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           setRange={setEmployeeScheduleRange}
           setSearch={setSearch}
           shifts={employeePersonalScheduleShifts}
-          timeZone={personalDisplayTimeZone(sessionQuery.data?.timeZone ?? 'America/Denver')}
+          today={personalScheduleToday}
+          timeZone={personalScheduleTimeZone}
           weekStart={weekStart}
         />
       ) : null}
