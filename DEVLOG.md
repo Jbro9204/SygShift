@@ -23,11 +23,13 @@
   MFA-sensitive effective permissions, controlled security-definer RPCs,
   append-only status/audit evidence, targeted notifications, deterministic
   duplicate prevention, and fingerprinted idempotent retries.
-- Release candidate verification and production postflight remain open. The
-  dated release record contains explicit placeholders for the final test
-  totals, rollback-only database lifecycle, preservation counts, rendered QA,
-  migration ledger, commit, Worker version, rollback tag, live asset hashes,
-  and authenticated production ceremony.
+- Passed the complete 329-file / 1,727-test gate, 54/54 focused workflow tests,
+  42/42 desktop/mobile Time Clock checks, and the linked rollback-only database
+  lifecycle before and after migration installation. Released migration
+  `20260928021235`, source `b845808`, and Worker
+  `e39db41d-486a-495d-9839-2d04cc6edcd6`; both production origins are healthy
+  and ready, all three live route shells respond, and deployed feature bundles
+  exactly match the fresh local build.
 - Release detail:
   `docs/changelogs/CHANGELOG_09-28-2026_VACANCY_PATROL_SERVICE_RECOVERY.md`.
 

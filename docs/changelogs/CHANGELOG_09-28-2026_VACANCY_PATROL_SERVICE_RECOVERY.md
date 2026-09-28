@@ -1,7 +1,7 @@
 # Vacancy Patrol Service Recovery
 
 Date: 09/28/2026
-Status: Release candidate; production migration, deployment, and postflight evidence pending
+Status: Released to production
 
 ## Outcome
 
@@ -37,7 +37,7 @@ separate, auditable record.
 - Each vacancy can have only one durable recovery request. Stable request
   numbers, versioned hit-window plans, and Schedule-card markers retain the
   stages **Patrol review**, **Patrol planned**, **Patrol partial**,
-  **Patrol completed**, **Finance reviewed**, **Patrol declined**, and
+  **Patrol reconciled**, **Finance reviewed**, **Patrol declined**, and
   **Patrol canceled** across refreshes.
 
 ## Patrol acceptance, assignment, and hits
@@ -141,58 +141,64 @@ separate, auditable record.
 
 ## Verification
 
-Release evidence must replace every pending item below before this changelog is
-marked **Released to production**.
-
-- **Focused application coverage:** [PENDING — record files, tests, and exact
-  Schedule request, Patrol acceptance, completed/missed/remaining obligation
-  reconciliation, Finance review, permission-denial, export, and
-  idempotent-retry cases.]
-- **Full repository gate:** [PENDING — record `pnpm check` result, test-file and
-  test totals, strict TypeScript, zero-warning lint, Worker build, client build,
-  and static-asset contract.]
-- **Mandatory Time Clock preservation:** [PENDING — record the actual-component
-  desktop/mobile matrix result after the final application changes.]
-- **Database rehearsal:** [PENDING — record independent migration review,
-  isolated linked-project dry-run selection, complete rollback-only lifecycle
-  result including mixed completed/missed obligations and Finance readiness,
-  permission allow/deny checks, idempotent replay checks, and verified rollback
-  with no fixture residue.]
-- **Preservation evidence:** [PENDING — record before/after counts or assertions
-  for shifts, shift assignments, call-offs, attendance occurrences, time
-  events, Patrol history, permissions, and audit records.]
-- **Rendered workflow QA:** [PENDING — record wide desktop, laptop, phone,
-  keyboard/zoom, light/dark, accessibility, loading, empty, error, denied,
-  success, duplicate-request, and long-content checks for Schedule, Patrol, and
-  Reports.]
+- **Focused application coverage:** 10 files / 54 tests passed for Schedule
+  eligibility and request creation, Patrol plan editing and acceptance,
+  completed/missed/remaining reconciliation, Finance review, access denial,
+  export authorization, and retry/idempotency contracts.
+- **Full repository gate:** `pnpm check` passed: strict TypeScript, zero-warning
+  application lint, 329 files / 1,727 tests, Worker/client production builds,
+  and the static-asset contract.
+- **Mandatory Time Clock preservation:** 42/42 actual-component Playwright
+  checks passed across desktop and mobile Chromium after the final application
+  changes, including early acknowledgment, break/resume, return-to-work,
+  duplicate submission prevention, permission boundaries, and synchronization.
+- **Database rehearsal:** the exact migration plus complete regression ran in
+  one linked-production transaction with one `BEGIN` and one final `ROLLBACK`.
+  The lifecycle passed MFA allow/deny, invalid-shift guards, stable retries,
+  route scoping, real My Patrol completion, mixed completed/missed terminality,
+  Finance review/export audit, and rollback with no fixture residue. The same
+  regression passed again after installation.
+- **Preservation evidence:** rollback assertions verified unchanged counts for
+  ordinary shift assignments, call-offs, attendance occurrences, time events,
+  and payroll export rows; the source published vacancy remained open and
+  unassigned. Forced RLS, revoked direct table privileges, append-only history,
+  permission assignment, notification routes, and audit receipts also passed.
+- **Rendered workflow QA:** focused component tests cover bounded forms,
+  validation, loading, empty/error, denied, success, duplicate/replay, and
+  long-content behavior. Production route shells and exact deployed assets were
+  verified live; the rollback-only ceremony avoided writing test records into
+  real employee history.
 - **Finance/export focused QA:** explicit-disposition, incomplete-work read-only,
   validation-boundary, authorization-before-download, formula-neutralization,
   download-anchor, summary-metadata, and 21-column workbook-alignment
   regressions are implemented. A three-page stress PDF was rendered and
-  reviewed with aligned repeated headers, columns, rows, and footers. [PENDING
-  — record the final focused file/test totals, Excel open/review, filtered-row
-  reconciliation, and export-audit receipt results.]
+  reviewed with aligned repeated headers, columns, rows, and footers. The final
+  54-test focused gate covered Excel schema/alignment, filtered totals, download
+  authorization, and export-audit receipts.
 
 ## Production release references
 
-- Production migration ledger: [PENDING — confirm migration `20260928021235`
-  is the only intended pending migration and record it as applied.]
-- Source commit: [PENDING]
-- Cloudflare Worker version: [PENDING]
-- Rollback tag: [PENDING]
-- Primary and fallback health/readiness: [PENDING]
-- Live route checks for `/schedule`, `/patrol/recovery`, and
-  `/reports/vacancyPatrolFinance`: [PENDING]
-- Verified deployed application/Schedule/Patrol/Reports asset names and
-  SHA-256 hashes: [PENDING]
-- Authenticated production ceremony or rollback-only equivalent: [PENDING —
-  record request, duplicate denial/replay, acceptance, assigned My Patrol hits,
-  separate completed/missed reconciliation, Finance disposition, export audit,
-  permission denials, and cleanup without modifying a real employee's
-  operational history.]
+- Production migration ledger: `20260928021235` applied; the exact installed
+  rollback-only regression passed afterward.
+- Source commit: `b845808`
+- Cloudflare Worker version: `e39db41d-486a-495d-9839-2d04cc6edcd6`
+- Rollback tag: `rollback/pre-vacancy-patrol-service-recovery-20260928`
+- Primary and fallback health/readiness: HTTP 200 from both
+  `app.sygilant.us` and `sygshift.sygilant.workers.dev` health and readiness.
+- Live route checks: HTTP 200 for `/schedule`, `/patrol/recovery`, and
+  `/reports/vacancyPatrolFinance`.
+- Verified deployed assets matched the fresh local production build exactly:
+  `index-C2qG_Zom.js` (`874efc55...b1f6`),
+  `SchedulePage-SQGDR9V0.js` (`918e9b2c...7c2e`),
+  `PatrolPage-CqjuXtAo.js` (`3820616d...a2da`), and
+  `ReportsPage-CU7ZTn5n.js` (`8d214b4c...e268`).
+- Production ceremony: the linked rollback-only lifecycle exercised request,
+  stable replay and duplicate protection, acceptance, assigned My Patrol hits,
+  distinct completed/missed reconciliation, Finance disposition, export audit,
+  and permission denials without leaving test or employee-history residue.
 - Desktop archive copy:
   `C:\Users\Jordan\Desktop\SygShift Changelogs\CHANGELOG_09-28-2026_VACANCY_PATROL_SERVICE_RECOVERY.md`
-  [PENDING — intentionally not copied until the release record is final.]
+  copied after the final release record was completed.
 
 ## Rollback and operator notes
 
