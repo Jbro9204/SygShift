@@ -1,7 +1,7 @@
 # Time Off Workspace Rebuild
 
 Date: 09/28/2026
-Status: Production release in progress
+Status: Released to production
 
 ## Outcome
 
@@ -110,11 +110,25 @@ protected HR leave decision.
 
 ## Production release references
 
-- Source commit: pending
-- Production migration ledger: pending
-- Cloudflare Worker version: pending
+- Source commit: `a876434`
+- Production migration ledger: `20260928203430`
+- Cloudflare Worker version: `2141e044-e45b-4ccb-90ea-0a8c64ddfd3e`
 - Rollback tag: `rollback/pre-time-off-workspace-rebuild-20260928`
-- Health, readiness, live-route, and exact-asset verification: pending
+- Custom and fallback origins returned HTTP 200 for health, readiness, and
+  `/time-off`; both readiness responses reported every required binding ready.
+- The authenticated production workspace loaded the 2 pending Time Off
+  requests, 3 pending Shift Requests, and retained decision history. Michael
+  Hinz's real AAL2 request-center postflight returned management access and the
+  same live pending queues.
+- Exact deployed assets matched the fresh local build:
+  - `index-D8ucAt-X.js` (`4205b158...0a04`)
+  - `RequestsPage-DEcPPGfS.js` (`b1deefd5...8eb6`)
+  - `TimeOffRequestModal-cLlbaWOk.js` (`5281350b...3fa6`)
+  - `index-BF77HDfS.css` (`32efa074...3427`)
+- Supabase security and performance advisors reported no error-level findings
+  after installation.
+- Desktop archive copy:
+  `C:\Users\Jordan\Desktop\SygShift Changelogs\CHANGELOG_09-28-2026_TIME_OFF_WORKSPACE_REBUILD.md`.
 
 ## Rollback and operator notes
 

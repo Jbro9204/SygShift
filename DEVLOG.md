@@ -3000,6 +3000,13 @@ pnpm exec wrangler deploy --keep-vars
   zero-warning lint, production builds, 6/6 focused responsive Time Off browser
   checks, 42/42 mandatory Time Clock checks, and a linked-production
   rollback-only migration/regression rehearsal.
+- Applied production migration `20260928203430`, reran both rollback-only SQL
+  regression suites, and verified Michael Hinz's real AAL2 management payload
+  returns the live 2 pending Time Off and 3 pending Shift Request records.
+- Released source `a876434` as Cloudflare Worker
+  `2141e044-e45b-4ccb-90ea-0a8c64ddfd3e`; both production origins passed
+  health/readiness, `/time-off`, authenticated workspace, and exact-asset
+  verification.
 - See
   `docs/changelogs/CHANGELOG_09-28-2026_TIME_OFF_WORKSPACE_REBUILD.md` for the
   complete security, verification, release, and rollback record.
