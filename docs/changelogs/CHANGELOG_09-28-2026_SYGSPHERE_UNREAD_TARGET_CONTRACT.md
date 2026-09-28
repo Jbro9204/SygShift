@@ -1,5 +1,8 @@
 # SygSphere Unread Target Contract
 
+Date: 09/28/2026
+Status: Released to production
+
 ## Outcome
 
 SygSphere inbox responses now identify the exact newest unread message for the
