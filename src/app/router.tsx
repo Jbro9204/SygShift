@@ -454,6 +454,14 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        path: 'time-off',
+        element: (
+          <RouteSuspense>
+            <RequestsPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
         path: 'requests',
         element: (
           <RouteSuspense>

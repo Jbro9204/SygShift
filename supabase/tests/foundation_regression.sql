@@ -563,7 +563,11 @@ begin
     and status = 'pending';
 
   begin
-    perform public.decide_time_off_request(time_off_id, 'approved', null);
+    perform public.decide_time_off_request(
+      time_off_id,
+      'approved',
+      'Valid regression note for the active assignment conflict.'
+    );
   exception when check_violation then
     blocked := true;
   end;
@@ -581,12 +585,20 @@ select public.publish_call_off_opening(
 from public.call_off_reports
 where shift_id = '50000000-0000-0000-0000-000000000001';
 
-select public.decide_time_off_request(id, 'approved', null) as assigned_time_off_approved
+select public.decide_time_off_request(
+  id,
+  'approved',
+  'Approved after the assigned-shift conflict was resolved.'
+) as assigned_time_off_approved
 from public.time_off_requests
 where employee_id = '00000000-0000-0000-0000-000000000003'
   and status = 'pending';
 
-select public.decide_time_off_request(id, 'approved', null) as guard_time_off_approved
+select public.decide_time_off_request(
+  id,
+  'approved',
+  'Approved for the assignment enforcement regression.'
+) as guard_time_off_approved
 from public.time_off_requests
 where employee_id = '00000000-0000-0000-0000-000000000005'
   and status = 'pending';

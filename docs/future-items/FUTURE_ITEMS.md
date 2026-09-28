@@ -145,6 +145,23 @@ Completion criteria:
 
 ## HR, Finance & Employee Lifecycle
 
+### Time-Off Payroll Policy and Approved-Request Changes
+
+- Priority: **High**
+- Target window: Management-policy decision before changing payroll treatment or enabling approved-request cancellation
+- Status: Operational request/review/tracking workspace released 09/28/2026; policy-dependent payroll and post-approval change rules remain unapproved
+- Added: 09/28/2026
+
+#### Execution instructions
+
+1. HR/Finance must define whether paid vacation and sick time represent a tracked balance, salary continuation, a payroll credit, a salary-default deduction, or documentation only for each employment type. Do not infer balances or change payroll from the request label.
+2. Decide who may cancel or revise an approved request, whether employee cancellation requires another approval, how close to the requested date a change is allowed, and how affected Schedule, Time & Attendance, Payroll, notifications, and protected Leave records must be reconciled.
+3. Preserve the original submission, approval, and affected-shift snapshot. Record any revision, cancellation, restoration, or payroll adjustment as a new audited action rather than rewriting history.
+4. Require effective permission and recent MFA for management actions, prevent self-approval, serialize changes against schedule assignment, and test employee isolation plus additive-role and individual-permission behavior.
+5. Release only after HR/Finance approve the written policy, rollback-only production regression proves that existing requests/payroll remain unchanged, and the employee/manager wording accurately describes the approved outcome.
+
+Completion criteria: approved written policy, audited change/cancellation workflow, reconciled downstream effects, employee and management guidance, allow/deny coverage, migration preservation evidence, and production verification.
+
 ### Employee Document Removal and Recovery
 
 - Priority: **High**

@@ -4,6 +4,24 @@ import { reportAttendanceIssue } from './timekeeping'
 
 const roleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'])
 const requestStatusSchema = z.enum(['pending', 'approved', 'declined', 'withdrawn', 'canceled'])
+export const timeOffRequestKinds = ['paid_vacation', 'sick_time', 'unpaid_time_off'] as const
+export type TimeOffRequestKind = (typeof timeOffRequestKinds)[number]
+const timeOffRequestKindSchema = z.enum(timeOffRequestKinds)
+
+const affectedTimeOffShiftSchema = z.object({
+  shiftId: z.string().uuid(),
+  assignmentId: z.string().uuid(),
+  workday: z.string(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  timeZone: z.string(),
+  siteCode: z.string().nullable(),
+  siteName: z.string().nullable(),
+  postName: z.string().nullable(),
+  eventName: z.string().nullable(),
+  location: z.string(),
+  estimatedMinutes: z.number().int().nonnegative(),
+})
 
 const employeeSchema = z.object({
   id: z.string().uuid(),
@@ -34,13 +52,24 @@ const requestShiftSchema = z.object({
 const timeOffSchema = z.object({
   id: z.string().uuid(),
   employee_id: z.string().uuid(),
+  employee_number: z.string().nullable().optional().default(null),
   starts_on: z.string(),
   ends_on: z.string(),
   partial_day_start: z.string().nullable(),
   partial_day_end: z.string().nullable(),
+  request_type: timeOffRequestKindSchema.nullable().optional().default(null),
+  employment_type_snapshot: z.enum(['hourly', 'salary', 'flex']).nullable().optional().default(null),
+  pay_treatment: z.enum(['salary_paid_leave', 'sick_policy', 'unpaid']).nullable().optional().default(null),
+  requested_minutes: z.number().int().nonnegative().nullable().optional().default(null),
+  return_on: z.string().nullable().optional().default(null),
+  affected_shift_count: z.number().int().nonnegative().optional().default(0),
+  affected_shifts: z.array(affectedTimeOffShiftSchema).optional().default([]),
   reason: z.string().nullable(),
   status: requestStatusSchema,
   decision_note: z.string().nullable(),
+  decided_at: z.string().nullable().optional().default(null),
+  decided_by_name: z.string().nullable().optional().default(null),
+  updated_at: z.string().nullable().optional().default(null),
   created_at: z.string(),
   employee: employeeSchema,
 })
@@ -177,9 +206,14 @@ export function parseCallOffCoverageWorkspace(input: unknown): CallOffCoverageWo
 
 export interface RequestCenter {
   employeeId: string
+  employeeTimeZone: string | null
   role: z.infer<typeof roleSchema>
   permissions: {
     canManage: boolean
+  }
+  timeOffHistory: {
+    managerHistoryLimit: number | null
+    truncated: boolean
   }
   timeOff: TimeOffRequest[]
   shiftRequests: ShiftWorkRequest[]
@@ -227,21 +261,37 @@ const rpcShiftSchema = z.object({
 
 export const requestCenterPayloadSchema = z.object({
   employeeId: z.string().uuid(),
+  employeeTimeZone: z.string().nullable().optional().default(null),
   role: roleSchema,
   permissions: z.object({
     canManage: z.boolean(),
   }),
+  timeOffHistory: z.object({
+    managerHistoryLimit: z.number().int().positive().nullable(),
+    truncated: z.boolean(),
+  }).optional().default({ managerHistoryLimit: null, truncated: false }),
   timeOff: z.array(z.object({
     id: z.string().uuid(),
     employeeId: z.string().uuid(),
     employeeName: z.string(),
+    employeeNumber: z.string().nullable().optional().default(null),
     startsOn: z.string(),
     endsOn: z.string(),
     partialDayStart: z.string().nullable(),
     partialDayEnd: z.string().nullable(),
+    requestType: timeOffRequestKindSchema.nullable().optional().default(null),
+    employmentType: z.enum(['hourly', 'salary', 'flex']).nullable().optional().default(null),
+    payTreatment: z.enum(['salary_paid_leave', 'sick_policy', 'unpaid']).nullable().optional().default(null),
+    requestedMinutes: z.number().int().nonnegative().nullable().optional().default(null),
+    returnOn: z.string().nullable().optional().default(null),
+    affectedShiftCount: z.number().int().nonnegative().optional().default(0),
+    affectedShifts: z.array(affectedTimeOffShiftSchema).optional().default([]),
     reason: z.string().nullable(),
     status: requestStatusSchema,
     decisionNote: z.string().nullable(),
+    decidedAt: z.string().nullable().optional().default(null),
+    decidedByName: z.string().nullable().optional().default(null),
+    updatedAt: z.string().nullable().optional().default(null),
     createdAt: z.string(),
   })),
   shiftRequests: z.array(z.object({
@@ -311,13 +361,24 @@ export async function getRequestCenter(): Promise<RequestCenter> {
     timeOff: payload.timeOff.map((request) => ({
       id: request.id,
       employee_id: request.employeeId,
+      employee_number: request.employeeNumber,
       starts_on: request.startsOn,
       ends_on: request.endsOn,
       partial_day_start: request.partialDayStart,
       partial_day_end: request.partialDayEnd,
+      request_type: request.requestType,
+      employment_type_snapshot: request.employmentType,
+      pay_treatment: request.payTreatment,
+      requested_minutes: request.requestedMinutes,
+      return_on: request.returnOn,
+      affected_shift_count: request.affectedShiftCount,
+      affected_shifts: request.affectedShifts,
       reason: request.reason,
       status: request.status,
       decision_note: request.decisionNote,
+      decided_at: request.decidedAt,
+      decided_by_name: request.decidedByName,
+      updated_at: request.updatedAt,
       created_at: request.createdAt,
       employee: employeeFromPayload(request.employeeId, request.employeeName),
     })),
@@ -352,8 +413,10 @@ export async function getRequestCenter(): Promise<RequestCenter> {
 
   return {
     employeeId: payload.employeeId,
+    employeeTimeZone: payload.employeeTimeZone,
     role: payload.role,
     permissions: payload.permissions,
+    timeOffHistory: payload.timeOffHistory,
     timeOff: records.timeOff,
     shiftRequests: records.shiftRequests,
     callOffs: records.callOffs,
@@ -369,29 +432,12 @@ export interface TimeOffInput {
   reason: string | null
 }
 
-export const timeOffRequestKinds = ['paid_vacation', 'sick_time', 'unpaid_time_off'] as const
-export type TimeOffRequestKind = (typeof timeOffRequestKinds)[number]
-
-const affectedTimeOffShiftSchema = z.object({
-  shiftId: z.string().uuid(),
-  assignmentId: z.string().uuid(),
-  workday: z.string(),
-  startsAt: z.string(),
-  endsAt: z.string(),
-  timeZone: z.string(),
-  siteCode: z.string().nullable(),
-  siteName: z.string().nullable(),
-  postName: z.string().nullable(),
-  eventName: z.string().nullable(),
-  location: z.string(),
-  estimatedMinutes: z.number().int().nonnegative(),
-})
-
 const timeOffEmployeeContextSchema = z.object({
   id: z.string().uuid(),
   employeeNumber: z.string().nullable(),
   name: z.string(),
   employmentType: z.enum(['hourly', 'salary', 'flex']),
+  timeZone: z.string().nullable().optional().default(null),
   status: z.literal('active'),
 })
 
@@ -408,6 +454,7 @@ const timeOffRequestContextSchema = z.object({
   employee: timeOffEmployeeContextSchema,
   allowedTypes: z.array(z.enum(timeOffRequestKinds)),
   affectedShifts: z.array(affectedTimeOffShiftSchema),
+  requestedMinutes: z.number().int().nonnegative().nullable().optional().default(null),
   recentRequests: z.array(recentTimeOffRequestSchema),
 })
 
@@ -417,6 +464,7 @@ const timeOffReviewContextSchema = z.object({
     id: z.string().uuid(),
     employeeNumber: z.string().nullable(),
     name: z.string(),
+    timeZone: z.string().nullable().optional().default(null),
   }),
   requestType: z.enum(timeOffRequestKinds).nullable(),
   employmentType: z.enum(['hourly', 'salary', 'flex']).nullable(),
@@ -449,10 +497,17 @@ export interface TimeOffRequestV2Input {
   reason: string | null
 }
 
-export async function getTimeOffRequestContext(startsOn?: string, endsOn?: string): Promise<TimeOffRequestContext> {
-  const { data, error } = await getSupabaseClient().rpc('get_time_off_request_context', {
+export async function getTimeOffRequestContext(
+  startsOn?: string,
+  endsOn?: string,
+  partialStart: string | null = null,
+  partialEnd: string | null = null,
+): Promise<TimeOffRequestContext> {
+  const { data, error } = await getSupabaseClient().rpc('get_time_off_request_context_v2', {
     request_starts_on: startsOn || null,
     request_ends_on: endsOn || null,
+    request_partial_start: partialStart,
+    request_partial_end: partialEnd,
   })
   if (error) throw new Error(error.message || 'Time-off request details could not be loaded.')
   return timeOffRequestContextSchema.parse(data)

@@ -80,7 +80,7 @@ const operationsMetrics: Array<{
 }> = [
   { label: 'On duty now', key: 'onDutyNow', icon: UsersRound, path: '/time/on-duty' },
   { label: 'Open coverage', key: 'openShifts', icon: CalendarClock, path: '/scheduler' },
-  { label: 'Pending reviews', key: 'pendingRequests', icon: ClipboardCheck, path: '/requests' },
+  { label: 'Pending reviews', key: 'pendingRequests', icon: ClipboardCheck, path: '/time-off' },
   { label: 'Clock exceptions', key: 'clockExceptions', icon: TimerReset, path: '/time/exceptions' },
 ]
 
@@ -170,7 +170,7 @@ export function OverviewPage() {
   const operationsHome = homeMode === 'operations'
   const ownTimeAllowed = canViewOwnTime(session)
   const punchAllowed = canUseOwnTimeClock(session)
-  const requestsAllowed = canAccessRoute('/requests', session)
+  const requestsAllowed = canAccessRoute('/time-off', session)
   const opportunitiesAllowed = canAccessRoute('/events', session)
   const scheduleAllowed = canAccessRoute('/schedule', session)
   const actionCenterAllowed = canAccessRoute('/actions', session)
@@ -356,9 +356,10 @@ export function OverviewPage() {
       )}
       {timeOffOpen ? (
         <TimeOffRequestModal
+          employeeTimeZone={requestsQuery.data?.employeeTimeZone ?? session.timeZone}
           onClose={() => setTimeOffOpen(false)}
           onSubmitted={() => void requestsQuery.refetch()}
-          requestHistoryPath="/requests"
+          requestHistoryPath="/time-off?tab=time-off"
         />
       ) : null}
       {earlyClockIn.restriction ? (
@@ -513,7 +514,7 @@ function EmployeeHome({ announcementArchivePath, announcements, announcementsErr
           </HomeCard>
           <HomeCard icon={ClipboardCheck} title="My requests" value={pendingRequests ? `${pendingRequests} pending` : 'No pending requests'}>
             {requestsError ? <ModuleRetry label="Requests could not be loaded." onRetry={onRetryRequests} /> : <p>Review time-off, coverage, and shift-request status.</p>}
-            {requestsAllowed ? <Link className="text-link" to="/requests">Open requests <ArrowRight aria-hidden="true" size={16} /></Link> : null}
+            {requestsAllowed ? <Link className="text-link" to="/time-off">Open request workspace <ArrowRight aria-hidden="true" size={16} /></Link> : null}
           </HomeCard>
           {opportunity ? <HomeCard icon={CalendarClock} title="Available opportunity" value={opportunityTitle(opportunity)}>
             <p>{`${opportunityLocation(opportunity)} · ${formatOperationalDateTime(opportunity.starts_at)} – ${formatDualTime(opportunity.ends_at, { timeZone: opportunity.time_zone })}`}</p>
@@ -564,17 +565,17 @@ function OperationsHome({ announcementArchivePath, announcements, announcementsE
   const pendingTimeOff = requestCenter?.timeOff.filter((item) => item.status === 'pending').length ?? 0
   const pendingShiftRequests = requestCenter?.shiftRequests.filter((item) => item.status === 'pending').length ?? 0
   const authorizedQueue = [
-    ...(openCallOffs ? [{ label: 'Call-offs awaiting review', value: openCallOffs, path: '/time/operations' }] : []),
-    ...(pendingTimeOff ? [{ label: 'Time-off requests', value: pendingTimeOff, path: '/requests' }] : []),
-    ...(pendingShiftRequests ? [{ label: 'Shift requests', value: pendingShiftRequests, path: '/requests' }] : []),
+    ...(openCallOffs ? [{ label: 'Call-offs awaiting review', value: openCallOffs, path: '/time-off?tab=call-offs' }] : []),
+    ...(pendingTimeOff ? [{ label: 'Time-off requests', value: pendingTimeOff, path: '/time-off?tab=time-off' }] : []),
+    ...(pendingShiftRequests ? [{ label: 'Shift requests', value: pendingShiftRequests, path: '/time-off?tab=shift-requests' }] : []),
     ...(metrics?.clockExceptions ? [{ label: 'Time exceptions', value: metrics.clockExceptions, path: '/time/exceptions' }] : []),
-  ].filter((item) => canAccessRoute(item.path, session))
+  ].filter((item) => canAccessRoute(routePathFromHref(item.path), session))
   const queue = boundedHomeItems(authorizedQueue)
   const queueTotal = authorizedQueue.reduce((total, item) => total + item.value, 0)
   const actionCenterPath = canAccessRoute('/time/operations', session)
     ? '/time/operations'
-    : canAccessRoute('/requests', session)
-      ? '/requests'
+    : canAccessRoute('/time-off', session)
+      ? '/time-off'
       : canAccessRoute('/time/exceptions', session)
         ? '/time/exceptions'
         : null

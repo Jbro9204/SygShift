@@ -43,7 +43,7 @@ describe('HRIS Stage 3 People and HR guardrails', () => {
     expect(employeeFile).toContain('EmployeeContactEditorDialog')
     expect(employeeFile).toContain("path: '/licensing'")
     expect(employeeFile).toContain("path: '/availability'")
-    expect(employeeFile).toContain("path: '/requests'")
+    expect(employeeFile).toContain("path: '/time-off'")
     expect(employeeFile).toContain("path: '/users'")
     expect(employeeFile).toContain('canAccessRoute(workspace.path, sessionQuery.data)')
     expect(employeeFile).toContain('No information is copied or maintained twice.')

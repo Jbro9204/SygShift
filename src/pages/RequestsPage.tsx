@@ -2,18 +2,24 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import {
+  CalendarCheck2,
   CalendarOff,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   CircleOff,
   ClipboardCheck,
+  Clock3,
   DatabaseZap,
+  FileText,
+  History,
   Megaphone,
+  Plus,
   Route,
   Search,
   ShieldAlert,
   TriangleAlert,
+  Umbrella,
   UserCheck,
   UsersRound,
 } from 'lucide-react'
@@ -35,10 +41,12 @@ import {
   type RequestShift,
   type ShiftWorkRequest,
   type TimeOffRequest,
+  type TimeOffRequestKind,
   type UpcomingAssignment,
 } from '../data/requests'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { formatDualTimeRange } from '../lib/time'
+import { dateKeyInTimeZone, formatDualTimeRange, OPERATIONAL_TIME_ZONE } from '../lib/time'
+import { isContinentalUsTimeZone } from '../lib/usTimeZones'
 import { buildCoverageCandidateDirectory } from './coverageCandidates'
 
 type RequestAction =
@@ -99,13 +107,21 @@ function formatShiftDate(shift: RequestShift): string {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  return <span className={`status-badge status-badge--${status}`}>{status.replace('_', ' ')}</span>
+  const labels: Record<string, string> = {
+    approved: 'Approved',
+    canceled: 'Canceled',
+    declined: 'Declined',
+    pending: 'Pending review',
+    withdrawn: 'Withdrawn',
+  }
+  return <span className={`status-badge status-badge--${status}`}>{labels[status] ?? status.replaceAll('_', ' ')}</span>
 }
 
 function formatRequestDate(date: string): string {
   return new Intl.DateTimeFormat('en-US', {
     day: '2-digit',
     month: '2-digit',
+    timeZone: OPERATIONAL_TIME_ZONE,
     year: 'numeric',
   }).format(new Date(`${date}T12:00:00`))
 }
@@ -114,6 +130,38 @@ function formatRequestDateRange(request: Pick<TimeOffRequest, 'starts_on' | 'end
   const start = formatRequestDate(request.starts_on)
   const end = formatRequestDate(request.ends_on)
   return start === end ? start : `${start} – ${end}`
+}
+
+function formatSubmittedDate(value: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: OPERATIONAL_TIME_ZONE,
+    year: 'numeric',
+  }).format(new Date(value))
+}
+
+function timeOffTypeLabel(value: TimeOffRequestKind | null): string {
+  if (value === 'paid_vacation') return 'Paid vacation'
+  if (value === 'sick_time') return 'Sick time'
+  if (value === 'unpaid_time_off') return 'Unpaid time off'
+  return 'Time off'
+}
+
+function requestedTimeLabel(minutes: number | null): string {
+  if (minutes == null) return 'Calculated during review'
+  const hours = minutes / 60
+  return `${hours.toFixed(hours % 1 === 0 ? 0 : 1)} hr`
+}
+
+function timeOffDurationLabel(request: TimeOffRequest, affectedShiftCount: number): string {
+  if (request.partial_day_start && request.partial_day_end) {
+    return `${requestedTimeLabel(request.requested_minutes)} partial day`
+  }
+  const dayLabel = request.starts_on === request.ends_on ? 'Full day' : 'Multiple full days'
+  if (affectedShiftCount === 0 || request.requested_minutes === 0) return `${dayLabel} · no scheduled hours affected`
+  if (request.requested_minutes == null) return dayLabel
+  return `${dayLabel} · ${requestedTimeLabel(request.requested_minutes)} scheduled`
 }
 
 interface PendingCallOff {
@@ -215,72 +263,275 @@ function CallOffConfirmation({
   )
 }
 
-function GuardHistory({
-  timeOff,
-  shiftRequests,
-  callOffs,
-  mutation,
+type RequestTab = 'time-off' | 'shift-requests' | 'call-offs'
+
+const requestTabs: Array<{
+  description: string
+  icon: typeof CalendarOff
+  id: RequestTab
+  label: string
+}> = [
+  { id: 'time-off', label: 'Time Off', description: 'Request and track planned time away', icon: Umbrella },
+  { id: 'shift-requests', label: 'Shift Requests', description: 'Track requests for open shifts', icon: CalendarCheck2 },
+  { id: 'call-offs', label: 'Call-Offs', description: 'Urgent absence and coverage work', icon: TriangleAlert },
+]
+
+function RequestWorkspaceTabs({
+  activeTab,
+  callOffCount,
+  onChange,
+  shiftRequestCount,
+  timeOffCount,
 }: {
-  timeOff: TimeOffRequest[]
-  shiftRequests: ShiftWorkRequest[]
-  callOffs: CallOffReport[]
+  activeTab: RequestTab
+  callOffCount: number
+  onChange: (tab: RequestTab) => void
+  shiftRequestCount: number
+  timeOffCount: number
+}) {
+  const counts: Record<RequestTab, number> = {
+    'call-offs': callOffCount,
+    'shift-requests': shiftRequestCount,
+    'time-off': timeOffCount,
+  }
+
+  return (
+    <nav aria-label="Request workspace" className="request-workspace-tabs">
+      {requestTabs.map((tab) => {
+        const Icon = tab.icon
+        return (
+          <button
+            aria-current={activeTab === tab.id ? 'page' : undefined}
+            className={activeTab === tab.id ? 'is-active' : ''}
+            key={tab.id}
+            onClick={() => onChange(tab.id)}
+            type="button"
+          >
+            <Icon aria-hidden="true" size={20} />
+            <span><strong>{tab.label}</strong><small>{tab.description}</small></span>
+            <em aria-label={`${counts[tab.id]} items`}>{counts[tab.id]}</em>
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
+function TimeOffRequestCard({
+  highlighted = false,
+  manager,
+  mutationPending,
+  onReview,
+  onWithdraw,
+  ownRequest,
+  request,
+}: {
+  highlighted?: boolean
+  manager: boolean
+  mutationPending: boolean
+  onReview?: (requestId: string) => void
+  onWithdraw?: (requestId: string) => void
+  ownRequest: boolean
+  request: TimeOffRequest
+}) {
+  const shiftNames = request.affected_shifts
+    .slice(0, 2)
+    .map((shift) => shift.postName ?? shift.eventName ?? shift.location)
+  const partialTime = request.partial_day_start && request.partial_day_end
+    ? `${request.partial_day_start.slice(0, 5)} – ${request.partial_day_end.slice(0, 5)}`
+    : null
+  const affectedShiftCount = Math.max(request.affected_shift_count, request.affected_shifts.length)
+
+  return (
+    <article className={`time-off-record${highlighted ? ' time-off-record--highlighted' : ''}`} id={`request-${request.id}`}>
+      <header className="time-off-record__header">
+        <div>
+          {manager ? <span className="time-off-record__employee">{employeeName(request.employee)}{request.employee_number ? ` · ${request.employee_number}` : ''}</span> : null}
+          <h3>{timeOffTypeLabel(request.request_type)}</h3>
+          <p>{formatRequestDateRange(request)}{partialTime ? ` · ${partialTime}` : ''}</p>
+        </div>
+        <StatusBadge status={request.status} />
+      </header>
+      <dl className="time-off-record__details">
+        <div><dt>Expected return</dt><dd>{request.return_on ? formatRequestDate(request.return_on) : 'Not provided'}</dd></div>
+        <div><dt>Requested time</dt><dd>{timeOffDurationLabel(request, affectedShiftCount)}</dd></div>
+        <div>
+          <dt>Affected shifts</dt>
+          <dd>{affectedShiftCount > 0 ? `${affectedShiftCount} published shift${affectedShiftCount === 1 ? '' : 's'}` : 'No published shifts found'}</dd>
+          {shiftNames.length > 0 ? <small>{shiftNames.join(' · ')}{affectedShiftCount > shiftNames.length ? ` +${affectedShiftCount - shiftNames.length} more` : ''}</small> : null}
+        </div>
+        <div><dt>Submitted</dt><dd>{formatSubmittedDate(request.created_at)}</dd></div>
+      </dl>
+      <div className="time-off-record__notes">
+        <div><span>Reason</span><p>{request.reason || 'No reason was provided.'}</p></div>
+        {request.decision_note ? <div><span>Decision note</span><p>{request.decision_note}</p></div> : null}
+        {request.decided_at ? <div><span>Decision recorded</span><p>{formatSubmittedDate(request.decided_at)}{request.decided_by_name ? ` by ${request.decided_by_name}` : ''}</p></div> : null}
+      </div>
+      {request.status === 'pending' ? (
+        <footer className="time-off-record__actions">
+          {manager && ownRequest ? <span className="time-off-record__self-note">Your request is waiting for a different authorized reviewer.</span> : null}
+          {manager && !ownRequest && onReview ? <button className="primary-action" onClick={() => onReview(request.id)} type="button">Review request</button> : null}
+          {ownRequest && onWithdraw ? <button className="secondary-button" disabled={mutationPending} onClick={() => onWithdraw(request.id)} type="button">Withdraw request</button> : null}
+        </footer>
+      ) : null}
+    </article>
+  )
+}
+
+function TimeOffWorkspace({
+  historyLimit,
+  historyTruncated,
+  highlightedRequestId,
+  manager,
+  mutation,
+  onNewRequest,
+  onReview,
+  onWithdraw,
+  requests,
+  viewerEmployeeId,
+  viewerTimeZone,
+}: {
+  historyLimit: number | null
+  historyTruncated: boolean
+  highlightedRequestId: string | null
+  manager: boolean
   mutation: ReturnType<typeof useRequestAction>
+  onNewRequest: () => void
+  onReview: (requestId: string) => void
+  onWithdraw: (requestId: string) => void
+  requests: TimeOffRequest[]
+  viewerEmployeeId: string
+  viewerTimeZone: string
+}) {
+  const [search, setSearch] = useState('')
+  const [status, setStatus] = useState('all')
+  const today = dateKeyInTimeZone(new Date(), viewerTimeZone)
+  const pending = requests.filter((request) => request.status === 'pending')
+  const approved = requests.filter((request) => request.status === 'approved')
+  const completed = requests.filter((request) => ['declined', 'withdrawn', 'canceled'].includes(request.status))
+  const pastOrClosed = requests.filter((request) => request.ends_on < today || ['declined', 'withdrawn', 'canceled'].includes(request.status))
+  const normalizedSearch = search.trim().toLocaleLowerCase()
+  const visible = requests.filter((request) => {
+    if (status !== 'all' && request.status !== status) return false
+    if (!normalizedSearch) return true
+    return [
+      employeeName(request.employee),
+      timeOffTypeLabel(request.request_type),
+      request.reason,
+      request.decision_note,
+      request.starts_on,
+      request.ends_on,
+    ].some((value) => value?.toLocaleLowerCase().includes(normalizedSearch))
+  })
+  const employeeUpcoming = visible.filter((request) => request.ends_on >= today && ['pending', 'approved'].includes(request.status))
+  const employeeHistory = visible.filter((request) => !employeeUpcoming.includes(request))
+  const managerPending = visible.filter((request) => request.status === 'pending')
+  const managerHistory = visible.filter((request) => request.status !== 'pending')
+
+  const renderRecords = (items: TimeOffRequest[]) => items.map((request) => (
+    <TimeOffRequestCard
+      highlighted={request.id === highlightedRequestId}
+      key={request.id}
+      manager={manager}
+      mutationPending={mutation.isPending}
+      onReview={onReview}
+      onWithdraw={onWithdraw}
+      ownRequest={request.employee_id === viewerEmployeeId}
+      request={request}
+    />
+  ))
+
+  return (
+    <div className="time-off-workspace">
+      <section className="time-off-workspace__welcome" aria-labelledby="time-off-workspace-title">
+        <div className="time-off-workspace__welcome-icon"><CalendarOff aria-hidden="true" size={28} /></div>
+        <div>
+          <p className="eyebrow">Planned leave</p>
+          <h2 id="time-off-workspace-title">{manager ? 'Time Off workspace' : 'Your time off, all in one place'}</h2>
+          <p>{manager ? 'Review new requests, see every decision, and keep the team’s leave record easy to follow.' : 'Submit a request in a few steps, see schedule impact before sending, and follow the decision here.'}</p>
+        </div>
+        <button className="primary-action" onClick={onNewRequest} type="button"><Plus aria-hidden="true" size={18} />New time-off request</button>
+      </section>
+
+      <section className="time-off-status-summary" aria-label={manager ? 'Time-off request totals' : 'My time-off status'}>
+        <article className={pending.length > 0 ? 'is-attention' : ''}><Clock3 aria-hidden="true" size={20} /><span>{manager ? 'Awaiting review' : 'Pending'}</span><strong>{pending.length}</strong></article>
+        <article><CheckCircle2 aria-hidden="true" size={20} /><span>Approved</span><strong>{approved.length}</strong></article>
+        <article><History aria-hidden="true" size={20} /><span>{manager ? 'Closed' : 'Past / closed'}</span><strong>{manager ? completed.length : pastOrClosed.length}</strong></article>
+        <article><FileText aria-hidden="true" size={20} /><span>All requests</span><strong>{requests.length}</strong></article>
+      </section>
+
+      {manager ? (
+        <section className="time-off-workspace__filters" aria-label="Filter time-off requests">
+          <label><span>Search requests</span><div><Search aria-hidden="true" size={18} /><input onChange={(event) => setSearch(event.target.value)} placeholder="Employee, date, type, or reason" type="search" value={search} /></div></label>
+          <label><span>Status</span><select onChange={(event) => setStatus(event.target.value)} value={status}><option value="all">All statuses</option><option value="pending">Pending review</option><option value="approved">Approved</option><option value="declined">Declined</option><option value="withdrawn">Withdrawn</option><option value="canceled">Canceled</option></select></label>
+        </section>
+      ) : null}
+      {manager && historyTruncated ? <p className="time-off-history-limit" role="note">Showing the newest {historyLimit ?? 100} completed team requests, plus every pending request and your own history.</p> : null}
+
+      {manager ? (
+        <div className="time-off-workspace__sections">
+          <section className="time-off-request-section" aria-labelledby="pending-time-off-title">
+            <div className="time-off-request-section__heading"><div><p className="eyebrow">Needs action</p><h2 id="pending-time-off-title">Pending Time Off review</h2><span>Open each request to confirm dates, return date, estimated time, and affected published shifts.</span></div><strong>{managerPending.length}</strong></div>
+            <div className="time-off-record-list">{renderRecords(managerPending)}{managerPending.length === 0 ? <p className="request-list-empty">No pending time-off requests match these filters.</p> : null}</div>
+          </section>
+          <section className="time-off-request-section" aria-labelledby="time-off-history-title">
+            <div className="time-off-request-section__heading"><div><p className="eyebrow">Tracking</p><h2 id="time-off-history-title">Decision history</h2><span>Approved, declined, withdrawn, and canceled requests remain visible here.</span></div><strong>{managerHistory.length}</strong></div>
+            <div className="time-off-record-list">{renderRecords(managerHistory)}{managerHistory.length === 0 ? <p className="request-list-empty">No completed requests match these filters.</p> : null}</div>
+          </section>
+        </div>
+      ) : (
+        <div className="time-off-workspace__sections">
+          <section className="time-off-request-section" aria-labelledby="upcoming-time-off-title">
+            <div className="time-off-request-section__heading"><div><p className="eyebrow">Next up</p><h2 id="upcoming-time-off-title">Upcoming requests</h2><span>Pending and approved time away that has not ended yet.</span></div><strong>{employeeUpcoming.length}</strong></div>
+            <div className="time-off-record-list">{renderRecords(employeeUpcoming)}{employeeUpcoming.length === 0 ? <p className="request-list-empty">You have no upcoming time-off requests.</p> : null}</div>
+          </section>
+          <section className="time-off-request-section" aria-labelledby="past-time-off-title">
+            <div className="time-off-request-section__heading"><div><p className="eyebrow">History</p><h2 id="past-time-off-title">Past and closed requests</h2><span>Previous requests and their final decisions stay here for reference.</span></div><strong>{employeeHistory.length}</strong></div>
+            <div className="time-off-record-list">{renderRecords(employeeHistory)}{employeeHistory.length === 0 ? <p className="request-list-empty">No past or closed time-off requests yet.</p> : null}</div>
+          </section>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WithdrawTimeOffDialog({
+  mutation,
+  onClose,
+  onWithdrawn,
+  request,
+}: {
+  mutation: ReturnType<typeof useRequestAction>
+  onClose: () => void
+  onWithdrawn: () => void
+  request: TimeOffRequest
 }) {
   return (
-    <section className="request-history" aria-labelledby="request-history-title">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">History</p>
-          <h2 id="request-history-title">My requests</h2>
-        </div>
+    <ModalDialog
+      busy={mutation.isPending}
+      busyLabel="Withdrawing your request..."
+      description="This removes the request from the approval queue but keeps its history for your records."
+      onClose={onClose}
+      title="Withdraw time-off request?"
+    >
+      <div className="time-off-withdraw-summary">
+        <strong>{timeOffTypeLabel(request.request_type)}</strong>
+        <span>{formatRequestDateRange(request)}</span>
+        <small>{request.reason || 'No reason was provided.'}</small>
       </div>
-      <div className="request-history-list">
-        {timeOff.map((request) => (
-          <article className="history-row" key={request.id}>
-            <div>
-              <strong>Time off · {formatRequestDateRange(request)}</strong>
-              <span>{request.reason || 'No note provided'}</span>
-            </div>
-            <div className="history-row__actions">
-              <StatusBadge status={request.status} />
-              {request.status === 'pending' ? (
-                <button
-                  className="text-button"
-                  disabled={mutation.isPending}
-                  onClick={() => mutation.mutate({ kind: 'withdraw-time-off', requestId: request.id })}
-                  type="button"
-                >
-                  Withdraw
-                </button>
-              ) : null}
-            </div>
-          </article>
-        ))}
-        {shiftRequests.map((request) => (
-          <article className="history-row" key={request.id}>
-            <div>
-              <strong>Shift request · {requestShiftTitle(request.shift)}</strong>
-              <span>{formatShiftDate(request.shift)}</span>
-            </div>
-            <StatusBadge status={request.status} />
-          </article>
-        ))}
-        {callOffs.map((report) => (
-          <article className="history-row" key={report.id}>
-            <div>
-              <strong>Call-off · {requestShiftTitle(report.shift)}</strong>
-              <span>{formatShiftDate(report.shift)}</span>
-            </div>
-            <span className="status-badge status-badge--leave">
-              {report.announcement_id ? 'Opening published' : 'Supervisor notified'}
-            </span>
-          </article>
-        ))}
-        {timeOff.length + shiftRequests.length + callOffs.length === 0 ? (
-          <p className="request-list-empty">No requests have been submitted.</p>
-        ) : null}
+      {mutation.isError ? <div className="inline-alert" role="alert">The request could not be withdrawn. Refresh its status and try again.</div> : null}
+      <div className="modal-actions">
+        <button className="secondary-button" disabled={mutation.isPending} onClick={onClose} type="button">Keep request</button>
+        <button
+          className="primary-action danger-primary"
+          disabled={mutation.isPending}
+          onClick={() => mutation.mutate({ kind: 'withdraw-time-off', requestId: request.id }, { onSuccess: onWithdrawn })}
+          type="button"
+        >
+          {mutation.isPending ? 'Withdrawing…' : 'Withdraw request'}
+        </button>
       </div>
-    </section>
+    </ModalDialog>
   )
 }
 
@@ -516,93 +767,117 @@ export function CoverageWorkflowDialog({
   )
 }
 
-function SupervisorQueue({
-  timeOff,
-  shiftRequests,
-  callOffs,
+function ShiftRequestsWorkspace({
+  highlightedRequestId,
+  manager,
   onDecision,
-  onReviewTimeOff,
-  onAnnouncement,
+  requests,
 }: {
-  timeOff: TimeOffRequest[]
-  shiftRequests: ShiftWorkRequest[]
-  callOffs: CallOffReport[]
+  highlightedRequestId: string | null
+  manager: boolean
   onDecision: (state: DecisionDialogState) => void
-  onReviewTimeOff: (requestId: string) => void
-  onAnnouncement: (report: CallOffReport) => void
+  requests: ShiftWorkRequest[]
 }) {
-  const total = timeOff.length + shiftRequests.length + callOffs.length
+  const [search, setSearch] = useState('')
+  const normalizedSearch = search.trim().toLocaleLowerCase()
+  const visible = requests.filter((request) => !normalizedSearch || [
+    employeeName(request.employee),
+    requestShiftTitle(request.shift),
+    requestShiftLocation(request.shift),
+    request.status,
+  ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch)))
+  const pending = requests.filter((request) => request.status === 'pending').length
 
   return (
-    <>
-      <section className="request-metrics" aria-label="Request queue totals">
-        <article><span>Time off</span><strong>{timeOff.length}</strong></article>
-        <article><span>Shift requests</span><strong>{shiftRequests.length}</strong></article>
-        <article><span>Call-offs</span><strong>{callOffs.length}</strong></article>
+    <div className="request-secondary-workspace">
+      <section className="request-secondary-workspace__intro">
+        <div><CalendarCheck2 aria-hidden="true" size={25} /><span><p className="eyebrow">Open coverage</p><h2>{manager ? 'Shift request review' : 'My shift requests'}</h2><small>{manager ? 'Approve qualified employees for open shifts without mixing this queue into planned leave.' : 'See the status of shifts you asked to work.'}</small></span></div>
+        <strong>{pending}<small>pending</small></strong>
       </section>
-      {total === 0 ? (
-        <DataStatePanel icon={ClipboardCheck} title="The action queue is clear">
-          <p>New time-off requests, shift requests, and call-offs will appear here.</p>
-        </DataStatePanel>
-      ) : (
-        <div className="approval-sections">
-          {callOffs.length > 0 ? (
-            <section className="approval-section" aria-labelledby="call-off-queue-title">
-              <div className="section-heading"><h2 id="call-off-queue-title">Absences requiring coverage review</h2></div>
-              {callOffs.map((report) => (
-                <article className="approval-card approval-card--urgent" key={report.id}>
-                  <div>
-                    <span className="approval-card__person">{employeeName(report.employee)}</span>
-                    <h3>{requestShiftTitle(report.shift)}</h3>
-                    <p>{formatShiftDate(report.shift)} · {requestShiftLocation(report.shift)}</p>
-                    <blockquote>{report.reason}</blockquote>
-                  </div>
-                  <button className="primary-action" onClick={() => onAnnouncement(report)} type="button">
-                    <Megaphone aria-hidden="true" size={18} />
-                    Review coverage
-                  </button>
-                </article>
-              ))}
-            </section>
-          ) : null}
-          {timeOff.length > 0 ? (
-            <section className="approval-section" aria-labelledby="time-off-queue-title">
-              <div className="section-heading"><h2 id="time-off-queue-title">Time-Off Requests</h2></div>
-              {timeOff.map((request) => (
-                <article className="approval-card" key={request.id}>
-                  <div>
-                    <span className="approval-card__person">{employeeName(request.employee)}</span>
-                    <h3>{formatRequestDateRange(request)}</h3>
-                    <p>{request.reason || 'No note provided'}</p>
-                  </div>
-                  <div className="approval-actions">
-                    <button className="primary-action" onClick={() => onReviewTimeOff(request.id)} type="button">Review request</button>
-                  </div>
-                </article>
-              ))}
-            </section>
-          ) : null}
-          {shiftRequests.length > 0 ? (
-            <section className="approval-section" aria-labelledby="shift-queue-title">
-              <div className="section-heading"><h2 id="shift-queue-title">Open-shift requests</h2></div>
-              {shiftRequests.map((request) => (
-                <article className="approval-card" key={request.id}>
-                  <div>
-                    <span className="approval-card__person">{employeeName(request.employee)}</span>
-                    <h3>{requestShiftTitle(request.shift)}</h3>
-                    <p>{formatShiftDate(request.shift)} · {requestShiftLocation(request.shift)}</p>
-                  </div>
-                  <div className="approval-actions">
-                    <button className="secondary-button" onClick={() => onDecision({ decision: 'declined', id: request.id, label: 'shift request' })} type="button">Decline</button>
-                    <button className="primary-action" onClick={() => onDecision({ decision: 'approved', id: request.id, label: 'shift request' })} type="button">Approve & assign</button>
-                  </div>
-                </article>
-              ))}
-            </section>
-          ) : null}
+      {manager && requests.length > 0 ? <label className="request-list-search"><span>Search shift requests</span><div><Search aria-hidden="true" size={18} /><input onChange={(event) => setSearch(event.target.value)} placeholder="Employee, shift, or location" type="search" value={search} /></div></label> : null}
+      <section className="request-list-panel" aria-labelledby="shift-requests-list-title">
+        <div className="request-list-panel__heading"><div><p className="eyebrow">{manager ? 'Review queue' : 'Tracking'}</p><h2 id="shift-requests-list-title">{manager ? 'Open-shift requests' : 'Request history'}</h2></div><strong>{visible.length}</strong></div>
+        <div className="request-queue-list">
+          {visible.map((request) => (
+            <article className={`request-queue-record${request.id === highlightedRequestId ? ' request-queue-record--highlighted' : ''}`} id={`request-${request.id}`} key={request.id}>
+              <div className="request-queue-record__main">
+                {manager ? <span className="request-queue-record__person">{employeeName(request.employee)}</span> : null}
+                <h3>{requestShiftTitle(request.shift)}</h3>
+                <p>{formatShiftDate(request.shift)} · {requestShiftLocation(request.shift)}</p>
+                {request.employee_note ? <blockquote>{request.employee_note}</blockquote> : null}
+                {request.decision_note ? <small>Decision note: {request.decision_note}</small> : null}
+              </div>
+              <div className="request-queue-record__actions">
+                <StatusBadge status={request.status} />
+                {manager && request.status === 'pending' ? <div><button className="secondary-button" onClick={() => onDecision({ decision: 'declined', id: request.id, label: 'shift request' })} type="button">Decline</button><button className="primary-action" onClick={() => onDecision({ decision: 'approved', id: request.id, label: 'shift request' })} type="button">Approve & assign</button></div> : null}
+              </div>
+            </article>
+          ))}
+          {visible.length === 0 ? <p className="request-list-empty">{search ? 'No shift requests match that search.' : manager ? 'There are no shift requests waiting for review.' : 'You have not requested an open shift yet.'}</p> : null}
         </div>
-      )}
-    </>
+      </section>
+    </div>
+  )
+}
+
+function callOffStatus(report: CallOffReport): string {
+  if (report.resolved_at) return 'Coverage resolved'
+  if (report.announcement_id) return 'Opening published'
+  if (report.acknowledged_at) return 'Under review'
+  return 'Coverage review needed'
+}
+
+function CallOffWorkspace({
+  assignments,
+  callOffs,
+  manager,
+  onConfirm,
+  onReviewCoverage,
+}: {
+  assignments: UpcomingAssignment[]
+  callOffs: CallOffReport[]
+  manager: boolean
+  onConfirm: (pending: PendingCallOff) => void
+  onReviewCoverage: (report: CallOffReport) => void
+}) {
+  const [search, setSearch] = useState('')
+  const normalizedSearch = search.trim().toLocaleLowerCase()
+  const visible = callOffs.filter((report) => !normalizedSearch || [
+    employeeName(report.employee),
+    requestShiftTitle(report.shift),
+    requestShiftLocation(report.shift),
+    report.reason,
+  ].some((value) => value?.toLocaleLowerCase().includes(normalizedSearch)))
+
+  return (
+    <div className="request-secondary-workspace request-secondary-workspace--call-offs">
+      <section className="call-off-purpose-note">
+        <ShieldAlert aria-hidden="true" size={23} />
+        <div><strong>Call-offs are for urgent attendance changes.</strong><p>Use Time Off for planned leave. A call-off alerts operations and starts the coverage workflow for an assigned shift.</p></div>
+      </section>
+      {!manager ? <GuardCallOffForm assignments={assignments} onConfirm={onConfirm} /> : null}
+      {manager && callOffs.length > 0 ? <label className="request-list-search"><span>Search call-offs</span><div><Search aria-hidden="true" size={18} /><input onChange={(event) => setSearch(event.target.value)} placeholder="Employee, shift, location, or reason" type="search" value={search} /></div></label> : null}
+      <section className="request-list-panel" aria-labelledby="call-off-list-title">
+        <div className="request-list-panel__heading"><div><p className="eyebrow">{manager ? 'Urgent queue' : 'Tracking'}</p><h2 id="call-off-list-title">{manager ? 'Absences requiring coverage review' : 'My reported call-offs'}</h2><span>{manager ? 'The original assignment stays in history while you choose a coverage plan.' : 'Operations can see these reports and their current coverage status.'}</span></div><strong>{visible.length}</strong></div>
+        <div className="request-queue-list">
+          {visible.map((report) => (
+            <article className="request-queue-record request-queue-record--urgent" key={report.id}>
+              <div className="request-queue-record__main">
+                {manager ? <span className="request-queue-record__person">{employeeName(report.employee)}</span> : null}
+                <h3>{requestShiftTitle(report.shift)}</h3>
+                <p>{formatShiftDate(report.shift)} · {requestShiftLocation(report.shift)}</p>
+                <blockquote>{report.reason || 'No reason was recorded.'}</blockquote>
+              </div>
+              <div className="request-queue-record__actions">
+                <span className={`status-badge ${report.resolved_at ? 'status-badge--approved' : 'status-badge--pending'}`}>{callOffStatus(report)}</span>
+                {manager && !report.resolved_at ? <button className="primary-action" onClick={() => onReviewCoverage(report)} type="button"><Megaphone aria-hidden="true" size={18} />Review coverage</button> : null}
+              </div>
+            </article>
+          ))}
+          {visible.length === 0 ? <p className="request-list-empty">{search ? 'No call-offs match that search.' : manager ? 'No absences currently require coverage review.' : 'You have no active call-off reports.'}</p> : null}
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -612,6 +887,7 @@ export function RequestsPage() {
   const [decision, setDecision] = useState<DecisionDialogState | null>(null)
   const [timeOffOpen, setTimeOffOpen] = useState(false)
   const [timeOffReviewId, setTimeOffReviewId] = useState<string | null>(null)
+  const [withdrawRequestId, setWithdrawRequestId] = useState<string | null>(null)
   const [announcement, setAnnouncement] = useState<Pick<CallOffReport, 'id'> | null>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const requestQuery = useQuery({
@@ -626,6 +902,19 @@ export function RequestsPage() {
     [requestQuery.data?.upcomingAssignments],
   )
   const linkedCallOffId = searchParams.get('callOff')
+  const linkedRequestId = searchParams.get('request')
+  const requestedTab = searchParams.get('tab')
+  const activeTab: RequestTab = linkedCallOffId
+    ? 'call-offs'
+    : requestedTab === 'shift-requests' || requestedTab === 'call-offs'
+      ? requestedTab
+      : 'time-off'
+  const withdrawRequest = withdrawRequestId
+    ? requestQuery.data?.timeOff.find((request) => request.id === withdrawRequestId) ?? null
+    : null
+  const viewerTimeZone = isContinentalUsTimeZone(requestQuery.data?.employeeTimeZone)
+    ? requestQuery.data.employeeTimeZone
+    : OPERATIONAL_TIME_ZONE
 
   useEffect(() => {
     if (privileged && linkedCallOffId && !announcement) {
@@ -633,24 +922,122 @@ export function RequestsPage() {
     }
   }, [announcement, linkedCallOffId, privileged])
 
+  useEffect(() => {
+    if (searchParams.get('new') === 'time-off') setTimeOffOpen(true)
+  }, [searchParams])
+
+  useEffect(() => {
+    if (activeTab !== 'time-off' || !linkedRequestId || !requestQuery.data) return
+    const linkedRequest = requestQuery.data.timeOff.find((request) => request.id === linkedRequestId)
+    if (!linkedRequest) return
+
+    document.getElementById(`request-${linkedRequestId}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+
+    if (privileged && linkedRequest.status === 'pending' && linkedRequest.employee_id !== requestQuery.data.employeeId && !timeOffReviewId) {
+      setTimeOffReviewId(linkedRequestId)
+      return
+    }
+    if (privileged && linkedRequest.status === 'pending' && linkedRequest.employee_id === requestQuery.data.employeeId) {
+      if (!actionMessage) {
+        setActionMessage('Your request is waiting for a different authorized reviewer. You can withdraw it while it is pending.')
+      }
+    }
+  }, [actionMessage, activeTab, linkedRequestId, privileged, requestQuery.data, timeOffReviewId])
+
+  useEffect(() => {
+    if (!linkedRequestId || !requestQuery.data || activeTab !== 'shift-requests') return
+    document.getElementById(`request-${linkedRequestId}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+  }, [activeTab, linkedRequestId, requestQuery.data])
+
+  function updateSearchParams(update: (next: URLSearchParams) => void) {
+    const next = new URLSearchParams(searchParams)
+    update(next)
+    setSearchParams(next, { replace: true })
+  }
+
+  function changeTab(tab: RequestTab) {
+    updateSearchParams((next) => {
+      next.set('tab', tab)
+      next.delete('request')
+      next.delete('callOff')
+      next.delete('new')
+    })
+    setActionMessage(null)
+  }
+
+  function openTimeOffRequest() {
+    setTimeOffOpen(true)
+    updateSearchParams((next) => {
+      next.set('tab', 'time-off')
+      next.set('new', 'time-off')
+      next.delete('request')
+    })
+  }
+
+  function closeTimeOffRequest() {
+    setTimeOffOpen(false)
+    if (searchParams.get('new') !== 'time-off') return
+    updateSearchParams((next) => next.delete('new'))
+  }
+
+  function openTimeOffReview(requestId: string) {
+    setTimeOffReviewId(requestId)
+    updateSearchParams((next) => {
+      next.set('tab', 'time-off')
+      next.set('request', requestId)
+    })
+  }
+
+  function closeTimeOffReview() {
+    setTimeOffReviewId(null)
+    if (!linkedRequestId) return
+    updateSearchParams((next) => next.delete('request'))
+  }
+
+  function openWithdrawRequest(requestId: string) {
+    mutation.reset()
+    setWithdrawRequestId(requestId)
+  }
+
+  function closeWithdrawRequest() {
+    if (mutation.isPending) return
+    mutation.reset()
+    setWithdrawRequestId(null)
+  }
+
+  function finishWithdrawRequest() {
+    setActionMessage('Your time-off request was withdrawn and remains in your history.')
+    setWithdrawRequestId(null)
+  }
+
   function closeCoverageWorkflow() {
     setAnnouncement(null)
     if (!linkedCallOffId) return
     const next = new URLSearchParams(searchParams)
+    next.set('tab', 'call-offs')
     next.delete('callOff')
     setSearchParams(next, { replace: true })
+  }
+
+  function openCoverageWorkflow(report: CallOffReport) {
+    setAnnouncement(report)
+    updateSearchParams((next) => {
+      next.set('tab', 'call-offs')
+      next.set('callOff', report.id)
+      next.delete('request')
+    })
   }
 
   return (
     <div className="page page--requests">
       <section className="page-intro workforce-intro">
         <div>
-          <p className="eyebrow">Workforce</p>
-          <h1>{privileged ? 'Request action queue' : 'Requests & call-offs'}</h1>
+          <p className="eyebrow">Workforce · Self-service</p>
+          <h1>Time Off</h1>
           <p className="page-summary">
             {privileged
-              ? 'Review time off, assign qualified guards to openings, and publish replacement coverage from one clear queue.'
-              : 'Request time away, track open-shift interest, or report an assigned shift you cannot work.'}
+              ? 'Request your own planned leave and manage the team’s time-off decisions from one dedicated workspace.'
+              : 'Request planned time away, follow every decision, and keep urgent call-offs separate.'}
           </p>
         </div>
       </section>
@@ -665,48 +1052,54 @@ export function RequestsPage() {
           </ul>
         </DataStatePanel>
       ) : requestQuery.isPending ? (
-        <DataStatePanel icon={ClipboardCheck} title="Loading request center">
-          <p>Checking your role and retrieving the records you are permitted to manage.</p>
+        <DataStatePanel icon={ClipboardCheck} title="Loading Time Off">
+          <p>Getting your requests, current statuses, and any work waiting for review.</p>
         </DataStatePanel>
       ) : requestQuery.isError ? (
-        <DataStatePanel icon={ShieldAlert} title="Requests unavailable" tone="error">
-          <p>{requestQuery.error.message}</p>
+        <DataStatePanel icon={ShieldAlert} title="Time Off could not be loaded" tone="error">
+          <p>Your request records are temporarily unavailable. Nothing was changed. Try again in a moment.</p>
+          <button className="secondary-button" onClick={() => void requestQuery.refetch()} type="button">Try again</button>
         </DataStatePanel>
       ) : (
         <>
-          {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+          {mutation.isError && activeTab !== 'time-off' ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
           {actionMessage ? <div className="form-feedback form-feedback--success" role="status">{actionMessage}</div> : null}
-          {privileged ? (
-            <SupervisorQueue
-              callOffs={requestQuery.data.callOffs}
-              onAnnouncement={setAnnouncement}
+          <RequestWorkspaceTabs
+            activeTab={activeTab}
+            callOffCount={requestQuery.data.callOffs.filter((report) => !report.resolved_at).length}
+            onChange={changeTab}
+            shiftRequestCount={requestQuery.data.shiftRequests.filter((request) => request.status === 'pending').length}
+            timeOffCount={requestQuery.data.timeOff.filter((request) => request.status === 'pending').length}
+          />
+          {activeTab === 'time-off' ? (
+            <TimeOffWorkspace
+              historyLimit={requestQuery.data.timeOffHistory?.managerHistoryLimit ?? null}
+              historyTruncated={requestQuery.data.timeOffHistory?.truncated ?? false}
+              highlightedRequestId={linkedRequestId}
+              manager={privileged}
+              mutation={mutation}
+              onNewRequest={openTimeOffRequest}
+              onReview={openTimeOffReview}
+              onWithdraw={openWithdrawRequest}
+              requests={requestQuery.data.timeOff}
+              viewerEmployeeId={requestQuery.data.employeeId}
+              viewerTimeZone={viewerTimeZone}
+            />
+          ) : activeTab === 'shift-requests' ? (
+            <ShiftRequestsWorkspace
+              highlightedRequestId={linkedRequestId}
+              manager={privileged}
               onDecision={setDecision}
-              onReviewTimeOff={setTimeOffReviewId}
-              shiftRequests={requestQuery.data.shiftRequests}
-              timeOff={requestQuery.data.timeOff}
+              requests={requestQuery.data.shiftRequests}
             />
           ) : (
-            <>
-              <div className="guard-request-grid">
-                <section className="request-form-card request-form-card--launcher" aria-labelledby="time-off-launcher-title">
-                  <div className="request-card-heading">
-                    <CalendarOff aria-hidden="true" size={24} />
-                    <div>
-                      <h2 id="time-off-launcher-title">Request Time Off</h2>
-                      <p>Choose planned dates, review affected shifts, and send one clear request for approval.</p>
-                    </div>
-                  </div>
-                  <button className="primary-action" onClick={() => setTimeOffOpen(true)} type="button">Start a time-off request</button>
-                </section>
-                <GuardCallOffForm assignments={guardAssignments} onConfirm={setPendingCallOff} />
-              </div>
-              <GuardHistory
-                callOffs={requestQuery.data.callOffs}
-                mutation={mutation}
-                shiftRequests={requestQuery.data.shiftRequests}
-                timeOff={requestQuery.data.timeOff}
-              />
-            </>
+            <CallOffWorkspace
+              assignments={guardAssignments}
+              callOffs={requestQuery.data.callOffs}
+              manager={privileged}
+              onConfirm={setPendingCallOff}
+              onReviewCoverage={openCoverageWorkflow}
+            />
           )}
         </>
       )}
@@ -714,14 +1107,15 @@ export function RequestsPage() {
       {pendingCallOff ? <CallOffConfirmation mutation={mutation} onClose={() => setPendingCallOff(null)} pending={pendingCallOff} /> : null}
       {timeOffOpen ? (
         <TimeOffRequestModal
-          onClose={() => setTimeOffOpen(false)}
+          employeeTimeZone={viewerTimeZone}
+          onClose={closeTimeOffRequest}
           onSubmitted={() => setActionMessage('Time-off request submitted for review.')}
-          requestHistoryPath="/requests"
+          requestHistoryPath="/time-off?tab=time-off"
         />
       ) : null}
       {timeOffReviewId ? (
         <TimeOffReviewDialog
-          onClose={() => setTimeOffReviewId(null)}
+          onClose={closeTimeOffReview}
           onDecided={setActionMessage}
           requestId={timeOffReviewId}
         />
@@ -732,6 +1126,14 @@ export function RequestsPage() {
           onClose={() => setDecision(null)}
           onDecided={setActionMessage}
           state={decision}
+        />
+      ) : null}
+      {withdrawRequest ? (
+        <WithdrawTimeOffDialog
+          mutation={mutation}
+          onClose={closeWithdrawRequest}
+          onWithdrawn={finishWithdrawRequest}
+          request={withdrawRequest}
         />
       ) : null}
       {announcement ? <CoverageWorkflowDialog onClose={closeCoverageWorkflow} onSaved={setActionMessage} report={announcement} /> : null}

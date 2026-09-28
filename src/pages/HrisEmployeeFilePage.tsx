@@ -116,7 +116,7 @@ export function HrisEmployeeFilePage() {
     { icon: MessageSquareText, label: 'Employee Conversations', path: '/employee-conversations' },
     { icon: BadgeCheck, label: 'Licensing Center', path: '/licensing' },
     { icon: CalendarCheck2, label: 'Availability', path: '/availability' },
-    { icon: ClipboardCheck, label: 'Time-Off Requests', path: '/requests' },
+    { icon: ClipboardCheck, label: 'Time Off', path: '/time-off' },
     { icon: KeyRound, label: 'User Accounts', path: '/users' },
   ].filter((workspace) => canAccessRoute(workspace.path, sessionQuery.data))
   const employeeFileGroups = record ? [

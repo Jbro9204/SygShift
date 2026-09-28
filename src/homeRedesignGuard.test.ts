@@ -15,12 +15,13 @@ describe('Home redesign guardrails', () => {
     expect(overviewSource).toContain('boundedHomeItems')
   })
 
-  it('keeps Time-Off Requests in HR & Finance instead of Workforce', () => {
+  it('keeps a universal Time Off workspace in Workforce', () => {
     const workforceIndex = navigationSource.indexOf("label: 'Workforce'")
     const financeIndex = navigationSource.indexOf("label: 'HR & Finance'")
-    const requestIndex = navigationSource.indexOf("label: 'Time-Off Requests'")
-    expect(requestIndex).toBeGreaterThan(financeIndex)
+    const requestIndex = navigationSource.indexOf("label: 'Time Off'")
     expect(requestIndex).toBeGreaterThan(workforceIndex)
+    expect(requestIndex).toBeLessThan(financeIndex)
+    expect(navigationSource).toContain("path: '/time-off'")
   })
 
   it('uses separate employee and operations Home compositions', () => {
@@ -35,7 +36,7 @@ describe('Home redesign guardrails', () => {
     expect(overviewSource).toContain('operationsMetrics.filter((item) => canAccessRoute(item.path, session))')
     expect(overviewSource).toContain('showPersonalLinks={operationsHome}')
     expect(overviewSource).toContain('to="/schedule"')
-    expect(overviewSource).toContain('to="/requests"')
+    expect(overviewSource).toContain('to="/time-off"')
     expect(overviewSource).toContain('to="/time/my-time?report=call-off"')
   })
 

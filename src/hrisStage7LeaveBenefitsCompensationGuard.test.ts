@@ -26,7 +26,7 @@ describe('HRIS Stage 7 leave, benefits, and compensation foundation', () => {
     expect(migration).not.toMatch(/insert\s+into\s+public\.(employee_access_roles|access_role_permissions|employee_permission_overrides)/i)
     expect(migration).toContain('hris_stage7_preservation_baseline')
     expect(migration).toContain('references public.time_off_requests(id)')
-    expect(navigation).toContain("path: '/requests'")
+    expect(navigation).toContain("path: '/time-off'")
   })
 
   it('isolates protected records and browser access', () => {

@@ -106,6 +106,19 @@ export function operationalToday(now = new Date()): Date {
   return new Date(values.year, values.month - 1, values.day, 12)
 }
 
+export function dateKeyInTimeZone(now = new Date(), timeZone = OPERATIONAL_TIME_ZONE): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone,
+    year: 'numeric',
+  }).formatToParts(now)
+  const values = Object.fromEntries(
+    parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]),
+  )
+  return `${values.year}-${values.month}-${values.day}`
+}
+
 export function formatOperationalDate(now = new Date(), timeZone = OPERATIONAL_TIME_ZONE): string {
   const weekday = new Intl.DateTimeFormat('en-US', {
     timeZone,

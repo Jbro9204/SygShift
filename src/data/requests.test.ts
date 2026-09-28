@@ -75,6 +75,112 @@ describe('request center contracts', () => {
     })).toThrow()
   })
 
+  it('accepts rich time-off records and bounded manager-history metadata from the request-center payload', () => {
+    const affectedShift = {
+      shiftId: shift.id,
+      assignmentId: '60000000-0000-4000-8000-000000000001',
+      workday: '2099-08-01',
+      startsAt: '2099-08-01T14:00:00.000Z',
+      endsAt: '2099-08-01T22:00:00.000Z',
+      timeZone: 'America/Denver',
+      siteCode: 'NORTH',
+      siteName: 'North Campus',
+      postName: 'Main entrance',
+      eventName: null,
+      location: 'North Campus',
+      estimatedMinutes: 480,
+    }
+    const parsed = parseRequestCenterPayload({
+      employeeId: employee.id,
+      employeeTimeZone: 'America/New_York',
+      role: 'supervisor',
+      permissions: { canManage: true },
+      timeOffHistory: { managerHistoryLimit: 100, truncated: true },
+      timeOff: [{
+        id: '50000000-0000-4000-8000-000000000001',
+        employeeId: employee.id,
+        employeeName: 'Alex Rivera',
+        employeeNumber: 'SYG-1041',
+        startsOn: '2099-08-01',
+        endsOn: '2099-08-02',
+        partialDayStart: null,
+        partialDayEnd: null,
+        requestType: 'sick_time',
+        employmentType: 'hourly',
+        payTreatment: 'sick_policy',
+        requestedMinutes: 480,
+        returnOn: '2099-08-03',
+        affectedShiftCount: 1,
+        affectedShifts: [affectedShift],
+        reason: 'Medical appointment.',
+        status: 'approved',
+        decisionNote: 'Coverage confirmed.',
+        decidedAt: '2099-07-03T15:00:00.000Z',
+        decidedByName: 'Taylor Supervisor',
+        updatedAt: '2099-07-03T15:00:00.000Z',
+        createdAt: '2099-07-01T12:00:00.000Z',
+      }],
+      shiftRequests: [],
+      callOffs: [],
+      upcomingAssignments: [],
+    })
+
+    expect(parsed.timeOffHistory).toEqual({ managerHistoryLimit: 100, truncated: true })
+    expect(parsed.employeeTimeZone).toBe('America/New_York')
+    expect(parsed.timeOff[0]).toMatchObject({
+      employeeNumber: 'SYG-1041',
+      requestType: 'sick_time',
+      employmentType: 'hourly',
+      payTreatment: 'sick_policy',
+      requestedMinutes: 480,
+      returnOn: '2099-08-03',
+      affectedShiftCount: 1,
+      affectedShifts: [affectedShift],
+      decisionNote: 'Coverage confirmed.',
+      decidedByName: 'Taylor Supervisor',
+    })
+  })
+
+  it('keeps legacy request-center responses compatible by defaulting only newly added history fields', () => {
+    const parsed = parseRequestCenterPayload({
+      employeeId: employee.id,
+      role: 'guard',
+      permissions: { canManage: false },
+      timeOff: [{
+        id: '50000000-0000-4000-8000-000000000001',
+        employeeId: employee.id,
+        employeeName: 'Alex Rivera',
+        startsOn: '2099-08-01',
+        endsOn: '2099-08-01',
+        partialDayStart: null,
+        partialDayEnd: null,
+        reason: null,
+        status: 'pending',
+        decisionNote: null,
+        createdAt: '2099-07-01T12:00:00.000Z',
+      }],
+      shiftRequests: [],
+      callOffs: [],
+      upcomingAssignments: [],
+    })
+
+    expect(parsed.timeOffHistory).toEqual({ managerHistoryLimit: null, truncated: false })
+    expect(parsed.employeeTimeZone).toBeNull()
+    expect(parsed.timeOff[0]).toMatchObject({
+      employeeNumber: null,
+      requestType: null,
+      employmentType: null,
+      payTreatment: null,
+      requestedMinutes: null,
+      returnOn: null,
+      affectedShiftCount: 0,
+      affectedShifts: [],
+      decidedAt: null,
+      decidedByName: null,
+      updatedAt: null,
+    })
+  })
+
   it('normalizes a legacy null Flex flag without rejecting the coverage worklist', () => {
     const parsed = parseCallOffCoverageWorkspace({
       callOff: {

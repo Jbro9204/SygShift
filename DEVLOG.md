@@ -2977,3 +2977,29 @@ pnpm exec wrangler deploy --keep-vars
   health, readiness, exact-asset, and authenticated Licensing workspace checks.
 - See
   `docs/changelogs/CHANGELOG_09-24-2026_EMPLOYEE_LICENSING_CENTER_MAJOR_UPDATE.md`.
+
+# 09/28/2026 - Time Off Workspace Rebuild
+
+- Rebuilt planned Time Off as a dedicated employee and management workspace,
+  with separate Shift Requests and urgent Call-Offs tabs and compatibility for
+  existing `/requests` links.
+- Added guided employee submission, profile-zone dates, DST-aware partial-day
+  previews, upcoming/history tracking, confirmed withdrawal, exact-record
+  notification links, and safe user-facing failures.
+- Added an effective-permission management queue with searchable decision
+  history, independent-review enforcement, MFA decisions, affected-shift
+  evidence, and superseded-schedule protection.
+- Replaced divergent request-center implementations with one authoritative
+  RPC, revoked direct authenticated time-off writes, serialized time-off and
+  schedule mutations, and preserved all existing request, schedule, payroll,
+  notification, and audit history.
+- Added forward migration `20260928203430_rebuild_time_off_request_center.sql`
+  plus authorization, interval, overnight, DST, race, notification, withdrawal,
+  and preservation regressions.
+- Full validation passed: 332 files / 1,751 tests, strict TypeScript,
+  zero-warning lint, production builds, 6/6 focused responsive Time Off browser
+  checks, 42/42 mandatory Time Clock checks, and a linked-production
+  rollback-only migration/regression rehearsal.
+- See
+  `docs/changelogs/CHANGELOG_09-28-2026_TIME_OFF_WORKSPACE_REBUILD.md` for the
+  complete security, verification, release, and rollback record.

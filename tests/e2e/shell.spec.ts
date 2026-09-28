@@ -8,6 +8,8 @@ const protectedRoutes = [
   '/sites',
   '/events',
   '/announcements',
+  '/time-off',
+  // Intentional compatibility alias for old bookmarks and notification links.
   '/requests',
   '/access-control',
   '/time',

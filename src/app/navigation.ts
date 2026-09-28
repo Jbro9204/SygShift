@@ -7,8 +7,8 @@ import {
   CalendarCheck2,
   CalendarClock,
   CalendarDays,
+  CalendarOff,
   CalendarPlus,
-  ClipboardCheck,
   ListChecks,
   FileBarChart,
   Files,
@@ -64,6 +64,7 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: 'Workforce',
     items: [
+      { label: 'Time Off', path: '/time-off', icon: CalendarOff, permissions: [] },
       { label: 'Directory', path: '/people', icon: UsersRound, permissions: ['directory.view', 'directory.edit_basic', 'availability.manage'] },
       { label: 'Employee Conversations', path: '/employee-conversations', icon: MessageSquareText, permissions: ['hr.conversations.view'] },
       { label: 'Licensing Center', path: '/licensing', icon: BadgeCheck, permissions: [] },
@@ -154,12 +155,6 @@ export const navigationGroups: NavigationGroup[] = [
         path: '/hr/payroll-integration',
         icon: ShieldCheck,
         permissions: ['hr.payroll_integration.view'],
-      },
-      {
-        label: 'Time-Off Requests',
-        path: '/requests',
-        icon: ClipboardCheck,
-        permissions: ['requests.view', 'requests.manage'],
       },
       {
         label: 'Payroll',

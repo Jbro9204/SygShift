@@ -11,13 +11,15 @@ import {
   type AffectedTimeOffShift,
   type TimeOffRequestKind,
 } from '../data/requests'
-import { formatDualTimeRange, operationalToday } from '../lib/time'
+import { dateKeyInTimeZone, formatDualTimeRange, OPERATIONAL_TIME_ZONE } from '../lib/time'
+import { continentalUsTimeZoneLabel, continentalUsTimeZoneShortLabel, isContinentalUsTimeZone } from '../lib/usTimeZones'
 import { ModalDialog } from './ModalDialog'
+import { timeOffErrorMessage } from './timeOffErrors'
 
 const requestTypeContent: Record<TimeOffRequestKind, { label: string; description: string }> = {
   paid_vacation: {
     label: 'Paid Vacation',
-    description: 'Request approved paid vacation hours. Available to salary employees only.',
+    description: 'Request planned vacation time. Available to salary employees only.',
   },
   sick_time: {
     label: 'Sick Time',
@@ -44,6 +46,23 @@ function minutesLabel(minutes: number | null | undefined): string {
   if (minutes == null) return 'Not calculated'
   const hours = minutes / 60
   return `${hours.toFixed(hours % 1 === 0 ? 0 : 2)} hr`
+}
+
+function requestedTimeLabel(request: {
+  affectedShifts: AffectedTimeOffShift[]
+  endsOn: string
+  partialEnd: string | null
+  partialStart: string | null
+  requestedMinutes: number | null
+  startsOn: string
+}): string {
+  if (request.partialStart && request.partialEnd) {
+    return request.requestedMinutes && request.requestedMinutes > 0
+      ? minutesLabel(request.requestedMinutes)
+      : 'Partial day'
+  }
+  if (request.requestedMinutes && request.requestedMinutes > 0) return minutesLabel(request.requestedMinutes)
+  return request.startsOn === request.endsOn ? 'Full day' : 'Multiple full days'
 }
 
 function employmentLabel(value: string | null): string {
@@ -79,7 +98,7 @@ function AffectedShiftList({ shifts }: { shifts: AffectedTimeOffShift[] }) {
           </div>
           <div>
             <strong>{dateLabel(shift.workday)}</strong>
-            <span>{formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}</span>
+            <span>{formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)} · {continentalUsTimeZoneShortLabel(shift.timeZone)} Time</span>
           </div>
           <span className="time-off-shift__hours">{minutesLabel(shift.estimatedMinutes)}</span>
         </article>
@@ -89,16 +108,19 @@ function AffectedShiftList({ shifts }: { shifts: AffectedTimeOffShift[] }) {
 }
 
 export function TimeOffRequestModal({
+  employeeTimeZone,
   onClose,
   onSubmitted,
   requestHistoryPath,
 }: {
+  employeeTimeZone?: string | null
   onClose: () => void
   onSubmitted?: () => void
   requestHistoryPath?: string | null
 }) {
   const queryClient = useQueryClient()
-  const today = format(operationalToday(), 'yyyy-MM-dd')
+  const requestTimeZone = isContinentalUsTimeZone(employeeTimeZone) ? employeeTimeZone : OPERATIONAL_TIME_ZONE
+  const today = dateKeyInTimeZone(new Date(), requestTimeZone)
   const [requestType, setRequestType] = useState<TimeOffRequestKind | null>(null)
   const [startsOn, setStartsOn] = useState(today)
   const [endsOn, setEndsOn] = useState(today)
@@ -116,13 +138,23 @@ export function TimeOffRequestModal({
   } | null>(null)
 
   const validRange = startsOn.length === 10 && endsOn.length === 10 && endsOn >= startsOn
+  const validPartialWindow = !partialDay || partialEnd > partialStart
   const contextQuery = useQuery({
-    enabled: validRange,
-    queryKey: ['time-off-request-context', startsOn, partialDay ? startsOn : endsOn],
-    queryFn: () => getTimeOffRequestContext(startsOn, partialDay ? startsOn : endsOn),
+    enabled: validRange && validPartialWindow,
+    queryKey: ['time-off-request-context', startsOn, partialDay ? startsOn : endsOn, partialDay ? partialStart : null, partialDay ? partialEnd : null],
+    queryFn: () => getTimeOffRequestContext(
+      startsOn,
+      partialDay ? startsOn : endsOn,
+      partialDay ? partialStart : null,
+      partialDay ? partialEnd : null,
+    ),
+    placeholderData: (previous) => previous,
     retry: false,
   })
   const context = contextQuery.data
+  const requestTimeZoneLabel = context?.employee.timeZone
+    ? continentalUsTimeZoneLabel(context.employee.timeZone)
+    : 'the time zone shown on your schedule'
 
   useEffect(() => {
     if (!context || (requestType && context.allowedTypes.includes(requestType))) return
@@ -138,7 +170,7 @@ export function TimeOffRequestModal({
     }
   }, [endsOn, partialDay, returnOn, startsOn])
 
-  const requestedMinutes = useMemo(() => {
+  const fallbackRequestedMinutes = useMemo(() => {
     if (!partialDay || partialEnd <= partialStart) return null
     const [startHour, startMinute] = partialStart.split(':').map(Number)
     const [endHour, endMinute] = partialEnd.split(':').map(Number)
@@ -148,7 +180,8 @@ export function TimeOffRequestModal({
   const affectedMinutes = context?.affectedShifts.length
     ? context.affectedShifts.reduce((total, shift) => total + shift.estimatedMinutes, 0)
     : null
-  const estimate = partialDay ? requestedMinutes : affectedMinutes
+  const authoritativeRequestedMinutes = contextQuery.isPlaceholderData ? null : context?.requestedMinutes ?? null
+  const estimate = authoritativeRequestedMinutes ?? (partialDay ? fallbackRequestedMinutes : affectedMinutes)
   const urgentSickShift = requestType === 'sick_time'
     ? context?.affectedShifts.find((shift) => shift.workday === today && new Date(shift.endsAt).getTime() > Date.now()) ?? null
     : null
@@ -172,6 +205,14 @@ export function TimeOffRequestModal({
       onSubmitted?.()
     },
   })
+  const submitErrorMessage = submitMutation.isError
+    ? timeOffErrorMessage(
+        submitMutation.error,
+        'The request could not be submitted. Nothing was changed. Review the dates and try again.',
+      )
+    : null
+  const submitErrorNeedsCallOff = submitMutation.error instanceof Error
+    && submitMutation.error.message.toLowerCase().includes('current or imminent shift')
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -224,13 +265,14 @@ export function TimeOffRequestModal({
     >
       <p className="time-off-purpose-note">{plannedTimeOffExplanation}</p>
       {contextQuery.isPending ? <div className="time-off-modal-loading" role="status">Loading your time-off options...</div> : null}
-      {contextQuery.isError ? <div className="inline-alert" role="alert">{contextQuery.error.message}</div> : null}
+      {contextQuery.isError ? <div className="inline-alert time-off-load-error" role="alert"><span>{timeOffErrorMessage(contextQuery.error, 'Your time-off options could not be loaded. Nothing was changed.')}</span><button className="secondary-button" onClick={() => void contextQuery.refetch()} type="button">Try again</button></div> : null}
       {context ? (
         <form className="time-off-request-form" onSubmit={submit}>
           <section className="time-off-employee-summary" aria-label="Employee submitting this request">
             <div><span>Employee</span><strong>{context.employee.name}</strong></div>
             <div><span>Employee number</span><strong>{context.employee.employeeNumber ?? 'Not assigned'}</strong></div>
             <div><span>Employment</span><strong>{employmentLabel(context.employee.employmentType)}</strong></div>
+            <div><span>Time zone</span><strong>{context.employee.timeZone ? continentalUsTimeZoneLabel(context.employee.timeZone) : 'See schedule'}</strong></div>
             <div><span>Treatment</span><strong>{treatmentLabel(requestType)}</strong></div>
           </section>
 
@@ -244,6 +286,7 @@ export function TimeOffRequestModal({
                 </label>
               ))}
             </div>
+            <p className="time-off-type-note">The request type records how the time away should be reviewed. It does not display or promise a leave balance or payroll credit.</p>
           </fieldset>
 
           <section className="time-off-date-section" aria-labelledby="time-off-dates-title">
@@ -263,6 +306,7 @@ export function TimeOffRequestModal({
               </> : null}
               <label><span>Expected return date</span><input min={partialDay ? startsOn : endsOn} onChange={(event) => setReturnOn(event.target.value)} type="date" value={returnOn} /></label>
             </div>
+            {partialDay ? <p className="time-off-time-zone-note">Enter the partial-day hours in {requestTimeZoneLabel}.</p> : null}
           </section>
 
           <section className="time-off-impact-section" aria-labelledby="time-off-impact-title">
@@ -270,7 +314,7 @@ export function TimeOffRequestModal({
               <div><Clock3 aria-hidden="true" size={22} /><h3 id="time-off-impact-title">Schedule impact</h3></div>
               <span className="time-off-estimate">Estimated requested time: <strong>{estimate == null ? 'Calculated during review' : minutesLabel(estimate)}</strong></span>
             </div>
-            {!validRange ? <p className="time-off-empty-shifts">Choose a valid date range to review affected shifts.</p> : contextQuery.isFetching ? <p className="time-off-empty-shifts">Checking published assignments...</p> : <AffectedShiftList shifts={context.affectedShifts} />}
+            {!validRange ? <p className="time-off-empty-shifts">Choose a valid date range to review affected shifts.</p> : !validPartialWindow ? <p className="time-off-empty-shifts">Choose an end time after the start time to preview the schedule impact.</p> : contextQuery.isFetching ? <p className="time-off-empty-shifts">Checking published assignments...</p> : <AffectedShiftList shifts={context.affectedShifts} />}
           </section>
 
           <label className="field-stack">
@@ -287,10 +331,19 @@ export function TimeOffRequestModal({
             </div>
           </aside>
 
-          {submitMutation.isError ? <div className="inline-alert" role="alert">{submitMutation.error.message}</div> : null}
+          {submitErrorMessage ? (
+            <div className="inline-alert time-off-load-error" role="alert">
+              <span>{submitErrorMessage}</span>
+              {submitErrorNeedsCallOff ? <Link className="secondary-button" to="/time/my-time?report=call-off" onClick={onClose}>Open Call-Off</Link> : null}
+            </div>
+          ) : null}
           <div className="modal-actions">
             <button className="secondary-button" onClick={onClose} type="button">Cancel</button>
-            <button className="primary-action" disabled={!requestType || !validRange || (partialDay && (!requestedMinutes || requestedMinutes <= 0)) || submitMutation.isPending} type="submit">
+            <button
+              className="primary-action"
+              disabled={!requestType || !validRange || contextQuery.isFetching || contextQuery.isError || (partialDay && (!fallbackRequestedMinutes || fallbackRequestedMinutes <= 0)) || submitMutation.isPending}
+              type="submit"
+            >
               {submitMutation.isPending ? 'Submitting...' : 'Submit Time-Off Request'}
             </button>
           </div>
@@ -330,6 +383,18 @@ export function TimeOffReviewDialog({
     },
   })
   const request = reviewQuery.data
+  const reviewErrorMessage = reviewQuery.isError
+    ? timeOffErrorMessage(
+        reviewQuery.error,
+        'The protected request could not be opened. Confirm your identity if prompted, then try again.',
+      )
+    : null
+  const decisionErrorMessage = mutation.isError
+    ? timeOffErrorMessage(
+        mutation.error,
+        'The decision could not be saved. Nothing was changed. Refresh the request status and try again.',
+      )
+    : null
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -347,14 +412,14 @@ export function TimeOffReviewDialog({
       title="Review Time-Off Request"
     >
       {reviewQuery.isPending ? <div className="time-off-modal-loading" role="status">Loading the complete request...</div> : null}
-      {reviewQuery.isError ? <div className="inline-alert" role="alert">{reviewQuery.error.message}</div> : null}
+      {reviewErrorMessage ? <div className="inline-alert time-off-load-error" role="alert"><span>{reviewErrorMessage}</span><button className="secondary-button" onClick={() => void reviewQuery.refetch()} type="button">Try again</button></div> : null}
       {request ? (
         <form className="time-off-review-form" onSubmit={submit}>
           <section className="time-off-review-summary">
             <div><span>Employee</span><strong>{request.employee.name}</strong><small>{request.employee.employeeNumber ?? 'No employee number'}</small></div>
             <div><span>Request</span><strong>{request.requestType ? requestTypeContent[request.requestType].label : 'Legacy time-off request'}</strong><small>{employmentLabel(request.employmentType)}</small></div>
-            <div><span>Dates</span><strong>{dateLabel(request.startsOn)}{request.endsOn !== request.startsOn ? ` – ${dateLabel(request.endsOn)}` : ''}</strong><small>{request.partialStart && request.partialEnd ? `${request.partialStart.slice(0, 5)} – ${request.partialEnd.slice(0, 5)}` : 'Full day(s)'}</small></div>
-            <div><span>Estimated time</span><strong>{minutesLabel(request.requestedMinutes)}</strong><small>{request.returnOn ? `Return ${dateLabel(request.returnOn)}` : 'Return date not provided'}</small></div>
+            <div><span>Dates</span><strong>{dateLabel(request.startsOn)}{request.endsOn !== request.startsOn ? ` – ${dateLabel(request.endsOn)}` : ''}</strong><small>{request.partialStart && request.partialEnd ? `${request.partialStart.slice(0, 5)} – ${request.partialEnd.slice(0, 5)} · ${request.employee.timeZone ? continentalUsTimeZoneLabel(request.employee.timeZone) : 'recorded local time'}` : 'Full day(s)'}</small></div>
+            <div><span>Requested time</span><strong>{requestedTimeLabel(request)}</strong><small>{request.returnOn ? `Return ${dateLabel(request.returnOn)}` : 'Return date not provided'}</small></div>
           </section>
 
           <section className="time-off-review-detail">
@@ -376,7 +441,7 @@ export function TimeOffReviewDialog({
           </fieldset>
           <label className="field-stack"><span>Decision note <small>Required</small></span><textarea maxLength={2000} onChange={(event) => setNote(event.target.value)} placeholder="Record why this decision was made." required rows={4} value={note} /></label>
           <p className="form-note">The decision is recorded with the reviewer, time, and original submission snapshot. Approving this request does not rewrite the original schedule.</p>
-          {mutation.isError ? <div className="inline-alert" role="alert">{mutation.error.message}</div> : null}
+          {decisionErrorMessage ? <div className="inline-alert" role="alert">{decisionErrorMessage}</div> : null}
           <div className="modal-actions">
             <button className="secondary-button" onClick={onClose} type="button">Leave unresolved</button>
             <button className="primary-action" disabled={!decision || !note.trim() || mutation.isPending} type="submit">Save decision</button>

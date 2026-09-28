@@ -38,6 +38,8 @@ describe('Guard least-privilege boundary', () => {
       '/time/tools',
       '/time/my-time',
       '/availability',
+      '/time-off',
+      // Intentional compatibility alias for saved links and notifications.
       '/requests',
     ]) {
       expect(canAccessRoute(route, guardSession), route).toBe(true)

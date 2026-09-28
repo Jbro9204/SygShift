@@ -1060,8 +1060,8 @@ function OccurrenceReviewDialog({
                 Open Time Operations
               </Link>
             ) : event.sourceTable === "time_off_requests" ? (
-              <Link className="time-button time-button--primary" to="/requests">
-                Open Time-Off Requests
+              <Link className="time-button time-button--primary" to={`/time-off?tab=time-off&request=${event.id}`}>
+                Open Time Off
               </Link>
             ) : null}
           </div>

@@ -92,6 +92,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/clients/:clientId': { anyOf: ['clients.view', 'clients.manage'] },
   '/patrol': { anyOf: ['patrol.self.view', 'patrol.view', 'patrol.manage', 'patrol.operations.view', 'patrol.routes.manage', 'patrol.assignments.manage'] },
   '/patrol/:patrolTab': { anyOf: ['patrol.self.view', 'patrol.view', 'patrol.manage', 'patrol.operations.view', 'patrol.routes.manage', 'patrol.assignments.manage'] },
+  '/time-off': { anyOf: [] },
   '/requests': { anyOf: [] },
   '/announcements': { anyOf: ['announcements.send', 'announcements.banner.manage'] },
   '/notifications': { anyOf: [] },

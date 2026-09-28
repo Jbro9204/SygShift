@@ -818,7 +818,7 @@ export function MyAccountPage() {
   const quickLinks = useMemo(() => [
     { icon: CalendarDays, label: 'My Schedule', path: '/schedule' },
     { icon: Clock3, label: 'My Time', path: '/time/my-time' },
-    { icon: CalendarDays, label: 'Time-Off Requests', path: '/requests' },
+    { icon: CalendarDays, label: 'Time Off', path: '/time-off' },
     { icon: CalendarDays, label: 'Availability', path: '/availability' },
   ].filter((item) => canAccessRoute(item.path, sessionContext)), [sessionContext])
 

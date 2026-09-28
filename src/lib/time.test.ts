@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  dateKeyInTimeZone,
   formatCompactDualTime,
   formatDualClockTime,
   formatDualTime,
@@ -13,6 +14,13 @@ import {
 } from './time'
 
 describe('operational time', () => {
+  it('uses the requested employee zone across an Eastern and Denver date boundary', () => {
+    const boundary = new Date('2099-10-12T04:30:00.000Z')
+
+    expect(dateKeyInTimeZone(boundary, 'America/New_York')).toBe('2099-10-12')
+    expect(dateKeyInTimeZone(boundary, 'America/Denver')).toBe('2099-10-11')
+  })
+
   it('uses the Colorado calendar date near the UTC boundary', () => {
     const date = operationalToday(new Date('2026-01-15T06:30:00.000Z'))
 
