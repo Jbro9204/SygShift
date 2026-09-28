@@ -19,8 +19,9 @@ import {
   findPatrolScheduleCandidate, getPatrolOperationState, patrolOperationLabels, patrolOperationTones,
   patrolScheduleCandidateValue, type PatrolOperationState,
 } from '../patrolOperations'
+import { VacancyPatrolRecoveryWorkspace } from '../patrol/VacancyPatrolRecoveryWorkspace'
 
-type PatrolTab = 'overview' | 'my-patrol' | 'operations' | 'routes'
+type PatrolTab = 'overview' | 'my-patrol' | 'operations' | 'recovery' | 'routes'
 type Outcome = 'secure' | 'attention_needed' | 'incident' | 'unable_to_access' | 'other'
 type PatrolOperationFilter = 'all' | PatrolOperationState
 
@@ -252,7 +253,7 @@ export function PatrolPage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const { patrolTab } = useParams<{ patrolTab?: string }>()
-  const requestedTab: PatrolTab = patrolTab === 'my-patrol' || patrolTab === 'operations' || patrolTab === 'routes' ? patrolTab : 'overview'
+  const requestedTab: PatrolTab = patrolTab === 'my-patrol' || patrolTab === 'operations' || patrolTab === 'recovery' || patrolTab === 'routes' ? patrolTab : 'overview'
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<(typeof pageSizes)[number]>(10)
@@ -285,6 +286,7 @@ export function PatrolPage() {
 
   const workspace = workspaceQuery.data
   const tab: PatrolTab = (requestedTab === 'operations' && !workspace?.actor.canViewOperations)
+    || (requestedTab === 'recovery' && !workspace?.actor.canManageAssignments)
     || (requestedTab === 'routes' && !workspace?.actor.canManageRoutes)
     ? 'overview'
     : requestedTab
@@ -339,6 +341,7 @@ export function PatrolPage() {
       <button className={tab === 'overview' ? 'is-active' : ''} onClick={() => changeTab('overview')} type="button">Overview</button>
       <button className={tab === 'my-patrol' ? 'is-active' : ''} onClick={() => changeTab('my-patrol')} type="button">My Patrol</button>
       {workspace.actor.canViewOperations ? <button className={tab === 'operations' ? 'is-active' : ''} onClick={() => changeTab('operations')} type="button">Operations</button> : null}
+      {workspace.actor.canManageAssignments ? <button className={tab === 'recovery' ? 'is-active' : ''} onClick={() => changeTab('recovery')} type="button">Vacancy Recovery</button> : null}
       {workspace.actor.canManageRoutes ? <button className={tab === 'routes' ? 'is-active' : ''} onClick={() => changeTab('routes')} type="button">Routes & Requirements</button> : null}
     </nav>
 
@@ -354,7 +357,7 @@ export function PatrolPage() {
       <section className="operations-panel patrol-report-callout"><FileBarChart aria-hidden="true" size={26} /><div><p className="eyebrow">Reporting</p><h2>Patrol Activity report</h2><p>Filter required, completed, missed, extra, incident, location, and evidence records. Export uses a separately audited permission.</p></div><Link className="primary-action" to="/reports/patrolActivity">Open report</Link></section>
     </> : null}
 
-    {tab !== 'overview' ? <section className="workforce-toolbar patrol-toolbar" aria-label="Patrol list controls">
+    {tab !== 'overview' && tab !== 'recovery' ? <section className="workforce-toolbar patrol-toolbar" aria-label="Patrol list controls">
       <label className="search-field search-field--wide"><Search aria-hidden="true" size={19} /><span className="visually-hidden">Search Patrol</span><input onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder={tab === 'routes' ? 'Search route, stop, status, or code' : 'Search route, guard, or service date'} type="search" value={search} /></label>
       {tab === 'operations' ? <label className="patrol-operation-filter"><span>Status</span><select onChange={(event) => { setOperationStatus(event.target.value as PatrolOperationFilter); setPage(1) }} value={operationStatus}><option value="all">All assignment statuses</option>{Object.entries(patrolOperationLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : null}
       <label className="patrol-row-count"><span>Rows</span><select onChange={(event) => { setPageSize(Number(event.target.value) as (typeof pageSizes)[number]); setPage(1) }} value={pageSize}>{pageSizes.map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
@@ -383,6 +386,8 @@ export function PatrolPage() {
     </> : null}
 
     {tab === 'routes' && workspace.actor.canManageRoutes ? <>{readinessQuery.data ? <section className={`operations-panel patrol-readiness ${readinessQuery.data.readyForBroadRelease ? 'patrol-readiness--ready' : ''}`}><div className="patrol-section-heading"><div><p className="eyebrow">Field release</p><h2>{readinessQuery.data.readyForBroadRelease ? 'Patrol release checks are ready' : 'Complete these checks before broad release'}</h2><p>This live checklist is derived from canonical clients, sites, routes, assignments, and stored field evidence.</p></div><button className="secondary-button" disabled={readinessQuery.isFetching} onClick={() => void readinessQuery.refetch()} type="button">Refresh checks</button></div><div className="patrol-readiness__checks">{readinessQuery.data.checks.map((check) => <article className={`patrol-readiness__check patrol-readiness__check--${check.state}`} key={check.code}>{check.state === 'ready' ? <CheckCircle2 aria-hidden="true" size={20} /> : <AlertTriangle aria-hidden="true" size={20} />}<div><strong>{check.label}</strong><span>{check.detail}</span><small>{check.action}</small></div></article>)}</div></section> : readinessQuery.isError ? <div className="inline-alert" role="alert">{readinessQuery.error.message}</div> : <p role="status">Loading field-release checks…</p>}<section className="operations-panel patrol-route-library"><div className="patrol-section-heading"><div><p className="eyebrow">Versioned configuration</p><h2>Routes & requirements</h2><p>Only the current version is editable. Prior versions remain attached to historical assignments.</p></div></div>{(visibleItems as PatrolRoute[]).map((route) => <article className="patrol-route-row" key={route.id}><div><strong>{route.name}</strong><span>{route.code} · Version {route.versionNumber} · {route.timeZone.replace('America/', '')}</span></div><span className={`patrol-status patrol-status--${route.status}`}>{statusLabel(route.status)}</span><div><strong>{route.stops.length}</strong><span>stops</span></div><div><strong>{route.stops.reduce((total, stop) => total + stop.requirements.filter((item) => item.status === 'active').reduce((sum, item) => sum + item.requiredHits, 0), 0)}</strong><span>weekly configured hits</span></div><button className="secondary-button" onClick={() => setRouteTarget(route)} type="button">Edit route</button></article>)}{visibleItems.length === 0 ? <p className="patrol-empty-inline">No routes match this search.</p> : null}<Pagination page={page} pageSize={pageSize} setPage={setPage} total={filteredRoutes.length} /></section></> : null}
+
+    {tab === 'recovery' && workspace.actor.canManageAssignments ? <VacancyPatrolRecoveryWorkspace /> : null}
 
     {hitTarget ? <HitDialog assignment={hitTarget.assignment} obligation={hitTarget.obligation} onClose={() => setHitTarget(null)} /> : null}
     {routeTarget !== undefined ? <RouteEditor locations={workspace.locations} onClose={() => setRouteTarget(undefined)} route={routeTarget} /> : null}

@@ -71,7 +71,7 @@ export const navigationGroups: NavigationGroup[] = [
       { label: 'Availability', path: '/availability', icon: CalendarCheck2, permissions: ['availability.view', 'availability.manage'] },
       { label: 'Sites & Posts', path: '/sites', icon: Building2, permissions: ['sites.view', 'sites.manage'] },
       { label: 'Client Directory', path: '/clients', icon: BriefcaseBusiness, permissions: ['clients.view', 'clients.manage'] },
-      { label: 'Patrol', path: '/patrol', icon: MapPinned, permissions: ['patrol.self.view', 'patrol.view', 'patrol.manage', 'patrol.operations.view', 'patrol.routes.manage'] },
+      { label: 'Patrol', path: '/patrol', icon: MapPinned, permissions: ['patrol.self.view', 'patrol.view', 'patrol.manage', 'patrol.operations.view', 'patrol.routes.manage', 'patrol.assignments.manage'] },
     ],
   },
   {

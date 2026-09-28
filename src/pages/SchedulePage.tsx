@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
-import { AlertCircle, BellRing, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Copy, DatabaseZap, Edit3, MapPin, Maximize2, MoveHorizontal, Plus, Search, Send, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
+import { AlertCircle, BellRing, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Copy, DatabaseZap, Edit3, MapPin, Maximize2, MoveHorizontal, Plus, Route, Search, Send, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import { ScheduleTimeBasisPanel, type ScheduleTimePreviewRow } from '../components/ScheduleTimeBasisPanel'
+import { VacancyPatrolRecoveryDialog } from '../components/VacancyPatrolRecoveryDialog'
 import {
   getAvailabilityWorkspace,
   type AvailabilityRecord,
@@ -48,6 +49,10 @@ import {
 } from '../data/schedule'
 import { processNotificationBatch } from '../data/operations'
 import { getMaintenanceStatus } from '../data/maintenance'
+import {
+  getVacancyPatrolRecoveryMap,
+  type VacancyPatrolRecoveryMapItem,
+} from '../data/vacancyPatrolRecovery'
 import { parseImportedScheduleNote, sourceReferenceLabel } from '../data/sourceNotes'
 import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
@@ -449,6 +454,30 @@ function operationalOpenSlots(shift: ScheduleShift): number {
   return Math.max(shift.headcount_required - operationalAssignmentCount(shift), 0)
 }
 
+function vacancyPatrolRecoveryEligible(
+  scheduleStatus: WeeklySchedule['status'] | undefined,
+  shift: ScheduleShift,
+  trustedServerTime?: string,
+): boolean {
+  return scheduleStatus === 'published'
+    && shift.is_open
+    && operationalAssignmentCount(shift) === 0
+    && !shift.coverage
+    && (shift.assignment_type ?? 'standard') === 'standard'
+    && (shift.work_type ?? 'post') === 'post'
+    && (!trustedServerTime || new Date(shift.ends_at).getTime() > new Date(trustedServerTime).getTime())
+}
+
+function vacancyPatrolStageLabel(stage: VacancyPatrolRecoveryMapItem['displayStage']): string {
+  if (stage === 'requested') return 'Patrol review'
+  if (stage === 'patrol_planned') return 'Patrol planned'
+  if (stage === 'partial') return 'Patrol partial'
+  if (stage === 'completed') return 'Patrol reconciled'
+  if (stage === 'finance_reviewed') return 'Finance reviewed'
+  if (stage === 'declined') return 'Patrol declined'
+  return 'Patrol canceled'
+}
+
 function cleanOperationalShiftNotes(notes: string | null | undefined): string | null {
   const text = notes?.trim()
   if (!text) return null
@@ -581,19 +610,25 @@ function findMatchingDraftShift(draft: { shifts: ScheduleShift[] }, sourceShift:
 }
 
 function ShiftCard({
+  canResolveVacancy,
   shift,
   canEdit,
   canResolve,
   onEdit,
   onResolve,
+  onResolveVacancy,
+  vacancyRecovery,
   compact = false,
   selected = false,
 }: {
   shift: ScheduleShift
   canEdit: boolean
   canResolve: boolean
+  canResolveVacancy?: boolean
   onEdit: (shift: ScheduleShift) => void
   onResolve: (shift: ScheduleShift) => void
+  onResolveVacancy?: (shift: ScheduleShift) => void
+  vacancyRecovery?: VacancyPatrolRecoveryMapItem
   compact?: boolean
   selected?: boolean
 }) {
@@ -655,7 +690,24 @@ function ShiftCard({
         ) : (
           <span className="shift-tag shift-tag--covered">Covered</span>
         )}
+        {vacancyRecovery ? (
+          <>
+            <span className={vacancyRecovery.displayStage === 'declined' || vacancyRecovery.displayStage === 'canceled' ? 'shift-tag shift-tag--review' : 'shift-tag shift-tag--coverage'} title={vacancyRecovery.requestNumber}>
+              {vacancyPatrolStageLabel(vacancyRecovery.displayStage)}
+            </span>
+            {vacancyRecovery.plannedHits > 0 ? <span className="shift-tag">Planned {vacancyRecovery.plannedHits} hit{vacancyRecovery.plannedHits === 1 ? '' : 's'}</span> : null}
+            {vacancyRecovery.displayStage === 'partial' ? <span className="shift-tag">{vacancyRecovery.completedHits}/{vacancyRecovery.plannedHits} complete</span> : null}
+          </>
+        ) : null}
       </div>
+      {canResolveVacancy && onResolveVacancy && !vacancyRecovery ? (
+        <button className="text-button shift-card__resolve" onClick={(event) => {
+          event.stopPropagation()
+          onResolveVacancy(shift)
+        }} type="button">
+          Resolve vacancy
+        </button>
+      ) : null}
       {showSourceReview ? (
         <div className="shift-card__source-note" aria-label="Schedule assignment review">
           {source.assignee ? <span><strong>Original assignee:</strong> {source.assignee}</span> : null}
@@ -1401,6 +1453,7 @@ function RemoveShiftDialog({
 
 function SchedulerShiftModal({
   availabilityRecords,
+  canResolveVacancy,
   employees,
   isDraft,
   isSaving,
@@ -1409,11 +1462,13 @@ function SchedulerShiftModal({
   onEdit,
   onRequestRemove,
   onResolve,
+  onResolveVacancy,
   saveError,
   shift,
   suggestion,
 }: {
   availabilityRecords: AvailabilityRecord[]
+  canResolveVacancy: boolean
   employees: ScheduleBuilderEmployee[]
   isDraft: boolean
   isSaving: boolean
@@ -1422,6 +1477,7 @@ function SchedulerShiftModal({
   onEdit: () => void
   onRequestRemove: () => void
   onResolve: () => void
+  onResolveVacancy: () => void
   saveError?: string | null
   shift: ScheduleShift
   suggestion: StaffingSuggestion | undefined
@@ -1781,6 +1837,12 @@ function SchedulerShiftModal({
           </button>
           {source.reviewNeeded ? (
             <button className="primary-action" onClick={onResolve} type="button">Resolve review</button>
+          ) : null}
+          {canResolveVacancy ? (
+            <button className="primary-action" onClick={onResolveVacancy} type="button">
+              <Route aria-hidden="true" size={17} />
+              Send to Patrol
+            </button>
           ) : null}
         </div>
       </section>
@@ -2228,6 +2290,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const [resolvingShift, setResolvingShift] = useState<ScheduleShift | null>(null)
   const [shiftEditor, setShiftEditor] = useState<ShiftEditorState | null>(null)
   const [removingShift, setRemovingShift] = useState<ScheduleShift | null>(null)
+  const [vacancyPatrolShiftId, setVacancyPatrolShiftId] = useState<string | null>(null)
   const [selectedPlannerShiftId, setSelectedPlannerShiftId] = useState<string | null>(null)
   const [selectedSchedulerDayKey, setSelectedSchedulerDayKey] = useState<string | null>(null)
   const [employeeWeekOpen, setEmployeeWeekOpen] = useState(false)
@@ -2314,6 +2377,18 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const canUseScheduler = canBuildSchedule && isSchedulerHome
   const canEditScheduler = canManageSchedule && isSchedulerHome
   const employeeOnlySchedule = sessionQuery.isSuccess && !canViewTeamSchedule && !isSchedulerHome
+  const hasVacancyPatrolRequestPermission = sessionHasAnyPermission(sessionQuery.data, ['patrol.recovery.request'])
+  const vacancyPatrolRecoveryMapQuery = useQuery({
+    enabled: isSupabaseConfigured && isSchedulerHome && hasVacancyPatrolRequestPermission && scheduleQuery.data?.status === 'published',
+    queryFn: () => getVacancyPatrolRecoveryMap(weekKey),
+    queryKey: ['vacancy-patrol-recovery-map', weekKey],
+    retry: false,
+  })
+  const vacancyPatrolRecoveriesByShift = useMemo(() => new Map(
+    (vacancyPatrolRecoveryMapQuery.data?.recoveries ?? []).map((recovery) => [recovery.shiftId, recovery]),
+  ), [vacancyPatrolRecoveryMapQuery.data?.recoveries])
+  const canInitiateVacancyPatrolRecovery = vacancyPatrolRecoveryMapQuery.data?.permissions.canInitiate
+    ?? hasVacancyPatrolRequestPermission
   const personalScheduleTimeZone = personalDisplayTimeZone(sessionQuery.data?.timeZone ?? 'America/Denver')
   const {
     isReady: personalScheduleDateReady,
@@ -3190,6 +3265,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     setShiftEditor(null)
     setSelectedSchedulerDayKey(null)
     setSelectedPlannerShiftId(null)
+    setVacancyPatrolShiftId(null)
   }, [canEditScheduler])
 
   useEffect(() => {
@@ -3255,6 +3331,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     setCopyWeekOpen(false)
     setNotifyScheduleOpen(false)
     setSelectedSchedulerDayKey(null)
+    setVacancyPatrolShiftId(null)
   }
 
   function handleCreateOpenShift(event: FormEvent<HTMLFormElement>) {
@@ -3284,6 +3361,15 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       status: 'preparing',
     })
     ensureDraftMutation.mutate({ openEditor: true, shift })
+  }
+
+  function openVacancyPatrolRecovery(shift: ScheduleShift) {
+    if (!canInitiateVacancyPatrolRecovery || !vacancyPatrolRecoveryEligible(scheduleQuery.data?.status, shift, scheduleServerTimeQuery.data?.serverTime)) return
+    setBuilderOpen(false)
+    setBuilderMessage(null)
+    setSelectedPlannerShiftId(null)
+    setSelectedSchedulerDayKey(null)
+    setVacancyPatrolShiftId(shift.id)
   }
 
   function applySuggestedEmployee(shift: ScheduleShift, employeeId: string) {
@@ -4183,6 +4269,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         />
       ) : null}
 
+      {canInitiateVacancyPatrolRecovery && vacancyPatrolShiftId ? (
+        <VacancyPatrolRecoveryDialog
+          onClose={() => setVacancyPatrolShiftId(null)}
+          onCreated={(receipt) => setBuilderMessage(`${receipt.requestNumber} was sent to Patrol for review. The published shift remains open until coverage is resolved.`)}
+          shiftId={vacancyPatrolShiftId}
+        />
+      ) : null}
+
       {canEditScheduler && shiftEditor?.status === 'ready' && shiftEditor.editableShift ? (
         <EditShiftDialog
           availabilityRecords={availabilityQuery.data?.availability ?? []}
@@ -4274,6 +4368,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                 {selectedSchedulerDay.shifts.map((shift) => {
                   const openSlots = operationalOpenSlots(shift)
                   const source = parseImportedScheduleNote(shift.notes)
+                  const vacancyRecovery = vacancyPatrolRecoveriesByShift.get(shift.id)
                   return (
                     <article className="scheduler-day-modal__shift" key={shift.id}>
                       <div>
@@ -4292,8 +4387,15 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                           {shift.coverage?.marker === 'coverage' ? <span className="shift-tag shift-tag--coverage">COVERAGE</span> : null}
                           {openSlots ? <span className="shift-tag shift-tag--open">{openSlots} open</span> : <span className="shift-tag shift-tag--covered">Covered</span>}
                           {source.reviewNeeded ? <span className="shift-tag shift-tag--review">Review</span> : null}
+                          {vacancyRecovery ? <span className="shift-tag shift-tag--coverage">{vacancyPatrolStageLabel(vacancyRecovery.displayStage)}</span> : null}
+                          {vacancyRecovery?.plannedHits ? <span className="shift-tag">Planned {vacancyRecovery.plannedHits} hit{vacancyRecovery.plannedHits === 1 ? '' : 's'}</span> : null}
                         </div>
                       </div>
+                      {canInitiateVacancyPatrolRecovery && !isHistoricalSchedulerWeek && vacancyPatrolRecoveryEligible(scheduleQuery.data?.status, shift, scheduleServerTimeQuery.data?.serverTime) && !vacancyRecovery ? (
+                        <button className="secondary-button secondary-button--small" onClick={() => openVacancyPatrolRecovery(shift)} type="button">
+                          <Route aria-hidden="true" size={17} />Resolve vacancy
+                        </button>
+                      ) : null}
                       <button className="primary-action primary-action--small" onClick={() => {
                         setSelectedSchedulerDayKey(null)
                         editShift(shift)
@@ -4652,6 +4754,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                                     <ShiftCard
                                       canEdit={canEditScheduler && !isHistoricalSchedulerWeek}
                                       canResolve={canEditScheduler && !isHistoricalSchedulerWeek}
+                                      canResolveVacancy={canInitiateVacancyPatrolRecovery && !isHistoricalSchedulerWeek && vacancyPatrolRecoveryEligible(scheduleQuery.data?.status, shift, scheduleServerTimeQuery.data?.serverTime)}
                                       compact
                                       key={shift.id}
                                       onEdit={(targetShift) => setSelectedPlannerShiftId(targetShift.id)}
@@ -4660,8 +4763,10 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                                         setBuilderMessage(null)
                                         setResolvingShift(targetShift)
                                       }}
+                                      onResolveVacancy={openVacancyPatrolRecovery}
                                       selected={selectedPlannerShiftId === shift.id}
                                       shift={shift}
+                                      vacancyRecovery={vacancyPatrolRecoveriesByShift.get(shift.id)}
                                     />
                                   ))}
                                   {shifts.length === 0 ? <span className="scheduler-coverage-empty">—</span> : null}
@@ -4685,6 +4790,9 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
               {canEditScheduler && !isHistoricalSchedulerWeek && selectedPlannerShift ? (
                 <SchedulerShiftModal
                   availabilityRecords={availabilityQuery.data?.availability ?? []}
+                  canResolveVacancy={canInitiateVacancyPatrolRecovery
+                    && vacancyPatrolRecoveryEligible(scheduleQuery.data?.status, selectedPlannerShift, scheduleServerTimeQuery.data?.serverTime)
+                    && !vacancyPatrolRecoveriesByShift.has(selectedPlannerShift.id)}
                   employees={builderOptionsQuery.data?.employees ?? []}
                   isDraft={scheduleQuery.data.status === 'draft'}
                   isSaving={addDraftShiftAssignmentMutation.isPending || ensureDraftMutation.isPending}
@@ -4697,6 +4805,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                     setBuilderMessage(null)
                     setResolvingShift(selectedPlannerShift)
                   }}
+                  onResolveVacancy={() => openVacancyPatrolRecovery(selectedPlannerShift)}
                   saveError={addDraftShiftAssignmentMutation.error instanceof Error ? addDraftShiftAssignmentMutation.error.message : null}
                   shift={selectedPlannerShift}
                   suggestion={staffingSuggestionsQuery.data?.find((item) => item.shiftId === selectedPlannerShift.id)}
@@ -4738,6 +4847,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                       <ShiftCard
                         canEdit={canEditScheduler && !isHistoricalSchedulerWeek}
                         canResolve={canEditScheduler && !isHistoricalSchedulerWeek}
+                        canResolveVacancy={canInitiateVacancyPatrolRecovery && !isHistoricalSchedulerWeek && vacancyPatrolRecoveryEligible(scheduleQuery.data?.status, shift, scheduleServerTimeQuery.data?.serverTime)}
                         compact
                         key={shift.id}
                         onEdit={editShift}
@@ -4746,7 +4856,9 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                           setBuilderMessage(null)
                           setResolvingShift(targetShift)
                         }}
+                        onResolveVacancy={openVacancyPatrolRecovery}
                         shift={shift}
+                        vacancyRecovery={vacancyPatrolRecoveriesByShift.get(shift.id)}
                       />
                     )) : (
                       <div className="scheduler-day-empty">

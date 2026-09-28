@@ -13,6 +13,9 @@ const dataMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../lib/supabase', () => ({ isSupabaseConfigured: true }))
+vi.mock('../patrol/VacancyPatrolRecoveryWorkspace', () => ({
+  VacancyPatrolRecoveryWorkspace: () => <section><h2>Vacancy Patrol recovery</h2></section>,
+}))
 vi.mock('../data/patrol', async (loadOriginal) => {
   const original = await loadOriginal<typeof import('../data/patrol')>()
   return {
@@ -75,6 +78,12 @@ function renderOperations() {
   return render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/patrol/operations']}><Routes><Route path="/patrol/:patrolTab" element={<PatrolPage />} /></Routes></MemoryRouter></QueryClientProvider>)
 }
 
+function renderRecovery(canManage = true) {
+  dataMocks.getPatrolWorkspace.mockResolvedValue(workspace(canManage))
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+  return render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={['/patrol/recovery']}><Routes><Route path="/patrol/:patrolTab" element={<PatrolPage />} /></Routes></MemoryRouter></QueryClientProvider>)
+}
+
 describe('Patrol Operations page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -108,5 +117,18 @@ describe('Patrol Operations page', () => {
     expect(screen.queryByRole('heading', { name: 'Connect route to published shift' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Assign makeup' })).not.toBeInTheDocument()
     expect(screen.getByText('Awaiting assignment')).toBeInTheDocument()
+  })
+
+  it('opens the focused vacancy recovery worklist only for assignment managers', async () => {
+    const { unmount } = renderRecovery(true)
+
+    expect(await screen.findByRole('heading', { name: 'Vacancy Patrol recovery' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Vacancy Recovery' })).toHaveClass('is-active')
+    unmount()
+
+    renderRecovery(false)
+    expect(await screen.findByRole('heading', { name: 'Patrol Command Center' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Vacancy Recovery' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Vacancy Patrol recovery' })).not.toBeInTheDocument()
   })
 })

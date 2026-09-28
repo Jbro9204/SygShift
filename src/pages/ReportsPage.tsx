@@ -19,6 +19,7 @@ import { ScheduledOvertimeForecastWorkspace } from '../reports/ScheduledOvertime
 import { AttendanceReportWorkspace } from '../reports/AttendanceReportWorkspace'
 import { ShortNoticeCallOutReportWorkspace } from '../reports/ShortNoticeCallOutReportWorkspace'
 import { UserAccountActivityReportWorkspace } from '../reports/UserAccountActivityReportWorkspace'
+import { VacancyPatrolFinanceReportWorkspace } from '../reports/VacancyPatrolFinanceReportWorkspace'
 
 const pageSizes = [10, 25, 50] as const
 const rangeStorageKey = 'sygshift-reports-range'
@@ -116,6 +117,7 @@ function ReportLibrary({ from, permissions, through }: { from: string; permissio
   const canViewTimeReports = permissions.includes('time.reports.view')
   const canViewLicensingReport = permissions.includes('licensing.view')
   const canViewPatrolReport = permissions.includes('patrol.reports.view') || permissions.includes('patrol.manage')
+  const canViewVacancyPatrolFinanceReport = permissions.includes('patrol.recovery.finance.view')
   const canViewClientReport = permissions.includes('clients.activity.view') || permissions.includes('clients.manage')
   const canViewHrReports = permissions.includes('hr.reporting.view')
   const canViewAccountActivityReport = permissions.includes('reports.account_activity.view')
@@ -166,10 +168,11 @@ function ReportLibrary({ from, permissions, through }: { from: string; permissio
         {canViewTimeReports ? <ReportCatalogCard category="Workforce planning" description="See who is scheduled above 40 hours, which assignments create the total, and where qualified Flex capacity may exist." path="/reports/scheduledOvertimeForecast" title="Scheduled Overtime Forecast" /> : null}
         {canViewClientReport ? <ReportCatalogCard category="Client operations" description="Review client status, renewals, linked sites, contacts, protected documents, shifts, patrol hits, incidents, and service history." path="/clients" title="Client Portfolio & Activity" /> : null}
         {canViewPatrolReport ? <ReportCatalogCard category="Patrol operations" description="Review required, completed, missed, makeup, extra, incident, location, and protected-evidence activity." path="/reports/patrolActivity" title="Patrol Activity" /> : null}
+        {canViewVacancyPatrolFinanceReport ? <ReportCatalogCard category="Finance & patrol" description="Reconcile regular schedule vacancies replaced by Patrol service, completed hits, and the documented billing disposition without creating duplicate charges." path={`/reports/vacancyPatrolFinance?from=${from}&through=${through}`} title="Vacancy Patrol Coverage & Billing" /> : null}
         {canViewLicensingReport ? <ReportCatalogCard category="Licensing & credentials" description="See who is licensed, expiring, expired, pending review, restricted, or missing a required license." path="/reports/licensingStatus" title="Guard Licensing Status" /> : null}
         {canViewTimeReports ? operationalReportDefinitions.map((definition) => <ReportCatalogCard category="Time & attendance" description={definition.description} key={definition.key} path={`/reports/${definition.key}?from=${from}&through=${through}&scope=active&sort=priority`} title={definition.title} />) : null}
       </div>
-      {!canViewLicensingReport && !canViewTimeReports && !canViewPatrolReport && !canViewClientReport && !canViewHrReports && !canViewAccountActivityReport ? <div className="report-empty">No report library items are available with your current permissions.</div> : null}
+      {!canViewLicensingReport && !canViewTimeReports && !canViewPatrolReport && !canViewVacancyPatrolFinanceReport && !canViewClientReport && !canViewHrReports && !canViewAccountActivityReport ? <div className="report-empty">No report library items are available with your current permissions.</div> : null}
     </section>
   </>
 }
@@ -243,6 +246,7 @@ export function ReportsPage() {
   const isScheduledOvertimeForecast = reportKey === 'scheduledOvertimeForecast'
   const isShortNoticeCallOutReport = reportKey === 'shortNoticeCallOuts'
   const isUserAccountActivityReport = reportKey === 'userAccountActivity'
+  const isVacancyPatrolFinanceReport = reportKey === 'vacancyPatrolFinance'
   const sessionQuery = useQuery({
     enabled: isSupabaseConfigured,
     queryFn: getSessionContext,
@@ -259,6 +263,7 @@ export function ReportsPage() {
   const canExportShortNoticeCallOutReport = permissions.includes('hr.reporting.export')
   const canViewUserAccountActivityReport = permissions.includes('reports.account_activity.view')
   const canExportUserAccountActivityReport = permissions.includes('reports.account_activity.export')
+  const canViewVacancyPatrolFinanceReport = permissions.includes('patrol.recovery.finance.view')
 
   useEffect(() => {
     if (searchParams.has('from') && searchParams.has('through')) return
@@ -279,7 +284,7 @@ export function ReportsPage() {
 
   return <div className="page page--reports">
     {!reportKey ? <section className="page-intro reports-page-intro"><div><p className="eyebrow">Operations</p><h1>Reports</h1><p className="page-summary">Choose a focused operational report without loading every record into one screen.</p></div><RangeControls from={from} onChange={changeRange} through={through} /></section> : null}
-    {reportKey && !definition && !isLicensingStatusReport && !isPatrolActivityReport && !isScheduledOvertimeForecast && !isShortNoticeCallOutReport && !isUserAccountActivityReport ? <DataStatePanel icon={ShieldAlert} title="Report not found" tone="error"><p>This report is not part of the approved report library.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
+    {reportKey && !definition && !isLicensingStatusReport && !isPatrolActivityReport && !isScheduledOvertimeForecast && !isShortNoticeCallOutReport && !isUserAccountActivityReport && !isVacancyPatrolFinanceReport ? <DataStatePanel icon={ShieldAlert} title="Report not found" tone="error"><p>This report is not part of the approved report library.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
     {!reportKey && sessionQuery.isPending ? <DataStatePanel icon={FileBarChart} title="Verifying report access"><p>Checking your current report permissions.</p></DataStatePanel> : null}
     {!reportKey && sessionQuery.isError ? <DataStatePanel icon={ShieldAlert} title="Report access unavailable" tone="error"><p>{sessionQuery.error.message}</p></DataStatePanel> : null}
     {!reportKey && sessionQuery.isSuccess ? <ReportLibrary from={from} permissions={permissions} through={through} /> : null}
@@ -306,5 +311,9 @@ export function ReportsPage() {
     {isUserAccountActivityReport && sessionQuery.isError ? <DataStatePanel icon={ShieldAlert} title="Account report access unavailable" tone="error"><p>{sessionQuery.error.message}</p></DataStatePanel> : null}
     {isUserAccountActivityReport && sessionQuery.isSuccess && !canViewUserAccountActivityReport ? <DataStatePanel icon={ShieldAlert} title="Account activity report access required" tone="error"><p>This protected account report is limited to Admin and Human Resources Manager users unless access is explicitly granted.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
     {isUserAccountActivityReport && canViewUserAccountActivityReport ? <UserAccountActivityReportWorkspace canExport={canExportUserAccountActivityReport} /> : null}
+    {isVacancyPatrolFinanceReport && sessionQuery.isPending ? <DataStatePanel icon={FileBarChart} title="Verifying Finance report access"><p>Checking your current Vacancy Patrol billing permission.</p></DataStatePanel> : null}
+    {isVacancyPatrolFinanceReport && sessionQuery.isError ? <DataStatePanel icon={ShieldAlert} title="Finance report access unavailable" tone="error"><p>{sessionQuery.error.message}</p></DataStatePanel> : null}
+    {isVacancyPatrolFinanceReport && sessionQuery.isSuccess && !canViewVacancyPatrolFinanceReport ? <DataStatePanel icon={ShieldAlert} title="Vacancy Patrol Finance access required" tone="error"><p>This protected report requires explicit Vacancy Patrol Finance access with verified MFA.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
+    {isVacancyPatrolFinanceReport && canViewVacancyPatrolFinanceReport ? <VacancyPatrolFinanceReportWorkspace from={from} onRangeChange={changeRange} through={through} /> : null}
   </div>
 }

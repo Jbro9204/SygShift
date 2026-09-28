@@ -71,6 +71,9 @@ describe('central access policy', () => {
   it('routes each Patrol workspace tab through the protected Patrol policy', () => {
     expect(canAccessRoute('/patrol/operations', session(['patrol.operations.view']))).toBe(true)
     expect(canAccessRoute('/patrol/routes', session(['patrol.routes.manage']))).toBe(true)
+    expect(canAccessRoute('/patrol/recovery', session(['patrol.assignments.manage']))).toBe(true)
+    expect(navigationGroups.flatMap((group) => group.items).find((item) => item.path === '/patrol')?.permissions)
+      .toContain('patrol.assignments.manage')
     expect(canAccessRoute('/patrol/operations', session([]))).toBe(false)
   })
 

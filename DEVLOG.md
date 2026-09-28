@@ -1,5 +1,36 @@
 # SygShift Development Log
 
+## 09/28/2026 - Vacancy Patrol Service Recovery
+
+- Added a separate, durable recovery lane for regular published shifts that
+  remain fully unassigned. The source shift stays open; the workflow does not
+  create a call-off, attendance occurrence, time entry, regular assignment,
+  invoice, or automatic client charge.
+- Added the permission-scoped Schedule request flow with an eligible route,
+  bounded non-overlapping visit windows, planned hits, operational/billing
+  reason, explicit boundary acknowledgment, stable request number, and
+  persistent workflow markers.
+- Added the Patrol management worklist and acceptance boundary. Acceptance
+  revalidates the vacancy, current route, service-day requirements, employee
+  Patrol authority, and armed qualification before creating a separate Patrol
+  assignment and real My Patrol hit obligations whose completed and explicitly
+  missed outcomes remain separate.
+- Added the protected **Vacancy Patrol Coverage & Billing** Finance report,
+  all-obligations-reconciled billing gate, distinct completed/missed/remaining
+  totals, unique separate-billing references, and audited CSV, Excel, and PDF
+  export authorization without generating an invoice or charge.
+- Added forced-RLS storage with no direct authenticated table access,
+  MFA-sensitive effective permissions, controlled security-definer RPCs,
+  append-only status/audit evidence, targeted notifications, deterministic
+  duplicate prevention, and fingerprinted idempotent retries.
+- Release candidate verification and production postflight remain open. The
+  dated release record contains explicit placeholders for the final test
+  totals, rollback-only database lifecycle, preservation counts, rendered QA,
+  migration ledger, commit, Worker version, rollback tag, live asset hashes,
+  and authenticated production ceremony.
+- Release detail:
+  `docs/changelogs/CHANGELOG_09-28-2026_VACANCY_PATROL_SERVICE_RECOVERY.md`.
+
 ## 09/28/2026 - SygSphere Unread Target Contract
 
 - Added an exact, additive unread message/reply target to the existing protected
