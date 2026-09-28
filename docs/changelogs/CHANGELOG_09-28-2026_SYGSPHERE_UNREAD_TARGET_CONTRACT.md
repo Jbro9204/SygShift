@@ -56,9 +56,21 @@ the client a routable unread identifier.
 
 ## Release status
 
-- Production migration and Worker postflight are recorded after rollout.
+- Production migration and Worker postflight are complete.
 
 ## Production status
 
-- Pending release postflight.
-
+- Applied and recorded migration
+  `20260928010352_sygsphere_latest_unread_target.sql` in the linked production
+  project after an isolated dry run selected that migration alone.
+- Released source `6a35c05` as Cloudflare Worker version
+  `3334c535-bc1f-47e1-adc3-f7c9509b2828`.
+- Both `app.sygilant.us` and `sygshift.sygilant.workers.dev` returned HTTP
+  200 for health and readiness after the release.
+- Paired Sygilant source `8ba65af` is live as Pages deployment
+  `aed55a46-29b2-4a39-a11c-a65b8f9e07a1`; its custom and immutable origins
+  passed 13 page checks, 28 protected-read denials, one hostile-origin mutation
+  denial, and 80 versioned asset checks.
+- Remote rollback tag:
+  `rollback/pre-sygsphere-unread-target-20260928`. The additive response
+  metadata should remain installed if application source is rolled back.

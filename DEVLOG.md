@@ -13,6 +13,10 @@
 - Passed the complete 321-file / 1,691-test gate, 42/42 Time Clock matrix,
   72/72 SygSphere responsive matrix, independent migration review, and an
   isolated linked-project dry run selecting exactly one migration.
+- Applied migration `20260928010352` and released source `6a35c05` as Worker
+  `3334c535-bc1f-47e1-adc3-f7c9509b2828`; both production origins returned
+  healthy and ready. Paired Sygilant source `8ba65af` is live as Pages
+  deployment `aed55a46-29b2-4a39-a11c-a65b8f9e07a1`.
 - Release detail:
   `docs/changelogs/CHANGELOG_09-28-2026_SYGSPHERE_UNREAD_TARGET_CONTRACT.md`.
 
