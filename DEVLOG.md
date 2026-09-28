@@ -1,5 +1,21 @@
 # SygShift Development Log
 
+## 09/28/2026 - SygSphere Unread Target Contract
+
+- Added an exact, additive unread message/reply target to the existing protected
+  SygSphere inbox contract so clients can open and acknowledge hidden replies or
+  older unloaded unread messages.
+- Preserved active-membership enforcement, authenticated-only execution,
+  structured mentions, the canonical private messaging implementation, and all
+  existing message/read history.
+- Extended rollback-only coverage for root and reply targets, newer own/read
+  messages, unread `2 → 1 → 0`, and nonmember/removed-member exclusion.
+- Passed the complete 321-file / 1,691-test gate, 42/42 Time Clock matrix,
+  72/72 SygSphere responsive matrix, independent migration review, and an
+  isolated linked-project dry run selecting exactly one migration.
+- Release detail:
+  `docs/changelogs/CHANGELOG_09-28-2026_SYGSPHERE_UNREAD_TARGET_CONTRACT.md`.
+
 ## 09/25/2026 - Employee and Schedule Time-Zone Contract
 
 - Made the employee profile time zone authoritative for personal Schedule,

@@ -3,7 +3,12 @@ import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const installed = process.argv.includes('--installed')
-const names = ['20260907023825_sygsphere_messaging_foundation.sql', '20260907025451_sygsphere_private_attachments.sql']
+const names = [
+  '20260907023825_sygsphere_messaging_foundation.sql',
+  '20260907025451_sygsphere_private_attachments.sql',
+  '20260908233000_sygsphere_experience_mentions_previews.sql',
+  '20260928010352_sygsphere_latest_unread_target.sql',
+]
 const body = names.map((name) => {
   const migration = readFileSync(resolve(root, `supabase/migrations/${name}`), 'utf8').trim()
   if (!/^begin;/i.test(migration) || !/commit;$/i.test(migration)) throw new Error('Unexpected migration transaction shape')
