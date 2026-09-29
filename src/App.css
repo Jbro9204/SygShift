@@ -40631,3 +40631,555 @@ button.document-workbench__template-control.is-signature img {
     display: none;
   }
 }
+
+/* Workforce Activity report */
+.workforce-activity-workspace {
+  min-width: 0;
+}
+
+.workforce-activity-heading > div,
+.workforce-activity-view-panel,
+.workforce-activity-results-heading > div:first-child {
+  min-width: 0;
+}
+
+.workforce-activity-heading h1 {
+  margin-top: 0.2rem;
+}
+
+.workforce-activity-heading p:not(.eyebrow),
+.workforce-activity-view-panel > p,
+.workforce-activity-results-heading p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.workforce-activity-day-panel,
+.workforce-activity-view-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.workforce-activity-day-picker,
+.workforce-activity-day-presets,
+.workforce-activity-date-controls,
+.workforce-activity-range-picker,
+.workforce-activity-scope,
+.workforce-activity-tabs,
+.workforce-activity-filter-actions,
+.workforce-activity-export-actions,
+.workforce-activity-pagination {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.workforce-activity-date-controls {
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.workforce-activity-scope {
+  flex: 0 0 auto;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--canvas);
+}
+
+.workforce-activity-scope__button {
+  min-height: 2.5rem;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid transparent;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 850;
+}
+
+.workforce-activity-scope__button--active {
+  border-color: color-mix(in srgb, var(--gold) 65%, var(--line));
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+.workforce-activity-day-picker label,
+.workforce-activity-range-picker label,
+.workforce-activity-filter-grid label,
+.workforce-activity-pagination label {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.workforce-activity-day-picker input,
+.workforce-activity-range-picker input,
+.workforce-activity-filter-grid select,
+.workforce-activity-pagination select {
+  width: 100%;
+  min-height: 2.85rem;
+}
+
+.workforce-activity-day-picker label {
+  min-width: 11rem;
+}
+
+.workforce-activity-range-picker label {
+  min-width: 10.5rem;
+}
+
+.workforce-activity-day-picker > button {
+  min-width: 2.85rem;
+  padding-inline: 0.65rem;
+}
+
+.workforce-activity-day-presets {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.workforce-activity-time-zone-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.workforce-activity-view-panel {
+  align-items: flex-start;
+}
+
+.workforce-activity-view-panel > p {
+  max-width: 43rem;
+  margin: 0;
+  text-align: right;
+}
+
+.workforce-activity-tabs {
+  flex: 0 0 auto;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: var(--canvas);
+}
+
+.workforce-activity-tab {
+  min-height: 2.6rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 850;
+}
+
+.workforce-activity-tab--active {
+  border-color: color-mix(in srgb, var(--gold) 65%, var(--line));
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+.workforce-activity-controls {
+  grid-template-columns: minmax(15rem, 0.8fr) minmax(0, 2fr) auto;
+  align-items: end;
+}
+
+.workforce-activity-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(8.5rem, 1fr));
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.workforce-activity-filter-actions {
+  min-height: 3rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.workforce-activity-filter-actions > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.workforce-activity-metrics {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin-top: 1rem;
+  margin-bottom: 0;
+}
+
+.workforce-activity-metrics article {
+  min-height: 8.4rem;
+}
+
+.workforce-activity-metrics strong {
+  overflow-wrap: anywhere;
+  font-size: clamp(1.6rem, 2.2vw, 2rem);
+}
+
+.workforce-activity-results-heading {
+  align-items: flex-start;
+}
+
+.workforce-activity-results-heading h2,
+.workforce-activity-results-heading p {
+  margin: 0;
+}
+
+.workforce-activity-results-heading h2 {
+  margin-top: 0.18rem;
+}
+
+.workforce-activity-export-actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.workforce-activity-export-actions button,
+.workforce-activity-row__action button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.reports-export-note--error {
+  border-color: color-mix(in srgb, #a63a32 60%, var(--line));
+  color: light-dark(#8b2923, #ffb4ad);
+  background: light-dark(#fff3f1, #321b1a);
+}
+
+.workforce-activity-groups,
+.workforce-activity-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.workforce-activity-group {
+  min-width: 0;
+}
+
+.workforce-activity-group + .workforce-activity-group {
+  padding-top: 0.3rem;
+}
+
+.workforce-activity-group__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.55rem;
+  padding: 0 0.2rem;
+}
+
+.workforce-activity-group__heading > div {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.45rem;
+}
+
+.workforce-activity-group__heading h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+}
+
+.workforce-activity-group__heading > span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.workforce-activity-row {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1.25fr) minmax(11rem, 1.25fr) repeat(2, minmax(9rem, 0.9fr)) minmax(8rem, auto);
+  gap: 0.85rem;
+  align-items: center;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-left: 0.28rem solid var(--gold);
+  border-radius: 0.85rem;
+  background: var(--paper);
+}
+
+.workforce-activity-row--worked_as_scheduled {
+  border-left-color: light-dark(#2b7a50, #62c38d);
+}
+
+.workforce-activity-row--replacement_worked,
+.workforce-activity-row--worked_not_scheduled {
+  border-left-color: light-dark(#326f91, #65b4de);
+}
+
+.workforce-activity-row--salary_worked_confirmed {
+  border-left-color: light-dark(#8c671d, #d6aa4d);
+}
+
+.workforce-activity-row--scheduled_no_work_record,
+.workforce-activity-row--open_unassigned {
+  border-left-color: light-dark(#a66d1f, #dfa65a);
+}
+
+.workforce-activity-row--called_off,
+.workforce-activity-row--needs_time_correction {
+  border-left-color: light-dark(#a63a32, #e47a72);
+}
+
+.workforce-activity-row__identity,
+.workforce-activity-row__location,
+.workforce-activity-row__time,
+.workforce-activity-row__action {
+  display: grid;
+  align-content: start;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.workforce-activity-row__identity strong,
+.workforce-activity-row__location strong,
+.workforce-activity-row__time strong,
+.workforce-activity-row__identity small,
+.workforce-activity-row__location small {
+  overflow-wrap: anywhere;
+}
+
+.workforce-activity-row__identity small,
+.workforce-activity-row__location small,
+.workforce-activity-row__time small,
+.workforce-activity-row__action small {
+  color: var(--muted);
+}
+
+.workforce-activity-row__location > span,
+.workforce-activity-row__time > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.workforce-activity-row__action {
+  justify-items: end;
+  text-align: right;
+}
+
+.workforce-outcome {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.28rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.workforce-outcome--worked_as_scheduled {
+  border-color: light-dark(#9ac8ad, #376849);
+  background: light-dark(#edf8f1, #172a20);
+  color: light-dark(#245f3f, #8bd9ad);
+}
+
+.workforce-outcome--replacement_worked,
+.workforce-outcome--worked_not_scheduled {
+  border-color: light-dark(#a3c9dc, #315d72);
+  background: light-dark(#eef7fb, #172832);
+  color: light-dark(#275f7c, #8dcee9);
+}
+
+.workforce-outcome--salary_worked_confirmed {
+  border-color: light-dark(#dbc68d, #6b5427);
+  background: light-dark(#fff8e7, #302716);
+  color: light-dark(#745616, #e5bf6b);
+}
+
+.workforce-outcome--scheduled_no_work_record,
+.workforce-outcome--open_unassigned {
+  border-color: light-dark(#e0bf8b, #75542b);
+  background: light-dark(#fff6e8, #302317);
+  color: light-dark(#805217, #e5b06b);
+}
+
+.workforce-outcome--called_off,
+.workforce-outcome--needs_time_correction {
+  border-color: light-dark(#e0aaa5, #783d38);
+  background: light-dark(#fff1ef, #321b1a);
+  color: light-dark(#8b2923, #ffaaa2);
+}
+
+.workforce-activity-pagination {
+  flex-wrap: wrap;
+}
+
+.workforce-activity-pagination label {
+  grid-template-columns: auto minmax(4rem, auto);
+  align-items: center;
+}
+
+.workforce-activity-detail-grid__wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1180px) {
+  .workforce-activity-controls {
+    grid-template-columns: minmax(14rem, 0.8fr) minmax(0, 1.5fr);
+  }
+
+  .workforce-activity-filter-grid {
+    grid-template-columns: repeat(2, minmax(9rem, 1fr));
+  }
+
+  .workforce-activity-filter-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .workforce-activity-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .workforce-activity-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workforce-activity-row__action {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    justify-items: start;
+    text-align: left;
+  }
+}
+
+  @media (max-width: 760px) {
+  .workforce-activity-day-panel,
+  .workforce-activity-view-panel,
+  .workforce-activity-results-heading,
+  .workforce-activity-group__heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workforce-activity-day-picker {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .workforce-activity-day-panel,
+  .workforce-activity-date-controls {
+    align-items: stretch;
+  }
+
+  .workforce-activity-scope,
+  .workforce-activity-date-controls,
+  .workforce-activity-range-picker {
+    width: 100%;
+  }
+
+  .workforce-activity-scope,
+  .workforce-activity-range-picker {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workforce-activity-range-picker label {
+    min-width: 0;
+  }
+
+  .workforce-activity-day-picker label {
+    min-width: 0;
+  }
+
+  .workforce-activity-day-presets,
+  .workforce-activity-export-actions {
+    justify-content: flex-start;
+  }
+
+  .workforce-activity-view-panel > p {
+    text-align: left;
+  }
+
+  .workforce-activity-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workforce-activity-controls,
+  .workforce-activity-filter-grid,
+  .workforce-activity-metrics,
+  .workforce-activity-row {
+    grid-template-columns: 1fr;
+  }
+
+  .workforce-activity-search,
+  .workforce-activity-filter-actions,
+  .workforce-activity-row__action {
+    grid-column: auto;
+  }
+
+  .workforce-activity-row__action {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+
+  .workforce-activity-row__action button,
+  .workforce-activity-export-actions button {
+    width: 100%;
+  }
+
+  .workforce-activity-group__heading > span {
+    align-self: flex-start;
+  }
+
+  .workforce-activity-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workforce-activity-detail-grid__wide {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 420px) {
+  .workforce-activity-day-presets,
+  .workforce-activity-export-actions,
+  .workforce-activity-tabs {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .workforce-activity-day-presets > span {
+    grid-column: 1;
+  }
+
+  .workforce-activity-range-picker {
+    grid-template-columns: 1fr;
+  }
+}

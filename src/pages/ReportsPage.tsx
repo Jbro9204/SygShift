@@ -20,6 +20,7 @@ import { AttendanceReportWorkspace } from '../reports/AttendanceReportWorkspace'
 import { ShortNoticeCallOutReportWorkspace } from '../reports/ShortNoticeCallOutReportWorkspace'
 import { UserAccountActivityReportWorkspace } from '../reports/UserAccountActivityReportWorkspace'
 import { VacancyPatrolFinanceReportWorkspace } from '../reports/VacancyPatrolFinanceReportWorkspace'
+import { WorkforceActivityReportWorkspace } from '../reports/WorkforceActivityReportWorkspace'
 
 const pageSizes = [10, 25, 50] as const
 const rangeStorageKey = 'sygshift-reports-range'
@@ -291,7 +292,7 @@ export function ReportsPage() {
     {definition && sessionQuery.isPending ? <DataStatePanel icon={FileBarChart} title="Verifying report access"><p>Checking your current Time reporting permission.</p></DataStatePanel> : null}
     {definition && sessionQuery.isError ? <DataStatePanel icon={ShieldAlert} title="Report access unavailable" tone="error"><p>{sessionQuery.error.message}</p></DataStatePanel> : null}
     {definition && sessionQuery.isSuccess && !canViewTimeReport ? <DataStatePanel icon={ShieldAlert} title="Time report access required" tone="error"><p>This report requires protected Time reporting access.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
-    {definition?.key === 'attendanceCallOffs' && canViewTimeReport ? <AttendanceReportWorkspace canExport={permissions.includes('reports.export')} from={from} through={through} onRangeChange={changeRange} /> : definition && canViewTimeReport ? <ReportWorkspace definition={definition} from={from} onRangeChange={changeRange} through={through} /> : null}
+    {definition?.key === 'attendanceCallOffs' && canViewTimeReport ? <AttendanceReportWorkspace canExport={permissions.includes('reports.export')} from={from} through={through} onRangeChange={changeRange} /> : definition?.key === 'scheduledVsActual' && canViewTimeReport ? <WorkforceActivityReportWorkspace canExport={permissions.includes('reports.export')} from={from} through={through} onRangeChange={changeRange} viewerTimeZone={sessionQuery.data?.timeZone} /> : definition && canViewTimeReport ? <ReportWorkspace definition={definition} from={from} onRangeChange={changeRange} through={through} /> : null}
     {isLicensingStatusReport && sessionQuery.isPending ? <DataStatePanel icon={FileBarChart} title="Verifying report access"><p>Checking your current Reports and Licensing permissions.</p></DataStatePanel> : null}
     {isLicensingStatusReport && sessionQuery.isError ? <DataStatePanel icon={ShieldAlert} title="Report access unavailable" tone="error"><p>{sessionQuery.error.message}</p></DataStatePanel> : null}
     {isLicensingStatusReport && sessionQuery.isSuccess && !canViewLicensingStatusReport ? <DataStatePanel icon={ShieldAlert} title="Licensing report access required" tone="error"><p>This report contains protected licensing information and requires Licensing access with verified MFA.</p><Link className="secondary-button" to="/reports">Return to Reports</Link></DataStatePanel> : null}
