@@ -424,6 +424,12 @@ begin
     and position('overtime' in lower(workspace::text)) = 0
     and position('payroll' in lower(workspace::text)) = 0,
     'The presence payload exposes no timekeeping, duration, overtime, or payroll facts.';
+  assert not exists (
+    select 1
+    from jsonb_array_elements(workspace -> 'assignments') item
+    where jsonb_typeof(item -> 'canMarkWorked') <> 'boolean'
+      or jsonb_typeof(item -> 'canVoid') <> 'boolean'
+  ), 'Every assignment exposes concrete boolean action flags, including rows without prior events.';
 
   workspace := public.get_salaried_shift_workspace(date '2020-11-01', date '2020-11-01', salary_employee);
   assert jsonb_array_length(workspace -> 'assignments') = 1
