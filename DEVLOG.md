@@ -1,5 +1,31 @@
 # SygShift Development Log
 
+## 09/29/2026 - Workforce Activity Report
+
+- Rebuilt **Scheduled vs. Actual** as the focused **Workforce Activity**
+  workspace: a one-day **Who Worked** view by default, plus date-range and
+  Schedule Comparison modes, useful employee/location/outcome filters,
+  server-side pagination, clear states, and audited Excel/PDF exports.
+- Preserved exact employee, client/event, site, post, schedule, attendance,
+  outcome, and row-time-zone evidence; covered vacancies, call-offs,
+  replacements, incomplete punches, corrections, overnight work, and
+  same-signature assignments without counting Dispatch phone duty.
+- Kept salaried work presence separate from hourly timekeeping: no punches,
+  hours, breaks, overtime, or payroll readiness are inferred for salary rows.
+- Enforced `time.reports.view`, recent MFA, and export authorization in the
+  public route and PostgreSQL RPCs, with complete unpaged audited exports.
+- Passed **23/23** focused tests, the full **338-file / 1,789-test** gate,
+  **42/42** Time Clock checks, **12/12** responsive report checks, linked SQL
+  regression before and after installation, and authenticated production UI
+  acceptance. Released migration `20260929143850`, source `e1ff1c5`, and Worker
+  `7ea0ee1b-b3ad-41b4-8eac-b8d09a531e48`.
+- Historical boundary: the February 17 Jason Crow client-import note records
+  six guards at Stanley Market Place but contains no employee roster and
+  predates retained SygShift schedule/timekeeping data. No names were inferred;
+  a reliable historical schedule, payroll, invoice, or event roster is needed
+  for a controlled backfill. Release detail:
+  `docs/changelogs/CHANGELOG_09-29-2026_WORKFORCE_ACTIVITY_REPORT.md`.
+
 ## 09/29/2026 - Patrol Assignment Link Repair
 
 - Repaired `link_patrol_route_shift` after production returned SQLSTATE `42702`
