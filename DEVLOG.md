@@ -1,5 +1,40 @@
 # SygShift Development Log
 
+## 09/29/2026 - Salaried Shift Confirmations
+
+- Added a dedicated **Salaried Shifts** workspace that records one audited
+  Worked marker for an ended scheduled salaried shift without creating punches,
+  worked minutes, breaks, overtime, payroll hours, or assignment mutations.
+- Limited access through the MFA-sensitive
+  `schedule.salary_shifts.manage` permission, route guards, and authoritative
+  database RPC enforcement; default grants cover Scheduler, Supervisor,
+  Operations Manager, Human Resources Manager, and Admin.
+- Preserved schedule-revision continuity, excluded supplemental Dispatch duty,
+  call-offs, approved Time Off, future/canceled/hourly rows, and added audited
+  correction plus idempotent retry behavior.
+- Passed the complete **334-file / 1,765-test** gate, the **42/42** Time Clock
+  matrix, linked rollback-only database lifecycle coverage, signed-out routing,
+  and authenticated production UI verification.
+- Released commits `3b36035` and `d6cd949` through migrations
+  `20260929132655`, `20260929132854`, `20260929133936`, and `20260929135819`
+  as Worker `33649eac-1aab-4287-a254-95cbc245c196`; health and readiness are
+  green. Release detail:
+  `docs/changelogs/CHANGELOG_09-29-2026_SALARIED_SHIFT_CONFIRMATIONS.md`.
+
+## 09/29/2026 - Time Off Archived Schedule Conflict Repair
+
+- Repaired Time Off approval so retained assignments on archived schedule
+  revisions remain historical and do not block a valid decision.
+- Preserved blocking for current draft and published assignments, employee
+  transaction locking, MFA, independent review, audit history, and notification
+  behavior.
+- Expanded the production rollback-only interval regression for archived,
+  draft, and published cases; no request, schedule, assignment, timekeeping, or
+  payroll rows were rewritten.
+- Released migration `20260929132650` in source commit `3b36035`. Release
+  detail:
+  `docs/changelogs/CHANGELOG_09-29-2026_TIME_OFF_ARCHIVED_SCHEDULE_REPAIR.md`.
+
 ## 09/28/2026 - Vacancy Patrol Service Recovery
 
 - Added a separate, durable recovery lane for regular published shifts that
