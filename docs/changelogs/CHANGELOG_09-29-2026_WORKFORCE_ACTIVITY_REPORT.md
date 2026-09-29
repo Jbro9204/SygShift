@@ -120,4 +120,3 @@ only when investigating coverage or attendance differences. Keep the displayed
 time-zone label with any copied time. Historical imports must preserve their
 source and employee identity evidence; do not create inferred attendance rows
 merely to make a historical client note appear in this report.
-
