@@ -2,6 +2,355 @@
   min-height: 100vh;
 }
 
+/* Salaried shift presence is intentionally Schedule-side. It records one
+   affirmative Worked marker per eligible assignment and never mirrors the
+   clock, payroll, or worked-time interfaces. */
+.page--salary-shifts {
+  max-width: 1380px;
+  overflow-x: clip;
+}
+
+.salary-shift-filter-card,
+.salary-shift-section {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--shadow-sm);
+}
+
+.salary-shift-filter-card {
+  margin: 18px 0;
+  padding: 18px;
+}
+
+.salary-shift-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 0.75fr)) minmax(210px, 1fr) minmax(150px, 0.75fr) minmax(230px, 1.2fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.salary-shift-filter-grid label,
+.salary-shift-note-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.salary-shift-filter-grid input,
+.salary-shift-filter-grid select,
+.salary-shift-note-field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+}
+
+.salary-shift-search > span:last-child {
+  position: relative;
+  display: block;
+}
+
+.salary-shift-search svg {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 13px;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.salary-shift-search input {
+  padding-left: 42px;
+}
+
+.salary-shift-filter-card__range {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.salary-shift-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.salary-shift-sections {
+  display: grid;
+  gap: 18px;
+}
+
+.salary-shift-section {
+  overflow: hidden;
+}
+
+.salary-shift-section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.salary-shift-section > header h2,
+.salary-shift-section > header p {
+  margin: 0;
+}
+
+.salary-shift-section > header h2 {
+  font-size: clamp(20px, 2vw, 26px);
+}
+
+.salary-shift-section > header > strong {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 4px 9px;
+  border: 1px solid color-mix(in srgb, var(--gold) 55%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gold) 14%, var(--paper));
+}
+
+.salary-shift-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px;
+}
+
+.salary-shift-record {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-left: 4px solid color-mix(in srgb, var(--gold) 80%, #8a6322);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--paper) 96%, var(--gold));
+}
+
+.salary-shift-record--worked {
+  border-left-color: var(--success);
+}
+
+.salary-shift-record__identity {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.salary-shift-record__identity > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.salary-shift-record__identity h3,
+.salary-shift-record__identity p,
+.salary-shift-record__evidence p,
+.salary-shift-record__reason {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.salary-shift-record__identity h3 {
+  font-size: 18px;
+}
+
+.salary-shift-record__identity p,
+.salary-shift-record__employee,
+.salary-shift-record__schedule span,
+.salary-shift-record__schedule small,
+.salary-shift-record__evidence span,
+.salary-shift-record__reason,
+.salary-shift-record__history span {
+  color: var(--muted);
+}
+
+.salary-shift-record__employee {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.salary-shift-record__schedule {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--canvas) 88%, var(--paper));
+}
+
+.salary-shift-record__schedule > div,
+.salary-shift-record__evidence {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.salary-shift-record__schedule small {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.salary-shift-record__evidence {
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--success) 40%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--success) 8%, var(--paper));
+  font-size: 13px;
+}
+
+.salary-shift-record__reason {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.salary-shift-record__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.salary-shift-record__history {
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.salary-shift-record__history summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.salary-shift-record__history ol {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
+
+.salary-shift-record__history li {
+  padding-left: 3px;
+}
+
+.salary-shift-record__history li strong,
+.salary-shift-record__history li span {
+  display: block;
+  font-size: 13px;
+}
+
+.salary-shift-record__history li p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.salary-shift-section__empty {
+  margin: 0;
+  padding: 22px 20px;
+  color: var(--muted);
+}
+
+.salary-shift-confirmation-summary {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.35fr) minmax(0, 1fr);
+  gap: 9px 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--canvas);
+}
+
+.salary-shift-confirmation-summary span {
+  color: var(--muted);
+}
+
+.salary-shift-confirmation-summary strong {
+  overflow-wrap: anywhere;
+}
+
+.salary-shift-note-field textarea {
+  min-height: 108px;
+  resize: vertical;
+}
+
+.salary-shift-note-field small {
+  color: var(--muted);
+  font-weight: 600;
+  text-align: right;
+}
+
+@media (max-width: 1180px) {
+  .salary-shift-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .salary-shift-search {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 820px) {
+  .salary-shift-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .salary-shift-filter-card {
+    padding: 14px;
+  }
+
+  .salary-shift-filter-grid,
+  .salary-shift-summary-grid,
+  .salary-shift-confirmation-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .salary-shift-search {
+    grid-column: auto;
+  }
+
+  .salary-shift-list {
+    padding: 12px;
+  }
+
+  .salary-shift-record__identity,
+  .salary-shift-section > header {
+    align-items: stretch;
+  }
+
+  .salary-shift-record__identity {
+    display: grid;
+  }
+
+  .salary-shift-record__identity .time-status-badge {
+    justify-self: start;
+  }
+}
+
 /* Guided corrective actions */
 .patrol-readiness { display: grid; gap: 1rem; }
 .patrol-readiness__checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }

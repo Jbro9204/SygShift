@@ -50,7 +50,6 @@ describe('permission surface guardrails', () => {
       'availability.view',
       'sites.view',
       'patrol.view',
-      'requests.view',
       'notifications.view',
       'reports.view',
       'admin.users.view',
@@ -58,6 +57,11 @@ describe('permission surface guardrails', () => {
     ]) {
       expect(`${navigationSource}\n${accessPolicySource}`).toContain(permission)
     }
+  })
+
+  it('keeps Time Off self-service available to every authenticated employee', () => {
+    expect(accessPolicySource).toContain("'/time-off': { anyOf: [] }")
+    expect(accessPolicySource).toContain("'/requests': { anyOf: [] }")
   })
 
   it('keeps Directory profile and availability access wired without bringing credential editing back into the Directory', () => {

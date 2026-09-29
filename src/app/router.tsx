@@ -42,6 +42,7 @@ import {
   RouteSuspense,
   SchedulePageRoute,
   SchedulerPageRoute,
+  SalariedShiftConfirmationsPageRoute,
   SitesPageRoute,
   SystemOperationsPageRoute,
   SupportTicketsPageRoute,
@@ -122,6 +123,14 @@ export const router = createBrowserRouter([
         element: (
           <RouteSuspense>
             <SchedulerPageRoute />
+          </RouteSuspense>
+        ),
+      },
+      {
+        path: 'shift-confirmations',
+        element: (
+          <RouteSuspense>
+            <SalariedShiftConfirmationsPageRoute />
           </RouteSuspense>
         ),
       },

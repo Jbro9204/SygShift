@@ -47,6 +47,15 @@ describe('central access policy', () => {
     expect(scheduleTeamViewPermissions).not.toContain('schedule.self.view')
   })
 
+  it('limits salaried shift confirmation to its exact management permission', () => {
+    expect(canAccessRoute('/shift-confirmations', session(['schedule.salary_shifts.manage']))).toBe(true)
+    expect(resolveAuthorizedLandingRoute(session(['schedule.salary_shifts.manage']))).toBe('/shift-confirmations')
+    expect(canAccessRoute('/shift-confirmations', session(['schedule.self.view']))).toBe(false)
+    expect(canAccessRoute('/shift-confirmations', session(['schedule.manage']))).toBe(false)
+    expect(navigationGroups.flatMap((group) => group.items).find((item) => item.path === '/shift-confirmations')?.permissions)
+      .toEqual(['schedule.salary_shifts.manage'])
+  })
+
   it('allows account security so users can complete required security setup', () => {
     expect(canAccessRoute('/account-security', session([]))).toBe(true)
   })

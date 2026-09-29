@@ -49,6 +49,7 @@ describe('Guard least-privilege boundary', () => {
   it('keeps team, administrative, and sensitive operations out of Guard access', () => {
     for (const route of [
       '/scheduler',
+      '/shift-confirmations',
       '/time/team',
       '/time/exceptions',
       '/time/operations',

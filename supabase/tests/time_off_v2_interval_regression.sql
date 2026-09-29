@@ -11,13 +11,18 @@ declare
   published_schedule_id constant uuid := 'f9250000-0000-4000-8000-000000000001';
   draft_schedule_id constant uuid := 'f9250000-0000-4000-8000-000000000002';
   superseded_schedule_id constant uuid := 'f9250000-0000-4000-8000-000000000003';
+  archived_schedule_id constant uuid := 'f9250000-0000-4000-8000-000000000004';
   evening_shift_id constant uuid := 'f9260000-0000-4000-8000-000000000001';
   overnight_shift_id constant uuid := 'f9260000-0000-4000-8000-000000000002';
   draft_shift_id constant uuid := 'f9260000-0000-4000-8000-000000000003';
   superseded_shift_id constant uuid := 'f9260000-0000-4000-8000-000000000004';
+  archived_shift_id constant uuid := 'f9260000-0000-4000-8000-000000000005';
+  draft_conflict_shift_id constant uuid := 'f9260000-0000-4000-8000-000000000006';
   morning_request_id uuid;
   evening_request_id uuid;
   overnight_request_id uuid;
+  archived_request_id uuid;
+  draft_conflict_request_id uuid;
   approved_before_assignment_id uuid;
   adjacent_request_one_id uuid;
   adjacent_request_two_id uuid;
@@ -56,7 +61,8 @@ begin
   values
     (published_schedule_id, date '2099-12-13', 1, 'draft', scheduler_employee),
     (draft_schedule_id, date '2099-12-20', 1, 'draft', scheduler_employee),
-    (superseded_schedule_id, date '2099-10-25', 1, 'draft', scheduler_employee);
+    (superseded_schedule_id, date '2099-10-25', 1, 'draft', scheduler_employee),
+    (archived_schedule_id, date '2099-11-01', 1, 'draft', scheduler_employee);
 
   -- Employee-local shift times:
   -- evening: 12/15 18:00-22:00; overnight: 12/19 22:00-12/20 06:00;
@@ -67,12 +73,16 @@ begin
     (evening_shift_id, published_schedule_id, post_id, timestamptz '2099-12-15 23:00:00+00', timestamptz '2099-12-16 03:00:00+00', 'America/New_York', 1, scheduler_employee),
     (overnight_shift_id, published_schedule_id, post_id, timestamptz '2099-12-20 03:00:00+00', timestamptz '2099-12-20 11:00:00+00', 'America/New_York', 1, scheduler_employee),
     (draft_shift_id, draft_schedule_id, post_id, timestamptz '2099-12-25 19:00:00+00', timestamptz '2099-12-25 21:00:00+00', 'America/New_York', 1, scheduler_employee),
-    (superseded_shift_id, superseded_schedule_id, post_id, timestamptz '2099-10-27 14:00:00+00', timestamptz '2099-10-27 22:00:00+00', 'America/New_York', 1, scheduler_employee);
+    (superseded_shift_id, superseded_schedule_id, post_id, timestamptz '2099-10-27 14:00:00+00', timestamptz '2099-10-27 22:00:00+00', 'America/New_York', 1, scheduler_employee),
+    (archived_shift_id, archived_schedule_id, post_id, timestamptz '2099-11-03 14:00:00+00', timestamptz '2099-11-03 22:00:00+00', 'America/New_York', 1, scheduler_employee),
+    (draft_conflict_shift_id, draft_schedule_id, post_id, timestamptz '2099-12-26 14:00:00+00', timestamptz '2099-12-26 22:00:00+00', 'America/New_York', 1, scheduler_employee);
   insert into public.shift_assignments(shift_id, employee_id, status, assigned_by)
   values
     (evening_shift_id, employee_id, 'assigned', scheduler_employee),
     (overnight_shift_id, employee_id, 'confirmed', scheduler_employee),
-    (superseded_shift_id, employee_id, 'assigned', scheduler_employee);
+    (superseded_shift_id, employee_id, 'assigned', scheduler_employee),
+    (archived_shift_id, employee_id, 'assigned', scheduler_employee),
+    (draft_conflict_shift_id, employee_id, 'assigned', scheduler_employee);
 
   update public.schedules
   set
@@ -90,6 +100,10 @@ begin
   update public.schedules
   set status = 'superseded'
   where id = superseded_schedule_id;
+
+  update public.schedules
+  set status = 'archived'
+  where id = archived_schedule_id;
 
   select count(*)::integer into baseline_time_off_count
   from public.time_off_requests;
@@ -239,6 +253,39 @@ begin
     jsonb_build_object('sub', employee_auth, 'role', 'authenticated', 'aal', 'aal2')::text,
     true
   );
+  archived_request_id := public.submit_time_off_request_v2(
+    'unpaid_time_off', date '2099-11-03', date '2099-11-03',
+    time '11:00', time '12:00', date '2099-11-04', 'Archived schedule exclusion.'
+  );
+  assert (
+    select jsonb_array_length(request.affected_shifts_snapshot) = 0
+    from public.time_off_requests request
+    where request.id = archived_request_id
+  ), 'An archived schedule assignment is not an affected active shift.';
+
+  perform set_config('request.jwt.claim.sub', scheduler_auth::text, true);
+  perform set_config(
+    'request.jwt.claims',
+    jsonb_build_object('sub', scheduler_auth, 'role', 'authenticated', 'aal', 'aal2')::text,
+    true
+  );
+  perform public.decide_time_off_request_v2(
+    archived_request_id,
+    'approved',
+    'Archived schedule assignments are historical and do not block approval.'
+  );
+  assert (
+    select request.status = 'approved'
+    from public.time_off_requests request
+    where request.id = archived_request_id
+  ), 'Archived schedule assignments do not block approval.';
+
+  perform set_config('request.jwt.claim.sub', employee_auth::text, true);
+  perform set_config(
+    'request.jwt.claims',
+    jsonb_build_object('sub', employee_auth, 'role', 'authenticated', 'aal', 'aal2')::text,
+    true
+  );
   evening_request_id := public.submit_time_off_request_v2(
     'unpaid_time_off', date '2099-12-15', date '2099-12-15',
     time '17:00', time '19:00', date '2099-12-16', 'Evening overlap check.'
@@ -278,7 +325,44 @@ begin
     select request.status = 'pending'
     from public.time_off_requests request
     where request.id = evening_request_id
-  ), 'Rejected approval preserves the pending request and history.';
+  ), 'A published assignment blocks approval and preserves the pending request.';
+
+  perform set_config('request.jwt.claim.sub', employee_auth::text, true);
+  perform set_config(
+    'request.jwt.claims',
+    jsonb_build_object('sub', employee_auth, 'role', 'authenticated', 'aal', 'aal2')::text,
+    true
+  );
+  draft_conflict_request_id := public.submit_time_off_request_v2(
+    'unpaid_time_off', date '2099-12-26', date '2099-12-26',
+    time '11:00', time '12:00', date '2099-12-27', 'Draft schedule conflict check.'
+  );
+
+  perform set_config('request.jwt.claim.sub', scheduler_auth::text, true);
+  perform set_config(
+    'request.jwt.claims',
+    jsonb_build_object('sub', scheduler_auth, 'role', 'authenticated', 'aal', 'aal2')::text,
+    true
+  );
+  begin
+    perform public.decide_time_off_request_v2(
+      draft_conflict_request_id,
+      'approved',
+      'Valid regression note for the draft assignment conflict.'
+    );
+    raise exception 'An overlapping draft assignment was approved.';
+  exception
+    when check_violation then
+      get stacked diagnostics error_message = message_text;
+      if error_message <> 'Resolve assigned shifts before approving this time off.' then
+        raise exception 'Unexpected draft-shift approval denial: %', error_message;
+      end if;
+  end;
+  assert (
+    select request.status = 'pending'
+    from public.time_off_requests request
+    where request.id = draft_conflict_request_id
+  ), 'A draft assignment blocks approval and preserves the pending request.';
 
   perform set_config('request.jwt.claim.sub', employee_auth::text, true);
   perform set_config(
@@ -544,13 +628,17 @@ begin
   into function_definition;
   assert position('private.lock_employee_schedule_time_off' in function_definition) > 0,
     'Decision participates in the employee schedule/time-off lock.';
+  assert position('schedule.status in (''draft'', ''published'')' in function_definition) > 0,
+    'Decision conflicts are limited to current draft and published schedules.';
+  assert position('schedule.status <> ''superseded''' in function_definition) = 0,
+    'Decision no longer treats archived schedules as active conflicts.';
   select pg_get_functiondef('private.enforce_assignment_capacity_and_overlap()'::regprocedure)
   into function_definition;
   assert position('private.lock_employee_schedule_time_off' in function_definition) > 0,
     'Assignment enforcement participates in the employee schedule/time-off lock.';
 
   assert (
-    select count(*)::integer = baseline_time_off_count + 9
+    select count(*)::integer = baseline_time_off_count + 11
     from public.time_off_requests
   ), 'Submit, decide, and withdraw preserve every request row as history.';
 end

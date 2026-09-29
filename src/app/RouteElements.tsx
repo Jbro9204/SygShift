@@ -61,6 +61,9 @@ export const SchedulePageRoute = lazy(() =>
 export const SchedulerPageRoute = lazy(() =>
   import('../pages/SchedulePage').then((module) => ({ default: module.SchedulerPage })),
 )
+export const SalariedShiftConfirmationsPageRoute = lazy(() =>
+  import('../pages/SalariedShiftConfirmationsPage').then((module) => ({ default: module.SalariedShiftConfirmationsPage })),
+)
 export const SitesPageRoute = lazy(() =>
   import('../pages/SitesPage').then((module) => ({ default: module.SitesPage })),
 )

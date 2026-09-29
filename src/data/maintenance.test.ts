@@ -8,6 +8,7 @@ import {
 describe('maintenance feature boundaries', () => {
   it('maps protected routes to their database feature boundary', () => {
     expect(maintenanceFeatureForPath('/scheduler')).toBe('schedule')
+    expect(maintenanceFeatureForPath('/shift-confirmations')).toBe('schedule')
     expect(maintenanceFeatureForPath('/schedule/week/2026-08-23')).toBe('schedule')
     expect(maintenanceFeatureForPath('/time/payroll')).toBe('payroll')
     expect(maintenanceFeatureForPath('/payroll')).toBe('payroll')

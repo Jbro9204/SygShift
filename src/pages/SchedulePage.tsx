@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
-import { AlertCircle, BellRing, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Copy, DatabaseZap, Edit3, MapPin, Maximize2, MoveHorizontal, Plus, Route, Search, Send, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
+import { AlertCircle, BellRing, CalendarCheck2, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Copy, DatabaseZap, Edit3, MapPin, Maximize2, MoveHorizontal, Plus, Route, Search, Send, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
@@ -2373,6 +2373,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       'schedule.delete_shift',
       'schedule.override_warnings',
     ])
+  const canManageSalaryShiftConfirmations = sessionHasAnyPermission(sessionQuery.data, ['schedule.salary_shifts.manage'])
   const canViewTeamSchedule = sessionHasAnyPermission(sessionQuery.data, scheduleTeamViewPermissions)
   const canUseScheduler = canBuildSchedule && isSchedulerHome
   const canEditScheduler = canManageSchedule && isSchedulerHome
@@ -3473,6 +3474,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
         {scheduleQuery.data || employeePersonalScheduleShifts.length > 0 ? (
           <div className="schedule-intro__actions">
             {canBuildSchedule && !isSchedulerHome ? <Link className="primary-action" to="/scheduler"><Edit3 aria-hidden="true" size={19} />Open Scheduler</Link> : null}
+            {canManageSalaryShiftConfirmations && !isSchedulerHome ? <Link className="secondary-button" to="/shift-confirmations"><CalendarCheck2 aria-hidden="true" size={19} />Salaried Shifts</Link> : null}
             <button
               className="secondary-button"
               onClick={() => {

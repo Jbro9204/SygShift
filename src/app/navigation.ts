@@ -56,6 +56,7 @@ export const navigationGroups: NavigationGroup[] = [
     items: [
       { label: 'Schedule', path: '/schedule', icon: CalendarDays, permissions: [...scheduleRoutePermissions] },
       { label: 'Scheduler', path: '/scheduler', icon: CalendarPlus, permissions: ['scheduler.view', 'scheduler.manage', 'schedule.manage'] },
+      { label: 'Salaried Shifts', path: '/shift-confirmations', icon: CalendarCheck2, permissions: ['schedule.salary_shifts.manage'] },
       { label: 'Events & Openings', path: '/events', icon: CalendarClock, permissions: ['events.view', 'events.manage', 'shift_pool.view', 'shift_pool.manage'] },
       { label: 'Time & Attendance', path: '/time', icon: Timer, permissions: ['time.self.view', 'time.punch', 'time.view', 'time.manage', 'time.export_payroll'] },
       { label: 'Action Center', path: '/actions', icon: ListChecks, permissions: ['actions.self.view'] },

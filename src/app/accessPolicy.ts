@@ -44,6 +44,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
   '/account-security': { anyOf: [] },
   '/actions': { anyOf: ['actions.self.view'] },
   '/schedule': { anyOf: scheduleRoutePermissions },
+  '/shift-confirmations': { anyOf: ['schedule.salary_shifts.manage'] },
   '/scheduler': { anyOf: ['scheduler.view', 'scheduler.manage', 'schedule.manage'] },
   '/events': { anyOf: ['events.view', 'events.manage', 'shift_pool.view', 'shift_pool.manage'] },
   '/time': { anyOf: ['time.self.view', 'time.punch', 'time.view', 'time.manage', 'time.export_payroll'] },
@@ -110,6 +111,7 @@ export const routeAccessPolicies: Readonly<Record<string, RouteAccessPolicy>> = 
 const authenticatedLandingRouteCandidates = [
   '/',
   '/schedule',
+  '/shift-confirmations',
   '/time',
   '/actions',
   '/patrol',
@@ -174,5 +176,12 @@ export function canAccessRoute(
 export function resolveAuthorizedLandingRoute(
   session: Pick<SessionContext, 'permissions'> | null | undefined,
 ): string {
+  // Home is intentionally available to every signed-in employee. A narrowly
+  // scoped additive role still needs a useful landing page when it can manage
+  // salaried shifts but has no separate Schedule permission.
+  if (
+    canAccessRoute('/shift-confirmations', session)
+    && !canAccessRoute('/schedule', session)
+  ) return '/shift-confirmations'
   return authenticatedLandingRouteCandidates.find((pathname) => canAccessRoute(pathname, session)) ?? '/account'
 }

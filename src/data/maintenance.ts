@@ -98,6 +98,7 @@ const routeFeatureMap: ReadonlyArray<[string, MaintenanceFeatureCode]> = [
   ['/payroll', 'payroll'],
   ['/time', 'time_attendance'],
   ['/scheduler', 'schedule'],
+  ['/shift-confirmations', 'schedule'],
   ['/schedule', 'schedule'],
   ['/events', 'events_openings'],
   ['/people', 'directory'],
