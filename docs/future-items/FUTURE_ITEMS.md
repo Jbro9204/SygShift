@@ -542,7 +542,7 @@ Completion criteria:
 
 - Priority: **High**
 - Target window: Controlled field pilot before Patrol is treated as fully production-ready
-- Status: Patrol workflow and reporting foundation complete; real route data, field acceptance, and sustained media validation remain open
+- Status: Assignment-link production blocker repaired 09/29/2026; field acceptance, photo/video validation, remaining addresses, and canonical client/site linkage remain open
 - Added: 09/02/2026
 
 #### Execution instructions
@@ -556,6 +556,17 @@ Completion criteria:
 Finish the operational rollout of Patrol with real addresses, route ownership, field feedback, and evidence that mobile reporting and larger media behave reliably under actual guard conditions.
 
 On 09/11/2026, a permission-scoped live release-readiness checklist was added to Patrol. It verifies canonical site ownership, addresses, active routes, Schedule-linked assignments, stored photo/long-video evidence, and cross-client relationship integrity without changing operational rows. Current production data keeps the release blocked; authoritative source data and Joseph's field evidence remain required.
+
+On 09/29/2026, the production route-assignment function was repaired after an
+ambiguous PL/pgSQL identifier blocked creation of Patrol assignments and their
+hit obligations. Management then linked three live assignments: Joseph Lee to
+**MG Properties Patrol** version 7 with 11 obligations, Anthony Herman to
+**Tamarac Apartments Hourly Patrol** version 1 with 8, and Fernando Gomez to
+**Patrol hits (not MG properties)** version 3 with 23. All 42 obligations are
+Scheduled, with 0 completed and 0 missed. This confirms the assignment and
+obligation-creation boundary; it does not complete field acceptance or prove
+photo/video upload, route-address, client/site-link, completed-hit, or
+missed-hit behavior.
 
 Required work:
 

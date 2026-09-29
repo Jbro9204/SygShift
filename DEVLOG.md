@@ -1,5 +1,30 @@
 # SygShift Development Log
 
+## 09/29/2026 - Patrol Assignment Link Repair
+
+- Repaired `link_patrol_route_shift` after production returned SQLSTATE `42702`
+  at 14:14:27 UTC on 09/29/2026 while Patrol management linked a route to a
+  published employee shift.
+- Removed the PL/pgSQL name collision between the local assignment identifier
+  and the `patrol_hit_obligations.assignment_id` column while preserving the
+  existing permission, MFA, route-version, shift/employee, audit, and retry
+  boundaries.
+- Applied and recorded forward migration `20260929143310`; both the exact
+  rollback rehearsal and the installed rollback-only assignment lifecycle
+  regression passed.
+- Created the three intended live Patrol assignments: Joseph Lee on **MG
+  Properties Patrol** version 7 with 11 obligations, Anthony Herman on
+  **Tamarac Apartments Hourly Patrol** version 1 with 8, and Fernando Gomez on
+  **Patrol hits (not MG properties)** version 3 with 23. All 42 obligations
+  remain Scheduled, with 0 completed and 0 missed.
+- Passed the complete **334-file / 1,766-test** gate, **2 focused files / 14
+  tests**, and the mandatory **42/42** Time Clock matrix.
+- No browser or Worker code changed, so no Cloudflare deployment was required.
+  Source commit `e7043b535b49269338cc6e307b9369eb4ded9865` was pushed to
+  `origin/main`; production health returned `status: ok`, and readiness returned
+  `status: ready` with every required binding check true. Release detail:
+  `docs/changelogs/CHANGELOG_09-29-2026_PATROL_ASSIGNMENT_LINK_REPAIR.md`.
+
 ## 09/29/2026 - Salaried Shift Confirmations
 
 - Added a dedicated **Salaried Shifts** workspace that records one audited
