@@ -122,4 +122,46 @@ describe('Accountability absence coverage handoff', () => {
     expect(await screen.findByRole('heading', { name: 'Handle an employee absence' })).toBeVisible()
     expect(screen.getByText('The original schedule will not disappear')).toBeVisible()
   })
+
+  it('continues the original coverage workflow when a manager retries the same logical absence', async () => {
+    mocks.createAccountabilityOccurrence.mockResolvedValueOnce({
+      id: '50000000-0000-4000-8000-000000000001',
+      employeeId,
+      shiftId,
+      eventType: 'call_off',
+      status: 'reported',
+      operationalDate: '2026-09-14',
+      createdAt: '2026-09-14T14:00:00.000Z',
+      callOffId,
+      coverageRequired: true,
+      created: false,
+      alreadyRecorded: true,
+    })
+    const user = userEvent.setup()
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter><AccountabilityPage /></MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Record occurrence' }))
+    const dialog = screen.getByRole('dialog', { name: 'Record accountability occurrence' })
+    await user.selectOptions(within(dialog).getByLabelText('Employee'), employeeId)
+    await user.selectOptions(within(dialog).getByLabelText('Scheduled shift'), shiftId)
+    await user.type(within(dialog).getByLabelText('Factual note'), 'Death in family')
+    await user.click(within(dialog).getByRole('button', { name: 'Record occurrence' }))
+
+    expect(mocks.createAccountabilityOccurrence.mock.calls[0]?.[0]).toEqual({
+      employeeId,
+      eventType: 'call_off',
+      note: 'Death in family',
+      operationalDate: null,
+      shiftId,
+      reportedLateMinutes: null,
+    })
+    expect(await screen.findByRole('heading', { name: 'Handle an employee absence' })).toBeVisible()
+    expect(screen.getByText('The original schedule will not disappear')).toBeVisible()
+    expect(mocks.getCallOffCoverageWorkspace).toHaveBeenCalledWith(callOffId)
+  })
 })

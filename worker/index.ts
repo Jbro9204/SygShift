@@ -546,6 +546,9 @@ interface AttendanceReportPayload {
   locationName: string
   note: string
   createdAt: string
+  created?: boolean
+  alreadyRecorded?: boolean
+  dispatchAlreadyNotified?: boolean
   dispatchTo: string
 }
 
@@ -8326,6 +8329,20 @@ async function handleAttendanceReportApi(request: Request, environment: Environm
     session.token,
     additionalHeaders,
   )
+
+  // An employee or manager can safely retry an existing logical absence. The
+  // database returns the original event/call-off so coverage can continue.
+  // Stop only when Dispatch was already notified; an earlier failed delivery
+  // remains recoverable through the normal audited email path below.
+  if (report.created === false && report.dispatchAlreadyNotified === true) {
+    return json({
+      ...report,
+      alreadyRecorded: true,
+      dispatchError: null,
+      dispatchNotified: report.dispatchAlreadyNotified ?? false,
+      requestId,
+    }, 200)
+  }
 
   let dispatchNotified = false
   let dispatchError: string | null = null

@@ -654,6 +654,8 @@ const attendanceReportResultSchema = z.object({
   locationName: z.string(),
   note: z.string(),
   createdAt: z.string(),
+  created: z.boolean().optional().default(true),
+  alreadyRecorded: z.boolean().optional().default(false),
   dispatchNotified: z.boolean().optional().default(false),
   dispatchError: z.string().nullable().optional(),
 })

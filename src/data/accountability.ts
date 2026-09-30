@@ -126,6 +126,8 @@ const eventSchema = z.object({
   note: z.string(),
   createdAt: z.string(),
   shiftId: z.string().uuid().nullable(),
+  callOffId: z.string().uuid().nullable().optional(),
+  coverageStatus: z.enum(['draft', 'open_pool', 'assigned', 'patrol_review', 'no_replacement', 'closed', 'canceled']).nullable().optional(),
   reviewOutcome: reviewOutcomeSchema.nullable(),
   reviewedAt: z.string().nullable(),
   reviewedByName: z.string().nullable(),
@@ -175,6 +177,8 @@ const createResultSchema = z.object({
   createdAt: z.string(),
   callOffId: z.string().uuid().nullable(),
   coverageRequired: z.boolean(),
+  created: z.boolean().optional().default(true),
+  alreadyRecorded: z.boolean().optional().default(false),
   reportedLateMinutes: z.number().int().positive().nullable().optional(),
   expectedArrivalAt: z.string().nullable().optional(),
   actualArrivalAt: z.string().nullable().optional(),
@@ -270,7 +274,13 @@ export async function createAccountabilityOccurrence(input: {
     target_shift_id: input.shiftId,
     target_reported_late_minutes: input.reportedLateMinutes ?? null,
   }), 'hr')
-  if (error) throw accountabilityOperationError('The occurrence could not be recorded. Your entries are still here; please try again.')
+  if (error) {
+    const scheduleChanged = error.code === '23514'
+      && /selected shift changed|current assignment/i.test(error.message ?? '')
+    throw accountabilityOperationError(scheduleChanged
+      ? 'The schedule changed while this form was open. Your entries are still here; refresh the shift list and choose the current assignment.'
+      : 'The occurrence could not be recorded. Your entries are still here; please try again.')
+  }
   return createResultSchema.parse(data)
 }
 

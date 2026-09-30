@@ -130,6 +130,8 @@ export function AccountabilityPage() {
       queryClient.invalidateQueries({ queryKey: ["request-center"] }),
       queryClient.invalidateQueries({ queryKey: ["open-opportunities"] }),
       queryClient.invalidateQueries({ queryKey: ["weekly-schedule"] }),
+      queryClient.invalidateQueries({ queryKey: ["workforce-activity-report"] }),
+      queryClient.invalidateQueries({ queryKey: ["my-notifications"] }),
     ]);
   }
 
@@ -836,6 +838,11 @@ function OccurrenceReviewDialog({
   const actualEmployee = reconciliation?.actualEmployees.find(
     (employee) => employee.employeeId === event.employeeId,
   );
+  const coverageComplete = event.coverageStatus
+    ? ["assigned", "no_replacement", "closed", "canceled"].includes(
+        event.coverageStatus,
+      )
+    : false;
 
   function submit(submitEvent: FormEvent<HTMLFormElement>) {
     submitEvent.preventDefault();
@@ -910,6 +917,27 @@ function OccurrenceReviewDialog({
           <p className="eyebrow">Original factual note</p>
           <p>{event.note}</p>
         </section>
+        {event.callOffId ? (
+          <TimeAlertCard
+            icon={coverageComplete ? CheckCircle2 : CalendarClock}
+            title={coverageComplete ? "Coverage plan completed" : "Coverage workflow available"}
+            tone={coverageComplete ? "good" : "warning"}
+          >
+            <p>
+              {coverageComplete
+                ? "This absence is already connected to a completed coverage decision."
+                : "This absence is already recorded. Continue the existing coverage workflow instead of entering it again."}
+            </p>
+            {!coverageComplete ? (
+              <TimeButton
+                onClick={() => setCoverageCallOffId(event.callOffId ?? null)}
+                variant="primary"
+              >
+                Continue coverage
+              </TimeButton>
+            ) : null}
+          </TimeAlertCard>
+        ) : null}
         {event.reviewable &&
         workspace.capabilities.canManage &&
         event.status !== "voided" ? (

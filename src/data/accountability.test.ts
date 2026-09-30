@@ -16,6 +16,62 @@ vi.mock('../lib/supabase', () => ({
 describe('accountability data error boundary', () => {
   beforeEach(() => supabaseMock.rpc.mockReset())
 
+  it('accepts an idempotent retry that returns the original event and call-off workflow', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({
+      data: {
+        id: '10000000-0000-4000-8000-000000000010',
+        employeeId: '10000000-0000-4000-8000-000000000001',
+        shiftId: '10000000-0000-4000-8000-000000000011',
+        eventType: 'call_off',
+        status: 'reported',
+        operationalDate: '2026-09-29',
+        createdAt: '2026-09-30T00:36:15.000Z',
+        callOffId: '10000000-0000-4000-8000-000000000012',
+        coverageRequired: true,
+        created: false,
+        alreadyRecorded: true,
+      },
+      error: null,
+    })
+
+    await expect(createAccountabilityOccurrence({
+      employeeId: '10000000-0000-4000-8000-000000000001',
+      shiftId: '10000000-0000-4000-8000-000000000011',
+      eventType: 'call_off',
+      operationalDate: null,
+      note: 'Dispatcher retry after the schedule was republished.',
+    })).resolves.toMatchObject({
+      id: '10000000-0000-4000-8000-000000000010',
+      callOffId: '10000000-0000-4000-8000-000000000012',
+      created: false,
+      alreadyRecorded: true,
+    })
+  })
+
+  it('gives a recoverable instruction when the selected assignment changed', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: '23514',
+        message: 'The selected shift changed and no single current assignment could be resolved.',
+      },
+    })
+
+    const failure = await createAccountabilityOccurrence({
+      employeeId: '10000000-0000-4000-8000-000000000001',
+      shiftId: '10000000-0000-4000-8000-000000000011',
+      eventType: 'call_off',
+      operationalDate: null,
+      note: 'Dispatcher retry after the schedule was republished.',
+    }).catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toBe(
+      'The schedule changed while this form was open. Your entries are still here; refresh the shift list and choose the current assignment.',
+    )
+    expect((failure as Error).message).not.toContain('23514')
+  })
+
   it.each([
     {
       run: () => createAccountabilityOccurrence({
