@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Check,
   CheckCircle2,
   Info,
   LockKeyhole,
@@ -15,22 +14,38 @@ import {
   UsersRound,
 } from 'lucide-react'
 import {
-  setEmployeeAccessProfile,
+  setEmployeeAccessProfileWithPrimaryRole,
   type AccessControlCenter,
   type AccessControlUser,
   type AccessRoleDefinition,
   type PermissionDefinition,
 } from '../data/accessControl'
+import {
+  employeeAdditionalRoleIds,
+  employeeRoleChange,
+  employeeRoleLabels,
+  employeeRoleOptions,
+  initialEmployeeRoles,
+  type EmployeeRoleDraft,
+} from '../lib/employeeRoleSelection'
+import { EmployeeRolesField } from './EmployeeRolesField'
 import { ModalDialog } from './ModalDialog'
 import { SensitivePermissionReview } from './SensitivePermissionReview'
 
-const roleLabels: Record<string, string> = {
-  admin: 'Admin',
-  dispatcher: 'Dispatcher',
-  guard: 'Guard',
-  recruiting_licensing: 'Recruiting & Licensing',
-  scheduler: 'Scheduler',
-  supervisor: 'Supervisor',
+const employeeStatusLabels: Record<string, string> = {
+  active: 'Active',
+  inactive: 'Inactive',
+  leave: 'On leave',
+  onboarding: 'Onboarding',
+  separated: 'Separated',
+}
+
+function employeeStatusClass(status: string): string {
+  if (status === 'active') return 'status-pill status-pill--green'
+  if (status === 'onboarding') return 'status-pill status-pill--gold'
+  if (status === 'leave') return 'status-pill status-pill--warning'
+  if (status === 'separated') return 'status-pill status-pill--attention'
+  return 'status-pill'
 }
 
 function groupedPermissions(permissions: PermissionDefinition[]) {
@@ -71,6 +86,9 @@ function riskLabel(permission: PermissionDefinition): string | null {
 }
 
 interface EmployeeAccessWorkspaceProps {
+  actorEmployeeId: string | null
+  actorIsPrimaryAdmin: boolean
+  canManageAccess: boolean
   onDirtyChange: (dirty: boolean) => void
   onSelectUser: (userId: string) => void
   permissions: PermissionDefinition[]
@@ -80,6 +98,9 @@ interface EmployeeAccessWorkspaceProps {
 }
 
 export function EmployeeAccessWorkspace({
+  actorEmployeeId,
+  actorIsPrimaryAdmin,
+  canManageAccess,
   onDirtyChange,
   onSelectUser,
   permissions,
@@ -92,31 +113,57 @@ export function EmployeeAccessWorkspace({
   const [permissionSearch, setPermissionSearch] = useState('')
   const [showSelectedOnly, setShowSelectedOnly] = useState(false)
   const [openCategory, setOpenCategory] = useState<string | null>(null)
-  const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set())
-  const [selectedAdditionCodes, setSelectedAdditionCodes] = useState<Set<string>>(new Set())
+  const user = users.find((candidate) => candidate.id === selectedUserId) ?? users[0]
+  const selfReadOnly = Boolean(user && actorEmployeeId && user.id === actorEmployeeId)
+  const protectedAdminReadOnly = Boolean(user?.primaryRole === 'admin' && !actorIsPrimaryAdmin)
+  const accessReadOnly = !canManageAccess || user?.status === 'separated' || selfReadOnly || protectedAdminReadOnly
+  const accessReadOnlyReason = !canManageAccess
+    ? 'You have view-only access. Role and employee access changes require the Manage Roles & Permissions permission and recent MFA verification.'
+    : selfReadOnly
+    ? 'Your own access is read-only here. Another primary Admin must review and apply changes to your account.'
+    : protectedAdminReadOnly
+      ? 'This primary Admin account is read-only. Only another primary Admin can change its access.'
+      : user?.status === 'separated'
+        ? 'Separated employee access is read-only. Assignments remain visible for audit history and cannot be changed here.'
+        : null
+  const [selectedAdditionCodes, setSelectedAdditionCodes] = useState<Set<string>>(() => new Set(
+    user?.overrides.filter((override) => override.effect === 'grant').map((override) => override.permissionCode) ?? [],
+  ))
   const [reason, setReason] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [confirmSensitive, setConfirmSensitive] = useState(false)
-  const user = users.find((candidate) => candidate.id === selectedUserId) ?? users[0]
 
   const permissionByCode = useMemo(
     () => new Map(permissions.map((permission) => [permission.code, permission])),
     [permissions],
   )
   const roleById = useMemo(() => new Map(roles.map((role) => [role.id, role])), [roles])
-  const primaryRole = useMemo(
-    () => roles.find((role) => role.systemRole && role.baseAppRole === user?.primaryRole),
-    [roles, user?.primaryRole],
+  const roleOptions = useMemo(
+    () => user ? employeeRoleOptions(roles, user.primaryRole, user.assignedRoleIds, true) : [],
+    [roles, user],
   )
-  const assignableRoles = useMemo(
-    () => roles.filter((role) => role.id !== primaryRole?.id),
-    [primaryRole?.id, roles],
+  const initialRoleDraft = useMemo(
+    () => user ? initialEmployeeRoles(roleOptions, user.primaryRole, user.assignedRoleIds) : { ids: [], primaryRole: null },
+    [roleOptions, user],
+  )
+  const [roleDraft, setRoleDraft] = useState<EmployeeRoleDraft>(() => initialRoleDraft)
+  const roleChange = useMemo(
+    () => employeeRoleChange(initialRoleDraft, roleDraft, roleOptions, true),
+    [initialRoleDraft, roleDraft, roleOptions],
+  )
+  const selectedRoleIds = useMemo(
+    () => employeeAdditionalRoleIds(roleDraft, roleOptions),
+    [roleDraft, roleOptions],
+  )
+  const selectedPrimaryRole = useMemo(
+    () => roles.find((role) => role.systemRole && role.baseAppRole === roleDraft.primaryRole),
+    [roleDraft.primaryRole, roles],
   )
   const inheritedCodes = useMemo(() => {
-    const codes = new Set(primaryRole?.permissionCodes ?? [])
+    const codes = new Set(selectedPrimaryRole?.permissionCodes ?? [])
     selectedRoleIds.forEach((roleId) => roleById.get(roleId)?.permissionCodes.forEach((code) => codes.add(code)))
     return codes
-  }, [primaryRole?.permissionCodes, roleById, selectedRoleIds])
+  }, [roleById, selectedPrimaryRole?.permissionCodes, selectedRoleIds])
   const storedGrantCodes = useMemo(
     () => user?.overrides.filter((override) => override.effect === 'grant').map((override) => override.permissionCode) ?? [],
     [user?.overrides],
@@ -129,10 +176,7 @@ export function EmployeeAccessWorkspace({
     () => new Set(legacyDenies.map((override) => override.permissionCode)),
     [legacyDenies],
   )
-  const originalAdditionCodes = useMemo(
-    () => storedGrantCodes.filter((code) => !inheritedCodes.has(code)),
-    [inheritedCodes, storedGrantCodes],
-  )
+  const originalAdditionCodes = storedGrantCodes
   const effectiveCodes = useMemo(() => {
     const codes = new Set(inheritedCodes)
     selectedAdditionCodes.forEach((code) => codes.add(code))
@@ -161,15 +205,16 @@ export function EmployeeAccessWorkspace({
       candidate.displayName,
       candidate.username ?? '',
       candidate.jobTitle ?? '',
-      roleLabels[candidate.primaryRole],
+      employeeRoleLabels[candidate.primaryRole],
+      employeeStatusLabels[candidate.status] ?? candidate.status,
     ].some((value) => value.toLocaleLowerCase().includes(query)))
   }, [employeeSearch, users])
-  const rolesChanged = user ? !setsMatch(selectedRoleIds, user.assignedRoleIds) : false
+  const rolesChanged = roleChange.changed
   const additionsChanged = !setsMatch(selectedAdditionCodes, originalAdditionCodes)
   const hasUnsavedChanges = rolesChanged || additionsChanged
   const changeCount = (
-    [...selectedRoleIds].filter((id) => !user?.assignedRoleIds.includes(id)).length
-    + (user?.assignedRoleIds.filter((id) => !selectedRoleIds.has(id)).length ?? 0)
+    roleChange.added.length
+    + roleChange.removed.length
     + [...selectedAdditionCodes].filter((code) => !originalAdditionCodes.includes(code)).length
     + originalAdditionCodes.filter((code) => !selectedAdditionCodes.has(code)).length
   )
@@ -182,9 +227,10 @@ export function EmployeeAccessWorkspace({
   )
 
   const mutation = useMutation({
-    mutationFn: setEmployeeAccessProfile,
+    mutationFn: setEmployeeAccessProfileWithPrimaryRole,
     onSuccess: (center) => {
       updateCenter(queryClient, center)
+      void queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
       setMessage('Employee access saved and effective permissions refreshed.')
       setReason('')
       setConfirmSensitive(false)
@@ -193,23 +239,18 @@ export function EmployeeAccessWorkspace({
 
   useEffect(() => {
     if (!user) return
-    const nextRoles = new Set(user.assignedRoleIds)
-    const baseCodes = new Set(primaryRole?.permissionCodes ?? [])
-    nextRoles.forEach((roleId) => roleById.get(roleId)?.permissionCodes.forEach((code) => baseCodes.add(code)))
-    setSelectedRoleIds(nextRoles)
-    setSelectedAdditionCodes(new Set(
-      user.overrides
-        .filter((override) => override.effect === 'grant' && !baseCodes.has(override.permissionCode))
-        .map((override) => override.permissionCode),
-    ))
+    setRoleDraft(initialRoleDraft)
+    setSelectedAdditionCodes(new Set(originalAdditionCodes))
     setReason('')
     setMessage(null)
     setOpenCategory(null)
-  }, [primaryRole?.permissionCodes, roleById, user])
+  }, [initialRoleDraft, originalAdditionCodes, user])
 
   useEffect(() => {
-    setSelectedAdditionCodes((current) => new Set([...current].filter((code) => !inheritedCodes.has(code))))
-  }, [inheritedCodes])
+    setSelectedAdditionCodes((current) => new Set(
+      [...current].filter((code) => storedGrantCodes.includes(code) || !inheritedCodes.has(code)),
+    ))
+  }, [inheritedCodes, storedGrantCodes])
 
   useEffect(() => {
     if (!permissionSearch.trim()) return
@@ -235,7 +276,7 @@ export function EmployeeAccessWorkspace({
     return (
       <section className="employee-access-empty">
         <ShieldAlert aria-hidden="true" size={24} />
-        <p>No active employees are available for access management.</p>
+        <p>No employees are available for access management.</p>
       </section>
     )
   }
@@ -246,17 +287,8 @@ export function EmployeeAccessWorkspace({
     onSelectUser(userId)
   }
 
-  function toggleRole(roleId: string) {
-    setSelectedRoleIds((current) => {
-      const next = new Set(current)
-      if (next.has(roleId)) next.delete(roleId)
-      else next.add(roleId)
-      return next
-    })
-    setMessage(null)
-  }
-
   function togglePermission(code: string) {
+    if (accessReadOnly) return
     setSelectedAdditionCodes((current) => {
       const next = new Set(current)
       if (next.has(code)) next.delete(code)
@@ -267,38 +299,36 @@ export function EmployeeAccessWorkspace({
   }
 
   function resetChanges() {
-    const nextRoles = new Set(user.assignedRoleIds)
-    const baseCodes = new Set(primaryRole?.permissionCodes ?? [])
-    nextRoles.forEach((roleId) => roleById.get(roleId)?.permissionCodes.forEach((code) => baseCodes.add(code)))
-    setSelectedRoleIds(nextRoles)
-    setSelectedAdditionCodes(new Set(storedGrantCodes.filter((code) => !baseCodes.has(code))))
+    setRoleDraft(initialRoleDraft)
+    setSelectedAdditionCodes(new Set(originalAdditionCodes))
     setReason('')
     setMessage(null)
   }
 
   function saveProfile() {
-    if (!reason.trim()) return
+    if (accessReadOnly || !reason.trim() || !roleDraft.primaryRole || roleChange.error) return
     if (newlyGrantedSensitive.length > 0) {
       setConfirmSensitive(true)
       return
     }
-    mutation.mutate({ employeeId: user.id, permissionCodes: [...selectedAdditionCodes], reason: reason.trim(), roleIds: [...selectedRoleIds] })
+    mutation.mutate({ employeeId: user.id, primaryRole: roleDraft.primaryRole, permissionCodes: [...selectedAdditionCodes], reason: reason.trim(), roleIds: selectedRoleIds })
   }
 
   function confirmSave() {
-    mutation.mutate({ employeeId: user.id, permissionCodes: [...selectedAdditionCodes], reason: reason.trim(), roleIds: [...selectedRoleIds] })
+    if (accessReadOnly || !roleDraft.primaryRole || roleChange.error) return
+    mutation.mutate({ employeeId: user.id, primaryRole: roleDraft.primaryRole, permissionCodes: [...selectedAdditionCodes], reason: reason.trim(), roleIds: selectedRoleIds })
   }
 
   return (
     <section className="access-employee-mode">
-      <aside className="access-employee-directory" aria-label="Active employees">
+      <aside className="access-employee-directory" aria-label="Employees">
         <div className="access-panel-heading">
           <div><p className="eyebrow">Employees</p><h2>Choose a person</h2></div>
           <span>{users.length}</span>
         </div>
         <label className="access-search-field">
           <Search aria-hidden="true" size={18} />
-          <span className="visually-hidden">Search active employees</span>
+          <span className="visually-hidden">Search employees</span>
           <input onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Search name, username, role, or title" type="search" value={employeeSearch} />
         </label>
         <div className="access-employee-list-meta" aria-live="polite">
@@ -309,7 +339,7 @@ export function EmployeeAccessWorkspace({
           {filteredUsers.map((candidate) => (
             <button aria-current={candidate.id === user.id ? 'true' : undefined} className={candidate.id === user.id ? 'access-person access-person--selected' : 'access-person'} key={candidate.id} onClick={() => chooseUser(candidate.id)} type="button">
               <span className="access-person__initials" aria-hidden="true">{employeeInitials(candidate.displayName)}</span>
-              <span><strong>{candidate.displayName}</strong><small>@{candidate.username || 'no-login'} · {roleLabels[candidate.primaryRole]}</small></span>
+              <span><strong>{candidate.displayName}</strong><small>@{candidate.username || 'no-login'} · {employeeRoleLabels[candidate.primaryRole]} · {employeeStatusLabels[candidate.status] ?? candidate.status}</small></span>
             </button>
           ))}
           {filteredUsers.length === 0 ? <p className="permission-search-empty">No employees match that search.</p> : null}
@@ -319,12 +349,13 @@ export function EmployeeAccessWorkspace({
       <div className="access-employee-editor">
         <header className="access-employee-summary">
           <div><p className="eyebrow">Employee access</p><h2>{user.displayName}</h2><p>@{user.username || 'no-login'}{user.jobTitle ? ` · ${user.jobTitle}` : ''}</p></div>
-          <span className="status-pill status-pill--green">Active</span>
+          <span className={employeeStatusClass(user.status)}>{employeeStatusLabels[user.status] ?? user.status}</span>
         </header>
+        {accessReadOnlyReason ? <p className="form-note" role="status">{accessReadOnlyReason}</p> : null}
 
         <div className="access-summary-strip" aria-label="Employee access summary">
-          <div><strong>{roleLabels[user.primaryRole]}</strong><span>Primary role</span></div>
-          <div><strong>{selectedRoleIds.size}</strong><span>Additional roles</span></div>
+          <div><strong>{roleDraft.primaryRole ? employeeRoleLabels[roleDraft.primaryRole] : 'Required'}</strong><span>Primary workforce role</span></div>
+          <div><strong>{selectedRoleIds.length}</strong><span>Additional role memberships</span></div>
           <div><strong>{inheritedCodes.size}</strong><span>Inherited access</span></div>
           <div><strong>{selectedAdditionCodes.size}</strong><span>Individual additions</span></div>
           <div><strong>{effectiveCodes.size}</strong><span>Effective access</span></div>
@@ -332,18 +363,13 @@ export function EmployeeAccessWorkspace({
 
         <section className="access-editor-section">
           <div className="access-section-heading">
-            <div><UsersRound aria-hidden="true" size={20} /><span><strong>Additional role memberships</strong><small>The employee always keeps their primary {roleLabels[user.primaryRole]} role.</small></span></div>
-            <span>{selectedRoleIds.size} selected</span>
+            <div><UsersRound aria-hidden="true" size={20} /><span><strong>Workforce roles</strong><small>Choose one primary workforce role. Additional role memberships add access without replacing it.</small></span></div>
+            <span>{selectedRoleIds.length} additional</span>
           </div>
-          <div className="access-role-memberships">
-            {assignableRoles.map((role) => (
-              <label className={selectedRoleIds.has(role.id) ? 'access-role-check access-role-check--selected' : 'access-role-check'} key={role.id}>
-                <input checked={selectedRoleIds.has(role.id)} onChange={() => toggleRole(role.id)} type="checkbox" />
-                <span><strong>{role.name}</strong><small>{role.permissionCodes.length} permissions{role.mfaRequired ? ' · MFA required' : ''}</small></span>
-                {selectedRoleIds.has(role.id) ? <Check aria-hidden="true" size={18} /> : null}
-              </label>
-            ))}
-          </div>
+          <EmployeeRolesField canManage={!accessReadOnly} canManageAdminRole={actorIsPrimaryAdmin}
+            disabled={mutation.isPending || accessReadOnly} draft={roleDraft} error={roleChange.error}
+            onChange={(next) => { setRoleDraft(next); setMessage(null) }} options={roleOptions}
+            originalPrimaryRole={initialRoleDraft.primaryRole} readOnlyReason={accessReadOnlyReason} unavailable={false} />
         </section>
 
         <section className="access-editor-section">
@@ -389,7 +415,7 @@ export function EmployeeAccessWorkspace({
                               {tone ? <em className={`access-risk access-risk--${permission.riskLevel}`}>{tone}</em> : null}
                               {permission.requiresMfa ? <em className="access-risk access-risk--mfa">MFA</em> : null}
                             </span>
-                            <input aria-label={`${selected ? 'Remove' : 'Add'} ${permission.name}`} checked={selected} onChange={() => togglePermission(permission.code)} type="checkbox" />
+                            <input aria-label={`${selected ? 'Remove' : 'Add'} ${permission.name}`} checked={selected} disabled={accessReadOnly || mutation.isPending} onChange={() => togglePermission(permission.code)} type="checkbox" />
                           </label>
                         )
                       })}
@@ -414,7 +440,7 @@ export function EmployeeAccessWorkspace({
             <div><ShieldAlert aria-hidden="true" size={20} /><span><strong>{changeCount} unsaved change{changeCount === 1 ? '' : 's'}</strong><small>All changes are applied together and written to the audit history.</small></span></div>
             <label><span>Required audit reason</span><input onChange={(event) => setReason(event.target.value)} placeholder="Why is this access changing?" value={reason} /></label>
             <button className="access-control-button access-control-button--secondary" disabled={mutation.isPending} onClick={resetChanges} type="button">Cancel</button>
-            <button className="access-control-button access-control-button--primary" disabled={mutation.isPending || !reason.trim()} onClick={saveProfile} type="button"><Save aria-hidden="true" size={18} />{mutation.isPending ? 'Saving...' : 'Save employee permissions'}</button>
+            <button className="access-control-button access-control-button--primary" disabled={mutation.isPending || !reason.trim() || Boolean(roleChange.error)} onClick={saveProfile} type="button"><Save aria-hidden="true" size={18} />{mutation.isPending ? 'Saving...' : 'Save employee permissions'}</button>
           </div>
         ) : null}
 

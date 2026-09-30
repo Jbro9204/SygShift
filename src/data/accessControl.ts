@@ -127,6 +127,40 @@ export async function setEmployeeAccessProfile(input: {
   return parseCenter(data)
 }
 
+export async function setEmployeeAccessProfileWithPrimaryRole(input: {
+  employeeId: string
+  primaryRole: AccessControlUser['primaryRole']
+  roleIds: string[]
+  permissionCodes: string[]
+  reason: string
+}): Promise<AccessControlCenter> {
+  const { data, error } = await getSupabaseClient().rpc('set_employee_access_profile_with_primary_role', {
+    target_employee_id: input.employeeId,
+    target_permission_codes: input.permissionCodes,
+    target_primary_role: input.primaryRole,
+    target_reason: input.reason,
+    target_role_ids: input.roleIds,
+  })
+  if (error) throw new Error(error.message || 'Employee access could not be saved.')
+  return parseCenter(data)
+}
+
+export async function setEmployeeWorkforceRoles(input: {
+  employeeId: string
+  primaryRole: AccessControlUser['primaryRole']
+  roleIds: string[]
+  reason: string
+}): Promise<AccessControlCenter> {
+  const { data, error } = await getSupabaseClient().rpc('set_employee_workforce_roles', {
+    target_employee_id: input.employeeId,
+    target_primary_role: input.primaryRole,
+    target_reason: input.reason,
+    target_role_ids: input.roleIds,
+  })
+  if (error) throw new Error(error.message || 'Employee workforce roles could not be saved.')
+  return parseCenter(data)
+}
+
 export async function setEmployeePermissionOverride(input: {
   employeeId: string
   permissionCode: string

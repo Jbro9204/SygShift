@@ -14,8 +14,12 @@ export interface EmployeeRoleDraft {
   primaryRole: AppRole | null
 }
 
-// The single visible list is the union of the inherited role and explicit memberships.
-// Keep their existing storage contract; this UI must not change authorization rules.
+export function employeeAdditionalRoleIds(draft: EmployeeRoleDraft, options: EmployeeRoleOption[]): string[] {
+  const primary = options.find((role) => role.systemRole && role.baseAppRole === draft.primaryRole)
+  return draft.ids.filter((id) => id !== primary?.id)
+}
+
+// The visible list combines the one primary workforce role with explicit, additive access roles.
 export function employeeRoleOptions(
   roles: AccessRoleDefinition[], primaryRole: AppRole, assignedIds: string[], canManage: boolean,
 ): EmployeeRoleOption[] {
@@ -23,7 +27,7 @@ export function employeeRoleOptions(
   for (const [base, name] of Object.entries(employeeRoleLabels)) {
     const baseAppRole = base as AppRole
     if (!options.some((role) => role.systemRole && role.baseAppRole === baseAppRole)
-      && (!canManage || baseAppRole === primaryRole)) {
+      && baseAppRole === primaryRole) {
       options.push({ id: `system:${baseAppRole}`, name, baseAppRole, systemRole: true,
         active: !canManage, unavailable: canManage, mfaRequired: baseAppRole !== 'guard', description: null })
     }
@@ -42,22 +46,28 @@ export function employeeRoleOptions(
 
 export function initialEmployeeRoles(options: EmployeeRoleOption[], primaryRole: AppRole, assignedIds: string[]): EmployeeRoleDraft {
   const primary = options.find((role) => role.systemRole && role.baseAppRole === primaryRole)
-  return { primaryRole, ids: [...new Set([...assignedIds, ...(primary ? [primary.id] : [])])] }
+  const additionalIds = employeeAdditionalRoleIds({ primaryRole, ids: assignedIds }, options)
+  return { primaryRole, ids: [...new Set([...(primary ? [primary.id] : []), ...additionalIds])] }
+}
+
+export function makeEmployeeRolePrimary(draft: EmployeeRoleDraft, option: EmployeeRoleOption,
+  options: EmployeeRoleOption[], canManage: boolean): EmployeeRoleDraft {
+  if (!canManage || !option.systemRole || !option.baseAppRole || !option.active || option.unavailable) return draft
+  const oldPrimary = options.find((role) => role.systemRole && role.baseAppRole === draft.primaryRole)
+  const retainedIds = draft.ids.filter((id) => id !== oldPrimary?.id && id !== option.id)
+  return {
+    primaryRole: option.baseAppRole,
+    ids: [option.id, ...retainedIds],
+  }
 }
 
 export function toggleEmployeeRole(draft: EmployeeRoleDraft, option: EmployeeRoleOption,
-  options: EmployeeRoleOption[], canManage: boolean): EmployeeRoleDraft {
-  if (!canManage) {
-    // Limited profile editors retain their existing single operational-role authority.
-    if (!option.systemRole || !option.baseAppRole || option.baseAppRole === 'admin') return draft
-    return { primaryRole: option.baseAppRole, ids: [option.id] }
-  }
+  _options: EmployeeRoleOption[], canManage: boolean): EmployeeRoleDraft {
+  if (!canManage) return draft
+  if (option.systemRole && option.baseAppRole === draft.primaryRole) return draft
+  if ((!option.active || option.unavailable) && !draft.ids.includes(option.id)) return draft
   const ids = draft.ids.includes(option.id) ? draft.ids.filter((id) => id !== option.id) : [...draft.ids, option.id]
-  const operationalRoles = options.filter((role) => ids.includes(role.id) && role.systemRole && role.baseAppRole)
-  const primaryRole = operationalRoles.some((role) => role.baseAppRole === draft.primaryRole)
-    ? draft.primaryRole
-    : operationalRoles[0]?.baseAppRole ?? null
-  return { ids, primaryRole }
+  return { ids, primaryRole: draft.primaryRole }
 }
 
 export function employeeRoleChange(initial: EmployeeRoleDraft, draft: EmployeeRoleDraft,
@@ -70,16 +80,17 @@ export function employeeRoleChange(initial: EmployeeRoleDraft, draft: EmployeeRo
   if (changed && !draft.primaryRole) {
     error = 'Keep one scheduling role selected, such as Guard or Supervisor. Department roles can be selected alongside it in this same list.'
   } else if (changed && canManage && draft.ids.some((id) => {
+    if (initial.ids.includes(id)) return false
     const role = options.find((option) => option.id === id)
     return !role || !role.active || role.unavailable
   })) {
-    error = 'An unavailable role is still selected. Review and remove that assignment before changing roles, or cancel the role changes to keep existing access.'
+    error = 'An unavailable role cannot be newly assigned. Refresh the role library or choose an active role.'
   }
-  const primary = options.find((role) => role.systemRole && role.baseAppRole === draft.primaryRole)
   return {
     changed, added, removed, error,
-    // Omit memberships on no-op/profile-only saves. Even legacy redundant assignments stay intact.
-    accessRoleIds: changed && canManage ? draft.ids.filter((id) => id !== primary?.id) : undefined,
+    // Primary workforce roles live on employees.role, never in additive role memberships.
+    // Omit memberships on no-op/profile-only saves so unrelated profile edits stay isolated.
+    accessRoleIds: changed && canManage ? employeeAdditionalRoleIds(draft, options) : undefined,
     mfaRequired: options.some((role) => draft.ids.includes(role.id) && role.mfaRequired),
   }
 }

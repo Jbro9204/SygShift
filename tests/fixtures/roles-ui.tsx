@@ -15,8 +15,9 @@ function Fixture() {
   const [result, setResult] = useState('No changes saved')
   return <main style={{ margin: '24px auto', maxWidth: 1040, padding: '0 16px' }}>
     <h1>Manage employee</h1>
-    <EmployeeForm accessRoles={employeeRoleFixtures} accessRolesReady assignedAccessRoleIds={['hr-manager-role']}
-      canEditAdminRole canEditBasic canSeparate employee={employeeRoleTestUser} onCancel={() => undefined}
+    <EmployeeForm accessRoles={employeeRoleFixtures} accessRolesReady actorEmployeeId="fixture-admin"
+      actorIsPrimaryAdmin assignedAccessRoleIds={['hr-manager-role']} canEditAdminRole canEditBasic
+      canSeparate canViewAdminRoles employee={employeeRoleTestUser} onCancel={() => undefined}
       onSubmit={(payload: EmployeeMutationInput) => setResult(JSON.stringify(payload))} pending={false} />
     <output aria-label="Saved role result" style={{ overflowWrap: 'anywhere' }}>{result}</output>
   </main>

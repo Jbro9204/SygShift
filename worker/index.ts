@@ -2159,6 +2159,35 @@ function requireSessionPermission(context: SessionContext, permission: string): 
   }
 }
 
+const workforceRoles = new Set<SessionContext['role']>([
+  'guard',
+  'dispatcher',
+  'scheduler',
+  'recruiting_licensing',
+  'supervisor',
+  'admin',
+])
+
+function requiredWorkforceRole(value: unknown): SessionContext['role'] {
+  const role = requiredText(value, 'Role', 40)
+  if (!workforceRoles.has(role as SessionContext['role'])) {
+    throw new ApiError('invalid_employee_role', 422, 'Choose a supported employee role.')
+  }
+  return role as SessionContext['role']
+}
+
+function requireWorkforceRoleAssignment(context: SessionContext, targetRole: SessionContext['role']): void {
+  if (targetRole === 'guard') return
+  requireSessionPermission(context, 'admin.roles.manage')
+  if (targetRole === 'admin' && context.role !== 'admin') {
+    throw new ApiError(
+      'primary_admin_required',
+      403,
+      'Only an employee whose primary workforce role is Admin can assign the Admin role.',
+    )
+  }
+}
+
 const DOCUMENT_STUDIO_ACCESS_PERMISSION = 'documents.workspace.view'
 
 function requireDocumentStudioAccess(context: SessionContext): void {
@@ -5396,11 +5425,9 @@ async function handleHrRecruitingApi(
     const body = await readJsonBody(request)
     const applicationId = requiredText(body.applicationId, 'Application', 36)
     if (!validUuid(applicationId)) throw new ApiError('invalid_application', 422, 'The application is invalid.')
-    const role = requiredText(body.role, 'Role', 40)
+    const role = requiredWorkforceRole(body.role)
     const employmentType = requiredText(body.employmentType, 'Employment type', 20)
-    if (!['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'].includes(role)) {
-      throw new ApiError('invalid_employee_role', 422, 'Choose a supported employee role.')
-    }
+    requireWorkforceRoleAssignment(session.context, role)
     if (!['hourly', 'salary', 'flex'].includes(employmentType)) {
       throw new ApiError('invalid_employment_type', 422, 'Choose hourly, salary, or flex employment.')
     }
@@ -5480,6 +5507,9 @@ async function handleHrOnboardingApi(
     const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
       ? body.payload as Record<string, unknown>
       : {}
+    const role = requiredWorkforceRole(payload.role ?? 'guard')
+    requireWorkforceRoleAssignment(session.context, role)
+    payload.role = role
     const employeeTimeZone = requiredText(payload.timeZone, 'Employee time zone', 64)
     if (!['America/New_York', 'America/Chicago', 'America/Denver', 'America/Phoenix', 'America/Los_Angeles'].includes(employeeTimeZone)) {
       throw new ApiError('invalid_employee_time_zone', 422, 'Choose Eastern, Central, Mountain, Arizona, or Pacific Time.')

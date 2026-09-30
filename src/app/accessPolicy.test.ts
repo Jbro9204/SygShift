@@ -92,6 +92,8 @@ describe('central access policy', () => {
     expect(canAccessRoute('/administration/access', session([]))).toBe(false)
     expect(canAccessRoute('/access-control', session(['admin.users.view']))).toBe(false)
     expect(canAccessRoute('/users', session(['admin.roles.view']))).toBe(false)
+    expect(canAccessRoute('/users', session(['admin.roles.manage']))).toBe(false)
+    expect(canAccessRoute('/users', session(['admin.users.view', 'admin.roles.manage']))).toBe(true)
   })
 
   it('keeps time workspace links aligned with their exact destination permissions', () => {

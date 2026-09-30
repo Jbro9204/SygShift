@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { HrisOnboardingPage } from './HrisOnboardingPage'
@@ -32,6 +32,7 @@ describe('HR onboarding wizard', () => {
   beforeEach(() => {
     getSessionContext.mockReset().mockResolvedValue({
       permissions: ['hr.onboarding.manage'],
+      role: 'supervisor',
     })
     getHrOnboardingWorkspace.mockReset().mockResolvedValue({
       cases: [],
@@ -95,5 +96,22 @@ describe('HR onboarding wizard', () => {
     expect(timeZone).toHaveValue('')
     expect(screen.getByText(/Suggested for NC: Eastern Time/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+  })
+
+  it('keeps Guard available while disabling unauthorized elevated pre-hire roles', async () => {
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Start onboarding' }))
+    fireEvent.change(screen.getByLabelText('Legal first name'), { target: { value: 'New' } })
+    fireEvent.change(screen.getByLabelText('Legal last name'), { target: { value: 'Guard' } })
+    fireEvent.change(screen.getByLabelText('Personal email'), { target: { value: 'new.guard@example.invalid' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+
+    const role = screen.getByRole('combobox', { name: /Schedule & timekeeping role/ })
+    expect(role).toHaveValue('guard')
+    expect(within(role).getByRole('option', { name: 'Guard' })).toBeEnabled()
+    expect(within(role).getByRole('option', { name: 'Supervisor' })).toBeDisabled()
+    expect(within(role).getByRole('option', { name: 'Admin' })).toBeDisabled()
+    expect(screen.getByText(/Assigning another workforce role requires Manage roles permission/)).toBeInTheDocument()
   })
 })

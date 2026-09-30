@@ -50,6 +50,8 @@ import type { SecurityKeySummary } from '../data/securityKeys'
 import { getSessionContext } from '../data/auth'
 import {
   getAccessControlCenter,
+  setEmployeeWorkforceRoles,
+  type AccessControlCenter,
   type AccessRoleDefinition,
 } from '../data/accessControl'
 import { preferredEmployeeDeliveryEmail } from '../lib/emailRecipients'
@@ -158,6 +160,20 @@ function employeeFormPayload(
   }
 }
 
+function employeeProfileFieldsChanged(employee: AdminUser, payload: EmployeeMutationInput): boolean {
+  return (employee.employeeNumber ?? null) !== (payload.employeeNumber ?? null)
+    || (employee.jobTitle ?? null) !== (payload.jobTitle ?? null)
+    || employee.firstName !== payload.firstName
+    || (employee.middleName ?? null) !== (payload.middleName ?? null)
+    || employee.lastName !== payload.lastName
+    || employee.employmentType !== payload.employmentType
+    || employee.timeZone !== payload.timeZone
+    || employee.status !== payload.status
+    || (employee.mobilePhone ?? null) !== (payload.mobilePhone ?? null)
+    || (employee.personalEmail ?? null) !== (payload.personalEmail ?? null)
+    || (employee.companyEmail ?? null) !== (payload.companyEmail ?? null)
+}
+
 function AccountStatusBadge({ user }: { user: AdminUser }) {
   if (user.accountStatus === 'not_created') {
     return <span className="account-status account-status--missing">No login</span>
@@ -229,9 +245,12 @@ function AccountActivityPanel({ user }: { user: AdminUser }) {
 export function EmployeeForm({
   accessRoles,
   accessRolesReady,
+  actorEmployeeId,
+  actorIsPrimaryAdmin,
   assignedAccessRoleIds = [],
   canEditAdminRole,
   canEditBasic,
+  canViewAdminRoles,
   canSeparate,
   employee,
   formId,
@@ -243,39 +262,84 @@ export function EmployeeForm({
 }: {
   accessRoles: AccessRoleDefinition[]
   accessRolesReady: boolean
+  actorEmployeeId: string | null
+  actorIsPrimaryAdmin: boolean
   assignedAccessRoleIds?: string[]
   canEditAdminRole: boolean
   canEditBasic: boolean
+  canViewAdminRoles: boolean
   canSeparate: boolean
   employee?: AdminUser
   formId?: string
   onDirty?: () => void
   onCancel: () => void
-  onSubmit: (payload: EmployeeMutationInput) => void
+  onSubmit: (payload: EmployeeMutationInput, roleChangeReason?: string) => void
   pending: boolean
   showActions?: boolean
 }) {
   const [roleDraft, setRoleDraft] = useState<EmployeeRoleDraft | null>(null)
   const [roleError, setRoleError] = useState<string | null>(null)
   const [reviewPayload, setReviewPayload] = useState<EmployeeMutationInput | null>(null)
-  const options = employeeRoleOptions(accessRoles, employee?.role ?? 'guard', assignedAccessRoleIds, canEditAdminRole)
-  const initialRoles = initialEmployeeRoles(options, employee?.role ?? 'guard', canEditAdminRole ? assignedAccessRoleIds : [])
+  const [roleChangeReason, setRoleChangeReason] = useState('')
+  const selfRoleReadOnly = Boolean(employee?.id && actorEmployeeId && employee.id === actorEmployeeId)
+  const protectedAdminRoleReadOnly = Boolean(employee?.role === 'admin' && !actorIsPrimaryAdmin)
+  const separatedRoleReadOnly = employee?.status === 'separated'
+  const canManageRoles = canEditAdminRole && !selfRoleReadOnly && !protectedAdminRoleReadOnly && !separatedRoleReadOnly
+  const roleReadOnlyReason = selfRoleReadOnly
+    ? 'Your own role assignments are read-only. Another primary Admin must review and apply access changes.'
+    : protectedAdminRoleReadOnly
+      ? 'This primary Admin role is read-only. Only another primary Admin can change its assignments.'
+      : separatedRoleReadOnly
+        ? 'Separated employee role assignments are read-only and retained for audit history.'
+        : null
+  const options = employeeRoleOptions(accessRoles, employee?.role ?? 'guard', assignedAccessRoleIds, canViewAdminRoles)
+  const initialRoles = initialEmployeeRoles(options, employee?.role ?? 'guard', canViewAdminRoles ? assignedAccessRoleIds : [])
   const selectedRoles = roleDraft ?? initialRoles
-  const roleChange = employeeRoleChange(initialRoles, selectedRoles, options, canEditAdminRole)
-  const canEditThisProfile = canEditBasic && !pending
-    && (canEditAdminRole || employee?.role !== 'admin')
+  const roleChange = employeeRoleChange(initialRoles, selectedRoles, options, canManageRoles)
+  const canEditProfileFields = canEditBasic && !pending
+    && (actorIsPrimaryAdmin || employee?.role !== 'admin')
     && (canSeparate || employee?.status !== 'separated')
+  const canSubmitForm = employee ? canEditProfileFields || canManageRoles : canEditProfileFields
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!canEditThisProfile || pending) return
+    if (!canSubmitForm || pending) return
     if (roleChange.error) { setRoleError(roleChange.error); return }
-    if (roleChange.changed && canEditAdminRole && !accessRolesReady) {
+    if (!canEditProfileFields && !roleChange.changed) return
+    if (roleChange.changed && canManageRoles && !accessRolesReady) {
       setRoleError('The role library must reload before role changes can be saved. Your edits have not been submitted.')
       return
     }
-    const payload = employeeFormPayload(event.currentTarget, employee?.id, employee?.preferredName)
-    if (roleChange.changed) setReviewPayload(payload)
+    const payload = canEditProfileFields
+      ? employeeFormPayload(event.currentTarget, employee?.id, employee?.preferredName)
+      : employee && selectedRoles.primaryRole
+        ? {
+            accessRoleIds: roleChange.accessRoleIds,
+            companyEmail: employee.companyEmail,
+            employeeId: employee.id,
+            employeeNumber: employee.employeeNumber,
+            employmentType: employee.employmentType,
+            firstName: employee.firstName,
+            jobTitle: employee.jobTitle,
+            lastName: employee.lastName,
+            middleName: employee.middleName,
+            mobilePhone: employee.mobilePhone,
+            personalEmail: employee.personalEmail,
+            preferredName: employee.preferredName,
+            role: selectedRoles.primaryRole,
+            status: employee.status,
+            timeZone: employee.timeZone,
+          }
+        : null
+    if (!payload) return
+    if (employee && roleChange.changed && employeeProfileFieldsChanged(employee, payload)) {
+      setRoleError('Save profile detail changes first, then apply the workforce role change with its own audit reason.')
+      return
+    }
+    if (roleChange.changed) {
+      setRoleChangeReason('')
+      setReviewPayload(payload)
+    }
     else onSubmit(payload)
   }
 
@@ -288,27 +352,27 @@ export function EmployeeForm({
         {roleChange.accessRoleIds.map((roleId) => <input key={roleId} name="accessRoleId" type="hidden" value={roleId} />)}
       </> : null}
       <div className="form-grid form-grid--three">
-        <label><span>First name</span><input defaultValue={employee?.firstName} disabled={!canEditThisProfile} name="firstName" required /></label>
-        <label><span>Middle name</span><input defaultValue={employee?.middleName ?? ''} disabled={!canEditThisProfile} name="middleName" /></label>
-        <label><span>Last name</span><input defaultValue={employee?.lastName} disabled={!canEditThisProfile} name="lastName" required /></label>
+        <label><span>First name</span><input defaultValue={employee?.firstName} disabled={!canEditProfileFields} name="firstName" required /></label>
+        <label><span>Middle name</span><input defaultValue={employee?.middleName ?? ''} disabled={!canEditProfileFields} name="middleName" /></label>
+        <label><span>Last name</span><input defaultValue={employee?.lastName} disabled={!canEditProfileFields} name="lastName" required /></label>
       </div>
       <div className="form-grid form-grid--two">
         <label>
           <span>Employee ID</span>
           <input
             defaultValue={employee?.employeeNumber ?? ''}
-            disabled={!canEditThisProfile}
+            disabled={!canEditProfileFields}
             name="employeeNumber"
             placeholder="Assigned automatically"
             readOnly
           />
         </label>
-        <label><span>Job title</span><input defaultValue={employee?.jobTitle ?? ''} disabled={!canEditThisProfile} maxLength={140} name="jobTitle" placeholder="Guard, Owner, IT and Business Development Engineer..." /></label>
+        <label><span>Job title</span><input defaultValue={employee?.jobTitle ?? ''} disabled={!canEditProfileFields} maxLength={140} name="jobTitle" placeholder="Guard, Owner, IT and Business Development Engineer..." /></label>
       </div>
       <div className="form-grid form-grid--three">
         <label>
           <span>Employment</span>
-          <select defaultValue={employee?.employmentType ?? 'hourly'} disabled={!canEditThisProfile} name="employmentType">
+          <select defaultValue={employee?.employmentType ?? 'hourly'} disabled={!canEditProfileFields} name="employmentType">
             <option value="hourly">Hourly</option>
             <option value="salary">Salary</option>
             <option value="flex">Flex</option>
@@ -316,7 +380,7 @@ export function EmployeeForm({
         </label>
         <label>
           <span>Status</span>
-          <select defaultValue={employee?.status ?? 'active'} disabled={!canEditThisProfile} name="status">
+          <select defaultValue={employee?.status ?? 'active'} disabled={!canEditProfileFields} name="status">
             <option value="active">Active</option>
             <option value="onboarding">Onboarding</option>
             <option value="leave">On leave</option>
@@ -326,26 +390,28 @@ export function EmployeeForm({
         </label>
         <label>
           <span>Employee time zone</span>
-          <select defaultValue={employee?.timeZone ?? ''} disabled={!canEditThisProfile} name="timeZone" required>
+          <select defaultValue={employee?.timeZone ?? ''} disabled={!canEditProfileFields} name="timeZone" required>
             {!employee ? <option disabled value="">Choose the employee's time zone</option> : null}
             {continentalUsTimeZones.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
         </label>
-        <label><span>Mobile phone</span><input defaultValue={employee?.mobilePhone ?? ''} disabled={!canEditThisProfile} name="mobilePhone" /></label>
+        <label><span>Mobile phone</span><input defaultValue={employee?.mobilePhone ?? ''} disabled={!canEditProfileFields} name="mobilePhone" /></label>
       </div>
       <div className="form-grid form-grid--two">
-        <label><span>Personal email</span><input defaultValue={employee?.personalEmail ?? ''} disabled={!canEditThisProfile} name="personalEmail" type="email" /></label>
-        <label><span>Company email</span><input defaultValue={employee?.companyEmail ?? ''} disabled={!canEditThisProfile} name="companyEmail" type="email" /></label>
+        <label><span>Personal email</span><input defaultValue={employee?.personalEmail ?? ''} disabled={!canEditProfileFields} name="personalEmail" type="email" /></label>
+        <label><span>Company email</span><input defaultValue={employee?.companyEmail ?? ''} disabled={!canEditProfileFields} name="companyEmail" type="email" /></label>
       </div>
-      <EmployeeRolesField options={options} draft={selectedRoles} canManage={canEditAdminRole}
-        disabled={!canEditThisProfile || pending} unavailable={canEditAdminRole && !accessRolesReady}
-        error={roleError} onChange={(next) => { setRoleDraft(next); setRoleError(null); onDirty?.() }} />
+      <EmployeeRolesField options={options} draft={selectedRoles} canManage={canManageRoles}
+        canManageAdminRole={actorIsPrimaryAdmin}
+        disabled={!canManageRoles || pending} unavailable={canViewAdminRoles && !accessRolesReady}
+        error={roleError} originalPrimaryRole={initialRoles.primaryRole}
+        onChange={(next) => { setRoleDraft(next); setRoleError(null); onDirty?.() }} readOnlyReason={roleReadOnlyReason} />
       {showActions ? (
         <div className="modal-actions">
           <button className="secondary-button" onClick={onCancel} type="button">Cancel</button>
-          <button className="primary-action" disabled={pending || !canEditThisProfile} type="submit">
+          <button className="primary-action" disabled={pending || !canSubmitForm} type="submit">
             {pending ? 'Saving…' : employee ? 'Save employee' : 'Create employee'}
           </button>
         </div>
@@ -356,13 +422,14 @@ export function EmployeeForm({
         <div className="employee-role-review__body">
           {roleChange.added.length ? <section aria-label="Roles to add"><h3>Add roles</h3><ul>{roleChange.added.map((role) => <li key={role.id}>{role.name}{role.mfaRequired ? ' · MFA required' : ''}</li>)}</ul></section> : null}
           {roleChange.removed.length ? <section aria-label="Roles to remove"><h3>Remove roles</h3><ul>{roleChange.removed.map((role) => <li key={role.id}>{role.name}</li>)}</ul></section> : null}
-          <p>Scheduling default: <strong>{roleLabels[reviewPayload.role]}</strong>.</p>
+          <p>Primary workforce role: <strong>{roleLabels[reviewPayload.role]}</strong>.</p>
           <p>{roleChange.mfaRequired ? 'The selected roles require MFA. Existing verification rules remain in force.' : 'Existing MFA enrollment is not reset or removed by this change.'}</p>
           <p>Individual permission exceptions and historical employee records are not changed.</p>
+          {employee ? <label><span>Required audit reason</span><input onChange={(event) => setRoleChangeReason(event.target.value)} placeholder="Why is this employee's role changing?" value={roleChangeReason} /></label> : null}
         </div>
         <div className="modal-actions">
           <button autoFocus className="secondary-button" onClick={() => setReviewPayload(null)} type="button">Back to editing</button>
-          <button className="primary-action" disabled={pending || !canEditThisProfile || (canEditAdminRole && !accessRolesReady)} onClick={() => { setReviewPayload(null); onSubmit(reviewPayload) }} type="button">Confirm &amp; save employee</button>
+          <button className="primary-action" disabled={pending || !canSubmitForm || Boolean(employee && !roleChangeReason.trim()) || (canManageRoles && !accessRolesReady)} onClick={() => { setReviewPayload(null); onSubmit(reviewPayload, roleChangeReason.trim() || undefined) }} type="button">Confirm &amp; save employee</button>
         </div>
       </ModalDialog>
     ) : null}
@@ -373,10 +440,13 @@ export function EmployeeForm({
 function ManageUserModal({
   accessRoles,
   accessRolesReady,
+  actorEmployeeId,
+  actorIsPrimaryAdmin,
   assignedAccessRoleIds,
   canDeleteUsers,
   canEditAdminRole,
   canEditBasic,
+  canViewAdminRoles,
   canManageLogin,
   canResetPassword,
   canSendNewUserInvites,
@@ -386,10 +456,13 @@ function ManageUserModal({
 }: {
   accessRoles: AccessRoleDefinition[]
   accessRolesReady: boolean
+  actorEmployeeId: string | null
+  actorIsPrimaryAdmin: boolean
   assignedAccessRoleIds: string[]
   canDeleteUsers: boolean
   canEditAdminRole: boolean
   canEditBasic: boolean
+  canViewAdminRoles: boolean
   canManageLogin: boolean
   canResetPassword: boolean
   canSendNewUserInvites: boolean
@@ -424,13 +497,29 @@ function ManageUserModal({
   })
 
   const updateMutation = useMutation({
-    mutationFn: (payload: EmployeeMutationInput) => updateEmployee({ ...payload, employeeId: employee.id }),
-    onSuccess: async (updatedEmployee) => {
+    mutationFn: async ({ payload, roleChangeReason }: { payload: EmployeeMutationInput; roleChangeReason?: string }) => {
+      if (payload.accessRoleIds !== undefined) {
+        if (!roleChangeReason?.trim()) throw new Error('Enter an audit reason for this role change.')
+        const center = await setEmployeeWorkforceRoles({
+          employeeId: employee.id,
+          primaryRole: payload.role,
+          reason: roleChangeReason.trim(),
+          roleIds: payload.accessRoleIds,
+        })
+        return { center, updatedEmployee: null }
+      }
+      const updatedEmployee = await updateEmployee({ ...payload, employeeId: employee.id })
+      return { center: null, updatedEmployee }
+    },
+    onSuccess: async ({ center, updatedEmployee }: { center: AccessControlCenter | null; updatedEmployee: AdminUser | null }) => {
       setProfileDirty(false)
-      setProfileSaveMessage('Employee profile saved.')
-      queryClient.setQueryData<AdminUserDirectory>(['admin-user-directory'], (current) =>
-        replaceDirectoryUser(current, updatedEmployee),
-      )
+      setProfileSaveMessage(center ? 'Employee roles saved.' : 'Employee profile saved.')
+      if (updatedEmployee) {
+        queryClient.setQueryData<AdminUserDirectory>(['admin-user-directory'], (current) =>
+          replaceDirectoryUser(current, updatedEmployee),
+        )
+      }
+      if (center) queryClient.setQueryData(['access-control-center'], center)
       await queryClient.invalidateQueries({ queryKey: ['admin-user-directory'], refetchType: 'active' })
       await queryClient.invalidateQueries({ queryKey: ['access-control-center'], refetchType: 'active' })
     },
@@ -518,9 +607,14 @@ function ManageUserModal({
     assignedAccessRoleIds.join(','),
   ].join('|')
   const profileFormId = `employee-profile-${employee.id}`
-  const canEditThisProfile = canEditBasic
-    && (canEditAdminRole || employee.role !== 'admin')
+  const canEditProfileFields = canEditBasic
+    && (actorIsPrimaryAdmin || employee.role !== 'admin')
     && (canSeparate || employee.status !== 'separated')
+  const canManageEmployeeRoles = canEditAdminRole
+    && employee.id !== actorEmployeeId
+    && employee.status !== 'separated'
+    && (actorIsPrimaryAdmin || employee.role !== 'admin')
+  const canSaveEmployeeForm = canEditProfileFields || canManageEmployeeRoles
 
   function closeWorkspace() {
     if (profileDirty && !window.confirm('Discard the unsaved employee profile changes?')) return
@@ -594,9 +688,12 @@ function ManageUserModal({
             <EmployeeForm
               accessRoles={accessRoles}
               accessRolesReady={accessRolesReady}
+              actorEmployeeId={actorEmployeeId}
+              actorIsPrimaryAdmin={actorIsPrimaryAdmin}
               assignedAccessRoleIds={assignedAccessRoleIds}
               canEditAdminRole={canEditAdminRole}
               canEditBasic={canEditBasic}
+              canViewAdminRoles={canViewAdminRoles}
               canSeparate={canSeparate}
               employee={employee}
               formId={profileFormId}
@@ -606,7 +703,7 @@ function ManageUserModal({
                 setProfileDirty(true)
                 setProfileSaveMessage(null)
               }}
-              onSubmit={(payload) => updateMutation.mutate(payload)}
+              onSubmit={(payload, roleChangeReason) => updateMutation.mutate({ payload, roleChangeReason })}
               pending={updateMutation.isPending}
               showActions={false}
             />
@@ -615,6 +712,8 @@ function ManageUserModal({
             <p className="form-note">
               {canEditBasic
                 ? 'Credential updates are handled in Directory so schedulers can maintain qualification records without account-security access.'
+                : canEditAdminRole
+                  ? 'Profile details are read-only. You can promote, demote, and update role memberships with a required audit reason.'
                 : 'This access level can review user records, but cannot edit employee profile details.'}
             </p>
             {canDeleteUsers ? (
@@ -822,7 +921,7 @@ function ManageUserModal({
             <span className={profileDirty ? 'is-dirty' : ''}>{profileDirty ? 'Unsaved profile changes' : profileSaveMessage ?? 'Profile is up to date'}</span>
             <div>
               <button className="secondary-button" disabled={!profileDirty || updateMutation.isPending} onClick={discardProfileChanges} type="button">Cancel</button>
-              <button className="primary-action" disabled={!profileDirty || updateMutation.isPending || !canEditThisProfile} form={profileFormId} type="submit">{updateMutation.isPending ? 'Saving…' : 'Save employee'}</button>
+              <button className="primary-action" disabled={!profileDirty || updateMutation.isPending || !canSaveEmployeeForm} form={profileFormId} type="submit">{updateMutation.isPending ? 'Saving…' : 'Save employee'}</button>
             </div>
           </footer>
         ) : null}
@@ -970,9 +1069,10 @@ export function UserAdminPage() {
   const canSeparate = hasPermission('admin.users.separate')
   const canDeleteUsers = hasPermission('admin.users.delete')
   const canEditAdminRole = hasPermission('admin.roles.manage')
+  const canViewAdminRoles = canEditAdminRole || hasPermission('admin.roles.view')
 
   const accessControlQuery = useQuery({
-    enabled: canEditAdminRole,
+    enabled: canViewAdminRoles,
     queryFn: getAccessControlCenter,
     queryKey: ['access-control-center'],
   })
@@ -1066,18 +1166,29 @@ export function UserAdminPage() {
   const selectedUser = selectedUserId ? users.find((user) => user.id === selectedUserId) ?? null : null
   const selectedAccessUser = selectedUserId ? accessUsersById.get(selectedUserId) : undefined
 
-  const roleFilterOptions = accessRoles.length
+  const roleFilterOptions = accessControlQuery.isSuccess && accessRoles.length
     ? accessRoles.map((accessRole) => ({
       label: accessRole.name,
       value: `role:${accessRole.id}`,
     }))
     : Object.entries(roleLabels).map(([baseRole, label]) => ({ label, value: `base:${baseRole}` }))
 
-  function displayedRoles(user: AdminUser): string {
-    const assignedNames = accessUsersById.get(user.id)?.assignedRoleIds
-      .map((roleId) => accessRoles.find((accessRole) => accessRole.id === roleId)?.name)
-      .filter((name): name is string => Boolean(name)) ?? []
-    return assignedNames.length ? assignedNames.join(', ') : roleLabels[user.role]
+  function additionalRoleNames(user: AdminUser): string[] | null {
+    if (!accessControlQuery.isSuccess) return null
+    const accessUser = accessUsersById.get(user.id)
+    if (!accessUser) return null
+    const primarySystemRoleIds = new Set(accessRoles
+      .filter((accessRole) => accessRole.systemRole && accessRole.baseAppRole === user.role)
+      .map((accessRole) => accessRole.id))
+    return [...new Set(accessUser.assignedRoleIds
+      .filter((roleId) => !primarySystemRoleIds.has(roleId))
+      .map((roleId) => accessRoles.find((accessRole) => accessRole.id === roleId)?.name ?? 'Unavailable assigned role'))]
+  }
+
+  function additionalRoleLabel(user: AdminUser): string {
+    const names = additionalRoleNames(user)
+    if (names === null) return 'Not available'
+    return names.join(', ') || 'None'
   }
 
   return (
@@ -1088,7 +1199,7 @@ export function UserAdminPage() {
           <h1>User Accounts</h1>
           <p className="page-summary">
             Manage employee account records, permanent usernames, login status, MFA, onboarding,
-            and recovery. Role and permission design remains in Roles &amp; Permissions.
+            recovery, and workforce roles. Fine-grained permission design remains in Roles &amp; Permissions.
           </p>
         </div>
         <div className="user-admin-intro__actions">
@@ -1183,7 +1294,8 @@ export function UserAdminPage() {
                       <small>{user.companyEmail || user.personalEmail || user.mobilePhone || 'No contact on file'}</small>
                     </div>
                     <div role="cell" className="user-admin-role-employment" data-label="Access & Employment">
-                      <span className="plain-value">{displayedRoles(user)}</span>
+                      <span className="plain-value">Primary: {roleLabels[user.role]}</span>
+                      <small>Additional: {additionalRoleLabel(user)}</small>
                       <small>{employmentLabels[user.employmentType]} · {statusLabels[user.status]}</small>
                     </div>
                     <div role="cell" className="user-admin-login-state" data-label="Login">
@@ -1200,7 +1312,7 @@ export function UserAdminPage() {
                     </div>
                     <div role="cell" data-label="Manage">
                       <button className="secondary-button secondary-button--small" onClick={() => setSelectedUserId(user.id)} type="button">
-                        <UserCog aria-hidden="true" size={17} /> {canEditBasic || canManageLogin || canResetPassword || canSendNewUserInvites || canSeparate || canDeleteUsers ? 'Manage' : 'View'}
+                        <UserCog aria-hidden="true" size={17} /> {canEditBasic || canEditAdminRole || canManageLogin || canResetPassword || canSendNewUserInvites || canSeparate || canDeleteUsers ? 'Manage' : 'View'}
                       </button>
                     </div>
                   </div>
@@ -1262,8 +1374,11 @@ export function UserAdminPage() {
           <EmployeeForm
             accessRoles={accessRoles}
             accessRolesReady={accessRolesReady}
+            actorEmployeeId={sessionContext?.employeeId ?? null}
+            actorIsPrimaryAdmin={sessionContext?.role === 'admin'}
             canEditAdminRole={canEditAdminRole}
             canEditBasic={canEditBasic}
+            canViewAdminRoles={canViewAdminRoles}
             canSeparate={canSeparate}
             onCancel={() => setCreating(false)}
             onSubmit={(payload) => createMutation.mutate(payload)}
@@ -1289,10 +1404,13 @@ export function UserAdminPage() {
         <ManageUserModal
           accessRoles={accessRoles}
           accessRolesReady={accessRolesReady}
+          actorEmployeeId={sessionContext?.employeeId ?? null}
+          actorIsPrimaryAdmin={sessionContext?.role === 'admin'}
           assignedAccessRoleIds={selectedAccessUser?.assignedRoleIds ?? []}
           canDeleteUsers={Boolean(canDeleteUsers)}
           canEditAdminRole={canEditAdminRole}
           canEditBasic={canEditBasic}
+          canViewAdminRoles={canViewAdminRoles}
           canManageLogin={canManageLogin}
           canResetPassword={canResetPassword}
           canSendNewUserInvites={canSendNewUserInvites}

@@ -28,6 +28,7 @@ import {
   type AccessRoleDefinition,
   type PermissionDefinition,
 } from '../data/accessControl'
+import { getSessionContext } from '../data/auth'
 import { applyPermissionCategorySelection } from '../lib/permissionSelection'
 
 const roleLabels: Record<string, string> = {
@@ -61,10 +62,12 @@ function keepHomeExperienceValid(current: Set<string>): Set<string> {
 }
 
 function HomeExperienceSelector({
+  disabled = false,
   lockedToOperations = false,
   onChange,
   value,
 }: {
+  disabled?: boolean
   lockedToOperations?: boolean
   onChange: (experience: HomeExperience) => void
   value: HomeExperience
@@ -77,7 +80,7 @@ function HomeExperienceSelector({
         <label className={value === 'basic' ? 'access-home-experience__option access-home-experience__option--selected' : 'access-home-experience__option'}>
           <input
             checked={value === 'basic'}
-            disabled={lockedToOperations}
+            disabled={disabled || lockedToOperations}
             name="homeExperience"
             onChange={() => onChange('basic')}
             type="radio"
@@ -91,6 +94,7 @@ function HomeExperienceSelector({
         <label className={value === 'operations' ? 'access-home-experience__option access-home-experience__option--selected' : 'access-home-experience__option'}>
           <input
             checked={value === 'operations'}
+            disabled={disabled}
             name="homeExperience"
             onChange={() => onChange('operations')}
             type="radio"
@@ -161,6 +165,7 @@ function PermissionGroup({
   onToggle,
   open,
   onOpenChange,
+  readOnly = false,
 }: {
   allPermissions: PermissionDefinition[]
   category: string
@@ -170,6 +175,7 @@ function PermissionGroup({
   onToggle: (code: string) => void
   open: boolean
   onOpenChange: () => void
+  readOnly?: boolean
 }) {
   const activeCount = selectedCount(allPermissions, selectedCodes)
   const allSelected = activeCount === allPermissions.length
@@ -189,8 +195,8 @@ function PermissionGroup({
             <strong>Category controls</strong>
             <small>{permissions.length === allPermissions.length ? `${allPermissions.length} permissions` : `${permissions.length} shown · ${allPermissions.length} total`}</small>
           </span>
-          <button disabled={allSelected} onClick={() => onSetAll(allPermissions.map((permission) => permission.code), true)} type="button">Select all</button>
-          <button disabled={activeCount === 0} onClick={() => onSetAll(allPermissions.map((permission) => permission.code), false)} type="button">Clear all</button>
+          <button disabled={readOnly || allSelected} onClick={() => onSetAll(allPermissions.map((permission) => permission.code), true)} type="button">Select all</button>
+          <button disabled={readOnly || activeCount === 0} onClick={() => onSetAll(allPermissions.map((permission) => permission.code), false)} type="button">Clear all</button>
         </div>
         {permissions.map((permission) => {
           const checked = selectedCodes.has(permission.code)
@@ -215,6 +221,7 @@ function PermissionGroup({
               <input
                 aria-label={`${checked ? 'Disable' : 'Enable'} ${permission.name}`}
                 checked={checked}
+                disabled={readOnly}
                 onChange={() => onToggle(permission.code)}
                 type="checkbox"
               />
@@ -414,13 +421,17 @@ function CreateRoleModal({
   )
 }
 
-function RolePermissionEditor({
+export function RolePermissionEditor({
+  canManage,
   onDirtyChange,
   permissions,
+  readOnlyReason,
   role,
 }: {
+  canManage: boolean
   onDirtyChange: (dirty: boolean) => void
   permissions: PermissionDefinition[]
+  readOnlyReason?: string
   role: AccessRoleDefinition
 }) {
   const queryClient = useQueryClient()
@@ -493,6 +504,7 @@ function RolePermissionEditor({
   }, [hasUnsavedChanges])
 
   function togglePermission(code: string) {
+    if (!canManage) return
     setSelectedCodes((current) => {
       const next = new Set(current)
       if (next.has(code)) next.delete(code)
@@ -503,16 +515,19 @@ function RolePermissionEditor({
   }
 
   function setAllPermissions(codes: string[], selected: boolean) {
+    if (!canManage) return
     setSelectedCodes((current) => keepHomeExperienceValid(applyPermissionCategorySelection(current, codes, selected)))
     setMessage(null)
   }
 
   function setHomeExperience(experience: HomeExperience) {
+    if (!canManage) return
     setSelectedCodes((current) => applyHomeExperienceSelection(current, experience))
     setMessage(null)
   }
 
   function savePermissions() {
+    if (!canManage) return
     if (newSensitiveCodes.length > 0) {
       setConfirmSensitive(true)
       return
@@ -535,11 +550,12 @@ function RolePermissionEditor({
           <strong>{selectedCodes.size}</strong>
           <small>permissions enabled</small>
           <small>{role.assignedCount} employee{role.assignedCount === 1 ? '' : 's'} assigned</small>
-          <small>{role.protected ? 'Safety permissions locked' : 'Editable role'}</small>
+          <small>{!canManage ? 'View only' : role.protected ? 'Safety permissions locked' : 'Editable role'}</small>
         </div>
       </div>
 
       <HomeExperienceSelector
+        disabled={!canManage}
         lockedToOperations={role.protected && role.code === 'system_admin'}
         onChange={setHomeExperience}
         value={homeExperience}
@@ -568,11 +584,14 @@ function RolePermissionEditor({
               onOpenChange={() => setOpenCategory(openCategory === category ? null : category)}
               open={openCategory === category}
               permissions={categoryPermissions}
+              readOnly={!canManage}
               selectedCodes={selectedCodes}
             />
           ))}
         </div>
       )}
+
+      {!canManage ? <p className="form-note" role="status">{readOnlyReason ?? 'You have view-only access. Changing role permissions requires the Manage Roles & Permissions permission and recent MFA verification.'}</p> : null}
 
       {hasUnsavedChanges ? (
         <div className="access-sticky-savebar">
@@ -642,13 +661,20 @@ export function AccessControlPage() {
   const [roleDirty, setRoleDirty] = useState(false)
   const [employeeDirty, setEmployeeDirty] = useState(false)
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
+  const sessionQuery = useQuery({
+    queryFn: getSessionContext,
+    queryKey: ['session-context', 'access-control'],
+  })
   const centerQuery = useQuery({
     queryFn: getAccessControlCenter,
     queryKey: ['access-control-center'],
   })
 
   const center = centerQuery.data
+  const canManageRoles = sessionQuery.data?.permissions.includes('admin.roles.manage') ?? false
   const selectedRole = center?.roles.find((role) => role.id === selectedRoleId) ?? center?.roles[0]
+  const canManageSelectedRole = canManageRoles
+    && (selectedRole?.code !== 'system_admin' || sessionQuery.data?.role === 'admin')
   const hasUnsavedChanges = roleDirty || employeeDirty
   const blocker = useBlocker(hasUnsavedChanges)
   const handleRoleDirtyChange = useCallback((dirty: boolean) => setRoleDirty(dirty), [])
@@ -677,10 +703,19 @@ export function AccessControlPage() {
     setSelectedRoleId(roleId)
   }
 
-  if (centerQuery.isPending) {
+  if (centerQuery.isPending || sessionQuery.isPending) {
     return (
       <AccessControlState icon={ShieldCheck} title="Loading roles and permissions">
         <p>Retrieving the active permission catalog, role matrix, employee assignments, and override records.</p>
+      </AccessControlState>
+    )
+  }
+
+  if (sessionQuery.isError) {
+    return (
+      <AccessControlState icon={ShieldAlert} title="Roles & Permissions unavailable" tone="error">
+        <p>{sessionQuery.error.message}</p>
+        <p>Your secure employee identity must be verified before access can be managed.</p>
       </AccessControlState>
     )
   }
@@ -742,7 +777,7 @@ export function AccessControlPage() {
           </div>
           <div>
             <strong>{center.users.length}</strong>
-            <span>Active employees</span>
+            <span>Employees</span>
           </div>
           <div>
             <strong>{center.users.reduce((total, user) => total + user.overrides.filter((override) => override.effect === 'grant').length, 0)}</strong>
@@ -770,15 +805,28 @@ export function AccessControlPage() {
                 <RoleTile key={role.id} onSelect={() => chooseRole(role.id)} role={role} selected={selectedRole?.id === role.id} />
               ))}
             </div>
-            <button className="access-control-button access-control-button--primary access-role-create" onClick={() => setCreateRoleOpen(true)} type="button">
-              <Plus aria-hidden="true" size={18} />Create role
-            </button>
+            {canManageRoles ? (
+              <button className="access-control-button access-control-button--primary access-role-create" onClick={() => setCreateRoleOpen(true)} type="button">
+                <Plus aria-hidden="true" size={18} />Create role
+              </button>
+            ) : null}
           </aside>
-          {selectedRole ? <RolePermissionEditor onDirtyChange={handleRoleDirtyChange} permissions={center.permissions} role={selectedRole} /> : null}
+          {selectedRole ? <RolePermissionEditor
+            canManage={canManageSelectedRole}
+            onDirtyChange={handleRoleDirtyChange}
+            permissions={center.permissions}
+            readOnlyReason={selectedRole.code === 'system_admin' && canManageRoles
+              ? 'Only an employee whose primary workforce role is Admin can change the protected Admin role definition.'
+              : undefined}
+            role={selectedRole}
+          /> : null}
         </section>
       ) : (
         <div aria-labelledby="employee-permission-tab" id="employee-permission-panel" role="tabpanel">
           <EmployeeAccessWorkspace
+            actorEmployeeId={sessionQuery.data.employeeId}
+            actorIsPrimaryAdmin={sessionQuery.data.role === 'admin'}
+            canManageAccess={canManageRoles}
             onDirtyChange={handleEmployeeDirtyChange}
             onSelectUser={setSelectedUserId}
             permissions={center.permissions}
@@ -801,7 +849,7 @@ export function AccessControlPage() {
         </div>
       </section>
 
-      {createRoleOpen ? (
+      {createRoleOpen && canManageRoles ? (
         <CreateRoleModal
           existingRoleIds={center.roles.map((role) => role.id)}
           onClose={() => setCreateRoleOpen(false)}

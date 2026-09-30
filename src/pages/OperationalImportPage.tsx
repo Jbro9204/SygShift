@@ -15,6 +15,8 @@ import {
 } from 'lucide-react'
 import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
+import { WorkforceRoleSelect } from '../components/WorkforceRoleSelect'
+import { getSessionContext } from '../data/auth'
 import { getImportReviewSummary } from '../data/importReview'
 import {
   acceptScheduleScope,
@@ -41,6 +43,13 @@ import {
   type SiteMappingQueueItem,
 } from '../data/importMapping'
 import { isSupabaseConfigured } from '../lib/supabase'
+import {
+  initialWorkforceRoleValue,
+  isWorkforceRole,
+  workforceRoleAssignmentGuidance,
+  workforceRoleSelectionError,
+  type WorkforceRoleAssignmentActor,
+} from '../lib/workforceRoleAssignment'
 
 type WorkArea = 'employees' | 'sites' | 'aliases' | 'exceptions'
 type EditorState =
@@ -151,7 +160,8 @@ function VerifiedMappingSetup() {
   )
 }
 
-function EmployeeEditor({ item, pending, onClose, onSave }: {
+export function EmployeeEditor({ actor, item, pending, onClose, onSave }: {
+  actor: WorkforceRoleAssignmentActor
   item: EmployeeMappingQueueItem
   pending: boolean
   onClose: () => void
@@ -160,9 +170,13 @@ function EmployeeEditor({ item, pending, onClose, onSave }: {
   const sourceName = payloadText(item.source_payload, 'name')
   const name = suggestedNameParts(sourceName)
   const sourceArmed = payloadBoolean(item.source_payload, 'armed')
+  const [selectedRole, setSelectedRole] = useState(initialWorkforceRoleValue(payloadText(item.source_payload, 'roleCandidate')))
+  const roleSelectionError = workforceRoleSelectionError(actor, selectedRole)
+  const roleAssignmentMessage = roleSelectionError ?? workforceRoleAssignmentGuidance(actor)
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (roleSelectionError || !isWorkforceRole(selectedRole)) return
     const form = new FormData(event.currentTarget)
     const value = (key: string) => String(form.get(key) ?? '').trim() || null
     onSave({
@@ -171,7 +185,7 @@ function EmployeeEditor({ item, pending, onClose, onSave }: {
       middleName: value('middleName'),
       lastName: String(form.get('lastName')).trim(),
       preferredName: value('preferredName'),
-      role: String(form.get('role')) as EmployeeMappingInput['role'],
+      role: selectedRole,
       employmentType: String(form.get('employmentType')) as EmployeeMappingInput['employmentType'],
       status: String(form.get('status')) as EmployeeMappingInput['status'],
       personalEmail: value('personalEmail'),
@@ -202,7 +216,7 @@ function EmployeeEditor({ item, pending, onClose, onSave }: {
         </div>
         <div className="form-grid form-grid--three">
           <label><span>Preferred name</span><input name="preferredName" /></label>
-          <label><span>Role</span><select defaultValue={payloadText(item.source_payload, 'roleCandidate') || 'guard'} name="role"><option value="guard">Guard</option><option value="dispatcher">Dispatcher</option><option value="scheduler">Scheduler</option><option value="supervisor">Supervisor</option><option value="admin">Admin</option></select></label>
+          <label><span>Primary workforce role</span><WorkforceRoleSelect actor={actor} aria-describedby={roleAssignmentMessage ? 'import-workforce-role-note' : undefined} aria-invalid={Boolean(roleSelectionError)} name="role" onChange={setSelectedRole} value={selectedRole} />{roleAssignmentMessage ? <small id="import-workforce-role-note">{roleAssignmentMessage}</small> : null}</label>
           <label><span>Employment</span><select defaultValue="hourly" name="employmentType"><option value="hourly">Hourly</option><option value="salary">Salary</option></select></label>
         </div>
         <div className="form-grid form-grid--three">
@@ -222,7 +236,7 @@ function EmployeeEditor({ item, pending, onClose, onSave }: {
         </div>
         <label className="field-stack"><span>Review note</span><textarea defaultValue="Confirmed against the workbook Directory source row." maxLength={4000} name="note" required rows={3} /></label>
         <p className="form-note">Active armed status requires both a credential number and a current expiration date.</p>
-        <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Cancel</button><button className="primary-action" disabled={pending} type="submit">{pending ? 'Saving…' : 'Save Directory mapping'}</button></div>
+        <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Cancel</button><button className="primary-action" disabled={pending || Boolean(roleSelectionError)} type="submit">{pending ? 'Saving…' : 'Save Directory mapping'}</button></div>
       </form>
     </ModalDialog>
   )
@@ -392,6 +406,7 @@ function LiveOperationalImport() {
   const queryClient = useQueryClient()
   const [workArea, setWorkArea] = useState<WorkArea>('employees')
   const [editor, setEditor] = useState<EditorState | null>(null)
+  const sessionQuery = useQuery({ queryKey: ['session-context'], queryFn: getSessionContext })
   const summaryQuery = useQuery({ queryKey: ['import-review-summary'], queryFn: getImportReviewSummary })
   const importRunId = summaryQuery.data?.importRunId
   const readinessQuery = useQuery({ queryKey: ['import-mapping-readiness', importRunId, scope], queryFn: () => getImportMappingReadiness(importRunId!, scope), enabled: Boolean(importRunId) })
@@ -429,8 +444,8 @@ function LiveOperationalImport() {
   const activeQuery = workArea === 'employees' ? employeesQuery : workArea === 'sites' ? sitesQuery : workArea === 'aliases' ? aliasesQuery : exceptionsQuery
   const options = optionsQuery.data ?? []
 
-  if (summaryQuery.isPending || readinessQuery.isPending) return <DataStatePanel icon={ListChecks} title="Loading operational mapping"><p>Verifying Admin access and calculating current-schedule readiness.</p></DataStatePanel>
-  if (summaryQuery.isError || readinessQuery.isError) return <DataStatePanel icon={ShieldAlert} title="Operational mapping unavailable" tone="error"><p>{summaryQuery.error?.message ?? readinessQuery.error?.message}</p></DataStatePanel>
+  if (sessionQuery.isPending || summaryQuery.isPending || readinessQuery.isPending) return <DataStatePanel icon={ListChecks} title="Loading operational mapping"><p>Verifying Admin access and calculating current-schedule readiness.</p></DataStatePanel>
+  if (sessionQuery.isError || summaryQuery.isError || readinessQuery.isError) return <DataStatePanel icon={ShieldAlert} title="Operational mapping unavailable" tone="error"><p>{sessionQuery.error?.message ?? summaryQuery.error?.message ?? readinessQuery.error?.message}</p></DataStatePanel>
   if (!importRunId || !readinessQuery.data) return <DataStatePanel icon={DatabaseZap} title="No protected import is available"><p>Stage and reconcile the workbook before operational mapping.</p></DataStatePanel>
 
   const readiness = readinessQuery.data
@@ -459,7 +474,7 @@ function LiveOperationalImport() {
         {workArea === 'exceptions' && exceptionsQuery.data ? exceptionsQuery.data.length === 0 ? <DataStatePanel icon={CheckCircle2} title="No shift exceptions remain"><p>There are no unresolved overlap or qualification conflicts in this scope.</p></DataStatePanel> : <div className="mapping-list">{exceptionsQuery.data.map((item) => <article className="mapping-row mapping-row--exception" key={item.candidate_id}><div className="mapping-row__main"><span className="mapping-status mapping-status--attention">{item.overlap_conflict ? 'Overlapping assignment' : 'Qualification conflict'}</span><h3>{payloadText(item.source_payload, 'contextLabel')}</h3><p>{payloadText(item.source_payload, 'localDate')} · {payloadText(item.source_payload, 'startTime')}–{payloadText(item.source_payload, 'endTime')} · {payloadText(item.source_payload, 'assigneeLabel')}</p></div><button className="primary-action" onClick={() => setEditor({ type: 'exception', item })} type="button">Resolve exception</button></article>)}</div> : null}
       </section>
 
-      {editor?.type === 'employee' ? <EmployeeEditor item={editor.item} onClose={() => setEditor(null)} onSave={(input) => mutation.mutate({ type: 'employee', input })} pending={mutation.isPending} /> : null}
+      {editor?.type === 'employee' ? <EmployeeEditor actor={sessionQuery.data} item={editor.item} onClose={() => setEditor(null)} onSave={(input) => mutation.mutate({ type: 'employee', input })} pending={mutation.isPending} /> : null}
       {editor?.type === 'site' ? <SiteEditor item={editor.item} onClose={() => setEditor(null)} onSave={(input) => mutation.mutate({ type: 'site', input })} pending={mutation.isPending} /> : null}
       {editor?.type === 'alias' ? <AssignmentEditor description={`Schedule label: ${editor.item.label_variants.join(' · ')}`} onClose={() => setEditor(null)} onSave={(disposition, keys, note) => mutation.mutate({ type: 'alias', input: { importRunId, sourceLabel: editor.item.label_variants[0] ?? editor.item.normalized_label, disposition, employeeMappingKeys: keys, note } })} options={options} pending={mutation.isPending} title="Map schedule name" /> : null}
       {editor?.type === 'schedule-person' ? <SchedulePersonEditor item={editor.item} onClose={() => setEditor(null)} onSave={(input) => mutation.mutate({ type: 'schedule-person', input: { ...input, importRunId } })} pending={mutation.isPending} /> : null}
