@@ -1,10 +1,8 @@
 import type { AccessRoleDefinition } from '../data/accessControl'
 import type { AppRole } from '../data/adminUsers'
+import { workforceRoleLabels } from './workforceRoleAssignment'
 
-export const employeeRoleLabels: Record<AppRole, string> = {
-  admin: 'Admin', dispatcher: 'Dispatcher', guard: 'Guard',
-  recruiting_licensing: 'Recruiting & Licensing', scheduler: 'Scheduler', supervisor: 'Supervisor',
-}
+export const employeeRoleLabels: Record<AppRole, string> = workforceRoleLabels
 
 export type EmployeeRoleOption = Pick<AccessRoleDefinition,
   'id' | 'name' | 'description' | 'baseAppRole' | 'systemRole' | 'active' | 'mfaRequired'> & { unavailable?: boolean }

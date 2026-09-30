@@ -9,6 +9,7 @@ import {
   type UserAccountActivityRow,
 } from '../data/userAccountActivityReport'
 import { downloadXlsxWorkbook } from '../lib/xlsxWorkbook'
+import { isWorkforceRole, workforceRoleLabel } from '../lib/workforceRoleAssignment'
 import {
   accountStateLabels,
   formatAccountActivityDate,
@@ -101,6 +102,7 @@ export function UserAccountActivityReportWorkspace({ canExport }: { canExport: b
   const total = query.data?.totalCount ?? 0
   const page = Math.floor(offset / pageSize) + 1
   const pages = Math.max(1, Math.ceil(total / pageSize))
+  const roleOptions = query.data?.roleOptions ?? []
 
   function updateFilter<K extends keyof UserAccountActivityFilters>(key: K, value: UserAccountActivityFilters[K]) {
     setFilters((current) => ({ ...current, [key]: value }))
@@ -121,7 +123,7 @@ export function UserAccountActivityReportWorkspace({ canExport }: { canExport: b
         <label><span>Account</span><select value={filters.accountStatus} onChange={(event) => updateFilter('accountStatus', event.target.value)}><option value="">All account states</option><option value="not_created">No account</option><option value="setup_incomplete">Setup incomplete</option><option value="active">Active</option><option value="disabled">Disabled</option></select></label>
         <label><span>Sign-in activity</span><select value={filters.loginStatus} onChange={(event) => updateFilter('loginStatus', event.target.value)}><option value="">All sign-in states</option><option value="never_signed_in">Never signed in</option><option value="recent">Recently active</option><option value="stale">Inactive</option></select></label>
         <label><span>MFA</span><select value={filters.mfaStatus} onChange={(event) => updateFilter('mfaStatus', event.target.value)}><option value="">All MFA states</option><option value="required_missing">Required — missing</option><option value="enrolled">Enrolled</option><option value="not_required">Not required</option></select></label>
-        <label><span>Role</span><select value={filters.role} onChange={(event) => updateFilter('role', event.target.value)}><option value="">All roles</option><option value="guard">Guard</option><option value="dispatcher">Dispatcher</option><option value="scheduler">Scheduler</option><option value="supervisor">Supervisor</option><option value="recruiting_licensing">Recruiting &amp; Licensing</option><option value="admin">Admin</option><option value="Human Resources Employee">Human Resources Employee</option><option value="Human Resources Manager">Human Resources Manager</option><option value="Operations Manager">Operations Manager</option></select></label>
+        <label><span>Role</span><select disabled={query.isPending} value={filters.role} onChange={(event) => updateFilter('role', event.target.value)}><option value="">All roles</option>{filters.role && !roleOptions.some((option) => option.value === filters.role) ? <option disabled value={filters.role}>{isWorkforceRole(filters.role) ? workforceRoleLabel(filters.role) : filters.role} (unavailable)</option> : null}{roleOptions.map((option) => <option key={option.value.toLowerCase()} value={option.value}>{isWorkforceRole(option.baseRole) ? workforceRoleLabel(option.baseRole) : option.label}</option>)}</select></label>
         <label><span>Sign-in source</span><select value={filters.source} onChange={(event) => updateFilter('source', event.target.value)}><option value="">All sources</option><option value="native">SygShift</option><option value="platform">Sygilant</option><option value="sygsphere">SygSphere</option></select></label>
         <label><span>Inactive after</span><select value={filters.staleDays} onChange={(event) => updateFilter('staleDays', Number(event.target.value) as 7 | 30 | 60 | 90)}><option value={7}>7 days</option><option value={30}>30 days</option><option value={60}>60 days</option><option value={90}>90 days</option></select></label>
       </div>

@@ -62,6 +62,7 @@ import {
   hydrateSharedIdentitySession,
   sharedIdentityRefreshDelayMs,
 } from '../lib/sharedIdentitySession'
+import { workforceRoleLabel } from '../lib/workforceRoleAssignment'
 
 const INACTIVITY_WARNING_MS = 55 * 60 * 1000
 const INACTIVITY_LOGOUT_MS = 60 * 60 * 1000
@@ -74,12 +75,6 @@ const COMPACT_NAVIGATION_QUERY = '(max-width: 1280px), (max-width: 1366px) and (
 
 function compactNavigationMatches(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia(COMPACT_NAVIGATION_QUERY).matches
-}
-
-function titleCase(value: string): string {
-  return value
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function accountInitials(name: string): string {
@@ -980,7 +975,7 @@ export function AppShell() {
                 </span>
                 <span className="user-profile-control__copy">
                   <strong>{accountSummary?.employment.legalName ?? sessionContext.displayName}</strong>
-                  <span>{titleCase(accountSummary?.employment.primaryRole ?? '') || 'Employee'} · @{sessionContext.username}</span>
+                  <span>{workforceRoleLabel(accountSummary?.employment.primaryRole) || 'Employee'} · @{sessionContext.username}</span>
                 </span>
               </Link>
               <button

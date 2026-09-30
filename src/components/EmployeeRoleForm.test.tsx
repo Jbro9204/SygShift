@@ -266,7 +266,7 @@ describe('actual employee role form and RPC serialization', () => {
     fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Employee' } })
     fireEvent.change(screen.getByLabelText('Employee time zone'), { target: { value: 'America/New_York' } })
     openRoles()
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Human Resources' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Human Resources Employee' }))
     fireEvent.click(screen.getByRole('button', { name: 'Create employee' }))
     expect(screen.queryByLabelText('Required audit reason')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Confirm & save employee' }))
@@ -500,7 +500,7 @@ describe('employee permissions workspace role contract', () => {
     renderAccessWorkspace(workspaceUser, { employeeId: workspaceUser.id, primaryAdmin: true })
     expect(screen.getByText(/Your own access is read-only here/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'View roles' }))
-    expect(screen.getByRole('checkbox', { name: 'Human Resources' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Human Resources Employee' })).toBeDisabled()
     expect(screen.queryByRole('button', { name: /primary workforce role/ })).not.toBeInTheDocument()
   })
 
@@ -520,7 +520,7 @@ describe('employee permissions workspace role contract', () => {
 
     expect(screen.getByText(/You have view-only access/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'View roles' }))
-    expect(screen.getByRole('checkbox', { name: 'Human Resources' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Human Resources Employee' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: /Operations.*available/ }))
     expect(screen.getByRole('checkbox', { name: 'Add View team' })).toBeDisabled()
   })

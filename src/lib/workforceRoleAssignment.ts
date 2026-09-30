@@ -5,14 +5,36 @@ export interface WorkforceRoleAssignmentActor {
   role?: WorkforceRole | null
 }
 
-export const workforceRoleOptions: ReadonlyArray<{ label: string; value: WorkforceRole }> = [
-  { label: 'Guard', value: 'guard' },
-  { label: 'Dispatcher', value: 'dispatcher' },
-  { label: 'Scheduler', value: 'scheduler' },
-  { label: 'Recruiting & Licensing', value: 'recruiting_licensing' },
-  { label: 'Supervisor', value: 'supervisor' },
-  { label: 'Admin', value: 'admin' },
+export const workforceRoleLabels: Record<WorkforceRole, string> = {
+  admin: 'Admin',
+  dispatcher: 'Dispatcher',
+  guard: 'Guard',
+  recruiting_licensing: 'Recruiting & Licensing',
+  scheduler: 'Scheduler',
+  supervisor: 'Supervisor',
+}
+
+const workforceRoleOrder: readonly WorkforceRole[] = [
+  'guard',
+  'dispatcher',
+  'scheduler',
+  'recruiting_licensing',
+  'supervisor',
+  'admin',
 ]
+
+export const workforceRoleOptions: ReadonlyArray<{ label: string; value: WorkforceRole }> = workforceRoleOrder
+  .map((value) => ({ label: workforceRoleLabels[value], value }))
+
+export function workforceRoleLabel(value: string | null | undefined): string {
+  const normalized = value?.trim()
+  if (!normalized) return ''
+  if (isWorkforceRole(normalized)) return workforceRoleLabels[normalized]
+  return normalized
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
 
 export function canAssignWorkforceRole(actor: WorkforceRoleAssignmentActor, targetRole: WorkforceRole): boolean {
   if (targetRole === 'guard') return true
@@ -37,7 +59,7 @@ export function workforceRoleSelectionError(
     return `The existing role “${role}” is not supported. Choose Guard or ask an authorized role manager to choose the correct workforce role.`
   }
   if (canAssignWorkforceRole(actor, role)) return null
-  const label = workforceRoleOptions.find((option) => option.value === role)?.label ?? role
+  const label = workforceRoleLabel(role)
   if (role === 'admin' && actor.permissions?.includes('admin.roles.manage')) {
     return `${label} remains selected but cannot be assigned by this account. Only an employee whose primary workforce role is Admin may assign it.`
   }

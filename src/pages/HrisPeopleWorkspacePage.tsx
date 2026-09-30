@@ -26,6 +26,7 @@ import {
   type HrisPeopleSavedView,
 } from '../data/hrisPeople'
 import { formatOperationalDateTime } from '../lib/time'
+import { workforceRoleLabel } from '../lib/workforceRoleAssignment'
 
 const statusLabels: Record<string, string> = {
   active: 'Active',
@@ -186,7 +187,7 @@ export function HrisPeopleWorkspacePage() {
                   <div className="hr-people-compact-list">
                     {workspace.items.map((employee) => (
                       <button key={employee.employeeId} onClick={() => openEmployee(employee.employeeId)} type="button">
-                        <span><strong>{employee.legalName}</strong><small>{employee.jobTitle || titleCase(employee.primaryRole)}</small></span><span className={`hr-account-pill hr-account-pill--${employee.accountStatus}`}>{accountLabels[employee.accountStatus]}</span>
+                        <span><strong>{employee.legalName}</strong><small>{employee.jobTitle || workforceRoleLabel(employee.primaryRole)}</small></span><span className={`hr-account-pill hr-account-pill--${employee.accountStatus}`}>{accountLabels[employee.accountStatus]}</span>
                       </button>
                     ))}
                   </div>
@@ -213,7 +214,7 @@ export function HrisPeopleWorkspacePage() {
                 <form onSubmit={submitSearch}><label htmlFor="hr-people-search">Search</label><div><Search aria-hidden="true" size={18} /><input id="hr-people-search" onChange={(event) => setSearchInput(event.target.value)} placeholder="Legal name, employee number, or username" value={searchInput} /></div><button className="secondary-button" type="submit">Search</button></form>
                 <label>Status<select onChange={(event) => updateFilter('status', event.target.value)} value={query.status}><option value="active">Active</option><option value="onboarding">Onboarding</option><option value="leave">On leave</option><option value="inactive">Inactive</option><option value="separated">Separated</option><option value="all">All statuses</option></select></label>
                 <label>Employment<select onChange={(event) => updateFilter('employmentType', event.target.value)} value={query.employmentType}><option value="all">All types</option>{workspace.options.employmentTypes.map((value) => <option key={value} value={value}>{titleCase(value)}</option>)}</select></label>
-                <label>Role<select onChange={(event) => updateFilter('role', event.target.value)} value={query.role}><option value="all">All roles</option>{workspace.options.roles.map((value) => <option key={value} value={value}>{titleCase(value)}</option>)}</select></label>
+                <label>Role<select onChange={(event) => updateFilter('role', event.target.value)} value={query.role}><option value="all">All roles</option>{workspace.options.roles.map((value) => <option key={value} value={value}>{workforceRoleLabel(value)}</option>)}</select></label>
                 <label>Sort<select onChange={(event) => updateFilter('sort', event.target.value)} value={query.sort}><option value="legal_name">Legal name</option><option value="employee_number">Employee number</option><option value="status">Status</option><option value="hired_on">Hire date</option></select></label>
                 <button aria-label="Reverse sort direction" className="hr-sort-button" onClick={() => updateFilter('direction', query.direction === 'asc' ? 'desc' : 'asc')} type="button">{query.direction === 'asc' ? <ArrowDownAZ aria-hidden="true" /> : <ArrowUpAZ aria-hidden="true" />}</button>
               </div>
@@ -223,7 +224,7 @@ export function HrisPeopleWorkspacePage() {
                   {workspace.items.map((employee) => (
                     <button className="hr-people-row" key={employee.employeeId} onClick={() => openEmployee(employee.employeeId)} role="listitem" type="button">
                       <span className="hr-people-row__identity"><span aria-hidden="true">{employee.legalName.split(' ').map((part) => part[0]).slice(0, 2).join('')}</span><span><strong>{employee.legalName}</strong><small>{employee.employeeNumber || 'Employee number pending'} · @{employee.username}</small></span></span>
-                      <span><small>Employment</small><strong>{titleCase(employee.employmentType)}</strong><small>{employee.jobTitle || titleCase(employee.primaryRole)}</small></span>
+                      <span><small>Employment</small><strong>{titleCase(employee.employmentType)}</strong><small>{employee.jobTitle || workforceRoleLabel(employee.primaryRole)}</small></span>
                       <span><small>Status</small><strong>{statusLabels[employee.status]}</strong><small>Hired {formatDate(employee.hiredOn)}</small></span>
                       <span><small>Account</small><strong>{accountLabels[employee.accountStatus]}</strong><small>{employee.lastSignInAt ? `Last sign-in ${formatOperationalDateTime(employee.lastSignInAt)}` : 'No sign-in recorded'}</small></span>
                       <span className="hr-people-row__signals">{employee.readinessSignals.length === 0 ? <em>Record ready</em> : employee.readinessSignals.map((signal) => <em key={signal}>{readinessLabels[signal] ?? titleCase(signal)}</em>)}</span>

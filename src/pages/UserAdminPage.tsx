@@ -66,15 +66,9 @@ import {
   type PlatformPresencePerson,
   type PlatformPresenceStatus,
 } from '../data/platformPresence'
+import { workforceRoleLabels } from '../lib/workforceRoleAssignment'
 
-const roleLabels: Record<AppRole, string> = {
-  admin: 'Admin',
-  dispatcher: 'Dispatcher',
-  guard: 'Guard',
-  recruiting_licensing: 'Recruiting & Licensing',
-  scheduler: 'Scheduler',
-  supervisor: 'Supervisor',
-}
+const roleLabels: Record<AppRole, string> = workforceRoleLabels
 
 const statusLabels: Record<EmployeeStatus, string> = {
   active: 'Active',

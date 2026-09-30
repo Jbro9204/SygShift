@@ -59,6 +59,7 @@ import {
   type SecurityKeySummary,
 } from '../data/securityKeys'
 import { formatOperationalDateTime } from '../lib/time'
+import { workforceRoleLabel } from '../lib/workforceRoleAssignment'
 
 type AccountTab = 'profile' | 'employment' | 'security' | 'notifications'
 type Feedback = { kind: 'error' | 'success'; text: string } | null
@@ -69,15 +70,6 @@ const tabs: Array<{ id: AccountTab; label: string; icon: typeof UserRound }> = [
   { id: 'security', label: 'Security', icon: KeyRound },
   { id: 'notifications', label: 'Notifications', icon: Bell },
 ]
-
-const roleLabels: Record<string, string> = {
-  admin: 'Admin',
-  dispatcher: 'Dispatcher',
-  guard: 'Guard',
-  recruiting_licensing: 'Recruiting & Licensing',
-  scheduler: 'Scheduler',
-  supervisor: 'Supervisor',
-}
 
 function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'SS'
@@ -421,7 +413,7 @@ function EmploymentTab({ account }: { account: MyAccount }) {
         <ReadonlyField label="Employee ID" value={displayValue(employment.employeeNumber)} />
         <ReadonlyField label="Username" value={`@${employment.username}`} />
         <ReadonlyField label="Job title" value={displayValue(employment.jobTitle)} />
-        <ReadonlyField label="Primary role" value={roleLabels[employment.primaryRole] || employment.primaryRole} />
+        <ReadonlyField label="Primary role" value={workforceRoleLabel(employment.primaryRole)} />
         <ReadonlyField label="Employment type" value={employment.employmentType.replace(/^./, (letter) => letter.toUpperCase())} />
         <ReadonlyField label="Employment status" value={employment.status.replace(/^./, (letter) => letter.toUpperCase())} />
         <ReadonlyField label="Hire date" value={formatDate(employment.hiredOn)} />

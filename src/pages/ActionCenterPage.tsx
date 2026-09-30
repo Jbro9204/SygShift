@@ -55,6 +55,7 @@ import {
   type CorrectiveActionResponseType,
   type EmployeeCorrectiveAction,
 } from '../data/correctiveActions'
+import { workforceRoleOptions } from '../lib/workforceRoleAssignment'
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return 'No due date'
@@ -428,7 +429,7 @@ function TrainingEditor({ onClose, onPublished }: { onClose: () => void; onPubli
         <label className="form-field"><span>Due date and time</span><input name="dueAt" type="datetime-local" /></label>
         <label className="form-field form-field--wide"><span>Description</span><textarea name="description" rows={3} /></label>
         <label className="form-field form-field--wide"><span>Completion instructions</span><textarea name="instructions" required rows={4} /></label>
-        <fieldset className="training-audience"><legend>Assign by role</legend>{['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'].map((role) => <label className="check-field" key={role}><input name="roles" type="checkbox" value={role} />{role.replace('_', ' ')}</label>)}</fieldset>
+        <fieldset className="training-audience"><legend>Assign by role</legend>{workforceRoleOptions.map((role) => <label className="check-field" key={role.value}><input name="roles" type="checkbox" value={role.value} />{role.label}</label>)}</fieldset>
         <label className="form-field"><span>Assign specific employees</span><select multiple name="employeeIds" size={6}>{optionsQuery.data?.employees.map((employee) => <option key={employee.id} value={employee.id}>{scheduleEmployeeName(employee)}{employee.employee_number ? ` · ${employee.employee_number}` : ''}</option>)}</select></label>
         <label className="form-field"><span>Assign scheduled sites</span><select multiple name="siteIds" size={6}>{sitesQuery.data?.filter((site) => site.active).map((site) => <option key={site.id} value={site.id}>{site.code ? `${site.code} · ` : ''}{site.name}</option>)}</select></label>
         <label className="form-field form-field--wide"><span>Assign employee states</span><input name="states" placeholder="CA, CO" /></label>

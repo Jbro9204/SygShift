@@ -1,4 +1,5 @@
 import type { LicensingCredential, LicensingEmployee } from '../data/licensing'
+import { workforceRoleLabel } from '../lib/workforceRoleAssignment'
 
 export const STANDARD_GUARD_LICENSE_CODE = 'denver_security_guard_license'
 export const ARMED_GUARD_LICENSE_CODE = 'armed_security_guard_credential'
@@ -134,15 +135,7 @@ export function formatLicensingDate(value: string | null | undefined): string {
 }
 
 export function formatLicensingRole(value: LicensingEmployee['role']): string {
-  const labels: Record<LicensingEmployee['role'], string> = {
-    admin: 'Admin',
-    dispatcher: 'Dispatcher',
-    guard: 'Guard',
-    recruiting_licensing: 'Recruiting & Licensing',
-    scheduler: 'Scheduler',
-    supervisor: 'Supervisor',
-  }
-  return labels[value]
+  return workforceRoleLabel(value)
 }
 
 export function formatLicensingEmploymentStatus(value: LicensingEmployee['employmentStatus']): string {

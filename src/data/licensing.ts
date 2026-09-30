@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { getSupabaseClient } from '../lib/supabase'
 import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 import type { ContinentalUsTimeZone } from '../lib/usTimeZones'
+import { workforceRoleLabel } from '../lib/workforceRoleAssignment'
 
 const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary', 'flex'])
@@ -843,12 +844,5 @@ export function formatEligibility(value: WorkEligibility): string {
 }
 
 export function formatRole(value: AppRole): string {
-  return {
-    admin: 'Admin',
-    dispatcher: 'Dispatcher',
-    guard: 'Guard',
-    recruiting_licensing: 'Recruiting & Licensing',
-    scheduler: 'Scheduler',
-    supervisor: 'Supervisor',
-  }[value]
+  return workforceRoleLabel(value)
 }

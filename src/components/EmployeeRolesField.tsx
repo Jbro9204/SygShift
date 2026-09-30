@@ -13,7 +13,7 @@ const rolePresentation: Record<string, { name?: string; summary: string }> = {
   admin: { summary: 'Full access to system settings, security, permissions, and protected records.' },
   dispatcher: { summary: 'Manages dispatch coverage, calls, incidents, and daily activity.' },
   guard: { summary: 'Views schedules, records time, completes assigned work, and uses employee self-service.' },
-  'human resources employee': { name: 'Human Resources', summary: 'Handles employee records, onboarding, HR documents, leave, and employee support.' },
+  'human resources employee': { summary: 'Handles employee records, onboarding, HR documents, leave, and employee support.' },
   'human resources manager': { summary: 'Manages all HR functions, compensation, payroll preparation, and employee administration.' },
   'operations manager': { summary: 'Oversees schedules, attendance, patrols, sites, licensing, and operational reports.' },
   'recruiting & licensing': { summary: 'Manages recruiting, onboarding, licenses, credentials, and compliance follow-up.' },

@@ -5734,7 +5734,41 @@ async function handleUserAccountActivityReportApi(
     },
     session.config.serviceRoleKey,
   )
-  return json({ ...payload, requestId })
+  if (exportRequested) return json({ ...payload, requestId })
+
+  // Read only filter metadata after the report's Worker and database authorization
+  // checks. The access-control center requires unrelated role-admin permissions.
+  const roleOptions: Array<{ value: string; label: string; baseRole: string | null }> = []
+  const seenRoleValues = new Set<string>()
+  const rolePageSize = 100
+  for (let roleOffset = 0; ; roleOffset += rolePageSize) {
+    const parameters = new URLSearchParams({
+      select: 'name,base_app_role,system_role',
+      active: 'eq.true',
+      order: 'system_role.desc,name.asc,id.asc',
+      limit: String(rolePageSize),
+      offset: String(roleOffset),
+    })
+    const roles = await supabaseJson<Array<{ name: string; base_app_role: string | null; system_role: boolean }>>(
+      `${session.config.url}/rest/v1/access_roles?${parameters}`,
+      { headers: { apikey: session.config.serviceRoleKey, authorization: `Bearer ${session.config.serviceRoleKey}` } },
+    )
+    for (const accessRole of roles) {
+      // The report RPC projects both primary and additional memberships as exact
+      // access-role names. Filtering by that name therefore includes both paths.
+      const value = accessRole.name.trim()
+      const dedupeKey = value.toLowerCase()
+      if (seenRoleValues.has(dedupeKey)) continue
+      seenRoleValues.add(dedupeKey)
+      roleOptions.push({
+        value,
+        label: value,
+        baseRole: accessRole.system_role ? accessRole.base_app_role : null,
+      })
+    }
+    if (roles.length < rolePageSize) break
+  }
+  return json({ ...payload, roleOptions, requestId })
 }
 
 function disabledHrLeaveWorkspace(requestId: string): Record<string, unknown> {

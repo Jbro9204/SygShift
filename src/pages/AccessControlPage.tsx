@@ -30,15 +30,7 @@ import {
 } from '../data/accessControl'
 import { getSessionContext } from '../data/auth'
 import { applyPermissionCategorySelection } from '../lib/permissionSelection'
-
-const roleLabels: Record<string, string> = {
-  admin: 'Admin',
-  dispatcher: 'Dispatcher',
-  guard: 'Guard',
-  recruiting_licensing: 'Recruiting & Licensing',
-  scheduler: 'Scheduler',
-  supervisor: 'Supervisor',
-}
+import { workforceRoleLabel } from '../lib/workforceRoleAssignment'
 
 const operationsDashboardPermission = 'operations.view'
 
@@ -250,7 +242,9 @@ function RoleTile({
     >
       <span>
         <strong>{role.name}</strong>
-        <small>{role.systemRole ? `System role${role.baseAppRole ? ` · ${roleLabels[role.baseAppRole]}` : ''}` : 'Custom role'}</small>
+        <small>{role.systemRole
+          ? `System role${role.baseAppRole ? ` · ${workforceRoleLabel(role.baseAppRole)}` : ''}`
+          : role.protected ? 'Protected access role' : 'Custom role'}</small>
       </span>
       <span className="role-tile__meta">
         <em>{role.permissionCodes.length} perms</em>

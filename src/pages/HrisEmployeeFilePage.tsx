@@ -39,6 +39,7 @@ import {
 } from '../data/hrisPeople'
 import { getSupervisionWorkspace } from '../data/supervision'
 import { formatOperationalDateTime } from '../lib/time'
+import { workforceRoleLabel } from '../lib/workforceRoleAssignment'
 
 const labels: Record<string, string> = {
   active: 'Active', disabled: 'Disabled', inactive: 'Inactive', leave: 'On leave', not_created: 'Not created', onboarding: 'Onboarding', pending: 'Activation pending', separated: 'Separated',
@@ -245,7 +246,7 @@ export function HrisEmployeeFilePage() {
           <header className="hr-file-hero">
             <div className="hr-file-avatar" aria-hidden="true">{record.firstName[0]}{record.lastName[0]}</div>
             <div><p className="eyebrow">Employee File</p><h1>{record.legalName}</h1><p>{record.employeeNumber || 'Employee number pending'} · @{record.username}</p></div>
-            <div className="hr-file-hero__status"><span>{labels[record.status] ?? titleCase(record.status)}</span><small>{record.jobTitle || titleCase(record.primaryRole)}</small></div>
+            <div className="hr-file-hero__status"><span>{labels[record.status] ?? titleCase(record.status)}</span><small>{record.jobTitle || workforceRoleLabel(record.primaryRole)}</small></div>
           </header>
 
           {canOpenConversations ? (
@@ -278,7 +279,7 @@ export function HrisEmployeeFilePage() {
 
             <article className="hr-file-card hr-file-employment-card">
               <div className="hr-file-card__heading"><ClipboardCheck aria-hidden="true" /><div><p className="eyebrow">Employment</p><h2>Current relationship</h2></div><div className="hr-file-card__actions">{editorContext?.canManageProfile ? <button className="hr-file-card__edit" onClick={() => setProfileEditor('employment')} type="button"><PencilLine aria-hidden="true" size={16} />Edit employment</button> : null}{supervisionQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={() => setSupervisorEditorOpen(true)} type="button"><UserRoundCog aria-hidden="true" size={16} />Assign supervisor</button> : null}{employmentDateHistoryQuery.data?.canManage ? <button className="hr-file-card__edit" onClick={openEmploymentDateEditor} type="button"><CalendarCheck2 aria-hidden="true" size={16} />Edit dates</button> : null}{editorContext?.canTerminate && sessionQuery.data?.employeeId !== record.employeeId ? <Link className="hr-file-card__edit hr-file-card__edit--danger" to={`/hr/offboarding?employee=${encodeURIComponent(record.employeeId)}`}><UserRoundX aria-hidden="true" size={16} />{record.status === 'separated' ? 'Start rehire case' : 'Start lifecycle case'}</Link> : null}</div></div>
-              <dl><div><dt>Work classification</dt><dd>{editorContext?.workClassification ? titleCase(editorContext.workClassification) : 'Not recorded'}</dd></div><div><dt>Pay &amp; timekeeping type</dt><dd>{titleCase(record.employmentType)}</dd></div><div><dt>Primary role</dt><dd>{titleCase(record.primaryRole)}</dd></div><div><dt>Assigned supervisor</dt><dd>{supervisionQuery.isPending ? 'Loading…' : supervisorAssignment?.supervisorName ?? 'Unassigned'}</dd></div><div><dt>Job title</dt><dd>{display(record.jobTitle)}</dd></div><div><dt>Start / hire date</dt><dd>{formatDate(record.hiredOn)}</dd></div><div><dt>Separation / termination date</dt><dd>{formatDate(record.separatedOn)}</dd></div></dl>
+              <dl><div><dt>Work classification</dt><dd>{editorContext?.workClassification ? titleCase(editorContext.workClassification) : 'Not recorded'}</dd></div><div><dt>Pay &amp; timekeeping type</dt><dd>{titleCase(record.employmentType)}</dd></div><div><dt>Primary role</dt><dd>{workforceRoleLabel(record.primaryRole)}</dd></div><div><dt>Assigned supervisor</dt><dd>{supervisionQuery.isPending ? 'Loading…' : supervisorAssignment?.supervisorName ?? 'Unassigned'}</dd></div><div><dt>Job title</dt><dd>{display(record.jobTitle)}</dd></div><div><dt>Start / hire date</dt><dd>{formatDate(record.hiredOn)}</dd></div><div><dt>Separation / termination date</dt><dd>{formatDate(record.separatedOn)}</dd></div></dl>
               {employmentDateSaved ? <div className="hr-file-employment-saved" role="status"><CalendarCheck2 aria-hidden="true" size={17} />Employment dates and audit history updated.</div> : null}
               {employmentDateHistoryQuery.data?.items.length ? (
                 <details className="hr-file-employment-history">

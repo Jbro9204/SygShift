@@ -48,6 +48,11 @@ const accountActivityReportSchema = z.object({
     securityExceptions: z.number().int().nonnegative(),
   }),
   rows: z.array(accountActivityRowSchema).max(5000),
+  roleOptions: z.array(z.object({
+    value: z.string(),
+    label: z.string(),
+    baseRole: z.string().nullable().optional(),
+  })).optional(),
   requestId: z.string().optional(),
 })
 

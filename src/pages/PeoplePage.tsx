@@ -24,15 +24,9 @@ import {
 } from '../data/supervision'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { operationalToday } from '../lib/time'
+import { workforceRoleLabels } from '../lib/workforceRoleAssignment'
 
-const roleLabels: Record<DirectoryEntry['role'], string> = {
-  dispatcher: 'Dispatcher',
-  guard: 'Guard',
-  recruiting_licensing: 'Recruiting & Licensing',
-  scheduler: 'Scheduler',
-  supervisor: 'Supervisor',
-  admin: 'Admin',
-}
+const roleLabels: Record<DirectoryEntry['role'], string> = workforceRoleLabels
 const statusLabels: Record<DirectoryEntry['status'], string> = {
   active: 'Active',
   onboarding: 'Onboarding',

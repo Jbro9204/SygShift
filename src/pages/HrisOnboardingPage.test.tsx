@@ -107,11 +107,36 @@ describe('HR onboarding wizard', () => {
     fireEvent.change(screen.getByLabelText('Personal email'), { target: { value: 'new.guard@example.invalid' } })
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
 
-    const role = screen.getByRole('combobox', { name: /Schedule & timekeeping role/ })
+    const role = screen.getByRole('combobox', { name: /Primary workforce role/ })
     expect(role).toHaveValue('guard')
     expect(within(role).getByRole('option', { name: 'Guard' })).toBeEnabled()
     expect(within(role).getByRole('option', { name: 'Supervisor' })).toBeDisabled()
     expect(within(role).getByRole('option', { name: 'Admin' })).toBeDisabled()
     expect(screen.getByText(/Assigning another workforce role requires Manage roles permission/)).toBeInTheDocument()
+  })
+
+  it('keeps the exact Recruiting & Licensing label from selection through review', async () => {
+    getSessionContext.mockResolvedValue({
+      permissions: ['admin.roles.manage', 'hr.onboarding.manage'],
+      role: 'supervisor',
+    })
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Start onboarding' }))
+    fireEvent.change(screen.getByLabelText('Legal first name'), { target: { value: 'Riley' } })
+    fireEvent.change(screen.getByLabelText('Legal last name'), { target: { value: 'Recruiter' } })
+    fireEvent.change(screen.getByLabelText('Personal email'), { target: { value: 'riley.recruiter@example.invalid' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+
+    fireEvent.change(screen.getByLabelText('Position title'), { target: { value: 'Recruiter' } })
+    fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-10-01' } })
+    fireEvent.change(screen.getByRole('combobox', { name: /Employee time zone/ }), { target: { value: 'America/Denver' } })
+    fireEvent.change(screen.getByRole('combobox', { name: /Primary workforce role/ }), { target: { value: 'recruiting_licensing' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+
+    const review = screen.getByRole('group', { name: 'Review and create' })
+    expect(within(review).getByText('Recruiting & Licensing')).toBeInTheDocument()
+    expect(within(review).queryByText('Recruiting Licensing')).not.toBeInTheDocument()
   })
 })
