@@ -89,7 +89,7 @@ installed function definition were verified directly after application.
   cached zone set, locks leave before assignment carry-forward, returns the
   approved-leave skip count, remains `SECURITY DEFINER` with an empty controlled
   search path, allows authenticated execution, and denies anonymous execution.
-- Full `pnpm check` passed after the final source merge: strict TypeScript,
+- Full `pnpm check` passed after this repair was merged: strict TypeScript,
   zero-warning lint, the full unit/regression suite, production builds, and the
   static-asset contract.
 - The required actual-component Time Clock Playwright workflow passed after the
