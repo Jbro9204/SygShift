@@ -3096,3 +3096,29 @@ pnpm exec wrangler deploy --keep-vars
 - See
   `docs/changelogs/CHANGELOG_09-28-2026_TIME_OFF_WORKSPACE_REBUILD.md` for the
   complete security, verification, release, and rollback record.
+
+# 09/30/2026 - Accountability Call-Off Idempotency Repair
+
+- Repaired Accountability and call-off identity across republished schedule
+  revisions so employee, manager, Time Operations, and legacy retries reuse one
+  canonical occurrence and coverage handoff.
+- Retained and linked historical duplicate rows instead of deleting evidence;
+  preserved original notes, assignments, time events, payroll, and coverage
+  decisions while filtering duplicates from every operational reader.
+- Added the missing employee-to-Operations coverage handoff, automatic terminal
+  alert cleanup, resumable/completed coverage UI states, and recoverable audited
+  Dispatch email delivery.
+- Applied hosted migration `20260930144337`; both the combined pre-release
+  rollback rehearsal and the installed rollback-only SQL regression passed
+  without retained fixtures.
+- Passed the focused 7-file / 49-test regression, the full 339-file / 1,797-test
+  quality gate and production builds, and the 42/42 mandatory desktop/mobile
+  Time Clock matrix.
+- Released source `681f585` as Cloudflare Worker
+  `49d767db-7af0-4f64-bd04-9403525ed35e`; both production origins passed
+  health, readiness, exact-asset, and authenticated live Accountability checks.
+- Rollback source checkpoint:
+  `rollback/pre-accountability-calloff-idempotency-repair-20260930`.
+- See
+  `docs/changelogs/CHANGELOG_09-30-2026_ACCOUNTABILITY_CALL_OFF_IDEMPOTENCY_REPAIR.md`
+  for the complete repair, verification, limitations, and release record.
