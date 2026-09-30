@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This rollback stops new HR document uploads and access without deleting employee data, document metadata, immutable versions, scan evidence, access history, or private objects.
+This rollback stops new HR document uploads and access without deleting employee data, document metadata, immutable versions, access history, or private objects.
 
 ## Immediate containment
 
@@ -10,8 +10,7 @@ This rollback stops new HR document uploads and access without deleting employee
 2. Set `private.hr_document_release_gate.enabled=false`, clearing the activation metadata through an audited administrative operation.
 3. Confirm that new upload requests and new access-grant requests are denied.
 4. Confirm that unused access grants cannot be consumed after the database gate closes.
-5. Keep the scanner callback available long enough to finish or reject files already stored in quarantine. It must not create a document version unless the result is clean.
-6. Revoke the scanner secret if compromise is suspected. Replace it before any later activation.
+5. Confirm there are no incomplete protected-storage verification attempts; retry only after the underlying storage issue is resolved.
 
 ## Preservation requirements
 
@@ -19,10 +18,10 @@ Do not delete records or objects as part of rollback.
 
 - Preserve upload operations and their final state.
 - Preserve immutable document versions.
-- Preserve append-only scan and access evidence.
+- Preserve append-only access evidence and protected-storage integrity evidence.
 - Preserve archive, retention, and legal-hold records.
 - Preserve current employee roles, individual grants, and individual denials unless a separately approved access-removal action is required.
-- Keep quarantine objects isolated for security review or approved disposition.
+- Keep private objects isolated for approved disposition.
 
 ## Recovery verification
 
@@ -39,4 +38,4 @@ After containment:
 
 ## Re-enabling after rollback
 
-Treat re-enablement as a new controlled release. Resolve the cause, repeat the scanner and restore evidence, use a canary permission assignment, perform the complete activation sequence, and retain a new approval record. Never re-enable solely because the original deployment appears healthy again.
+Treat re-enablement as a new controlled release. Resolve the cause, repeat protected-storage and restore evidence, use a canary permission assignment, perform the complete activation sequence, and retain a new approval record. Never re-enable solely because the original deployment appears healthy again.

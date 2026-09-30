@@ -44,14 +44,6 @@ const classificationLabels = {
   restricted: 'Restricted',
 } as const
 
-const scanLabels = {
-  clean: 'Ready',
-  quarantined: 'Uploading',
-  rejected: 'File not accepted',
-  scan_error: 'Upload needs attention',
-  scan_pending: 'Finishing upload',
-} as const
-
 function formatDate(value: string | null): string {
   if (!value) return 'Not recorded'
   const [year, month, day] = value.split('-')
@@ -95,9 +87,6 @@ export function HrisDocumentsPage() {
   const workspaceQuery = useQuery({
     queryFn: () => getHrDocumentWorkspace(filters),
     queryKey: ['hr-documents', filters],
-    refetchInterval: (query) => query.state.data?.documents.some((document) => (
-      document.version?.scanState === 'quarantined' || document.version?.scanState === 'scan_pending'
-    )) ? 2_000 : false,
   })
   const workspace = workspaceQuery.data
   const focusedEmployee = workspace?.employees.find((employee) => employee.id === filters.employeeId)
@@ -222,7 +211,7 @@ export function HrisDocumentsPage() {
           <section className="hr-documents-toolbar">
             <div className="hr-documents-toolbar__heading">
               <div><p className="eyebrow">Saved records</p><h2>{filters.employeeId ? `Files for ${focusedEmployeeName}` : 'Completed and uploaded documents'}</h2><p>{filters.employeeId ? 'Every current file assigned to this employee is shown below.' : 'Search documents that have already been saved to a company or employee record. Working forms and training material stay above.'}</p></div>
-              {workspace.actor.canManageAny ? <button className="primary-action" onClick={() => setWorkbench(filters.employeeId ? { employeeId: filters.employeeId, employeeOnly: true } : {})} type="button"><UploadCloud aria-hidden="true" size={18} />{filters.employeeId ? 'Add document' : 'Add completed PDF'}</button> : null}
+              {workspace.actor.canManageAny && !filters.employeeId ? <button className="primary-action" onClick={() => setWorkbench({})} type="button"><UploadCloud aria-hidden="true" size={18} />Add completed PDF</button> : null}
             </div>
             <div className="hr-documents-filters">
               <form onSubmit={submitSearch}>
@@ -230,7 +219,7 @@ export function HrisDocumentsPage() {
                 <div><Search aria-hidden="true" size={18} /><input id="hr-document-search" onChange={(event) => setSearchInput(event.target.value)} placeholder="Title, category, employee, or file" value={searchInput} /></div>
                 <button className="secondary-button" type="submit">Search</button>
               </form>
-              <label>Employee<select onChange={(event) => updateEmployeeFilter(event.target.value || undefined)} value={filters.employeeId ?? ''}><option value="">All authorized employees</option>{filters.employeeId && !workspace.employees.some((employee) => employee.id === filters.employeeId) ? <option value={filters.employeeId}>{focusedEmployeeName}</option> : null}{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select></label>
+              {!filters.employeeId ? <label>Employee<select onChange={(event) => updateEmployeeFilter(event.target.value || undefined)} value={filters.employeeId ?? ''}><option value="">All authorized employees</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select></label> : null}
               <label>Vault<select onChange={(event) => updateFilter('vaultCode', event.target.value || undefined)} value={filters.vaultCode ?? ''}><option value="">All authorized vaults</option>{workspace.vaults.filter((vault) => vault.canView).map((vault) => <option key={vault.code} value={vault.code}>{vault.name}</option>)}</select></label>
               <label>Rows<select onChange={(event) => updateFilter('pageSize', Number(event.target.value) as PageSize)} value={filters.pageSize ?? 10}><option value={5}>5</option><option value={10}>10</option><option value={20}>20</option></select></label>
               <label className="hr-documents-archive-filter"><input checked={Boolean(filters.includeArchived)} onChange={(event) => updateFilter('includeArchived', event.target.checked)} type="checkbox" /><Archive aria-hidden="true" size={17} />Include archived</label>
@@ -252,8 +241,8 @@ export function HrisDocumentsPage() {
                         <span className="hr-document-row__icon"><FileTypeIcon mimeType={document.version?.mimeType ?? null} /></span>
                         <span className="hr-document-row__identity"><strong>{document.title}</strong><small>{document.employeeLegalName ?? 'Company record'}{document.employeeNumber ? ` · ${document.employeeNumber}` : ''}</small></span>
                         <span><small>Category</small><strong>{document.category}</strong><em>{document.vaultCode}</em></span>
-                        <span><small>Access</small><strong>{classificationLabels[document.accessClassification]}</strong><em className={`hr-scan-state hr-scan-state--${document.version?.scanState ?? 'scan_pending'}`}>{document.version ? scanLabels[document.version.scanState] : 'No file'}</em></span>
-                        <span><small>Version</small><strong>{document.version ? `Version ${document.version.versionNumber}` : 'Pending'}</strong><em>{document.version ? formatOperationalDateTime(document.version.uploadedAt) : 'No upload recorded'}</em></span>
+                        <span><small>Access</small><strong>{classificationLabels[document.accessClassification]}</strong><em className={`hr-document-availability hr-document-availability--${document.canPreview || document.canDownload ? 'available' : 'unavailable'}`}>{document.version ? document.canPreview || document.canDownload ? 'Available' : 'Unavailable' : 'No file'}</em></span>
+                        <span><small>Version</small><strong>{document.version ? `Version ${document.version.versionNumber}` : 'No file'}</strong><em>{document.version ? formatOperationalDateTime(document.version.uploadedAt) : 'No upload recorded'}</em></span>
                         <ChevronDown aria-hidden="true" className={isExpanded ? 'rotated' : ''} />
                       </button>
                       {isExpanded ? (
@@ -262,14 +251,14 @@ export function HrisDocumentsPage() {
                             <div><dt>Description</dt><dd>{document.description || 'No description recorded'}</dd></div>
                             <div><dt>Effective date</dt><dd>{formatDate(document.effectiveDate)}</dd></div>
                             <div><dt>Expiration date</dt><dd>{formatDate(document.expirationDate)}</dd></div>
-                            <div><dt>File</dt><dd>{document.version ? `${document.version.filename} · ${formatFileSize(document.version.sizeBytes)}` : 'No released file'}</dd></div>
+                            <div><dt>File</dt><dd>{document.version ? `${document.version.filename} · ${formatFileSize(document.version.sizeBytes)}` : 'No uploaded file'}</dd></div>
                           </dl>
                           <div aria-label={`Actions for ${document.title}`} className="hr-document-row__actions" role="group">
                             {document.canDownload && document.version?.mimeType === 'application/pdf' ? <button className="primary-action" disabled={openForWork.isPending} onClick={() => openForWork.mutate(document)} type="button"><FilePenLine aria-hidden="true" size={17} />Work on a copy</button> : null}
                             {document.canPreview ? <button className="secondary-button" onClick={() => setAccessTarget({ action: 'preview', document })} type="button"><Eye aria-hidden="true" size={17} />Preview</button> : null}
                             {document.canDownload ? <button className="secondary-button" onClick={() => setAccessTarget({ action: 'download', document })} type="button"><Download aria-hidden="true" size={17} />Download</button> : null}
                             {document.canManage ? <button className={document.archivedAt ? 'secondary-button' : 'danger-button'} onClick={() => { lifecycleMutation.reset(); setLifecycleTarget(document) }} type="button">{document.archivedAt ? <><RotateCcw aria-hidden="true" size={17} />Restore</> : <><Archive aria-hidden="true" size={17} />{document.employeeId ? 'Remove from employee file' : 'Archive'}</>}</button> : null}
-                            {!document.canPreview && !document.canDownload ? <span>This file is still being prepared. It will be available here automatically.</span> : null}
+                            {!document.canPreview && !document.canDownload ? <span>This file is not available for viewing or download. Contact an authorized HR administrator if it needs attention.</span> : null}
                           </div>
                         </div>
                       ) : null}

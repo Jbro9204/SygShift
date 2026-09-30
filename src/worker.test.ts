@@ -1166,13 +1166,14 @@ describe('Cloudflare Worker boundary', () => {
       environment(new Response('asset'), {
         ...configuredEnvironment,
         EMAIL: { send: emailSend },
+        SYGSHIFT_SYGSPHERE_RESUMABLE_UPLOADS_ENABLED: 'true',
       }),
       { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
     )
 
-    expect(scheduledWork).toHaveLength(4)
+    expect(scheduledWork).toHaveLength(7)
     await Promise.all(scheduledWork)
-    expect(fetchMock).toHaveBeenCalledTimes(14)
+    expect(fetchMock).toHaveBeenCalledTimes(18)
     const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
     for (const rpc of [
       'service_process_due_sygtasks_reminders',
@@ -1189,6 +1190,10 @@ describe('Cloudflare Worker boundary', () => {
       'service_claim_notification_batch',
       'service_claim_support_ticket_notification_batch',
       'service_claim_employee_notification_batch',
+      'service_list_hr_document_availability_recovery',
+      'service_list_sygsphere_file_availability_recovery',
+      'service_list_sygsphere_resumable_availability_recovery',
+      'service_list_sygsphere_resumable_purge',
     ]) expect(calledUrls.some((url) => url.includes(`/rpc/${rpc}`))).toBe(true)
     const automationCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/rpc/service_run_timekeeping_automation'))!
     const scheduleRefreshCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/rpc/service_refresh_attendance_alert_schedule_state'))!
@@ -1200,6 +1205,38 @@ describe('Cloudflare Worker boundary', () => {
     expect(scheduleRefreshBody.target_full_reconciliation).toBe(false)
     expect(lifecycleBody.target_full_reconciliation).toBe(false)
     expect(emailSend).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('leaves legacy HR uploads unavailable when recovery cannot re-read their private object', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/rpc/service_list_hr_document_availability_recovery')) {
+        return new Response(JSON.stringify([{
+          bucket: 'hr-general',
+          checksum: 'a'.repeat(64),
+          objectKey: '10000000-0000-4000-8000-000000000001/20000000-0000-4000-8000-000000000002',
+          operationId: '30000000-0000-4000-8000-000000000003',
+          sizeBytes: 4,
+        }]), { headers: { 'content-type': 'application/json' } })
+      }
+      if (url.includes('/storage/v1/object/hr-general/')) return new Response('missing', { status: 404 })
+      return new Response(JSON.stringify([]), { headers: { 'content-type': 'application/json' } })
+    })
+    const scheduledWork: Promise<unknown>[] = []
+    vi.stubGlobal('fetch', fetchMock)
+
+    await worker.scheduled(
+      { cron: '* * * * *', scheduledTime: Date.UTC(2026, 7, 18, 18, 3) },
+      environment(new Response('asset'), { ...configuredEnvironment, EMAIL: { send: vi.fn() } }),
+      { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+    )
+
+    await Promise.all(scheduledWork)
+    const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
+    expect(calledUrls.some((url) => url.includes('/rpc/service_list_hr_document_availability_recovery'))).toBe(true)
+    expect(calledUrls.some((url) => url.includes('/storage/v1/object/hr-general/'))).toBe(true)
+    expect(calledUrls.some((url) => url.includes('/rpc/service_mark_hr_document_upload_stored'))).toBe(false)
     vi.unstubAllGlobals()
   })
 

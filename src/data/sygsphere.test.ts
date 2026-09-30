@@ -57,13 +57,13 @@ describe('SygSphere navigation and drafts', () => {
     expect(sphereCanPreview({ mimeType: 'text/plain', sizeBytes: 1048577 })).toBe(false)
     expect(sphereCanPreview({ mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', sizeBytes: 100 })).toBe(false)
   })
-  it('waits through transient mobile storage confirmation before completing the upload', async () => {
+  it('waits through transient storage confirmation before making the upload available', async () => {
     const requestId = '33333333-3333-4333-8333-333333333333'
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(Response.json({ detail: 'The upload has not finished.', error: 'sygsphere_file_not_stored', requestId }, { status: 409 }))
-      .mockResolvedValueOnce(Response.json({ state: 'uploaded', uploadId: requestId }, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({ state: 'clean', uploadId: requestId }, { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
-    await expect(sphereCompleteUpload(requestId, undefined, [0, 0])).resolves.toMatchObject({ state: 'processing', uploadId: requestId })
+    await expect(sphereCompleteUpload(requestId, undefined, [0, 0])).resolves.toMatchObject({ state: 'clean', uploadId: requestId })
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
   it('requires a real retransmission when storage never received a resumable upload', async () => {
@@ -88,18 +88,18 @@ describe('SygSphere navigation and drafts', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(error).toMatchObject({ code: 'sygsphere_storage_transfer_failed', completionPending: false, uploadId })
   })
-  it('sends normal attachments through the queued security-check pipeline without waiting for the scanner', async () => {
+  it('makes normal attachments available as soon as protected storage confirms them', async () => {
     const fileId = '66666666-6666-4666-8666-666666666666'
     const conversationId = '67676767-6767-4767-8767-676767676767'
     const requestReference = '77777777-7777-4777-8777-777777777777'
     const fetchMock = vi.fn().mockResolvedValue(Response.json(
-      { uploadId: fileId, requestReference, state: 'scanning' },
-      { status: 202 },
+      { uploadId: fileId, requestReference, state: 'clean' },
+      { status: 200 },
     ))
     vi.stubGlobal('fetch', fetchMock)
     const file = new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], 'report.pdf', { type: 'application/pdf' })
 
-    await expect(sphereUpload(file, fileId, conversationId, null)).resolves.toEqual({ state: 'processing', uploadId: fileId, requestReference })
+    await expect(sphereUpload(file, fileId, conversationId, null)).resolves.toEqual({ state: 'clean', uploadId: fileId, requestReference })
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/v1/sygsphere/uploads')
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ cache: 'no-store', method: 'POST' })

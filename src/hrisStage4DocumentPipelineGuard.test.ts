@@ -19,7 +19,7 @@ describe('HRIS Stage 4 protected document pipeline', () => {
       .toThrow('The file name, declared type, and verified content do not match.')
   })
 
-  it('rejects active PDF content before it can enter quarantine', () => {
+  it('rejects active PDF content before protected storage acceptance', () => {
     const unsafePdf = encoder.encode('%PDF-1.7\n1 0 obj << /OpenAction 2 0 R /JavaScript true >>')
 
     expect(() => validateHrDocumentFile(unsafePdf, 'unsafe.pdf', 'application/pdf'))

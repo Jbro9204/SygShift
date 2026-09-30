@@ -114,7 +114,7 @@ export function HrSystemRolloutPanel({ onComplete }: { onComplete: () => Promise
       }
       setStage('Complete')
       setState('complete')
-      setMessage('The full HR and Training PDF package is registered. Security scanning continues in the protected processing queue.')
+      setMessage('The full HR and Training PDF package is registered and available in its protected document areas.')
       await onComplete()
     } catch (error) {
       setState('error')
@@ -123,7 +123,7 @@ export function HrSystemRolloutPanel({ onComplete }: { onComplete: () => Promise
   }
 
   return <section className="hr-system-rollout">
-    <header><div><p className="eyebrow">Controlled release</p><h2>HR System v2.1 rollout</h2><p>Imports the validated PDF library through the existing private vault, malware scanner, immutable version, and audit controls.</p></div><Library aria-hidden="true" size={26}/></header>
+    <header><div><p className="eyebrow">Controlled release</p><h2>HR System v2.1 rollout</h2><p>Imports the validated PDF library through the existing private vault, immutable version, and audit controls.</p></div><Library aria-hidden="true" size={26}/></header>
     <input accept="application/json,application/pdf" aria-label="Choose HR System rollout folder" multiple onChange={(event) => void selectFolder(event)} ref={(element) => { folderInput.current = element; element?.setAttribute('webkitdirectory', '') }} style={{ display: 'none' }} type="file" />
     <input accept="application/zip,.zip" aria-label="Choose HR System rollout ZIP" onChange={(event) => void selectArchive(event)} ref={archiveInput} style={{ display: 'none' }} type="file" />
     <div className={`hr-system-rollout__status is-${state}`}>

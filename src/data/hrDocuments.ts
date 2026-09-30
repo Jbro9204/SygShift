@@ -40,7 +40,7 @@ const versionSchema = z.object({
   mimeType: nullableText,
   sizeBytes: z.number().nonnegative(),
   uploadedAt: z.string(),
-  scanState: z.enum(['quarantined', 'scan_pending', 'clean', 'rejected', 'scan_error']),
+  scanState: z.enum(['quarantined', 'scan_pending', 'clean', 'rejected', 'scan_error', 'storage_error']),
 })
 
 const documentSchema = z.object({

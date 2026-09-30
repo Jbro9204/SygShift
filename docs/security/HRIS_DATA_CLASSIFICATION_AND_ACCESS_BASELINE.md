@@ -52,9 +52,9 @@ Before an object becomes available it must pass:
 
 1. extension, MIME, size, and file-signature validation;
 2. active-content restrictions;
-3. quarantine storage;
-4. malware scanning;
-5. an authorized release from quarantine;
+3. protected private storage with an exact bucket, object-key, size, and MIME record;
+4. SHA-256 verification of the bytes written to private storage;
+5. authorized availability registration;
 6. version and retention registration.
 
 Preview and download use short-lived, single-purpose server delivery after an authorization check. Public URLs and permanent signed URLs are prohibited. Every preview, download, replacement, archive, restore, retention change, and legal hold is audited.
@@ -73,7 +73,7 @@ Break-glass access is disabled by default and is not a hidden Admin bypass. The 
 - require second-person review after use;
 - permit immediate revocation.
 
-Break-glass cannot bypass impossible-data rules, locked payroll snapshots, audit integrity, malware quarantine, or separated-account authentication controls.
+Break-glass cannot bypass impossible-data rules, locked payroll snapshots, audit integrity, document validation or integrity verification, or separated-account authentication controls.
 
 ## Audit requirements
 

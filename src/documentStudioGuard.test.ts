@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const migration = readFileSync('supabase/migrations/20260902202948_enterprise_document_studio.sql', 'utf8')
+const immediateAvailabilityMigration = readFileSync('supabase/migrations/20260930215000_document_upload_immediate_availability.sql', 'utf8')
 const worker = readFileSync('worker/index.ts', 'utf8')
 const studioPage = readFileSync('src/components/DocumentStudioDashboard.tsx', 'utf8')
 const workbench = readFileSync('src/components/DocumentWorkbench.tsx', 'utf8')
@@ -17,6 +18,7 @@ describe('enterprise Document Studio safeguards', () => {
 
   it('pins signature execution to an exact clean immutable source version', () => {
     expect(migration).toContain("private.hr_document_latest_scan_state(version_record.id)<>'clean'")
+    expect(immediateAvailabilityMigration).toContain('private.hr_document_latest_availability_state')
     expect(migration).toContain('document.current_version_id=envelope_record.document_version_id')
     expect(migration).toContain('sourceChecksum')
     expect(migration).toContain('final_package_checksum')
@@ -29,6 +31,17 @@ describe('enterprise Document Studio safeguards', () => {
     expect(migration).toContain('signature_audit_certificates_immutable')
     expect(worker).toContain('buildSignatureAuditCertificate')
     expect(worker).toContain('service_commit_signature_finalization')
+    expect(immediateAvailabilityMigration).toContain('create or replace function public.service_commit_signature_finalization')
+    expect(immediateAvailabilityMigration).toContain('Finalization files must remain in the approved private vault.')
+    expect(immediateAvailabilityMigration).toContain("'Signed final PDF and audit certificate completed after protected storage and checksum verification.'")
+    expect(immediateAvailabilityMigration).not.toContain("'SygShift trusted PDF finalizer'")
+    const finalVerification = worker.indexOf('finalObjectKey,\n      finalBytes.byteLength,\n      finalChecksum,')
+    const auditVerification = worker.indexOf('auditObjectKey,\n      auditBytes.byteLength,\n      auditChecksum,')
+    const commit = worker.indexOf("'service_commit_signature_finalization'")
+    expect(finalVerification).toBeGreaterThan(0)
+    expect(auditVerification).toBeGreaterThan(0)
+    expect(finalVerification).toBeLessThan(commit)
+    expect(auditVerification).toBeLessThan(commit)
   })
 
   it('preserves recorded signature evidence when PDF finalization must retry', () => {

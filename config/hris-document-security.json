@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "release": {
     "featureFlag": "SYGSHIFT_DOCUMENT_PIPELINE_ENABLED",
     "defaultEnabled": false,
@@ -32,12 +32,11 @@
     "checksumAlgorithm": "sha256",
     "allowedExtensions": ["pdf", "png", "jpg", "jpeg", "webp", "txt", "docx", "xlsx"]
   },
-  "malware": {
-    "quarantineByDefault": true,
-    "scanRequiredBeforeAccess": true,
-    "previewBeforeCleanScanAllowed": false,
-    "downloadBeforeCleanScanAllowed": false,
-    "releaseRequiresScannerEvidence": true
+  "availability": {
+    "requiresProtectedStorageVerification": true,
+    "requiresChecksumIntegrityMatch": true,
+    "immediatelyAvailableAfterVerification": true,
+    "backgroundSecurityScanRequired": false
   },
   "history": {
     "versionsImmutable": true,

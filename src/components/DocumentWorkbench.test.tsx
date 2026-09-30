@@ -318,7 +318,7 @@ describe('DocumentWorkbench editor', () => {
     client.clear()
   })
 
-  it('reports a durable filing immediately while the exact completed PDF finishes processing in the background', async () => {
+  it('reports a completed filing immediately after the exact PDF is stored', async () => {
     const sourcePdf = await PDFDocument.create()
     sourcePdf.addPage([612, 792])
     const source = await sourcePdf.save()
@@ -329,7 +329,7 @@ describe('DocumentWorkbench editor', () => {
     let uploadedFile: File | null = null
     documentApi.upload.mockImplementation(async (input: { file: File }) => {
       uploadedFile = input.file
-      return { documentId, operationId: '30000000-0000-4000-8000-000000000001', requestId: 'request', scanState: 'scan_pending', versionId: '40000000-0000-4000-8000-000000000001' }
+      return { documentId, operationId: '30000000-0000-4000-8000-000000000001', requestId: 'request', scanState: 'clean', versionId: '40000000-0000-4000-8000-000000000001' }
     })
     const onSaved = vi.fn()
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
@@ -341,7 +341,7 @@ describe('DocumentWorkbench editor', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'File' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save to company documents' }))
 
-    await screen.findByText('Saved to Company documents. You can close this window; processing will finish in the background.')
+    await screen.findByText('Saved to Company documents.')
     expect(documentApi.getWorkspace).not.toHaveBeenCalled()
     expect(documentApi.getBlob).not.toHaveBeenCalled()
     expect(onSaved).toHaveBeenCalledTimes(1)

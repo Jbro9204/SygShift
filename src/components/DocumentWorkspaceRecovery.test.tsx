@@ -80,8 +80,8 @@ describe('Document Studio identity recovery', () => {
           id: '60000000-0000-4000-8000-000000000001', employeeId, employeeNumber: 'SYG-1058', employeeLegalName: 'Zachary Alexander Ward',
           vaultCode: 'hr-general', title: 'Zach Ward Medical Excuse 9.11.26', category: 'Business document', description: null,
           accessClassification: 'confidential', effectiveDate: null, expirationDate: null, archivedAt: null,
-          canManage: true, canPreview: false, canDownload: false,
-          version: { id: '70000000-0000-4000-8000-000000000001', versionNumber: 1, filename: 'zach-ward-medical-excuse.pdf', mimeType: 'application/pdf', sizeBytes: 719094, uploadedAt: '2026-09-11T20:00:23Z', scanState: 'scan_pending' },
+          canManage: true, canPreview: true, canDownload: true,
+          version: { id: '70000000-0000-4000-8000-000000000001', versionNumber: 1, filename: 'zach-ward-medical-excuse.pdf', mimeType: 'application/pdf', sizeBytes: 719094, uploadedAt: '2026-09-11T20:00:23Z', scanState: 'clean' },
         }],
         pagination: { page: 1, pageSize: 10, totalCount: 1, totalPages: 1 },
       })
@@ -93,8 +93,9 @@ describe('Document Studio identity recovery', () => {
     expect(requestedUrls).toHaveLength(1)
     expect(requestedUrls[0]).toContain(`employeeId=${employeeId}`)
     expect(screen.getByRole('region', { name: 'Documents for Zachary Alexander Ward' })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Employee' })).toHaveValue(employeeId)
+    expect(screen.queryByRole('combobox', { name: 'Employee' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Employee File' })).toHaveAttribute('href', `/hr/people/${employeeId}`)
+    expect(screen.getAllByRole('button', { name: 'Add document' })).toHaveLength(1)
     expect(screen.queryByText('What would you like to do?')).not.toBeInTheDocument()
     client.clear()
   })

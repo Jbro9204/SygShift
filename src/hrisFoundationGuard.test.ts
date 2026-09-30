@@ -51,8 +51,8 @@ describe('HRIS Stage 1 security foundation', () => {
     expect(foundation.releaseGate.protectedProductionDataAllowed).toBe(false)
     expect(foundation.releaseGate.requiredEvidence).toEqual(expect.arrayContaining([
       'authorization-tests',
+      'audit-integrity-tests',
       'backup-restore-drill',
-      'document-quarantine-validation',
       'rollback-validation',
     ]))
   })
@@ -82,7 +82,7 @@ describe('HRIS Stage 1 security foundation', () => {
     }
   })
 
-  it('keeps every HR document family private and separately permissioned', () => {
+  it('keeps every HR document family private, validated, and separately permissioned', () => {
     expect(foundation.vaults.map(({ code }) => code)).toEqual(expect.arrayContaining([
       'hr-general',
       'hr-financial',
@@ -98,12 +98,14 @@ describe('HRIS Stage 1 security foundation', () => {
     expect(foundation.documentControls).toMatchObject({
       publicAccess: false,
       directStorageUrls: false,
-      quarantineRequired: true,
-      malwareScanRequired: true,
+      extensionValidationRequired: true,
       immutableVersions: true,
       legalHoldSupported: true,
+      mimeValidationRequired: true,
       previewAudited: true,
       downloadAudited: true,
+      shortLivedAccessRequired: true,
+      signatureValidationRequired: true,
     })
   })
 

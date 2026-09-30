@@ -35,11 +35,11 @@ A restoration drill must be completed in an isolated environment before the stag
 
 Before Stage 4 activation, verify:
 
-- quarantined and released objects restore with their metadata;
+- available and unavailable objects restore with their immutable metadata;
 - object versions remain linked to the correct employee and document identity;
 - retention dates and legal holds survive recovery;
 - restored objects remain private;
-- malware/scan disposition does not revert to trusted without evidence;
+- availability does not change unless private-storage identity and SHA-256 integrity are verified again;
 - preview/download audit history still references the immutable document version;
 - deleted or archived objects follow approved retention rather than permanent browser deletion.
 

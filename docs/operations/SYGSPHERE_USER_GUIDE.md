@@ -23,7 +23,7 @@ Select the branded SygSphere launcher above **Need Help?**. Its badge counts con
 
 ## Share files
 
-Select the paperclip, choose a file and review **Share file**. Supported files: PDF, PNG/JPEG/WebP, plain text, DOCX and XLSX, up to 25 MB. Unsafe file structures and malware are blocked. Sharing waits for a clean scan; there is no public file URL or unscanned download. File uploads need the page to stay open until complete.
+Select the paperclip, choose a file and review **Share file**. Supported files: PDF, PNG/JPEG/WebP, plain text, DOCX and XLSX, up to 25 MB. Unsafe file structures are blocked. Once the system has stored the file privately and verified its checksum, it is available immediately; there is no public file URL. File uploads need the page to stay open until complete.
 
 Use the download card or **Conversation details → Files** to retrieve shared files. Download authorization is checked again every time; removing someone from a conversation removes their file access. Files already downloaded to someone's device cannot be recalled.
 

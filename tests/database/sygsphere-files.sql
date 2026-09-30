@@ -8,7 +8,7 @@ begin
   perform set_config('request.jwt.claim.sub',accounts[1]::text,true);
   perform set_config('request.jwt.claims',jsonb_build_object('sub',accounts[1],'role','authenticated','aal','aal2')::text,true);
   cid:=(public.sygsphere_request('create',jsonb_build_object('kind','group','name','File boundary rehearsal','members',jsonb_build_array(actors[2])))->>'id')::uuid;
-  begin perform public.service_sygsphere_file('begin',actors[1],jsonb_build_object('fileId',fid,'conversationId',cid)); raise exception 'Browser trusted as scanner'; exception when insufficient_privilege then null; end;
+  begin perform public.service_sygsphere_file('begin',actors[1],jsonb_build_object('fileId',fid,'conversationId',cid)); raise exception 'Browser trusted as availability service'; exception when insufficient_privilege then null; end;
   perform set_config('request.jwt.claim.role','service_role',true);
   perform set_config('request.jwt.claims',jsonb_build_object('role','service_role')::text,true);
   perform public.service_sygsphere_file('begin',actors[1],jsonb_build_object('fileId',fid,'conversationId',cid,'filename','Rehearsal.txt','mimeType','text/plain','sizeBytes',5,'checksum',checksum));
@@ -17,20 +17,23 @@ begin
   begin perform public.sygsphere_files('access',jsonb_build_object('fileId',fid)); raise exception 'Pending file readable'; exception when insufficient_privilege then null; end;
   perform set_config('request.jwt.claim.role','service_role',true);
   perform set_config('request.jwt.claims',jsonb_build_object('role','service_role')::text,true);
-  begin perform public.service_sygsphere_file('complete',actors[1],jsonb_build_object('fileId',fid,'state','clean','scanner','ClamAV test')); raise exception 'Missing checksum accepted'; exception when check_violation then null; end;
-  payload:=public.service_sygsphere_file('complete',actors[1],jsonb_build_object('fileId',fid,'state','clean','scanner','ClamAV test','checksum',checksum)); msg:=(payload->>'messageId')::uuid;
-  payload:=public.service_sygsphere_file('complete',actors[1],jsonb_build_object('fileId',fid,'state','clean','scanner','ClamAV test','checksum',checksum));
+  begin perform public.service_sygsphere_file('complete',actors[1],jsonb_build_object('fileId',fid,'state','clean')); raise exception 'Missing checksum accepted'; exception when check_violation then null; end;
+  begin perform public.service_sygsphere_file('complete',actors[1],jsonb_build_object('fileId',fid,'state','clean','checksum',checksum)); raise exception 'Missing private storage object accepted'; exception when check_violation then null; end;
+  insert into storage.objects(bucket_id,name,metadata)
+  values('sygsphere-files',cid::text||'/'||fid::text,jsonb_build_object('size',5,'contentLength',5,'mimetype','text/plain'));
+  payload:=public.service_sygsphere_file('complete',actors[1],jsonb_build_object('fileId',fid,'state','clean','checksum',checksum)); msg:=(payload->>'messageId')::uuid;
+  payload:=public.service_sygsphere_file('complete',actors[1],jsonb_build_object('fileId',fid,'state','clean','checksum',checksum));
   if (payload->>'messageId')::uuid<>msg or (select count(*) from private.sygsphere_messages where conversation_id=cid)<>1 then raise exception 'File retry duplicated message'; end if;
   perform set_config('request.jwt.claim.role','authenticated',true);
   perform set_config('request.jwt.claim.sub',accounts[2]::text,true);
   perform set_config('request.jwt.claims',jsonb_build_object('sub',accounts[2],'role','authenticated','aal','aal2')::text,true);
-  if (public.sygsphere_files('access',jsonb_build_object('fileId',fid))->>'filename')<>'Rehearsal.txt' then raise exception 'Clean member download unavailable'; end if;
+  if (public.sygsphere_files('access',jsonb_build_object('fileId',fid))->>'filename')<>'Rehearsal.txt' then raise exception 'Available member download unavailable'; end if;
   update private.sygsphere_members set removed_at=clock_timestamp() where conversation_id=cid and employee_id=actors[2];
   begin perform public.sygsphere_files('access',jsonb_build_object('fileId',fid)); raise exception 'Removed member download allowed'; exception when insufficient_privilege then null; end;
   perform set_config('request.jwt.claim.sub',accounts[3]::text,true);
   perform set_config('request.jwt.claims',jsonb_build_object('sub',accounts[3],'role','authenticated','aal','aal2')::text,true);
   begin perform public.sygsphere_files('list',jsonb_build_object('conversationId',cid)); raise exception 'Nonmember file list allowed'; exception when insufficient_privilege then null; end;
-  if has_function_privilege('authenticated','public.service_sygsphere_file(text,uuid,jsonb)','EXECUTE') then raise exception 'Browser scanner privilege'; end if;
+  if has_function_privilege('authenticated','public.service_sygsphere_file(text,uuid,jsonb)','EXECUTE') then raise exception 'Browser availability-service privilege'; end if;
   if exists(select 1 from storage.buckets where id='sygsphere-files' and public) then raise exception 'Public files bucket'; end if;
 end $$;
-select 'SygSphere file quarantine, service-only scanner, checksum, retry and membership checks passed; rollback follows.' as file_result;
+select 'SygSphere protected storage, service-only availability completion, checksum, retry and membership checks passed; rollback follows.' as file_result;

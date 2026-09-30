@@ -17,7 +17,7 @@ const assignmentSchema = z.object({
   documentId: z.string().uuid(), versionId: z.string().uuid(), documentTitle: z.string(), category: z.string().optional(),
   requirementType: z.enum(['acknowledgment', 'electronic_signature']), statement: z.string(),
   dueDate: nullableText, status: assignmentStatusSchema, createdAt: z.string(), completedAt: nullableText,
-  scanState: z.enum(['quarantined', 'scan_pending', 'clean', 'rejected', 'scan_error']).optional(),
+  scanState: z.enum(['quarantined', 'scan_pending', 'clean', 'rejected', 'scan_error', 'storage_error']).optional(),
 })
 
 const managerWorkspaceSchema = z.object({

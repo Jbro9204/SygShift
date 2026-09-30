@@ -40,7 +40,7 @@ describe('Document Studio access boundary', () => {
       handler('handleHrDocumentUpload', 'handleHrDocumentWorkspace'),
       handler('handleHrDocumentWorkspace', 'handleHrDocumentArchive'),
       handler('handleHrDocumentArchive', 'handleHrTemplateLibrary'),
-      handler('handleHrTemplateLibrary', 'handleHrDocumentScanCallback'),
+      handler('handleHrTemplateLibrary', 'handleAssignedTrainingDocument'),
       handler('handleHrDocumentAccessGrant', 'handleHrDocumentAccess'),
       handler('handleHrDocumentWorkflowWorkspace', 'handleMyHrDocumentWorkspace'),
       handler('handleCreateHrDocumentRequest', 'handleReviewHrDocumentRequest'),

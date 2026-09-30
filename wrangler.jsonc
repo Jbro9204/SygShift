@@ -22,10 +22,6 @@
   "durable_objects": {
     "bindings": [
       {
-        "name": "DOCUMENT_SCANNER",
-        "class_name": "DocumentScannerContainer"
-      },
-      {
         "name": "TENANT_COMMS",
         "class_name": "TenantCommsDurableObject"
       }
@@ -39,43 +35,12 @@
     {
       "tag": "v2-sygsphere-communications-coordinator",
       "new_sqlite_classes": ["TenantCommsDurableObject"]
-    }
-  ],
-  "containers": [
+    },
     {
-      "name": "sygshift-document-scanner",
-      "class_name": "DocumentScannerContainer",
-      "image": "docker.io/clamav/clamav:1.5.4",
-      "instance_type": "standard-1",
-      "max_instances": 1,
-      "constraints": {
-        "regions": ["ENAM", "WNAM"]
-      },
-      "ssh": {
-        "enabled": false
-      }
+      "tag": "v3-document-scanner-retired",
+      "deleted_classes": ["DocumentScannerContainer"]
     }
   ],
-  "queues": {
-    "producers": [
-      {
-        "binding": "DOCUMENT_SCAN_QUEUE",
-        "queue": "sygshift-document-scans"
-      }
-    ],
-    "consumers": [
-      {
-        "queue": "sygshift-document-scans",
-        "max_batch_size": 1,
-        "max_batch_timeout": 10,
-        "max_retries": 5,
-        "dead_letter_queue": "sygshift-document-scans-dlq",
-        "max_concurrency": 1,
-        "retry_delay": 30,
-        "visibility_timeout_ms": 480000
-      }
-    ]
-  },
   "send_email": [
     {
       "name": "EMAIL"

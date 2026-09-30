@@ -1,5 +1,7 @@
 # HRIS Stage 4 Secure Document Foundation
 
+> **Superseded workflow notice — 09/30/2026:** This document records the original foundation design. The active document workflow has no malware scanner, quarantine queue, scanner callback, or background preparation state. A supported upload becomes available immediately after server-side file validation, private storage verification, and SHA-256 integrity verification. Private storage, access controls, recent MFA, immutable versions, retention, legal holds, short-lived access, and audit records remain required.
+
 ## Run 1 boundary
 
 Stage 4 Run 1 installs a dormant document-security foundation. It does not expose upload, preview, download, archive, restore, acknowledgment, or signature controls. The release gate is disabled by default and cannot be enabled without recorded security and recovery evidence.
@@ -28,11 +30,9 @@ Each restricted vault has separate view and manage permissions. Receiving access
 - Future preview and download links must be server-authorized, short-lived, and audited.
 - The maximum file size is 25 MB.
 
-## File lifecycle
+## Historical Run 1 file lifecycle
 
-Every future upload must enter quarantine before it can be released. The upload boundary must verify file signature, detected MIME type, extension, size, active content, and SHA-256 checksum. A document cannot be previewed or downloaded until an approved malware scanner records a clean result with evidence.
-
-The current run stores only the schema and enforcement evidence required for that lifecycle. It intentionally provides no upload path until the scanner and recovery path are implemented and tested.
+This historical run required quarantine and a scanner before release. That design is no longer active. The current upload boundary verifies file signature, detected MIME type, extension, size, active content, protected storage, and SHA-256 checksum; the document is then available immediately. No upload waits on or invokes a malware scanner.
 
 ## Authorization requirements
 
@@ -44,7 +44,7 @@ The existing MFA check in the dormant schema is only an account-security prerequ
 
 - Document versions are immutable.
 - Replacements create a new version instead of overwriting an old file.
-- Scan and access records are append-only.
+- Historical scan and access records are append-only; new availability and access records are append-only.
 - Browser hard delete is prohibited; documents are archived instead.
 - Active legal holds prevent disposition.
 - Retention defaults to manual review until approved policies are supplied.
@@ -52,11 +52,11 @@ The existing MFA check in the dormant schema is only an account-security prerequ
 
 ## Required evidence before Run 2 release
 
-- Approved scanner integration and scanner-failure behavior
+- Protected-storage and checksum-verification behavior
 - File-signature and active-content validation tests
 - Recent-MFA enforcement tests
 - Cross-vault denial tests
-- Quarantine, clean, rejected, and recovery-path tests
+- Immediate-availability, rejected, storage-failure, and recovery-path tests
 - Short-lived access and audit tests
 - Backup and restore evidence
 - Confirmation that current access assignments and operational data remain unchanged

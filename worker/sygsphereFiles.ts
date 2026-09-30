@@ -9,7 +9,6 @@ type Dependencies = {
   authorize: (action: string, input: Record<string, unknown>) => Promise<unknown>
   operation: (action: string, input: Record<string, unknown>) => Promise<unknown>
   validate: (bytes: Uint8Array, filename: string, mimeType: string) => { detectedMimeType: string; sanitizedFilename: string }
-  scan: (bytes: Uint8Array) => Promise<{ state: string; scannerName: string; scannerVersion: string }>
   store: (path: string, bytes: Uint8Array, mime: string) => Promise<void>
   fetch: (path: string) => Promise<Response>
 }
@@ -29,6 +28,23 @@ export async function boundedSphereUpload(request: Pick<Request, 'body' | 'heade
   const bytes = new Uint8Array(length); let offset = 0
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
   return bytes
+}
+
+async function verifyStoredSphereFile(
+  stored: Response,
+  expectedSizeBytes: number,
+  expectedChecksum: string,
+): Promise<void> {
+  if (!stored.ok) throw new Error('The file could not be stored securely.')
+  const storedBytes = await boundedSphereUpload(stored)
+  if (storedBytes.byteLength !== expectedSizeBytes) {
+    throw new Error('The stored file size does not match the approved upload.')
+  }
+  const storedHash = await crypto.subtle.digest('SHA-256', new Uint8Array(storedBytes).buffer)
+  const storedChecksum = [...new Uint8Array(storedHash)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+  if (storedChecksum !== expectedChecksum) {
+    throw new Error('The stored file checksum does not match the approved upload.')
+  }
 }
 
 export async function handleSphereFiles(request: Request, dependencies: Dependencies): Promise<Response> {
@@ -70,21 +86,19 @@ export async function handleSphereFiles(request: Request, dependencies: Dependen
   if (operation.state === 'clean') return Response.json(operation)
   const objectKey = `${conversationId.data}/${fileId.data}`
   try {
-    // Private storage is quarantine: there is no object policy or download until clean evidence is committed.
-    try { await dependencies.store(objectKey, bytes, validated.detectedMimeType) } catch {
-      const previous = await dependencies.fetch(objectKey)
-      if (!previous.ok) throw new Error('The file could not be stored securely.')
-      const previousBytes = await boundedSphereUpload(previous)
-      const previousHash = await crypto.subtle.digest('SHA-256', new Uint8Array(previousBytes).buffer)
-      if ([...new Uint8Array(previousHash)].map((byte) => byte.toString(16).padStart(2, '0')).join('') !== checksum) throw new Error('This retry does not match the stored file.')
-    }
-    const scan = await dependencies.scan(bytes)
-    const state = scan.state === 'clean' ? 'clean' : 'rejected'
-    const result = operationSchema.parse(await dependencies.operation('complete', { ...metadata, state, scanner: `${scan.scannerName} ${scan.scannerVersion}` }))
-    if (state !== 'clean') return failure('This file was blocked by its security scan. It was not shared.', 422)
+    // The file becomes shareable only after a durable read-back verifies the
+    // exact private object. A matching pre-existing object remains a safe
+    // idempotent retry when the initial storage write reports a conflict.
+    try { await dependencies.store(objectKey, bytes, validated.detectedMimeType) } catch { /* verify the existing object below */ }
+    await verifyStoredSphereFile(
+      await dependencies.fetch(objectKey),
+      bytes.byteLength,
+      checksum,
+    )
+    const result = operationSchema.parse(await dependencies.operation('complete', { ...metadata, state: 'clean' }))
     return Response.json(result, { headers: { 'cache-control': 'private, no-store' } })
   } catch {
-    await dependencies.operation('complete', { ...metadata, state: 'error', scanner: '' }).catch(() => undefined)
-    return failure('The file could not be safely shared. No unscanned file is available to participants. Retry your upload.', 503)
+    await dependencies.operation('complete', { ...metadata, state: 'error' }).catch(() => undefined)
+    return failure('The file could not be stored safely. Retry your upload.', 503)
   }
 }

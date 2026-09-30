@@ -8,7 +8,6 @@ import type { HrDocumentWorkspace } from '../data/hrDocuments'
 
 const mocks = vi.hoisted(() => ({
   createEnvelope: vi.fn(),
-  getWorkspace: vi.fn(),
   sendEnvelope: vi.fn(),
   uploadDocument: vi.fn(),
 }))
@@ -20,7 +19,6 @@ vi.mock('../data/documentStudio', async (load) => ({
 }))
 vi.mock('../data/hrDocuments', async (load) => ({
   ...(await load<typeof import('../data/hrDocuments')>()),
-  getHrDocumentWorkspace: mocks.getWorkspace,
   uploadHrDocument: mocks.uploadDocument,
 }))
 
@@ -53,11 +51,10 @@ describe('Document signature wizard', () => {
     HTMLDialogElement.prototype.close = vi.fn(function (this: HTMLDialogElement) { this.removeAttribute('open') })
     mocks.createEnvelope.mockReset().mockResolvedValue({ id: envelopeId })
     mocks.sendEnvelope.mockReset().mockResolvedValue({ status: 'sent' })
-    mocks.uploadDocument.mockReset().mockImplementation(async (_input, onProgress: (value: number) => void) => { onProgress(100); return { documentId, operationId: crypto.randomUUID(), requestId: 'request-1', scanState: 'scan_pending', versionId: crypto.randomUUID() } })
-    mocks.getWorkspace.mockReset().mockResolvedValue({ ...workspace, documents: [{ accessClassification: 'confidential', archivedAt: null, canDownload: true, canManage: true, canPreview: true, category: 'Proposal', description: null, effectiveDate: null, employeeId: null, employeeLegalName: null, employeeNumber: null, expirationDate: null, id: documentId, title: 'Service proposal', vaultCode: 'hr-general', version: { filename: 'proposal.pdf', id: crypto.randomUUID(), mimeType: 'application/pdf', scanState: 'clean', sizeBytes: 120, uploadedAt: '2026-09-10T12:00:00Z', versionNumber: 1 } }], pagination: { page: 1, pageSize: 20, totalCount: 1, totalPages: 1 } })
+    mocks.uploadDocument.mockReset().mockImplementation(async (_input, onProgress: (value: number) => void) => { onProgress(100); return { documentId, operationId: crypto.randomUUID(), requestId: 'request-1', scanState: 'clean', versionId: crypto.randomUUID() } })
   })
 
-  it('uploads, scans, and sends an outside document without asking for a policy or template', async () => {
+  it('uploads and sends an outside document without asking for a policy or template', async () => {
     const user = userEvent.setup()
     const view = renderWizard()
     const fileInput = view.container.querySelector<HTMLInputElement>('input[type="file"]')

@@ -195,13 +195,13 @@ const sphereStandardUploadMaxBytes = 6 * 1024 * 1024
 const sphereResumableTargetSchema = z.object({
   bucket: z.string().optional(), expiresAt: z.string().optional(), messageId: z.string().nullable().optional(), objectKey: z.string().optional(),
   resumableEndpoint: z.string().url().optional(), signedUploadToken: z.string().min(1).optional(),
-  failureStage: z.enum(['file_validation', 'security_scan', 'storage', 'expired']).nullable().optional(),
+  failureStage: z.string().nullable().optional(),
   manualRetryCount: z.number().int().nonnegative().optional(), requestReference: z.string().uuid().nullable().optional(), retryable: z.boolean().optional(),
-  state: z.enum(['prepared', 'uploading', 'uploaded', 'scanning', 'clean', 'rejected', 'error', 'expired']).optional(), uploadId: z.string().uuid(),
+  state: z.string().optional(), uploadId: z.string().uuid(),
 })
 export type SphereUploadStatus = z.infer<typeof sphereResumableTargetSchema>
-export type SphereUploadStage = 'uploading' | 'scanning'
-export type SphereUploadResult = { state: 'clean' | 'processing'; uploadId: string; requestReference?: string }
+export type SphereUploadStage = 'uploading' | 'finishing'
+export type SphereUploadResult = { state: 'clean'; uploadId: string; requestReference?: string }
 
 export class SphereUploadError extends Error {
   readonly code?: string
@@ -230,36 +230,42 @@ async function sphereApiError(response: Response, fallback: string) {
 
 export async function sphereUploadStatus(uploadId: string): Promise<SphereUploadStatus> {
   const response = await fetch(`/api/v1/sygsphere/uploads/${uploadId}`, { headers: await sphereFileHeaders(), cache: 'no-store' })
-  if (!response.ok) throw await sphereApiError(response, 'The file security-check status could not be read.')
+  if (!response.ok) throw await sphereApiError(response, 'The file status could not be read.')
   return sphereResumableTargetSchema.parse(await response.json())
 }
 
-const sphereCompletionRetryDelaysMs = [0, 250]
+const sphereStorageConfirmationDelaysMs = [0, 250]
 
-function waitForUploadCompletionRetry(delayMs: number) {
+function waitForStorageConfirmation(delayMs: number) {
   return delayMs > 0 ? new Promise<void>((resolve) => setTimeout(resolve, delayMs)) : Promise.resolve()
 }
 
 export async function sphereCompleteUpload(
   uploadId: string,
   onProgress?: (percentage: number, stage: SphereUploadStage) => void,
-  retryDelaysMs = sphereCompletionRetryDelaysMs,
+  retryDelaysMs = sphereStorageConfirmationDelaysMs,
 ): Promise<SphereUploadResult> {
   let pendingError: SphereUploadError | null = null
-  onProgress?.(95, 'scanning')
+  onProgress?.(95, 'finishing')
   for (const delayMs of retryDelaysMs) {
-    await waitForUploadCompletionRetry(delayMs)
+    await waitForStorageConfirmation(delayMs)
     const complete = await fetch(`/api/v1/sygsphere/uploads/${uploadId}/complete`, {
       headers: await sphereFileHeaders('application/json'), body: '{}', method: 'POST', cache: 'no-store',
     })
     if (complete.ok) {
       const completed = sphereResumableTargetSchema.safeParse(await complete.json().catch(() => null))
-      onProgress?.(100, 'scanning')
-      return {
-        state: completed.success && completed.data.state === 'clean' ? 'clean' : 'processing',
-        uploadId,
-        requestReference: completed.success ? completed.data.requestReference ?? undefined : complete.headers.get('x-request-id') ?? undefined,
+      if (completed.success && completed.data.state === 'clean') {
+        onProgress?.(100, 'finishing')
+        return {
+          state: 'clean',
+          uploadId,
+          requestReference: completed.data.requestReference ?? undefined,
+        }
       }
+      throw new SphereUploadError('The file could not be confirmed as available. Choose it again and try sharing it.', {
+        requestReference: completed.success ? completed.data.requestReference ?? undefined : complete.headers.get('x-request-id') ?? undefined,
+        uploadId,
+      })
     }
     const error = await sphereApiError(complete, 'The protected file upload could not be finalized.')
     if (error.code !== 'sygsphere_file_not_stored') throw error
@@ -284,8 +290,8 @@ async function sphereProtectedUpload(file: File, fileId: string, conversationId:
   })
   if (!authorization.ok) throw await sphereApiError(authorization, 'The protected file upload could not be authorized.')
   const target = sphereResumableTargetSchema.parse(await authorization.json())
-  if (target.state === 'clean') { onProgress?.(100, 'scanning'); return { state: 'clean', uploadId: target.uploadId, requestReference: target.requestReference ?? undefined } }
-  if (target.state === 'error') throw new SphereUploadError('The file could not complete its security check. Retry the security check without uploading it again.', { requestReference: target.requestReference ?? undefined, retryable: target.retryable, uploadId: target.uploadId })
+  if (target.state === 'clean') { onProgress?.(100, 'finishing'); return { state: 'clean', uploadId: target.uploadId, requestReference: target.requestReference ?? undefined } }
+  if (target.state === 'error') throw new SphereUploadError('The file is not available. Choose it again and try sharing it.', { requestReference: target.requestReference ?? undefined, uploadId: target.uploadId })
   onProgress?.(1, 'uploading')
   if (target.state === 'prepared') {
     if (!target.bucket || !target.objectKey || !target.resumableEndpoint || !target.signedUploadToken) throw new Error('The secure file upload target is incomplete.')
@@ -309,9 +315,7 @@ async function sphereProtectedUpload(file: File, fileId: string, conversationId:
       }).catch(reject)
     })
   }
-  if (target.state !== 'scanning') return sphereCompleteUpload(target.uploadId, onProgress)
-  onProgress?.(100, 'scanning')
-  return { state: 'processing', uploadId: target.uploadId, requestReference: target.requestReference ?? undefined }
+  return sphereCompleteUpload(target.uploadId, onProgress)
 }
 
 export async function sphereUpload(file: File, fileId: string, conversationId: string, parentId: string | null, onProgress?: (percentage: number, stage: SphereUploadStage) => void): Promise<SphereUploadResult> {
@@ -321,13 +325,6 @@ export async function sphereUpload(file: File, fileId: string, conversationId: s
   return sphereProtectedUpload(file, fileId, conversationId, parentId, mimeType, onProgress)
 }
 
-export async function sphereRetryUpload(uploadId: string): Promise<SphereUploadStatus> {
-  const response = await fetch(`/api/v1/sygsphere/uploads/${uploadId}/retry`, {
-    headers: await sphereFileHeaders('application/json'), body: '{}', method: 'POST', cache: 'no-store',
-  })
-  if (!response.ok) throw await sphereApiError(response, 'The file security check could not be retried.')
-  return sphereResumableTargetSchema.parse(await response.json())
-}
 export async function sphereDownload(file: SphereFile) {
   const response = await sphereFileResponse(await fetch(`/api/v1/sygsphere/files/${file.id}`, { headers: await sphereFileHeaders(), cache: 'no-store' }))
   const url = URL.createObjectURL(await response.blob())

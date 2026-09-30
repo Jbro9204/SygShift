@@ -53,8 +53,9 @@ for (const vault of config.vaults) {
 }
 
 for (const control of [
-  'quarantineRequired',
-  'malwareScanRequired',
+  'protectedStorageVerificationRequired',
+  'checksumIntegrityRequired',
+  'immediateAvailabilityAfterVerification',
   'signatureValidationRequired',
   'mimeValidationRequired',
   'extensionValidationRequired',

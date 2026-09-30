@@ -9,7 +9,7 @@ Baseline: `346d774` on `main`; `pnpm check` passed with 900 tests. Existing unco
 1. Additive, membership-authorized messaging database and rollback-only database tests.
 2. Branded launcher and responsive messaging workspace: direct conversations, groups, channels, threads, reactions, saved/pinned messages, search and drafts.
 3. Separate messaging live updates, unread state, presence, typing and sound controls. No system/ticket notification or email producer is changed.
-4. Private, malware-scanned attachments and usable sharing workflows.
+4. Private, integrity-verified attachments and usable sharing workflows.
 5. Full regression verification, fresh production build, deployment, live checks and release documentation.
 
 Each completed stage receives a checkpoint commit. A checkpoint is not a claim of production acceptance. Database changes are forward-only and additive; application recovery retains messages and memberships. Production is not enabled until the complete workflow passes its release gates. Recover application behavior with the recorded previous Worker version; disable the SygSphere database gate if isolation is needed. Never roll back by deleting conversations or operational data.

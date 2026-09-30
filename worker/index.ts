@@ -9,7 +9,6 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from '@simplewebauthn/server'
-import { Container } from '@cloudflare/containers'
 import { strFromU8, unzipSync } from 'fflate'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { deliverPushBatch, validPushHook } from './webPush'
@@ -52,14 +51,11 @@ type Environment = Partial<Env> & {
   SYGSHIFT_PUSH_PRIVATE_KEY?: string
   SYGSHIFT_PUSH_HOOK_SECRET?: string
   ASSETS: Fetcher
-  DOCUMENT_SCANNER?: DurableObjectNamespace<DocumentScannerContainer>
-  DOCUMENT_SCAN_QUEUE?: Queue<DocumentScanQueueMessage>
   SUPABASE_SERVICE_ROLE_KEY?: string
   SYGSHIFT_SECURITY_KEYS_ENABLED?: string
   SYGSHIFT_SECURITY_KEY_PILOT_USERNAMES?: string
   SYGSHIFT_DOCUMENT_PIPELINE_ENABLED?: string
   SYGSHIFT_SYGSPHERE_RESUMABLE_UPLOADS_ENABLED?: string
-  SYGSHIFT_DOCUMENT_SCANNER_SECRET?: string
   SYGSHIFT_HR_AUTOMATION_ENABLED?: string
   SYGSHIFT_HR_RECRUITING_ENABLED?: string
   SYGSHIFT_HR_ONBOARDING_ENABLED?: string
@@ -94,26 +90,6 @@ type Environment = Partial<Env> & {
   SYGSHIFT_PASSWORD_RECOVERY_BRIDGE_SECRET?: string
 }
 
-interface DocumentScanQueueMessage {
-  kind?: 'hr' | 'sygsphere'
-  operationId: string
-  requestId: string
-}
-
-interface DocumentScanOperation {
-  attemptCount?: number
-  bucket?: string
-  documentId?: string
-  expectedChecksum?: string
-  expectedSizeBytes?: number
-  mimeType?: string
-  objectKey?: string
-  operationId: string
-  state: string
-  terminal?: boolean
-  versionId?: string
-}
-
 interface SygSphereResumableUploadOperation {
   authorId?: string
   bucket?: string
@@ -122,7 +98,7 @@ interface SygSphereResumableUploadOperation {
   expiresAt?: string
   filename?: string
   lastError?: string | null
-  failureStage?: 'file_validation' | 'security_scan' | 'storage' | 'expired' | null
+  failureStage?: 'file_validation' | 'storage' | 'expired' | null
   leaseId?: string
   manualRetryCount?: number
   messageId?: string | null
@@ -136,91 +112,6 @@ interface SygSphereResumableUploadOperation {
   stale?: boolean
   terminal?: boolean
   uploadId?: string
-}
-
-interface DocumentMalwareScanResult {
-  details: string
-  scannerName: 'ClamAV'
-  scannerVersion: string
-  signatureReference: string
-  state: 'clean' | 'rejected'
-}
-
-export class DocumentScannerContainer extends Container<Environment> {
-  defaultPort = 3310
-  requiredPorts = [3310]
-  sleepAfter = '30m'
-  enableInternet = false
-  envVars = { CLAMAV_NO_FRESHCLAMD: 'true', CLAMD_STARTUP_TIMEOUT: '300' }
-
-  private scannerRuntime(): ContainerRuntime {
-    if (!this.ctx.container) throw new Error('The document scanner container is unavailable.')
-    return this.ctx.container
-  }
-
-  async scanDocument(content: ReadableStream<Uint8Array>): Promise<DocumentMalwareScanResult> {
-    const runtime = this.scannerRuntime()
-    if (!runtime.running) {
-      runtime.start({ enableInternet: false, env: this.envVars })
-    }
-    // Attach the package lifecycle after the raw protocol-safe start so the
-    // normal activity monitor and 30-minute sleep policy still apply.
-    await this.start()
-
-    // The generic Container port probe speaks HTTP and cannot validate clamd's
-    // native TCP protocol. Have clamdscan wait for the local daemon and submit
-    // the provided bytes through its private stream protocol in one operation.
-    const scanProcess = await runtime.exec(
-      ['clamdscan', '--wait', '--ping=300:1', '--stream', '--stdout', '--no-summary', '-'],
-      { stdin: content, stderr: 'combined', stdout: 'pipe' },
-    )
-    let timeout: ReturnType<typeof setTimeout> | undefined
-    try {
-      const scanOutput = await Promise.race([
-        scanProcess.output(),
-        new Promise<never>((_, reject) => {
-          timeout = setTimeout(() => {
-            scanProcess.kill(9)
-            reject(new Error('The malware scan exceeded the 360-second startup and scan safety limit.'))
-          }, 360_000)
-        }),
-      ])
-      const details = new TextDecoder().decode(scanOutput.stdout).trim().slice(0, 2_000)
-      const versionProcess = await runtime.exec(['clamdscan', '--version'], {
-        stderr: 'combined',
-        stdout: 'pipe',
-      })
-      const versionOutput = await versionProcess.output()
-      const scannerVersion = new TextDecoder().decode(versionOutput.stdout).trim().slice(0, 120)
-      if (versionOutput.exitCode !== 0 || !scannerVersion) {
-        throw new Error('The malware scanner version could not be verified.')
-      }
-      if (scanOutput.exitCode === 0 && /:\s+OK\s*$/im.test(details)) {
-        return {
-          details: 'ClamAV completed the malware scan and found no known threat.',
-          scannerName: 'ClamAV',
-          scannerVersion,
-          signatureReference: 'clamav-database-from-pinned-image',
-          state: 'clean',
-        }
-      }
-      if (scanOutput.exitCode === 1 && /\bFOUND\s*$/im.test(details)) {
-        const signature = details.match(/:\s*([^:\r\n]+)\s+FOUND\s*$/im)?.[1]?.trim() ?? 'known-malware-signature'
-        return {
-          details: `ClamAV rejected the file after detecting ${signature}.`.slice(0, 2_000),
-          scannerName: 'ClamAV',
-          scannerVersion,
-          signatureReference: signature.slice(0, 255),
-          state: 'rejected',
-        }
-      }
-      throw new Error(
-        `The malware scanner returned an operational error (${scanOutput.exitCode}): ${details || 'no diagnostic output'}`,
-      )
-    } finally {
-      if (timeout) clearTimeout(timeout)
-    }
-  }
 }
 
 interface SessionContext {
@@ -2348,7 +2239,7 @@ export function validateHrDocumentFile(
     const pdfText = strFromU8(bytes.subarray(0, Math.min(bytes.length, 5 * 1024 * 1024)), true)
     // Compressed image/font streams are arbitrary binary and may coincidentally
     // contain strings such as "/JS". Only inspect the PDF object structure;
-    // ClamAV still scans the complete, unmodified binary after quarantine.
+    // The complete, unmodified binary is retained for the final protected-storage checksum check.
     const pdfStructure = pdfText.replace(/stream\r?\n[\s\S]*?endstream/gi, 'stream\nendstream')
     if (/\/(javascript|js|launch|embeddedfile|aa|richmedia)\b/i.test(pdfStructure)) {
       throw new ApiError('active_content_not_allowed', 400, 'PDF files with scripts, launch actions, or embedded content are not allowed.')
@@ -2543,7 +2434,7 @@ async function deletePrivateStorageObject(
     },
     method: 'DELETE',
   })
-  if (!response.ok && response.status !== 404) throw new Error('Quarantined storage cleanup failed.')
+  if (!response.ok && response.status !== 404) throw new Error('Private storage cleanup failed.')
 }
 
 async function storePrivateStorageObject(
@@ -2569,7 +2460,7 @@ async function storePrivateStorageObject(
   if (!response.ok) throw new Error(`Protected storage rejected the generated file (${response.status}).`)
 }
 
-async function storeQuarantinedDocument(
+async function storePrivateDocument(
   config: { serviceRoleKey: string, url: string },
   operation: HrDocumentUploadOperation,
   bytes: Uint8Array,
@@ -2590,15 +2481,24 @@ async function storeQuarantinedDocument(
     },
     method: 'POST',
   })
-  if (uploaded.ok) return
-
-  // An idempotent retry may arrive after the object was stored but before its state advanced.
-  const existing = await fetchPrivateStorageObject(config, operation.bucket, operation.objectKey)
-  if (!existing.ok) throw new Error(`Quarantine storage rejected the upload (${uploaded.status}).`)
-  const existingBytes = new Uint8Array(await existing.arrayBuffer())
-  if (existingBytes.byteLength !== bytes.byteLength || await sha256BytesHex(existingBytes) !== checksum) {
-    throw new Error('The idempotent upload key is already associated with different content.')
+  if (!uploaded.ok) {
+    // An idempotent retry may arrive after the object was stored but before its state advanced.
+    const existing = await fetchPrivateStorageObject(config, operation.bucket, operation.objectKey)
+    if (!existing.ok) throw new Error(`Protected storage rejected the upload (${uploaded.status}).`)
+    const existingChecksum = await privateStorageChecksum(existing, bytes.byteLength)
+    if (existingChecksum !== checksum) {
+      throw new Error('The idempotent upload key is already associated with different content.')
+    }
+    return
   }
+
+  await verifyPrivateStorageObjectChecksum(
+    config,
+    operation.bucket,
+    operation.objectKey,
+    bytes.byteLength,
+    checksum,
+  )
 }
 
 async function constantTimeSecretMatches(provided: string, expected: string): Promise<boolean> {
@@ -2609,15 +2509,6 @@ async function constantTimeSecretMatches(provided: string, expected: string): Pr
     difference |= expectedHash.charCodeAt(index) ^ providedHash.charCodeAt(index)
   }
   return difference === 0
-}
-
-async function requireDocumentScanner(request: Request, environment: Environment): Promise<void> {
-  const expected = environment.SYGSHIFT_DOCUMENT_SCANNER_SECRET?.trim() ?? ''
-  const provided = request.headers.get('x-sygshift-document-scanner-secret')?.trim() ?? ''
-  if (expected.length < 32) throw new ApiError('document_scanner_not_configured', 503, 'The protected document scanner is not configured.')
-  if (!await constantTimeSecretMatches(provided, expected)) {
-    throw new ApiError('document_scanner_authentication_failed', 401, 'Scanner authentication failed.')
-  }
 }
 
 async function requireHrSystemRollout(request: Request, environment: Environment): Promise<string> {
@@ -2636,219 +2527,46 @@ async function requireHrSystemRollout(request: Request, environment: Environment
   return actorId
 }
 
-function requireDocumentScannerBindings(environment: Environment): {
-  queue: Queue<DocumentScanQueueMessage>
-  scanner: DurableObjectNamespace<DocumentScannerContainer>
-} {
-  if (!environment.DOCUMENT_SCANNER || !environment.DOCUMENT_SCAN_QUEUE) {
-    throw new ApiError('document_scanner_not_configured', 503, 'The protected document scanner is not configured.')
-  }
-  return { queue: environment.DOCUMENT_SCAN_QUEUE, scanner: environment.DOCUMENT_SCANNER }
-}
-
-function readableBytes(bytes: Uint8Array): ReadableStream<Uint8Array> {
-  const copy = new Uint8Array(bytes.byteLength)
-  copy.set(bytes)
-  return new Blob([copy.buffer]).stream()
-}
-
-async function scanDocumentBytes(
-  environment: Environment,
-  bytes: Uint8Array,
-): Promise<DocumentMalwareScanResult> {
-  const { scanner } = requireDocumentScannerBindings(environment)
-  return scanner.getByName('primary').scanDocument(readableBytes(bytes))
-}
-
-async function enqueueDocumentScan(
-  environment: Environment,
-  operationId: string,
-  requestId: string,
-): Promise<void> {
-  if (!validUuid(operationId)) throw new Error('The scan operation identifier is invalid.')
-  const { queue } = requireDocumentScannerBindings(environment)
-  await queue.send({ operationId, requestId }, { contentType: 'json' })
-}
-
-async function enqueueSygSphereScan(
-  environment: Environment,
-  operationId: string,
-  requestId: string,
-): Promise<void> {
-  if (!validUuid(operationId)) throw new Error('The SygSphere scan operation identifier is invalid.')
-  const { queue } = requireDocumentScannerBindings(environment)
-  await queue.send({ kind: 'sygsphere', operationId, requestId }, { contentType: 'json' })
-}
-
-async function recordDocumentScanResult(
-  config: { serviceRoleKey: string, url: string },
-  operationId: string,
-  result: DocumentMalwareScanResult,
-  evidenceSha256: string,
-): Promise<void> {
-  await callRpc(
-    config,
-    'service_record_hr_document_scan_result',
-    {
-      target_details: result.details,
-      target_evidence_sha256: evidenceSha256,
-      target_operation_id: operationId,
-      target_scanner_name: result.scannerName,
-      target_scanner_version: result.scannerVersion,
-      target_signature_reference: result.signatureReference,
-      target_state: result.state,
-    },
-    config.serviceRoleKey,
-  )
-}
-
-async function processDocumentScanMessage(
-  environment: Environment,
-  message: DocumentScanQueueMessage,
-): Promise<void> {
-  if (!validUuid(message.operationId)) throw new Error('The queued scan operation is invalid.')
-  const config = configuredSupabase(environment)
-  if (!config) throw new Error('The secure data connection is unavailable.')
-  const operation = await callRpc<DocumentScanOperation>(
-    config,
-    'service_claim_hr_document_scan',
-    { target_operation_id: message.operationId, target_request_id: message.requestId },
-    config.serviceRoleKey,
-  )
-  if (operation.terminal) return
-  if (
-    !operation.bucket
-    || !operation.objectKey
-    || !operation.expectedChecksum
-    || !/^[a-f0-9]{64}$/.test(operation.expectedChecksum)
-    || !Number.isSafeInteger(operation.expectedSizeBytes)
-  ) {
-    throw new Error('The scan operation is missing protected storage evidence.')
-  }
-
-  const stored = await fetchPrivateStorageObject(config, operation.bucket, operation.objectKey)
-  if (!stored.ok) throw new Error(`The quarantined document could not be loaded (${stored.status}).`)
-  const bytes = new Uint8Array(await stored.arrayBuffer())
-  const observedChecksum = await sha256BytesHex(bytes)
-  if (bytes.byteLength !== operation.expectedSizeBytes || observedChecksum !== operation.expectedChecksum) {
-    const integrityFailure: DocumentMalwareScanResult = {
-      details: 'The quarantined object did not match its immutable upload size or checksum and was rejected.',
-      scannerName: 'ClamAV',
-      scannerVersion: 'integrity-boundary',
-      signatureReference: 'sha256-or-size-mismatch',
-      state: 'rejected',
-    }
-    await recordDocumentScanResult(config, operation.operationId, integrityFailure, observedChecksum)
-    await deletePrivateStorageObject(config, operation.bucket, operation.objectKey)
-    return
-  }
-
-  const result = await scanDocumentBytes(environment, bytes)
-  await recordDocumentScanResult(config, operation.operationId, result, observedChecksum)
-  if (result.state === 'rejected') {
-    await deletePrivateStorageObject(config, operation.bucket, operation.objectKey)
-  }
-}
-
 type WorkerDigestStream = WritableStream<Uint8Array> & {
   readonly bytesWritten: number | bigint
   readonly digest: Promise<ArrayBuffer>
 }
 
-class SygSphereScanFailure extends Error {
-  readonly leaseId: string
-  readonly objectKey: string
-
-  constructor(message: string, leaseId: string, objectKey: string) {
-    super(message)
-    this.name = 'SygSphereScanFailure'
-    this.leaseId = leaseId
-    this.objectKey = objectKey
+async function privateStorageChecksum(
+  stored: Response,
+  expectedSizeBytes: number,
+): Promise<string> {
+  if (!stored.ok || !stored.body) {
+    throw new Error(`Protected storage object could not be read (${stored.status}).`)
   }
+  const contentLength = Number(stored.headers.get('content-length'))
+  type DigestStreamCrypto = Crypto & { DigestStream?: new (algorithm: string) => WorkerDigestStream }
+  const DigestStream = (crypto as DigestStreamCrypto).DigestStream
+  if (!DigestStream) throw new Error('The streaming integrity service is unavailable.')
+  const digestStream = new DigestStream('SHA-256')
+  await stored.body.pipeTo(digestStream)
+  const observedBytes = Number(digestStream.bytesWritten)
+  if (contentLength !== expectedSizeBytes || observedBytes !== expectedSizeBytes) {
+    throw new Error('The stored file size does not match the authorized upload.')
+  }
+  return [...new Uint8Array(await digestStream.digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
 }
 
-async function processSygSphereScanMessage(
-  environment: Environment,
-  message: DocumentScanQueueMessage,
-): Promise<'complete' | 'deferred'> {
-  if (!validUuid(message.operationId)) throw new Error('The queued SygSphere scan operation is invalid.')
-  const config = configuredSupabase(environment)
-  if (!config) throw new Error('The secure data connection is unavailable.')
-  const operation = await callRpc<SygSphereResumableUploadOperation>(
-    config,
-    'service_claim_sygsphere_resumable_scan',
-    { target_upload_id: message.operationId },
-    config.serviceRoleKey,
+async function verifyPrivateStorageObjectChecksum(
+  config: { serviceRoleKey: string, url: string },
+  bucket: string,
+  objectKey: string,
+  expectedSizeBytes: number,
+  expectedChecksum: string,
+): Promise<void> {
+  const storedChecksum = await privateStorageChecksum(
+    await fetchPrivateStorageObject(config, bucket, objectKey),
+    expectedSizeBytes,
   )
-  if (operation.terminal) {
-    if (operation.objectKey && ['rejected', 'expired'].includes(operation.state ?? '')) {
-      await deletePrivateStorageObject(config, sygsphereResumableBucket, operation.objectKey).catch(() => undefined)
-    }
-    return 'complete'
-  }
-  if (operation.deferred) return 'deferred'
-  if (
-    !operation.uploadId
-    || !operation.objectKey
-    || !operation.leaseId
-    || operation.bucket !== sygsphereResumableBucket
-    || !Number.isSafeInteger(operation.sizeBytes)
-  ) {
-    throw new Error('The SygSphere scan operation is missing protected storage evidence.')
-  }
-
-  try {
-    const stored = await fetchPrivateStorageObject(config, sygsphereResumableBucket, operation.objectKey)
-    if (!stored.ok || !stored.body) throw new Error(`The quarantined SygSphere file could not be loaded (${stored.status}).`)
-    const contentLength = Number(stored.headers.get('content-length'))
-    type DigestStreamCrypto = Crypto & { DigestStream?: new (algorithm: string) => WorkerDigestStream }
-    const DigestStream = (crypto as DigestStreamCrypto).DigestStream
-    if (!DigestStream) throw new Error('The streaming file-integrity service is unavailable.')
-    const digestStream = new DigestStream('SHA-256')
-    const digestWriter = digestStream.getWriter()
-    const integrityStream = new TransformStream<Uint8Array, Uint8Array>({
-      async transform(chunk, controller) {
-        await digestWriter.write(chunk)
-        controller.enqueue(chunk)
-      },
-      async flush() {
-        await digestWriter.close()
-      },
-    })
-    const { scanner } = requireDocumentScannerBindings(environment)
-    const scan = await scanner.getByName('primary').scanDocument(stored.body.pipeThrough(integrityStream))
-    const checksum = [...new Uint8Array(await digestStream.digest)]
-      .map((byte) => byte.toString(16).padStart(2, '0'))
-      .join('')
-    const observedBytes = Number(digestStream.bytesWritten)
-    const integrityFailed = contentLength !== operation.sizeBytes || observedBytes !== operation.sizeBytes
-    const state = integrityFailed ? 'rejected' : scan.state
-    const scannerEvidence = integrityFailed
-      ? 'integrity-boundary sha256-or-size-mismatch'
-      : `${scan.scannerName} ${scan.scannerVersion}`
-    const completion = await callRpc<SygSphereResumableUploadOperation>(
-      config,
-      'service_complete_sygsphere_resumable_scan',
-      {
-        target_checksum: checksum,
-        target_error: integrityFailed ? 'The stored file size changed after upload authorization.' : null,
-        target_lease_id: operation.leaseId,
-        target_scanner: scannerEvidence,
-        target_state: state,
-        target_upload_id: operation.uploadId,
-      },
-      config.serviceRoleKey,
-    )
-    if (completion.state === 'rejected') {
-      await deletePrivateStorageObject(config, sygsphereResumableBucket, operation.objectKey)
-    }
-    return 'complete'
-  } catch (error) {
-    throw new SygSphereScanFailure(
-      error instanceof Error ? error.message : 'The SygSphere file scan failed.',
-      operation.leaseId,
-      operation.objectKey,
-    )
+  if (storedChecksum !== expectedChecksum) {
+    throw new Error('The stored private object does not match its approved SHA-256 checksum.')
   }
 }
 
@@ -2858,24 +2576,10 @@ async function handleDocumentPipelineCanary(
   requestId: string,
 ): Promise<Response> {
   if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
-  await requireDocumentScanner(request, environment)
-  requireDocumentScannerBindings(environment)
   const config = configuredSupabase(environment)
   if (!config) throw new ApiError('server_not_configured', 503, 'The secure data connection is unavailable.')
 
   const canaryRunId = crypto.randomUUID()
-  const cleanBytes = new TextEncoder().encode(`SygShift protected document release canary ${canaryRunId}`)
-  const eicarText = [
-    'X5O!P%@AP[4\\PZX54(P^)7CC)7}$',
-    'EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*',
-  ].join('')
-  const rejectionBytes = new TextEncoder().encode(eicarText)
-  const cleanResult = await scanDocumentBytes(environment, cleanBytes)
-  const rejectionResult = await scanDocumentBytes(environment, rejectionBytes)
-  if (cleanResult.state !== 'clean' || rejectionResult.state !== 'rejected') {
-    throw new ApiError('document_scanner_canary_failed', 503, 'The malware scanner did not pass its clean and rejection checks.')
-  }
-
   const recoveryBytes = new TextEncoder().encode(`SygShift private storage recovery canary ${canaryRunId}`)
   const recoveryChecksum = await sha256BytesHex(recoveryBytes)
   const primaryKey = `_release-canary/${canaryRunId}/primary.txt`
@@ -2902,42 +2606,22 @@ async function handleDocumentPipelineCanary(
   }
   if (!recoveryPassed) throw new ApiError('document_recovery_canary_failed', 503, 'The private storage recovery drill failed.')
 
-  const cleanChecksum = await sha256BytesHex(cleanBytes)
-  const rejectionChecksum = await sha256BytesHex(rejectionBytes)
   const evidence = [
-    {
-      details: { container: 'cloudflare', outcome: cleanResult.state },
-      evidenceSha256: cleanChecksum,
-      evidenceType: 'scanner_clean',
-      scannerName: cleanResult.scannerName,
-      scannerVersion: cleanResult.scannerVersion,
-    },
-    {
-      details: { container: 'cloudflare', outcome: rejectionResult.state },
-      evidenceSha256: rejectionChecksum,
-      evidenceType: 'scanner_reject',
-      scannerName: rejectionResult.scannerName,
-      scannerVersion: rejectionResult.scannerVersion,
-    },
     {
       details: { bucket: 'hr-general', restored: true },
       evidenceSha256: recoveryChecksum,
       evidenceType: 'storage_recovery',
-      scannerName: null,
-      scannerVersion: null,
     },
   ]
   for (const item of evidence) {
     await callRpc(
       config,
-      'service_record_document_pipeline_release_evidence',
+      'service_record_document_pipeline_availability_evidence',
       {
         target_canary_run_id: canaryRunId,
         target_details: item.details,
         target_evidence_sha256: item.evidenceSha256,
         target_evidence_type: item.evidenceType,
-        target_scanner_name: item.scannerName,
-        target_scanner_version: item.scannerVersion,
       },
       config.serviceRoleKey,
     )
@@ -2946,13 +2630,9 @@ async function handleDocumentPipelineCanary(
   return json({
     canaryRunId,
     checks: {
-      cleanFile: 'passed',
-      malwareRejection: 'passed',
       privateStorageRecovery: 'passed',
     },
     requestId,
-    scanner: cleanResult.scannerName,
-    scannerVersion: cleanResult.scannerVersion,
     status: 'passed',
   })
 }
@@ -3755,14 +3435,12 @@ async function handleSygSphereResumableUpload(
   }
   const url = new URL(request.url)
   const statusMatch = url.pathname.match(/^\/api\/v1\/sygsphere\/uploads\/([0-9a-f-]{36})(?:\/(complete|retry))?$/i)
-  const completing = url.pathname.endsWith('/complete')
-  const retrying = url.pathname.endsWith('/retry')
+  const completing = url.pathname.endsWith('/complete') || url.pathname.endsWith('/retry')
   const session = await requireAuthenticatedSession(request, environment)
   const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
 
   if (url.pathname === '/api/v1/sygsphere/uploads') {
     if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
-    requireDocumentScannerBindings(environment)
     const body = await readJsonBodyWithin(request, 16 * 1024)
     const conversationId = requiredText(body.conversationId, 'Conversation', 36).toLowerCase()
     const fileId = requiredText(body.fileId, 'File', 36).toLowerCase()
@@ -3802,7 +3480,7 @@ async function handleSygSphereResumableUpload(
 
   if (!statusMatch || !validUuid(statusMatch[1] ?? '')) return errorJson('not_found', requestId, 404)
   const uploadId = statusMatch[1]!
-  if ((!completing && !retrying && request.method !== 'GET') || ((completing || retrying) && request.method !== 'POST')) {
+  if ((!completing && request.method !== 'GET') || (completing && request.method !== 'POST')) {
     return errorJson('method_not_allowed', requestId, 405)
   }
   const operation = await callRpc<SygSphereResumableUploadOperation>(
@@ -3811,35 +3489,23 @@ async function handleSygSphereResumableUpload(
     { target_actor_id: session.context.employee_id, target_upload_id: uploadId },
     session.config.serviceRoleKey,
   )
-  if (!completing && !retrying) return json({
+  if (!completing) return json({
     expiresAt: operation.expiresAt,
     failureStage: operation.failureStage ?? null,
     manualRetryCount: operation.manualRetryCount ?? 0,
     messageId: operation.messageId ?? null,
     requestId,
     requestReference: operation.requestReference ?? requestId,
-    retryable: operation.retryable === true,
+    retryable: false,
     state: operation.state,
     uploadId: operation.uploadId ?? uploadId,
   })
-  if (retrying) {
-    const stored = operation.objectKey ? await fetch(privateStorageObjectUrl(serviceConfig, sygsphereResumableBucket, operation.objectKey), {
-      headers: { apikey: serviceConfig.serviceRoleKey, authorization: `Bearer ${serviceConfig.serviceRoleKey}` },
-      method: 'HEAD',
-    }) : null
-    if (!stored?.ok) throw new ApiError('sygsphere_quarantine_missing', 409, 'The quarantined upload is no longer available. Choose the file again.')
-    const retried = await callRpc<SygSphereResumableUploadOperation>(serviceConfig, 'service_retry_sygsphere_resumable_scan', {
-      target_actor_id: session.context.employee_id, target_request_id: requestId, target_upload_id: uploadId,
-    }, serviceConfig.serviceRoleKey)
-    await enqueueSygSphereScan(environment, uploadId, requestId)
-    return json({ ...retried, requestId, requestReference: retried.requestReference ?? requestId }, 202)
-  }
   if (!operation.objectKey || operation.bucket !== sygsphereResumableBucket || operation.objectKey.includes('..')) {
     throw new ApiError('invalid_sygsphere_storage_target', 422, 'The protected file storage target is invalid.')
   }
   if (operation.state === 'clean') return json({ ...operation, requestId })
-  if (['rejected', 'error', 'expired'].includes(operation.state ?? '')) {
-    return json({ detail: operation.state === 'rejected' ? 'This file was blocked by its security check and was not shared.' : 'The protected file security check needs attention.', error: 'sygsphere_file_unavailable', requestId, requestReference: operation.requestReference ?? requestId, retryable: operation.retryable === true, state: operation.state, uploadId }, 409)
+  if (['rejected', 'expired'].includes(operation.state ?? '')) {
+    return json({ detail: 'This protected upload is not available. Choose the file again.', error: 'sygsphere_file_unavailable', requestId, requestReference: operation.requestReference ?? requestId, retryable: false, state: operation.state, uploadId }, 409)
   }
   if (operation.state === 'prepared') {
     const stored = await waitForPrivateStorageObjectHead(serviceConfig, sygsphereResumableBucket, operation.objectKey)
@@ -3855,7 +3521,7 @@ async function handleSygSphereResumableUpload(
         validateSygSphereResumableFile(prefix, operation.filename, mimeType, sizeBytes)
       } else {
         const storedFile = await fetchPrivateStorageObject(serviceConfig, sygsphereResumableBucket, operation.objectKey)
-        if (!storedFile.ok) throw new ApiError('sygsphere_file_not_stored', 409, 'The quarantined upload could not be read. Try the upload again.')
+        if (!storedFile.ok) throw new ApiError('sygsphere_file_not_stored', 409, 'The protected upload could not be read. Try the upload again.')
         validateHrDocumentFile(new Uint8Array(await storedFile.arrayBuffer()), operation.filename, mimeType)
       }
     } catch (error) {
@@ -3871,8 +3537,30 @@ async function handleSygSphereResumableUpload(
       serviceConfig.serviceRoleKey,
     )
   }
-  if (operation.state !== 'scanning') await enqueueSygSphereScan(environment, uploadId, requestId)
-  return json({ requestId, requestReference: operation.requestReference ?? requestId, state: operation.state === 'scanning' ? 'scanning' : 'uploaded', uploadId }, 202)
+  const approvedSizeBytes = operation.sizeBytes
+  if (typeof approvedSizeBytes !== 'number' || !Number.isSafeInteger(approvedSizeBytes) || approvedSizeBytes < 1) {
+    throw new ApiError('sygsphere_file_integrity_failed', 422, 'The protected upload is missing its approved file size.')
+  }
+  const storedFile = await fetchPrivateStorageObject(serviceConfig, sygsphereResumableBucket, operation.objectKey)
+  const checksum = await privateStorageChecksum(storedFile, approvedSizeBytes)
+  const completed = await callRpc<SygSphereResumableUploadOperation>(
+    serviceConfig,
+    'service_complete_sygsphere_resumable_upload_available',
+    {
+      target_actor_id: session.context.employee_id,
+      target_checksum: checksum,
+      target_request_id: requestId,
+      target_upload_id: uploadId,
+    },
+    serviceConfig.serviceRoleKey,
+  )
+  return json({
+    messageId: completed.messageId ?? null,
+    requestId,
+    requestReference: operation.requestReference ?? requestId,
+    state: completed.state,
+    uploadId,
+  })
 }
 
 export function patrolEvidenceSignatureMatches(bytes: Uint8Array, mimeType: string): boolean {
@@ -4142,67 +3830,46 @@ async function handleHrDocumentUpload(
     config.serviceRoleKey,
   )
 
-  if (operation.state !== 'quarantined') {
-    if (operation.state === 'scan_pending' || operation.state === 'scan_error') {
-      await enqueueDocumentScan(environment, operation.operationId, requestId)
-    }
+  if (operation.state === 'clean') {
     return json({
       documentId: operation.documentId,
       operationId: operation.operationId,
       requestId,
-      scanState: operation.state,
+      scanState: 'clean',
       versionId: operation.versionId,
-    }, 202)
+    })
   }
 
   try {
-    await storeQuarantinedDocument(serviceConfig, operation, bytes, validated.detectedMimeType, checksum)
-    await callRpc(
+    await storePrivateDocument(serviceConfig, operation, bytes, validated.detectedMimeType, checksum)
+    const completed = await callRpc<HrDocumentUploadOperation>(
       serviceConfig,
       'service_mark_hr_document_upload_stored',
       { target_operation_id: operation.operationId, target_request_id: requestId },
       config.serviceRoleKey,
     )
+    return json({
+      documentId: operation.documentId,
+      operationId: operation.operationId,
+      requestId,
+      scanState: completed.state,
+      versionId: operation.versionId,
+    })
   } catch (error) {
     await deletePrivateStorageObject(serviceConfig, operation.bucket, operation.objectKey).catch(() => undefined)
     await callRpc(
       serviceConfig,
       'service_fail_hr_document_upload',
       {
-        target_failure_code: 'quarantine_storage_failed',
-        target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Quarantine storage failed.',
+        target_failure_code: 'protected_storage_failed',
+        target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Protected storage failed.',
         target_operation_id: operation.operationId,
-        target_state: 'scan_error',
+        target_state: 'storage_error',
       },
       config.serviceRoleKey,
     ).catch(() => undefined)
-    throw new ApiError('document_quarantine_failed', 502, 'The document could not be placed in protected quarantine.')
+    throw new ApiError('document_storage_failed', 502, 'The document could not be stored safely. Try the upload again.')
   }
-
-  try {
-    await enqueueDocumentScan(environment, operation.operationId, requestId)
-  } catch (error) {
-    await callRpc(
-      serviceConfig,
-      'service_fail_hr_document_upload',
-      {
-        target_failure_code: 'scan_dispatch_failed',
-        target_failure_detail: error instanceof Error ? error.message.slice(0, 1000) : 'Malware scan dispatch failed.',
-        target_operation_id: operation.operationId,
-        target_state: 'scan_error',
-      },
-      config.serviceRoleKey,
-    ).catch(() => undefined)
-    throw new ApiError('document_scan_dispatch_failed', 503, 'The upload is safely quarantined, but its malware scan could not be started. Retry the upload request.')
-  }
-
-  return json({
-    documentId: operation.documentId,
-    operationId: operation.operationId,
-    requestId,
-    scanState: 'scan_pending',
-    versionId: operation.versionId,
-  }, 202)
 }
 
 async function handleHrDocumentWorkspace(
@@ -4431,46 +4098,6 @@ async function handleAssignedTrainingDocument(
   headers.set('content-type', target.mimeType)
   headers.set('pragma', 'no-cache')
   return new Response(stored.body, { headers, status: 200 })
-}
-
-async function handleHrDocumentScanCallback(
-  request: Request,
-  environment: Environment,
-  requestId: string,
-  operationId: string,
-): Promise<Response> {
-  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
-  await requireDocumentScanner(request, environment)
-  if (!validUuid(operationId)) throw new ApiError('invalid_upload_operation', 422, 'The upload operation is invalid.')
-  const config = configuredSupabase(environment)
-  if (!config) throw new ApiError('server_not_configured', 503, 'The secure data connection is unavailable.')
-  const body = await readJsonBody(request)
-  const state = requiredText(body.state, 'Scan result', 20)
-  if (!['clean', 'rejected', 'scan_error'].includes(state)) {
-    throw new ApiError('invalid_scan_result', 422, 'The scanner result is invalid.')
-  }
-  const scannerName = requiredText(body.scannerName, 'Scanner name', 120)
-  const scannerVersion = requiredText(body.scannerVersion, 'Scanner version', 120)
-  const signatureReference = optionalText(body.signatureReference, 'Signature reference', 255)
-  const evidenceSha256 = optionalText(body.evidenceSha256, 'Scanner evidence checksum', 64)
-  if (state === 'clean' && (!evidenceSha256 || !/^[a-f0-9]{64}$/.test(evidenceSha256))) {
-    throw new ApiError('scanner_evidence_required', 422, 'Clean scan results require SHA-256 evidence.')
-  }
-  const result = await callRpc<Record<string, unknown>>(
-    { serviceRoleKey: config.serviceRoleKey, url: config.url },
-    'service_record_hr_document_scan_result',
-    {
-      target_details: optionalText(body.details, 'Scanner details', 2000),
-      target_evidence_sha256: evidenceSha256,
-      target_operation_id: operationId,
-      target_scanner_name: scannerName,
-      target_scanner_version: scannerVersion,
-      target_signature_reference: signatureReference,
-      target_state: state,
-    },
-    config.serviceRoleKey,
-  )
-  return json({ ...result, requestId })
 }
 
 async function handleHrDocumentAccessGrant(
@@ -5046,8 +4673,22 @@ async function finalizeSignatureEnvelope(
   try {
     await storePrivateStorageObject(config, payload.sourceBucket, finalObjectKey, finalBytes, 'application/pdf')
     finalStored = true
+    await verifyPrivateStorageObjectChecksum(
+      config,
+      payload.sourceBucket,
+      finalObjectKey,
+      finalBytes.byteLength,
+      finalChecksum,
+    )
     await storePrivateStorageObject(config, payload.sourceBucket, auditObjectKey, auditBytes, 'application/pdf')
     auditStored = true
+    await verifyPrivateStorageObjectChecksum(
+      config,
+      payload.sourceBucket,
+      auditObjectKey,
+      auditBytes.byteLength,
+      auditChecksum,
+    )
     return await callRpc<Record<string, unknown>>(config, 'service_commit_signature_finalization', {
       target_audit_bucket: payload.sourceBucket,
       target_audit_checksum: auditChecksum,
@@ -6567,8 +6208,6 @@ async function handleHrDocumentsApi(
   }
   const archiveDocumentId = url.pathname.match(/^\/api\/v1\/hr\/documents\/([0-9a-f-]{36})\/archive$/i)?.[1]
   if (archiveDocumentId) return handleHrDocumentArchive(request, environment, requestId, archiveDocumentId)
-  const scanOperationId = url.pathname.match(/^\/api\/v1\/hr\/documents\/scans\/([0-9a-f-]{36})$/i)?.[1]
-  if (scanOperationId) return handleHrDocumentScanCallback(request, environment, requestId, scanOperationId)
   const accessToken = url.pathname.match(/^\/api\/v1\/hr\/documents\/access\/([A-Za-z0-9_-]{40,100})$/)?.[1]
   if (accessToken) return handleHrDocumentAccess(request, environment, requestId, accessToken)
   const accessDocumentId = url.pathname.match(/^\/api\/v1\/hr\/documents\/([0-9a-f-]{36})\/access$/i)?.[1]
@@ -8877,72 +8516,135 @@ function readiness(environment: Environment, requestId: string): Response {
   }, ready ? 200 : 503)
 }
 
-async function handleDocumentScanQueue(
-  batch: MessageBatch<DocumentScanQueueMessage>,
-  environment: Environment,
-): Promise<void> {
+async function recoverLegacyHrDocumentAvailability(environment: Environment): Promise<{ recovered: number, failed: number }> {
   const config = configuredSupabase(environment)
-  for (const message of batch.messages) {
-    if (message.body?.kind === 'sygsphere') {
-      try {
-        const outcome = await processSygSphereScanMessage(environment, message.body)
-        if (outcome === 'deferred') {
-          message.retry({ delaySeconds: Math.min(300, 15 * Math.max(1, message.attempts)) })
-        } else {
-          message.ack()
-        }
-      } catch (error) {
-        let terminal = false
-        let stale = false
-        let objectKey: string | undefined
-        let terminalState: SygSphereResumableUploadOperation['state']
-        if (config && error instanceof SygSphereScanFailure && validUuid(message.body?.operationId ?? '')) {
-          const deferred = await callRpc<SygSphereResumableUploadOperation>(
-            config,
-            'service_defer_sygsphere_resumable_scan',
-            {
-              target_error: error.message.slice(0, 1_000),
-              target_lease_id: error.leaseId,
-              target_upload_id: message.body.operationId,
-            },
-            config.serviceRoleKey,
-          ).catch(() => null)
-          terminal = deferred?.terminal === true
-          stale = deferred?.stale === true
-          terminalState = deferred?.state
-          objectKey = deferred?.objectKey
-        }
-        if (terminal || stale) {
-          if (config && objectKey && ['rejected', 'expired'].includes(terminalState ?? '')) {
-            await deletePrivateStorageObject(config, sygsphereResumableBucket, objectKey).catch(() => undefined)
-          }
-          message.ack()
-        } else {
-          message.retry({ delaySeconds: Math.min(300, 15 * Math.max(1, message.attempts)) })
-        }
-      }
+  if (!config) return { recovered: 0, failed: 0 }
+  const candidates = await callRpc<unknown>(
+    config,
+    'service_list_hr_document_availability_recovery',
+    { target_limit: 25 },
+    config.serviceRoleKey,
+  )
+  if (!Array.isArray(candidates)) throw new Error('The HR document availability recovery response is invalid.')
+  let recovered = 0
+  let failed = 0
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') { failed += 1; continue }
+    const item = candidate as Record<string, unknown>
+    const operationId = String(item.operationId ?? '')
+    const bucket = String(item.bucket ?? '')
+    const objectKey = String(item.objectKey ?? '')
+    const expectedChecksum = String(item.checksum ?? '')
+    const sizeBytes = Number(item.sizeBytes)
+    if (!validUuid(operationId) || !bucket || bucket.includes('..') || !objectKey || objectKey.includes('..')
+      || !/^[a-f0-9]{64}$/.test(expectedChecksum) || !Number.isSafeInteger(sizeBytes)
+      || sizeBytes < 1 || sizeBytes > maxHrDocumentBytes) {
+      failed += 1
       continue
     }
     try {
-      await processDocumentScanMessage(environment, message.body)
-      message.ack()
-    } catch (error) {
-      if (config && validUuid(message.body?.operationId ?? '')) {
-        await callRpc(
-          config,
-          'service_fail_hr_document_upload',
-          {
-            target_failure_code: 'malware_scan_scan_error',
-            target_failure_detail: error instanceof Error ? error.message.slice(0, 1_000) : 'The malware scan failed.',
-            target_operation_id: message.body.operationId,
-            target_state: 'scan_error',
-          },
-          config.serviceRoleKey,
-        ).catch(() => undefined)
-      }
-      message.retry({ delaySeconds: Math.min(300, 15 * Math.max(1, message.attempts)) })
+      await verifyPrivateStorageObjectChecksum(config, bucket, objectKey, sizeBytes, expectedChecksum)
+      await callRpc(
+        config,
+        'service_mark_hr_document_upload_stored',
+        { target_operation_id: operationId, target_request_id: null },
+        config.serviceRoleKey,
+      )
+      recovered += 1
+    } catch {
+      failed += 1
     }
   }
+  return { recovered, failed }
+}
+
+async function recoverStoredSygSphereFiles(environment: Environment): Promise<{ recovered: number, failed: number }> {
+  const config = configuredSupabase(environment)
+  if (!config) return { recovered: 0, failed: 0 }
+  const candidates = await callRpc<unknown>(
+    config,
+    'service_list_sygsphere_file_availability_recovery',
+    { target_limit: 25 },
+    config.serviceRoleKey,
+  )
+  if (!Array.isArray(candidates)) throw new Error('The SygSphere availability recovery response is invalid.')
+  let recovered = 0
+  let failed = 0
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') { failed += 1; continue }
+    const item = candidate as Record<string, unknown>
+    const authorId = String(item.authorId ?? '')
+    const fileId = String(item.fileId ?? '')
+    const objectKey = String(item.objectKey ?? '')
+    const expectedChecksum = String(item.checksum ?? '')
+    const sizeBytes = Number(item.sizeBytes)
+    if (!validUuid(authorId) || !validUuid(fileId) || !objectKey || objectKey.includes('..')
+      || !/^[a-f0-9]{64}$/.test(expectedChecksum) || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1) {
+      failed += 1
+      continue
+    }
+    try {
+      const checksum = await privateStorageChecksum(
+        await fetchPrivateStorageObject(config, sygsphereResumableBucket, objectKey),
+        sizeBytes,
+      )
+      if (checksum !== expectedChecksum) throw new Error('The stored file checksum does not match its upload record.')
+      await callRpc(
+        config,
+        'service_sygsphere_file',
+        { action: 'complete', target_actor_id: authorId, input: { checksum, fileId, state: 'clean' } },
+        config.serviceRoleKey,
+      )
+      recovered += 1
+    } catch {
+      failed += 1
+    }
+  }
+  return { recovered, failed }
+}
+
+async function recoverStoredSygSphereResumableUploads(environment: Environment): Promise<{ recovered: number, failed: number }> {
+  if (!sygsphereResumableUploadsEnabled(environment)) return { recovered: 0, failed: 0 }
+  const config = configuredSupabase(environment)
+  if (!config) return { recovered: 0, failed: 0 }
+  const candidates = await callRpc<unknown>(
+    config,
+    'service_list_sygsphere_resumable_availability_recovery',
+    { target_limit: 25 },
+    config.serviceRoleKey,
+  )
+  if (!Array.isArray(candidates)) throw new Error('The resumable availability recovery response is invalid.')
+  let recovered = 0
+  let failed = 0
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') { failed += 1; continue }
+    const item = candidate as Record<string, unknown>
+    const authorId = String(item.authorId ?? '')
+    const objectKey = String(item.objectKey ?? '')
+    const sizeBytes = Number(item.sizeBytes)
+    const uploadId = String(item.uploadId ?? '')
+    if (!validUuid(authorId) || !validUuid(uploadId) || !objectKey || objectKey.includes('..')
+      || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1) {
+      failed += 1
+      continue
+    }
+    try {
+      const checksum = await privateStorageChecksum(
+        await fetchPrivateStorageObject(config, sygsphereResumableBucket, objectKey),
+        sizeBytes,
+      )
+      await callRpc(
+        config,
+        'service_complete_sygsphere_resumable_upload_available',
+        { target_actor_id: authorId, target_checksum: checksum, target_request_id: null, target_upload_id: uploadId },
+        config.serviceRoleKey,
+      )
+      recovered += 1
+    } catch {
+      failed += 1
+    }
+  }
+  return { recovered, failed }
 }
 
 async function purgeExpiredSygSphereUploads(environment: Environment): Promise<{ deleted: number, failed: number }> {
@@ -8955,7 +8657,7 @@ async function purgeExpiredSygSphereUploads(environment: Environment): Promise<{
     { target_limit: 25 },
     config.serviceRoleKey,
   )
-  if (!Array.isArray(candidates)) throw new Error('The SygSphere quarantine cleanup response is invalid.')
+  if (!Array.isArray(candidates)) throw new Error('The SygSphere upload cleanup response is invalid.')
   const deleted: string[] = []
   let failed = 0
   for (const candidate of candidates) {
@@ -9022,9 +8724,6 @@ export function secureResponse(request: Request, response: Response, requestId: 
 }
 
 export default {
-  async queue(batch: MessageBatch<DocumentScanQueueMessage>, environment: Environment): Promise<void> {
-    await handleDocumentScanQueue(batch, environment)
-  },
   async fetch(request: Request, environment: Environment, context?: WorkerExecutionContext): Promise<Response> {
     const url = new URL(request.url)
     const requestId = crypto.randomUUID()
@@ -9435,7 +9134,6 @@ export default {
           authorize: (action, input) => callRpc({ publishableKey: config.publishableKey, url: config.url }, 'sygsphere_files', { action, input }, session.token, forwardedAssuranceHeaders(request)),
           operation: (action, input) => callRpc({ serviceRoleKey: config.serviceRoleKey, url: config.url }, 'service_sygsphere_file', { action, target_actor_id: session.context.employee_id, input }, config.serviceRoleKey),
           validate: validateHrDocumentFile,
-          scan: (bytes) => scanDocumentBytes(environment, bytes),
           store: (path, bytes, mime) => storePrivateStorageObject(config, 'sygsphere-files', path, bytes, mime),
           fetch: (path) => fetchPrivateStorageObject(config, 'sygsphere-files', path),
         })
@@ -9493,8 +9191,38 @@ export default {
     }))
     context.waitUntil(purgeExpiredSygSphereUploads(environment).catch((error) => {
       console.error(JSON.stringify({
-        event: 'sygsphere_quarantine_cleanup_failed',
+        event: 'sygsphere_upload_cleanup_failed',
         message: error instanceof Error ? error.message : 'Unknown cleanup failure',
+      }))
+    }))
+    context.waitUntil(recoverLegacyHrDocumentAvailability(environment).then((recovery) => {
+      if (recovery.recovered > 0 || recovery.failed > 0) {
+        console.info(JSON.stringify({ event: 'hr_document_availability_recovery', ...recovery }))
+      }
+    }).catch((error) => {
+      console.error(JSON.stringify({
+        event: 'hr_document_availability_recovery_failed',
+        message: error instanceof Error ? error.message : 'Unknown availability recovery failure',
+      }))
+    }))
+    context.waitUntil(recoverStoredSygSphereFiles(environment).then((recovery) => {
+      if (recovery.recovered > 0 || recovery.failed > 0) {
+        console.info(JSON.stringify({ event: 'sygsphere_file_availability_recovery', ...recovery }))
+      }
+    }).catch((error) => {
+      console.error(JSON.stringify({
+        event: 'sygsphere_file_availability_recovery_failed',
+        message: error instanceof Error ? error.message : 'Unknown availability recovery failure',
+      }))
+    }))
+    context.waitUntil(recoverStoredSygSphereResumableUploads(environment).then((recovery) => {
+      if (recovery.recovered > 0 || recovery.failed > 0) {
+        console.info(JSON.stringify({ event: 'sygsphere_resumable_availability_recovery', ...recovery }))
+      }
+    }).catch((error) => {
+      console.error(JSON.stringify({
+        event: 'sygsphere_resumable_availability_recovery_failed',
+        message: error instanceof Error ? error.message : 'Unknown availability recovery failure',
       }))
     }))
     context.waitUntil((async () => {

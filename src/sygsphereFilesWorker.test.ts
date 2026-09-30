@@ -22,7 +22,7 @@ describe('SygSphere larger-file validation', () => {
     expect(() => validateSygSphereResumableFile(png, 'field-photo.png', 'image/png', 104857601)).toThrow('100 MB')
   })
 
-  it('authorizes small supported documents for the same private quarantine pipeline', () => {
+  it('authorizes small supported documents for the same protected immediate-availability path', () => {
     expect(validateSygSphereUploadIntent('field-report.pdf', 'application/pdf', 29_500)).toEqual({
       mimeType: 'application/pdf',
       sanitizedFilename: 'field-report.pdf',

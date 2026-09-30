@@ -9,7 +9,7 @@
       "authorization-tests",
       "audit-integrity-tests",
       "backup-restore-drill",
-      "document-quarantine-validation",
+      "document-upload-integrity-validation",
       "rollback-validation"
     ]
   },
@@ -263,8 +263,9 @@
   "documentControls": {
     "publicAccess": false,
     "directStorageUrls": false,
-    "quarantineRequired": true,
-    "malwareScanRequired": true,
+    "protectedStorageVerificationRequired": true,
+    "checksumIntegrityRequired": true,
+    "immediateAvailabilityAfterVerification": true,
     "signatureValidationRequired": true,
     "mimeValidationRequired": true,
     "extensionValidationRequired": true,

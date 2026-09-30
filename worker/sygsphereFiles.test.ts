@@ -4,33 +4,27 @@ import { boundedSphereUpload, handleSphereFiles } from './sygsphereFiles'
 const id = '11111111-1111-4111-8111-111111111111'
 const cid = '22222222-2222-4222-8222-222222222222'
 function dependencies() {
-  return { actorId: id, authorize: vi.fn().mockResolvedValue({ ok: true }), operation: vi.fn(async (action: string, input: Record<string, unknown>) => ({ id, state: action === 'begin' ? 'pending' : input.state, messageId: action === 'begin' ? null : id })), validate: vi.fn().mockReturnValue({ detectedMimeType: 'text/plain', sanitizedFilename: 'note.txt' }), scan: vi.fn().mockResolvedValue({ state: 'clean', scannerName: 'ClamAV', scannerVersion: 'test' }), store: vi.fn().mockResolvedValue(undefined), fetch: vi.fn().mockResolvedValue(new Response('hello')) }
+  return { actorId: id, authorize: vi.fn().mockResolvedValue({ ok: true }), operation: vi.fn(async (action: string, input: Record<string, unknown>) => ({ id, state: action === 'begin' ? 'pending' : input.state, messageId: action === 'begin' ? null : id })), validate: vi.fn().mockReturnValue({ detectedMimeType: 'text/plain', sanitizedFilename: 'note.txt' }), store: vi.fn().mockResolvedValue(undefined), fetch: vi.fn().mockResolvedValue(new Response('hello')) }
 }
 const upload = () => new Request(`https://app.sygilant.us/api/v1/sygsphere/files/${id}?conversation=${cid}&filename=note.txt`, { method: 'PUT', body: 'hello', headers: { 'content-type': 'text/plain' } })
 describe('SygSphere protected files', () => {
-  it('authorizes before reading, stores before scan and shares only a clean result', async () => {
+  it('authorizes before reading, then makes a checksum-verified protected upload available', async () => {
     const deps = dependencies(); const response = await handleSphereFiles(upload(), deps)
     expect(response.status).toBe(200); expect(deps.authorize).toHaveBeenCalledWith('authorize', { conversationId: cid })
-    expect(deps.scan).toHaveBeenCalledOnce(); expect(deps.operation).toHaveBeenLastCalledWith('complete', expect.objectContaining({ state: 'clean', scanner: 'ClamAV test' }))
-    expect(deps.store.mock.invocationCallOrder[0]).toBeLessThan(deps.scan.mock.invocationCallOrder[0]!)
+    expect(deps.store).toHaveBeenCalledWith(`${cid}/${id}`, expect.any(Uint8Array), 'text/plain')
+    expect(deps.fetch).toHaveBeenCalledWith(`${cid}/${id}`)
+    expect(deps.operation).toHaveBeenLastCalledWith('complete', expect.objectContaining({
+      checksum: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+      state: 'clean',
+    }))
   })
-  it('rejects nonmember uploads before scan or storage', async () => {
+  it('rejects nonmember uploads before validation or storage', async () => {
     const deps = dependencies(); deps.authorize.mockRejectedValue(new Error('Denied'))
-    await expect(handleSphereFiles(upload(), deps)).rejects.toThrow('Denied'); expect(deps.store).not.toHaveBeenCalled(); expect(deps.scan).not.toHaveBeenCalled()
+    await expect(handleSphereFiles(upload(), deps)).rejects.toThrow('Denied'); expect(deps.store).not.toHaveBeenCalled(); expect(deps.validate).not.toHaveBeenCalled()
   })
-  it('never publishes rejected malware', async () => {
-    const deps = dependencies(); deps.scan.mockResolvedValue({ state: 'rejected', scannerName: 'ClamAV', scannerVersion: 'test' })
-    expect((await handleSphereFiles(upload(), deps)).status).toBe(422)
-    expect(deps.operation).toHaveBeenLastCalledWith('complete', expect.objectContaining({ state: 'rejected' }))
-  })
-  it('fails closed when the scanner is unavailable', async () => {
-    const deps = dependencies(); deps.scan.mockRejectedValue(new Error('Unavailable'))
-    expect((await handleSphereFiles(upload(), deps)).status).toBe(503)
-    expect(deps.operation).toHaveBeenLastCalledWith('complete', expect.objectContaining({ state: 'error' }))
-  })
-  it('does not reshare or rescan an already completed retry', async () => {
+  it('does not restore an already available retry', async () => {
     const deps = dependencies(); deps.operation.mockResolvedValue({ id, state: 'clean', messageId: id })
-    expect((await handleSphereFiles(upload(), deps)).status).toBe(200); expect(deps.scan).not.toHaveBeenCalled(); expect(deps.store).not.toHaveBeenCalled()
+    expect((await handleSphereFiles(upload(), deps)).status).toBe(200); expect(deps.store).not.toHaveBeenCalled()
   })
   it('downloads with membership authorization, no caching and sandboxed attachment headers', async () => {
     const deps = dependencies(); deps.authorize.mockResolvedValue({ filename: 'note.txt', mimeType: 'text/plain', sizeBytes: 5, objectKey: `${cid}/${id}` })
@@ -57,6 +51,25 @@ describe('SygSphere protected files', () => {
   })
   it('rejects a changed file on storage conflict', async () => {
     const deps = dependencies(); deps.store.mockRejectedValue(new Error('Exists')); deps.fetch.mockResolvedValue(new Response('different bytes'))
-    expect((await handleSphereFiles(upload(), deps)).status).toBe(503); expect(deps.scan).not.toHaveBeenCalled()
+    expect((await handleSphereFiles(upload(), deps)).status).toBe(503); expect(deps.fetch).toHaveBeenCalledWith(`${cid}/${id}`)
+    expect(deps.operation).toHaveBeenLastCalledWith('complete', expect.objectContaining({ state: 'error' }))
+  })
+
+  it('allows an idempotent conflict only when the stored object read-back matches exactly', async () => {
+    const deps = dependencies(); deps.store.mockRejectedValue(new Error('Exists'))
+    expect((await handleSphereFiles(upload(), deps)).status).toBe(200)
+    expect(deps.operation).toHaveBeenLastCalledWith('complete', expect.objectContaining({ state: 'clean' }))
+  })
+
+  it('does not make a file available when the stored object length changes', async () => {
+    const deps = dependencies(); deps.fetch.mockResolvedValue(new Response('hell'))
+    expect((await handleSphereFiles(upload(), deps)).status).toBe(503)
+    expect(deps.operation).toHaveBeenLastCalledWith('complete', expect.objectContaining({ state: 'error' }))
+  })
+
+  it('does not make a file available when the stored object checksum changes', async () => {
+    const deps = dependencies(); deps.fetch.mockResolvedValue(new Response('HELLO'))
+    expect((await handleSphereFiles(upload(), deps)).status).toBe(503)
+    expect(deps.operation).toHaveBeenLastCalledWith('complete', expect.objectContaining({ state: 'error' }))
   })
 })

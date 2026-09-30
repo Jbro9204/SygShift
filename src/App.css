@@ -902,14 +902,12 @@
   width: 42px;
 }
 
-.hr-scan-state { align-items: center; display: inline-flex; }
-.hr-scan-state::before { background: #ba7b17; border-radius: 50%; content: ''; height: 7px; margin-right: 6px; width: 7px; }
-.hr-scan-state--clean { color: light-dark(#176a4c, #bdebd3) !important; }
-.hr-scan-state--clean::before { background: #278a68; }
-.hr-scan-state--rejected,
-.hr-scan-state--scan_error { color: light-dark(#a0362f, #ffc5bd) !important; }
-.hr-scan-state--rejected::before,
-.hr-scan-state--scan_error::before { background: #ba4337; }
+.hr-document-availability { align-items: center; display: inline-flex; }
+.hr-document-availability::before { background: #ba7b17; border-radius: 50%; content: ''; height: 7px; margin-right: 6px; width: 7px; }
+.hr-document-availability--available { color: light-dark(#176a4c, #bdebd3) !important; }
+.hr-document-availability--available::before { background: #278a68; }
+.hr-document-availability--unavailable { color: light-dark(#a0362f, #ffc5bd) !important; }
+.hr-document-availability--unavailable::before { background: #ba4337; }
 
 .hr-document-row__details {
   background: light-dark(#fbf8f2, #171b1f);

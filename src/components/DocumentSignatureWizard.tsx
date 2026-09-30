@@ -1,10 +1,9 @@
 import { type DragEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, CheckCircle2, ChevronLeft, ChevronRight, FileSignature, Search, ShieldCheck, UploadCloud, Users } from 'lucide-react'
 import { ModalDialog } from './ModalDialog'
 import { createSignatureEnvelope, sendSignatureEnvelope, type DocumentStudioPolicy } from '../data/documentStudio'
 import {
-  getHrDocumentWorkspace,
   hrDocumentMimeType,
   uploadHrDocument,
   type HrDocumentUploadInput,
@@ -12,7 +11,7 @@ import {
   type HrDocumentWorkspace,
 } from '../data/hrDocuments'
 
-type WizardStep = 'document' | 'people' | 'review' | 'security' | 'complete'
+type WizardStep = 'document' | 'people' | 'review' | 'sending' | 'complete'
 type RequiredAction = 'sign' | 'acknowledge' | 'approve' | 'certify' | 'review'
 
 const actionLabels: Record<RequiredAction, string> = {
@@ -89,23 +88,18 @@ export function DocumentSignatureWizard({
   }, [eligibleEmployees, recipientSearch])
 
   const upload = useMutation({
-    mutationFn: (input: HrDocumentUploadInput) => uploadHrDocument(input, setProgress),
+    mutationFn: async (input: HrDocumentUploadInput) => {
+      const result = await uploadHrDocument(input, setProgress)
+      if (result.scanState === 'rejected' || result.scanState === 'cancelled') {
+        throw new Error('This file could not be accepted. Choose another copy or file format.')
+      }
+      return result
+    },
     onSuccess: (result) => {
       setUploadResult({ documentId: result.documentId })
-      setStep('security')
+      setStep('sending')
     },
   })
-
-  const scan = useQuery({
-    enabled: Boolean(uploadResult),
-    queryKey: ['signature-upload-scan', uploadResult?.documentId],
-    queryFn: () => getHrDocumentWorkspace({ page: 1, pageSize: 20, search: title.trim().slice(0, 120) }),
-    refetchInterval: (query) => {
-      const document = query.state.data?.documents.find((item) => item.id === uploadResult?.documentId)
-      return !document || ['quarantined', 'scan_pending'].includes(document.version?.scanState ?? '') ? 2_000 : false
-    },
-  })
-  const uploadedDocument = scan.data?.documents.find((item) => item.id === uploadResult?.documentId)
 
   const send = useMutation({
     mutationFn: async () => {
@@ -126,7 +120,7 @@ export function DocumentSignatureWizard({
         templateVersionId: null,
         title: title.trim(),
       })
-      if (typeof created.id !== 'string') throw new Error('The document was prepared, but the signature request confirmation was invalid.')
+      if (typeof created.id !== 'string') throw new Error('The signature request confirmation was invalid.')
       await sendSignatureEnvelope(created.id)
       return created.id
     },
@@ -143,12 +137,10 @@ export function DocumentSignatureWizard({
   })
 
   useEffect(() => {
-    if (step !== 'security' || !uploadedDocument || sendStarted.current) return
-    if (uploadedDocument.version?.scanState === 'clean') {
-      sendStarted.current = true
-      send.mutate()
-    }
-  }, [send, step, uploadedDocument])
+    if (step !== 'sending' || !uploadResult || sendStarted.current) return
+    sendStarted.current = true
+    send.mutate()
+  }, [send, step, uploadResult])
 
   function chooseFile(nextFile: File | null) {
     upload.reset()
@@ -189,7 +181,7 @@ export function DocumentSignatureWizard({
   function startDelivery() {
     if (!file || !selectedVault || !standardPolicy || !recipientIds.length) return
     setValidation(null)
-    setStep('security')
+    setStep('sending')
     upload.mutate({
       accessClassification: selectedVault.classification,
       category,
@@ -207,8 +199,7 @@ export function DocumentSignatureWizard({
     setValidation(null)
   }
 
-  const scanState = uploadedDocument?.version?.scanState
-  const processingError = upload.error || scan.error || send.error
+  const processingError = upload.error || send.error
   return <ModalDialog
     busy={upload.isPending || send.isPending}
     busyLabel={upload.isPending ? `Uploading protected document… ${progress}%` : 'Sending protected signature request…'}
@@ -223,9 +214,9 @@ export function DocumentSignatureWizard({
           ['document', 'Document'],
           ['people', 'People'],
           ['review', 'Review'],
-          ['security', 'Send'],
+          ['sending', 'Send'],
         ].map(([value, label], index) => {
-          const order = ['document', 'people', 'review', 'security', 'complete']
+          const order = ['document', 'people', 'review', 'sending', 'complete']
           const currentIndex = order.indexOf(step)
           const itemIndex = order.indexOf(value as WizardStep)
           return <li className={itemIndex === currentIndex ? 'current' : itemIndex < currentIndex ? 'complete' : ''} key={value}><span>{itemIndex < currentIndex ? <Check aria-hidden="true" size={15} /> : index + 1}</span><strong>{label}</strong></li>
@@ -233,7 +224,7 @@ export function DocumentSignatureWizard({
       </ol>
 
       {step === 'document' ? <form className="document-signature-wizard__panel" onSubmit={continueFromDocument}>
-        <header><UploadCloud aria-hidden="true"/><div><h3>Choose the document</h3><p>Upload a proposal, agreement, policy, or other supported outside document. SygShift files it securely and scans it before anything is sent.</p></div></header>
+        <header><UploadCloud aria-hidden="true"/><div><h3>Choose the document</h3><p>Upload a proposal, agreement, policy, or other supported outside document. SygShift files it securely and makes it available before anything is sent.</p></div></header>
         <div className={`document-signature-wizard__dropzone${dragActive ? ' active' : ''}`} onDragEnter={(event) => { event.preventDefault(); setDragActive(true) }} onDragLeave={() => setDragActive(false)} onDragOver={(event) => event.preventDefault()} onDrop={(event: DragEvent<HTMLDivElement>) => { event.preventDefault(); setDragActive(false); chooseFile(event.dataTransfer.files.item(0)) }}>
           <input accept={workspace.vaults.filter((vault) => vault.canManage).flatMap((vault) => vault.allowedMimeTypes).filter((value, index, all) => all.indexOf(value) === index).join(',')} hidden onChange={(event) => chooseFile(event.target.files?.item(0) ?? null)} ref={inputRef} type="file"/>
           <FileSignature aria-hidden="true" size={34}/><strong>{file?.name ?? 'Drop the document here'}</strong><span>{file ? formatFileSize(file.size) : 'PDF, Word, image, spreadsheet, or text file within your authorized limit'}</span><button className="secondary-button" onClick={() => inputRef.current?.click()} type="button">{file ? 'Choose another file' : 'Choose file'}</button>
@@ -255,19 +246,19 @@ export function DocumentSignatureWizard({
       </form> : null}
 
       {step === 'review' ? <section className="document-signature-wizard__panel">
-        <header><FileSignature aria-hidden="true"/><div><h3>Review and send</h3><p>SygShift will upload the original, complete its security scan, create the request, and send it. No separate template is required.</p></div></header>
+        <header><FileSignature aria-hidden="true"/><div><h3>Review and send</h3><p>SygShift will upload the original, confirm it was saved, create the request, and send it. No separate template is required.</p></div></header>
         <dl className="document-signature-wizard__summary"><div><dt>Document</dt><dd>{title}<small>{file?.name} · {file ? formatFileSize(file.size) : ''}</small></dd></div><div><dt>Action</dt><dd>{actionLabels[requiredAction]}</dd></div><div><dt>Recipients</dt><dd>{recipientIds.map((id) => workspace.employees.find((employee) => employee.id === id)?.legalName).filter(Boolean).join(', ')}</dd></div><div><dt>Filed with</dt><dd>{employeeId === 'company' ? 'Company / shared records' : workspace.employees.find((employee) => employee.id === employeeId)?.legalName}</dd></div></dl>
         <div className="document-signature-wizard__grid"><label className="wide">Message <span>Optional</span><textarea maxLength={2000} onChange={(event) => setMessage(event.target.value)} rows={4} value={message}/></label><label>Due date <span>Optional</span><input onChange={(event) => setExpiresAt(event.target.value)} type="datetime-local" value={expiresAt}/></label></div>
         {!standardPolicy ? <p className="form-error" role="alert">The approved internal signing policy is unavailable. A Document Studio administrator must restore it before this request can be sent.</p> : null}
         <footer><button className="secondary-button" onClick={() => setStep('people')} type="button"><ChevronLeft aria-hidden="true" size={17}/>Back</button><button className="primary-action" disabled={!standardPolicy} onClick={startDelivery} type="button"><UploadCloud aria-hidden="true" size={17}/>Upload and send</button></footer>
       </section> : null}
 
-      {step === 'security' ? <section className="document-signature-wizard__processing" aria-live="polite">
-        <span className={`document-signature-wizard__processing-icon${processingError || ['rejected', 'scan_error'].includes(scanState ?? '') ? ' error' : ''}`}><ShieldCheck aria-hidden="true"/></span>
-        <h3>{upload.isPending ? `Uploading document — ${progress}%` : send.isPending ? 'Sending the request' : processingError || ['rejected', 'scan_error'].includes(scanState ?? '') ? 'The request was not sent' : 'Completing security review'}</h3>
-        <p>{upload.isPending ? 'The original is being transferred to private storage.' : send.isPending ? 'The clean document is being pinned to its recipients and immutable audit trail.' : processingError ? errorMessage(processingError, 'The document could not be prepared.') : scanState === 'rejected' ? 'The file did not pass security review and remains unavailable.' : scanState === 'scan_error' ? 'The file remains quarantined because security review could not complete.' : 'The document is private and unavailable to recipients until malware and integrity checks pass.'}</p>
+      {step === 'sending' ? <section className="document-signature-wizard__processing" aria-live="polite">
+        <span className={`document-signature-wizard__processing-icon${processingError ? ' error' : ''}`}><ShieldCheck aria-hidden="true"/></span>
+        <h3>{upload.isPending ? `Uploading document — ${progress}%` : send.isPending ? 'Sending the request' : processingError ? 'The request was not sent' : 'Preparing the request'}</h3>
+        <p>{upload.isPending ? 'The original is being transferred to protected storage.' : send.isPending ? 'The saved document is being pinned to its recipients and immutable audit trail.' : processingError ? errorMessage(processingError, 'The document could not be sent.') : 'The file is available and your protected request is being created.'}</p>
         {upload.isPending ? <div aria-label={`Upload ${progress}% complete`} className="hr-document-progress"><span style={{ width: `${progress}%` }}/></div> : null}
-        {send.isError ? <div className="document-signature-wizard__processing-actions"><button className="secondary-button" onClick={onClose} type="button">Close — document stays saved</button><button className="primary-action" onClick={() => send.mutate()} type="button">Try sending again</button></div> : processingError || ['rejected', 'scan_error'].includes(scanState ?? '') ? <button className="secondary-button" onClick={onClose} type="button">Close — document stays saved</button> : null}
+        {send.isError ? <div className="document-signature-wizard__processing-actions"><button className="secondary-button" onClick={onClose} type="button">Close — document stays saved</button><button className="primary-action" onClick={() => send.mutate()} type="button">Try sending again</button></div> : upload.isError ? <button className="secondary-button" onClick={() => { upload.reset(); setStep('review') }} type="button">Back to review</button> : null}
       </section> : null}
 
       {step === 'complete' ? <section className="document-signature-wizard__processing complete" aria-live="polite"><span className="document-signature-wizard__processing-icon"><CheckCircle2 aria-hidden="true"/></span><h3>Document sent</h3><p>{recipientIds.length} {recipientIds.length === 1 ? 'employee has' : 'employees have'} been notified. The request is now tracked in Signature requests, and each recipient can complete it from My Documents.</p><button className="primary-action" onClick={onClose} type="button">Done</button></section> : null}

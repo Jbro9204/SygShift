@@ -35,7 +35,7 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { ModalDialog } from './ModalDialog'
 import { SecurePdfViewer } from './SecurePdfViewer'
 import { createSignatureEnvelope, getDocumentStudioWorkspace, sendSignatureEnvelope } from '../data/documentStudio'
-import { getHrDocumentBlob, getHrDocumentWorkspace, uploadHrDocument, type HrDocumentWorkspace } from '../data/hrDocuments'
+import { uploadHrDocument, type HrDocumentWorkspace } from '../data/hrDocuments'
 import {
   completedPdfFilename,
   createTypedSignaturePng,
@@ -128,10 +128,6 @@ function inferredControlType(label: string): DetectedTemplateField['controlType'
 
 function friendlyError(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
-}
-
-function delay(milliseconds: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 }
 
 function bytesAsFile(bytes: Uint8Array, title: string): File {
@@ -508,28 +504,6 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     return finished
   }
 
-  async function fileChecksum(value: Blob): Promise<string> {
-    const digest = await crypto.subtle.digest('SHA-256', await value.arrayBuffer())
-    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
-  }
-
-  async function verifyStoredDocument(documentId: string, expected: File, expectedTitle: string): Promise<void> {
-    let ready = false
-    for (let attempt = 0; attempt < 45; attempt += 1) {
-      const current = await getHrDocumentWorkspace({ page: 1, pageSize: 20, search: expectedTitle.trim().slice(0, 120) })
-      const stored = current.documents.find((document) => document.id === documentId)
-      if (stored?.version?.scanState === 'clean') { ready = true; break }
-      if (stored?.version?.scanState === 'rejected') throw new Error('This file could not be accepted. Download it, check the PDF, and try again.')
-      await delay(2_000)
-    }
-    if (!ready) throw new Error('The PDF is still being prepared. It remains safely saved and can be opened from Saved documents when preparation finishes.')
-    const stored = await getHrDocumentBlob(documentId, 'preview')
-    const [expectedChecksum, storedChecksum] = await Promise.all([fileChecksum(expected), fileChecksum(stored.blob)])
-    if (expected.size !== stored.blob.size || expectedChecksum !== storedChecksum) {
-      throw new Error('The saved copy did not match the completed PDF. Keep this window open and try saving again.')
-    }
-  }
-
   async function openPreview() {
     setPreviewBusy(true)
     setPreviewError(null)
@@ -863,9 +837,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     onSuccess: ({ employeeId: savedEmployeeId, fingerprint, result }) => {
       const owner = savedEmployeeId === 'company' ? 'Company documents' : workspace.employees.find((employee) => employee.id === savedEmployeeId)?.legalName ?? 'the employee file'
       setSavedDocument({ employeeId: savedEmployeeId, fingerprint, id: result.documentId })
-      setSavedMessage(result.scanState === 'clean'
-        ? `Saved to ${owner}.`
-        : `Saved to ${owner}. You can close this window; processing will finish in the background.`)
+      setSavedMessage(`Saved to ${owner}.`)
       void queryClient.invalidateQueries({ queryKey: ['hr-documents'] })
       onSaved()
     },
@@ -897,8 +869,10 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
           title,
           vaultCode: selectedVault.code,
         }, setProgress)
+        if (uploaded.scanState === 'rejected' || uploaded.scanState === 'cancelled') {
+          throw new Error('This file could not be accepted. Download it, check the PDF, and try again.')
+        }
         documentId = uploaded.documentId
-        await verifyStoredDocument(uploaded.documentId, finished, title)
         setSavedDocument({ employeeId: filingEmployeeId, fingerprint: documentFingerprint, id: uploaded.documentId })
       }
 
@@ -921,7 +895,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
         templateVersionId: null,
         title: title.trim(),
       })
-      if (typeof created.id !== 'string') throw new Error('The document was prepared, but the delivery confirmation was invalid.')
+      if (typeof created.id !== 'string') throw new Error('The document request confirmation was invalid.')
       await sendSignatureEnvelope(created.id)
     },
     onSuccess: async () => {

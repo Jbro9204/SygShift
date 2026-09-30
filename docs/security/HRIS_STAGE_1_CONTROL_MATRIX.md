@@ -11,7 +11,7 @@
 | Break glass | System Admin recovery paths exist | Temporary, scoped, reasoned, reviewed, audited | Design complete; workflow not deployed |
 | Append-only audit | `private.audit_events`; append-only operational histories | Audit protected views, exports, approvals, documents, emergency access | Existing foundation verified; HR events pending |
 | Private storage | Existing private domain buckets | Six separately permissioned HR vaults | Reserved only; not deployed |
-| Document safety | Type/size restrictions on existing buckets | Signature validation, quarantine, malware scan, versioning, legal hold | Required release blocker |
+| Document safety | Type/size restrictions on existing buckets | Signature validation, active-content restrictions, protected storage verification, SHA-256 integrity verification, versioning, legal hold | Required release blocker |
 | Maintenance | Feature-scoped, MFA, automatic expiration, audit, recovery | New HR modules disabled independently and protected during release | Existing control verified |
 | Background jobs | Every-minute bounded time/alert/notification automation | Independent idempotent HR jobs with retry/dead-letter controls | Existing pattern verified; HR jobs pending |
 | Backup and recovery | Supabase managed backups stated; release runbooks | HR schema restore drill and document recovery evidence | Required release blocker |
@@ -27,7 +27,7 @@ The following remain hard controls even for a System Admin or break-glass user:
 - passwords, service keys, private signing material, or recovery secrets cannot be exposed;
 - original punch evidence and locked payroll exports cannot be rewritten;
 - audit records cannot be edited or deleted;
-- malware-quarantined documents cannot be previewed or downloaded;
+- documents that fail validation, protected-storage identity, or SHA-256 integrity verification cannot be previewed or downloaded;
 - separated or disabled accounts cannot authenticate;
 - a record cannot be assigned to a nonexistent employee identity;
 - a legal hold cannot be silently bypassed;
@@ -40,4 +40,4 @@ The following remain hard controls even for a System Admin or break-glass user:
 - `pnpm check:hris-foundation` passes.
 - The HRIS foundation guard test passes.
 - The feature/program gate remains disabled and protected production HR data remains prohibited.
-- Backup/restore and document-quarantine evidence remain explicit blockers for the stages that introduce schema or files.
+- Backup/restore and protected-storage integrity evidence remain explicit blockers for the stages that introduce schema or files.

@@ -105,7 +105,7 @@ Six future HR vaults are reserved in the foundation contract: general HR, financ
 
 1. There is no authoritative effective-dated HR employment record yet.
 2. There are no category-separated HR document vaults.
-3. Malware scanning and quarantine are not yet implemented for HR documents.
+3. The original malware-scanning and quarantine proposal has been retired. Active HR document availability requires server-side file validation, private storage, exact object metadata verification, and SHA-256 integrity verification; it does not wait on a scanner or background preparation queue.
 4. The future HR permission catalog and server services do not yet exist.
 5. Break-glass workflow records, second-person review, and recent-MFA enforcement for HR do not yet exist.
 6. An HR-specific backup/restore drill has not been performed because no HR schema or protected HR data exists yet.

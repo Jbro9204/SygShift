@@ -13,7 +13,7 @@ const policy = JSON.parse(
   release: { defaultEnabled: boolean }
   authorization: { recentMfaRequiredBeforeDocumentAccessRelease: boolean; recentMfaMaximumAgeSeconds: number; trustedDeviceAloneSatisfiesRecentMfa: boolean }
   storage: { publicObjectsAllowed: boolean; directBrowserObjectAccessAllowed: boolean }
-  malware: { quarantineByDefault: boolean; previewBeforeCleanScanAllowed: boolean; downloadBeforeCleanScanAllowed: boolean }
+  validation: { requireFileSignatureMatch: boolean; rejectActiveContent: boolean; rejectExtensionMimeMismatch: boolean }
   history: { versionsImmutable: boolean; legalHoldPreventsDisposition: boolean }
   vaults: string[]
 }
@@ -44,12 +44,13 @@ describe('HRIS Stage 4 document foundation guardrails', () => {
     expect(migration).not.toContain('create policy')
   })
 
-  it('requires quarantine and clean scanner evidence before any later access release', () => {
-    expect(policy.malware.quarantineByDefault).toBe(true)
-    expect(policy.malware.previewBeforeCleanScanAllowed).toBe(false)
-    expect(policy.malware.downloadBeforeCleanScanAllowed).toBe(false)
-    expect(migration).toContain("'quarantined', 'scan_pending', 'clean', 'rejected', 'scan_error'")
-    expect(migration).toContain('Clean scan results require evidence.')
+  it('requires private storage, file validation, and authorization before later access release', () => {
+    expect(policy.validation.requireFileSignatureMatch).toBe(true)
+    expect(policy.validation.rejectActiveContent).toBe(true)
+    expect(policy.validation.rejectExtensionMimeMismatch).toBe(true)
+    expect(migration).toContain('sha256_checksum text not null')
+    expect(migration).toContain('private.require_hr_document_permission')
+    expect(migration).toContain('Document management access is required.')
   })
 
   it('preserves immutable versions, append-only access history, and legal holds', () => {
