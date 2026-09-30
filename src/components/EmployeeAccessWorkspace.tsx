@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   CheckCircle2,
@@ -108,12 +108,104 @@ export function EmployeeAccessWorkspace({
   selectedUserId,
   users,
 }: EmployeeAccessWorkspaceProps) {
-  const queryClient = useQueryClient()
   const [employeeSearch, setEmployeeSearch] = useState('')
+  const [editorDirty, setEditorDirty] = useState(false)
+  const user = users.find((candidate) => candidate.id === selectedUserId) ?? users[0]
+  const filteredUsers = useMemo(() => {
+    const query = employeeSearch.trim().toLocaleLowerCase()
+    if (!query) return users
+    return users.filter((candidate) => [
+      candidate.displayName,
+      candidate.username ?? '',
+      candidate.jobTitle ?? '',
+      employeeRoleLabels[candidate.primaryRole],
+      employeeStatusLabels[candidate.status] ?? candidate.status,
+    ].some((value) => value.toLocaleLowerCase().includes(query)))
+  }, [employeeSearch, users])
+  const handleEditorDirtyChange = useCallback((dirty: boolean) => {
+    setEditorDirty(dirty)
+    onDirtyChange(dirty)
+  }, [onDirtyChange])
+
+  if (!user) {
+    return (
+      <section className="employee-access-empty">
+        <ShieldAlert aria-hidden="true" size={24} />
+        <p>No employees are available for access management.</p>
+      </section>
+    )
+  }
+
+  function chooseUser(userId: string) {
+    if (userId === user.id) return
+    if (editorDirty && !window.confirm('Discard unsaved employee access changes?')) return
+    onSelectUser(userId)
+  }
+
+  return (
+    <section className="access-employee-mode">
+      <aside className="access-employee-directory" aria-label="Employees">
+        <div className="access-panel-heading">
+          <div><p className="eyebrow">Employees</p><h2>Choose a person</h2></div>
+          <span>{users.length}</span>
+        </div>
+        <label className="access-search-field">
+          <Search aria-hidden="true" size={18} />
+          <span className="visually-hidden">Search employees</span>
+          <input onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Search name, username, role, or title" type="search" value={employeeSearch} />
+        </label>
+        <div className="access-employee-list-meta" aria-live="polite">
+          <span>Showing {filteredUsers.length} of {users.length}</span>
+          <span>Scroll to browse</span>
+        </div>
+        <div className="access-employee-list" aria-label="Employee search results">
+          {filteredUsers.map((candidate) => (
+            <button aria-current={candidate.id === user.id ? 'true' : undefined} className={candidate.id === user.id ? 'access-person access-person--selected' : 'access-person'} key={candidate.id} onClick={() => chooseUser(candidate.id)} type="button">
+              <span className="access-person__initials" aria-hidden="true">{employeeInitials(candidate.displayName)}</span>
+              <span><strong>{candidate.displayName}</strong><small>@{candidate.username || 'no-login'} · {employeeRoleLabels[candidate.primaryRole]} · {employeeStatusLabels[candidate.status] ?? candidate.status}</small></span>
+            </button>
+          ))}
+          {filteredUsers.length === 0 ? <p className="permission-search-empty">No employees match that search.</p> : null}
+        </div>
+      </aside>
+
+      <EmployeeAccessEditor
+        key={user.id}
+        actorEmployeeId={actorEmployeeId}
+        actorIsPrimaryAdmin={actorIsPrimaryAdmin}
+        canManageAccess={canManageAccess}
+        onDirtyChange={handleEditorDirtyChange}
+        permissions={permissions}
+        roles={roles}
+        user={user}
+      />
+    </section>
+  )
+}
+
+interface EmployeeAccessEditorProps {
+  actorEmployeeId: string | null
+  actorIsPrimaryAdmin: boolean
+  canManageAccess: boolean
+  onDirtyChange: (dirty: boolean) => void
+  permissions: PermissionDefinition[]
+  roles: AccessRoleDefinition[]
+  user: AccessControlUser
+}
+
+function EmployeeAccessEditor({
+  actorEmployeeId,
+  actorIsPrimaryAdmin,
+  canManageAccess,
+  onDirtyChange,
+  permissions,
+  roles,
+  user,
+}: EmployeeAccessEditorProps) {
+  const queryClient = useQueryClient()
   const [permissionSearch, setPermissionSearch] = useState('')
   const [showSelectedOnly, setShowSelectedOnly] = useState(false)
   const [openCategory, setOpenCategory] = useState<string | null>(null)
-  const user = users.find((candidate) => candidate.id === selectedUserId) ?? users[0]
   const selfReadOnly = Boolean(user && actorEmployeeId && user.id === actorEmployeeId)
   const protectedAdminReadOnly = Boolean(user?.primaryRole === 'admin' && !actorIsPrimaryAdmin)
   const accessReadOnly = !canManageAccess || user?.status === 'separated' || selfReadOnly || protectedAdminReadOnly
@@ -198,17 +290,6 @@ export function EmployeeAccessWorkspace({
     [availableAdditions, permissionSearch, selectedAdditionCodes, showSelectedOnly],
   )
   const grouped = useMemo(() => groupedPermissions(visiblePermissions), [visiblePermissions])
-  const filteredUsers = useMemo(() => {
-    const query = employeeSearch.trim().toLocaleLowerCase()
-    if (!query) return users
-    return users.filter((candidate) => [
-      candidate.displayName,
-      candidate.username ?? '',
-      candidate.jobTitle ?? '',
-      employeeRoleLabels[candidate.primaryRole],
-      employeeStatusLabels[candidate.status] ?? candidate.status,
-    ].some((value) => value.toLocaleLowerCase().includes(query)))
-  }, [employeeSearch, users])
   const rolesChanged = roleChange.changed
   const additionsChanged = !setsMatch(selectedAdditionCodes, originalAdditionCodes)
   const hasUnsavedChanges = rolesChanged || additionsChanged
@@ -272,21 +353,6 @@ export function EmployeeAccessWorkspace({
     return () => onDirtyChange(false)
   }, [hasUnsavedChanges, onDirtyChange])
 
-  if (!user) {
-    return (
-      <section className="employee-access-empty">
-        <ShieldAlert aria-hidden="true" size={24} />
-        <p>No employees are available for access management.</p>
-      </section>
-    )
-  }
-
-  function chooseUser(userId: string) {
-    if (userId === user.id) return
-    if (hasUnsavedChanges && !window.confirm('Discard unsaved employee access changes?')) return
-    onSelectUser(userId)
-  }
-
   function togglePermission(code: string) {
     if (accessReadOnly) return
     setSelectedAdditionCodes((current) => {
@@ -320,32 +386,7 @@ export function EmployeeAccessWorkspace({
   }
 
   return (
-    <section className="access-employee-mode">
-      <aside className="access-employee-directory" aria-label="Employees">
-        <div className="access-panel-heading">
-          <div><p className="eyebrow">Employees</p><h2>Choose a person</h2></div>
-          <span>{users.length}</span>
-        </div>
-        <label className="access-search-field">
-          <Search aria-hidden="true" size={18} />
-          <span className="visually-hidden">Search employees</span>
-          <input onChange={(event) => setEmployeeSearch(event.target.value)} placeholder="Search name, username, role, or title" type="search" value={employeeSearch} />
-        </label>
-        <div className="access-employee-list-meta" aria-live="polite">
-          <span>Showing {filteredUsers.length} of {users.length}</span>
-          <span>Scroll to browse</span>
-        </div>
-        <div className="access-employee-list" aria-label="Employee search results">
-          {filteredUsers.map((candidate) => (
-            <button aria-current={candidate.id === user.id ? 'true' : undefined} className={candidate.id === user.id ? 'access-person access-person--selected' : 'access-person'} key={candidate.id} onClick={() => chooseUser(candidate.id)} type="button">
-              <span className="access-person__initials" aria-hidden="true">{employeeInitials(candidate.displayName)}</span>
-              <span><strong>{candidate.displayName}</strong><small>@{candidate.username || 'no-login'} · {employeeRoleLabels[candidate.primaryRole]} · {employeeStatusLabels[candidate.status] ?? candidate.status}</small></span>
-            </button>
-          ))}
-          {filteredUsers.length === 0 ? <p className="permission-search-empty">No employees match that search.</p> : null}
-        </div>
-      </aside>
-
+    <>
       <div className="access-employee-editor">
         <header className="access-employee-summary">
           <div><p className="eyebrow">Employee access</p><h2>{user.displayName}</h2><p>@{user.username || 'no-login'}{user.jobTitle ? ` · ${user.jobTitle}` : ''}</p></div>
@@ -457,6 +498,6 @@ export function EmployeeAccessWorkspace({
           </div>
         </ModalDialog>
       ) : null}
-    </section>
+    </>
   )
 }

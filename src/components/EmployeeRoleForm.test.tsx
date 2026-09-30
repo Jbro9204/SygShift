@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createEmployee, updateEmployee, type AdminUser, type EmployeeMutationInput } from '../data/adminUsers'
 import type { AccessControlCenter, AccessControlUser, AccessRoleDefinition, PermissionDefinition } from '../data/accessControl'
@@ -365,7 +366,101 @@ function renderAccessWorkspace(user: AccessControlUser = workspaceUser, actor: {
   }
 }
 
+function WorkspaceSelectionHarness({ onDirtyChange, permissions = workspacePermissions, users }: {
+  onDirtyChange: (dirty: boolean) => void
+  permissions?: PermissionDefinition[]
+  users: AccessControlUser[]
+}) {
+  const [selectedUserId, setSelectedUserId] = useState(users[0]?.id ?? '')
+  return (
+    <EmployeeAccessWorkspace
+      actorEmployeeId="90000000-0000-4000-8000-000000000001"
+      actorIsPrimaryAdmin
+      canManageAccess
+      onDirtyChange={onDirtyChange}
+      onSelectUser={setSelectedUserId}
+      permissions={permissions}
+      roles={workspaceRoles}
+      selectedUserId={selectedUserId}
+      users={users}
+    />
+  )
+}
+
 describe('employee permissions workspace role contract', () => {
+  it('switches employees with isolated editor state while preserving the directory search', async () => {
+    const guardEmployee: AccessControlUser = {
+      ...workspaceUser,
+      displayName: 'Danny Dallash',
+      id: '10000000-0000-4000-8000-000000000002',
+      username: 'danny.dallash',
+    }
+    const recruitingEmployee: AccessControlUser = {
+      ...workspaceUser,
+      assignedRoleIds: [
+        '20000000-0000-4000-8000-000000000003',
+        '20000000-0000-4000-8000-000000000004',
+      ],
+      displayName: 'Zach Ward',
+      id: '10000000-0000-4000-8000-000000000003',
+      overrides: [{
+        createdAt: '2026-09-30T12:05:00.000Z',
+        effect: 'grant',
+        id: '30000000-0000-4000-8000-000000000002',
+        permissionCode: 'team.view',
+        reason: 'Existing Zach-specific access.',
+      }],
+      primaryRole: 'recruiting_licensing',
+      username: 'zward',
+    }
+    const sensitivePermissions: PermissionDefinition[] = workspacePermissions.map((entry) => (
+      entry.code === 'team.view' ? { ...entry, riskLevel: 'sensitive' } : entry
+    ))
+    const onDirtyChange = vi.fn()
+    const confirmDiscard = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'Danny access save failed.' } })
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <WorkspaceSelectionHarness onDirtyChange={onDirtyChange} permissions={sensitivePermissions} users={[guardEmployee, recruitingEmployee]} />
+      </QueryClientProvider>,
+    )
+
+    expect(screen.getByText('Guard', { selector: '.access-summary-strip strong' })).toBeInTheDocument()
+    const employeeEditor = container.querySelector('.access-employee-editor')
+    expect(employeeEditor).not.toBeNull()
+    const directorySearch = screen.getByPlaceholderText('Search name, username, role, or title')
+    const directoryList = screen.getByLabelText('Employee search results')
+    directoryList.scrollTop = 64
+    fireEvent.change(directorySearch, { target: { value: 'active' } })
+    fireEvent.click(screen.getByRole('button', { name: /Operations.*available/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Add View team' }))
+    fireEvent.change(screen.getByPlaceholderText('Why is this access changing?'), { target: { value: 'Temporary sensitive access.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save employee permissions' }))
+    expect(screen.getByRole('dialog', { name: 'Confirm sensitive access' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm and save' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Danny access save failed.'))
+
+    onDirtyChange.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: /Zach Ward/ }))
+
+    expect(confirmDiscard).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog', { name: 'Confirm sensitive access' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Danny access save failed.')).not.toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Search name, username, role, or title')).toBe(directorySearch)
+    expect(screen.getByLabelText('Employee search results')).toBe(directoryList)
+    expect(container.querySelector('.access-employee-editor')).not.toBe(employeeEditor)
+    expect(directorySearch).toHaveValue('active')
+    expect(directoryList.scrollTop).toBe(64)
+    const summary = screen.getByLabelText('Employee access summary')
+    expect(within(summary).getByText('Recruiting & Licensing')).toBeInTheDocument()
+    expect(within(summary).getByText('Additional role memberships').previousElementSibling).toHaveTextContent('2')
+    expect(screen.getByText('1 selected')).toBeInTheDocument()
+    expect(screen.queryByText(/unsaved changes?/)).not.toBeInTheDocument()
+    expect(onDirtyChange).not.toHaveBeenCalledWith(true)
+    confirmDiscard.mockRestore()
+  })
+
   it('saves primary role, additive memberships, and preserved direct grants through the unified RPC', async () => {
     const updatedUser = { ...workspaceUser, primaryRole: 'supervisor' as const }
     const center: AccessControlCenter = {
