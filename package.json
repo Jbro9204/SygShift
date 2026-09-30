@@ -34,6 +34,7 @@
     "check:hris-offboarding-self-service-reporting": "node tools/validate-hris-stage9-offboarding-self-service-reporting.mjs",
     "check:hris-payroll-integration": "node tools/validate-hris-stage10-payroll-integration-hardening.mjs",
     "check:hris-admin-baseline": "node tools/validate-hris-admin-permission-baseline.mjs",
+    "check:access-profile-security-boundary": "node tools/validate-access-profile-security-boundary.mjs",
     "check:sygsphere-comms-spike": "node tools/validate-sygsphere-communications-provider-spike.mjs",
     "check:sygsphere-comms-stage12": "node tools/validate-sygsphere-communications-stage12-foundation.mjs",
     "check:sygsphere-comms-stage45": "node tools/validate-sygsphere-communications-stage45-gates.mjs",

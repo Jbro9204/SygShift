@@ -748,6 +748,28 @@ begin
     'sub', limited_auth, 'role', 'authenticated', 'aal', 'aal2'
   )::text, true);
 
+  begin
+    perform sygshift_access_internal.set_employee_access_profile_with_primary_role(
+      target_employee, 'supervisor', array[extra_role_id], array[]::text[],
+      'Direct helper must repeat role-management authorization.'
+    );
+    raise exception 'A basic profile editor invoked the privileged full-profile helper.';
+  exception when insufficient_privilege then
+    null;
+  end;
+
+  begin
+    perform sygshift_access_internal.set_employee_workforce_roles(
+      target_employee, 'supervisor', array[extra_role_id],
+      'Direct role-only helper must repeat role-management authorization.'
+    );
+    raise exception 'A basic profile editor invoked the privileged role-only helper.';
+  exception when insufficient_privilege then
+    null;
+  end;
+  assert (select role = 'guard' from public.employees where id = target_employee),
+    'A direct-helper denial changed the employee primary role.';
+
   -- A basic profile editor can save an unchanged role.
   perform public.admin_update_employee(
     target_employee, 'Atomic', null, 'Target', null, 'guard', 'hourly', 'active',
@@ -870,6 +892,16 @@ begin
     'The AAL1 role attempt changed the employee.';
 
   begin
+    perform sygshift_access_internal.set_employee_workforce_roles(
+      target_employee, 'supervisor', array[extra_role_id],
+      'Direct helper must enforce recent MFA.'
+    );
+    raise exception 'An AAL1 role manager invoked the privileged role-only helper.';
+  exception when insufficient_privilege then
+    null;
+  end;
+
+  begin
     perform public.get_licensing_center();
     raise exception 'An AAL1 Licensing manager opened the Licensing Center.';
   exception when insufficient_privilege then
@@ -899,6 +931,33 @@ begin
     and not public.has_effective_permission('licensing.view')
     and not public.has_any_effective_permission(array['admin.users.basic', 'admin.users.manage']),
     'The roles-manager fixture must not inherit profile-edit authority.';
+
+  -- Authenticated callers can reach the helpers only through the dedicated
+  -- non-exposed schema, and the helpers repeat the same MFA/authorization
+  -- checks. Exercise both implementation routines directly as an authorized
+  -- AAL2 role manager while preserving the live direct-grant snapshot.
+  perform sygshift_access_internal.set_employee_access_profile_with_primary_role(
+    target_employee,
+    'guard',
+    array[extra_role_id],
+    array(
+      select permission_override.permission_code
+      from public.employee_permission_overrides permission_override
+      where permission_override.employee_id = target_employee
+        and permission_override.active
+        and permission_override.effect = 'grant'
+      order by permission_override.permission_code
+    ),
+    'Authorized direct full-helper boundary regression.'
+  );
+  perform sygshift_access_internal.set_employee_workforce_roles(
+    target_employee,
+    'guard',
+    array[extra_role_id],
+    'Authorized direct role-only helper boundary regression.'
+  );
+  assert (select role = 'guard' from public.employees where id = target_employee),
+    'An authorized direct helper call did not preserve the requested primary role.';
 
   select count(*) into employee_count_before from public.employees;
   select count(*) into access_count_before from public.employee_access_roles;
@@ -1840,7 +1899,7 @@ begin
     'The denied final-recovery Admin termination changed employment status.';
 
   assert position('pg_advisory_xact_lock' in pg_get_functiondef(
-      'public.set_employee_access_profile_with_primary_role(uuid,public.app_role,uuid[],text[],text)'::regprocedure
+      'sygshift_access_internal.set_employee_access_profile_with_primary_role(uuid,public.app_role,uuid[],text[],text)'::regprocedure
     )) > 0
     and position('pg_advisory_xact_lock' in pg_get_functiondef(
       'public.admin_update_employee(uuid,text,text,text,text,public.app_role,public.employment_type,public.employee_status,text,text,text,text,text)'::regprocedure
@@ -1857,7 +1916,7 @@ begin
     'A last-Admin decrement path is missing the shared advisory transaction lock.';
 
   assert position('for update' in lower(pg_get_functiondef(
-      'public.set_employee_workforce_roles(uuid,public.app_role,uuid[],text)'::regprocedure
+      'sygshift_access_internal.set_employee_workforce_roles(uuid,public.app_role,uuid[],text)'::regprocedure
     ))) > 0
     and position('for update' in lower(pg_get_functiondef(
       'public.set_employee_permission_override(uuid,text,text,text)'::regprocedure
