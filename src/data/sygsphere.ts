@@ -197,9 +197,11 @@ const sphereResumableTargetSchema = z.object({
   resumableEndpoint: z.string().url().optional(), signedUploadToken: z.string().min(1).optional(),
   failureStage: z.string().nullable().optional(),
   manualRetryCount: z.number().int().nonnegative().optional(), requestReference: z.string().uuid().nullable().optional(), retryable: z.boolean().optional(),
-  state: z.string().optional(), uploadId: z.string().uuid(),
+  // `scanning` remains readable only for records created before the immediate-
+  // availability release. It is finalized immediately below; no client polls or
+  // presents a scan state to the user.
+  state: z.enum(['prepared', 'uploading', 'uploaded', 'scanning', 'clean', 'rejected', 'error', 'expired']).optional(), uploadId: z.string().uuid(),
 })
-export type SphereUploadStatus = z.infer<typeof sphereResumableTargetSchema>
 export type SphereUploadStage = 'uploading' | 'finishing'
 export type SphereUploadResult = { state: 'clean'; uploadId: string; requestReference?: string }
 
@@ -226,12 +228,6 @@ async function sphereApiError(response: Response, fallback: string) {
   const message = payload.success && payload.data.detail ? payload.data.detail : fallback
   const responseRequestId = response.headers.get('x-request-id') ?? undefined
   return new SphereUploadError(message, payload.success ? { code: payload.data.error, requestReference: payload.data.requestReference ?? payload.data.requestId ?? responseRequestId, retryable: payload.data.retryable, uploadId: payload.data.uploadId } : { requestReference: responseRequestId })
-}
-
-export async function sphereUploadStatus(uploadId: string): Promise<SphereUploadStatus> {
-  const response = await fetch(`/api/v1/sygsphere/uploads/${uploadId}`, { headers: await sphereFileHeaders(), cache: 'no-store' })
-  if (!response.ok) throw await sphereApiError(response, 'The file status could not be read.')
-  return sphereResumableTargetSchema.parse(await response.json())
 }
 
 const sphereStorageConfirmationDelaysMs = [0, 250]
@@ -291,9 +287,14 @@ async function sphereProtectedUpload(file: File, fileId: string, conversationId:
   if (!authorization.ok) throw await sphereApiError(authorization, 'The protected file upload could not be authorized.')
   const target = sphereResumableTargetSchema.parse(await authorization.json())
   if (target.state === 'clean') { onProgress?.(100, 'finishing'); return { state: 'clean', uploadId: target.uploadId, requestReference: target.requestReference ?? undefined } }
-  if (target.state === 'error') throw new SphereUploadError('The file is not available. Choose it again and try sharing it.', { requestReference: target.requestReference ?? undefined, uploadId: target.uploadId })
+  if (target.state === 'rejected') throw new SphereUploadError('The file type or contents could not be accepted. Choose another file or file format.', { requestReference: target.requestReference ?? undefined, uploadId: target.uploadId })
+  if (target.state === 'expired' || target.state === 'error') throw new SphereUploadError('The previous upload is no longer available. Choose the file again and share it.', { requestReference: target.requestReference ?? undefined, uploadId: target.uploadId })
   onProgress?.(1, 'uploading')
-  if (target.state === 'prepared') {
+  // Older authorizations did not include state. A complete signed target is a
+  // prepared upload, while legacy `uploaded`/`scanning` records simply move to
+  // the immediate completion check without any scan wait or polling.
+  const uploadPrepared = target.state === 'prepared' || (!target.state && Boolean(target.bucket && target.objectKey && target.resumableEndpoint && target.signedUploadToken))
+  if (uploadPrepared) {
     if (!target.bucket || !target.objectKey || !target.resumableEndpoint || !target.signedUploadToken) throw new Error('The secure file upload target is incomplete.')
     await new Promise<void>((resolve, reject) => {
       const upload = new Upload(file, {
@@ -314,6 +315,8 @@ async function sphereProtectedUpload(file: File, fileId: string, conversationId:
         upload.start()
       }).catch(reject)
     })
+  } else if (target.state !== 'uploaded' && target.state !== 'scanning') {
+    throw new SphereUploadError('The file upload could not be prepared. Choose the file again and try sharing it.', { requestReference: target.requestReference ?? undefined, uploadId: target.uploadId })
   }
   return sphereCompleteUpload(target.uploadId, onProgress)
 }

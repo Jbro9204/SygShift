@@ -3434,8 +3434,7 @@ async function handleSygSphereResumableUpload(
     throw new ApiError('sygsphere_protected_uploads_disabled', 503, 'Protected SygSphere uploads are temporarily unavailable. Your message draft is unaffected.')
   }
   const url = new URL(request.url)
-  const statusMatch = url.pathname.match(/^\/api\/v1\/sygsphere\/uploads\/([0-9a-f-]{36})(?:\/(complete|retry))?$/i)
-  const completing = url.pathname.endsWith('/complete') || url.pathname.endsWith('/retry')
+  const completionMatch = url.pathname.match(/^\/api\/v1\/sygsphere\/uploads\/([0-9a-f-]{36})\/complete$/i)
   const session = await requireAuthenticatedSession(request, environment)
   const serviceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
 
@@ -3474,32 +3473,20 @@ async function handleSygSphereResumableUpload(
       requestReference: operation.requestReference ?? requestId,
       resumableEndpoint: patrolStorageResumableEndpoint(session.config.url),
       signedUploadToken: signed.token,
+      state: 'prepared',
       uploadId: operation.uploadId,
     }, 201)
   }
 
-  if (!statusMatch || !validUuid(statusMatch[1] ?? '')) return errorJson('not_found', requestId, 404)
-  const uploadId = statusMatch[1]!
-  if ((!completing && request.method !== 'GET') || (completing && request.method !== 'POST')) {
-    return errorJson('method_not_allowed', requestId, 405)
-  }
+  if (!completionMatch || !validUuid(completionMatch[1] ?? '')) return errorJson('not_found', requestId, 404)
+  const uploadId = completionMatch[1]!
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
   const operation = await callRpc<SygSphereResumableUploadOperation>(
     serviceConfig,
     'service_get_sygsphere_resumable_upload',
     { target_actor_id: session.context.employee_id, target_upload_id: uploadId },
     session.config.serviceRoleKey,
   )
-  if (!completing) return json({
-    expiresAt: operation.expiresAt,
-    failureStage: operation.failureStage ?? null,
-    manualRetryCount: operation.manualRetryCount ?? 0,
-    messageId: operation.messageId ?? null,
-    requestId,
-    requestReference: operation.requestReference ?? requestId,
-    retryable: false,
-    state: operation.state,
-    uploadId: operation.uploadId ?? uploadId,
-  })
   if (!operation.objectKey || operation.bucket !== sygsphereResumableBucket || operation.objectKey.includes('..')) {
     throw new ApiError('invalid_sygsphere_storage_target', 422, 'The protected file storage target is invalid.')
   }
@@ -9112,7 +9099,7 @@ export default {
             : errorJson('training_document_request_failed', requestId, 500, 'The assigned training material could not be opened.')
         }
       }
-    } else if (url.pathname === '/api/v1/sygsphere/uploads' || /^\/api\/v1\/sygsphere\/uploads\/[0-9a-f-]{36}(?:\/(?:complete|retry))?$/i.test(url.pathname)) {
+    } else if (url.pathname === '/api/v1/sygsphere/uploads' || /^\/api\/v1\/sygsphere\/uploads\/[0-9a-f-]{36}\/complete$/i.test(url.pathname)) {
       try {
         response = await handleSygSphereResumableUpload(request, environment, requestId)
       } catch (error) {

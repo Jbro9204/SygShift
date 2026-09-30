@@ -3,7 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ALargeSmall, ArrowLeft, Bell, BellOff, Bookmark, Check, ChevronDown, Download, Eye, Hash, Info, MessageCircle, Paperclip, Plus, Search, Send, Smile, Users, X } from 'lucide-react'
 import { getSessionContext } from '../data/auth'
-import { readSphereDraft, sphereActiveMentions, sphereCanPreview, sphereConversation, sphereCreate, sphereDirectory, sphereDownload, sphereDraftKey, sphereFiles, sphereInbox, sphereMessage, sphereMessageParts, sphereMessages, spherePath, spherePersonMentionLabel, spherePhoto, spherePreferences, spherePreview, sphereRequest, sphereResolveTypedMentions, sphereSearch, sphereSend, sphereUpload, sphereUploadStatus, SphereUploadError, writeSphereDraft, type SphereConversation, type SphereDraft, type SphereFile, type SphereMention, type SphereMessage, type SpherePerson, type SpherePreview, type SphereTextSize } from '../data/sygsphere'
+import { readSphereDraft, sphereActiveMentions, sphereCanPreview, sphereConversation, sphereCreate, sphereDirectory, sphereDownload, sphereDraftKey, sphereFiles, sphereInbox, sphereMessage, sphereMessageParts, sphereMessages, spherePath, spherePersonMentionLabel, spherePhoto, spherePreferences, spherePreview, sphereRequest, sphereResolveTypedMentions, sphereSearch, sphereSend, sphereUpload, SphereUploadError, writeSphereDraft, type SphereConversation, type SphereDraft, type SphereFile, type SphereMention, type SphereMessage, type SpherePerson, type SpherePreview, type SphereTextSize } from '../data/sygsphere'
 import { runSygSphereProviderSmokeProbe } from '../data/sygsphereCommunications'
 import { ModalDialog } from '../components/ModalDialog'
 import { SecurePdfViewer } from '../components/SecurePdfViewer'
@@ -145,7 +145,6 @@ export function SphereWorkspace({ employeeId, providerSmokeEnabled = false }: { 
   const conversationId = params.get('conversation')
   const threadId = params.get('thread')
   const focusId = params.get('message')
-  const uploadId = params.get('upload')
   const conversation = inbox.data?.conversations.find((item) => item.id === conversationId)
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['sygsphere', employeeId] })
   const preferences = useMutation({ mutationFn: (soundEnabled: boolean) => sphereRequest('presence', { soundEnabled }), onSuccess: refresh })
@@ -189,7 +188,6 @@ export function SphereWorkspace({ employeeId, providerSmokeEnabled = false }: { 
       </> : <div className="sphere-welcome"><img src="/branding/sygsphere-emblem.png" alt="" /><span className="sphere-eyebrow">WELCOME TO SYGSPHERE</span><h2>Good work starts with<br />a conversation.</h2><p>Connect with anyone in SygShift. Keep your team’s messages, decisions and shared work together.</p><button className="sphere-primary" type="button" onClick={() => setNewOpen(true)}><Plus size={18} /> Start a conversation</button>{conversationId ? <p role="status">That conversation is no longer available to your account.</p> : null}</div>}
     </div>
     {newOpen ? <NewConversation employeeId={employeeId} onClose={() => setNewOpen(false)} onCreated={(id) => { setNewOpen(false); openConversation(id) }} /> : null}
-    {uploadId && /^[0-9a-f-]{36}$/i.test(uploadId) ? <SphereUploadRecovery employeeId={employeeId} uploadId={uploadId} onClose={() => navigate(conversationId ? spherePath(conversationId) : '/sygsphere', { replace: true })} /> : null}
   </section>
 }
 
@@ -377,20 +375,6 @@ function SphereComposer({ employeeId, conversationId, parentId, members }: { emp
     <ErrorNotice error={send.error} />{send.isError ? <p className="sphere-hint">Your draft is safe here. Retry uses the same send identifier to prevent duplicates.</p> : null}
     {!storageAvailable ? <p className="sphere-error">Device storage is unavailable. Keep this page open until you send your draft.</p> : null}
   </form>
-}
-
-function SphereUploadRecovery({ employeeId, uploadId, onClose }: { employeeId: string; uploadId: string; onClose: () => void }) {
-  const status = useQuery({
-    queryKey: ['sygsphere', employeeId, 'upload', uploadId],
-    queryFn: () => sphereUploadStatus(uploadId),
-  })
-  const state = status.data?.state
-  return <ModalDialog title="SygSphere file status" description="Upload status" className="sphere-modal" onClose={onClose}><div className="sphere-form">
-    {status.isPending ? <p role="status">Checking the file…</p> : state === 'clean' ? <><strong>File available</strong><p>The file is available to everyone in this conversation.</p></> : state === 'rejected' ? <><strong>File could not be shared</strong><p>The file type or contents could not be accepted. Choose another copy or file format.</p></> : state === 'expired' ? <><strong>Upload expired</strong><p>Choose the file again from the conversation composer to start a new upload.</p></> : <><strong>File was not shared</strong><p>Choose the file again from the conversation composer and share it again.</p></>}
-    <ErrorNotice error={status.error} />
-    {status.data?.requestReference ? <p className="sphere-reference">Reference ID: <code>{status.data.requestReference}</code></p> : null}
-    <footer><button type="button" onClick={onClose}>Close</button></footer>
-  </div></ModalDialog>
 }
 
 function SphereResults({ employeeId, query, saved, onOpen }: { employeeId: string; query: string; saved: boolean; onOpen: (message: SphereMessage) => void }) {
