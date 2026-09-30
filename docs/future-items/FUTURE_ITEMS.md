@@ -492,8 +492,7 @@ Required work:
 - [ ] Define for every role what it may view, create, approve, edit, download/export, assign, deactivate, and administer.
 - [ ] Review and reduce Scheduler permissions so future schedulers do not automatically inherit Michael's exceptional individual access.
 - [ ] Separate supervisory accountability authority from scheduling authority and keep confidential HR records, corrective actions, compensation, and protected documents limited to named authorized roles.
-- [ ] Reconcile primary role, additional access roles, and individual additions or denials so each mechanism has a clear purpose and the effective-access view never appears duplicated or contradictory.
-- [ ] Validate Admin safety protections, Human Resources versus Human Resources Manager boundaries, Operations Manager scope, role promotion/demotion, and access removal with allow-and-deny tests.
+- [ ] After the official hierarchy is approved, validate the Human Resources versus Human Resources Manager boundary and Operations Manager scope with allow-and-deny tests.
 
 Completion criteria:
 

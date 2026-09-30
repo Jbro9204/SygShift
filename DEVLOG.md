@@ -1,5 +1,33 @@
 # SygShift Development Log
 
+## 09/30/2026 - Unified Workforce Role Transitions
+
+- Consolidated employee role administration around one authoritative primary
+  workforce role plus clearly labeled additional access roles, with one
+  consistent role-selection experience across User Accounts and Employee
+  Permissions.
+- Added audited, atomic promotion and demotion handling that removes obsolete
+  canonical primary-role access while preserving unrelated custom roles,
+  individual grants, and explicit denials.
+- Enforced the transition contract at the database and Worker boundaries,
+  including self-edit, separated-employee, protected Admin, and last active
+  recovery Admin safeguards; onboarding, candidate conversion, and import
+  paths now revalidate elevated roles at their final write.
+- Isolated employee-specific editor state, standardized canonical role labels
+  and protected-role classification across the product, and made the User
+  Account Activity role filter use the active catalog for primary and
+  additional memberships.
+- Installed migrations `20260930201818 atomic_primary_role_access_profiles`
+  and `20260930203517 access_profile_security_invoker_boundary`; released
+  source lineage `8dedd681`, `9ec5b6e`, `48a0400`, and `b9d0972` as Worker
+  `d69793e0-dede-413b-a4ed-90c097a19f57`.
+- Passed the full **349-file / 1,860-test** gate, **8/8** responsive role
+  checks, **42/42** Time Clock checks, SQL rollback/boundary regressions, exact
+  production asset parity, health/readiness, and authenticated live role/report
+  acceptance. No existing employee assignment was guessed, normalized, or
+  changed. Release detail:
+  `docs/changelogs/CHANGELOG_09-30-2026_UNIFIED_WORKFORCE_ROLE_TRANSITIONS.md`.
+
 ## 09/30/2026 - Schedule Week Copy Reliability Repair
 
 - Removed the repeated time-zone catalog scan that caused normal-size **Copy
@@ -17,7 +45,6 @@
   `rollback/pre-schedule-week-copy-reliability-repair-20260930`. Release
   detail:
   `docs/changelogs/CHANGELOG_09-30-2026_SCHEDULE_WEEK_COPY_RELIABILITY_REPAIR.md`.
-
 ## 09/29/2026 - Workforce Activity Report
 
 - Rebuilt **Scheduled vs. Actual** as the focused **Workforce Activity**
