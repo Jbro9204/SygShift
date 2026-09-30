@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addWeeks, format, startOfWeek } from 'date-fns'
 import { AlertCircle, BellRing, CalendarCheck2, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Copy, DatabaseZap, Edit3, MapPin, Maximize2, MoveHorizontal, Plus, Route, Search, Send, ShieldAlert, Sparkles, Trash2 } from 'lucide-react'
@@ -61,6 +61,7 @@ import { continentalUsTimeZoneLabel, continentalUsTimeZones, personalDisplayTime
 import { scheduleTeamViewPermissions } from '../app/accessPolicy'
 import { scheduledOvertimePreviewBlocksSave } from '../scheduleDraftEdit'
 import { downloadScheduleCalendar } from '../schedule/calendar'
+import { copyWeekFailureMessage } from '../schedule/copyWeekFeedback'
 import { usePersonalScheduleDateBasis } from '../schedule/personalScheduleDate'
 import {
   runAfterScheduleWallClockPreflight,
@@ -2064,13 +2065,16 @@ function EmployeeWeekDialog({
 }
 
 function CopyWeekDialog({
+  errorMessage,
   isCopying,
   onClose,
   onCopy,
+  onResetError,
   schedule,
   weekEnd,
   weekStart,
 }: {
+  errorMessage: string | null
   isCopying: boolean
   onClose: () => void
   onCopy: (input: {
@@ -2079,6 +2083,7 @@ function CopyWeekDialog({
     includeAssignments: boolean
     includeEvents: boolean
   }) => void
+  onResetError: () => void
   schedule: WeeklySchedule
   weekEnd: Date
   weekStart: Date
@@ -2090,9 +2095,24 @@ function CopyWeekDialog({
   const [replacementConfirmed, setReplacementConfirmed] = useState(false)
   const normalizedDestination = format(startOfWeek(dateKeyToLocalDate(destinationWeekStartsOn), { weekStartsOn: 0 }), 'yyyy-MM-dd')
   const destinationEnd = format(addDays(dateKeyToLocalDate(normalizedDestination), 6), 'MM/dd/yyyy')
+  const sourceKey = `${schedule.id}:${schedule.revision}:${format(weekStart, 'yyyy-MM-dd')}`
+  const previousSourceKeyRef = useRef(sourceKey)
+
+  useEffect(() => {
+    if (isCopying || previousSourceKeyRef.current === sourceKey) return
+    previousSourceKeyRef.current = sourceKey
+    setDestinationWeekStartsOn(format(addWeeks(weekStart, 1), 'yyyy-MM-dd'))
+    setReplacementConfirmed(false)
+    onResetError()
+  }, [isCopying, onResetError, sourceKey, weekStart])
+
+  function clearError() {
+    if (errorMessage) onResetError()
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    clearError()
     onCopy({
       destinationWeekStartsOn: normalizedDestination,
       includeAssignments,
@@ -2129,7 +2149,10 @@ function CopyWeekDialog({
             Destination week starts
             <input
               min={format(addWeeks(weekStart, -6), 'yyyy-MM-dd')}
-              onChange={(event) => setDestinationWeekStartsOn(event.target.value)}
+              onChange={(event) => {
+                clearError()
+                setDestinationWeekStartsOn(event.target.value)
+              }}
               type="date"
               value={destinationWeekStartsOn}
             />
@@ -2139,7 +2162,10 @@ function CopyWeekDialog({
             <label className="check-field">
               <input
                 checked={includeAssignments}
-                onChange={(event) => setIncludeAssignments(event.target.checked)}
+                onChange={(event) => {
+                  clearError()
+                  setIncludeAssignments(event.target.checked)
+                }}
                 type="checkbox"
               />
               Copy assigned employees
@@ -2147,7 +2173,10 @@ function CopyWeekDialog({
             <label className="check-field">
               <input
                 checked={includeEvents}
-                onChange={(event) => setIncludeEvents(event.target.checked)}
+                onChange={(event) => {
+                  clearError()
+                  setIncludeEvents(event.target.checked)
+                }}
                 type="checkbox"
               />
               Include one-time events
@@ -2165,11 +2194,16 @@ function CopyWeekDialog({
         <label className="schedule-workflow-confirmation check-field">
           <input
             checked={replacementConfirmed}
-            onChange={(event) => setReplacementConfirmed(event.target.checked)}
+            onChange={(event) => {
+              clearError()
+              setReplacementConfirmed(event.target.checked)
+            }}
             type="checkbox"
           />
           I understand this will replace the destination working draft.
         </label>
+
+        {errorMessage ? <p className="form-feedback form-feedback--error" role="alert">{errorMessage}</p> : null}
 
         <div className="modal-actions">
           <button className="secondary-button" disabled={isCopying} onClick={onClose} type="button">
@@ -2296,6 +2330,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   const [employeeWeekOpen, setEmployeeWeekOpen] = useState(false)
   const [cancelDraftConfirmOpen, setCancelDraftConfirmOpen] = useState(false)
   const [copyWeekOpen, setCopyWeekOpen] = useState(false)
+  const [copyWeekError, setCopyWeekError] = useState<string | null>(null)
   const [notifyScheduleOpen, setNotifyScheduleOpen] = useState(false)
   const [builderMessage, setBuilderMessage] = useState<string | null>(null)
   const [boardScrollWidth, setBoardScrollWidth] = useState(0)
@@ -2882,11 +2917,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       const destinationWeek = new Date(`${result.schedule.week_starts_on}T12:00:00`)
       const destinationKey = format(destinationWeek, 'yyyy-MM-dd')
       queryClient.setQueryData(['weekly-schedule', destinationKey], result.schedule)
+      setCopyWeekError(null)
       setCopyWeekOpen(false)
       jumpToWeek(destinationWeek)
       setBuilderMessage(
         `Copied and verified ${result.copiedCount} shift${result.copiedCount === 1 ? '' : 's'} across ${result.siteCount} site${result.siteCount === 1 ? '' : 's'} with ${result.copiedAssignmentCount} active assignment${result.copiedAssignmentCount === 1 ? '' : 's'} into ${format(destinationWeek, 'MM/dd/yyyy')}.${
           result.skippedInactiveAssignmentCount ? ` ${result.skippedInactiveAssignmentCount} inactive or separated assignment${result.skippedInactiveAssignmentCount === 1 ? '' : 's'} left open for review.` : ''
+        }${
+          result.skippedApprovedTimeOffAssignmentCount ? ` ${result.skippedApprovedTimeOffAssignmentCount} assignment${result.skippedApprovedTimeOffAssignmentCount === 1 ? '' : 's'} left open because of approved time off.` : ''
         }${
           result.carriedCredentialOverrideCount ? ` ${result.carriedCredentialOverrideCount} existing armed placement${result.carriedCredentialOverrideCount === 1 ? '' : 's'} carried forward with an audited credential override.` : ''
         }`,
@@ -2899,9 +2937,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
       ])
     },
     onError: (error) => {
-      setBuilderMessage(error instanceof Error ? error.message : 'The week could not be copied into a draft.')
+      setCopyWeekError(copyWeekFailureMessage(error))
     },
   })
+  const resetCopyWeekMutation = copyWeekMutation.reset
+  const clearCopyWeekError = useCallback(() => {
+    resetCopyWeekMutation()
+    setCopyWeekError(null)
+  }, [resetCopyWeekMutation])
   const cancelDraftMutation = useMutation({
     mutationFn: () => cancelScheduleDraft(scheduleQuery.data!.id),
     onSuccess: async (publishedSchedule) => {
@@ -3533,11 +3576,19 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
 
       {canEditScheduler && copyWeekOpen && scheduleQuery.data ? (
         <CopyWeekDialog
+          errorMessage={copyWeekError}
           isCopying={copyWeekMutation.isPending}
           onClose={() => {
-            if (!copyWeekMutation.isPending) setCopyWeekOpen(false)
+            if (!copyWeekMutation.isPending) {
+              clearCopyWeekError()
+              setCopyWeekOpen(false)
+            }
           }}
-          onCopy={(input) => copyWeekMutation.mutate(input)}
+          onCopy={(input) => {
+            setCopyWeekError(null)
+            copyWeekMutation.mutate(input)
+          }}
+          onResetError={clearCopyWeekError}
           schedule={scheduleQuery.data}
           weekEnd={weekEnd}
           weekStart={weekStart}
@@ -3633,7 +3684,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   className="secondary-button"
                   disabled={!scheduleQuery.data || copyWeekMutation.isPending}
                   onClick={() => {
-                    copyWeekMutation.reset()
+                    clearCopyWeekError()
                     setCopyWeekOpen(true)
                   }}
                   type="button"

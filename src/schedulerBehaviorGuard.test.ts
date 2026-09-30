@@ -107,6 +107,16 @@ describe('scheduler behavior guardrails', () => {
     )
   })
 
+  it('keeps copy-week failures in the dialog and clears stale feedback between copy attempts', () => {
+    expect(schedulePage).toContain('setCopyWeekError(copyWeekFailureMessage(error))')
+    expect(schedulePage).toContain('skippedApprovedTimeOffAssignmentCount')
+    expect(schedulePage).toContain('errorMessage={copyWeekError}')
+    expect(schedulePage).toContain('onResetError={clearCopyWeekError}')
+    expect(schedulePage).toContain('const previousSourceKeyRef = useRef(sourceKey)')
+    expect(schedulePage).toContain('previousSourceKeyRef.current === sourceKey')
+    expect(schedulePage).not.toContain("setBuilderMessage(error instanceof Error ? error.message : 'The week could not be copied into a draft.')")
+  })
+
   it('fits all seven employee schedule days inside the scheduler board', () => {
     expect(schedulePage).toContain('className="scheduler-day-board"')
     const schedulerBoardStyles = /\.scheduler-day-board \{[\s\S]+?\}/.exec(appStyles)?.[0] ?? ''

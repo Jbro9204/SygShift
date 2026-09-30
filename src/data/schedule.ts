@@ -245,6 +245,7 @@ const copyScheduleWeekResultSchema = z.object({
   copiedAssignmentCount: z.number().int().nonnegative(),
   replacedCount: z.number().int().nonnegative(),
   skippedInactiveAssignmentCount: z.number().int().nonnegative(),
+  skippedApprovedTimeOffAssignmentCount: z.number().int().nonnegative().default(0),
   carriedCredentialOverrideCount: z.number().int().nonnegative(),
   siteCount: z.number().int().nonnegative(),
 })
