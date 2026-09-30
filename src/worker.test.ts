@@ -147,6 +147,20 @@ describe('Cloudflare Worker boundary', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
   })
 
+  it('does not expose retired SygSphere upload status or retry routes', async () => {
+    const uploadId = '10000000-0000-4000-8000-000000000001'
+    for (const request of [
+      new Request(`https://app.sygshift.example/api/v1/sygsphere/uploads/${uploadId}`),
+      new Request(`https://app.sygshift.example/api/v1/sygsphere/uploads/${uploadId}/retry`, { method: 'POST' }),
+    ]) {
+      const assets = environment()
+      const response = await worker.fetch(request, assets)
+      expect(response.status).toBe(404)
+      expect(await response.json()).toMatchObject({ error: 'not_found' })
+      expect(assets.ASSETS.fetch).not.toHaveBeenCalled()
+    }
+  })
+
   it('keeps the protected Communications ingress unavailable while its runtime flag is closed', async () => {
     const assets = environment(new Response('asset'), configuredEnvironment)
     const response = await worker.fetch(
