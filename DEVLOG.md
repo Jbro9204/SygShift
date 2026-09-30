@@ -1,5 +1,23 @@
 # SygShift Development Log
 
+## 09/30/2026 - Schedule Week Copy Reliability Repair
+
+- Removed the repeated time-zone catalog scan that caused normal-size **Copy
+  week** requests to exceed the authenticated timeout and atomically roll back.
+- Preserved all copy safeguards and added approved-Time-Off-aware assignment
+  carry-forward: the affected destination shift stays open instead of
+  canceling the entire week, and the Scheduler states the exact open count.
+- Applied the two forward-only production migrations, passed the 142-shift
+  authenticated rollback-only capacity regression, live-size rollback
+  rehearsal, DST, Dispatch-overlap, Time Off, full quality, and required Time
+  Clock browser checks.
+- Released implementation commit `011bcae` as Cloudflare Worker
+  `c2f7033c-e087-428c-9d57-2adb05489b19`; both production origins are healthy,
+  ready, and serving the verified Schedule bundle. Rollback checkpoint:
+  `rollback/pre-schedule-week-copy-reliability-repair-20260930`. Release
+  detail:
+  `docs/changelogs/CHANGELOG_09-30-2026_SCHEDULE_WEEK_COPY_RELIABILITY_REPAIR.md`.
+
 ## 09/29/2026 - Workforce Activity Report
 
 - Rebuilt **Scheduled vs. Actual** as the focused **Workforce Activity**
