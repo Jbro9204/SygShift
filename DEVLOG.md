@@ -1,5 +1,31 @@
 # SygShift Development Log
 
+## 10/01/2026 - Document Center Usability Overhaul
+
+- Rebuilt the existing Document Center form engine around semantic fields,
+  table/role-aware signature and date mapping, exact body-line reflow, bounded
+  text and signature fitting, final-PDF preflight, and one shared output gate
+  for preview, download, filing, and sending.
+- Separated reusable sources, guides/training, and saved records; added clear
+  field labels and source status, responsive phone/small-laptop/high-zoom
+  layouts, and MFA-backed item-by-item source approval and retirement.
+- Classified and pinned all 537 imported source PDFs without approving any on
+  management's behalf: 203 controlled forms, 260 references, 12 training
+  forms, and 62 training references remain protected drafts until individually
+  reviewed. Approved and retired sources cannot be silently replaced or
+  generically archived.
+- Applied migration `20261001183000`, pushed implementation `e0232fb`, and
+  deployed Cloudflare Worker `3b4f8185-d072-47cd-a558-0084391acba2`.
+- Passed the full **353-file / 1,912-test** gate, **44/48** Document Center
+  browser checks with four intentional skips, **42/42** actual-component Time
+  Clock checks, the linked rollback rehearsal, production reconciliation,
+  both health/readiness origins, and exact live-asset SHA-256 parity.
+- The production route reaches the unified HR MFA checkpoint. The final
+  owner-authenticated preview/download/file/reopen comparison remains open so
+  QA does not bypass MFA or use an employee file as disposable test data.
+  Release detail:
+  `docs/changelogs/CHANGELOG_10-01-2026_DOCUMENT_CENTER_USABILITY_OVERHAUL.md`.
+
 ## 09/30/2026 - Unified Workforce Role Transitions
 
 - Consolidated employee role administration around one authoritative primary

@@ -1,7 +1,7 @@
 # Document Center Usability Overhaul
 
 Date: 10/01/2026  
-Status: Production database installed; application deployment verification pending
+Status: Released to production; authorized owner-session roundtrip remains open
 
 ## Outcome
 
@@ -166,10 +166,16 @@ body paragraph.
   preview, download, file, reopen, and compare visible output. This remains a
   controlled acceptance item because no imported source was silently approved
   and no employee file was used as disposable test data.
-- [ ] Git commit and push to `origin/main`.
-- [ ] Cloudflare Worker deployment identifier and live asset verification.
-- [ ] Primary and fallback health/readiness results and authenticated live
-  Document Center verification.
+- [x] Implementation commit `e0232fb` pushed to `origin/main`.
+- [x] Cloudflare Worker version `3b4f8185-d072-47cd-a558-0084391acba2`
+  deployed to both production origins.
+- [x] Primary and fallback `/health` and `/ready` checks returned HTTP 200 and
+  ready status. The live entry asset `/assets/index-Boe87Xz-.js` matched the
+  freshly built local asset byte-for-byte by SHA-256
+  (`C4C398F937DD382658F1DEF42F1E9F44D3B3AFC095AAC7A064C05FFB3E4E932A`).
+- [ ] Authenticated live Document Center completion remains part of the owner
+  roundtrip above. The production route reached the unified HR verification
+  checkpoint successfully; automated QA did not bypass the owner's MFA.
 
 The following original verification descriptions are retained for release
 traceability:
