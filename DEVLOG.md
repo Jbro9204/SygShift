@@ -28,6 +28,23 @@
   changed. Release detail:
   `docs/changelogs/CHANGELOG_09-30-2026_UNIFIED_WORKFORCE_ROLE_TRANSITIONS.md`.
 
+## 09/30/2026 - Document Immediate Availability
+
+- Retired document scanning as a gate across HR Document Center and SygSphere:
+  a supported file is now usable immediately after private storage,
+  SHA-256/size/MIME verification, authorization, and audit recording succeed.
+- Preserved MFA, permissions, private storage, signature/type/size validation,
+  active-content rejection, immutable versions, legal holds, retention, and
+  short-lived access. Eight stranded SygSphere files were safely recovered;
+  expired, rejected, canceled, missing, or mismatched uploads were not reopened.
+- Removed the scanner Worker, four scanner queues, scanner container, Pages
+  bindings, and scanner-only Worker secret after both live application paths
+  verified clean. Historical scan events remain audit-only.
+- SygShift passed the full 344-file / 1,837-test quality gate; Sygilant passed
+  its 240-file / 1,208-test quality gate. Both SygShift readiness origins and
+  both active Sygilant health origins return 200. Release detail:
+  `docs/changelogs/CHANGELOG_09-30-2026_DOCUMENT_IMMEDIATE_AVAILABILITY.md`.
+
 ## 09/30/2026 - Schedule Week Copy Reliability Repair
 
 - Removed the repeated time-zone catalog scan that caused normal-size **Copy
