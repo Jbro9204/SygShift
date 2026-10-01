@@ -190,6 +190,36 @@
   line-height: 1.45;
 }
 
+.hr-document-adoption {
+  display: grid;
+  gap: 16px;
+}
+
+.hr-document-adoption > label {
+  display: grid;
+  font-size: .88rem;
+  font-weight: 800;
+  gap: 7px;
+}
+
+.hr-document-adoption textarea {
+  background: light-dark(#fffdf9, #171b1f);
+  border: 1px solid light-dark(#cfc3b2, #454c52);
+  border-radius: 12px;
+  color: inherit;
+  font: inherit;
+  line-height: 1.45;
+  min-height: 112px;
+  padding: 12px 14px;
+  resize: vertical;
+}
+
+.hr-document-adoption textarea:focus-visible {
+  border-color: light-dark(#a66e17, #d3a245);
+  outline: 3px solid light-dark(#f2d79f, #5f4924);
+  outline-offset: 1px;
+}
+
 .hr-template-library__filters {
   align-items: end;
   background: light-dark(#fffdf9, #171b1f);
@@ -253,7 +283,7 @@
 }
 
 .hr-template-library__clear {
-  min-height: 42px;
+  min-height: 46px;
 }
 
 .hr-template-library__result-summary,
@@ -317,6 +347,46 @@
 
 .hr-template-library__identity small {
   color: light-dark(#6c6357, #bbb3a7);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.hr-template-library__badges {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.hr-template-library__kind,
+.hr-document-record-badge {
+  border: 1px solid light-dark(#d6c29a, #6d5429);
+  border-radius: 999px;
+  color: light-dark(#69470f, #f1cb79);
+  background: light-dark(#fff2d6, #342817);
+  display: inline-flex;
+  font-size: .72rem;
+  font-weight: 900;
+  line-height: 1.25;
+  max-width: 100%;
+  padding: 5px 9px;
+  width: fit-content;
+}
+
+.hr-template-library__kind.is-document_guide,
+.hr-document-record-badge--guide_policy_source {
+  border-color: light-dark(#b9c9d8, #496379);
+  color: light-dark(#315873, #b9dcf4);
+  background: light-dark(#edf6fc, #172b39);
+}
+
+.hr-template-library__kind:is(.is-training_admin, .is-training_module, .is-training_form),
+.hr-document-record-badge--training_source {
+  border-color: light-dark(#b8d1c0, #3f7154);
+  color: light-dark(#27613d, #bce8cb);
+  background: light-dark(#edf8f1, #173424);
 }
 
 .hr-template-library__availability {
@@ -387,9 +457,12 @@
 }
 
 .hr-template-library__technical-details summary {
+  align-items: center;
   cursor: pointer;
+  display: flex;
   font-size: .84rem;
   font-weight: 850;
+  min-height: 44px;
 }
 
 .hr-template-library__technical-details[open] summary { margin-bottom: 12px; }
@@ -487,7 +560,7 @@
   }
 
   .hr-template-library__code,
-  .hr-template-library__availability {
+  .hr-template-library__badges {
     justify-self: start;
   }
 
@@ -497,7 +570,7 @@
   }
 
   .hr-template-library__identity,
-  .hr-template-library__availability {
+  .hr-template-library__badges {
     grid-column: 1 / -1;
   }
 
@@ -506,6 +579,70 @@
   }
 
   .hr-template-library__details dl {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Saved records use the same clear source/record language as the libraries.
+   Titles and filing metadata wrap instead of disappearing behind ellipses. */
+.hr-document-row__identity > strong,
+.hr-document-row__classification > strong,
+.hr-document-row__classification > em {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.hr-document-row__identity {
+  align-content: center;
+  gap: 6px !important;
+}
+
+.hr-document-row__identity > small {
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.hr-document-record-badge--employee_record {
+  border-color: light-dark(#b8d1c0, #3f7154);
+  color: light-dark(#27613d, #bce8cb);
+  background: light-dark(#edf8f1, #173424);
+}
+
+.hr-document-record-badge--company_record {
+  border-color: light-dark(#c9c3b8, #555d63);
+  color: light-dark(#5f584e, #d2ccc2);
+  background: light-dark(#f5f2ed, #252b2f);
+}
+
+.hr-document-row__details dd > strong,
+.hr-document-row__details dd > span {
+  display: block;
+}
+
+.hr-document-row__details dd > span {
+  color: light-dark(#6d6357, #b9b2a7);
+  font-size: .82rem;
+  margin-top: 4px;
+}
+
+.hr-document-row__details dl {
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+}
+
+@media (max-width: 1120px) {
+  .hr-document-row__details dl {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .hr-document-row__details dl div:last-child {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .hr-document-row__details dl {
     grid-template-columns: 1fr;
   }
 }

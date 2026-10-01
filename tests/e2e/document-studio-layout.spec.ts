@@ -22,7 +22,7 @@ async function installStudioStartFixture(page: import('@playwright/test').Page, 
     document.documentElement.style.colorScheme = selectedTheme
     document.body.innerHTML = `<main style="max-width:1440px;margin:0 auto;padding:24px"><h1>Document Center</h1>
       <section class="document-studio" aria-label="Document Center">
-        <div class="document-studio__tabs" role="tablist" aria-label="Document Studio sections"><button aria-selected="true" class="active" role="tab">Start</button><button aria-selected="false" role="tab">Working HR forms</button><button aria-selected="false" role="tab">Training &amp; guides</button><button aria-selected="false" role="tab">Signature requests</button><button aria-selected="false" role="tab">Manage system</button></div>
+        <div class="document-studio__tabs" role="tablist" aria-label="Document Studio sections"><button aria-selected="true" class="active" role="tab">Start</button><button aria-selected="false" role="tab">Forms &amp; source catalog</button><button aria-selected="false" role="tab">Guides, policies &amp; training</button><button aria-selected="false" role="tab">Signature requests</button><button aria-selected="false" role="tab">Manage system</button></div>
         <div class="document-studio__quick-actions" aria-label="Document Center quick start">
           <span aria-hidden="true" class="document-studio__quick-actions-icon">✓</span>
           <div class="document-studio__quick-actions-copy"><p class="eyebrow">Simple document work</p><h2>What would you like to do?</h2><span>Choose a starting point below. We’ll guide you through completing, reviewing, and saving or sending the document.</span></div>
@@ -30,12 +30,12 @@ async function installStudioStartFixture(page: import('@playwright/test').Page, 
         </div>
         <div class="document-studio__launch-grid">
           <button type="button"><span>↑</span><strong>Use an outside PDF</strong><small>Upload a proposal or other document and work on it now</small></button>
-          <button type="button"><span>⌕</span><strong>Start an HR task</strong><small>Find the right working form by what you need to do</small></button>
-          <button type="button"><span>▤</span><strong>Add to an employee file</strong><small>Complete a PDF and save it with the right person</small></button>
-          <button type="button"><span>▱</span><strong>Find training or a guide</strong><small>Open learning material without mixing it with HR forms</small></button>
+          <button type="button"><span>⌕</span><strong>Browse forms &amp; source material</strong><small>Preview drafts and references; adopted forms can start a new working copy</small></button>
+          <button type="button"><span>▤</span><strong>File a finished employee record</strong><small>Complete a PDF and save it with the right person</small></button>
+          <button type="button"><span>▱</span><strong>Open a guide, policy, or training item</strong><small>Reference material stays separate from finished records</small></button>
         </div>
-        <p class="document-studio__simple-note">No policy, template, filing section, or setup wizard is required.</p>
-        <div class="document-studio__overview"><article><span>▤</span><div><h3>Fill the form, not the screen</h3><p>When a PDF contains form fields, SygShift detects them and keeps every answer in the correct box.</p></div></article><article><span>✓</span><div><h3>Review before finishing</h3><p>Preview the exact completed PDF, then download it, send it, or add it to an employee record.</p></div></article><article><span>◎</span><div><h3>Find finished work easily</h3><p>Employee documents stay on the employee file.</p></div></article></div>
+        <p class="document-studio__simple-note">Source adoption status, reference material, and finished records remain clearly separated.</p>
+        <div class="document-studio__overview"><article><span>▤</span><div><h3>Use a reviewed source</h3><p>Only adopted form sources can start a working copy. Draft and reference sources remain preview-only.</p></div></article><article><span>✓</span><div><h3>Review before finishing</h3><p>Preview the exact completed PDF, then download it, send it, or add it to an employee record.</p></div></article><article><span>◎</span><div><h3>Find finished work easily</h3><p>Finished employee and company records stay in Saved document records.</p></div></article></div>
       </section>
     </main>`
   }, theme)
@@ -94,7 +94,7 @@ for (const theme of ['light', 'dark'] as const) {
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
     if (testInfo.project.name === 'mobile-chromium') {
-      for (const tab of ['Start', 'Working HR forms', 'Training & guides', 'Signature requests', 'Manage system']) {
+      for (const tab of ['Start', 'Forms & source catalog', 'Guides, policies & training', 'Signature requests', 'Manage system']) {
         await expect(page.getByRole('tab', { name: tab })).toBeInViewport()
       }
     }

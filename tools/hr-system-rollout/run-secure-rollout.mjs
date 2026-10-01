@@ -91,6 +91,7 @@ for (const item of catalog.items.slice(startIndex)) {
       fullText: item.searchText.slice(0, 700_000),
       guideCode: item.guideCode ?? null,
       lifecycleStatus: item.status,
+      sourceType: item.sourceType ?? null,
       packageMetadata: {
         libraryVersion: '2.1',
         pdfRelativePath: item.pdfRelativePath,

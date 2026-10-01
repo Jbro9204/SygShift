@@ -43,6 +43,18 @@ const versionSchema = z.object({
   scanState: z.enum(['quarantined', 'scan_pending', 'clean', 'rejected', 'scan_error', 'storage_error']),
 })
 
+const documentSourceMetadataSchema = z.object({
+  code: z.string(),
+  documentKind: z.enum(['hr_source', 'training_admin', 'training_module', 'document_guide', 'training_form']),
+  lifecycleStatus: z.enum(['draft_for_adoption', 'adopted', 'retired']),
+  purpose: z.string(),
+  recordClass: z.string(),
+  section: z.string(),
+  sourceFilename: z.string(),
+  sourceType: z.enum(['controlled_form', 'reference_material', 'training_form', 'training_reference', 'unclassified']),
+  title: z.string(),
+})
+
 const documentSchema = z.object({
   id: z.string().uuid(),
   employeeId: z.string().uuid().nullable(),
@@ -59,6 +71,8 @@ const documentSchema = z.object({
   canManage: z.boolean(),
   canPreview: z.boolean(),
   canDownload: z.boolean(),
+  // Older Workers intentionally omit this during the additive v3 rollout.
+  sourceMetadata: documentSourceMetadataSchema.nullable().optional(),
   version: versionSchema.nullable(),
 })
 
@@ -100,6 +114,7 @@ const documentLifecycleResultSchema = z.object({
 
 export type HrDocumentWorkspace = z.infer<typeof workspaceSchema>
 export type HrDocumentRecord = z.infer<typeof documentSchema>
+export type HrDocumentSourceMetadata = z.infer<typeof documentSourceMetadataSchema>
 export type HrDocumentVault = z.infer<typeof vaultSchema>
 export type HrDocumentEmployee = z.infer<typeof employeeSchema>
 

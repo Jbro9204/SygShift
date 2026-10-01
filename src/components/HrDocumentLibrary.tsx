@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BookOpenCheck,
   BriefcaseBusiness,
@@ -17,18 +17,27 @@ import {
   ShieldAlert,
   Search,
   ShieldCheck,
+  ShieldOff,
   UserPlus,
 } from 'lucide-react'
 import { DataStatePanel } from './DataStatePanel'
 import { ModalDialog } from './ModalDialog'
 import { SecurePdfViewer } from './SecurePdfViewer'
 import {
+  adoptHrDocumentLibrarySource,
   getHrDocumentLibrary,
+  retireHrDocumentLibrarySource,
   type HrDocumentLibraryAudience,
   type HrDocumentLibraryFilters,
+  type HrDocumentLibraryItem,
   type HrDocumentLibraryKind,
 } from '../data/hrDocumentLibrary'
 import { getHrDocumentBlob } from '../data/hrDocuments'
+import {
+  libraryAllowsWorkingCopy,
+  libraryKindLabel,
+  libraryPrimaryActionLabel,
+} from '../lib/documentPresentation'
 
 type PageSize = 5 | 10 | 20
 type LibraryCollection = 'all' | 'forms' | 'learning'
@@ -55,9 +64,15 @@ const sensitivityLabels = {
 } as const
 
 const kindLabels: Record<HrDocumentLibraryKind, string> = {
-  hr_source: 'HR document', training_admin: 'Training administration', training_module: 'Training module',
-  document_guide: 'Document guide', training_form: 'Training form',
+  hr_source: 'HR source catalog', training_admin: 'Training administration', training_module: 'Training modules',
+  document_guide: 'Use guides & policies', training_form: 'Training forms',
 }
+
+const lifecycleLabels = {
+  adopted: 'Approved source',
+  draft_for_adoption: 'Draft source',
+  retired: 'Retired source',
+} as const
 
 const learningKinds: HrDocumentLibraryKind[] = ['training_module', 'training_form', 'training_admin', 'document_guide']
 
@@ -71,13 +86,39 @@ function readableDocumentTitle(value: string): string {
   })
 }
 
+function sourceAccessNote(
+  item: Pick<HrDocumentLibraryItem, 'availability' | 'lifecycleStatus'>,
+  workingCopyAllowed: boolean,
+): string {
+  if (item.availability !== 'available') {
+    return 'This catalog item is searchable, but its source file still needs to be connected before it can be reviewed.'
+  }
+  if (item.lifecycleStatus === 'draft_for_adoption') {
+    return 'This draft is available to preview or download. It cannot start a working copy until an authorized document manager approves it for use.'
+  }
+  if (item.lifecycleStatus === 'retired') {
+    return 'This retired source remains available for historical reference. It cannot start new work.'
+  }
+  return workingCopyAllowed
+    ? 'Ready to start as a new working copy. The adopted company source stays unchanged.'
+    : 'Ready to preview or download as reference material. The adopted company source stays unchanged.'
+}
+
 export function HrDocumentLibrary({ collection, mode = 'employee', onUseDocument }: { collection?: LibraryCollection; mode?: 'employee' | 'studio' | 'training'; onUseDocument?: (file: File, title: string) => void }) {
+  const queryClient = useQueryClient()
   const activeCollection: LibraryCollection = collection ?? (mode === 'training' ? 'learning' : mode === 'studio' ? 'forms' : 'all')
-  const defaultKind: HrDocumentLibraryKind | undefined = activeCollection === 'forms' ? 'hr_source' : activeCollection === 'learning' ? 'training_module' : undefined
+  const defaultKind: HrDocumentLibraryKind | undefined = activeCollection === 'forms'
+    ? 'hr_source'
+    : activeCollection === 'learning'
+      ? mode === 'training' ? 'training_module' : 'document_guide'
+      : undefined
   const [searchInput, setSearchInput] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [filters, setFilters] = useState<HrDocumentLibraryFilters>({ page: 1, pageSize: 10, kind: defaultKind })
   const [accessTarget, setAccessTarget] = useState<{ id: string; title: string } | null>(null)
+  const [adoptionTarget, setAdoptionTarget] = useState<HrDocumentLibraryItem | null>(null)
+  const [retirementTarget, setRetirementTarget] = useState<HrDocumentLibraryItem | null>(null)
+  const [lifecycleNotice, setLifecycleNotice] = useState<string | null>(null)
   const query = useQuery({
     queryFn: () => getHrDocumentLibrary(filters),
     queryKey: ['hr-document-library', filters],
@@ -89,6 +130,22 @@ export function HrDocumentLibrary({ collection, mode = 'employee', onUseDocument
       return { file: new File([result.blob], result.filename || `${title}.pdf`, { type: result.blob.type || 'application/pdf' }), title }
     },
     onSuccess: ({ file, title }) => onUseDocument?.(file, title),
+  })
+  const adoptSource = useMutation({
+    mutationFn: (input: { libraryItemId: string; reason: string; sourceSha256: string; updatedAt: string }) => adoptHrDocumentLibrarySource(input),
+    onSuccess: async () => {
+      setLifecycleNotice('The exact reviewed source is now approved for new work.')
+      setAdoptionTarget(null)
+      await queryClient.invalidateQueries({ queryKey: ['hr-document-library'] })
+    },
+  })
+  const retireSource = useMutation({
+    mutationFn: (input: { libraryItemId: string; reason: string; sourceSha256: string; updatedAt: string }) => retireHrDocumentLibrarySource(input),
+    onSuccess: async () => {
+      setLifecycleNotice('The source is retired. Existing records and assignments remain preserved.')
+      setRetirementTarget(null)
+      await queryClient.invalidateQueries({ queryKey: ['hr-document-library'] })
+    },
   })
 
   useEffect(() => {
@@ -124,14 +181,14 @@ export function HrDocumentLibrary({ collection, mode = 'employee', onUseDocument
   }
 
   const hasFilters = Boolean(filters.search || filters.category || filters.audience || filters.kind !== defaultKind)
-  const heading = activeCollection === 'forms' ? 'Choose what HR needs to do' : activeCollection === 'learning' ? 'Training and reference library' : 'Find a company document'
+  const heading = activeCollection === 'forms' ? 'HR forms & source templates' : activeCollection === 'learning' ? 'Guides, policies & training' : 'Find a company document'
   const introduction = activeCollection === 'forms'
-    ? 'Start with the task or search in plain language. Open a working copy, fill the detected fields, review it, then download, send, or file it.'
+    ? 'Start with the task or search in plain language. Each item shows whether it is approved, awaiting approval, or reference material.'
     : activeCollection === 'learning'
-      ? 'Training courses, training forms, and reference guides stay together here—separate from forms used for employee actions.'
-      : 'Search approved company documents by name, code, purpose, or everyday wording.'
-  const itemLabel = activeCollection === 'forms' ? 'Working forms' : activeCollection === 'learning' ? 'Learning items' : 'Documents'
-  const resultLabel = activeCollection === 'forms' ? 'working forms' : activeCollection === 'learning' ? 'learning items' : 'documents'
+      ? 'Use guides, policies, training modules, and training forms stay together here—separate from completed employee and company records.'
+      : 'Search the company source catalog by name, code, purpose, or everyday wording. Each item shows its current approval status.'
+  const itemLabel = activeCollection === 'forms' ? 'HR source items' : activeCollection === 'learning' ? 'Guides & learning' : 'Library sources'
+  const resultLabel = activeCollection === 'forms' ? 'HR source items' : activeCollection === 'learning' ? 'guides, policies, and training items' : 'library sources'
 
   return (
     <section className={`hr-template-library hr-template-library--${mode}`}>
@@ -151,7 +208,7 @@ export function HrDocumentLibrary({ collection, mode = 'employee', onUseDocument
         <div className="hr-template-library__metrics">
           <article><Files aria-hidden="true"/><span>{itemLabel}</span><strong>{workspace.summary.visibleCount}</strong></article>
           <article><BookOpenCheck aria-hidden="true"/><span>Categories</span><strong>{workspace.summary.categoryCount}</strong></article>
-          <article><FileCheck2 aria-hidden="true"/><span>Files released</span><strong>{workspace.summary.availableCount}</strong></article>
+          <article><FileCheck2 aria-hidden="true"/><span>Files available</span><strong>{workspace.summary.availableCount}</strong></article>
         </div>
 
         {activeCollection === 'forms' ? <div className="hr-template-library__intent-grid" aria-label="Common HR tasks">
@@ -160,13 +217,13 @@ export function HrDocumentLibrary({ collection, mode = 'employee', onUseDocument
 
         <div className="hr-template-library__notice">
           <ShieldCheck aria-hidden="true" size={20}/>
-          <div><strong>{activeCollection === 'forms' ? 'Working HR forms only' : activeCollection === 'learning' ? 'Learning material stays separate' : 'Approved company library'}</strong><span>{activeCollection === 'forms' ? 'Training handouts and completed employee records are not mixed into these results.' : activeCollection === 'learning' ? 'Use these items for learning and reference, not for filing a new employee action.' : 'Every result is permission-checked before it opens.'}</span></div>
+          <div><strong>{activeCollection === 'forms' ? 'Controlled-source catalog' : activeCollection === 'learning' ? 'Guides and learning stay separate' : 'Company source library'}</strong><span>{activeCollection === 'forms' ? 'Only approved forms can start a working copy. Drafts and reference sources remain preview-only.' : activeCollection === 'learning' ? 'Use these items for guidance, policy reference, or training—not as completed employee records.' : 'Every result is permission-checked and clearly identifies its type and approval status.'}</span></div>
         </div>
 
         <div className="hr-template-library__filters">
           <form onSubmit={submitSearch}>
             <label htmlFor={`hr-template-search-${mode}`}>Search library</label>
-            <div><Search aria-hidden="true" size={18}/><input id={`hr-template-search-${mode}`} maxLength={120} onChange={(event) => setSearchInput(event.target.value)} placeholder="What do you need help with?" value={searchInput}/></div>
+            <div><Search aria-hidden="true" size={18}/><input id={`hr-template-search-${mode}`} maxLength={120} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search title, code, category, or purpose" value={searchInput}/></div>
             <button className="secondary-button" type="submit">Search</button>
           </form>
           <label>Category<select onChange={(event) => updateFilter('category', event.target.value || undefined)} value={filters.category ?? ''}><option value="">All categories</option>{workspace.categories.map((category) => <option key={category.name} value={category.name}>{category.name} ({category.count})</option>)}</select></label>
@@ -181,24 +238,37 @@ export function HrDocumentLibrary({ collection, mode = 'employee', onUseDocument
         {workspace.items.length ? <div className="hr-template-library__list">
           {workspace.items.map((item) => {
             const expanded = expandedId === item.id
+            const detailsId = `hr-template-library-details-${item.id}`
+            const workingCopyAllowed = libraryAllowsWorkingCopy(item)
+            const adoptionAllowed = workspace.permissions.canManage === true
+              && item.availability === 'available'
+              && item.lifecycleStatus === 'draft_for_adoption'
+              && Boolean(item.sourceType && item.sourceType !== 'unclassified')
+              && Boolean(item.sourceSha256 && item.updatedAt)
+            const retirementAllowed = workspace.permissions.canManage === true
+              && item.availability === 'available'
+              && item.lifecycleStatus === 'adopted'
+              && Boolean(item.sourceSha256 && item.updatedAt)
+            const accessNote = sourceAccessNote(item, workingCopyAllowed)
             return <article className="hr-template-library__item" key={item.id}>
-              <button aria-expanded={expanded} className="hr-template-library__summary" onClick={() => setExpandedId(expanded ? null : item.id)} type="button">
+              <button aria-controls={detailsId} aria-expanded={expanded} className="hr-template-library__summary" onClick={() => setExpandedId(expanded ? null : item.id)} type="button">
                 <span className="hr-template-library__code">{item.code}</span>
                 <span className="hr-template-library__identity"><strong>{readableDocumentTitle(item.title)}</strong><small>{item.category}</small></span>
-                <span className={`hr-template-library__availability is-${item.availability}`}>{item.availability === 'available' ? 'Ready to use' : 'Needs file'}</span>
+                <span className="hr-template-library__badges"><span className={`hr-template-library__kind is-${item.documentKind}`}>{libraryKindLabel(item)}</span><span className={`hr-template-library__availability is-${item.availability}`}>{item.availability === 'available' ? 'Source file ready' : 'Source file needed'}</span><span className={`hr-template-library__availability is-${item.lifecycleStatus}`}>{lifecycleLabels[item.lifecycleStatus]}</span></span>
                 <ChevronDown aria-hidden="true" className={expanded ? 'rotated' : ''} size={20}/>
               </button>
-              {expanded ? <div className="hr-template-library__details">
+              <div className="hr-template-library__details" hidden={!expanded} id={detailsId}>
                 <div><small>What this document is for</small><p>{item.purpose}</p></div>
                 <dl className="hr-template-library__essential-details">
                   <div><dt>Record class</dt><dd>{item.recordClass}</dd></div>
                   <div><dt>Document type</dt><dd>{kindLabels[item.documentKind]}</dd></div>
+                  <div><dt>Source status</dt><dd>{lifecycleLabels[item.lifecycleStatus]}</dd></div>
                   <div><dt>Length</dt><dd>{item.pageCount ? `${item.pageCount} pages` : 'Not recorded'}</dd></div>
                 </dl>
-                <details className="hr-template-library__technical-details"><summary>Document details</summary><dl><div><dt>Package section</dt><dd>{item.section}</dd></div><div><dt>Intended audience</dt><dd>{audienceLabels[item.audience]}</dd></div><div><dt>Handling</dt><dd>{sensitivityLabels[item.sensitivity]}</dd></div><div><dt>Controlled source</dt><dd>{item.sourceFilename}</dd></div></dl></details>
-                <p className="hr-template-library__access-note">{item.availability === 'available' ? 'Ready to open as a new working copy. The company source stays unchanged.' : 'This item is searchable, but its PDF still needs to be connected before anyone can use it.'}</p>
-                {item.availability === 'available' && item.sourceDocumentId ? <div className="hr-template-library__actions">{onUseDocument?<button className="primary-action" disabled={useDocument.isPending} onClick={()=>useDocument.mutate({documentId:item.sourceDocumentId!,title:item.title})} type="button"><FilePenLine size={17}/>Use this document</button>:null}<button className="secondary-button" onClick={()=>setAccessTarget({id:item.sourceDocumentId!,title:item.title})} type="button"><Eye size={17}/>Preview PDF</button><button className="secondary-button" onClick={()=>void downloadLibraryItem(item.sourceDocumentId!,item.title)} type="button"><Download size={17}/>Download</button></div> : null}
-              </div> : null}
+                <details className="hr-template-library__technical-details"><summary>Retrieval and source details</summary><dl><div><dt>Library code</dt><dd>{item.code}</dd></div><div><dt>Package section</dt><dd>{item.section}</dd></div><div><dt>Intended audience</dt><dd>{audienceLabels[item.audience]}</dd></div><div><dt>Handling</dt><dd>{sensitivityLabels[item.sensitivity]}</dd></div><div><dt>Controlled filename</dt><dd>{item.sourceFilename}</dd></div>{item.guideCode ? <div><dt>Related guide</dt><dd>{item.guideCode}</dd></div> : null}{item.relatedModules.length ? <div><dt>Related modules</dt><dd>{item.relatedModules.join(', ')}</dd></div> : null}</dl></details>
+                <p className="hr-template-library__access-note">{accessNote}</p>
+                {item.availability === 'available' && item.sourceDocumentId ? <div className="hr-template-library__actions">{onUseDocument && workingCopyAllowed?<button className="primary-action" disabled={useDocument.isPending} onClick={()=>useDocument.mutate({documentId:item.sourceDocumentId!,title:item.title})} type="button"><FilePenLine size={17}/>{libraryPrimaryActionLabel(item)}</button>:null}<button className={workingCopyAllowed ? 'secondary-button' : 'primary-action'} onClick={()=>setAccessTarget({id:item.sourceDocumentId!,title:item.title})} type="button"><Eye size={17}/>{workingCopyAllowed ? 'Preview controlled source' : libraryPrimaryActionLabel(item)}</button><button className="secondary-button" onClick={()=>void downloadLibraryItem(item.sourceDocumentId!,item.title)} type="button"><Download size={17}/>Download source file</button>{adoptionAllowed?<button className="secondary-button" onClick={()=>{setLifecycleNotice(null);adoptSource.reset();setAdoptionTarget(item)}} type="button"><FileCheck2 aria-hidden="true" size={17}/>Approve for use</button>:null}{retirementAllowed?<button className="quiet-danger-button" onClick={()=>{setLifecycleNotice(null);retireSource.reset();setRetirementTarget(item)}} type="button"><ShieldOff aria-hidden="true" size={17}/>Retire source</button>:null}</div> : null}
+              </div>
             </article>
           })}
         </div> : <DataStatePanel icon={Search} title={`No ${resultLabel} match these filters`}><p>Try a broader term, another category, or clear the filters.</p></DataStatePanel>}
@@ -210,9 +280,44 @@ export function HrDocumentLibrary({ collection, mode = 'employee', onUseDocument
         </div>
       </> : null}
       {accessTarget ? <LibraryPreview documentId={accessTarget.id} onClose={()=>setAccessTarget(null)} title={accessTarget.title}/> : null}
+      {adoptionTarget && adoptionTarget.sourceSha256 && adoptionTarget.updatedAt ? <SourceAdoptionDialog busy={adoptSource.isPending} error={adoptSource.error instanceof Error ? adoptSource.error.message : null} item={adoptionTarget} onAdopt={(reason)=>adoptSource.mutate({libraryItemId:adoptionTarget.id,reason,sourceSha256:adoptionTarget.sourceSha256!,updatedAt:adoptionTarget.updatedAt!})} onClose={()=>setAdoptionTarget(null)}/> : null}
+      {retirementTarget && retirementTarget.sourceSha256 && retirementTarget.updatedAt ? <SourceRetirementDialog busy={retireSource.isPending} error={retireSource.error instanceof Error ? retireSource.error.message : null} item={retirementTarget} onClose={()=>setRetirementTarget(null)} onRetire={(reason)=>retireSource.mutate({libraryItemId:retirementTarget.id,reason,sourceSha256:retirementTarget.sourceSha256!,updatedAt:retirementTarget.updatedAt!})}/> : null}
+      {lifecycleNotice ? <div className="toast toast--success" role="status">{lifecycleNotice}</div> : null}
       {useDocument.isError ? <div className="toast toast--error" role="alert">{useDocument.error instanceof Error ? useDocument.error.message : 'The working copy could not be opened.'}</div> : null}
     </section>
   )
+}
+
+function SourceRetirementDialog({ busy, error, item, onClose, onRetire }: { busy: boolean; error: string | null; item: HrDocumentLibraryItem; onClose: () => void; onRetire: (reason: string) => void }) {
+  const [reason, setReason] = useState('')
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    onRetire(reason.trim())
+  }
+  return <ModalDialog busy={busy} busyLabel="Retiring protected source…" className="hr-document-modal" description="Retirement stops new working copies and new training assignments while preserving completed work, prior assignments, and the protected audit history." onClose={onClose} title={`Retire ${item.code}`}>
+    <form className="hr-document-adoption" onSubmit={submit}>
+      <div className="hr-template-library__notice"><ShieldOff aria-hidden="true" size={20}/><div><strong>Stop future use of this source</strong><span>{item.title} · {libraryKindLabel(item)}. Existing records and assignments remain preserved.</span></div></div>
+      <label>Retirement reason<textarea maxLength={1000} minLength={5} onChange={(event)=>setReason(event.target.value)} placeholder="Explain why this source must no longer be used for new work." required rows={4} value={reason}/></label>
+      {error ? <div className="inline-alert" role="alert">{error}</div> : null}
+      <div className="modal-actions"><button className="secondary-button" disabled={busy} onClick={onClose} type="button">Cancel</button><button className="danger-button" disabled={busy || reason.trim().length < 5} type="submit"><ShieldOff aria-hidden="true" size={17}/>Retire source</button></div>
+    </form>
+  </ModalDialog>
+}
+
+function SourceAdoptionDialog({ busy, error, item, onAdopt, onClose }: { busy: boolean; error: string | null; item: HrDocumentLibraryItem; onAdopt: (reason: string) => void; onClose: () => void }) {
+  const [reason, setReason] = useState('')
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    onAdopt(reason.trim())
+  }
+  return <ModalDialog busy={busy} busyLabel="Approving protected source…" className="hr-document-modal" description="Approval makes this exact company source available for new working copies. The decision is recorded in the protected document audit history." onClose={onClose} title={`Approve ${item.code} for use`}>
+    <form className="hr-document-adoption" onSubmit={submit}>
+      <div className="hr-template-library__notice"><ShieldCheck aria-hidden="true" size={20}/><div><strong>Confirm the reviewed source</strong><span>{item.title} · {libraryKindLabel(item)}. Training modules become assignable only after this approval succeeds.</span></div></div>
+      <label>Approval reason<textarea maxLength={1000} minLength={5} onChange={(event)=>setReason(event.target.value)} placeholder="Explain who reviewed this source and why it is ready for company use." required rows={4} value={reason}/></label>
+      {error ? <div className="inline-alert" role="alert">{error}</div> : null}
+      <div className="modal-actions"><button className="secondary-button" disabled={busy} onClick={onClose} type="button">Cancel</button><button className="primary-action" disabled={busy || reason.trim().length < 5} type="submit"><FileCheck2 aria-hidden="true" size={17}/>Approve source</button></div>
+    </form>
+  </ModalDialog>
 }
 
 async function downloadLibraryItem(documentId:string,title:string){

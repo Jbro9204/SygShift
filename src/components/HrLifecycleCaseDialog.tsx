@@ -159,7 +159,7 @@ export function HrLifecycleCaseDialog({ caseId, onClose, onUpdated, options }: {
       </section>
 
       <section className="hr-lifecycle-case__documents">
-        <div className="section-heading"><div><p className="eyebrow">Connected forms</p><h3>Approved HR documents</h3><p>These reference the controlled library source. No file or employee fact is copied into the case.</p></div></div>
+        <div className="section-heading"><div><p className="eyebrow">Connected source documents</p><h3>HR source references</h3><p>These links point to the controlled source catalog. Adoption and availability are verified in Document Studio; no file or employee fact is copied into the case.</p></div></div>
         <div>{data.documents.map((document) => <article key={document.id}><FileText aria-hidden="true" /><span><strong>{document.formCode} · {document.title}</strong><small>{displayStatus(document.sensitivity)} · {document.available ? 'Source available' : 'Indexed source awaiting approved upload'}</small></span><Link className="secondary-button secondary-button--small" to={`/hr/documents?library=${encodeURIComponent(document.formCode)}`}>Open Document Studio</Link></article>)}</div>
       </section>
 

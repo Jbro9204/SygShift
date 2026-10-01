@@ -5,7 +5,7 @@ const audienceSchema = z.enum(['all_employees', 'supervisors_and_hr', 'hr_only']
 const sensitivitySchema = z.enum(['standard', 'restricted', 'highly_restricted'])
 const documentKindSchema = z.enum(['hr_source', 'training_admin', 'training_module', 'document_guide', 'training_form'])
 
-const libraryItemSchema = z.object({
+export const libraryItemSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),
   title: z.string(),
@@ -16,6 +16,11 @@ const libraryItemSchema = z.object({
   audience: audienceSchema,
   sensitivity: sensitivitySchema,
   sourceFilename: z.string(),
+  // Older Workers omit the reviewed subtype during the additive v2 rollout.
+  // Presentation code treats an omitted or unclassified value as preview-only.
+  sourceType: z.enum(['controlled_form', 'reference_material', 'training_form', 'training_reference', 'unclassified']).optional(),
+  sourceSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(),
+  updatedAt: z.string().datetime().optional(),
   sourceDocumentId: z.string().uuid().nullable(),
   availability: z.enum(['cataloged', 'available']),
   documentKind: documentKindSchema,
@@ -31,6 +36,7 @@ const libraryWorkspaceSchema = z.object({
   permissions: z.object({
     canSeeSupervisor: z.boolean(),
     canSeeHr: z.boolean(),
+    canManage: z.boolean().optional(),
   }),
   summary: z.object({
     visibleCount: z.number().int().nonnegative(),
@@ -79,4 +85,24 @@ export async function getHrDocumentLibrary(
   const response = await documentApiRequest(`/api/v1/hr/documents/library?${query.toString()}`)
   if (!response.ok) throw await parseApiError(response, 'The document library could not be loaded.')
   return libraryWorkspaceSchema.parse(await response.json())
+}
+
+export async function adoptHrDocumentLibrarySource(input: { libraryItemId: string; reason: string; sourceSha256: string; updatedAt: string }): Promise<void> {
+  const { libraryItemId, reason, sourceSha256, updatedAt } = input
+  const response = await documentApiRequest(`/api/v1/hr/documents/library/${libraryItemId}/adopt`, {
+    body: JSON.stringify({ reason, sourceSha256, updatedAt }),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  })
+  if (!response.ok) throw await parseApiError(response, 'The source could not be adopted.')
+}
+
+export async function retireHrDocumentLibrarySource(input: { libraryItemId: string; reason: string; sourceSha256: string; updatedAt: string }): Promise<void> {
+  const { libraryItemId, reason, sourceSha256, updatedAt } = input
+  const response = await documentApiRequest(`/api/v1/hr/documents/library/${libraryItemId}/retire`, {
+    body: JSON.stringify({ reason, sourceSha256, updatedAt }),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  })
+  if (!response.ok) throw await parseApiError(response, 'The source could not be retired.')
 }

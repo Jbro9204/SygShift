@@ -8,13 +8,13 @@ async function installWorkbenchFixture(page: Page, theme: 'light' | 'dark', pane
     document.documentElement.dataset.theme = selectedTheme
     document.documentElement.style.colorScheme = selectedTheme
     const searchIcon = '<svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>'
-    const editPanel = `<div class="document-workbench__panel"><div><p class="eyebrow">Fill on the document</p><h3>Click any highlighted box</h3><p>Type, check, choose, or sign directly on the form. The field list below remains available when you need it.</p></div><section aria-label="Detected form fields" class="document-workbench__guided-fields"><div class="document-workbench__guided-heading"><p class="eyebrow">Field list</p><h3>2 editable fields found</h3><p>Click a box on the form for the fastest path, or use this list to jump between pages.</p></div><div class="document-workbench__guided-list"><label><span>Position<small>Page 1</small></span><input value="IT and Business Development Engineer"></label><div class="document-workbench__guided-signature"><span>Enter / Sign<small>Page 1</small></span><button class="secondary-button secondary-button--small" type="button">Place signature here</button><small>Click the signature box on the document or use this button.</small></div></div></section><div class="document-workbench__tools"><button class="active" type="button">T <span>Text</span></button><button type="button">✒ <span>Signature</span></button><button type="button">▣ <span>Date</span></button><button type="button">✓ <span>Check</span></button></div><label class="document-workbench__field">Selected text box<textarea rows="4">John Holliday requires an unlimited plainclothes endorsement to provide discreet executive-protection services.\nApproved for the listed assignment.</textarea></label><section aria-label="Selected text box controls" class="document-workbench__text-controls"><div class="document-workbench__selection-heading"><span>↔</span><div><strong>Selected text box</strong><small>Drag the text to move it. Drag its gold corner to resize the box.</small></div></div><div class="document-workbench__size-control"><span>Text size</span><div><button aria-label="Decrease text size">−</button><output>12 pt</output><button aria-label="Increase text size">+</button></div></div><label class="document-workbench__width-control">Text box width <output>44%</output><input aria-label="Text box width" max="88" min="16" type="range" value="44"></label></section><p class="document-workbench__tip">Tip: select an item to move it. Text boxes can also wrap, resize, and be edited after placement.</p></div>`
+    const editPanel = `<div class="document-workbench__panel"><div><p class="eyebrow">Fill on the document</p><h3>Click any highlighted box</h3><p>Type, check, choose, or sign directly on the form. The guided fields below remain available when you need them.</p></div><section aria-label="Detected form fields" class="document-workbench__guided-fields"><label class="document-workbench__guided-employee">Whose form is this?<select><option>Michelle Hood · SYG-1042</option></select><small>Choosing an employee fills matching name, ID, title, supervisor, location, and company fields when available.</small></label><div class="document-workbench__guided-heading"><div><p class="eyebrow">Guided fields</p><h3>3 clearly labeled fields</h3><p>Fields are grouped by section and signer role. Use “Show on form” to jump to the exact location.</p></div><button class="secondary-button secondary-button--small" type="button">Fill employee details</button></div><section aria-label="Document readiness" class="document-workbench__readiness needs-review"><div><strong>Mapping review needed</strong><span>1 of 3 fields completed</span></div><p>One generic field needs a clear label and type before output.</p></section><div class="document-workbench__guided-list"><section class="document-workbench__guided-group"><header><strong>Employee details and acknowledgment</strong><span>3 fields</span></header><div class="document-workbench__guided-field is-active"><div class="document-workbench__guided-field-heading"><label for="fixture-position">Position and department assignment</label><span>Short text · Page 1</span></div><p>Use the employee's current assigned position.</p><input id="fixture-position" value="IT and Business Development Engineer"><div class="document-workbench__guided-actions"><button class="document-workbench__guided-jump" type="button">Show on form</button></div></div><div class="document-workbench__guided-field document-workbench__mapping-review"><div class="document-workbench__guided-field-heading"><strong>Confirm this field</strong><span>Page 1</span></div><p>The PDF only says “Enter.” Give it a clear label and type so it cannot be completed incorrectly.</p><label class="document-workbench__mapping-control">Field label<input value="Supervisor acknowledgment and review outcome"></label><label class="document-workbench__mapping-control">Field type<select><option>Long response</option></select></label><div class="document-workbench__guided-actions"><button class="primary-action primary-action--small" type="button">Use this mapping</button><button class="document-workbench__guided-jump" type="button">Show on form</button></div></div><div class="document-workbench__guided-signature"><div class="document-workbench__guided-field-heading"><strong>Employee acknowledgment signature</strong><span>Signature · Page 1</span></div><p>Sign after reviewing the completed record.</p><div class="document-workbench__guided-actions"><button class="secondary-button secondary-button--small" type="button">Place signature</button><button class="document-workbench__guided-jump" type="button">Show on form</button></div><small>No signature has been placed.</small></div></section></div></section><div class="document-workbench__tools"><button class="active" type="button">T <span>Text</span></button><button type="button">✒ <span>Signature</span></button><button type="button">▣ <span>Date</span></button><button type="button">✓ <span>Check</span></button></div><label class="document-workbench__field">Selected text box<textarea rows="4">John Holliday requires an unlimited plainclothes endorsement to provide discreet executive-protection services.\nApproved for the listed assignment.</textarea></label><section aria-label="Selected text box controls" class="document-workbench__text-controls"><div class="document-workbench__selection-heading"><span>↔</span><div><strong>Selected text box</strong><small>Drag the text to move it. Drag its gold corner to resize the box.</small></div></div><div class="document-workbench__size-control"><span>Text size</span><div><button aria-label="Decrease text size">−</button><output>12 pt</output><button aria-label="Increase text size">+</button></div></div><label class="document-workbench__width-control">Text box width <output>44%</output><input aria-label="Text box width" max="88" min="16" type="range" value="44"></label></section><p class="document-workbench__tip">Tip: select an item to move it. Text boxes can also wrap, resize, and be edited after placement.</p></div>`
     const filePanel = `<div class="document-workbench__panel"><div><p class="eyebrow">Save to SygShift</p><h3>Add to an employee file</h3><p>The filing area is selected automatically. Choose only the person.</p></div><label class="document-workbench__field">Document title<input value="Compensation proposal"></label><label class="document-workbench__field">Find an employee<div class="document-workbench__search">${searchIcon}<input placeholder="Search by name or employee number" value="Michelle"></div></label><div class="document-workbench__people"><label class="document-workbench__choice"><input checked name="employee" type="radio"><span><strong>Michelle Hood</strong><small>SYG-1042</small></span></label><label class="document-workbench__choice"><input name="employee" type="radio"><span><strong>Michael Hinz</strong><small>SYG-1017</small></span></label></div><label class="document-workbench__field">Document type<select><option>Proposal</option></select></label><button class="primary-action document-workbench__wide-action" type="button">Add to employee file</button></div>`
     const sendPanel = `<div class="document-workbench__panel"><div><p class="eyebrow">Send from SygShift</p><h3>Who needs this document?</h3><p>Choose the people and what they need to do.</p></div><label class="document-workbench__field">Action<select><option>Sign document</option></select></label><label class="document-workbench__field">Find recipients<div class="document-workbench__search">${searchIcon}<input placeholder="Search employees" value="Michael"></div></label><div class="document-workbench__people"><p>1 selected</p><label class="document-workbench__choice"><input checked type="checkbox"><span><strong>Michael Hinz</strong><small>SYG-1017</small></span></label></div><label class="document-workbench__field">Message <span>Optional</span><textarea rows="3">Please review and sign.</textarea></label><button class="primary-action document-workbench__wide-action" type="button">Send document</button></div>`
     const panels: Record<Panel, string> = { edit: editPanel, file: filePanel, send: sendPanel }
     const signatureImage = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221000%22 height=%22260%22 viewBox=%220 0 1000 260%22%3E%3Ctext x=%2220%22 y=%22185%22 font-size=%22155%22%3EJordan C Brown%3C/text%3E%3C/svg%3E'
     const directFields = selectedPanel === 'edit' ? `<input aria-label="Position on document" class="document-workbench__template-control is-text" style="left:18%;top:20%;width:34%;height:4%;font-size:7px" value="IT and Business Development Engineer"><textarea aria-label="Employee explanation on document" class="document-workbench__template-control is-long_text is-selected" style="left:18%;top:50%;width:68%;height:14%;font-size:11px">This answer stays inside the printed section and scrolls internally when more detail is entered.</textarea><button aria-label="Written warning on document: checked" aria-pressed="true" class="document-workbench__template-control is-checkbox" style="left:62%;top:30%;width:3%;height:3%" type="button">✓</button>` : ''
-    document.body.innerHTML = `<dialog aria-labelledby="workbench-title" class="modal-dialog document-workbench" open><div class="modal-dialog__heading"><div class="modal-dialog__heading-copy"><h2 id="workbench-title">Compensation proposal</h2><p>Type, sign, download, send, or add this PDF to an employee file from one place.</p></div><button aria-label="Close dialog" class="modal-close" type="button">×</button></div><div class="document-workbench__body"><header class="document-workbench__toolbar"><div class="document-workbench__paging"><button aria-label="Previous page" disabled>‹</button><strong>Page 1 of 2</strong><button aria-label="Next page">›</button></div><div class="document-workbench__history"><button aria-label="Undo last document change">↶</button><button aria-label="Redo last document change" disabled>↷</button></div><button aria-label="Maximize editor" aria-pressed="false" class="document-workbench__maximize" type="button">⛶</button><button class="secondary-button secondary-button--small" type="button">Choose another PDF</button></header><div class="document-workbench__main"><section class="document-workbench__document"><div class="document-workbench__sheet" style="width:650px;height:820px"><div style="padding:64px;color:#111"><h2>Compensation Proposal</h2><p>Employee: Michelle Hood</p></div>${directFields}<div class="document-workbench__annotation is-text is-selected" style="left:18%;top:36%;width:44%;font-size:12px"><button aria-label="Text box: John Holliday requires an unlimited plainclothes endorsement" aria-pressed="true" class="document-workbench__annotation-content" type="button">John Holliday requires an unlimited plainclothes endorsement to provide discreet executive-protection services for his scheduled assignment.</button><button aria-label="Resize selected text box" class="document-workbench__resize-handle" type="button">↘</button></div><div class="document-workbench__annotation is-signature" style="left:50%;top:72%;width:31%"><button aria-label="signature: Jordan C Brown. Drag or use arrow keys to move." class="document-workbench__annotation-content" type="button"><img alt="" draggable="false" src="${signatureImage}"></button></div></div></section><aside class="document-workbench__side"><div class="document-workbench__side-tabs" role="tablist" aria-label="Document actions"><button aria-selected="${selectedPanel === 'edit'}" class="${selectedPanel === 'edit' ? 'active' : ''}" role="tab">Edit</button><button aria-selected="${selectedPanel === 'file'}" class="${selectedPanel === 'file' ? 'active' : ''}" role="tab">File</button><button aria-selected="${selectedPanel === 'send'}" class="${selectedPanel === 'send' ? 'active' : ''}" role="tab">Send</button></div>${panels[selectedPanel]}</aside></div><footer class="document-workbench__footer"><div><span>1 addition · Changes are applied when you download, send, or file the PDF.</span></div><div><button class="secondary-button">Close</button><button class="secondary-button">Preview finished PDF</button><button class="primary-action">Download PDF</button></div></footer></div></dialog>`
+    document.body.innerHTML = `<dialog aria-labelledby="workbench-title" class="modal-dialog document-workbench" open><div class="modal-dialog__heading"><div class="modal-dialog__heading-copy"><h2 id="workbench-title">Employee information and emergency contact record</h2><p>Type, sign, download, send, or add this PDF to an employee file from one place.</p></div><button aria-label="Close dialog" class="modal-close" type="button">×</button></div><div class="document-workbench__body"><header class="document-workbench__toolbar"><div class="document-workbench__paging"><button aria-label="Previous page" disabled>‹</button><strong>Page 1 of 2</strong><button aria-label="Next page">›</button></div><div class="document-workbench__history"><button aria-label="Undo last document change">↶</button><button aria-label="Redo last document change" disabled>↷</button></div><button aria-label="Maximize editor" aria-pressed="false" class="document-workbench__maximize" type="button">⛶</button><button class="secondary-button secondary-button--small" type="button">Choose another PDF</button></header><div class="document-workbench__main"><section class="document-workbench__document"><div class="document-workbench__sheet" style="width:650px;height:820px"><div style="padding:64px;color:#111"><h2>Compensation Proposal</h2><p>Employee: Michelle Hood</p></div>${directFields}<div class="document-workbench__annotation is-text is-selected" style="left:18%;top:36%;width:44%;font-size:12px"><button aria-label="Text box: John Holliday requires an unlimited plainclothes endorsement" aria-pressed="true" class="document-workbench__annotation-content" type="button">John Holliday requires an unlimited plainclothes endorsement to provide discreet executive-protection services for his scheduled assignment.</button><button aria-label="Resize selected text box" class="document-workbench__resize-handle" type="button">↘</button></div><div class="document-workbench__annotation is-signature" style="left:50%;top:72%;width:31%"><button aria-label="signature: Jordan C Brown. Drag or use arrow keys to move." class="document-workbench__annotation-content" type="button"><img alt="" draggable="false" src="${signatureImage}"></button></div></div></section><aside class="document-workbench__side"><div class="document-workbench__side-tabs" role="tablist" aria-label="Document actions"><button aria-selected="${selectedPanel === 'edit'}" class="${selectedPanel === 'edit' ? 'active' : ''}" role="tab">Edit</button><button aria-selected="${selectedPanel === 'file'}" class="${selectedPanel === 'file' ? 'active' : ''}" role="tab">File</button><button aria-selected="${selectedPanel === 'send'}" class="${selectedPanel === 'send' ? 'active' : ''}" role="tab">Send</button></div>${panels[selectedPanel]}</aside></div><footer class="document-workbench__footer"><div><span>1 addition · Changes are applied when you download, send, or file the PDF.</span></div><div><button class="secondary-button">Close</button><button class="secondary-button">Preview finished PDF</button><button class="primary-action">Download PDF</button></div></footer></div></dialog>`
     const dialog = document.querySelector<HTMLDialogElement>('.document-workbench')!
     const maximize = document.querySelector<HTMLButtonElement>('.document-workbench__maximize')!
     maximize.addEventListener('click', () => {
@@ -57,6 +57,66 @@ async function expectPeopleListUsable(page: Page) {
   expect(geometry.scrollHeight + 4).toBeGreaterThanOrEqual(geometry.height)
 }
 
+async function expectWorkbenchChromeUsable(page: Page, minimumMainHeight: number) {
+  const geometry = await page.evaluate(() => {
+    const dialog = document.querySelector<HTMLDialogElement>('.document-workbench')!
+    const main = document.querySelector<HTMLElement>('.document-workbench__main')!
+    const footer = document.querySelector<HTMLElement>('.document-workbench__footer')!
+    const targetSelectors = [
+      '.document-workbench__toolbar button',
+      '.document-workbench__side-tabs button',
+      '.document-workbench__guided-actions button',
+      '.document-workbench__footer button',
+    ]
+    const targetBoxes = targetSelectors.flatMap((selector) => Array.from(document.querySelectorAll<HTMLElement>(selector), (element) => element.getBoundingClientRect()))
+    const footerBoxes = Array.from(footer.querySelectorAll<HTMLElement>('button'), (element) => element.getBoundingClientRect())
+    const footerButtonsOverlap = footerBoxes.some((button, index) => footerBoxes.slice(index + 1).some((other) => (
+      button.left < other.right
+      && button.right > other.left
+      && button.top < other.bottom
+      && button.bottom > other.top
+    )))
+    const horizontallyClipped = Array.from(document.querySelectorAll<HTMLElement>([
+      '.document-workbench__side',
+      '.document-workbench__panel',
+      '.document-workbench__guided-fields',
+      '.document-workbench__guided-group',
+      '.document-workbench__guided-field',
+      '.document-workbench__guided-signature',
+      '.document-workbench__mapping-review',
+      '.document-workbench__readiness',
+    ].join(','))).some((element) => element.scrollWidth > element.clientWidth + 1)
+    const dialogBox = dialog.getBoundingClientRect()
+    const footerBox = footer.getBoundingClientRect()
+    return {
+      dialogContained: dialogBox.left >= -1 && dialogBox.right <= window.innerWidth + 1 && dialogBox.top >= -1 && dialogBox.bottom <= window.innerHeight + 1,
+      footerButtonsOverlap,
+      footerContained: footerBox.left >= dialogBox.left - 1 && footerBox.right <= dialogBox.right + 1 && footerBox.bottom <= dialogBox.bottom + 1,
+      horizontallyClipped,
+      mainHeight: main.clientHeight,
+      minimumTargetHeight: Math.min(...targetBoxes.map((box) => box.height)),
+      rootOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    }
+  })
+  expect(geometry.dialogContained).toBe(true)
+  expect(geometry.footerContained).toBe(true)
+  expect(geometry.footerButtonsOverlap).toBe(false)
+  expect(geometry.horizontallyClipped).toBe(false)
+  expect(geometry.mainHeight).toBeGreaterThanOrEqual(minimumMainHeight)
+  expect(geometry.minimumTargetHeight).toBeGreaterThanOrEqual(44)
+  expect(geometry.rootOverflow).toBeLessThanOrEqual(1)
+
+  const jump = page.locator('.document-workbench__guided-jump').first()
+  await jump.scrollIntoViewIfNeeded()
+  const scrolledGeometry = await jump.evaluate((element) => {
+    const target = element.getBoundingClientRect()
+    const main = element.closest('.document-workbench__main')!.getBoundingClientRect()
+    return { bottom: target.bottom, mainBottom: main.bottom, mainTop: main.top, top: target.top }
+  })
+  expect(scrolledGeometry.top).toBeGreaterThanOrEqual(scrolledGeometry.mainTop - 1)
+  expect(scrolledGeometry.bottom).toBeLessThanOrEqual(scrolledGeometry.mainBottom + 1)
+}
+
 for (const theme of ['light', 'dark'] as const) {
   test(`PDF workbench text editing is contained and readable in ${theme} mode`, async ({ page }, testInfo) => {
     await page.goto('/')
@@ -68,9 +128,9 @@ for (const theme of ['light', 'dark'] as const) {
     const signature = page.getByRole('button', { name: /signature: Jordan C Brown/ })
     await expect(signature).toBeVisible()
     expect(await signature.locator('img').evaluate((image) => image.getBoundingClientRect().right <= image.parentElement!.getBoundingClientRect().right + 1)).toBe(true)
-    const guidedSignature = page.getByRole('button', { name: 'Place signature here' })
+    const guidedSignature = page.getByRole('button', { name: 'Place signature' })
     await expect(guidedSignature).toBeVisible()
-    expect(await guidedSignature.evaluate((button) => button.getBoundingClientRect().height)).toBeGreaterThanOrEqual(40)
+    expect(await guidedSignature.evaluate((button) => button.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44)
     const directPosition = page.getByRole('textbox', { name: 'Position on document' })
     await expect(directPosition).toBeVisible()
     await directPosition.fill('Business Development Engineer')
@@ -118,3 +178,23 @@ for (const theme of ['light', 'dark'] as const) {
     await page.screenshot({ path: testInfo.outputPath(`document-send-${theme}.png`), fullPage: true })
   })
 }
+
+test('PDF workbench keeps its editor, guided sidebar, and completion actions usable on a small laptop, phone, and effective 200% zoom', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-chromium')
+  const cases = [
+    { height: 640, minimumMainHeight: 220, name: 'small-laptop', width: 1024 },
+    // A 1280 × 720 desktop viewport exposes about 640 × 360 CSS pixels at 200% browser zoom.
+    { height: 360, minimumMainHeight: 112, name: 'zoom-200', width: 640 },
+    // A 1024 × 720 small laptop exposes about 512 × 360 CSS pixels at 200% browser zoom.
+    { height: 360, minimumMainHeight: 96, name: 'small-laptop-zoom-200', width: 512 },
+    { height: 568, minimumMainHeight: 112, name: 'narrow-phone', width: 320 },
+  ]
+  for (const viewport of cases) {
+    await page.setViewportSize({ height: viewport.height, width: viewport.width })
+    await page.goto('/')
+    await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--ink').trim().length > 0)
+    await installWorkbenchFixture(page, 'light', 'edit')
+    await expectWorkbenchChromeUsable(page, viewport.minimumMainHeight)
+    await page.screenshot({ path: testInfo.outputPath(`document-workbench-${viewport.name}.png`), fullPage: true })
+  }
+})

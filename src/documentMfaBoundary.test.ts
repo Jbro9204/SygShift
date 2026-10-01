@@ -20,7 +20,12 @@ function request(endpoint: string, key: string | null = 'test-key', recentTotp =
   if (key) headers.set('x-sygshift-security-key', key)
   return new Request(`https://app.sygshift.example/api/v1/hr/documents/${endpoint}`, { headers })
 }
-function installTransport(verification: () => Response, permitted = true, workspace: Record<string, unknown> = { summary: { documents: 537 } }, v2Unavailable = false) {
+function installTransport(
+  verification: () => Response,
+  permitted = true,
+  workspace: Record<string, unknown> = { summary: { documents: 537 } },
+  availableWorkspaceVersion: 'v1' | 'v2' | 'v3' = 'v3',
+) {
   const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
     if (String(url).endsWith('/get_session_context')) return Response.json({
       employee_id: actorId, has_mfa: true, role: 'admin',
@@ -35,9 +40,12 @@ function installTransport(verification: () => Response, permitted = true, worksp
     }
     if (String(url).endsWith('/service_get_document_studio_workspace')) return Response.json(workspace)
     if (String(url).endsWith('/service_get_signature_policy_options')) return Response.json([{ id: '10000000-0000-4000-8000-000000000099', active: true }])
-    if (String(url).endsWith('/service_get_hr_document_workspace_v2')) return v2Unavailable
-      ? Response.json({ code: 'PGRST202', message: 'Function is not available.' }, { status: 404 })
-      : Response.json({ documents: [], pagination: { totalCount: 537 } })
+    if (String(url).endsWith('/service_get_hr_document_workspace_v3')) return availableWorkspaceVersion === 'v3'
+      ? Response.json({ documents: [], pagination: { totalCount: 537 } })
+      : Response.json({ code: 'PGRST202', message: 'Function is not available.' }, { status: 404 })
+    if (String(url).endsWith('/service_get_hr_document_workspace_v2')) return availableWorkspaceVersion === 'v2'
+      ? Response.json({ documents: [], pagination: { totalCount: 537 } })
+      : Response.json({ code: 'PGRST202', message: 'Function is not available.' }, { status: 404 })
     if (String(url).endsWith('/service_get_hr_document_workspace')) return Response.json({ documents: [], pagination: { totalCount: 537 } })
     throw new Error('Unexpected request')
   })
@@ -77,16 +85,16 @@ describe.each(['studio', 'workspace'])('Document %s verification boundary', (end
     expect((await worker.fetch(request(endpoint, null, true), env)).status).toBe(200)
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
-  if (endpoint === 'workspace') it('keeps the document workspace available during a safe v2 database rollout', async () => {
+  if (endpoint === 'workspace') it.each(['v2', 'v1'] as const)('keeps the document workspace available during a safe v3 database rollout through %s', async (availableVersion) => {
     const fetchMock = installTransport(
       () => Response.json({ method: 'security_key', verifiedAt: new Date().toISOString() }),
       true,
       undefined,
-      true,
+      availableVersion,
     )
     const response = await worker.fetch(request(endpoint), env)
     expect(response.status).toBe(200)
-    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/service_get_hr_document_workspace'))).toBe(true)
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith(`/service_get_hr_document_workspace${availableVersion === 'v2' ? '_v2' : ''}`))).toBe(true)
   })
   it('requests verification when no recent factor is supplied', async () => {
     const fetchMock = installTransport(() => Response.json(null))

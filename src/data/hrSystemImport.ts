@@ -4,6 +4,7 @@ import { documentApiRequest, parseApiError, uploadHrDocument } from './hrDocumen
 export const hrSystemKindSchema = z.enum(['hr_source', 'training_admin', 'training_module', 'document_guide', 'training_form'])
 const itemSchema = z.object({
   kind: hrSystemKindSchema,
+  sourceType: z.enum(['controlled_form', 'reference_material', 'training_form', 'training_reference', 'unclassified']).optional(),
   code: z.string().min(2).max(80),
   title: z.string().min(1).max(200),
   category: z.string().min(1).max(160),
@@ -80,6 +81,7 @@ export async function importHrSystemItem(
       fullText: item.searchText.slice(0, 700_000),
       guideCode: item.guideCode ?? null,
       lifecycleStatus: item.status,
+      sourceType: item.sourceType ?? null,
       packageMetadata: {
         libraryVersion: '2.1',
         pdfRelativePath: item.pdfRelativePath,

@@ -67,7 +67,7 @@ describe('unified guided HR lifecycle workflow', () => {
       expect(wizard).toContain(step)
     }
     expect(dialog).toContain('Live readiness checks')
-    expect(dialog).toContain('Approved HR documents')
+    expect(dialog).toContain('HR source references')
     expect(dialog).toContain('Permanent case timeline')
     expect(migration).toContain('private.hr_lifecycle_document_links')
     expect(migration).toContain("'hr_offboarding'")

@@ -69,6 +69,47 @@ def sensitivity_for(section: str) -> tuple[str, str, str]:
     return "hr-general", "confidential", "hr_only"
 
 
+def source_type_for(kind: str, code: str, section: str) -> str:
+    """Persist the reviewed behavior of each source; unknown additions stay closed."""
+    if kind == "training_form":
+        return "training_form"
+    if kind in {"training_admin", "training_module"}:
+        return "training_reference"
+    if kind == "document_guide":
+        return "reference_material"
+    if kind != "hr_source":
+        return "unclassified"
+
+    normalized_code = code.upper()
+    normalized_section = section.replace("\\", "/").lower()
+    reference_codes = {
+        "GS-HR-000", "GS-HR-GUIDE-100", "GS-HR-GUIDE-110", "GS-HR-GUIDE-120",
+        "GS-HR-GUIDE-130", "GS-HR-GUIDE-150", "GS-HR-GUIDE-160", "GS-HR-INT-000",
+        "GS-HR-INT-010", "GS-HR-INT-100", "GS-HR-INT-110", "GS-HR-EXP-000",
+        "GS-HR-HB-100", "GS-HR-HB-110", "GS-HR-HB-120", "GS-HR-SRC-001",
+    }
+    if (
+        normalized_code.startswith("GS-JD-")
+        or normalized_code in reference_codes
+        or normalized_section.startswith("02_guides/")
+        or normalized_section.startswith("03_interview/00_start")
+        or normalized_section.startswith("04_exp/00_start")
+        or normalized_section.startswith("04_exp/01_handbooks")
+    ):
+        return "reference_material"
+    if (
+        normalized_section.startswith("01_forms/")
+        or normalized_section == "legacy library"
+        or normalized_code == "GS-HR-INT-120"
+        or normalized_section.startswith("03_interview/02_core")
+        or normalized_section.startswith("03_interview/03_roles")
+        or normalized_section.startswith("03_interview/04_exercises")
+        or re.match(r"^04_exp/(02|03|04|05|06|07|08|09|10)_", normalized_section)
+    ):
+        return "controlled_form"
+    return "unclassified"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-root", required=True, type=Path)
@@ -113,6 +154,7 @@ def main() -> None:
         guide = crosswalk.get(row["safe_path"])
         items.append({
             "kind": "hr_source",
+            "sourceType": source_type_for("hr_source", code, row["section"]),
             "code": code,
             "title": title,
             "category": row["category"],
@@ -152,6 +194,7 @@ def main() -> None:
             related_modules = crosswalk_row.get("related_modules", "").split("; ") if crosswalk_row else []
         items.append({
             "kind": kind,
+            "sourceType": source_type_for(kind, row["code"], f"TRN/{Path(relative).parent.as_posix()}"),
             "code": row["code"],
             "title": row["title"],
             "category": row["category"],

@@ -3893,11 +3893,17 @@ async function handleHrDocumentWorkspace(
   const workspaceConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
   let payload: HrDocumentWorkspacePayload
   try {
-    payload = await callRpc<HrDocumentWorkspacePayload>(workspaceConfig, 'service_get_hr_document_workspace_v2', workspaceArguments, session.config.serviceRoleKey)
+    payload = await callRpc<HrDocumentWorkspacePayload>(workspaceConfig, 'service_get_hr_document_workspace_v3', workspaceArguments, session.config.serviceRoleKey)
   } catch (error) {
-    const v2Unavailable = error instanceof SupabaseRequestError && (error.status === 404 || error.code === 'PGRST202' || error.code === '42883')
-    if (!v2Unavailable) throw error
-    payload = await callRpc<HrDocumentWorkspacePayload>(workspaceConfig, 'service_get_hr_document_workspace', workspaceArguments, session.config.serviceRoleKey)
+    const v3Unavailable = error instanceof SupabaseRequestError && (error.status === 404 || error.code === 'PGRST202' || error.code === '42883')
+    if (!v3Unavailable) throw error
+    try {
+      payload = await callRpc<HrDocumentWorkspacePayload>(workspaceConfig, 'service_get_hr_document_workspace_v2', workspaceArguments, session.config.serviceRoleKey)
+    } catch (fallbackError) {
+      const v2Unavailable = fallbackError instanceof SupabaseRequestError && (fallbackError.status === 404 || fallbackError.code === 'PGRST202' || fallbackError.code === '42883')
+      if (!v2Unavailable) throw fallbackError
+      payload = await callRpc<HrDocumentWorkspacePayload>(workspaceConfig, 'service_get_hr_document_workspace', workspaceArguments, session.config.serviceRoleKey)
+    }
   }
   payload.documents = Array.isArray(payload.documents)
     ? payload.documents.map((item) => {
@@ -3986,19 +3992,23 @@ async function handleHrTemplateLibrary(
   if (kind && !['hr_source', 'training_admin', 'training_module', 'document_guide', 'training_form'].includes(kind)) {
     throw new ApiError('invalid_template_kind', 422, 'The document-library type is invalid.')
   }
-  const payload = await callRpc<HrTemplateLibraryPayload>(
-    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
-    'service_get_hr_system_library',
-    {
-      target_actor_id: session.context.employee_id,
-      target_category: category || null,
-      target_kind: kind || null,
-      target_page: page,
-      target_page_size: pageSize,
-      target_search: search || null,
-    },
-    session.config.serviceRoleKey,
-  )
+  const libraryArguments = {
+    target_actor_id: session.context.employee_id,
+    target_category: category || null,
+    target_kind: kind || null,
+    target_page: page,
+    target_page_size: pageSize,
+    target_search: search || null,
+  }
+  const libraryConfig = { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url }
+  let payload: HrTemplateLibraryPayload
+  try {
+    payload = await callRpc<HrTemplateLibraryPayload>(libraryConfig, 'service_get_hr_system_library_v2', libraryArguments, session.config.serviceRoleKey)
+  } catch (error) {
+    const v2Unavailable = error instanceof SupabaseRequestError && (error.status === 404 || error.code === 'PGRST202' || error.code === '42883')
+    if (!v2Unavailable) throw error
+    payload = await callRpc<HrTemplateLibraryPayload>(libraryConfig, 'service_get_hr_system_library', libraryArguments, session.config.serviceRoleKey)
+  }
   return json({ ...payload, requestId })
 }
 
@@ -4028,32 +4038,125 @@ async function handleHrSystemRegistration(
   const metadata = body.packageMetadata && typeof body.packageMetadata === 'object' && !Array.isArray(body.packageMetadata)
     ? body.packageMetadata as Record<string, unknown>
     : {}
+  const sourceType = optionalText(body.sourceType, 'Reviewed source type', 40)
+  if (sourceType && !['controlled_form', 'reference_material', 'training_form', 'training_reference', 'unclassified'].includes(sourceType)) {
+    throw new ApiError('invalid_source_type', 422, 'Choose a valid reviewed source type.')
+  }
+  const lifecycleStatus = requiredText(body.lifecycleStatus, 'Lifecycle status', 40)
+  if (lifecycleStatus !== 'draft_for_adoption') {
+    throw new ApiError('invalid_source_lifecycle', 422, 'Registration can only create a draft source. Use the reviewed adoption workflow to approve it for use.')
+  }
+  const registrationArguments = {
+    target_actor_id: actorId,
+    target_audience: 'hr_only',
+    target_category: requiredText(body.category, 'Category', 160),
+    target_code: requiredText(body.code, 'Controlled item code', 80),
+    target_document_id: documentId,
+    target_document_kind: requiredText(body.documentKind, 'Document kind', 40),
+    target_full_text: optionalText(body.fullText, 'Searchable document text', 700_000) ?? '',
+    target_guide_code: optionalText(body.guideCode, 'Guide code', 80),
+    target_lifecycle_status: lifecycleStatus,
+    target_package_metadata: metadata,
+    target_page_count: Number(body.pageCount),
+    target_purpose: requiredText(body.purpose, 'Purpose', 4000),
+    target_record_class: requiredText(body.recordClass, 'Record class', 300),
+    target_related_modules: relatedModules,
+    target_request_id: requestId,
+    target_section: requiredText(body.section, 'Section', 240),
+    target_sensitivity: requiredText(body.sensitivity, 'Sensitivity', 30),
+    target_source_filename: requiredText(body.sourceFilename, 'Source filename', 255),
+    target_source_sha256: requiredText(body.sourceSha256, 'Source checksum', 64),
+    target_title: requiredText(body.title, 'Title', 200),
+  }
+  const registrationConfig = { serviceRoleKey: config.serviceRoleKey, url: config.url }
+  let payload: Record<string, unknown>
+  try {
+    payload = await callRpc<Record<string, unknown>>(
+      registrationConfig,
+      'service_register_hr_system_item_v2',
+      { ...registrationArguments, target_source_type: sourceType ?? null },
+      config.serviceRoleKey,
+    )
+  } catch (error) {
+    const v2Unavailable = error instanceof SupabaseRequestError && (error.status === 404 || error.code === 'PGRST202' || error.code === '42883')
+    if (!v2Unavailable) throw error
+    if (registrationArguments.target_document_kind === 'training_module') {
+      throw new ApiError('training_registration_upgrade_required', 503, 'Training imports are paused briefly while the lifecycle-safe registration update finishes.')
+    }
+    payload = await callRpc<Record<string, unknown>>(
+      registrationConfig,
+      'service_register_hr_system_item',
+      registrationArguments,
+      config.serviceRoleKey,
+    )
+  }
+  return json({ ...payload, requestId })
+}
+
+async function handleHrLibraryAdoption(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+  libraryItemId: string,
+): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
+  await requireRecentHrMfa(request, session)
+  const body = await readJsonBodyWithin(request, 8 * 1024)
+  const reason = requiredText(body.reason, 'Adoption reason', 1000)
+  const expectedUpdatedAt = optionalIsoTimestamp(body.updatedAt, 'Reviewed source timestamp')
+  const expectedSha256 = requiredText(body.sourceSha256, 'Reviewed source checksum', 64)
+  if (!expectedUpdatedAt || !/^[a-f0-9]{64}$/.test(expectedSha256)) {
+    throw new ApiError('invalid_source_version', 422, 'Refresh and review the current source before adopting it.')
+  }
   const payload = await callRpc<Record<string, unknown>>(
-    { serviceRoleKey: config.serviceRoleKey, url: config.url },
-    'service_register_hr_system_item',
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_adopt_hr_library_source',
     {
-      target_actor_id: actorId,
-      target_audience: 'hr_only',
-      target_category: requiredText(body.category, 'Category', 160),
-      target_code: requiredText(body.code, 'Controlled item code', 80),
-      target_document_id: documentId,
-      target_document_kind: requiredText(body.documentKind, 'Document kind', 40),
-      target_full_text: optionalText(body.fullText, 'Searchable document text', 700_000) ?? '',
-      target_guide_code: optionalText(body.guideCode, 'Guide code', 80),
-      target_lifecycle_status: requiredText(body.lifecycleStatus, 'Lifecycle status', 40),
-      target_package_metadata: metadata,
-      target_page_count: Number(body.pageCount),
-      target_purpose: requiredText(body.purpose, 'Purpose', 4000),
-      target_record_class: requiredText(body.recordClass, 'Record class', 300),
-      target_related_modules: relatedModules,
+      target_actor_id: session.context.employee_id,
+      target_expected_sha256: expectedSha256,
+      target_expected_updated_at: expectedUpdatedAt,
+      target_library_item_id: libraryItemId,
+      target_reason: reason,
       target_request_id: requestId,
-      target_section: requiredText(body.section, 'Section', 240),
-      target_sensitivity: requiredText(body.sensitivity, 'Sensitivity', 30),
-      target_source_filename: requiredText(body.sourceFilename, 'Source filename', 255),
-      target_source_sha256: requiredText(body.sourceSha256, 'Source checksum', 64),
-      target_title: requiredText(body.title, 'Title', 200),
     },
-    config.serviceRoleKey,
+    session.config.serviceRoleKey,
+  )
+  return json({ ...payload, requestId })
+}
+
+async function handleHrLibraryRetirement(
+  request: Request,
+  environment: Environment,
+  requestId: string,
+  libraryItemId: string,
+): Promise<Response> {
+  if (request.method !== 'POST') return errorJson('method_not_allowed', requestId, 405)
+  requireHrDocumentPipeline(environment)
+  const session = await requireAuthenticatedSession(request, environment)
+  requireDocumentStudioAccess(session.context)
+  await requireRecentHrMfa(request, session)
+  const body = await readJsonBodyWithin(request, 8 * 1024)
+  const reason = requiredText(body.reason, 'Retirement reason', 1000)
+  const expectedUpdatedAt = optionalIsoTimestamp(body.updatedAt, 'Reviewed source timestamp')
+  const expectedSha256 = requiredText(body.sourceSha256, 'Reviewed source checksum', 64)
+  if (!expectedUpdatedAt || !/^[a-f0-9]{64}$/.test(expectedSha256)) {
+    throw new ApiError('invalid_source_version', 422, 'Refresh and review the current source before retiring it.')
+  }
+  const payload = await callRpc<Record<string, unknown>>(
+    { serviceRoleKey: session.config.serviceRoleKey, url: session.config.url },
+    'service_retire_hr_library_source',
+    {
+      target_actor_id: session.context.employee_id,
+      target_expected_sha256: expectedSha256,
+      target_expected_updated_at: expectedUpdatedAt,
+      target_library_item_id: libraryItemId,
+      target_reason: reason,
+      target_request_id: requestId,
+    },
+    session.config.serviceRoleKey,
   )
   return json({ ...payload, requestId })
 }
@@ -6138,6 +6241,10 @@ async function handleHrDocumentsApi(
   if (url.pathname === '/api/v1/hr/documents/library/registration') {
     return handleHrSystemRegistration(request, environment, requestId)
   }
+  const adoptLibraryItemId = url.pathname.match(/^\/api\/v1\/hr\/documents\/library\/([0-9a-f-]{36})\/adopt$/i)?.[1]
+  if (adoptLibraryItemId) return handleHrLibraryAdoption(request, environment, requestId, adoptLibraryItemId)
+  const retireLibraryItemId = url.pathname.match(/^\/api\/v1\/hr\/documents\/library\/([0-9a-f-]{36})\/retire$/i)?.[1]
+  if (retireLibraryItemId) return handleHrLibraryRetirement(request, environment, requestId, retireLibraryItemId)
   if (url.pathname === '/api/v1/hr/documents/studio') {
     return handleDocumentStudioWorkspace(request, environment, requestId)
   }

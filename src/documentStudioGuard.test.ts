@@ -70,8 +70,8 @@ describe('enterprise Document Studio safeguards', () => {
   it('ships real management and employee execution surfaces with a PDF renderer', () => {
     expect(studioPage).toContain('Signature requests')
     expect(studioPage).toContain('Use an outside PDF')
-    expect(studioPage).toContain('Working HR forms')
-    expect(studioPage).toContain('Training & guides')
+    expect(studioPage).toContain('Forms & source catalog')
+    expect(studioPage).toContain('Guides, policies & training')
     expect(workbench).toContain('Add to employee file')
     expect(workbench).toContain('createTypedSignaturePng')
     expect(studioPage).toContain('New document policy version')

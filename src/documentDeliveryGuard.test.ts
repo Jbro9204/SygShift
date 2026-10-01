@@ -76,7 +76,7 @@ describe('employee write-up and signature delivery', () => {
     expect(studio).toContain('Save or send')
     expect(studio).toContain('Use an outside PDF')
     expect(studio).toContain('No policy, template, filing section, or setup wizard is required.')
-    expect(studio).toContain('Add to an employee file')
+    expect(studio).toContain('File a finished employee record')
     expect(workbench).toContain('Send document')
     expect(workbench).toContain('createTypedSignaturePng')
     expect(studio).toContain('Send document without placed fields')

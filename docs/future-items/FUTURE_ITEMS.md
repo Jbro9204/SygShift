@@ -192,8 +192,8 @@ Completion criteria:
 ### Document Center Editing, Selection, and Preview Repairs
 
 - Priority: **Urgent**
-- Target window: Usability and fillable-field upgrade released 09/12/2026; owner completed-document roundtrip acceptance remains
-- Status: Guided Document Center, direct on-document field editing, standard PDF form-field support, employee prefill, bounded short/long field output, direct printed/native checks, signature-field targeting, responsive navigation, and consistent form styling are live; final authorized owner-session roundtrip acceptance remains
+- Target window: Comprehensive form-engine and source-lifecycle overhaul released 10/01/2026; owner completed-document roundtrip acceptance remains
+- Status: Guided field mapping, exact body-line reflow, standard PDF form-field support, employee prefill, bounded text/signature output, PDF preflight, source/record separation, responsive navigation, and controlled source approval/retirement are live; final authorized owner-session roundtrip acceptance remains
 - Added: 09/11/2026
 
 Make the Document Center reliably usable for finding an employee, completing approved HR forms, placing a full signature, and reviewing the exact finished PDF.
@@ -212,10 +212,13 @@ Required workflow:
 - [x] Keep long-form on-document editors inside the printed section boundary with internal scrolling so editing one narrative can never cover the sections and fields below it.
 - [x] Recognize printed and native checkbox targets on the page so an authorized user can check or clear the visible box directly instead of hunting through the side panel.
 - [x] Distinguish system-prefilled employee information from editable user-entered information, show what will be inserted before placement, and allow authorized corrections before producing the finished PDF.
-- [x] Replace the mixed library landing page with task-first choices and separate **Working HR forms**, **Training & guides**, **Saved records**, **Signature requests**, and permission-controlled system management.
+- [x] Replace the mixed library landing page with task-first choices and separate **Forms & source catalog**, **Guides, policies & training**, **Saved document records**, **Signature requests**, and permission-controlled system management.
 - [x] Normalize awkward all-lowercase/all-uppercase library titles for display, keep technical source details collapsed by default, and provide plain-language HR task shortcuts without altering controlled source records.
 - [x] Repair **Preview finished PDF** by giving the viewer stable completed-PDF bytes through a browser-policy-compatible path. Do not weaken the production Content Security Policy merely to permit temporary `blob:` fetches.
 - [x] Keep **Back to editing** and **Download this PDF** usable when preview fails, preserve all unsaved additions, and provide a specific retry state rather than a blank viewer.
+- [x] Classify all 537 imported source PDFs, keep every imported item draft by default, and require an authorized, MFA-backed, item-by-item approval before a form or training item can be used for new work.
+- [x] Pin approved and retired catalog items to the exact reviewed PDF version and checksum so later uploads, generic archiving, or ordinary application rollback cannot rewrite historical source evidence.
+- [x] Validate all 212 source PDFs containing flattened placeholders and all 5,689 detected bracketed fields against mapping, geometry, collision, body-text, and final-output safeguards.
 - [ ] Add end-to-end production-policy coverage for the complete flow: open a controlled HR template, search and select an employee, fill representative short and long fields, place and resize a long signature, preview the completed PDF, download it, file it to that employee, reopen it, and verify identical visible content.
 - [x] Verify light/dark mode, desktop, 14-inch laptop, browser zoom, mobile, keyboard, touch, accessibility, long employee names, empty/no-result searches, and large employee lists before release.
 
@@ -308,7 +311,7 @@ Run 4 added service-only document request and assignment workflows, exact immuta
 
 The unified Document Studio and electronic-signature control plane was completed on 09/02/2026. The production core now includes versioned policies and templates, normalized fields, canonical record associations, signer routing, consent and authentication evidence, saved signature appearances, immutable signed renditions, audit certificates, private uploads, browser preview, download, and bounded management/employee workspaces. The 09/10/2026 usability release added direct outside-document delivery: an authorized user can upload a proposal or other supported file, choose one to 25 active employees and the required action, and let SygShift automatically handle ordinary protected filing, protected-storage and SHA-256 integrity verification, standard policy selection, delivery, and tracking. OCR, true native PDF content editing, irreversible redaction, page restructuring, regulated-document automation, external signers, and organizational seals remain separate future capabilities and stay fail-closed until their own technical, legal, and recovery controls exist.
 
-The Guardianship HR Template Library v1.0 searchable index was completed on 09/02/2026. All 56 controlled GS-HR forms are cataloged once inside the HR-restricted Document Studio with plain-language search, category and audience filtering, expandable purpose/handling details, and bounded 5/10/20 pagination. Employees use the separate **My Documents** workspace only for forms and completed records assigned directly to them. The protected pipeline is available for controlled canonical source ingestion; individual source files remain **Indexed** until HR uploads and links each approved version.
+The Guardianship HR System v2.1 source package is fully ingested into the HR-restricted Document Center. As of 10/01/2026, all 537 source PDFs are linked to exact protected versions and classified as 203 controlled forms, 260 reference items, 12 training forms, and 62 training-reference items. Every imported item remains a draft until an authorized document manager reviews that exact PDF and records an MFA-backed approval reason. Approved or retired sources cannot be silently replaced or generically archived. Employees use the separate **My Documents** workspace only for documents and completed records assigned directly to them.
 
 Run 2 installed the original fail-closed server boundary for exact file-signature validation, private storage, immutable audit evidence, recent authenticator or security-key verification, and permission-scoped one-time document access. Every access token remains hashed, expires within 60 seconds, is single-use, and rechecks the current available version, active account, and effective vault permission when consumed. The former scanner queue/container was retired on 09/30/2026; private storage, recovery, checksum verification, company/shared record support, safe Office preview, and production release evidence remain.
 
@@ -453,7 +456,7 @@ Finish the remaining HR operating workflows without replacing the permanent empl
 
 Required work:
 
-- [ ] Upload, verify, approve, and link each source file represented in the indexed Guardianship HR Template Library so **Indexed** entries become controlled, usable document versions.
+- [ ] Have an authorized HR document manager review and approve each intended operational source individually. Do not bulk-approve the 537 imported PDFs or infer legal, policy, training, or workflow approval from successful ingestion.
 - [ ] Convert approved operational material into governed checklists, fillable forms, site rules, guided prompts, and required reporting workflows with named owners and version history.
 - [ ] Release the corrective-action workflow from authorized supervisors to HR, including factual records, evidence, follow-up, receipt acknowledgment that does not imply agreement, employee response, restricted visibility, and audit history.
 - [ ] Activate the remaining protected HR modules only after each module has approved operating policy, permission ownership, recent-MFA rules, canary validation, recovery evidence, and production verification.
