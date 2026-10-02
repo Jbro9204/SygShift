@@ -1,5 +1,29 @@
 # SygShift Development Log
 
+## 10/02/2026 - Document Center Usability Recovery
+
+- Recovered the existing Document Center without creating a replacement
+  system: form-like source PDFs can start a guided working copy immediately,
+  while optional governance is labeled **Mark reviewed**.
+- Reorganized completion around plain-language questions, locked mapped
+  answers to their PDF boxes, moved manual placement behind Advanced tools,
+  and repaired **Show on form** navigation on phones and high zoom.
+- Restored protected PDF preview across HR Documents, Client Files, Licensing,
+  My Documents, and SygSphere by passing secured bytes directly to the shared
+  viewer instead of refetching blocked `blob:` URLs.
+- Applied targeted migration `20261002190309`: stale availability references
+  are 3→0 and reusable sources are excluded from both permanent-record counts
+  and pages. Production data remained 542 active documents, 537 linked
+  sources, and five actual active saved records.
+- Passed 68/68 focused tests, the full 355-file / 1,923-test gate, and 80/82
+  Document Center plus Time Clock browser checks with two intentional skips.
+- Released application commit `1e93257` as Cloudflare Worker
+  `ba1cb980-4416-4362-9d78-84d718fd7d8e`; both production origins passed
+  health/readiness and exact live-asset hash parity.
+- The live owner browser reached the intact HR MFA checkpoint; no security key
+  or authenticator step was bypassed. Release detail:
+  `docs/changelogs/CHANGELOG_10-02-2026_DOCUMENT_CENTER_USABILITY_RECOVERY.md`.
+
 ## 10/02/2026 - Document Library Timestamp Repair
 
 - Repaired the Document Center response contract so valid PostgreSQL
