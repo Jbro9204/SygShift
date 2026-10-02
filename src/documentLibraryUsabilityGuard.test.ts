@@ -8,6 +8,9 @@ const library = readFileSync('src/components/HrDocumentLibrary.tsx', 'utf8')
 const libraryData = readFileSync('src/data/hrDocumentLibrary.ts', 'utf8')
 const page = readFileSync('src/pages/HrisDocumentsPage.tsx', 'utf8')
 const css = readFileSync('src/documentStudio.css', 'utf8')
+const workbench = readFileSync('src/components/DocumentWorkbench.tsx', 'utf8')
+const appCss = readFileSync('src/App.css', 'utf8')
+const recoveryMigration = readFileSync('supabase/migrations/20261002190309_repair_document_library_usability.sql', 'utf8')
 
 describe('Document Center source and record usability', () => {
   it('separates reusable sources, reference material, and permanent records', () => {
@@ -33,6 +36,26 @@ describe('Document Center source and record usability', () => {
     expect(library).toContain('aria-controls={detailsId}')
     expect(library).toContain('hidden={!expanded}')
     expect(library).toContain('id={detailsId}')
+    expect(library).toContain('Available source')
+    expect(library).toContain('Ready-to-use form catalog')
+    expect(library).toContain('Mark reviewed')
+    expect(library).toContain('<SecurePdfViewer bytes={bytes} title={title}/>')
+  })
+
+  it('defaults form completion to questions while keeping manual PDF tools advanced', () => {
+    expect(workbench).toContain('Answer the form questions')
+    expect(workbench).toContain('Form questions')
+    expect(workbench).toContain('Advanced PDF tools')
+    expect(workbench).toContain('Back to questions')
+    expect(workbench).toContain('SygShift will not guess')
+    expect(appCss).toContain('.document-workbench__main.is-guided .document-workbench__side { order: -1; }')
+  })
+
+  it('removes source PDFs from permanent-record paging and repairs source lifecycle routines', () => {
+    expect(recoveryMigration).toContain('library_item.source_document_id = document.id')
+    expect(recoveryMigration).toContain('private.hr_document_latest_availability_state')
+    expect(recoveryMigration).toContain('expected 2 archive filters')
+    expect(recoveryMigration).toContain("notify pgrst, 'reload schema'")
   })
 
   it('wraps long titles and metadata at desktop and compact widths', () => {

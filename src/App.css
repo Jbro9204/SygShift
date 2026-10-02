@@ -39734,6 +39734,21 @@ button.document-workbench__template-control.is-signature img {
 .document-workbench__guided-check { align-items: center !important; background: light-dark(#fff, #171b1f); border: 1px solid light-dark(#d3c9ba, #4a5056); border-radius: 12px; display: flex !important; font-size: 1rem; font-weight: 750; gap: 10px; justify-content: flex-start !important; min-height: 46px; padding: 10px 12px; }
 .document-workbench__guided-check input { flex: 0 0 auto; height: 20px; min-height: 20px; padding: 0; width: 20px; }
 
+.document-workbench__advanced-toggle { width: 100%; }
+
+.document-workbench__advanced-notice {
+  display: grid;
+  gap: 9px;
+  padding: 13px;
+  color: light-dark(#554b3e, #d9d0c4);
+  background: light-dark(#f8f4ec, #1d2023);
+  border: 1px solid light-dark(#d9d0c2, #41474d);
+  border-radius: 13px;
+}
+
+.document-workbench__advanced-notice > p { margin: 0; font-size: .82rem; line-height: 1.45; }
+.document-workbench__advanced-notice > button { justify-self: start; }
+
 .document-workbench__tools button {
   display: flex;
   min-height: 52px;
@@ -40013,6 +40028,8 @@ button.document-workbench__template-control.is-signature img {
   .document-workbench__history { margin-left: 0; }
   .document-workbench__toolbar > .secondary-button { width: 100%; }
   .document-workbench__main { display: flex; overflow: auto; flex-direction: column; }
+  .document-workbench__main.is-guided .document-workbench__side { order: -1; }
+  .document-workbench__main.is-guided .document-workbench__document { min-height: 28dvh; flex-basis: 28dvh; }
   .document-workbench__document { min-height: 36dvh; flex: 0 0 36dvh; padding: 10px; }
   .document-workbench__side { display: block; min-height: 380px; overflow: visible; border-top: 1px solid light-dark(#d9d2c6, #353b41); border-left: 0; }
   .document-workbench__panel { max-height: none; padding: 14px; overflow: visible; }

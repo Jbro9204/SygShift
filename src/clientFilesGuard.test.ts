@@ -34,7 +34,8 @@ describe('enterprise Client Files release guard', () => {
   it('renders protected PDFs in the shared in-app viewer instead of a browser-blocked frame', () => {
     const page = read('src/pages/ClientFilesPage.tsx')
     expect(page).toContain("import { SecurePdfViewer } from '../components/SecurePdfViewer'")
-    expect(page).toContain('<SecurePdfViewer title={document.title} url={preview.url} />')
+    expect(page).toContain('<SecurePdfViewer bytes={preview.bytes} title={document.title} />')
+    expect(page).toContain('new Uint8Array(await blob.arrayBuffer())')
     expect(page).not.toContain('<iframe')
     expect(page).toContain('getClientDocumentBlob(document.id, action)')
     expect(page).not.toContain('<span>Business reason</span><textarea')

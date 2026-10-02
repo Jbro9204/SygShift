@@ -167,7 +167,7 @@ export function sphereMessageParts(body: string, mentions: SphereMention[]): Sph
 
 const sphereFileSchema = z.object({ id: z.string(), filename: z.string(), mimeType: z.string(), sizeBytes: z.number(), messageId: z.string(), parentId: z.string().nullable(), state: z.string(), createdAt: z.string() })
 export type SphereFile = z.infer<typeof sphereFileSchema>
-export type SpherePreview = { kind: 'image' | 'pdf'; url: string } | { kind: 'text'; text: string }
+export type SpherePreview = { kind: 'image'; url: string } | { bytes: Uint8Array; kind: 'pdf' } | { kind: 'text'; text: string }
 export function sphereCanPreview(file: Pick<SphereFile, 'mimeType' | 'sizeBytes'>) {
   return (['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.mimeType) && file.sizeBytes <= 26214400) || (file.mimeType === 'text/plain' && file.sizeBytes <= 1048576)
 }
@@ -339,7 +339,8 @@ export async function spherePreview(file: SphereFile): Promise<SpherePreview> {
   const response = await sphereFileResponse(await fetch(`/api/v1/sygsphere/files/${file.id}?mode=preview`, { headers: await sphereFileHeaders(), cache: 'no-store' }))
   const blob = await response.blob()
   if (file.mimeType === 'text/plain') return { kind: 'text', text: await blob.text() }
-  return { kind: file.mimeType === 'application/pdf' ? 'pdf' : 'image', url: URL.createObjectURL(blob) }
+  if (file.mimeType === 'application/pdf') return { bytes: new Uint8Array(await blob.arrayBuffer()), kind: 'pdf' }
+  return { kind: 'image', url: URL.createObjectURL(blob) }
 }
 export async function spherePhoto(photoPath: string) {
   if (photoPath.includes('\0') || photoPath.includes('..') || photoPath.length > 700) throw new Error('The profile photo path is invalid.')

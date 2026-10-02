@@ -46,7 +46,8 @@ describe('SygSphere experience boundaries', () => {
     expect(files).toContain("'cross-origin-resource-policy': 'same-origin'")
     expect(data).toContain("file.mimeType === 'text/plain' && file.sizeBytes <= 1048576")
     expect(page).toContain("import { SecurePdfViewer } from '../components/SecurePdfViewer'")
-    expect(page).toContain('<SecurePdfViewer title={file.filename} url={preview.data.url} />')
+    expect(page).toContain('<SecurePdfViewer bytes={preview.data.bytes} title={file.filename} />')
+    expect(data).toContain("return { bytes: new Uint8Array(await blob.arrayBuffer()), kind: 'pdf' }")
     expect(page).not.toContain('<iframe src={preview.data.url}')
   })
 

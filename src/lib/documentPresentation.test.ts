@@ -95,16 +95,26 @@ describe('document library presentation', () => {
     expect(libraryAllowsWorkingCopy(template)).toBe(true)
   })
 
-  it('never starts working copies from draft or retired sources', () => {
+  it('starts guided working copies from available draft forms while retired sources remain blocked', () => {
     const draft = source({ lifecycleStatus: 'draft_for_adoption' })
     const retired = source({ lifecycleStatus: 'retired' })
     expect(presentDocumentRecord({ employeeId: null }, draft)).toMatchObject({
-      actionLabel: 'Preview draft source',
-      label: 'Draft controlled form source',
-      workingCopyAllowed: false,
+      actionLabel: 'Start guided form',
+      label: 'Available controlled form source',
+      workingCopyAllowed: true,
     })
+    expect(libraryAllowsWorkingCopy(draft)).toBe(true)
     expect(libraryAllowsWorkingCopy(retired)).toBe(false)
     expect(libraryPrimaryActionLabel(retired)).toBe('Preview retired source')
+  })
+
+  it('keeps available draft reference material read-only without requiring approval to preview it', () => {
+    const draftReference = source({ lifecycleStatus: 'draft_for_adoption', sourceType: 'reference_material' })
+    expect(presentDocumentRecord({ employeeId: null }, draftReference)).toMatchObject({
+      actionLabel: 'Preview reference source',
+      label: 'Guide, handbook, or role reference',
+      workingCopyAllowed: false,
+    })
   })
 
   it('uses explicit subtype metadata before broad hr_source or title wording', () => {

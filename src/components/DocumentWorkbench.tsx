@@ -832,6 +832,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
   const [dragActive, setDragActive] = useState(false)
   const [title, setTitle] = useState(initialTitle || initialFile?.name.replace(/\.pdf$/i, '') || '')
   const [panel, setPanel] = useState<WorkbenchPanel>(employeeOnly ? 'file' : 'edit')
+  const [advancedEditing, setAdvancedEditing] = useState(false)
   const [maximized, setMaximized] = useState(false)
   const [tool, setTool] = useState<PdfAnnotationKind | null>('text')
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null)
@@ -929,6 +930,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     setSelectedTemplateFieldId(null)
     setTemplateFields([])
     setFieldDetectionTruncated(false)
+    setAdvancedEditing(false)
     void (async () => {
       try {
         if (file.type !== 'application/pdf' && !file.name.toLocaleLowerCase().endsWith('.pdf')) throw new Error('Choose a PDF so it can be opened, completed, and signed here.')
@@ -945,7 +947,8 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
           setFieldDetectionTruncated(detected.truncated)
           setSourceBytes(bytes)
           setFieldDetectionPending(false)
-          if (detected.fields.length) setTool(null)
+          setAdvancedEditing(detected.fields.length === 0)
+          setTool(detected.fields.length ? null : 'text')
         }
       } catch (error) {
         if (!cancelled) {
@@ -1021,6 +1024,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     else container.scrollTop = top
     if (pendingDocumentFocusRef.current === field.id) {
       pendingDocumentFocusRef.current = null
+      if (typeof container.scrollIntoView === 'function') container.scrollIntoView({ behavior: 'smooth', block: 'start' })
       templateControlRefs.current.get(field.id)?.focus({ preventScroll: true })
     }
   }, [page, selectedTemplateFieldId, sheetSize.height, templateFields])
@@ -1154,7 +1158,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     const unresolved = templateFields.find((field) => field.mappingStatus === 'review')
     if (!unresolved) return
     selectTemplateField(unresolved, { focusSidebar: true })
-    throw new Error(`Review and label “${unresolved.rawLabel}” on page ${unresolved.page} before previewing, downloading, filing, or sending this form.`)
+    throw new Error(`This form has an unclear field on page ${unresolved.page} and needs a template repair. SygShift will not guess where information belongs.`)
   }
 
   async function placeTemplateSignature(field: DetectedTemplateField) {
@@ -1387,6 +1391,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     finalFileCacheRef.current = null
     closePreview()
     setSelectedAnnotationId(null)
+    setAdvancedEditing(false)
     setUndoHistory([])
     setRedoHistory([])
     idempotencyKeysRef.current.clear()
@@ -1658,7 +1663,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
       type="button"
     >Show on form</button>
 
-    if (field.mappingStatus === 'review') {
+    if (field.mappingStatus === 'review' && advancedEditing) {
       return <div className={`document-workbench__guided-field document-workbench__mapping-review${selected ? ' is-active' : ''}`} key={field.id}>
         <div className="document-workbench__guided-field-heading"><strong>Confirm this field</strong><span>Page {field.page}</span></div>
         <p>The PDF only says “{field.rawLabel}.” Give it a clear label and type so it cannot be completed incorrectly.</p>
@@ -1668,12 +1673,20 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
       </div>
     }
 
+    if (field.mappingStatus === 'review') {
+      return <div className={`document-workbench__guided-field document-workbench__mapping-review${selected ? ' is-active' : ''}`} key={field.id}>
+        <div className="document-workbench__guided-field-heading"><strong>Template repair needed</strong><span>Page {field.page}</span></div>
+        <p>This source does not identify this field clearly, so SygShift will not guess. A document manager must repair this template or provide a generated replacement.</p>
+        {jumpToField}
+      </div>
+    }
+
     if (field.controlType === 'signature') {
       return <div className={`document-workbench__guided-signature${selected ? ' is-active' : ''}`} key={field.id}>
         <div className="document-workbench__guided-field-heading"><strong>{field.label}</strong><span>Signature · Page {field.page}</span></div>
         <p>{field.description}</p>
         <div className="document-workbench__guided-actions">
-          <button className="secondary-button secondary-button--small" onClick={() => selectTemplateField(field, { focusDocument: true })} ref={registerControl} type="button">{fieldAnnotation ? 'Review signature' : 'Place signature'}</button>
+          <button className="secondary-button secondary-button--small" onClick={() => selectTemplateField(field, { focusDocument: true })} ref={registerControl} type="button">{fieldAnnotation ? 'Review signature' : 'Add signature'}</button>
           {jumpToField}
         </div>
         <small>{fieldAnnotation ? `${fieldAnnotation.text} is placed in this signature field.` : 'No signature has been placed.'}</small>
@@ -1722,7 +1735,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
     busy={busy}
     busyLabel={previewBusy ? 'Building the finished preview…' : save.isPending ? `Saving document… ${progress}%` : progress < 100 ? `Preparing document… ${progress}%` : 'Sending document…'}
     className={`document-workbench${maximized ? ' is-maximized' : ''}`}
-    description={file ? 'Type, sign, download, send, or add this PDF to an employee file from one place.' : 'Choose a PDF from your device. It opens immediately so you can work without a setup process.'}
+    description={file ? 'Answer the guided questions, review the exact completed PDF, then download, file, or send it.' : 'Choose a PDF from your device. It opens immediately so you can work without a setup process.'}
     dismissible={!busy}
     headingIcon={<FilePenLine />}
     onClose={onClose}
@@ -1754,13 +1767,13 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
         <input accept="application/pdf,.pdf" hidden onChange={(event) => chooseFile(event.target.files?.item(0) ?? null)} ref={inputRef} type="file" />
       </header>
 
-      <div className="document-workbench__main">
+      <div className={`document-workbench__main${panel === 'edit' && templateFields.length > 0 && !advancedEditing ? ' is-guided' : ''}`}>
         <section className="document-workbench__document" aria-busy={rendering} ref={viewportRef}>
           {loadError ? <p className="form-error" role="alert">{loadError}</p> : null}
           {!pdf && !loadError ? <p className="document-workbench__loading">Opening PDF…</p> : null}
           <div className={`document-workbench__sheet${tool ? ' is-placing' : ''}`} onPointerDown={(event) => void addAnnotation(event)} ref={sheetRef} style={{ height: sheetSize.height || undefined, width: sheetSize.width || undefined }}>
             <canvas hidden={!pdf || !sheetSize.width} ref={canvasRef} />
-            {panel === 'edit' ? visibleTemplateFields.map(renderTemplateControl) : null}
+            {panel === 'edit' ? (advancedEditing ? visibleTemplateFields : visibleTemplateFields.filter((field) => field.id === selectedTemplateFieldId)).map(renderTemplateControl) : null}
             {visibleAnnotations.map((annotation) => <div
               className={`document-workbench__annotation is-${annotation.kind}${annotation.templateFieldKey ? ' is-template-field' : ''}${annotation.nativeFieldName ? ' is-native-field' : ''}${selectedAnnotationId === annotation.id ? ' is-selected' : ''}`}
               key={annotation.id}
@@ -1779,19 +1792,19 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
               }}
             >
               <button
-                aria-label={`${annotation.kind === 'text' ? 'Text box' : annotation.kind}: ${annotation.text}. Drag or use arrow keys to move.`}
+                aria-label={`${annotation.kind === 'text' ? 'Text box' : annotation.kind}: ${annotation.text}${annotation.templateFieldKey || annotation.nativeFieldName ? '' : '. Drag or use arrow keys to move.'}`}
                 aria-pressed={selectedAnnotationId === annotation.id}
                 className="document-workbench__annotation-content"
-                onClick={() => { if (!annotation.nativeFieldName) { setSelectedAnnotationId(annotation.id); setSelectedTemplateFieldId(null); setTool(null); setPanel('edit') } }}
-                onKeyDown={(event) => moveAnnotationWithKeyboard(event, annotation)}
+                onClick={() => { if (!annotation.templateFieldKey && !annotation.nativeFieldName) { setSelectedAnnotationId(annotation.id); setSelectedTemplateFieldId(null); setTool(null); setPanel('edit') } }}
+                onKeyDown={(event) => { if (!annotation.templateFieldKey && !annotation.nativeFieldName) moveAnnotationWithKeyboard(event, annotation) }}
                 onPointerCancel={finishAnnotationGesture}
-                onPointerDown={(event) => annotation.nativeFieldName ? event.stopPropagation() : startAnnotationGesture(event, annotation, 'move')}
+                onPointerDown={(event) => annotation.templateFieldKey || annotation.nativeFieldName ? event.stopPropagation() : startAnnotationGesture(event, annotation, 'move')}
                 onPointerMove={continueAnnotationGesture}
                 onPointerUp={finishAnnotationGesture}
-                title="Drag to move. Arrow keys also move this item."
+                title={annotation.templateFieldKey || annotation.nativeFieldName ? 'Placed automatically from the form answer.' : 'Drag to move. Arrow keys also move this item.'}
                 type="button"
               >{annotation.kind === 'signature' ? <SignatureImage annotation={annotation} /> : annotation.nativeFieldType === 'checkbox' ? '✓' : annotation.text}</button>
-              {(annotation.kind === 'text' || annotation.kind === 'signature') && !annotation.nativeFieldName && selectedAnnotationId === annotation.id ? <button
+              {(annotation.kind === 'text' || annotation.kind === 'signature') && !annotation.templateFieldKey && !annotation.nativeFieldName && selectedAnnotationId === annotation.id ? <button
                 aria-label={annotation.kind === 'signature' ? 'Resize selected signature' : 'Resize selected text box'}
                 className="document-workbench__resize-handle"
                 onPointerCancel={finishAnnotationGesture}
@@ -1807,37 +1820,41 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
 
         <aside className="document-workbench__side">
           <div className="document-workbench__side-tabs" role="tablist" aria-label="Document actions">
-            <button aria-selected={panel === 'edit'} className={panel === 'edit' ? 'active' : ''} onClick={() => setPanel('edit')} role="tab" type="button"><FilePenLine size={17} />Edit</button>
+            <button aria-selected={panel === 'edit'} className={panel === 'edit' ? 'active' : ''} onClick={() => setPanel('edit')} role="tab" type="button"><FilePenLine size={17} />{templateFields.length && !advancedEditing ? 'Questions' : 'Edit PDF'}</button>
             <button aria-selected={panel === 'file'} className={panel === 'file' ? 'active' : ''} onClick={() => setPanel('file')} role="tab" type="button"><FolderInput size={17} />File</button>
             <button aria-selected={panel === 'send'} className={panel === 'send' ? 'active' : ''} onClick={() => setPanel('send')} role="tab" type="button"><Send size={17} />Send</button>
           </div>
 
           {panel === 'edit' ? <div className="document-workbench__panel">
-            <div><p className="eyebrow">{templateFields.length ? 'Fill on the document' : 'Add to the PDF'}</p><h3>{templateFields.length ? 'Click any highlighted box' : 'Choose a tool, then click the page'}</h3><p>{templateFields.length ? 'Type, check, choose, or sign directly on the form. The field list below remains available when you need it.' : 'Every addition can be undone or removed before you finish.'}</p></div>
-            {selectedTemplateField?.controlType === 'signature' ? <section className="document-workbench__direct-signature" aria-label={`Sign ${selectedTemplateField.label}`}>
+            <div><p className="eyebrow">{templateFields.length && !advancedEditing ? 'Complete document' : 'Advanced PDF tools'}</p><h3>{templateFields.length && !advancedEditing ? 'Answer the form questions' : 'Add or adjust PDF content'}</h3><p>{templateFields.length && !advancedEditing ? 'Your answers are placed in the correct locations automatically. Use “Show on form” whenever you want to verify a placement.' : 'Use these tools only when this copy needs text or a signature that is not part of the guided form.'}</p></div>
+            {!advancedEditing && selectedTemplateField?.controlType === 'signature' ? <section className="document-workbench__direct-signature" aria-label={`Sign ${selectedTemplateField.label}`}>
               <div className="document-workbench__selection-heading"><span><FileSignature aria-hidden="true" size={17} /></span><div><strong>{selectedTemplateAnnotation ? 'Update this signature' : 'Sign this field'}</strong><small>{selectedTemplateField.label} · Page {selectedTemplateField.page}</small></div></div>
               <label className="document-workbench__field">Signer name<input autoFocus maxLength={120} onChange={(event) => setSignatureName(event.target.value)} placeholder="Type the full name" value={signatureName} /></label>
               <div className="document-workbench__signature-preview" style={{ fontFamily: `"${signatureFamily}", cursive` }}>{signatureName || 'Your signature'}</div>
               <div className="document-workbench__signature-styles" aria-label="Signature style">{signatureFamilies.map((family) => <button aria-pressed={signatureFamily === family} className={signatureFamily === family ? 'active' : ''} key={family} onClick={() => setSignatureFamily(family)} style={{ fontFamily: `"${family}", cursive` }} type="button">{signatureName || 'Signature'}</button>)}</div>
               <div className="document-workbench__direct-signature-actions"><button className="primary-action" disabled={!signatureName.trim()} onClick={() => void placeTemplateSignature(selectedTemplateField)} type="button">{selectedTemplateAnnotation ? 'Update signature' : 'Place signature'}</button>{selectedTemplateAnnotation ? <button className="danger-button danger-button--small" onClick={() => removeTemplateSignature(selectedTemplateField)} type="button"><Trash2 size={16} />Remove</button> : null}</div>
             </section> : null}
-            {templateFields.length ? <section className="document-workbench__guided-fields" aria-label="Detected form fields">
+            {templateFields.length && !advancedEditing ? <section className="document-workbench__guided-fields" aria-label="Form questions">
               <label className="document-workbench__guided-employee">Whose form is this?<select onChange={(event) => { const nextEmployeeId = event.target.value; setEmployeeId(nextEmployeeId); if (nextEmployeeId !== 'company') fillSelectedEmployeeDetails(nextEmployeeId) }} value={employeeId}><option value="company">Not tied to one employee</option>{workspace.employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.legalName}{employee.employeeNumber ? ` · ${employee.employeeNumber}` : ''}</option>)}</select><small>Choosing an employee fills matching name, ID, title, supervisor, location, and company fields when available.</small></label>
-              <div className="document-workbench__guided-heading"><div><p className="eyebrow">Guided fields</p><h3>{templateFields.length} clearly labeled {templateFields.length === 1 ? 'field' : 'fields'}</h3><p>Fields are grouped by section and signer role. Use “Show on form” to jump to the exact location.</p></div>{workspace.employees.some((employee) => employee.id === employeeId) ? <button className="secondary-button secondary-button--small" onClick={() => fillSelectedEmployeeDetails()} type="button">Fill employee details</button> : null}</div>
+              <div className="document-workbench__guided-heading"><div><p className="eyebrow">Form questions</p><h3>{templateFields.length} {templateFields.length === 1 ? 'question' : 'questions'}</h3><p>Complete each section below. SygShift places every answer into the finished document.</p></div>{workspace.employees.some((employee) => employee.id === employeeId) ? <button className="secondary-button secondary-button--small" onClick={() => fillSelectedEmployeeDetails()} type="button">Fill employee details</button> : null}</div>
               <section aria-label="Document readiness" className={`document-workbench__readiness${reviewTemplateFields || fieldDetectionTruncated ? ' needs-review' : ''}`}>
-                <div><strong>{fieldDetectionTruncated ? 'Controlled mapping required' : reviewTemplateFields ? 'Mapping review needed' : completedTemplateFields ? 'Ready for final preview' : 'Ready to complete'}</strong><span>{completedTemplateFields} of {templateFields.length} fields completed</span></div>
-                <p>{fieldDetectionTruncated ? `This PDF exceeds the ${MAX_DETECTED_TEMPLATE_FIELDS}-field safety limit and cannot be finalized from automatic detection.` : reviewTemplateFields ? `${reviewTemplateFields} generic ${reviewTemplateFields === 1 ? 'field needs' : 'fields need'} a clear label and type before output.` : 'Preview the finished PDF before you download, file, or send it.'}</p>
+                <div><strong>{fieldDetectionTruncated ? 'Template repair required' : reviewTemplateFields ? 'Template repair needed' : completedTemplateFields ? 'Ready for final preview' : 'Ready to complete'}</strong><span>{completedTemplateFields} of {templateFields.length} answered</span></div>
+                <p>{fieldDetectionTruncated ? `This PDF exceeds the ${MAX_DETECTED_TEMPLATE_FIELDS}-question safety limit and needs a generated replacement or a managed template.` : reviewTemplateFields ? `${reviewTemplateFields} ${reviewTemplateFields === 1 ? 'question needs' : 'questions need'} template repair. SygShift will not guess where information belongs.` : 'Preview the finished PDF before you download, file, or send it.'}</p>
               </section>
               <div className="document-workbench__guided-list">{templateFieldGroups.map(([groupLabel, fields]) => <section className="document-workbench__guided-group" key={groupLabel}><header><strong>{groupLabel}</strong><span>{fields.length} {fields.length === 1 ? 'field' : 'fields'}</span></header>{fields.map(renderGuidedField)}</section>)}</div>
+              <button className="secondary-button document-workbench__advanced-toggle" onClick={() => { setAdvancedEditing(true); setSelectedTemplateFieldId(null); setTool(null) }} type="button">Advanced PDF tools</button>
             </section> : null}
-            <div className="document-workbench__tools">
+            {!templateFields.length && !advancedEditing ? <section className="document-workbench__advanced-notice"><strong>No guided questions were found</strong><p>This PDF can still be completed with the manual text, date, checkmark, and signature tools.</p><button className="secondary-button" onClick={() => { setAdvancedEditing(true); setTool('text') }} type="button">Open advanced PDF tools</button></section> : null}
+            {advancedEditing && templateFields.length ? <section className="document-workbench__advanced-notice"><strong>Advanced PDF tools</strong><p>Manual additions are available below. Guided answers stay saved while you make adjustments.</p><button className="secondary-button" onClick={() => { setAdvancedEditing(false); setTool(null); setSelectedAnnotationId(null) }} type="button">Back to questions</button></section> : null}
+            {advancedEditing && reviewTemplateFields ? <section className="document-workbench__guided-fields" aria-label="Template repair controls"><div className="document-workbench__guided-heading"><div><p className="eyebrow">Template administration</p><h3>Repair unclear fields</h3><p>These mapping controls are for document managers, not routine form completion.</p></div></div><div className="document-workbench__guided-list">{templateFieldGroups.map(([groupLabel, fields]) => fields.some((field) => field.mappingStatus === 'review') ? <section className="document-workbench__guided-group" key={groupLabel}><header><strong>{groupLabel}</strong></header>{fields.filter((field) => field.mappingStatus === 'review').map(renderGuidedField)}</section> : null)}</div></section> : null}
+            {advancedEditing ? <div className="document-workbench__tools">
               <button aria-pressed={tool === null && !selectedTemplateFieldId} className={tool === null && !selectedTemplateFieldId ? 'active' : ''} onClick={() => { setTool(null); setSelectedAnnotationId(null); setSelectedTemplateFieldId(null) }} type="button"><Move size={18} /><span>Select / move</span></button>
               <button aria-pressed={tool === 'text' && !selectedAnnotationId} className={tool === 'text' && !selectedAnnotationId ? 'active' : ''} onClick={() => { setTool('text'); setSelectedAnnotationId(null); setSelectedTemplateFieldId(null) }} type="button"><Type size={18} /><span>Text</span></button>
               <button aria-pressed={tool === 'signature'} className={tool === 'signature' ? 'active' : ''} onClick={() => { setTool('signature'); setSelectedAnnotationId(null); setSelectedTemplateFieldId(null) }} type="button"><FileSignature size={18} /><span>Signature</span></button>
               <button aria-pressed={tool === 'date'} className={tool === 'date' ? 'active' : ''} onClick={() => { setTool('date'); setSelectedAnnotationId(null); setSelectedTemplateFieldId(null) }} type="button"><CalendarDays size={18} /><span>Date</span></button>
               <button aria-pressed={tool === 'checkmark'} className={tool === 'checkmark' ? 'active' : ''} onClick={() => { setTool('checkmark'); setSelectedAnnotationId(null); setSelectedTemplateFieldId(null) }} type="button"><Check size={18} /><span>Check</span></button>
-            </div>
-            {tool === 'text' || selectedTextAnnotation ? <>
+            </div> : null}
+            {advancedEditing && (tool === 'text' || selectedTextAnnotation) ? <>
               <label className="document-workbench__field">{selectedTextAnnotation ? 'Selected text box' : 'Text to add'}<textarea maxLength={2000} onChange={(event) => selectedTextAnnotation ? updateAnnotation(selectedTextAnnotation.id, (current) => ({ ...current, text: event.target.value })) : setTextValue(event.target.value)} placeholder="Type the complete text here" rows={4} value={selectedTextAnnotation?.text ?? textValue} /></label>
               {selectedTextAnnotation ? <section className="document-workbench__text-controls" aria-label="Selected text box controls">
                 <div className="document-workbench__selection-heading"><span><Move aria-hidden="true" size={17} /></span><div><strong>Selected text box</strong><small>Drag the text to move it. Drag its gold corner to resize the box.</small></div></div>
@@ -1846,7 +1863,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
                 <div className="document-workbench__selection-actions"><button className="secondary-button secondary-button--small" onClick={() => { setSelectedAnnotationId(null); setTextValue('') }} type="button"><Type size={16} />Add another text box</button><button className="danger-button danger-button--small" onClick={() => { commitAnnotationSnapshot(annotationsRef.current.filter((item) => item.id !== selectedTextAnnotation.id)); setSelectedAnnotationId(null) }} type="button"><Trash2 size={16} />Remove text box</button></div>
               </section> : null}
             </> : null}
-            {tool === 'signature' || selectedSignatureAnnotation ? <div className="document-workbench__signature">
+            {advancedEditing && (tool === 'signature' || selectedSignatureAnnotation) ? <div className="document-workbench__signature">
               {selectedSignatureAnnotation ? <section className="document-workbench__text-controls" aria-label="Selected signature controls">
                 <div className="document-workbench__selection-heading"><span><Move aria-hidden="true" size={17} /></span><div><strong>Selected signature</strong><small>Drag the signature to move it. Drag its gold corner or use the size control below.</small></div></div>
                 <div className="document-workbench__selected-signature"><SignatureImage annotation={selectedSignatureAnnotation} /></div>
@@ -1858,7 +1875,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
                 <div className="document-workbench__signature-styles" aria-label="Signature style">{signatureFamilies.map((family) => <button aria-pressed={signatureFamily === family} className={signatureFamily === family ? 'active' : ''} key={family} onClick={() => setSignatureFamily(family)} style={{ fontFamily: `"${family}", cursive` }} type="button">{signatureName || 'Signature'}</button>)}</div>
               </>}
             </div> : null}
-            <p className="document-workbench__tip">Tip: select an item to move it. Text boxes can also wrap, resize, and be edited after placement.</p>
+            {advancedEditing ? <p className="document-workbench__tip">Tip: select an item to move it. Text boxes can also wrap, resize, and be edited after placement.</p> : null}
           </div> : null}
 
           {panel === 'file' ? <div className="document-workbench__panel">
@@ -1886,7 +1903,7 @@ export function DocumentWorkbench({ employeeOnly = false, initialEmployeeId, ini
       </div>
 
       <footer className="document-workbench__footer">
-        <div aria-live="polite">{savedMessage ? <span className="document-workbench__success"><CheckCircle2 size={18} />{savedMessage}</span> : <span>{annotations.length} {annotations.length === 1 ? 'addition' : 'additions'} · Changes are applied when you download, send, or file the PDF.</span>}</div>
+        <div aria-live="polite">{savedMessage ? <span className="document-workbench__success"><CheckCircle2 size={18} />{savedMessage}</span> : templateFields.length && !advancedEditing ? <span>{completedTemplateFields} of {templateFields.length} questions answered · Preview the finished PDF before filing, sending, or downloading.</span> : <span>{annotations.length} {annotations.length === 1 ? 'addition' : 'additions'} · Changes are applied when you download, send, or file the PDF.</span>}</div>
         {operationError || previewError ? <p className="form-error" role="alert">{previewError ?? friendlyError(operationError, 'The document action could not be completed.')}</p> : null}
         <div><button className="secondary-button" disabled={busy} onClick={onClose} type="button">Close</button><button className="secondary-button" disabled={!sourceBytes || fieldDetectionPending || !title.trim() || busy} onClick={() => void openPreview()} type="button"><Eye size={18} />Preview finished PDF</button><button className="primary-action" disabled={!sourceBytes || fieldDetectionPending || !title.trim() || busy} onClick={() => void download()} type="button"><Download size={18} />Download PDF</button></div>
       </footer>

@@ -416,12 +416,13 @@ function CredentialDocumentAccessModal({
   onClose: () => void
 }) {
   const started = useRef(false)
+  const [previewBytes, setPreviewBytes] = useState<Uint8Array | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewType, setPreviewType] = useState('')
   const [verificationOpen, setVerificationOpen] = useState(false)
   const accessMutation = useMutation({
     mutationFn: () => getLicensingDocumentBlob(document.id, action),
-    onSuccess: ({ blob, filename }) => {
+    onSuccess: async ({ blob, filename }) => {
       if (action === 'download') {
         const url = URL.createObjectURL(blob)
         const anchor = window.document.createElement('a')
@@ -433,6 +434,10 @@ function CredentialDocumentAccessModal({
         return
       }
       setPreviewType(blob.type)
+      if (blob.type === 'application/pdf') {
+        setPreviewBytes(new Uint8Array(await blob.arrayBuffer()))
+        return
+      }
       setPreviewUrl(URL.createObjectURL(blob))
     },
     onError: (error) => {
@@ -458,10 +463,10 @@ function CredentialDocumentAccessModal({
       onClose={onClose}
       title={action === 'preview' ? 'View licensing document' : 'Download licensing document'}
     >
-      {previewUrl ? (
+      {previewBytes || previewUrl ? (
         <div className="licensing-document-preview">
-          {previewType === 'application/pdf' ? <SecurePdfViewer title={document.filename} url={previewUrl} /> : null}
-          {previewType.startsWith('image/') ? <img alt={`Preview of ${document.filename}`} src={previewUrl} /> : null}
+          {previewType === 'application/pdf' && previewBytes ? <SecurePdfViewer bytes={previewBytes} title={document.filename} /> : null}
+          {previewType.startsWith('image/') && previewUrl ? <img alt={`Preview of ${document.filename}`} src={previewUrl} /> : null}
           <div className="modal-actions"><button className="secondary-button" onClick={onClose} type="button">Close preview</button></div>
         </div>
       ) : (

@@ -26,16 +26,16 @@ async function installStudioStartFixture(page: import('@playwright/test').Page, 
         <div class="document-studio__quick-actions" aria-label="Document Center quick start">
           <span aria-hidden="true" class="document-studio__quick-actions-icon">✓</span>
           <div class="document-studio__quick-actions-copy"><p class="eyebrow">Simple document work</p><h2>What would you like to do?</h2><span>Choose a starting point below. We’ll guide you through completing, reviewing, and saving or sending the document.</span></div>
-          <ol aria-label="Document work steps" class="document-studio__quick-actions-steps"><li><span>1</span><strong>Choose</strong></li><li><span>2</span><strong>Complete</strong></li><li><span>3</span><strong>Save or send</strong></li></ol>
+          <ol aria-label="Document work steps" class="document-studio__quick-actions-steps"><li><span>1</span><strong>Choose</strong></li><li><span>2</span><strong>Answer</strong></li><li><span>3</span><strong>Review &amp; finish</strong></li></ol>
         </div>
         <div class="document-studio__launch-grid">
           <button type="button"><span>↑</span><strong>Use an outside PDF</strong><small>Upload a proposal or other document and work on it now</small></button>
-          <button type="button"><span>⌕</span><strong>Browse forms &amp; source material</strong><small>Preview drafts and references; adopted forms can start a new working copy</small></button>
+          <button type="button"><span>⌕</span><strong>Start a guided form</strong><small>Choose a form, answer clear questions, and review the completed PDF</small></button>
           <button type="button"><span>▤</span><strong>File a finished employee record</strong><small>Complete a PDF and save it with the right person</small></button>
           <button type="button"><span>▱</span><strong>Open a guide, policy, or training item</strong><small>Reference material stays separate from finished records</small></button>
         </div>
-        <p class="document-studio__simple-note">Source adoption status, reference material, and finished records remain clearly separated.</p>
-        <div class="document-studio__overview"><article><span>▤</span><div><h3>Use a reviewed source</h3><p>Only adopted form sources can start a working copy. Draft and reference sources remain preview-only.</p></div></article><article><span>✓</span><div><h3>Review before finishing</h3><p>Preview the exact completed PDF, then download it, send it, or add it to an employee record.</p></div></article><article><span>◎</span><div><h3>Find finished work easily</h3><p>Finished employee and company records stay in Saved document records.</p></div></article></div>
+        <p class="document-studio__simple-note">Available forms open immediately. References remain preview-only, and finished records stay separate.</p>
+        <div class="document-studio__overview"><article><span>▤</span><div><h3>Answer clear questions</h3><p>Choose an available form and complete its labeled questions. A separate approval is not required before routine use.</p></div></article><article><span>✓</span><div><h3>Review before finishing</h3><p>Preview the exact completed PDF, then download it, send it, or add it to an employee record.</p></div></article><article><span>◎</span><div><h3>Find finished work easily</h3><p>Finished employee and company records stay in Saved document records.</p></div></article></div>
       </section>
     </main>`
   }, theme)
@@ -71,7 +71,9 @@ for (const theme of ['light', 'dark'] as const) {
     await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--ink').trim().length > 0)
     await installStudioStartFixture(page, theme)
     await expect(page.getByRole('heading', { name: 'What would you like to do?' })).toBeVisible()
-    await expect(page.locator('.document-studio__quick-actions-steps > li')).toHaveText(['1Choose', '2Complete', '3Save or send'])
+    await expect(page.locator('.document-studio__quick-actions-steps > li')).toHaveText(['1Choose', '2Answer', '3Review & finish'])
+    await expect(page.getByRole('button', { name: /Start a guided form/ })).toBeVisible()
+    await expect(page.getByText('A separate approval is not required before routine use.')).toBeVisible()
     const introduction = await page.locator('.document-studio__quick-actions').evaluate((card) => {
       const style = getComputedStyle(card)
       return { borderRadius: parseFloat(style.borderRadius), paddingLeft: parseFloat(style.paddingLeft), paddingRight: parseFloat(style.paddingRight) }

@@ -90,12 +90,18 @@ function lifecyclePresentation(
       : 'guide, handbook, or reference source'
   return {
     ...base,
-    actionLabel: retired ? 'Preview retired source' : 'Preview draft source',
+    actionLabel: retired
+      ? 'Preview retired source'
+      : base.workingCopyAllowed
+        ? base.kind === 'training_source' ? 'Start guided training form' : 'Start guided form'
+        : base.actionLabel,
     description: retired
       ? 'Retired company-library source. It remains available for historical reference but cannot start new work.'
-      : 'Draft company-library source awaiting formal adoption. It may be reviewed, but it cannot start a working copy yet.',
-    label: retired ? `Retired ${typeLabel}` : `Draft ${typeLabel}`,
-    workingCopyAllowed: false,
+      : base.workingCopyAllowed
+        ? 'Available company-library form. Start a guided working copy now; marking the source reviewed is optional and does not block routine use.'
+        : 'Available company-library reference. It may be previewed or downloaded without a separate approval step.',
+    label: retired ? `Retired ${typeLabel}` : base.workingCopyAllowed ? `Available ${typeLabel}` : base.label,
+    workingCopyAllowed: retired ? false : base.workingCopyAllowed,
   }
 }
 

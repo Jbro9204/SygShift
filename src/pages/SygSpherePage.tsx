@@ -409,13 +409,13 @@ function SphereDetails({ employeeId, conversation, onClose }: { employeeId: stri
 function FileButton({ file }: { file: SphereFile }) {
   const download = useMutation({ mutationFn: () => sphereDownload(file) })
   const preview = useMutation<SpherePreview, Error>({ mutationFn: () => spherePreview(file) })
-  useEffect(() => () => { if (preview.data && preview.data.kind !== 'text') URL.revokeObjectURL(preview.data.url) }, [preview.data])
+  useEffect(() => () => { if (preview.data?.kind === 'image') URL.revokeObjectURL(preview.data.url) }, [preview.data])
   return <div className="sphere-file-row"><div className="sphere-file"><Paperclip size={19} /><span><strong>{file.filename}</strong><small>{(file.sizeBytes / 1048576).toFixed(2)} MB</small></span><div>
     {sphereCanPreview(file) ? <button type="button" disabled={preview.isPending} onClick={() => preview.mutate()}><Eye size={17} />{preview.isPending ? 'Opening…' : 'Preview'}</button> : null}
     <button type="button" disabled={download.isPending} onClick={() => download.mutate()}><Download size={17} />{download.isPending ? 'Downloading…' : 'Download'}</button>
   </div></div><ErrorNotice error={download.error || preview.error} />
   {preview.data ? <ModalDialog title={file.filename} description="File preview" className="sphere-modal sphere-preview-modal" onClose={() => preview.reset()}><div className="sphere-preview">
-    {preview.data.kind === 'text' ? <pre>{preview.data.text}</pre> : preview.data.kind === 'image' ? <img src={preview.data.url} alt={`Preview of ${file.filename}`} /> : <SecurePdfViewer title={file.filename} url={preview.data.url} />}
+    {preview.data.kind === 'text' ? <pre>{preview.data.text}</pre> : preview.data.kind === 'image' ? <img src={preview.data.url} alt={`Preview of ${file.filename}`} /> : <SecurePdfViewer bytes={preview.data.bytes} title={file.filename} />}
     <footer><button type="button" onClick={() => preview.reset()}>Close</button><button type="button" onClick={() => download.mutate()} disabled={download.isPending}><Download size={17} />Download</button></footer>
   </div></ModalDialog> : null}</div>
 }
