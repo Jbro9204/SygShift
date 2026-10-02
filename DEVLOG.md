@@ -1,5 +1,22 @@
 # SygShift Development Log
 
+## 10/02/2026 - Document Library Timestamp Repair
+
+- Repaired the Document Center response contract so valid PostgreSQL
+  `timestamptz` values with explicit offsets no longer reject the complete
+  source library.
+- Preserved six-digit PostgreSQL precision through the exact approval and
+  retirement concurrency token instead of truncating it through a JavaScript
+  `Date`.
+- Added Worker-side rolling compatibility, fail-closed handling for an invalid
+  optional item timestamp, and a plain operational message for any future
+  required-response mismatch.
+- No database or production-data change is required. Focused coverage passed
+  20/20, the full gate passed 1,919 tests with one intentional skip, and the
+  Document Center plus actual Time Clock browser matrix passed 62/62.
+- Release detail:
+  `docs/changelogs/CHANGELOG_10-02-2026_DOCUMENT_LIBRARY_TIMESTAMP_REPAIR.md`.
+
 ## 10/01/2026 - Document Center Usability Overhaul
 
 - Rebuilt the existing Document Center form engine around semantic fields,

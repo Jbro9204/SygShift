@@ -4,6 +4,13 @@ import { documentApiRequest, parseApiError } from './hrDocuments'
 const audienceSchema = z.enum(['all_employees', 'supervisors_and_hr', 'hr_only'])
 const sensitivitySchema = z.enum(['standard', 'restricted', 'highly_restricted'])
 const documentKindSchema = z.enum(['hr_source', 'training_admin', 'training_module', 'document_guide', 'training_form'])
+const libraryTimestampSchema = z.string()
+  .datetime({ offset: true })
+  // Preserve PostgreSQL microseconds because this value is also the source
+  // version token for approval and retirement concurrency checks.
+  .transform((value) => value.replace(/[+-]00:00$/u, 'Z'))
+  .optional()
+  .catch(undefined)
 
 export const libraryItemSchema = z.object({
   id: z.string().uuid(),
@@ -20,7 +27,7 @@ export const libraryItemSchema = z.object({
   // Presentation code treats an omitted or unclassified value as preview-only.
   sourceType: z.enum(['controlled_form', 'reference_material', 'training_form', 'training_reference', 'unclassified']).optional(),
   sourceSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(),
-  updatedAt: z.string().datetime().optional(),
+  updatedAt: libraryTimestampSchema,
   sourceDocumentId: z.string().uuid().nullable(),
   availability: z.enum(['cataloged', 'available']),
   documentKind: documentKindSchema,
@@ -84,7 +91,11 @@ export async function getHrDocumentLibrary(
   if (filters.search?.trim()) query.set('search', filters.search.trim())
   const response = await documentApiRequest(`/api/v1/hr/documents/library?${query.toString()}`)
   if (!response.ok) throw await parseApiError(response, 'The document library could not be loaded.')
-  return libraryWorkspaceSchema.parse(await response.json())
+  const result = libraryWorkspaceSchema.safeParse(await response.json())
+  if (!result.success) {
+    throw new Error('The document library returned incomplete information. Refresh the page and try again.')
+  }
+  return result.data
 }
 
 export async function adoptHrDocumentLibrarySource(input: { libraryItemId: string; reason: string; sourceSha256: string; updatedAt: string }): Promise<void> {

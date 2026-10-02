@@ -89,6 +89,8 @@ describe('HR document source metadata boundary', () => {
     expect(registrationHandler).toContain("'service_adopt_hr_library_source'")
     expect(registrationHandler).toContain('target_expected_sha256')
     expect(registrationHandler).toContain('target_expected_updated_at')
+    expect(registrationHandler).toContain("optionalExactIsoTimestamp(body.updatedAt, 'Reviewed source timestamp')")
+    expect(worker).toMatch(/function optionalExactIsoTimestamp[\s\S]*return text/)
   })
 
   it('pins the exact clean PDF version and blocks silent adopted-source replacement', () => {

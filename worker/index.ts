@@ -34,6 +34,7 @@ import {
 import { parseSygSphereCommsWebSocketRouteReference } from './comms/websocketTicket'
 import { buildSygSphereCommsUsageResponse } from './comms/usageContract'
 import { parseSygSphereCommsCommand } from '../shared/sygsphere-communications/v1/contract'
+import { isHrDocumentSourceVersionTimestamp, normalizeHrDocumentLibraryTimestamps } from './hrDocumentLibraryPayload'
 
 export { TenantCommsDurableObject }
 
@@ -4009,7 +4010,7 @@ async function handleHrTemplateLibrary(
     if (!v2Unavailable) throw error
     payload = await callRpc<HrTemplateLibraryPayload>(libraryConfig, 'service_get_hr_system_library', libraryArguments, session.config.serviceRoleKey)
   }
-  return json({ ...payload, requestId })
+  return json({ ...normalizeHrDocumentLibraryTimestamps(payload), requestId })
 }
 
 async function handleHrSystemRegistration(
@@ -4106,7 +4107,7 @@ async function handleHrLibraryAdoption(
   await requireRecentHrMfa(request, session)
   const body = await readJsonBodyWithin(request, 8 * 1024)
   const reason = requiredText(body.reason, 'Adoption reason', 1000)
-  const expectedUpdatedAt = optionalIsoTimestamp(body.updatedAt, 'Reviewed source timestamp')
+  const expectedUpdatedAt = optionalExactIsoTimestamp(body.updatedAt, 'Reviewed source timestamp')
   const expectedSha256 = requiredText(body.sourceSha256, 'Reviewed source checksum', 64)
   if (!expectedUpdatedAt || !/^[a-f0-9]{64}$/.test(expectedSha256)) {
     throw new ApiError('invalid_source_version', 422, 'Refresh and review the current source before adopting it.')
@@ -4140,7 +4141,7 @@ async function handleHrLibraryRetirement(
   await requireRecentHrMfa(request, session)
   const body = await readJsonBodyWithin(request, 8 * 1024)
   const reason = requiredText(body.reason, 'Retirement reason', 1000)
-  const expectedUpdatedAt = optionalIsoTimestamp(body.updatedAt, 'Reviewed source timestamp')
+  const expectedUpdatedAt = optionalExactIsoTimestamp(body.updatedAt, 'Reviewed source timestamp')
   const expectedSha256 = requiredText(body.sourceSha256, 'Reviewed source checksum', 64)
   if (!expectedUpdatedAt || !/^[a-f0-9]{64}$/.test(expectedSha256)) {
     throw new ApiError('invalid_source_version', 422, 'Refresh and review the current source before retiring it.')
@@ -4541,6 +4542,15 @@ function optionalIsoTimestamp(value: unknown, field: string): string | null {
   const date = new Date(text)
   if (Number.isNaN(date.getTime())) throw new ApiError('invalid_document_timestamp', 422, `${field} must be a valid date and time.`)
   return date.toISOString()
+}
+
+function optionalExactIsoTimestamp(value: unknown, field: string): string | null {
+  if (value === null || value === undefined || value === '') return null
+  const text = requiredText(value, field, 50)
+  if (!isHrDocumentSourceVersionTimestamp(text)) {
+    throw new ApiError('invalid_document_timestamp', 422, `${field} must be a valid date and time.`)
+  }
+  return text
 }
 
 function signatureAppearanceBytes(value: unknown): { bytes: Uint8Array, mimeType: 'image/png' | 'image/jpeg' } {
