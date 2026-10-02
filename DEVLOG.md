@@ -14,6 +14,11 @@
 - No database or production-data change is required. Focused coverage passed
   20/20, the full gate passed 1,919 tests with one intentional skip, and the
   Document Center plus actual Time Clock browser matrix passed 62/62.
+- Released application commit `23e6137` as Cloudflare Worker
+  `5681178e-e895-4dfd-949a-b0c0e92f6023`; both production origins passed
+  health/readiness and exact live-asset hash parity.
+- Authenticated production acceptance confirmed saved records and all 231 HR
+  source items load without the prior datetime-validation failure.
 - Release detail:
   `docs/changelogs/CHANGELOG_10-02-2026_DOCUMENT_LIBRARY_TIMESTAMP_REPAIR.md`.
 

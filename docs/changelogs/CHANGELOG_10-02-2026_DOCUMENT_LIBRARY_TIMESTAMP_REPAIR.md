@@ -1,7 +1,7 @@
 # Document Library Timestamp Repair
 
 Date: 10/02/2026
-Status: Implementation verified; production deployment pending
+Status: Released to production
 
 ## Outcome
 
@@ -62,12 +62,21 @@ missing or malformed.
 - Document Center and mandatory actual-component Time Clock browser matrix:
   **62/62 passed** across desktop and mobile.
 - `git diff --check`: passed.
+- Authenticated production verification confirmed the Document Center opens,
+  saved records load, and the Forms & Source Catalog renders all **231 source
+  items** without the prior raw datetime-validation failure.
 
 ## Release status
 
-- Application commit: pending.
-- Cloudflare Worker version: pending.
-- Production health/readiness and live-asset verification: pending.
+- Application commit: `23e6137`.
+- Cloudflare Worker version: `5681178e-e895-4dfd-949a-b0c0e92f6023`.
+- Both `app.sygilant.us` and `sygshift.sygilant.workers.dev` returned HTTP 200
+  for health and readiness, with readiness reporting ready.
+- Both production origins served `/assets/index-CxWo8_OL.js` with exact
+  SHA-256 parity:
+  `719649218D62D9865C22FEC54BDDFCC48C54633FBEC72C293C9D9681F7A3E3AA`.
+- Anonymous Document Library access remained rejected with HTTP 401 on both
+  origins.
 - Pre-release rollback tag:
   `rollback/pre-document-library-timestamp-repair-20261002` at `508d543`.
 
