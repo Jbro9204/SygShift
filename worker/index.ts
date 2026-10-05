@@ -9333,12 +9333,21 @@ export default {
       const config = configuredSupabase(environment)
       if (!config) throw new Error('Scheduled timekeeping automation is missing its protected data configuration.')
       const jobRunId = crypto.randomUUID()
-      const automation = await callRpc<Record<string, unknown>>(
-        { serviceRoleKey: config.serviceRoleKey, url: config.url },
-        'service_run_timekeeping_automation',
-        { target_job_run_id: jobRunId },
-        config.serviceRoleKey,
-      )
+      let automation: Record<string, unknown>
+      try {
+        automation = await callRpc<Record<string, unknown>>(
+          { serviceRoleKey: config.serviceRoleKey, url: config.url },
+          'service_run_timekeeping_automation',
+          { target_job_run_id: jobRunId },
+          config.serviceRoleKey,
+        )
+      } catch (error) {
+        automation = {
+          status: 'failed',
+          message: error instanceof Error ? error.message : 'Unknown timekeeping automation failure',
+        }
+        console.error(JSON.stringify({ event: 'timekeeping_automation_failed', ...automation }))
+      }
       const denverTimeParts = new Intl.DateTimeFormat('en-US', {
         hour: '2-digit',
         hourCycle: 'h23',
@@ -9371,12 +9380,21 @@ export default {
           reason: 'five_minute_safety_interval',
         }
       }
-      const alertLifecycle = await callRpc<Record<string, unknown>>(
-        { serviceRoleKey: config.serviceRoleKey, url: config.url },
-        'service_reconcile_operational_alert_lifecycle',
-        { target_full_reconciliation: fullReconciliation },
-        config.serviceRoleKey,
-      )
+      let alertLifecycle: Record<string, unknown>
+      try {
+        alertLifecycle = await callRpc<Record<string, unknown>>(
+          { serviceRoleKey: config.serviceRoleKey, url: config.url },
+          'service_reconcile_operational_alert_lifecycle',
+          { target_full_reconciliation: fullReconciliation },
+          config.serviceRoleKey,
+        )
+      } catch (error) {
+        alertLifecycle = {
+          status: 'failed',
+          message: error instanceof Error ? error.message : 'Unknown operational-alert lifecycle failure',
+        }
+        console.error(JSON.stringify({ event: 'operational_alert_lifecycle_reconciliation_failed', ...alertLifecycle }))
+      }
       const patrol = await callRpc<Record<string, unknown>>(
         { serviceRoleKey: config.serviceRoleKey, url: config.url },
         'service_reconcile_patrol_obligations',

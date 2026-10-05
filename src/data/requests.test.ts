@@ -183,6 +183,7 @@ describe('request center contracts', () => {
 
   it('normalizes a legacy null Flex flag without rejecting the coverage worklist', () => {
     const parsed = parseCallOffCoverageWorkspace({
+      actionable: true,
       callOff: {
         id: '70000000-0000-4000-8000-000000000001',
         employeeId: employee.id,
@@ -225,6 +226,28 @@ describe('request center contracts', () => {
 
     expect(parsed.candidates).toHaveLength(1)
     expect(parsed.candidates[0].isFlex).toBe(false)
+    expect(parsed.actionable).toBe(true)
+  })
+
+  it('fails closed when an older coverage payload omits its lifecycle decision', () => {
+    const parsed = parseCallOffCoverageWorkspace({
+      callOff: {
+        id: '70000000-0000-4000-8000-000000000001', employeeId: employee.id,
+        employeeName: 'Alex Rivera', reason: null, reportedAt: '2099-07-01T12:00:00.000Z', replacementNeeded: true,
+      },
+      shift: {
+        id: shift.id, startsAt: shift.starts_at, endsAt: shift.ends_at, timeZone: shift.time_zone,
+        title: 'Main entrance', location: 'North Campus', requiresArmed: false, isOpen: false,
+      },
+      coverageCase: null,
+      candidates: [],
+      actions: [],
+      attendancePolicy: { pointsActive: false, message: 'No point policy is active.' },
+      patrolFallback: { available: false, message: 'Coverage is closed.' },
+    })
+
+    expect(parsed.actionable).toBe(false)
+    expect(parsed.nonActionableReason).toBeNull()
   })
 
   it('replaces malformed coverage payload details with a safe user message', () => {

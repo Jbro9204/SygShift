@@ -76,6 +76,8 @@ describe('Accountability absence coverage handoff', () => {
       coverageRequired: true,
     })
     mocks.getCallOffCoverageWorkspace.mockReset().mockResolvedValue({
+      actionable: true,
+      nonActionableReason: null,
       callOff: {
         id: callOffId,
         employeeId,

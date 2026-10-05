@@ -87,6 +87,9 @@ const alertSchema = z.object({
   directPath: z.string().nullable(),
   createdAt: z.string(),
   acknowledgedAt: z.string().nullable(),
+  active: z.boolean().optional(),
+  lifecycleStatus: z.enum(['active_operations', 'payroll_review', 'resolved']).optional(),
+  liveUntil: z.string().nullable().optional(),
 })
 
 const manualEntryHistorySchema = z.object({
@@ -216,6 +219,33 @@ export type EmployeeCallOffReport = z.infer<typeof callOffReportSchema>
 export type TimeOperationsReports = z.infer<typeof reportsSchema>
 export type OperationalReportKey = z.infer<typeof operationalReportKeySchema>
 export type OperationalReportPage = z.infer<typeof reportPageSchema>
+
+export function isOperationalAlertLive(
+  alert: OperationalAlert,
+  serverTimestamp?: string,
+): boolean {
+  if (alert.active === false) return false
+  if (alert.lifecycleStatus && alert.lifecycleStatus !== 'active_operations') return false
+  if (alert.alertType === 'employee_call_off' && !alert.liveUntil) return false
+  if (!alert.liveUntil) return true
+  if (!serverTimestamp) return false
+
+  const serverTime = Date.parse(serverTimestamp)
+  const liveUntil = Date.parse(alert.liveUntil)
+  return Number.isFinite(serverTime) && Number.isFinite(liveUntil) && serverTime < liveUntil
+}
+
+export function isCallOffReportCurrent(
+  report: Pick<EmployeeCallOffReport, 'endsAt' | 'replacementNeeded' | 'resolvedAt'>,
+  serverTimestamp?: string,
+): boolean {
+  if (!report.replacementNeeded || report.resolvedAt || !serverTimestamp) return false
+
+  const serverTime = Date.parse(serverTimestamp)
+  const shiftEnd = Date.parse(report.endsAt)
+  const liveUntil = shiftEnd + (60 * 60 * 1000)
+  return Number.isFinite(serverTime) && Number.isFinite(shiftEnd) && serverTime < liveUntil
+}
 
 export function formatTimeOperationsPostLabel(
   post: TimeOperationsWorkspace['posts'][number],

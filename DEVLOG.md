@@ -1,5 +1,24 @@
 # SygShift Development Log
 
+## 10/05/2026 - Call-Off Alert Lifecycle and Automatic Retirement
+
+- Added one authoritative lifecycle for call-off alerts, notifications,
+  coverage work, and retained audit history, including automatic retirement
+  one hour after the scheduled shift ends.
+- Reconciled production from 8 stale active call-off alerts, 59 stale
+  actionable notifications, and 2 stale Patrol-review cases to zero without
+  deleting any source or history row; call-off reports remained 15 and actions
+  increased from 22 to 31.
+- Added fail-closed Request Center and Time Operations handling, raw-write and
+  claim-time guards, generation-safe reopening, Worker job isolation, and a
+  rollback-only database lifecycle regression.
+- Passed the linked production-schema rehearsal, exact-target dry run,
+  installed SQL regression, 9-file / 101-test focused suite, full 1,949-test
+  gate, and 42/42 actual-component desktop/mobile Time Clock matrix.
+- Applied targeted migration `20261005123949`; application deployment is in
+  progress. Release detail:
+  `docs/changelogs/CHANGELOG_10-05-2026_CALL_OFF_ALERT_LIFECYCLE.md`.
+
 ## 10/02/2026 - Document Center Usability Recovery
 
 - Recovered the existing Document Center without creating a replacement

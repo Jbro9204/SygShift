@@ -1222,6 +1222,71 @@ describe('Cloudflare Worker boundary', () => {
     vi.unstubAllGlobals()
   })
 
+  it.each([
+    {
+      failedRpc: 'service_run_timekeeping_automation',
+      expectedEvent: 'timekeeping_automation_failed',
+      expectedSummaryKey: 'automation',
+    },
+    {
+      failedRpc: 'service_reconcile_operational_alert_lifecycle',
+      expectedEvent: 'operational_alert_lifecycle_reconciliation_failed',
+      expectedSummaryKey: 'alertLifecycle',
+    },
+  ])('continues call-off lifecycle and delivery safeguards when $failedRpc fails', async ({
+    expectedEvent,
+    expectedSummaryKey,
+    failedRpc,
+  }) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes(`/rpc/${failedRpc}`)) {
+        return new Response(JSON.stringify({ message: `${failedRpc} failed` }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify([]), { headers: { 'content-type': 'application/json' } })
+    })
+    const scheduledWork: Promise<unknown>[] = []
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', fetchMock)
+
+    await worker.scheduled(
+      { cron: '* * * * *', scheduledTime: Date.UTC(2026, 9, 5, 15, 10) },
+      environment(new Response('asset'), {
+        ...configuredEnvironment,
+        EMAIL: { send: vi.fn() },
+      }),
+      { waitUntil: (promise: Promise<unknown>) => { scheduledWork.push(promise) } },
+    )
+
+    await expect(Promise.all(scheduledWork)).resolves.toBeDefined()
+    const calledUrls = fetchMock.mock.calls.map(([input]) => String(input))
+    const callIndex = (rpc: string) => calledUrls.findIndex((url) => url.includes(`/rpc/${rpc}`))
+    expect(callIndex('service_run_timekeeping_automation')).toBeGreaterThanOrEqual(0)
+    expect(callIndex('service_reconcile_operational_alert_lifecycle')).toBeGreaterThan(callIndex('service_run_timekeeping_automation'))
+    expect(callIndex('service_process_shift_coverage_notification_waves')).toBeGreaterThan(callIndex('service_reconcile_operational_alert_lifecycle'))
+    expect(callIndex('service_claim_notification_batch')).toBeGreaterThan(callIndex('service_process_shift_coverage_notification_waves'))
+    expect(errorSpy.mock.calls.some(([value]) => String(value).includes(`"event":"${expectedEvent}"`))).toBe(true)
+
+    const scheduledSummary = infoSpy.mock.calls
+      .map(([value]) => {
+        try {
+          return JSON.parse(String(value)) as Record<string, unknown>
+        } catch {
+          return null
+        }
+      })
+      .find((value) => value && value.cron === '* * * * *')
+    expect(scheduledSummary?.[expectedSummaryKey]).toEqual(expect.objectContaining({ status: 'failed' }))
+
+    errorSpy.mockRestore()
+    infoSpy.mockRestore()
+    vi.unstubAllGlobals()
+  })
+
   it('leaves legacy HR uploads unavailable when recovery cannot re-read their private object', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)

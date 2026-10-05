@@ -651,6 +651,7 @@ export function CoverageWorkflowDialog({
     [search, showUnavailable, workspace?.candidates],
   )
   const selectedCandidate = workspace?.candidates.find((candidate) => candidate.id === replacementEmployeeId) ?? null
+  const actionable = workspace?.actionable === true
   const completed = workspace?.coverageCase?.status === 'assigned' || workspace?.coverageCase?.status === 'no_replacement' || workspace?.coverageCase?.status === 'closed'
   const selectedCandidateReady = Boolean(selectedCandidate?.eligible)
     && (!selectedCandidate?.requiresOvertimeApproval || allowOvertime)
@@ -684,7 +685,13 @@ export function CoverageWorkflowDialog({
     >
       {workspaceQuery.isPending ? <DataStatePanel icon={ClipboardCheck} title="Loading the shift"><p>Checking the original assignment and qualified coverage options.</p></DataStatePanel> : null}
       {workspaceQuery.isError ? <DataStatePanel icon={ShieldAlert} title="Coverage review unavailable" tone="error"><p>{workspaceQuery.error.message}</p></DataStatePanel> : null}
-      {workspace && completed ? (
+      {workspace && !actionable ? (
+        <div className="coverage-complete">
+          <CircleOff aria-hidden="true" size={28} />
+          <div><h3>This coverage window is closed</h3><p>{workspace.nonActionableReason || 'This call-off no longer requires live replacement coverage. Its history is still available for review.'}</p></div>
+          <button className="primary-action" onClick={onClose} type="button">Done</button>
+        </div>
+      ) : workspace && completed ? (
         <div className="coverage-complete">
           <CheckCircle2 aria-hidden="true" size={28} />
           <div><h3>This coverage case is complete</h3><p>The original assignment and every management action remain in the audit history.</p></div>

@@ -62,6 +62,8 @@ vi.mock('../data/requests', async (loadOriginal) => ({
 
 function coverageWorkspace() {
   return {
+    actionable: true,
+    nonActionableReason: null,
     callOff: {
       id: callOffId,
       employeeId,

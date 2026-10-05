@@ -112,6 +112,8 @@ function timeOffRequest(overrides: Record<string, unknown> = {}) {
 
 function coverageWorkspace() {
   return {
+    actionable: true,
+    nonActionableReason: null,
     callOff: {
       id: callOffId,
       employeeId: absentEmployeeId,
@@ -178,7 +180,7 @@ describe('Requests absence coverage workflow', () => {
       recentRequests: [],
     })
     dataMocks.getCallOffCoverageWorkspace.mockResolvedValue(coverageWorkspace())
-    dataMocks.resolveCallOffCoverage.mockResolvedValue({
+    dataMocks.resolveCallOffCoverage.mockReset().mockResolvedValue({
       coverageCaseId: '50000000-0000-4000-8000-000000000001',
       status: 'assigned',
       coverageMode: 'assigned_guard',
@@ -491,6 +493,26 @@ describe('Requests absence coverage workflow', () => {
       expect.anything(),
     ))
     expect(await screen.findByText('Replacement assigned and original schedule preserved.')).toBeVisible()
+  })
+
+  it('shows history without coverage actions after the live response window closes', async () => {
+    dataMocks.getCallOffCoverageWorkspace.mockResolvedValue({
+      ...coverageWorkspace(),
+      actionable: false,
+      nonActionableReason: 'The live coverage window ended one hour after the scheduled shift.',
+      candidates: [],
+      patrolFallback: { available: false, message: 'Coverage is closed.' },
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Review coverage' }))
+
+    expect(await screen.findByRole('heading', { name: 'This coverage window is closed' })).toBeVisible()
+    expect(screen.getByText('The live coverage window ended one hour after the scheduled shift.')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save coverage plan' })).not.toBeInTheDocument()
+    expect(dataMocks.resolveCallOffCoverage).not.toHaveBeenCalled()
   })
 
   it('shows every qualified non-Flex employee after the Flex recommendations', async () => {

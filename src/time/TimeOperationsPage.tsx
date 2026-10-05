@@ -17,6 +17,8 @@ import {
   formatTimeOperationsPostLabel,
   getMissingTimeRequestWorkspace,
   getTimekeepingOperationsWorkspace,
+  isCallOffReportCurrent,
+  isOperationalAlertLive,
   reportEmployeeCallOff,
   resolveOperationalException,
   reviewMissingTimeRequest,
@@ -132,8 +134,14 @@ export function TimeOperationsPage() {
     ownRequests.filter((request) => request.status === 'submitted' || request.status === 'under_review').length,
     ownEventCorrections.length,
   )
-  const urgent = workspace.alerts.filter((alert) => alert.priority === 'urgent' && !alert.acknowledgedAt)
-  const activeCallOffReports = workspace.callOffReports.filter((report) => !report.resolvedAt)
+  const urgent = workspace.alerts.filter((alert) => (
+    isOperationalAlertLive(alert, workspace.serverTimestamp)
+    && alert.priority === 'urgent'
+    && !alert.acknowledgedAt
+  ))
+  const activeCallOffReports = workspace.callOffReports.filter((report) => (
+    isCallOffReportCurrent(report, workspace.serverTimestamp)
+  ))
 
   return (
     <main className="page page--sygshift-time">
@@ -216,7 +224,7 @@ export function TimeOperationsPage() {
 
       {workspace.canViewOperations ? (
         <section className="time-operations-panel">
-          <div className="time-operations-panel__heading"><div><p className="eyebrow">Attendance history</p><h2>Active sick and call-off records</h2></div><TimeStatusBadge tone={activeCallOffReports.length ? 'warning' : 'good'}>{activeCallOffReports.length ? `${activeCallOffReports.length} active` : 'Clear'}</TimeStatusBadge></div>
+          <div className="time-operations-panel__heading"><div><p className="eyebrow">Active attendance</p><h2>Current sick and call-off records</h2></div><TimeStatusBadge tone={activeCallOffReports.length ? 'warning' : 'good'}>{activeCallOffReports.length ? `${activeCallOffReports.length} active` : 'Clear'}</TimeStatusBadge></div>
           {activeCallOffReports.length ? activeCallOffReports.map((report) => (
             <article className="time-workflow-row time-workflow-row--wide" key={report.id}>
               <div><strong>{report.employeeName}</strong><span>{readableStatus(report.callOffType)} · {report.location}</span><small>{formatOperationalDateTime(report.startsAt, { timeZone: report.timeZone })} – {formatOperationalDateTime(report.endsAt, { timeZone: report.timeZone })} · received by {report.receivedBy || 'authorized user'}</small></div>

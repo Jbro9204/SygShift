@@ -13,7 +13,7 @@ import {
 } from '../app/internalNavigation'
 import { canAccessRoute, canLaunchSygilantPlatform, hasAnyEffectivePermission, resolveAuthorizedLandingRoute } from '../app/accessPolicy'
 import { getActiveAnnouncementBanners, type AnnouncementBanner } from '../data/announcements'
-import { getTimekeepingOperationsWorkspace } from '../data/timeOperations'
+import { getTimekeepingOperationsWorkspace, isOperationalAlertLive } from '../data/timeOperations'
 import { getRequiredActionCheckpoint } from '../data/actionCenter'
 import {
   authSessionIdFromAccessToken,
@@ -245,7 +245,11 @@ export function AppShell() {
       })
 
     const attendanceAlerts = (operationalAlertQuery.data?.alerts ?? [])
-      .filter((alert) => !alert.acknowledgedAt && (alert.priority === 'urgent' || alert.priority === 'high'))
+      .filter((alert) => (
+        isOperationalAlertLive(alert, operationalAlertQuery.data?.serverTimestamp)
+        && !alert.acknowledgedAt
+        && (alert.priority === 'urgent' || alert.priority === 'high')
+      ))
       .flatMap((alert) => {
         const directPath = alert.directPath ?? '/time/operations'
         if (!sessionContext || !canAccessRoute(routePathFromHref(directPath), sessionContext)) return []
@@ -275,7 +279,7 @@ export function AppShell() {
         ctaLabel: 'Open Time & Attendance',
       },
     ]
-  }, [activeBannerQuery.data, operationalAlertQuery.data?.alerts, payrollReminderWeek.fromLabel, payrollReminderWeek.throughLabel, sessionContext, showPayrollReminder])
+  }, [activeBannerQuery.data, operationalAlertQuery.data?.alerts, operationalAlertQuery.data?.serverTimestamp, payrollReminderWeek.fromLabel, payrollReminderWeek.throughLabel, sessionContext, showPayrollReminder])
 
   const visibleNavigationGroups = navigationGroups
     .map((group) => ({

@@ -10,10 +10,30 @@ import { AppShell } from './AppShell'
 const employeeId = 'a25a5f5f-45b6-4e43-87a6-79298ed9347f'
 const accessToken = 'header.eyJleHAiOjQxMDI0NDQ4MDAsInNlc3Npb25faWQiOiI3YzIxNzAxYS01NmVkLTRjNjQtOGM0Ny1jOWRjNTE2ZTQzOTgifQ.signature'
 
+type OperationalWorkspaceFixture = {
+  serverTimestamp: string
+  alerts: Array<{
+    id: string
+    alertType: string
+    priority: 'normal' | 'high' | 'urgent'
+    title: string
+    summary: string
+    employeeId: string | null
+    shiftId: string | null
+    directPath: string | null
+    createdAt: string
+    acknowledgedAt: string | null
+    active?: boolean
+    lifecycleStatus?: 'active_operations' | 'payroll_review' | 'resolved'
+    liveUntil?: string | null
+  }>
+}
+
 const shared = vi.hoisted(() => ({
   activeAccessToken: null as string | null,
   browserListener: null as ((action: 'cleared' | 'updated') => void) | null,
   hydrateResult: null as null | { accessToken: string; expiresAt: number; refreshToken: string; scope: 'platform' | 'sygsphere' },
+  operationalWorkspace: { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' } as OperationalWorkspaceFixture,
   scope: null as null | 'platform' | 'sygsphere',
 }))
 
@@ -83,7 +103,10 @@ vi.mock('../data/auth', () => ({
 }))
 
 vi.mock('../data/announcements', () => ({ getActiveAnnouncementBanners: vi.fn(async () => []) }))
-vi.mock('../data/timeOperations', () => ({ getTimekeepingOperationsWorkspace: vi.fn(async () => ({ alerts: [] })) }))
+vi.mock('../data/timeOperations', async (loadOriginal) => ({
+  ...await loadOriginal<typeof import('../data/timeOperations')>(),
+  getTimekeepingOperationsWorkspace: vi.fn(async () => shared.operationalWorkspace),
+}))
 vi.mock('../data/actionCenter', () => ({
   getRequiredActionCheckpoint: vi.fn(async () => ({
     blocking: false,
@@ -132,6 +155,7 @@ beforeEach(() => {
   shared.activeAccessToken = null
   shared.browserListener = null
   shared.hydrateResult = null
+  shared.operationalWorkspace = { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' }
   shared.scope = null
   localStorage.clear()
   sessionStorage.clear()
@@ -183,6 +207,27 @@ describe('AppShell shared-session lifecycle', () => {
     expect(screen.queryByText('Account security')).not.toBeInTheDocument()
   })
 
+  it('keeps the shell alert count limited to current operational alerts', async () => {
+    shared.operationalWorkspace = {
+      serverTimestamp: '2026-10-05T12:00:00.000Z',
+      alerts: [
+        operationalAlert('Current urgent alert', { liveUntil: '2026-10-05T13:00:00.000Z' }),
+        operationalAlert('Current high alert', { id: '10000000-0000-4000-8000-000000000002', priority: 'high', liveUntil: '2026-10-05T13:00:00.000Z' }),
+        operationalAlert('Expired alert', { id: '10000000-0000-4000-8000-000000000003', liveUntil: '2026-10-05T12:00:00.000Z' }),
+        operationalAlert('Inactive alert', { id: '10000000-0000-4000-8000-000000000004', active: false }),
+        operationalAlert('Resolved alert', { id: '10000000-0000-4000-8000-000000000005', lifecycleStatus: 'resolved' }),
+      ],
+    }
+    prepareSharedSession('platform')
+    renderShell('/')
+
+    expect(await screen.findByText('Current urgent alert')).toBeVisible()
+    expect(screen.getByLabelText('Alert 1 of 2')).toBeVisible()
+    expect(screen.queryByText('Expired alert')).not.toBeInTheDocument()
+    expect(screen.queryByText('Inactive alert')).not.toBeInTheDocument()
+    expect(screen.queryByText('Resolved alert')).not.toBeInTheDocument()
+  })
+
   it('switches scaled laptop viewports to the full-width navigation drawer without losing the saved desktop preference', async () => {
     const removeEventListener = vi.fn()
     vi.stubGlobal('matchMedia', vi.fn(() => ({
@@ -229,6 +274,27 @@ function prepareSharedSession(scope: 'platform' | 'sygsphere') {
     expiresAt: Math.floor(Date.now() / 1000) + 3600,
     refreshToken: 'refresh-token',
     scope,
+  }
+}
+
+function operationalAlert(
+  title: string,
+  overrides: Partial<OperationalWorkspaceFixture['alerts'][number]> = {},
+): OperationalWorkspaceFixture['alerts'][number] {
+  return {
+    id: '10000000-0000-4000-8000-000000000001',
+    alertType: 'employee_call_off',
+    priority: 'urgent',
+    title,
+    summary: `${title} summary`,
+    employeeId,
+    shiftId: '20000000-0000-4000-8000-000000000001',
+    directPath: '/time/operations',
+    createdAt: '2026-10-05T10:00:00.000Z',
+    acknowledgedAt: null,
+    active: true,
+    lifecycleStatus: 'active_operations',
+    ...overrides,
   }
 }
 

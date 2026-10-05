@@ -138,6 +138,8 @@ const coverageCandidateSchema = z.object({
 }))
 
 const coverageWorkspaceSchema = z.object({
+  actionable: z.boolean().optional().default(false),
+  nonActionableReason: z.string().nullable().optional().default(null),
   callOff: z.object({
     id: z.string().uuid(),
     employeeId: z.string().uuid(),
