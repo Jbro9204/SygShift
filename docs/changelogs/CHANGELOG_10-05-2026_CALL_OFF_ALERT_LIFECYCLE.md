@@ -1,7 +1,7 @@
 # Call-Off Alert Lifecycle and Automatic Retirement
 
 Date: 10/05/2026
-Status: Database released; application deployment pending
+Status: Released to production
 
 ## Outcome
 
@@ -96,6 +96,13 @@ create those revisions.
   production build, and static-asset contract passed.
 - Mandatory actual-component Time Clock matrix: **42/42 passed** across desktop
   Chromium and Pixel 7 mobile Chromium.
+- Both production origins passed root, login, health, and readiness checks;
+  every readiness binding reported ready. The live application entry bundle
+  exactly matched the fresh local production build at SHA-256
+  `120581d01ee232032b258ed1e8606d7cc7bbf4169e7cf792d74c084071977fca`.
+- Authenticated production acceptance opened **Time Operations** and confirmed
+  **Current sick and call-off records — Clear** with **No active call-offs in
+  this range**. The page produced no browser-console errors.
 - Database lint reported no finding in the new lifecycle functions. Existing
   unrelated HR workflow lint findings remain outside this release.
 
@@ -115,8 +122,8 @@ create those revisions.
 ## Release references
 
 - Database migration: `20261005123949`
-- Implementation commit: pending
-- Cloudflare Worker version: pending
+- Implementation commit: `2341dbe`
+- Cloudflare Worker version: `4b9add8f-a9cd-4100-857a-e921de6f63c1`
 - Rollback tag: `rollback/pre-call-off-alert-lifecycle-20261005`
 
 The rollback tag restores application source only. The database change is

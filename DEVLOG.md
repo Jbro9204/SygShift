@@ -15,8 +15,12 @@
 - Passed the linked production-schema rehearsal, exact-target dry run,
   installed SQL regression, 9-file / 101-test focused suite, full 1,949-test
   gate, and 42/42 actual-component desktop/mobile Time Clock matrix.
-- Applied targeted migration `20261005123949`; application deployment is in
-  progress. Release detail:
+- Applied targeted migration `20261005123949` and released implementation
+  commit `2341dbe` as Cloudflare Worker
+  `4b9add8f-a9cd-4100-857a-e921de6f63c1`. Both production origins passed
+  root, login, health, readiness, and exact-asset verification. Authenticated
+  production acceptance showed **Current sick and call-off records — Clear**
+  and no browser-console errors. Release detail:
   `docs/changelogs/CHANGELOG_10-05-2026_CALL_OFF_ALERT_LIFECYCLE.md`.
 
 ## 10/02/2026 - Document Center Usability Recovery
