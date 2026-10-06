@@ -1,7 +1,7 @@
 # EP / TRUEP Payroll Classification
 
 Date: 10/06/2026
-Status: Release verification in progress
+Status: Released
 
 ## Outcome
 
@@ -102,8 +102,26 @@ to the category totals again.
 - [x] Supabase database advisors completed: no feature-specific performance
   warnings; authenticated RPC notices were reviewed as intentional endpoints
   with database-enforced identity, permission, and MFA checks.
-- [ ] Git push, Cloudflare deployment, production health/readiness, exact live
-  asset, and authenticated-workspace verification.
+- [x] Git push, Cloudflare deployment, production health/readiness, exact live
+  asset, and authenticated-workspace verification completed.
+
+## Release record
+
+- Production migration: `20261006130458_event_payroll_classification`
+- Implementation commit: `0792e12b9ba19f6044ce2b8866f72c26087b2f54`
+- Cloudflare Worker version: `13556b9b-ef97-4e5b-b4ab-1fd85d37a31e`
+- Pre-release rollback tag:
+  `rollback/pre-ep-truep-payroll-classification-20261006`
+- Both `app.sygilant.us` and the Workers fallback returned HTTP 200 for health
+  and readiness; all readiness checks were true.
+- Both production origins served module entry `/assets/index-CVXeIlpz.js`,
+  exactly matching the fresh local build: **714,204 bytes**, SHA-256
+  `6469d20b17d79243685b6c3a2852da01426a868f913b92e2bb207de27cc2ea11`.
+- An unauthenticated protected HR workspace request returned HTTP 401
+  `auth_required`.
+- The existing owner browser session was freshly reloaded after deployment,
+  completed its secure-session check, and rendered the authenticated SygShift
+  workspace for Jordan Brown with normal navigation and connected messaging.
 
 ## Operational activation
 

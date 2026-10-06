@@ -14,6 +14,12 @@
 - Hardened overnight/week-boundary, void, occurrence-repair, concurrency,
   permission-deny, legacy-lock, and salary-default handling. The linked
   migration/regression rollback rehearsal and independent review passed.
+- Applied targeted migration `20261006130458`, pushed implementation commit
+  `0792e12`, and deployed Cloudflare Worker
+  `13556b9b-ef97-4e5b-b4ab-1fd85d37a31e`.
+- Both production origins passed health/readiness, the live module exactly
+  matched the fresh build, unauthenticated protected access remained rejected,
+  and the freshly reloaded owner session rendered the authenticated workspace.
 - Full verification and production release details are recorded in
   `docs/changelogs/CHANGELOG_10-06-2026_EP_TRUEP_PAYROLL_CLASSIFICATION.md`.
 
