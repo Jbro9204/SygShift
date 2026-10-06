@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WorkforceActivityRow } from '../reports/workforceActivityTypes'
-import { exportWorkforceActivityReport, getWorkforceActivityReportPage } from './workforceActivity'
+import {
+  exportWorkforceActivityReport,
+  getWorkforceActivityReportEmployeeOptions,
+  getWorkforceActivityReportPage,
+} from './workforceActivity'
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
 
@@ -116,6 +120,23 @@ describe('workforce activity data boundary', () => {
     })
   })
 
+  it('loads the protected employee picker independently of the current report rows', async () => {
+    const zeroWorkEmployeeId = '10000000-0000-4000-8000-000000000002'
+    rpc.mockResolvedValue({
+      data: [
+        { id: employeeId, label: 'Alex Morgan', employeeNumber: 'SYG-1001' },
+        { id: zeroWorkEmployeeId, label: 'Bailey Scheduled Only', employeeNumber: 'SYG-1002' },
+      ],
+      error: null,
+    })
+
+    await expect(getWorkforceActivityReportEmployeeOptions()).resolves.toEqual([
+      { id: employeeId, label: 'Alex Morgan', employeeNumber: 'SYG-1001' },
+      { id: zeroWorkEmployeeId, label: 'Bailey Scheduled Only', employeeNumber: 'SYG-1002' },
+    ])
+    expect(rpc).toHaveBeenCalledWith('get_workforce_activity_report_employee_options')
+  })
+
   it('uses the audited export RPC and accepts its complete unpaged result', async () => {
     const rows = Array.from({ length: 75 }, (_, index) => workforceRow({ id: `row:${index}` }))
     rpc.mockResolvedValue({
@@ -162,10 +183,22 @@ describe('workforce activity data boundary', () => {
     })).rejects.toThrow()
   })
 
+  it('rejects malformed employee options instead of treating an invalid roster as no choices', async () => {
+    rpc.mockResolvedValue({ data: [{ id: 'not-a-uuid', employeeNumber: 'SYG-1001' }], error: null })
+
+    await expect(getWorkforceActivityReportEmployeeOptions()).rejects.toThrow()
+  })
+
   it('surfaces the server error without attempting to parse an absent payload', async () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'Report permission is required.' } })
     await expect(getWorkforceActivityReportPage({
       fromDate: '2026-09-28', throughDate: '2026-09-28', view: 'worked', groupBy: 'location', page: 1, pageSize: 25,
     })).rejects.toThrow('Report permission is required.')
+  })
+
+  it('surfaces employee-picker authorization errors instead of silently emptying the selector', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'Report permission is required.' } })
+
+    await expect(getWorkforceActivityReportEmployeeOptions()).rejects.toThrow('Report permission is required.')
   })
 })

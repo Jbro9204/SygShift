@@ -41012,6 +41012,24 @@ button.document-workbench__template-control.is-signature img {
   font-weight: 750;
 }
 
+.workforce-activity-selected-employee {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  margin: 0;
+  padding: 0.48rem 0.68rem;
+  border: 1px solid color-mix(in srgb, var(--gold) 52%, var(--line));
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--gold) 10%, var(--paper));
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.workforce-activity-selected-employee strong {
+  overflow-wrap: anywhere;
+}
+
 .workforce-activity-metrics {
   grid-template-columns: repeat(6, minmax(0, 1fr));
   margin-top: 1rem;

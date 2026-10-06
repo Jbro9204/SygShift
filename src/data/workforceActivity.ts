@@ -15,6 +15,10 @@ const labeledOptionSchema = z.object({
   label: z.string().min(1),
 })
 
+const workforceActivityEmployeeOptionSchema = labeledOptionSchema.extend({
+  employeeNumber: z.string().nullable(),
+})
+
 const workforceActivityRowSchema: z.ZodType<WorkforceActivityRow> = z.object({
   id: z.string().min(1),
   operationalDate: z.string(),
@@ -73,7 +77,7 @@ const workforceActivityReportPageSchema = z.object({
   filterOptions: z.object({
     views: z.array(z.object({ value: workforceActivityViewSchema, label: z.string().min(1) })),
     groupings: z.array(z.object({ value: workforceActivityGroupSchema, label: z.string().min(1) })),
-    employees: z.array(labeledOptionSchema.extend({ employeeNumber: z.string().nullable() })),
+    employees: z.array(workforceActivityEmployeeOptionSchema),
     clients: z.array(labeledOptionSchema),
     sites: z.array(labeledOptionSchema),
     events: z.array(labeledOptionSchema),
@@ -89,6 +93,7 @@ const workforceActivityReportPageSchema = z.object({
 export type WorkforceActivityView = z.infer<typeof workforceActivityViewSchema>
 export type WorkforceActivityGroup = z.infer<typeof workforceActivityGroupSchema>
 export type WorkforceActivityReportPage = z.infer<typeof workforceActivityReportPageSchema>
+export type WorkforceActivityEmployeeOption = z.infer<typeof workforceActivityEmployeeOptionSchema>
 export type { WorkforceActivityOutcome, WorkforceActivityRow }
 
 export type WorkforceActivityReportExport = WorkforceActivityReportPage & {
@@ -130,6 +135,12 @@ export async function getWorkforceActivityReportPage(
   })
   if (error) throw new Error(error.message || 'Workforce activity could not be loaded.')
   return workforceActivityReportPageSchema.parse(data)
+}
+
+export async function getWorkforceActivityReportEmployeeOptions(): Promise<WorkforceActivityEmployeeOption[]> {
+  const { data, error } = await getSupabaseClient().rpc('get_workforce_activity_report_employee_options')
+  if (error) throw new Error(error.message || 'Employee choices could not be loaded for this report.')
+  return z.array(workforceActivityEmployeeOptionSchema).parse(data)
 }
 
 export async function exportWorkforceActivityReport(

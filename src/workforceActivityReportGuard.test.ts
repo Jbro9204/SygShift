@@ -10,6 +10,7 @@ describe('Workforce Activity report route guardrails', () => {
   it('keeps the existing protected route key while presenting the dedicated day-based workspace', () => {
     const definition = getOperationalReportDefinition('scheduledVsActual')
     const reportsPage = read('src/pages/ReportsPage.tsx')
+    const workspace = read('src/reports/WorkforceActivityReportWorkspace.tsx')
 
     expect(definition).toMatchObject({
       key: 'scheduledVsActual',
@@ -19,6 +20,10 @@ describe('Workforce Activity report route guardrails', () => {
     expect(definition?.description).toContain('who worked and where')
     expect(reportsPage).toContain("definition?.key === 'scheduledVsActual'")
     expect(reportsPage).toContain('<WorkforceActivityReportWorkspace')
+    expect(workspace).toContain('getWorkforceActivityReportEmployeeOptions')
+    expect(workspace).toContain('Showing work for')
+    expect(workspace).not.toContain('placeholderData: (previous) => previous')
+    expect(workspace).not.toContain('to="/time/team"')
   })
 
   it('requires report-view permission for the nested workforce route', () => {

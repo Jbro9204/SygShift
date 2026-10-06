@@ -1,8 +1,12 @@
--- Run after 20260929143850. All report fixtures and the export audit roll back.
+-- Run after 20261006113000. All report fixtures and the export audit roll back.
 
 begin;
 
 set local statement_timeout = '90s';
+
+-- Reproduce the production schema extension that exposed the unsafe shift.*
+-- projection. The report must ignore unrelated future shift columns.
+alter table public.shifts add column if not exists payroll_category text;
 
 do $permission_contract$
 begin
@@ -16,11 +20,21 @@ begin
     'public.export_workforce_activity_report(date,date,text,text,uuid,uuid,uuid,uuid,text,text)',
     'EXECUTE'
   ), 'Authenticated sessions can call the protected workforce activity export RPC.';
+  assert has_function_privilege(
+    'authenticated',
+    'public.get_workforce_activity_report_employee_options()',
+    'EXECUTE'
+  ), 'Authenticated sessions can load the protected workforce activity employee picker.';
   assert not has_function_privilege(
     'anon',
     'public.get_workforce_activity_report_page(date,date,text,text,uuid,uuid,uuid,uuid,text,text,integer,integer)',
     'EXECUTE'
   ), 'Anonymous sessions cannot execute the workforce activity report.';
+  assert not has_function_privilege(
+    'anon',
+    'public.get_workforce_activity_report_employee_options()',
+    'EXECUTE'
+  ), 'Anonymous sessions cannot load the workforce activity employee picker.';
   assert not has_function_privilege(
     'authenticated',
     'private.get_workforce_activity_report_rows(date,date)',
@@ -33,6 +47,15 @@ begin
   ), 'Authenticated clients cannot bypass report authorization through the private renderer.';
   assert not has_schema_privilege('authenticated', 'private', 'USAGE'),
     'Authenticated clients cannot enter the private schema.';
+  assert pg_catalog.pg_get_functiondef(
+    'private.get_workforce_activity_report_rows(date,date)'::pg_catalog.regprocedure
+  ) !~ 'current_shifts[[:space:]]+as[[:space:]]+materialized[[:space:]]*[(][[:space:]]*select[[:space:]]+shift[.][*]',
+    'The report must not propagate every shift column into grouped vacancy rows.';
+  assert position(
+    'report.duplicate_of_call_off_report_id is null' in pg_catalog.pg_get_functiondef(
+      'private.get_workforce_activity_report_rows(date,date)'::pg_catalog.regprocedure
+    )
+  ) > 0, 'The Workforce Activity repair must retain canonical call-off duplicate filtering.';
 end
 $permission_contract$;
 
@@ -52,6 +75,7 @@ declare
   unscheduled_worker constant uuid := 'fb110000-0000-4000-8000-000000000008';
   obsolete_worker constant uuid := 'fb110000-0000-4000-8000-000000000009';
   salary_legacy_punch_worker constant uuid := 'fb110000-0000-4000-8000-00000000000a';
+  zero_activity_worker constant uuid := 'fb110000-0000-4000-8000-000000000010';
   location_override_worker constant uuid := 'fb110000-0000-4000-8000-00000000000c';
   same_signature_worker constant uuid := 'fb110000-0000-4000-8000-00000000000d';
   prior_revision_call_off_worker constant uuid := 'fb110000-0000-4000-8000-00000000000e';
@@ -119,6 +143,7 @@ begin
     (unscheduled_worker, 'SYG-9818', 'workforceunscheduled', 'Finley', 'Unscheduled', 'guard', 'hourly', 'active', 'America/New_York'),
     (obsolete_worker, 'SYG-9819', 'workforceobsolete', 'Old', 'Revision', 'guard', 'hourly', 'active', 'America/New_York'),
     (salary_legacy_punch_worker, 'SYG-9820', 'workforcesalarylegacy', 'Gray', 'Salary Legacy', 'guard', 'salary', 'active', 'America/New_York'),
+    (zero_activity_worker, 'SYG-9826', 'workforcezeroactivity', 'Kendall', 'No Activity', 'guard', 'hourly', 'active', 'America/New_York'),
     (location_override_worker, 'SYG-9822', 'workforcelocationoverride', 'Harper', 'Corrected Location', 'guard', 'hourly', 'active', 'America/New_York'),
     (same_signature_worker, 'SYG-9823', 'workforcesamesignature', 'Indigo', 'Parallel Position', 'guard', 'hourly', 'active', 'America/New_York'),
     (prior_revision_call_off_worker, 'SYG-9824', 'workforcepriorcalloff', 'Jules', 'Prior Call Off', 'guard', 'hourly', 'active', 'America/New_York'),
@@ -347,6 +372,22 @@ begin
   select count(*) into before_time_events from public.time_events;
   select count(*) into before_presence from private.salaried_shift_presence_events;
 
+  worker_result := public.get_workforce_activity_report_employee_options();
+  assert exists (
+    select 1
+    from jsonb_array_elements(worker_result) option
+    where option ->> 'id' = zero_activity_worker::text
+      and option ->> 'label' = 'Kendall No Activity'
+      and option ->> 'employeeNumber' = 'SYG-9826'
+  ), 'An active employee without a worked row was missing from the independent report picker.';
+
+  worker_result := public.get_workforce_activity_report_page(
+    date '2097-04-02', date '2097-04-02', 'worked', 'employee',
+    zero_activity_worker, null, null, null, null, null, 1, 50
+  );
+  assert (worker_result ->> 'totalCount')::integer = 0,
+    'The selected zero-activity employee incorrectly appeared in Who Worked.';
+
   result := public.get_workforce_activity_report_page(
     date '2097-04-02', date '2097-04-02', 'all', 'day',
     null, client_id, null, null, null, null, 1, 200
@@ -561,6 +602,7 @@ begin
   perform public.get_workforce_activity_report_page(
     date '2097-04-02', date '2097-04-02'
   );
+  perform public.get_workforce_activity_report_employee_options();
   denied := false;
   begin
     perform public.export_workforce_activity_report(
@@ -587,6 +629,14 @@ begin
   end;
   assert denied, 'The report opened without MFA.';
 
+  denied := false;
+  begin
+    perform public.get_workforce_activity_report_employee_options();
+  exception when insufficient_privilege then
+    denied := true;
+  end;
+  assert denied, 'The employee picker opened without MFA.';
+
   perform set_config(
     'request.jwt.claims',
     jsonb_build_object('sub', unauthorized_auth, 'role', 'authenticated', 'aal', 'aal2')::text,
@@ -602,6 +652,14 @@ begin
     denied := true;
   end;
   assert denied, 'An employee without time.reports.view opened the team report.';
+
+  denied := false;
+  begin
+    perform public.get_workforce_activity_report_employee_options();
+  exception when insufficient_privilege then
+    denied := true;
+  end;
+  assert denied, 'An employee without time.reports.view loaded the team report employee picker.';
 end
 $workforce_activity_regression$;
 

@@ -11,6 +11,7 @@ import { dateKeyInTimeZone } from '../lib/time'
 
 const dataMocks = vi.hoisted(() => ({
   exportReport: vi.fn(),
+  getEmployeeOptions: vi.fn(),
   getPage: vi.fn(),
 }))
 const downloadMocks = vi.hoisted(() => ({
@@ -23,6 +24,7 @@ vi.mock('../data/workforceActivity', async (loadOriginal) => {
   return {
     ...original,
     exportWorkforceActivityReport: dataMocks.exportReport,
+    getWorkforceActivityReportEmployeeOptions: dataMocks.getEmployeeOptions,
     getWorkforceActivityReportPage: dataMocks.getPage,
   }
 })
@@ -37,7 +39,15 @@ vi.mock('./workforceActivityExport', async (loadOriginal) => {
 })
 
 const employeeId = '10000000-0000-4000-8000-000000000001'
+const zeroWorkEmployeeId = '10000000-0000-4000-8000-000000000002'
 const eventId = '20000000-0000-4000-8000-000000000001'
+
+function employeeOptions() {
+  return [
+    { id: employeeId, label: 'Alex Morgan', employeeNumber: 'SYG-1001' },
+    { id: zeroWorkEmployeeId, label: 'Bailey Scheduled Only', employeeNumber: 'SYG-1002' },
+  ]
+}
 
 function row(overrides: Partial<WorkforceActivityRow> = {}): WorkforceActivityRow {
   return {
@@ -145,6 +155,7 @@ describe('Workforce Activity report workspace', () => {
     HTMLDialogElement.prototype.showModal = vi.fn(function showModal(this: HTMLDialogElement) { this.setAttribute('open', '') })
     HTMLDialogElement.prototype.close = vi.fn(function close(this: HTMLDialogElement) { this.removeAttribute('open') })
     dataMocks.getPage.mockResolvedValue(page())
+    dataMocks.getEmployeeOptions.mockResolvedValue(employeeOptions())
     dataMocks.exportReport.mockResolvedValue(exportPage([row()]))
     downloadMocks.xlsx.mockReturnValue('sygshift-workforce-activity.xlsx')
     downloadMocks.pdf.mockResolvedValue('sygshift-workforce-activity.pdf')
@@ -164,6 +175,7 @@ describe('Workforce Activity report workspace', () => {
       page: 1,
       pageSize: 25,
     }))
+    expect(dataMocks.getEmployeeOptions).toHaveBeenCalled()
     expect(screen.getByRole('option', { name: 'Called off' })).toBeInTheDocument()
     expect(screen.getByText('Each record uses its assigned time zone')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'One day' })).toHaveAttribute('aria-pressed', 'true')
@@ -184,6 +196,35 @@ describe('Workforce Activity report workspace', () => {
 
     await user.click(screen.getByRole('button', { name: 'Next' }))
     await waitFor(() => expect(dataMocks.getPage).toHaveBeenCalledWith(expect.objectContaining({ page: 2 })))
+  })
+
+  it('lets an authorized user choose an employee with no worked row and does not show another employee\'s previous result', async () => {
+    const user = userEvent.setup()
+    let resolveZeroWorkReport: ((value: WorkforceActivityReportPage) => void) | undefined
+    dataMocks.getPage.mockImplementation((input: { employeeId?: string }) => {
+      if (input.employeeId === zeroWorkEmployeeId) {
+        return new Promise<WorkforceActivityReportPage>((resolve) => { resolveZeroWorkReport = resolve })
+      }
+      return Promise.resolve(page([row()]))
+    })
+    renderWorkspace()
+
+    expect(await screen.findByRole('heading', { name: 'Jason Crow Event' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Bailey Scheduled Only · SYG-1002' })).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Employee'), zeroWorkEmployeeId)
+
+    await waitFor(() => expect(dataMocks.getPage).toHaveBeenCalledWith(expect.objectContaining({
+      employeeId: zeroWorkEmployeeId,
+      page: 1,
+      view: 'worked',
+    })))
+    expect(await screen.findByText('Loading workforce activity…')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Jason Crow Event' })).not.toBeInTheDocument()
+    expect(screen.getByText('Showing work for')).toHaveTextContent('Bailey Scheduled Only')
+
+    resolveZeroWorkReport?.(page([]))
+    expect(await screen.findByText('No workforce activity was found for Bailey Scheduled Only.')).toBeInTheDocument()
+    expect(screen.getByText('No recorded or confirmed work was found for Bailey Scheduled Only on this day. Open Schedule Comparison to review planned coverage.')).toBeInTheDocument()
   })
 
   it('keeps a validated, URL-persisted date-range mode for multi-day reporting', async () => {

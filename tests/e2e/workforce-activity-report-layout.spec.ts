@@ -56,12 +56,12 @@ async function installWorkforceActivityFixture(page: Page) {
           <section class="operations-panel reports-workspace-controls workforce-activity-controls" aria-label="Workforce activity filters">
             <label class="reports-search workforce-activity-search"><span>Search</span><span class="reports-search-input"><span aria-hidden="true">⌕</span><input placeholder="Employee, event, client, site, or post" type="search"></span></label>
             <div class="workforce-activity-filter-grid">
-              <label><span>Employee</span><select><option>All employees</option><option>Jordan Montgomery · SYG-1000</option></select></label>
+              <label><span>Employee</span><select><option>All employees</option><option selected>Jordan Montgomery · SYG-1000</option></select></label>
               <label><span>Location or event</span><select><option>All locations and events</option><optgroup label="Sites"><option>Downtown Campus — North Administration Entrance</option></optgroup></select></label>
               <label><span>Outcome</span><select><option>All outcomes</option><option>Worked as scheduled (31)</option><option>Salary work confirmed (4)</option></select></label>
               <label><span>Organize by</span><select><option>Location</option><option>Employee</option><option>Day</option></select></label>
             </div>
-            <div class="workforce-activity-filter-actions"><button class="secondary-button" disabled type="button">Clear filters</button></div>
+            <div class="workforce-activity-filter-actions"><p class="workforce-activity-selected-employee" role="status">Showing work for <strong>Jordan Montgomery</strong></p><button class="secondary-button" type="button">Clear filters</button></div>
           </section>
 
           <section class="operations-metrics workforce-activity-metrics" aria-label="Workforce activity summary">
@@ -165,6 +165,7 @@ for (const viewport of viewportCases) {
     await expect(pagination).toBeVisible()
     await expect(pagination.getByText('Page 1 of 2')).toBeVisible()
     await expect(pagination.getByRole('button', { name: 'Next' })).toBeVisible()
+    await expect(page.getByRole('status')).toContainText('Showing work for Jordan Montgomery')
 
     const horizontalBounds = await Promise.all([exports, pagination].map(async (locator) => {
       await locator.scrollIntoViewIfNeeded()

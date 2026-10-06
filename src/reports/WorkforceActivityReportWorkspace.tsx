@@ -16,7 +16,9 @@ import { DataStatePanel } from '../components/DataStatePanel'
 import { ModalDialog } from '../components/ModalDialog'
 import {
   exportWorkforceActivityReport,
+  getWorkforceActivityReportEmployeeOptions,
   getWorkforceActivityReportPage,
+  type WorkforceActivityEmployeeOption,
   type WorkforceActivityGroup,
   type WorkforceActivityOutcome,
   type WorkforceActivityRow,
@@ -29,6 +31,7 @@ import { downloadWorkforceActivityPdf, downloadWorkforceActivityXlsx } from './w
 import { workforceActivityOutcomeValues } from './workforceActivityTypes'
 
 const pageSizes = [10, 25, 50] as const
+const emptyEmployeeOptions: WorkforceActivityEmployeeOption[] = []
 type DateScope = 'day' | 'range'
 
 const workforceActivityOutcomeLabels: Record<WorkforceActivityOutcome, string> = {
@@ -141,7 +144,6 @@ function WorkforceActivityDetail({ onClose, row }: { onClose: () => void; row: W
       {row.notes.length ? <div className="workforce-activity-detail-grid__wide"><span>Notes</span><strong>{row.notes.join('\n')}</strong></div> : null}
     </div>
     <div className="modal-actions">
-      <Link className="primary-action" to="/time/team">Open employee time</Link>
       <button className="secondary-button" onClick={onClose} type="button">Close</button>
     </div>
   </ModalDialog>
@@ -182,6 +184,12 @@ export function WorkforceActivityReportWorkspace({
   const reportThrough = dateScope === 'day' ? day : rangeThrough
   const locationFilter = locationRequest(location)
 
+  const employeeOptionsQuery = useQuery({
+    queryKey: ['workforce-activity-report-employee-options'],
+    queryFn: getWorkforceActivityReportEmployeeOptions,
+    staleTime: 60_000,
+  })
+
   const query = useQuery({
     queryKey: ['workforce-activity-report', reportFrom, reportThrough, view, groupBy, employeeId, location, outcome, deferredSearch, page, pageSize],
     queryFn: () => getWorkforceActivityReportPage({
@@ -196,8 +204,14 @@ export function WorkforceActivityReportWorkspace({
       page,
       pageSize,
     }),
-    placeholderData: (previous) => previous,
   })
+
+  const employeeOptions = employeeOptionsQuery.data ?? emptyEmployeeOptions
+  const selectedEmployee = useMemo<WorkforceActivityEmployeeOption | undefined>(() => {
+    if (!employeeId) return undefined
+    return employeeOptions.find((option) => option.id === employeeId)
+      ?? query.data?.filterOptions.employees.find((option) => option.id === employeeId)
+  }, [employeeId, employeeOptions, query.data?.filterOptions.employees])
 
   const groupedRows = useMemo(() => {
     const groups = new Map<string, WorkforceActivityRow[]>()
@@ -243,11 +257,18 @@ export function WorkforceActivityReportWorkspace({
     resetPage()
   }
 
+  function selectEmployee(nextEmployeeId: string) {
+    setEmployeeId(nextEmployeeId)
+    setSelected(null)
+    resetPage()
+  }
+
   function clearFilters() {
     setEmployeeId('')
     setLocation('')
     setOutcome('')
     setSearch('')
+    setSelected(null)
     resetPage()
   }
 
@@ -267,7 +288,8 @@ export function WorkforceActivityReportWorkspace({
         outcome: outcome || undefined,
         search: deferredSearch || undefined,
       })
-      const employee = report.filterOptions.employees.find((option) => option.id === employeeId)
+      const employee = employeeOptions.find((option) => option.id === employeeId)
+        ?? report.filterOptions.employees.find((option) => option.id === employeeId)
       const description = [
         activeTab.label,
         employee ? `Employee: ${employee.label}` : '',
@@ -341,12 +363,12 @@ export function WorkforceActivityReportWorkspace({
     <section className="operations-panel reports-workspace-controls workforce-activity-controls" aria-label="Workforce activity filters">
       <label className="reports-search workforce-activity-search"><span>Search</span><span className="reports-search-input"><Search aria-hidden="true" size={19} /><input onChange={(event) => { setSearch(event.target.value); resetPage() }} placeholder="Employee, event, client, site, or post" type="search" value={search} /></span></label>
       <div className="workforce-activity-filter-grid">
-        <label><span>Employee</span><select onChange={(event) => { setEmployeeId(event.target.value); resetPage() }} value={employeeId}><option value="">All employees</option>{query.data?.filterOptions.employees.map((option) => <option key={option.id} value={option.id}>{option.label}{option.employeeNumber ? ` · ${option.employeeNumber}` : ''}</option>)}</select></label>
+        <label><span>Employee</span><select disabled={employeeOptionsQuery.isPending} onChange={(event) => selectEmployee(event.target.value)} value={employeeId}><option value="">{employeeOptionsQuery.isPending ? 'Loading employees…' : 'All employees'}</option>{employeeOptions.map((option) => <option key={option.id} value={option.id}>{option.label}{option.employeeNumber ? ` · ${option.employeeNumber}` : ''}</option>)}</select></label>
         <label><span>Location or event</span><select onChange={(event) => { setLocation(event.target.value); resetPage() }} value={location}><option value="">All locations and events</option>{query.data?.filterOptions.clients.length ? <optgroup label="Clients">{query.data.filterOptions.clients.map((option) => <option key={option.id} value={`client:${option.id}`}>{option.label}</option>)}</optgroup> : null}{query.data?.filterOptions.sites.length ? <optgroup label="Sites">{query.data.filterOptions.sites.map((option) => <option key={option.id} value={`site:${option.id}`}>{option.label}</option>)}</optgroup> : null}{query.data?.filterOptions.events.length ? <optgroup label="Events">{query.data.filterOptions.events.map((option) => <option key={option.id} value={`event:${option.id}`}>{option.label}</option>)}</optgroup> : null}</select></label>
         <label><span>Outcome</span><select onChange={(event) => { setOutcome(event.target.value as WorkforceActivityOutcome | ''); resetPage() }} value={outcome}><option value="">All outcomes</option>{workforceActivityOutcomeValues.map((value) => { const option = query.data?.filterOptions.outcomes.find((candidate) => candidate.value === value); return <option key={value} value={value}>{workforceActivityOutcomeLabels[value]}{option ? ` (${option.count})` : ''}</option> })}</select></label>
         <label><span>Organize by</span><select onChange={(event) => { setGroupBy(event.target.value as WorkforceActivityGroup); resetPage() }} value={groupBy}>{query.data?.filterOptions.groupings.map((option) => <option key={option.value} value={option.value}>{option.label}</option>) ?? <><option value="location">Location</option><option value="employee">Employee</option><option value="day">Day</option></>}</select></label>
       </div>
-      <div className="workforce-activity-filter-actions"><button className="secondary-button" disabled={!hasFilters} onClick={clearFilters} type="button">Clear filters</button>{query.isFetching && !query.isPending ? <span role="status">Refreshing results…</span> : null}</div>
+      <div className="workforce-activity-filter-actions">{selectedEmployee ? <p className="workforce-activity-selected-employee" role="status">Showing work for <strong>{selectedEmployee.label}</strong></p> : null}<button className="secondary-button" disabled={!hasFilters} onClick={clearFilters} type="button">Clear filters</button>{employeeOptionsQuery.isError ? <span role="alert">Employee choices could not be loaded. <button className="text-button" onClick={() => void employeeOptionsQuery.refetch()} type="button">Retry</button></span> : null}{query.isFetching && !query.isPending ? <span role="status">Refreshing results…</span> : null}</div>
     </section>
 
     {summary ? <section className="operations-metrics workforce-activity-metrics" aria-label="Workforce activity summary">
@@ -368,7 +390,7 @@ export function WorkforceActivityReportWorkspace({
       {exportNotice ? <p className="reports-export-note" role="status">{exportNotice}</p> : null}
       {query.isPending ? <div className="report-empty" role="status">Loading workforce activity…</div> : null}
       {query.isError ? <DataStatePanel icon={AlertTriangle} title="Workforce activity is unavailable" tone="error"><p>{query.error.message}</p><button className="secondary-button" onClick={() => void query.refetch()} type="button"><RefreshCw aria-hidden="true" size={17} />Retry</button></DataStatePanel> : null}
-      {query.isSuccess && query.data.rows.length === 0 ? <div className="report-empty"><strong>No workforce activity matches this view.</strong><span>{hasFilters ? `Clear a filter or choose another ${dateScope === 'day' ? 'operational day' : 'date range'}.` : view === 'worked' ? `No recorded or confirmed work was found for this ${dateScope === 'day' ? 'day' : 'range'}. Open Schedule Comparison to review planned coverage.` : `No scheduled or worked records were found for this ${dateScope === 'day' ? 'day' : 'range'}.`}</span></div> : null}
+      {query.isSuccess && query.data.rows.length === 0 ? <div className="report-empty"><strong>{selectedEmployee ? `No workforce activity was found for ${selectedEmployee.label}.` : 'No workforce activity matches this view.'}</strong><span>{selectedEmployee ? view === 'worked' ? `No recorded or confirmed work was found for ${selectedEmployee.label} on this ${dateScope === 'day' ? 'day' : 'date range'}. Open Schedule Comparison to review planned coverage.` : `No scheduled or worked records were found for ${selectedEmployee.label} on this ${dateScope === 'day' ? 'day' : 'date range'}.` : hasFilters ? `Clear a filter or choose another ${dateScope === 'day' ? 'operational day' : 'date range'}.` : view === 'worked' ? `No recorded or confirmed work was found for this ${dateScope === 'day' ? 'day' : 'range'}. Open Schedule Comparison to review planned coverage.` : `No scheduled or worked records were found for this ${dateScope === 'day' ? 'day' : 'range'}.`}</span></div> : null}
       {groupedRows.length ? <div className="workforce-activity-groups">{groupedRows.map(([label, rows]) => <section className="workforce-activity-group" key={label} aria-label={label}>
         <div className="workforce-activity-group__heading"><div><MapPin aria-hidden="true" size={18} /><h3>{label}</h3></div><span>{rows.length} {rows.length === 1 ? 'record' : 'records'} on this page</span></div>
         <div className="workforce-activity-list">{rows.map((row) => <article className={`workforce-activity-row workforce-activity-row--${row.outcome}`} key={row.id}>
