@@ -26,6 +26,8 @@ import {
   getPayrollExportHistory,
   getPayrollRules,
   getTimekeepingReview,
+  payrollCategoryAllocation,
+  payrollCategoryLabel,
   payrollHours,
   reviewTimeEventCorrection,
   summarizePayrollRowsByEmployee,
@@ -150,6 +152,26 @@ function rowLocation(row: TimekeepingReviewRow): string {
   return [row.siteCode, row.siteName, row.postName ?? row.eventName]
     .filter(Boolean)
     .join(' / ') || row.locationName
+}
+
+function payrollCategoryTotals(rows: TimekeepingReviewRow[]) {
+  return rows.reduce((totals, row) => {
+    const allocation = payrollCategoryAllocation(row)
+    totals.regularCategoryMinutes += allocation.regularCategoryMinutes
+    totals.epMinutes += allocation.epMinutes
+    totals.truepMinutes += allocation.truepMinutes
+    totals.unclassifiedCategoryMinutes += allocation.unclassifiedCategoryMinutes
+    return totals
+  }, {
+    epMinutes: 0,
+    unclassifiedCategoryMinutes: 0,
+    regularCategoryMinutes: 0,
+    truepMinutes: 0,
+  })
+}
+
+function isPayrollRowReady(row: TimekeepingReviewRow): boolean {
+  return row.payrollReady && !row.mixedPayrollCategories
 }
 
 function rowClock(value: string | null, row: TimekeepingReviewRow): string {
@@ -384,7 +406,7 @@ function PayrollExceptions({
   rows: TimekeepingReviewRow[]
 }) {
   const exceptionRows = useMemo(
-    () => rows.filter((row) => !row.payrollReady || row.exceptionCodes.length > 0),
+    () => rows.filter((row) => !isPayrollRowReady(row) || row.exceptionCodes.length > 0),
     [rows],
   )
   const [search, setSearch] = useState('')
@@ -520,6 +542,7 @@ export function PayrollEmployeeSummaryTable({
   }))
   const hasActivity = visibleGroups.some((group) => group.summaries.length > 0)
   const hasTrainingTime = visibleGroups.some((group) => group.summaries.some((summary) => summary.trainingMinutes > 0))
+  const hasLegacyUnclassifiedTime = visibleGroups.some((group) => group.summaries.some((summary) => summary.unclassifiedCategoryMinutes > 0))
 
   if (!hasActivity) {
     return (
@@ -533,7 +556,7 @@ export function PayrollEmployeeSummaryTable({
     <section className="time-card payroll-employee-summary-panel" aria-labelledby="payroll-employee-summary-title">
       <TimeSectionHeader
         eyebrow="Weekly employee totals"
-        summary="Each Sunday-through-Saturday payroll week is shown separately. Overnight work remains with the week in which the occurrence began."
+        summary="Each Sunday-through-Saturday payroll week is shown separately. Regular, EP, and TRUEP partition total worked hours; overtime is already included in one category and is not added again."
         title="Payroll weeks"
       />
       <div className="payroll-week-summary-list">
@@ -560,9 +583,13 @@ export function PayrollEmployeeSummaryTable({
             <tr>
               <th>Employee</th>
               <th>Worked shifts</th>
+              <th>Total worked</th>
               <th>Regular</th>
-              <th>OT</th>
-              <th>Worked</th>
+              <th>EP</th>
+              <th>TRUEP</th>
+              {hasLegacyUnclassifiedTime ? <th>Legacy unclassified</th> : null}
+              <th>Non-OT</th>
+              <th>OT <span className="sr-only">included in category totals</span></th>
               {hasTrainingTime ? <th>Training</th> : null}
               <th>Breaks</th>
               <th>Sick/PTO</th>
@@ -585,9 +612,13 @@ export function PayrollEmployeeSummaryTable({
                   <strong>{summary.workedShiftCount}</strong>
                   <span>{summary.locationCount} location{summary.locationCount === 1 ? '' : 's'} · {summary.accountabilityCount} accountability</span>
                 </td>
+                <td><strong>{payrollHours(summary.paidMinutes)} hr</strong></td>
+                <td><strong>{payrollHours(summary.regularCategoryMinutes)} hr</strong></td>
+                <td><strong>{payrollHours(summary.epMinutes)} hr</strong></td>
+                <td><strong>{payrollHours(summary.truepMinutes)} hr</strong></td>
+                {hasLegacyUnclassifiedTime ? <td><strong>{payrollHours(summary.unclassifiedCategoryMinutes)} hr</strong></td> : null}
                 <td><strong>{payrollHours(summary.regularMinutes)} hr</strong></td>
                 <td><strong>{payrollHours(summary.overtimeMinutes)} hr</strong></td>
-                <td><strong>{payrollHours(summary.paidMinutes)} hr</strong></td>
                 {hasTrainingTime ? <td><strong>{payrollHours(summary.trainingMinutes)} hr</strong></td> : null}
                 <td><strong>{summary.breakMinutes} min</strong></td>
                 <td><strong>{payrollHours(sickPtoMinutes)} hr</strong></td>
@@ -732,7 +763,8 @@ function PayrollEmployeeWorkspace({
                   <div key={week.weekStartsOn}>
                     <span>{week.label || `Week ${index + 1}`}</span>
                     <strong>{payrollHours(payrollWeeklyTotalPayableMinutes(summary))} hr</strong>
-                    <small>{payrollHours(summary.regularMinutes)} regular · {payrollHours(summary.overtimeMinutes)} OT · {payrollHours(summary.sickPayMinutes + summary.vacationPayMinutes)} sick/PTO</small>
+                    <small>{payrollHours(summary.regularCategoryMinutes)} Regular · {payrollHours(summary.epMinutes)} EP · {payrollHours(summary.truepMinutes)} TRUEP · {payrollHours(summary.regularMinutes)} non-OT · {payrollHours(summary.overtimeMinutes)} OT · {payrollHours(summary.sickPayMinutes + summary.vacationPayMinutes)} sick/PTO</small>
+                    {summary.unclassifiedCategoryMinutes > 0 ? <small>{payrollHours(summary.unclassifiedCategoryMinutes)} legacy hours are unclassified.</small> : null}
                   </div>
                 ))}
               </div>
@@ -790,17 +822,23 @@ export function PayrollRowsTable({
               <th>Date</th>
               <th>Location</th>
               <th>Time category</th>
+              <th>Payroll category</th>
               <th>Clock in</th>
               <th>Clock out</th>
               <th>Regular</th>
-              <th>OT</th>
-              <th>Paid</th>
+              <th>EP</th>
+              <th>TRUEP</th>
+              <th>Non-OT</th>
+              <th>OT <span className="sr-only">included in category totals</span></th>
+              <th>Total worked</th>
               <th>Payroll batch</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {rows.map((row) => {
+              const categoryMinutes = payrollCategoryAllocation(row)
+              return (
               <tr key={`${row.employeeId}-${row.shiftId ?? row.rowKind}-${row.operationalDate}-${row.firstClockIn ?? row.scheduledStartsAt ?? 'no-start'}`}>
                 <td>
                   <strong>{row.employeeName}</strong>
@@ -818,8 +856,17 @@ export function PayrollRowsTable({
                   <strong>{row.mixedWorkTypes ? 'Needs classification review' : row.workType === 'training' ? 'Paid training' : 'Worked time'}</strong>
                   {row.workType === 'training' ? <span>Marked on the scheduled shift</span> : null}
                 </td>
+                <td>
+                  <strong>{row.mixedPayrollCategories ? 'Needs category review' : row.payrollCategoryLabel ?? payrollCategoryLabel(row.payrollCategory)}</strong>
+                  {!row.payrollCategory ? <span>Historical locked row; not reassigned.</span> : null}
+                </td>
                 <td>{rowClock(row.firstClockIn, row)}</td>
                 <td>{rowClock(row.lastClockOut, row)}</td>
+                <td>
+                  <strong>{payrollHours(categoryMinutes.regularCategoryMinutes)} hr</strong>
+                </td>
+                <td><strong>{payrollHours(categoryMinutes.epMinutes)} hr</strong></td>
+                <td><strong>{payrollHours(categoryMinutes.truepMinutes)} hr</strong></td>
                 <td>
                   <strong>{payrollHours(row.regularMinutes)} hr</strong>
                   {row.grossMinutes !== row.paidMinutes + row.breakMinutes ? <span>Gross time reviewed</span> : null}
@@ -841,7 +888,7 @@ export function PayrollRowsTable({
                   {row.manualAdjustment ? <small>Manual adjustment recorded</small> : null}
                 </td>
                 <td>
-                  {row.payrollReady ? (
+                  {isPayrollRowReady(row) ? (
                     <span className="payroll-status payroll-status--ready">Ready</span>
                   ) : (
                     <span className="payroll-status payroll-status--hold">Needs review</span>
@@ -850,7 +897,7 @@ export function PayrollRowsTable({
                   {row.payrollNotes.length > 0 ? <small>{row.payrollNotes.join(' ')}</small> : null}
                 </td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
       </div>
@@ -1065,6 +1112,7 @@ export function TimePayrollPage() {
           summary: {
             exceptionCount: 0,
             grossMinutes: detail.batch.grossMinutes,
+            ...payrollCategoryTotals(detail.rows),
             overtimeMinutes: detail.rows.reduce((total, row) => total + row.overtimeMinutes, 0),
             paidMinutes: detail.batch.paidMinutes,
             pendingCorrectionCount: 0,
@@ -1106,6 +1154,7 @@ export function TimePayrollPage() {
           summary: {
             exceptionCount: 0,
             grossMinutes: detail.batch.grossMinutes,
+            ...payrollCategoryTotals(detail.rows),
             overtimeMinutes: detail.rows.reduce((total, row) => total + row.overtimeMinutes, 0),
             paidMinutes: detail.batch.paidMinutes,
             pendingCorrectionCount: 0,
@@ -1200,7 +1249,7 @@ export function TimePayrollPage() {
       setSelectedCorrection(correction)
       return
     }
-    const row = review.rows.find((candidate) => !candidate.payrollReady || candidate.exceptionCodes.length > 0)
+    const row = review.rows.find((candidate) => !isPayrollRowReady(candidate) || candidate.exceptionCodes.length > 0)
     if (row) openRowBlocker(row)
   }
 
@@ -1318,10 +1367,16 @@ export function TimePayrollPage() {
           <section className="time-command-grid payroll-summary-grid" aria-label="Payroll export totals">
             <TimeMetricCard detail="Only SygShift timeclock rows in the selected range." icon={FileClock} label="Worked Rows" value={totals?.rowCount ?? 0} />
             <TimeMetricCard detail="Paid hours from completed clock-in/out records after unpaid breaks." icon={CheckCircle2} label="Paid Hours" tone="good" value={`${payrollHours(totals?.paidMinutes ?? 0)} hr`} />
+            <TimeMetricCard detail="Regular payroll-category hours included in total worked hours." icon={FileClock} label="Regular Hours" value={`${payrollHours(totals?.regularCategoryMinutes ?? 0)} hr`} />
+            <TimeMetricCard detail="Executive Protection hours included in total worked hours." icon={ShieldAlert} label="EP Hours" value={`${payrollHours(totals?.epMinutes ?? 0)} hr`} />
+            <TimeMetricCard detail="TRUEP hours included in total worked hours." icon={ShieldAlert} label="TRUEP Hours" value={`${payrollHours(totals?.truepMinutes ?? 0)} hr`} />
+            <TimeMetricCard detail="Worked hours before the overtime portion; this is separate from the Regular payroll category." icon={Timer} label="Non-Overtime" value={`${payrollHours(totals?.regularMinutes ?? 0)} hr`} />
             <TimeMetricCard detail="Daily/weekly overtime calculated by payroll rules." icon={AlertTriangle} label="Overtime" tone={(totals?.overtimeMinutes ?? 0) > 0 ? 'warning' : 'neutral'} value={`${payrollHours(totals?.overtimeMinutes ?? 0)} hr`} />
             <TimeMetricCard detail="Rows or corrections blocking official export." icon={ShieldAlert} label="Blockers" tone={(totals?.exceptionCount ?? 0) + (totals?.pendingCorrectionCount ?? 0) > 0 ? 'danger' : 'good'} value={(totals?.exceptionCount ?? 0) + (totals?.pendingCorrectionCount ?? 0)} />
             {trainingMinutes > 0 ? <TimeMetricCard detail="Paid training marked on scheduled shifts and included in worked hours." icon={History} label="Training Time" value={`${payrollHours(trainingMinutes)} hr`} /> : null}
+            {(totals?.unclassifiedCategoryMinutes ?? 0) > 0 ? <TimeMetricCard detail="Historical locked hours preserved without assigning a category that was not recorded at lock time." icon={History} label="Legacy Unclassified" tone="warning" value={`${payrollHours(totals?.unclassifiedCategoryMinutes ?? 0)} hr`} /> : null}
           </section>
+          <div className="inline-note">Regular, EP, and TRUEP partition total worked hours. Overtime is already included in exactly one category total and must not be added again.</div>
           <section className="time-card payroll-priority-panel" aria-labelledby="payroll-priority-title">
             <TimeSectionHeader eyebrow="Priority work" summary="Only the first five items needing attention are shown here. Use Review Queue for the complete list." title="What needs attention" />
             <div className="payroll-priority-list">
@@ -1331,13 +1386,13 @@ export function TimePayrollPage() {
                   <TimeStatusBadge tone="warning">Review</TimeStatusBadge>
                 </article>
               ))}
-              {review.rows.filter((row) => !row.payrollReady || row.exceptionCodes.length > 0).slice(0, Math.max(0, 5 - review.pendingCorrections.length)).map((row) => (
+              {review.rows.filter((row) => !isPayrollRowReady(row) || row.exceptionCodes.length > 0).slice(0, Math.max(0, 5 - review.pendingCorrections.length)).map((row) => (
                 <article key={`${row.employeeId}-${row.operationalDate}-${row.shiftId ?? row.rowKind}`}>
                   <div><strong>{row.employeeName}</strong><span>{formatUsDateKey(row.operationalDate)} · {rowLocation(row)}</span></div>
                   <TimeStatusBadge tone="warning">{row.exceptionCodes.length ? row.exceptionCodes.map(exceptionLabel).join(', ') : 'Needs review'}</TimeStatusBadge>
                 </article>
               ))}
-              {review.pendingCorrections.length === 0 && !review.rows.some((row) => !row.payrollReady || row.exceptionCodes.length > 0) ? (
+              {review.pendingCorrections.length === 0 && !review.rows.some((row) => !isPayrollRowReady(row) || row.exceptionCodes.length > 0) ? (
                 <div className="payroll-priority-list__empty"><CheckCircle2 aria-hidden="true" size={22} /><span>No priority payroll work for this period.</span></div>
               ) : null}
             </div>
@@ -1425,7 +1480,12 @@ export function TimePayrollPage() {
               <article key={week.weekStartsOn}>
                 <span>{week.label}</span>
                 <strong>{formatUsDateKey(week.weekStartsOn)} - {formatUsDateKey(week.weekEndsOn)}</strong>
-                <div><b>{payrollHours(summary.regularMinutes)} hr</b><small>Regular</small></div>
+                <div><b>{payrollHours(summary.paidMinutes)} hr</b><small>Total worked</small></div>
+                <div><b>{payrollHours(summary.regularCategoryMinutes)} hr</b><small>Regular</small></div>
+                <div><b>{payrollHours(summary.epMinutes)} hr</b><small>EP</small></div>
+                <div><b>{payrollHours(summary.truepMinutes)} hr</b><small>TRUEP</small></div>
+                {summary.unclassifiedCategoryMinutes > 0 ? <div><b>{payrollHours(summary.unclassifiedCategoryMinutes)} hr</b><small>Legacy unclassified</small></div> : null}
+                <div><b>{payrollHours(summary.regularMinutes)} hr</b><small>Non-overtime</small></div>
                 <div><b>{payrollHours(summary.overtimeMinutes)} hr</b><small>Overtime</small></div>
                 <div><b>{payrollHours(summary.sickPayMinutes + summary.vacationPayMinutes)} hr</b><small>Sick/PTO</small></div>
                 <div><b>{payrollHours(payrollWeeklyTotalPayableMinutes(summary))} hr</b><small>Total payable</small></div>
@@ -1437,7 +1497,7 @@ export function TimePayrollPage() {
               <article key={`${row.operationalDate}-${row.shiftId ?? row.rowKind}-${row.firstClockIn ?? row.scheduledStartsAt ?? 'row'}`}>
                 <div><strong>{formatUsDateKey(row.operationalDate)}</strong><span>{rowLocation(row)}</span></div>
                 <div><span>{rowClock(row.firstClockIn, row)} - {rowClock(row.lastClockOut, row)}</span><small>{row.breakMinutes} unpaid break min</small></div>
-                <div><strong>{payrollHours(row.paidMinutes)} paid hr</strong><TimeStatusBadge tone={row.payrollReady ? 'good' : 'warning'}>{row.payrollReady ? 'Ready' : 'Needs review'}</TimeStatusBadge></div>
+                <div><strong>{payrollHours(row.paidMinutes)} worked hr</strong><small>{row.mixedPayrollCategories ? 'Conflicting payroll categories' : row.payrollCategoryLabel ?? payrollCategoryLabel(row.payrollCategory)} · {payrollHours(row.regularMinutes)} non-OT · {payrollHours(row.overtimeMinutes)} OT</small><TimeStatusBadge tone={isPayrollRowReady(row) ? 'good' : 'warning'}>{isPayrollRowReady(row) ? 'Ready' : 'Needs review'}</TimeStatusBadge></div>
               </article>
             ))}
           </div>

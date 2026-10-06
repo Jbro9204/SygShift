@@ -44,6 +44,19 @@ describe("overnight Time Maintenance workday guard", () => {
     expect(timePage).toContain("Review this employee");
   });
 
+  it("corrects published payroll categories in the same audited maintenance modal", () => {
+    expect(timePage).toContain("correctTimeRecordPayrollCategory");
+    expect(timePage).toContain("correctionMode === 'payroll_category'");
+    expect(timePage).toContain('type="radio" /> Payroll category');
+    expect(timePage).toContain('<option value="regular">Regular</option>');
+    expect(timePage).toContain('<option value="ep">EP</option>');
+    expect(timePage).toContain('<option value="truep">TRUEP</option>');
+    expect(timePage).toContain('correctionReason.trim().length >= 8');
+    expect(timePage).toContain('Payroll: {event.payrollCategoryLabel}');
+    expect(timePage).toContain("queryClient.invalidateQueries({ queryKey: ['time-maintenance'] })");
+    expect(timePage).toContain("queryClient.invalidateQueries({ queryKey: ['timekeeping-review'] })");
+  });
+
   it("filters the exception workspace to the employee from the timecard link", () => {
     expect(exceptionsPage).toContain(
       "const focusedEmployeeId = searchParams.get('employee')",

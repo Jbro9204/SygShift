@@ -13,6 +13,7 @@ const shift: ScheduleShift = {
   requires_armed: true,
   is_open: false,
   is_overtime: false,
+  payrollCategory: 'regular',
   notes: 'Bring radio, keys',
   post: { id: '22222222-2222-4222-8222-222222222222', name: 'Lobby', site: { id: '33333333-3333-4333-8333-333333333333', code: 'HQ', name: 'Headquarters' } },
   event: null,

@@ -15,6 +15,7 @@ Every exported payroll row must be explainable from approved SygShift records:
 - break or unpaid adjustment when applicable
 - regular time
 - overtime time
+- payroll category: Regular, EP, or TRUEP
 - manual correction reason
 - approving supervisor or admin when approval is required
 
@@ -58,6 +59,27 @@ For this operation:
 During validation, compare at least five entries from different devices to ensure the displayed work date and time match the Colorado operating schedule.
 
 Payroll-week assignment uses Sunday at 12:00 AM in `America/Denver`. A linked occurrence is never split at that boundary: the complete shift follows its scheduled start. Validate Saturday-to-Sunday overnight shifts, early and late punches around midnight, standalone manual entries, unscheduled work, and both daylight-saving transitions.
+
+### Payroll category handling
+
+Regular, EP, and TRUEP classify actual worked time; they do not define a rate
+or decide where overtime is paid. Confirm that:
+
+- every worked occurrence has exactly one category,
+- Regular is the default,
+- EP and TRUEP can be selected only for an explicitly enabled Site,
+- copied, call-off, open-coverage, and replacement shifts retain the source
+  category,
+- Regular + EP + TRUEP + legacy-unclassified minutes equal Total Worked
+  minutes,
+- Non-Overtime + Overtime minutes equal Total Worked minutes,
+- overtime is already included in exactly one category and is not added twice,
+- salary-default and other non-time rows contribute no payroll-category worked
+  minutes, and
+- mixed or unresolved categories block the official payroll lock.
+
+Finance and Payroll remain responsible for pay rates, venue rates, tax
+treatment, and legal overtime allocation.
 
 ### 4. Exception coverage
 
@@ -103,6 +125,9 @@ Use this checklist for each payroll dry run:
 - Export totals match review-screen totals.
 - Every row has one unique payroll occurrence key and one resolved payroll-batch week.
 - Paid minutes equal regular minutes plus overtime minutes.
+- Regular, EP, TRUEP, and legacy-unclassified minutes equal worked minutes.
+- Salary-default and other non-time rows do not appear as category worked hours.
+- Overtime is treated as a subset of category hours, not an additional total.
 - Cross-boundary rows disclose their assignment source, policy version, configuration version, and whether a manual adjustment exists.
 - Payroll reviewer signs off before the export is used.
 

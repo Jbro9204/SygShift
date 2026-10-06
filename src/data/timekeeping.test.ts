@@ -18,6 +18,8 @@ import {
   parseTimekeepingDashboard,
   parseTimekeepingEvent,
   parseTimekeepingReview,
+  payrollCategoryAllocation,
+  payrollCategoryLabel,
   payrollHours,
   reviewRowsToPayrollSummaryCsv,
   reviewRowsToPayrollCsv,
@@ -422,6 +424,8 @@ describe('timekeeping validation', () => {
         pendingCorrectionCount: 0,
         grossMinutes: 510,
         paidMinutes: 480,
+        payrollCategory: 'ep',
+        payrollCategoryLabel: 'EP',
         regularMinutes: 420,
         overtimeMinutes: 60,
         salaryDefaultMinutes: 0,
@@ -514,6 +518,8 @@ describe('timekeeping validation', () => {
           grossMinutes: 510,
           breakMinutes: 30,
           paidMinutes: 480,
+          payrollCategory: 'regular',
+          payrollCategoryLabel: 'Regular',
           regularMinutes: 420,
           overtimeMinutes: 60,
           salaryDefaultMinutes: 0,
@@ -549,6 +555,8 @@ describe('timekeeping validation', () => {
           grossMinutes: 0,
           breakMinutes: 0,
           paidMinutes: 0,
+          payrollCategory: 'regular',
+          payrollCategoryLabel: 'Regular',
           regularMinutes: 0,
           overtimeMinutes: 0,
           salaryDefaultMinutes: 0,
@@ -584,6 +592,8 @@ describe('timekeeping validation', () => {
           grossMinutes: 300,
           breakMinutes: 0,
           paidMinutes: 300,
+          payrollCategory: 'truep',
+          payrollCategoryLabel: 'TRUEP',
           regularMinutes: 300,
           overtimeMinutes: 0,
           salaryDefaultMinutes: 0,
@@ -607,7 +617,12 @@ describe('timekeeping validation', () => {
     expect(summaries[0]?.paidMinutes).toBe(480)
     expect(summaries[0]?.payrollReady).toBe(false)
     expect(summaries[0]?.exceptionCount).toBe(1)
-    expect(reviewRowsToPayrollSummaryCsv(review.rows)).toContain('Jordan Brown,jbrown,admin,salary,07/12/2026,07/13/2026,2,1,8.50,30,0.00,8.00,7.00,1.00,no,1,1')
+    expect(summaries[0]?.regularCategoryMinutes).toBe(480)
+    expect(summaries[0]?.epMinutes).toBe(0)
+    expect(summaries[0]?.truepMinutes).toBe(0)
+    expect(summaries[0]?.unclassifiedCategoryMinutes).toBe(0)
+    expect(reviewRowsToPayrollSummaryCsv(review.rows)).toContain('Total Worked Hours,Regular Hours,EP Hours,TRUEP Hours,Legacy Unclassified Hours,Non-Overtime Hours,Overtime Hours (included in category totals)')
+    expect(reviewRowsToPayrollSummaryCsv(review.rows)).toContain('Jordan Brown,jbrown,admin,salary,07/12/2026,07/13/2026')
     expect(reviewRowsToPayrollCsv(review.rows)).toContain('Jordan Brown,jbrown,07/12/2026')
     expect(reviewRowsToPayrollCsv(review.rows)).not.toContain('07/13/2026')
   })
@@ -671,6 +686,32 @@ describe('timekeeping validation', () => {
     expect(review.rows[0]?.rowKind).toBe('salary_default')
     expect(reviewRowsToPayrollCsv(review.rows)).not.toContain('salary_default,Jordan Brown,jbrown,07/12/2026')
     expect(reviewRowsToPayrollCsv(review.rows)).not.toContain('Salary Default Hours')
+  })
+
+  it('keeps payroll categories separate from overtime and preserves legacy rows as unclassified', () => {
+    expect(payrollCategoryAllocation({ rowKind: 'time_event', paidMinutes: 480, payrollCategory: 'truep' })).toEqual({
+      epMinutes: 0,
+      regularCategoryMinutes: 0,
+      truepMinutes: 480,
+      unclassifiedCategoryMinutes: 0,
+    })
+    expect(payrollCategoryAllocation({ rowKind: 'time_event', paidMinutes: 480, payrollCategory: null })).toEqual({
+      epMinutes: 0,
+      regularCategoryMinutes: 0,
+      truepMinutes: 0,
+      unclassifiedCategoryMinutes: 480,
+    })
+    expect(payrollCategoryAllocation({
+      rowKind: 'salary_default',
+      paidMinutes: 2400,
+      payrollCategory: 'regular',
+    })).toEqual({
+      epMinutes: 0,
+      regularCategoryMinutes: 0,
+      truepMinutes: 0,
+      unclassifiedCategoryMinutes: 0,
+    })
+    expect(payrollCategoryLabel(null)).toBe('Legacy / unclassified')
   })
 
   it('validates locked payroll export batch records', () => {

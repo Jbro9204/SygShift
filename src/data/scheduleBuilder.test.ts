@@ -42,6 +42,13 @@ describe('schedule builder data contract', () => {
       })
       .mockResolvedValueOnce({ data: [], error: null })
       .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({
+        data: [{
+          shiftId: '40000000-0000-4000-8000-000000000001',
+          payrollCategory: 'ep',
+        }],
+        error: null,
+      })
       .mockResolvedValueOnce({ data: [], error: null })
 
     await expect(getWeeklySchedule('2026-09-20')).resolves.toMatchObject({
@@ -49,8 +56,32 @@ describe('schedule builder data contract', () => {
         time_zone: 'America/New_York',
         time_zone_source: 'employee',
         time_zone_employee_id: '70000000-0000-4000-8000-000000000001',
+        payrollCategory: 'ep',
       }],
     })
+  })
+
+  it('fails closed when shift payroll classifications cannot be loaded', async () => {
+    rpc
+      .mockResolvedValueOnce({
+        data: {
+          id: '30000000-0000-4000-8000-000000000001',
+          week_starts_on: '2026-09-20',
+          revision: 4,
+          status: 'draft',
+          published_at: null,
+          shifts: [],
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: 'classification map unavailable' } })
+      .mockResolvedValueOnce({ data: [], error: null })
+
+    await expect(getWeeklySchedule('2026-09-20')).rejects.toThrow(
+      'Shift payroll classifications could not be loaded. The schedule was not displayed to prevent incorrect payroll labels.',
+    )
   })
 
   it('loads supervisor builder options from the guarded RPC', async () => {
@@ -65,6 +96,7 @@ describe('schedule builder data contract', () => {
             code: 'HQ',
             name: 'Headquarters',
             time_zone: 'America/Denver',
+            supports_ep_truep_payroll: true,
           },
         }],
         employees: [
@@ -106,6 +138,7 @@ describe('schedule builder data contract', () => {
           name: 'Headquarters',
           time_zone: 'America/Denver',
           supports_dispatch_phone_duty: false,
+          supports_ep_truep_payroll: true,
         },
       }],
       employees: [
@@ -188,7 +221,7 @@ describe('schedule builder data contract', () => {
       publishAnnouncement: true,
     })
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_create_typed_open_shift', {
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_typed_open_shift_with_payroll_category_v1', {
       target_week_starts_on: '2026-07-05',
       target_post_id: null,
       event_name: 'Concert coverage',
@@ -207,6 +240,7 @@ describe('schedule builder data contract', () => {
       target_availability_override_note: null,
       target_credential_override_note: null,
       target_work_type: 'post',
+      target_payroll_category: 'regular',
     })
   })
 
@@ -231,7 +265,7 @@ describe('schedule builder data contract', () => {
       publishAnnouncement: true,
     })).rejects.toThrow('Choose the event time zone.')
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_create_typed_open_shift', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_typed_open_shift_with_payroll_category_v1', expect.objectContaining({
       event_time_zone: null,
     }))
   })
@@ -264,11 +298,12 @@ describe('schedule builder data contract', () => {
       isOvertime: false,
       notes: '',
       publishAnnouncement: false,
+      payrollCategory: 'ep',
     })).resolves.toMatchObject({
       assignment_id: '80000000-0000-4000-8000-000000000001',
     })
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_create_typed_open_shift', {
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_typed_open_shift_with_payroll_category_v1', {
       target_week_starts_on: '2026-07-05',
       target_post_id: '10000000-0000-4000-8000-000000000001',
       event_name: null,
@@ -287,6 +322,7 @@ describe('schedule builder data contract', () => {
       target_availability_override_note: null,
       target_credential_override_note: null,
       target_work_type: 'post',
+      target_payroll_category: 'ep',
     })
   })
 
@@ -354,7 +390,7 @@ describe('schedule builder data contract', () => {
       credentialOverrideNote: '  License verified outside SygShift; upload pending.  ',
     })
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_create_typed_open_shift', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_typed_open_shift_with_payroll_category_v1', expect.objectContaining({
       target_employee_id: '70000000-0000-4000-8000-000000000001',
       target_credential_override_note: 'License verified outside SygShift; upload pending.',
     }))
@@ -399,11 +435,13 @@ describe('schedule builder data contract', () => {
       useEmployeeTimeZone: true,
     })
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_create_employee_local_coverage_plan_v3', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_coverage_plan_with_payroll_category_v1', expect.objectContaining({
       target_employee_id: '70000000-0000-4000-8000-000000000001',
       target_notes: 'Patrol route',
       target_overtime_override_note: 'Matt approved patrol overtime.',
       target_dispatch_mode: 'primary_shift',
+      target_payroll_category: 'regular',
+      use_employee_time_zone: true,
     }))
   })
 
@@ -450,15 +488,17 @@ describe('schedule builder data contract', () => {
       publishAnnouncement: false,
       useEmployeeTimeZone: true,
       expectedTimeZone: 'America/New_York',
+      payrollCategory: 'truep',
     })).resolves.toHaveLength(2)
 
     expect(rpc).toHaveBeenCalledTimes(1)
-    expect(rpc).toHaveBeenCalledWith('scheduler_create_coverage_plan_batch_v1', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_coverage_plan_batch_with_payroll_category_v1', expect.objectContaining({
       shift_operational_dates: ['2026-09-01', '2026-09-02'],
       target_notes: 'Eastern assignment',
       use_employee_time_zone: true,
       expected_time_zone: 'America/New_York',
       target_dispatch_mode: 'primary_shift',
+      target_payroll_category: 'truep',
     }))
   })
 
@@ -506,7 +546,7 @@ describe('schedule builder data contract', () => {
       expectedTimeZone: 'America/New_York',
     })
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_create_coverage_plan_batch_v1', expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith('scheduler_create_coverage_plan_batch_with_payroll_category_v1', expect.objectContaining({
       event_site_id: null,
       event_time_zone: 'America/New_York',
       expected_time_zone: 'America/New_York',
@@ -564,17 +604,19 @@ describe('schedule builder data contract', () => {
   })
 
   it('updates draft shift assignments through the unambiguous scheduler RPC', async () => {
-    rpc.mockResolvedValueOnce({
-      data: {
-        id: '30000000-0000-4000-8000-000000000001',
-        week_starts_on: '2026-07-26',
-        revision: 4,
-        status: 'draft',
-        published_at: null,
-        shifts: [],
-      },
-      error: null,
-    })
+    rpc
+      .mockResolvedValueOnce({
+        data: {
+          id: '30000000-0000-4000-8000-000000000001',
+          week_starts_on: '2026-07-26',
+          revision: 4,
+          status: 'draft',
+          published_at: null,
+          shifts: [],
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: [], error: null })
 
     await expect(updateScheduleDraftShift({
       shiftId: '40000000-0000-4000-8000-000000000001',
@@ -587,12 +629,13 @@ describe('schedule builder data contract', () => {
       notes: '  Armed coverage  ',
       employeeId: '70000000-0000-4000-8000-000000000001',
       credentialOverrideNote: '  Pending upload  ',
+      payrollCategory: 'ep',
     })).resolves.toMatchObject({
       id: '30000000-0000-4000-8000-000000000001',
       status: 'draft',
     })
 
-    expect(rpc).toHaveBeenCalledWith('scheduler_update_typed_draft_shift_v3', {
+    expect(rpc).toHaveBeenCalledWith('scheduler_update_typed_draft_shift_with_payroll_category_v1', {
       target_shift_id: '40000000-0000-4000-8000-000000000001',
       shift_operational_date: '2026-07-29',
       shift_start_time: '08:00',
@@ -606,6 +649,7 @@ describe('schedule builder data contract', () => {
       target_credential_override_note: 'Pending upload',
       target_overtime_override_note: null,
       target_work_type: 'post',
+      target_payroll_category: 'ep',
       target_dispatch_mode: 'primary_shift',
     })
   })
@@ -643,17 +687,19 @@ describe('schedule builder data contract', () => {
   })
 
   it('removes duplicate draft shifts through the guarded removal RPC', async () => {
-    rpc.mockResolvedValueOnce({
-      data: {
-        id: '30000000-0000-4000-8000-000000000001',
-        week_starts_on: '2026-07-26',
-        revision: 4,
-        status: 'draft',
-        published_at: null,
-        shifts: [],
-      },
-      error: null,
-    })
+    rpc
+      .mockResolvedValueOnce({
+        data: {
+          id: '30000000-0000-4000-8000-000000000001',
+          week_starts_on: '2026-07-26',
+          revision: 4,
+          status: 'draft',
+          published_at: null,
+          shifts: [],
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: [], error: null })
 
     await expect(removeScheduleDraftShift({
       shiftId: '40000000-0000-4000-8000-000000000001',

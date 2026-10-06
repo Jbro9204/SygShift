@@ -40,6 +40,7 @@ import {
   shiftTimeRange,
   updateScheduleDraftShift,
   type ImportedScheduleShift,
+  type PayrollCategory,
   type ScheduleBuilderEmployee,
   type ScheduleBuilderPost,
   type ScheduledOvertimeCreatePreview,
@@ -96,6 +97,7 @@ interface OpenShiftFormState {
   credentialOverrideConfirmedResponsibility: boolean
   overtimeOverrideNote: string
   workType: 'post' | 'training'
+  payrollCategory: PayrollCategory
   dispatchMode: 'primary_shift' | 'concurrent_duty'
 }
 
@@ -153,6 +155,7 @@ function defaultOpenShiftForm(weekKey: string): OpenShiftFormState {
     credentialOverrideConfirmedResponsibility: false,
     overtimeOverrideNote: '',
     workType: 'post',
+    payrollCategory: 'regular',
     dispatchMode: 'primary_shift',
   }
 }
@@ -165,6 +168,50 @@ function dispatchCoverageLabel(shift: ScheduleShift): string | null {
   if (shift.assignment_type === 'dispatch_primary') return 'Paid dispatch shift'
   if (shift.assignment_type === 'dispatch_phone_duty') return 'Concurrent dispatch duty'
   return null
+}
+
+function payrollCategoryLabel(category: PayrollCategory): string {
+  if (category === 'ep') return 'EP'
+  if (category === 'truep') return 'TRUEP'
+  return 'Regular'
+}
+
+function PayrollCategorySelector({
+  name,
+  onChange,
+  value,
+}: {
+  name: string
+  onChange: (category: PayrollCategory) => void
+  value: PayrollCategory
+}) {
+  const options: Array<{ description: string; label: string; value: PayrollCategory }> = [
+    { description: 'Default payroll classification.', label: 'Regular', value: 'regular' },
+    { description: 'Separates these worked hours into the EP payroll column.', label: 'EP', value: 'ep' },
+    { description: 'Separates these worked hours into the TRUEP payroll column.', label: 'TRUEP', value: 'truep' },
+  ]
+
+  return (
+    <fieldset className="schedule-payroll-category">
+      <legend>Payroll classification</legend>
+      {options.map((option) => (
+        <label className={value === option.value ? 'is-selected' : ''} key={option.value}>
+          <input
+            checked={value === option.value}
+            name={name}
+            onChange={() => onChange(option.value)}
+            type="radio"
+            value={option.value}
+          />
+          <span>
+            <strong>{option.label}</strong>
+            <small>{option.description}</small>
+          </span>
+        </label>
+      ))}
+      <p>Classification controls separate payroll export columns. Finance and Payroll continue to control rates and overtime treatment.</p>
+    </fieldset>
+  )
 }
 
 function overtimeCountedShiftLabel(shift: ScheduledOvertimeCreatePreview['countedShifts'][number]): string {
@@ -665,6 +712,7 @@ function ShiftCard({
         <strong>{shiftTimeRange(shift)}</strong>
         {dispatchCoverageLabel(shift) ? <span className="shift-tag shift-tag--dispatch">{dispatchCoverageLabel(shift)}</span> : null}
         {shift.is_overtime ? <span className="shift-tag shift-tag--overtime">OT</span> : null}
+        {shift.payrollCategory !== 'regular' ? <span className="shift-tag shift-tag--payroll">{payrollCategoryLabel(shift.payrollCategory)}</span> : null}
         {shift.coverage?.marker === 'call_off' ? <span className="shift-tag shift-tag--call-off">CALL OFF</span> : null}
         {shift.coverage?.marker === 'coverage' ? <span className="shift-tag shift-tag--coverage">COVERAGE</span> : null}
       </div>
@@ -899,6 +947,7 @@ function EmployeePersonalSchedulePanel({
                           {notes ? <p className="employee-shift-card__notes">{notes}</p> : null}
                           <div className="employee-shift-card__tags">
                             {shift.work_type === 'training' ? <span>Paid training</span> : null}
+                            {shift.payrollCategory !== 'regular' ? <span>{payrollCategoryLabel(shift.payrollCategory)}</span> : null}
                             <span>{shift.requires_armed ? 'Armed' : 'Unarmed'}</span>
                             <span>Assigned to you</span>
                           </div>
@@ -951,6 +1000,7 @@ function EditShiftDialog({
     credentialOverrideNote?: string | null
     overtimeOverrideNote?: string | null
     workType?: 'post' | 'training'
+    payrollCategory?: PayrollCategory
     dispatchMode?: 'primary_shift' | 'concurrent_duty'
   }>>
   onClose: () => void
@@ -969,6 +1019,7 @@ function EditShiftDialog({
   const [isOpen, setIsOpen] = useState(shift.is_open)
   const [isOvertime, setIsOvertime] = useState(shift.is_overtime)
   const [workType, setWorkType] = useState<'post' | 'training'>(shift.work_type ?? 'post')
+  const [payrollCategory, setPayrollCategory] = useState<PayrollCategory>(shift.payrollCategory)
   const [dispatchMode, setDispatchMode] = useState<'primary_shift' | 'concurrent_duty'>(
     shift.assignment_type === 'dispatch_phone_duty' ? 'concurrent_duty' : 'primary_shift',
   )
@@ -981,8 +1032,11 @@ function EditShiftDialog({
   const selectedEmployee = selectedBuilderEmployee(employees, selectedEmployeeId)
   const timeBasisEmployee = selectedBuilderEmployee(employees, shift.time_zone_employee_id)
   const shiftSiteId = shift.post?.site.id ?? shift.event?.site?.id ?? null
-  const shiftSiteTimeZone = posts.find((post) => post.site.id === shiftSiteId)?.site.time_zone
+  const shiftSite = posts.find((post) => post.site.id === shiftSiteId)?.site
+  const shiftSiteTimeZone = shiftSite?.time_zone
     ?? (shift.time_zone_source === 'site' ? shift.time_zone : null)
+  const showPayrollCategorySelector = Boolean(shiftSite?.supports_ep_truep_payroll)
+    || shift.payrollCategory !== 'regular'
   const editTimePreview = useMemo(() => {
     try {
       return {
@@ -1048,6 +1102,7 @@ function EditShiftDialog({
     || isOpen !== shift.is_open
     || isOvertime !== shift.is_overtime
     || workType !== (shift.work_type ?? 'post')
+    || payrollCategory !== shift.payrollCategory
     || dispatchMode !== (shift.assignment_type === 'dispatch_phone_duty' ? 'concurrent_duty' : 'primary_shift')
     || overrideNote.trim().length > 0
     || credentialOverrideNote.trim().length > 0
@@ -1080,6 +1135,7 @@ function EditShiftDialog({
       credentialOverrideNote: credentialOverrideRequired ? credentialOverrideNote : null,
       overtimeOverrideNote: overtimeOverrideRequired ? overtimeOverrideNote : null,
       workType,
+      payrollCategory,
       dispatchMode: isDispatchCoverageShift(shift) ? dispatchMode : undefined,
     }, {
       onSuccess: onClose,
@@ -1118,6 +1174,18 @@ function EditShiftDialog({
               <small>Check only when this scheduled block is employee training. It will be identified in payroll reporting.</small>
             </span>
           </label>
+          {showPayrollCategorySelector ? (
+            <PayrollCategorySelector
+              name="editPayrollCategory"
+              onChange={setPayrollCategory}
+              value={payrollCategory}
+            />
+          ) : null}
+          {!shiftSite?.supports_ep_truep_payroll && shift.payrollCategory !== 'regular' ? (
+            <p className="form-note schedule-payroll-category-note">
+              This historical shift keeps its {payrollCategoryLabel(shift.payrollCategory)} classification even though the site no longer enables EP / TRUEP for new shifts.
+            </p>
+          ) : null}
           {isDispatchCoverageShift(shift) ? (
             <fieldset className="schedule-builder-dispatch-mode">
               <legend>Dispatch timekeeping</legend>
@@ -1589,6 +1657,7 @@ function SchedulerShiftModal({
             <div><dt>Needed</dt><dd>{shift.headcount_required}</dd></div>
             <div><dt>Open</dt><dd>{openSlots}</dd></div>
             <div><dt>Requirement</dt><dd>{shift.requires_armed ? 'Armed credential' : 'Unarmed'}</dd></div>
+            <div><dt>Payroll classification</dt><dd>{payrollCategoryLabel(shift.payrollCategory)}</dd></div>
             {shift.work_type === 'training' ? <div><dt>Time category</dt><dd>Paid training</dd></div> : null}
           </dl>
           </section>
@@ -2474,12 +2543,13 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
     enabled: isSupabaseConfigured && canEditScheduler,
   })
   const availableSites = useMemo(() => {
-    const sites = new Map<string, { id: string, name: string, time_zone: string }>()
+    const sites = new Map<string, { id: string, name: string, time_zone: string, supports_ep_truep_payroll: boolean }>()
     for (const post of builderOptionsQuery.data?.posts ?? []) {
       sites.set(post.site.id, {
         id: post.site.id,
         name: post.site.name,
         time_zone: post.site.time_zone,
+        supports_ep_truep_payroll: post.site.supports_ep_truep_payroll,
       })
     }
     return [...sites.values()].sort((left, right) => left.name.localeCompare(right.name))
@@ -2491,6 +2561,9 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
   }, [staffingSuggestionsQuery.data])
   const selectedPost = builderOptionsQuery.data?.posts.find((post) => post.id === openShiftForm.postId)
   const selectedEventSite = availableSites.find((site) => site.id === openShiftForm.eventSiteId)
+  const selectedSiteSupportsPayrollCategories = openShiftForm.mode === 'post'
+    ? Boolean(selectedPost?.site.supports_ep_truep_payroll)
+    : Boolean(selectedEventSite?.supports_ep_truep_payroll)
   const openShiftDateKeys = useMemo(
     () => selectedOpenShiftDateKeys(openShiftForm, weekKey, weekEndKey),
     [openShiftForm, weekEndKey, weekKey],
@@ -2706,6 +2779,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
           overtimeOverrideNote: openShiftOvertimeOverrideRequired ? openShiftForm.overtimeOverrideNote : null,
           publishAnnouncement: !openShiftForm.employeeId && openShiftForm.publishAnnouncement,
           workType: openShiftForm.workType,
+          payrollCategory: openShiftForm.payrollCategory,
           useEmployeeTimeZone: useEmployeeLocalTime,
           expectedTimeZone: openShiftTimeBasisZone,
           dispatchMode: openShiftForm.dispatchMode,
@@ -3835,6 +3909,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                   onChange={(event) => updateOpenShiftForm({
                     mode: event.target.value as OpenShiftFormState['mode'],
                     dispatchMode: 'primary_shift',
+                    payrollCategory: 'regular',
                     employeeId: '',
                     credentialOverrideNote: '',
                     credentialOverrideConfirmedKnown: false,
@@ -3870,6 +3945,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                       updateOpenShiftForm({
                         postId: event.target.value,
                         dispatchMode: post?.site.supports_dispatch_phone_duty ? openShiftForm.dispatchMode : 'primary_shift',
+                        payrollCategory: post?.site.supports_ep_truep_payroll ? openShiftForm.payrollCategory : 'regular',
                         armedHeadcount: post?.requires_armed ? String(total) : '0',
                         assignmentRequirement: post?.requires_armed ? 'armed' : 'unarmed',
                         credentialOverrideNote: '',
@@ -3919,6 +3995,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                         updateOpenShiftForm({
                           eventSiteId: event.target.value,
                           eventTimeZone: site?.time_zone ?? '',
+                          payrollCategory: site?.supports_ep_truep_payroll ? openShiftForm.payrollCategory : 'regular',
                         })
                       }}
                       value={openShiftForm.eventSiteId}
@@ -3949,6 +4026,14 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
                     </small>
                   </label>
                 </>
+              ) : null}
+
+              {selectedSiteSupportsPayrollCategories ? (
+                <PayrollCategorySelector
+                  name="newShiftPayrollCategory"
+                  onChange={(payrollCategory) => updateOpenShiftForm({ payrollCategory })}
+                  value={openShiftForm.payrollCategory}
+                />
               ) : null}
 
               {openShiftForm.mode === 'post' && selectedPost?.site.supports_dispatch_phone_duty ? (
@@ -4342,6 +4427,7 @@ export function SchedulePage({ mode = 'master' }: { mode?: 'master' | 'scheduler
             shiftEditor.editableShift.headcount_required,
             shiftEditor.editableShift.is_open,
             shiftEditor.editableShift.is_overtime,
+            shiftEditor.editableShift.payrollCategory,
             shiftEditor.editableShift.notes ?? '',
             shiftEditor.editableShift.assignments.map((assignment) => `${assignment.employee.id}:${assignment.status}`).join(','),
           ].join('|')}

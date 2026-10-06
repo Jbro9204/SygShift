@@ -30,8 +30,8 @@ describe('primary paid Dispatch shift boundary', () => {
   })
 
   it('keeps the scheduler choice explicit through create, edit, and overtime preview', () => {
-    expect(scheduleData).toContain("rpc('scheduler_create_coverage_plan_v3'")
-    expect(scheduleData).toContain("rpc('scheduler_update_typed_draft_shift_v3'")
+    expect(scheduleData).toContain("rpc('scheduler_create_coverage_plan_with_payroll_category_v1'")
+    expect(scheduleData).toContain("rpc('scheduler_update_typed_draft_shift_with_payroll_category_v1'")
     expect(scheduleData).toContain("rpc('get_scheduled_overtime_create_preview_v2'")
     expect(schedulePage).toContain('Primary paid shift')
     expect(schedulePage).toContain('Concurrent phone duty')

@@ -11,6 +11,7 @@ function shift(overrides: Partial<ScheduleShift> = {}): ScheduleShift {
     id: '00000000-0000-4000-8000-000000000001',
     is_open: true,
     is_overtime: false,
+    payrollCategory: 'regular',
     notes: null,
     post: null,
     requires_armed: false,

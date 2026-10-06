@@ -44,6 +44,9 @@ const cleanReview: TimekeepingReview = {
     operationalDate: '2026-07-12',
     overtimeMinutes: 0,
     paidMinutes: 480,
+    payrollCategory: 'regular',
+    payrollCategoryLabel: 'Regular',
+    mixedPayrollCategories: false,
     payrollNotes: [],
     payrollOccurrenceKey: 'shift:73000000-0000-4000-8000-000000000010:employee:73000000-0000-4000-8000-000000000001',
     payrollAssignmentSource: 'scheduled_shift',
@@ -89,14 +92,18 @@ const cleanReview: TimekeepingReview = {
   summary: {
     exceptionCount: 0,
     grossMinutes: 510,
+    epMinutes: 0,
     overtimeMinutes: 0,
     paidMinutes: 480,
     pendingCorrectionCount: 0,
     readyCount: 1,
+    regularCategoryMinutes: 480,
     regularMinutes: 480,
     rowCount: 1,
     salaryDefaultMinutes: 0,
     timeOffMinutes: 0,
+    truepMinutes: 0,
+    unclassifiedCategoryMinutes: 0,
   },
   throughDate: '2026-07-25',
 }
@@ -152,6 +159,47 @@ describe('payroll export readiness', () => {
 
     expect(payrollLockBlocker(blockedReview)).toContain('Needs review')
     expect(payrollReadinessPercent(blockedReview)).toBe(0)
+  })
+
+  it('blocks a conflicting payroll category even if the underlying row was marked ready', () => {
+    const mixedCategoryReview: TimekeepingReview = {
+      ...cleanReview,
+      rows: [{
+        ...cleanReview.rows[0],
+        mixedPayrollCategories: true,
+      }],
+    }
+
+    expect(payrollLockBlocker(mixedCategoryReview)).toContain('conflicting Regular, EP, or TRUEP')
+    expect(payrollReadinessPercent(mixedCategoryReview)).toBe(0)
+    expect(exportableWorkedTimeRows(mixedCategoryReview.rows)).toHaveLength(0)
+  })
+
+  it('keeps an unresolved live category unclassified instead of defaulting it to Regular', () => {
+    const unresolvedReview: TimekeepingReview = {
+      ...cleanReview,
+      rows: [{
+        ...cleanReview.rows[0],
+        payrollCategory: null,
+        payrollCategoryLabel: 'Unclassified',
+        payrollCategoryResolved: false,
+        payrollReady: false,
+        reviewStatus: 'unresolved',
+      }],
+      summary: {
+        ...cleanReview.summary,
+        exceptionCount: 1,
+        readyCount: 0,
+        regularCategoryMinutes: 0,
+        unclassifiedCategoryMinutes: 480,
+      },
+    }
+
+    const review = workedTimePayrollReview(unresolvedReview)
+
+    expect(review?.rows[0].payrollCategory).toBeNull()
+    expect(review?.summary.regularCategoryMinutes).toBe(0)
+    expect(review?.summary.unclassifiedCategoryMinutes).toBe(480)
   })
 
   it('uses stable file names for preview and official exports', () => {
@@ -358,6 +406,100 @@ describe('payroll export readiness', () => {
     expect(accountabilityEventPayCategory(callOffEvent)).toBe('Unpaid call-off')
   })
 
+  it('reconciles category totals independently from overtime without double counting', () => {
+    const rows: TimekeepingReview['rows'] = [
+      {
+        ...cleanReview.rows[0],
+        grossMinutes: 1920,
+        paidMinutes: 1920,
+        payrollBatchWeekEndsOn: '2026-07-18',
+        payrollBatchWeekStartsOn: '2026-07-12',
+        regularMinutes: 1920,
+      },
+      {
+        ...cleanReview.rows[0],
+        firstClockIn: '2026-07-13T14:00:00.000Z',
+        grossMinutes: 480,
+        lastClockOut: '2026-07-13T22:00:00.000Z',
+        operationalDate: '2026-07-13',
+        paidMinutes: 480,
+        payrollBatchWeekEndsOn: '2026-07-18',
+        payrollBatchWeekStartsOn: '2026-07-12',
+        payrollCategory: 'ep',
+        payrollCategoryLabel: 'EP',
+        regularMinutes: 480,
+      },
+      {
+        ...cleanReview.rows[0],
+        firstClockIn: '2026-07-14T14:00:00.000Z',
+        grossMinutes: 480,
+        lastClockOut: '2026-07-14T22:00:00.000Z',
+        operationalDate: '2026-07-14',
+        overtimeMinutes: 480,
+        paidMinutes: 480,
+        payrollBatchWeekEndsOn: '2026-07-18',
+        payrollBatchWeekStartsOn: '2026-07-12',
+        payrollCategory: 'truep',
+        payrollCategoryLabel: 'TRUEP',
+        regularMinutes: 0,
+      },
+    ]
+    const review: TimekeepingReview = {
+      ...cleanReview,
+      rows,
+      summary: {
+        ...cleanReview.summary,
+        epMinutes: 480,
+        grossMinutes: 2880,
+        overtimeMinutes: 480,
+        paidMinutes: 2880,
+        readyCount: 3,
+        regularCategoryMinutes: 1920,
+        regularMinutes: 2400,
+        rowCount: 3,
+        truepMinutes: 480,
+      },
+    }
+
+    const summary = summarizePayrollWorkbookByWeek({ exportType: 'Preview', review })[0]?.summaries[0]
+
+    expect(summary).toMatchObject({
+      epMinutes: 480,
+      overtimeMinutes: 480,
+      paidMinutes: 2880,
+      regularCategoryMinutes: 1920,
+      regularMinutes: 2400,
+      truepMinutes: 480,
+      unclassifiedCategoryMinutes: 0,
+    })
+    expect((summary?.regularCategoryMinutes ?? 0) + (summary?.epMinutes ?? 0) + (summary?.truepMinutes ?? 0)).toBe(summary?.paidMinutes)
+    expect((summary?.regularMinutes ?? 0) + (summary?.overtimeMinutes ?? 0)).toBe(summary?.paidMinutes)
+  })
+
+  it('keeps an old locked row without a stored category visibly unclassified in the workbook', () => {
+    const legacyReview: TimekeepingReview = {
+      ...cleanReview,
+      rows: [{
+        ...cleanReview.rows[0],
+        payrollCategory: undefined,
+        payrollCategoryLabel: undefined,
+      }],
+    }
+
+    const sheets = buildPayrollWorkbookSheets({ exportType: 'Official Locked', review: legacyReview })
+    const summary = sheets.find((sheet) => sheet.name === 'Payroll Summary')
+    const summaryHeaderIndex = summary?.rows.findIndex((row) => row[0] === 'Employee') ?? -1
+    const summaryRow = summary?.rows[summaryHeaderIndex + 1]
+    const weekOneDetail = sheets.find((sheet) => sheet.name === 'Week 1 Detail')
+    const detailRow = weekOneDetail?.rows.find((row) => row[0] === cleanReview.rows[0].employeeName)
+
+    expect(summaryRow?.[7]).toBe(0)
+    expect(summaryRow?.[10]).toBe(8)
+    expect(detailRow?.[5]).toBe('Legacy / unclassified')
+    expect(detailRow?.[13]).toBe(0)
+    expect(detailRow?.[16]).toBe(8)
+  })
+
   it('builds a compact payroll summary with separate review and variance sheets', () => {
     const sheets = buildPayrollWorkbookSheets({
       exportType: 'Preview',
@@ -371,6 +513,11 @@ describe('payroll export readiness', () => {
       'Payroll Review',
       'Hours Variance',
     ])
+    for (const sheet of sheets) {
+      if (sheet.columnWidths) {
+        expect(Math.max(...sheet.rows.map((row) => row.length))).toBeLessThanOrEqual(sheet.columnWidths.length)
+      }
+    }
     const summaryHeaderIndex = sheets[0].rows.findIndex((row) => row[0] === 'Employee')
     expect(summaryHeaderIndex).toBeGreaterThan(0)
     expect(sheets[0].rows[summaryHeaderIndex]).toEqual([
@@ -380,9 +527,13 @@ describe('payroll export readiness', () => {
       'Week Dates',
       'Worked Shifts',
       'Scheduled Hours',
-      'Worked Hours',
-      'Training Hours',
+      'Total Worked Hours',
       'Regular Hours',
+      'EP Hours',
+      'TRUEP Hours',
+      'Legacy Unclassified Hours',
+      'Paid Training Hours',
+      'Non-Overtime Hours',
       'Overtime Hours',
       'Sick Pay Hours',
       'PTO Hours',
@@ -390,7 +541,7 @@ describe('payroll export readiness', () => {
       'Total Payable',
       'Status',
     ])
-    expect(sheets[0].rows.every((row) => row.length <= 15)).toBe(true)
+    expect(sheets[0].rows.every((row) => row.length <= 19)).toBe(true)
     const employeeHeader = sheets.at(-1)?.rows.find((row) => row[0] === 'Employee' && row[1] === 'Employee ID')
     expect(employeeHeader).toEqual([
       'Employee',
@@ -399,14 +550,19 @@ describe('payroll export readiness', () => {
       'Work Date',
       'Site / Post',
       'Time Category',
+      'Payroll Category',
       'Scheduled Start',
       'Scheduled End',
       'Actual Clock In',
       'Actual Clock Out',
-      'Worked Hours',
+      'Total Worked Hours',
+      'Regular Hours',
+      'EP Hours',
+      'TRUEP Hours',
+      'Legacy Unclassified Hours',
       'Payroll Batch Week',
       'Payroll Period',
-      'Regular Hours',
+      'Non-Overtime Hours',
       'Overtime Hours',
       'Break Minutes',
       'Crosses Payroll Boundary',
@@ -717,7 +873,7 @@ describe('payroll export readiness', () => {
     const weekOne = sheets[0].rows[summaryHeaderIndex + 1]
     const weekTwo = sheets[0].rows[summaryHeaderIndex + 2]
 
-    expect(weekOne?.slice(6, 15)).toEqual([8, 0, 8, 0, 0, 0, 0, 8, 'Ready'])
-    expect(weekTwo?.slice(6, 15)).toEqual([8, 0, 6, 2, 2, 0, 0, 10, 'Ready'])
+    expect(weekOne?.slice(6, 19)).toEqual([8, 8, 0, 0, 0, 0, 8, 0, 0, 0, 0, 8, 'Ready'])
+    expect(weekTwo?.slice(6, 19)).toEqual([8, 8, 0, 0, 0, 0, 6, 2, 2, 0, 0, 10, 'Ready'])
   })
 })

@@ -11,6 +11,10 @@ const supportedScheduleTimeZoneSchema = z.enum([
   'America/Los_Angeles',
 ])
 
+const payrollCategorySchema = z.enum(['regular', 'ep', 'truep'])
+
+export type PayrollCategory = z.infer<typeof payrollCategorySchema>
+
 const assignedEmployeeSchema = z.object({
   id: z.string().uuid(),
   first_name: z.string(),
@@ -77,6 +81,7 @@ const shiftSchema = z.object({
   is_overtime: z.boolean(),
   assignment_type: z.enum(['standard', 'dispatch_primary', 'dispatch_phone_duty']).optional(),
   work_type: z.enum(['post', 'training']).optional(),
+  payrollCategory: payrollCategorySchema.default('regular'),
   notes: z.string().nullable(),
   post: postSchema.nullable(),
   event: eventSchema.nullable(),
@@ -106,6 +111,7 @@ const builderPostSchema = z.object({
     name: z.string(),
     time_zone: supportedScheduleTimeZoneSchema,
     supports_dispatch_phone_duty: z.boolean().default(false),
+    supports_ep_truep_payroll: z.boolean().default(false),
   }),
 })
 
@@ -168,6 +174,11 @@ const shiftWorkTypeMapSchema = z.array(z.object({
 const shiftAssignmentTypeMapSchema = z.array(z.object({
   shiftId: z.string().uuid(),
   assignmentType: z.enum(['standard', 'dispatch_primary', 'dispatch_phone_duty']),
+}))
+
+const shiftPayrollCategoryMapSchema = z.array(z.object({
+  shiftId: z.string().uuid(),
+  payrollCategory: payrollCategorySchema,
 }))
 
 const resolveReviewShiftResultSchema = z.object({
@@ -348,6 +359,7 @@ export interface CreateOpenShiftInput {
   availabilityOverrideNote?: string | null
   credentialOverrideNote?: string | null
   workType?: 'post' | 'training'
+  payrollCategory?: PayrollCategory
 }
 
 export interface CreateCoveragePlanInput {
@@ -372,6 +384,7 @@ export interface CreateCoveragePlanInput {
   credentialOverrideNote?: string | null
   overtimeOverrideNote?: string | null
   workType?: 'post' | 'training'
+  payrollCategory?: PayrollCategory
   useEmployeeTimeZone?: boolean
   dispatchMode?: 'primary_shift' | 'concurrent_duty'
 }
@@ -416,6 +429,7 @@ export interface UpdateDraftShiftInput {
   credentialOverrideNote?: string | null
   overtimeOverrideNote?: string | null
   workType?: 'post' | 'training'
+  payrollCategory?: PayrollCategory
   dispatchMode?: 'primary_shift' | 'concurrent_duty'
 }
 
@@ -438,11 +452,36 @@ export interface EmployeeScheduleRow {
   shifts: ScheduleShift[]
 }
 
+const payrollCategoryLoadError = 'Shift payroll classifications could not be loaded. The schedule was not displayed to prevent incorrect payroll labels.'
+
+function applyShiftPayrollCategories(
+  schedule: WeeklySchedule,
+  payrollCategories: z.infer<typeof shiftPayrollCategoryMapSchema>,
+): WeeklySchedule {
+  const payrollCategoryByShift = new Map(payrollCategories.map((item) => [item.shiftId, item.payrollCategory]))
+  return {
+    ...schedule,
+    shifts: schedule.shifts.map((shift) => ({
+      ...shift,
+      payrollCategory: payrollCategoryByShift.get(shift.id) ?? shift.payrollCategory,
+    })),
+  }
+}
+
+async function hydrateShiftPayrollCategories(schedule: WeeklySchedule): Promise<WeeklySchedule> {
+  const { data, error } = await getSupabaseClient().rpc('get_shift_payroll_category_map', {
+    target_week_starts_on: schedule.week_starts_on,
+  })
+  if (error) throw new Error(payrollCategoryLoadError)
+  return applyShiftPayrollCategories(schedule, shiftPayrollCategoryMapSchema.parse(data ?? []))
+}
+
 export async function getWeeklySchedule(weekStartsOn: string): Promise<WeeklySchedule | null> {
-  const [scheduleResult, workTypeResult, assignmentTypeResult, coverageResult] = await Promise.all([
+  const [scheduleResult, workTypeResult, assignmentTypeResult, payrollCategoryResult, coverageResult] = await Promise.all([
     getSupabaseClient().rpc('get_weekly_schedule_payload', { target_week_starts_on: weekStartsOn }),
     getSupabaseClient().rpc('get_shift_work_type_map', { target_week_starts_on: weekStartsOn }),
     getSupabaseClient().rpc('get_shift_assignment_type_map', { target_week_starts_on: weekStartsOn }),
+    getSupabaseClient().rpc('get_shift_payroll_category_map', { target_week_starts_on: weekStartsOn }),
     getSupabaseClient().rpc('get_shift_coverage_status_map', { target_week_starts_on: weekStartsOn }),
   ])
   const { data, error } = scheduleResult
@@ -455,9 +494,11 @@ export async function getWeeklySchedule(weekStartsOn: string): Promise<WeeklySch
   const workTypeByShift = new Map(workTypes.map((item) => [item.shiftId, item.workType]))
   const assignmentTypes = assignmentTypeResult.error ? [] : shiftAssignmentTypeMapSchema.parse(assignmentTypeResult.data ?? [])
   const assignmentTypeByShift = new Map(assignmentTypes.map((item) => [item.shiftId, item.assignmentType]))
+  if (payrollCategoryResult.error) throw new Error(payrollCategoryLoadError)
+  const payrollCategories = shiftPayrollCategoryMapSchema.parse(payrollCategoryResult.data ?? [])
   const coverageItems = coverageResult.error ? [] : z.array(shiftCoverageStatusSchema).parse(coverageResult.data ?? [])
   const coverageByShift = new Map(coverageItems.map((item) => [item.shiftId, item]))
-  return {
+  return applyShiftPayrollCategories({
     ...schedule,
     shifts: schedule.shifts.map((shift) => ({
       ...shift,
@@ -466,7 +507,7 @@ export async function getWeeklySchedule(weekStartsOn: string): Promise<WeeklySch
       coverage: coverageByShift.get(shift.id) ?? null,
       assignments: shift.assignments.filter((assignment) => assignment.status !== 'canceled'),
     })),
-  }
+  }, payrollCategories)
 }
 
 export async function getScheduleBuilderOptions(): Promise<ScheduleBuilderOptions> {
@@ -490,7 +531,7 @@ export async function getImportedSchedulePreview(weekStartsOn: string): Promise<
 }
 
 export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Promise<CreateOpenShiftResult> {
-  const { data, error } = await getSupabaseClient().rpc('scheduler_create_typed_open_shift', {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_create_typed_open_shift_with_payroll_category_v1', {
     target_week_starts_on: input.weekStartsOn,
     target_post_id: input.mode === 'post' ? input.postId : null,
     event_name: input.mode === 'event' ? input.eventName?.trim() : null,
@@ -509,6 +550,7 @@ export async function createSupervisorOpenShift(input: CreateOpenShiftInput): Pr
     target_availability_override_note: input.availabilityOverrideNote?.trim() || null,
     target_credential_override_note: input.credentialOverrideNote?.trim() || null,
     target_work_type: input.workType ?? 'post',
+    target_payroll_category: input.payrollCategory ?? 'regular',
   })
 
   if (error) throw new Error(error.message || 'The open shift could not be created.')
@@ -543,10 +585,11 @@ export async function createSupervisorCoveragePlan(input: CreateCoveragePlanInpu
     target_dispatch_mode: input.dispatchMode ?? 'primary_shift',
     target_dispatch_overlap_acknowledged: false,
   }
-  const request = input.useEmployeeTimeZone
-    ? getSupabaseClient().rpc('scheduler_create_employee_local_coverage_plan_v3', dispatchAwarePayload)
-    : getSupabaseClient().rpc('scheduler_create_coverage_plan_v3', dispatchAwarePayload)
-  const { data, error } = await request
+  const { data, error } = await getSupabaseClient().rpc('scheduler_create_coverage_plan_with_payroll_category_v1', {
+    ...dispatchAwarePayload,
+    target_payroll_category: input.payrollCategory ?? 'regular',
+    use_employee_time_zone: input.useEmployeeTimeZone ?? false,
+  })
 
   if (error) throw new Error(error.message || 'The coverage plan could not be created.')
   return createCoveragePlanResultSchema.parse(data)
@@ -555,7 +598,7 @@ export async function createSupervisorCoveragePlan(input: CreateCoveragePlanInpu
 export async function createSupervisorCoveragePlanBatch(
   input: CreateCoveragePlanBatchInput,
 ): Promise<CreateCoveragePlanResult[]> {
-  const { data, error } = await getSupabaseClient().rpc('scheduler_create_coverage_plan_batch_v1', {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_create_coverage_plan_batch_with_payroll_category_v1', {
     target_week_starts_on: input.weekStartsOn,
     target_post_id: input.mode === 'post' ? input.postId : null,
     event_name: input.mode === 'event' ? input.eventName?.trim() : null,
@@ -570,6 +613,7 @@ export async function createSupervisorCoveragePlanBatch(
     target_is_overtime: input.isOvertime,
     target_notes: input.notes?.trim() || null,
     target_work_type: input.workType ?? 'post',
+    target_payroll_category: input.payrollCategory ?? 'regular',
     publish_announcement: input.publishAnnouncement,
     target_employee_id: input.employeeId || null,
     target_assignment_requires_armed: input.assignmentRequirement === 'armed',
@@ -593,11 +637,11 @@ export async function ensureScheduleDraft(weekStartsOn: string): Promise<WeeklyS
 
   if (error) throw new Error(error.message || 'The schedule draft could not be opened.')
   if (!data) return null
-  return scheduleSchema.parse(data)
+  return hydrateShiftPayrollCategories(scheduleSchema.parse(data))
 }
 
 export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Promise<WeeklySchedule> {
-  const { data, error } = await getSupabaseClient().rpc('scheduler_update_typed_draft_shift_v3', {
+  const { data, error } = await getSupabaseClient().rpc('scheduler_update_typed_draft_shift_with_payroll_category_v1', {
     target_shift_id: input.shiftId,
     shift_operational_date: input.shiftDate,
     shift_start_time: input.startTime,
@@ -611,21 +655,23 @@ export async function updateScheduleDraftShift(input: UpdateDraftShiftInput): Pr
     target_credential_override_note: input.credentialOverrideNote?.trim() || null,
     target_overtime_override_note: input.overtimeOverrideNote?.trim() || null,
     target_work_type: input.workType ?? 'post',
+    target_payroll_category: input.payrollCategory ?? 'regular',
     target_dispatch_mode: input.dispatchMode ?? 'primary_shift',
   })
 
   if (error) throw new Error(error.message || 'The draft shift could not be updated.')
   const schedule = scheduleSchema.parse(data)
-  return {
+  return hydrateShiftPayrollCategories({
     ...schedule,
     shifts: schedule.shifts.map((shift) => shift.id === input.shiftId ? {
       ...shift,
       work_type: input.workType ?? 'post',
+      payrollCategory: input.payrollCategory ?? 'regular',
       assignment_type: input.dispatchMode
         ? input.dispatchMode === 'concurrent_duty' ? 'dispatch_phone_duty' : 'dispatch_primary'
         : shift.assignment_type,
     } : shift),
-  }
+  })
 }
 
 export async function addScheduleDraftShiftAssignment(input: AddDraftShiftAssignmentInput): Promise<WeeklySchedule> {
@@ -640,13 +686,13 @@ export async function addScheduleDraftShiftAssignment(input: AddDraftShiftAssign
 
   if (error) throw new Error(error.message || 'The guard could not be added to this shift.')
   const schedule = scheduleSchema.parse(data)
-  return {
+  return hydrateShiftPayrollCategories({
     ...schedule,
     shifts: schedule.shifts.map((shift) => ({
       ...shift,
       assignments: shift.assignments.filter((assignment) => assignment.status !== 'canceled'),
     })),
-  }
+  })
 }
 
 export async function getConcurrentDispatchOverlapPreview(
@@ -722,7 +768,7 @@ export async function removeScheduleDraftShift(input: RemoveDraftShiftInput): Pr
   })
 
   if (error) throw new Error(error.message || 'The shift could not be removed from the draft.')
-  return scheduleSchema.parse(data)
+  return hydrateShiftPayrollCategories(scheduleSchema.parse(data))
 }
 
 export async function publishScheduleDraft(scheduleId: string): Promise<WeeklySchedule> {
@@ -731,7 +777,7 @@ export async function publishScheduleDraft(scheduleId: string): Promise<WeeklySc
   })
 
   if (error) throw new Error(error.message || 'The schedule draft could not be published.')
-  return scheduleSchema.parse(data)
+  return hydrateShiftPayrollCategories(scheduleSchema.parse(data))
 }
 
 export async function publishEmployeeScheduleSlice(scheduleId: string, employeeId: string): Promise<WeeklySchedule> {
@@ -741,7 +787,7 @@ export async function publishEmployeeScheduleSlice(scheduleId: string, employeeI
   })
 
   if (error) throw new Error(error.message || 'The employee schedule could not be published.')
-  return scheduleSchema.parse(data)
+  return hydrateShiftPayrollCategories(scheduleSchema.parse(data))
 }
 
 export async function queueSchedulePublishedNotification(scheduleId: string, note?: string | null): Promise<ScheduleNotificationResult> {
@@ -760,7 +806,7 @@ export async function copyScheduleWeekToDraft(input: {
   includeAssignments: boolean
   includeEvents: boolean
 }): Promise<CopyScheduleWeekResult> {
-  const { data, error } = await getSupabaseClient().rpc('replace_schedule_week_draft_with_work_types', {
+  const { data, error } = await getSupabaseClient().rpc('replace_schedule_week_draft_with_payroll_categories_v1', {
     source_schedule_id: input.sourceScheduleId,
     destination_week_starts_on: input.destinationWeekStartsOn,
     include_assignments: input.includeAssignments,
@@ -768,7 +814,11 @@ export async function copyScheduleWeekToDraft(input: {
   })
 
   if (error) throw new Error(error.message || 'The schedule week could not be copied.')
-  return copyScheduleWeekResultSchema.parse(data)
+  const result = copyScheduleWeekResultSchema.parse(data)
+  return {
+    ...result,
+    schedule: await hydrateShiftPayrollCategories(result.schedule),
+  }
 }
 
 export async function cancelScheduleDraft(scheduleId: string): Promise<WeeklySchedule | null> {
@@ -778,7 +828,7 @@ export async function cancelScheduleDraft(scheduleId: string): Promise<WeeklySch
 
   if (error) throw new Error(error.message || 'The schedule draft could not be canceled.')
   if (!data) return null
-  return scheduleSchema.parse(data)
+  return hydrateShiftPayrollCategories(scheduleSchema.parse(data))
 }
 
 export async function getScheduleStaffingSuggestions(scheduleId: string): Promise<StaffingSuggestion[]> {

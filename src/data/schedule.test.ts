@@ -20,6 +20,7 @@ const siteShift: ScheduleShift = {
   requires_armed: true,
   is_open: false,
   is_overtime: false,
+  payrollCategory: 'regular',
   notes: null,
   post: {
     id: '20000000-0000-0000-0000-000000000001',

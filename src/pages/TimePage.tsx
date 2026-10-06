@@ -31,6 +31,7 @@ import {
   activeTimeState,
   clockInWindowOpensAt,
   createPayrollExportBatch,
+  correctTimeRecordPayrollCategory,
   correctTimeRecordWorkType,
   getClockableShiftChoices,
   minutesUntilClockInOpens,
@@ -46,6 +47,8 @@ import {
   getTimekeepingReview,
   isEarlyClockInBlockedError,
   nextTimeEventKinds,
+  payrollCategoryAllocation,
+  payrollCategoryLabel,
   payrollHours,
   recordTimeEvent,
   reviewRowsToPayrollSummaryCsv,
@@ -58,6 +61,7 @@ import {
   supervisorUpdateTimeEventLocation,
   verifiedTimekeepingBaseline,
   type PendingCorrection,
+  type PayrollCategory,
   type PayrollExportBatch,
   type PayrollEmployeeSummary,
   type ClockableShiftChoices,
@@ -145,6 +149,10 @@ function payrollWeekRange(dateKey: string): { fromDate: string; throughDate: str
     fromDate: formatDateKey(start),
     throughDate: formatDateKey(end),
   }
+}
+
+function isPayrollRowReady(row: TimekeepingReviewRow): boolean {
+  return row.payrollReady && !row.mixedPayrollCategories
 }
 
 function formatTime(value: string, timeZone = OPERATIONAL_TIME_ZONE): string {
@@ -479,7 +487,7 @@ export function TimeMaintenanceWorkbench({
   const [addContext, setAddContext] = useState<string | null>(null)
   const [addSuccessMessage, setAddSuccessMessage] = useState<string | null>(null)
   const [selectedEvent, setSelectedEvent] = useState<TimeMaintenanceEvent | null>(null)
-  const [correctionMode, setCorrectionMode] = useState<'adjust' | 'void' | 'site_post' | 'work_type'>('adjust')
+  const [correctionMode, setCorrectionMode] = useState<'adjust' | 'void' | 'site_post' | 'work_type' | 'payroll_category'>('adjust')
   const [correctionDate, setCorrectionDate] = useState(defaultDate)
   const [correctionTime, setCorrectionTime] = useState('08:00')
   const [correctionKind, setCorrectionKind] = useState<TimeEventKind>('clock_in')
@@ -487,6 +495,7 @@ export function TimeMaintenanceWorkbench({
   const [correctionManualLocation, setCorrectionManualLocation] = useState('')
   const [correctionReason, setCorrectionReason] = useState('')
   const [correctionWorkType, setCorrectionWorkType] = useState<WorkType>('post')
+  const [correctionPayrollCategory, setCorrectionPayrollCategory] = useState<PayrollCategory>('regular')
   const showOverview = !lockEmployeeFilter && employeeId === ''
   const overviewSummaryQuery = useQuery({
     enabled: isSupabaseConfigured,
@@ -612,6 +621,13 @@ export function TimeMaintenanceWorkbench({
           workType: correctionWorkType,
         })
       }
+      if (correctionMode === 'payroll_category') {
+        return correctTimeRecordPayrollCategory({
+          payrollCategory: correctionPayrollCategory,
+          reason: correctionReason.trim(),
+          timeEventId: selectedEvent.id,
+        })
+      }
       return supervisorCorrectTimeEvent({
         reason: correctionReason.trim(),
         replacementKind: correctionMode === 'adjust' ? correctionKind : null,
@@ -681,6 +697,7 @@ export function TimeMaintenanceWorkbench({
     && !addMutation.isPending
   const canCorrect = selectedEvent !== null
     && correctionReason.trim().length > 0
+    && (correctionMode !== 'payroll_category' || correctionReason.trim().length >= 8)
     && !correctionMutation.isPending
     && (correctionMode !== 'site_post' || (correctionShiftId !== '' && (correctionShiftId !== MANUAL_SITE_POST_OPTION || correctionManualLocation.trim().length > 0)))
   const selectedEventDate = selectedEvent ? dateInputValue(selectedEvent.effectiveAt) : ''
@@ -723,7 +740,7 @@ export function TimeMaintenanceWorkbench({
     setCorrectionReason('')
   }, [employeeId, fromDate, throughDate])
 
-  function beginCorrection(event: TimeMaintenanceEvent, mode: 'adjust' | 'void' | 'site_post' | 'work_type') {
+  function beginCorrection(event: TimeMaintenanceEvent, mode: 'adjust' | 'void' | 'site_post' | 'work_type' | 'payroll_category') {
     setSelectedEvent(event)
     setCorrectionMode(mode)
     setCorrectionDate(dateInputValue(event.effectiveAt))
@@ -733,6 +750,7 @@ export function TimeMaintenanceWorkbench({
     setCorrectionManualLocation(event.locationName === 'Unscheduled' || event.locationName === 'Unscheduled Location' ? '' : event.locationName)
     setCorrectionReason('')
     setCorrectionWorkType(event.workType)
+    setCorrectionPayrollCategory(event.payrollCategory)
   }
 
   function prefillRelatedPunch(event: TimeMaintenanceEvent) {
@@ -838,11 +856,16 @@ export function TimeMaintenanceWorkbench({
             <details className="time-maintenance-breakdown">
               <summary>View hours breakdown</summary>
               <div className="time-maintenance-breakdown__grid">
-                <span><small>Regular</small><strong>{payrollHours(selectedPayrollSummary?.regularMinutes ?? 0)} hr</strong></span>
+                <span><small>Regular</small><strong>{payrollHours(selectedPayrollSummary?.regularCategoryMinutes ?? 0)} hr</strong></span>
+                <span><small>EP</small><strong>{payrollHours(selectedPayrollSummary?.epMinutes ?? 0)} hr</strong></span>
+                <span><small>TRUEP</small><strong>{payrollHours(selectedPayrollSummary?.truepMinutes ?? 0)} hr</strong></span>
+                {(selectedPayrollSummary?.unclassifiedCategoryMinutes ?? 0) > 0 ? <span><small>Legacy unclassified</small><strong>{payrollHours(selectedPayrollSummary?.unclassifiedCategoryMinutes ?? 0)} hr</strong></span> : null}
+                <span><small>Non-overtime</small><strong>{payrollHours(selectedPayrollSummary?.regularMinutes ?? 0)} hr</strong></span>
                 <span><small>Overtime</small><strong>{payrollHours(selectedPayrollSummary?.overtimeMinutes ?? 0)} hr</strong></span>
                 <span><small>Unpaid breaks</small><strong>{payrollHours(selectedPayrollSummary?.breakMinutes ?? 0)} hr</strong></span>
                 <span><small>Completed work segments</small><strong>{selectedPayrollSummary?.workedShiftCount ?? 0}</strong></span>
               </div>
+              <small>Regular, EP, and TRUEP partition total worked hours. Overtime is already included in one category.</small>
             </details>
           ) : null}
 
@@ -1079,6 +1102,10 @@ export function TimeMaintenanceWorkbench({
                   setCorrectionMode('work_type')
                   setCorrectionWorkType(selectedEvent.workType)
                 }} type="radio" /> Time category</label>
+                <label><input checked={correctionMode === 'payroll_category'} onChange={() => {
+                  setCorrectionMode('payroll_category')
+                  setCorrectionPayrollCategory(selectedEvent.payrollCategory)
+                }} type="radio" /> Payroll category</label>
                 <label><input checked={correctionMode === 'void'} onChange={() => setCorrectionMode('void')} type="radio" /> Void duplicate/accidental</label>
               </div>
               {correctionMode === 'adjust' ? (
@@ -1159,6 +1186,20 @@ export function TimeMaintenanceWorkbench({
                   <small>This updates every punch in this employee's same shift/day occurrence and preserves the original punches in the audit history.</small>
                 </label>
               ) : null}
+              {correctionMode === 'payroll_category' ? (
+                <label className="time-correction-editor__location">
+                  <span>Payroll category</span>
+                  <select onChange={(event) => setCorrectionPayrollCategory(event.target.value as PayrollCategory)} value={correctionPayrollCategory}>
+                    <option value="regular">Regular</option>
+                    <option value="ep">EP</option>
+                    <option value="truep">TRUEP</option>
+                  </select>
+                  <small>
+                    Current category: {selectedEvent.payrollCategoryLabel}. This updates every punch in the same worked occurrence,
+                    keeps the original punches, and requires a reason of at least 8 characters.
+                  </small>
+                </label>
+              ) : null}
               <label className="time-maintenance-add__reason">
                 <span>Reason</span>
                 <textarea
@@ -1174,7 +1215,7 @@ export function TimeMaintenanceWorkbench({
               <div className="time-correction-editor__actions">
                 <button className="secondary-button" onClick={() => setSelectedEvent(null)} type="button">Cancel</button>
                 <button className={correctionMode === 'void' ? 'danger-primary' : 'primary-action'} disabled={!canCorrect} type="submit">
-                  {correctionMutation.isPending ? 'Saving...' : correctionMode === 'void' ? 'Void punch' : correctionMode === 'site_post' ? 'Save Site/Post' : correctionMode === 'work_type' ? 'Save work type' : 'Save corrected punch'}
+                  {correctionMutation.isPending ? 'Saving...' : correctionMode === 'void' ? 'Void punch' : correctionMode === 'site_post' ? 'Save Site/Post' : correctionMode === 'work_type' ? 'Save work type' : correctionMode === 'payroll_category' ? 'Save payroll category' : 'Save corrected punch'}
                 </button>
               </div>
               </form>
@@ -1298,6 +1339,7 @@ export function TimeMaintenanceWorkbench({
                         <span>{event.source.replaceAll('_', ' ')}</span>
                         {event.recordedKind && event.recordedKind !== event.kind ? <small>Originally: {eventLabels[event.recordedKind]}</small> : null}
                         {event.workType === 'training' ? <small>Paid training</small> : null}
+                        <small>Payroll: {event.payrollCategoryLabel}</small>
                       </td>
                       <td>
                         <strong>{event.locationName}</strong>
@@ -1679,26 +1721,31 @@ function MyTimeHistory({ dashboard, defaultDate }: { dashboard: TimekeepingDashb
         <>
           <section className="my-time-history__metrics" aria-label="My time totals">
             <article>
-              <span>Paid</span>
+              <span>Total paid</span>
               <strong>{payrollHours(review.summary.paidMinutes)} hr</strong>
               <small>Total paid time in this range.</small>
             </article>
             <article>
               <span>Regular</span>
-              <strong>{payrollHours(review.summary.regularMinutes)} hr</strong>
-              <small>Regular payroll hours.</small>
+              <strong>{payrollHours(review.summary.regularCategoryMinutes ?? 0)} hr</strong>
+              <small>Regular payroll-category hours.</small>
             </article>
+            <article><span>EP</span><strong>{payrollHours(review.summary.epMinutes ?? 0)} hr</strong><small>Executive Protection hours.</small></article>
+            <article><span>TRUEP</span><strong>{payrollHours(review.summary.truepMinutes ?? 0)} hr</strong><small>TRUEP hours.</small></article>
+            <article><span>Non-overtime</span><strong>{payrollHours(review.summary.regularMinutes)} hr</strong><small>Worked hours before overtime.</small></article>
             <article className={review.summary.overtimeMinutes ? 'import-metric--attention' : ''}>
               <span>OT</span>
               <strong>{payrollHours(review.summary.overtimeMinutes)} hr</strong>
-              <small>Daily or weekly overtime.</small>
+              <small>Daily or weekly overtime, already included in one category.</small>
             </article>
+            {(review.summary.unclassifiedCategoryMinutes ?? 0) > 0 ? <article className="import-metric--attention"><span>Legacy unclassified</span><strong>{payrollHours(review.summary.unclassifiedCategoryMinutes ?? 0)} hr</strong><small>Historical locked hours without a recorded category.</small></article> : null}
             <article className={review.summary.pendingCorrectionCount ? 'import-metric--attention' : ''}>
               <span>Corrections</span>
               <strong>{review.summary.pendingCorrectionCount}</strong>
               <small>Waiting for supervisor review.</small>
             </article>
           </section>
+          <div className="inline-note">Regular, EP, and TRUEP partition actual clocked worked hours only. Salary defaults stay separate. Do not add overtime on top of those category totals.</div>
 
           {review.rows.length === 0 ? (
             <DataStatePanel icon={FileClock} title="No time records in this range">
@@ -1723,10 +1770,12 @@ function MyTimeHistory({ dashboard, defaultDate }: { dashboard: TimekeepingDashb
                   </div>
                   <div className="my-time-row__hours">
                     <strong>{payrollHours(row.paidMinutes)} hr</strong>
-                    <span>{row.breakMinutes} break min</span>
+                    <span>{row.rowKind === 'salary_default'
+                      ? 'Salary default'
+                      : `${row.mixedPayrollCategories ? 'Conflicting payroll categories' : row.payrollCategoryLabel ?? payrollCategoryLabel(row.payrollCategory)} · ${row.breakMinutes} break min`}</span>
                   </div>
                   <div className="my-time-row__status">
-                    {row.payrollReady ? (
+                    {isPayrollRowReady(row) ? (
                       <span className="payroll-status payroll-status--ready">Ready</span>
                     ) : (
                       <span className="payroll-status payroll-status--hold">Needs review</span>
@@ -1771,14 +1820,20 @@ function PayrollReviewTable({
             <th>Location</th>
             <th>Clock in</th>
             <th>Clock out</th>
+            <th>Payroll category</th>
             <th>Regular</th>
-            <th>OT</th>
-            <th>Paid</th>
+            <th>EP</th>
+            <th>TRUEP</th>
+            <th>Non-OT</th>
+            <th>OT <span className="sr-only">included in category totals</span></th>
+            <th>Total worked</th>
             <th>Status</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {rows.map((row) => {
+            const categoryMinutes = payrollCategoryAllocation(row)
+            return (
             <tr key={`${row.employeeId}-${row.shiftId ?? 'unscheduled'}-${row.operationalDate}`}>
               <td>
                 <strong>{row.employeeName}</strong>
@@ -1801,6 +1856,13 @@ function PayrollReviewTable({
               <td>{row.firstClockIn ? formatTime(row.firstClockIn, row.timeZone) : row.rowKind === 'salary_default' ? 'Payroll default' : 'Missing'}</td>
               <td>{row.lastClockOut ? formatTime(row.lastClockOut, row.timeZone) : row.rowKind === 'salary_default' ? 'Payroll default' : 'Missing'}</td>
               <td>
+                <strong>{row.mixedPayrollCategories ? 'Needs review' : row.payrollCategoryLabel ?? payrollCategoryLabel(row.payrollCategory)}</strong>
+                {!row.payrollCategory ? <span>Legacy locked row</span> : null}
+              </td>
+              <td><strong>{payrollHours(categoryMinutes.regularCategoryMinutes)} hr</strong></td>
+              <td><strong>{payrollHours(categoryMinutes.epMinutes)} hr</strong></td>
+              <td><strong>{payrollHours(categoryMinutes.truepMinutes)} hr</strong></td>
+              <td>
                 <strong>{payrollHours(row.regularMinutes)} hr</strong>
                 {row.salaryDefaultMinutes > 0 ? <span>{payrollHours(row.salaryDefaultMinutes)} salary default</span> : null}
               </td>
@@ -1813,7 +1875,7 @@ function PayrollReviewTable({
                 <span>{row.breakMinutes} break min</span>
               </td>
               <td>
-                {row.payrollReady ? (
+                {isPayrollRowReady(row) ? (
                   <span className="payroll-status payroll-status--ready">Ready</span>
                 ) : (
                   <span className="payroll-status payroll-status--hold">Needs review</span>
@@ -1826,7 +1888,7 @@ function PayrollReviewTable({
                 ) : null}
               </td>
             </tr>
-          ))}
+          )})}
         </tbody>
       </table>
     </div>
@@ -2020,16 +2082,20 @@ function SupervisorTimeReview({
         <>
           <section className="time-review-metrics" aria-label="Payroll review totals">
             <article><span>Worked rows</span><strong>{review.summary.rowCount}</strong><small>Clock-in/out groups in range</small></article>
-            <article><span>Regular</span><strong>{payrollHours(review.summary.regularMinutes)}</strong><small>Regular worked hours</small></article>
-            <article className={review.summary.overtimeMinutes ? 'import-metric--attention' : ''}><span>OT</span><strong>{payrollHours(review.summary.overtimeMinutes)}</strong><small>Daily/weekly overtime</small></article>
-            <article><span>Paid hours</span><strong>{payrollHours(review.summary.paidMinutes)}</strong><small>Worked-time export preview</small></article>
+            <article><span>Total worked</span><strong>{payrollHours(review.summary.paidMinutes)}</strong><small>Worked-time export preview</small></article>
+            <article><span>Regular</span><strong>{payrollHours(review.summary.regularCategoryMinutes ?? 0)}</strong><small>Regular payroll-category hours</small></article>
+            <article><span>EP</span><strong>{payrollHours(review.summary.epMinutes ?? 0)}</strong><small>Executive Protection hours</small></article>
+            <article><span>TRUEP</span><strong>{payrollHours(review.summary.truepMinutes ?? 0)}</strong><small>TRUEP hours</small></article>
+            <article><span>Non-overtime</span><strong>{payrollHours(review.summary.regularMinutes)}</strong><small>Worked hours before overtime</small></article>
+            <article className={review.summary.overtimeMinutes ? 'import-metric--attention' : ''}><span>OT</span><strong>{payrollHours(review.summary.overtimeMinutes)}</strong><small>Included in one category total</small></article>
+            {(review.summary.unclassifiedCategoryMinutes ?? 0) > 0 ? <article className="import-metric--attention"><span>Legacy unclassified</span><strong>{payrollHours(review.summary.unclassifiedCategoryMinutes ?? 0)}</strong><small>Preserved historical locked hours</small></article> : null}
           </section>
 
           <PayrollRulesPanel review={review} />
 
           <div className="inline-note">
             Payroll export includes only time recorded by SygShift clock-in/out punches. Scheduled shifts and salary
-            default rows are not exported.
+            default rows are not exported. Regular, EP, and TRUEP partition total worked hours; overtime is already included in one category and must not be added again.
           </div>
 
           {correctionMutation.isError ? <div className="inline-alert" role="alert">{correctionMutation.error.message}</div> : null}

@@ -15318,8 +15318,84 @@ a.home-metric-card:focus-visible {
   line-height: 1.45;
 }
 
+.schedule-payroll-category {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.85rem;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.schedule-payroll-category legend {
+  padding: 0 0.35rem;
+  font-weight: 800;
+}
+
+.form-grid .schedule-payroll-category label {
+  display: flex;
+  min-width: 0;
+  min-height: 72px;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.schedule-payroll-category label.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.form-grid .schedule-payroll-category input[type="radio"] {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  margin-top: 0.2rem;
+  accent-color: var(--gold-dark);
+}
+
+.schedule-payroll-category span {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.schedule-payroll-category strong,
+.schedule-payroll-category small,
+.schedule-payroll-category p {
+  overflow-wrap: anywhere;
+}
+
+.schedule-payroll-category small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.schedule-payroll-category p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.schedule-payroll-category-note {
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 720px) {
-  .schedule-builder-dispatch-mode {
+  .schedule-builder-dispatch-mode,
+  .schedule-payroll-category {
     grid-template-columns: 1fr;
   }
 }
@@ -17849,6 +17925,12 @@ a.home-metric-card:focus-visible {
   border-color: light-dark(#d8ad54, #a67a27);
 }
 
+.shift-tag--payroll {
+  color: light-dark(#5b3b08, #ffe09b);
+  background: light-dark(#f7e7bd, #3b2d12);
+  border-color: light-dark(#d8ad54, #a67a27);
+}
+
 .shift-tag--call-off {
   color: light-dark(#8d2d25, #ffc5bd);
   background: light-dark(#f9e3df, #481f1d);
@@ -18496,6 +18578,23 @@ a.home-metric-card:focus-visible {
   font-weight: 850;
 }
 
+.site-directory__site .site-payroll-badge {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 24px;
+  align-items: center;
+  margin-top: 7px;
+  padding: 3px 8px;
+  color: light-dark(#694714, #ffe09b);
+  background: light-dark(#f3e5c8, #342817);
+  border: 1px solid light-dark(#dec18a, #806026);
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
 .site-directory__location {
   display: flex;
   align-items: flex-start;
@@ -18761,6 +18860,30 @@ a.home-metric-card:focus-visible {
 .site-editor-section .check-field {
   width: fit-content;
   margin-top: 12px;
+}
+
+.site-editor-section .site-payroll-toggle {
+  width: 100%;
+  min-height: 44px;
+  align-items: flex-start;
+  margin-top: 0;
+}
+
+.site-payroll-toggle > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.site-payroll-toggle strong,
+.site-payroll-toggle small {
+  overflow-wrap: anywhere;
+}
+
+.site-payroll-toggle small {
+  color: var(--muted);
+  font-weight: 550;
+  line-height: 1.45;
 }
 
 .site-editor-checks {

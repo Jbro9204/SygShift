@@ -1,4 +1,9 @@
-import type { TimekeepingReview, TimekeepingReviewRow } from '../data/timekeeping'
+import {
+  payrollCategoryAllocation,
+  payrollCategoryLabel,
+  type TimekeepingReview,
+  type TimekeepingReviewRow,
+} from '../data/timekeeping'
 
 export const ACTIVE_CLOCK_IN_REVIEW_LIMIT_HOURS = 14
 export const SCHEDULED_CLOCK_OUT_GRACE_HOURS = 2
@@ -14,6 +19,7 @@ export function isExportableWorkedTimeRow(row: TimekeepingReviewRow): boolean {
     && row.payrollReady
     && row.exceptionCodes.length === 0
     && !row.mixedWorkTypes
+    && !row.mixedPayrollCategories
     && row.paidMinutes > 0
 }
 
@@ -51,9 +57,28 @@ function sumRows(rows: TimekeepingReviewRow[], field: 'breakMinutes' | 'grossMin
 export function workedTimePayrollReview(review: TimekeepingReview | undefined): TimekeepingReview | undefined {
   if (!review) return undefined
   const serverNow = new Date(review.serverTimestamp)
-  const rows = workedTimeRows(review.rows).filter((row) => !isActiveInProgressTimeRow(row, serverNow))
-  const readyRows = rows.filter((row) => row.payrollReady && row.exceptionCodes.length === 0)
-  const blockedRows = rows.filter((row) => !row.payrollReady || row.exceptionCodes.length > 0)
+  const rows = workedTimeRows(review.rows)
+    .filter((row) => !isActiveInProgressTimeRow(row, serverNow))
+    .map((row) => row.payrollCategory || row.payrollCategoryResolved === false ? row : {
+      ...row,
+      payrollCategory: 'regular' as const,
+      payrollCategoryLabel: payrollCategoryLabel('regular'),
+    })
+  const readyRows = rows.filter((row) => row.payrollReady && row.exceptionCodes.length === 0 && !row.mixedPayrollCategories)
+  const blockedRows = rows.filter((row) => !row.payrollReady || row.exceptionCodes.length > 0 || row.mixedPayrollCategories)
+  const categoryTotals = rows.reduce((totals, row) => {
+    const allocation = payrollCategoryAllocation(row)
+    totals.regularCategoryMinutes += allocation.regularCategoryMinutes
+    totals.epMinutes += allocation.epMinutes
+    totals.truepMinutes += allocation.truepMinutes
+    totals.unclassifiedCategoryMinutes += allocation.unclassifiedCategoryMinutes
+    return totals
+  }, {
+    epMinutes: 0,
+    regularCategoryMinutes: 0,
+    truepMinutes: 0,
+    unclassifiedCategoryMinutes: 0,
+  })
 
   return {
     ...review,
@@ -65,6 +90,7 @@ export function workedTimePayrollReview(review: TimekeepingReview | undefined): 
       paidMinutes: sumRows(rows, 'paidMinutes'),
       pendingCorrectionCount: review.pendingCorrections.length,
       readyCount: readyRows.length,
+      ...categoryTotals,
       regularMinutes: sumRows(rows, 'regularMinutes'),
       rowCount: rows.length,
       salaryDefaultMinutes: 0,
@@ -79,6 +105,7 @@ export function payrollLockBlocker(review: TimekeepingReview | undefined): strin
   if (workedReview.summary.rowCount === 0) return 'There are no SygShift clock-in/out time records in this range yet.'
   if (workedReview.summary.pendingCorrectionCount > 0) return 'Resolve every pending correction request first.'
   if (workedReview.rows.some((row) => row.mixedWorkTypes)) return 'Resolve every row with conflicting worked-time and training classifications before locking payroll.'
+  if (workedReview.rows.some((row) => row.mixedPayrollCategories)) return 'Resolve every row with conflicting Regular, EP, or TRUEP payroll categories before locking payroll.'
   if (workedReview.summary.exceptionCount > 0) return 'Fix every worked-time row marked Needs review before locking payroll.'
   if (workedReview.summary.readyCount !== workedReview.summary.rowCount) return 'Every worked-time row must be marked Ready before payroll can be locked.'
   return ''

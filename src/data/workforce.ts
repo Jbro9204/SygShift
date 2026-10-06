@@ -68,6 +68,7 @@ const siteSchema = z.object({
   postal_code: z.string().nullable(),
   time_zone: z.string(),
   active: z.boolean(),
+  supports_ep_truep_payroll: z.boolean().default(false),
   posts: z.array(postSchema),
 })
 
@@ -110,6 +111,7 @@ export interface SiteMutationInput {
   postalCode?: string | null
   timeZone: string
   active: boolean
+  supportsEpTruepPayroll: boolean
 }
 
 export interface PostMutationInput {
@@ -177,6 +179,7 @@ export async function upsertSite(input: SiteMutationInput): Promise<Site[]> {
     target_postal_code: cleanOptional(input.postalCode),
     target_region: cleanOptional(input.region),
     target_site_id: input.siteId ?? null,
+    target_supports_ep_truep_payroll: input.supportsEpTruepPayroll,
     target_time_zone: cleanOptional(input.timeZone) ?? 'America/Denver',
   })
   if (error) throw new Error(error.message || 'Site could not be saved.')

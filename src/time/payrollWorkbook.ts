@@ -1,4 +1,6 @@
 import {
+  payrollCategoryAllocation,
+  payrollCategoryLabel,
   payrollHours,
   summarizePayrollRowsByEmployee,
   type PayrollAccountabilityEvent,
@@ -349,6 +351,10 @@ export interface PayrollWeeklyEmployeeSummary {
   otherPaidMinutes: number
   overtimeMinutes: number
   paidMinutes: number
+  regularCategoryMinutes: number
+  epMinutes: number
+  truepMinutes: number
+  unclassifiedCategoryMinutes: number
   regularMinutes: number
   scheduledMinutes: number
   sickPayMinutes: number
@@ -439,11 +445,15 @@ function weeklyPayrollSummary(
     hasActivity,
     hasWorkedDetail: rows.length > 0,
     locationCount: worked?.locationCount ?? 0,
-    needsReview: rows.some((row) => !row.payrollReady || row.exceptionCodes.length > 0)
+    needsReview: rows.some((row) => !row.payrollReady || row.exceptionCodes.length > 0 || row.mixedPayrollCategories)
       || weekEvents.some((event) => accountabilityEventReviewNote(event) !== ''),
     otherPaidMinutes: accountability?.otherPaidMinutes ?? 0,
     overtimeMinutes: worked?.overtimeMinutes ?? 0,
     paidMinutes: worked?.paidMinutes ?? 0,
+    regularCategoryMinutes: worked?.regularCategoryMinutes ?? 0,
+    epMinutes: worked?.epMinutes ?? 0,
+    truepMinutes: worked?.truepMinutes ?? 0,
+    unclassifiedCategoryMinutes: worked?.unclassifiedCategoryMinutes ?? 0,
     regularMinutes: worked?.regularMinutes ?? 0,
     scheduledMinutes: summaryScheduledMinutes(employeeId, rows) + (accountability?.scheduledMinutes ?? 0),
     sickPayMinutes: accountability?.sickPayMinutes ?? 0,
@@ -490,6 +500,7 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
     ['Pay Period', `${formatUsDateKey(review.fromDate)} - ${formatUsDateKey(review.throughDate)}`],
     ['Report Status', input.exportType],
     ['Pay Basis', 'Completed SygShift clock-in/out records plus approved sick and PTO hours. Scheduled hours are shown only for comparison.'],
+    ['Hours Relationship', 'Regular, EP, TRUEP, and any legacy-unclassified hours partition Total Worked Hours. Overtime is already included in exactly one of those categories and must not be added again.'],
     ['Payroll Rules', input.rules ? `${input.rules.weekStartsOnLabel} 12:00 AM payroll week; entire overnight occurrence follows scheduled start. ${payrollHours(input.rules.dailyOvertimeMinutes)} daily OT / ${payrollHours(input.rules.weeklyOvertimeMinutes)} weekly OT remain a separate calculation.` : 'Rules loaded from SygShift'],
     ['Calculation Policy', input.rules ? `${input.rules.payrollCalculationPolicyVersion} / configuration ${input.rules.payrollConfigurationVersion}` : 'Recorded with each official batch'],
     ['Review Note', input.exportNote ?? input.batch?.note ?? ''],
@@ -503,9 +514,13 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
     'Week Dates',
     'Worked Shifts',
     'Scheduled Hours',
-    'Worked Hours',
-    'Training Hours',
+    'Total Worked Hours',
     'Regular Hours',
+    'EP Hours',
+    'TRUEP Hours',
+    'Legacy Unclassified Hours',
+    'Paid Training Hours',
+    'Non-Overtime Hours',
     'Overtime Hours',
     'Sick Pay Hours',
     'PTO Hours',
@@ -525,6 +540,10 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
     summary.workedShiftCount,
     hours(summary.scheduledMinutes),
     hours(summary.paidMinutes),
+    hours(summary.regularCategoryMinutes),
+    hours(summary.epMinutes),
+    hours(summary.truepMinutes),
+    hours(summary.unclassifiedCategoryMinutes),
     hours(summary.trainingMinutes),
     hours(summary.regularMinutes),
     hours(summary.overtimeMinutes),
@@ -539,6 +558,10 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
       result.workedShiftCount += item.summary.workedShiftCount
       result.scheduledMinutes += item.summary.scheduledMinutes
       result.paidMinutes += item.summary.paidMinutes
+      result.regularCategoryMinutes += item.summary.regularCategoryMinutes
+      result.epMinutes += item.summary.epMinutes
+      result.truepMinutes += item.summary.truepMinutes
+      result.unclassifiedCategoryMinutes += item.summary.unclassifiedCategoryMinutes
       result.trainingMinutes += item.summary.trainingMinutes
       result.regularMinutes += item.summary.regularMinutes
       result.overtimeMinutes += item.summary.overtimeMinutes
@@ -549,13 +572,17 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
       return result
     }, {
       otherPaidMinutes: 0,
+      epMinutes: 0,
+      unclassifiedCategoryMinutes: 0,
       overtimeMinutes: 0,
       paidMinutes: 0,
+      regularCategoryMinutes: 0,
       regularMinutes: 0,
       scheduledMinutes: 0,
       sickPayMinutes: 0,
       totalPayableMinutes: 0,
       trainingMinutes: 0,
+      truepMinutes: 0,
       vacationPayMinutes: 0,
       workedShiftCount: 0,
     })
@@ -572,6 +599,10 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
       minuteTotals.workedShiftCount,
       hours(minuteTotals.scheduledMinutes),
       hours(minuteTotals.paidMinutes),
+      hours(minuteTotals.regularCategoryMinutes),
+      hours(minuteTotals.epMinutes),
+      hours(minuteTotals.truepMinutes),
+      hours(minuteTotals.unclassifiedCategoryMinutes),
       hours(minuteTotals.trainingMinutes),
       hours(minuteTotals.regularMinutes),
       hours(minuteTotals.overtimeMinutes),
@@ -592,27 +623,28 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
   const totalsRowIndex = headerRowIndex + body.length + weeklyTotals.length + 1
 
   return {
-    centerColumns: [1, 2, 3, 4, 14],
-    columnWidths: [26, 14, 14, 25, 14, 16, 15, 16, 14, 15, 15, 14, 16, 16, 16],
+    centerColumns: [1, 2, 3, 4, 18],
+    columnWidths: [26, 14, 14, 25, 14, 16, 18, 15, 14, 15, 22, 19, 20, 18, 15, 14, 16, 16, 16],
     filterRowIndex: headerRowIndex,
     freezeRows: headerRowIndex + 1,
     headerRows: [headerRowIndex],
     integerColumns: [4],
     mergedCells: [
-      'A1:O1',
-      'B2:O2',
-      'B3:O3',
-      'B4:O4',
-      'B5:O5',
-      'B6:O6',
-      'B7:O7',
-      'B8:O8',
+      'A1:S1',
+      'B2:S2',
+      'B3:S3',
+      'B4:S4',
+      'B5:S5',
+      'B6:S6',
+      'B7:S7',
+      'B8:S8',
+      'B9:S9',
     ],
-    metadataRows: [1, 2, 3, 4, 5, 6, 7],
+    metadataRows: [1, 2, 3, 4, 5, 6, 7, 8],
     name: 'Payroll Summary',
     rowHeights: {
       3: 34,
-      4: 30,
+      4: 42,
       5: 30,
     },
     rows: [...titleRows, header, ...body, ...weeklyTotals, totals],
@@ -630,12 +662,14 @@ function buildWeeklyDetailSheets(input: PayrollWorkbookInput, events: PayrollAcc
         || (left.firstClockIn ?? '').localeCompare(right.firstClockIn ?? ''))
       .map((row) => {
         const payableMinutes = row.paidMinutes
+        const categoryMinutes = payrollCategoryAllocation(row)
         return [
           row.employeeName,
           row.employeeId,
           row.username,
           formatUsDateKey(row.operationalDate),
           row.workType === 'training' ? 'Paid training' : 'Worked time',
+          row.mixedPayrollCategories ? 'Conflicting payroll categories' : row.payrollCategoryLabel ?? payrollCategoryLabel(row.payrollCategory),
           locationLabel(row),
           dateTimeText(row.scheduledStartsAt, row.timeZone),
           dateTimeText(row.scheduledEndsAt, row.timeZone),
@@ -643,6 +677,10 @@ function buildWeeklyDetailSheets(input: PayrollWorkbookInput, events: PayrollAcc
           dateTimeText(row.lastClockOut, row.timeZone),
           hours(scheduledMinutes(row)),
           hours(row.paidMinutes),
+          hours(categoryMinutes.regularCategoryMinutes),
+          hours(categoryMinutes.epMinutes),
+          hours(categoryMinutes.truepMinutes),
+          hours(categoryMinutes.unclassifiedCategoryMinutes),
           hours(row.regularMinutes),
           hours(row.overtimeMinutes),
           0,
@@ -650,8 +688,12 @@ function buildWeeklyDetailSheets(input: PayrollWorkbookInput, events: PayrollAcc
           0,
           hours(payableMinutes),
           row.breakMinutes,
-          row.payrollReady && row.exceptionCodes.length === 0 ? 'Ready' : 'Needs review',
-          [...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')), ...row.payrollNotes].join(' | '),
+          row.payrollReady && row.exceptionCodes.length === 0 && !row.mixedPayrollCategories ? 'Ready' : 'Needs review',
+          [
+            ...(row.mixedPayrollCategories ? ['Conflicting payroll categories'] : []),
+            ...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')),
+            ...row.payrollNotes,
+          ].join(' | '),
           `${formatUsDateKey(week.weekStartsOn)} - ${formatUsDateKey(week.weekEndsOn)}`,
           row.crossesPayrollBoundary ? 'Yes' : 'No',
         ]
@@ -673,12 +715,17 @@ function buildWeeklyDetailSheets(input: PayrollWorkbookInput, events: PayrollAcc
           event.username,
           formatUsDateKey(event.operationalDate),
           `${eventLabel(event.eventType)} / ${accountabilityEventPayCategory(event)}`,
+          '',
           accountabilityLocation(event),
           dateTimeText(event.startsAt, event.timeZone),
           dateTimeText(event.endsAt, event.timeZone),
           '',
           '',
           hours(scheduled),
+          0,
+          0,
+          0,
+          0,
           0,
           0,
           0,
@@ -699,26 +746,27 @@ function buildWeeklyDetailSheets(input: PayrollWorkbookInput, events: PayrollAcc
       [`${week.label} Payroll Detail`],
       ['Payroll Week', `${formatUsDateKey(week.weekStartsOn)} - ${formatUsDateKey(week.weekEndsOn)}`],
       ['Assignment Rule', 'An overnight occurrence remains entirely in the payroll week containing its scheduled start.'],
+      ['Hours Relationship', 'Regular, EP, TRUEP, and legacy-unclassified hours partition Total Worked Hours. Overtime is included in those category totals.'],
       [],
     ]
     const headerRowIndex = titleRows.length
     return {
-      centerColumns: [3, 4, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22],
-      columnWidths: [24, 38, 18, 14, 24, 38, 24, 24, 24, 24, 16, 15, 14, 15, 14, 14, 16, 16, 14, 16, 46, 25, 18],
+      centerColumns: [3, 4, 5, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27],
+      columnWidths: [24, 38, 18, 14, 24, 20, 38, 24, 24, 24, 24, 16, 18, 15, 14, 15, 22, 20, 18, 14, 14, 16, 16, 14, 16, 46, 25, 18],
       filterRowIndex: headerRowIndex,
       freezeRows: headerRowIndex + 1,
       headerRows: [headerRowIndex],
-      integerColumns: [18],
-      mergedCells: ['A1:W1', 'B2:W2', 'B3:W3'],
-      metadataRows: [1, 2],
+      integerColumns: [23],
+      mergedCells: ['A1:AB1', 'B2:AB2', 'B3:AB3', 'B4:AB4'],
+      metadataRows: [1, 2, 3],
       name: `${week.label} Detail`,
       rows: [
         ...titleRows,
-        ['Employee', 'Employee ID', 'Username', 'Work Date', 'Record Type', 'Site / Post', 'Scheduled Start', 'Scheduled End', 'Actual Clock In', 'Actual Clock Out', 'Scheduled Hours', 'Worked Hours', 'Regular Hours', 'Overtime Hours', 'Sick Hours', 'PTO Hours', 'Other Paid Hours', 'Total Payable', 'Break Minutes', 'Status', 'Notes', 'Payroll Week', 'Crosses Week Boundary'],
+        ['Employee', 'Employee ID', 'Username', 'Work Date', 'Record Type', 'Payroll Category', 'Site / Post', 'Scheduled Start', 'Scheduled End', 'Actual Clock In', 'Actual Clock Out', 'Scheduled Hours', 'Total Worked Hours', 'Regular Hours', 'EP Hours', 'TRUEP Hours', 'Legacy Unclassified Hours', 'Non-Overtime Hours', 'Overtime Hours', 'Sick Hours', 'PTO Hours', 'Other Paid Hours', 'Total Payable', 'Break Minutes', 'Status', 'Notes', 'Payroll Week', 'Crosses Week Boundary'],
         ...(rows.length > 0 ? rows : [['No payroll records assigned to this week.']]),
       ],
       titleRows: [0],
-      wrapColumns: [4, 5, 6, 7, 8, 9, 20, 21],
+      wrapColumns: [4, 5, 6, 7, 8, 9, 10, 25, 26],
     }
   })
 }
@@ -726,7 +774,7 @@ function buildWeeklyDetailSheets(input: PayrollWorkbookInput, events: PayrollAcc
 function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAccountabilityEvent[]): WorkbookSheet {
   const header = ['Employee', 'Date', 'Issue', 'Location', 'Payroll Batch', 'Assignment Source', 'Scheduled', 'Worked', 'Payable', 'Variance', 'Status', 'Shift Notes', 'Review Notes']
   const rowItems = rows
-    .filter((row) => !row.payrollReady || row.exceptionCodes.length > 0 || row.payrollNotes.length > 0)
+    .filter((row) => !row.payrollReady || row.exceptionCodes.length > 0 || row.payrollNotes.length > 0 || row.mixedPayrollCategories)
     .map((row) => {
       const scheduled = scheduledMinutes(row)
       return [
@@ -740,9 +788,13 @@ function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
         hours(row.paidMinutes),
         hours(row.paidMinutes),
         hours(row.paidMinutes - scheduled),
-        row.payrollReady ? 'Ready' : 'Needs review',
+        row.payrollReady && !row.mixedPayrollCategories ? 'Ready' : 'Needs review',
         row.shiftNotes ?? '',
-        [...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')), ...row.payrollNotes].join(' | '),
+        [
+          ...(row.mixedPayrollCategories ? ['Conflicting payroll categories'] : []),
+          ...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')),
+          ...row.payrollNotes,
+        ].join(' | '),
       ]
     })
   const eventItems = events.filter((event) => accountabilityEventReviewNote(event) !== '').map((event) => {
@@ -809,7 +861,7 @@ function buildVarianceSheet(rows: TimekeepingReviewRow[]): WorkbookSheet {
         hours(scheduled),
         hours(row.paidMinutes),
         hours(variance),
-        !row.payrollReady ? 'Needs review' : Math.abs(variance) >= 15 ? 'Variance noted' : 'Ready',
+        !row.payrollReady || row.mixedPayrollCategories ? 'Needs review' : Math.abs(variance) >= 15 ? 'Variance noted' : 'Ready',
       ]
     })
     .filter((row) => Math.abs(Number(row[5])) > 0)
@@ -843,6 +895,10 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
     otherPaidMinutes: number
     overtimeMinutes: number
     paidMinutes: number
+    regularCategoryMinutes: number
+    epMinutes: number
+    truepMinutes: number
+    unclassifiedCategoryMinutes: number
     regularMinutes: number
     scheduledMinutes: number
     shifts: number
@@ -859,20 +915,29 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
       employees: new Set<string>(),
       needsReview: 0,
       otherPaidMinutes: 0,
+      epMinutes: 0,
+      unclassifiedCategoryMinutes: 0,
       overtimeMinutes: 0,
       paidMinutes: 0,
+      regularCategoryMinutes: 0,
       regularMinutes: 0,
       scheduledMinutes: 0,
       shifts: 0,
       sickPayMinutes: 0,
       trainingMinutes: 0,
+      truepMinutes: 0,
       vacationPayMinutes: 0,
     }
     item.breakMinutes += row.breakMinutes
     item.employees.add(row.employeeName)
-    item.needsReview += row.payrollReady && row.exceptionCodes.length === 0 ? 0 : 1
+    item.needsReview += row.payrollReady && row.exceptionCodes.length === 0 && !row.mixedPayrollCategories ? 0 : 1
     item.overtimeMinutes += row.overtimeMinutes
     item.paidMinutes += row.paidMinutes
+    const categoryMinutes = payrollCategoryAllocation(row)
+    item.regularCategoryMinutes += categoryMinutes.regularCategoryMinutes
+    item.epMinutes += categoryMinutes.epMinutes
+    item.truepMinutes += categoryMinutes.truepMinutes
+    item.unclassifiedCategoryMinutes += categoryMinutes.unclassifiedCategoryMinutes
     if (row.workType === 'training') item.trainingMinutes += row.paidMinutes
     item.regularMinutes += row.regularMinutes
     item.scheduledMinutes += scheduledMinutes(row)
@@ -888,13 +953,17 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
       employees: new Set<string>(),
       needsReview: 0,
       otherPaidMinutes: 0,
+      epMinutes: 0,
+      unclassifiedCategoryMinutes: 0,
       overtimeMinutes: 0,
       paidMinutes: 0,
+      regularCategoryMinutes: 0,
       regularMinutes: 0,
       scheduledMinutes: 0,
       shifts: 0,
       sickPayMinutes: 0,
       trainingMinutes: 0,
+      truepMinutes: 0,
       vacationPayMinutes: 0,
     }
     const scheduled = accountabilityEventScheduledMinutes(event)
@@ -917,34 +986,40 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
       item.shifts,
       hours(item.scheduledMinutes),
       hours(item.paidMinutes),
+      hours(item.regularCategoryMinutes),
+      hours(item.epMinutes),
+      hours(item.truepMinutes),
+      hours(item.unclassifiedCategoryMinutes),
       hours(item.trainingMinutes),
+      hours(item.regularMinutes),
+      hours(item.overtimeMinutes),
       hours(item.sickPayMinutes),
       hours(item.vacationPayMinutes),
       hours(item.otherPaidMinutes),
       hours(item.paidMinutes + item.sickPayMinutes + item.vacationPayMinutes + item.otherPaidMinutes),
-      hours(item.overtimeMinutes),
       item.needsReview,
     ])
 
   const titleRows: WorkbookCell[][] = [
     ['Site / Post Payroll Summary'],
     ['Purpose', 'Operational rollup of worked and paid hours by Site/Post for the selected payroll period.'],
+    ['Hours Relationship', 'Regular, EP, TRUEP, and legacy-unclassified hours partition Total Worked Hours. Overtime is included in those category totals.'],
     [],
   ]
   const headerRowIndex = titleRows.length
   return {
-    centerColumns: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-    columnWidths: [42, 12, 15, 16, 15, 16, 14, 14, 16, 17, 15, 16],
+    centerColumns: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+    columnWidths: [42, 12, 15, 16, 18, 15, 14, 15, 22, 19, 20, 18, 14, 14, 16, 17, 16],
     filterRowIndex: headerRowIndex,
     freezeRows: headerRowIndex + 1,
     headerRows: [headerRowIndex],
-    integerColumns: [1, 2, 11],
-    mergedCells: ['A1:L1', 'B2:L2'],
-    metadataRows: [1],
+    integerColumns: [1, 2, 16],
+    mergedCells: ['A1:Q1', 'B2:Q2', 'B3:Q3'],
+    metadataRows: [1, 2],
     name: 'Site Summary',
     rows: [
       ...titleRows,
-      ['Site / Post', 'Employees', 'Worked Shifts', 'Scheduled Hours', 'Worked Hours', 'Training Hours', 'Sick Pay', 'PTO Hours', 'Other Paid', 'Total Payable', 'Overtime', 'Review Items'],
+      ['Site / Post', 'Employees', 'Worked Shifts', 'Scheduled Hours', 'Total Worked Hours', 'Regular Hours', 'EP Hours', 'TRUEP Hours', 'Legacy Unclassified Hours', 'Paid Training Hours', 'Non-Overtime Hours', 'Overtime Hours', 'Sick Pay', 'PTO Hours', 'Other Paid', 'Total Payable', 'Review Items'],
       ...(rowsOut.length > 0 ? rowsOut : [['No worked time in this range.']]),
     ],
     titleRows: [0],
@@ -1013,6 +1088,7 @@ function buildEmployeeSheets(input: PayrollWorkbookInput, events: PayrollAccount
     const employeeEvents = events.filter((event) => event.employeeId === employeeId)
     const employeeName = employeeRows[0]?.employeeName ?? employeeEvents[0]?.employeeName ?? 'Employee'
     const workedRows: WorkbookCell[][] = employeeRows.map((row) => {
+      const categoryMinutes = payrollCategoryAllocation(row)
       return [
         row.employeeName,
         row.employeeId,
@@ -1020,11 +1096,16 @@ function buildEmployeeSheets(input: PayrollWorkbookInput, events: PayrollAccount
         formatUsDateKey(row.operationalDate),
         locationLabel(row),
         row.workType === 'training' ? 'Paid training' : 'Worked time',
+        row.mixedPayrollCategories ? 'Conflicting payroll categories' : row.payrollCategoryLabel ?? payrollCategoryLabel(row.payrollCategory),
         dateTimeText(row.scheduledStartsAt, row.timeZone),
         dateTimeText(row.scheduledEndsAt, row.timeZone),
         dateTimeText(row.firstClockIn, row.timeZone),
         dateTimeText(row.lastClockOut, row.timeZone),
         hours(row.paidMinutes),
+        hours(categoryMinutes.regularCategoryMinutes),
+        hours(categoryMinutes.epMinutes),
+        hours(categoryMinutes.truepMinutes),
+        hours(categoryMinutes.unclassifiedCategoryMinutes),
         row.payrollBatchWeekStartsOn && row.payrollBatchWeekEndsOn ? `${formatUsDateKey(row.payrollBatchWeekStartsOn)} - ${formatUsDateKey(row.payrollBatchWeekEndsOn)}` : 'Unresolved',
         row.payrollPeriodStartsOn && row.payrollPeriodEndsOn ? `${formatUsDateKey(row.payrollPeriodStartsOn)} - ${formatUsDateKey(row.payrollPeriodEndsOn)}` : '',
         hours(row.regularMinutes),
@@ -1033,9 +1114,13 @@ function buildEmployeeSheets(input: PayrollWorkbookInput, events: PayrollAccount
         row.crossesPayrollBoundary ? 'Yes' : 'No',
         row.payrollAssignmentSource.replaceAll('_', ' '),
         row.manualAdjustment ? 'Yes' : 'No',
-        row.payrollReady ? 'Ready' : 'Needs review',
+        row.payrollReady && !row.mixedPayrollCategories ? 'Ready' : 'Needs review',
         row.shiftNotes ?? '',
-        [...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')), ...row.payrollNotes].join(' | '),
+        [
+          ...(row.mixedPayrollCategories ? ['Conflicting payroll categories'] : []),
+          ...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')),
+          ...row.payrollNotes,
+        ].join(' | '),
       ]
     })
     const eventRows: WorkbookCell[][] = employeeEvents.map((event) => [
@@ -1054,6 +1139,7 @@ function buildEmployeeSheets(input: PayrollWorkbookInput, events: PayrollAccount
     ])
 
     const workedMinutes = employeeRows.reduce((total, row) => total + row.paidMinutes, 0)
+    const workedSummary = summarizePayrollRowsByEmployee(employeeRows)[0]
     const trainingMinutes = employeeRows.filter((row) => row.workType === 'training').reduce((total, row) => total + row.paidMinutes, 0)
     const scheduledTotal = employeeRows.reduce((total, row) => total + scheduledMinutes(row), 0)
     const sickMinutes = employeeEvents.filter((event) => event.eventType === 'called_in_sick').reduce((total, event) => total + accountabilityEventPayableMinutes(event), 0)
@@ -1061,19 +1147,20 @@ function buildEmployeeSheets(input: PayrollWorkbookInput, events: PayrollAccount
     const otherPaidMinutes = employeeEvents
       .filter((event) => event.eventType !== 'called_in_sick' && event.eventType !== 'vacation')
       .reduce((total, event) => total + accountabilityEventPayableMinutes(event), 0)
-    const employeeNeedsReview = employeeRows.some((row) => !row.payrollReady) || employeeEvents.some((event) => accountabilityEventReviewNote(event) !== '')
+    const employeeNeedsReview = employeeRows.some((row) => !row.payrollReady || row.mixedPayrollCategories) || employeeEvents.some((event) => accountabilityEventReviewNote(event) !== '')
     const weeklyTotals: WorkbookCell[][] = workbookWeeks.map((week) => {
       const summary = weeklyPayrollSummary(input, employeeId, week, events)
       return [
         week.label,
-        `${formatUsDateKey(week.weekStartsOn)} - ${formatUsDateKey(week.weekEndsOn)} | Scheduled ${hours(summary.scheduledMinutes)} | Worked ${hours(summary.paidMinutes)} | Regular ${hours(summary.regularMinutes)} | OT ${hours(summary.overtimeMinutes)} | Sick ${hours(summary.sickPayMinutes)} | PTO ${hours(summary.vacationPayMinutes)} | Total Payable ${hours(payrollWeeklyTotalPayableMinutes(summary))}`,
+        `${formatUsDateKey(week.weekStartsOn)} - ${formatUsDateKey(week.weekEndsOn)} | Scheduled ${hours(summary.scheduledMinutes)} | Worked ${hours(summary.paidMinutes)} | Regular ${hours(summary.regularCategoryMinutes)} | EP ${hours(summary.epMinutes)} | TRUEP ${hours(summary.truepMinutes)} | Legacy ${hours(summary.unclassifiedCategoryMinutes)} | Non-OT ${hours(summary.regularMinutes)} | OT ${hours(summary.overtimeMinutes)} | Sick ${hours(summary.sickPayMinutes)} | PTO ${hours(summary.vacationPayMinutes)} | Total Payable ${hours(payrollWeeklyTotalPayableMinutes(summary))}`,
       ]
     })
     const titleRows: WorkbookCell[][] = [
       [`${employeeName} — Payroll Detail`],
       ['Pay Period', `${formatUsDateKey(review.fromDate)} - ${formatUsDateKey(review.throughDate)}`],
       ...weeklyTotals,
-      ['Period Totals', `Scheduled ${hours(scheduledTotal)} | Worked ${hours(workedMinutes)} | Paid training ${hours(trainingMinutes)} | Sick ${hours(sickMinutes)} | PTO ${hours(ptoMinutes)} | Other Paid ${hours(otherPaidMinutes)} | Total Payable ${hours(workedMinutes + sickMinutes + ptoMinutes + otherPaidMinutes)}`],
+      ['Period Totals', `Scheduled ${hours(scheduledTotal)} | Worked ${hours(workedMinutes)} | Regular ${hours(workedSummary?.regularCategoryMinutes ?? 0)} | EP ${hours(workedSummary?.epMinutes ?? 0)} | TRUEP ${hours(workedSummary?.truepMinutes ?? 0)} | Legacy ${hours(workedSummary?.unclassifiedCategoryMinutes ?? 0)} | Non-OT ${hours(workedSummary?.regularMinutes ?? 0)} | OT ${hours(workedSummary?.overtimeMinutes ?? 0)} | Paid training ${hours(trainingMinutes)} | Sick ${hours(sickMinutes)} | PTO ${hours(ptoMinutes)} | Other Paid ${hours(otherPaidMinutes)} | Total Payable ${hours(workedMinutes + sickMinutes + ptoMinutes + otherPaidMinutes)}`],
+      ['Hours Relationship', 'Regular, EP, TRUEP, and legacy-unclassified hours partition Total Worked Hours. Overtime is included in those category totals.'],
       ['Review Status', employeeNeedsReview ? 'Needs review' : 'Ready'],
       [],
     ]
@@ -1083,22 +1170,22 @@ function buildEmployeeSheets(input: PayrollWorkbookInput, events: PayrollAccount
     const accountabilityHeaderRow = accountabilityTitleRow + 1
 
     return {
-      centerColumns: [3, 5, 10, 11, 12, 13, 14, 15, 17, 18],
-      columnWidths: [24, 38, 18, 14, 38, 18, 24, 24, 24, 24, 15, 25, 25, 14, 14, 14, 18, 24, 18, 16, 42, 46],
+      centerColumns: [3, 5, 6, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24],
+      columnWidths: [24, 38, 18, 14, 38, 18, 20, 24, 24, 24, 24, 18, 15, 14, 15, 22, 25, 25, 20, 18, 14, 18, 24, 18, 16, 42, 46],
       filterRowIndex: workedHeaderRow,
       freezeRows: workedHeaderRow + 1,
       headerRows: [workedHeaderRow, accountabilityHeaderRow],
-      integerColumns: [14],
+      integerColumns: [20],
       mergedCells: [
-        'A1:V1',
-        ...Array.from({ length: titleRows.length - 2 }, (_, index) => `B${index + 2}:V${index + 2}`),
-        `A${accountabilityTitleRow + 1}:V${accountabilityTitleRow + 1}`,
+        'A1:AA1',
+        ...Array.from({ length: titleRows.length - 2 }, (_, index) => `B${index + 2}:AA${index + 2}`),
+        `A${accountabilityTitleRow + 1}:AA${accountabilityTitleRow + 1}`,
       ],
       metadataRows: Array.from({ length: titleRows.length - 2 }, (_, index) => index + 1),
       name: sheetName(employeeName, usedNames),
       rows: [
         ...titleRows,
-        ['Employee', 'Employee ID', 'Username', 'Work Date', 'Site / Post', 'Time Category', 'Scheduled Start', 'Scheduled End', 'Actual Clock In', 'Actual Clock Out', 'Worked Hours', 'Payroll Batch Week', 'Payroll Period', 'Regular Hours', 'Overtime Hours', 'Break Minutes', 'Crosses Payroll Boundary', 'Assignment Source', 'Manual Adjustment', 'Exception Status', 'Shift Notes', 'Review Notes'],
+        ['Employee', 'Employee ID', 'Username', 'Work Date', 'Site / Post', 'Time Category', 'Payroll Category', 'Scheduled Start', 'Scheduled End', 'Actual Clock In', 'Actual Clock Out', 'Total Worked Hours', 'Regular Hours', 'EP Hours', 'TRUEP Hours', 'Legacy Unclassified Hours', 'Payroll Batch Week', 'Payroll Period', 'Non-Overtime Hours', 'Overtime Hours', 'Break Minutes', 'Crosses Payroll Boundary', 'Assignment Source', 'Manual Adjustment', 'Exception Status', 'Shift Notes', 'Review Notes'],
         ...(workedRows.length > 0 ? workedRows : [['No worked time rows in this range.']]),
         [],
         ['Accountability / Sick Pay / PTO'],
@@ -1107,7 +1194,7 @@ function buildEmployeeSheets(input: PayrollWorkbookInput, events: PayrollAccount
       ],
       sectionRows: [accountabilityTitleRow],
       titleRows: [0],
-      wrapColumns: [4, 6, 7, 8, 9, 11, 12, 17, 20, 21],
+      wrapColumns: [4, 5, 6, 7, 8, 9, 10, 16, 17, 22, 25, 26],
     }
   })
 }

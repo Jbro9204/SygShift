@@ -59,7 +59,8 @@ describe('continental employee time-zone release guard', () => {
     expect(migration).toContain('localized_ends_at')
     expect(migration).toContain('time_zone_source = \'employee\'')
     expect(migration).toContain('case when shift_end_time <= shift_start_time then 1 else 0 end')
-    expect(scheduleData).toContain("'scheduler_create_employee_local_coverage_plan_v3'")
+    expect(scheduleData).toContain("'scheduler_create_coverage_plan_with_payroll_category_v1'")
+    expect(scheduleData).toContain('use_employee_time_zone: input.useEmployeeTimeZone ?? false')
     expect(schedulePage).toContain('useEmployeeTimeZone: useEmployeeLocalTime')
   })
 

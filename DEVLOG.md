@@ -1,5 +1,22 @@
 # SygShift Development Log
 
+## 10/06/2026 - EP / TRUEP Payroll Classification
+
+- Added Regular, EP, and TRUEP shift classifications with Regular as the
+  default and an explicit per-Site enablement control; no Site is auto-enabled
+  or inferred from its code/name.
+- Preserved category through schedule copy, call-off/open coverage,
+  replacements, and actual worked-time occurrences, with audited MFA-backed
+  correction before payroll lock.
+- Added separate category columns and totals across payroll review, CSV, XLSX,
+  Site summaries, and employee detail while keeping overtime as a subset and
+  leaving rates/legal allocation to Finance and Payroll.
+- Hardened overnight/week-boundary, void, occurrence-repair, concurrency,
+  permission-deny, legacy-lock, and salary-default handling. The linked
+  migration/regression rollback rehearsal and independent review passed.
+- Full verification and production release details are recorded in
+  `docs/changelogs/CHANGELOG_10-06-2026_EP_TRUEP_PAYROLL_CLASSIFICATION.md`.
+
 ## 10/05/2026 - Call-Off Alert Lifecycle and Automatic Retirement
 
 - Added one authoritative lifecycle for call-off alerts, notifications,

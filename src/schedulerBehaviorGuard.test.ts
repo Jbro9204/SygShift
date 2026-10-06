@@ -89,7 +89,7 @@ describe('scheduler behavior guardrails', () => {
   })
 
   it('atomically replaces a destination draft from the exact visible revision', () => {
-    expect(scheduleData).toContain('replace_schedule_week_draft_with_work_types')
+    expect(scheduleData).toContain('replace_schedule_week_draft_with_payroll_categories_v1')
     expect(scheduleData).toContain('source_schedule_id: input.sourceScheduleId')
     expect(schedulePage).toContain('copyWeekMutation')
     expect(schedulePage).toContain('Copy week')
@@ -105,6 +105,19 @@ describe('scheduler behavior guardrails', () => {
     expect(atomicWeekCopyMigration.indexOf('insert into public.schedule_assignment_overrides')).toBeLessThan(
       atomicWeekCopyMigration.indexOf('insert into public.shift_assignments (', atomicWeekCopyMigration.indexOf('for source_assignment in')),
     )
+  })
+
+  it('keeps payroll classifications site-gated, explicit, and usable at narrow widths', () => {
+    expect(schedulePage).toContain('PayrollCategorySelector')
+    expect(schedulePage).toContain('selectedSiteSupportsPayrollCategories')
+    expect(schedulePage).toContain('supports_ep_truep_payroll')
+    expect(schedulePage).toContain("payrollCategory: post?.site.supports_ep_truep_payroll ? openShiftForm.payrollCategory : 'regular'")
+    expect(schedulePage).toContain("payrollCategory: site?.supports_ep_truep_payroll ? openShiftForm.payrollCategory : 'regular'")
+
+    const payrollChoiceStyles = /\.schedule-payroll-category label \{[\s\S]+?\}/.exec(appStyles)?.[0] ?? ''
+    expect(payrollChoiceStyles).toContain('min-height: 72px')
+    expect(appStyles).toContain('.schedule-payroll-category {')
+    expect(appStyles).toContain('grid-template-columns: 1fr;')
   })
 
   it('keeps copy-week failures in the dialog and clears stale feedback between copy attempts', () => {

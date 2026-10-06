@@ -72,6 +72,7 @@ function siteFormPayload(
     postalCode: optionalField(data, 'postalCode'),
     region: optionalField(data, 'region'),
     siteId,
+    supportsEpTruepPayroll: data.get('supportsEpTruepPayroll') === 'on',
     timeZone: optionalField(data, 'timeZone') ?? 'America/Denver',
   }
 }
@@ -141,6 +142,23 @@ function SiteEditorModal({
               type="checkbox"
             />
             Active site
+          </label>
+        </fieldset>
+        <fieldset className="site-editor-section">
+          <legend>Payroll classifications</legend>
+          <label className="check-field site-payroll-toggle">
+            <input
+              defaultChecked={site?.supports_ep_truep_payroll ?? false}
+              name="supportsEpTruepPayroll"
+              type="checkbox"
+            />
+            <span>
+              <strong>Enable EP / TRUEP classifications for this site</strong>
+              <small>
+                Regular remains the default. Schedulers may classify individual shifts as EP or TRUEP.
+                Finance and Payroll continue to control rates and overtime treatment.
+              </small>
+            </span>
           </label>
         </fieldset>
         <fieldset className="site-editor-section">
@@ -536,6 +554,10 @@ function ExpandedSite({
           <dt>Status</dt>
           <dd>{site.active ? 'Active' : 'Inactive'}</dd>
         </div>
+        <div>
+          <dt>Payroll classifications</dt>
+          <dd>{site.supports_ep_truep_payroll ? 'Regular, EP, and TRUEP' : 'Regular only'}</dd>
+        </div>
       </dl>
       <section className="site-posts" aria-labelledby={`site-posts-${site.id}`}>
         <div className="site-posts__heading">
@@ -868,6 +890,9 @@ export function SitesPage() {
                         <div className="site-directory__site">
                           <strong>{site.name}</strong>
                           <span>{site.code || 'No site code'}</span>
+                          {site.supports_ep_truep_payroll ? (
+                            <span className="site-payroll-badge">EP / TRUEP site</span>
+                          ) : null}
                         </div>
                         <div className="site-directory__location">
                           <MapPin aria-hidden="true" size={16} />

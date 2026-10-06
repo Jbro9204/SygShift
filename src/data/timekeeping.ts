@@ -9,6 +9,7 @@ const assignmentStatusSchema = z.enum(['assigned', 'confirmed', 'canceled', 'com
 const appRoleSchema = z.enum(['guard', 'dispatcher', 'scheduler', 'recruiting_licensing', 'supervisor', 'admin'])
 const employmentTypeSchema = z.enum(['hourly', 'salary', 'flex'])
 const workTypeSchema = z.enum(['post', 'training'])
+const payrollCategorySchema = z.enum(['regular', 'ep', 'truep'])
 const employeeTimeZoneSchema = z.enum(['America/New_York', 'America/Chicago', 'America/Denver', 'America/Phoenix', 'America/Los_Angeles'])
 
 const timekeepingEmployeeSchema = z.object({
@@ -262,6 +263,10 @@ const timekeepingReviewRowSchema = z.object({
   workTypeOvertimeEligible: z.boolean().optional().default(true),
   workTypeRateSource: z.enum(['employee_base_rate', 'configured_rate']).optional().default('employee_base_rate'),
   mixedWorkTypes: z.boolean().optional().default(false),
+  payrollCategory: payrollCategorySchema.nullable().optional(),
+  payrollCategoryLabel: z.string().nullable().optional(),
+  payrollCategoryResolved: z.boolean().optional(),
+  mixedPayrollCategories: z.boolean().optional(),
   payrollOccurrenceKey: z.string().optional().default(''),
   payrollOccurrenceFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   payrollAssignmentAnchor: z.string().nullable().optional(),
@@ -298,6 +303,11 @@ const payrollReconciliationSchema = z.object({
   regularMinutes: z.number().int().nonnegative(),
   overtimeMinutes: z.number().int().nonnegative(),
   regularPlusOvertimeMatchesPaid: z.boolean(),
+  regularCategoryMinutes: z.number().int().nonnegative().optional(),
+  epMinutes: z.number().int().nonnegative().optional(),
+  truepMinutes: z.number().int().nonnegative().optional(),
+  unclassifiedCategoryMinutes: z.number().int().nonnegative().optional(),
+  categoryMinutesMatchPaid: z.boolean().optional(),
   rowCount: z.number().int().nonnegative(),
   uniqueOccurrenceCount: z.number().int().nonnegative(),
   duplicateOccurrenceCount: z.number().int().nonnegative(),
@@ -369,6 +379,8 @@ const timeMaintenanceEventSchema = z.object({
   workType: workTypeSchema.optional().default('post'),
   workTypeLabel: z.string().optional().default('Worked Time'),
   payCode: z.string().optional().default('POST'),
+  payrollCategory: payrollCategorySchema.optional().default('regular'),
+  payrollCategoryLabel: z.string().optional().default('Regular'),
 })
 
 const timeMaintenanceSchema = z.object({
@@ -431,10 +443,31 @@ const timeWorkTypeMapItemSchema = z.object({
   mixedWorkTypes: z.boolean().default(false),
 })
 
+const timePayrollCategoryMapItemSchema = z.object({
+  employeeId: z.string().uuid(),
+  shiftId: z.string().uuid().nullable(),
+  operationalDate: z.string(),
+  payrollOccurrenceKey: z.string().optional().default(''),
+  eventIds: z.array(z.string().uuid()).optional().default([]),
+  payrollCategory: payrollCategorySchema,
+  payrollCategoryLabel: z.string(),
+  mixedPayrollCategories: z.boolean().default(false),
+})
+
 const workTypeCorrectionResultSchema = z.object({
   correctionCount: z.number().int().positive(),
   eventIds: z.array(z.string().uuid()),
   workType: workTypeSchema,
+  reason: z.string(),
+  correctedAt: z.string(),
+  correctedBy: z.string().uuid(),
+})
+
+const payrollCategoryCorrectionResultSchema = z.object({
+  correctionCount: z.number().int().positive(),
+  correctionIds: z.array(z.string().uuid()),
+  eventIds: z.array(z.string().uuid()),
+  payrollCategory: payrollCategorySchema,
   reason: z.string(),
   correctedAt: z.string(),
   correctedBy: z.string().uuid(),
@@ -543,6 +576,10 @@ const timekeepingReviewSchema = z.object({
     paidMinutes: z.number().int().nonnegative(),
     regularMinutes: z.number().int().nonnegative().default(0),
     overtimeMinutes: z.number().int().nonnegative().default(0),
+    regularCategoryMinutes: z.number().int().nonnegative().optional(),
+    epMinutes: z.number().int().nonnegative().optional(),
+    truepMinutes: z.number().int().nonnegative().optional(),
+    unclassifiedCategoryMinutes: z.number().int().nonnegative().optional(),
     timeOffMinutes: z.number().int().nonnegative().default(0),
     salaryDefaultMinutes: z.number().int().nonnegative().default(0),
   }),
@@ -825,6 +862,7 @@ export type PayrollRecalculationResult = z.infer<typeof payrollRecalculationResu
 export type PayrollAccountabilityEvent = z.infer<typeof payrollAccountabilityEventSchema>
 export type AttendanceReportResult = z.infer<typeof attendanceReportResultSchema>
 export type WorkType = z.infer<typeof workTypeSchema>
+export type PayrollCategory = z.infer<typeof payrollCategorySchema>
 export type AttendanceReconciliationDiscrepancy = z.infer<typeof attendanceReconciliationDiscrepancySchema>
 export type AttendanceReconciliationAction = z.infer<typeof attendanceReconciliationActionSchema>
 export type AttendanceClientCreditStatus = z.infer<typeof attendanceClientCreditStatusSchema>
@@ -844,6 +882,10 @@ export interface PayrollEmployeeSummary {
   grossMinutes: number
   breakMinutes: number
   paidMinutes: number
+  regularCategoryMinutes: number
+  epMinutes: number
+  truepMinutes: number
+  unclassifiedCategoryMinutes: number
   regularMinutes: number
   overtimeMinutes: number
   postMinutes: number
@@ -852,6 +894,47 @@ export interface PayrollEmployeeSummary {
   exceptionCount: number
   payrollReady: boolean
   notes: string[]
+}
+
+export interface PayrollCategoryMinuteAllocation {
+  regularCategoryMinutes: number
+  epMinutes: number
+  truepMinutes: number
+  unclassifiedCategoryMinutes: number
+}
+
+export function payrollCategoryLabel(category: PayrollCategory | null | undefined): string {
+  if (category === 'ep') return 'EP'
+  if (category === 'truep') return 'TRUEP'
+  if (category === 'regular') return 'Regular'
+  return 'Legacy / unclassified'
+}
+
+export function payrollCategoryAllocation(
+  row: Pick<TimekeepingReviewRow, 'rowKind' | 'paidMinutes' | 'payrollCategory' | 'mixedPayrollCategories'>,
+): PayrollCategoryMinuteAllocation {
+  if (row.rowKind !== 'time_event') {
+    return {
+      regularCategoryMinutes: 0,
+      epMinutes: 0,
+      truepMinutes: 0,
+      unclassifiedCategoryMinutes: 0,
+    }
+  }
+  if (row.mixedPayrollCategories) {
+    return {
+      regularCategoryMinutes: 0,
+      epMinutes: 0,
+      truepMinutes: 0,
+      unclassifiedCategoryMinutes: row.paidMinutes,
+    }
+  }
+  return {
+    regularCategoryMinutes: row.payrollCategory === 'regular' ? row.paidMinutes : 0,
+    epMinutes: row.payrollCategory === 'ep' ? row.paidMinutes : 0,
+    truepMinutes: row.payrollCategory === 'truep' ? row.paidMinutes : 0,
+    unclassifiedCategoryMinutes: row.payrollCategory ? 0 : row.paidMinutes,
+  }
 }
 
 export const CLOCK_IN_EARLY_WINDOW_MINUTES = 5
@@ -1245,7 +1328,7 @@ export async function getTimekeepingReview(input: {
   fromDate: string
   throughDate: string
 }): Promise<TimekeepingReview> {
-  const [reviewResult, workTypeResult] = await Promise.all([
+  const [reviewResult, workTypeResult, payrollCategoryResult] = await Promise.all([
     supabaseWithIdentityVerification(() => getSupabaseClient().rpc('get_timekeeping_review', {
       target_from_date: input.fromDate,
       target_through_date: input.throughDate,
@@ -1254,31 +1337,74 @@ export async function getTimekeepingReview(input: {
       target_from_date: input.fromDate,
       target_through_date: input.throughDate,
     }), 'general'),
+    supabaseWithIdentityVerification(() => getSupabaseClient().rpc('get_time_payroll_category_map', {
+      target_from_date: input.fromDate,
+      target_through_date: input.throughDate,
+    }), 'general'),
   ])
   const { data, error } = reviewResult
   if (error) throw new Error(error.message || 'Supervisor time review could not be loaded.')
   const review = parseTimekeepingReview(data)
   if (workTypeResult.error) throw new Error(workTypeResult.error.message || 'Work classifications could not be loaded.')
+  if (payrollCategoryResult.error) throw new Error(payrollCategoryResult.error.message || 'Payroll categories could not be loaded.')
   const workTypes = z.array(timeWorkTypeMapItemSchema).parse(workTypeResult.data ?? [])
+  const payrollCategories = z.array(timePayrollCategoryMapItemSchema).parse(payrollCategoryResult.data ?? [])
   const workTypeByOccurrence = new Map(workTypes.map((item) => [
     `${item.employeeId}|${item.shiftId ?? ''}|${item.operationalDate}`,
     item,
   ]))
+  const payrollCategoryByCanonicalOccurrence = new Map(payrollCategories
+    .filter((item) => item.payrollOccurrenceKey)
+    .map((item) => [item.payrollOccurrenceKey, item]))
+  const payrollCategoryByEventId = new Map(payrollCategories.flatMap((item) =>
+    item.eventIds.map((eventId) => [eventId, item] as const)))
+  const payrollCategoryByLegacyOccurrence = new Map(payrollCategories
+    .filter((item) => !item.payrollOccurrenceKey && item.eventIds.length === 0)
+    .map((item) => [
+      `${item.employeeId}|${item.shiftId ?? ''}|${item.operationalDate}`,
+      item,
+    ]))
 
   return {
     ...review,
     rows: review.rows.map((row) => {
-      const workType = workTypeByOccurrence.get(`${row.employeeId}|${row.shiftId ?? ''}|${row.operationalDate}`)
-      if (!workType) return row
+      const occurrenceKey = `${row.employeeId}|${row.shiftId ?? ''}|${row.operationalDate}`
+      const workType = workTypeByOccurrence.get(occurrenceKey)
+      const payrollCategory = (row.payrollOccurrenceKey
+        ? payrollCategoryByCanonicalOccurrence.get(row.payrollOccurrenceKey)
+        : undefined)
+        ?? row.eventTimeline.map((event) => payrollCategoryByEventId.get(event.id)).find(Boolean)
+        ?? payrollCategoryByLegacyOccurrence.get(occurrenceKey)
+      const isWorkedTime = row.rowKind === 'time_event'
+      const payrollCategoryResolved = !isWorkedTime
+        || Boolean(payrollCategory)
+        || row.payrollCategoryResolved !== false
+      const livePayrollCategory = !isWorkedTime
+        ? null
+        : payrollCategoryResolved
+        ? payrollCategory?.payrollCategory ?? row.payrollCategory ?? 'regular'
+        : null
       return {
         ...row,
-        mixedWorkTypes: workType.mixedWorkTypes,
-        payCode: workType.payCode,
-        workType: workType.workType,
-        workTypeLabel: workType.label,
-        workTypeOvertimeEligible: workType.overtimeEligible,
-        workTypePaid: workType.paid,
-        workTypeRateSource: workType.rateSource,
+        mixedPayrollCategories: payrollCategory?.mixedPayrollCategories ?? row.mixedPayrollCategories ?? false,
+        payrollCategory: livePayrollCategory,
+        payrollCategoryLabel: !isWorkedTime
+          ? row.payrollCategoryLabel ?? 'Not applicable'
+          : payrollCategoryResolved
+          ? payrollCategory?.payrollCategoryLabel
+            ?? (row.payrollCategory ? row.payrollCategoryLabel : null)
+            ?? payrollCategoryLabel(livePayrollCategory)
+          : row.payrollCategoryLabel ?? payrollCategoryLabel(null),
+        payrollCategoryResolved,
+        ...(workType ? {
+          mixedWorkTypes: workType.mixedWorkTypes,
+          payCode: workType.payCode,
+          workType: workType.workType,
+          workTypeLabel: workType.label,
+          workTypeOvertimeEligible: workType.overtimeEligible,
+          workTypePaid: workType.paid,
+          workTypeRateSource: workType.rateSource,
+        } : {}),
       }
     }),
   }
@@ -1308,6 +1434,20 @@ export async function correctTimeRecordWorkType(input: {
   })
   if (error) throw new Error(error.message || 'The work classification could not be corrected.')
   return workTypeCorrectionResultSchema.parse(data)
+}
+
+export async function correctTimeRecordPayrollCategory(input: {
+  timeEventId: string
+  payrollCategory: PayrollCategory
+  reason: string
+}): Promise<z.infer<typeof payrollCategoryCorrectionResultSchema>> {
+  const { data, error } = await getSupabaseClient().rpc('correct_time_event_payroll_category', {
+    target_payroll_category: input.payrollCategory,
+    target_reason: input.reason,
+    target_time_event_id: input.timeEventId,
+  })
+  if (error) throw new Error(error.message || 'The payroll category could not be corrected.')
+  return payrollCategoryCorrectionResultSchema.parse(data)
 }
 
 export async function getLiveTimeRoster(): Promise<LiveTimeRoster> {
@@ -1347,10 +1487,15 @@ export async function getTeamAttendanceSummary(input: {
 function summarizeTimekeepingRows(rows: TimekeepingReviewRow[], pendingCorrections: PendingCorrection[]): TimekeepingReview['summary'] {
   return rows.reduce<TimekeepingReview['summary']>((summary, row) => {
     summary.rowCount += 1
-    if (row.payrollReady) summary.readyCount += 1
+    if (row.payrollReady && !row.mixedPayrollCategories) summary.readyCount += 1
     else summary.exceptionCount += 1
     summary.grossMinutes += row.grossMinutes
     summary.paidMinutes += row.paidMinutes
+    const categoryMinutes = payrollCategoryAllocation(row)
+    summary.regularCategoryMinutes = (summary.regularCategoryMinutes ?? 0) + categoryMinutes.regularCategoryMinutes
+    summary.epMinutes = (summary.epMinutes ?? 0) + categoryMinutes.epMinutes
+    summary.truepMinutes = (summary.truepMinutes ?? 0) + categoryMinutes.truepMinutes
+    summary.unclassifiedCategoryMinutes = (summary.unclassifiedCategoryMinutes ?? 0) + categoryMinutes.unclassifiedCategoryMinutes
     summary.regularMinutes += row.regularMinutes
     summary.overtimeMinutes += row.overtimeMinutes
     summary.timeOffMinutes += row.timeOffMinutes
@@ -1359,14 +1504,18 @@ function summarizeTimekeepingRows(rows: TimekeepingReviewRow[], pendingCorrectio
   }, {
     exceptionCount: 0,
     grossMinutes: 0,
+    epMinutes: 0,
+    unclassifiedCategoryMinutes: 0,
     overtimeMinutes: 0,
     paidMinutes: 0,
     pendingCorrectionCount: pendingCorrections.length,
     readyCount: 0,
+    regularCategoryMinutes: 0,
     regularMinutes: 0,
     rowCount: 0,
     salaryDefaultMinutes: 0,
     timeOffMinutes: 0,
+    truepMinutes: 0,
   })
 }
 
@@ -1509,7 +1658,7 @@ export async function getTimeMaintenance(input: {
   employeeId?: string | null
 }): Promise<TimeMaintenance> {
   const client = getSupabaseClient()
-  const [maintenanceResult, workTypeResult] = await Promise.all([
+  const [maintenanceResult, workTypeResult, payrollCategoryResult] = await Promise.all([
     client.rpc('get_time_maintenance', {
       target_employee_id: input.employeeId ?? null,
       target_from_date: input.fromDate,
@@ -1519,9 +1668,14 @@ export async function getTimeMaintenance(input: {
       target_from_date: input.fromDate,
       target_through_date: input.throughDate,
     }),
+    client.rpc('get_time_payroll_category_map', {
+      target_from_date: input.fromDate,
+      target_through_date: input.throughDate,
+    }),
   ])
   if (maintenanceResult.error) throw new Error(maintenanceResult.error.message || 'Time maintenance could not be loaded. MFA is required.')
   if (workTypeResult.error) throw new Error(workTypeResult.error.message || 'Work classifications could not be loaded.')
+  if (payrollCategoryResult.error) throw new Error(payrollCategoryResult.error.message || 'Payroll categories could not be loaded.')
 
   let maintenance: TimeMaintenance
   try {
@@ -1530,10 +1684,19 @@ export async function getTimeMaintenance(input: {
     throw new Error('Time maintenance returned an unreadable record. Refresh the page. If the issue continues, contact an administrator.')
   }
   const workTypes = z.array(timeWorkTypeMapItemSchema).parse(workTypeResult.data ?? [])
+  const payrollCategories = z.array(timePayrollCategoryMapItemSchema).parse(payrollCategoryResult.data ?? [])
   const workTypeByOccurrence = new Map(workTypes.map((item) => [
     `${item.employeeId}|${item.shiftId ?? ''}|${item.operationalDate}`,
     item,
   ]))
+  const payrollCategoryByEventId = new Map(payrollCategories.flatMap((item) =>
+    item.eventIds.map((eventId) => [eventId, item] as const)))
+  const payrollCategoryByLegacyOccurrence = new Map(payrollCategories
+    .filter((item) => !item.payrollOccurrenceKey && item.eventIds.length === 0)
+    .map((item) => [
+      `${item.employeeId}|${item.shiftId ?? ''}|${item.operationalDate}`,
+      item,
+    ]))
   const denverDate = (timestamp: string) => {
     const parts = new Intl.DateTimeFormat('en-US', {
       day: '2-digit',
@@ -1549,7 +1712,16 @@ export async function getTimeMaintenance(input: {
     ...maintenance,
     events: maintenance.events.map((event) => {
       const mapped = workTypeByOccurrence.get(`${event.employeeId}|${event.shiftId ?? ''}|${denverDate(event.effectiveAt)}`)
-      return mapped ? { ...event, payCode: mapped.payCode, workType: mapped.workType, workTypeLabel: mapped.label } : event
+      const payrollCategory = payrollCategoryByEventId.get(event.id)
+        ?? payrollCategoryByLegacyOccurrence.get(`${event.employeeId}|${event.shiftId ?? ''}|${event.operationalDate}`)
+      return {
+        ...event,
+        ...(mapped ? { payCode: mapped.payCode, workType: mapped.workType, workTypeLabel: mapped.label } : {}),
+        ...(payrollCategory ? {
+          payrollCategory: payrollCategory.payrollCategory,
+          payrollCategoryLabel: payrollCategory.payrollCategoryLabel,
+        } : {}),
+      }
     }),
   }
 }
@@ -1808,6 +1980,7 @@ export function payrollExportRows(rows: TimekeepingReviewRow[]): TimekeepingRevi
     && Boolean(row.lastClockOut)
     && row.payrollReady
     && row.exceptionCodes.length === 0
+    && !row.mixedPayrollCategories
     && row.paidMinutes > 0,
   )
 }
@@ -1830,14 +2003,18 @@ export function summarizePayrollRowsByEmployee(rows: TimekeepingReviewRow[]): Pa
       locationKeys: new Set<string>(),
       noteKeys: new Set<string>(),
       notes: [],
+      epMinutes: 0,
       overtimeMinutes: 0,
       paidMinutes: 0,
       payrollReady: true,
       postMinutes: 0,
       readyCount: 0,
+      regularCategoryMinutes: 0,
       regularMinutes: 0,
       role: row.role,
       trainingMinutes: 0,
+      truepMinutes: 0,
+      unclassifiedCategoryMinutes: 0,
       username: row.username,
       workedShiftCount: 0,
     }
@@ -1847,6 +2024,11 @@ export function summarizePayrollRowsByEmployee(rows: TimekeepingReviewRow[]): Pa
     summary.paidMinutes += row.paidMinutes
     summary.regularMinutes += row.regularMinutes
     summary.overtimeMinutes += row.overtimeMinutes
+    const categoryMinutes = payrollCategoryAllocation(row)
+    summary.regularCategoryMinutes += categoryMinutes.regularCategoryMinutes
+    summary.epMinutes += categoryMinutes.epMinutes
+    summary.truepMinutes += categoryMinutes.truepMinutes
+    summary.unclassifiedCategoryMinutes += categoryMinutes.unclassifiedCategoryMinutes
     if (row.workType === 'training') summary.trainingMinutes += row.paidMinutes
     else summary.postMinutes += row.paidMinutes
     summary.workedShiftCount += 1
@@ -1854,14 +2036,19 @@ export function summarizePayrollRowsByEmployee(rows: TimekeepingReviewRow[]): Pa
     summary.lastDate = row.operationalDate > summary.lastDate ? row.operationalDate : summary.lastDate
     summary.locationKeys.add(payrollLocationKey(row))
 
-    if (row.payrollReady && row.exceptionCodes.length === 0) {
+    if (row.payrollReady && row.exceptionCodes.length === 0 && !row.mixedPayrollCategories) {
       summary.readyCount += 1
     } else {
       summary.exceptionCount += 1
       summary.payrollReady = false
     }
 
-    for (const note of [...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')), ...row.payrollNotes]) {
+    const categoryNotes = row.mixedPayrollCategories
+      ? ['Conflicting payroll categories must be resolved.']
+      : row.payrollCategory
+        ? []
+        : ['Legacy locked row has no payroll category.']
+    for (const note of [...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')), ...row.payrollNotes, ...categoryNotes]) {
       const cleanNote = note.trim()
       if (!cleanNote || summary.noteKeys.has(cleanNote)) continue
       summary.noteKeys.add(cleanNote)
@@ -1891,10 +2078,14 @@ export function reviewRowsToPayrollSummaryCsv(rows: TimekeepingReviewRow[]): str
     'Locations Worked',
     'Gross Hours',
     'Break Minutes',
-    'Training Hours',
-    'Paid Hours',
+    'Paid Training Hours (included in Total Worked)',
+    'Total Worked Hours',
     'Regular Hours',
-    'Overtime Hours',
+    'EP Hours',
+    'TRUEP Hours',
+    'Legacy Unclassified Hours',
+    'Non-Overtime Hours',
+    'Overtime Hours (included in category totals)',
     'Payroll Ready',
     'Rows Ready',
     'Rows Needing Review',
@@ -1914,6 +2105,10 @@ export function reviewRowsToPayrollSummaryCsv(rows: TimekeepingReviewRow[]): str
     summary.breakMinutes,
     payrollHours(summary.trainingMinutes),
     payrollHours(summary.paidMinutes),
+    payrollHours(summary.regularCategoryMinutes),
+    payrollHours(summary.epMinutes),
+    payrollHours(summary.truepMinutes),
+    payrollHours(summary.unclassifiedCategoryMinutes),
     payrollHours(summary.regularMinutes),
     payrollHours(summary.overtimeMinutes),
     summary.payrollReady ? 'yes' : 'no',
@@ -1938,36 +2133,49 @@ export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
     'Clock Out',
     'Gross Hours',
     'Break Minutes',
-    'Paid Hours',
+    'Total Worked Hours',
+    'Payroll Category',
     'Regular Hours',
-    'Overtime Hours',
+    'EP Hours',
+    'TRUEP Hours',
+    'Legacy Unclassified Hours',
+    'Non-Overtime Hours',
+    'Overtime Hours (included in category totals)',
     'Overtime',
     'Payroll Ready',
     'Exceptions',
     'Shift Notes',
     'Notes',
   ]
-  const lines = payrollExportRows(rows).map((row) => [
-    row.rowKind,
-    row.employeeName,
-    row.username,
-    payrollDate(row.operationalDate),
-    payrollDate(row.weekStartsOn),
-    payrollDate(row.weekEndsOn),
-    payrollLocationLabel(row),
-    payrollDateTime(row.firstClockIn, row.timeZone),
-    payrollDateTime(row.lastClockOut, row.timeZone),
-    payrollHours(row.grossMinutes),
-    row.breakMinutes,
-    payrollHours(row.paidMinutes),
-    payrollHours(row.regularMinutes),
-    payrollHours(row.overtimeMinutes),
-    row.isOvertime ? 'yes' : 'no',
-    row.payrollReady ? 'yes' : 'no',
-    row.exceptionCodes.join('|'),
-    row.shiftNotes ?? '',
-    row.payrollNotes.join('|'),
-  ].map(csvEscape).join(','))
+  const lines = payrollExportRows(rows).map((row) => {
+    const categoryMinutes = payrollCategoryAllocation(row)
+    return [
+      row.rowKind,
+      row.employeeName,
+      row.username,
+      payrollDate(row.operationalDate),
+      payrollDate(row.weekStartsOn),
+      payrollDate(row.weekEndsOn),
+      payrollLocationLabel(row),
+      payrollDateTime(row.firstClockIn, row.timeZone),
+      payrollDateTime(row.lastClockOut, row.timeZone),
+      payrollHours(row.grossMinutes),
+      row.breakMinutes,
+      payrollHours(row.paidMinutes),
+      row.payrollCategoryLabel ?? payrollCategoryLabel(row.payrollCategory),
+      payrollHours(categoryMinutes.regularCategoryMinutes),
+      payrollHours(categoryMinutes.epMinutes),
+      payrollHours(categoryMinutes.truepMinutes),
+      payrollHours(categoryMinutes.unclassifiedCategoryMinutes),
+      payrollHours(row.regularMinutes),
+      payrollHours(row.overtimeMinutes),
+      row.isOvertime ? 'yes' : 'no',
+      row.payrollReady ? 'yes' : 'no',
+      row.exceptionCodes.join('|'),
+      row.shiftNotes ?? '',
+      row.payrollNotes.join('|'),
+    ].map(csvEscape).join(',')
+  })
 
   return [headers.map(csvEscape).join(','), ...lines].join('\n')
 }

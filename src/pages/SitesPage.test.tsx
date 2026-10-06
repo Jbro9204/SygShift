@@ -68,6 +68,7 @@ const sites: Site[] = [
       },
     ],
     region: 'CO',
+    supports_ep_truep_payroll: true,
     time_zone: 'America/Denver',
   },
   {
@@ -80,6 +81,7 @@ const sites: Site[] = [
     postal_code: null,
     posts: [],
     region: 'CO',
+    supports_ep_truep_payroll: false,
     time_zone: 'America/Denver',
   },
 ]
@@ -219,6 +221,7 @@ describe('Sites & Posts directory', () => {
     fireEvent.change(screen.getByLabelText('Postal code'), {
       target: { value: '80226' },
     })
+    fireEvent.click(screen.getByLabelText(/Enable EP \/ TRUEP classifications/i))
 
     fireEvent.click(screen.getByRole('button', { name: 'Save site' }))
 
@@ -232,8 +235,20 @@ describe('Sites & Posts directory', () => {
       postalCode: '80226',
       region: 'CO',
       siteId: undefined,
+      supportsEpTruepPayroll: true,
       timeZone: 'America/Denver',
     })
+  })
+
+  it('shows EP payroll configuration in the directory and preserves it when editing', async () => {
+    renderPage()
+
+    expect(await screen.findByText('EP / TRUEP site')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Main Campus posts' }))
+    expect(screen.getByText('Regular, EP, and TRUEP')).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit site' }))
+    expect(screen.getByLabelText(/Enable EP \/ TRUEP classifications/i)).toBeChecked()
   })
 
   it('submits a new post for the expanded parent without asking for the site again', async () => {
