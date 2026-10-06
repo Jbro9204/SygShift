@@ -1,5 +1,20 @@
 # SygShift Development Log
 
+## 10/06/2026 - Workforce Activity Report Employee Picker Repair
+
+- Restored the grouped Workforce Activity report after a new payroll category
+  exposed an unsafe wildcard shift projection, without reverting the existing
+  call-off canonicalization safeguard.
+- Added an independent, permission-protected employee roster so authorized
+  report users can choose an employee even when that person has no activity in
+  the selected period; the report never invents work history.
+- Applied migration `20261006113000`, passed the full 359-file / 1,967-test
+  gate, the 50/50 focused desktop/mobile Workforce Activity and Time Clock
+  matrix, authenticated production verification, health/readiness, and deployed
+  Worker `e85f0848-7615-45a4-9def-b7ea2f0eb5d9` from source `c4fe25b`.
+- Release detail:
+  `docs/changelogs/CHANGELOG_10-06-2026_WORKFORCE_ACTIVITY_REPORT_EMPLOYEE_PICKER_REPAIR.md`.
+
 ## 10/06/2026 - EP / TRUEP Payroll Classification
 
 - Added Regular, EP, and TRUEP shift classifications with Regular as the
