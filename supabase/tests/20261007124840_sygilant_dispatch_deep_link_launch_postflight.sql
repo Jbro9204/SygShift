@@ -2,6 +2,7 @@ do $$
 declare
   constraint_definition text;
   issue_definition text;
+  issue_search_path_hardened boolean;
 begin
   select pg_catalog.pg_get_constraintdef(constraint_record.oid)
   into constraint_definition
@@ -12,6 +13,10 @@ begin
   issue_definition := pg_catalog.pg_get_functiondef(
     'public.service_issue_sygilant_shared_launch(jsonb)'::regprocedure
   );
+  select coalesce('search_path=""' = any(procedure.proconfig), false)
+  into issue_search_path_hardened
+  from pg_catalog.pg_proc procedure
+  where procedure.oid = 'public.service_issue_sygilant_shared_launch(jsonb)'::regprocedure;
 
   if constraint_definition not like '%/dashboard%'
      or constraint_definition not like '%/dispatch%call=%'
@@ -24,7 +29,7 @@ begin
      or issue_definition not like '%private.sygilant_launch_assurance_allowed%'
      or issue_definition not like '%private.employee_effective_permissions%'
      or issue_definition not like '%source_session.not_after%'
-     or issue_definition not like '%set search_path = ''''%'
+     or not issue_search_path_hardened
      or issue_definition not like '%''destination'', destination_value%' then
     raise exception 'Sygilant launch issuance no longer preserves destination, session, assurance, or entitlement checks.';
   end if;
