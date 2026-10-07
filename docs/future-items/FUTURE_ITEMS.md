@@ -632,6 +632,20 @@ Time Clock desktop/mobile suite was previously verified at 42/42. Database migra
 SygShift Worker deployment, health/readiness, and authenticated notification-handoff acceptance remain pending.
 This checkpoint does not authorize or complete the final Sygilant-hosted cutover.
 
+Production technical checkpoint recorded 10/07/2026: source `945f7500a00624a9cde64e26498928789df40df8`
+is on `main`, and Worker
+`d903f14a-be46-4d4c-813c-e5a4789e2b8f` is live on `app.sygilant.us` after the canonical fresh-build deploy. Health
+and all nine readiness checks passed; live HTML matched the six fresh entry assets, and each asset returned HTTP
+200. The valid-origin anonymous boundary returned HTTP 401 `authentication_required`, while an invalid origin
+returned HTTP 403. All four coordinated migration ledger entries matched their expected hashes, and all postflights
+passed. The ownership repair
+classified seven reports as five `untouched_dispatch_scaffold` and two `edited_attested_dispatch_draft`, all with
+immutable `author_reassigned` decisions. The corrected rollback canary returned
+`dispatch_incident_responder_ownership_rollback_canary_passed`, followed by zero dispatch and report canary residue.
+Authenticated Jordan Admin verification reached the Sygilant dashboard, Market dispatch call, and linked incident
+draft. Final Guard-device notification, save/submission, and reviewer acceptance remain open; this checkpoint does
+not authorize or complete the final Sygilant-hosted cutover.
+
 #### Execution instructions
 
 1. Inventory both platforms' identity, session, MFA/FIDO, recovery, user, role, permission, audit, URL, and deployment models before selecting the shared-identity design.

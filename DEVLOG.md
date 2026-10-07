@@ -2,7 +2,7 @@
 
 ## 10/07/2026 - Guard Notification Report Handoff
 
-- Prepared SygShift notification inbox, live-notification, and push-click actions to open the exact related
+- Released SygShift notification inbox, live-notification, and push-click actions that open the exact related
   Sygilant dispatch call or supported report through the protected employee handoff.
 - Added strict notification-category, record-reference, destination, official-address, session, access, and
   returned-destination validation. Invalid or mismatched actions fail closed with employee-safe recovery.
@@ -11,8 +11,22 @@
 - The complete gate passed 362 passing test files / 1 skipped and 2,020 passing tests / 1 skipped, plus strict TypeScript,
   zero-warning lint, production build, and the static-asset contract. The mandatory Time Clock desktop/mobile
   suite was previously verified at 42/42 and is not represented as a new 10/07 execution.
-- This is a release candidate only. Database migration, compatible Sygilant deployment, SygShift Worker deployment,
-  health/readiness, and authenticated handoff acceptance remain pending. Final hosted cutover remains open.
+- Source `945f7500a00624a9cde64e26498928789df40df8` was promoted to `main`; the canonical `pnpm deploy` fresh build and
+  static-asset checks passed, and Worker `d903f14a-be46-4d4c-813c-e5a4789e2b8f` is live on `app.sygilant.us`.
+  GitHub **Security and release checks** run `37631489278` also completed successfully for that source.
+  Health and readiness returned HTTP 200, all nine readiness checks were true, live HTML exactly matched the six
+  fresh entry-asset references, and all six assets returned HTTP 200 to `HEAD` requests.
+- The valid-origin anonymous launch returned HTTP 401 `authentication_required`, while an invalid origin returned
+  HTTP 403. All four coordinated migration ledger entries matched their exact expected hashes, and all postflights
+  passed.
+  The ownership repair classified seven reports as five `untouched_dispatch_scaffold` plus two
+  `edited_attested_dispatch_draft`, each with an immutable `author_reassigned` decision.
+- The corrected rollback canary ended with `dispatch_incident_responder_ownership_rollback_canary_passed`; the
+  separate read-only residue check returned `dispatch_canary_residue=0` and `report_canary_residue=0`.
+- Authenticated Jordan Admin verification reached the Sygilant dashboard, the Market dispatch call, and its linked
+  incident-report draft from SygShift. The final real-Guard notification, save/submission, and reviewer
+  accept-or-reject ceremony remains open and is not claimed by this Admin smoke test. Final hosted cutover also
+  remains open.
 - Full record:
   `docs/changelogs/CHANGELOG_10-07-2026_GUARD_NOTIFICATION_REPORT_HANDOFF.md`.
 
