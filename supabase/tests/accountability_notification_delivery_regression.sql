@@ -81,8 +81,8 @@ begin
 
   operation_result := public.review_attendance_accountability_event(
     created_event_id,
-    'confirmed',
-    'Rollback-only confirmation regression.'
+    'unexcused',
+    'Rollback-only unexcused decision regression.'
   );
   assert operation_result ->> 'status' = 'resolved',
     'The Accountability decision did not save.';
@@ -99,7 +99,7 @@ begin
     select count(*) = 3
     from public.attendance_accountability_event_actions action_record
     where action_record.event_id = created_event_id
-      and action_record.action in ('created', 'confirmed', 'reclassified')
+      and action_record.action in ('created', 'unexcused', 'reclassified')
   ), 'The complete append-only action history was not retained.';
   assert (
     select count(*) = 3

@@ -106,6 +106,27 @@ export function payrollLockBlocker(review: TimekeepingReview | undefined): strin
   if (workedReview.summary.pendingCorrectionCount > 0) return 'Resolve every pending correction request first.'
   if (workedReview.rows.some((row) => row.mixedWorkTypes)) return 'Resolve every row with conflicting worked-time and training classifications before locking payroll.'
   if (workedReview.rows.some((row) => row.mixedPayrollCategories)) return 'Resolve every row with conflicting Regular, EP, or TRUEP payroll categories before locking payroll.'
+  if (workedReview.reconciliation && !workedReview.reconciliation.passed) {
+    const issues: string[] = []
+    if (workedReview.reconciliation.categoryMinutesMatchPaid === false) {
+      issues.push('Regular, EP, TRUEP, and legacy-unclassified minutes do not equal paid minutes')
+    }
+    if ((workedReview.reconciliation.unclassifiedCategoryMinutes ?? 0) > 0) {
+      issues.push(`${workedReview.reconciliation.unclassifiedCategoryMinutes} paid minute${workedReview.reconciliation.unclassifiedCategoryMinutes === 1 ? '' : 's'} still need a Regular, EP, or TRUEP classification`)
+    }
+    if (!workedReview.reconciliation.regularPlusOvertimeMatchesPaid) {
+      issues.push('regular plus overtime minutes do not equal paid minutes')
+    }
+    if (workedReview.reconciliation.duplicateOccurrenceCount > 0) {
+      issues.push(`${workedReview.reconciliation.duplicateOccurrenceCount} duplicate worked-time occurrence${workedReview.reconciliation.duplicateOccurrenceCount === 1 ? '' : 's'}`)
+    }
+    if (workedReview.reconciliation.unresolvedAssignmentCount > 0) {
+      issues.push(`${workedReview.reconciliation.unresolvedAssignmentCount} unresolved payroll week assignment${workedReview.reconciliation.unresolvedAssignmentCount === 1 ? '' : 's'}`)
+    }
+    return issues.length > 0
+      ? `Payroll reconciliation failed: ${issues.join('; ')}. Resolve these issues before locking payroll.`
+      : 'Payroll reconciliation failed. Refresh the review and resolve its reconciliation issues before locking payroll.'
+  }
   if (workedReview.summary.exceptionCount > 0) return 'Fix every worked-time row marked Needs review before locking payroll.'
   if (workedReview.summary.readyCount !== workedReview.summary.rowCount) return 'Every worked-time row must be marked Ready before payroll can be locked.'
   return ''

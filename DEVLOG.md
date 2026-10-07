@@ -1,5 +1,23 @@
 # SygShift Development Log
 
+## 10/07/2026 - Future Call-Off and Payroll Readiness Repair
+
+- Restored next-day and nearest-later standard shift selection for employee and manager call-off reporting while
+  preserving the server's existing early-clock enforcement.
+- Excluded canceled, draft, and concurrent Dispatch duty records from call-off choices; corrected shift-date display
+  to use each shift's time zone; and completed `unexcused` display, filtering, reliability, notification, and email
+  handling.
+- Removed empty payroll-summary employee/week placeholders, added server-reconciliation lock blockers and actionable
+  Regular/EP/TRUEP classification guidance, and documented exact-minute rounding and status meaning in the workbook.
+- Applied and recorded production migration `20261007182434`. Four rollback-only SQL regressions passed, including
+  behavior fixtures for future call-offs and MFA denial.
+- The complete gate passed 363 test files / 1 skipped and 2,030 tests / 1 skipped; the required desktop/mobile Time
+  Clock Playwright matrix passed 42/42.
+- Attendance points, B'Nai site-responsibility scope, and live EP/TRUEP Site/rate activation remain deliberate
+  decision boundaries and were not guessed. Schedule persistence checks passed without reproducing current loss.
+- Full release record:
+  `docs/changelogs/CHANGELOG_10-07-2026_FUTURE_CALLOFF_AND_PAYROLL_READINESS_REPAIR.md`.
+
 ## 10/07/2026 - Guard Notification Report Handoff
 
 - Released SygShift notification inbox, live-notification, and push-click actions that open the exact related

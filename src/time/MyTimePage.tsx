@@ -491,7 +491,7 @@ function AttendanceReportModal({
               <option value="">No specific shift / date only</option>
               {shifts.map((shift) => (
                 <option key={shift.assignmentId} value={shift.shiftId}>
-                  {formatUsDateKey(shift.startsAt.slice(0, 10))} - {shiftTitle(shift)} - {shiftRequirementLabel(shift.requiresArmed)} - {shiftLocation(shift)} - {formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}
+                  {formatShiftDate(shift.startsAt, shift.timeZone)} - {shiftTitle(shift)} - {shiftRequirementLabel(shift.requiresArmed)} - {shiftLocation(shift)} - {formatDualTimeRange(shift.startsAt, shift.endsAt, shift.timeZone)}
                 </option>
               ))}
             </select>
@@ -1051,6 +1051,15 @@ function TimeCorrectionRequestModal({
       </form>
     </ModalDialog>
   )
+}
+
+function formatShiftDate(value: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone,
+    year: 'numeric',
+  }).format(new Date(value))
 }
 
 function correctionReason(mode: TimeCorrectionMode, reason: string): string {

@@ -50,8 +50,9 @@ describe('accountability decisions', () => {
     expect(isNegativeReliabilityOccurrence(event({ reviewOutcome: null, status: 'voided' }))).toBe(false)
   })
 
-  it('counts only a reviewed and confirmed reliability occurrence', () => {
+  it('counts reviewed confirmed and unexcused reliability occurrences', () => {
     expect(isNegativeReliabilityOccurrence(event({ reviewOutcome: 'confirmed', status: 'resolved' }))).toBe(true)
+    expect(isNegativeReliabilityOccurrence(event({ reviewOutcome: 'unexcused', status: 'resolved' }))).toBe(true)
     expect(isNegativeReliabilityOccurrence(event({ eventType: 'called_in_sick', reviewOutcome: 'confirmed', status: 'resolved' }))).toBe(false)
     expect(isNegativeReliabilityOccurrence(event({ eventType: 'vacation', reviewOutcome: 'confirmed', status: 'resolved' }))).toBe(false)
   })
@@ -60,11 +61,12 @@ describe('accountability decisions', () => {
     const summary = summarizeAccountability([
       event(),
       event({ id: crypto.randomUUID(), reviewOutcome: 'confirmed', status: 'resolved' }),
+      event({ id: crypto.randomUUID(), reviewOutcome: 'unexcused', status: 'resolved' }),
       event({ id: crypto.randomUUID(), reviewOutcome: 'excused_protected', status: 'resolved' }),
       event({ id: crypto.randomUUID(), reviewOutcome: 'corrected', status: 'resolved' }),
       event({ id: crypto.randomUUID(), reviewOutcome: 'dismissed', status: 'resolved' }),
     ])
-    expect(summary).toMatchObject({ total: 5, open: 1, confirmed: 1, protected: 1, corrected: 1, dismissed: 1 })
+    expect(summary).toMatchObject({ total: 6, open: 1, confirmed: 1, unexcused: 1, protected: 1, corrected: 1, dismissed: 1 })
   })
 
   it('builds an employee-centered overview without listing employees who have no events', () => {
@@ -79,5 +81,9 @@ describe('accountability decisions', () => {
 
   it('maps an unresolved record to the open review state', () => {
     expect(accountabilityDisplayState(event())).toBe('open')
+  })
+
+  it('keeps an unexcused decision visible as a resolved review state', () => {
+    expect(accountabilityDisplayState(event({ reviewOutcome: 'unexcused', status: 'resolved' }))).toBe('unexcused')
   })
 })

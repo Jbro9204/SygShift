@@ -175,6 +175,70 @@ describe('payroll export readiness', () => {
     expect(exportableWorkedTimeRows(mixedCategoryReview.rows)).toHaveLength(0)
   })
 
+  it('blocks a failed server reconciliation with actionable reasons', () => {
+    const failedReconciliationReview: TimekeepingReview = {
+      ...cleanReview,
+      reconciliation: {
+        categoryMinutesMatchPaid: false,
+        configurationVersion: 1,
+        duplicateOccurrenceCount: 2,
+        epMinutes: 0,
+        overtimeMinutes: 60,
+        paidMinutes: 480,
+        passed: false,
+        policyVersion: 'payroll-batch-v1',
+        regularCategoryMinutes: 420,
+        regularMinutes: 360,
+        regularPlusOvertimeMatchesPaid: false,
+        rowCount: 2,
+        truepMinutes: 0,
+        unclassifiedCategoryMinutes: 0,
+        uniqueOccurrenceCount: 1,
+        unresolvedAssignmentCount: 1,
+      },
+    }
+
+    const blocker = payrollLockBlocker(failedReconciliationReview)
+
+    expect(blocker).toContain('Regular, EP, TRUEP, and legacy-unclassified minutes do not equal paid minutes')
+    expect(blocker).toContain('regular plus overtime minutes do not equal paid minutes')
+    expect(blocker).toContain('2 duplicate worked-time occurrences')
+    expect(blocker).toContain('1 unresolved payroll week assignment')
+  })
+
+  it('names paid minutes that still need a payroll category', () => {
+    const failedClassificationReview: TimekeepingReview = {
+      ...cleanReview,
+      reconciliation: {
+        categoryMinutesMatchPaid: true,
+        configurationVersion: 1,
+        duplicateOccurrenceCount: 0,
+        epMinutes: 0,
+        overtimeMinutes: 0,
+        paidMinutes: 75,
+        passed: false,
+        policyVersion: 'payroll-batch-v1',
+        regularCategoryMinutes: 0,
+        regularMinutes: 75,
+        regularPlusOvertimeMatchesPaid: true,
+        rowCount: 1,
+        truepMinutes: 0,
+        unclassifiedCategoryMinutes: 75,
+        uniqueOccurrenceCount: 1,
+        unresolvedAssignmentCount: 0,
+      },
+    }
+
+    expect(payrollLockBlocker(failedClassificationReview)).toContain(
+      '75 paid minutes still need a Regular, EP, or TRUEP classification',
+    )
+  })
+
+  it('does not reject a historical review solely because reconciliation metadata is absent', () => {
+    expect(cleanReview.reconciliation).toBeUndefined()
+    expect(payrollLockBlocker(cleanReview)).toBe('')
+  })
+
   it('keeps an unresolved live category unclassified instead of defaulting it to Regular', () => {
     const unresolvedReview: TimekeepingReview = {
       ...cleanReview,
@@ -539,7 +603,15 @@ describe('payroll export readiness', () => {
       'PTO Hours',
       'Other Paid Hours',
       'Total Payable',
-      'Status',
+      'SygShift Review Status',
+    ])
+    expect(sheets[0].rows).toContainEqual([
+      'Rounding Basis',
+      'SygShift aggregates exact whole minutes first, then displays hours rounded to two decimals. Do not add displayed row values to reconstruct totals.',
+    ])
+    expect(sheets[0].rows).toContainEqual([
+      'Status Meaning',
+      'SygShift Review Status describes source-record readiness inside SygShift; it is not an iSolved submission, approval, or payment status.',
     ])
     expect(sheets[0].rows.every((row) => row.length <= 19)).toBe(true)
     const employeeHeader = sheets.at(-1)?.rows.find((row) => row[0] === 'Employee' && row[1] === 'Employee ID')
@@ -727,6 +799,69 @@ describe('payroll export readiness', () => {
     expect(weekTwo).toMatchObject({ hasActivity: false, paidMinutes: 0, workedShiftCount: 0 })
   })
 
+  it('omits inactive employee-week placeholders while retaining EP and TRUEP week and pay-period totals', () => {
+    const weekOneEpRow: TimekeepingReview['rows'][number] = {
+      ...cleanReview.rows[0],
+      grossMinutes: 120,
+      paidMinutes: 120,
+      payrollCategory: 'ep',
+      payrollCategoryLabel: 'EP',
+      regularMinutes: 120,
+    }
+    const weekTwoTruepRow: TimekeepingReview['rows'][number] = {
+      ...cleanReview.rows[0],
+      employeeId: '73000000-0000-4000-8000-000000000002',
+      employeeName: 'Jade Baptist',
+      firstClockIn: '2026-07-20T14:00:00.000Z',
+      grossMinutes: 180,
+      lastClockOut: '2026-07-20T17:00:00.000Z',
+      operationalDate: '2026-07-20',
+      paidMinutes: 180,
+      payrollAssignmentAnchor: '2026-07-20T14:00:00.000Z',
+      payrollBatchWeekEndsOn: '2026-07-25',
+      payrollBatchWeekStartsOn: '2026-07-19',
+      payrollCategory: 'truep',
+      payrollCategoryLabel: 'TRUEP',
+      payrollOccurrenceKey: 'shift:73000000-0000-4000-8000-000000000020:employee:73000000-0000-4000-8000-000000000002',
+      regularMinutes: 180,
+      username: 'jbaptist',
+    }
+    const review: TimekeepingReview = {
+      ...cleanReview,
+      rows: [weekOneEpRow, weekTwoTruepRow],
+      summary: {
+        ...cleanReview.summary,
+        epMinutes: 120,
+        grossMinutes: 300,
+        paidMinutes: 300,
+        readyCount: 2,
+        regularCategoryMinutes: 0,
+        regularMinutes: 300,
+        rowCount: 2,
+        truepMinutes: 180,
+      },
+    }
+
+    const summary = buildPayrollWorkbookSheets({ exportType: 'Preview', review })[0]
+    const headerIndex = summary.rows.findIndex((row) => row[0] === 'Employee')
+    const bodyAndTotals = summary.rows.slice(headerIndex + 1)
+    const employeeRows = bodyAndTotals.filter((row) => !String(row[0]).endsWith(' totals'))
+    const weekOneTotal = bodyAndTotals.find((row) => row[0] === 'Week 1 totals')
+    const weekTwoTotal = bodyAndTotals.find((row) => row[0] === 'Week 2 totals')
+    const payPeriodTotal = bodyAndTotals.find((row) => row[0] === 'Pay period totals')
+
+    expect(employeeRows.map((row) => [row[0], row[2], row[8], row[9]])).toEqual([
+      ['Jordan Brown', 'Week 1', 2, 0],
+      ['Jade Baptist', 'Week 2', 0, 3],
+    ])
+    expect(bodyAndTotals.some((row) => row[0] === 'Employee' || row[18] === 'No activity')).toBe(false)
+    expect(weekOneTotal?.slice(8, 10)).toEqual([2, 0])
+    expect(weekTwoTotal?.slice(8, 10)).toEqual([0, 3])
+    expect(payPeriodTotal?.slice(8, 10)).toEqual([2, 3])
+    expect(payPeriodTotal?.[6]).toBe(5)
+    expect(payPeriodTotal?.[17]).toBe(5)
+  })
+
   it('keeps the workbook URL alive long enough for the browser to finish the download', () => {
     vi.useFakeTimers()
     const createObjectUrl = vi.fn(() => 'blob:sygshift-payroll-preview')
@@ -777,13 +912,14 @@ describe('payroll export readiness', () => {
     }
     const sheets = buildPayrollWorkbookSheets({ exportType: 'Preview', review })
     const summaryHeaderIndex = sheets[0].rows.findIndex((row) => row[0] === 'Employee')
-    const weekOne = sheets[0].rows[summaryHeaderIndex + 1]
-    const weekTwo = sheets[0].rows[summaryHeaderIndex + 2]
+    const employeeRows = sheets[0].rows
+      .slice(summaryHeaderIndex + 1)
+      .filter((row) => !String(row[0]).endsWith(' totals'))
+    const weekOne = employeeRows.find((row) => row[2] === 'Week 1')
 
     expect(weekOne?.[2]).toBe('Week 1')
     expect(weekOne?.[6]).toBe(8)
-    expect(weekTwo?.[2]).toBe('Week 2')
-    expect(weekTwo?.[6]).toBe(0)
+    expect(employeeRows.some((row) => row[2] === 'Week 2')).toBe(false)
     expect(sheets.find((sheet) => sheet.name === 'Week 1 Detail')?.rows.some((row) => row[0] === 'Jordan Brown' && row[11] === 8)).toBe(true)
     expect(sheets.find((sheet) => sheet.name === 'Week 2 Detail')?.rows.some((row) => row[0] === 'Jordan Brown')).toBe(false)
   })
@@ -815,8 +951,12 @@ describe('payroll export readiness', () => {
     }
     const sheets = buildPayrollWorkbookSheets({ exportType: 'Preview', review })
     const summaryHeaderIndex = sheets[0].rows.findIndex((row) => row[0] === 'Employee')
-    expect(sheets[0].rows[summaryHeaderIndex + 1]?.[6]).toBe(0)
-    expect(sheets[0].rows[summaryHeaderIndex + 2]?.[6]).toBe(8)
+    const employeeRows = sheets[0].rows
+      .slice(summaryHeaderIndex + 1)
+      .filter((row) => !String(row[0]).endsWith(' totals'))
+
+    expect(employeeRows.some((row) => row[2] === 'Week 1')).toBe(false)
+    expect(employeeRows.find((row) => row[2] === 'Week 2')?.[6]).toBe(8)
   })
 
   it('keeps weekly worked, overtime, sick-pay, and payable totals in their correct payroll week', () => {

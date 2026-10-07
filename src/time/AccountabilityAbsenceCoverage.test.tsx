@@ -41,9 +41,9 @@ vi.mock('../data/accountability', async (loadOriginal) => ({
     shiftOptions: [{
       id: shiftId,
       employeeId,
-      operationalDate: '2026-09-14',
-      startsAt: '2026-09-14T14:00:00.000Z',
-      endsAt: '2026-09-14T22:00:00.000Z',
+      operationalDate: '2026-09-15',
+      startsAt: '2026-09-15T14:00:00.000Z',
+      endsAt: '2026-09-15T22:00:00.000Z',
       timeZone: 'America/Denver',
       locationName: 'Central Site',
       siteCode: 'CTR',
@@ -70,7 +70,7 @@ describe('Accountability absence coverage handoff', () => {
       shiftId,
       eventType: 'call_off',
       status: 'reported',
-      operationalDate: '2026-09-14',
+      operationalDate: '2026-09-15',
       createdAt: '2026-09-14T14:00:00.000Z',
       callOffId,
       coverageRequired: true,
@@ -88,8 +88,8 @@ describe('Accountability absence coverage handoff', () => {
       },
       shift: {
         id: shiftId,
-        startsAt: '2026-09-14T14:00:00.000Z',
-        endsAt: '2026-09-14T22:00:00.000Z',
+        startsAt: '2026-09-15T14:00:00.000Z',
+        endsAt: '2026-09-15T22:00:00.000Z',
         timeZone: 'America/Denver',
         title: 'Main post',
         location: 'Central Site',
@@ -117,6 +117,7 @@ describe('Accountability absence coverage handoff', () => {
     const dialog = screen.getByRole('dialog', { name: 'Record accountability occurrence' })
     expect(within(dialog).getByLabelText('Occurrence type')).toHaveValue('call_off')
     await user.selectOptions(within(dialog).getByLabelText('Employee'), employeeId)
+    expect(within(dialog).getByRole('option', { name: /09\/15\/2026/ })).toBeVisible()
     await user.selectOptions(within(dialog).getByLabelText('Scheduled shift'), shiftId)
     await user.type(within(dialog).getByLabelText('Factual note'), 'Unable to report for the scheduled shift.')
     await user.click(within(dialog).getByRole('button', { name: 'Record occurrence' }))
@@ -132,7 +133,7 @@ describe('Accountability absence coverage handoff', () => {
       shiftId,
       eventType: 'call_off',
       status: 'reported',
-      operationalDate: '2026-09-14',
+      operationalDate: '2026-09-15',
       createdAt: '2026-09-14T14:00:00.000Z',
       callOffId,
       coverageRequired: true,

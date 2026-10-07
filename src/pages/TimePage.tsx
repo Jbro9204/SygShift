@@ -83,7 +83,7 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { formatDualTime, OPERATIONAL_TIME_ZONE, operationalToday } from '../lib/time'
 import { personalDisplayTimeZone } from '../lib/usTimeZones'
 import { TimeCommandCenterPage } from '../time/TimeCommandCenterPage'
-import { workedTimePayrollReview } from '../time/timePayroll'
+import { payrollLockBlocker, workedTimePayrollReview } from '../time/timePayroll'
 import { currentPayrollWeek } from '../time/timeRules'
 import { adjacentOperationalDate, recommendedManualPunchTimestamp } from '../time/manualPunchWorkday'
 import {
@@ -1978,15 +1978,6 @@ function PendingCorrections({
       ))}
     </div>
   )
-}
-
-function payrollLockBlocker(review: TimekeepingReview | undefined): string {
-  if (!review) return 'Load the payroll review before locking an export.'
-  if (review.summary.rowCount === 0) return 'There are no time records in this range yet.'
-  if (review.summary.pendingCorrectionCount > 0) return 'Resolve every pending correction request first.'
-  if (review.summary.exceptionCount > 0) return 'Fix every row marked “Needs review” before locking payroll.'
-  if (review.summary.readyCount !== review.summary.rowCount) return 'Every row must be marked Ready before payroll can be locked.'
-  return ''
 }
 
 function PayrollExportHistoryList({ batches }: { batches: PayrollExportBatch[] }) {

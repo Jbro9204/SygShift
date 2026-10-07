@@ -54,6 +54,7 @@ const allStates = [
   "all",
   "open",
   "confirmed",
+  "unexcused",
   "protected",
   "corrected",
   "dismissed",
@@ -227,7 +228,7 @@ export function AccountabilityPage() {
       >
         <p>
           Approved sick time, vacation, protected leave, dismissed records, and
-          unreviewed reports do not count as confirmed reliability occurrences.
+          unreviewed reports do not count as reviewed reliability occurrences.
           Hard payroll blockers remain in Time Exceptions.
         </p>
       </TimeAlertCard>
@@ -537,14 +538,15 @@ function EmployeeOverview({
             </div>
           </dl>
           <p className="accountability-person-card__states">
-            {row.open} open · {row.confirmed} confirmed · {row.protected}{" "}
+            {row.open} open · {row.confirmed} confirmed · {row.unexcused}{" "}
+            unexcused · {row.protected}{" "}
             protected · {row.corrected} corrected · {row.dismissed} dismissed ·{" "}
             {row.voided} voided
           </p>
           <small>
             Recorded totals include corrected records; dismissed and voided
             records are excluded. {row.confirmedReliabilityOccurrences}{" "}
-            confirmed reliability occurrence(s).
+            reviewed reliability occurrence(s).
           </small>
           <TimeButton
             onClick={() => onOpen(row.employeeId)}
@@ -1217,7 +1219,7 @@ function stateTone(
   if (state === "open") return "warning";
   if (state === "protected" || state === "corrected" || state === "dismissed")
     return "good";
-  if (state === "confirmed") return "danger";
+  if (state === "confirmed" || state === "unexcused") return "danger";
   return "neutral";
 }
 

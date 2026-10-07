@@ -498,9 +498,11 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
   const titleRows: WorkbookCell[][] = [
     ['SygShift Payroll Report'],
     ['Pay Period', `${formatUsDateKey(review.fromDate)} - ${formatUsDateKey(review.throughDate)}`],
-    ['Report Status', input.exportType],
+    ['Export Status', input.exportType],
     ['Pay Basis', 'Completed SygShift clock-in/out records plus approved sick and PTO hours. Scheduled hours are shown only for comparison.'],
     ['Hours Relationship', 'Regular, EP, TRUEP, and any legacy-unclassified hours partition Total Worked Hours. Overtime is already included in exactly one of those categories and must not be added again.'],
+    ['Rounding Basis', 'SygShift aggregates exact whole minutes first, then displays hours rounded to two decimals. Do not add displayed row values to reconstruct totals.'],
+    ['Status Meaning', 'SygShift Review Status describes source-record readiness inside SygShift; it is not an iSolved submission, approval, or payment status.'],
     ['Payroll Rules', input.rules ? `${input.rules.weekStartsOnLabel} 12:00 AM payroll week; entire overnight occurrence follows scheduled start. ${payrollHours(input.rules.dailyOvertimeMinutes)} daily OT / ${payrollHours(input.rules.weeklyOvertimeMinutes)} weekly OT remain a separate calculation.` : 'Rules loaded from SygShift'],
     ['Calculation Policy', input.rules ? `${input.rules.payrollCalculationPolicyVersion} / configuration ${input.rules.payrollConfigurationVersion}` : 'Recorded with each official batch'],
     ['Review Note', input.exportNote ?? input.batch?.note ?? ''],
@@ -526,12 +528,14 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
     'PTO Hours',
     'Other Paid Hours',
     'Total Payable',
-    'Status',
+    'SygShift Review Status',
   ]
-  const weeklySummaries = weeklyGroups.flatMap((group) => group.summaries.map((summary) => ({
-    summary,
-    week: group.week,
-  })))
+  const weeklySummaries = weeklyGroups.flatMap((group) => group.summaries
+    .filter((summary) => summary.hasActivity)
+    .map((summary) => ({
+      summary,
+      week: group.week,
+    })))
   const body: WorkbookCell[][] = weeklySummaries.map(({ summary, week }) => [
     summary.employeeName,
     summary.employmentType,
@@ -639,13 +643,17 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
       'B7:S7',
       'B8:S8',
       'B9:S9',
+      'B10:S10',
+      'B11:S11',
     ],
-    metadataRows: [1, 2, 3, 4, 5, 6, 7, 8],
+    metadataRows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     name: 'Payroll Summary',
     rowHeights: {
       3: 34,
       4: 42,
-      5: 30,
+      5: 38,
+      6: 38,
+      7: 30,
     },
     rows: [...titleRows, header, ...body, ...weeklyTotals, totals],
     titleRows: [0],

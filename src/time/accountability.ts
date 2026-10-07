@@ -1,6 +1,6 @@
 import type { AccountabilityEvent, AccountabilityWorkspace } from '../data/accountability'
 
-export type AccountabilityDisplayState = 'open' | 'confirmed' | 'protected' | 'corrected' | 'dismissed' | 'voided'
+export type AccountabilityDisplayState = 'open' | 'confirmed' | 'unexcused' | 'protected' | 'corrected' | 'dismissed' | 'voided'
 
 export const accountabilityTypeLabels: Readonly<Record<AccountabilityEvent['eventType'], string>> = {
   called_in_sick: 'Called in sick',
@@ -14,6 +14,7 @@ export const accountabilityTypeLabels: Readonly<Record<AccountabilityEvent['even
 
 export const accountabilityDecisionLabels = {
   confirmed: 'Confirm occurrence',
+  unexcused: 'Mark unexcused',
   excused_protected: 'Mark excused / protected',
   corrected: 'Mark corrected',
   dismissed: 'Dismiss incorrect occurrence',
@@ -24,6 +25,7 @@ export const accountabilityDecisionLabels = {
 export function accountabilityDisplayState(event: AccountabilityEvent): AccountabilityDisplayState {
   if (event.status === 'voided') return 'voided'
   if (event.reviewOutcome === 'excused_protected') return 'protected'
+  if (event.reviewOutcome === 'unexcused') return 'unexcused'
   if (event.reviewOutcome === 'confirmed') return 'confirmed'
   if (event.reviewOutcome === 'corrected') return 'corrected'
   if (event.reviewOutcome === 'dismissed') return 'dismissed'
@@ -33,7 +35,7 @@ export function accountabilityDisplayState(event: AccountabilityEvent): Accounta
 
 export function isNegativeReliabilityOccurrence(event: AccountabilityEvent): boolean {
   if (event.status === 'voided') return false
-  if (event.reviewOutcome !== 'confirmed') return false
+  if (!['confirmed', 'unexcused'].includes(event.reviewOutcome ?? '')) return false
   return ['call_off', 'no_call_no_show', 'late_arrival', 'early_departure'].includes(event.eventType)
 }
 
@@ -60,6 +62,7 @@ export function summarizeAccountability(events: AccountabilityEvent[]) {
     other: 0,
     open: 0,
     confirmed: 0,
+    unexcused: 0,
     protected: 0,
     corrected: 0,
     dismissed: 0,
@@ -74,6 +77,7 @@ export interface AccountabilityEmployeeSummary extends ReturnType<typeof summari
   total: number
   open: number
   confirmed: number
+  unexcused: number
   protected: number
   corrected: number
   dismissed: number
@@ -102,6 +106,7 @@ export function buildEmployeeAccountabilitySummaries(
       total: summary.total,
       open: summary.open,
       confirmed: summary.confirmed,
+      unexcused: summary.unexcused,
       protected: summary.protected,
       corrected: summary.corrected,
       dismissed: summary.dismissed,
