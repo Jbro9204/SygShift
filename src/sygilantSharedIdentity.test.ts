@@ -174,6 +174,57 @@ describe('SygShift to Sygilant protected platform launch', () => {
     expect(assertionPayload).not.toHaveProperty('sourceAuthSessionId')
   })
 
+  it.each([
+    '/dispatch?call=4896f7c0-7143-48f9-9978-d1f6a342186f',
+    '/daily-activity-reports?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5',
+    '/incident-reports?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5',
+    '/vehicle-inspections?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5',
+  ] as const)('signs and records the exact allowlisted operational destination %s', async (destination) => {
+    let issuedPayload: Record<string, unknown> | null = null
+    vi.stubGlobal('fetch', vi.fn(async (input, init = {}) => {
+      const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {}
+      if (url.includes('/rest/v1/rpc/get_session_context')) {
+        return json({ employee_id: employeeId, has_mfa: true, permissions: ['apps.sygilant.access'], role: 'admin', username: 'jordan' })
+      }
+      if (url.includes('/auth/v1/user')) return json({ id: authUserId })
+      if (url.includes('/rest/v1/rpc/service_issue_sygilant_shared_launch')) {
+        issuedPayload = body.target_payload as Record<string, unknown>
+        return json({ requestId: issuedPayload.requestId })
+      }
+      return json({ error: 'unhandled' }, 500)
+    }))
+
+    const response = await handleSygilantSharedIdentityRequest(
+      launchRequest('https://app.sygilant.us', 'aal2', destination),
+      environment,
+      apiRequestId,
+    )
+    expect(response?.status).toBe(201)
+    const payload = await response?.json() as { launch: { assertion: string, destination: string } }
+    expect(payload.launch.destination).toBe(destination)
+    expect(decodeAssertion(payload.launch.assertion)).toMatchObject({ destination })
+    expect(issuedPayload).toMatchObject({ destination })
+  })
+
+  it.each([
+    '/dispatch?call=not-a-uuid',
+    '/dispatch?call=4896f7c0-7143-48f9-9978-d1f6a342186f&admin=true',
+    '/incident-reports?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5&edit=true',
+    '/review-queues?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5',
+  ])('rejects a non-allowlisted launch destination %s before an upstream call', async (destination) => {
+    const upstream = vi.fn()
+    vi.stubGlobal('fetch', upstream)
+    const response = await handleSygilantSharedIdentityRequest(
+      launchRequest('https://app.sygilant.us', 'aal2', destination),
+      environment,
+      apiRequestId,
+    )
+    expect(response?.status).toBe(400)
+    await expect(response?.json()).resolves.toMatchObject({ error: 'invalid_sygilant_launch_request' })
+    expect(upstream).not.toHaveBeenCalled()
+  })
+
   it.each(approvedLaunchRoles)(
     'issues an authorized assertion for $accessRole with the approved MFA policy',
     async ({ mfaRequired, roleId }) => {
@@ -375,7 +426,13 @@ describe('SygShift to Sygilant protected platform launch', () => {
     },
   )
 
-  it('revalidates and atomically consumes an issued assertion for the authorized Sygilant server', async () => {
+  it.each([
+    '/dashboard',
+    '/dispatch?call=4896f7c0-7143-48f9-9978-d1f6a342186f',
+    '/daily-activity-reports?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5',
+    '/incident-reports?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5',
+    '/vehicle-inspections?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5',
+  ] as const)('revalidates and atomically consumes an issued assertion for %s', async (destination) => {
     let issuedPayload: Record<string, unknown> | null = null
     vi.stubGlobal('fetch', vi.fn(async (input, init = {}) => {
       const url = String(input)
@@ -404,7 +461,11 @@ describe('SygShift to Sygilant protected platform launch', () => {
       return json({ error: 'unhandled' }, 500)
     }))
 
-    const issued = await handleSygilantSharedIdentityRequest(launchRequest(), environment, apiRequestId)
+    const issued = await handleSygilantSharedIdentityRequest(
+      launchRequest('https://app.sygilant.us', 'aal2', destination),
+      environment,
+      apiRequestId,
+    )
     if (!issued) throw new Error('The Sygilant launch route was not handled.')
     const assertion = ((await issued.json()) as { launch: { assertion: string } }).launch.assertion
     expect(issuedPayload).not.toBeNull()
@@ -424,7 +485,7 @@ describe('SygShift to Sygilant protected platform launch', () => {
     await expect(introspected?.json()).resolves.toMatchObject({
       identity: {
         applicationId: 'sygilant',
-        destination: '/dashboard',
+        destination,
         externalEmployeeId: employeeId,
         externalSubjectId: authUserId,
         externalUsername: 'jordan',
@@ -546,9 +607,18 @@ describe('SygShift to Sygilant protected platform launch', () => {
   )
 })
 
-function launchRequest(origin = 'https://app.sygilant.us', aal: 'aal1' | 'aal2' = 'aal2') {
+function launchRequest(
+  origin = 'https://app.sygilant.us',
+  aal: 'aal1' | 'aal2' = 'aal2',
+  destination?: string,
+) {
   return new Request('https://app.sygilant.us/api/v1/apps/sygilant/launch', {
-    headers: { authorization: `Bearer ${accessToken(aal)}`, origin },
+    ...(destination ? { body: JSON.stringify({ destination }) } : {}),
+    headers: {
+      authorization: `Bearer ${accessToken(aal)}`,
+      ...(destination ? { 'content-type': 'application/json' } : {}),
+      origin,
+    },
     method: 'POST',
   })
 }

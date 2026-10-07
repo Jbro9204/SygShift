@@ -5,6 +5,7 @@ import {
   isOfficialSygShiftOrigin,
   launchSygilantPlatform,
   OFFICIAL_SYGSHIFT_ORIGIN,
+  parseSygilantPlatformDestination,
   submitSygilantPlatformLaunch,
   SYGILANT_LAUNCH_ENDPOINT,
 } from './platformLaunch'
@@ -38,6 +39,20 @@ describe('Sygilant platform launch boundary', () => {
     expect(isOfficialSygShiftOrigin('https://app.sygilant.us.evil.example')).toBe(false)
   })
 
+  it('allows only the dashboard or one exact operational destination', () => {
+    const callId = '4896f7c0-7143-48f9-9978-d1f6a342186f'
+    const reportId = 'eacdc293-e7ff-4d14-8f8e-38340e26a2c5'
+    expect(parseSygilantPlatformDestination('/dashboard')).toBe('/dashboard')
+    expect(parseSygilantPlatformDestination(`/dispatch?call=${callId}`)).toBe(`/dispatch?call=${callId}`)
+    expect(parseSygilantPlatformDestination(`/daily-activity-reports?report=${reportId}`)).toBe(`/daily-activity-reports?report=${reportId}`)
+    expect(parseSygilantPlatformDestination(`/incident-reports?report=${reportId}`)).toBe(`/incident-reports?report=${reportId}`)
+    expect(parseSygilantPlatformDestination(`/vehicle-inspections?report=${reportId}`)).toBe(`/vehicle-inspections?report=${reportId}`)
+    expect(parseSygilantPlatformDestination(`/dispatch?call=${callId}&view=all`)).toBeNull()
+    expect(parseSygilantPlatformDestination(`/incident-reports?report=${reportId}&edit=true`)).toBeNull()
+    expect(parseSygilantPlatformDestination('/dispatch')).toBeNull()
+    expect(parseSygilantPlatformDestination('//sygilant.us/dispatch')).toBeNull()
+  })
+
   it('requests a launch from the same-origin protected endpoint without placing credentials in the URL', async () => {
     const requestId = crypto.randomUUID()
     const assertion = `ssli_v1.${'a'.repeat(80)}.${'b'.repeat(64)}`
@@ -55,10 +70,44 @@ describe('Sygilant platform launch boundary', () => {
     await expect(launchSygilantPlatform()).resolves.toMatchObject({ applicationUrl: 'https://sygilant.us', assertion, destination: '/dashboard' })
     expect(SYGILANT_LAUNCH_ENDPOINT).toBe('/api/v1/apps/sygilant/launch')
     expect(fetchMock).toHaveBeenCalledWith(SYGILANT_LAUNCH_ENDPOINT, expect.objectContaining({
+      body: JSON.stringify({ destination: '/dashboard' }),
       method: 'POST',
       credentials: 'same-origin',
     }))
     expect(fetchMock.mock.calls[0]?.[0]).not.toContain('test-access-token')
+  })
+
+  it('binds the requested dispatch call to the returned one-time assertion', async () => {
+    const destination = '/dispatch?call=4896f7c0-7143-48f9-9978-d1f6a342186f' as const
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      launch: {
+        applicationId: 'sygilant',
+        applicationUrl: 'https://sygilant.us',
+        assertion: `ssli_v1.${'a'.repeat(80)}.${'b'.repeat(64)}`,
+        destination,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        requestId: crypto.randomUUID(),
+      },
+    }), { status: 201 }))
+
+    await expect(launchSygilantPlatform(destination)).resolves.toMatchObject({ destination })
+    expect(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ destination }))
+  })
+
+  it('rejects a response whose destination differs from the requested call', async () => {
+    const destination = '/dispatch?call=4896f7c0-7143-48f9-9978-d1f6a342186f' as const
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      launch: {
+        applicationId: 'sygilant',
+        applicationUrl: 'https://sygilant.us',
+        assertion: `ssli_v1.${'a'.repeat(80)}.${'b'.repeat(64)}`,
+        destination: '/dashboard',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        requestId: crypto.randomUUID(),
+      },
+    }), { status: 201 }))
+
+    await expect(launchSygilantPlatform(destination)).rejects.toThrow('could not be opened securely')
   })
 
   it('forwards the protected session assurance without forwarding shared SygSphere assurance', async () => {
@@ -143,6 +192,22 @@ describe('Sygilant platform launch boundary', () => {
     expect(form.action).not.toContain(assertion)
     expect(new FormData(form).get('assertion')).toBe(assertion)
     expect(new FormData(form).get('destination')).toBe('/dashboard')
+  })
+
+  it('posts the exact signed dispatch destination to the Sygilant consumer', () => {
+    const destination = '/dispatch?call=4896f7c0-7143-48f9-9978-d1f6a342186f' as const
+    const nativeSubmit = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => undefined)
+    submitSygilantPlatformLaunch({
+      applicationId: 'sygilant',
+      applicationUrl: 'https://sygilant.us',
+      assertion: `ssli_v1.${'a'.repeat(80)}.${'b'.repeat(64)}`,
+      destination,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      requestId: crypto.randomUUID(),
+    })
+
+    const form = nativeSubmit.mock.instances[0] as HTMLFormElement
+    expect(new FormData(form).get('destination')).toBe(destination)
   })
 
   it('fails closed when the employee session or protected endpoint is unavailable', async () => {

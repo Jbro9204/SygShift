@@ -1,9 +1,11 @@
 const launchPath = '/api/v1/apps/sygilant/launch'
 const introspectionPath = '/api/v1/apps/sygilant/introspect'
-const destination = '/dashboard'
+const dashboardDestination = '/dashboard'
 const applicationId = 'sygilant'
 const assertionPattern = /^ssli_v1\.[A-Za-z0-9_-]{20,5000}\.[a-f0-9]{64}$/i
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const dispatchDestinationPattern = /^\/dispatch\?call=[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const reportDestinationPattern = /^\/(?:daily-activity-reports|incident-reports|vehicle-inspections)\?report=[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const assuranceLevels = new Set(['aal1', 'aal2', 'security_key', 'trusted_device', 'external_mfa'])
 const redirectStatuses = new Set([301, 302, 303, 307, 308])
 const encoder = new TextEncoder()
@@ -48,11 +50,18 @@ type SessionContext = {
 
 type AuthUser = { id?: string }
 
+type SygilantDestination =
+  | `/dispatch?call=${string}`
+  | `/daily-activity-reports?report=${string}`
+  | `/incident-reports?report=${string}`
+  | `/vehicle-inspections?report=${string}`
+  | '/dashboard'
+
 type AssertionPayload = {
   applicationId: 'sygilant'
   assuranceLevel: 'aal1' | 'aal2' | 'security_key' | 'trusted_device' | 'external_mfa'
   audience: string
-  destination: '/dashboard'
+  destination: SygilantDestination
   expiresAt: string
   externalEmployeeId: string
   externalSubjectId: string
@@ -157,8 +166,16 @@ async function issueLaunch(request: Request, config: Configuration, requestId: s
   if (request.headers.get('origin') !== config.issuer) {
     throw new SharedLaunchError('sygilant_launch_origin_denied', 403, 'The launch request did not come from SygShift.')
   }
-  if (Number(request.headers.get('content-length') ?? 0) > 0) {
-    throw new SharedLaunchError('invalid_sygilant_launch_request', 400, 'The Sygilant launch request must not contain a body.')
+  let requestedDestination: SygilantDestination = dashboardDestination
+  if (request.body !== null) {
+    if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
+      throw new SharedLaunchError('sygilant_launch_content_type_required', 415, 'The Sygilant launch request must use JSON.')
+    }
+    const body = await boundedJson(request, 1_024)
+    if (!body || Object.keys(body).length !== 1 || !isSygilantDestination(body.destination)) {
+      throw new SharedLaunchError('invalid_sygilant_launch_request', 400, 'The Sygilant launch destination is invalid.')
+    }
+    requestedDestination = body.destination
   }
 
   const token = bearerToken(request)
@@ -198,7 +215,7 @@ async function issueLaunch(request: Request, config: Configuration, requestId: s
     applicationId,
     assuranceLevel: assuranceLevel(request, claims, context.has_mfa === true),
     audience: config.audience,
-    destination,
+    destination: requestedDestination,
     expiresAt: expiresAt.toISOString(),
     externalEmployeeId: context.employee_id!,
     externalSubjectId: authUser.id!,
@@ -246,7 +263,7 @@ async function issueLaunch(request: Request, config: Configuration, requestId: s
       applicationId,
       applicationUrl: config.applicationUrl,
       assertion,
-      destination,
+      destination: requestedDestination,
       expiresAt: payload.expiresAt,
       requestId: payload.requestId,
     },
@@ -298,7 +315,7 @@ async function introspectLaunch(request: Request, config: Configuration, request
     || consumed.roleId !== verified.roleId
     || consumed.requestId !== verified.requestId
     || consumed.assuranceLevel !== verified.assuranceLevel
-    || consumed.destination !== destination
+    || consumed.destination !== verified.destination
   ) {
     throw new SharedLaunchError('sygilant_launch_identity_mismatch', 403, 'The Sygilant launch identity could not be verified.')
   }
@@ -315,7 +332,7 @@ async function introspectLaunch(request: Request, config: Configuration, request
     identity: {
       applicationId,
       assuranceLevel: consumed.assuranceLevel,
-      destination,
+      destination: verified.destination,
       expiresAt: consumed.expiresAt,
       externalEmployeeId: consumed.employeeId,
       externalSubjectId: consumed.authUserId,
@@ -346,7 +363,7 @@ async function verifyAssertion(assertion: string, config: Configuration): Promis
     || value.applicationId !== applicationId
     || value.issuer !== config.issuer
     || value.audience !== config.audience
-    || value.destination !== destination
+    || !isSygilantDestination(value.destination)
     || value.profileId !== value.externalSubjectId
     || !uuidPattern.test(value.externalSubjectId ?? '')
     || !uuidPattern.test(value.externalEmployeeId ?? '')
@@ -478,6 +495,14 @@ function requestContext(request: Request, requestId: string): Record<string, str
 function bearerToken(request: Request): string {
   const authorization = request.headers.get('authorization') ?? ''
   return authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : ''
+}
+
+function isSygilantDestination(value: unknown): value is SygilantDestination {
+  return value === dashboardDestination
+    || (typeof value === 'string' && (
+      dispatchDestinationPattern.test(value)
+      || reportDestinationPattern.test(value)
+    ))
 }
 
 async function boundedJson(request: Request, maximumBytes: number): Promise<Record<string, unknown> | null> {

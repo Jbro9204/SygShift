@@ -1,7 +1,22 @@
 /* Push only: no fetch handler, offline cache, or interception of application requests. */
 const SETTINGS = 'sygshift-push-settings-v1'
 const OWNER = '/__sygshift_push_owner'
+const SYGILANT_UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
+const SYGILANT_DESTINATION = new RegExp(`^(?:/dispatch\\?call|/(?:daily-activity-reports|incident-reports|vehicle-inspections)\\?report)=${SYGILANT_UUID}$`, 'i')
 let processing = Promise.resolve()
+
+function notificationClickPath(path, notificationId) {
+  if (SYGILANT_DESTINATION.test(path)) {
+    return `/notifications?sygilant=${encodeURIComponent(path)}&notification=${encodeURIComponent(notificationId)}`
+  }
+  if (
+    path.startsWith('/dispatch')
+    || path.startsWith('/daily-activity-reports')
+    || path.startsWith('/incident-reports')
+    || path.startsWith('/vehicle-inspections')
+  ) return '/notifications'
+  return path
+}
 self.addEventListener('install', (event) => event.waitUntil(self.skipWaiting()))
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))
 self.addEventListener('message', (event) => {
@@ -39,7 +54,8 @@ self.addEventListener('push', (event) => {
       visible.forEach((client) => client.postMessage({ type: 'sygshift:notification', id: payload.id }))
       return
     }
-    const path = typeof payload.path === 'string' && payload.path.startsWith('/') && !payload.path.startsWith('//') && !/[\\\r\n]/.test(payload.path) ? payload.path : '/notifications'
+    const safePath = typeof payload.path === 'string' && payload.path.startsWith('/') && !payload.path.startsWith('//') && !/[\\\r\n]/.test(payload.path) ? payload.path : '/notifications'
+    const path = notificationClickPath(safePath, payload.id)
     await self.registration.showNotification('SygShift update', {
       body: 'You have a new update. Open SygShift to review it securely.',
       icon: '/pwa/sygshift-192.png', tag: `sygshift-${payload.id}`, renotify: false,

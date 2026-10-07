@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
 import { BellRing, X } from 'lucide-react'
-import { claimNotification, getLiveNotifications, safeNotificationPath, type LiveNotification } from '../data/liveNotifications'
+import { claimNotification, getLiveNotifications, type LiveNotification } from '../data/liveNotifications'
 import { getSupabaseClient } from '../lib/supabase'
 import { completeLoginSound, enableAudio, playSound } from '../lib/notificationSounds'
 import './LiveNotifications.css'
 import { markPushPresented, restorePushSession } from '../data/pushNotifications'
+import { NotificationActionControl } from './NotificationActionControl'
 
 export function LiveNotifications({ employeeId, username }: { employeeId: string; username: string }) {
   const queryClient = useQueryClient()
@@ -115,9 +115,17 @@ export function LiveNotifications({ employeeId, username }: { employeeId: string
   return <aside className="live-notifications" aria-label="New notifications" aria-live="polite">
     {toasts.map((notification) => <article className={`live-notification live-notification--${notification.priority}`} key={notification.id}>
       <BellRing aria-hidden="true" size={22} />
-      <Link to={safeNotificationPath(notification.actionPath)} onClick={() => setToasts((current) => current.filter((item) => item.id !== notification.id))}>
+      <NotificationActionControl
+        actionPath={notification.actionPath}
+        className="live-notification__action"
+        inactiveClassName="live-notification__content"
+        onLaunchPrepared={() => setToasts((current) => current.filter((item) => item.id !== notification.id))}
+        showInactive
+        sourceId={notification.sourceId}
+        sourceType={notification.sourceType}
+      >
         <small>New SygShift update</small><strong>{notification.title}</strong><span>Open update</span>
-      </Link>
+      </NotificationActionControl>
       <button aria-label="Hide popup" onClick={() => setToasts((current) => current.filter((item) => item.id !== notification.id))} type="button"><X size={18} /></button>
     </article>)}
     {audioBlocked && toasts.length > 0 ? <button className="secondary-button" onClick={() => { void enableAudio().then((enabled) => setAudioBlocked(!enabled)) }} type="button">Enable notification sounds</button> : null}

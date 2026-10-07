@@ -621,6 +621,17 @@ Required work:
 - Status: Side-by-side shared identity and reciprocal employee launch accepted 09/11/2026; final Sygilant-hosted cutover remains gated
 - Added: 09/02/2026
 
+Release-candidate technical checkpoint recorded 10/07/2026: notification inbox, live-notification, and push-click
+actions now distinguish SygShift-local work from allowlisted Sygilant dispatch and report work. A protected handoff
+requires the notification category, matching record reference, exact destination, official application address,
+active employee session, existing Sygilant access, and matching returned destination. Read, acknowledgment, and
+required-action states remain independent. The complete gate passed 362 passing test files / 1 skipped and 2,020
+passing tests / 1 skipped, plus strict TypeScript, zero-warning lint, production build, and the static-asset
+contract. The mandatory
+Time Clock desktop/mobile suite was previously verified at 42/42. Database migration, compatible Sygilant release,
+SygShift Worker deployment, health/readiness, and authenticated notification-handoff acceptance remain pending.
+This checkpoint does not authorize or complete the final Sygilant-hosted cutover.
+
 #### Execution instructions
 
 1. Inventory both platforms' identity, session, MFA/FIDO, recovery, user, role, permission, audit, URL, and deployment models before selecting the shared-identity design.

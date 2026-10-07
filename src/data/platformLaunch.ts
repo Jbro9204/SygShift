@@ -5,12 +5,37 @@ import { appendProtectedSessionHeaders } from '../lib/protectedSessionHeaders'
 export const SYGILANT_LAUNCH_ENDPOINT = '/api/v1/apps/sygilant/launch'
 export const OFFICIAL_SYGSHIFT_ORIGIN = 'https://app.sygilant.us'
 
+const uuidPattern = '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
+const sygilantDispatchDestinationPattern = new RegExp(`^/dispatch\\?call=${uuidPattern}$`, 'i')
+const sygilantReportDestinationPattern = new RegExp(`^/(?:daily-activity-reports|incident-reports|vehicle-inspections)\\?report=${uuidPattern}$`, 'i')
+export type SygilantPlatformDestination =
+  | `/dispatch?call=${string}`
+  | `/daily-activity-reports?report=${string}`
+  | `/incident-reports?report=${string}`
+  | `/vehicle-inspections?report=${string}`
+  | '/dashboard'
+
+const sygilantPlatformDestinationSchema = z.custom<SygilantPlatformDestination>(
+  (value) => typeof value === 'string'
+    && (
+      value === '/dashboard'
+      || sygilantDispatchDestinationPattern.test(value)
+      || sygilantReportDestinationPattern.test(value)
+    ),
+  'Invalid Sygilant destination.',
+)
+
+export function parseSygilantPlatformDestination(value: unknown): SygilantPlatformDestination | null {
+  const parsed = sygilantPlatformDestinationSchema.safeParse(value)
+  return parsed.success ? parsed.data : null
+}
+
 const sygilantLaunchResponseSchema = z.object({
   launch: z.object({
     applicationId: z.literal('sygilant'),
     applicationUrl: z.string().url(),
     assertion: z.string().regex(/^ssli_v1\.[A-Za-z0-9_-]{20,5000}\.[a-f0-9]{64}$/i),
-    destination: z.literal('/dashboard'),
+    destination: sygilantPlatformDestinationSchema,
     expiresAt: z.string().datetime(),
     requestId: z.string().uuid(),
   }),
@@ -43,7 +68,9 @@ function validatedSygilantApplicationUrl(value: string): string {
   return url.origin
 }
 
-export async function launchSygilantPlatform(): Promise<SygilantPlatformLaunch> {
+export async function launchSygilantPlatform(
+  destination: SygilantPlatformDestination = '/dashboard',
+): Promise<SygilantPlatformLaunch> {
   const { data, error } = await getSupabaseClient().auth.getSession()
   if (error || !data.session?.access_token) {
     throw new Error('Your secure SygShift session could not be confirmed. Please sign in again.')
@@ -52,8 +79,10 @@ export async function launchSygilantPlatform(): Promise<SygilantPlatformLaunch> 
   const headers = appendProtectedSessionHeaders({
     accept: 'application/json',
     authorization: `Bearer ${data.session.access_token}`,
+    'content-type': 'application/json',
   })
   const response = await fetch(SYGILANT_LAUNCH_ENDPOINT, {
+    body: JSON.stringify({ destination }),
     cache: 'no-store',
     credentials: 'same-origin',
     headers,
@@ -61,7 +90,7 @@ export async function launchSygilantPlatform(): Promise<SygilantPlatformLaunch> 
   })
   const parsed = sygilantLaunchResponseSchema.safeParse(await response.json().catch(() => null))
 
-  if (!response.ok || !parsed.success) {
+  if (!response.ok || !parsed.success || parsed.data.launch.destination !== destination) {
     throw new Error('Sygilant could not be opened securely. Please try again.')
   }
 

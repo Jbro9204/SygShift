@@ -7,7 +7,7 @@ async function fixture(visible = false, owner: string | null = 'employee') {
   const handlers = new Map<string, (event: Record<string, unknown>) => void>()
   const entries = new Map<string, Response>()
   entries.set('/__sygshift_push_owner', Response.json({ employeeId: owner }))
-  const notification = vi.fn(async () => {})
+  const notification = vi.fn(async (_title: string, _options: { data: { employeeId: string; path: string } }) => {})
   const message = vi.fn()
   const openWindow = vi.fn(async () => {})
   const windows = visible ? [{ visibilityState: 'visible', postMessage: message }] : []
@@ -19,7 +19,15 @@ async function fixture(visible = false, owner: string | null = 'employee') {
     handlers.get('push')!({ data: { json: () => ({ id, employeeId, path }) }, waitUntil: (work: Promise<void>) => { completion = work } })
     await completion
   }
-  return { push, notification, message, handlers, openWindow }
+  async function click(data: { employeeId: string; path: string }) {
+    let completion: Promise<void> | undefined
+    handlers.get('notificationclick')!({
+      notification: { close: vi.fn(), data },
+      waitUntil: (work: Promise<void>) => { completion = work },
+    })
+    await completion
+  }
+  return { push, click, notification, message, handlers, openWindow }
 }
 describe('push-only service worker', () => {
   it('does not intercept normal app or authentication fetches', async () => expect((await fixture()).handlers.has('fetch')).toBe(false))
@@ -42,6 +50,35 @@ describe('push-only service worker', () => {
   it('replaces unsafe push links with the personal notification inbox', async () => {
     const app = await fixture(); await app.push('alert', 'employee', '//outside.example')
     expect(app.notification).toHaveBeenCalledWith('SygShift update', expect.objectContaining({ data: { path: '/notifications', employeeId: 'employee' } }))
+  })
+  it.each([
+    '/dispatch?call=not-a-uuid',
+    '/daily-activity-reports?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5&edit=true',
+    '/incident-reports',
+    '/vehicle-inspections?report=not-a-uuid',
+  ])('fails a malformed cross-platform push path closed to the notification inbox: %s', async (path) => {
+    const app = await fixture()
+    await app.push('alert', 'employee', path)
+    expect(app.notification).toHaveBeenCalledWith('SygShift update', expect.objectContaining({
+      data: { path: '/notifications', employeeId: 'employee' },
+    }))
+  })
+  it.each([
+    '/dispatch?call=4896f7c0-7143-48f9-9978-d1f6a342186f',
+    '/daily-activity-reports?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5',
+    '/incident-reports?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5',
+    '/vehicle-inspections?report=eacdc293-e7ff-4d14-8f8e-38340e26a2c5',
+  ])('bridges a background %s click through the signed Sygilant launch page', async (destination) => {
+    const app = await fixture()
+    await app.push('2768b3c0-6f71-4ba0-8795-6cd965871a97', 'employee', destination)
+    const data = app.notification.mock.calls[0]?.[1]?.data
+    expect(data).toEqual({
+      employeeId: 'employee',
+      path: `/notifications?sygilant=${encodeURIComponent(destination)}&notification=2768b3c0-6f71-4ba0-8795-6cd965871a97`,
+    })
+
+    await app.click(data)
+    expect(app.openWindow).toHaveBeenCalledWith(`https://app.sygilant.us${data.path}`)
   })
   it('does not repeat an alert already presented in the app', async () => {
     const app = await fixture()
