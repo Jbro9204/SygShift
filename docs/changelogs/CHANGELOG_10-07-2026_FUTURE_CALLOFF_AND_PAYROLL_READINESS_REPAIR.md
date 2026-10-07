@@ -1,7 +1,7 @@
 # Future Call-Off and Payroll Readiness Repair
 
 Date: 10/07/2026
-Status: Database repair live; application deployment pending
+Status: Deployed and verified in production
 
 ## Outcome
 
@@ -82,4 +82,9 @@ Accountability and payroll-readiness defects found while reviewing the supplied 
 ## Deployment record
 
 - Database migration and rollback regressions: complete.
-- Source promotion, Cloudflare Worker deployment, live asset, and health/readiness verification: pending.
+- Source revision: `1082ef7` (`fix: restore future calloffs and payroll readiness`), fast-forwarded to
+  `origin/main`.
+- Cloudflare Worker version: `2ba56ea0-fe80-4cef-9f3f-6b05cedaa06a`.
+- `https://app.sygilant.us/api/v1/health`: `status=ok`, `service=sygshift`, `version=v1`.
+- `https://app.sygilant.us/api/v1/ready`: `status=ready`, `ready=true`; every reported dependency check passed.
+- The live HTML referenced the exact six entry assets from the production build, and all six returned HTTP 200.

@@ -13,6 +13,8 @@
   behavior fixtures for future call-offs and MFA denial.
 - The complete gate passed 363 test files / 1 skipped and 2,030 tests / 1 skipped; the required desktop/mobile Time
   Clock Playwright matrix passed 42/42.
+- Promoted source revision `1082ef7` to `origin/main` and deployed Cloudflare Worker version
+  `2ba56ea0-fe80-4cef-9f3f-6b05cedaa06a`; production health, readiness, and exact live-asset checks passed.
 - Attendance points, B'Nai site-responsibility scope, and live EP/TRUEP Site/rate activation remain deliberate
   decision boundaries and were not guessed. Schedule persistence checks passed without reproducing current loss.
 - Full release record:
