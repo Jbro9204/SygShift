@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getSupabaseClient } from '../lib/supabase'
-import { readSphereDraft, sphereCanPreview, sphereCompleteUpload, sphereDraftKey, sphereMentionIds, sphereMessageParts, spherePath, spherePersonMentionLabel, sphereRequest, sphereResolveTypedMentions, sphereUnread, sphereUpload, SphereUploadError, writeSphereDraft } from './sygsphere'
+import { readSphereDraft, sphereCanPreview, sphereCompleteUpload, sphereDraftKey, sphereMentionIds, sphereMessageParts, spherePath, spherePersonMentionLabel, spherePreview, sphereRequest, sphereResolveTypedMentions, sphereUnread, sphereUpload, SphereUploadError, writeSphereDraft } from './sygsphere'
 vi.mock('../lib/supabase', () => ({ getSupabaseClient: vi.fn() }))
 describe('SygSphere navigation and drafts', () => {
   beforeEach(() => {
@@ -57,6 +57,18 @@ describe('SygSphere navigation and drafts', () => {
     expect(sphereCanPreview({ mimeType: 'text/plain', sizeBytes: 1048577 })).toBe(false)
     expect(sphereCanPreview({ mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', sizeBytes: 100 })).toBe(false)
   })
+  it('loads inline images only through the protected no-store preview endpoint', async () => {
+    const file = { id: crypto.randomUUID(), filename: 'scene.png', mimeType: 'image/png', sizeBytes: 4, messageId: crypto.randomUUID(), parentId: null, state: 'clean', createdAt: new Date().toISOString() }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { status: 200, headers: { 'content-type': 'image/png' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:protected-sygsphere-preview')
+
+    await expect(spherePreview(file)).resolves.toEqual({ kind: 'image', url: 'blob:protected-sygsphere-preview' })
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`/api/v1/sygsphere/files/${file.id}?mode=preview`)
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ cache: 'no-store' })
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('authorization')).toBe('Bearer test-token')
+  })
   it('waits through transient storage confirmation before making the upload available', async () => {
     const requestId = '33333333-3333-4333-8333-333333333333'
     const fetchMock = vi.fn()
@@ -93,34 +105,42 @@ describe('SygSphere navigation and drafts', () => {
     const conversationId = '67676767-6767-4767-8767-676767676767'
     const requestReference = '77777777-7777-4777-8777-777777777777'
     const fetchMock = vi.fn().mockResolvedValue(Response.json(
-      { uploadId: fileId, requestReference, state: 'clean' },
-      { status: 200 },
+      { id: fileId, messageId: crypto.randomUUID(), state: 'clean' },
+      { status: 200, headers: { 'x-request-id': requestReference } },
     ))
     vi.stubGlobal('fetch', fetchMock)
     const file = new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], 'report.pdf', { type: 'application/pdf' })
 
     await expect(sphereUpload(file, fileId, conversationId, null)).resolves.toEqual({ state: 'clean', uploadId: fileId, requestReference })
     expect(fetchMock).toHaveBeenCalledOnce()
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/v1/sygsphere/uploads')
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ cache: 'no-store', method: 'POST' })
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
-      clientId: fileId,
-      conversationId,
-      fileId,
-      filename: 'report.pdf',
-      sizeBytes: file.size,
-    })
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`/api/v1/sygsphere/files/${fileId}?conversation=${conversationId}&filename=report.pdf`)
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ body: file, cache: 'no-store', method: 'PUT' })
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('content-type')).toBe('application/pdf')
   })
-  it('keeps the selected normal attachment retryable when upload authorization fails', async () => {
+  it('keeps the selected normal attachment retryable when its protected transfer fails', async () => {
     const fileId = '88888888-8888-4888-8888-888888888888'
     const requestReference = '99999999-9999-4999-8999-999999999999'
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(
-      { detail: 'The protected upload could not be authorized.', error: 'sygsphere_upload_authorization_failed' },
+      { detail: 'The protected upload could not be stored.', error: 'sygsphere_upload_storage_failed' },
       { status: 503, headers: { 'x-request-id': requestReference } },
     )))
 
     const error = await sphereUpload(new File(['%PDF'], 'report.pdf', { type: 'application/pdf' }), fileId, crypto.randomUUID(), null).catch((reason: unknown) => reason)
     expect(error).toBeInstanceOf(SphereUploadError)
-    expect(error).toMatchObject({ code: 'sygsphere_upload_authorization_failed', completionPending: false, requestReference })
+    expect(error).toMatchObject({ code: 'sygsphere_upload_storage_failed', completionPending: false, requestReference })
+  })
+  it('uses signed resumable authorization only when a file exceeds the protected direct-upload limit', async () => {
+    const fileId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const conversationId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    const file = new File([new Uint8Array((25 * 1024 * 1024) + 1)], 'large.pdf', { type: 'application/pdf' })
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(
+      { uploadId: fileId, requestReference: crypto.randomUUID(), state: 'clean' },
+      { status: 200 },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(sphereUpload(file, fileId, conversationId, null)).resolves.toMatchObject({ state: 'clean', uploadId: fileId })
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/v1/sygsphere/uploads')
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ cache: 'no-store', method: 'POST' })
   })
 })

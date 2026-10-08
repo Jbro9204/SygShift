@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ALargeSmall, ArrowLeft, Bell, BellOff, Bookmark, Check, ChevronDown, Download, Eye, Hash, Info, MessageCircle, Paperclip, Plus, Search, Send, Smile, Users, X } from 'lucide-react'
+import { ALargeSmall, ArrowLeft, Bell, BellOff, Bookmark, Check, ChevronDown, Hash, Info, MessageCircle, Paperclip, Plus, Search, Send, Smile, Users, X } from 'lucide-react'
 import { getSessionContext } from '../data/auth'
-import { readSphereDraft, sphereActiveMentions, sphereCanPreview, sphereConversation, sphereCreate, sphereDirectory, sphereDownload, sphereDraftKey, sphereFiles, sphereInbox, sphereMessage, sphereMessageParts, sphereMessages, spherePath, spherePersonMentionLabel, spherePhoto, spherePreferences, spherePreview, sphereRequest, sphereResolveTypedMentions, sphereSearch, sphereSend, sphereUpload, SphereUploadError, writeSphereDraft, type SphereConversation, type SphereDraft, type SphereFile, type SphereMention, type SphereMessage, type SpherePerson, type SpherePreview, type SphereTextSize } from '../data/sygsphere'
+import { readSphereDraft, sphereActiveMentions, sphereConversation, sphereCreate, sphereDirectory, sphereDraftKey, sphereFiles, sphereInbox, sphereMessage, sphereMessageParts, sphereMessages, spherePath, spherePersonMentionLabel, spherePhoto, spherePreferences, sphereRequest, sphereResolveTypedMentions, sphereSearch, sphereSend, sphereUpload, SphereUploadError, writeSphereDraft, type SphereConversation, type SphereDraft, type SphereMention, type SphereMessage, type SpherePerson, type SphereTextSize } from '../data/sygsphere'
 import { runSygSphereProviderSmokeProbe } from '../data/sygsphereCommunications'
 import { ModalDialog } from '../components/ModalDialog'
-import { SecurePdfViewer } from '../components/SecurePdfViewer'
+import { SygSphereFileAttachment } from '../components/SygSphereFileAttachment'
 import { SygSphereCommunicationsWorkspace } from '../components/communications/SygSphereCommunicationsRuntime'
 import '../styles/sygsphere.css'
 import { platformPresenceLabels, type PlatformPresenceStatus } from '../data/platformPresence'
@@ -406,24 +406,11 @@ function SphereDetails({ employeeId, conversation, onClose }: { employeeId: stri
   </div>{confirmPerson ? <ModalDialog title={`${confirmPerson.operation === 'add' ? 'Add' : confirmPerson.operation === 'owner' ? 'Make owner:' : 'Remove'} ${confirmPerson.person.name}?`} className="sphere-modal" onClose={() => setConfirmPerson(null)} busy={mutation.isPending}><div className="sphere-form"><p>{confirmPerson.operation === 'add' ? 'This person will be able to read all conversation history and shared files. Only add them if that access is appropriate.' : confirmPerson.operation === 'owner' ? 'Owners can add and remove participants, change details and archive this conversation.' : 'Their access to this conversation and its files will end. Their previous messages will remain.'}</p><ErrorNotice error={mutation.error} /><footer><button type="button" onClick={() => setConfirmPerson(null)}>Cancel</button><button type="button" className="sphere-primary" disabled={mutation.isPending} onClick={() => mutation.mutate({ action: 'members', employeeId: confirmPerson.person.id, operation: confirmPerson.operation })}>Confirm</button></footer></div></ModalDialog> : null}</aside>
 }
 
-function FileButton({ file }: { file: SphereFile }) {
-  const download = useMutation({ mutationFn: () => sphereDownload(file) })
-  const preview = useMutation<SpherePreview, Error>({ mutationFn: () => spherePreview(file) })
-  useEffect(() => () => { if (preview.data?.kind === 'image') URL.revokeObjectURL(preview.data.url) }, [preview.data])
-  return <div className="sphere-file-row"><div className="sphere-file"><Paperclip size={19} /><span><strong>{file.filename}</strong><small>{(file.sizeBytes / 1048576).toFixed(2)} MB</small></span><div>
-    {sphereCanPreview(file) ? <button type="button" disabled={preview.isPending} onClick={() => preview.mutate()}><Eye size={17} />{preview.isPending ? 'Opening…' : 'Preview'}</button> : null}
-    <button type="button" disabled={download.isPending} onClick={() => download.mutate()}><Download size={17} />{download.isPending ? 'Downloading…' : 'Download'}</button>
-  </div></div><ErrorNotice error={download.error || preview.error} />
-  {preview.data ? <ModalDialog title={file.filename} description="File preview" className="sphere-modal sphere-preview-modal" onClose={() => preview.reset()}><div className="sphere-preview">
-    {preview.data.kind === 'text' ? <pre>{preview.data.text}</pre> : preview.data.kind === 'image' ? <img src={preview.data.url} alt={`Preview of ${file.filename}`} /> : <SecurePdfViewer bytes={preview.data.bytes} title={file.filename} />}
-    <footer><button type="button" onClick={() => preview.reset()}>Close</button><button type="button" onClick={() => download.mutate()} disabled={download.isPending}><Download size={17} />Download</button></footer>
-  </div></ModalDialog> : null}</div>
-}
 function MessageFiles({ employeeId, message }: { employeeId: string; message: SphereMessage }) {
   const files = useQuery({ queryKey: ['sygsphere', employeeId, 'message-files', message.id], queryFn: () => sphereFiles(message.conversationId, undefined, message.id) })
-  return <><ErrorNotice error={files.error} />{files.data?.map((file) => <FileButton key={file.id} file={file} />)}</>
+  return <><ErrorNotice error={files.error} />{files.data?.map((file) => <SygSphereFileAttachment key={file.id} file={file} placement="message" />)}</>
 }
 function SharedFiles({ employeeId, conversationId }: { employeeId: string; conversationId: string }) {
   const files = useInfiniteQuery({ queryKey: ['sygsphere', employeeId, 'files', conversationId], queryFn: ({ pageParam }) => sphereFiles(conversationId, pageParam), initialPageParam: undefined as string | undefined, getNextPageParam: (last) => last.length === 50 ? last.at(-1)?.createdAt : undefined })
-  return <><h3>Shared files</h3><ErrorNotice error={files.error} />{files.data?.pages.flat().map((file) => <FileButton key={file.id} file={file} />)}{files.data?.pages[0]?.length === 0 ? <p>Files shared in this conversation appear here.</p> : null}{files.hasNextPage ? <button type="button" disabled={files.isFetchingNextPage} onClick={() => void files.fetchNextPage()}>Load more files</button> : null}</>
+  return <><h3>Shared files</h3><ErrorNotice error={files.error} />{files.data?.pages.flat().map((file) => <SygSphereFileAttachment key={file.id} file={file} />)}{files.data?.pages[0]?.length === 0 ? <p>Files shared in this conversation appear here.</p> : null}{files.hasNextPage ? <button type="button" disabled={files.isFetchingNextPage} onClick={() => void files.fetchNextPage()}>Load more files</button> : null}</>
 }

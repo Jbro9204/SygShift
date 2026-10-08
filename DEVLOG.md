@@ -1,5 +1,20 @@
 # SygShift Development Log
 
+## 10/08/2026 - SygSphere Upload and Inline Image Repair
+
+- Corrected signed SygSphere and Patrol resumable uploads to use Supabase Storage's signed TUS endpoint.
+- Restored the protected direct upload route for ordinary files through 25 MB while retaining resumable support
+  through 100 MB and versioning resumable fingerprints away from stale authorizations.
+- Added protected, lazy-loaded JPEG/PNG/WebP thumbnails inside chat messages with full preview, retry, download,
+  responsive phone layout, and object-URL cleanup; Shared Files remains compact and on demand.
+- Preserved current conversation-membership authorization, private no-store delivery, exact storage read-back, file
+  validation, and audit boundaries. No migration or RLS change was required.
+- The complete gate passed 365 test files / 1 skipped and 2,041 tests / 1 skipped. SygSphere passed 72/72 desktop and
+  mobile browser checks, and the mandatory Time Clock matrix passed 42/42.
+- Production deployment details will be recorded after promotion.
+- Full release record:
+  `docs/changelogs/CHANGELOG_10-08-2026_SYGSPHERE_UPLOAD_AND_INLINE_IMAGE_REPAIR.md`.
+
 ## 10/07/2026 - Future Call-Off and Payroll Readiness Repair
 
 - Restored next-day and nearest-later standard shift selection for employee and manager call-off reporting while

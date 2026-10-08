@@ -438,11 +438,11 @@ test('keeps the mobile composer compact and grows it only for multiline work', a
 test('shares an ordinary mobile attachment once it is available', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 640 })
   let uploadCount = 0
-  await page.route('**/api/v1/sygsphere/uploads', async (route) => {
-    if (route.request().method() !== 'POST') return route.continue()
+  await page.route('**/api/v1/sygsphere/files/**', async (route) => {
+    if (route.request().method() !== 'PUT') return route.continue()
     uploadCount += 1
-    const request = route.request().postDataJSON() as { fileId: string }
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ uploadId: request.fileId, state: 'clean' }) })
+    const fileId = new URL(route.request().url()).pathname.split('/').at(-1)
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: fileId, messageId: null, state: 'clean' }) })
   })
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
   await page.locator('input[type="file"]').setInputFiles({ name: 'mobile-photo.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })
@@ -451,28 +451,34 @@ test('shares an ordinary mobile attachment once it is available', async ({ page 
   expect(uploadCount).toBe(1)
 })
 test('shares a normal desktop PDF as soon as protected storage confirms it', async ({ page }) => {
-  let authorization: { filename?: string; mimeType?: string; sizeBytes?: number } | null = null
-  await page.route('**/api/v1/sygsphere/uploads', async (route) => {
-    if (route.request().method() !== 'POST') return route.continue()
-    authorization = route.request().postDataJSON()
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ uploadId: (authorization as { fileId: string }).fileId, state: 'clean' }) })
+  let transfer: { filename?: string | null; mimeType?: string | null; sizeBytes?: number } | null = null
+  await page.route('**/api/v1/sygsphere/files/**', async (route) => {
+    if (route.request().method() !== 'PUT') return route.continue()
+    const requestUrl = new URL(route.request().url())
+    const fileId = requestUrl.pathname.split('/').at(-1)
+    transfer = {
+      filename: requestUrl.searchParams.get('filename'),
+      mimeType: route.request().headers()['content-type'],
+      sizeBytes: route.request().postDataBuffer()?.byteLength,
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: fileId, messageId: null, state: 'clean' }) })
   })
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}`)
   await page.locator('input[type="file"]').setInputFiles({ name: 'desktop-report.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.7\n%%EOF') })
   await page.getByRole('button', { name: 'Share file', exact: true }).click()
   await expect(page.getByText('Your file has been shared.')).toBeVisible()
-  expect(authorization).toMatchObject({ filename: 'desktop-report.pdf', mimeType: 'application/pdf', sizeBytes: 14 })
+  expect(transfer).toMatchObject({ filename: 'desktop-report.pdf', mimeType: 'application/pdf', sizeBytes: 14 })
 })
-test('lets a user try a mobile attachment again when its first upload authorization fails', async ({ page }) => {
+test('lets a user try a mobile attachment again when its first protected transfer fails', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 640 })
   let uploadAttempts = 0
-  await page.route('**/api/v1/sygsphere/uploads', async (route) => {
-    if (route.request().method() !== 'POST') return route.continue()
+  await page.route('**/api/v1/sygsphere/files/**', async (route) => {
+    if (route.request().method() !== 'PUT') return route.continue()
     uploadAttempts += 1
-    const request = route.request().postDataJSON() as { fileId: string }
+    const fileId = new URL(route.request().url()).pathname.split('/').at(-1)
     await route.fulfill(uploadAttempts === 1
-      ? { status: 503, contentType: 'application/json', headers: { 'x-request-id': '30000000-0000-4000-8000-000000000003' }, body: JSON.stringify({ detail: 'The protected upload could not be authorized.', error: 'sygsphere_upload_authorization_failed' }) }
-      : { status: 200, contentType: 'application/json', body: JSON.stringify({ uploadId: request.fileId, state: 'clean' }) })
+      ? { status: 503, contentType: 'application/json', headers: { 'x-request-id': '30000000-0000-4000-8000-000000000003' }, body: JSON.stringify({ detail: 'The protected upload could not be stored.', error: 'sygsphere_upload_storage_failed' }) }
+      : { status: 200, contentType: 'application/json', body: JSON.stringify({ id: fileId, messageId: null, state: 'clean' }) })
   })
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
   await page.locator('input[type="file"]').setInputFiles({ name: 'mobile-resume.jpg', mimeType: 'image/jpeg', buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) })

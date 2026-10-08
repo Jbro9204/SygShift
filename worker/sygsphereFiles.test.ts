@@ -38,11 +38,33 @@ describe('SygSphere protected files', () => {
     expect(response.headers.get('content-type')).toContain('charset=utf-8'); expect(response.headers.get('x-content-type-options')).toBe('nosniff')
     expect(response.headers.get('cross-origin-resource-policy')).toBe('same-origin'); expect(await response.text()).toBe('hello')
   })
+  it('streams a protected image preview without exposing its storage location', async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+    const deps = dependencies()
+    deps.authorize.mockResolvedValue({ filename: 'scene.png', mimeType: 'image/png', sizeBytes: bytes.byteLength, objectKey: `${cid}/${id}` })
+    deps.fetch.mockResolvedValue(new Response(bytes))
+
+    const response = await handleSphereFiles(new Request(`https://app.sygilant.us/api/v1/sygsphere/files/${id}?mode=preview`), deps)
+
+    expect(deps.authorize).toHaveBeenCalledWith('access', { fileId: id })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('image/png')
+    expect(response.headers.get('content-disposition')).toContain('inline')
+    expect(response.headers.get('cache-control')).toContain('no-store')
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes)
+  })
+  it('denies a protected image before storage is read when membership authorization fails', async () => {
+    const deps = dependencies(); deps.authorize.mockRejectedValue(new Error('Denied'))
+    await expect(handleSphereFiles(new Request(`https://app.sygilant.us/api/v1/sygsphere/files/${id}?mode=preview`), deps)).rejects.toThrow('Denied')
+    expect(deps.fetch).not.toHaveBeenCalled()
+  })
   it('does not fetch an unsupported or oversized text preview', async () => {
     const deps = dependencies(); deps.authorize.mockResolvedValue({ filename: 'report.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', sizeBytes: 5, objectKey: `${cid}/${id}` })
     expect((await handleSphereFiles(new Request(`https://app.sygilant.us/api/v1/sygsphere/files/${id}?mode=preview`), deps)).status).toBe(415)
     expect(deps.fetch).not.toHaveBeenCalled()
     deps.authorize.mockResolvedValue({ filename: 'large.txt', mimeType: 'text/plain', sizeBytes: 1048577, objectKey: `${cid}/${id}` })
+    expect((await handleSphereFiles(new Request(`https://app.sygilant.us/api/v1/sygsphere/files/${id}?mode=preview`), deps)).status).toBe(415)
+    deps.authorize.mockResolvedValue({ filename: 'large.png', mimeType: 'image/png', sizeBytes: 26214401, objectKey: `${cid}/${id}` })
     expect((await handleSphereFiles(new Request(`https://app.sygilant.us/api/v1/sygsphere/files/${id}?mode=preview`), deps)).status).toBe(415)
   })
   it('rejects empty and oversized uploads', async () => {

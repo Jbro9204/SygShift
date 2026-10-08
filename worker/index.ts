@@ -3264,7 +3264,7 @@ async function handleClientDocumentsApi(request: Request, environment: Environme
   return errorJson('not_found', requestId, 404)
 }
 
-function patrolStorageResumableEndpoint(supabaseUrl: string): string {
+export function storageResumableEndpoint(supabaseUrl: string): string {
   const url = new URL(supabaseUrl)
   const projectReference = url.hostname.endsWith('.supabase.co')
     ? url.hostname.slice(0, -'.supabase.co'.length)
@@ -3273,6 +3273,10 @@ function patrolStorageResumableEndpoint(supabaseUrl: string): string {
     ? `https://${projectReference}.storage.supabase.co`
     : url.origin
   return `${origin}/storage/v1/upload/resumable`
+}
+
+export function signedStorageResumableEndpoint(supabaseUrl: string): string {
+  return `${storageResumableEndpoint(supabaseUrl)}/sign`
 }
 
 async function createPrivateSignedUpload(
@@ -3472,7 +3476,7 @@ async function handleSygSphereResumableUpload(
       objectKey: operation.objectKey,
       requestId,
       requestReference: operation.requestReference ?? requestId,
-      resumableEndpoint: patrolStorageResumableEndpoint(session.config.url),
+      resumableEndpoint: signedStorageResumableEndpoint(session.config.url),
       signedUploadToken: signed.token,
       state: 'prepared',
       uploadId: operation.uploadId,
@@ -3646,7 +3650,7 @@ async function handlePatrolEvidenceUploadAuthorization(
     expiresInSeconds: 7200,
     objectKey: operation.objectKey,
     requestId,
-    resumableEndpoint: patrolStorageResumableEndpoint(session.config.url),
+    resumableEndpoint: signedStorageResumableEndpoint(session.config.url),
     signedUploadToken: signed.token,
   }, 201)
 }

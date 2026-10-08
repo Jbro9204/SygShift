@@ -54,7 +54,9 @@ export async function handleSphereFiles(request: Request, dependencies: Dependen
   if (request.method === 'GET') {
     const target = accessSchema.parse(await dependencies.authorize('access', { fileId: fileId.data }))
     const preview = url.searchParams.get('mode') === 'preview'
-    if (preview && (!previewMimeTypes.has(target.mimeType) || (target.mimeType === 'text/plain' && target.sizeBytes > 1048576))) {
+    if (preview && (!previewMimeTypes.has(target.mimeType)
+      || (target.mimeType === 'text/plain' && target.sizeBytes > 1048576)
+      || (target.mimeType !== 'text/plain' && target.sizeBytes > 26214400))) {
       return failure('This file type is available for download but cannot be previewed safely.', 415)
     }
     const stored = await dependencies.fetch(target.objectKey)

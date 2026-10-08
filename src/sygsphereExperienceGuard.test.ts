@@ -10,6 +10,7 @@ const immediateAvailabilityMigration = readFileSync(join(root, 'supabase', 'migr
 const mentionMatcherRepair = readFileSync(join(root, 'supabase', 'migrations', '20260912050000_repair_sygsphere_mention_token_matcher.sql'), 'utf8')
 const data = readFileSync(join(root, 'src', 'data', 'sygsphere.ts'), 'utf8')
 const page = readFileSync(join(root, 'src', 'pages', 'SygSpherePage.tsx'), 'utf8')
+const attachment = readFileSync(join(root, 'src', 'components', 'SygSphereFileAttachment.tsx'), 'utf8')
 const files = readFileSync(join(root, 'worker', 'sygsphereFiles.ts'), 'utf8')
 const worker = readFileSync(join(root, 'worker', 'index.ts'), 'utf8')
 
@@ -45,10 +46,12 @@ describe('SygSphere experience boundaries', () => {
     expect(files).toContain("'content-security-policy': \"sandbox; default-src 'none'")
     expect(files).toContain("'cross-origin-resource-policy': 'same-origin'")
     expect(data).toContain("file.mimeType === 'text/plain' && file.sizeBytes <= 1048576")
-    expect(page).toContain("import { SecurePdfViewer } from '../components/SecurePdfViewer'")
-    expect(page).toContain('<SecurePdfViewer bytes={preview.data.bytes} title={file.filename} />')
+    expect(attachment).toContain("import { SecurePdfViewer } from './SecurePdfViewer'")
+    expect(attachment).toContain('<SecurePdfViewer bytes={previewData.bytes} title={file.filename} />')
     expect(data).toContain("return { bytes: new Uint8Array(await blob.arrayBuffer()), kind: 'pdf' }")
-    expect(page).not.toContain('<iframe src={preview.data.url}')
+    expect(attachment).not.toContain('<iframe')
+    expect(page).toContain('file={file} placement="message"')
+    expect(page).toContain('<SygSphereFileAttachment key={file.id} file={file} />')
   })
 
   it('makes supported attachments available after protected storage and checksum verification', () => {

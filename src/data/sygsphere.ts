@@ -192,6 +192,7 @@ async function sphereFileResponse(response: Response) {
 }
 const sphereResumableMaxBytes = 104857600
 const sphereStandardUploadMaxBytes = 6 * 1024 * 1024
+const sphereDirectUploadMaxBytes = 25 * 1024 * 1024
 const sphereResumableTargetSchema = z.object({
   bucket: z.string().optional(), expiresAt: z.string().optional(), messageId: z.string().nullable().optional(), objectKey: z.string().optional(),
   resumableEndpoint: z.string().url().optional(), signedUploadToken: z.string().min(1).optional(),
@@ -300,7 +301,9 @@ async function sphereProtectedUpload(file: File, fileId: string, conversationId:
       const upload = new Upload(file, {
         chunkSize: sphereStandardUploadMaxBytes,
         endpoint: target.resumableEndpoint,
-        fingerprint: async () => `sygsphere:${target.uploadId}:${target.objectKey}:${file.size}:${file.lastModified}`,
+        // Version the signed-upload fingerprint so browsers never resume an
+        // authorization that was created for the former unsigned TUS route.
+        fingerprint: async () => `sygsphere:signed-v2:${target.uploadId}:${target.objectKey}:${file.size}:${file.lastModified}`,
         headers: { 'x-signature': target.signedUploadToken! },
         metadata: { bucketName: target.bucket!, cacheControl: '3600', contentType: mimeType, filename: file.name, objectName: target.objectKey! },
         onError: (error) => reject(new Error(error.message || 'The upload was interrupted. Your draft and selected file are still available.')),
@@ -321,10 +324,27 @@ async function sphereProtectedUpload(file: File, fileId: string, conversationId:
   return sphereCompleteUpload(target.uploadId, onProgress)
 }
 
+async function sphereDirectUpload(file: File, fileId: string, conversationId: string, parentId: string | null, mimeType: string, onProgress?: (percentage: number, stage: SphereUploadStage) => void): Promise<SphereUploadResult> {
+  const query = new URLSearchParams({ conversation: conversationId, filename: file.name })
+  if (parentId) query.set('thread', parentId)
+  onProgress?.(1, 'uploading')
+  const response = await fetch(`/api/v1/sygsphere/files/${fileId}?${query}`, {
+    body: file,
+    cache: 'no-store',
+    headers: await sphereFileHeaders(mimeType),
+    method: 'PUT',
+  })
+  if (!response.ok) throw await sphereApiError(response, 'The file could not be shared. Your selected file is still available to retry.')
+  const result = z.object({ id: z.string().uuid(), messageId: z.string().uuid().nullable(), state: z.literal('clean') }).parse(await response.json())
+  onProgress?.(100, 'finishing')
+  return { state: 'clean', uploadId: result.id, requestReference: response.headers.get('x-request-id') ?? undefined }
+}
+
 export async function sphereUpload(file: File, fileId: string, conversationId: string, parentId: string | null, onProgress?: (percentage: number, stage: SphereUploadStage) => void): Promise<SphereUploadResult> {
   if (file.size > sphereResumableMaxBytes || file.size < 1) throw new Error('Choose a file between 1 byte and 100 MB.')
   const fallbackMime: Record<string, string> = { pdf: 'application/pdf', txt: 'text/plain', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
   const mimeType = file.type || fallbackMime[file.name.split('.').at(-1)?.toLowerCase() || ''] || 'application/octet-stream'
+  if (file.size <= sphereDirectUploadMaxBytes) return sphereDirectUpload(file, fileId, conversationId, parentId, mimeType, onProgress)
   return sphereProtectedUpload(file, fileId, conversationId, parentId, mimeType, onProgress)
 }
 
