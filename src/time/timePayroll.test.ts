@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { PayrollAccountabilityEvent, TimekeepingReview } from '../data/timekeeping'
+import type { PayrollAccountabilityEvent, PayrollRules, TimekeepingReview } from '../data/timekeeping'
 import {
   accountabilityEventPayCategory,
   accountabilityEventPayableMinutes,
@@ -108,6 +108,29 @@ const cleanReview: TimekeepingReview = {
   throughDate: '2026-07-25',
 }
 
+const sundayPayrollRules: PayrollRules = {
+  crossBoundaryGroupingPolicy: 'elapsed_time_boundary_split',
+  dailyOvertimeMinutes: 720,
+  defaultBreakMinutes: 30,
+  overtimePolicyVersion: 'colorado-daily-weekly-v1',
+  overtimeTimeZone: 'America/Denver',
+  overtimeWeekStartsOn: 0,
+  overtimeWeekStartTime: '00:00:00',
+  payDateAnchor: '2026-08-28',
+  payFrequency: 'biweekly',
+  payrollCalculationPolicyVersion: 'payroll-batch-v2',
+  payrollConfigurationVersion: 2,
+  payrollPolicyEffectiveFrom: '2026-08-16',
+  payrollWeekStartTime: '00:00:00',
+  salaryTimeOffReducesDefault: true,
+  salaryWeeklyDefaultMinutes: 2_400,
+  timeZone: 'America/Denver',
+  unpaidBreaks: true,
+  weeklyOvertimeMinutes: 2_400,
+  weekStartsOn: 0,
+  weekStartsOnLabel: 'Sunday',
+}
+
 afterEach(() => {
   vi.useRealTimers()
   vi.restoreAllMocks()
@@ -204,6 +227,35 @@ describe('payroll export readiness', () => {
     expect(blocker).toContain('regular plus overtime minutes do not equal paid minutes')
     expect(blocker).toContain('2 duplicate worked-time occurrences')
     expect(blocker).toContain('1 unresolved payroll week assignment')
+  })
+
+  it('blocks locking when payroll-week allocations do not reconcile to selected-range paid minutes', () => {
+    const allocationMismatchReview: TimekeepingReview = {
+      ...cleanReview,
+      reconciliation: {
+        categoryMinutesMatchPaid: true,
+        configurationVersion: 2,
+        duplicateOccurrenceCount: 0,
+        epMinutes: 0,
+        overtimeMinutes: 0,
+        paidMinutes: 480,
+        passed: false,
+        payrollWeekAllocationsMatchPaid: false,
+        policyVersion: 'payroll-batch-v2',
+        regularCategoryMinutes: 480,
+        regularMinutes: 480,
+        regularPlusOvertimeMatchesPaid: true,
+        rowCount: 1,
+        truepMinutes: 0,
+        unclassifiedCategoryMinutes: 0,
+        uniqueOccurrenceCount: 1,
+        unresolvedAssignmentCount: 0,
+      },
+    }
+
+    expect(payrollLockBlocker(allocationMismatchReview)).toBe(
+      'Payroll reconciliation failed: payroll-week allocation minutes do not reconcile to the selected-range paid minutes. Resolve these issues before locking payroll.',
+    )
   })
 
   it('names paid minutes that still need a payroll category', () => {
@@ -922,6 +974,368 @@ describe('payroll export readiness', () => {
     expect(employeeRows.some((row) => row[2] === 'Week 2')).toBe(false)
     expect(sheets.find((sheet) => sheet.name === 'Week 1 Detail')?.rows.some((row) => row[0] === 'Jordan Brown' && row[11] === 8)).toBe(true)
     expect(sheets.find((sheet) => sheet.name === 'Week 2 Detail')?.rows.some((row) => row[0] === 'Jordan Brown')).toBe(false)
+  })
+
+  it('allocates a crossing occurrence into both payroll weeks without duplicating the canonical timecard', () => {
+    const overnightRow = {
+      ...cleanReview.rows[0],
+      breakMinutes: 0,
+      crossesPayrollBoundary: true,
+      firstClockIn: '2026-08-16T05:00:00.000Z',
+      grossMinutes: 480,
+      lastClockOut: '2026-08-16T13:00:00.000Z',
+      occurrenceBreakMinutes: 0,
+      occurrenceGrossMinutes: 480,
+      occurrenceOvertimeMinutes: 0,
+      occurrencePaidMinutes: 480,
+      occurrenceRegularCategoryMinutes: 480,
+      occurrenceRegularMinutes: 480,
+      occurrenceUnpaidGapMinutes: 0,
+      operationalDate: '2026-08-15',
+      paidMinutes: 480,
+      payrollAssignmentAnchor: '2026-08-16T05:00:00.000Z',
+      payrollBatchWeekEndsOn: '2026-08-15',
+      payrollBatchWeekStartsOn: '2026-08-09',
+      payrollPeriodEndsOn: '2026-08-22',
+      payrollPeriodStartsOn: '2026-08-09',
+      payrollPolicyVersion: 'payroll-batch-v2',
+      payrollGroupingPolicy: 'elapsed_time_boundary_split',
+      payrollWeekAllocations: [{
+        allocationKey: 'shift:73000000-0000-4000-8000-000000000010:employee:73000000-0000-4000-8000-000000000001|2026-08-09',
+        breakMinutes: 0,
+        epMinutes: 0,
+        grossMinutes: 60,
+        overtimeMinutes: 0,
+        paidMinutes: 60,
+        regularCategoryMinutes: 60,
+        regularMinutes: 60,
+        truepMinutes: 0,
+        unclassifiedCategoryMinutes: 0,
+        unpaidGapMinutes: 0,
+        weekEndsOn: '2026-08-15',
+        weekStartsOn: '2026-08-09',
+      }, {
+        allocationKey: 'shift:73000000-0000-4000-8000-000000000010:employee:73000000-0000-4000-8000-000000000001|2026-08-16',
+        breakMinutes: 0,
+        epMinutes: 0,
+        grossMinutes: 420,
+        overtimeMinutes: 0,
+        paidMinutes: 420,
+        regularCategoryMinutes: 420,
+        regularMinutes: 420,
+        truepMinutes: 0,
+        unclassifiedCategoryMinutes: 0,
+        unpaidGapMinutes: 0,
+        weekEndsOn: '2026-08-22',
+        weekStartsOn: '2026-08-16',
+      }],
+      regularMinutes: 480,
+      scheduledEndsAt: '2026-08-16T13:00:00.000Z',
+      scheduledStartsAt: '2026-08-16T05:00:00.000Z',
+    }
+    const review: TimekeepingReview = {
+      ...cleanReview,
+      fromDate: '2026-08-09',
+      rows: [overnightRow],
+      throughDate: '2026-08-22',
+    }
+    const sheets = buildPayrollWorkbookSheets({ exportType: 'Preview', review })
+    const summary = sheets[0]
+    const summaryHeaderIndex = summary.rows.findIndex((row) => row[0] === 'Employee')
+    const summaryRows = summary.rows.slice(summaryHeaderIndex + 1)
+
+    expect(summaryRows.find((row) => row[0] === 'Jordan Brown' && row[2] === 'Week 1')?.[6]).toBe(1)
+    expect(summaryRows.find((row) => row[0] === 'Jordan Brown' && row[2] === 'Week 2')?.[6]).toBe(7)
+    expect(summaryRows.find((row) => row[0] === 'Pay period totals')?.[4]).toBe(1)
+    expect(summaryRows.find((row) => row[0] === 'Pay period totals')?.[6]).toBe(8)
+
+    const weekOneDetail = sheets.find((sheet) => sheet.name === 'Week 1 Detail')!
+    const weekTwoDetail = sheets.find((sheet) => sheet.name === 'Week 2 Detail')!
+    expect(weekOneDetail.rows.some((row) => row[0] === 'Jordan Brown' && row[4] === 'Worked-time allocation' && row[12] === 1)).toBe(true)
+    expect(weekTwoDetail.rows.some((row) => row[0] === 'Jordan Brown' && row[4] === 'Worked-time allocation' && row[12] === 7)).toBe(true)
+
+    const employeeSheet = sheets.at(-1)!
+    expect(employeeSheet.rows.filter((row) => row[0] === 'Jordan Brown')).toHaveLength(1)
+    expect(employeeSheet.rows.find((row) => row[0] === 'Jordan Brown')?.[11]).toBe(8)
+    expect(String(employeeSheet.rows.find((row) => row[0] === 'Jordan Brown')?.[16])).toContain('1 hrs')
+    expect(String(employeeSheet.rows.find((row) => row[0] === 'Jordan Brown')?.[16])).toContain('7 hrs')
+  })
+
+  it('regenerates a locked Sunday workbook from stored allocations when live rules changed', () => {
+    const occurrenceKey = cleanReview.rows[0].payrollOccurrenceKey
+    const lockedRow: TimekeepingReview['rows'][number] = {
+      ...cleanReview.rows[0],
+      breakMinutes: 0,
+      crossesPayrollBoundary: true,
+      timeZone: 'America/New_York',
+      firstClockIn: '2026-08-16T05:00:00.000Z',
+      grossMinutes: 480,
+      lastClockOut: '2026-08-16T13:00:00.000Z',
+      occurrenceBreakMinutes: 0,
+      occurrenceGrossMinutes: 480,
+      occurrenceOvertimeMinutes: 0,
+      occurrencePaidMinutes: 480,
+      occurrenceRegularCategoryMinutes: 480,
+      occurrenceRegularMinutes: 480,
+      occurrenceUnpaidGapMinutes: 0,
+      operationalDate: '2026-08-15',
+      paidMinutes: 480,
+      payrollBatchWeekEndsOn: '2026-08-15',
+      payrollBatchWeekStartsOn: '2026-08-09',
+      payrollConfigurationVersion: 2,
+      payrollGroupingPolicy: 'elapsed_time_boundary_split',
+      payrollPolicyVersion: 'payroll-batch-v2',
+      payrollWeekAllocations: [{
+        allocationKey: `${occurrenceKey}|2026-08-09`,
+        breakMinutes: 0,
+        epMinutes: 0,
+        grossMinutes: 60,
+        overtimeMinutes: 0,
+        paidMinutes: 60,
+        regularCategoryMinutes: 60,
+        regularMinutes: 60,
+        truepMinutes: 0,
+        unclassifiedCategoryMinutes: 0,
+        unpaidGapMinutes: 0,
+        weekEndsOn: '2026-08-15',
+        weekStartsOn: '2026-08-09',
+      }, {
+        allocationKey: `${occurrenceKey}|2026-08-16`,
+        breakMinutes: 0,
+        epMinutes: 0,
+        grossMinutes: 420,
+        overtimeMinutes: 0,
+        paidMinutes: 420,
+        regularCategoryMinutes: 420,
+        regularMinutes: 420,
+        truepMinutes: 0,
+        unclassifiedCategoryMinutes: 0,
+        unpaidGapMinutes: 0,
+        weekEndsOn: '2026-08-22',
+        weekStartsOn: '2026-08-16',
+      }],
+      regularMinutes: 480,
+      scheduledEndsAt: '2026-08-16T13:00:00.000Z',
+      scheduledStartsAt: '2026-08-16T05:00:00.000Z',
+    }
+    const review: TimekeepingReview = {
+      ...cleanReview,
+      fromDate: '2026-08-09',
+      rows: [lockedRow],
+      throughDate: '2026-08-22',
+    }
+    const changedLiveRules: PayrollRules = {
+      ...sundayPayrollRules,
+      crossBoundaryGroupingPolicy: 'scheduled_shift_start',
+      payrollCalculationPolicyVersion: 'future-live-policy',
+      payrollConfigurationVersion: 99,
+      payrollWeekStartTime: '04:00:00',
+      weekStartsOn: 1,
+      weekStartsOnLabel: 'Monday',
+    }
+    const input = {
+      accountabilityEvents: [{
+        ...sickEvent,
+        employeeId: lockedRow.employeeId,
+        employeeName: lockedRow.employeeName,
+        endsAt: '2026-08-16T16:00:00.000Z',
+        operationalDate: '2026-08-16',
+        startsAt: '2026-08-16T14:00:00.000Z',
+        username: lockedRow.username,
+      }],
+      batch: {
+        createdAt: '2026-08-23T14:00:00.000Z',
+        createdBy: '73000000-0000-4000-8000-000000000001',
+        createdByName: 'Jordan Brown',
+        digest: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        fromDate: '2026-08-09',
+        grossMinutes: 480,
+        id: '73000000-0000-4000-8000-000000000020',
+        note: 'Locked Sunday payroll batch.',
+        paidMinutes: 480,
+        rowCount: 1,
+        throughDate: '2026-08-22',
+      },
+      exportType: 'Official Locked' as const,
+      review,
+      rules: changedLiveRules,
+    }
+
+    expect(payrollWorkbookWeeks(input)).toEqual([
+      { label: 'Week 1', weekEndsOn: '2026-08-15', weekStartsOn: '2026-08-09' },
+      { label: 'Week 2', weekEndsOn: '2026-08-22', weekStartsOn: '2026-08-16' },
+    ])
+    const sheets = buildPayrollWorkbookSheets(input)
+    expect(sheets[0].rows).toContainEqual([
+      'Calculation Policy',
+      'payroll-batch-v2 / configuration 2 (stored with locked row)',
+    ])
+    expect(sheets[0].rows.find((row) => row[0] === 'Payroll Rules')?.[1]).toContain('Time zone: America/Denver')
+    expect(sheets.find((sheet) => sheet.name === 'Week 1 Detail')?.rows
+      .find((row) => row[0] === 'Jordan Brown')?.[11]).toBe(1)
+    expect(sheets.find((sheet) => sheet.name === 'Week 2 Detail')?.rows
+      .find((row) => row[0] === 'Jordan Brown')?.[11]).toBe(7)
+    const summaryHeaderIndex = sheets[0].rows.findIndex((row) => row[0] === 'Employee')
+    expect(sheets[0].rows.slice(summaryHeaderIndex + 1)
+      .find((row) => row[0] === 'Jordan Brown' && row[2] === 'Week 2')?.[14]).toBe(2)
+  })
+
+  it('does not emit a phantom worked row for a zero-paid boundary allocation', () => {
+    const occurrenceKey = cleanReview.rows[0].payrollOccurrenceKey
+    const row: TimekeepingReview['rows'][number] = {
+      ...cleanReview.rows[0],
+      breakMinutes: 30,
+      crossesPayrollBoundary: true,
+      firstClockIn: '2026-08-16T05:30:00.000Z',
+      grossMinutes: 480,
+      lastClockOut: '2026-08-16T13:30:00.000Z',
+      occurrenceBreakMinutes: 30,
+      occurrenceGrossMinutes: 480,
+      occurrenceOvertimeMinutes: 0,
+      occurrencePaidMinutes: 450,
+      occurrenceRegularCategoryMinutes: 450,
+      occurrenceRegularMinutes: 450,
+      occurrenceUnpaidGapMinutes: 0,
+      operationalDate: '2026-08-15',
+      paidMinutes: 450,
+      payrollConfigurationVersion: 2,
+      payrollGroupingPolicy: 'elapsed_time_boundary_split',
+      payrollPolicyVersion: 'payroll-batch-v2',
+      payrollWeekAllocations: [{
+        allocationKey: `${occurrenceKey}|2026-08-09`,
+        breakMinutes: 30,
+        epMinutes: 0,
+        grossMinutes: 30,
+        overtimeMinutes: 0,
+        paidMinutes: 0,
+        regularCategoryMinutes: 0,
+        regularMinutes: 0,
+        truepMinutes: 0,
+        unclassifiedCategoryMinutes: 0,
+        unpaidGapMinutes: 0,
+        weekEndsOn: '2026-08-15',
+        weekStartsOn: '2026-08-09',
+      }, {
+        allocationKey: `${occurrenceKey}|2026-08-16`,
+        breakMinutes: 0,
+        epMinutes: 0,
+        grossMinutes: 450,
+        overtimeMinutes: 0,
+        paidMinutes: 450,
+        regularCategoryMinutes: 450,
+        regularMinutes: 450,
+        truepMinutes: 0,
+        unclassifiedCategoryMinutes: 0,
+        unpaidGapMinutes: 0,
+        weekEndsOn: '2026-08-22',
+        weekStartsOn: '2026-08-16',
+      }],
+      regularMinutes: 450,
+      scheduledEndsAt: '2026-08-16T13:30:00.000Z',
+      scheduledStartsAt: '2026-08-16T05:30:00.000Z',
+    }
+    const review: TimekeepingReview = {
+      ...cleanReview,
+      fromDate: '2026-08-09',
+      rows: [row],
+      throughDate: '2026-08-22',
+    }
+    const sheets = buildPayrollWorkbookSheets({ exportType: 'Preview', review, rules: sundayPayrollRules })
+    const summaryHeaderIndex = sheets[0].rows.findIndex((item) => item[0] === 'Employee')
+    const summaryRows = sheets[0].rows.slice(summaryHeaderIndex + 1)
+
+    expect(summaryRows.find((item) => item[0] === 'Jordan Brown' && item[2] === 'Week 1')?.slice(4, 7)).toEqual([0, 0.5, 0])
+    expect(summaryRows.find((item) => item[0] === 'Week 1 totals')?.[5]).toBe(0.5)
+    expect(summaryRows.find((item) => item[0] === 'Jordan Brown' && item[2] === 'Week 2')?.slice(4, 7)).toEqual([1, 7.5, 7.5])
+    expect(summaryRows.find((item) => item[0] === 'Pay period totals')?.[4]).toBe(1)
+    expect(sheets.find((sheet) => sheet.name === 'Week 1 Detail')?.rows
+      .some((item) => item[0] === 'Jordan Brown')).toBe(false)
+    expect(sheets.find((sheet) => sheet.name === 'Week 2 Detail')?.rows
+      .some((item) => item[0] === 'Jordan Brown' && item[12] === 7.5)).toBe(true)
+  })
+
+  it.each([
+    {
+      edge: 'start edge',
+      expectedScheduledMinutes: 420,
+      fromDate: '2026-08-10',
+      scheduledEndsAt: '2026-08-10T13:00:00.000Z',
+      scheduledStartsAt: '2026-08-10T05:00:00.000Z',
+      throughDate: '2026-08-15',
+    },
+    {
+      edge: 'end edge',
+      expectedScheduledMinutes: 60,
+      fromDate: '2026-08-09',
+      scheduledEndsAt: '2026-08-16T13:00:00.000Z',
+      scheduledStartsAt: '2026-08-16T05:00:00.000Z',
+      throughDate: '2026-08-15',
+    },
+  ])('clips scheduled comparison minutes at the selected range $edge', ({
+    expectedScheduledMinutes,
+    fromDate,
+    scheduledEndsAt,
+    scheduledStartsAt,
+    throughDate,
+  }) => {
+    const occurrenceKey = cleanReview.rows[0].payrollOccurrenceKey
+    const paidMinutes = expectedScheduledMinutes - 30
+    const row: TimekeepingReview['rows'][number] = {
+      ...cleanReview.rows[0],
+      breakMinutes: 0,
+      firstClockIn: scheduledStartsAt,
+      grossMinutes: paidMinutes,
+      lastClockOut: scheduledEndsAt,
+      occurrenceBreakMinutes: 0,
+      occurrenceGrossMinutes: 480,
+      occurrenceOvertimeMinutes: 0,
+      occurrencePaidMinutes: 480,
+      occurrenceRegularCategoryMinutes: 480,
+      occurrenceRegularMinutes: 480,
+      occurrenceUnpaidGapMinutes: 0,
+      paidMinutes,
+      payrollBatchWeekEndsOn: '2026-08-15',
+      payrollBatchWeekStartsOn: '2026-08-09',
+      payrollConfigurationVersion: 2,
+      payrollGroupingPolicy: 'elapsed_time_boundary_split',
+      payrollPolicyVersion: 'payroll-batch-v2',
+      payrollWeekAllocations: [{
+        allocationKey: `${occurrenceKey}|2026-08-09`,
+        breakMinutes: 0,
+        epMinutes: 0,
+        grossMinutes: paidMinutes,
+        overtimeMinutes: 0,
+        paidMinutes,
+        regularCategoryMinutes: paidMinutes,
+        regularMinutes: paidMinutes,
+        truepMinutes: 0,
+        unclassifiedCategoryMinutes: 0,
+        unpaidGapMinutes: 0,
+        weekEndsOn: '2026-08-15',
+        weekStartsOn: '2026-08-09',
+      }],
+      regularMinutes: paidMinutes,
+      scheduledEndsAt,
+      scheduledStartsAt,
+    }
+    const review: TimekeepingReview = {
+      ...cleanReview,
+      fromDate,
+      rows: [row],
+      throughDate,
+    }
+    const summary = summarizePayrollWorkbookByWeek({
+      exportType: 'Preview',
+      review,
+      rules: sundayPayrollRules,
+    })[0]?.summaries[0]
+
+    expect(summary?.scheduledMinutes).toBe(expectedScheduledMinutes)
+    const sheets = buildPayrollWorkbookSheets({ exportType: 'Preview', review, rules: sundayPayrollRules })
+    const varianceRow = sheets.find((sheet) => sheet.name === 'Hours Variance')?.rows
+      .find((item) => item[0] === 'Jordan Brown')
+    expect(varianceRow?.[3]).toBe(expectedScheduledMinutes / 60)
+    expect(varianceRow?.[5]).toBe(-0.5)
   })
 
   it('places a Sunday-night occurrence in week two without splitting its hours', () => {

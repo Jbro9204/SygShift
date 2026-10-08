@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  allocateIntervalByPayrollWeek,
   elapsedMinutes,
   getPayrollBatchWeek,
+  PAYROLL_BATCH_POLICY_VERSION,
   reconcilePayrollMinutes,
   resolvePayrollOccurrenceAssignment,
   shiftDateKey,
@@ -20,6 +22,74 @@ const occurrence = (overrides: Partial<PayrollOccurrenceInput> = {}): PayrollOcc
 })
 
 describe('payroll batch week assignment', () => {
+  it('labels active boundary allocations with the v2 payroll policy', () => {
+    expect(PAYROLL_BATCH_POLICY_VERSION).toBe('payroll-batch-v2')
+  })
+
+  it('allocates one canonical Saturday-night interval across the Sunday midnight boundary', () => {
+    expect(allocateIntervalByPayrollWeek(
+      '2026-09-06T04:00:00.000Z',
+      '2026-09-06T12:00:00.000Z',
+      denver,
+    )).toEqual([{
+      minutes: 120,
+      weekEndsOn: '2026-09-05',
+      weekStartsOn: '2026-08-30',
+    }, {
+      minutes: 360,
+      weekEndsOn: '2026-09-12',
+      weekStartsOn: '2026-09-06',
+    }])
+  })
+
+  it('awards an equal sub-minute rounding remainder to the earlier payroll week', () => {
+    expect(allocateIntervalByPayrollWeek(
+      '2026-09-06T05:59:30.000Z',
+      '2026-09-06T06:00:30.000Z',
+      denver,
+    )).toEqual([{
+      minutes: 1,
+      weekEndsOn: '2026-09-05',
+      weekStartsOn: '2026-08-30',
+    }, {
+      minutes: 0,
+      weekEndsOn: '2026-09-12',
+      weekStartsOn: '2026-09-06',
+    }])
+  })
+
+  it('allocates actual elapsed time across the spring DST payroll-week boundary', () => {
+    expect(allocateIntervalByPayrollWeek(
+      '2026-03-08T06:00:00.000Z',
+      '2026-03-08T10:00:00.000Z',
+      denver,
+    )).toEqual([{
+      minutes: 60,
+      weekEndsOn: '2026-03-07',
+      weekStartsOn: '2026-03-01',
+    }, {
+      minutes: 180,
+      weekEndsOn: '2026-03-14',
+      weekStartsOn: '2026-03-08',
+    }])
+  })
+
+  it('allocates actual elapsed time across the fall DST payroll-week boundary', () => {
+    expect(allocateIntervalByPayrollWeek(
+      '2026-11-01T05:00:00.000Z',
+      '2026-11-01T11:00:00.000Z',
+      denver,
+    )).toEqual([{
+      minutes: 60,
+      weekEndsOn: '2026-10-31',
+      weekStartsOn: '2026-10-25',
+    }, {
+      minutes: 300,
+      weekEndsOn: '2026-11-07',
+      weekStartsOn: '2026-11-01',
+    }])
+  })
+
   it('keeps Saturday 10 PM to Sunday 6 AM in the previous week with all eight hours', () => {
     const result = resolvePayrollOccurrenceAssignment(occurrence(), denver)
     expect(result.weekStartsOn).toBe('2026-08-09')

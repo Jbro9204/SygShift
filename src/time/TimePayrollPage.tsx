@@ -46,6 +46,7 @@ import { TimeMaintenanceWorkbench, type TimeMaintenanceFocusRequest } from '../p
 import { canExportPayroll, canManageTime, canOverridePayrollAssignment, canViewTeamTime } from './timePermissions'
 import { completedPayrollPeriod, currentPayrollPeriod, formatUsDateKey, shiftPayrollPeriod, type TimePeriod } from './timeRules'
 import { payrollExportFileName, payrollLockBlocker, payrollReadinessPercent, workedTimePayrollReview } from './timePayroll'
+import { payrollOccurrenceMinutes, payrollWeekAllocationForRow } from './payrollAllocations'
 import {
   downloadPayrollWorkbook,
   payrollWeeklyTotalPayableMinutes,
@@ -154,6 +155,17 @@ function rowLocation(row: TimekeepingReviewRow): string {
     .join(' / ') || row.locationName
 }
 
+function rowPayrollAllocationLabel(row: TimekeepingReviewRow): string {
+  if (!row.payrollWeekAllocations?.length) {
+    return row.payrollBatchWeekStartsOn && row.payrollBatchWeekEndsOn
+      ? `${formatUsDateKey(row.payrollBatchWeekStartsOn)} - ${formatUsDateKey(row.payrollBatchWeekEndsOn)} · ${payrollHours(row.paidMinutes)} hr`
+      : 'Allocation unavailable'
+  }
+  return row.payrollWeekAllocations.map((allocation) => (
+    `${formatUsDateKey(allocation.weekStartsOn)} - ${formatUsDateKey(allocation.weekEndsOn)} · ${payrollHours(allocation.paidMinutes)} hr`
+  )).join(' | ')
+}
+
 function payrollCategoryTotals(rows: TimekeepingReviewRow[]) {
   return rows.reduce((totals, row) => {
     const allocation = payrollCategoryAllocation(row)
@@ -220,7 +232,7 @@ function PayrollRulesSummary({ rules, period }: { period: Pick<TimePeriod, 'from
       <article>
         <span>Payroll week</span>
         <strong>{rules.weekStartsOnLabel} {rules.payrollWeekStartTime.slice(0, 5)} - Saturday 11:59 PM</strong>
-        <small>Entire overnight occurrences follow the scheduled shift start; there is no fixed morning cutoff.</small>
+        <small>A crossing shift remains one timecard; worked minutes are allocated at Sunday 12:00 AM in America/Denver.</small>
       </article>
       <article>
         <span>Overtime</span>
@@ -556,7 +568,7 @@ export function PayrollEmployeeSummaryTable({
     <section className="time-card payroll-employee-summary-panel" aria-labelledby="payroll-employee-summary-title">
       <TimeSectionHeader
         eyebrow="Weekly employee totals"
-        summary="Each Sunday-through-Saturday payroll week is shown separately. Regular, EP, and TRUEP partition total worked hours; overtime is already included in one category and is not added again."
+        summary="Each Sunday-through-Saturday payroll week uses derived minute allocations. A crossing shift remains one canonical timecard. Regular, EP, and TRUEP partition total worked hours; overtime is already included in one category and is not added again."
         title="Payroll weeks"
       />
       <div className="payroll-week-summary-list">
@@ -582,7 +594,7 @@ export function PayrollEmployeeSummaryTable({
           <thead>
             <tr>
               <th>Employee</th>
-              <th>Worked shifts</th>
+              <th>Timecards with allocation</th>
               <th>Total worked</th>
               <th>Regular</th>
               <th>EP</th>
@@ -638,7 +650,9 @@ export function PayrollEmployeeSummaryTable({
                       {isSelected ? 'Viewing details' : 'View details'}
                     </TimeButton>
                   ) : (
-                    <TimeStatusBadge tone="neutral">Events only</TimeStatusBadge>
+                    <TimeStatusBadge tone="neutral">
+                      {summary.accountabilityCount > 0 ? 'Events only' : 'Scheduled only'}
+                    </TimeStatusBadge>
                   )}
                 </td>
               </tr>
@@ -830,14 +844,20 @@ export function PayrollRowsTable({
               <th>TRUEP</th>
               <th>Non-OT</th>
               <th>OT <span className="sr-only">included in category totals</span></th>
-              <th>Total worked</th>
-              <th>Payroll batch</th>
+              <th>Allocated worked</th>
+              <th>Payroll week</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => {
-              const categoryMinutes = payrollCategoryAllocation(row)
+              const allocation = payrollWeekAllocationForRow(row, week.weekStartsOn, week)
+              const occurrence = payrollOccurrenceMinutes(row)
+              const categoryMinutes = allocation ?? payrollCategoryAllocation(row)
+              const allocatedPaidMinutes = allocation?.paidMinutes ?? row.paidMinutes
+              const allocatedBreakMinutes = allocation?.breakMinutes ?? row.breakMinutes
+              const allocatedRegularMinutes = allocation?.regularMinutes ?? row.regularMinutes
+              const allocatedOvertimeMinutes = allocation?.overtimeMinutes ?? row.overtimeMinutes
               return (
               <tr key={`${row.employeeId}-${row.shiftId ?? row.rowKind}-${row.operationalDate}-${row.firstClockIn ?? row.scheduledStartsAt ?? 'no-start'}`}>
                 <td>
@@ -868,21 +888,19 @@ export function PayrollRowsTable({
                 <td><strong>{payrollHours(categoryMinutes.epMinutes)} hr</strong></td>
                 <td><strong>{payrollHours(categoryMinutes.truepMinutes)} hr</strong></td>
                 <td>
-                  <strong>{payrollHours(row.regularMinutes)} hr</strong>
+                  <strong>{payrollHours(allocatedRegularMinutes)} hr</strong>
                   {row.grossMinutes !== row.paidMinutes + row.breakMinutes ? <span>Gross time reviewed</span> : null}
                 </td>
                 <td>
-                  <strong>{payrollHours(row.overtimeMinutes)} hr</strong>
+                  <strong>{payrollHours(allocatedOvertimeMinutes)} hr</strong>
                   {row.timeOffMinutes > 0 ? <span>{payrollHours(row.timeOffMinutes)} time off</span> : null}
                 </td>
                 <td>
-                  <strong>{payrollHours(row.paidMinutes)} hr</strong>
-                  <span>{row.breakMinutes} break min</span>
+                  <strong>{payrollHours(allocatedPaidMinutes)} hr</strong>
+                  <span>{allocatedBreakMinutes} break min · one {payrollHours(occurrence.paidMinutes)} hr timecard</span>
                 </td>
                 <td>
-                  <strong>{row.payrollBatchWeekStartsOn && row.payrollBatchWeekEndsOn
-                    ? `${formatUsDateKey(row.payrollBatchWeekStartsOn)} - ${formatUsDateKey(row.payrollBatchWeekEndsOn)}`
-                    : 'Needs assignment'}</strong>
+                  <strong>{formatUsDateKey(week.weekStartsOn)} - {formatUsDateKey(week.weekEndsOn)}</strong>
                   <span>{assignmentSourceLabel(row.payrollAssignmentSource)}</span>
                   {row.crossesPayrollBoundary ? <TimeStatusBadge tone="warning">Crosses payroll boundary</TimeStatusBadge> : null}
                   {row.manualAdjustment ? <small>Manual adjustment recorded</small> : null}
@@ -1106,7 +1124,6 @@ export function TimePayrollPage() {
           fromDate: detail.batch.fromDate,
           exceptionResolutionHistory: detail.exceptionResolutionHistory,
           operationalTimeZone: 'America/Denver',
-          payrollRules: rulesQuery.data,
           pendingCorrections: [],
           serverTimestamp: detail.batch.createdAt,
           summary: {
@@ -1124,7 +1141,6 @@ export function TimePayrollPage() {
           },
           throughDate: detail.batch.throughDate,
         },
-        rules: rulesQuery.data,
       }, payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, 'official'))
     },
   })
@@ -1148,7 +1164,6 @@ export function TimePayrollPage() {
           fromDate: detail.batch.fromDate,
           exceptionResolutionHistory: detail.exceptionResolutionHistory,
           operationalTimeZone: 'America/Denver',
-          payrollRules: rulesQuery.data,
           pendingCorrections: [],
           serverTimestamp: detail.batch.createdAt,
           summary: {
@@ -1166,7 +1181,6 @@ export function TimePayrollPage() {
           },
           throughDate: detail.batch.throughDate,
         },
-        rules: rulesQuery.data,
       }, payrollExportFileName(detail.batch.fromDate, detail.batch.throughDate, 'official'))
       setExportNote('')
       await queryClient.invalidateQueries({ queryKey: ['payroll-export-history'] })
@@ -1493,13 +1507,14 @@ export function TimePayrollPage() {
             ))}
           </div>
           <div className="payroll-employee-detail-list">
-            {selectedEmployeeRows.map((row) => (
-              <article key={`${row.operationalDate}-${row.shiftId ?? row.rowKind}-${row.firstClockIn ?? row.scheduledStartsAt ?? 'row'}`}>
+            {selectedEmployeeRows.map((row) => {
+              const occurrence = payrollOccurrenceMinutes(row)
+              return <article key={row.payrollOccurrenceKey || `${row.operationalDate}-${row.shiftId ?? row.rowKind}-${row.firstClockIn ?? row.scheduledStartsAt ?? 'row'}`}>
                 <div><strong>{formatUsDateKey(row.operationalDate)}</strong><span>{rowLocation(row)}</span></div>
-                <div><span>{rowClock(row.firstClockIn, row)} - {rowClock(row.lastClockOut, row)}</span><small>{row.breakMinutes} unpaid break min</small></div>
-                <div><strong>{payrollHours(row.paidMinutes)} worked hr</strong><small>{row.mixedPayrollCategories ? 'Conflicting payroll categories' : row.payrollCategoryLabel ?? payrollCategoryLabel(row.payrollCategory)} · {payrollHours(row.regularMinutes)} non-OT · {payrollHours(row.overtimeMinutes)} OT</small><TimeStatusBadge tone={isPayrollRowReady(row) ? 'good' : 'warning'}>{isPayrollRowReady(row) ? 'Ready' : 'Needs review'}</TimeStatusBadge></div>
+                <div><span>{rowClock(row.firstClockIn, row)} - {rowClock(row.lastClockOut, row)}</span><small>{occurrence.breakMinutes} unpaid break min · one canonical timecard</small></div>
+                <div><strong>{payrollHours(occurrence.paidMinutes)} worked hr</strong><small>{row.mixedPayrollCategories ? 'Conflicting payroll categories' : row.payrollCategoryLabel ?? payrollCategoryLabel(row.payrollCategory)} · {payrollHours(occurrence.regularMinutes)} non-OT · {payrollHours(occurrence.overtimeMinutes)} OT</small><small>Payroll allocation: {rowPayrollAllocationLabel(row)}</small><TimeStatusBadge tone={isPayrollRowReady(row) ? 'good' : 'warning'}>{isPayrollRowReady(row) ? 'Ready' : 'Needs review'}</TimeStatusBadge></div>
               </article>
-            ))}
+            })}
           </div>
         </ModalDialog>
       ) : null}
@@ -1518,7 +1533,7 @@ export function TimePayrollPage() {
           </div>
           <section className="payroll-assignment-review" aria-labelledby="payroll-assignment-review-title">
             <div>
-              <span>Payroll batch assignment</span>
+              <span>Payroll batch assignment anchor</span>
               <h3 id="payroll-assignment-review-title">
                 {selectedBlockerRow.payrollBatchWeekStartsOn && selectedBlockerRow.payrollBatchWeekEndsOn
                   ? `${formatUsDateKey(selectedBlockerRow.payrollBatchWeekStartsOn)} - ${formatUsDateKey(selectedBlockerRow.payrollBatchWeekEndsOn)}`
@@ -1529,7 +1544,7 @@ export function TimePayrollPage() {
             </div>
             {selectedBlockerRow.crossesPayrollBoundary ? (
               <TimeAlertCard icon={History} title="Crosses Payroll Boundary" tone="warning">
-                <p>This occurrence begins in one payroll week and ends in the next. The entire occurrence stays with the payroll batch selected from its scheduled start.</p>
+                <p>This remains one canonical timecard. Worked minutes are allocated to the payroll weeks on each side of Sunday 12:00 AM in America/Denver.</p>
               </TimeAlertCard>
             ) : null}
             {selectedBlockerRow.payrollAssignmentStatus === 'unresolved' && selectedBlockerRow.payrollAssignmentCandidates.length > 0 ? (

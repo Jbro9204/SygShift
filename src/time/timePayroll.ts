@@ -108,6 +108,9 @@ export function payrollLockBlocker(review: TimekeepingReview | undefined): strin
   if (workedReview.rows.some((row) => row.mixedPayrollCategories)) return 'Resolve every row with conflicting Regular, EP, or TRUEP payroll categories before locking payroll.'
   if (workedReview.reconciliation && !workedReview.reconciliation.passed) {
     const issues: string[] = []
+    if (workedReview.reconciliation.payrollWeekAllocationsMatchPaid === false) {
+      issues.push('payroll-week allocation minutes do not reconcile to the selected-range paid minutes')
+    }
     if (workedReview.reconciliation.categoryMinutesMatchPaid === false) {
       issues.push('Regular, EP, TRUEP, and legacy-unclassified minutes do not equal paid minutes')
     }

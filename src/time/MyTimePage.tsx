@@ -41,9 +41,16 @@ import {
 } from '../data/timekeeping'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { shiftDisplayTitle, shiftRequirementLabel } from '../lib/shiftDisplay'
-import { formatDualTimeRange, formatOperationalDateTime } from '../lib/time'
+import { dateKeyInTimeZone, formatDualTimeRange, formatOperationalDateTime } from '../lib/time'
 import { canViewOwnTime } from './timePermissions'
 import { isActiveInProgressTimeRow } from './timePayroll'
+import {
+  hasSplitPayrollAllocation,
+  payrollAllocatedPaidMinutes,
+  payrollAllocatedPaidMinutesForWeek,
+  payrollAllocationRemainderMinutes,
+  payrollOccurrenceMinutes,
+} from './payrollAllocations'
 import { currentPayrollPeriod, formatUsDateKey, payrollPeriodFromBoundary } from './timeRules'
 import {
   TimeAlertCard,
@@ -192,17 +199,19 @@ export function MyTimePage() {
   })
 
   const totals = useMemo(() => {
-    const today = dashboard?.operationalDate
-    const currentWeekDate = today ? new Date(`${today}T12:00:00Z`) : null
+    const payrollToday = periodQuery.data
+      ? dateKeyInTimeZone(new Date(periodQuery.data.serverTimestamp), periodQuery.data.timeZone)
+      : null
+    const currentWeekDate = payrollToday ? new Date(`${payrollToday}T12:00:00Z`) : null
     if (currentWeekDate) currentWeekDate.setUTCDate(currentWeekDate.getUTCDate() - (currentWeekDate.getUTCDay() - (periodQuery.data?.weekStartsOn ?? 0) + 7) % 7)
     const activeWeek = currentWeekDate?.toISOString().slice(0, 10)
     return {
-      payPeriod: sumPaidMinutes(rows),
+      payPeriod: payrollAllocatedPaidMinutes(rows, selectedPeriod),
       pendingCorrections: reviewQuery.data?.pendingCorrections.length ?? dashboard?.pendingCorrectionCount ?? 0,
-      today: sumPaidMinutes(todayRows),
-      week: sumPaidMinutes(currentRows.filter((row) => row.weekStartsOn === activeWeek)),
+      today: sumOccurrencePaidMinutes(todayRows),
+      week: activeWeek ? payrollAllocatedPaidMinutesForWeek(currentRows, activeWeek) : 0,
     }
-  }, [dashboard?.operationalDate, dashboard?.pendingCorrectionCount, reviewQuery.data?.pendingCorrections.length, rows, todayRows, currentRows, periodQuery.data?.weekStartsOn])
+  }, [dashboard?.pendingCorrectionCount, reviewQuery.data?.pendingCorrections.length, rows, selectedPeriod, todayRows, currentRows, periodQuery.data])
 
   if (!isSupabaseConfigured) {
     return (
@@ -868,7 +877,7 @@ function MyTimeRows({
         <div className="my-time-history__list">
           {rows.map((row) => (
             <MyTimecardRow
-              key={`${row.rowKind}-${row.employeeId}-${row.operationalDate}-${row.shiftId ?? row.locationName}`}
+              key={row.payrollOccurrenceKey || `${row.rowKind}-${row.employeeId}-${row.operationalDate}-${row.shiftId ?? row.locationName}`}
               onRequestCorrection={onRequestCorrection}
               recentEvents={recentEvents}
               row={row}
@@ -902,6 +911,8 @@ function MyTimecardRow({
     : row.exceptionCodes
   const ready = row.payrollReady || activeInProgress
   const correctionEvent = findCorrectionEventForRow(row, recentEvents)
+  const occurrenceMinutes = payrollOccurrenceMinutes(row)
+  const allocationNote = myTimePayrollAllocationNote(row)
 
   return (
     <article className="my-time-row">
@@ -913,10 +924,11 @@ function MyTimecardRow({
         <strong>{row.locationName}</strong>
         <span>{[row.siteCode, row.siteName, row.postName, row.eventName].filter(Boolean).join(' - ') || 'Location pending'}</span>
         <small>{formatRowWindow(row, activeInProgress)}{row.mixedWorkTypes ? ' · Needs classification review' : row.workType === 'training' ? ' · Paid training' : ''}</small>
+        {allocationNote ? <small><strong>Payroll allocation:</strong> {allocationNote}</small> : null}
       </div>
       <div className="my-time-row__hours">
-        <strong>{payrollHours(row.paidMinutes)} hrs</strong>
-        <span>{row.breakMinutes} unpaid break min</span>
+        <strong>{payrollHours(occurrenceMinutes.paidMinutes)} hrs</strong>
+        <span>{occurrenceMinutes.breakMinutes} unpaid break min</span>
       </div>
       <div className="my-time-row__status">
         <TimeStatusBadge tone={ready ? 'good' : 'warning'}>{activeInProgress ? 'In progress' : ready ? 'Ready' : 'Needs review'}</TimeStatusBadge>
@@ -1141,6 +1153,22 @@ function shiftTitle(shift: TimekeepingShift): string {
   return shiftDisplayTitle(shift)
 }
 
-function sumPaidMinutes(rows: TimekeepingReviewRow[]): number {
-  return rows.reduce((total, row) => total + row.paidMinutes, 0)
+function myTimePayrollAllocationNote(row: TimekeepingReviewRow): string | null {
+  if (!hasSplitPayrollAllocation(row)) return null
+
+  const occurrence = payrollOccurrenceMinutes(row)
+  const allocations = row.payrollWeekAllocations ?? []
+  const breakdown = allocations.map((allocation) => (
+    `${payrollHours(allocation.paidMinutes)} hrs to ${formatUsDateKey(allocation.weekStartsOn)}–${formatUsDateKey(allocation.weekEndsOn)}`
+  ))
+  const remainder = payrollAllocationRemainderMinutes(row)
+  if (remainder > 0) breakdown.push(`${payrollHours(remainder)} hrs to an adjacent pay period`)
+
+  return breakdown.length > 0
+    ? `This remains one ${payrollHours(occurrence.paidMinutes)}-hour timecard. ${breakdown.join('; ')}.`
+    : `This remains one ${payrollHours(occurrence.paidMinutes)}-hour timecard. Allocation details are unavailable for this historical record.`
+}
+
+function sumOccurrencePaidMinutes(rows: TimekeepingReviewRow[]): number {
+  return rows.reduce((total, row) => total + payrollOccurrenceMinutes(row).paidMinutes, 0)
 }

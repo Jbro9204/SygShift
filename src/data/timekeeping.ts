@@ -184,7 +184,7 @@ const payrollRulesSchema = z.object({
   salaryWeeklyDefaultMinutes: z.number().int().nonnegative(),
   salaryTimeOffReducesDefault: z.boolean(),
   payrollWeekStartTime: z.string().optional().default('00:00:00'),
-  crossBoundaryGroupingPolicy: z.literal('scheduled_shift_start').optional().default('scheduled_shift_start'),
+  crossBoundaryGroupingPolicy: z.enum(['scheduled_shift_start', 'elapsed_time_boundary_split']).optional().default('scheduled_shift_start'),
   payrollPolicyEffectiveFrom: z.string().optional().default('2026-08-16'),
   payrollConfigurationVersion: z.number().int().positive().optional().default(1),
   payrollCalculationPolicyVersion: z.string().optional().default('payroll-batch-v1'),
@@ -212,6 +212,43 @@ const payrollAssignmentCandidateSchema = z.object({
   endsAt: z.string(),
   timeZone: z.string(),
   locationName: z.string(),
+})
+
+const payrollWeekAllocationSchema = z.object({
+  allocationKey: z.string().min(1),
+  weekStartsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  weekEndsOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  grossMinutes: z.number().int().nonnegative(),
+  breakMinutes: z.number().int().nonnegative(),
+  unpaidGapMinutes: z.number().int().nonnegative(),
+  paidMinutes: z.number().int().nonnegative(),
+  regularMinutes: z.number().int().nonnegative(),
+  overtimeMinutes: z.number().int().nonnegative(),
+  regularCategoryMinutes: z.number().int().nonnegative(),
+  epMinutes: z.number().int().nonnegative(),
+  truepMinutes: z.number().int().nonnegative(),
+  unclassifiedCategoryMinutes: z.number().int().nonnegative(),
+}).superRefine((allocation, context) => {
+  if (allocation.regularMinutes + allocation.overtimeMinutes !== allocation.paidMinutes) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Payroll allocation regular and overtime minutes must equal paid minutes.',
+      path: ['regularMinutes'],
+    })
+  }
+  if (
+    allocation.regularCategoryMinutes
+    + allocation.epMinutes
+    + allocation.truepMinutes
+    + allocation.unclassifiedCategoryMinutes
+    !== allocation.paidMinutes
+  ) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Payroll allocation category minutes must equal paid minutes.',
+      path: ['regularCategoryMinutes'],
+    })
+  }
 })
 
 const timekeepingReviewRowSchema = z.object({
@@ -254,6 +291,16 @@ const timekeepingReviewRowSchema = z.object({
   workedSegments: z.array(timekeepingWorkedSegmentSchema).optional().default([]),
   unpaidGaps: z.array(timekeepingUnpaidGapSchema).optional().default([]),
   unpaidGapMinutes: z.number().int().nonnegative().optional().default(0),
+  occurrenceGrossMinutes: z.number().int().nonnegative().optional(),
+  occurrenceBreakMinutes: z.number().int().nonnegative().optional(),
+  occurrenceUnpaidGapMinutes: z.number().int().nonnegative().optional(),
+  occurrencePaidMinutes: z.number().int().nonnegative().optional(),
+  occurrenceRegularMinutes: z.number().int().nonnegative().optional(),
+  occurrenceOvertimeMinutes: z.number().int().nonnegative().optional(),
+  occurrenceRegularCategoryMinutes: z.number().int().nonnegative().optional(),
+  occurrenceEpMinutes: z.number().int().nonnegative().optional(),
+  occurrenceTruepMinutes: z.number().int().nonnegative().optional(),
+  occurrenceUnclassifiedCategoryMinutes: z.number().int().nonnegative().optional(),
   shiftNotes: z.string().nullable().optional(),
   payrollNotes: z.array(z.string()).default([]),
   workType: workTypeSchema.optional().default('post'),
@@ -287,6 +334,7 @@ const timekeepingReviewRowSchema = z.object({
   payrollAssignmentStatus: z.enum(['derived', 'corrected', 'unresolved']).optional().default('unresolved'),
   payrollAssignmentExplanation: z.string().optional().default('Payroll assignment metadata is unavailable for this historical row.'),
   payrollAssignmentCandidates: z.array(payrollAssignmentCandidateSchema).optional().default([]),
+  payrollWeekAllocations: z.array(payrollWeekAllocationSchema).optional(),
   crossesPayrollBoundary: z.boolean().optional().default(false),
   payrollGroupingPolicy: z.string().optional().default('historical'),
   payrollPolicyVersion: z.string().optional().default('historical'),
@@ -308,6 +356,20 @@ const payrollReconciliationSchema = z.object({
   truepMinutes: z.number().int().nonnegative().optional(),
   unclassifiedCategoryMinutes: z.number().int().nonnegative().optional(),
   categoryMinutesMatchPaid: z.boolean().optional(),
+  payrollWeekAllocationGrossMinutes: z.number().int().nonnegative().optional(),
+  payrollWeekAllocationPaidMinutes: z.number().int().nonnegative().optional(),
+  payrollWeekAllocationBreakMinutes: z.number().int().nonnegative().optional(),
+  payrollWeekAllocationUnpaidGapMinutes: z.number().int().nonnegative().optional(),
+  payrollWeekAllocationRegularMinutes: z.number().int().nonnegative().optional(),
+  payrollWeekAllocationOvertimeMinutes: z.number().int().nonnegative().optional(),
+  payrollWeekAllocationRegularCategoryMinutes: z.number().int().nonnegative().optional(),
+  payrollWeekAllocationEpMinutes: z.number().int().nonnegative().optional(),
+  payrollWeekAllocationTruepMinutes: z.number().int().nonnegative().optional(),
+  payrollWeekAllocationUnclassifiedCategoryMinutes: z.number().int().nonnegative().optional(),
+  payrollWeekAllocationCount: z.number().int().nonnegative().optional(),
+  payrollWeekAllocationBlockedRowCount: z.number().int().nonnegative().optional(),
+  payrollWeekAllocationsMatchPaid: z.boolean().optional(),
+  payrollWeekAllocationsReadyForLock: z.boolean().optional(),
   rowCount: z.number().int().nonnegative(),
   uniqueOccurrenceCount: z.number().int().nonnegative(),
   duplicateOccurrenceCount: z.number().int().nonnegative(),
@@ -860,6 +922,7 @@ export type PayrollPeriodContext = z.infer<typeof payrollPeriodContextSchema>
 export type PayrollAssignmentCorrectionResult = z.infer<typeof payrollAssignmentCorrectionResultSchema>
 export type PayrollRecalculationResult = z.infer<typeof payrollRecalculationResultSchema>
 export type PayrollAccountabilityEvent = z.infer<typeof payrollAccountabilityEventSchema>
+export type PayrollWeekAllocation = z.infer<typeof payrollWeekAllocationSchema>
 export type AttendanceReportResult = z.infer<typeof attendanceReportResultSchema>
 export type WorkType = z.infer<typeof workTypeSchema>
 export type PayrollCategory = z.infer<typeof payrollCategorySchema>
@@ -1049,6 +1112,10 @@ export function parseTimekeepingEvent(value: unknown): TimekeepingEvent {
 
 export function parseTimekeepingReview(value: unknown): TimekeepingReview {
   return timekeepingReviewSchema.parse(value)
+}
+
+export function parsePayrollWeekAllocation(value: unknown): PayrollWeekAllocation {
+  return payrollWeekAllocationSchema.parse(value)
 }
 
 export function parseTimeMaintenance(value: unknown): TimeMaintenance {
@@ -2146,35 +2213,71 @@ export function reviewRowsToPayrollCsv(rows: TimekeepingReviewRow[]): string {
     'Exceptions',
     'Shift Notes',
     'Notes',
+    'Canonical Occurrence',
+    'Allocation Key',
+    'Occurrence Gross Hours',
+    'Occurrence Break Minutes',
+    'Occurrence Unpaid Gap Minutes',
+    'Occurrence Paid Hours',
   ]
-  const lines = payrollExportRows(rows).map((row) => {
-    const categoryMinutes = payrollCategoryAllocation(row)
-    return [
+  const lines = payrollExportRows(rows).flatMap((row) => {
+    const fallbackCategoryMinutes = payrollCategoryAllocation(row)
+    const fallbackWeekStartsOn = row.payrollBatchWeekStartsOn ?? row.weekStartsOn ?? ''
+    const fallbackWeekEndsOn = row.payrollBatchWeekEndsOn ?? row.weekEndsOn ?? ''
+    const allocations: PayrollWeekAllocation[] = row.payrollWeekAllocations?.length ? row.payrollWeekAllocations : [{
+      allocationKey: `${row.payrollOccurrenceKey || `${row.employeeId}:${row.operationalDate}`}|${fallbackWeekStartsOn || 'unresolved'}`,
+      breakMinutes: row.breakMinutes,
+      epMinutes: fallbackCategoryMinutes.epMinutes,
+      grossMinutes: row.grossMinutes,
+      overtimeMinutes: row.overtimeMinutes,
+      paidMinutes: row.paidMinutes,
+      regularCategoryMinutes: fallbackCategoryMinutes.regularCategoryMinutes,
+      regularMinutes: row.regularMinutes,
+      truepMinutes: fallbackCategoryMinutes.truepMinutes,
+      unclassifiedCategoryMinutes: fallbackCategoryMinutes.unclassifiedCategoryMinutes,
+      unpaidGapMinutes: row.unpaidGapMinutes,
+      weekEndsOn: fallbackWeekEndsOn,
+      weekStartsOn: fallbackWeekStartsOn,
+    }]
+    const occurrencePaidMinutes = row.occurrencePaidMinutes ?? row.paidMinutes
+
+    return allocations.filter((allocation) => allocation.paidMinutes > 0).map((allocation) => [
       row.rowKind,
       row.employeeName,
       row.username,
       payrollDate(row.operationalDate),
-      payrollDate(row.weekStartsOn),
-      payrollDate(row.weekEndsOn),
+      payrollDate(allocation.weekStartsOn),
+      payrollDate(allocation.weekEndsOn),
       payrollLocationLabel(row),
       payrollDateTime(row.firstClockIn, row.timeZone),
       payrollDateTime(row.lastClockOut, row.timeZone),
-      payrollHours(row.grossMinutes),
-      row.breakMinutes,
-      payrollHours(row.paidMinutes),
+      payrollHours(allocation.grossMinutes),
+      allocation.breakMinutes,
+      payrollHours(allocation.paidMinutes),
       row.payrollCategoryLabel ?? payrollCategoryLabel(row.payrollCategory),
-      payrollHours(categoryMinutes.regularCategoryMinutes),
-      payrollHours(categoryMinutes.epMinutes),
-      payrollHours(categoryMinutes.truepMinutes),
-      payrollHours(categoryMinutes.unclassifiedCategoryMinutes),
-      payrollHours(row.regularMinutes),
-      payrollHours(row.overtimeMinutes),
-      row.isOvertime ? 'yes' : 'no',
+      payrollHours(allocation.regularCategoryMinutes),
+      payrollHours(allocation.epMinutes),
+      payrollHours(allocation.truepMinutes),
+      payrollHours(allocation.unclassifiedCategoryMinutes),
+      payrollHours(allocation.regularMinutes),
+      payrollHours(allocation.overtimeMinutes),
+      allocation.overtimeMinutes > 0 ? 'yes' : 'no',
       row.payrollReady ? 'yes' : 'no',
       row.exceptionCodes.join('|'),
       row.shiftNotes ?? '',
-      row.payrollNotes.join('|'),
-    ].map(csvEscape).join(',')
+      [
+        ...(allocations.length > 1 || occurrencePaidMinutes !== allocation.paidMinutes
+          ? [`Derived payroll-week allocation from one ${payrollHours(occurrencePaidMinutes)}-hour canonical timecard.`]
+          : []),
+        ...row.payrollNotes,
+      ].join('|'),
+      row.payrollOccurrenceKey,
+      allocation.allocationKey,
+      payrollHours(row.occurrenceGrossMinutes ?? row.grossMinutes),
+      row.occurrenceBreakMinutes ?? row.breakMinutes,
+      row.occurrenceUnpaidGapMinutes ?? row.unpaidGapMinutes,
+      payrollHours(occurrencePaidMinutes),
+    ].map(csvEscape).join(','))
   })
 
   return [headers.map(csvEscape).join(','), ...lines].join('\n')

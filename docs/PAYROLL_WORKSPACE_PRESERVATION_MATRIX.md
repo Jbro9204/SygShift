@@ -12,7 +12,7 @@ This matrix is the release boundary for moving Payroll out of Time & Attendance.
 | Correction approvals | `reviewTimeEventCorrection` | Review Queue | Keep MFA, permission checks, audit note, and immediate refresh. |
 | Exception resolution | Existing timekeeping exception and resolution APIs | Review Queue | Preserve hard versus reviewable blocker behavior and resolution history. |
 | Payroll batch assignment | `correctPayrollBatchAssignment` | Review Queue issue detail | Keep exact occurrence fingerprint, Sunday validation, MFA, and required audit reason. |
-| Employee weekly totals | `summarizePayrollWorkbookByWeek` | Employee Payroll | Keep Sunday-Saturday weeks and entire overnight occurrence in the week where it begins. |
+| Employee weekly totals | `summarizePayrollWorkbookByWeek` | Employee Payroll | Keep Sunday-Saturday weeks while deriving exact boundary allocation slices; retain one full operational occurrence and make its slices reconcile to the same paid total. |
 | Employee detail | Weekly summary selection and punch rows | Employee Payroll detail | Open on demand; do not render every punch in the all-employee view. |
 | Preview workbook | `downloadPayrollWorkbook` preview | Export & History | Preserve workbook validation and error reporting before download. |
 | Official lock | `createPayrollExportBatch` | Export & History | Preserve blocking validation, required note, immutable batch record, and audit history. |
@@ -30,5 +30,7 @@ This matrix is the release boundary for moving Payroll out of Time & Attendance.
 - No role or individual permission assignment is changed.
 - Preview and official exports continue to contain only SygShift worked-time records plus approved accountability/pay categories.
 - Payroll calculations remain server-authoritative; browser sorting, filtering, and pagination never change totals.
+- Operational shifts, punches, corrections, and timecards remain whole and immutable; payroll-week slices are derived records used only for payroll-facing totals, overtime, locks, exports, and integrations.
+- Existing locked payroll batches remain historical snapshots under their recorded policy version. A new allocation policy may affect only unlocked review data and newly created locks.
 - Every mutation retains loading, success/error feedback, audit behavior, and data refresh.
 - Legacy Payroll URLs remain valid through redirects.

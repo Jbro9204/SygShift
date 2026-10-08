@@ -58,7 +58,7 @@ For this operation:
 
 During validation, compare at least five entries from different devices to ensure the displayed work date and time match the Colorado operating schedule.
 
-Payroll-week assignment uses Sunday at 12:00 AM in `America/Denver`. A linked occurrence is never split at that boundary: the complete shift follows its scheduled start. Validate Saturday-to-Sunday overnight shifts, early and late punches around midnight, standalone manual entries, unscheduled work, and both daylight-saving transitions.
+Payroll-week allocation uses Sunday at 12:00 AM in `America/Denver`. The linked shift and punch chain remain one canonical occurrence, but exact paid intervals are divided at the payroll boundary for weekly totals and exports. Validate a Saturday-to-Sunday overnight occurrence both as one complete timecard and as reconciled payroll slices; also validate cross-pay-period work, breaks spanning or adjacent to the boundary, early and late punches around midnight, standalone manual entries, unscheduled work, weekly overtime, category totals, and both daylight-saving transitions.
 
 ### Payroll category handling
 
@@ -97,6 +97,8 @@ Test and approve handling for:
 - unarmed guard attempting to take armed work
 - overnight shift crossing midnight
 - overtime threshold
+- payroll-week boundary allocation (whole occurrence equals the sum of all slices)
+- pay-period boundary allocation (each export contains only its overlapping slice)
 - salary employee day marker
 
 ### 5. Export review

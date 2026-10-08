@@ -1,5 +1,6 @@
 -- Run against a database with 20261006130458_event_payroll_classification.sql
--- installed. All fixtures and audit records are rolled back.
+-- and the current payroll-week allocation policy installed. All fixtures and
+-- audit records are rolled back.
 
 begin;
 
@@ -483,9 +484,16 @@ begin
     or reviewed_row ->> 'payrollCategory' <> 'ep'
     or coalesce((reviewed_row ->> 'epMinutes')::integer, 0)
       <> coalesce((reviewed_row ->> 'paidMinutes')::integer, 0)
+    or jsonb_array_length(reviewed_row -> 'eventTimeline') <> 4
+    or jsonb_array_length(reviewed_row -> 'payrollWeekAllocations') <> 1
+    or reviewed_row -> 'payrollWeekAllocations' -> 0 ->> 'weekStartsOn' <> '2098-01-05'
+    or coalesce((reviewed_row ->> 'paidMinutes')::integer, -1) <> 60
+    or coalesce((reviewed_row ->> 'occurrencePaidMinutes')::integer, -1) <> 450
+    or coalesce((reviewed_row ->> 'occurrenceEpMinutes')::integer, -1) <> 450
+    or reviewed_row ->> 'payrollGroupingPolicy' <> 'elapsed_time_boundary_split'
     or reviewed_row ->> 'payrollBatchWeekStartsOn' <> '2098-01-05'
   then
-    raise exception 'Canonical category join failed across midnight/payroll week boundary: %', reviewed_row;
+    raise exception 'Canonical category or derived payroll-week allocation failed across the boundary: %', reviewed_row;
   end if;
 
   correction_result := public.correct_time_event_payroll_category(
@@ -661,7 +669,8 @@ begin
 
   if position('lock_payroll_category_occurrence' in lower(function_sql)) = 0
     or position('get_effective_time_event_payroll_categories' in lower(function_sql)) = 0
-    or position('event.occurrence_key = occurrence_key' in lower(function_sql)) = 0
+    or position('event.occurrence_key = target_occurrence_key' in lower(function_sql)) = 0
+    or position('event.occurrence_key = occurrence_key' in lower(function_sql)) <> 0
     or position('not event.voided' in lower(function_sql)) = 0
   then
     raise exception 'Payroll row validation lost its shared lock or canonical post-lock category read.';

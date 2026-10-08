@@ -187,9 +187,10 @@ Trust model:
 - Pay weeks run Sunday 12:00 AM through Saturday 11:59 PM.
 - Payroll is biweekly on Friday; the configured pay-period rules and current HR direction govern exact export windows.
 - The payroll-week boundary is Sunday at 12:00 AM in `America/Denver`. Do not introduce an operational-day cutoff such as 6:00 AM into payroll batching.
-- Keep every linked overnight shift in the payroll week containing the scheduled shift start. Replacement assignments and linked manual entries inherit the parent shift; standalone manual entries use manual clock-in; unscheduled work uses actual clock-in.
-- Treat payroll-batch grouping and overtime allocation as separate policies. Changes to one require separate review and version metadata for the other.
-- `src/time/payrollBoundary.ts` is the browser-side reference implementation and `private.get_payroll_batch_week(...)` is the database authority. Both must remain covered by boundary and daylight-saving tests.
+- Keep every linked overnight shift, punch chain, correction, and timecard as one canonical operational occurrence on the day it starts. Do not split or rewrite the source occurrence.
+- Build payroll as a derived allocation view. Divide exact paid intervals at Sunday 12:00 AM in `America/Denver`; breaks belong to the interval in which they occurred. Employee payroll totals, weekly overtime, preview and locked exports, and downstream payroll integrations use only the resulting allocation slices that overlap the selected range.
+- Treat operational occurrence ownership, payroll-week allocation, and overtime allocation as separately versioned policies. Changes require reconciliation tests showing that whole-occurrence paid time equals the sum of all payroll allocations and that category and overtime totals do not double count.
+- `src/time/payrollBoundary.ts` is the browser-side reference implementation and the database payroll-review functions are authoritative. Both must remain covered by cross-week, cross-pay-period, break, category, overtime, and daylight-saving tests.
 - Open assignment recalculation must be idempotent and must skip locked payroll. Any authorized correction requires `time.override_payroll_assignment`, MFA, a Sunday date, a reason, and append-only audit history.
 - Hourly payroll uses worked time recorded through punches and approved corrections, not scheduled hours.
 - Scheduled hours may appear for comparison and discrepancy reporting but are not silently converted into worked hours.

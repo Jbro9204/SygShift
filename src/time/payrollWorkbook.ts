@@ -7,11 +7,13 @@ import {
   type PayrollEmployeeSummary,
   type PayrollExportBatch,
   type PayrollRules,
+  type PayrollWeekAllocation,
   type TimekeepingReview,
   type TimekeepingReviewRow,
 } from '../data/timekeeping'
 import { formatUsDateKey } from './timeRules'
-import { getPayrollBatchWeek, shiftDateKey } from './payrollBoundary'
+import { allocateIntervalByPayrollWeek, getPayrollBatchWeek, payrollDateRangeInstants, shiftDateKey } from './payrollBoundary'
+import { payrollOccurrenceMinutes, payrollWeekAllocationsForRow } from './payrollAllocations'
 
 type WorkbookCell = string | number | boolean | null | undefined
 
@@ -180,14 +182,6 @@ function accountabilityLocation(event: PayrollAccountabilityEvent): string {
   return [event.siteCode, event.siteName, event.postName ?? event.eventName].filter(Boolean).join(' / ') || event.locationName
 }
 
-function scheduledMinutes(row: TimekeepingReviewRow): number {
-  if (!row.scheduledStartsAt || !row.scheduledEndsAt) return 0
-  const starts = Date.parse(row.scheduledStartsAt)
-  const ends = Date.parse(row.scheduledEndsAt)
-  if (!Number.isFinite(starts) || !Number.isFinite(ends) || ends <= starts) return 0
-  return Math.round((ends - starts) / 60_000)
-}
-
 function hours(minutes: number): number {
   return Number(payrollHours(minutes))
 }
@@ -325,12 +319,6 @@ export function payrollPayableMinutes(
     + (accountabilitySummary?.otherPaidMinutes ?? 0)
 }
 
-function summaryScheduledMinutes(employeeId: string, rows: TimekeepingReviewRow[]): number {
-  return rows
-    .filter((row) => row.employeeId === employeeId)
-    .reduce((total, row) => total + scheduledMinutes(row), 0)
-}
-
 export interface PayrollWorkbookWeek {
   label: string
   weekEndsOn: string
@@ -384,19 +372,173 @@ function payrollWeekStartMinutes(value: string | undefined): number {
   return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : 0
 }
 
+function weekdayForDateKey(dateKey: string): number {
+  const [year, month, day] = dateKey.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay()
+}
+
+function lockedWorkbookBoundary(input: PayrollWorkbookInput): {
+  timeZone: string
+  weekStartMinutes: number
+  weekStartsOn: number
+} {
+  const storedRow = input.review.rows.find((row) => row.payrollWeekAllocations?.length)
+    ?? input.review.rows.find((row) => row.payrollBatchWeekStartsOn)
+    ?? input.review.rows[0]
+  const storedWeekStartsOn = storedRow?.payrollWeekAllocations?.[0]?.weekStartsOn
+    ?? storedRow?.payrollBatchWeekStartsOn
+    ?? input.batch?.fromDate
+    ?? input.review.fromDate
+  return {
+    timeZone: input.review.operationalTimeZone,
+    weekStartMinutes: 0,
+    weekStartsOn: weekdayForDateKey(storedWeekStartsOn),
+  }
+}
+
 function payrollWeekForInstant(input: PayrollWorkbookInput, instant: string): string {
-  return getPayrollBatchWeek(instant, {
-    timeZone: input.rules?.timeZone ?? input.review.operationalTimeZone,
-    weekStartMinutes: payrollWeekStartMinutes(input.rules?.payrollWeekStartTime),
-    weekStartsOn: input.rules?.weekStartsOn ?? 0,
-  }).weekStartsOn!
+  const config = input.exportType === 'Official Locked'
+    ? lockedWorkbookBoundary(input)
+    : {
+        timeZone: input.rules?.timeZone ?? input.review.operationalTimeZone,
+        weekStartMinutes: payrollWeekStartMinutes(input.rules?.payrollWeekStartTime),
+        weekStartsOn: input.rules?.weekStartsOn ?? 0,
+      }
+  return getPayrollBatchWeek(instant, config).weekStartsOn!
 }
 
 export function payrollWorkbookWeekForRow(input: PayrollWorkbookInput, row: TimekeepingReviewRow): string {
   if (row.payrollBatchWeekStartsOn) return row.payrollBatchWeekStartsOn
   const anchor = row.payrollAssignmentAnchor ?? row.scheduledStartsAt ?? row.firstClockIn
   if (anchor) return payrollWeekForInstant(input, anchor)
-  return payrollWeekStartForDate(row.operationalDate, input.rules?.weekStartsOn ?? 0)
+  const weekStartsOn = input.exportType === 'Official Locked'
+    ? lockedWorkbookBoundary(input).weekStartsOn
+    : input.rules?.weekStartsOn ?? 0
+  return payrollWeekStartForDate(row.operationalDate, weekStartsOn)
+}
+
+export interface PayrollWorkbookRowAllocation {
+  allocation: PayrollWeekAllocation
+  row: TimekeepingReviewRow
+}
+
+export function payrollWorkbookAllocationsForRow(
+  input: PayrollWorkbookInput,
+  row: TimekeepingReviewRow,
+): PayrollWeekAllocation[] {
+  const weekStartsOn = payrollWorkbookWeekForRow(input, row)
+  return payrollWeekAllocationsForRow(row, {
+    weekEndsOn: shiftDateKey(weekStartsOn, 6),
+    weekStartsOn,
+  })
+}
+
+function allocatedReviewRow(row: TimekeepingReviewRow, allocation: PayrollWeekAllocation): TimekeepingReviewRow {
+  return {
+    ...row,
+    breakMinutes: allocation.breakMinutes,
+    grossMinutes: allocation.grossMinutes,
+    overtimeMinutes: allocation.overtimeMinutes,
+    paidMinutes: allocation.paidMinutes,
+    payrollBatchWeekEndsOn: allocation.weekEndsOn,
+    payrollBatchWeekStartsOn: allocation.weekStartsOn,
+    regularMinutes: allocation.regularMinutes,
+    unpaidGapMinutes: allocation.unpaidGapMinutes,
+  }
+}
+
+function allocatedRowsForWeek(
+  input: PayrollWorkbookInput,
+  weekStartsOn: string,
+  employeeId?: string,
+  includeZeroPaid = false,
+): PayrollWorkbookRowAllocation[] {
+  return input.review.rows.flatMap((row) => {
+    if (row.rowKind !== 'time_event' || (employeeId && row.employeeId !== employeeId)) return []
+    const allocation = payrollWorkbookAllocationsForRow(input, row)
+      .find((item) => item.weekStartsOn === weekStartsOn && (includeZeroPaid || item.paidMinutes > 0))
+    return allocation ? [{ allocation, row }] : []
+  })
+}
+
+function scheduledMinutesForWeek(
+  input: PayrollWorkbookInput,
+  row: TimekeepingReviewRow,
+  weekStartsOn: string,
+): number {
+  if (!row.scheduledStartsAt || !row.scheduledEndsAt) return 0
+  try {
+    const storedWeekStartsOn = input.exportType === 'Official Locked'
+      && row.payrollWeekAllocations?.length
+      ? weekdayForDateKey(row.payrollWeekAllocations[0].weekStartsOn)
+      : undefined
+    const timeZone = input.exportType === 'Official Locked'
+      ? input.review.operationalTimeZone
+      : input.rules?.timeZone ?? input.review.operationalTimeZone
+    const range = payrollDateRangeInstants(input.review.fromDate, input.review.throughDate, timeZone)
+    const clippedStart = Math.max(Date.parse(row.scheduledStartsAt), Date.parse(range.startsAt))
+    const clippedEnd = Math.min(Date.parse(row.scheduledEndsAt), Date.parse(range.endsAtExclusive))
+    if (!Number.isFinite(clippedStart) || !Number.isFinite(clippedEnd) || clippedEnd <= clippedStart) return 0
+    const scheduledStartsAt = new Date(clippedStart).toISOString()
+    const scheduledEndsAt = new Date(clippedEnd).toISOString()
+    if (!row.payrollWeekAllocations?.length) {
+      return payrollWorkbookWeekForRow(input, row) === weekStartsOn
+        ? Math.round((clippedEnd - clippedStart) / 60_000)
+        : 0
+    }
+    return allocateIntervalByPayrollWeek(scheduledStartsAt, scheduledEndsAt, {
+      timeZone,
+      weekStartMinutes: input.exportType === 'Official Locked'
+        ? 0
+        : payrollWeekStartMinutes(input.rules?.payrollWeekStartTime),
+      weekStartsOn: storedWeekStartsOn ?? input.rules?.weekStartsOn ?? 0,
+    }).find((allocation) => allocation.weekStartsOn === weekStartsOn)?.minutes ?? 0
+  } catch {
+    return 0
+  }
+}
+
+function scheduledMinutesInReview(input: PayrollWorkbookInput, row: TimekeepingReviewRow): number {
+  return payrollWorkbookWeeks(input).reduce(
+    (total, week) => total + scheduledMinutesForWeek(input, row, week.weekStartsOn),
+    0,
+  )
+}
+
+function payrollAllocationText(row: TimekeepingReviewRow): string {
+  const storedAllocations = row.payrollWeekAllocations ?? []
+  const allocations = storedAllocations.filter((allocation) => allocation.paidMinutes > 0)
+  if (allocations.length === 0) {
+    if (storedAllocations.length > 0) return 'No paid payroll-week allocation'
+    return row.payrollBatchWeekStartsOn && row.payrollBatchWeekEndsOn
+      ? `${formatUsDateKey(row.payrollBatchWeekStartsOn)} - ${formatUsDateKey(row.payrollBatchWeekEndsOn)}: ${hours(row.paidMinutes)} hrs`
+      : 'Unresolved'
+  }
+  return allocations.map((allocation) => (
+    `${formatUsDateKey(allocation.weekStartsOn)} - ${formatUsDateKey(allocation.weekEndsOn)}: ${hours(allocation.paidMinutes)} hrs`
+  )).join(' | ')
+}
+
+function hasPaidPayrollAllocation(input: PayrollWorkbookInput, row: TimekeepingReviewRow): boolean {
+  return payrollWorkbookAllocationsForRow(input, row).some((allocation) => allocation.paidMinutes > 0)
+}
+
+function occurrenceCategoryMinutes(row: TimekeepingReviewRow) {
+  if (
+    row.occurrenceRegularCategoryMinutes !== undefined
+    && row.occurrenceEpMinutes !== undefined
+    && row.occurrenceTruepMinutes !== undefined
+    && row.occurrenceUnclassifiedCategoryMinutes !== undefined
+  ) {
+    return {
+      epMinutes: row.occurrenceEpMinutes,
+      regularCategoryMinutes: row.occurrenceRegularCategoryMinutes,
+      truepMinutes: row.occurrenceTruepMinutes,
+      unclassifiedCategoryMinutes: row.occurrenceUnclassifiedCategoryMinutes,
+    }
+  }
+  const occurrence = payrollOccurrenceMinutes(row)
+  return payrollCategoryAllocation({ ...row, paidMinutes: occurrence.paidMinutes })
 }
 
 function payrollWeekForAccountabilityEvent(input: PayrollWorkbookInput, event: PayrollAccountabilityEvent): string {
@@ -405,6 +547,41 @@ function payrollWeekForAccountabilityEvent(input: PayrollWorkbookInput, event: P
 }
 
 export function payrollWorkbookWeeks(input: PayrollWorkbookInput): PayrollWorkbookWeek[] {
+  if (input.exportType === 'Official Locked') {
+    const storedWeeks = new Map<string, string>()
+    for (const row of input.review.rows) {
+      if (row.payrollWeekAllocations?.length) {
+        for (const allocation of row.payrollWeekAllocations) {
+          storedWeeks.set(allocation.weekStartsOn, allocation.weekEndsOn)
+        }
+      } else if (row.payrollBatchWeekStartsOn) {
+        storedWeeks.set(
+          row.payrollBatchWeekStartsOn,
+          row.payrollBatchWeekEndsOn ?? shiftDateKey(row.payrollBatchWeekStartsOn, 6),
+        )
+      }
+    }
+
+    const rangeStart = input.batch?.fromDate ?? input.review.fromDate
+    const rangeEnd = input.batch?.throughDate ?? input.review.throughDate
+    let cursor = [...storedWeeks.keys()].sort()[0] ?? rangeStart
+    while (cursor > rangeStart) cursor = shiftDateKey(cursor, -7)
+    while (shiftDateKey(cursor, 6) < rangeStart) cursor = shiftDateKey(cursor, 7)
+    while (cursor <= rangeEnd) {
+      if (!storedWeeks.has(cursor)) storedWeeks.set(cursor, shiftDateKey(cursor, 6))
+      cursor = shiftDateKey(cursor, 7)
+    }
+
+    return [...storedWeeks.entries()]
+      .filter(([weekStartsOn, weekEndsOn]) => weekStartsOn <= rangeEnd && weekEndsOn >= rangeStart)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([weekStartsOn, weekEndsOn], index) => ({
+        label: `Week ${index + 1}`,
+        weekEndsOn,
+        weekStartsOn,
+      }))
+  }
+
   const weekStartsOn = input.rules?.weekStartsOn ?? 0
   const firstWeekStart = payrollWeekStartForDate(input.review.fromDate, weekStartsOn)
   const weeks: PayrollWorkbookWeek[] = []
@@ -428,13 +605,21 @@ function weeklyPayrollSummary(
   week: PayrollWorkbookWeek,
   events: PayrollAccountabilityEvent[],
 ): PayrollWeeklyEmployeeSummary {
-  const rows = input.review.rows.filter((row) => row.employeeId === employeeId && payrollWorkbookWeekForRow(input, row) === week.weekStartsOn)
+  const allocatedRows = allocatedRowsForWeek(input, week.weekStartsOn, employeeId)
+  const scheduledRows = allocatedRowsForWeek(input, week.weekStartsOn, employeeId, true)
+  const rows = allocatedRows.map(({ allocation, row }) => allocatedReviewRow(row, allocation))
   const weekEvents = events.filter((event) => event.employeeId === employeeId && payrollWeekForAccountabilityEvent(input, event) === week.weekStartsOn)
   const worked = summarizePayrollRowsByEmployee(rows)[0]
   const accountability = summarizePayrollAccountabilityByEmployee(weekEvents)[0]
-  const sampleRow = rows[0]
+  const sampleRow = rows[0] ?? scheduledRows[0]?.row
   const sampleEvent = weekEvents[0]
-  const hasActivity = rows.length > 0 || weekEvents.length > 0
+  const hasActivity = rows.length > 0 || scheduledRows.length > 0 || weekEvents.length > 0
+  const categoryMinutes = allocatedRows.reduce((totals, { allocation }) => ({
+    epMinutes: totals.epMinutes + allocation.epMinutes,
+    regularCategoryMinutes: totals.regularCategoryMinutes + allocation.regularCategoryMinutes,
+    truepMinutes: totals.truepMinutes + allocation.truepMinutes,
+    unclassifiedCategoryMinutes: totals.unclassifiedCategoryMinutes + allocation.unclassifiedCategoryMinutes,
+  }), { epMinutes: 0, regularCategoryMinutes: 0, truepMinutes: 0, unclassifiedCategoryMinutes: 0 })
   return {
     accountabilityCount: accountability?.accountabilityCount ?? 0,
     breakMinutes: worked?.breakMinutes ?? 0,
@@ -450,12 +635,15 @@ function weeklyPayrollSummary(
     otherPaidMinutes: accountability?.otherPaidMinutes ?? 0,
     overtimeMinutes: worked?.overtimeMinutes ?? 0,
     paidMinutes: worked?.paidMinutes ?? 0,
-    regularCategoryMinutes: worked?.regularCategoryMinutes ?? 0,
-    epMinutes: worked?.epMinutes ?? 0,
-    truepMinutes: worked?.truepMinutes ?? 0,
-    unclassifiedCategoryMinutes: worked?.unclassifiedCategoryMinutes ?? 0,
+    regularCategoryMinutes: categoryMinutes.regularCategoryMinutes,
+    epMinutes: categoryMinutes.epMinutes,
+    truepMinutes: categoryMinutes.truepMinutes,
+    unclassifiedCategoryMinutes: categoryMinutes.unclassifiedCategoryMinutes,
     regularMinutes: worked?.regularMinutes ?? 0,
-    scheduledMinutes: summaryScheduledMinutes(employeeId, rows) + (accountability?.scheduledMinutes ?? 0),
+    scheduledMinutes: scheduledRows.reduce(
+      (total, { row }) => total + scheduledMinutesForWeek(input, row, week.weekStartsOn),
+      0,
+    ) + (accountability?.scheduledMinutes ?? 0),
     sickPayMinutes: accountability?.sickPayMinutes ?? 0,
     trainingMinutes: worked?.trainingMinutes ?? 0,
     username: worked?.username ?? accountability?.username ?? sampleRow?.username ?? sampleEvent?.username ?? 'unknown',
@@ -491,6 +679,31 @@ export function summarizePayrollWorkbookByWeek(input: PayrollWorkbookInput): Pay
   }))
 }
 
+function payrollRulesWorkbookText(input: PayrollWorkbookInput): string {
+  if (input.exportType === 'Official Locked') {
+    const storedRow = input.review.rows.find((row) => row.payrollWeekAllocations?.length) ?? input.review.rows[0]
+    const hasStoredAllocations = input.review.rows.some((row) => row.payrollWeekAllocations?.length)
+    return hasStoredAllocations
+      ? `Locked allocation snapshot; a crossing timecard remains one occurrence and stored payroll-week minutes control this workbook. Time zone: ${input.review.operationalTimeZone}.`
+      : `Locked occurrence assignments control this workbook. Policy: ${storedRow?.payrollGroupingPolicy ?? 'historical locked payroll policy'}.`
+  }
+  return input.rules
+    ? `${input.rules.weekStartsOnLabel} 12:00 AM America/Denver payroll week; a crossing timecard remains one occurrence while worked minutes are allocated to each payroll week. ${payrollHours(input.rules.dailyOvertimeMinutes)} daily OT / ${payrollHours(input.rules.weeklyOvertimeMinutes)} weekly OT remain a separate calculation.`
+    : 'Rules loaded from SygShift'
+}
+
+function payrollCalculationPolicyWorkbookText(input: PayrollWorkbookInput): string {
+  if (input.exportType === 'Official Locked') {
+    const storedRow = input.review.rows.find((row) => row.payrollPolicyVersion) ?? input.review.rows[0]
+    return storedRow
+      ? `${storedRow.payrollPolicyVersion} / configuration ${storedRow.payrollConfigurationVersion} (stored with locked row)`
+      : 'Stored locked payroll policy'
+  }
+  return input.rules
+    ? `${input.rules.payrollCalculationPolicyVersion} / configuration ${input.rules.payrollConfigurationVersion}`
+    : 'Recorded with each official batch'
+}
+
 function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountabilityEvent[]): WorkbookSheet {
   const review = input.review
   const weeklyGroups = summarizePayrollWorkbookByWeek({ ...input, accountabilityEvents: events })
@@ -503,8 +716,8 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
     ['Hours Relationship', 'Regular, EP, TRUEP, and any legacy-unclassified hours partition Total Worked Hours. Overtime is already included in exactly one of those categories and must not be added again.'],
     ['Rounding Basis', 'SygShift aggregates exact whole minutes first, then displays hours rounded to two decimals. Do not add displayed row values to reconstruct totals.'],
     ['Status Meaning', 'SygShift Review Status describes source-record readiness inside SygShift; it is not an iSolved submission, approval, or payment status.'],
-    ['Payroll Rules', input.rules ? `${input.rules.weekStartsOnLabel} 12:00 AM payroll week; entire overnight occurrence follows scheduled start. ${payrollHours(input.rules.dailyOvertimeMinutes)} daily OT / ${payrollHours(input.rules.weeklyOvertimeMinutes)} weekly OT remain a separate calculation.` : 'Rules loaded from SygShift'],
-    ['Calculation Policy', input.rules ? `${input.rules.payrollCalculationPolicyVersion} / configuration ${input.rules.payrollConfigurationVersion}` : 'Recorded with each official batch'],
+    ['Payroll Rules', payrollRulesWorkbookText(input)],
+    ['Calculation Policy', payrollCalculationPolicyWorkbookText(input)],
     ['Review Note', input.exportNote ?? input.batch?.note ?? ''],
     ['Batch', input.batch ? `Locked payroll batch ${input.batch.id} / ${input.batch.digest.slice(0, 12)}` : 'Preview only — not an official payroll submission'],
     [],
@@ -530,12 +743,12 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
     'Total Payable',
     'SygShift Review Status',
   ]
-  const weeklySummaries = weeklyGroups.flatMap((group) => group.summaries
-    .filter((summary) => summary.hasActivity)
+  const allWeeklySummaries = weeklyGroups.flatMap((group) => group.summaries
     .map((summary) => ({
       summary,
       week: group.week,
     })))
+  const weeklySummaries = allWeeklySummaries.filter(({ summary }) => summary.hasActivity)
   const body: WorkbookCell[][] = weeklySummaries.map(({ summary, week }) => [
     summary.employeeName,
     summary.employmentType,
@@ -557,7 +770,11 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
     hours(payrollWeeklyTotalPayableMinutes(summary)),
     summary.needsReview ? 'Needs review' : summary.hasActivity ? 'Ready' : 'No activity',
   ])
-  const totalRow = (label: string, matching: Array<{ summary: PayrollWeeklyEmployeeSummary }>): WorkbookCell[] => {
+  const totalRow = (
+    label: string,
+    matching: Array<{ summary: PayrollWeeklyEmployeeSummary }>,
+    workedShiftCountOverride?: number,
+  ): WorkbookCell[] => {
     const minuteTotals = matching.reduce((result, item) => {
       result.workedShiftCount += item.summary.workedShiftCount
       result.scheduledMinutes += item.summary.scheduledMinutes
@@ -600,7 +817,7 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
       '',
       '',
       '',
-      minuteTotals.workedShiftCount,
+      workedShiftCountOverride ?? minuteTotals.workedShiftCount,
       hours(minuteTotals.scheduledMinutes),
       hours(minuteTotals.paidMinutes),
       hours(minuteTotals.regularCategoryMinutes),
@@ -619,9 +836,12 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
   }
   const weeklyTotals = weeks.map((week) => totalRow(
     `${week.label} totals`,
-    weeklySummaries.filter((item) => item.week.weekStartsOn === week.weekStartsOn),
+    allWeeklySummaries.filter((item) => item.week.weekStartsOn === week.weekStartsOn),
   ))
-  const totals = totalRow('Pay period totals', weeklySummaries)
+  const canonicalWorkedShiftCount = new Set(input.review.rows
+    .filter((row) => row.rowKind === 'time_event' && hasPaidPayrollAllocation(input, row))
+    .map((row) => row.payrollOccurrenceKey || `${row.employeeId}:${row.shiftId ?? row.operationalDate}:${row.firstClockIn ?? ''}`)).size
+  const totals = totalRow('Pay period totals', allWeeklySummaries, canonicalWorkedShiftCount)
   const headerRowIndex = titleRows.length
   const totalsRowIndexes = weeklyTotals.map((_, index) => headerRowIndex + body.length + index + 1)
   const totalsRowIndex = headerRowIndex + body.length + weeklyTotals.length + 1
@@ -663,41 +883,43 @@ function buildSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountab
 
 function buildWeeklyDetailSheets(input: PayrollWorkbookInput, events: PayrollAccountabilityEvent[]): WorkbookSheet[] {
   return payrollWorkbookWeeks(input).map((week) => {
-    const workedRows: WorkbookCell[][] = input.review.rows
-      .filter((row) => payrollWorkbookWeekForRow(input, row) === week.weekStartsOn)
-      .sort((left, right) => left.employeeName.localeCompare(right.employeeName, undefined, { sensitivity: 'base' })
-        || left.operationalDate.localeCompare(right.operationalDate)
-        || (left.firstClockIn ?? '').localeCompare(right.firstClockIn ?? ''))
-      .map((row) => {
-        const payableMinutes = row.paidMinutes
-        const categoryMinutes = payrollCategoryAllocation(row)
+    const workedRows: WorkbookCell[][] = allocatedRowsForWeek(input, week.weekStartsOn)
+      .sort((left, right) => left.row.employeeName.localeCompare(right.row.employeeName, undefined, { sensitivity: 'base' })
+        || left.row.operationalDate.localeCompare(right.row.operationalDate)
+        || (left.row.firstClockIn ?? '').localeCompare(right.row.firstClockIn ?? ''))
+      .map(({ allocation, row }) => {
+        const occurrence = payrollOccurrenceMinutes(row)
+        const derivedAllocation = (row.payrollWeekAllocations?.length ?? 0) > 1 || occurrence.paidMinutes !== allocation.paidMinutes
         return [
           row.employeeName,
           row.employeeId,
           row.username,
           formatUsDateKey(row.operationalDate),
-          row.workType === 'training' ? 'Paid training' : 'Worked time',
+          row.workType === 'training'
+            ? derivedAllocation ? 'Paid training allocation' : 'Paid training'
+            : derivedAllocation ? 'Worked-time allocation' : 'Worked time',
           row.mixedPayrollCategories ? 'Conflicting payroll categories' : row.payrollCategoryLabel ?? payrollCategoryLabel(row.payrollCategory),
           locationLabel(row),
           dateTimeText(row.scheduledStartsAt, row.timeZone),
           dateTimeText(row.scheduledEndsAt, row.timeZone),
           dateTimeText(row.firstClockIn, row.timeZone),
           dateTimeText(row.lastClockOut, row.timeZone),
-          hours(scheduledMinutes(row)),
-          hours(row.paidMinutes),
-          hours(categoryMinutes.regularCategoryMinutes),
-          hours(categoryMinutes.epMinutes),
-          hours(categoryMinutes.truepMinutes),
-          hours(categoryMinutes.unclassifiedCategoryMinutes),
-          hours(row.regularMinutes),
-          hours(row.overtimeMinutes),
+          hours(scheduledMinutesForWeek(input, row, week.weekStartsOn)),
+          hours(allocation.paidMinutes),
+          hours(allocation.regularCategoryMinutes),
+          hours(allocation.epMinutes),
+          hours(allocation.truepMinutes),
+          hours(allocation.unclassifiedCategoryMinutes),
+          hours(allocation.regularMinutes),
+          hours(allocation.overtimeMinutes),
           0,
           0,
           0,
-          hours(payableMinutes),
-          row.breakMinutes,
+          hours(allocation.paidMinutes),
+          allocation.breakMinutes,
           row.payrollReady && row.exceptionCodes.length === 0 && !row.mixedPayrollCategories ? 'Ready' : 'Needs review',
           [
+            ...(derivedAllocation ? [`Derived payroll-week allocation from one ${hours(occurrence.paidMinutes)}-hour canonical timecard; punches and corrections remain one occurrence.`] : []),
             ...(row.mixedPayrollCategories ? ['Conflicting payroll categories'] : []),
             ...row.exceptionCodes.map((code) => code.replaceAll('_', ' ')),
             ...row.payrollNotes,
@@ -753,7 +975,7 @@ function buildWeeklyDetailSheets(input: PayrollWorkbookInput, events: PayrollAcc
     const titleRows: WorkbookCell[][] = [
       [`${week.label} Payroll Detail`],
       ['Payroll Week', `${formatUsDateKey(week.weekStartsOn)} - ${formatUsDateKey(week.weekEndsOn)}`],
-      ['Assignment Rule', 'An overnight occurrence remains entirely in the payroll week containing its scheduled start.'],
+      ['Allocation Rule', 'A crossing shift remains one canonical timecard. Worked, break, category, and overtime minutes are allocated at Sunday 12:00 AM America/Denver for weekly payroll totals.'],
       ['Hours Relationship', 'Regular, EP, TRUEP, and legacy-unclassified hours partition Total Worked Hours. Overtime is included in those category totals.'],
       [],
     ]
@@ -779,12 +1001,12 @@ function buildWeeklyDetailSheets(input: PayrollWorkbookInput, events: PayrollAcc
   })
 }
 
-function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAccountabilityEvent[]): WorkbookSheet {
+function buildDiscrepancySheet(input: PayrollWorkbookInput, events: PayrollAccountabilityEvent[]): WorkbookSheet {
   const header = ['Employee', 'Date', 'Issue', 'Location', 'Payroll Batch', 'Assignment Source', 'Scheduled', 'Worked', 'Payable', 'Variance', 'Status', 'Shift Notes', 'Review Notes']
-  const rowItems = rows
+  const rowItems = input.review.rows
     .filter((row) => !row.payrollReady || row.exceptionCodes.length > 0 || row.payrollNotes.length > 0 || row.mixedPayrollCategories)
     .map((row) => {
-      const scheduled = scheduledMinutes(row)
+      const scheduled = scheduledMinutesInReview(input, row)
       return [
         row.employeeName,
         formatUsDateKey(row.operationalDate),
@@ -851,16 +1073,16 @@ function buildDiscrepancySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
   }
 }
 
-function buildVarianceSheet(rows: TimekeepingReviewRow[]): WorkbookSheet {
+function buildVarianceSheet(input: PayrollWorkbookInput): WorkbookSheet {
   const titleRows: WorkbookCell[][] = [
     ['Scheduled vs. Worked Hours'],
     ['Purpose', 'Comparison only. Payroll pay comes from completed SygShift time records and approved paid-leave records—not scheduled hours.'],
     [],
   ]
   const header = ['Employee', 'Date', 'Location', 'Scheduled Hours', 'Worked Hours', 'Variance Hours', 'Status']
-  const body = rows
+  const body = input.review.rows
     .map((row) => {
-      const scheduled = scheduledMinutes(row)
+      const scheduled = scheduledMinutesInReview(input, row)
       const variance = row.paidMinutes - scheduled
       return [
         row.employeeName,
@@ -894,7 +1116,7 @@ function buildVarianceSheet(rows: TimekeepingReviewRow[]): WorkbookSheet {
   }
 }
 
-function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAccountabilityEvent[]): WorkbookSheet {
+function buildSiteSummarySheet(input: PayrollWorkbookInput, events: PayrollAccountabilityEvent[]): WorkbookSheet {
   const sites = new Map<string, {
     accountabilityItems: number
     breakMinutes: number
@@ -915,7 +1137,8 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
     vacationPayMinutes: number
   }>()
 
-  for (const row of rows) {
+  for (const row of input.review.rows) {
+    if (row.rowKind === 'time_event' && !hasPaidPayrollAllocation(input, row)) continue
     const key = locationLabel(row)
     const item = sites.get(key) ?? {
       accountabilityItems: 0,
@@ -948,7 +1171,7 @@ function buildSiteSummarySheet(rows: TimekeepingReviewRow[], events: PayrollAcco
     item.unclassifiedCategoryMinutes += categoryMinutes.unclassifiedCategoryMinutes
     if (row.workType === 'training') item.trainingMinutes += row.paidMinutes
     item.regularMinutes += row.regularMinutes
-    item.scheduledMinutes += scheduledMinutes(row)
+    item.scheduledMinutes += scheduledMinutesInReview(input, row)
     item.shifts += 1
     sites.set(key, item)
   }
@@ -1095,8 +1318,11 @@ function buildEmployeeSheets(input: PayrollWorkbookInput, events: PayrollAccount
     const employeeRows = rows.filter((row) => row.employeeId === employeeId)
     const employeeEvents = events.filter((event) => event.employeeId === employeeId)
     const employeeName = employeeRows[0]?.employeeName ?? employeeEvents[0]?.employeeName ?? 'Employee'
-    const workedRows: WorkbookCell[][] = employeeRows.map((row) => {
-      const categoryMinutes = payrollCategoryAllocation(row)
+    const workedRows: WorkbookCell[][] = employeeRows.filter((row) => (
+      row.rowKind !== 'time_event' || hasPaidPayrollAllocation(input, row)
+    )).map((row) => {
+      const categoryMinutes = occurrenceCategoryMinutes(row)
+      const occurrence = payrollOccurrenceMinutes(row)
       return [
         row.employeeName,
         row.employeeId,
@@ -1109,16 +1335,16 @@ function buildEmployeeSheets(input: PayrollWorkbookInput, events: PayrollAccount
         dateTimeText(row.scheduledEndsAt, row.timeZone),
         dateTimeText(row.firstClockIn, row.timeZone),
         dateTimeText(row.lastClockOut, row.timeZone),
-        hours(row.paidMinutes),
+        hours(occurrence.paidMinutes),
         hours(categoryMinutes.regularCategoryMinutes),
         hours(categoryMinutes.epMinutes),
         hours(categoryMinutes.truepMinutes),
         hours(categoryMinutes.unclassifiedCategoryMinutes),
-        row.payrollBatchWeekStartsOn && row.payrollBatchWeekEndsOn ? `${formatUsDateKey(row.payrollBatchWeekStartsOn)} - ${formatUsDateKey(row.payrollBatchWeekEndsOn)}` : 'Unresolved',
+        payrollAllocationText(row),
         row.payrollPeriodStartsOn && row.payrollPeriodEndsOn ? `${formatUsDateKey(row.payrollPeriodStartsOn)} - ${formatUsDateKey(row.payrollPeriodEndsOn)}` : '',
-        hours(row.regularMinutes),
-        hours(row.overtimeMinutes),
-        row.breakMinutes,
+        hours(occurrence.regularMinutes),
+        hours(occurrence.overtimeMinutes),
+        occurrence.breakMinutes,
         row.crossesPayrollBoundary ? 'Yes' : 'No',
         row.payrollAssignmentSource.replaceAll('_', ' '),
         row.manualAdjustment ? 'Yes' : 'No',
@@ -1149,7 +1375,7 @@ function buildEmployeeSheets(input: PayrollWorkbookInput, events: PayrollAccount
     const workedMinutes = employeeRows.reduce((total, row) => total + row.paidMinutes, 0)
     const workedSummary = summarizePayrollRowsByEmployee(employeeRows)[0]
     const trainingMinutes = employeeRows.filter((row) => row.workType === 'training').reduce((total, row) => total + row.paidMinutes, 0)
-    const scheduledTotal = employeeRows.reduce((total, row) => total + scheduledMinutes(row), 0)
+    const scheduledTotal = employeeRows.reduce((total, row) => total + scheduledMinutesInReview(input, row), 0)
     const sickMinutes = employeeEvents.filter((event) => event.eventType === 'called_in_sick').reduce((total, event) => total + accountabilityEventPayableMinutes(event), 0)
     const ptoMinutes = employeeEvents.filter((event) => event.eventType === 'vacation').reduce((total, event) => total + accountabilityEventPayableMinutes(event), 0)
     const otherPaidMinutes = employeeEvents
@@ -1168,6 +1394,7 @@ function buildEmployeeSheets(input: PayrollWorkbookInput, events: PayrollAccount
       ['Pay Period', `${formatUsDateKey(review.fromDate)} - ${formatUsDateKey(review.throughDate)}`],
       ...weeklyTotals,
       ['Period Totals', `Scheduled ${hours(scheduledTotal)} | Worked ${hours(workedMinutes)} | Regular ${hours(workedSummary?.regularCategoryMinutes ?? 0)} | EP ${hours(workedSummary?.epMinutes ?? 0)} | TRUEP ${hours(workedSummary?.truepMinutes ?? 0)} | Legacy ${hours(workedSummary?.unclassifiedCategoryMinutes ?? 0)} | Non-OT ${hours(workedSummary?.regularMinutes ?? 0)} | OT ${hours(workedSummary?.overtimeMinutes ?? 0)} | Paid training ${hours(trainingMinutes)} | Sick ${hours(sickMinutes)} | PTO ${hours(ptoMinutes)} | Other Paid ${hours(otherPaidMinutes)} | Total Payable ${hours(workedMinutes + sickMinutes + ptoMinutes + otherPaidMinutes)}`],
+      ['Allocation Note', 'Each line below is one canonical timecard and shows its full occurrence total. Payroll Week Allocations identifies the exact range-scoped minutes used by the weekly and pay-period totals above.'],
       ['Hours Relationship', 'Regular, EP, TRUEP, and legacy-unclassified hours partition Total Worked Hours. Overtime is included in those category totals.'],
       ['Review Status', employeeNeedsReview ? 'Needs review' : 'Ready'],
       [],
@@ -1212,9 +1439,9 @@ export function buildPayrollWorkbookSheets(input: PayrollWorkbookInput): Workboo
   return [
     buildSummarySheet(input, events),
     ...buildWeeklyDetailSheets(input, events),
-    buildDiscrepancySheet(input.review.rows, events),
-    buildVarianceSheet(input.review.rows),
-    buildSiteSummarySheet(input.review.rows, events),
+    buildDiscrepancySheet(input, events),
+    buildVarianceSheet(input),
+    buildSiteSummarySheet(input, events),
     buildExceptionDecisionSheet(input.review),
     ...buildEmployeeSheets(input, events),
   ]

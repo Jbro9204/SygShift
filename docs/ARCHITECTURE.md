@@ -101,10 +101,12 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Supervisors preview CSV payroll rows first; the preview does not create the official record.
 - A locked payroll export is created only through the database, after the server recalculates the review range.
 - Payroll locking is blocked when any row has a missing punch, invalid punch order, unresolved correction, zero paid minutes, or other exception.
-- A linked shift occurrence is assigned as one indivisible unit to the payroll week containing its scheduled start in `America/Denver`. A Saturday shift that ends Sunday remains in the Saturday week; early or late punches do not move it.
+- A linked shift remains one canonical operational occurrence anchored to its scheduled start in `America/Denver`; punches, corrections, schedule ownership, and timecard presentation are never divided merely because the shift crosses midnight or a payroll boundary.
+- Payroll review derives `payrollWeekAllocations` from the occurrence's exact paid intervals. An interval crossing Sunday 12:00 AM in `America/Denver` is divided at that instant, so a Saturday 10:00 PM-Sunday 6:00 AM occurrence can remain one timecard while contributing two hours to the prior payroll week and six hours to the next.
 - Standalone manual entries use their manual clock-in, and legitimate unscheduled work uses its actual clock-in. Missing anchors remain unresolved and must be reviewed before export.
-- Payroll-batch assignment and overtime allocation are separate policies. The batch rule never silently changes daily or weekly overtime calculations.
-- Open occurrences may be recalculated under the active versioned policy. Locked export snapshots retain their original assignment, policy version, configuration version, time zone, and grouping rule.
+- Weekly overtime is recalculated from the allocation slices in each payroll week; daily-overtime and operational-workday rules remain independently versioned. Regular, EP, and TRUEP minutes must reconcile across the same slices without duplication.
+- Employee payroll totals, preview workbooks, official locks, exports, and payroll integrations use only the allocation slices overlapping the selected range. Whole-occurrence totals remain available for operational timecard display and reconciliation.
+- Open occurrences may be recalculated under the active versioned policy. Existing locked export snapshots are immutable and retain their original assignment, policy version, configuration version, time zone, and grouping rule; the allocation policy applies only to newly reviewed and locked payroll data.
 - Authorized payroll-batch corrections require MFA, a Sunday week-start date, a written reason, and append-only history. They apply only to the selected unlocked occurrence.
 - Locked batches are stored in private tables with row snapshots, totals, the exporting employee, an audit note, and a SHA-256 digest of the clean review rows.
 - Locked batches and their rows are append-only. Duplicate locks for the exact same reviewed range and digest return the existing batch instead of creating clutter.

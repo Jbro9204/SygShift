@@ -13,6 +13,7 @@ import {
   parsePayrollExportDetail,
   parsePayrollExportHistory,
   parsePayrollPeriodContext,
+  parsePayrollWeekAllocation,
   parseTeamAttendanceSummary,
   parseTimeMaintenance,
   parseTimekeepingDashboard,
@@ -30,6 +31,28 @@ import {
 } from './timekeeping'
 
 describe('timekeeping validation', () => {
+  it('validates exact payroll-week allocation arithmetic', () => {
+    const allocation = parsePayrollWeekAllocation({
+      allocationKey: 'shift:boundary|2026-09-06',
+      breakMinutes: 30,
+      epMinutes: 0,
+      grossMinutes: 390,
+      overtimeMinutes: 60,
+      paidMinutes: 360,
+      regularCategoryMinutes: 360,
+      regularMinutes: 300,
+      truepMinutes: 0,
+      unclassifiedCategoryMinutes: 0,
+      unpaidGapMinutes: 0,
+      weekEndsOn: '2026-09-12',
+      weekStartsOn: '2026-09-06',
+    })
+
+    expect(allocation.paidMinutes).toBe(360)
+    expect(() => parsePayrollWeekAllocation({ ...allocation, overtimeMinutes: 0 })).toThrow(/regular and overtime minutes/)
+    expect(() => parsePayrollWeekAllocation({ ...allocation, regularCategoryMinutes: 300 })).toThrow(/category minutes/)
+  })
+
   it('accepts the employee-safe payroll-period context', () => {
     expect(parsePayrollPeriodContext({
       serverTimestamp: '2026-09-03T01:30:00.000Z',
