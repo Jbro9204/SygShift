@@ -1,5 +1,34 @@
 # SygShift Development Log
 
+## 10/08/2026 - Payroll Week-Boundary Allocation Without Timekeeping Rewrite
+
+- Added versioned payroll-only allocation for worked occurrences that cross the configured Sunday 12:00 AM
+  `America/Denver` workweek boundary. A Saturday 10:00 PM–Sunday 6:00 AM shift remains one Saturday schedule
+  assignment and one canonical timecard, while payroll receives separate 2-hour and 6-hour week slices before
+  break allocation.
+- Preserved the existing schedule, punch/event chain, occurrence identity, operational work date, attendance,
+  call-off, and internal timekeeping behavior. My Time payroll/week/pay-period totals, weekly overtime, payroll
+  review, CSV/XLSX output, and future payroll integrations consume the derived allocation layer.
+- Versioned the calculation as `elapsed_time_boundary_split` / `payroll-batch-v2`, configuration version 2,
+  effective 10/08/2026. Existing locked `payroll-batch-v1` rows remain byte-for-byte historical records and own
+  their complete occurrences; no prior batch, shift, punch, or assignment history is rewritten.
+- Added allocation-aware locking and reconciliation, exact selected-range clipping, actual-week overtime context,
+  DST-safe elapsed-time splitting, break attribution by elapsed interval, adjacent-week lock support, legacy-lock
+  protection, and explicit fail-closed blockers for incomplete or mismatched allocation evidence.
+- Preserved the detailed CSV's original first 24 columns and appended canonical-occurrence and allocation evidence.
+  Official locked workbooks derive policy, week, and timezone from their stored rows instead of current live rules.
+- Verification passed 369 test files / 1 skipped and 2,086 tests / 1 skipped, strict TypeScript, zero-warning lint,
+  the production build/static-asset contract, and 46/46 desktop/mobile browser checks (including the mandatory
+  42/42 Time Clock workflow), plus both linked-production rollback-only SQL
+  regressions, unchanged canonical and locked-history hashes after rehearsal, and no new feature-specific database
+  lint errors.
+- Applied migration `20261008125500`, promoted source `10e4313`, and deployed Cloudflare Worker
+  `1e0a20bd-c677-4b43-b995-6e1026f292d0`. Both production origins passed health/readiness, the exact new index
+  assets were live, both installed SQL regressions passed, migration history was confirmed, and all canonical and
+  locked-history counts and hashes remained unchanged.
+- Full release record:
+  `docs/changelogs/CHANGELOG_10-08-2026_PAYROLL_WEEK_BOUNDARY_ALLOCATION.md`.
+
 ## 10/08/2026 - Client Communications, Directory Search, and SygSphere Viewport Repair
 
 - Added a searchable, paginated internal Client Communications workspace plus a Communications tab in each Client
