@@ -1,7 +1,7 @@
 # Client Communications, Search, and SygSphere Viewport Repair
 
 Date: 10/08/2026  
-Status: Validated locally; production migration and deployment pending
+Status: Deployed and verified in production
 
 ## Outcome
 
@@ -82,11 +82,18 @@ the surrounding page no longer moves or leaves a large blank tail.
 - The SygSphere route now owns exactly one viewport through the deterministic `app-shell--sygsphere` layout chain
   instead of depending on a fragile `:has()` selector and exact DOM shape.
 - The layout remains valid when one inert route-transition or error-boundary wrapper surrounds the workspace.
+- The production-only blank tail was traced to the screen-reader presence label inside each direct-conversation
+  row. Those labels were absolutely positioned against the document at wide desktop sizes, so a long inbox silently
+  enlarged the browser scroll root even though the visible conversation list was clipped.
+- Each presence label is now contained by its own conversation row. The SygSphere shell is also fixed to the dynamic
+  viewport and both conversation-list and message-history boundary scrolling are contained.
 - The application header, SygSphere toolbar, conversation header, and composer remain stationary. Wheel and touch
-  scrolling move only the message-history pane.
+  scrolling move only the intended conversation or message-history pane.
 - Regression coverage uses the reported ultra-wide/short sizes (2410×643, 2359×714, and 2418×621) plus a
   1205×322 high-zoom equivalent, and verifies that the composer and Send control stay inside the viewport without a
   document-level scroll tail.
+- A realistic full AppShell regression overflows 36 conversation rows and 24 messages, verifies the accessible
+  presence labels remain row-owned, and confirms the document stays exactly viewport-height.
 
 ## Data preserved
 
@@ -105,6 +112,9 @@ The new relationship history is additive and forward-only.
 - Combined desktop/mobile browser release suite: **138/138 passed**, covering Client Files and Client
   Communications responsiveness, the reported SygSphere viewport sizes, message-history-only wheel scrolling, and
   the mandatory actual-component Time Clock workflow.
+- After the final live-only overflow cause was isolated, the complete SygSphere desktop/mobile suite passed
+  **84/84**, including the full shell, oversized inbox, phone, mobile-keyboard, short-laptop, high-zoom, upload,
+  image, thread, read-receipt, and composer workflows.
 - Focused component coverage verifies continuous Client Directory typing, prior-result preservation during refresh,
   exact Communications permission gates, employee-scoped cache isolation, logout purging, candidate freshness,
   and stable retry request UUIDs.
@@ -114,21 +124,19 @@ The new relationship history is additive and forward-only.
 - SQL lifecycle regressions cover immediate and delayed link/unlink retries, unlink/relink generations, stale target
   rejection, request UUID payload reuse, RLS/grants, MFA, exact permissions, and current SygSphere membership.
 
-## Release work still required
-
-The following work remains pending and is not claimed as completed:
-
-- apply and verify migration `20261008124500_client_sygsphere_communications_workspace.sql`;
-- promote the intended source revision to `origin/main`;
-- deploy the Cloudflare Worker and verify health, readiness, exact live assets, and authenticated Client
-  Communications/SygSphere workflows.
-
 ## Deployment record
 
-- Production database migration: **pending**.
-- Source revision: **not yet promoted**.
-- Cloudflare Worker version: **not yet deployed**.
-- Production health/readiness and authenticated workflow verification: **pending**.
-
-This record must be updated with exact migration, test, revision, Worker, and production-verification evidence before
-the release can be described as deployed or complete.
+- Production migration `20261008124500_client_sygsphere_communications_workspace` was applied in one transaction.
+  Postflight checks found one migration record, both private forced-RLS ledgers, the two protected permissions, five
+  authorization-checked RPCs, zero browser table grants, zero invalid dependent roles, and no retained test rows.
+- Installed production SQL regressions passed with PL/pgSQL assertions enabled.
+- Source revisions `7937944` and final viewport containment revision `380e1c2` were promoted to `origin/main`.
+- Cloudflare Worker version `418bdcbd-ad37-41bf-95af-8acc75c07949` was deployed to the custom and fallback origins.
+- Health and readiness returned HTTP 200 / ready on both origins, including successful asset-binding and Supabase
+  readiness checks.
+- Both origins served the exact six-entry production asset set. The live bytes matched the release build for
+  `/assets/index-C1Ij0oU-.js`, `/assets/index-2FDQBd7j.css`, `preload-helper`, `schemas`, `supabase`, and `useQuery`.
+- Authenticated production verification confirmed continuous Client Directory typing retains focus, Client
+  Communications renders without duplicating SygSphere data, and SygSphere now reports document `855/855` while its
+  1,742-pixel conversation list and 7,901-pixel message history remain independently scrollable. The composer ended
+  at pixel 834 inside the 855-pixel viewport.

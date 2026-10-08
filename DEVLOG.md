@@ -15,13 +15,18 @@
 - Repaired Client Directory search so the field keeps focus through result refreshes, and replaced SygSphere's
   DOM-shape-dependent height rule with deterministic route height ownership so only message history scrolls at the
   reported ultra-wide/short and high-zoom layouts.
-- Local verification passed: 368 test files / 1 skipped and 2,065 tests / 1 skipped, strict TypeScript,
+- Traced the remaining live blank tail to absolutely positioned accessibility presence labels escaping a long
+  conversation list. Conversation rows now contain those labels, the route is fixed to one dynamic viewport, and
+  conversation/message scroll boundaries cannot move the page chrome.
+- Verification passed: 368 test files / 1 skipped and 2,065 tests / 1 skipped, strict TypeScript,
   zero-warning lint, production builds, the combined 138/138 desktop/mobile Client Files, SygSphere, and mandatory
-  Time Clock browser matrix, and a linked-production rollback-only migration/regression rehearsal with no retained
-  schema or fixture rows.
-- Production migration, source promotion, deployment, and live verification remain pending and are not claimed by
-  this entry.
-- Working release record:
+  Time Clock browser matrix, the final 84/84 SygSphere suite with an oversized real-shell inbox, and both linked-
+  production rollback-only and installed migration regressions.
+- Applied migration `20261008124500`, promoted source `380e1c2`, and deployed Cloudflare Worker
+  `418bdcbd-ad37-41bf-95af-8acc75c07949`. Both origins passed health/readiness and exact six-asset verification;
+  authenticated production checks confirmed Client search focus, Client Communications, and an `855/855` SygSphere
+  document with long conversations/messages confined to their own scroll panes.
+- Full release record:
   `docs/changelogs/CHANGELOG_10-08-2026_CLIENT_COMMUNICATIONS_SEARCH_AND_SYGSPHERE_VIEWPORT_REPAIR.md`.
 
 ## 10/08/2026 - SygSphere Upload and Inline Image Repair
