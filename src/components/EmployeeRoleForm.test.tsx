@@ -4,6 +4,11 @@ import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createEmployee, updateEmployee, type AdminUser, type EmployeeMutationInput } from '../data/adminUsers'
 import type { AccessControlCenter, AccessControlUser, AccessRoleDefinition, PermissionDefinition } from '../data/accessControl'
+import {
+  effectiveClientCommunicationPermissions,
+  setClientCommunicationPermissionCategory,
+  toggleClientCommunicationPermission,
+} from '../lib/clientCommunicationPermissions'
 import { RolePermissionEditor } from '../pages/AccessControlPage'
 import { EmployeeForm } from '../pages/UserAdminPage'
 import { employeeRoleFixtures, employeeRoleTestUser } from '../test/employeeRoleFixtures'
@@ -344,7 +349,7 @@ const workspacePermissions = [
 function renderAccessWorkspace(user: AccessControlUser = workspaceUser, actor: { employeeId: string; primaryAdmin: boolean } = {
   employeeId: '90000000-0000-4000-8000-000000000001',
   primaryAdmin: true,
-}, canManageAccess = true) {
+}, canManageAccess = true, permissions = workspacePermissions) {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } })
   return {
     ...render(
@@ -355,7 +360,7 @@ function renderAccessWorkspace(user: AccessControlUser = workspaceUser, actor: {
         canManageAccess={canManageAccess}
         onDirtyChange={vi.fn()}
         onSelectUser={vi.fn()}
-        permissions={workspacePermissions}
+        permissions={permissions}
         roles={workspaceRoles}
         selectedUserId={user.id}
         users={[user]}
@@ -488,6 +493,98 @@ describe('employee permissions workspace role contract', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['admin-user-directory'], refetchType: 'active' })
   })
 
+  it('does not offer dependent Client Communications additions while a prerequisite denial is active', () => {
+    const communicationsPermissions = [
+      ...workspacePermissions,
+      permission('clients.view', 'View client files'),
+      permission('clients.manage', 'Manage client files'),
+      permission('clients.communications.view', 'View client communications'),
+      permission('clients.communications.manage', 'Manage client communications'),
+    ]
+    const restrictedUser: AccessControlUser = {
+      ...workspaceUser,
+      effectivePermissionCodes: ['time.view', 'hr.view'],
+      overrides: [{
+        createdAt: '2026-10-08T12:05:00.000Z',
+        effect: 'deny',
+        id: '30000000-0000-4000-8000-000000000012',
+        permissionCode: 'clients.view',
+        reason: 'Protected Client Files restriction.',
+      }],
+    }
+    renderAccessWorkspace(
+      restrictedUser,
+      { employeeId: '90000000-0000-4000-8000-000000000001', primaryAdmin: true },
+      true,
+      communicationsPermissions,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Operations.*available/ }))
+
+    expect(screen.queryByRole('checkbox', { name: 'Add View client communications' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: 'Add Manage client communications' })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Add Manage client files' })).toBeEnabled()
+  })
+
+  it('preserves an existing blocked dependent grant without re-adding its denied prerequisite on an unrelated save', async () => {
+    const communicationsPermissions = [
+      ...workspacePermissions,
+      permission('clients.view', 'View client files'),
+      permission('clients.manage', 'Manage client files'),
+      permission('clients.communications.view', 'View client communications'),
+      permission('clients.communications.manage', 'Manage client communications'),
+    ]
+    const userWithBlockedGrant: AccessControlUser = {
+      ...workspaceUser,
+      effectivePermissionCodes: ['time.view', 'hr.view'],
+      overrides: [
+        {
+          createdAt: '2026-10-08T12:00:00.000Z',
+          effect: 'grant',
+          id: '30000000-0000-4000-8000-000000000010',
+          permissionCode: 'clients.communications.manage',
+          reason: 'Existing dependent grant.',
+        },
+        {
+          createdAt: '2026-10-08T12:05:00.000Z',
+          effect: 'deny',
+          id: '30000000-0000-4000-8000-000000000011',
+          permissionCode: 'clients.view',
+          reason: 'Protected Client Files restriction.',
+        },
+      ],
+    }
+    const updatedUser = { ...userWithBlockedGrant, primaryRole: 'supervisor' as const }
+    const center: AccessControlCenter = {
+      generatedAt: '2026-10-08T12:30:00.000Z',
+      permissions: communicationsPermissions,
+      roles: workspaceRoles,
+      users: [updatedUser],
+    }
+    rpc.mockResolvedValueOnce({ data: center, error: null })
+    renderAccessWorkspace(
+      userWithBlockedGrant,
+      { employeeId: '90000000-0000-4000-8000-000000000001', primaryAdmin: true },
+      true,
+      communicationsPermissions,
+    )
+
+    const summary = screen.getByLabelText('Employee access summary')
+    expect(within(summary).getByText('Effective access').previousElementSibling).toHaveTextContent('2')
+    fireEvent.click(screen.getByRole('button', { name: 'Manage roles' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Make Supervisor the primary workforce role' }))
+    fireEvent.change(screen.getByPlaceholderText('Why is this access changing?'), { target: { value: 'Update workforce role only.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save employee permissions' }))
+
+    await waitFor(() => expect(rpc).toHaveBeenCalledWith('set_employee_access_profile_with_primary_role', {
+      target_employee_id: userWithBlockedGrant.id,
+      target_permission_codes: ['clients.communications.manage'],
+      target_primary_role: 'supervisor',
+      target_reason: 'Update workforce role only.',
+      target_role_ids: ['20000000-0000-4000-8000-000000000003'],
+    }))
+  })
+
   it('shows separated employees for audit while keeping assignments read-only', () => {
     renderAccessWorkspace({ ...workspaceUser, status: 'separated' })
     expect(screen.getByText('Separated')).toBeInTheDocument()
@@ -544,5 +641,60 @@ describe('role permission viewer boundary', () => {
     expect(screen.getByRole('button', { name: 'Clear all' })).toBeDisabled()
     expect(screen.getByRole('checkbox', { name: /View time/ })).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Save role permissions' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Client Communications role dependencies', () => {
+  it('adds the complete Client Files dependency chain when management is enabled', () => {
+    const selected = toggleClientCommunicationPermission(new Set(), 'clients.communications.manage')
+    expect([...selected]).toEqual(expect.arrayContaining([
+      'clients.communications.manage',
+      'clients.communications.view',
+      'clients.manage',
+      'clients.view',
+    ]))
+  })
+
+  it('removes dependent communications access when a base Client Files permission is cleared', () => {
+    const current = new Set([
+      'clients.view',
+      'clients.manage',
+      'clients.communications.view',
+      'clients.communications.manage',
+    ])
+    const withoutManagement = toggleClientCommunicationPermission(current, 'clients.manage')
+    expect(withoutManagement.has('clients.communications.manage')).toBe(false)
+    expect(withoutManagement.has('clients.communications.view')).toBe(true)
+
+    const withoutClientFiles = setClientCommunicationPermissionCategory(current, ['clients.view'], false)
+    expect(withoutClientFiles.has('clients.communications.view')).toBe(false)
+    expect(withoutClientFiles.has('clients.communications.manage')).toBe(false)
+  })
+
+  it('does not add a dependent permission or a prerequisite covered by an active denial', () => {
+    const deniedCodes = new Set(['clients.view'])
+    const selected = toggleClientCommunicationPermission(
+      new Set(),
+      'clients.communications.manage',
+      deniedCodes,
+    )
+
+    expect(selected.size).toBe(0)
+    expect(selected.has('clients.view')).toBe(false)
+  })
+
+  it('keeps an existing invalid dependent grant inert while unrelated additions are edited', () => {
+    const deniedCodes = new Set(['clients.view'])
+    const selected = toggleClientCommunicationPermission(
+      new Set(['clients.communications.manage']),
+      'unrelated.permission',
+      deniedCodes,
+    )
+    const effective = effectiveClientCommunicationPermissions(selected, deniedCodes)
+
+    expect(selected).toEqual(new Set(['clients.communications.manage', 'unrelated.permission']))
+    expect(selected.has('clients.view')).toBe(false)
+    expect(effective.has('clients.communications.manage')).toBe(false)
+    expect(effective.has('unrelated.permission')).toBe(true)
   })
 })

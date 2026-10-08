@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useIsMutating, useQuery, useQueryClient } from '@tanstack/react-query'
+import { type QueryClient, useIsMutating, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, BellRing, ChevronDown, ChevronsLeft, ChevronsRight, FileClock, Home, LogOut, Megaphone, Menu, Moon, ShieldAlert, ShieldCheck, Sun, X } from 'lucide-react'
 import { homeNavigationItem, navigationGroups } from '../app/navigation'
@@ -72,6 +72,19 @@ const WORKSPACE_ALERT_ROTATE_MS = 9_000
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'sygshift.sidebar.collapsed'
 const SIDEBAR_GROUP_STORAGE_KEY = 'sygshift.sidebar.open-group'
 const COMPACT_NAVIGATION_QUERY = '(max-width: 1280px), (max-width: 1366px) and (max-height: 800px)'
+const SESSION_SCOPED_QUERY_ROOTS = [
+  'support',
+  'my-notifications',
+  'notification-device-session',
+  'notification-device-push',
+  'sygsphere',
+  'client-communications',
+  'session-context',
+] as const
+
+function clearSessionScopedQueryCaches(queryClient: QueryClient) {
+  for (const key of SESSION_SCOPED_QUERY_ROOTS) queryClient.removeQueries({ queryKey: [key] })
+}
 
 function compactNavigationMatches(): boolean {
   return typeof window.matchMedia === 'function' && window.matchMedia(COMPACT_NAVIGATION_QUERY).matches
@@ -476,6 +489,7 @@ export function AppShell() {
 
     function tearDownSharedIdentitySession(message: string | null, notifyOtherTabs: boolean) {
       clearSharedIdentityRefreshTimer()
+      clearSessionScopedQueryCaches(queryClient)
       deactivateSharedIdentitySupabaseSession()
       clearSharedIdentitySession()
       setAuthSessionId(null)
@@ -547,6 +561,7 @@ export function AppShell() {
       setAuthSessionId(data.session ? authSessionIdFromAccessToken(data.session.access_token) : null)
 
       if (!data.session) {
+        clearSessionScopedQueryCaches(queryClient)
         deactivateSharedIdentitySupabaseSession()
         clearSharedIdentitySession()
         setSessionContext(null)
@@ -556,7 +571,10 @@ export function AppShell() {
 
       try {
         const context = await getSessionContext()
-        if (active) setSessionContext(context)
+        if (active) {
+          queryClient.setQueryData(['session-context'], context)
+          setSessionContext(context)
+        }
       } catch {
         const wasShared = getSharedIdentitySessionScope() !== null
         if (wasShared) {
@@ -564,6 +582,7 @@ export function AppShell() {
           tearDownSharedIdentitySession(null, true)
         } else {
           await signOut()
+          clearSessionScopedQueryCaches(queryClient)
         }
         if (active) {
           setSessionContext(null)
@@ -581,14 +600,18 @@ export function AppShell() {
         if (getSharedIdentitySessionScope()) return
         setAuthSessionId(session ? authSessionIdFromAccessToken(session.access_token) : null)
         if (!session) {
-          for (const key of ['support', 'my-notifications', 'notification-device-session', 'notification-device-push', 'sygsphere']) {
-            queryClient.removeQueries({ queryKey: [key] })
-          }
+          clearSessionScopedQueryCaches(queryClient)
           void clearPushSession()
           clearSharedIdentitySession()
           deactivateSharedIdentitySupabaseSession()
           setSessionContext(null)
           setAuthLoading(false)
+          return
+        }
+
+        if (_event === 'SIGNED_IN') {
+          clearSessionScopedQueryCaches(queryClient)
+          void loadSessionContext(true)
           return
         }
 
@@ -604,7 +627,8 @@ export function AppShell() {
         if (getSharedIdentitySessionScope()) tearDownSharedIdentitySession(null, false)
         return
       }
-      void loadSessionContext(false, true)
+      clearSessionScopedQueryCaches(queryClient)
+      void loadSessionContext(true, true)
     })
 
     const restoreVisibleSharedSession = () => {
@@ -661,6 +685,7 @@ export function AppShell() {
 
     try {
       await signOut()
+      clearSessionScopedQueryCaches(queryClient)
       setSessionContext(null)
       navigate('/login', { replace: true })
     } catch (error) {
@@ -694,6 +719,7 @@ export function AppShell() {
       try {
         await signOut()
       } finally {
+        clearSessionScopedQueryCaches(queryClient)
         setSessionContext(null)
         navigate('/login', { replace: true, state: { reason: 'inactive' } })
       }
@@ -750,7 +776,7 @@ export function AppShell() {
       document.removeEventListener('visibilitychange', handleActivity)
       window.removeEventListener('storage', handleSharedActivity)
     }
-  }, [navigate, sessionContext])
+  }, [navigate, queryClient, sessionContext])
 
   if (authLoading) {
     return (

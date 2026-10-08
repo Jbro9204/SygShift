@@ -21,6 +21,11 @@ import {
   type PermissionDefinition,
 } from '../data/accessControl'
 import {
+  clientCommunicationPermissionBlockedBy,
+  effectiveClientCommunicationPermissions,
+  toggleClientCommunicationPermission,
+} from '../lib/clientCommunicationPermissions'
+import {
   employeeAdditionalRoleIds,
   employeeRoleChange,
   employeeRoleLabels,
@@ -272,15 +277,18 @@ function EmployeeAccessEditor({
   const effectiveCodes = useMemo(() => {
     const codes = new Set(inheritedCodes)
     selectedAdditionCodes.forEach((code) => codes.add(code))
-    legacyDenies.forEach((override) => codes.delete(override.permissionCode))
-    return codes
-  }, [inheritedCodes, legacyDenies, selectedAdditionCodes])
+    return effectiveClientCommunicationPermissions(codes, legacyDeniedCodes)
+  }, [inheritedCodes, legacyDeniedCodes, selectedAdditionCodes])
   const availableAdditions = useMemo(
     () => permissions.filter((permission) => (
       !inheritedCodes.has(permission.code)
       && !legacyDeniedCodes.has(permission.code)
+      && (
+        selectedAdditionCodes.has(permission.code)
+        || clientCommunicationPermissionBlockedBy(permission.code, legacyDeniedCodes).length === 0
+      )
     )),
-    [inheritedCodes, legacyDeniedCodes, permissions],
+    [inheritedCodes, legacyDeniedCodes, permissions, selectedAdditionCodes],
   )
   const visiblePermissions = useMemo(
     () => availableAdditions.filter((permission) => (
@@ -356,10 +364,11 @@ function EmployeeAccessEditor({
   function togglePermission(code: string) {
     if (accessReadOnly) return
     setSelectedAdditionCodes((current) => {
-      const next = new Set(current)
-      if (next.has(code)) next.delete(code)
-      else next.add(code)
-      return next
+      const effectiveDraft = new Set([...inheritedCodes, ...current])
+      const next = toggleClientCommunicationPermission(effectiveDraft, code, legacyDeniedCodes)
+      return new Set([...next].filter((permissionCode) => (
+        storedGrantCodes.includes(permissionCode) || !inheritedCodes.has(permissionCode)
+      )))
     })
     setMessage(null)
   }

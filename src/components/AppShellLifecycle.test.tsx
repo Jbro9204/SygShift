@@ -31,6 +31,7 @@ type OperationalWorkspaceFixture = {
 
 const shared = vi.hoisted(() => ({
   activeAccessToken: null as string | null,
+  authListener: null as null | ((event: string, session: { access_token: string } | null) => void),
   browserListener: null as ((action: 'cleared' | 'updated') => void) | null,
   hydrateResult: null as null | { accessToken: string; expiresAt: number; refreshToken: string; scope: 'platform' | 'sygsphere' },
   operationalWorkspace: { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' } as OperationalWorkspaceFixture,
@@ -76,7 +77,10 @@ vi.mock('../lib/supabase', () => ({
           session: shared.activeAccessToken ? { access_token: shared.activeAccessToken } : null,
         },
       })),
-      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+      onAuthStateChange: vi.fn((listener: (event: string, session: { access_token: string } | null) => void) => {
+        shared.authListener = listener
+        return { data: { subscription: { unsubscribe: vi.fn() } } }
+      }),
     },
   })),
   isSupabaseConfigured: true,
@@ -153,6 +157,7 @@ vi.mock('./LiveNotifications', () => ({ LiveNotifications: () => null }))
 
 beforeEach(() => {
   shared.activeAccessToken = null
+  shared.authListener = null
   shared.browserListener = null
   shared.hydrateResult = null
   shared.operationalWorkspace = { alerts: [], serverTimestamp: '2026-10-05T12:00:00.000Z' }
@@ -265,6 +270,23 @@ describe('AppShell shared-session lifecycle', () => {
     const { deactivateSharedIdentitySupabaseSession } = await import('../lib/supabase')
     expect(deactivateSharedIdentitySupabaseSession).toHaveBeenCalled()
   })
+
+  it('purges Client Communications and session context caches when the authenticated session ends', async () => {
+    shared.activeAccessToken = accessToken
+    const { queryClient } = renderShell('/')
+    await waitFor(() => expect(shared.authListener).not.toBeNull())
+
+    const communicationsKey = ['client-communications', employeeId, 'workspace', 'all', '', 1, 20]
+    queryClient.setQueryData(communicationsKey, { privatePreview: 'Employee A message' })
+    queryClient.setQueryData(['session-context'], { employeeId })
+    queryClient.setQueryData(['unrelated-cache'], { retained: true })
+
+    act(() => shared.authListener?.('SIGNED_OUT', null))
+
+    expect(queryClient.getQueryData(communicationsKey)).toBeUndefined()
+    expect(queryClient.getQueryData(['session-context'])).toBeUndefined()
+    expect(queryClient.getQueryData(['unrelated-cache'])).toEqual({ retained: true })
+  })
 })
 
 function prepareSharedSession(scope: 'platform' | 'sygsphere') {
@@ -301,7 +323,7 @@ function operationalAlert(
 function renderShell(initialEntry: string) {
   window.history.replaceState({}, '', initialEntry)
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <Routes>
@@ -316,4 +338,5 @@ function renderShell(initialEntry: string) {
       </MemoryRouter>
     </QueryClientProvider>,
   )
+  return { ...view, queryClient }
 }

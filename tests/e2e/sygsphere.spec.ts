@@ -249,6 +249,133 @@ test('fills the shell below the header without an empty page tail', async ({ pag
   expect(geometry.sphereBottom).toBe(geometry.viewportBottom)
   await page.screenshot({ path: testInfo.outputPath('sygsphere-shell.png'), fullPage: true })
 })
+for (const viewport of [
+  { label: 'reported 2410 by 643 viewport', width: 2410, height: 643 },
+  { label: 'reported 2359 by 714 viewport', width: 2359, height: 714 },
+  { label: 'reported 2418 by 621 viewport', width: 2418, height: 621 },
+  { label: 'reported screen at 200-percent-equivalent zoom', width: 1205, height: 322 },
+]) {
+  test(`owns the viewport and removes the blank page tail at the ${viewport.label}`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
+    await page.getByRole('textbox', { name: 'Write a message', exact: true }).evaluate((element) => element.blur())
+
+    const geometry = await page.evaluate(() => {
+      const shell = document.querySelector<HTMLElement>('.app-shell--sygsphere')!
+      const workspace = document.querySelector<HTMLElement>('.workspace')!
+      const main = document.querySelector<HTMLElement>('#main-content')!
+      const sphere = document.querySelector<HTMLElement>('.sphere-workspace')!
+      const composer = document.querySelector<HTMLElement>('.sphere-composer')!
+      return {
+        bodyScrollTop: document.body.scrollTop,
+        composerBottom: Math.round(composer.getBoundingClientRect().bottom),
+        documentHeightOverflow: document.documentElement.scrollHeight - window.innerHeight,
+        documentScrollTop: document.documentElement.scrollTop,
+        mainBottom: Math.round(main.getBoundingClientRect().bottom),
+        shellBottom: Math.round(shell.getBoundingClientRect().bottom),
+        shellOverflow: getComputedStyle(shell).overflowY,
+        sphereBottom: Math.round(sphere.getBoundingClientRect().bottom),
+        viewportBottom: window.innerHeight,
+        windowScrollY: window.scrollY,
+        workspaceBottom: Math.round(workspace.getBoundingClientRect().bottom),
+      }
+    })
+
+    expect(geometry.documentHeightOverflow).toBeLessThanOrEqual(1)
+    expect(geometry.windowScrollY).toBe(0)
+    expect(geometry.documentScrollTop).toBe(0)
+    expect(geometry.bodyScrollTop).toBe(0)
+    expect(geometry.shellOverflow).toBe('hidden')
+    expect(geometry.shellBottom).toBe(geometry.viewportBottom)
+    expect(geometry.workspaceBottom).toBe(geometry.viewportBottom)
+    expect(geometry.mainBottom).toBe(geometry.viewportBottom)
+    expect(geometry.sphereBottom).toBe(geometry.viewportBottom)
+    expect(geometry.composerBottom).toBeLessThanOrEqual(geometry.viewportBottom)
+    await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeInViewport()
+  })
+}
+test('keeps route height ownership when a transition wrapper surrounds SygSphere', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 600 })
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}&wrapped-shell&theme=dark`)
+  const geometry = await page.evaluate(() => {
+    const frame = document.querySelector<HTMLElement>('.sphere-route-frame')!
+    const sphere = document.querySelector<HTMLElement>('.sphere-workspace')!
+    return {
+      documentHeightOverflow: document.documentElement.scrollHeight - window.innerHeight,
+      frameBottom: Math.round(frame.getBoundingClientRect().bottom),
+      frameHeight: Math.round(frame.getBoundingClientRect().height),
+      sphereBottom: Math.round(sphere.getBoundingClientRect().bottom),
+      viewportBottom: window.innerHeight,
+    }
+  })
+  expect(geometry.documentHeightOverflow).toBeLessThanOrEqual(1)
+  expect(geometry.frameHeight).toBeGreaterThan(0)
+  expect(geometry.frameBottom).toBe(geometry.viewportBottom)
+  expect(geometry.sphereBottom).toBe(geometry.viewportBottom)
+})
+test('scrolls message history without moving the SygSphere page chrome', async ({ page }) => {
+  await page.setViewportSize({ width: 2410, height: 643 })
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
+  await page.getByRole('textbox', { name: 'Write a message', exact: true }).fill('Viewport scroll seed')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(page.locator('.sphere-main > .sphere-message-list article')).toHaveCount(1)
+  const messages = page.locator('.sphere-main > .sphere-message-list')
+  await messages.evaluate((node) => {
+    const template = node.querySelector('article')
+    if (!template) throw new Error('Expected a message template in the fixture')
+    for (let index = 0; index < 24; index += 1) {
+      const clone = template.cloneNode(true) as HTMLElement
+      const body = clone.querySelector<HTMLElement>('.sphere-message__body')
+      if (body) body.textContent = `Viewport scroll regression message ${index + 1}`
+      node.append(clone)
+    }
+    node.scrollTop = node.scrollHeight
+  })
+  await expect.poll(() => messages.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true)
+
+  const before = await page.evaluate(() => {
+    const rect = (selector: string) => {
+      const box = document.querySelector<HTMLElement>(selector)!.getBoundingClientRect()
+      return { bottom: Math.round(box.bottom), top: Math.round(box.top) }
+    }
+    const list = document.querySelector<HTMLElement>('.sphere-main > .sphere-message-list')!
+    return {
+      chatHeader: rect('.sphere-chat-header'),
+      composer: rect('.sphere-composer'),
+      messageScrollTop: list.scrollTop,
+      sphereTopbar: rect('.sphere-topbar'),
+      systemTopbar: rect('.topbar'),
+    }
+  })
+  const messageBox = await messages.boundingBox()
+  if (!messageBox) throw new Error('Expected the message history to be visible')
+  await page.mouse.move(messageBox.x + messageBox.width / 2, messageBox.y + messageBox.height / 2)
+  await page.mouse.wheel(0, -700)
+  await expect.poll(() => messages.evaluate((node) => node.scrollTop)).toBeLessThan(before.messageScrollTop)
+
+  const after = await page.evaluate(() => {
+    const rect = (selector: string) => {
+      const box = document.querySelector<HTMLElement>(selector)!.getBoundingClientRect()
+      return { bottom: Math.round(box.bottom), top: Math.round(box.top) }
+    }
+    return {
+      bodyScrollTop: document.body.scrollTop,
+      chatHeader: rect('.sphere-chat-header'),
+      composer: rect('.sphere-composer'),
+      documentScrollTop: document.documentElement.scrollTop,
+      sphereTopbar: rect('.sphere-topbar'),
+      systemTopbar: rect('.topbar'),
+      windowScrollY: window.scrollY,
+    }
+  })
+  expect(after.windowScrollY).toBe(0)
+  expect(after.documentScrollTop).toBe(0)
+  expect(after.bodyScrollTop).toBe(0)
+  expect(after.systemTopbar).toEqual(before.systemTopbar)
+  expect(after.sphereTopbar).toEqual(before.sphereTopbar)
+  expect(after.chatHeader).toEqual(before.chatHeader)
+  expect(after.composer).toEqual(before.composer)
+})
 test('keeps the mobile composer and Send control usable inside the full SygShift shell', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 412, height: 720 })
   await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)

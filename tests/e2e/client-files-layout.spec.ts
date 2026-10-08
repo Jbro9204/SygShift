@@ -18,12 +18,25 @@ async function installClientFileFixture(page: import('@playwright/test').Page, t
     document.documentElement.dataset.theme = selectedTheme
     document.documentElement.style.colorScheme = selectedTheme
     document.body.innerHTML = `<main style="max-width:1440px;margin:0 auto;padding:24px"><div class="page page--clients">
-      <button class="back-link" type="button">Back to Client Files</button>
+      <button class="client-back-link" type="button">← Back to Client Files</button>
       <header class="client-file-hero"><div><p class="eyebrow">CLI-1000 · Active</p><h1>Sample Client</h1><p>Sample Client Legal LLC</p></div><div class="client-file-hero__actions"><button class="secondary-button" type="button">Edit client</button><button class="primary-action" type="button">Add service record</button></div></header>
-      <nav class="client-tabs" aria-label="Client File sections"><button type="button">Overview</button><button type="button">Contacts (14)</button><button type="button">Sites &amp; Posts (12)</button><button class="is-active" aria-current="page" type="button">Documents (28)</button><button type="button">Activity</button></nav>
+      <nav class="client-tabs" aria-label="Client File sections"><button type="button">Overview</button><button type="button">Contacts (14)</button><button type="button">Sites &amp; Posts (12)</button><button type="button">Communications</button><button class="is-active" aria-current="page" type="button">Documents (28)</button><button type="button">Activity</button></nav>
       <section class="client-card"><div class="client-section-heading"><div><p class="eyebrow">Private client vault</p><h2>Proposals, contracts &amp; records</h2><p>Contract and pricing files remain visible only to separately authorized employees.</p></div><button class="primary-action" type="button">Upload document</button></div>
       <div class="client-document-list">${Array.from({ length: 10 }, (_, index) => `<article><span aria-hidden="true">▣</span><div><strong>Document ${index + 1}</strong><span>contract · 1.2 MB · restricted</span><small>sample-${index + 1}.pdf · Added Sep 2, 2026</small></div><span class="client-portal-state">internal only</span><div><button class="secondary-button secondary-button--small" type="button">View</button><button class="secondary-button secondary-button--small" type="button">Download</button></div></article>`).join('')}</div>
       <footer class="client-pagination"><span>Page 1 · 28 documents</span><label>Rows <select><option>10</option></select></label><button class="secondary-button secondary-button--small" type="button">Previous</button><button class="secondary-button secondary-button--small" type="button">Next</button></footer></section>
+    </div></main>`
+  }, theme)
+}
+
+async function installClientCommunicationsFixture(page: import('@playwright/test').Page, theme: 'light' | 'dark') {
+  await page.evaluate((selectedTheme) => {
+    document.documentElement.dataset.theme = selectedTheme
+    document.documentElement.style.colorScheme = selectedTheme
+    document.body.innerHTML = `<main style="max-width:1440px;margin:0 auto;padding:12px"><div class="page page--clients">
+      <header class="client-page-hero"><div><p class="eyebrow">Workforce &amp; Operations</p><h1>Client Communications</h1><p>Find client-linked internal conversations in one place, then open the protected source conversation or its Client File.</p></div><div class="client-page-hero__actions"><button class="secondary-button" type="button">Client Directory</button></div></header>
+      <section class="client-card client-communications-card"><div class="client-section-heading client-communications-heading"><div><button class="client-communications-back" type="button">← Client Directory</button><p class="eyebrow">Internal staff communication</p><h2>All client communications</h2><p>Messages stay in their original protected SygSphere conversation. This view helps authorized participants find the client context; it does not send messages to a client portal.</p></div></div>
+      <div class="client-communications-assurance"><span aria-hidden="true">✓</span><div><strong>Membership remains authoritative</strong><span>Only current participants can open or preview a conversation.</span></div></div>
+      <div class="client-communications-list" role="list"><div class="client-communication-row" role="listitem"><div class="client-communication-row__icon" aria-hidden="true">✉</div><div class="client-communication-row__body"><div class="client-communication-row__title"><strong>TClientOperationsWithoutBreaks012345678901234567890123456789012345678901234567890123456789</strong><span class="client-communication-unread">2 unread</span></div><a class="client-communication-client" href="#client">TClientWithoutBreaks012345678901234567890123456789012345678901234567890123456789 · CLI-1222</a><span>Group conversation · SchedulingAndSiteCoordinationWithoutBreaks0123456789012345678901234567890123456789</span><p><strong>Latest:</strong> Confirm tomorrow's coverage.</p><small>Last message 10/08/2026, 8:00 AM MDT</small></div><div class="client-communication-row__actions"><a class="primary-action" href="#sphere">Open in SygSphere</a><button class="secondary-button secondary-button--small" type="button">Unlink</button></div></div></div></section>
     </div></main>`
   }, theme)
 }
@@ -50,6 +63,19 @@ for (const theme of ['light', 'dark'] as const) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
     await expect(page.locator('.client-document-list article')).toHaveCount(10)
     await expect(page.locator('.client-pagination')).toContainText('28 documents')
+    const accessibility = await new AxeBuilder({ page }).analyze()
+    expect(accessibility.violations).toEqual([])
+  })
+
+  test(`Client Communications remains readable on a phone in ${theme} mode`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 700 })
+    await page.goto('/')
+    await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--ink').trim().length > 0)
+    await installClientCommunicationsFixture(page, theme)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await expect(page.getByText('TClientOperationsWithoutBreaks012345678901234567890123456789012345678901234567890123456789')).toBeVisible()
+    expect(await page.locator('.client-communication-row__body').evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+    await expect(page.getByRole('link', { name: 'Open in SygSphere' })).toBeVisible()
     const accessibility = await new AxeBuilder({ page }).analyze()
     expect(accessibility.violations).toEqual([])
   })

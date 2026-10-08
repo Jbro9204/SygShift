@@ -29,7 +29,7 @@ import {
   type PermissionDefinition,
 } from '../data/accessControl'
 import { getSessionContext } from '../data/auth'
-import { applyPermissionCategorySelection } from '../lib/permissionSelection'
+import { addClientCommunicationDependencies, setClientCommunicationPermissionCategory, toggleClientCommunicationPermission } from '../lib/clientCommunicationPermissions'
 import { workforceRoleLabel } from '../lib/workforceRoleAssignment'
 
 const operationsDashboardPermission = 'operations.view'
@@ -51,6 +51,14 @@ function keepHomeExperienceValid(current: Set<string>): Set<string> {
   const next = new Set(current)
   if (!next.has(operationsDashboardPermission)) next.delete(operationsHomePermission)
   return next
+}
+
+function toggleAccessPermission(current: Set<string>, code: string): Set<string> {
+  return keepHomeExperienceValid(toggleClientCommunicationPermission(current, code))
+}
+
+function setAccessPermissionCategory(current: Set<string>, codes: string[], selected: boolean): Set<string> {
+  return keepHomeExperienceValid(setClientCommunicationPermissionCategory(current, codes, selected))
 }
 
 function HomeExperienceSelector({
@@ -303,16 +311,11 @@ function CreateRoleModal({
   })
 
   function togglePermission(code: string) {
-    setSelectedCodes((current) => {
-      const next = new Set(current)
-      if (next.has(code)) next.delete(code)
-      else next.add(code)
-      return keepHomeExperienceValid(next)
-    })
+    setSelectedCodes((current) => toggleAccessPermission(current, code))
   }
 
   function setAllPermissions(codes: string[], selected: boolean) {
-    setSelectedCodes((current) => keepHomeExperienceValid(applyPermissionCategorySelection(current, codes, selected)))
+    setSelectedCodes((current) => setAccessPermissionCategory(current, codes, selected))
   }
 
   function setHomeExperience(experience: HomeExperience) {
@@ -429,7 +432,7 @@ export function RolePermissionEditor({
   role: AccessRoleDefinition
 }) {
   const queryClient = useQueryClient()
-  const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set(role.permissionCodes))
+  const [selectedCodes, setSelectedCodes] = useState<Set<string>>(() => keepHomeExperienceValid(addClientCommunicationDependencies(new Set(role.permissionCodes))))
   const [message, setMessage] = useState<string | null>(null)
   const [permissionSearch, setPermissionSearch] = useState('')
   const [showEnabledOnly, setShowEnabledOnly] = useState(false)
@@ -470,7 +473,7 @@ export function RolePermissionEditor({
   })
 
   useEffect(() => {
-    setSelectedCodes(new Set(role.permissionCodes))
+    setSelectedCodes(keepHomeExperienceValid(addClientCommunicationDependencies(new Set(role.permissionCodes))))
     setOpenCategory(null)
     setShowEnabledOnly(false)
   }, [role.id, role.permissionCodes])
@@ -499,18 +502,13 @@ export function RolePermissionEditor({
 
   function togglePermission(code: string) {
     if (!canManage) return
-    setSelectedCodes((current) => {
-      const next = new Set(current)
-      if (next.has(code)) next.delete(code)
-      else next.add(code)
-      return keepHomeExperienceValid(next)
-    })
+    setSelectedCodes((current) => toggleAccessPermission(current, code))
     setMessage(null)
   }
 
   function setAllPermissions(codes: string[], selected: boolean) {
     if (!canManage) return
-    setSelectedCodes((current) => keepHomeExperienceValid(applyPermissionCategorySelection(current, codes, selected)))
+    setSelectedCodes((current) => setAccessPermissionCategory(current, codes, selected))
     setMessage(null)
   }
 
@@ -590,7 +588,7 @@ export function RolePermissionEditor({
       {hasUnsavedChanges ? (
         <div className="access-sticky-savebar">
           <div><ShieldAlert aria-hidden="true" size={20} /><span><strong>{changeCount} unsaved change{changeCount === 1 ? '' : 's'}</strong><small>Changes to {role.name} will affect {role.assignedCount} employee{role.assignedCount === 1 ? '' : 's'}.</small></span></div>
-          <button className="access-control-button access-control-button--secondary" disabled={mutation.isPending} onClick={() => setSelectedCodes(new Set(role.permissionCodes))} type="button">Cancel</button>
+          <button className="access-control-button access-control-button--secondary" disabled={mutation.isPending} onClick={() => setSelectedCodes(keepHomeExperienceValid(addClientCommunicationDependencies(new Set(role.permissionCodes))))} type="button">Cancel</button>
           <button className="access-control-button access-control-button--primary" disabled={mutation.isPending} onClick={savePermissions} type="button"><Save aria-hidden="true" size={18} />{mutation.isPending ? 'Saving...' : 'Save role permissions'}</button>
         </div>
       ) : null}

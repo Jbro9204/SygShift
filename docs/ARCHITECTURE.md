@@ -48,6 +48,9 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Source spreadsheets are staged in the private schema with source tab, row, checksum, and original field values. An authorized reviewer must match, promote, or exclude every row.
 - Internal and future client-visible state remain separate. `internal_only`, `eligible_to_share`, `awaiting_approval`, `published_to_client`, and `withdrawn` prepare a later Client Portal without publishing anything in this release.
 - Every list is bounded by a 5, 10, or 20-row page or a deliberate View All disclosure. Browser routes are `/clients` and `/clients/:clientId`.
+- Client Communications is an internal, searchable relationship index over existing SygSphere conversations. It stores only the Client File/conversation identifiers, operational purpose, and audited link lifecycle; messages, attachments, read receipts, membership, and conversation history remain authoritative in SygSphere and are never copied into the Client Files domain. A separate private request ledger binds each accepted link or exact-generation unlink to one caller-supplied request UUID so delayed network retries cannot resurrect a retired link or retire a later replacement.
+- The global Client Communications workspace and each Client File's Communications tab use server-side search and bounded pagination. Available-conversation lookup is separately paginated, and a SygSphere conversation About panel may resolve the same active relationship back to its Client File.
+- Client Directory search retains the current bounded result set while a replacement query is in flight. The search control therefore keeps one stable browser identity and focus while results refresh instead of remounting the whole workspace after each character.
 
 ## Continental U.S. schedule time zones
 
@@ -174,6 +177,8 @@ PostgreSQL is the final authorization boundary. Roles are Guard, Supervisor, and
 - Recipient-specific private `sygsphere:<auth user id>` Broadcast topics carry invalidation identifiers only. The client reloads authorized records, with focus/reconnect and polling fallback. Visible-message IDs drive read receipts; drafts and client identifiers are scoped by employee, conversation and thread.
 - The Worker checks membership before accepting bounded file bytes, validates content, stores private objects, and verifies the expected SHA-256 checksum before service-only completion. Downloads require current membership and an available attached, nondeleted message; no public Storage policy or signed public URL is introduced.
 - A SygSphere-only release gate provides isolation without deleting history. Voice/video, Microsoft calendar integration and SygSphere background Web Push are not part of this release.
+- The authenticated SygSphere route owns exactly the remaining viewport beneath application chrome through the deterministic `app-shell--sygsphere` layout chain. The page, shell, conversation header, and composer remain stationary; the message-history pane is the only vertical conversation scroller, including ultra-wide/short windows, high zoom, and one inert route-transition wrapper.
+- A Client File shortcut in conversation details is only a protected reference. It never changes SygSphere membership or sends content to a client, and it appears only after the Client Communications permission, effective `sygsphere.comms.use`, MFA, feature gate, active-account, and current-membership checks all succeed.
 
 ## SygTasks reminders and alarms
 

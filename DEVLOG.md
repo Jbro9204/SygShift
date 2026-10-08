@@ -1,5 +1,29 @@
 # SygShift Development Log
 
+## 10/08/2026 - Client Communications, Directory Search, and SygSphere Viewport Repair
+
+- Added a searchable, paginated internal Client Communications workspace plus a Communications tab in each Client
+  File and a protected return link from an associated SygSphere conversation.
+- Kept SygSphere authoritative: the relationship stores no copied messages, files, receipts, or membership, never
+  adds a participant, and never sends content to a client contact or future client portal.
+- Added exact MFA-protected view/manage permissions on top of the live Client Files permissions, current SygSphere
+  membership, the SygSphere release gate, and active-account checks. Role saves now normalize dependent permissions,
+  and link/unlink history remains private and auditable.
+- Scoped all Client Communications caches by employee and clears them on every identity teardown or account switch.
+  A private forced-RLS request ledger also makes unchanged retries harmless and binds unlinking to the exact link
+  generation, preventing delayed requests from resurrecting old links or retiring replacements.
+- Repaired Client Directory search so the field keeps focus through result refreshes, and replaced SygSphere's
+  DOM-shape-dependent height rule with deterministic route height ownership so only message history scrolls at the
+  reported ultra-wide/short and high-zoom layouts.
+- Local verification passed: 368 test files / 1 skipped and 2,065 tests / 1 skipped, strict TypeScript,
+  zero-warning lint, production builds, the combined 138/138 desktop/mobile Client Files, SygSphere, and mandatory
+  Time Clock browser matrix, and a linked-production rollback-only migration/regression rehearsal with no retained
+  schema or fixture rows.
+- Production migration, source promotion, deployment, and live verification remain pending and are not claimed by
+  this entry.
+- Working release record:
+  `docs/changelogs/CHANGELOG_10-08-2026_CLIENT_COMMUNICATIONS_SEARCH_AND_SYGSPHERE_VIEWPORT_REPAIR.md`.
+
 ## 10/08/2026 - SygSphere Upload and Inline Image Repair
 
 - Corrected signed SygSphere and Patrol resumable uploads to use Supabase Storage's signed TUS endpoint.

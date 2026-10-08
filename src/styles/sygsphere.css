@@ -6,9 +6,14 @@ body:has(.sidebar--open) .sphere-mobile-launcher{display:none!important}
 .sphere-launcher .sphere-launcher__emblem{display:none}.sidebar--collapsed .sphere-launcher .sphere-launcher__emblem{display:block}.sphere-launcher__brand img{max-width:185px!important}.sphere-launcher__brand small{padding-left:4px}
 @media(max-width:900px){.sphere-mobile-launcher{display:flex;position:fixed;bottom:18px;left:14px;z-index:70;align-items:center;gap:8px;padding:10px 13px;border-radius:30px;border:1px solid #d0a14c;background:#151b1d;color:#f3dab0;font-size:12px;box-shadow:0 3px 15px #0003;text-decoration:none}.sphere-mobile-launcher img{width:24px;height:22px;object-fit:contain}body:has(.sphere-workspace) .sphere-mobile-launcher,.sidebar--open .sphere-mobile-launcher{display:none}}
 .sphere-workspace [hidden]{display:none!important}.sphere-workspace .sphere-file{display:flex;justify-content:flex-start;width:100%;text-align:left;margin:8px 0;padding:13px;background:var(--sp-soft)}.sphere-file span{display:flex;flex-direction:column;min-width:0}.sphere-file strong{overflow-wrap:anywhere;font-size:12px}.sphere-file small{font-size:10px;color:var(--sp-muted);font-weight:400}
-.app-shell--sygsphere{min-height:0;overflow:hidden}
-.workspace:has(> #main-content > .sphere-workspace){display:flex;height:100vh;height:100dvh;max-height:100dvh;min-height:0;flex-direction:column;overflow:hidden}
-.workspace:has(> #main-content > .sphere-workspace)>#main-content{display:flex;width:100%;flex:1 1 auto;min-height:0;overflow:hidden}
+.app-shell--sygsphere{height:100vh;height:100dvh;min-height:0;overflow:hidden}
+.app-shell--sygsphere>.workspace{display:flex;height:100%;max-height:100%;min-height:0;flex-direction:column;overflow:hidden}
+.app-shell--sygsphere #main-content{display:flex;width:100%;flex:1 1 0;min-height:0;overflow:hidden}
+/* Keep the route resilient if an error boundary or route transition adds one
+   inert wrapper between main and the messaging workspace. Height ownership is
+   still provided by the deterministic route class, not DOM-shape detection. */
+.app-shell--sygsphere #main-content>:only-child:not(.sphere-workspace){display:flex;width:100%;min-width:0;min-height:0;flex:1 1 0;overflow:hidden}
+.app-shell--sygsphere #main-content>:only-child:not(.sphere-workspace)>.sphere-workspace{flex:1 1 0;min-width:0;min-height:0}
 .sphere-workspace{width:100%;height:auto;min-height:0;max-height:100%;flex:1 1 auto;display:flex;flex-direction:column;background:var(--sp-bg);border:1px solid var(--sp-border);border-radius:18px;overflow:hidden;box-shadow:0 8px 28px #00000008}
 .sphere-workspace button,.sphere-modal button,.sphere-toast button{display:inline-flex;align-items:center;justify-content:center;gap:7px;font:inherit;font-weight:600;color:var(--sp-text);background:var(--sp-panel);border:1px solid var(--sp-border);border-radius:10px;min-height:38px;padding:8px 12px;cursor:pointer;white-space:normal}
 .sphere-workspace button:hover,.sphere-modal button:hover{background:var(--sp-soft);border-color:var(--sp-gold)}
@@ -40,7 +45,7 @@ body:has(.sidebar--open) .sphere-mobile-launcher{display:none!important}
 @media(max-width:1250px){.sphere-conversations{width:230px}.sphere-detail{width:290px}.sphere-message-list{padding:20px 16px 6px}.sphere-composer{margin:0 14px 16px}.sphere-composer-tools small{display:none}.sphere-layout{position:relative}.sphere-detail:not(.sphere-thread){position:absolute;right:0;top:0;bottom:0;z-index:6;box-shadow:-10px 0 30px #0002}}
 @media(max-width:850px){.sphere-conversations{width:210px}.sphere-thread{position:absolute;right:0;top:0;bottom:0;z-index:6;width:min(420px,100%);box-shadow:-10px 0 30px #0002}}
 @media(max-width:760px){
-  .workspace:has(> #main-content > .sphere-workspace)>#main-content,.sphere-workspace,.sphere-layout,.sphere-main{overflow:hidden}
+  .app-shell--sygsphere #main-content,.sphere-workspace,.sphere-layout,.sphere-main{overflow:hidden}
   .sphere-workspace{border-radius:12px}
   .sphere-topbar{min-height:58px;padding:8px 10px;gap:8px;flex-wrap:nowrap}
   .sphere-topbar h1{font-size:18px}
