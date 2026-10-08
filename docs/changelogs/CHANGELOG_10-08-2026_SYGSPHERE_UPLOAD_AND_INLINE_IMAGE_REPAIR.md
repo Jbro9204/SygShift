@@ -1,7 +1,7 @@
 # SygSphere Upload and Inline Image Repair
 
 Date: 10/08/2026
-Status: Release-ready; production deployment pending
+Status: Deployed and verified in production
 
 ## Outcome
 
@@ -53,11 +53,16 @@ without making private conversation files public.
   high-zoom, composer, and attachment layout checks.
 - Mandatory Time Clock desktop/mobile matrix: **42/42** passed.
 - `git diff --check`: passed.
+- Signed-in production verification opened an existing private image conversation, rendered protected thumbnails,
+  opened a full image preview, and returned to the user's original conversation without creating a test message or
+  uploading a test file.
 
 ## Deployment record
 
 - Database migration: not required.
-- Source revision: pending.
-- Cloudflare Worker version: pending.
-- Production health, readiness, exact-asset, and authenticated workflow verification: pending.
-
+- Source revision: `7056a9f` (`fix: repair SygSphere uploads and inline images`), fast-forwarded to `origin/main`.
+- Cloudflare Worker version: `c98f175c-39bf-484b-84cc-76b465b9ac9e`.
+- `https://app.sygilant.us/api/v1/health`: `status=ok`, `service=sygshift`, `version=v1`.
+- `https://app.sygilant.us/api/v1/ready`: `status=ready`, `ready=true`; every reported dependency check passed.
+- The fallback Worker origin passed health, the live HTML exactly matched the six production entry assets, and all
+  six returned HTTP 200.

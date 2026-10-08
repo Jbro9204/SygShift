@@ -11,7 +11,9 @@
   validation, and audit boundaries. No migration or RLS change was required.
 - The complete gate passed 365 test files / 1 skipped and 2,041 tests / 1 skipped. SygSphere passed 72/72 desktop and
   mobile browser checks, and the mandatory Time Clock matrix passed 42/42.
-- Production deployment details will be recorded after promotion.
+- Promoted source `7056a9f` to `origin/main` and deployed Cloudflare Worker version
+  `c98f175c-39bf-484b-84cc-76b465b9ac9e`; health, readiness, fallback health, all six exact live assets, and a
+  signed-in protected thumbnail/full-preview workflow passed in production.
 - Full release record:
   `docs/changelogs/CHANGELOG_10-08-2026_SYGSPHERE_UPLOAD_AND_INLINE_IMAGE_REPAIR.md`.
 
