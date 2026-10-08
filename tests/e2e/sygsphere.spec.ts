@@ -313,9 +313,9 @@ test('keeps route height ownership when a transition wrapper surrounds SygSphere
   expect(geometry.frameBottom).toBe(geometry.viewportBottom)
   expect(geometry.sphereBottom).toBe(geometry.viewportBottom)
 })
-test('scrolls message history without moving the SygSphere page chrome', async ({ page }) => {
+test('keeps the realistic AppShell viewport fixed while message history owns scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 2410, height: 643 })
-  await page.goto(`${fixture}?scope=${crypto.randomUUID()}&mobile-shell&theme=dark`)
+  await page.goto(`${fixture}?scope=${crypto.randomUUID()}&realistic-shell&theme=dark`)
   await page.getByRole('textbox', { name: 'Write a message', exact: true }).fill('Viewport scroll seed')
   await page.getByRole('button', { name: 'Send', exact: true }).click()
   await expect(page.locator('.sphere-main > .sphere-message-list article')).toHaveCount(1)
@@ -332,21 +332,62 @@ test('scrolls message history without moving the SygSphere page chrome', async (
     node.scrollTop = node.scrollHeight
   })
   await expect.poll(() => messages.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true)
+  const conversations = page.locator('.sphere-conversation-list')
+  await conversations.evaluate((node) => {
+    const template = node.querySelector<HTMLElement>('.sphere-conversation')
+    if (!template?.parentElement) throw new Error('Expected a conversation template in the fixture')
+    for (let index = 0; index < 36; index += 1) {
+      const clone = template.cloneNode(true) as HTMLElement
+      const title = clone.querySelector<HTMLElement>('strong')
+      if (title) title.textContent = `Overflow regression conversation ${index + 1}`
+      const presence = document.createElement('span')
+      presence.className = 'visually-hidden'
+      presence.textContent = 'Presence: Active. '
+      clone.querySelector<HTMLElement>(':scope > span:nth-child(2)')?.append(presence)
+      template.parentElement.append(clone)
+    }
+    node.scrollTop = node.scrollHeight
+  })
+  await expect.poll(() => conversations.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true)
 
   const before = await page.evaluate(() => {
     const rect = (selector: string) => {
       const box = document.querySelector<HTMLElement>(selector)!.getBoundingClientRect()
       return { bottom: Math.round(box.bottom), top: Math.round(box.top) }
     }
+    const conversationList = document.querySelector<HTMLElement>('.sphere-conversation-list')!
+    const hiddenPresenceNodes = Array.from(conversationList.querySelectorAll<HTMLElement>('.sphere-conversation .visually-hidden'))
+    const lastHiddenPresence = hiddenPresenceNodes.at(-1)!
+    const lastHiddenConversation = lastHiddenPresence.closest<HTMLElement>('.sphere-conversation')!
     const list = document.querySelector<HTMLElement>('.sphere-main > .sphere-message-list')!
+    const shell = document.querySelector<HTMLElement>('.app-shell--sygsphere')!
+    const workspace = document.querySelector<HTMLElement>('.workspace')!
     return {
       chatHeader: rect('.sphere-chat-header'),
       composer: rect('.sphere-composer'),
+      conversationViewportHeight: conversationList.clientHeight,
+      conversationScrollHeight: conversationList.scrollHeight,
+      documentHeightOverflow: document.documentElement.scrollHeight - window.innerHeight,
+      hasAppShellSiblings: shell.querySelector(':scope > .sidebar') !== null && shell.querySelector(':scope > .workspace') === workspace,
+      hiddenPresenceCount: hiddenPresenceNodes.length,
+      lastHiddenPresenceOwnedByConversation: lastHiddenPresence.offsetParent === lastHiddenConversation,
       messageScrollTop: list.scrollTop,
+      messageViewportHeight: list.clientHeight,
+      messageScrollHeight: list.scrollHeight,
+      shellIsCompact: shell.classList.contains('app-shell--compact-navigation'),
       sphereTopbar: rect('.sphere-topbar'),
       systemTopbar: rect('.topbar'),
+      workspaceMarginLeft: Math.round(Number.parseFloat(getComputedStyle(workspace).marginLeft)),
     }
   })
+  expect(before.hasAppShellSiblings).toBe(true)
+  expect(before.shellIsCompact).toBe(false)
+  expect(before.workspaceMarginLeft).toBe(276)
+  expect(before.conversationScrollHeight).toBeGreaterThan(before.conversationViewportHeight)
+  expect(before.hiddenPresenceCount).toBe(36)
+  expect(before.lastHiddenPresenceOwnedByConversation).toBe(true)
+  expect(before.messageScrollHeight).toBeGreaterThan(before.messageViewportHeight)
+  expect(before.documentHeightOverflow).toBeLessThanOrEqual(1)
   const messageBox = await messages.boundingBox()
   if (!messageBox) throw new Error('Expected the message history to be visible')
   await page.mouse.move(messageBox.x + messageBox.width / 2, messageBox.y + messageBox.height / 2)
@@ -362,6 +403,7 @@ test('scrolls message history without moving the SygSphere page chrome', async (
       bodyScrollTop: document.body.scrollTop,
       chatHeader: rect('.sphere-chat-header'),
       composer: rect('.sphere-composer'),
+      documentHeightOverflow: document.documentElement.scrollHeight - window.innerHeight,
       documentScrollTop: document.documentElement.scrollTop,
       sphereTopbar: rect('.sphere-topbar'),
       systemTopbar: rect('.topbar'),
@@ -371,6 +413,7 @@ test('scrolls message history without moving the SygSphere page chrome', async (
   expect(after.windowScrollY).toBe(0)
   expect(after.documentScrollTop).toBe(0)
   expect(after.bodyScrollTop).toBe(0)
+  expect(after.documentHeightOverflow).toBeLessThanOrEqual(1)
   expect(after.systemTopbar).toEqual(before.systemTopbar)
   expect(after.sphereTopbar).toEqual(before.sphereTopbar)
   expect(after.chatHeader).toEqual(before.chatHeader)

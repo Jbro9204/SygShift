@@ -32,10 +32,30 @@ function PdfStabilityFixture() {
   return <main style={{ height: '100dvh', padding: 16 }}>{url ? <SecurePdfViewer title="Stable preview fixture" url={url} /> : <p>Preparing PDF fixture…</p>}</main>
 }
 const accountControls = <div className="user-menu"><div aria-label="Appearance" className="theme-switcher" role="group"><button aria-label="Use light mode" className="theme-switcher__button" type="button">☀</button><button aria-label="Use dark mode" className="theme-switcher__button" type="button">☾</button></div><span aria-hidden="true" className="user-menu__divider" /><a aria-label="Open notifications" className="header-notification" href="#notifications">!</a><span aria-hidden="true" className="user-menu__divider" /><a aria-label="Open My Account" className="user-profile-control" href="#account"><span className="user-menu__avatar">MC</span></a><button aria-label="Sign Out" className="user-menu__icon-button" type="button">↪</button></div>
+function SygSphereAppShellFixture({ forceCompact = false }: { forceCompact?: boolean }) {
+  const compactNavigation = forceCompact || window.matchMedia('(max-width: 1280px), (max-width: 1366px) and (max-height: 800px)').matches
+  return <div className={`app-shell${compactNavigation ? ' app-shell--compact-navigation' : ''} app-shell--sygsphere`}>
+    <a className="skip-link" href="#main-content">Skip to main content</a>
+    <button aria-controls="primary-navigation" aria-expanded="false" aria-label="Open navigation" className="mobile-menu-button" type="button">☰</button>
+    <div aria-hidden="true" className="navigation-scrim" />
+    <aside className="sidebar" id="primary-navigation">
+      <div className="sidebar-brand"><strong>SygShift</strong><button aria-label="Close navigation" className="sidebar-close" type="button">×</button><button aria-label="Collapse navigation" className="sidebar-collapse" type="button">‹</button></div>
+      <nav aria-label="Primary navigation" className="sidebar-navigation"><a className="navigation-link" href="#home">Home</a><a className="navigation-link navigation-link--active" href="#sygsphere">SygSphere</a></nav>
+      <div className="sidebar-utilities" />
+    </aside>
+    <div className="workspace">
+      <OperationalTimeHeader accountControls={accountControls} />
+      <section aria-label="Workspace alerts" className="workspace-alert-strip workspace-alert-strip--urgent"><div className="workspace-alert-strip__icon">!</div><div className="workspace-alert-strip__copy"><strong>Missing clock-in</strong><div className="workspace-alert-strip__ticker"><span>Employee · Assigned post</span></div></div><div className="workspace-alert-strip__position">1/2</div><button className="workspace-alert-strip__action" type="button">Review alert</button></section>
+      <main id="main-content" tabIndex={-1}>{sphere}</main>
+    </div>
+  </div>
+}
 const fixtureBody = params.has('pdf')
   ? <PdfStabilityFixture />
+  : params.has('realistic-shell')
+  ? <SygSphereAppShellFixture />
   : params.has('mobile-shell')
-  ? <div className="app-shell app-shell--compact-navigation app-shell--sygsphere"><button aria-label="Open navigation" className="mobile-menu-button" type="button">☰</button><div className="workspace" style={{ marginLeft: 0 }}><OperationalTimeHeader accountControls={accountControls} /><section aria-label="Workspace alerts" className="workspace-alert-strip workspace-alert-strip--urgent"><div className="workspace-alert-strip__icon">!</div><div className="workspace-alert-strip__copy"><strong>Missing clock-in</strong><div className="workspace-alert-strip__ticker"><span>Employee · Assigned post</span></div></div><div className="workspace-alert-strip__position">1/2</div><button className="workspace-alert-strip__action" type="button">Review alert</button></section><main id="main-content">{sphere}</main></div></div>
+  ? <SygSphereAppShellFixture forceCompact />
   : params.has('wrapped-shell')
   ? <div className="app-shell app-shell--sygsphere"><div className="workspace" style={{ marginLeft: 0 }}><header className="topbar"><span>SygShift</span><span /><span /></header><main id="main-content"><div className="sphere-route-frame">{sphere}</div></main></div></div>
   : params.has('shell')
